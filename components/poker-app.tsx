@@ -24,12 +24,32 @@ import type { Card, GameSnapshot, PlayerAction, PublicSeat, Winner } from "@/lib
 import { avatarPresets, profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 
-const suitSymbols: Record<Card["suit"], string> = {
-  clubs: "♣",
-  diamonds: "♦",
-  hearts: "♥",
-  spades: "♠",
+const suitPaths: Record<Exclude<Card["suit"], "clubs">, string> = {
+  hearts:
+    "M16 28.5C16 28.5 3 19.6 3 11.2C3 6.2 6.8 3 11 3C13.6 3 15.6 4.4 16 6.6C16.4 4.4 18.4 3 21 3C25.2 3 29 6.2 29 11.2C29 19.6 16 28.5 16 28.5Z",
+  diamonds: "M16 2L29 16L16 30L3 16Z",
+  spades:
+    "M16 3C16 3 29 13.4 29 20.4C29 24.6 25.6 27 22.2 27C19.9 27 17.9 25.8 17 24C17.4 26.6 18.8 28.6 21 30H11C13.2 28.6 14.6 26.6 15 24C14.1 25.8 12.1 27 9.8 27C6.4 27 3 24.6 3 20.4C3 13.4 16 3 16 3Z",
 };
+
+function SuitGlyph({ suit }: { suit: Card["suit"] }) {
+  if (suit === "clubs") {
+    return (
+      <svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">
+        <circle cx="16" cy="10.5" r="6.6" />
+        <circle cx="9.8" cy="19" r="6.6" />
+        <circle cx="22.2" cy="19" r="6.6" />
+        <path d="M13.6 20.5H18.4L21 29.5H11Z" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">
+      <path d={suitPaths[suit]} />
+    </svg>
+  );
+}
+
 const spokenRanks: Record<Card["rank"], string> = {
   "2": "Two",
   "3": "Three",
@@ -113,7 +133,9 @@ function PlayingCard({
   if (!card) {
     return (
       <div className={clsx("playing-card card-back", sizeClass)} aria-label="Hidden card">
-        <span>RR</span>
+        <span className="card-back-emblem">
+          <span>R</span>
+        </span>
       </div>
     );
   }
@@ -123,9 +145,15 @@ function PlayingCard({
       className={clsx("playing-card", sizeClass, red && "card-red")}
       aria-label={`${spokenRanks[card.rank]} of ${card.suit}`}
     >
-      <span className="card-rank">{card.rank}</span>
-      <span className="card-suit">{suitSymbols[card.suit]}</span>
-      <span className="card-suit-large">{suitSymbols[card.suit]}</span>
+      <span className="card-index card-index-top">
+        <span className="card-index-rank">{card.rank}</span>
+        <span className="card-index-glyph"><SuitGlyph suit={card.suit} /></span>
+      </span>
+      <span className="card-suit-large"><SuitGlyph suit={card.suit} /></span>
+      <span className="card-index card-index-bottom">
+        <span className="card-index-rank">{card.rank}</span>
+        <span className="card-index-glyph"><SuitGlyph suit={card.suit} /></span>
+      </span>
     </div>
   );
 }

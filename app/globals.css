@@ -908,27 +908,64 @@ button:disabled { cursor: wait; opacity: .62; }
 .card-large { width: clamp(68px, 7.4vw, 88px); border-radius: 8px; }
 .card-small { width: clamp(38px, 4.2vw, 52px); border-radius: 4px; }
 .card-red { color: #b23f3e; }
-.card-rank { position: absolute; top: 7px; left: 8px; font: 700 clamp(17px, 2.2vw, 24px) Georgia, serif; }
-.card-suit { position: absolute; top: 29px; left: 9px; font-size: 16px; }
-.card-suit-large { position: absolute; right: 8px; bottom: 3px; font-size: clamp(32px, 4vw, 50px); opacity: .9; }
-.card-large .card-rank { font-size: clamp(20px, 2.6vw, 28px); top: 9px; left: 10px; }
-.card-large .card-suit { font-size: 18px; top: 35px; left: 11px; }
-.card-large .card-suit-large { font-size: clamp(38px, 4.8vw, 58px); }
-.card-small .card-rank { font-size: 12px; top: 3px; left: 4px; }
-.card-small .card-suit { font-size: 9px; top: 16px; left: 5px; }
-.card-small .card-suit-large { font-size: 22px; right: 3px; bottom: -2px; }
+
+/* Twin corner indices (rank + suit glyph), mirrored top-left/bottom-right
+   like a real card, plus a subtle centered suit watermark. Readability
+   over decoration: the glyph is small at the corners and low-opacity in
+   the center so it never competes with the rank for a glance-read. */
+.card-index { position: absolute; display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.card-index-top { top: 7px; left: 8px; }
+.card-index-bottom { bottom: 7px; right: 8px; transform: rotate(180deg); }
+.card-index-rank { font: 700 clamp(17px, 2.2vw, 24px) Georgia, serif; }
+.card-index-glyph { width: 13px; height: 13px; margin-top: 2px; }
+.card-index-glyph svg { display: block; width: 100%; height: 100%; }
+.card-suit-large {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: .13;
+  pointer-events: none;
+}
+.card-suit-large svg { width: 56%; height: 56%; }
+
+.card-large .card-index-rank { font-size: clamp(20px, 2.6vw, 28px); }
+.card-large .card-index-top { top: 9px; left: 10px; }
+.card-large .card-index-bottom { bottom: 9px; right: 10px; }
+.card-large .card-index-glyph { width: 15px; height: 15px; }
+.card-small .card-index-rank { font-size: 12px; }
+.card-small .card-index-top { top: 3px; left: 4px; }
+.card-small .card-index-bottom { bottom: 3px; right: 4px; }
+.card-small .card-index-glyph { width: 8px; height: 8px; }
 
 .card-back {
   display: grid;
   place-items: center;
-  color: rgba(238,215,137,.65);
   border: 3px solid #e7e2d2;
   background:
-    repeating-linear-gradient(45deg, rgba(224,199,112,.14) 0 2px, transparent 2px 6px),
+    repeating-linear-gradient(45deg, rgba(224,199,112,.13) 0 1px, transparent 1px 9px),
+    repeating-linear-gradient(-45deg, rgba(224,199,112,.13) 0 1px, transparent 1px 9px),
     #193e31;
 }
 
-.card-back span { font: italic 9px Georgia, serif; border: 1px solid rgba(238,215,137,.35); padding: 4px 2px; transform: rotate(-10deg); }
+.card-back-emblem {
+  width: 42%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  transform: rotate(45deg);
+  border: 1px solid rgba(238,215,137,.55);
+  border-radius: 22%;
+  background: rgba(224,199,112,.16);
+}
+.card-back-emblem span {
+  transform: rotate(-45deg);
+  font: italic 700 clamp(9px, 2.6vw, 15px) Georgia, serif;
+  color: rgba(243,227,166,.88);
+}
+.card-large .card-back-emblem span { font-size: clamp(11px, 3vw, 17px); }
+.card-small .card-back-emblem span { font-size: clamp(7px, 1.8vw, 10px); }
+
 .card-ghost { box-shadow: none; border: 1px dashed rgba(255,255,255,.12); background: rgba(0,0,0,.08); }
 
 .player-seat {

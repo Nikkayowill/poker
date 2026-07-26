@@ -222,7 +222,6 @@ const PlayerSeat = memo(function PlayerSeat({
             <strong>{seat.name}</strong>
             {!seat.isHuman && <span className="ai-badge">AI</span>}
             {seat.isMine && <span className="you-chip">You</span>}
-            {seat.isDealer && <span className="dealer-chip">D</span>}
             {seat.isSmallBlind && <span className="blind-label">SB</span>}
             {seat.isBigBlind && <span className="blind-label">BB</span>}
           </div>
@@ -954,7 +953,47 @@ function PokerTable({
     : game.seats.map((_, index) => game.seats[(mySeatIndex + index) % game.seats.length]);
   const potRef = useRef<HTMLDivElement | null>(null);
   const seatRefs = useRef<Record<string, HTMLElement | null>>({});
+  const tableWrapRef = useRef<HTMLDivElement | null>(null);
   const showFunnel = game.status === "complete" && game.winners.length > 0;
+
+  const dealerSeatId = game.seats.find((seat) => seat.isDealer)?.id ?? null;
+  const [dealerVector, setDealerVector] = useState<{ dx: number; dy: number } | null>(null);
+  const dealerMeasuredOnceRef = useRef(false);
+  const [dealerAnimated, setDealerAnimated] = useState(false);
+  const measureDealer = useCallback(() => {
+    const anchorEl = potRef.current;
+    const seatEl = dealerSeatId ? seatRefs.current[dealerSeatId] : null;
+    if (!anchorEl || !seatEl) return;
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const seatRect = seatEl.getBoundingClientRect();
+    setDealerVector({
+      dx: seatRect.left + seatRect.width / 2 - (anchorRect.left + anchorRect.width / 2),
+      dy: seatRect.top + seatRect.height / 2 - (anchorRect.top + anchorRect.height / 2),
+    });
+    if (!dealerMeasuredOnceRef.current) {
+      dealerMeasuredOnceRef.current = true;
+      // Skip the glide transition for this first placement (mount, refresh,
+      // reconnect) -- only actual dealer-seat changes between hands should
+      // animate. Arming on the next frame keeps this snap-into-place paint
+      // free of a transition rather than racing the style application.
+      window.requestAnimationFrame(() => setDealerAnimated(true));
+    }
+  }, [dealerSeatId]);
+  const seatOrderKey = orderedSeats.map((seat) => seat.id).join(",");
+  useEffect(() => {
+    measureDealer();
+  }, [measureDealer, seatOrderKey, historyOpen]);
+  useEffect(() => {
+    const wrap = tableWrapRef.current;
+    if (!wrap) return;
+    const observer = new ResizeObserver(() => measureDealer());
+    observer.observe(wrap);
+    window.addEventListener("orientationchange", measureDealer);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("orientationchange", measureDealer);
+    };
+  }, [measureDealer]);
 
   // A silent auto-fold/check is easy to miss on a first turn; call it out
   // explicitly instead of only leaving a trace in the activity log. Derived
@@ -1042,7 +1081,7 @@ function PokerTable({
 
       <section className="game-content">
         <div className="table-area">
-          <div className="poker-table-wrap">
+          <div className="poker-table-wrap" ref={tableWrapRef}>
             <div className="poker-rail">
               <div className="poker-felt">
                 <div className="felt-texture" />
@@ -1085,6 +1124,22 @@ function PokerTable({
                 )}
               </div>
             </div>
+            {dealerSeatId && (
+              <div
+                className={clsx(
+                  "dealer-puck",
+                  dealerVector && "dealer-puck-visible",
+                  dealerAnimated && "dealer-puck-animated",
+                )}
+                style={{
+                  "--puck-dx": `${dealerVector?.dx ?? 0}px`,
+                  "--puck-dy": `${dealerVector?.dy ?? 0}px`,
+                } as React.CSSProperties}
+                aria-hidden="true"
+              >
+                <span>D</span>
+              </div>
+            )}
             {orderedSeats.map((seat, index) => (
               <PlayerSeat
                 key={seat.id}

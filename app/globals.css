@@ -1116,7 +1116,7 @@ button:disabled { cursor: wait; opacity: .62; }
 .seat-name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; row-gap: 3px; }
 .seat-name-row strong { max-width: 75px; overflow: hidden; text-overflow: ellipsis; color: #edf1eb; font-size: 12px; }
 
-.dealer-chip, .blind-label, .you-chip {
+.blind-label, .you-chip {
   width: 16px;
   height: 16px;
   display: inline-grid;
@@ -1127,6 +1127,32 @@ button:disabled { cursor: wait; opacity: .62; }
   font-size: 8px;
   font-weight: 850;
 }
+
+/* A single persistent puck (not one per seat) so it can glide between
+   seats instead of popping. Positioned via a fixed anchor point plus a
+   measured translate delta -- the same technique .pot-chip-flight uses --
+   so it works at every breakpoint without knowing the table's geometry. */
+.dealer-puck {
+  position: absolute;
+  left: 50%;
+  top: 19%;
+  z-index: 8;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transform: translate(-50%, -50%) translate(var(--puck-dx, 0px), var(--puck-dy, 0px));
+  border-radius: 50%;
+  border: 1px solid rgba(120,94,20,.6);
+  background: radial-gradient(circle at 32% 28%, #fbf6e3, #e9dfb8 45%, #cbb978 78%, #a68f4c);
+  box-shadow: 0 3px 6px rgba(0,0,0,.4), inset 0 1px 1px rgba(255,255,255,.65), inset 0 -2px 3px rgba(120,94,20,.4);
+  font: 700 11px Georgia, serif;
+  color: #4a3a12;
+  opacity: 0;
+}
+.dealer-puck-visible { opacity: 1; }
+.dealer-puck-animated { transition: transform .55s cubic-bezier(.32,.72,.28,1); }
 
 .blind-label {
   width: auto;
@@ -2063,5 +2089,8 @@ button:disabled { cursor: wait; opacity: .62; }
   .action-countdown.countdown-critical,
   .turn-ring {
     animation: none;
+  }
+  .dealer-puck-animated {
+    transition: none;
   }
 }

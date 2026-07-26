@@ -13,13 +13,14 @@ import {
   RotateCcw,
   Save,
   Settings2,
+  TimerReset,
   UsersRound,
   Upload,
   X,
 } from "lucide-react";
-import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import type { Card, GameSnapshot, PlayerAction, PublicSeat } from "@/lib/game/types";
+import type { Card, GameSnapshot, PlayerAction, PublicSeat, Winner } from "@/lib/game/types";
 import { avatarPresets, profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 
@@ -111,16 +112,51 @@ function PlayingCard({
   );
 }
 
-function PlayerSeat({ seat, placement }: { seat: PublicSeat; placement: string }) {
+function PlayerSeat({
+  seat,
+  placement,
+  handNumber,
+  secondsRemaining,
+  winAmount,
+  elementRef,
+}: {
+  seat: PublicSeat;
+  placement: string;
+  handNumber: number;
+  secondsRemaining: number;
+  winAmount?: number;
+  elementRef?: (el: HTMLElement | null) => void;
+}) {
   const folded = seat.status === "folded" || seat.status === "out";
+  const isWinner = winAmount !== undefined;
   return (
     <article
-      className={clsx("player-seat", placement, seat.isCurrent && "seat-current", folded && "seat-muted")}
+      ref={elementRef}
+      className={clsx(
+        "player-seat",
+        placement,
+        seat.isCurrent && "seat-current",
+        seat.isSmallBlind && "seat-small-blind",
+        seat.isBigBlind && "seat-big-blind",
+        folded && "seat-muted",
+        isWinner && "seat-winner",
+      )}
       style={{ "--seat-accent": seat.accent } as React.CSSProperties}
     >
-      <div className="seat-cards">
+      {(seat.isSmallBlind || seat.isBigBlind) && (
+        <span className="blind-silhouette" aria-label={seat.isBigBlind ? "Big blind" : "Small blind"}>
+          <span>{seat.isBigBlind ? "BIG BLIND" : "SMALL BLIND"}</span>
+        </span>
+      )}
+      <div className={clsx("seat-cards", isWinner && "winning-cards")}>
         {seat.holeCards.map((card, index) => (
-          <PlayingCard key={index} card={card} small />
+          <span
+            className="dealt-card-shell"
+            key={`${handNumber}-${index}`}
+            style={{ animationDelay: `${160 + seat.position * 115 + index * 460}ms` }}
+          >
+            <PlayingCard card={card} small />
+          </span>
         ))}
       </div>
       <div className="seat-profile">
@@ -144,7 +180,7 @@ function PlayerSeat({ seat, placement }: { seat: PublicSeat; placement: string }
             {seat.isSmallBlind && <span className="blind-label">SB</span>}
             {seat.isBigBlind && <span className="blind-label">BB</span>}
           </div>
-          <span className="seat-stack">
+          <span className={clsx("seat-stack", isWinner && "seat-stack-win")}>
             <span className="chip-dot" /> {seat.stack.toLocaleString()}
           </span>
         </div>
@@ -153,6 +189,13 @@ function PlayerSeat({ seat, placement }: { seat: PublicSeat; placement: string }
       {seat.status === "folded" && <span className="status-pill">Folded</span>}
       {seat.status === "all-in" && <span className="status-pill all-in">All in</span>}
       {seat.streetBet > 0 && <span className="table-bet">{seat.streetBet}</span>}
+      {isWinner && <span className="win-amount-float">+{winAmount.toLocaleString()}</span>}
+      {seat.isCurrent && (
+        <div className="seat-turn-status" aria-live="polite">
+          <span>{seat.isMine ? "YOUR TURN" : seat.isHuman ? "THINKING" : "AI THINKING"}</span>
+          <strong>{secondsRemaining}s</strong>
+        </div>
+      )}
     </article>
   );
 }
@@ -435,16 +478,33 @@ function ProfileModal({
   );
 }
 
+function TurnProgressBar({ remainingFraction }: { remainingFraction: number }) {
+  return (
+    <div className="turn-progress-track">
+      <div
+        className={clsx("turn-progress-fill", remainingFraction <= 0.25 && "progress-critical")}
+        style={{ transform: `scaleX(${remainingFraction})` }}
+      />
+    </div>
+  );
+}
+
 function ActionBar({
   game,
   pending,
   onAction,
+  secondsRemaining,
+  remainingFraction,
 }: {
   game: GameSnapshot;
   pending: boolean;
   onAction: (action: PlayerAction) => void;
+  secondsRemaining: number;
+  remainingFraction: number;
 }) {
   const legal = game.legalActions;
+  const currentSeat = game.seats.find((seat) => seat.isCurrent);
+  const mySeat = game.seats.find((seat) => seat.isMine);
   const [raiseTo, setRaiseTo] = useState(legal?.minRaiseTo ?? 0);
 
   if (game.status === "complete") {
@@ -465,13 +525,41 @@ function ActionBar({
     return (
       <div className="action-bar waiting-bar">
         <span className="waiting-dot" />
-        <span>Waiting for the next action</span>
+        <span className="waiting-copy">
+          <strong>{currentSeat ? `${currentSeat.name} is thinking` : "Waiting for the next hand"}</strong>
+          <small>{currentSeat?.isHuman ? "Player decision" : "AI decision is being made server-side"}</small>
+        </span>
+        {currentSeat && <span className="waiting-countdown">{secondsRemaining}s</span>}
+        {currentSeat && <TurnProgressBar remainingFraction={remainingFraction} />}
       </div>
     );
   }
 
   return (
-    <div className="action-bar">
+    <div className="action-bar action-bar-your-turn">
+      <TurnProgressBar remainingFraction={remainingFraction} />
+      <div className="turn-tools">
+        <div className={clsx("action-countdown", secondsRemaining <= 5 && "countdown-critical")}>
+          <span>Your turn</span>
+          <strong>{secondsRemaining}</strong>
+          <small>seconds</small>
+        </div>
+        <button
+          type="button"
+          className="time-card-button"
+          disabled={pending || !mySeat || mySeat.timeCardsRemaining <= 0}
+          onClick={() => onAction({ type: "use-time-card" })}
+          title="Add 20 seconds to this turn"
+        >
+          <TimerReset size={16} />
+          <span>+20s</span>
+          <span className="time-card-stack" aria-label={`${mySeat?.timeCardsRemaining ?? 0} time cards remaining`}>
+            {[0, 1, 2].map((index) => (
+              <i key={index} className={index < (mySeat?.timeCardsRemaining ?? 0) ? "available" : ""} />
+            ))}
+          </span>
+        </button>
+      </div>
       <div className="basic-actions">
         {legal.canFold && (
           <button disabled={pending} onClick={() => onAction({ type: "fold" })}>
@@ -526,6 +614,63 @@ function ActionBar({
   );
 }
 
+/**
+ * Animates chips flying from the pot to each winning seat. Measures real
+ * screen positions (rather than hardcoded per-placement offsets) so the
+ * trajectory stays correct across every responsive breakpoint. Keyed by hand
+ * number from the parent, so it mounts fresh — and animates — exactly once
+ * per completed hand.
+ */
+function PotFunnel({
+  winners,
+  potRef,
+  seatRefs,
+}: {
+  winners: Winner[];
+  potRef: React.RefObject<HTMLDivElement | null>;
+  seatRefs: React.RefObject<Record<string, HTMLElement | null>>;
+}) {
+  const [vectors, setVectors] = useState<Array<{ seatId: string; dx: number; dy: number }>>([]);
+
+  useEffect(() => {
+    const potRect = potRef.current?.getBoundingClientRect();
+    if (!potRect) return;
+    const potCenterX = potRect.left + potRect.width / 2;
+    const potCenterY = potRect.top + potRect.height / 2;
+    const next: Array<{ seatId: string; dx: number; dy: number }> = [];
+    winners.forEach((winner) => {
+      const seatEl = seatRefs.current[winner.seatId];
+      if (!seatEl) return;
+      const seatRect = seatEl.getBoundingClientRect();
+      next.push({
+        seatId: winner.seatId,
+        dx: seatRect.left + seatRect.width / 2 - potCenterX,
+        dy: seatRect.top + seatRect.height / 2 - potCenterY,
+      });
+    });
+    setVectors(next);
+    // Deliberately runs once on mount: this component remounts (a fresh
+    // measurement) via its `key={handNumber}` in the parent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <>
+      {vectors.map((vector) => (
+        <span
+          key={vector.seatId}
+          className="pot-funnel"
+          style={{ "--funnel-dx": `${vector.dx}px`, "--funnel-dy": `${vector.dy}px` } as React.CSSProperties}
+        >
+          <span className="chip-dot" />
+          <span className="chip-dot" />
+          <span className="chip-dot" />
+        </span>
+      ))}
+    </>
+  );
+}
+
 function RoomCodeChip({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -567,10 +712,60 @@ function PokerTable({
   onCustomize: () => void;
 }) {
   const placements = ["seat-bottom", "seat-left", "seat-top", "seat-right"];
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!game.turnDeadlineAt || game.currentPlayer === null) return;
+    const initialTick = window.setTimeout(() => setClockNow(Date.now()), 0);
+    const interval = window.setInterval(() => setClockNow(Date.now()), 250);
+    return () => {
+      window.clearTimeout(initialTick);
+      window.clearInterval(interval);
+    };
+  }, [game.turnDeadlineAt, game.currentPlayer]);
+  const deadline = Date.parse(game.turnDeadlineAt ?? "");
+  const startedAt = Date.parse(game.turnStartedAt ?? "");
+  const secondsRemaining = Number.isFinite(deadline)
+    ? Math.max(0, Math.ceil((deadline - clockNow) / 1000))
+    : 0;
+  const turnDurationMs = Number.isFinite(deadline) && Number.isFinite(startedAt) ? deadline - startedAt : 0;
+  const remainingFraction = turnDurationMs > 0
+    ? Math.max(0, Math.min(1, (deadline - clockNow) / turnDurationMs))
+    : 0;
+  const currentSeat = game.seats.find((seat) => seat.isCurrent);
   const mySeatIndex = game.seats.findIndex((seat) => seat.isMine);
   const orderedSeats = mySeatIndex <= 0
     ? game.seats
     : game.seats.map((_, index) => game.seats[(mySeatIndex + index) % game.seats.length]);
+  const potRef = useRef<HTMLDivElement | null>(null);
+  const seatRefs = useRef<Record<string, HTMLElement | null>>({});
+  const showFunnel = game.status === "complete" && game.winners.length > 0;
+
+  // A silent auto-fold/check is easy to miss on a first turn; call it out
+  // explicitly instead of only leaving a trace in the activity log. Derived
+  // during render (React's "adjusting state" pattern) rather than in an
+  // effect, since it only needs to react to game.log changing, not to
+  // synchronize with anything external.
+  const [timeoutFlash, setTimeoutFlash] = useState<string | null>(null);
+  const [lastSeenLogId, setLastSeenLogId] = useState<string | null>(null);
+  const latestLogId = game.log[0]?.id ?? null;
+  if (latestLogId !== lastSeenLogId) {
+    const previouslyObserved = lastSeenLogId !== null;
+    setLastSeenLogId(latestLogId);
+    const entry = game.log[0];
+    const mySeat = game.seats.find((seat) => seat.isMine);
+    if (previouslyObserved && entry && mySeat && entry.text.startsWith(`${mySeat.name} ran out of time`)) {
+      setTimeoutFlash(
+        mySeat.lastAction === "Timed out · Check"
+          ? "Time's up — you checked automatically."
+          : "Time's up — you folded automatically.",
+      );
+    }
+  }
+  useEffect(() => {
+    if (!timeoutFlash) return;
+    const timer = window.setTimeout(() => setTimeoutFlash(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [timeoutFlash]);
   return (
     <main className="game-shell">
       <header className="game-header">
@@ -602,29 +797,59 @@ function PokerTable({
             <div className="poker-rail">
               <div className="poker-felt">
                 <div className="felt-texture" />
-                <div className="pot-display">
+                <div className={clsx("pot-display", showFunnel && "pot-display-paid")} ref={potRef}>
                   <span>MAIN POT</span>
                   <strong><span className="chip-stack-icon" />{game.pot.toLocaleString()}</strong>
                 </div>
+                {showFunnel && <PotFunnel key={game.handNumber} winners={game.winners} potRef={potRef} seatRefs={seatRefs} />}
                 <div className="community-cards">
                   {[0, 1, 2, 3, 4].map((index) => (
-                    <PlayingCard
-                      key={index}
-                      card={game.community[index] ?? null}
-                      ghost={!game.community[index]}
-                    />
+                    <span
+                      className={clsx("community-card-shell", game.community[index] && "community-card-revealed")}
+                      key={`${game.handNumber}-${game.street}-${index}`}
+                    >
+                      <PlayingCard
+                        card={game.community[index] ?? null}
+                        ghost={!game.community[index]}
+                      />
+                    </span>
                   ))}
                 </div>
                 <span className="street-label">{game.street}</span>
+                {currentSeat && (
+                  <div className={clsx("turn-callout", currentSeat.isMine && "turn-callout-mine")}>
+                    <span>{currentSeat.isMine ? "YOU’RE UP" : currentSeat.isHuman ? "PLAYER TURN" : "AI TURN"}</span>
+                    <strong>{currentSeat.name}</strong>
+                    <b>{secondsRemaining}s</b>
+                  </div>
+                )}
               </div>
             </div>
             {orderedSeats.map((seat, index) => (
-              <PlayerSeat key={seat.id} seat={seat} placement={placements[index]} />
+              <PlayerSeat
+                key={seat.id}
+                seat={seat}
+                placement={placements[index]}
+                handNumber={game.handNumber}
+                secondsRemaining={seat.isCurrent ? secondsRemaining : 0}
+                winAmount={showFunnel ? game.winners.find((winner) => winner.seatId === seat.id)?.amount : undefined}
+                elementRef={(el) => { seatRefs.current[seat.id] = el; }}
+              />
             ))}
           </div>
 
           {error && <div className="table-toast"><X size={15} /> {error}</div>}
-          <ActionBar key={game.version} game={game} pending={pending} onAction={onAction} />
+          {!error && timeoutFlash && (
+            <div className="timeout-toast"><TimerReset size={14} /> {timeoutFlash}</div>
+          )}
+          <ActionBar
+            key={game.version}
+            game={game}
+            pending={pending}
+            onAction={onAction}
+            secondsRemaining={secondsRemaining}
+            remainingFraction={remainingFraction}
+          />
         </div>
 
         <aside className="hand-panel">
@@ -738,12 +963,12 @@ export function PokerApp() {
     };
   }, [gameId, refresh]);
 
-  // A fallback poll: keeps demo/memory mode (no Realtime) live, and is what
-  // actually surfaces an idle-turn auto-fold/check to a player who is
-  // waiting on someone else and has no other reason to re-fetch.
+  // One-second polling drives server-authored bot deadlines and human
+  // timeouts even when no database change has occurred yet. Realtime still
+  // delivers completed decisions immediately to every other browser.
   useEffect(() => {
     if (!gameId) return;
-    const interval = window.setInterval(() => void refresh(gameId), 5000);
+    const interval = window.setInterval(() => void refresh(gameId), 1000);
     return () => window.clearInterval(interval);
   }, [gameId, refresh]);
 

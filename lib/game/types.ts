@@ -32,6 +32,8 @@ export interface Seat {
   committed: number;
   acted: boolean;
   lastAction: string | null;
+  /** Consumable 20-second extensions. Human players receive three when they take a seat. */
+  timeCardsRemaining: number;
 }
 
 export interface Winner {
@@ -63,8 +65,10 @@ export interface GameState {
   smallBlind: number;
   bigBlind: number;
   currentPlayer: number | null;
-  /** When the current player's turn began; drives the AFK auto-fold/check timeout. */
+  /** When the current player's turn began. */
   turnStartedAt: string | null;
+  /** Server-authored deadline for the current human or bot action. */
+  turnDeadlineAt: string | null;
   currentBet: number;
   minRaise: number;
   pot: number;
@@ -84,6 +88,7 @@ export type PlayerAction =
   | { type: "call" }
   | { type: "raise"; amount: number }
   | { type: "all-in" }
+  | { type: "use-time-card" }
   | { type: "next-hand" }
   | { type: "leave-seat" };
 

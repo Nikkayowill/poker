@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { expireIdleTurn } from "@/lib/game/engine";
+import { advanceTimedTurn, normalizeGameState } from "@/lib/game/engine";
 import type { GameState, PlayerAction } from "@/lib/game/types";
 
 declare global {
@@ -135,19 +135,19 @@ export async function findGameByRoomCode(code: string): Promise<string | null> {
 }
 
 /**
- * Loads a table and auto-resolves any human turn idle past TURN_TIMEOUT_MS
- * before returning it, so one AFK player can't stall it for everyone else.
+ * Loads a table and advances one due server-authoritative turn before
+ * returning it: an expired human clock or one paced bot decision.
  * Any route that reads a table (a poll, an action, a spectator view) should
  * go through this rather than getStoredGame directly.
  */
 export async function loadGameWithTimeouts(id: string): Promise<GameState | null> {
   const state = await getStoredGame(id);
   if (!state) return null;
-  const { state: updated, expiredSeatIds } = expireIdleTurn(state);
-  if (expiredSeatIds.length === 0) return state;
+  const advanced = advanceTimedTurn(state);
+  if (!advanced.action || !advanced.actorSeatId) return state;
   try {
-    await persistExpiredTurn(updated, expiredSeatIds[0]);
-    return updated;
+    await persistTimedTurn(advanced.state, advanced.actorSeatId, advanced.action);
+    return advanced.state;
   } catch {
     // Another request already changed the table between our read and this
     // write; serve its latest state instead of failing an otherwise-passive read.
@@ -157,14 +157,14 @@ export async function loadGameWithTimeouts(id: string): Promise<GameState | null
 
 export async function getStoredGame(id: string): Promise<GameState | null> {
   const supabase = adminClient();
-  if (!supabase) return memoryGames.has(id) ? clone(memoryGames.get(id)!) : null;
+  if (!supabase) return memoryGames.has(id) ? normalizeGameState(clone(memoryGames.get(id)!)) : null;
   const { data, error } = await supabase
     .from("game_state_private")
     .select("state")
     .eq("game_id", id)
     .maybeSingle();
   if (error) throw new Error(`Could not load the table: ${error.message}`);
-  return data?.state ? (data.state as GameState) : null;
+  return data?.state ? normalizeGameState(data.state as GameState) : null;
 }
 
 export async function updateStoredGame(
@@ -188,7 +188,7 @@ export async function updateStoredGame(
     p_game_id: state.id,
     p_expected_version: previousVersion,
     p_state: state,
-    p_action_type: action.type.replace("-", "_"),
+    p_action_type: action.type.replaceAll("-", "_"),
     p_amount: action.type === "raise" ? action.amount : null,
     p_actor_seat_id: action.type === "next-hand" ? null : actorSeat?.id ?? null,
   });
@@ -230,8 +230,12 @@ export async function persistSeatClaim(state: GameState, seatId: string): Promis
   }
 }
 
-/** Persists an idle-turn auto-fold/auto-check produced by expireIdleTurn. */
-async function persistExpiredTurn(state: GameState, actorSeatId: string): Promise<void> {
+/** Persists one due bot action or human timeout produced by advanceTimedTurn. */
+async function persistTimedTurn(
+  state: GameState,
+  actorSeatId: string,
+  action: Exclude<PlayerAction, { type: "next-hand" | "leave-seat" | "use-time-card" }>,
+): Promise<void> {
   const supabase = adminClient();
   if (!supabase) {
     const current = memoryGames.get(state.id);
@@ -247,8 +251,8 @@ async function persistExpiredTurn(state: GameState, actorSeatId: string): Promis
     p_game_id: state.id,
     p_expected_version: previousVersion,
     p_state: state,
-    p_action_type: "fold",
-    p_amount: null,
+    p_action_type: action.type.replaceAll("-", "_"),
+    p_amount: action.type === "raise" ? action.amount : null,
     p_actor_seat_id: actorSeatId,
   });
   if (error) {

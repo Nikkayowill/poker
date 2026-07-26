@@ -18,7 +18,10 @@ import type { PlayerProfile } from "@/lib/profile/types";
 const suits: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
 const ranks: Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
 const streetOrder: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
-type TurnAction = Exclude<PlayerAction, { type: "next-hand" } | { type: "leave-seat" }>;
+type TurnAction = Exclude<
+  PlayerAction,
+  { type: "next-hand" } | { type: "leave-seat" } | { type: "use-time-card" }
+>;
 // Indexed by seat position (0-3), so a vacated seat can always be restored to
 // its original bot identity regardless of who claimed it in between.
 const botProfiles: Array<{
@@ -35,8 +38,14 @@ const botProfiles: Array<{
   { name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
 ];
 
-// A human turn idle longer than this is auto-resolved (checked if free, folded otherwise).
-export const TURN_TIMEOUT_MS = 45_000;
+// Humans get a short decision clock plus three optional time-bank cards.
+// Bot deadlines are also persisted so polling/realtime can pace decisions
+// without trusting a browser timer.
+export const TURN_TIMEOUT_MS = 20_000;
+export const TIME_CARD_EXTENSION_MS = 20_000;
+export const STARTING_TIME_CARDS = 3;
+export const BOT_DECISION_MIN_MS = 1_800;
+export const BOT_DECISION_MAX_MS = 3_200;
 
 // Excludes visually ambiguous characters (0/O, 1/I/L) from shareable room codes.
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -79,9 +88,18 @@ function inHand(seat: Seat) {
   return seat.status !== "out";
 }
 
-function setCurrentPlayer(state: GameState, index: number | null) {
+function setCurrentPlayer(state: GameState, index: number | null, now = Date.now()) {
   state.currentPlayer = index;
-  state.turnStartedAt = index === null ? null : new Date().toISOString();
+  if (index === null) {
+    state.turnStartedAt = null;
+    state.turnDeadlineAt = null;
+    return;
+  }
+  state.turnStartedAt = new Date(now).toISOString();
+  const duration = state.seats[index].isHuman
+    ? TURN_TIMEOUT_MS
+    : randomInt(BOT_DECISION_MIN_MS, BOT_DECISION_MAX_MS + 1);
+  state.turnDeadlineAt = new Date(now + duration).toISOString();
 }
 
 function canAct(seat: Seat) {
@@ -117,7 +135,7 @@ function setupHand(state: GameState, firstHand = false) {
   if (funded.length < 2) {
     state.status = "complete";
     state.street = "showdown";
-    state.currentPlayer = null;
+    setCurrentPlayer(state, null);
     state.message = "Not enough players with chips to continue.";
     return;
   }
@@ -195,6 +213,7 @@ export function createGame(
       committed: 0,
       acted: false,
       lastAction: null,
+      timeCardsRemaining: STARTING_TIME_CARDS,
     },
     ...botProfiles.slice(1).map((bot, index): Seat => ({
       id: randomUUID(),
@@ -209,6 +228,7 @@ export function createGame(
       committed: 0,
       acted: false,
       lastAction: null,
+      timeCardsRemaining: 0,
     })),
   ];
 
@@ -227,6 +247,7 @@ export function createGame(
     bigBlind: 20,
     currentPlayer: null,
     turnStartedAt: null,
+    turnDeadlineAt: null,
     currentBet: 0,
     minRaise: 20,
     pot: 0,
@@ -240,7 +261,7 @@ export function createGame(
     updatedAt: now,
   };
   setupHand(state, true);
-  return autoPlayBots(state);
+  return state;
 }
 
 /**
@@ -269,7 +290,9 @@ export function claimSeat(
   seat.accent = profile.accent;
   seat.avatarUrl = profile.avatarUrl;
   seat.avatarPreset = profile.avatarPreset;
+  seat.timeCardsRemaining = STARTING_TIME_CARDS;
   if (seat.stack === 0) seat.stack = 1000;
+  if (state.currentPlayer === seatIndex) setCurrentPlayer(state, seatIndex);
 
   state.version += 1;
   state.updatedAt = new Date().toISOString();
@@ -296,6 +319,8 @@ export function vacateSeat(state: GameState, token: string): GameState {
   seat.accent = fallback.accent;
   seat.avatarUrl = fallback.avatarUrl;
   seat.avatarPreset = fallback.avatarPreset;
+  seat.timeCardsRemaining = 0;
+  if (state.currentPlayer === seatIndex) setCurrentPlayer(state, seatIndex);
 
   return state;
 }
@@ -583,43 +608,104 @@ export function autoPlayBots(state: GameState): GameState {
 }
 
 /**
- * Auto-resolves a human turn that has sat idle past TURN_TIMEOUT_MS (check if
- * free, fold otherwise), so one AFK player can't stall the table for
- * everyone else. Bundles any resulting cascade (an idle fold can hand the
- * turn straight to another idle human) into a single version bump, since the
- * persistence layer's optimistic-concurrency check only allows +1 per call.
+ * Makes aggregates created before turn clocks/time cards forward-compatible.
+ * The normalized fields are persisted with the next ordinary state update.
  */
+export function normalizeGameState(state: GameState): GameState {
+  state.seats.forEach((seat) => {
+    if (!Number.isInteger(seat.timeCardsRemaining)) {
+      seat.timeCardsRemaining = seat.isHuman ? STARTING_TIME_CARDS : 0;
+    }
+  });
+  if (state.currentPlayer === null || state.status !== "playing") {
+    state.turnStartedAt = null;
+    state.turnDeadlineAt = null;
+    return state;
+  }
+  const startedAt = Date.parse(state.turnStartedAt ?? "");
+  if (!Number.isFinite(startedAt)) {
+    setCurrentPlayer(state, state.currentPlayer);
+    return state;
+  }
+  if (!state.turnDeadlineAt || !Number.isFinite(Date.parse(state.turnDeadlineAt))) {
+    const duration = state.seats[state.currentPlayer].isHuman
+      ? TURN_TIMEOUT_MS
+      : BOT_DECISION_MIN_MS;
+    state.turnDeadlineAt = new Date(startedAt + duration).toISOString();
+  }
+  return state;
+}
+
+export interface TimedTurnAdvance {
+  state: GameState;
+  actorSeatId: string | null;
+  action: TurnAction | null;
+  timedOut: boolean;
+}
+
+/**
+ * Advances at most one due turn. Humans auto-check when checking is free and
+ * otherwise auto-fold. Bots make exactly one decision after their persisted
+ * think deadline; the next bot receives a fresh deadline, which creates
+ * visible pacing instead of resolving a whole table in one request.
+ */
+export function advanceTimedTurn(state: GameState, now = Date.now()): TimedTurnAdvance {
+  normalizeGameState(state);
+  if (state.status !== "playing" || state.currentPlayer === null || !state.turnDeadlineAt) {
+    return { state, actorSeatId: null, action: null, timedOut: false };
+  }
+  if (now < Date.parse(state.turnDeadlineAt)) {
+    return { state, actorSeatId: null, action: null, timedOut: false };
+  }
+
+  const seatIndex = state.currentPlayer;
+  const seat = state.seats[seatIndex];
+  const timedOut = seat.isHuman;
+  const legal = getLegalActions(state, seatIndex);
+  const action: TurnAction = timedOut
+    ? legal.canCheck ? { type: "check" } : { type: "fold" }
+    : chooseBotAction(state, seatIndex);
+  const actorSeatId = seat.id;
+
+  applyTurnAction(state, action);
+  if (timedOut) {
+    seat.lastAction = action.type === "check" ? "Timed out · Check" : "Timed out · Fold";
+    addLog(state, `${seat.name} ran out of time`);
+  }
+  state.version += 1;
+  state.updatedAt = new Date(now).toISOString();
+  return { state, actorSeatId, action, timedOut };
+}
+
+/** Backwards-compatible helper retained for focused timeout tests. */
 export function expireIdleTurn(state: GameState): { state: GameState; expiredSeatIds: string[] } {
-  const expiredSeatIds: string[] = [];
-  let safety = 0;
-  while (
-    state.status === "playing" &&
-    state.currentPlayer !== null &&
-    state.seats[state.currentPlayer].isHuman &&
-    state.turnStartedAt !== null &&
-    Date.now() - new Date(state.turnStartedAt).getTime() > TURN_TIMEOUT_MS &&
-    safety < 10
-  ) {
-    const seatIndex = state.currentPlayer;
-    const legal = getLegalActions(state, seatIndex);
-    const action: TurnAction = legal.canCheck ? { type: "check" } : { type: "fold" };
-    expiredSeatIds.push(state.seats[seatIndex].id);
-    applyTurnAction(state, action);
-    autoPlayBots(state);
-    safety += 1;
-  }
-  if (expiredSeatIds.length > 0) {
-    state.version += 1;
-    state.updatedAt = new Date().toISOString();
-  }
-  return { state, expiredSeatIds };
+  normalizeGameState(state);
+  const current = state.currentPlayer === null ? null : state.seats[state.currentPlayer];
+  if (!current?.isHuman) return { state, expiredSeatIds: [] };
+  const result = advanceTimedTurn(state);
+  return {
+    state: result.state,
+    expiredSeatIds: result.timedOut && result.actorSeatId ? [result.actorSeatId] : [],
+  };
 }
 
 export function applyPlayerAction(state: GameState, action: PlayerAction, callerToken: string): GameState {
+  normalizeGameState(state);
   const seatIndex = state.seats.findIndex((seat) => seat.ownerToken === callerToken);
   if (seatIndex === -1) throw new Error("You are not seated at this table.");
   if (action.type === "leave-seat") {
     vacateSeat(state, callerToken);
+  } else if (action.type === "use-time-card") {
+    if (state.status !== "playing" || state.currentPlayer !== seatIndex) {
+      throw new Error("Time cards can only be used on your turn.");
+    }
+    const seat = state.seats[seatIndex];
+    if (seat.timeCardsRemaining <= 0) throw new Error("You have no time cards left.");
+    const deadline = Math.max(Date.now(), Date.parse(state.turnDeadlineAt ?? ""));
+    seat.timeCardsRemaining -= 1;
+    state.turnDeadlineAt = new Date(deadline + TIME_CARD_EXTENSION_MS).toISOString();
+    seat.lastAction = `Time card · ${seat.timeCardsRemaining} left`;
+    addLog(state, `${seat.name} uses a time card (+20s)`);
   } else if (action.type === "next-hand") {
     if (state.status !== "complete") throw new Error("Finish the current hand first.");
     setupHand(state);
@@ -628,7 +714,6 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
     if (state.currentPlayer !== seatIndex) throw new Error("Wait for your turn.");
     applyTurnAction(state, action);
   }
-  autoPlayBots(state);
   state.version += 1;
   state.updatedAt = new Date().toISOString();
   return state;

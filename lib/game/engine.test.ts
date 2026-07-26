@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { applyPlayerAction, claimSeat, createGame, expireIdleTurn, TURN_TIMEOUT_MS, toSnapshot, vacateSeat } from "./engine";
+import {
+  advanceTimedTurn,
+  applyPlayerAction,
+  claimSeat,
+  createGame,
+  expireIdleTurn,
+  STARTING_TIME_CARDS,
+  TIME_CARD_EXTENSION_MS,
+  TURN_TIMEOUT_MS,
+  toSnapshot,
+  vacateSeat,
+} from "./engine";
 import { evaluateHand } from "./evaluator";
-import type { Card, PlayerAction } from "./types";
+import type { Card, GameState, PlayerAction } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 const testProfile = (name: string): Pick<PlayerProfile, "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset"> => ({
@@ -20,6 +31,29 @@ const cards = (values: string): Card[] =>
       suit: suitMap[value.at(-1)! as keyof typeof suitMap],
     };
   });
+
+function advanceBotsUntilHuman(state: GameState): GameState {
+  let game = state;
+  let safety = 0;
+
+  while (
+    game.status === "playing" &&
+    game.currentPlayer !== null &&
+    !game.seats[game.currentPlayer].isHuman
+  ) {
+    game = advanceTimedTurn(
+      game,
+      Date.parse(game.turnDeadlineAt ?? new Date().toISOString()),
+    ).state;
+    safety += 1;
+
+    if (safety > 100) {
+      throw new Error("Bot pacing did not reach a human turn");
+    }
+  }
+
+  return game;
+}
 
 describe("hand evaluator", () => {
   it("recognizes a royal straight flush", () => {
@@ -58,6 +92,7 @@ describe("server game engine", () => {
     let safety = 0;
 
     while (completed < 12) {
+      game = advanceBotsUntilHuman(game);
       if (game.status === "complete") {
         expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0)).toBe(4000);
         completed += 1;
@@ -157,8 +192,10 @@ describe("multi-human seating", () => {
     const guestSeatIndex = claimed.seatIndex;
     const versionAfterClaim = game.version;
 
-    // Right after claiming, action is still with the host (auto-play always
-    // stops at the first human seat), so the guest cannot act out of turn.
+    game = advanceBotsUntilHuman(game);
+
+    // The opening bot decision is paced. Once it resolves, action reaches the
+    // host, so the guest still cannot act out of turn.
     expect(game.currentPlayer).not.toBe(guestSeatIndex);
     expect(() => applyPlayerAction(game, { type: "check" }, guestToken)).toThrow(/turn/i);
 
@@ -211,13 +248,17 @@ describe("giving up a seat", () => {
 
   it("lets go of a seat mid-turn without stalling the table", () => {
     const hostToken = crypto.randomUUID();
-    let game = createGame(hostToken, "Host");
+    let game = advanceBotsUntilHuman(createGame(hostToken, "Host"));
     expect(game.currentPlayer).toBe(0);
 
     game = applyPlayerAction(game, { type: "leave-seat" }, hostToken);
     expect(game.seats[0].isHuman).toBe(false);
-    // Every remaining seat is a bot, so autoPlayBots should have run the hand
-    // to completion (or at least moved play off the now-vacated seat).
+    // The restored bot inherits the turn but receives its own deliberate
+    // decision window, rather than resolving synchronously in the request.
+    expect(game.currentPlayer).toBe(0);
+    expect(game.turnDeadlineAt).not.toBeNull();
+
+    game = advanceTimedTurn(game, Date.parse(game.turnDeadlineAt!)).state;
     expect(game.currentPlayer === null || game.currentPlayer !== 0).toBe(true);
   });
 });
@@ -234,10 +275,11 @@ describe("idle turn timeout", () => {
 
   it("auto-resolves a human turn idle past the timeout, in exactly one version bump", () => {
     const token = crypto.randomUUID();
-    const game = createGame(token, "Host");
+    const game = advanceBotsUntilHuman(createGame(token, "Host"));
     expect(game.currentPlayer).toBe(0);
     const hostSeatId = game.seats[0].id;
     game.turnStartedAt = new Date(Date.now() - TURN_TIMEOUT_MS - 1000).toISOString();
+    game.turnDeadlineAt = new Date(Date.now() - 1000).toISOString();
 
     const before = game.version;
     const { state, expiredSeatIds } = expireIdleTurn(game);
@@ -247,5 +289,49 @@ describe("idle turn timeout", () => {
     // out, or checked and action moved on).
     expect(state.currentPlayer === null || state.currentPlayer !== 0 || state.seats[0].status === "folded")
       .toBe(true);
+  });
+
+  it("resolves only one paced bot decision per deadline", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    expect(game.currentPlayer).not.toBeNull();
+    expect(game.seats[game.currentPlayer!].isHuman).toBe(false);
+
+    const beforeVersion = game.version;
+    const deadline = Date.parse(game.turnDeadlineAt!);
+    const early = advanceTimedTurn(game, deadline - 1);
+    expect(early.action).toBeNull();
+    expect(early.state.version).toBe(beforeVersion);
+
+    const due = advanceTimedTurn(game, deadline);
+    expect(due.action).not.toBeNull();
+    expect(due.state.version).toBe(beforeVersion + 1);
+  });
+});
+
+describe("time cards", () => {
+  it("gives each human three cards and extends only their active deadline", () => {
+    const token = crypto.randomUUID();
+    let game = advanceBotsUntilHuman(createGame(token, "Host"));
+    expect(game.currentPlayer).toBe(0);
+    expect(game.seats[0].timeCardsRemaining).toBe(STARTING_TIME_CARDS);
+
+    const deadlineBefore = Date.parse(game.turnDeadlineAt!);
+    game = applyPlayerAction(game, { type: "use-time-card" }, token);
+
+    expect(game.currentPlayer).toBe(0);
+    expect(game.seats[0].timeCardsRemaining).toBe(STARTING_TIME_CARDS - 1);
+    expect(Date.parse(game.turnDeadlineAt!)).toBe(deadlineBefore + TIME_CARD_EXTENSION_MS);
+  });
+
+  it("cannot spend a fourth time card", () => {
+    const token = crypto.randomUUID();
+    let game = advanceBotsUntilHuman(createGame(token, "Host"));
+
+    for (let index = 0; index < STARTING_TIME_CARDS; index += 1) {
+      game = applyPlayerAction(game, { type: "use-time-card" }, token);
+    }
+
+    expect(game.seats[0].timeCardsRemaining).toBe(0);
+    expect(() => applyPlayerAction(game, { type: "use-time-card" }, token)).toThrow(/time cards/i);
   });
 });

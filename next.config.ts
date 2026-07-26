@@ -2,13 +2,16 @@ import type { NextConfig } from "next";
 
 // Supabase Realtime/Storage endpoints are project-specific subdomains of
 // supabase.co, so the CSP allow-lists that pattern rather than a single URL.
+// Next.js dev mode (Fast Refresh, React's dev-mode error overlay) relies on
+// eval(); that never ships in a production bundle, so it's only relaxed here.
+const isDev = process.env.NODE_ENV !== "production";
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://*.supabase.co",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+  `connect-src 'self' https://*.supabase.co wss://*.supabase.co${isDev ? " ws://localhost:*" : ""}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

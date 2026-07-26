@@ -1182,3 +1182,47 @@ button:disabled { cursor: wait; opacity: .62; }
   .preset-grid { grid-template-columns: repeat(3, 1fr); }
   .profile-preview { padding: 14px; }
 }
+
+/* A phone held sideways for the table view is short, not narrow: the
+   width-keyed breakpoints above don't fire, and without this the top seat
+   and the action bar both run past the viewport edge. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .game-header, .lobby-header {
+    height: 42px;
+    padding-top: env(safe-area-inset-top);
+  }
+  .game-header .wordmark small, .lobby-header .wordmark small { display: none; }
+  .table-area {
+    padding-top: 4px;
+    padding-bottom: calc(4px + env(safe-area-inset-bottom));
+  }
+  .poker-table-wrap { aspect-ratio: 3; margin-top: 0; }
+  .player-seat { min-height: 46px; padding: 5px 8px; }
+  .seat-cards { top: -24px; }
+  .seat-cards .playing-card { width: 24px; }
+  .action-bar {
+    min-height: 50px;
+    margin-top: 6px;
+    padding: 5px 10px;
+  }
+  .basic-actions button, .allin-action { min-height: 32px; padding: 0 12px; }
+  .commit-actions .primary-action { min-height: 36px; }
+  .raise-buttons button { min-height: 26px; }
+  .hand-complete { min-height: 0; }
+  .range-row { margin-bottom: 2px; }
+  .raise-buttons { margin-top: 2px; }
+}
+
+/* Older/smaller handsets (e.g. iPhone SE 1st-gen landscape, 568x320) need a
+   second, more aggressive tier on top of the one above. */
+@media (max-height: 340px) and (orientation: landscape) {
+  .game-header, .lobby-header { height: 34px; }
+  .table-area { padding-top: 2px; padding-bottom: calc(2px + env(safe-area-inset-bottom)); }
+  .poker-table-wrap { aspect-ratio: 3.6; }
+  .player-seat { min-height: 38px; padding: 4px 6px; }
+  .seat-cards { top: -19px; }
+  .seat-cards .playing-card { width: 19px; }
+  .action-bar { min-height: 42px; margin-top: 4px; padding: 4px 8px; }
+  .basic-actions button, .allin-action { min-height: 28px; }
+  .commit-actions .primary-action { min-height: 30px; }
+}

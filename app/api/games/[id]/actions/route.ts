@@ -34,14 +34,14 @@ export async function POST(
     const game = await getStoredGame(id);
     if (!game) return NextResponse.json({ error: "Table not found." }, { status: 404 });
     const updated = applyPlayerAction(game, parsed.data, ownerToken);
-    await updateStoredGame(updated, parsed.data);
+    await updateStoredGame(updated, parsed.data, ownerToken);
     return NextResponse.json({
       game: toSnapshot(updated, ownerToken),
       persistence: persistenceMode(),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "That action could not be completed.";
-    const status = message.includes("session") || message.includes("belongs") ? 403 : 409;
+    const status = message.includes("not seated") ? 403 : 409;
     return NextResponse.json({ error: message }, { status });
   }
 }

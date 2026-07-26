@@ -11,6 +11,7 @@ export interface Card {
 export type Street = "preflop" | "flop" | "turn" | "river" | "showdown";
 export type SeatStatus = "active" | "folded" | "all-in" | "out";
 export type GameStatus = "playing" | "complete";
+export type BotPersonality = "MANIAC" | "ROCK" | "CALLING_STATION";
 
 export interface Seat {
   id: string;
@@ -21,6 +22,9 @@ export interface Seat {
   avatarPreset: string;
   position: number;
   isHuman: boolean;
+  /** The session token of the human seated here; null for an open/bot seat. Never sent to clients. */
+  ownerToken: string | null;
+  personality: BotPersonality | null;
   stack: number;
   status: SeatStatus;
   holeCards: Card[];
@@ -46,7 +50,11 @@ export interface LogEntry {
 
 export interface GameState {
   id: string;
-  ownerToken: string;
+  /** Session token of whoever created the table; kept for auditing only, never an authorization check. */
+  hostToken: string;
+  isPrivate: boolean;
+  /** Shareable join code for private tables; null for public (quick-play) tables. */
+  roomCode: string | null;
   version: number;
   status: GameStatus;
   street: Street;
@@ -88,16 +96,22 @@ export interface LegalActions {
   maxRaiseTo: number;
 }
 
-export interface PublicSeat extends Omit<Seat, "holeCards"> {
+export interface PublicSeat extends Omit<Seat, "holeCards" | "ownerToken"> {
   holeCards: Array<Card | null>;
   isDealer: boolean;
   isCurrent: boolean;
   isSmallBlind: boolean;
   isBigBlind: boolean;
+  /** Whether the requesting session owns this seat. Never expose the raw ownerToken to any client. */
+  isMine: boolean;
+  /** True for a bot-controlled seat that any player may claim via quick play or a room code. */
+  isOpen: boolean;
 }
 
 export interface GameSnapshot
-  extends Omit<GameState, "deck" | "ownerToken" | "seats"> {
+  extends Omit<GameState, "deck" | "hostToken" | "seats"> {
   seats: PublicSeat[];
   legalActions: LegalActions | null;
+  /** True when the requesting session owns a seat at this table. */
+  isSeated: boolean;
 }

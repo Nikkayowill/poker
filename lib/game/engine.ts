@@ -1,6 +1,7 @@
 import { randomInt, randomUUID } from "crypto";
 import { compareScores, evaluateHand, type HandScore } from "./evaluator";
 import type {
+  BotPersonality,
   Card,
   GameSnapshot,
   GameState,
@@ -17,11 +18,29 @@ import type { PlayerProfile } from "@/lib/profile/types";
 const suits: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
 const ranks: Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
 const streetOrder: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
-const botProfiles = [
-  { name: "Maya", initials: "MA", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond" },
-  { name: "Theo", initials: "TH", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt" },
-  { name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river" },
+const botProfiles: Array<{
+  name: string;
+  initials: string;
+  accent: string;
+  avatarUrl: null;
+  avatarPreset: string;
+  personality: BotPersonality;
+}> = [
+  { name: "Maya", initials: "MA", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond", personality: "MANIAC" },
+  { name: "Theo", initials: "TH", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt", personality: "CALLING_STATION" },
+  { name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
 ];
+
+// Excludes visually ambiguous characters (0/O, 1/I/L) from shareable room codes.
+const ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+export function generateRoomCode(): string {
+  let code = "";
+  for (let index = 0; index < 6; index += 1) {
+    code += ROOM_CODE_ALPHABET[randomInt(ROOM_CODE_ALPHABET.length)];
+  }
+  return code;
+}
 
 function makeDeck(): Card[] {
   const deck = suits.flatMap((suit) => ranks.map((rank) => ({ rank, suit })));
@@ -83,13 +102,11 @@ function dealToCommunity(state: GameState, count: number) {
 
 function setupHand(state: GameState, firstHand = false) {
   const funded = state.seats.filter((seat) => seat.stack > 0);
-  if (funded.length < 2 || state.seats[0].stack === 0) {
+  if (funded.length < 2) {
     state.status = "complete";
     state.street = "showdown";
     state.currentPlayer = null;
-    state.message = state.seats[0].stack === 0
-      ? "You’re out of chips. Start a fresh table to play again."
-      : "Table complete.";
+    state.message = "Not enough players with chips to continue.";
     return;
   }
 
@@ -141,9 +158,10 @@ function setupHand(state: GameState, firstHand = false) {
 }
 
 export function createGame(
-  ownerToken: string,
+  hostToken: string,
   playerName = "You",
   appearance?: Pick<PlayerProfile, "initials" | "accent" | "avatarUrl" | "avatarPreset">,
+  options?: { isPrivate?: boolean },
 ): GameState {
   const now = new Date().toISOString();
   const seats: Seat[] = [
@@ -156,6 +174,8 @@ export function createGame(
       avatarPreset: appearance?.avatarPreset ?? "ace",
       position: 0,
       isHuman: true,
+      ownerToken: hostToken,
+      personality: null,
       stack: 1000,
       status: "active",
       holeCards: [],
@@ -169,6 +189,7 @@ export function createGame(
       ...bot,
       position: index + 1,
       isHuman: false,
+      ownerToken: null,
       stack: 1000,
       status: "active",
       holeCards: [],
@@ -179,9 +200,12 @@ export function createGame(
     })),
   ];
 
+  const isPrivate = options?.isPrivate ?? false;
   const state: GameState = {
     id: randomUUID(),
-    ownerToken,
+    hostToken,
+    isPrivate,
+    roomCode: isPrivate ? generateRoomCode() : null,
     version: 1,
     status: "playing",
     street: "preflop",
@@ -204,6 +228,39 @@ export function createGame(
   };
   setupHand(state, true);
   return autoPlayBots(state);
+}
+
+/**
+ * Seats a player at an open (bot-controlled) seat, converting it to a human
+ * seat under their session token. If they already own a seat here (e.g.
+ * revisiting a room-code link), returns that seat instead of claiming a new
+ * one. A seat a previous occupant busted out of gets a fresh buy-in.
+ */
+export function claimSeat(
+  state: GameState,
+  token: string,
+  profile: Pick<PlayerProfile, "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset">,
+): { state: GameState; seatIndex: number } {
+  const existing = state.seats.findIndex((seat) => seat.ownerToken === token);
+  if (existing !== -1) return { state, seatIndex: existing };
+
+  const seatIndex = state.seats.findIndex((seat) => seat.ownerToken === null);
+  if (seatIndex === -1) throw new Error("This table is full.");
+
+  const seat = state.seats[seatIndex];
+  seat.isHuman = true;
+  seat.ownerToken = token;
+  seat.personality = null;
+  seat.name = profile.displayName.slice(0, 18) || "Player";
+  seat.initials = profile.initials;
+  seat.accent = profile.accent;
+  seat.avatarUrl = profile.avatarUrl;
+  seat.avatarPreset = profile.avatarPreset;
+  if (seat.stack === 0) seat.stack = 1000;
+
+  state.version += 1;
+  state.updatedAt = new Date().toISOString();
+  return { state, seatIndex };
 }
 
 export function getLegalActions(state: GameState, seatIndex: number): LegalActions {
@@ -412,18 +469,64 @@ function applyTurnAction(state: GameState, action: Exclude<PlayerAction, { type:
   progressAfterAction(state, actorIndex);
 }
 
+// Tuning knobs per personality; all thresholds/rolls follow the same shape
+// as the original single-profile heuristic, just widened or narrowed.
+const personalityProfiles: Record<
+  BotPersonality,
+  {
+    pressureFactor: number; // fraction of stack that counts as "under pressure"
+    pressureFoldRoll: number; // 0-100 chance to fold to pressure without a decent hand
+    raiseRoll: number; // 0-100 chance to raise with a decent hand
+    raiseWide: boolean; // will also treat a single high card as decent
+    raiseSizeBB: number; // raise-to size, in big blinds over the current bet
+    looseFoldRoll: number; // 0-100 chance to fold instead of call when calling is optional
+  }
+> = {
+  MANIAC: {
+    pressureFactor: 0.55,
+    pressureFoldRoll: 30,
+    raiseRoll: 65,
+    raiseWide: true,
+    raiseSizeBB: 4,
+    looseFoldRoll: 4,
+  },
+  ROCK: {
+    pressureFactor: 0.18,
+    pressureFoldRoll: 85,
+    raiseRoll: 25,
+    raiseWide: false,
+    raiseSizeBB: 2,
+    looseFoldRoll: 22,
+  },
+  CALLING_STATION: {
+    pressureFactor: 0.9,
+    pressureFoldRoll: 10,
+    raiseRoll: 10,
+    raiseWide: false,
+    raiseSizeBB: 2,
+    looseFoldRoll: 3,
+  },
+};
+
 function chooseBotAction(state: GameState, seatIndex: number): Exclude<PlayerAction, { type: "next-hand" }> {
   const legal = getLegalActions(state, seatIndex);
   const seat = state.seats[seatIndex];
+  const profile = personalityProfiles[seat.personality ?? "ROCK"];
   const highRanks = seat.holeCards.filter((card) => ["A", "K", "Q", "J"].includes(card.rank)).length;
   const pair = seat.holeCards[0]?.rank === seat.holeCards[1]?.rank;
+  const decent = pair || highRanks === 2 || (profile.raiseWide && highRanks === 1);
   const roll = randomInt(100);
-  if (legal.toCall > seat.stack * 0.28 && !pair && highRanks === 0 && roll < 72) return { type: "fold" };
-  if (legal.canRaise && (pair || highRanks === 2) && roll < 42) {
-    const target = Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, state.currentBet + state.bigBlind * 2));
+  if (legal.toCall > seat.stack * profile.pressureFactor && !decent && roll < profile.pressureFoldRoll) {
+    return { type: "fold" };
+  }
+  if (legal.canRaise && decent && roll < profile.raiseRoll) {
+    const target = Math.min(
+      legal.maxRaiseTo,
+      Math.max(legal.minRaiseTo, state.currentBet + state.bigBlind * profile.raiseSizeBB),
+    );
     return { type: "raise", amount: target };
   }
-  if (legal.canCall) return roll < 13 && legal.canFold ? { type: "fold" } : { type: "call" };
+  if (legal.canCall) return roll < profile.looseFoldRoll && legal.canFold ? { type: "fold" } : { type: "call" };
   return { type: "check" };
 }
 
@@ -442,15 +545,15 @@ export function autoPlayBots(state: GameState): GameState {
   return state;
 }
 
-export function applyPlayerAction(state: GameState, action: PlayerAction, ownerToken: string): GameState {
-  if (state.ownerToken !== ownerToken) throw new Error("This table belongs to another session.");
+export function applyPlayerAction(state: GameState, action: PlayerAction, callerToken: string): GameState {
+  const seatIndex = state.seats.findIndex((seat) => seat.ownerToken === callerToken);
+  if (seatIndex === -1) throw new Error("You are not seated at this table.");
   if (action.type === "next-hand") {
     if (state.status !== "complete") throw new Error("Finish the current hand first.");
     setupHand(state);
   } else {
     if (state.status !== "playing") throw new Error("This hand is complete.");
-    const actor = state.currentPlayer === null ? null : state.seats[state.currentPlayer];
-    if (!actor?.isHuman) throw new Error("Wait for your turn.");
+    if (state.currentPlayer !== seatIndex) throw new Error("Wait for your turn.");
     applyTurnAction(state, action);
   }
   autoPlayBots(state);
@@ -459,28 +562,33 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, ownerT
   return state;
 }
 
-export function toSnapshot(state: GameState, ownerToken: string): GameSnapshot {
-  const isOwner = state.ownerToken === ownerToken;
+export function toSnapshot(state: GameState, callerToken: string): GameSnapshot {
+  const mySeatIndex = state.seats.findIndex((seat) => seat.ownerToken === callerToken);
   const publicState = Object.fromEntries(
-    Object.entries(state).filter(([key]) => key !== "deck" && key !== "ownerToken" && key !== "seats"),
-  ) as Omit<GameState, "deck" | "ownerToken" | "seats">;
+    Object.entries(state).filter(([key]) => key !== "deck" && key !== "hostToken" && key !== "seats"),
+  ) as Omit<GameState, "deck" | "hostToken" | "seats">;
   const { small, big } = blindPositions(state);
   const showdown = state.street === "showdown";
   return {
     ...publicState,
-    seats: state.seats.map((seat) => ({
-      ...seat,
-      holeCards: seat.holeCards.map((card) =>
-        isOwner && (seat.isHuman || showdown) ? card : null,
-      ),
-      isDealer: seat.position === state.buttonPosition,
-      isCurrent: seat.position === state.currentPlayer,
-      isSmallBlind: seat.position === small,
-      isBigBlind: seat.position === big,
-    })),
+    isSeated: mySeatIndex !== -1,
+    seats: state.seats.map((seat, index) => {
+      const isMine = index === mySeatIndex;
+      const publicSeat = Object.fromEntries(
+        Object.entries(seat).filter(([key]) => key !== "ownerToken"),
+      ) as Omit<Seat, "ownerToken">;
+      return {
+        ...publicSeat,
+        holeCards: seat.holeCards.map((card) => (isMine || showdown ? card : null)),
+        isDealer: seat.position === state.buttonPosition,
+        isCurrent: seat.position === state.currentPlayer,
+        isSmallBlind: seat.position === small,
+        isBigBlind: seat.position === big,
+        isMine,
+        isOpen: seat.ownerToken === null,
+      };
+    }),
     legalActions:
-      isOwner && state.currentPlayer !== null && state.seats[state.currentPlayer].isHuman
-        ? getLegalActions(state, state.currentPlayer)
-        : null,
+      mySeatIndex !== -1 && state.currentPlayer === mySeatIndex ? getLegalActions(state, mySeatIndex) : null,
   };
 }

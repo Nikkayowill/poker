@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { applyPlayerAction, createGame, toSnapshot } from "./engine";
+import { applyPlayerAction, claimSeat, createGame, toSnapshot } from "./engine";
 import { evaluateHand } from "./evaluator";
 import type { Card, PlayerAction } from "./types";
+
+const testProfile = (name: string) => ({
+  displayName: name,
+  initials: name.slice(0, 2).toUpperCase(),
+  accent: "#79c9ff",
+  avatarUrl: null,
+  avatarPreset: "ace",
+});
 
 const cards = (values: string): Card[] =>
   values.split(" ").map((value) => {
@@ -70,5 +78,105 @@ describe("server game engine", () => {
       expect(safety).toBeLessThan(500);
     }
     expect(completed).toBeGreaterThan(0);
+  });
+});
+
+describe("bot identity", () => {
+  it("assigns a distinct AI personality to each bot seat and none to the host", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    expect(game.seats[0].personality).toBeNull();
+    expect(game.seats.slice(1).map((seat) => seat.personality)).toEqual(["MANIAC", "CALLING_STATION", "ROCK"]);
+    expect(game.seats.slice(1).every((seat) => !seat.isHuman)).toBe(true);
+  });
+});
+
+describe("room codes", () => {
+  it("issues a shareable code only for private tables", () => {
+    const publicGame = createGame(crypto.randomUUID(), "Host");
+    expect(publicGame.isPrivate).toBe(false);
+    expect(publicGame.roomCode).toBeNull();
+
+    const privateGame = createGame(crypto.randomUUID(), "Host", undefined, { isPrivate: true });
+    expect(privateGame.isPrivate).toBe(true);
+    expect(privateGame.roomCode).toMatch(/^[A-Z0-9]{6}$/);
+  });
+});
+
+describe("multi-human seating", () => {
+  it("converts the first open bot seat into a human seat", () => {
+    const hostToken = crypto.randomUUID();
+    const guestToken = crypto.randomUUID();
+    const game = createGame(hostToken, "Host");
+
+    const { state, seatIndex } = claimSeat(game, guestToken, testProfile("Guest"));
+    expect(seatIndex).toBe(1);
+    expect(state.seats[1].isHuman).toBe(true);
+    expect(state.seats[1].ownerToken).toBe(guestToken);
+    expect(state.seats[1].personality).toBeNull();
+    expect(state.seats[1].name).toBe("Guest");
+  });
+
+  it("returns the same seat on a repeat claim instead of taking another one", () => {
+    const hostToken = crypto.randomUUID();
+    const guestToken = crypto.randomUUID();
+    const game = createGame(hostToken, "Host");
+
+    const first = claimSeat(game, guestToken, testProfile("Guest"));
+    const versionAfterFirstClaim = first.state.version;
+    const second = claimSeat(first.state, guestToken, testProfile("Guest"));
+
+    expect(second.seatIndex).toBe(first.seatIndex);
+    expect(second.state.version).toBe(versionAfterFirstClaim);
+  });
+
+  it("refuses to seat a fifth player at a full table", () => {
+    const hostToken = crypto.randomUUID();
+    let game = createGame(hostToken, "Host");
+    for (const name of ["Guest1", "Guest2", "Guest3"]) {
+      game = claimSeat(game, crypto.randomUUID(), testProfile(name)).state;
+    }
+    expect(game.seats.every((seat) => seat.isHuman)).toBe(true);
+    expect(() => claimSeat(game, crypto.randomUUID(), testProfile("Guest4"))).toThrow(/full/i);
+  });
+
+  it("rejects an action from a token that owns no seat", () => {
+    const hostToken = crypto.randomUUID();
+    const game = createGame(hostToken, "Host");
+    expect(() => applyPlayerAction(game, { type: "check" }, crypto.randomUUID())).toThrow(/not seated/i);
+  });
+
+  it("lets a second human act on their own turn, while hiding cards from each other", () => {
+    const hostToken = crypto.randomUUID();
+    const guestToken = crypto.randomUUID();
+    let game = createGame(hostToken, "Host");
+    expect(game.status).toBe("playing");
+
+    const claimed = claimSeat(game, guestToken, testProfile("Guest"));
+    game = claimed.state;
+    const guestSeatIndex = claimed.seatIndex;
+    const versionAfterClaim = game.version;
+
+    // Right after claiming, action is still with the host (auto-play always
+    // stops at the first human seat), so the guest cannot act out of turn.
+    expect(game.currentPlayer).not.toBe(guestSeatIndex);
+    expect(() => applyPlayerAction(game, { type: "check" }, guestToken)).toThrow(/turn/i);
+
+    // The host folding hands the turn straight to the guest, since she is the
+    // next active seat and has not acted yet this betting round.
+    game = applyPlayerAction(game, { type: "fold" }, hostToken);
+    expect(game.currentPlayer).toBe(guestSeatIndex);
+
+    const guestView = toSnapshot(game, guestToken);
+    expect(guestView.legalActions).not.toBeNull();
+    expect(guestView.seats[guestSeatIndex].holeCards.every(Boolean)).toBe(true);
+    expect(guestView.seats[0].holeCards.every((card) => card === null)).toBe(true);
+
+    const hostView = toSnapshot(game, hostToken);
+    expect(hostView.legalActions).toBeNull();
+    expect(hostView.seats[guestSeatIndex].holeCards.every((card) => card === null)).toBe(true);
+
+    expect(() => applyPlayerAction(game, { type: "check" }, hostToken)).toThrow(/turn/i);
+    game = applyPlayerAction(game, { type: "call" }, guestToken);
+    expect(game.version).toBeGreaterThan(versionAfterClaim);
   });
 });

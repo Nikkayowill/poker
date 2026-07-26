@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Camera,
   Check,
-  CircleDollarSign,
   Clock3,
   Coins,
   FoldVertical,
@@ -14,11 +13,7 @@ import {
   RotateCcw,
   Save,
   Settings2,
-  ShieldCheck,
-  Sparkles,
   UsersRound,
-  Wifi,
-  WifiOff,
   Upload,
   X,
 } from "lucide-react";
@@ -78,7 +73,7 @@ function ProfileTrigger({
       {!compact && (
         <span>
           <strong>{profile.displayName}</strong>
-          <small>Customize profile</small>
+          <small>Profile</small>
         </span>
       )}
       <Settings2 size={14} />
@@ -143,6 +138,8 @@ function PlayerSeat({ seat, placement }: { seat: PublicSeat; placement: string }
         <div className="seat-copy">
           <div className="seat-name-row">
             <strong>{seat.name}</strong>
+            {!seat.isHuman && <span className="ai-badge">AI</span>}
+            {seat.isMine && <span className="you-chip">You</span>}
             {seat.isDealer && <span className="dealer-chip">D</span>}
             {seat.isSmallBlind && <span className="blind-label">SB</span>}
             {seat.isBigBlind && <span className="blind-label">BB</span>}
@@ -160,30 +157,37 @@ function PlayerSeat({ seat, placement }: { seat: PublicSeat; placement: string }
   );
 }
 
-function Lobby({ profile, onStart, loading, error, onCustomize }: {
+function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, error, onCustomize }: {
   profile: PlayerProfile | null;
-  onStart: (name: string) => void;
+  onQuickPlay: (name: string) => void;
+  onHostPrivate: (name: string) => void;
+  onJoinCode: (name: string, code: string) => void;
   loading: boolean;
   error: string | null;
   onCustomize: () => void;
 }) {
   const [name, setName] = useState(profile?.displayName ?? "");
+  const [joinCode, setJoinCode] = useState("");
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    onStart(name.trim() || "You");
+    onQuickPlay(name.trim() || "You");
+  };
+  const submitJoin = (event: FormEvent) => {
+    event.preventDefault();
+    if (joinCode.trim().length === 6) onJoinCode(name.trim() || "You", joinCode.trim());
   };
   return (
     <main className="lobby">
       <section className="hero">
-        <div className="eyebrow"><Sparkles size={14} /> Your seat is waiting</div>
-        <h1>Play the hand.<br /><em>Own the river.</em></h1>
+        <div className="lobby-kicker">River Room · 4-max</div>
+        <h1>No-limit Hold’em.<br /><em>Nothing extra.</em></h1>
         <p>
-          A polished no-limit Hold’em table with private cards, proper betting rounds,
-          side pots, and every decision verified on the server.
+          Buy in for 1,000 chips, take a seat, and play. Start a quick table
+          or open a private room for friends.
         </p>
         <form className="start-form" onSubmit={submit}>
           <div className="form-label-row">
-            <label htmlFor="player-name">Your table name</label>
+            <label htmlFor="player-name">Player name</label>
             {profile && <button type="button" onClick={onCustomize}>Edit profile</button>}
           </div>
           <div className="name-row">
@@ -195,20 +199,42 @@ function Lobby({ profile, onStart, loading, error, onCustomize }: {
               placeholder="Enter your name"
               autoComplete="nickname"
             />
-            <button type="submit" disabled={loading}>
-              {loading ? "Shuffling…" : <>Take a seat <ArrowRight size={17} /></>}
+          </div>
+          <div className="lobby-actions">
+            <button type="submit" className="primary-action" disabled={loading}>
+              {loading ? "Opening table…" : <>Quick play <ArrowRight size={17} /></>}
+            </button>
+            <button type="button" className="secondary-action" disabled={loading} onClick={() => onHostPrivate(name.trim() || "You")}>
+              <UsersRound size={15} /> Private table
             </button>
           </div>
           {error && <p className="form-error"><X size={14} /> {error}</p>}
         </form>
-        <div className="trust-row">
-          <span><LockKeyhole size={14} /> Server-shuffled</span>
-          <span><ShieldCheck size={14} /> Secure hole cards</span>
-          <span><Wifi size={14} /> Realtime-ready</span>
+        <form className="join-form" onSubmit={submitJoin}>
+          <label htmlFor="join-code">Join a private table</label>
+          <div className="join-row">
+            <input
+              id="join-code"
+              value={joinCode}
+              maxLength={6}
+              onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+              placeholder="ROOM CODE"
+              autoComplete="off"
+            />
+            <button type="submit" disabled={loading || joinCode.trim().length !== 6}>Join</button>
+          </div>
+        </form>
+        <div className="table-facts" aria-label="Table details">
+          <span><strong>4</strong> seats</span>
+          <span><strong>10 / 20</strong> blinds</span>
+          <span><strong>1,000</strong> buy-in</span>
         </div>
       </section>
       <aside className="lobby-preview">
-        <div className="preview-glow" />
+        <div className="preview-heading">
+          <span>Table preview</span>
+          <span>No limit · 4-max</span>
+        </div>
         <div className="mini-table">
           <span className="mini-seat mini-top">MA</span>
           <span className="mini-seat mini-left">TH</span>
@@ -222,10 +248,6 @@ function Lobby({ profile, onStart, loading, error, onCustomize }: {
               { rank: "K", suit: "diamonds" },
             ].map((card) => <PlayingCard key={card.rank} card={card as Card} small />)}
           </div>
-        </div>
-        <div className="preview-stat">
-          <div><UsersRound size={17} /><span><strong>4 seats</strong>Instant table</span></div>
-          <div><CircleDollarSign size={17} /><span><strong>1,000</strong>Starting stack</span></div>
         </div>
       </aside>
     </main>
@@ -314,8 +336,8 @@ function ProfileModal({
       <section className="profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-title">
         <header className="profile-modal-header">
           <div>
-            <span>PLAYER IDENTITY</span>
-            <h2 id="profile-title">Make the seat yours.</h2>
+            <span>PROFILE</span>
+            <h2 id="profile-title">Edit player details</h2>
           </div>
           <button className="modal-close" onClick={onClose} aria-label="Close profile editor"><X size={18} /></button>
         </header>
@@ -443,7 +465,7 @@ function ActionBar({
     return (
       <div className="action-bar waiting-bar">
         <span className="waiting-dot" />
-        <span>Players are making their decisions…</span>
+        <span>Waiting for the next action</span>
       </div>
     );
   }
@@ -504,6 +526,25 @@ function ActionBar({
   );
 }
 
+function RoomCodeChip({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    const link = `${window.location.origin}/?code=${code}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Clipboard access can be denied by browser policy; the code is still visible to copy by hand.
+    }
+  };
+  return (
+    <button type="button" className="room-code-chip" onClick={copy}>
+      <LockKeyhole size={12} /> Code {code} <span>{copied ? "Copied!" : "Copy invite"}</span>
+    </button>
+  );
+}
+
 function PokerTable({
   game,
   persistence,
@@ -524,6 +565,10 @@ function PokerTable({
   onCustomize: () => void;
 }) {
   const placements = ["seat-bottom", "seat-left", "seat-top", "seat-right"];
+  const mySeatIndex = game.seats.findIndex((seat) => seat.isMine);
+  const orderedSeats = mySeatIndex <= 0
+    ? game.seats
+    : game.seats.map((_, index) => game.seats[(mySeatIndex + index) % game.seats.length]);
   return (
     <main className="game-shell">
       <header className="game-header">
@@ -533,7 +578,9 @@ function PokerTable({
         </button>
         <div className="table-meta">
           <span><span className={clsx("live-dot", persistence === "memory" && "demo-dot")} />{persistence === "supabase" ? "Realtime" : "Demo table"}</span>
-          <span>Table {game.id.slice(0, 6).toUpperCase()}</span>
+          {game.isPrivate && game.roomCode
+            ? <RoomCodeChip code={game.roomCode} />
+            : <span>Table {game.id.slice(0, 6).toUpperCase()}</span>}
           <span>Blinds {game.smallBlind}/{game.bigBlind}</span>
         </div>
         <div className="game-header-actions">
@@ -564,7 +611,7 @@ function PokerTable({
                 <span className="street-label">{game.street}</span>
               </div>
             </div>
-            {game.seats.map((seat, index) => (
+            {orderedSeats.map((seat, index) => (
               <PlayerSeat key={seat.id} seat={seat} placement={placements[index]} />
             ))}
           </div>
@@ -592,10 +639,7 @@ function PokerTable({
               </div>
             ))}
           </div>
-          <div className="security-note">
-            <ShieldCheck size={18} />
-            <p><strong>Server-authoritative</strong>Your browser never sees the deck or another player’s cards.</p>
-          </div>
+          <div className="panel-footnote">Deck and hole cards secured server-side</div>
         </aside>
       </section>
     </main>
@@ -632,17 +676,32 @@ export function PokerApp() {
     ingest(data);
   }, [ingest]);
 
+  const joinByCode = useCallback(async (code: string, name?: string) => {
+    const response = await fetch("/api/games/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, name }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? "Could not join that table.");
+    ingest(data);
+    window.history.replaceState({}, "", `/?table=${data.game.id}`);
+  }, [ingest]);
+
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("table");
-    if (!id) return;
+    const params = new URLSearchParams(window.location.search);
+    const tableId = params.get("table");
+    const code = params.get("code");
+    if (!tableId && !code) return;
     const timer = window.setTimeout(() => {
-      void refresh(id).catch((caught) => {
+      const opened = tableId ? refresh(tableId) : joinByCode(code!);
+      void opened.catch((caught) => {
         setError(caught instanceof Error ? caught.message : "Could not open that table.");
         window.history.replaceState({}, "", "/");
       });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [refresh]);
+  }, [refresh, joinByCode]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -672,21 +731,53 @@ export function PokerApp() {
     };
   }, [gameId, refresh]);
 
-  const start = async (name: string) => {
+  const quickPlay = async (name: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/games/quick-play", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not find you a table.");
+      ingest(data);
+      window.history.pushState({}, "", `/?table=${data.game.id}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not find you a table.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const hostPrivate = async (name: string) => {
     setLoading(true);
     setError(null);
     try {
       const response = await fetch("/api/games", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, isPrivate: true }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not start a table.");
+      if (!response.ok) throw new Error(data.error ?? "Could not host a table.");
       ingest(data);
       window.history.pushState({}, "", `/?table=${data.game.id}`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not start a table.");
+      setError(caught instanceof Error ? caught.message : "Could not host a table.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const joinWithCode = async (name: string, code: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await joinByCode(code, name);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not join that table.");
     } finally {
       setLoading(false);
     }
@@ -727,7 +818,7 @@ export function PokerApp() {
             <span>River Room<small>NO LIMIT HOLD’EM</small></span>
           </div>
           <div className="header-actions">
-            <div className="header-status"><WifiOff size={14} /> Private practice table</div>
+            <div className="header-status">No-limit Hold’em · 4-max</div>
             {profile && <ProfileTrigger profile={profile} onClick={() => setProfileOpen(true)} />}
           </div>
         </header>
@@ -749,7 +840,9 @@ export function PokerApp() {
           <Lobby
             key={profile?.updatedAt ?? "guest"}
             profile={profile}
-            onStart={start}
+            onQuickPlay={quickPlay}
+            onHostPrivate={hostPrivate}
+            onJoinCode={joinWithCode}
             loading={loading}
             error={error}
             onCustomize={() => setProfileOpen(true)}

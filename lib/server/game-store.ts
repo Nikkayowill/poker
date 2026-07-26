@@ -33,18 +33,20 @@ export async function createStoredGame(state: GameState): Promise<void> {
     return;
   }
 
-  const human = state.seats.find((seat) => seat.isHuman)!;
+  const host = state.seats.find((seat) => seat.ownerToken === state.hostToken)!;
   const { error: sessionError } = await supabase.from("player_sessions").upsert({
-    token: state.ownerToken,
-    display_name: human.name,
+    token: state.hostToken,
+    display_name: host.name,
     last_seen_at: new Date().toISOString(),
   });
   if (sessionError) throw new Error(`Could not create player session: ${sessionError.message}`);
 
   const { error: gameError } = await supabase.from("games").insert({
     id: state.id,
-    owner_token: state.ownerToken,
+    owner_token: state.hostToken,
     status: state.status,
+    is_private: state.isPrivate,
+    room_code: state.roomCode,
     small_blind: state.smallBlind,
     big_blind: state.bigBlind,
     current_hand_number: state.handNumber,
@@ -61,7 +63,7 @@ export async function createStoredGame(state: GameState): Promise<void> {
   const { data: profileRecord, error: profileError } = await supabase
     .from("profiles")
     .select("id")
-    .eq("session_token", state.ownerToken)
+    .eq("session_token", state.hostToken)
     .maybeSingle();
   if (profileError) throw new Error(`Could not link player profile: ${profileError.message}`);
 
@@ -70,6 +72,8 @@ export async function createStoredGame(state: GameState): Promise<void> {
       id: seat.id,
       game_id: state.id,
       profile_id: seat.isHuman ? profileRecord?.id ?? null : null,
+      owner_token: seat.ownerToken,
+      personality: seat.personality,
       seat_number: seat.position,
       display_name: seat.name,
       initials: seat.initials,
@@ -89,6 +93,46 @@ export async function createStoredGame(state: GameState): Promise<void> {
   });
 }
 
+/** Finds the oldest public, still-playable table with an open (bot) seat. */
+export async function findOpenPublicGame(): Promise<string | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    let best: GameState | null = null;
+    for (const state of memoryGames.values()) {
+      if (state.isPrivate || state.status !== "playing") continue;
+      if (!state.seats.some((seat) => seat.ownerToken === null)) continue;
+      if (!best || state.createdAt < best.createdAt) best = state;
+    }
+    return best?.id ?? null;
+  }
+
+  const { data, error } = await supabase
+    .from("game_seats")
+    .select("game_id, games!inner(created_at, is_private, status)")
+    .is("owner_token", null)
+    .eq("is_bot", true)
+    .eq("games.is_private", false)
+    .eq("games.status", "playing")
+    .order("created_at", { referencedTable: "games", ascending: true })
+    .limit(1);
+  if (error) throw new Error(`Could not search for an open table: ${error.message}`);
+  return data?.[0]?.game_id ?? null;
+}
+
+/** Resolves a shareable private-room code to its table id. */
+export async function findGameByRoomCode(code: string): Promise<string | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    for (const state of memoryGames.values()) {
+      if (state.roomCode === code) return state.id;
+    }
+    return null;
+  }
+  const { data, error } = await supabase.from("games").select("id").eq("room_code", code).maybeSingle();
+  if (error) throw new Error(`Could not look up that room code: ${error.message}`);
+  return data?.id ?? null;
+}
+
 export async function getStoredGame(id: string): Promise<GameState | null> {
   const supabase = adminClient();
   if (!supabase) return memoryGames.has(id) ? clone(memoryGames.get(id)!) : null;
@@ -104,6 +148,7 @@ export async function getStoredGame(id: string): Promise<GameState | null> {
 export async function updateStoredGame(
   state: GameState,
   action: PlayerAction,
+  callerToken: string,
 ): Promise<void> {
   const supabase = adminClient();
   if (!supabase) {
@@ -116,17 +161,49 @@ export async function updateStoredGame(
   }
 
   const previousVersion = state.version - 1;
-  const human = state.seats.find((seat) => seat.isHuman)!;
+  const actorSeat = state.seats.find((seat) => seat.ownerToken === callerToken);
   const { error } = await supabase.rpc("persist_game_action", {
     p_game_id: state.id,
     p_expected_version: previousVersion,
     p_state: state,
     p_action_type: action.type.replace("-", "_"),
     p_amount: action.type === "raise" ? action.amount : null,
-    p_actor_seat_id: action.type === "next-hand" ? null : human.id,
+    p_actor_seat_id: action.type === "next-hand" ? null : actorSeat?.id ?? null,
   });
   if (error) {
     if (error.code === "40001") throw new Error("The table changed. Refresh and try again.");
     throw new Error(`Could not update the table: ${error.message}`);
+  }
+}
+
+/**
+ * Persists a seat claim (a bot seat becoming human-controlled via quick play
+ * or a room code). This isn't a PlayerAction, so it reuses the same
+ * optimistic-concurrency RPC with the 'deal' audit action rather than
+ * widening the action_type enum for one rare event.
+ */
+export async function persistSeatClaim(state: GameState, seatId: string): Promise<void> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const current = memoryGames.get(state.id);
+    if (current && current.version !== state.version - 1) {
+      throw new Error("The table changed. Refresh and try again.");
+    }
+    memoryGames.set(state.id, clone(state));
+    return;
+  }
+
+  const previousVersion = state.version - 1;
+  const { error } = await supabase.rpc("persist_game_action", {
+    p_game_id: state.id,
+    p_expected_version: previousVersion,
+    p_state: state,
+    p_action_type: "deal",
+    p_amount: null,
+    p_actor_seat_id: seatId,
+  });
+  if (error) {
+    if (error.code === "40001") throw new Error("The table changed. Refresh and try again.");
+    throw new Error(`Could not join the table: ${error.message}`);
   }
 }

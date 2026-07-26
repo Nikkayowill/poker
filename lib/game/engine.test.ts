@@ -85,6 +85,47 @@ describe("server game engine", () => {
     expect(snapshot.seats.slice(1).flatMap((seat) => seat.holeCards).every((card) => card === null)).toBe(true);
   });
 
+  it("hides folded and uncontested-win hole cards from other seats after the hand ends", () => {
+    const hostToken = crypto.randomUUID();
+    let game = createGame(hostToken, "Host");
+    const guestTokens = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+    ["Guest1", "Guest2", "Guest3"].forEach((name, index) => {
+      game = claimSeat(game, guestTokens[index], testProfile(name)).state;
+    });
+    expect(game.seats.every((seat) => seat.isHuman)).toBe(true);
+
+    // Every seat is human-controlled, so folding is fully deterministic: fold
+    // whoever is due to act until only one seat remains (an uncontested win),
+    // rather than letting bot randomness decide the outcome.
+    let safety = 0;
+    while (game.status === "playing") {
+      const actorIndex = game.currentPlayer!;
+      const actorToken = game.seats[actorIndex].ownerToken!;
+      const legal = toSnapshot(game, actorToken).legalActions!;
+      const action: PlayerAction = legal.canFold ? { type: "fold" } : { type: "check" };
+      game = applyPlayerAction(game, action, actorToken);
+      safety += 1;
+      expect(safety).toBeLessThan(50);
+    }
+
+    expect(game.status).toBe("complete");
+    expect(game.winners).toHaveLength(1);
+    expect(game.winners[0].hand).toBe("Uncontested");
+    const winnerId = game.winners[0].seatId;
+
+    // A caller who is neither the winner nor themselves must see every other
+    // seat's hole cards as hidden — including the uncontested winner's, since
+    // a real showdown never happened for anyone to have a right to see them.
+    const onlookerToken = game.seats.find((seat) => seat.id !== winnerId)!.ownerToken!;
+    const view = toSnapshot(game, onlookerToken);
+    expect(view.seats.find((seat) => seat.id === winnerId)!.holeCards.every((card) => card === null)).toBe(true);
+    view.seats
+      .filter((seat) => !seat.isMine)
+      .forEach((seat) => {
+        expect(seat.holeCards.every((card) => card === null)).toBe(true);
+      });
+  });
+
   it("plays repeated complete hands while conserving chips", () => {
     const token = crypto.randomUUID();
     let game = createGame(token, "Test");

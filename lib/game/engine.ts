@@ -41,7 +41,7 @@ const botProfiles: Array<{
 // Humans get a short decision clock plus three optional time-bank cards.
 // Bot deadlines are also persisted so polling/realtime can pace decisions
 // without trusting a browser timer.
-export const TURN_TIMEOUT_MS = 20_000;
+export const TURN_TIMEOUT_MS = 15_000;
 export const TIME_CARD_EXTENSION_MS = 20_000;
 export const STARTING_TIME_CARDS = 3;
 export const BOT_DECISION_MIN_MS = 1_800;
@@ -725,18 +725,24 @@ export function toSnapshot(state: GameState, callerToken: string): GameSnapshot 
     Object.entries(state).filter(([key]) => key !== "deck" && key !== "hostToken" && key !== "seats"),
   ) as Omit<GameState, "deck" | "hostToken" | "seats">;
   const { small, big } = blindPositions(state);
-  const showdown = state.street === "showdown";
+  // A hand only reveals cards to the table when 2+ players actually reached
+  // showdown. An uncontested win (everyone else folded) lets the winner muck
+  // without showing, exactly like a real showdown never happened for anyone
+  // who folded earlier — their cards stay hidden from other seats forever.
+  const contenders = remaining(state);
+  const genuineShowdown = state.street === "showdown" && contenders.length > 1;
   return {
     ...publicState,
     isSeated: mySeatIndex !== -1,
     seats: state.seats.map((seat, index) => {
       const isMine = index === mySeatIndex;
+      const revealed = isMine || (genuineShowdown && seat.status !== "folded" && seat.status !== "out");
       const publicSeat = Object.fromEntries(
         Object.entries(seat).filter(([key]) => key !== "ownerToken"),
       ) as Omit<Seat, "ownerToken">;
       return {
         ...publicSeat,
-        holeCards: seat.holeCards.map((card) => (isMine || showdown ? card : null)),
+        holeCards: seat.holeCards.map((card) => (revealed ? card : null)),
         isDealer: seat.position === state.buttonPosition,
         isCurrent: seat.position === state.currentPlayer,
         isSmallBlind: seat.position === small,

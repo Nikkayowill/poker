@@ -265,7 +265,7 @@ const PlayerSeat = memo(function PlayerSeat({
   && previous.winAmount === next.winAmount
 ));
 
-function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessionReady, error, onCustomize }: {
+function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessionReady, error }: {
   profile: PlayerProfile | null;
   onQuickPlay: (name: string) => void;
   onHostPrivate: (name: string) => void;
@@ -273,7 +273,6 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessi
   loading: boolean;
   sessionReady: boolean;
   error: string | null;
-  onCustomize: () => void;
 }) {
   const [name, setName] = useState(profile?.displayName ?? "");
   const [joinCode, setJoinCode] = useState("");
@@ -297,7 +296,6 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessi
         <form className="start-form" onSubmit={submit}>
           <div className="form-label-row">
             <label htmlFor="player-name">Player name</label>
-            {profile && <button type="button" onClick={onCustomize}>Edit profile</button>}
           </div>
           <div className="name-row">
             <input
@@ -1609,7 +1607,6 @@ export function PokerApp() {
             loading={loading}
             sessionReady={!profileLoading}
             error={error}
-            onCustomize={() => setProfileOpen(true)}
           />
         )}
       {profileOpen && profile && (

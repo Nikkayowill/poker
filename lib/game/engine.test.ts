@@ -11,7 +11,7 @@ import {
   toSnapshot,
   vacateSeat,
 } from "./engine";
-import { evaluateHand } from "./evaluator";
+import { compareScores, describeHand, evaluateHand } from "./evaluator";
 import type { Card, GameState, PlayerAction } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
 
@@ -55,10 +55,19 @@ function advanceBotsUntilHuman(state: GameState): GameState {
   return game;
 }
 
+function createHumanTable() {
+  const tokens = Array.from({ length: 6 }, () => crypto.randomUUID());
+  let game = createGame(tokens[0], "Player 1");
+  for (let index = 1; index < tokens.length; index += 1) {
+    game = claimSeat(game, tokens[index], testProfile(`Player ${index + 1}`)).state;
+  }
+  return { game, tokens };
+}
+
 describe("hand evaluator", () => {
   it("recognizes a royal straight flush", () => {
     const score = evaluateHand(cards("As Ks Qs Js 10s 2d 3c"));
-    expect(score.name).toBe("Straight flush");
+    expect(score.name).toBe("Royal flush");
     expect(score.values).toEqual([8, 14]);
   });
 
@@ -72,6 +81,36 @@ describe("hand evaluator", () => {
     const fullHouse = evaluateHand(cards("Ah Ad Ac Ks Kd 2h 3h"));
     const flush = evaluateHand(cards("Ah Jh 8h 5h 2h Kd Qc"));
     expect(fullHouse.values[0]).toBeGreaterThan(flush.values[0]);
+  });
+
+  it.each([
+    ["High card", "As Kd 9h 7c 4s 3d 2c"],
+    ["One pair", "As Ad 9h 7c 4s 3d 2c"],
+    ["Two pair", "As Ad 9h 9c 4s 3d 2c"],
+    ["Three of a kind", "As Ad Ah 9c 4s 3d 2c"],
+    ["Straight", "9s 8d 7h 6c 5s 3d 2c"],
+    ["Flush", "As 9s 7s 4s 2s Kd Qc"],
+    ["Full house", "As Ad Ah 9c 9s 3d 2c"],
+    ["Four of a kind", "As Ad Ah Ac 9s 3d 2c"],
+    ["Straight flush", "9s 8s 7s 6s 5s Kd Qc"],
+  ])("recognizes %s", (name, values) => {
+    expect(evaluateHand(cards(values)).name).toBe(name);
+  });
+
+  it("uses every kicker in order and detects exact ties", () => {
+    const strongerPair = evaluateHand(cards("As Ad Kh Qc 9s 3d 2c"));
+    const weakerPair = evaluateHand(cards("Ac Ah Kd Qs 8c 3h 2d"));
+    expect(compareScores(strongerPair, weakerPair)).toBeGreaterThan(0);
+
+    const first = evaluateHand(cards("As Kd Qh Jc 9s 3d 2c"));
+    const sameFromDifferentSuits = evaluateHand(cards("Ah Ks Qd Js 9c 4h 2d"));
+    expect(compareScores(first, sameFromDifferentSuits)).toBe(0);
+  });
+
+  it("correctly reports when the board itself is the best hand", () => {
+    const boardPlays = cards("As Kd Qh Jc 10s 2d 3c");
+    expect(evaluateHand(boardPlays).name).toBe("Straight");
+    expect(describeHand(boardPlays)).toBe("Straight");
   });
 });
 
@@ -161,6 +200,182 @@ describe("server game engine", () => {
       expect(safety).toBeLessThan(500);
     }
     expect(completed).toBeGreaterThan(0);
+  });
+
+  it("keeps fold available even when checking is free", () => {
+    const token = crypto.randomUUID();
+    let game = advanceBotsUntilHuman(createGame(token, "Host"));
+    expect(game.currentPlayer).toBe(0);
+    game.seats[0].streetBet = game.currentBet;
+
+    const legal = toSnapshot(game, token).legalActions;
+    expect(legal?.canCheck).toBe(true);
+    expect(legal?.canFold).toBe(true);
+    game = applyPlayerAction(game, { type: "fold" }, token);
+    expect(game.seats[0].status).toBe("folded");
+  });
+
+  it("shows a made-hand hint only to the player who owns those cards", () => {
+    const hostToken = crypto.randomUUID();
+    const guestToken = crypto.randomUUID();
+    const game = claimSeat(
+      createGame(hostToken, "Host"),
+      guestToken,
+      testProfile("Guest"),
+    ).state;
+    game.seats[0].holeCards = cards("3c 3d");
+    game.community = cards("3h Ks 2c");
+
+    const hostView = toSnapshot(game, hostToken);
+    const guestView = toSnapshot(game, guestToken);
+    expect(hostView.seats[0].handLabel).toBe("Three of a kind");
+    expect(hostView.seats[1].handLabel).toBeNull();
+    expect(guestView.seats[0].handLabel).toBeNull();
+  });
+
+  it("releases a busted human seat before the next deal", () => {
+    const hostToken = crypto.randomUUID();
+    let game = createGame(hostToken, "Host");
+    game.status = "complete";
+    game.seats[0].stack = 0;
+
+    game = applyPlayerAction(game, { type: "next-hand" }, hostToken);
+    expect(game.seats[0].ownerToken).toBeNull();
+    expect(game.seats[0].isHuman).toBe(false);
+    expect(game.seats[0].status).toBe("out");
+    expect(toSnapshot(game, hostToken).isSeated).toBe(false);
+  });
+
+  it("rejects a check facing a bet and enforces the minimum raise", () => {
+    const token = crypto.randomUUID();
+    const game = createGame(token, "Host");
+    game.currentPlayer = 0;
+    game.seats[0].status = "active";
+    game.seats[0].streetBet = 0;
+    game.seats[0].stack = 980;
+    game.currentBet = 20;
+    game.minRaise = 20;
+
+    expect(() => applyPlayerAction(structuredClone(game), { type: "check" }, token)).toThrow(/20 to call/i);
+    expect(() => applyPlayerAction(structuredClone(game), { type: "raise", amount: 39 }, token)).toThrow(/minimum raise/i);
+
+    const called = applyPlayerAction(structuredClone(game), { type: "call" }, token);
+    expect(called.seats[0].streetBet).toBe(20);
+
+    const raised = applyPlayerAction(structuredClone(game), { type: "raise", amount: 40 }, token);
+    expect(raised.currentBet).toBe(40);
+    expect(raised.seats[0].lastAction).toBe("Raise to · 40");
+  });
+
+  it("accepts a short all-in without reopening it as a full minimum raise", () => {
+    const token = crypto.randomUUID();
+    const game = createGame(token, "Host");
+    game.currentPlayer = 0;
+    game.seats[0].status = "active";
+    game.seats[0].streetBet = 0;
+    game.seats[0].stack = 30;
+    game.currentBet = 20;
+    game.minRaise = 20;
+
+    const legal = toSnapshot(game, token).legalActions!;
+    expect(legal.canRaise).toBe(false);
+    expect(legal.canAllIn).toBe(true);
+
+    const allIn = applyPlayerAction(game, { type: "all-in" }, token);
+    expect(allIn.seats[0].status).toBe("all-in");
+    expect(allIn.currentBet).toBe(30);
+    expect(allIn.minRaise).toBe(20);
+  });
+
+  it("awards main and side pots by contribution and excludes a folded best hand", () => {
+    const { game, tokens } = createHumanTable();
+    game.status = "playing";
+    game.street = "river";
+    game.buttonPosition = 5;
+    game.community = cards("2c 3d 7h 8s 9c");
+    game.currentPlayer = 0;
+    game.currentBet = 100;
+    game.seats.forEach((seat) => {
+      seat.acted = true;
+      seat.streetBet = 0;
+      seat.committed = 0;
+      seat.stack = 0;
+      seat.status = "out";
+    });
+
+    Object.assign(game.seats[0], {
+      status: "active",
+      stack: 900,
+      streetBet: 100,
+      committed: 100,
+      acted: false,
+      holeCards: cards("As Ad"),
+    });
+    Object.assign(game.seats[1], {
+      status: "all-in",
+      committed: 300,
+      holeCards: cards("Ks Kd"),
+    });
+    Object.assign(game.seats[2], {
+      status: "all-in",
+      committed: 500,
+      holeCards: cards("Qs Jd"),
+    });
+    Object.assign(game.seats[3], {
+      status: "folded",
+      committed: 100,
+      holeCards: cards("9d 9h"),
+    });
+    game.pot = 1000;
+
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    expect(complete.status).toBe("complete");
+    expect(complete.winners.find((winner) => winner.seatId === complete.seats[0].id)?.amount).toBe(400);
+    expect(complete.winners.find((winner) => winner.seatId === complete.seats[1].id)?.amount).toBe(400);
+    expect(complete.winners.find((winner) => winner.seatId === complete.seats[2].id)?.amount).toBe(200);
+    expect(complete.winners.some((winner) => winner.seatId === complete.seats[3].id)).toBe(false);
+  });
+
+  it("gives an odd tied-pot chip to the first winner left of the button", () => {
+    const { game, tokens } = createHumanTable();
+    game.status = "playing";
+    game.street = "river";
+    game.buttonPosition = 0;
+    game.community = cards("Ah Kd Qc 2s 3h");
+    game.currentPlayer = 1;
+    game.currentBet = 101;
+    game.seats.forEach((seat) => {
+      seat.acted = true;
+      seat.streetBet = 0;
+      seat.committed = 0;
+      seat.stack = 0;
+      seat.status = "out";
+    });
+    Object.assign(game.seats[0], {
+      status: "all-in",
+      committed: 101,
+      holeCards: cards("Js 10s"),
+    });
+    Object.assign(game.seats[1], {
+      status: "active",
+      stack: 899,
+      streetBet: 101,
+      committed: 101,
+      acted: false,
+      holeCards: cards("9s 9d"),
+    });
+    Object.assign(game.seats[2], {
+      status: "all-in",
+      committed: 101,
+      holeCards: cards("Jh 10h"),
+    });
+    game.pot = 303;
+
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[1]);
+    const buttonWinner = complete.winners.find((winner) => winner.seatId === complete.seats[0].id)!;
+    const leftWinner = complete.winners.find((winner) => winner.seatId === complete.seats[2].id)!;
+    expect(buttonWinner.amount).toBe(151);
+    expect(leftWinner.amount).toBe(152);
   });
 });
 

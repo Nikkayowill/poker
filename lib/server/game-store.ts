@@ -2,6 +2,7 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { advanceTimedTurn, normalizeGameState } from "@/lib/game/engine";
 import type { GameState, PlayerAction } from "@/lib/game/types";
+import { readSupabaseRuntimeConfig } from "./runtime-config";
 
 declare global {
   var __riverRoomGames: Map<string, GameState> | undefined;
@@ -11,10 +12,9 @@ const memoryGames = globalThis.__riverRoomGames ?? new Map<string, GameState>();
 globalThis.__riverRoomGames = memoryGames;
 
 export function adminClient(): SupabaseClient | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key, {
+  const config = readSupabaseRuntimeConfig();
+  if (!config) return null;
+  return createClient(config.url, config.serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }

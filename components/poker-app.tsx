@@ -18,7 +18,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, memo, useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import type { Card, GameSnapshot, PlayerAction, PublicSeat, Winner } from "@/lib/game/types";
 import { avatarPresets, profileAccents } from "@/lib/profile/types";
@@ -29,6 +29,21 @@ const suitSymbols: Record<Card["suit"], string> = {
   diamonds: "♦",
   hearts: "♥",
   spades: "♠",
+};
+const spokenRanks: Record<Card["rank"], string> = {
+  "2": "Two",
+  "3": "Three",
+  "4": "Four",
+  "5": "Five",
+  "6": "Six",
+  "7": "Seven",
+  "8": "Eight",
+  "9": "Nine",
+  "10": "Ten",
+  J: "Jack",
+  Q: "Queen",
+  K: "King",
+  A: "Ace",
 };
 
 type AvatarView = Pick<PlayerProfile, "displayName" | "initials" | "avatarUrl" | "avatarPreset" | "accent">;
@@ -106,7 +121,7 @@ function PlayingCard({
   return (
     <div
       className={clsx("playing-card", sizeClass, red && "card-red")}
-      aria-label={`${card.rank} of ${card.suit}`}
+      aria-label={`${spokenRanks[card.rank]} of ${card.suit}`}
     >
       <span className="card-rank">{card.rank}</span>
       <span className="card-suit">{suitSymbols[card.suit]}</span>
@@ -115,7 +130,7 @@ function PlayingCard({
   );
 }
 
-function PlayerSeat({
+const PlayerSeat = memo(function PlayerSeat({
   seat,
   placement,
   handNumber,
@@ -183,9 +198,23 @@ function PlayerSeat({
             {seat.isSmallBlind && <span className="blind-label">SB</span>}
             {seat.isBigBlind && <span className="blind-label">BB</span>}
           </div>
-          <span className={clsx("seat-stack", isWinner && "seat-stack-win")}>
-            <span className="chip-dot" /> {seat.stack.toLocaleString()}
+          <span
+            className={clsx(
+              "seat-stack",
+              seat.isMine && "seat-stack-mine",
+              isWinner && "seat-stack-win",
+            )}
+            aria-label={`${seat.stack.toLocaleString()} chips`}
+          >
+            <span className="chip-dot" />
+            <strong>{seat.stack.toLocaleString()}</strong>
+            {seat.isMine && <small>chips</small>}
           </span>
+          {seat.isMine && seat.handLabel && (
+            <span className="hand-strength" aria-live="polite">
+              {seat.handLabel}
+            </span>
+          )}
         </div>
       </div>
       {seat.lastAction && <span className="action-pill">{seat.lastAction}</span>}
@@ -201,14 +230,21 @@ function PlayerSeat({
       )}
     </article>
   );
-}
+}, (previous, next) => (
+  previous.seat === next.seat
+  && previous.placement === next.placement
+  && previous.handNumber === next.handNumber
+  && previous.secondsRemaining === next.secondsRemaining
+  && previous.winAmount === next.winAmount
+));
 
-function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, error, onCustomize }: {
+function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessionReady, error, onCustomize }: {
   profile: PlayerProfile | null;
   onQuickPlay: (name: string) => void;
   onHostPrivate: (name: string) => void;
   onJoinCode: (name: string, code: string) => void;
   loading: boolean;
+  sessionReady: boolean;
   error: string | null;
   onCustomize: () => void;
 }) {
@@ -247,10 +283,14 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, error
             />
           </div>
           <div className="lobby-actions">
-            <button type="submit" className="primary-action" disabled={loading}>
-              {loading ? "Opening table…" : <>Quick play <ArrowRight size={17} /></>}
+            <button type="submit" className="primary-action" disabled={loading || !sessionReady}>
+              {!sessionReady
+                ? "Preparing your seat…"
+                : loading
+                  ? "Joining table…"
+                  : <>Join table · 1K buy-in <ArrowRight size={17} /></>}
             </button>
-            <button type="button" className="secondary-action" disabled={loading} onClick={() => onHostPrivate(name.trim() || "You")}>
+            <button type="button" className="secondary-action" disabled={loading || !sessionReady} onClick={() => onHostPrivate(name.trim() || "You")}>
               <UsersRound size={15} /> Private table
             </button>
           </div>
@@ -267,7 +307,7 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, error
               placeholder="ROOM CODE"
               autoComplete="off"
             />
-            <button type="submit" disabled={loading || joinCode.trim().length !== 6}>Join</button>
+            <button type="submit" disabled={loading || !sessionReady || joinCode.trim().length !== 6}>Join</button>
           </div>
         </form>
         <div className="table-facts" aria-label="Table details">
@@ -498,12 +538,14 @@ function ActionBar({
   game,
   pending,
   onAction,
+  onLeave,
   secondsRemaining,
   remainingFraction,
 }: {
   game: GameSnapshot;
   pending: boolean;
   onAction: (action: PlayerAction) => void;
+  onLeave: () => void;
   secondsRemaining: number;
   remainingFraction: number;
 }) {
@@ -518,6 +560,36 @@ function ActionBar({
   };
 
   if (game.status === "complete") {
+    if (!game.isSeated) {
+      return (
+        <div className="action-bar hand-complete busted-player">
+          <div>
+            <span className="action-kicker">Seat closed</span>
+            <strong>You’re out of chips. Start a fresh table when you’re ready.</strong>
+          </div>
+          <button className="primary-action" onClick={onLeave}>
+            Return to lobby
+          </button>
+        </div>
+      );
+    }
+    if (mySeat?.stack === 0) {
+      return (
+        <div className="action-bar hand-complete busted-player">
+          <div>
+            <span className="action-kicker">Stack exhausted</span>
+            <strong>You’re out of chips. Your seat will open for the next player.</strong>
+          </div>
+          <button
+            className="primary-action"
+            disabled={pending}
+            onClick={() => onAction({ type: "next-hand" })}
+          >
+            Close seat
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="action-bar hand-complete">
         <div>
@@ -683,17 +755,26 @@ function PotFunnel({
 
   return (
     <>
-      {vectors.map((vector) => (
-        <span
-          key={vector.seatId}
-          className="pot-funnel"
-          style={{ "--funnel-dx": `${vector.dx}px`, "--funnel-dy": `${vector.dy}px` } as React.CSSProperties}
-        >
-          <span className="chip-dot" />
-          <span className="chip-dot" />
-          <span className="chip-dot" />
-        </span>
-      ))}
+      {vectors.flatMap((vector) =>
+        Array.from({ length: 12 }, (_, index) => {
+          const spreadX = ((index % 5) - 2) * 5;
+          const spreadY = ((index * 7) % 13) - 6;
+          return (
+            <span
+              key={`${vector.seatId}-${index}`}
+              className={`pot-chip-flight chip-color-${index % 5}`}
+              style={{
+                "--funnel-dx": `${vector.dx + spreadX}px`,
+                "--funnel-dy": `${vector.dy + spreadY}px`,
+                "--shuffle-x": `${((index * 11) % 31) - 15}px`,
+                "--shuffle-y": `${-12 - ((index * 5) % 18)}px`,
+                "--chip-delay": `${index * 34}ms`,
+              } as React.CSSProperties}
+              aria-hidden="true"
+            />
+          );
+        }),
+      )}
     </>
   );
 }
@@ -726,6 +807,16 @@ function HandHistoryDrawer({
   handNumber: number;
   onClose: () => void;
 }) {
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   return (
     <div
       className="history-overlay"
@@ -740,7 +831,7 @@ function HandHistoryDrawer({
             <span>TABLE ACTIVITY</span>
             <strong>Hand #{handNumber}</strong>
           </div>
-          <button className="modal-close" onClick={onClose} aria-label="Close hand history"><X size={16} /></button>
+          <button ref={closeButtonRef} className="modal-close" onClick={onClose} aria-label="Close hand history"><X size={16} /></button>
         </div>
         <div className="activity-list">
           {log.length === 0 && <p className="activity-empty">Nothing has happened yet.</p>}
@@ -770,6 +861,7 @@ function PokerTable({
   onLeaveSeat,
   profile,
   onCustomize,
+  connectionState,
 }: {
   game: GameSnapshot;
   persistence: string;
@@ -780,6 +872,7 @@ function PokerTable({
   onLeaveSeat: () => void;
   profile: PlayerProfile | null;
   onCustomize: () => void;
+  connectionState: ConnectionState;
 }) {
   const placements = [
     "seat-bottom",
@@ -790,7 +883,24 @@ function PokerTable({
     "seat-lower-right",
   ];
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [showOrientationHint, setShowOrientationHint] = useState(false);
+  const historyButtonRef = useRef<HTMLButtonElement | null>(null);
+  const closeHistory = useCallback(() => {
+    setHistoryOpen(false);
+    window.requestAnimationFrame(() => historyButtonRef.current?.focus());
+  }, []);
   const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    const portraitPhone = window.matchMedia("(max-width: 600px) and (orientation: portrait)");
+    const updateHint = () => setShowOrientationHint(portraitPhone.matches);
+    updateHint();
+    portraitPhone.addEventListener("change", updateHint);
+    const timer = window.setTimeout(() => setShowOrientationHint(false), 6500);
+    return () => {
+      portraitPhone.removeEventListener("change", updateHint);
+      window.clearTimeout(timer);
+    };
+  }, []);
   useEffect(() => {
     if (!game.turnDeadlineAt || game.currentPlayer === null) return;
     const initialTick = window.setTimeout(() => setClockNow(Date.now()), 0);
@@ -852,7 +962,18 @@ function PokerTable({
           <span>River Room<small>NO LIMIT HOLD’EM</small></span>
         </button>
         <div className="table-meta">
-          <span><span className={clsx("live-dot", persistence === "memory" && "demo-dot")} />{persistence === "supabase" ? "Realtime" : "Demo table"}</span>
+          <span>
+            <span className={clsx(
+              "live-dot",
+              persistence === "memory" && "demo-dot",
+              connectionState !== "connected" && "connection-dot-warning",
+            )} />
+            {connectionState === "offline"
+              ? "Offline"
+              : connectionState === "reconnecting"
+                ? "Reconnecting"
+                : persistence === "supabase" ? "Realtime" : "Demo table"}
+          </span>
           {game.isPrivate && game.roomCode
             ? <RoomCodeChip code={game.roomCode} />
             : <span>Table {game.id.slice(0, 6).toUpperCase()}</span>}
@@ -861,6 +982,7 @@ function PokerTable({
         <div className="game-header-actions">
           {profile && <ProfileTrigger profile={profile} onClick={onCustomize} compact />}
           <button
+            ref={historyButtonRef}
             className="history-toggle"
             onClick={() => setHistoryOpen(true)}
             aria-label="Open hand history"
@@ -877,6 +999,19 @@ function PokerTable({
         </div>
       </header>
 
+      {showOrientationHint && (
+        <button
+          type="button"
+          className="orientation-hint"
+          onClick={() => setShowOrientationHint(false)}
+          aria-label="Dismiss landscape orientation suggestion"
+        >
+          <span aria-hidden="true">↻</span>
+          Rotate for a wider table
+          <small>Portrait still works</small>
+        </button>
+      )}
+
       <section className="game-content">
         <div className="table-area">
           <div className="poker-table-wrap">
@@ -892,12 +1027,23 @@ function PokerTable({
                   {[0, 1, 2, 3, 4].map((index) => (
                     <span
                       className={clsx("community-card-shell", game.community[index] && "community-card-revealed")}
-                      key={`${game.handNumber}-${game.street}-${index}`}
+                      key={`${game.handNumber}-${index}`}
+                      style={{
+                        "--community-delay": `${index < 3 ? index * 110 : 0}ms`,
+                      } as React.CSSProperties}
                     >
-                      <PlayingCard
-                        card={game.community[index] ?? null}
-                        ghost={!game.community[index]}
-                      />
+                      {game.community[index]
+                        ? (
+                          <span className="community-card-flipper">
+                            <span className="community-card-backface" aria-hidden="true">
+                              <PlayingCard card={null} />
+                            </span>
+                            <span className="community-card-face">
+                              <PlayingCard card={game.community[index]} />
+                            </span>
+                          </span>
+                        )
+                        : <PlayingCard card={null} ghost />}
                     </span>
                   ))}
                 </div>
@@ -933,20 +1079,35 @@ function PokerTable({
           <ActionBar
             key={game.version}
             game={game}
-            pending={pending}
+            pending={pending || connectionState !== "connected"}
             onAction={onAction}
+            onLeave={onLeave}
             secondsRemaining={secondsRemaining}
             remainingFraction={remainingFraction}
           />
         </div>
       </section>
 
+      {connectionState !== "connected" && (
+        <div className="connection-overlay" role="status" aria-live="assertive">
+          <span className="waiting-dot" />
+          <strong>
+            {connectionState === "offline"
+              ? "You’re offline — gameplay is paused"
+              : "Reconnecting to the table…"}
+          </strong>
+          <small>Your controls will unlock after the latest server state arrives.</small>
+        </div>
+      )}
+
       {historyOpen && (
-        <HandHistoryDrawer log={game.log} handNumber={game.handNumber} onClose={() => setHistoryOpen(false)} />
+        <HandHistoryDrawer log={game.log} handNumber={game.handNumber} onClose={closeHistory} />
       )}
     </main>
   );
 }
+
+type ConnectionState = "connected" | "reconnecting" | "offline";
 
 export function PokerApp() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
@@ -954,7 +1115,9 @@ export function PokerApp() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [persistence, setPersistence] = useState("memory");
   const [loading, setLoading] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [connectionState, setConnectionState] = useState<ConnectionState>("connected");
   const gameId = game?.id;
 
   const loadProfile = useCallback(async () => {
@@ -966,8 +1129,13 @@ export function PokerApp() {
   }, []);
 
   const ingest = useCallback((data: { game: GameSnapshot; persistence: string }) => {
-    setGame(data.game);
+    setGame((current) => (
+      current && current.id === data.game.id && current.version > data.game.version
+        ? current
+        : data.game
+    ));
     setPersistence(data.persistence);
+    setConnectionState("connected");
     setError(null);
   }, []);
 
@@ -976,6 +1144,7 @@ export function PokerApp() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "Could not refresh the table.");
     ingest(data);
+    return data as { game: GameSnapshot; persistence: string };
   }, [ingest]);
 
   const joinByCode = useCallback(async (code: string, name?: string) => {
@@ -989,6 +1158,23 @@ export function PokerApp() {
     ingest(data);
     window.history.replaceState({}, "", `/?table=${data.game.id}`);
   }, [ingest]);
+
+  useEffect(() => {
+    const markOffline = () => setConnectionState("offline");
+    const reconnect = () => {
+      setConnectionState("reconnecting");
+      if (gameId) {
+        void refresh(gameId).catch(() => setConnectionState("reconnecting"));
+      }
+    };
+    window.addEventListener("offline", markOffline);
+    window.addEventListener("online", reconnect);
+    if (!window.navigator.onLine) markOffline();
+    return () => {
+      window.removeEventListener("offline", markOffline);
+      window.removeEventListener("online", reconnect);
+    };
+  }, [gameId, refresh]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -1007,12 +1193,30 @@ export function PokerApp() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadProfile().catch((caught) => {
-        setError(caught instanceof Error ? caught.message : "Could not load your profile.");
-      });
+      void loadProfile()
+        .catch((caught) => {
+          setError(caught instanceof Error ? caught.message : "Could not load your profile.");
+        })
+        .finally(() => setProfileLoading(false));
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadProfile]);
+
+  useEffect(() => {
+    if (!("serviceWorker" in window.navigator)) return;
+    if (process.env.NODE_ENV === "production") {
+      void window.navigator.serviceWorker.register("/sw.js").catch(() => {
+        // Installation is an enhancement; normal online play remains available.
+      });
+      return;
+    }
+
+    // A development service worker can serve stale shell responses while Fast
+    // Refresh is rebuilding. Keep npm run dev as a plain network experience.
+    void window.navigator.serviceWorker.getRegistrations().then((registrations) => {
+      registrations.forEach((registration) => void registration.unregister());
+    });
+  }, []);
 
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -1026,21 +1230,49 @@ export function PokerApp() {
         { event: "*", schema: "public", table: "game_signals", filter: `game_id=eq.${gameId}` },
         () => void refresh(gameId),
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") setConnectionState("connected");
+        if (
+          status === "CHANNEL_ERROR"
+          || status === "TIMED_OUT"
+          || status === "CLOSED"
+        ) {
+          setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
+        }
+      });
     return () => {
       if (channel) void supabase.removeChannel(channel);
       channel = null;
     };
   }, [gameId, refresh]);
 
-  // One-second polling drives server-authored bot deadlines and human
-  // timeouts even when no database change has occurred yet. Realtime still
-  // delivers completed decisions immediately to every other browser.
+  // Supabase Realtime delivers actions immediately, so persistent tables only
+  // need one deadline-aligned refresh to resolve the current bot/human timer.
+  // In-memory development has no Realtime channel and keeps a modest fallback
+  // poll so multiple local browsers still stay synchronized.
   useEffect(() => {
     if (!gameId) return;
-    const interval = window.setInterval(() => void refresh(gameId), 1000);
-    return () => window.clearInterval(interval);
-  }, [gameId, refresh]);
+    const refreshTable = () => {
+      if (!window.navigator.onLine) {
+        setConnectionState("offline");
+        return;
+      }
+      void refresh(gameId).catch(() => setConnectionState("reconnecting"));
+    };
+
+    if (persistence === "memory") {
+      const interval = window.setInterval(refreshTable, 1500);
+      return () => window.clearInterval(interval);
+    }
+
+    const deadline = Date.parse(game?.turnDeadlineAt ?? "");
+    if (!Number.isFinite(deadline)) return;
+    const timeout = window.setTimeout(
+      refreshTable,
+      Math.max(200, deadline - Date.now() + 120),
+    );
+    return () => window.clearTimeout(timeout);
+  }, [game?.turnDeadlineAt, gameId, persistence, refresh]);
 
   const quickPlay = async (name: string) => {
     setLoading(true);
@@ -1164,6 +1396,7 @@ export function PokerApp() {
             onLeaveSeat={leaveSeat}
             profile={profile}
             onCustomize={() => setProfileOpen(true)}
+            connectionState={connectionState}
           />
         )
         : (
@@ -1174,6 +1407,7 @@ export function PokerApp() {
             onHostPrivate={hostPrivate}
             onJoinCode={joinWithCode}
             loading={loading}
+            sessionReady={!profileLoading}
             error={error}
             onCustomize={() => setProfileOpen(true)}
           />

@@ -17,6 +17,22 @@ const categoryNames = [
   "Straight flush",
 ];
 
+const rankNames: Record<Card["rank"], string> = {
+  "2": "Two",
+  "3": "Three",
+  "4": "Four",
+  "5": "Five",
+  "6": "Six",
+  "7": "Seven",
+  "8": "Eight",
+  "9": "Nine",
+  "10": "Ten",
+  J: "Jack",
+  Q: "Queen",
+  K: "King",
+  A: "Ace",
+};
+
 export interface HandScore {
   values: number[];
   name: string;
@@ -51,7 +67,10 @@ function scoreFive(cards: Card[]): HandScore {
     score = [1, groups[0][0], ...groups.slice(1).map(([value]) => value).sort((a, b) => b - a)];
   } else score = [0, ...values];
 
-  return { values: score, name: categoryNames[score[0]] };
+  return {
+    values: score,
+    name: score[0] === 8 && score[1] === 14 ? "Royal flush" : categoryNames[score[0]],
+  };
 }
 
 export function compareScores(a: HandScore, b: HandScore): number {
@@ -79,4 +98,30 @@ export function evaluateHand(cards: Card[]): HandScore {
     }
   }
   return best!;
+}
+
+/**
+ * Beginner-facing made-hand label. Before five cards are available it reports
+ * rank groups (or the high card); from the flop onward it uses the exact
+ * server evaluator, so the hint can never disagree with showdown scoring.
+ */
+export function describeHand(cards: Card[]): string {
+  if (cards.length >= 5) return evaluateHand(cards).name;
+  if (cards.length === 0) return "";
+
+  const counts = new Map<Card["rank"], number>();
+  cards.forEach((card) => counts.set(card.rank, (counts.get(card.rank) ?? 0) + 1));
+  const groups = [...counts.entries()].sort(
+    (a, b) => b[1] - a[1] || rankValue[b[0]] - rankValue[a[0]],
+  );
+
+  if (groups[0][1] === 4) return "Four of a kind";
+  if (groups[0][1] === 3) return "Three of a kind";
+  if (groups.filter(([, count]) => count === 2).length >= 2) return "Two pair";
+  if (groups[0][1] === 2) return "One pair";
+
+  const high = cards.reduce((best, card) =>
+    rankValue[card.rank] > rankValue[best.rank] ? card : best,
+  );
+  return `${rankNames[high.rank]} high`;
 }

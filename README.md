@@ -1,7 +1,7 @@
 # River Room
 
 A compact, server-authoritative no-limit Texas Hold’em game built with Next.js and
-Supabase. It is immediately playable against three server-controlled opponents and
+Supabase. It is immediately playable at a six-max table with server-controlled opponents and
 uses Supabase persistence/realtime automatically when credentials are present.
 
 Player profiles persist across tables and support display names, six built-in
@@ -24,10 +24,16 @@ Open `http://localhost:3000`. With no environment values the server uses an
 in-memory store, which is useful for local evaluation and still keeps all poker
 logic off the client.
 
+To test from an iPhone or another device on the same Wi-Fi network, run
+`npm run dev:network`, then open `http://YOUR-COMPUTER-LAN-IP:3000` on the
+phone. Allow port 3000 through the computer firewall. PWA installation is not
+required for browser play; service workers are intentionally disabled during
+development.
+
 For persistent Supabase mode:
 
 1. Create a Supabase project.
-2. Run both SQL files in `supabase/migrations` in filename order.
+2. Run every SQL file in `supabase/migrations` in filename order.
 3. Copy `.env.example` to `.env.local` and provide the project URL, anon key, and
    service-role key.
 4. Restart the Next.js server.

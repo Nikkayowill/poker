@@ -106,6 +106,8 @@ export interface LegalActions {
 
 export interface PublicSeat extends Omit<Seat, "holeCards" | "ownerToken"> {
   holeCards: Array<Card | null>;
+  /** Beginner-facing made-hand label, populated only for the requesting player's seat. */
+  handLabel: string | null;
   isDealer: boolean;
   isCurrent: boolean;
   isSmallBlind: boolean;

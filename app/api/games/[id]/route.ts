@@ -21,6 +21,15 @@ export async function GET(
     const game = await loadGameWithTimeouts(id);
     if (!game) return NextResponse.json({ error: "Table not found." }, { status: 404 });
     const ownerToken = request.cookies.get("river_session")?.value ?? "";
+    if (
+      game.isPrivate
+      && !game.seats.some((seat) => seat.ownerToken === ownerToken)
+    ) {
+      return NextResponse.json(
+        { error: "Join this private table with its invite code first." },
+        { status: 403 },
+      );
+    }
     return NextResponse.json({
       game: toSnapshot(game, ownerToken),
       persistence: persistenceMode(),

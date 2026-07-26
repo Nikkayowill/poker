@@ -4,6 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "River Room — Texas Hold’em",
   description: "A server-authoritative Texas Hold’em table powered by Supabase.",
+  manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

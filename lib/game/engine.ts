@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from "crypto";
-import { compareScores, evaluateHand, type HandScore } from "./evaluator";
+import { compareScores, describeHand, evaluateHand, type HandScore } from "./evaluator";
 import type {
   BotPersonality,
   Card,
@@ -111,6 +111,29 @@ function canAct(seat: Seat) {
   return seat.status === "active" && seat.stack > 0;
 }
 
+function restoreBotControl(seat: Seat) {
+  const fallback = botProfiles[seat.position] ?? botProfiles[0];
+  seat.isHuman = false;
+  seat.ownerToken = null;
+  seat.personality = fallback.personality;
+  seat.name = fallback.name;
+  seat.initials = fallback.initials;
+  seat.accent = fallback.accent;
+  seat.avatarUrl = fallback.avatarUrl;
+  seat.avatarPreset = fallback.avatarPreset;
+  seat.timeCardsRemaining = 0;
+}
+
+function releaseBustedHumanSeats(state: GameState) {
+  state.seats.forEach((seat) => {
+    if (!seat.isHuman || seat.stack > 0) return;
+    const playerName = seat.name;
+    restoreBotControl(seat);
+    seat.status = "out";
+    addLog(state, `${playerName} is out of chips and leaves the table`);
+  });
+}
+
 function blindPositions(state: GameState) {
   if (state.seats.filter(inHand).length === 2) {
     // Heads-up: the button also posts the small blind and acts first
@@ -144,6 +167,7 @@ function dealToCommunity(state: GameState, count: number) {
 }
 
 function setupHand(state: GameState, firstHand = false) {
+  if (!firstHand) releaseBustedHumanSeats(state);
   const funded = state.seats.filter((seat) => seat.stack > 0);
   if (funded.length < 2) {
     state.status = "complete";
@@ -323,16 +347,7 @@ export function vacateSeat(state: GameState, token: string): GameState {
   if (seatIndex === -1) throw new Error("You are not seated at this table.");
 
   const seat = state.seats[seatIndex];
-  const fallback = botProfiles[seat.position] ?? botProfiles[0];
-  seat.isHuman = false;
-  seat.ownerToken = null;
-  seat.personality = fallback.personality;
-  seat.name = fallback.name;
-  seat.initials = fallback.initials;
-  seat.accent = fallback.accent;
-  seat.avatarUrl = fallback.avatarUrl;
-  seat.avatarPreset = fallback.avatarPreset;
-  seat.timeCardsRemaining = 0;
+  restoreBotControl(seat);
   if (state.currentPlayer === seatIndex) setCurrentPlayer(state, seatIndex);
 
   return state;
@@ -345,7 +360,9 @@ export function getLegalActions(state: GameState, seatIndex: number): LegalActio
   const maxRaiseTo = seat.streetBet + seat.stack;
   const minRaiseTo = state.currentBet + state.minRaise;
   return {
-    canFold: isTurn && toCall > 0,
+    // Folding when a check is available is strategically unusual but legal,
+    // and players expect the control to remain available on every street.
+    canFold: isTurn,
     canCheck: isTurn && toCall === 0,
     canCall: isTurn && toCall > 0 && seat.stack > 0,
     canRaise: isTurn && maxRaiseTo > state.currentBet && maxRaiseTo >= minRaiseTo,
@@ -422,8 +439,8 @@ function showdown(state: GameState) {
       let remainder = potAmount - share * winners.length;
       const ordered = [...winners].sort(
         (a, b) =>
-          ((a.position - state.buttonPosition + state.seats.length) % state.seats.length) -
-          ((b.position - state.buttonPosition + state.seats.length) % state.seats.length),
+          ((a.position - state.buttonPosition - 1 + state.seats.length) % state.seats.length) -
+          ((b.position - state.buttonPosition - 1 + state.seats.length) % state.seats.length),
       );
       ordered.forEach((winner) => {
         const extra = remainder > 0 ? 1 : 0;
@@ -496,7 +513,7 @@ function applyTurnAction(state: GameState, action: TurnAction) {
   const toCall = legal.toCall;
 
   if (action.type === "fold") {
-    if (!legal.canFold) throw new Error("You can check here; folding is not available.");
+    if (!legal.canFold) throw new Error("Folding is not available.");
     seat.status = "folded";
     seat.acted = true;
     seat.lastAction = "Fold";
@@ -756,6 +773,9 @@ export function toSnapshot(state: GameState, callerToken: string): GameSnapshot 
       return {
         ...publicSeat,
         holeCards: seat.holeCards.map((card) => (revealed ? card : null)),
+        handLabel: isMine && seat.holeCards.length > 0
+          ? describeHand([...seat.holeCards, ...state.community])
+          : null,
         isDealer: seat.position === state.buttonPosition,
         isCurrent: seat.position === state.currentPlayer,
         isSmallBlind: seat.position === small,

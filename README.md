@@ -27,7 +27,7 @@ logic off the client.
 For persistent Supabase mode:
 
 1. Create a Supabase project.
-2. Run both SQL files in `supabase/migrations` in filename order.
+2. Run every SQL file in `supabase/migrations` in filename order.
 3. Copy `.env.example` to `.env.local` and provide the project URL, anon key, and
    service-role key.
 4. Restart the Next.js server.

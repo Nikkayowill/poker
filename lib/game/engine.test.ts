@@ -88,8 +88,14 @@ describe("server game engine", () => {
   it("hides folded and uncontested-win hole cards from other seats after the hand ends", () => {
     const hostToken = crypto.randomUUID();
     let game = createGame(hostToken, "Host");
-    const guestTokens = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
-    ["Guest1", "Guest2", "Guest3"].forEach((name, index) => {
+    const guestTokens = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ];
+    ["Guest1", "Guest2", "Guest3", "Guest4", "Guest5"].forEach((name, index) => {
       game = claimSeat(game, guestTokens[index], testProfile(name)).state;
     });
     expect(game.seats.every((seat) => seat.isHuman)).toBe(true);
@@ -135,7 +141,7 @@ describe("server game engine", () => {
     while (completed < 12) {
       game = advanceBotsUntilHuman(game);
       if (game.status === "complete") {
-        expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0)).toBe(4000);
+        expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0)).toBe(6000);
         completed += 1;
         if (completed >= 12 || game.seats[0].stack === 0) break;
         game = applyPlayerAction(game, { type: "next-hand" }, token);
@@ -148,7 +154,7 @@ describe("server game engine", () => {
         else action = { type: "all-in" };
         game = applyPlayerAction(game, action, token);
         if (game.status === "playing") {
-          expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0) + game.pot).toBe(4000);
+          expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0) + game.pot).toBe(6000);
         }
       }
       safety += 1;
@@ -159,11 +165,59 @@ describe("server game engine", () => {
 });
 
 describe("bot identity", () => {
-  it("assigns a distinct AI personality to each bot seat and none to the host", () => {
+  it("seats a six-max table with a distinct AI personality per bot seat and none for the host", () => {
     const game = createGame(crypto.randomUUID(), "Host");
+    expect(game.seats).toHaveLength(6);
     expect(game.seats[0].personality).toBeNull();
-    expect(game.seats.slice(1).map((seat) => seat.personality)).toEqual(["MANIAC", "CALLING_STATION", "ROCK"]);
+    expect(game.seats.slice(1).map((seat) => seat.personality)).toEqual([
+      "MANIAC",
+      "CALLING_STATION",
+      "ROCK",
+      "MANIAC",
+      "CALLING_STATION",
+    ]);
     expect(game.seats.slice(1).every((seat) => !seat.isHuman)).toBe(true);
+    // Every bot seat gets a visually distinct identity (no repeats among bots).
+    expect(new Set(game.seats.slice(1).map((seat) => seat.avatarPreset)).size).toBe(5);
+  });
+});
+
+describe("heads-up blinds", () => {
+  it("makes the button also the small blind once a table shrinks to two funded seats", () => {
+    const hostToken = crypto.randomUUID();
+    let game = createGame(hostToken, "Host");
+    const guestTokens = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ];
+    ["Guest1", "Guest2", "Guest3", "Guest4", "Guest5"].forEach((name, index) => {
+      game = claimSeat(game, guestTokens[index], testProfile(name)).state;
+    });
+
+    // Simulate four seats busting out, leaving exactly two funded players.
+    game.seats[2].stack = 0;
+    game.seats[3].stack = 0;
+    game.seats[4].stack = 0;
+    game.seats[5].stack = 0;
+    game.status = "complete";
+
+    const nextHand = applyPlayerAction(game, { type: "next-hand" }, hostToken);
+    expect(nextHand.status).toBe("playing");
+    const view = toSnapshot(nextHand, hostToken);
+    const activeSeats = view.seats.filter((seat) => seat.status !== "out");
+    expect(activeSeats).toHaveLength(2);
+
+    // The general n-player rule (small blind is the seat AFTER the button)
+    // would be backwards here — standard heads-up poker has the button post
+    // the small blind and act first preflop.
+    const buttonSeat = activeSeats.find((seat) => seat.isDealer);
+    expect(buttonSeat).toBeDefined();
+    expect(buttonSeat!.isSmallBlind).toBe(true);
+    const otherSeat = activeSeats.find((seat) => seat !== buttonSeat)!;
+    expect(otherSeat.isBigBlind).toBe(true);
   });
 });
 
@@ -206,14 +260,15 @@ describe("multi-human seating", () => {
     expect(second.state.version).toBe(versionAfterFirstClaim);
   });
 
-  it("refuses to seat a fifth player at a full table", () => {
+  it("refuses to seat a seventh player at a full six-max table", () => {
     const hostToken = crypto.randomUUID();
     let game = createGame(hostToken, "Host");
-    for (const name of ["Guest1", "Guest2", "Guest3"]) {
+    for (const name of ["Guest1", "Guest2", "Guest3", "Guest4", "Guest5"]) {
       game = claimSeat(game, crypto.randomUUID(), testProfile(name)).state;
     }
+    expect(game.seats).toHaveLength(6);
     expect(game.seats.every((seat) => seat.isHuman)).toBe(true);
-    expect(() => claimSeat(game, crypto.randomUUID(), testProfile("Guest4"))).toThrow(/full/i);
+    expect(() => claimSeat(game, crypto.randomUUID(), testProfile("Guest6"))).toThrow(/full/i);
   });
 
   it("rejects an action from a token that owns no seat", () => {

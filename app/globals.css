@@ -463,8 +463,10 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .mini-top { left: 50%; top: 0; transform: translate(-50%, -62%); }
 .mini-bottom { left: 50%; bottom: 0; transform: translate(-50%, 65%); border-color: var(--gold); width: 58px; height: 58px; }
-.mini-left { left: 0; top: 50%; transform: translate(-60%, -50%); }
-.mini-right { right: 0; top: 50%; transform: translate(60%, -50%); }
+.mini-upper-left { left: 6%; top: 22%; transform: translate(-60%, -50%); }
+.mini-lower-left { left: 6%; bottom: 10%; transform: translate(-60%, 50%); }
+.mini-upper-right { right: 6%; top: 22%; transform: translate(60%, -50%); }
+.mini-lower-right { right: 6%; bottom: 10%; transform: translate(60%, 50%); }
 
 .mini-pot {
   position: absolute;
@@ -546,25 +548,73 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .give-up-seat-button:hover { border-color: rgba(255,138,122,.4); color: #ffac9d; }
 
+.history-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  color: #9aa8a0;
+  background: rgba(255,255,255,.025);
+  padding: 9px 13px;
+  border-radius: 7px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.history-toggle:hover { border-color: rgba(217,184,93,.28); color: #f0dfaa; }
+
+/* The game screen must never scroll: a fixed viewport-height shell with a
+   flex column of (fixed-height header) + (squeezable content). Every level
+   below uses flex:1 + min-height:0 so it shrinks to fit instead of growing
+   past the viewport and pushing the page into document-flow scrolling. */
+.game-shell {
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .game-content {
-  min-height: calc(100vh - 68px);
-  min-height: calc(100svh - 68px);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 270px;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .table-area {
+  flex: 1;
+  min-height: 0;
   min-width: 0;
   position: relative;
-  padding: 30px 28px calc(18px + env(safe-area-inset-bottom));
-  padding-left: max(28px, env(safe-area-inset-left));
-  padding-right: max(28px, env(safe-area-inset-right));
+  padding: clamp(6px, 2vh, 26px) clamp(10px, 3vw, 28px) 0;
+  padding-left: max(clamp(10px, 3vw, 28px), env(safe-area-inset-left));
+  padding-right: max(clamp(10px, 3vw, 28px), env(safe-area-inset-right));
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* A dedicated, never-pushed layer for the local player's decision: it sits
+   at a fixed flex slot below the table (flex: 0 0 auto), so nothing above it
+   growing or shrinking can ever move it vertically. */
+.action-layer {
+  flex: 0 0 auto;
+  position: relative;
+  padding: 0 clamp(10px, 3vw, 28px) calc(clamp(8px, 1.6vh, 20px) + env(safe-area-inset-bottom));
+  padding-left: max(clamp(10px, 3vw, 28px), env(safe-area-inset-left));
+  padding-right: max(clamp(10px, 3vw, 28px), env(safe-area-inset-right));
 }
 
 .poker-table-wrap {
-  width: min(850px, calc(100% - 170px));
+  /* Capped by both max table width AND an estimate of the vertical room the
+     header and action layer leave behind, so the table shrinks to fit a
+     short-but-wide viewport instead of overflowing it (aspect-ratio alone
+     only reacts to width, never to how little height is actually left). */
+  width: min(850px, 100%, calc((100dvh - 68px - 200px) * 1.72));
   aspect-ratio: 1.72;
   margin: auto;
   position: relative;
@@ -702,7 +752,7 @@ button:disabled { cursor: wait; opacity: .62; }
 .turn-callout {
   position: absolute;
   left: 50%;
-  bottom: 6%;
+  top: 6%;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -737,23 +787,31 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 .turn-callout-mine > span { color: var(--gold); }
 
+/* Three tiers, largest to smallest: the local player's own hole cards
+   (.card-large) read as the dominant element on the felt; community cards
+   (bare .playing-card) are the next-most prominent; opponents' card backs
+   (.card-small) are smaller since their rank/suit is never shown anyway. */
 .playing-card {
-  width: clamp(44px, 5vw, 62px);
+  width: clamp(58px, 6.2vw, 78px);
   aspect-ratio: .7;
   position: relative;
   overflow: hidden;
   color: #17211d;
   background: #f2f0e8;
   border: 1px solid rgba(0,0,0,.12);
-  border-radius: 6px;
+  border-radius: 7px;
   box-shadow: 0 7px 16px rgba(0,0,0,.25);
 }
 
-.card-small { width: 36px; border-radius: 4px; }
+.card-large { width: clamp(70px, 7.6vw, 90px); border-radius: 8px; }
+.card-small { width: clamp(36px, 4vw, 50px); border-radius: 4px; }
 .card-red { color: #b23f3e; }
-.card-rank { position: absolute; top: 5px; left: 6px; font: 700 clamp(13px, 1.7vw, 18px) Georgia, serif; }
-.card-suit { position: absolute; top: 22px; left: 7px; font-size: 12px; }
-.card-suit-large { position: absolute; right: 6px; bottom: 1px; font-size: clamp(23px, 3vw, 38px); opacity: .9; }
+.card-rank { position: absolute; top: 6px; left: 7px; font: 700 clamp(15px, 2vw, 21px) Georgia, serif; }
+.card-suit { position: absolute; top: 26px; left: 8px; font-size: 14px; }
+.card-suit-large { position: absolute; right: 7px; bottom: 2px; font-size: clamp(28px, 3.6vw, 44px); opacity: .9; }
+.card-large .card-rank { font-size: clamp(18px, 2.3vw, 25px); top: 8px; left: 9px; }
+.card-large .card-suit { font-size: 16px; top: 31px; left: 10px; }
+.card-large .card-suit-large { font-size: clamp(34px, 4.2vw, 52px); }
 .card-small .card-rank { font-size: 12px; top: 3px; left: 4px; }
 .card-small .card-suit { font-size: 9px; top: 16px; left: 5px; }
 .card-small .card-suit-large { font-size: 22px; right: 3px; bottom: -2px; }
@@ -785,10 +843,16 @@ button:disabled { cursor: wait; opacity: .62; }
   transition: opacity .2s, border-color .25s, translate .25s cubic-bezier(.2,.8,.3,1), scale .25s;
 }
 
-.seat-top { --deal-x: 0px; --deal-y: 155px; left: 50%; top: 0; transform: translate(-50%, -16%); }
-.seat-bottom { --deal-x: 0px; --deal-y: -155px; left: 50%; bottom: 0; transform: translate(-50%, 16%); }
-.seat-left { --deal-x: 230px; --deal-y: 0px; left: 0; top: 50%; transform: translate(-26%, -50%); }
-.seat-right { --deal-x: -230px; --deal-y: 0px; right: 0; top: 50%; transform: translate(26%, -50%); }
+/* Six seats around an oval: bottom-center is always the local player (seats
+   are rotated relative to them before rendering), the rest fan out clockwise.
+   --deal-x/--deal-y point from each seat toward the pot, reused by both the
+   card-deal and chip-funnel animations. */
+.seat-top { --deal-x: 0px; --deal-y: 150px; left: 50%; top: 0; transform: translate(-50%, -16%); }
+.seat-bottom { --deal-x: 0px; --deal-y: -150px; left: 50%; bottom: 0; transform: translate(-50%, 20%); }
+.seat-upper-left { --deal-x: 165px; --deal-y: 85px; left: 3%; top: 26%; transform: translate(-16%, -50%); }
+.seat-lower-left { --deal-x: 165px; --deal-y: -85px; left: 3%; bottom: 8%; transform: translate(-16%, 50%); }
+.seat-upper-right { --deal-x: -165px; --deal-y: 85px; right: 3%; top: 26%; transform: translate(16%, -50%); }
+.seat-lower-right { --deal-x: -165px; --deal-y: -85px; right: 3%; bottom: 8%; transform: translate(16%, 50%); }
 
 .seat-current {
   z-index: 9;
@@ -957,12 +1021,17 @@ button:disabled { cursor: wait; opacity: .62; }
   transform: translateX(-50%);
 }
 
+/* The local player's own hole cards render noticeably larger (see
+   .card-large), so they need more clearance above the seat box. */
+.seat-cards.own-cards { top: -70px; z-index: 6; }
+
 .dealt-card-shell {
   display: block;
   animation: deal-to-seat .62s cubic-bezier(.18,.82,.22,1.08) both;
 }
 
 .dealt-card-shell + .dealt-card-shell { margin-left: -12px; }
+.own-cards .dealt-card-shell + .dealt-card-shell { margin-left: -16px; }
 .dealt-card-shell:first-child .playing-card { transform: rotate(-5deg); }
 .dealt-card-shell:last-child .playing-card { transform: rotate(5deg); }
 
@@ -991,7 +1060,7 @@ button:disabled { cursor: wait; opacity: .62; }
   box-shadow: 0 8px 20px rgba(0,0,0,.34);
 }
 
-.seat-right .seat-turn-status { right: auto; left: -67px; }
+.seat-upper-right .seat-turn-status, .seat-lower-right .seat-turn-status { right: auto; left: -67px; }
 .seat-turn-status span {
   display: block;
   color: var(--seat-accent);
@@ -1025,8 +1094,8 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 .seat-top .table-bet { left: 50%; bottom: -48px; transform: translateX(-50%); }
 .seat-bottom .table-bet { left: 50%; top: -62px; transform: translateX(-50%); }
-.seat-left .table-bet { right: -42px; top: 50%; }
-.seat-right .table-bet { left: -42px; top: 50%; }
+.seat-upper-left .table-bet, .seat-lower-left .table-bet { right: -42px; top: 50%; }
+.seat-upper-right .table-bet, .seat-lower-right .table-bet { left: -42px; top: 50%; }
 
 .action-bar {
   position: relative;
@@ -1135,21 +1204,25 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .basic-actions, .commit-actions { display: flex; gap: 8px; }
 .basic-actions button, .raise-buttons button, .allin-action {
-  min-height: 42px;
+  min-height: 48px;
   border: 1px solid rgba(255,255,255,.1);
-  border-radius: 7px;
+  border-radius: 8px;
   color: #c1cbc5;
   background: rgba(255,255,255,.035);
-  padding: 0 15px;
+  padding: 0 17px;
   cursor: pointer;
   display: inline-flex;
   justify-content: center;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
 }
 .basic-actions button:hover, .raise-buttons button:hover { border-color: rgba(217,184,93,.3); color: #f0dfaa; }
+.basic-actions button:focus-visible, .raise-buttons button:focus-visible, .commit-actions button:focus-visible, .allin-action:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 2px;
+}
 .basic-actions button strong { color: var(--gold-light); }
 
 .raise-control {
@@ -1169,11 +1242,19 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 
 .raise-buttons { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
-.raise-buttons button { min-height: 32px; padding: 0 10px; font-size: 9px; }
+.raise-buttons button { min-height: 36px; padding: 0 10px; font-size: 9px; }
+/* The all-in preset sits apart from the ordinary bet-sizing presets so it's
+   never mistaken for one of them. */
+.raise-buttons .allin-preset {
+  margin-left: 6px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(255,255,255,.14);
+  color: #e9d88e;
+}
 .commit-actions { margin-left: auto; }
-.commit-actions .primary-action { min-height: 50px; min-width: 118px; font-size: 12px; }
+.commit-actions .primary-action { min-height: 52px; min-width: 130px; font-size: 12px; }
 .commit-actions .primary-action span { font-family: Georgia, serif; }
-.allin-action { color: #e9d88e; border-color: rgba(217,184,93,.25); min-height: 50px; }
+.allin-action { color: #e9d88e; border-color: rgba(217,184,93,.25); min-height: 52px; }
 
 .waiting-bar {
   justify-content: center;
@@ -1242,13 +1323,34 @@ button:disabled { cursor: wait; opacity: .62; }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 
-.hand-panel {
-  min-height: 100%;
+/* Hand history is an overlay, not a document-flow sidebar: position:fixed
+   guarantees it can never affect the table/action-layer's size regardless of
+   whether it's open, closed, or how much content it holds. */
+.history-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(3,9,7,.55);
+  animation: overlay-in .18s ease both;
+}
+
+.history-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(360px, 100%);
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--line);
-  background: rgba(12,19,16,.75);
+  background: #101a16;
+  box-shadow: -30px 0 70px rgba(0,0,0,.4);
+  animation: history-in .22s ease both;
 }
+
+@keyframes history-in { from { transform: translateX(100%); } }
+
+.activity-empty { margin: 20px 0; color: #5c6b63; font-size: 11px; text-align: center; }
 
 .panel-heading {
   height: 72px;
@@ -1534,10 +1636,7 @@ button:disabled { cursor: wait; opacity: .62; }
 .profile-modal-footer .primary-action { min-width: 140px; }
 
 @media (max-width: 1020px) {
-  .game-content { grid-template-columns: 1fr; }
-  .hand-panel { display: none; }
-  .poker-table-wrap { width: min(820px, calc(100% - 130px)); }
-  .table-area { min-height: calc(100vh - 68px); }
+  .poker-table-wrap { width: min(780px, calc(100% - 40px)); }
 }
 
 @media (max-width: 800px) {
@@ -1547,10 +1646,11 @@ button:disabled { cursor: wait; opacity: .62; }
   .table-facts { justify-content: center; }
   .lobby-preview { margin-top: 30px; }
   .table-meta span:nth-child(2) { display: none; }
-  .poker-table-wrap { width: calc(100% - 80px); }
-  .player-seat { width: 132px; }
-  .seat-left { transform: translate(-31%, -50%); }
-  .seat-right { transform: translate(31%, -50%); }
+  .poker-table-wrap { width: calc(100% - 24px); }
+  .player-seat { width: 122px; }
+  .seat-upper-left, .seat-lower-left { left: 1%; }
+  .seat-upper-right, .seat-lower-right { right: 1%; }
+  .history-drawer { width: min(320px, 100%); }
   .action-bar { flex-wrap: wrap; }
   .turn-tools {
     flex: 1 0 auto;
@@ -1583,46 +1683,57 @@ button:disabled { cursor: wait; opacity: .62; }
   .join-form { margin-left: auto; margin-right: auto; }
   .lobby-preview { display: none; }
   .game-header {
-    padding: 0 14px;
-    padding-left: max(14px, env(safe-area-inset-left));
-    padding-right: max(14px, env(safe-area-inset-right));
+    height: 56px;
+    padding: 0 12px;
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
   }
   .game-header .wordmark > span:last-child, .table-meta span:not(:first-child) { display: none; }
-  .leave-button, .give-up-seat-button { padding: 8px; font-size: 9px; }
+  .leave-button, .give-up-seat-button, .history-toggle { padding: 7px; font-size: 9px; }
+  .history-toggle span { display: none; }
   .table-area {
-    padding: 15px 8px calc(12px + env(safe-area-inset-bottom));
-    padding-left: max(8px, env(safe-area-inset-left));
-    padding-right: max(8px, env(safe-area-inset-right));
-    min-height: calc(100svh - 68px);
+    padding: 4px 4px 0;
+    padding-left: max(4px, env(safe-area-inset-left));
+    padding-right: max(4px, env(safe-area-inset-right));
   }
-  .poker-table-wrap { width: calc(100% - 35px); margin-top: 80px; aspect-ratio: 1.25; }
-  .poker-rail { inset: 9% 3%; }
-  .playing-card { width: 43px; }
+  .poker-table-wrap {
+    width: calc(100% - 6px);
+    aspect-ratio: 1.05;
+  }
+  .poker-rail { inset: 3% 1%; }
+  .playing-card { width: clamp(30px, 8.5vw, 40px); }
+  .card-large { width: clamp(46px, 15vw, 60px); }
+  .card-small { width: clamp(24px, 6.5vw, 32px); }
   .community-cards { gap: 3px; }
-  .player-seat { width: 112px; min-height: 58px; padding: 8px; }
-  .seat-avatar { width: 32px; height: 32px; }
-  .seat-name-row strong { max-width: 54px; font-size: 10px; }
-  .seat-left { left: 2%; transform: translate(-19%, -50%); }
-  .seat-right { right: 2%; transform: translate(19%, -50%); }
-  .seat-top { transform: translate(-50%, -45%); }
-  .seat-bottom { transform: translate(-50%, 45%); }
-  .seat-cards { top: -32px; }
-  .seat-cards .playing-card { width: 30px; }
-  .seat-turn-status { right: -53px; min-width: 45px; padding: 4px; }
-  .seat-right .seat-turn-status { left: -53px; }
+  .player-seat { width: 94px; min-height: 50px; padding: 6px; }
+  .seat-avatar { width: 27px; height: 27px; }
+  .seat-name-row strong { max-width: 42px; font-size: 9px; }
+  .seat-top { transform: translate(-50%, -42%); }
+  .seat-bottom { transform: translate(-50%, 42%); }
+  .seat-upper-left { left: 0; top: 24%; transform: translate(-8%, -50%); }
+  .seat-lower-left { left: 0; bottom: 10%; transform: translate(-8%, 50%); }
+  .seat-upper-right { right: 0; top: 24%; transform: translate(8%, -50%); }
+  .seat-lower-right { right: 0; bottom: 10%; transform: translate(8%, 50%); }
+  .seat-cards { top: -26px; }
+  .seat-cards.own-cards { top: -40px; }
+  .seat-cards .playing-card { width: 26px; }
+  .seat-turn-status { right: -48px; min-width: 42px; padding: 4px; }
+  .seat-upper-right .seat-turn-status, .seat-lower-right .seat-turn-status { right: auto; left: -48px; }
   .seat-turn-status span { font-size: 5px; }
   .seat-turn-status strong { font-size: 12px; }
   .blind-silhouette > span { display: none; }
-  .turn-callout { bottom: 4%; padding: 5px 7px; }
+  .turn-callout { top: 4%; padding: 5px 7px; }
   .turn-callout > strong { max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .action-bar { margin-top: 68px; padding: 8px; gap: 8px; }
+  .action-layer { padding: 0 4px calc(6px + env(safe-area-inset-bottom)); padding-left: max(4px, env(safe-area-inset-left)); padding-right: max(4px, env(safe-area-inset-right)); }
+  .action-bar { margin-top: 6px; padding: 8px; gap: 8px; }
   .turn-tools { width: 100%; min-height: 54px; }
   .action-countdown { flex: 1; width: auto; grid-template-columns: auto auto auto; align-items: baseline; gap: 5px; }
   .action-countdown strong { font-size: 22px; }
   .time-card-button { min-width: 80px; flex-direction: row; gap: 5px; }
   .basic-actions { flex: 1; }
-  .basic-actions button { flex: 1; padding: 0 10px; }
-  .commit-actions .primary-action { min-width: 95px; padding: 12px; }
+  .basic-actions button { flex: 1; padding: 0 10px; min-height: 48px; }
+  .commit-actions .primary-action { min-width: 95px; padding: 12px; min-height: 48px; }
+  .allin-action { min-height: 48px; }
   .hand-complete { flex-wrap: nowrap; }
   .hand-complete strong { max-width: 180px; font-size: 11px; }
   .header-actions .header-status { display: none; }
@@ -1642,6 +1753,20 @@ button:disabled { cursor: wait; opacity: .62; }
   .profile-modal form { padding: 18px 19px calc(22px + env(safe-area-inset-bottom)); }
   .preset-grid { grid-template-columns: repeat(3, 1fr); }
   .profile-preview { padding: 14px; }
+
+  /* Hand history becomes a bottom sheet rather than a side drawer. */
+  .history-drawer {
+    top: auto;
+    right: 0;
+    left: 0;
+    width: auto;
+    max-height: 75svh;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -20px 60px rgba(0,0,0,.4);
+  }
+  @keyframes history-in { from { transform: translateY(100%); } }
 }
 
 /* A phone held sideways for the table view is short, not narrow: the
@@ -1654,22 +1779,29 @@ button:disabled { cursor: wait; opacity: .62; }
   }
   .game-header .wordmark small, .lobby-header .wordmark small { display: none; }
   .table-area {
-    padding-top: 4px;
-    padding-bottom: calc(4px + env(safe-area-inset-bottom));
+    padding-top: 2px;
+    padding-bottom: 0;
   }
-  .poker-table-wrap { aspect-ratio: 3; margin-top: 0; }
-  .player-seat { min-height: 46px; padding: 5px 8px; }
-  .seat-cards { top: -24px; }
-  .seat-cards .playing-card { width: 24px; }
+  .poker-table-wrap { aspect-ratio: 3; }
+  .player-seat { min-height: 42px; padding: 4px 8px; }
+  .seat-upper-left, .seat-lower-left { left: 3%; }
+  .seat-upper-right, .seat-lower-right { right: 3%; }
+  .seat-upper-left, .seat-upper-right { top: 18%; }
+  .seat-lower-left, .seat-lower-right { bottom: 2%; }
+  .seat-cards { top: -22px; }
+  .seat-cards.own-cards { top: -30px; }
+  .seat-cards .playing-card { width: 22px; }
+  .card-large { width: clamp(32px, 7.5vw, 42px); }
   .seat-turn-status, .turn-callout { display: none; }
+  .action-layer { padding-bottom: env(safe-area-inset-bottom); }
   .action-bar {
     min-height: 50px;
-    margin-top: 6px;
+    margin-top: 4px;
     padding: 5px 10px;
   }
-  .basic-actions button, .allin-action { min-height: 32px; padding: 0 12px; }
-  .commit-actions .primary-action { min-height: 36px; }
-  .raise-buttons button { min-height: 26px; }
+  .basic-actions button, .allin-action { min-height: 40px; padding: 0 12px; }
+  .commit-actions .primary-action { min-height: 42px; }
+  .raise-buttons button { min-height: 30px; }
   .hand-complete { min-height: 0; }
   .range-row { margin-bottom: 2px; }
   .raise-buttons { margin-top: 2px; }
@@ -1679,20 +1811,25 @@ button:disabled { cursor: wait; opacity: .62; }
   .action-countdown strong { font-size: 19px; }
   .time-card-button { min-width: 48px; }
   .time-card-button > span:nth-child(2) { display: none; }
+  .history-drawer { width: min(300px, 82%); }
 }
 
 /* Older/smaller handsets (e.g. iPhone SE 1st-gen landscape, 568x320) need a
    second, more aggressive tier on top of the one above. */
 @media (max-height: 340px) and (orientation: landscape) {
   .game-header, .lobby-header { height: 34px; }
-  .table-area { padding-top: 2px; padding-bottom: calc(2px + env(safe-area-inset-bottom)); }
+  .table-area { padding-top: 0; }
   .poker-table-wrap { aspect-ratio: 3.6; }
-  .player-seat { min-height: 38px; padding: 4px 6px; }
-  .seat-cards { top: -19px; }
-  .seat-cards .playing-card { width: 19px; }
-  .action-bar { min-height: 42px; margin-top: 4px; padding: 4px 8px; }
-  .basic-actions button, .allin-action { min-height: 28px; }
-  .commit-actions .primary-action { min-height: 30px; }
+  .player-seat { min-height: 36px; padding: 3px 6px; }
+  .seat-upper-left, .seat-upper-right { top: 14%; }
+  .seat-lower-left, .seat-lower-right { bottom: 0; }
+  .seat-cards { top: -18px; }
+  .seat-cards.own-cards { top: -24px; }
+  .seat-cards .playing-card { width: 18px; }
+  .card-large { width: clamp(26px, 6.5vw, 34px); }
+  .action-bar { min-height: 42px; margin-top: 3px; padding: 4px 8px; }
+  .basic-actions button, .allin-action { min-height: 36px; }
+  .commit-actions .primary-action { min-height: 38px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

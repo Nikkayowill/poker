@@ -22,8 +22,11 @@ type TurnAction = Exclude<
   PlayerAction,
   { type: "next-hand" } | { type: "leave-seat" } | { type: "use-time-card" }
 >;
-// Indexed by seat position (0-3), so a vacated seat can always be restored to
-// its original bot identity regardless of who claimed it in between.
+// A table always has SEAT_COUNT total seats; any not claimed by a human are
+// bot-controlled. Indexed by seat position, so a vacated seat can always be
+// restored to its original bot identity regardless of who claimed it since.
+export const SEAT_COUNT = 6;
+
 const botProfiles: Array<{
   name: string;
   initials: string;
@@ -36,6 +39,8 @@ const botProfiles: Array<{
   { name: "Maya", initials: "MA", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond", personality: "MANIAC" },
   { name: "Theo", initials: "TH", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt", personality: "CALLING_STATION" },
   { name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
+  { name: "Priya", initials: "PR", accent: "#65d6a2", avatarUrl: null, avatarPreset: "ace", personality: "MANIAC" },
+  { name: "Wren", initials: "WR", accent: "#f08ca7", avatarUrl: null, avatarPreset: "crown", personality: "CALLING_STATION" },
 ];
 
 // Humans get a short decision clock plus three optional time-bank cards.
@@ -107,6 +112,14 @@ function canAct(seat: Seat) {
 }
 
 function blindPositions(state: GameState) {
+  if (state.seats.filter(inHand).length === 2) {
+    // Heads-up: the button also posts the small blind and acts first
+    // preflop — the standard heads-up convention, and the reverse of what
+    // the general n-player rule below would produce with only two players.
+    const small = state.buttonPosition;
+    const big = nextSeat(state, small, inHand);
+    return { small, big };
+  }
   const small = nextSeat(state, state.buttonPosition, inHand);
   const big = small === null ? null : nextSeat(state, small, inHand);
   return { small, big };

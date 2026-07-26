@@ -5,9 +5,9 @@ import {
   ArrowRight,
   Camera,
   Check,
-  Clock3,
   Coins,
   FoldVertical,
+  History,
   LockKeyhole,
   Palette,
   RotateCcw,
@@ -85,16 +85,19 @@ function ProfileTrigger({
 function PlayingCard({
   card,
   small = false,
+  large = false,
   ghost = false,
 }: {
   card: Card | null;
   small?: boolean;
+  large?: boolean;
   ghost?: boolean;
 }) {
-  if (ghost) return <div className={clsx("playing-card card-ghost", small && "card-small")} />;
+  const sizeClass = large ? "card-large" : small ? "card-small" : null;
+  if (ghost) return <div className={clsx("playing-card card-ghost", sizeClass)} />;
   if (!card) {
     return (
-      <div className={clsx("playing-card card-back", small && "card-small")} aria-label="Hidden card">
+      <div className={clsx("playing-card card-back", sizeClass)} aria-label="Hidden card">
         <span>RR</span>
       </div>
     );
@@ -102,7 +105,7 @@ function PlayingCard({
   const red = card.suit === "hearts" || card.suit === "diamonds";
   return (
     <div
-      className={clsx("playing-card", small && "card-small", red && "card-red")}
+      className={clsx("playing-card", sizeClass, red && "card-red")}
       aria-label={`${card.rank} of ${card.suit}`}
     >
       <span className="card-rank">{card.rank}</span>
@@ -148,14 +151,14 @@ function PlayerSeat({
           <span>{seat.isBigBlind ? "BIG BLIND" : "SMALL BLIND"}</span>
         </span>
       )}
-      <div className={clsx("seat-cards", isWinner && "winning-cards")}>
+      <div className={clsx("seat-cards", seat.isMine && "own-cards", isWinner && "winning-cards")}>
         {seat.holeCards.map((card, index) => (
           <span
             className="dealt-card-shell"
             key={`${handNumber}-${index}`}
             style={{ animationDelay: `${160 + seat.position * 115 + index * 460}ms` }}
           >
-            <PlayingCard card={card} small />
+            <PlayingCard card={card} small={!seat.isMine} large={seat.isMine} />
           </span>
         ))}
       </div>
@@ -222,7 +225,7 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, error
   return (
     <main className="lobby">
       <section className="hero">
-        <div className="lobby-kicker">River Room · 4-max</div>
+        <div className="lobby-kicker">River Room · 6-max</div>
         <h1>No-limit Hold’em.<br /><em>Nothing extra.</em></h1>
         <p>
           Buy in for 1,000 chips, take a seat, and play. Start a quick table
@@ -268,7 +271,7 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, error
           </div>
         </form>
         <div className="table-facts" aria-label="Table details">
-          <span><strong>4</strong> seats</span>
+          <span><strong>6</strong> seats</span>
           <span><strong>10 / 20</strong> blinds</span>
           <span><strong>1,000</strong> buy-in</span>
         </div>
@@ -276,12 +279,14 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, error
       <aside className="lobby-preview">
         <div className="preview-heading">
           <span>Table preview</span>
-          <span>No limit · 4-max</span>
+          <span>No limit · 6-max</span>
         </div>
         <div className="mini-table">
-          <span className="mini-seat mini-top">MA</span>
-          <span className="mini-seat mini-left">TH</span>
-          <span className="mini-seat mini-right">RV</span>
+          <span className="mini-seat mini-top">RV</span>
+          <span className="mini-seat mini-upper-left">MA</span>
+          <span className="mini-seat mini-upper-right">PR</span>
+          <span className="mini-seat mini-lower-left">TH</span>
+          <span className="mini-seat mini-lower-right">WR</span>
           <span className="mini-seat mini-bottom">YOU</span>
           <div className="mini-pot"><Coins size={14} /> 240</div>
           <div className="mini-cards">
@@ -506,6 +511,11 @@ function ActionBar({
   const currentSeat = game.seats.find((seat) => seat.isCurrent);
   const mySeat = game.seats.find((seat) => seat.isMine);
   const [raiseTo, setRaiseTo] = useState(legal?.minRaiseTo ?? 0);
+  const potPreset = (fraction: number) => {
+    if (!legal) return 0;
+    const target = Math.round(game.pot * fraction);
+    return Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, target));
+  };
 
   if (game.status === "complete") {
     return (
@@ -562,17 +572,21 @@ function ActionBar({
       </div>
       <div className="basic-actions">
         {legal.canFold && (
-          <button disabled={pending} onClick={() => onAction({ type: "fold" })}>
+          <button disabled={pending} onClick={() => onAction({ type: "fold" })} aria-label="Fold">
             <FoldVertical size={16} /> Fold
           </button>
         )}
         {legal.canCheck && (
-          <button disabled={pending} onClick={() => onAction({ type: "check" })}>
+          <button disabled={pending} onClick={() => onAction({ type: "check" })} aria-label="Check">
             <Check size={17} /> Check
           </button>
         )}
         {legal.canCall && (
-          <button disabled={pending} onClick={() => onAction({ type: "call" })}>
+          <button
+            disabled={pending}
+            onClick={() => onAction({ type: "call" })}
+            aria-label={`Call ${legal.callAmount} chips`}
+          >
             Call <strong>{legal.callAmount}</strong>
           </button>
         )}
@@ -593,19 +607,32 @@ function ActionBar({
             onChange={(event) => setRaiseTo(Number(event.target.value))}
           />
           <div className="raise-buttons">
-            <button onClick={() => setRaiseTo(Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, game.pot)))}>Pot</button>
-            <button onClick={() => setRaiseTo(legal.maxRaiseTo)}>Max</button>
+            <button type="button" onClick={() => setRaiseTo(legal.minRaiseTo)}>Min</button>
+            <button type="button" onClick={() => setRaiseTo(potPreset(0.5))}>½ Pot</button>
+            <button type="button" onClick={() => setRaiseTo(potPreset(2 / 3))}>⅔ Pot</button>
+            <button type="button" onClick={() => setRaiseTo(potPreset(1))}>Pot</button>
+            <button type="button" className="allin-preset" onClick={() => setRaiseTo(legal.maxRaiseTo)}>All-in</button>
           </div>
         </div>
       )}
       <div className="commit-actions">
         {legal.canRaise && (
-          <button className="primary-action" disabled={pending} onClick={() => onAction({ type: "raise", amount: raiseTo })}>
-            Raise <span>{raiseTo}</span>
+          <button
+            className="primary-action"
+            disabled={pending}
+            onClick={() => onAction({ type: "raise", amount: raiseTo })}
+            aria-label={`Raise to ${raiseTo} chips`}
+          >
+            Raise to <span>{raiseTo}</span>
           </button>
         )}
         {legal.canAllIn && (
-          <button className="allin-action" disabled={pending} onClick={() => onAction({ type: "all-in" })}>
+          <button
+            className="allin-action"
+            disabled={pending}
+            onClick={() => onAction({ type: "all-in" })}
+            aria-label="Go all in"
+          >
             All in
           </button>
         )}
@@ -690,6 +717,49 @@ function RoomCodeChip({ code }: { code: string }) {
   );
 }
 
+function HandHistoryDrawer({
+  log,
+  handNumber,
+  onClose,
+}: {
+  log: GameSnapshot["log"];
+  handNumber: number;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="history-overlay"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target) onClose();
+      }}
+    >
+      <aside className="history-drawer" role="dialog" aria-modal="true" aria-label="Hand history">
+        <div className="panel-heading">
+          <div>
+            <span>TABLE ACTIVITY</span>
+            <strong>Hand #{handNumber}</strong>
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Close hand history"><X size={16} /></button>
+        </div>
+        <div className="activity-list">
+          {log.length === 0 && <p className="activity-empty">Nothing has happened yet.</p>}
+          {log.map((entry) => (
+            <div className={clsx("activity-item", `activity-${entry.kind}`)} key={entry.id}>
+              <span className="activity-icon">{entry.kind === "win" ? "♛" : entry.kind === "deal" ? "◆" : "•"}</span>
+              <div>
+                <p>{entry.text}</p>
+                <time>{new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="panel-footnote">Deck and hole cards secured server-side</div>
+      </aside>
+    </div>
+  );
+}
+
 function PokerTable({
   game,
   persistence,
@@ -711,7 +781,15 @@ function PokerTable({
   profile: PlayerProfile | null;
   onCustomize: () => void;
 }) {
-  const placements = ["seat-bottom", "seat-left", "seat-top", "seat-right"];
+  const placements = [
+    "seat-bottom",
+    "seat-lower-left",
+    "seat-upper-left",
+    "seat-top",
+    "seat-upper-right",
+    "seat-lower-right",
+  ];
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [clockNow, setClockNow] = useState(() => Date.now());
   useEffect(() => {
     if (!game.turnDeadlineAt || game.currentPlayer === null) return;
@@ -782,6 +860,14 @@ function PokerTable({
         </div>
         <div className="game-header-actions">
           {profile && <ProfileTrigger profile={profile} onClick={onCustomize} compact />}
+          <button
+            className="history-toggle"
+            onClick={() => setHistoryOpen(true)}
+            aria-label="Open hand history"
+            aria-haspopup="dialog"
+          >
+            <History size={15} /> <span>History</span>
+          </button>
           {game.isSeated && (
             <button className="give-up-seat-button" onClick={onLeaveSeat} title="Give up your seat; a bot takes over">
               Give up seat
@@ -837,7 +923,9 @@ function PokerTable({
               />
             ))}
           </div>
+        </div>
 
+        <div className="action-layer">
           {error && <div className="table-toast"><X size={15} /> {error}</div>}
           {!error && timeoutFlash && (
             <div className="timeout-toast"><TimerReset size={14} /> {timeoutFlash}</div>
@@ -851,29 +939,11 @@ function PokerTable({
             remainingFraction={remainingFraction}
           />
         </div>
-
-        <aside className="hand-panel">
-          <div className="panel-heading">
-            <div>
-              <span>TABLE ACTIVITY</span>
-              <strong>Hand #{game.handNumber}</strong>
-            </div>
-            <Clock3 size={17} />
-          </div>
-          <div className="activity-list">
-            {game.log.map((entry) => (
-              <div className={clsx("activity-item", `activity-${entry.kind}`)} key={entry.id}>
-                <span className="activity-icon">{entry.kind === "win" ? "♛" : entry.kind === "deal" ? "◆" : "•"}</span>
-                <div>
-                  <p>{entry.text}</p>
-                  <time>{new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="panel-footnote">Deck and hole cards secured server-side</div>
-        </aside>
       </section>
+
+      {historyOpen && (
+        <HandHistoryDrawer log={game.log} handNumber={game.handNumber} onClose={() => setHistoryOpen(false)} />
+      )}
     </main>
   );
 }
@@ -1077,7 +1147,7 @@ export function PokerApp() {
             <span>River Room<small>NO LIMIT HOLD’EM</small></span>
           </div>
           <div className="header-actions">
-            <div className="header-status">No-limit Hold’em · 4-max</div>
+            <div className="header-status">No-limit Hold’em · 6-max</div>
             {profile && <ProfileTrigger profile={profile} onClick={() => setProfileOpen(true)} />}
           </div>
         </header>

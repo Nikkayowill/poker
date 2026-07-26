@@ -806,6 +806,75 @@ function PotFunnel({
   );
 }
 
+/**
+ * A handful of chips flying from an acting seat to the pot. Renders as a
+ * sibling of the seats (inside .poker-table-wrap, not .poker-felt) so the
+ * felt's overflow:hidden never clips a seat that sits outside its oval --
+ * the same reason the seats themselves live at that level. Self-removes
+ * via `onDone` once its animation finishes, so no DOM nodes or timers
+ * accumulate across a hand.
+ */
+function ChipFlight({
+  id,
+  seatId,
+  tableWrapRef,
+  potRef,
+  seatRefs,
+  onDone,
+}: {
+  id: string;
+  seatId: string;
+  tableWrapRef: React.RefObject<HTMLDivElement | null>;
+  potRef: React.RefObject<HTMLDivElement | null>;
+  seatRefs: React.RefObject<Record<string, HTMLElement | null>>;
+  onDone: (id: string) => void;
+}) {
+  const [layout, setLayout] = useState<{ originX: number; originY: number; dx: number; dy: number } | null>(null);
+
+  useEffect(() => {
+    const wrapRect = tableWrapRef.current?.getBoundingClientRect();
+    const potRect = potRef.current?.getBoundingClientRect();
+    const seatEl = seatRefs.current[seatId];
+    if (!wrapRect || !potRect || !seatEl) {
+      onDone(id);
+      return;
+    }
+    const seatRect = seatEl.getBoundingClientRect();
+    setLayout({
+      originX: seatRect.left + seatRect.width / 2 - wrapRect.left,
+      originY: seatRect.top + seatRect.height / 2 - wrapRect.top,
+      dx: potRect.left + potRect.width / 2 - (seatRect.left + seatRect.width / 2),
+      dy: potRect.top + potRect.height / 2 - (seatRect.top + seatRect.height / 2),
+    });
+    const timer = window.setTimeout(() => onDone(id), 560);
+    return () => window.clearTimeout(timer);
+    // Deliberately runs once on mount: this flight is a one-shot event keyed
+    // by its own id, not something that reacts to later layout changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!layout) return null;
+
+  return (
+    <>
+      {Array.from({ length: 3 }, (_, index) => (
+        <span
+          key={index}
+          className={`seat-chip-flight chip-color-${index % 5}`}
+          style={{
+            left: `${layout.originX}px`,
+            top: `${layout.originY}px`,
+            "--flight-dx": `${layout.dx}px`,
+            "--flight-dy": `${layout.dy}px`,
+            "--flight-delay": `${index * 30}ms`,
+          } as React.CSSProperties}
+          aria-hidden="true"
+        />
+      ))}
+    </>
+  );
+}
+
 function RoomCodeChip({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -995,6 +1064,43 @@ function PokerTable({
     };
   }, [measureDealer]);
 
+  // Chips fly from a seat to the pot only for an authoritative *increase* in
+  // that seat's committed-this-street amount versus the last snapshot on the
+  // same hand/street. Comparing against an empty baseline whenever the hand
+  // or street changes (rather than the stale prior-street value) means a
+  // street reset never reads as a contribution, while a freshly posted
+  // blind still does. A null baseline -- true on mount and forced on any
+  // disconnect -- skips flight generation entirely for that one snapshot,
+  // so neither initial hydration nor a reconnect ever replays history.
+  const streetBetsRef = useRef<{ handNumber: number; street: string; bets: Record<string, number> } | null>(null);
+  const [chipFlights, setChipFlights] = useState<Array<{ id: string; seatId: string }>>([]);
+  useEffect(() => {
+    if (connectionState !== "connected") {
+      streetBetsRef.current = null;
+    }
+  }, [connectionState]);
+  useEffect(() => {
+    const prev = streetBetsRef.current;
+    const sameStreet = prev !== null && prev.handNumber === game.handNumber && prev.street === game.street;
+    const baseline = sameStreet ? prev!.bets : {};
+    if (prev !== null) {
+      const arrivals = game.seats
+        .filter((seat) => seat.streetBet > (baseline[seat.id] ?? 0))
+        .map((seat) => ({ id: `${game.handNumber}-${game.street}-${seat.id}-${seat.streetBet}`, seatId: seat.id }));
+      if (arrivals.length) {
+        setChipFlights((current) => [...current, ...arrivals]);
+      }
+    }
+    streetBetsRef.current = {
+      handNumber: game.handNumber,
+      street: game.street,
+      bets: Object.fromEntries(game.seats.map((seat) => [seat.id, seat.streetBet])),
+    };
+  }, [game.seats, game.handNumber, game.street]);
+  const removeChipFlight = useCallback((id: string) => {
+    setChipFlights((current) => current.filter((flight) => flight.id !== id));
+  }, []);
+
   // A silent auto-fold/check is easy to miss on a first turn; call it out
   // explicitly instead of only leaving a trace in the activity log. Derived
   // during render (React's "adjusting state" pattern) rather than in an
@@ -1140,6 +1246,17 @@ function PokerTable({
                 <span>D</span>
               </div>
             )}
+            {chipFlights.map((flight) => (
+              <ChipFlight
+                key={flight.id}
+                id={flight.id}
+                seatId={flight.seatId}
+                tableWrapRef={tableWrapRef}
+                potRef={potRef}
+                seatRefs={seatRefs}
+                onDone={removeChipFlight}
+              />
+            ))}
             {orderedSeats.map((seat, index) => (
               <PlayerSeat
                 key={seat.id}

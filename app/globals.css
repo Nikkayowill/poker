@@ -810,6 +810,34 @@ button:disabled { cursor: wait; opacity: .62; }
   }
 }
 
+/* A small, conservative spray of chips from an acting seat to the pot --
+   fires far more often than the pot-to-winner funnel (every bet/call/raise/
+   blind, for any of six seats), so it stays intentionally lighter: three
+   chips, no shuffle detour, just a quick direct arc. Positioned via inline
+   left/top (the seat's measured position) rather than a fixed anchor, since
+   unlike the pot or the dealer puck, the origin differs per seat. */
+.seat-chip-flight {
+  position: absolute;
+  z-index: 8;
+  width: 11px;
+  height: 7px;
+  border: 2px dashed rgba(255,255,255,.8);
+  border-radius: 50%;
+  background: #be3538;
+  box-shadow: 0 2px 3px rgba(0,0,0,.4), inset 0 0 0 2px rgba(0,0,0,.13);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: chip-fly-to-pot .48s cubic-bezier(.3,.7,.28,1) var(--flight-delay, 0ms) both;
+}
+@keyframes chip-fly-to-pot {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.5); }
+  16% { opacity: 1; }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--flight-dx)), calc(-50% + var(--flight-dy))) scale(.8);
+  }
+}
+
 .chip-stack-icon, .chip-dot {
   display: inline-block;
   width: 13px;
@@ -2106,6 +2134,7 @@ button:disabled { cursor: wait; opacity: .62; }
   .dealt-card-shell,
   .community-card-flipper,
   .pot-chip-flight,
+  .seat-chip-flight,
   .seat-current::after,
   .action-countdown.countdown-critical,
   .turn-ring {

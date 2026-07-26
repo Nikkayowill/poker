@@ -1,0 +1,486 @@
+import { randomInt, randomUUID } from "crypto";
+import { compareScores, evaluateHand, type HandScore } from "./evaluator";
+import type {
+  Card,
+  GameSnapshot,
+  GameState,
+  LegalActions,
+  PlayerAction,
+  Rank,
+  Seat,
+  Suit,
+  Street,
+  Winner,
+} from "./types";
+import type { PlayerProfile } from "@/lib/profile/types";
+
+const suits: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
+const ranks: Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
+const streetOrder: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
+const botProfiles = [
+  { name: "Maya", initials: "MA", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond" },
+  { name: "Theo", initials: "TH", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt" },
+  { name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river" },
+];
+
+function makeDeck(): Card[] {
+  const deck = suits.flatMap((suit) => ranks.map((rank) => ({ rank, suit })));
+  for (let index = deck.length - 1; index > 0; index -= 1) {
+    const swapWith = randomInt(index + 1);
+    [deck[index], deck[swapWith]] = [deck[swapWith], deck[index]];
+  }
+  return deck;
+}
+
+function addLog(state: GameState, text: string, kind: "deal" | "action" | "win" = "action") {
+  state.log.unshift({ id: randomUUID(), text, at: new Date().toISOString(), kind });
+  state.log = state.log.slice(0, 18);
+}
+
+function nextSeat(
+  state: GameState,
+  from: number,
+  predicate: (seat: Seat) => boolean,
+): number | null {
+  for (let offset = 1; offset <= state.seats.length; offset += 1) {
+    const index = (from + offset) % state.seats.length;
+    if (predicate(state.seats[index])) return index;
+  }
+  return null;
+}
+
+function inHand(seat: Seat) {
+  return seat.status !== "out";
+}
+
+function canAct(seat: Seat) {
+  return seat.status === "active" && seat.stack > 0;
+}
+
+function blindPositions(state: GameState) {
+  const small = nextSeat(state, state.buttonPosition, inHand);
+  const big = small === null ? null : nextSeat(state, small, inHand);
+  return { small, big };
+}
+
+function commit(seat: Seat, amount: number) {
+  const paid = Math.max(0, Math.min(amount, seat.stack));
+  seat.stack -= paid;
+  seat.streetBet += paid;
+  seat.committed += paid;
+  if (seat.stack === 0) seat.status = "all-in";
+  return paid;
+}
+
+function dealToCommunity(state: GameState, count: number) {
+  state.deck.pop(); // burn
+  for (let index = 0; index < count; index += 1) {
+    const card = state.deck.pop();
+    if (!card) throw new Error("The deck ran out of cards.");
+    state.community.push(card);
+  }
+}
+
+function setupHand(state: GameState, firstHand = false) {
+  const funded = state.seats.filter((seat) => seat.stack > 0);
+  if (funded.length < 2 || state.seats[0].stack === 0) {
+    state.status = "complete";
+    state.street = "showdown";
+    state.currentPlayer = null;
+    state.message = state.seats[0].stack === 0
+      ? "You’re out of chips. Start a fresh table to play again."
+      : "Table complete.";
+    return;
+  }
+
+  if (!firstHand) {
+    state.buttonPosition = nextSeat(state, state.buttonPosition, (seat) => seat.stack > 0) ?? 0;
+    state.handNumber += 1;
+  }
+  state.deck = makeDeck();
+  state.community = [];
+  state.winners = [];
+  state.street = "preflop";
+  state.status = "playing";
+  state.currentBet = 0;
+  state.minRaise = state.bigBlind;
+  state.pot = 0;
+  state.message = "Cards are in the air";
+
+  state.seats.forEach((seat) => {
+    seat.status = seat.stack > 0 ? "active" : "out";
+    seat.holeCards = [];
+    seat.streetBet = 0;
+    seat.committed = 0;
+    seat.acted = false;
+    seat.lastAction = null;
+  });
+
+  for (let round = 0; round < 2; round += 1) {
+    let cursor = state.buttonPosition;
+    for (let dealt = 0; dealt < funded.length; dealt += 1) {
+      const position = nextSeat(state, cursor, inHand);
+      if (position === null) break;
+      const card = state.deck.pop();
+      if (!card) throw new Error("The deck ran out of cards.");
+      state.seats[position].holeCards.push(card);
+      cursor = position;
+    }
+  }
+
+  const { small, big } = blindPositions(state);
+  if (small === null || big === null) throw new Error("Not enough players for blinds.");
+  const smallPaid = commit(state.seats[small], state.smallBlind);
+  const bigPaid = commit(state.seats[big], state.bigBlind);
+  state.seats[small].lastAction = `Small blind · ${smallPaid}`;
+  state.seats[big].lastAction = `Big blind · ${bigPaid}`;
+  state.currentBet = Math.max(smallPaid, bigPaid);
+  state.pot = state.seats.reduce((sum, seat) => sum + seat.committed, 0);
+  state.currentPlayer = nextSeat(state, big, canAct);
+  addLog(state, `Hand ${state.handNumber} dealt · blinds ${state.smallBlind}/${state.bigBlind}`, "deal");
+}
+
+export function createGame(
+  ownerToken: string,
+  playerName = "You",
+  appearance?: Pick<PlayerProfile, "initials" | "accent" | "avatarUrl" | "avatarPreset">,
+): GameState {
+  const now = new Date().toISOString();
+  const seats: Seat[] = [
+    {
+      id: randomUUID(),
+      name: playerName.slice(0, 18) || "You",
+      initials: appearance?.initials ?? (playerName || "You").slice(0, 2).toUpperCase(),
+      accent: appearance?.accent ?? "#e7c66a",
+      avatarUrl: appearance?.avatarUrl ?? null,
+      avatarPreset: appearance?.avatarPreset ?? "ace",
+      position: 0,
+      isHuman: true,
+      stack: 1000,
+      status: "active",
+      holeCards: [],
+      streetBet: 0,
+      committed: 0,
+      acted: false,
+      lastAction: null,
+    },
+    ...botProfiles.map((bot, index): Seat => ({
+      id: randomUUID(),
+      ...bot,
+      position: index + 1,
+      isHuman: false,
+      stack: 1000,
+      status: "active",
+      holeCards: [],
+      streetBet: 0,
+      committed: 0,
+      acted: false,
+      lastAction: null,
+    })),
+  ];
+
+  const state: GameState = {
+    id: randomUUID(),
+    ownerToken,
+    version: 1,
+    status: "playing",
+    street: "preflop",
+    handNumber: 1,
+    buttonPosition: 0,
+    smallBlind: 10,
+    bigBlind: 20,
+    currentPlayer: null,
+    currentBet: 0,
+    minRaise: 20,
+    pot: 0,
+    deck: [],
+    community: [],
+    seats,
+    winners: [],
+    log: [],
+    message: "",
+    createdAt: now,
+    updatedAt: now,
+  };
+  setupHand(state, true);
+  return autoPlayBots(state);
+}
+
+export function getLegalActions(state: GameState, seatIndex: number): LegalActions {
+  const seat = state.seats[seatIndex];
+  const isTurn = state.status === "playing" && state.currentPlayer === seatIndex && canAct(seat);
+  const toCall = Math.max(0, state.currentBet - seat.streetBet);
+  const maxRaiseTo = seat.streetBet + seat.stack;
+  const minRaiseTo = state.currentBet + state.minRaise;
+  return {
+    canFold: isTurn && toCall > 0,
+    canCheck: isTurn && toCall === 0,
+    canCall: isTurn && toCall > 0 && seat.stack > 0,
+    canRaise: isTurn && maxRaiseTo > state.currentBet && maxRaiseTo >= minRaiseTo,
+    canAllIn: isTurn && seat.stack > 0,
+    toCall,
+    callAmount: Math.min(toCall, seat.stack),
+    minRaiseTo: Math.min(minRaiseTo, maxRaiseTo),
+    maxRaiseTo,
+  };
+}
+
+function bettingComplete(state: GameState) {
+  return state.seats.every(
+    (seat) =>
+      seat.status === "folded" ||
+      seat.status === "out" ||
+      seat.status === "all-in" ||
+      (seat.acted && seat.streetBet === state.currentBet),
+  );
+}
+
+function remaining(state: GameState) {
+  return state.seats.filter((seat) => seat.status !== "folded" && seat.status !== "out");
+}
+
+function awardUncontested(state: GameState, seat: Seat) {
+  const amount = state.seats.reduce((sum, candidate) => sum + candidate.committed, 0);
+  seat.stack += amount;
+  state.pot = amount;
+  state.winners = [{ seatId: seat.id, name: seat.name, amount, hand: "Uncontested" }];
+  state.street = "showdown";
+  state.status = "complete";
+  state.currentPlayer = null;
+  state.message = `${seat.name} wins ${amount}`;
+  addLog(state, `${seat.name} wins ${amount} uncontested`, "win");
+}
+
+function sidePotWinners(
+  eligible: Seat[],
+  scores: Map<string, HandScore>,
+): Seat[] {
+  let best: HandScore | null = null;
+  let winners: Seat[] = [];
+  eligible.forEach((seat) => {
+    const score = scores.get(seat.id)!;
+    const comparison = best ? compareScores(score, best) : 1;
+    if (comparison > 0) {
+      best = score;
+      winners = [seat];
+    } else if (comparison === 0) winners.push(seat);
+  });
+  return winners;
+}
+
+function showdown(state: GameState) {
+  while (state.community.length < 5) {
+    dealToCommunity(state, state.community.length === 0 ? 3 : 1);
+  }
+  const contenders = remaining(state);
+  const scores = new Map(
+    contenders.map((seat) => [seat.id, evaluateHand([...seat.holeCards, ...state.community])]),
+  );
+  const levels = [...new Set(state.seats.map((seat) => seat.committed).filter(Boolean))].sort((a, b) => a - b);
+  let previous = 0;
+  const winnings = new Map<string, number>();
+
+  levels.forEach((level) => {
+    const contributors = state.seats.filter((seat) => seat.committed >= level);
+    const potAmount = (level - previous) * contributors.length;
+    const eligible = contributors.filter((seat) => seat.status !== "folded" && seat.status !== "out");
+    if (eligible.length > 0) {
+      const winners = sidePotWinners(eligible, scores);
+      const share = Math.floor(potAmount / winners.length);
+      let remainder = potAmount - share * winners.length;
+      const ordered = [...winners].sort(
+        (a, b) =>
+          ((a.position - state.buttonPosition + state.seats.length) % state.seats.length) -
+          ((b.position - state.buttonPosition + state.seats.length) % state.seats.length),
+      );
+      ordered.forEach((winner) => {
+        const extra = remainder > 0 ? 1 : 0;
+        remainder -= extra;
+        winnings.set(winner.id, (winnings.get(winner.id) ?? 0) + share + extra);
+      });
+    }
+    previous = level;
+  });
+
+  const winners: Winner[] = [...winnings.entries()].map(([seatId, amount]) => {
+    const seat = state.seats.find((candidate) => candidate.id === seatId)!;
+    seat.stack += amount;
+    return { seatId, name: seat.name, amount, hand: scores.get(seatId)!.name };
+  });
+  state.winners = winners.sort((a, b) => b.amount - a.amount);
+  state.pot = state.seats.reduce((sum, seat) => sum + seat.committed, 0);
+  state.street = "showdown";
+  state.status = "complete";
+  state.currentPlayer = null;
+  state.message = winners.map((winner) => `${winner.name} wins ${winner.amount} · ${winner.hand}`).join(" / ");
+  addLog(state, state.message, "win");
+}
+
+function advanceStreet(state: GameState) {
+  const next = streetOrder[streetOrder.indexOf(state.street) + 1];
+  if (!next || next === "showdown") {
+    showdown(state);
+    return;
+  }
+  state.street = next;
+  dealToCommunity(state, next === "flop" ? 3 : 1);
+  state.currentBet = 0;
+  state.minRaise = state.bigBlind;
+  state.seats.forEach((seat) => {
+    seat.streetBet = 0;
+    seat.acted = false;
+    seat.lastAction = null;
+  });
+  addLog(state, `${next[0].toUpperCase()}${next.slice(1)} dealt`, "deal");
+
+  const first = nextSeat(state, state.buttonPosition, canAct);
+  state.currentPlayer = first;
+  state.message = `${next[0].toUpperCase()}${next.slice(1)}`;
+  if (first === null || state.seats.filter(canAct).length <= 1) {
+    advanceStreet(state);
+  }
+}
+
+function progressAfterAction(state: GameState, actorIndex: number) {
+  state.pot = state.seats.reduce((sum, seat) => sum + seat.committed, 0);
+  const contenders = remaining(state);
+  if (contenders.length === 1) {
+    awardUncontested(state, contenders[0]);
+    return;
+  }
+  if (bettingComplete(state)) {
+    advanceStreet(state);
+    return;
+  }
+  state.currentPlayer = nextSeat(state, actorIndex, canAct);
+  if (state.currentPlayer === null) advanceStreet(state);
+}
+
+function applyTurnAction(state: GameState, action: Exclude<PlayerAction, { type: "next-hand" }>) {
+  const actorIndex = state.currentPlayer;
+  if (actorIndex === null) throw new Error("There is no active turn.");
+  const seat = state.seats[actorIndex];
+  const legal = getLegalActions(state, actorIndex);
+  const toCall = legal.toCall;
+
+  if (action.type === "fold") {
+    if (!legal.canFold) throw new Error("You can check here; folding is not available.");
+    seat.status = "folded";
+    seat.acted = true;
+    seat.lastAction = "Fold";
+    addLog(state, `${seat.name} folds`);
+  } else if (action.type === "check") {
+    if (!legal.canCheck) throw new Error(`There is ${toCall} to call.`);
+    seat.acted = true;
+    seat.lastAction = "Check";
+    addLog(state, `${seat.name} checks`);
+  } else if (action.type === "call") {
+    if (!legal.canCall) throw new Error("Calling is not available.");
+    const paid = commit(seat, toCall);
+    seat.acted = true;
+    seat.lastAction = paid < toCall ? `All-in · ${paid}` : `Call · ${paid}`;
+    addLog(state, `${seat.name} ${paid < toCall ? "is all-in for" : "calls"} ${paid}`);
+  } else {
+    const raiseTo = action.type === "all-in" ? legal.maxRaiseTo : Math.floor(action.amount);
+    if (raiseTo <= state.currentBet) {
+      if (action.type === "all-in") {
+        const paid = commit(seat, toCall);
+        seat.acted = true;
+        seat.lastAction = `All-in · ${paid}`;
+        addLog(state, `${seat.name} is all-in for ${paid}`);
+      } else throw new Error("Raise must exceed the current bet.");
+    } else {
+      if (raiseTo > legal.maxRaiseTo) throw new Error("That raise exceeds your stack.");
+      const raiseSize = raiseTo - state.currentBet;
+      const isShortAllIn = raiseTo === legal.maxRaiseTo && raiseSize < state.minRaise;
+      if (raiseSize < state.minRaise && !isShortAllIn) {
+        throw new Error(`Minimum raise is to ${state.currentBet + state.minRaise}.`);
+      }
+      commit(seat, raiseTo - seat.streetBet);
+      if (!isShortAllIn) {
+        state.minRaise = raiseSize;
+        state.seats.forEach((candidate) => {
+          if (candidate.id !== seat.id && canAct(candidate)) candidate.acted = false;
+        });
+      }
+      state.currentBet = raiseTo;
+      seat.acted = true;
+      seat.lastAction = seat.status === "all-in" ? `All-in · ${raiseTo}` : `Raise to · ${raiseTo}`;
+      addLog(state, `${seat.name} ${seat.status === "all-in" ? "is all-in for" : "raises to"} ${raiseTo}`);
+    }
+  }
+  progressAfterAction(state, actorIndex);
+}
+
+function chooseBotAction(state: GameState, seatIndex: number): Exclude<PlayerAction, { type: "next-hand" }> {
+  const legal = getLegalActions(state, seatIndex);
+  const seat = state.seats[seatIndex];
+  const highRanks = seat.holeCards.filter((card) => ["A", "K", "Q", "J"].includes(card.rank)).length;
+  const pair = seat.holeCards[0]?.rank === seat.holeCards[1]?.rank;
+  const roll = randomInt(100);
+  if (legal.toCall > seat.stack * 0.28 && !pair && highRanks === 0 && roll < 72) return { type: "fold" };
+  if (legal.canRaise && (pair || highRanks === 2) && roll < 42) {
+    const target = Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, state.currentBet + state.bigBlind * 2));
+    return { type: "raise", amount: target };
+  }
+  if (legal.canCall) return roll < 13 && legal.canFold ? { type: "fold" } : { type: "call" };
+  return { type: "check" };
+}
+
+export function autoPlayBots(state: GameState): GameState {
+  let safety = 0;
+  while (
+    state.status === "playing" &&
+    state.currentPlayer !== null &&
+    !state.seats[state.currentPlayer].isHuman &&
+    safety < 80
+  ) {
+    const action = chooseBotAction(state, state.currentPlayer);
+    applyTurnAction(state, action);
+    safety += 1;
+  }
+  return state;
+}
+
+export function applyPlayerAction(state: GameState, action: PlayerAction, ownerToken: string): GameState {
+  if (state.ownerToken !== ownerToken) throw new Error("This table belongs to another session.");
+  if (action.type === "next-hand") {
+    if (state.status !== "complete") throw new Error("Finish the current hand first.");
+    setupHand(state);
+  } else {
+    if (state.status !== "playing") throw new Error("This hand is complete.");
+    const actor = state.currentPlayer === null ? null : state.seats[state.currentPlayer];
+    if (!actor?.isHuman) throw new Error("Wait for your turn.");
+    applyTurnAction(state, action);
+  }
+  autoPlayBots(state);
+  state.version += 1;
+  state.updatedAt = new Date().toISOString();
+  return state;
+}
+
+export function toSnapshot(state: GameState, ownerToken: string): GameSnapshot {
+  const isOwner = state.ownerToken === ownerToken;
+  const publicState = Object.fromEntries(
+    Object.entries(state).filter(([key]) => key !== "deck" && key !== "ownerToken" && key !== "seats"),
+  ) as Omit<GameState, "deck" | "ownerToken" | "seats">;
+  const { small, big } = blindPositions(state);
+  const showdown = state.street === "showdown";
+  return {
+    ...publicState,
+    seats: state.seats.map((seat) => ({
+      ...seat,
+      holeCards: seat.holeCards.map((card) =>
+        isOwner && (seat.isHuman || showdown) ? card : null,
+      ),
+      isDealer: seat.position === state.buttonPosition,
+      isCurrent: seat.position === state.currentPlayer,
+      isSmallBlind: seat.position === small,
+      isBigBlind: seat.position === big,
+    })),
+    legalActions:
+      isOwner && state.currentPlayer !== null && state.seats[state.currentPlayer].isHuman
+        ? getLegalActions(state, state.currentPlayer)
+        : null,
+  };
+}

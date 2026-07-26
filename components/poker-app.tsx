@@ -1,0 +1,767 @@
+"use client";
+
+import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
+import {
+  ArrowRight,
+  Camera,
+  Check,
+  CircleDollarSign,
+  Clock3,
+  Coins,
+  FoldVertical,
+  LockKeyhole,
+  Palette,
+  RotateCcw,
+  Save,
+  Settings2,
+  ShieldCheck,
+  Sparkles,
+  UsersRound,
+  Wifi,
+  WifiOff,
+  Upload,
+  X,
+} from "lucide-react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
+import clsx from "clsx";
+import type { Card, GameSnapshot, PlayerAction, PublicSeat } from "@/lib/game/types";
+import { avatarPresets, profileAccents } from "@/lib/profile/types";
+import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
+
+const suitSymbols: Record<Card["suit"], string> = {
+  clubs: "♣",
+  diamonds: "♦",
+  hearts: "♥",
+  spades: "♠",
+};
+
+type AvatarView = Pick<PlayerProfile, "displayName" | "initials" | "avatarUrl" | "avatarPreset" | "accent">;
+
+function ProfileAvatar({
+  profile,
+  className,
+  showTurn = false,
+}: {
+  profile: AvatarView;
+  className?: string;
+  showTurn?: boolean;
+}) {
+  const preset = avatarPresets.find((candidate) => candidate.id === profile.avatarPreset) ?? avatarPresets[0];
+  return (
+    <span
+      className={clsx("profile-avatar", className, profile.avatarUrl && "has-avatar-image")}
+      style={{
+        "--avatar-accent": profile.accent,
+        ...(profile.avatarUrl ? { backgroundImage: `url("${profile.avatarUrl}")` } : {}),
+      } as React.CSSProperties}
+      role="img"
+      aria-label={`${profile.displayName}'s avatar`}
+    >
+      {!profile.avatarUrl && <span>{preset.symbol}</span>}
+      {showTurn && <span className="turn-ring" />}
+    </span>
+  );
+}
+
+function ProfileTrigger({
+  profile,
+  onClick,
+  compact = false,
+}: {
+  profile: PlayerProfile;
+  onClick: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <button className={clsx("profile-trigger", compact && "profile-trigger-compact")} onClick={onClick}>
+      <ProfileAvatar profile={profile} />
+      {!compact && (
+        <span>
+          <strong>{profile.displayName}</strong>
+          <small>Customize profile</small>
+        </span>
+      )}
+      <Settings2 size={14} />
+    </button>
+  );
+}
+
+function PlayingCard({
+  card,
+  small = false,
+  ghost = false,
+}: {
+  card: Card | null;
+  small?: boolean;
+  ghost?: boolean;
+}) {
+  if (ghost) return <div className={clsx("playing-card card-ghost", small && "card-small")} />;
+  if (!card) {
+    return (
+      <div className={clsx("playing-card card-back", small && "card-small")} aria-label="Hidden card">
+        <span>RR</span>
+      </div>
+    );
+  }
+  const red = card.suit === "hearts" || card.suit === "diamonds";
+  return (
+    <div
+      className={clsx("playing-card", small && "card-small", red && "card-red")}
+      aria-label={`${card.rank} of ${card.suit}`}
+    >
+      <span className="card-rank">{card.rank}</span>
+      <span className="card-suit">{suitSymbols[card.suit]}</span>
+      <span className="card-suit-large">{suitSymbols[card.suit]}</span>
+    </div>
+  );
+}
+
+function PlayerSeat({ seat, placement }: { seat: PublicSeat; placement: string }) {
+  const folded = seat.status === "folded" || seat.status === "out";
+  return (
+    <article
+      className={clsx("player-seat", placement, seat.isCurrent && "seat-current", folded && "seat-muted")}
+      style={{ "--seat-accent": seat.accent } as React.CSSProperties}
+    >
+      <div className="seat-cards">
+        {seat.holeCards.map((card, index) => (
+          <PlayingCard key={index} card={card} small />
+        ))}
+      </div>
+      <div className="seat-profile">
+        <ProfileAvatar
+          className="seat-avatar"
+          profile={{
+            displayName: seat.name,
+            initials: seat.initials,
+            avatarUrl: seat.avatarUrl,
+            avatarPreset: seat.avatarPreset as AvatarPreset,
+            accent: seat.accent,
+          }}
+          showTurn={seat.isCurrent}
+        />
+        <div className="seat-copy">
+          <div className="seat-name-row">
+            <strong>{seat.name}</strong>
+            {seat.isDealer && <span className="dealer-chip">D</span>}
+            {seat.isSmallBlind && <span className="blind-label">SB</span>}
+            {seat.isBigBlind && <span className="blind-label">BB</span>}
+          </div>
+          <span className="seat-stack">
+            <span className="chip-dot" /> {seat.stack.toLocaleString()}
+          </span>
+        </div>
+      </div>
+      {seat.lastAction && <span className="action-pill">{seat.lastAction}</span>}
+      {seat.status === "folded" && <span className="status-pill">Folded</span>}
+      {seat.status === "all-in" && <span className="status-pill all-in">All in</span>}
+      {seat.streetBet > 0 && <span className="table-bet">{seat.streetBet}</span>}
+    </article>
+  );
+}
+
+function Lobby({ profile, onStart, loading, error, onCustomize }: {
+  profile: PlayerProfile | null;
+  onStart: (name: string) => void;
+  loading: boolean;
+  error: string | null;
+  onCustomize: () => void;
+}) {
+  const [name, setName] = useState(profile?.displayName ?? "");
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    onStart(name.trim() || "You");
+  };
+  return (
+    <main className="lobby">
+      <section className="hero">
+        <div className="eyebrow"><Sparkles size={14} /> Your seat is waiting</div>
+        <h1>Play the hand.<br /><em>Own the river.</em></h1>
+        <p>
+          A polished no-limit Hold’em table with private cards, proper betting rounds,
+          side pots, and every decision verified on the server.
+        </p>
+        <form className="start-form" onSubmit={submit}>
+          <div className="form-label-row">
+            <label htmlFor="player-name">Your table name</label>
+            {profile && <button type="button" onClick={onCustomize}>Edit profile</button>}
+          </div>
+          <div className="name-row">
+            <input
+              id="player-name"
+              value={name}
+              maxLength={18}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Enter your name"
+              autoComplete="nickname"
+            />
+            <button type="submit" disabled={loading}>
+              {loading ? "Shuffling…" : <>Take a seat <ArrowRight size={17} /></>}
+            </button>
+          </div>
+          {error && <p className="form-error"><X size={14} /> {error}</p>}
+        </form>
+        <div className="trust-row">
+          <span><LockKeyhole size={14} /> Server-shuffled</span>
+          <span><ShieldCheck size={14} /> Secure hole cards</span>
+          <span><Wifi size={14} /> Realtime-ready</span>
+        </div>
+      </section>
+      <aside className="lobby-preview">
+        <div className="preview-glow" />
+        <div className="mini-table">
+          <span className="mini-seat mini-top">MA</span>
+          <span className="mini-seat mini-left">TH</span>
+          <span className="mini-seat mini-right">RV</span>
+          <span className="mini-seat mini-bottom">YOU</span>
+          <div className="mini-pot"><Coins size={14} /> 240</div>
+          <div className="mini-cards">
+            {[
+              { rank: "A", suit: "spades" },
+              { rank: "10", suit: "hearts" },
+              { rank: "K", suit: "diamonds" },
+            ].map((card) => <PlayingCard key={card.rank} card={card as Card} small />)}
+          </div>
+        </div>
+        <div className="preview-stat">
+          <div><UsersRound size={17} /><span><strong>4 seats</strong>Instant table</span></div>
+          <div><CircleDollarSign size={17} /><span><strong>1,000</strong>Starting stack</span></div>
+        </div>
+      </aside>
+    </main>
+  );
+}
+
+function ProfileModal({
+  profile,
+  onClose,
+  onSaved,
+}: {
+  profile: PlayerProfile;
+  onClose: () => void;
+  onSaved: (profile: PlayerProfile) => void;
+}) {
+  const [displayName, setDisplayName] = useState(profile.displayName);
+  const [avatarPreset, setAvatarPreset] = useState<AvatarPreset>(profile.avatarPreset);
+  const [accent, setAccent] = useState(profile.accent);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(profile.avatarUrl);
+  const [usingUpload, setUsingUpload] = useState(Boolean(profile.avatarUrl));
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const preview: AvatarView = {
+    displayName: displayName || "Player",
+    initials: (displayName || "P").slice(0, 2).toUpperCase(),
+    avatarUrl: usingUpload ? previewUrl : null,
+    avatarPreset,
+    accent,
+  };
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          displayName,
+          avatarPreset,
+          accent,
+          clearUpload: !usingUpload,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not save your profile.");
+      onSaved(data.profile);
+      setMessage("Profile saved");
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : "Could not save your profile.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const upload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setMessage(null);
+    try {
+      const body = new FormData();
+      body.append("avatar", file);
+      const response = await fetch("/api/profile/avatar", { method: "POST", body });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not upload that image.");
+      setPreviewUrl(data.profile.avatarUrl);
+      setUsingUpload(true);
+      onSaved(data.profile);
+      setMessage("Photo uploaded");
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : "Could not upload that image.");
+    } finally {
+      setUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  return (
+    <div className="profile-overlay" role="presentation" onMouseDown={(event) => {
+      if (event.currentTarget === event.target) onClose();
+    }}>
+      <section className="profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+        <header className="profile-modal-header">
+          <div>
+            <span>PLAYER IDENTITY</span>
+            <h2 id="profile-title">Make the seat yours.</h2>
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Close profile editor"><X size={18} /></button>
+        </header>
+        <form onSubmit={save}>
+          <div className="profile-preview">
+            <div className="avatar-stage">
+              <ProfileAvatar profile={preview} />
+              <label className="camera-button">
+                <Camera size={15} />
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={upload}
+                  disabled={uploading}
+                />
+              </label>
+            </div>
+            <div>
+              <strong>{displayName || "Player"}</strong>
+              <span>{usingUpload ? "Personal photo" : avatarPresets.find((preset) => preset.id === avatarPreset)?.label}</span>
+              <label className="upload-button">
+                <Upload size={13} /> {uploading ? "Uploading…" : "Upload photo"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={upload}
+                  disabled={uploading}
+                />
+              </label>
+              <small>PNG, JPEG, WebP or GIF · 2 MB max</small>
+            </div>
+          </div>
+
+          <div className="profile-field">
+            <label htmlFor="profile-name">Display name</label>
+            <input
+              id="profile-name"
+              value={displayName}
+              maxLength={18}
+              onChange={(event) => setDisplayName(event.target.value)}
+              autoComplete="nickname"
+              required
+            />
+            <span>{displayName.length}/18</span>
+          </div>
+
+          <fieldset className="preset-fieldset">
+            <legend>Choose an avatar</legend>
+            <div className="preset-grid">
+              {avatarPresets.map((preset) => (
+                <button
+                  type="button"
+                  key={preset.id}
+                  className={clsx(avatarPreset === preset.id && !usingUpload && "selected")}
+                  onClick={() => {
+                    setAvatarPreset(preset.id);
+                    setUsingUpload(false);
+                  }}
+                  aria-label={preset.label}
+                >
+                  <span>{preset.symbol}</span>
+                  <small>{preset.label}</small>
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
+          <fieldset className="accent-fieldset">
+            <legend><Palette size={13} /> Table color</legend>
+            <div className="accent-row">
+              {profileAccents.map((color) => (
+                <button
+                  type="button"
+                  key={color}
+                  className={accent === color ? "selected" : ""}
+                  style={{ "--swatch": color } as React.CSSProperties}
+                  onClick={() => setAccent(color)}
+                  aria-label={`Use color ${color}`}
+                />
+              ))}
+            </div>
+          </fieldset>
+
+          <footer className="profile-modal-footer">
+            <span className={message?.includes("saved") || message?.includes("uploaded") ? "success-message" : ""}>
+              {message}
+            </span>
+            <button className="primary-action" type="submit" disabled={saving || uploading}>
+              <Save size={15} /> {saving ? "Saving…" : "Save profile"}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function ActionBar({
+  game,
+  pending,
+  onAction,
+}: {
+  game: GameSnapshot;
+  pending: boolean;
+  onAction: (action: PlayerAction) => void;
+}) {
+  const legal = game.legalActions;
+  const [raiseTo, setRaiseTo] = useState(legal?.minRaiseTo ?? 0);
+
+  if (game.status === "complete") {
+    return (
+      <div className="action-bar hand-complete">
+        <div>
+          <span className="action-kicker">Hand complete</span>
+          <strong>{game.message}</strong>
+        </div>
+        <button className="primary-action" disabled={pending} onClick={() => onAction({ type: "next-hand" })}>
+          <RotateCcw size={16} /> Deal next hand
+        </button>
+      </div>
+    );
+  }
+
+  if (!legal) {
+    return (
+      <div className="action-bar waiting-bar">
+        <span className="waiting-dot" />
+        <span>Players are making their decisions…</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="action-bar">
+      <div className="basic-actions">
+        {legal.canFold && (
+          <button disabled={pending} onClick={() => onAction({ type: "fold" })}>
+            <FoldVertical size={16} /> Fold
+          </button>
+        )}
+        {legal.canCheck && (
+          <button disabled={pending} onClick={() => onAction({ type: "check" })}>
+            <Check size={17} /> Check
+          </button>
+        )}
+        {legal.canCall && (
+          <button disabled={pending} onClick={() => onAction({ type: "call" })}>
+            Call <strong>{legal.callAmount}</strong>
+          </button>
+        )}
+      </div>
+      {legal.canRaise && (
+        <div className="raise-control">
+          <div className="range-row">
+            <span>Raise to</span>
+            <strong>{raiseTo}</strong>
+          </div>
+          <input
+            aria-label="Raise amount"
+            type="range"
+            min={legal.minRaiseTo}
+            max={legal.maxRaiseTo}
+            step={game.bigBlind}
+            value={raiseTo}
+            onChange={(event) => setRaiseTo(Number(event.target.value))}
+          />
+          <div className="raise-buttons">
+            <button onClick={() => setRaiseTo(Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, game.pot)))}>Pot</button>
+            <button onClick={() => setRaiseTo(legal.maxRaiseTo)}>Max</button>
+          </div>
+        </div>
+      )}
+      <div className="commit-actions">
+        {legal.canRaise && (
+          <button className="primary-action" disabled={pending} onClick={() => onAction({ type: "raise", amount: raiseTo })}>
+            Raise <span>{raiseTo}</span>
+          </button>
+        )}
+        {legal.canAllIn && (
+          <button className="allin-action" disabled={pending} onClick={() => onAction({ type: "all-in" })}>
+            All in
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PokerTable({
+  game,
+  persistence,
+  pending,
+  error,
+  onAction,
+  onLeave,
+  profile,
+  onCustomize,
+}: {
+  game: GameSnapshot;
+  persistence: string;
+  pending: boolean;
+  error: string | null;
+  onAction: (action: PlayerAction) => void;
+  onLeave: () => void;
+  profile: PlayerProfile | null;
+  onCustomize: () => void;
+}) {
+  const placements = ["seat-bottom", "seat-left", "seat-top", "seat-right"];
+  return (
+    <main className="game-shell">
+      <header className="game-header">
+        <button className="wordmark" onClick={onLeave} aria-label="Leave table">
+          <span className="mark">R</span>
+          <span>River Room<small>NO LIMIT HOLD’EM</small></span>
+        </button>
+        <div className="table-meta">
+          <span><span className={clsx("live-dot", persistence === "memory" && "demo-dot")} />{persistence === "supabase" ? "Realtime" : "Demo table"}</span>
+          <span>Table {game.id.slice(0, 6).toUpperCase()}</span>
+          <span>Blinds {game.smallBlind}/{game.bigBlind}</span>
+        </div>
+        <div className="game-header-actions">
+          {profile && <ProfileTrigger profile={profile} onClick={onCustomize} compact />}
+          <button className="leave-button" onClick={onLeave}>Leave table</button>
+        </div>
+      </header>
+
+      <section className="game-content">
+        <div className="table-area">
+          <div className="poker-table-wrap">
+            <div className="poker-rail">
+              <div className="poker-felt">
+                <div className="felt-texture" />
+                <div className="pot-display">
+                  <span>MAIN POT</span>
+                  <strong><span className="chip-stack-icon" />{game.pot.toLocaleString()}</strong>
+                </div>
+                <div className="community-cards">
+                  {[0, 1, 2, 3, 4].map((index) => (
+                    <PlayingCard
+                      key={index}
+                      card={game.community[index] ?? null}
+                      ghost={!game.community[index]}
+                    />
+                  ))}
+                </div>
+                <span className="street-label">{game.street}</span>
+              </div>
+            </div>
+            {game.seats.map((seat, index) => (
+              <PlayerSeat key={seat.id} seat={seat} placement={placements[index]} />
+            ))}
+          </div>
+
+          {error && <div className="table-toast"><X size={15} /> {error}</div>}
+          <ActionBar key={game.version} game={game} pending={pending} onAction={onAction} />
+        </div>
+
+        <aside className="hand-panel">
+          <div className="panel-heading">
+            <div>
+              <span>TABLE ACTIVITY</span>
+              <strong>Hand #{game.handNumber}</strong>
+            </div>
+            <Clock3 size={17} />
+          </div>
+          <div className="activity-list">
+            {game.log.map((entry) => (
+              <div className={clsx("activity-item", `activity-${entry.kind}`)} key={entry.id}>
+                <span className="activity-icon">{entry.kind === "win" ? "♛" : entry.kind === "deal" ? "◆" : "•"}</span>
+                <div>
+                  <p>{entry.text}</p>
+                  <time>{new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="security-note">
+            <ShieldCheck size={18} />
+            <p><strong>Server-authoritative</strong>Your browser never sees the deck or another player’s cards.</p>
+          </div>
+        </aside>
+      </section>
+    </main>
+  );
+}
+
+export function PokerApp() {
+  const [game, setGame] = useState<GameSnapshot | null>(null);
+  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [persistence, setPersistence] = useState("memory");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const gameId = game?.id;
+
+  const loadProfile = useCallback(async () => {
+    const response = await fetch("/api/profile", { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? "Could not load your profile.");
+    setProfile(data.profile);
+    setPersistence(data.persistence);
+  }, []);
+
+  const ingest = useCallback((data: { game: GameSnapshot; persistence: string }) => {
+    setGame(data.game);
+    setPersistence(data.persistence);
+    setError(null);
+  }, []);
+
+  const refresh = useCallback(async (id: string) => {
+    const response = await fetch(`/api/games/${id}`, { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? "Could not refresh the table.");
+    ingest(data);
+  }, [ingest]);
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("table");
+    if (!id) return;
+    const timer = window.setTimeout(() => {
+      void refresh(id).catch((caught) => {
+        setError(caught instanceof Error ? caught.message : "Could not open that table.");
+        window.history.replaceState({}, "", "/");
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [refresh]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadProfile().catch((caught) => {
+        setError(caught instanceof Error ? caught.message : "Could not load your profile.");
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadProfile]);
+
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!gameId || !url || !key) return;
+    const supabase = createClient(url, key);
+    let channel: RealtimeChannel | null = supabase
+      .channel(`table:${gameId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "game_signals", filter: `game_id=eq.${gameId}` },
+        () => void refresh(gameId),
+      )
+      .subscribe();
+    return () => {
+      if (channel) void supabase.removeChannel(channel);
+      channel = null;
+    };
+  }, [gameId, refresh]);
+
+  const start = async (name: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/games", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not start a table.");
+      ingest(data);
+      window.history.pushState({}, "", `/?table=${data.game.id}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not start a table.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const act = async (action: PlayerAction) => {
+    if (!game || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/games/${game.id}/actions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "That action was not accepted.");
+      ingest(data);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "That action was not accepted.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const leave = () => {
+    setGame(null);
+    setError(null);
+    window.history.replaceState({}, "", "/");
+  };
+
+  return (
+    <div className="app-root">
+      {!game && (
+        <header className="lobby-header">
+          <div className="wordmark">
+            <span className="mark">R</span>
+            <span>River Room<small>NO LIMIT HOLD’EM</small></span>
+          </div>
+          <div className="header-actions">
+            <div className="header-status"><WifiOff size={14} /> Private practice table</div>
+            {profile && <ProfileTrigger profile={profile} onClick={() => setProfileOpen(true)} />}
+          </div>
+        </header>
+      )}
+      {game
+        ? (
+          <PokerTable
+            game={game}
+            persistence={persistence}
+            pending={loading}
+            error={error}
+            onAction={act}
+            onLeave={leave}
+            profile={profile}
+            onCustomize={() => setProfileOpen(true)}
+          />
+        )
+        : (
+          <Lobby
+            key={profile?.updatedAt ?? "guest"}
+            profile={profile}
+            onStart={start}
+            loading={loading}
+            error={error}
+            onCustomize={() => setProfileOpen(true)}
+          />
+        )}
+      {profileOpen && profile && (
+        <ProfileModal
+          profile={profile}
+          onClose={() => setProfileOpen(false)}
+          onSaved={setProfile}
+        />
+      )}
+    </div>
+  );
+}

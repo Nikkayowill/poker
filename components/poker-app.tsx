@@ -552,6 +552,7 @@ function PokerTable({
   error,
   onAction,
   onLeave,
+  onLeaveSeat,
   profile,
   onCustomize,
 }: {
@@ -561,6 +562,7 @@ function PokerTable({
   error: string | null;
   onAction: (action: PlayerAction) => void;
   onLeave: () => void;
+  onLeaveSeat: () => void;
   profile: PlayerProfile | null;
   onCustomize: () => void;
 }) {
@@ -585,6 +587,11 @@ function PokerTable({
         </div>
         <div className="game-header-actions">
           {profile && <ProfileTrigger profile={profile} onClick={onCustomize} compact />}
+          {game.isSeated && (
+            <button className="give-up-seat-button" onClick={onLeaveSeat} title="Give up your seat; a bot takes over">
+              Give up seat
+            </button>
+          )}
           <button className="leave-button" onClick={onLeave}>Leave table</button>
         </div>
       </header>
@@ -731,6 +738,15 @@ export function PokerApp() {
     };
   }, [gameId, refresh]);
 
+  // A fallback poll: keeps demo/memory mode (no Realtime) live, and is what
+  // actually surfaces an idle-turn auto-fold/check to a player who is
+  // waiting on someone else and has no other reason to re-fetch.
+  useEffect(() => {
+    if (!gameId) return;
+    const interval = window.setInterval(() => void refresh(gameId), 5000);
+    return () => window.clearInterval(interval);
+  }, [gameId, refresh]);
+
   const quickPlay = async (name: string) => {
     setLoading(true);
     setError(null);
@@ -809,6 +825,24 @@ export function PokerApp() {
     window.history.replaceState({}, "", "/");
   };
 
+  const leaveSeat = async () => {
+    if (!game) return;
+    setLoading(true);
+    try {
+      await fetch(`/api/games/${game.id}/actions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "leave-seat" }),
+      });
+    } catch {
+      // Best effort: the seat still reverts to a bot server-side even if this
+      // client never hears back, so there's nothing useful to show here.
+    } finally {
+      setLoading(false);
+      leave();
+    }
+  };
+
   return (
     <div className="app-root">
       {!game && (
@@ -832,6 +866,7 @@ export function PokerApp() {
             error={error}
             onAction={act}
             onLeave={leave}
+            onLeaveSeat={leaveSeat}
             profile={profile}
             onCustomize={() => setProfileOpen(true)}
           />

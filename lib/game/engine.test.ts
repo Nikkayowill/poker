@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { applyPlayerAction, claimSeat, createGame, toSnapshot } from "./engine";
+import { applyPlayerAction, claimSeat, createGame, expireIdleTurn, TURN_TIMEOUT_MS, toSnapshot, vacateSeat } from "./engine";
 import { evaluateHand } from "./evaluator";
 import type { Card, PlayerAction } from "./types";
+import type { PlayerProfile } from "@/lib/profile/types";
 
-const testProfile = (name: string) => ({
+const testProfile = (name: string): Pick<PlayerProfile, "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset"> => ({
   displayName: name,
   initials: name.slice(0, 2).toUpperCase(),
   accent: "#79c9ff",
@@ -178,5 +179,73 @@ describe("multi-human seating", () => {
     expect(() => applyPlayerAction(game, { type: "check" }, hostToken)).toThrow(/turn/i);
     game = applyPlayerAction(game, { type: "call" }, guestToken);
     expect(game.version).toBeGreaterThan(versionAfterClaim);
+  });
+});
+
+describe("giving up a seat", () => {
+  it("restores the seat's original bot identity, including for the host's own seat", () => {
+    const hostToken = crypto.randomUUID();
+    const guestToken = crypto.randomUUID();
+    let game = createGame(hostToken, "Host");
+    const claimed = claimSeat(game, guestToken, testProfile("Guest"));
+    game = claimed.state;
+    expect(game.seats[claimed.seatIndex].name).toBe("Guest");
+
+    game = vacateSeat(game, guestToken);
+    const restored = game.seats[claimed.seatIndex];
+    expect(restored.isHuman).toBe(false);
+    expect(restored.ownerToken).toBeNull();
+    expect(restored.name).toBe("Maya");
+    expect(restored.personality).toBe("MANIAC");
+
+    game = vacateSeat(game, hostToken);
+    expect(game.seats[0].isHuman).toBe(false);
+    expect(game.seats[0].ownerToken).toBeNull();
+    expect(game.seats[0].name).toBe("Jax");
+  });
+
+  it("rejects vacating a seat you don't own", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    expect(() => vacateSeat(game, crypto.randomUUID())).toThrow(/not seated/i);
+  });
+
+  it("lets go of a seat mid-turn without stalling the table", () => {
+    const hostToken = crypto.randomUUID();
+    let game = createGame(hostToken, "Host");
+    expect(game.currentPlayer).toBe(0);
+
+    game = applyPlayerAction(game, { type: "leave-seat" }, hostToken);
+    expect(game.seats[0].isHuman).toBe(false);
+    // Every remaining seat is a bot, so autoPlayBots should have run the hand
+    // to completion (or at least moved play off the now-vacated seat).
+    expect(game.currentPlayer === null || game.currentPlayer !== 0).toBe(true);
+  });
+});
+
+describe("idle turn timeout", () => {
+  it("leaves a fresh turn untouched", () => {
+    const token = crypto.randomUUID();
+    const game = createGame(token, "Host");
+    const before = game.version;
+    const { state, expiredSeatIds } = expireIdleTurn(game);
+    expect(expiredSeatIds).toHaveLength(0);
+    expect(state.version).toBe(before);
+  });
+
+  it("auto-resolves a human turn idle past the timeout, in exactly one version bump", () => {
+    const token = crypto.randomUUID();
+    const game = createGame(token, "Host");
+    expect(game.currentPlayer).toBe(0);
+    const hostSeatId = game.seats[0].id;
+    game.turnStartedAt = new Date(Date.now() - TURN_TIMEOUT_MS - 1000).toISOString();
+
+    const before = game.version;
+    const { state, expiredSeatIds } = expireIdleTurn(game);
+    expect(expiredSeatIds).toEqual([hostSeatId]);
+    expect(state.version).toBe(before + 1);
+    // The host was seat 0 and is no longer the current player (either folded
+    // out, or checked and action moved on).
+    expect(state.currentPlayer === null || state.currentPlayer !== 0 || state.seats[0].status === "folded")
+      .toBe(true);
   });
 });

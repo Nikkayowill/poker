@@ -63,6 +63,8 @@ export interface GameState {
   smallBlind: number;
   bigBlind: number;
   currentPlayer: number | null;
+  /** When the current player's turn began; drives the AFK auto-fold/check timeout. */
+  turnStartedAt: string | null;
   currentBet: number;
   minRaise: number;
   pot: number;
@@ -82,7 +84,8 @@ export type PlayerAction =
   | { type: "call" }
   | { type: "raise"; amount: number }
   | { type: "all-in" }
-  | { type: "next-hand" };
+  | { type: "next-hand" }
+  | { type: "leave-seat" };
 
 export interface LegalActions {
   canFold: boolean;

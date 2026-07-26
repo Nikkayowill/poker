@@ -534,6 +534,18 @@ button:disabled { cursor: wait; opacity: .62; }
   cursor: pointer;
 }
 
+.give-up-seat-button {
+  border: 1px solid rgba(255,138,122,.22);
+  color: #d99a90;
+  background: rgba(255,138,122,.04);
+  padding: 9px 13px;
+  border-radius: 7px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.give-up-seat-button:hover { border-color: rgba(255,138,122,.4); color: #ffac9d; }
+
 .game-content {
   min-height: calc(100vh - 68px);
   min-height: calc(100svh - 68px);
@@ -1217,7 +1229,7 @@ button:disabled { cursor: wait; opacity: .62; }
     padding-right: max(14px, env(safe-area-inset-right));
   }
   .game-header .wordmark > span:last-child, .table-meta span:not(:first-child) { display: none; }
-  .leave-button { padding: 8px; font-size: 9px; }
+  .leave-button, .give-up-seat-button { padding: 8px; font-size: 9px; }
   .table-area {
     padding: 15px 8px calc(12px + env(safe-area-inset-bottom));
     padding-left: max(8px, env(safe-area-inset-left));

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { applyPlayerAction, toSnapshot } from "@/lib/game/engine";
-import { getStoredGame, persistenceMode, updateStoredGame } from "@/lib/server/game-store";
+import { loadGameWithTimeouts, persistenceMode, updateStoredGame } from "@/lib/server/game-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
@@ -13,6 +13,7 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("raise"), amount: z.number().int().positive() }),
   z.object({ type: z.literal("all-in") }),
   z.object({ type: z.literal("next-hand") }),
+  z.object({ type: z.literal("leave-seat") }),
 ]);
 
 const paramsSchema = z.object({ id: z.string().uuid() });
@@ -31,7 +32,7 @@ export async function POST(
     const paramsParsed = paramsSchema.safeParse(await context.params);
     if (!paramsParsed.success) return NextResponse.json({ error: "Table not found." }, { status: 404 });
     const { id } = paramsParsed.data;
-    const game = await getStoredGame(id);
+    const game = await loadGameWithTimeouts(id);
     if (!game) return NextResponse.json({ error: "Table not found." }, { status: 404 });
     const updated = applyPlayerAction(game, parsed.data, ownerToken);
     await updateStoredGame(updated, parsed.data, ownerToken);

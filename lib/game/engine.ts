@@ -18,6 +18,9 @@ import type { PlayerProfile } from "@/lib/profile/types";
 const suits: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
 const ranks: Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
 const streetOrder: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
+type TurnAction = Exclude<PlayerAction, { type: "next-hand" } | { type: "leave-seat" }>;
+// Indexed by seat position (0-3), so a vacated seat can always be restored to
+// its original bot identity regardless of who claimed it in between.
 const botProfiles: Array<{
   name: string;
   initials: string;
@@ -26,10 +29,14 @@ const botProfiles: Array<{
   avatarPreset: string;
   personality: BotPersonality;
 }> = [
+  { name: "Jax", initials: "JX", accent: "#8fd6a8", avatarUrl: null, avatarPreset: "lucky", personality: "ROCK" },
   { name: "Maya", initials: "MA", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond", personality: "MANIAC" },
   { name: "Theo", initials: "TH", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt", personality: "CALLING_STATION" },
   { name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
 ];
+
+// A human turn idle longer than this is auto-resolved (checked if free, folded otherwise).
+export const TURN_TIMEOUT_MS = 45_000;
 
 // Excludes visually ambiguous characters (0/O, 1/I/L) from shareable room codes.
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -70,6 +77,11 @@ function nextSeat(
 
 function inHand(seat: Seat) {
   return seat.status !== "out";
+}
+
+function setCurrentPlayer(state: GameState, index: number | null) {
+  state.currentPlayer = index;
+  state.turnStartedAt = index === null ? null : new Date().toISOString();
 }
 
 function canAct(seat: Seat) {
@@ -153,7 +165,7 @@ function setupHand(state: GameState, firstHand = false) {
   state.seats[big].lastAction = `Big blind · ${bigPaid}`;
   state.currentBet = Math.max(smallPaid, bigPaid);
   state.pot = state.seats.reduce((sum, seat) => sum + seat.committed, 0);
-  state.currentPlayer = nextSeat(state, big, canAct);
+  setCurrentPlayer(state, nextSeat(state, big, canAct));
   addLog(state, `Hand ${state.handNumber} dealt · blinds ${state.smallBlind}/${state.bigBlind}`, "deal");
 }
 
@@ -184,7 +196,7 @@ export function createGame(
       acted: false,
       lastAction: null,
     },
-    ...botProfiles.map((bot, index): Seat => ({
+    ...botProfiles.slice(1).map((bot, index): Seat => ({
       id: randomUUID(),
       ...bot,
       position: index + 1,
@@ -214,6 +226,7 @@ export function createGame(
     smallBlind: 10,
     bigBlind: 20,
     currentPlayer: null,
+    turnStartedAt: null,
     currentBet: 0,
     minRaise: 20,
     pot: 0,
@@ -263,6 +276,30 @@ export function claimSeat(
   return { state, seatIndex };
 }
 
+/**
+ * Gives up a seat, handing control back to a bot under the seat's original
+ * identity. If it happens to be this seat's turn right now, the following
+ * autoPlayBots() call resolves it automatically, since the seat is no longer
+ * human-controlled — no separate "resolve their pending turn" step needed.
+ */
+export function vacateSeat(state: GameState, token: string): GameState {
+  const seatIndex = state.seats.findIndex((seat) => seat.ownerToken === token);
+  if (seatIndex === -1) throw new Error("You are not seated at this table.");
+
+  const seat = state.seats[seatIndex];
+  const fallback = botProfiles[seat.position] ?? botProfiles[0];
+  seat.isHuman = false;
+  seat.ownerToken = null;
+  seat.personality = fallback.personality;
+  seat.name = fallback.name;
+  seat.initials = fallback.initials;
+  seat.accent = fallback.accent;
+  seat.avatarUrl = fallback.avatarUrl;
+  seat.avatarPreset = fallback.avatarPreset;
+
+  return state;
+}
+
 export function getLegalActions(state: GameState, seatIndex: number): LegalActions {
   const seat = state.seats[seatIndex];
   const isTurn = state.status === "playing" && state.currentPlayer === seatIndex && canAct(seat);
@@ -303,7 +340,7 @@ function awardUncontested(state: GameState, seat: Seat) {
   state.winners = [{ seatId: seat.id, name: seat.name, amount, hand: "Uncontested" }];
   state.street = "showdown";
   state.status = "complete";
-  state.currentPlayer = null;
+  setCurrentPlayer(state, null);
   state.message = `${seat.name} wins ${amount}`;
   addLog(state, `${seat.name} wins ${amount} uncontested`, "win");
 }
@@ -368,7 +405,7 @@ function showdown(state: GameState) {
   state.pot = state.seats.reduce((sum, seat) => sum + seat.committed, 0);
   state.street = "showdown";
   state.status = "complete";
-  state.currentPlayer = null;
+  setCurrentPlayer(state, null);
   state.message = winners.map((winner) => `${winner.name} wins ${winner.amount} · ${winner.hand}`).join(" / ");
   addLog(state, state.message, "win");
 }
@@ -391,7 +428,7 @@ function advanceStreet(state: GameState) {
   addLog(state, `${next[0].toUpperCase()}${next.slice(1)} dealt`, "deal");
 
   const first = nextSeat(state, state.buttonPosition, canAct);
-  state.currentPlayer = first;
+  setCurrentPlayer(state, first);
   state.message = `${next[0].toUpperCase()}${next.slice(1)}`;
   if (first === null || state.seats.filter(canAct).length <= 1) {
     advanceStreet(state);
@@ -409,11 +446,11 @@ function progressAfterAction(state: GameState, actorIndex: number) {
     advanceStreet(state);
     return;
   }
-  state.currentPlayer = nextSeat(state, actorIndex, canAct);
+  setCurrentPlayer(state, nextSeat(state, actorIndex, canAct));
   if (state.currentPlayer === null) advanceStreet(state);
 }
 
-function applyTurnAction(state: GameState, action: Exclude<PlayerAction, { type: "next-hand" }>) {
+function applyTurnAction(state: GameState, action: TurnAction) {
   const actorIndex = state.currentPlayer;
   if (actorIndex === null) throw new Error("There is no active turn.");
   const seat = state.seats[actorIndex];
@@ -508,7 +545,7 @@ const personalityProfiles: Record<
   },
 };
 
-function chooseBotAction(state: GameState, seatIndex: number): Exclude<PlayerAction, { type: "next-hand" }> {
+function chooseBotAction(state: GameState, seatIndex: number): TurnAction {
   const legal = getLegalActions(state, seatIndex);
   const seat = state.seats[seatIndex];
   const profile = personalityProfiles[seat.personality ?? "ROCK"];
@@ -545,10 +582,45 @@ export function autoPlayBots(state: GameState): GameState {
   return state;
 }
 
+/**
+ * Auto-resolves a human turn that has sat idle past TURN_TIMEOUT_MS (check if
+ * free, fold otherwise), so one AFK player can't stall the table for
+ * everyone else. Bundles any resulting cascade (an idle fold can hand the
+ * turn straight to another idle human) into a single version bump, since the
+ * persistence layer's optimistic-concurrency check only allows +1 per call.
+ */
+export function expireIdleTurn(state: GameState): { state: GameState; expiredSeatIds: string[] } {
+  const expiredSeatIds: string[] = [];
+  let safety = 0;
+  while (
+    state.status === "playing" &&
+    state.currentPlayer !== null &&
+    state.seats[state.currentPlayer].isHuman &&
+    state.turnStartedAt !== null &&
+    Date.now() - new Date(state.turnStartedAt).getTime() > TURN_TIMEOUT_MS &&
+    safety < 10
+  ) {
+    const seatIndex = state.currentPlayer;
+    const legal = getLegalActions(state, seatIndex);
+    const action: TurnAction = legal.canCheck ? { type: "check" } : { type: "fold" };
+    expiredSeatIds.push(state.seats[seatIndex].id);
+    applyTurnAction(state, action);
+    autoPlayBots(state);
+    safety += 1;
+  }
+  if (expiredSeatIds.length > 0) {
+    state.version += 1;
+    state.updatedAt = new Date().toISOString();
+  }
+  return { state, expiredSeatIds };
+}
+
 export function applyPlayerAction(state: GameState, action: PlayerAction, callerToken: string): GameState {
   const seatIndex = state.seats.findIndex((seat) => seat.ownerToken === callerToken);
   if (seatIndex === -1) throw new Error("You are not seated at this table.");
-  if (action.type === "next-hand") {
+  if (action.type === "leave-seat") {
+    vacateSeat(state, callerToken);
+  } else if (action.type === "next-hand") {
     if (state.status !== "complete") throw new Error("Finish the current hand first.");
     setupHand(state);
   } else {

@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { expireIdleTurn } from "@/lib/game/engine";
 import type { GameState, PlayerAction } from "@/lib/game/types";
 
 declare global {
@@ -133,6 +134,27 @@ export async function findGameByRoomCode(code: string): Promise<string | null> {
   return data?.id ?? null;
 }
 
+/**
+ * Loads a table and auto-resolves any human turn idle past TURN_TIMEOUT_MS
+ * before returning it, so one AFK player can't stall it for everyone else.
+ * Any route that reads a table (a poll, an action, a spectator view) should
+ * go through this rather than getStoredGame directly.
+ */
+export async function loadGameWithTimeouts(id: string): Promise<GameState | null> {
+  const state = await getStoredGame(id);
+  if (!state) return null;
+  const { state: updated, expiredSeatIds } = expireIdleTurn(state);
+  if (expiredSeatIds.length === 0) return state;
+  try {
+    await persistExpiredTurn(updated, expiredSeatIds[0]);
+    return updated;
+  } catch {
+    // Another request already changed the table between our read and this
+    // write; serve its latest state instead of failing an otherwise-passive read.
+    return getStoredGame(id);
+  }
+}
+
 export async function getStoredGame(id: string): Promise<GameState | null> {
   const supabase = adminClient();
   if (!supabase) return memoryGames.has(id) ? clone(memoryGames.get(id)!) : null;
@@ -205,5 +227,32 @@ export async function persistSeatClaim(state: GameState, seatId: string): Promis
   if (error) {
     if (error.code === "40001") throw new Error("The table changed. Refresh and try again.");
     throw new Error(`Could not join the table: ${error.message}`);
+  }
+}
+
+/** Persists an idle-turn auto-fold/auto-check produced by expireIdleTurn. */
+async function persistExpiredTurn(state: GameState, actorSeatId: string): Promise<void> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const current = memoryGames.get(state.id);
+    if (current && current.version !== state.version - 1) {
+      throw new Error("The table changed. Refresh and try again.");
+    }
+    memoryGames.set(state.id, clone(state));
+    return;
+  }
+
+  const previousVersion = state.version - 1;
+  const { error } = await supabase.rpc("persist_game_action", {
+    p_game_id: state.id,
+    p_expected_version: previousVersion,
+    p_state: state,
+    p_action_type: "fold",
+    p_amount: null,
+    p_actor_seat_id: actorSeatId,
+  });
+  if (error) {
+    if (error.code === "40001") throw new Error("The table changed. Refresh and try again.");
+    throw new Error(`Could not update the table: ${error.message}`);
   }
 }

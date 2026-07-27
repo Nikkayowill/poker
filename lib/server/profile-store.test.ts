@@ -4,6 +4,7 @@ import {
   adjustGold,
   banProfile,
   claimDailyGold,
+  deleteProfile,
   ensureProfile,
   isBanned,
   listProfiles,
@@ -102,6 +103,21 @@ describe("Gold economy (memory mode)", () => {
     const profiles = await listProfiles();
     const found = profiles.find((entry) => entry.id === profile.id);
     expect(found?.lastSeenIp).toBe("203.0.113.5");
+  });
+
+  it("deletes a profile by id, so it no longer appears in listProfiles or isBanned lookups", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await deleteProfile(profile.id);
+    const profiles = await listProfiles();
+    expect(profiles.some((entry) => entry.id === profile.id)).toBe(false);
+    // ensureProfile treats the now-unknown token as a brand new signup.
+    const recreated = await ensureProfile(token);
+    expect(recreated.id).not.toBe(profile.id);
+  });
+
+  it("rejects deleteProfile for an unknown profile id", async () => {
+    await expect(deleteProfile(randomUUID())).rejects.toThrow("Profile not found.");
   });
 
   it("lists profiles newest first, including one just created", async () => {

@@ -2357,6 +2357,23 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .admin-header h1 { margin: 0; font-size: 20px; }
 
+.admin-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-back {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.admin-back:hover { color: var(--ink); border-color: var(--gold); }
+
 .admin-refresh {
   padding: 8px 14px;
   border-radius: 8px;
@@ -2516,6 +2533,19 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 
 .admin-ban:disabled { opacity: 0.6; cursor: default; }
+
+.admin-delete {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 107, 107, 0.6);
+  background: rgba(255, 107, 107, 0.16);
+  color: #ffb3b3;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-delete:disabled { opacity: 0.6; cursor: default; }
 
 .admin-flag {
   display: inline-block;

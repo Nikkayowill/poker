@@ -413,6 +413,32 @@ export async function banProfile(profileId: string, banned: boolean): Promise<vo
 }
 
 /**
+ * Permanently erases a profile by id. Distinct from banProfile: a ban blocks
+ * future play but keeps the record; this removes it outright (e.g. cleaning
+ * up duplicate test/throwaway signups -- this app has no login, so every new
+ * browser/cleared-cookie visit creates a fresh profile). Any of that
+ * profile's historical game_seats rows are retained but detached
+ * (profile_id -> null via the FK's own ON DELETE SET NULL) rather than
+ * deleted, so past hand history isn't corrupted.
+ */
+export async function deleteProfile(profileId: string): Promise<void> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) throw new Error("Profile not found.");
+    memoryProfiles.delete(entry[0]);
+    return;
+  }
+  const { data, error } = await supabase
+    .from("profiles")
+    .delete()
+    .eq("id", profileId)
+    .select("id");
+  if (error) throw new Error(`Could not delete profile: ${error.message}`);
+  if (!data || data.length === 0) throw new Error("Profile not found.");
+}
+
+/**
  * Stamps the IP a token most recently joined/hosted a table from -- an
  * admin-only signal for spotting multiple accounts played from the same
  * address (collusion/chip dumping), never surfaced to players. Best-effort:

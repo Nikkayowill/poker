@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import type { AdminProfileSummary } from "@/lib/server/profile-store";
 
 const SECRET_STORAGE_KEY = "river-room-admin-secret";
@@ -167,6 +168,26 @@ export function AdminDashboard() {
     }
   };
 
+  const removeProfile = async (profile: AdminProfileSummary) => {
+    if (!window.confirm(`Permanently delete ${profile.displayName}'s profile? This can't be undone.`)) return;
+    setPendingId(profile.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/delete-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ profileId: profile.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not delete that profile.");
+      setProfiles((current) => current?.filter((entry) => entry.id !== profile.id) ?? null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not delete that profile.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
   const copyId = async (id: string) => {
     try {
       await navigator.clipboard.writeText(id);
@@ -243,14 +264,17 @@ export function AdminDashboard() {
     <main className="admin-shell">
       <header className="admin-header">
         <h1>River Room admin</h1>
-        <button
-          type="button"
-          className="admin-refresh"
-          onClick={() => void load(secret)}
-          disabled={loading}
-        >
-          {loading ? "Refreshing…" : "Refresh"}
-        </button>
+        <div className="admin-header-actions">
+          <Link className="admin-back" href="/">← Back to the table</Link>
+          <button
+            type="button"
+            className="admin-refresh"
+            onClick={() => void load(secret)}
+            disabled={loading}
+          >
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </header>
       {error && <p className="admin-error">{error}</p>}
       {stats && (
@@ -305,6 +329,7 @@ export function AdminDashboard() {
               <th>Adjust Gold</th>
               <th>Banned</th>
               <th />
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -356,14 +381,25 @@ export function AdminDashboard() {
                       {profile.banned ? "Unban" : "Ban"}
                     </button>
                   </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="admin-delete"
+                      disabled={pendingId === profile.id}
+                      onClick={() => void removeProfile(profile)}
+                    >
+                      Delete
+                    </button>
+                  </td>
                 </tr>
               );
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
+                <td colSpan={9} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
               </tr>
             )}
+
           </tbody>
         </table>
       </div>

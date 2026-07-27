@@ -267,6 +267,41 @@ export async function spendGold(token: string, amount: number): Promise<PlayerPr
 }
 
 /**
+ * Refunds a prior spendGold call that turned out not to buy anything (e.g.
+ * a seat-claim or rebuy that failed to persist after Gold was already
+ * deducted). This is a rare error-recovery path, not the spend hot path, so
+ * it uses a plain read-then-write rather than a guarded RPC -- a slight
+ * race here would only ever over-refund in the player's favor.
+ */
+export async function creditGold(token: string, amount: number): Promise<PlayerProfile> {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid Gold amount.");
+  const now = new Date().toISOString();
+  const supabase = adminClient();
+  if (!supabase) {
+    const current = memoryProfiles.get(token);
+    if (!current) throw new Error("Profile not found.");
+    const next: StoredProfile = { ...current, goldBalance: current.goldBalance + amount, updatedAt: now };
+    memoryProfiles.set(token, next);
+    return publicProfile(next);
+  }
+
+  const { data: current, error: readError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("session_token", token)
+    .single();
+  if (readError) throw new Error(`Could not load profile: ${readError.message}`);
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ gold_balance: Number(current.gold_balance) + amount, updated_at: now })
+    .eq("session_token", token)
+    .select("*")
+    .single();
+  if (error) throw new Error(`Could not credit Gold: ${error.message}`);
+  return publicProfile(fromRow(data));
+}
+
+/**
  * Credits the flat daily amount once per UTC calendar day. Throws if
  * already claimed today rather than silently no-op-ing, so the client can
  * tell the difference between "claimed" and "nothing happened."

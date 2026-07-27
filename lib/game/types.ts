@@ -1,3 +1,5 @@
+import type { StakesTier } from "./tiers";
+
 export type Suit = "clubs" | "diamonds" | "hearts" | "spades";
 export type Rank =
   | "2" | "3" | "4" | "5" | "6" | "7" | "8"
@@ -57,6 +59,8 @@ export interface GameState {
   isPrivate: boolean;
   /** Shareable join code for private tables; null for public (quick-play) tables. */
   roomCode: string | null;
+  /** Stakes level; fixes this table's blinds and every seat's buy-in bounds. */
+  tier: StakesTier;
   version: number;
   status: GameStatus;
   street: Street;
@@ -90,7 +94,8 @@ export type PlayerAction =
   | { type: "all-in" }
   | { type: "use-time-card" }
   | { type: "next-hand" }
-  | { type: "leave-seat" };
+  | { type: "leave-seat" }
+  | { type: "rebuy"; amount: number };
 
 export interface LegalActions {
   canFold: boolean;

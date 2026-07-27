@@ -646,3 +646,60 @@ describe("time cards", () => {
     expect(() => applyPlayerAction(game, { type: "use-time-card" }, token)).toThrow(/time cards/i);
   });
 });
+
+describe("stakes tiers and buy-ins", () => {
+  it("defaults to the micro tier's blinds and a 1000 stack when no tier/buyIn is given", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    expect(game.tier).toBe("micro");
+    expect(game.smallBlind).toBe(10);
+    expect(game.bigBlind).toBe(20);
+    expect(game.seats[0].stack).toBe(1000);
+  });
+
+  it("applies a tier's blinds and clamps an out-of-range buy-in into bounds", () => {
+    const tooLow = createGame(crypto.randomUUID(), "Host", undefined, { tier: "mid", buyIn: 100 });
+    expect(tooLow.tier).toBe("mid");
+    expect(tooLow.smallBlind).toBe(50);
+    expect(tooLow.bigBlind).toBe(100);
+    expect(tooLow.seats[0].stack).toBe(2500); // clamped up to mid's minBuyIn
+
+    const tooHigh = createGame(crypto.randomUUID(), "Host", undefined, { tier: "mid", buyIn: 999_999 });
+    expect(tooHigh.seats[0].stack).toBe(10_000); // clamped down to mid's maxBuyIn
+  });
+
+  it("clamps a claimed seat's buy-in into the table's own tier bounds", () => {
+    const hostToken = crypto.randomUUID();
+    let game = createGame(hostToken, "Host", undefined, { tier: "high", buyIn: 20_000 });
+    // Only an empty (busted-out) seat takes a fresh buy-in on claim -- claiming
+    // an active bot's seat mid-hand inherits its current stack instead, which
+    // is exercised separately above. Simulate a busted seat here.
+    game.seats[1].stack = 0;
+    const guestToken = crypto.randomUUID();
+    const claimed = claimSeat(game, guestToken, testProfile("Guest"), 999_999);
+    game = claimed.state;
+    expect(claimed.seatIndex).toBe(1);
+    expect(game.seats[claimed.seatIndex].stack).toBe(40_000); // clamped down to high's maxBuyIn
+  });
+
+  it("lets a busted seat rebuy between hands, clamped to the table's tier", () => {
+    const token = crypto.randomUUID();
+    let game = createGame(token, "Host", undefined, { tier: "micro", buyIn: 1000 });
+    game.status = "complete";
+    game.seats[0].stack = 0;
+
+    game = applyPlayerAction(game, { type: "rebuy", amount: 5_000_000 }, token);
+    expect(game.seats[0].stack).toBe(2000); // clamped down to micro's maxBuyIn
+    expect(game.status).toBe("playing"); // rebuy immediately deals the next hand
+  });
+
+  it("refuses to rebuy a seat that still has chips, or outside a completed hand", () => {
+    const token = crypto.randomUUID();
+    const game = createGame(token, "Host");
+    expect(() => applyPlayerAction(game, { type: "rebuy", amount: 1000 }, token))
+      .toThrow(/rebuy between hands/i);
+
+    game.status = "complete";
+    expect(() => applyPlayerAction(game, { type: "rebuy", amount: 1000 }, token))
+      .toThrow(/still has chips/i);
+  });
+});

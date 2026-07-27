@@ -2,6 +2,7 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { advanceTimedTurn, normalizeGameState } from "@/lib/game/engine";
 import type { GameState, PlayerAction } from "@/lib/game/types";
+import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { readSupabaseRuntimeConfig } from "./runtime-config";
 
 declare global {
@@ -95,12 +96,20 @@ export async function createStoredGame(state: GameState): Promise<void> {
 }
 
 /** Finds the oldest public, still-playable table with an open (bot) seat. */
-export async function findOpenPublicGame(): Promise<string | null> {
+/**
+ * Finds an open public table at a specific stakes tier. Filters by the
+ * tier's blinds (small_blind/big_blind are already dedicated, indexed
+ * columns on `games`) rather than adding a new `tier` column -- blinds
+ * uniquely determine tier in this app's fixed 3-tier config.
+ */
+export async function findOpenPublicGame(tier: StakesTier): Promise<string | null> {
+  const config = TIER_CONFIG[tier];
   const supabase = adminClient();
   if (!supabase) {
     let best: GameState | null = null;
     for (const state of memoryGames.values()) {
       if (state.isPrivate || state.status !== "playing") continue;
+      if (state.tier !== tier) continue;
       if (!state.seats.some((seat) => seat.ownerToken === null)) continue;
       if (!best || state.createdAt < best.createdAt) best = state;
     }
@@ -109,11 +118,13 @@ export async function findOpenPublicGame(): Promise<string | null> {
 
   const { data, error } = await supabase
     .from("game_seats")
-    .select("game_id, games!inner(created_at, is_private, status)")
+    .select("game_id, games!inner(created_at, is_private, status, small_blind, big_blind)")
     .is("owner_token", null)
     .eq("is_bot", true)
     .eq("games.is_private", false)
     .eq("games.status", "playing")
+    .eq("games.small_blind", config.smallBlind)
+    .eq("games.big_blind", config.bigBlind)
     .order("created_at", { referencedTable: "games", ascending: true })
     .limit(1);
   if (error) throw new Error(`Could not search for an open table: ${error.message}`);

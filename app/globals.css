@@ -1626,6 +1626,7 @@ button:disabled { cursor: wait; opacity: .62; }
 .hand-complete > div { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .hand-complete strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 14px Georgia, serif; color: #f0dfaa; }
 .action-kicker { color: #77867e; font-size: 8px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+.busted-actions { display: flex; gap: 10px; flex-shrink: 0; }
 
 .table-toast {
   position: absolute;

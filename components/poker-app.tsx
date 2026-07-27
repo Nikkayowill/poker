@@ -21,6 +21,7 @@ import {
 import { ChangeEvent, FormEvent, memo, useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import type { Card, GameSnapshot, PlayerAction, PublicSeat, Winner } from "@/lib/game/types";
+import { TIER_CONFIG } from "@/lib/game/tiers";
 import { avatarPresets, profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 
@@ -680,19 +681,29 @@ function ActionBar({
       );
     }
     if (mySeat?.stack === 0) {
+      const rebuyAmount = TIER_CONFIG[game.tier].maxBuyIn;
       return (
         <div className="action-bar hand-complete busted-player">
           <div>
             <span className="action-kicker">Stack exhausted</span>
-            <strong>You’re out of chips. Your seat will open for the next player.</strong>
+            <strong>You’re out of chips. Rebuy to keep playing, or close your seat.</strong>
           </div>
-          <button
-            className="primary-action"
-            disabled={pending}
-            onClick={() => onAction({ type: "next-hand" })}
-          >
-            Close seat
-          </button>
+          <div className="busted-actions">
+            <button
+              className="secondary-action"
+              disabled={pending}
+              onClick={() => onAction({ type: "next-hand" })}
+            >
+              Close seat
+            </button>
+            <button
+              className="primary-action"
+              disabled={pending}
+              onClick={() => onAction({ type: "rebuy", amount: rebuyAmount })}
+            >
+              Rebuy {rebuyAmount.toLocaleString()}
+            </button>
+          </div>
         </div>
       );
     }
@@ -1543,7 +1554,7 @@ export function PokerApp() {
     setPersistence(data.persistence);
   }, []);
 
-  const ingest = useCallback((data: { game: GameSnapshot; persistence: string }) => {
+  const ingest = useCallback((data: { game: GameSnapshot; persistence: string; profile?: PlayerProfile }) => {
     setGame((current) => (
       current && current.id === data.game.id && current.version > data.game.version
         ? current
@@ -1552,6 +1563,10 @@ export function PokerApp() {
     setPersistence(data.persistence);
     setConnectionState("connected");
     setError(null);
+    // Present whenever the action spent or credited Gold (a buy-in, a
+    // rebuy), so the navbar balance updates without a separate profile
+    // re-fetch.
+    if (data.profile) setProfile(data.profile);
   }, []);
 
   const refresh = useCallback(async (id: string) => {

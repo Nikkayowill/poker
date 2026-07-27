@@ -14,6 +14,7 @@ import type {
   Winner,
 } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { clampBuyIn, TIER_CONFIG, type StakesTier } from "./tiers";
 
 const suits: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
 const ranks: Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
@@ -228,9 +229,17 @@ export function createGame(
   hostToken: string,
   playerName = "You",
   appearance?: Pick<PlayerProfile, "initials" | "accent" | "avatarUrl" | "avatarPreset">,
-  options?: { isPrivate?: boolean },
+  options?: { isPrivate?: boolean; tier?: StakesTier; buyIn?: number },
 ): GameState {
   const now = new Date().toISOString();
+  const tier = options?.tier ?? "micro";
+  const config = TIER_CONFIG[tier];
+  // Defaults to 1000 (not the tier's own range) so every existing caller
+  // that doesn't pass a buyIn -- every test, and any not-yet-updated route --
+  // keeps getting exactly the stack size the app has always started with.
+  // A real buy-in choice (the new lobby/quick-play flow) always passes one
+  // explicitly and gets clamped into the tier's actual bounds.
+  const buyIn = options?.buyIn === undefined ? 1000 : clampBuyIn(tier, options.buyIn);
   const seats: Seat[] = [
     {
       id: randomUUID(),
@@ -243,7 +252,7 @@ export function createGame(
       isHuman: true,
       ownerToken: hostToken,
       personality: null,
-      stack: 1000,
+      stack: buyIn,
       status: "active",
       holeCards: [],
       streetBet: 0,
@@ -258,7 +267,7 @@ export function createGame(
       position: index + 1,
       isHuman: false,
       ownerToken: null,
-      stack: 1000,
+      stack: buyIn,
       status: "active",
       holeCards: [],
       streetBet: 0,
@@ -275,18 +284,19 @@ export function createGame(
     hostToken,
     isPrivate,
     roomCode: isPrivate ? generateRoomCode() : null,
+    tier,
     version: 1,
     status: "playing",
     street: "preflop",
     handNumber: 1,
     buttonPosition: 0,
-    smallBlind: 10,
-    bigBlind: 20,
+    smallBlind: config.smallBlind,
+    bigBlind: config.bigBlind,
     currentPlayer: null,
     turnStartedAt: null,
     turnDeadlineAt: null,
     currentBet: 0,
-    minRaise: 20,
+    minRaise: config.bigBlind,
     pot: 0,
     deck: [],
     community: [],
@@ -311,6 +321,7 @@ export function claimSeat(
   state: GameState,
   token: string,
   profile: Pick<PlayerProfile, "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset">,
+  buyIn?: number,
 ): { state: GameState; seatIndex: number } {
   const existing = state.seats.findIndex((seat) => seat.ownerToken === token);
   if (existing !== -1) return { state, seatIndex: existing };
@@ -328,7 +339,7 @@ export function claimSeat(
   seat.avatarUrl = profile.avatarUrl;
   seat.avatarPreset = profile.avatarPreset;
   seat.timeCardsRemaining = STARTING_TIME_CARDS;
-  if (seat.stack === 0) seat.stack = 1000;
+  if (seat.stack === 0) seat.stack = buyIn === undefined ? 1000 : clampBuyIn(state.tier, buyIn);
   if (state.currentPlayer === seatIndex) setCurrentPlayer(state, seatIndex);
 
   state.version += 1;
@@ -738,6 +749,16 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
     addLog(state, `${seat.name} uses a time card (+20s)`);
   } else if (action.type === "next-hand") {
     if (state.status !== "complete") throw new Error("Finish the current hand first.");
+    setupHand(state);
+  } else if (action.type === "rebuy") {
+    if (state.status !== "complete") throw new Error("You can only rebuy between hands.");
+    const seat = state.seats[seatIndex];
+    if (seat.stack > 0) throw new Error("Your seat still has chips.");
+    // Refill and immediately deal, in one action -- refilling first means
+    // setupHand's own releaseBustedHumanSeats (which only reclaims seats
+    // still at 0) leaves this seat alone rather than handing it to a bot.
+    seat.stack = clampBuyIn(state.tier, action.amount);
+    seat.status = "active";
     setupHand(state);
   } else {
     if (state.status !== "playing") throw new Error("This hand is complete.");

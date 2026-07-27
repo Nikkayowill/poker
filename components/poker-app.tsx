@@ -156,7 +156,8 @@ function GoldBadge({
     <div className={clsx("gold-badge", justClaimed && "gold-badge-claimed")}>
       <span className="gold-balance">
         <Coins size={14} />
-        <strong>{profile.goldBalance.toLocaleString()}</strong>
+        <span>Gold: </span>
+        <strong>{(profile.goldBalance ?? 0).toLocaleString()}</strong>
       </span>
       <button type="button" className="gold-claim-button" disabled={!canClaim || claiming} onClick={claim}>
         {canClaim ? "Claim daily Gold" : "Claimed today"}
@@ -344,7 +345,7 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessi
         </p>
         <div className="start-form">
           <div className="form-label-row">
-            <label htmlFor="player-name">Player name</label>
+            <label htmlFor="player-name">Enter Your Player Name</label>
           </div>
           <div className="name-row">
             <input
@@ -402,7 +403,6 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessi
       </section>
       <aside className="lobby-preview">
         <div className="preview-heading">
-          <span>Table preview</span>
           <span>No limit · 6-max</span>
         </div>
         <div className="mini-table">

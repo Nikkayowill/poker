@@ -8,7 +8,9 @@ import {
   creditGold,
   deleteProfile,
   ensureProfile,
+  findSessionByUserId,
   isBanned,
+  linkProfileToUser,
   listProfiles,
   recordSeenIp,
   setUnlimitedGold,
@@ -68,6 +70,7 @@ describe("Gold economy (memory mode)", () => {
   it("grants the daily amount once, then rejects a same-day repeat", async () => {
     const token = randomUUID();
     await ensureProfile(token);
+    await linkProfileToUser(token, randomUUID());
     const claimed = await claimDailyGold(token);
     expect(claimed.goldBalance).toBe(3000);
     expect(claimed.lastDailyClaimAt).not.toBeNull();
@@ -168,6 +171,46 @@ describe("Gold economy (memory mode)", () => {
     await setUnlimitedGold(profile.id, true);
     await adjustGold(profile.id, -2000);
     await expect(claimBackstopGold(token, 500)).rejects.toThrow("unlimited Gold");
+  });
+
+  it("refuses the daily claim for a guest who has not saved their progress", async () => {
+    const token = randomUUID();
+    await ensureProfile(token);
+    await expect(claimDailyGold(token)).rejects.toThrow("Save your progress");
+  });
+
+  it("links an account to a guest profile without disturbing its Gold", async () => {
+    const token = randomUUID();
+    const guest = await ensureProfile(token);
+    await spendGold(token, 500); // play a little first, so there is progress to keep
+    expect(guest.isRegistered).toBe(false);
+
+    const linked = await linkProfileToUser(token, randomUUID());
+    expect(linked.isRegistered).toBe(true);
+    expect(linked.id).toBe(guest.id);
+    expect(linked.goldBalance).toBe(1500);
+  });
+
+  it("is idempotent for the same account and refuses a different one", async () => {
+    const token = randomUUID();
+    await ensureProfile(token);
+    const userId = randomUUID();
+    await linkProfileToUser(token, userId);
+    await expect(linkProfileToUser(token, userId)).resolves.toBeTruthy();
+    await expect(linkProfileToUser(token, randomUUID()))
+      .rejects.toThrow("already belongs to another account");
+  });
+
+  it("finds an account's existing profile so a cleared cookie can be restored", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token, "Returning");
+    const userId = randomUUID();
+    await linkProfileToUser(token, userId);
+
+    const found = await findSessionByUserId(userId);
+    expect(found?.token).toBe(token);
+    expect(found?.profile.id).toBe(profile.id);
+    expect(await findSessionByUserId(randomUUID())).toBeNull();
   });
 
   it("lists profiles newest first, including one just created", async () => {

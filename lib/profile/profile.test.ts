@@ -18,6 +18,7 @@ describe("profile appearance", () => {
       goldBalance: 2000,
       unlimitedGold: false,
       lastDailyClaimAt: null,
+      isRegistered: false,
     };
     const snapshot = toSnapshot(createGame(token, profile.displayName, profile), token);
     expect(snapshot.seats[0]).toMatchObject({

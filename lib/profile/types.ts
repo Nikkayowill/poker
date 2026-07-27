@@ -34,6 +34,12 @@ export interface PlayerProfile {
   unlimitedGold: boolean;
   /** ISO timestamp of the last successful daily-Gold claim, or null if never claimed. */
   lastDailyClaimAt: string | null;
+  /**
+   * Whether this profile is backed by a real account. Deliberately a boolean
+   * rather than the account id: the client only needs to know if progress is
+   * safe and which rewards are unlocked, never who the account is.
+   */
+  isRegistered: boolean;
 }
 
 export interface ProfileUpdate {

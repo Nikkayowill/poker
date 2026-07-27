@@ -22,6 +22,7 @@ import { ChangeEvent, FormEvent, memo, useCallback, useEffect, useRef, useState 
 import clsx from "clsx";
 import type { Card, GameSnapshot, PlayerAction, PublicSeat, Winner } from "@/lib/game/types";
 import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
+import { accountsEnabled, authClient } from "@/lib/auth/client";
 import { avatarPresets, profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 
@@ -174,8 +175,16 @@ function GoldBadge({
         <span>Gold: </span>
         <strong>{(profile.goldBalance ?? 0).toLocaleString()}</strong>
       </span>
-      <button type="button" className="gold-claim-button" disabled={!canClaim || claiming} onClick={claim}>
-        {canClaim ? "Claim daily Gold" : "Claimed today"}
+      <button
+        type="button"
+        className="gold-claim-button"
+        disabled={!profile.isRegistered || !canClaim || claiming}
+        title={profile.isRegistered ? undefined : "Save your progress to unlock the daily reward"}
+        onClick={claim}
+      >
+        {!profile.isRegistered
+          ? "Save to claim"
+          : canClaim ? "Claim daily Gold" : "Claimed today"}
       </button>
     </div>
   );
@@ -344,6 +353,9 @@ function Lobby({
   cashOutNotice,
   onDismissCashOut,
   onClaimBackstop,
+  authNotice,
+  onDismissAuthNotice,
+  onSaveProgress,
 }: {
   profile: PlayerProfile | null;
   onQuickPlay: (name: string, tier: StakesTier, buyIn: number) => void;
@@ -355,6 +367,9 @@ function Lobby({
   cashOutNotice: number | null;
   onDismissCashOut: () => void;
   onClaimBackstop: () => void;
+  authNotice: string | null;
+  onDismissAuthNotice: () => void;
+  onSaveProgress: () => void;
 }) {
   const [name, setName] = useState(profile?.displayName ?? "");
   const [joinCode, setJoinCode] = useState("");
@@ -368,6 +383,13 @@ function Lobby({
   const needsTopUp = Boolean(
     profile && !profile.unlimitedGold && (profile.goldBalance ?? 0) < TIER_CONFIG.micro.minBuyIn,
   );
+  // Only nudge a guest once they have actually played -- a profile still
+  // sitting on its untouched starting balance has nothing worth saving yet,
+  // and prompting then is asking for a signup with no reason behind it.
+  const showSavePrompt = Boolean(
+    accountsEnabled() && profile && !profile.isRegistered && profile.lastDailyClaimAt === null
+    && profile.goldBalance !== 2000,
+  );
   return (
     <main className="lobby">
       <section className="hero">
@@ -379,6 +401,26 @@ function Lobby({
             </span>
             <button type="button" onClick={onDismissCashOut} aria-label="Dismiss">
               <X size={14} />
+            </button>
+          </div>
+        )}
+        {authNotice && (
+          <div className="cash-out-notice" role="status">
+            <Check size={15} />
+            <span>{authNotice}</span>
+            <button type="button" onClick={onDismissAuthNotice} aria-label="Dismiss">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+        {showSavePrompt && (
+          <div className="save-progress-notice" role="status">
+            <span>
+              You&rsquo;re playing as a guest. Save your progress to keep your Gold and claim
+              daily rewards.
+            </span>
+            <button type="button" className="secondary-action" onClick={onSaveProgress}>
+              Save progress
             </button>
           </div>
         )}
@@ -1770,6 +1812,7 @@ export function PokerApp() {
   const [error, setError] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connected");
   const [cashOutNotice, setCashOutNotice] = useState<number | null>(null);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const gameId = game?.id;
 
   const loadProfile = useCallback(async () => {
@@ -2060,6 +2103,56 @@ export function PokerApp() {
     }
   };
 
+  // Completes a sign-in: Supabase has redirected back with a session, so
+  // hand its access token to the server, which verifies it and either links
+  // this guest profile or restores the one the account already owns.
+  const linkAccount = useCallback(async (accessToken: string) => {
+    try {
+      const response = await fetch("/api/auth/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not save your progress.");
+      setProfile(data.profile);
+      setAuthNotice(data.restored ? "Welcome back — your progress is restored." : "Progress saved to your account.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not save your progress.");
+    }
+  }, []);
+
+  useEffect(() => {
+    const client = authClient();
+    if (!client) return;
+    // Fires on the redirect back from the provider, and again on refresh
+    // while a session is cached, which is what keeps a returning player
+    // signed in without a second trip through the provider.
+    const { data } = client.auth.onAuthStateChange((_event, session) => {
+      if (session?.access_token) void linkAccount(session.access_token);
+    });
+    return () => data.subscription.unsubscribe();
+  }, [linkAccount]);
+
+  const signIn = async () => {
+    const client = authClient();
+    if (!client) return;
+    setError(null);
+    const { error: signInError } = await client.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+    if (signInError) setError("Could not open Google sign-in. Try again.");
+  };
+
+  const signOut = async () => {
+    const client = authClient();
+    if (!client) return;
+    await client.auth.signOut();
+    setAuthNotice("Signed out. This browser is a guest again.");
+    await loadProfile().catch(() => {});
+  };
+
   /** Leaving the table while still seated cashes out first, so chips are never stranded. */
   const leaveTable = () => {
     if (game?.isSeated) {
@@ -2080,6 +2173,19 @@ export function PokerApp() {
           <div className="header-actions">
             <div className="header-status">No-limit Hold’em · 6-max</div>
             {profile && <GoldBadge profile={profile} onClaimed={setProfile} />}
+            {accountsEnabled() && profile && (
+              profile.isRegistered
+                ? (
+                  <button type="button" className="auth-button" onClick={() => void signOut()}>
+                    Sign out
+                  </button>
+                )
+                : (
+                  <button type="button" className="auth-button auth-button-save" onClick={() => void signIn()}>
+                    Save progress
+                  </button>
+                )
+            )}
             {profile && <ProfileTrigger profile={profile} onClick={() => setProfileOpen(true)} />}
           </div>
         </header>
@@ -2113,6 +2219,9 @@ export function PokerApp() {
             cashOutNotice={cashOutNotice}
             onDismissCashOut={() => setCashOutNotice(null)}
             onClaimBackstop={claimBackstop}
+            authNotice={authNotice}
+            onDismissAuthNotice={() => setAuthNotice(null)}
+            onSaveProgress={signIn}
           />
         )}
       {profileOpen && profile && (

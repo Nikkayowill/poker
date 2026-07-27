@@ -2345,6 +2345,40 @@ button:disabled { cursor: wait; opacity: .62; }
 .broke-notice span { flex: 1; min-width: 200px; }
 .broke-notice button { flex-shrink: 0; padding: 7px 14px; font-size: 12px; min-height: 0; }
 
+.save-progress-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.save-progress-notice span { flex: 1; min-width: 220px; }
+.save-progress-notice button { flex-shrink: 0; padding: 7px 14px; font-size: 12px; min-height: 0; }
+
+.auth-button {
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.auth-button:hover { border-color: var(--gold); }
+.auth-button-save { border-color: rgba(217, 184, 93, 0.45); color: var(--gold-light); }
+.auth-button-save:hover { background: rgba(217, 184, 93, 0.12); }
+
 .admin-shell {
   min-height: 100vh;
   min-height: 100svh;

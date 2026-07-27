@@ -4,10 +4,15 @@ import { avatarPresets, profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile, ProfileUpdate } from "@/lib/profile/types";
 import { adminClient } from "./game-store";
 
-interface StoredProfile extends PlayerProfile {
+// isRegistered is omitted and derived from userId in publicProfile, so the
+// owning account is the single source of truth rather than a flag that can
+// drift out of sync with it.
+interface StoredProfile extends Omit<PlayerProfile, "isRegistered"> {
   avatarPath: string | null;
   /** Last broke-player recovery grant, rate limited separately from the daily claim. */
   lastBackstopAt: string | null;
+  /** Owning auth account, or null while this is still a guest profile. */
+  userId: string | null;
   /** Admin-only moderation fields -- never leave publicProfile()'s shape. */
   banned: boolean;
   lastSeenIp: string | null;
@@ -65,6 +70,7 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     goldBalance: profile.goldBalance,
     unlimitedGold: profile.unlimitedGold,
     lastDailyClaimAt: profile.lastDailyClaimAt,
+    isRegistered: profile.userId !== null,
   };
 }
 
@@ -83,6 +89,7 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     goldBalance: STARTING_GOLD,
     unlimitedGold: false,
     lastDailyClaimAt: null,
+    userId: null,
     banned: false,
     lastSeenIp: null,
     lastBackstopAt: null,
@@ -103,6 +110,7 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     goldBalance: Number(row.gold_balance),
     unlimitedGold: Boolean(row.unlimited_gold),
     lastDailyClaimAt: row.last_daily_claim_at ? String(row.last_daily_claim_at) : null,
+    userId: row.user_id ? String(row.user_id) : null,
     banned: Boolean(row.banned),
     lastSeenIp: row.last_seen_ip ? String(row.last_seen_ip) : null,
     lastBackstopAt: row.last_backstop_at ? String(row.last_backstop_at) : null,
@@ -347,6 +355,11 @@ export async function claimDailyGold(token: string): Promise<PlayerProfile> {
   if (!supabase) {
     const current = memoryProfiles.get(token);
     if (!current) throw new Error("Profile not found.");
+    // The recurring faucet requires an identity that survives a cleared
+    // cookie. Guests keep their starter Gold and can play freely; only the
+    // repeatable reward asks them to be someone, which converts on real
+    // value and closes the obvious farming route in the same rule.
+    if (!current.userId) throw new Error("Save your progress to claim daily Gold.");
     if (current.lastDailyClaimAt && isSameUtcDay(new Date(current.lastDailyClaimAt), now)) {
       throw new Error("You already claimed your daily Gold today.");
     }
@@ -359,6 +372,16 @@ export async function claimDailyGold(token: string): Promise<PlayerProfile> {
     memoryProfiles.set(token, next);
     return publicProfile(next);
   }
+
+  // Checked here rather than inside the RPC so an unregistered player gets
+  // told what to do about it, instead of the RPC's generic "already claimed".
+  const { data: gate, error: gateError } = await supabase
+    .from("profiles")
+    .select("user_id")
+    .eq("session_token", token)
+    .single();
+  if (gateError) throw new Error("Profile not found.");
+  if (!gate.user_id) throw new Error("Save your progress to claim daily Gold.");
 
   const { data, error } = await supabase
     .rpc("claim_daily_gold", { p_token: token, p_amount: DAILY_GOLD_GRANT })
@@ -373,6 +396,77 @@ export async function claimDailyGold(token: string): Promise<PlayerProfile> {
     .single();
   if (readError) throw new Error(`Could not load profile: ${readError.message}`);
   return publicProfile(fromRow(row));
+}
+
+/**
+ * Attaches an authenticated account to the profile behind a session, turning
+ * a guest into a registered player without disturbing their Gold, avatar or
+ * history -- the session cookie stays the gameplay identity either way.
+ *
+ * Idempotent for the same account, and refuses to re-point a profile at a
+ * different account, which would silently transfer one player's balance to
+ * another.
+ */
+export async function linkProfileToUser(token: string, userId: string): Promise<PlayerProfile> {
+  const now = new Date().toISOString();
+  const supabase = adminClient();
+
+  if (!supabase) {
+    const current = memoryProfiles.get(token);
+    if (!current) throw new Error("Profile not found.");
+    if (current.userId && current.userId !== userId) {
+      throw new Error("This profile already belongs to another account.");
+    }
+    const next: StoredProfile = { ...current, userId, updatedAt: now };
+    memoryProfiles.set(token, next);
+    return publicProfile(next);
+  }
+
+  const { data: row, error: readError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("session_token", token)
+    .single();
+  if (readError) throw new Error("Profile not found.");
+  const current = fromRow(row);
+  if (current.userId && current.userId !== userId) {
+    throw new Error("This profile already belongs to another account.");
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ user_id: userId, updated_at: now })
+    .eq("session_token", token)
+    .select("*")
+    .single();
+  if (error) throw new Error(`Could not link your account: ${error.message}`);
+  return publicProfile(fromRow(data));
+}
+
+/**
+ * Finds the profile an account already owns, along with the session token
+ * that addresses it. Used to restore a returning player whose cookie is
+ * gone: their browser gets pointed back at the profile they already have,
+ * rather than starting over as a stranger.
+ */
+export async function findSessionByUserId(
+  userId: string,
+): Promise<{ token: string; profile: PlayerProfile } | null> {
+  const supabase = adminClient();
+
+  if (!supabase) {
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.userId === userId);
+    return entry ? { token: entry[0], profile: publicProfile(entry[1]) } : null;
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not look up your account: ${error.message}`);
+  if (!data) return null;
+  return { token: String(data.session_token), profile: publicProfile(fromRow(data)) };
 }
 
 /**

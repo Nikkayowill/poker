@@ -26,6 +26,12 @@ export interface PlayerProfile {
   accent: string;
   createdAt: string;
   updatedAt: string;
+  /** Persistent currency spent on table buy-ins; 1 Gold = 1 chip. */
+  goldBalance: number;
+  /** When true, spendGold is a no-op for this profile -- used to gift a specific person free play. */
+  unlimitedGold: boolean;
+  /** ISO timestamp of the last successful daily-Gold claim, or null if never claimed. */
+  lastDailyClaimAt: string | null;
 }
 
 export interface ProfileUpdate {

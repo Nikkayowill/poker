@@ -14,6 +14,9 @@ describe("profile appearance", () => {
       accent: "#c08dff",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      goldBalance: 2000,
+      unlimitedGold: false,
+      lastDailyClaimAt: null,
     };
     const snapshot = toSnapshot(createGame(token, profile.displayName, profile), token);
     expect(snapshot.seats[0]).toMatchObject({

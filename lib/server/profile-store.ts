@@ -25,6 +25,10 @@ function initials(displayName: string) {
     .toUpperCase();
 }
 
+/** A brand new profile's starting balance, and the flat amount a daily claim grants. */
+const STARTING_GOLD = 2000;
+const DAILY_GOLD_GRANT = 1000;
+
 function publicProfile(profile: StoredProfile): PlayerProfile {
   return {
     displayName: profile.displayName,
@@ -34,6 +38,9 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     accent: profile.accent,
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt,
+    goldBalance: profile.goldBalance,
+    unlimitedGold: profile.unlimitedGold,
+    lastDailyClaimAt: profile.lastDailyClaimAt,
   };
 }
 
@@ -48,6 +55,9 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     accent: "#e7c66a",
     createdAt: now,
     updatedAt: now,
+    goldBalance: STARTING_GOLD,
+    unlimitedGold: false,
+    lastDailyClaimAt: null,
   };
 }
 
@@ -61,7 +71,17 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     accent: String(row.accent),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
+    goldBalance: Number(row.gold_balance),
+    unlimitedGold: Boolean(row.unlimited_gold),
+    lastDailyClaimAt: row.last_daily_claim_at ? String(row.last_daily_claim_at) : null,
   };
+}
+
+/** UTC calendar-day comparison -- "daily" resets at midnight UTC, not per-user local time. */
+function isSameUtcDay(a: Date, b: Date) {
+  return a.getUTCFullYear() === b.getUTCFullYear()
+    && a.getUTCMonth() === b.getUTCMonth()
+    && a.getUTCDate() === b.getUTCDate();
 }
 
 export async function ensureProfile(token: string, preferredName?: string): Promise<PlayerProfile> {
@@ -205,4 +225,96 @@ export async function saveAvatar(
   const stored = fromRow(data);
   if (oldPath && oldPath !== path) await supabase.storage.from("avatars").remove([oldPath]);
   return publicProfile(stored);
+}
+
+/**
+ * Deducts `amount` Gold, or does nothing if the profile is flagged
+ * `unlimitedGold`. Throws if the balance is insufficient. The Supabase path
+ * uses the `spend_gold` RPC (a guarded single UPDATE) rather than a
+ * read-then-write, so two concurrent spends can't both pass a balance check
+ * against the same stale read and drive the balance negative.
+ */
+export async function spendGold(token: string, amount: number): Promise<PlayerProfile> {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid Gold amount.");
+  const supabase = adminClient();
+  if (!supabase) {
+    const current = memoryProfiles.get(token);
+    if (!current) throw new Error("Profile not found.");
+    if (!current.unlimitedGold && current.goldBalance < amount) throw new Error("Not enough Gold.");
+    const next: StoredProfile = {
+      ...current,
+      goldBalance: current.unlimitedGold ? current.goldBalance : current.goldBalance - amount,
+      updatedAt: new Date().toISOString(),
+    };
+    memoryProfiles.set(token, next);
+    return publicProfile(next);
+  }
+
+  const { data, error } = await supabase.rpc("spend_gold", { p_token: token, p_amount: amount }).single();
+  if (error) throw new Error(`Could not spend Gold: ${error.message}`);
+  const result = data as { success: boolean; gold_balance: number } | null;
+  if (!result?.success) throw new Error("Not enough Gold.");
+  const { data: row, error: readError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("session_token", token)
+    .single();
+  if (readError) throw new Error(`Could not load profile: ${readError.message}`);
+  return publicProfile(fromRow(row));
+}
+
+/**
+ * Credits the flat daily amount once per UTC calendar day. Throws if
+ * already claimed today rather than silently no-op-ing, so the client can
+ * tell the difference between "claimed" and "nothing happened."
+ */
+export async function claimDailyGold(token: string): Promise<PlayerProfile> {
+  const supabase = adminClient();
+  const now = new Date();
+  if (!supabase) {
+    const current = memoryProfiles.get(token);
+    if (!current) throw new Error("Profile not found.");
+    if (current.lastDailyClaimAt && isSameUtcDay(new Date(current.lastDailyClaimAt), now)) {
+      throw new Error("You already claimed your daily Gold today.");
+    }
+    const next: StoredProfile = {
+      ...current,
+      goldBalance: current.goldBalance + DAILY_GOLD_GRANT,
+      lastDailyClaimAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
+    memoryProfiles.set(token, next);
+    return publicProfile(next);
+  }
+
+  const { data, error } = await supabase
+    .rpc("claim_daily_gold", { p_token: token, p_amount: DAILY_GOLD_GRANT })
+    .single();
+  if (error) throw new Error(`Could not claim Gold: ${error.message}`);
+  const result = data as { gold_balance: number; claimed: boolean } | null;
+  if (!result?.claimed) throw new Error("You already claimed your daily Gold today.");
+  const { data: row, error: readError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("session_token", token)
+    .single();
+  if (readError) throw new Error(`Could not load profile: ${readError.message}`);
+  return publicProfile(fromRow(row));
+}
+
+/** Flags (or unflags) a profile so spendGold never actually deducts from it -- for gifting a specific person free play. */
+export async function setUnlimitedGold(token: string, unlimited: boolean): Promise<void> {
+  const supabase = adminClient();
+  const now = new Date().toISOString();
+  if (!supabase) {
+    const current = memoryProfiles.get(token);
+    if (!current) throw new Error("Profile not found.");
+    memoryProfiles.set(token, { ...current, unlimitedGold: unlimited, updatedAt: now });
+    return;
+  }
+  const { error } = await supabase
+    .from("profiles")
+    .update({ unlimited_gold: unlimited, updated_at: now })
+    .eq("session_token", token);
+  if (error) throw new Error(`Could not update Gold flag: ${error.message}`);
 }

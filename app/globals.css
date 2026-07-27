@@ -161,6 +161,54 @@ input[type="range"] { touch-action: pan-x; }
   padding: 4px 7px 4px 4px;
 }
 
+.gold-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid rgba(217,184,93,.22);
+  border-radius: 6px;
+  background: rgba(217,184,93,.05);
+}
+
+.gold-balance {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #f0dfaa;
+}
+.gold-balance strong { display: inline-block; font-size: 12px; font-weight: 750; }
+.gold-balance svg { color: var(--gold); }
+
+.gold-claim-button {
+  appearance: none;
+  padding: 5px 9px;
+  color: #17170f;
+  border: 0;
+  border-radius: 5px;
+  background: var(--gold);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .02em;
+  cursor: pointer;
+  transition: transform .08s ease, opacity .12s ease;
+}
+.gold-claim-button:disabled {
+  color: #6c7570;
+  background: rgba(255,255,255,.06);
+  cursor: default;
+}
+.gold-claim-button:active:not(:disabled) { transform: translateY(1px); }
+
+.gold-badge-claimed .gold-balance strong {
+  animation: gold-claim-pulse .9s ease;
+}
+@keyframes gold-claim-pulse {
+  0% { color: #f0dfaa; transform: scale(1); }
+  30% { color: #fff3be; transform: scale(1.16); }
+  100% { color: #f0dfaa; transform: scale(1); }
+}
+
 .profile-avatar {
   --avatar-accent: #e7c66a;
   width: 34px;
@@ -2164,7 +2212,8 @@ button:disabled { cursor: wait; opacity: .62; }
   .muck-drift,
   .seat-current::after,
   .action-countdown.countdown-critical,
-  .turn-ring {
+  .turn-ring,
+  .gold-badge-claimed .gold-balance strong {
     animation: none;
   }
   .dealer-puck-animated {

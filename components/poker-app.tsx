@@ -117,6 +117,53 @@ function ProfileTrigger({
   );
 }
 
+function isSameUtcDay(a: Date, b: Date) {
+  return a.getUTCFullYear() === b.getUTCFullYear()
+    && a.getUTCMonth() === b.getUTCMonth()
+    && a.getUTCDate() === b.getUTCDate();
+}
+
+function GoldBadge({
+  profile,
+  onClaimed,
+}: {
+  profile: PlayerProfile;
+  onClaimed: (profile: PlayerProfile) => void;
+}) {
+  const [claiming, setClaiming] = useState(false);
+  const [justClaimed, setJustClaimed] = useState(false);
+  const canClaim = !profile.lastDailyClaimAt || !isSameUtcDay(new Date(profile.lastDailyClaimAt), new Date());
+
+  const claim = async () => {
+    if (claiming || !canClaim) return;
+    setClaiming(true);
+    try {
+      const response = await fetch("/api/profile/gold/claim", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not claim your daily Gold.");
+      onClaimed(data.profile);
+      setJustClaimed(true);
+      window.setTimeout(() => setJustClaimed(false), 900);
+    } catch {
+      // Best-effort: the button simply stays available so they can try again.
+    } finally {
+      setClaiming(false);
+    }
+  };
+
+  return (
+    <div className={clsx("gold-badge", justClaimed && "gold-badge-claimed")}>
+      <span className="gold-balance">
+        <Coins size={14} />
+        <strong>{profile.goldBalance.toLocaleString()}</strong>
+      </span>
+      <button type="button" className="gold-claim-button" disabled={!canClaim || claiming} onClick={claim}>
+        {canClaim ? "Claim daily Gold" : "Claimed today"}
+      </button>
+    </div>
+  );
+}
+
 function PlayingCard({
   card,
   small = false,
@@ -1054,6 +1101,7 @@ function PokerTable({
   onLeaveSeat,
   profile,
   onCustomize,
+  onProfileChange,
   connectionState,
 }: {
   game: GameSnapshot;
@@ -1065,6 +1113,7 @@ function PokerTable({
   onLeaveSeat: () => void;
   profile: PlayerProfile | null;
   onCustomize: () => void;
+  onProfileChange: (profile: PlayerProfile) => void;
   connectionState: ConnectionState;
 }) {
   const placements = [
@@ -1285,6 +1334,7 @@ function PokerTable({
           <span>Blinds {game.smallBlind}/{game.bigBlind}</span>
         </div>
         <div className="game-header-actions">
+          {profile && <GoldBadge profile={profile} onClaimed={onProfileChange} />}
           {profile && <ProfileTrigger profile={profile} onClick={onCustomize} compact />}
           <button
             ref={historyButtonRef}
@@ -1725,6 +1775,7 @@ export function PokerApp() {
           </div>
           <div className="header-actions">
             <div className="header-status">No-limit Hold’em · 6-max</div>
+            {profile && <GoldBadge profile={profile} onClaimed={setProfile} />}
             {profile && <ProfileTrigger profile={profile} onClick={() => setProfileOpen(true)} />}
           </div>
         </header>
@@ -1741,6 +1792,7 @@ export function PokerApp() {
             onLeaveSeat={leaveSeat}
             profile={profile}
             onCustomize={() => setProfileOpen(true)}
+            onProfileChange={setProfile}
             connectionState={connectionState}
           />
         )

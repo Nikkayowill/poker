@@ -296,11 +296,15 @@ export async function spendGold(token: string, amount: number): Promise<PlayerPr
 }
 
 /**
- * Refunds a prior spendGold call that turned out not to buy anything (e.g.
- * a seat-claim or rebuy that failed to persist after Gold was already
- * deducted). This is a rare error-recovery path, not the spend hot path, so
- * it uses a plain read-then-write rather than a guarded RPC -- a slight
- * race here would only ever over-refund in the player's favor.
+ * Returns Gold to a player: a cash-out when they leave a table, or a refund
+ * for a spend that bought nothing (a seat claim or rebuy that failed to
+ * persist). This is a rare path rather than the spend hot path, so it uses a
+ * plain read-then-write rather than a guarded RPC -- a slight race here would
+ * only ever over-refund in the player's favor.
+ *
+ * Mirrors spendGold's unlimited-Gold handling exactly, and must keep doing
+ * so: an unlimited profile is never charged a buy-in, so paying its stack
+ * back out would mint the buy-in on every sit-down/stand-up cycle.
  */
 export async function creditGold(token: string, amount: number): Promise<PlayerProfile> {
   if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid Gold amount.");
@@ -309,6 +313,7 @@ export async function creditGold(token: string, amount: number): Promise<PlayerP
   if (!supabase) {
     const current = memoryProfiles.get(token);
     if (!current) throw new Error("Profile not found.");
+    if (current.unlimitedGold) return publicProfile(current);
     const next: StoredProfile = { ...current, goldBalance: current.goldBalance + amount, updatedAt: now };
     memoryProfiles.set(token, next);
     return publicProfile(next);
@@ -320,6 +325,7 @@ export async function creditGold(token: string, amount: number): Promise<PlayerP
     .eq("session_token", token)
     .single();
   if (readError) throw new Error(`Could not load profile: ${readError.message}`);
+  if (current.unlimited_gold) return publicProfile(fromRow(current));
   const { data, error } = await supabase
     .from("profiles")
     .update({ gold_balance: Number(current.gold_balance) + amount, updated_at: now })

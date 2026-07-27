@@ -152,6 +152,21 @@ function GoldBadge({
     }
   };
 
+  // An unlimited profile is never charged and never credited, so a running
+  // total would be a number that never means anything -- and a daily claim
+  // would top up a balance that is already irrelevant.
+  if (profile.unlimitedGold) {
+    return (
+      <div className="gold-badge">
+        <span className="gold-balance">
+          <Coins size={14} />
+          <span>Gold: </span>
+          <strong title="This profile plays for free">Unlimited</strong>
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className={clsx("gold-badge", justClaimed && "gold-badge-claimed")}>
       <span className="gold-balance">
@@ -2012,8 +2027,14 @@ export function PokerApp() {
       if (response.ok && data?.profile) setProfile(data.profile);
       // Chips only become Gold when the player stands up, so this is the one
       // moment the loop is visible. Say it plainly instead of leaving them to
-      // spot the balance change in the navbar.
-      if (response.ok && typeof data?.cashedOut === "number" && data.cashedOut > 0) {
+      // spot the balance change in the navbar. Unlimited profiles are neither
+      // charged nor paid, so there is no balance change to announce.
+      if (
+        response.ok
+        && typeof data?.cashedOut === "number"
+        && data.cashedOut > 0
+        && !data?.profile?.unlimitedGold
+      ) {
         setCashOutNotice(data.cashedOut);
       }
     } catch {

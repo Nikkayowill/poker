@@ -5,6 +5,7 @@ import {
   banProfile,
   claimBackstopGold,
   claimDailyGold,
+  creditGold,
   deleteProfile,
   ensureProfile,
   isBanned,
@@ -40,6 +41,23 @@ describe("Gold economy (memory mode)", () => {
     const profile = await ensureProfile(token);
     await setUnlimitedGold(profile.id, true);
     const after = await spendGold(token, 1_000_000);
+    expect(after.goldBalance).toBe(2000);
+  });
+
+  it("never credits an unlimited-Gold profile, so buy-in/cash-out cannot mint", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await setUnlimitedGold(profile.id, true);
+
+    // The exact cycle a player reported: buy in high, stand up, repeat.
+    // spendGold is a no-op for unlimited profiles, so paying the stack back
+    // out would hand over the full buy-in every single time.
+    for (let round = 0; round < 3; round += 1) {
+      await spendGold(token, 40_000);
+      await creditGold(token, 40_000);
+    }
+
+    const after = await ensureProfile(token);
     expect(after.goldBalance).toBe(2000);
   });
 

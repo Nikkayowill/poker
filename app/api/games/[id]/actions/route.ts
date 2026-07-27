@@ -3,7 +3,7 @@ import { z } from "zod";
 import { applyPlayerAction, toSnapshot } from "@/lib/game/engine";
 import { clampBuyIn } from "@/lib/game/tiers";
 import { loadGameWithTimeouts, persistenceMode, updateStoredGame } from "@/lib/server/game-store";
-import { creditGold, spendGold } from "@/lib/server/profile-store";
+import { creditGold, isBanned, spendGold } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import type { PlayerProfile } from "@/lib/profile/types";
 
@@ -32,6 +32,9 @@ export async function POST(
   try {
     const ownerToken = request.cookies.get("river_session")?.value;
     if (!ownerToken) return NextResponse.json({ error: "Your table session expired." }, { status: 401 });
+    if (await isBanned(ownerToken)) {
+      return NextResponse.json({ error: "Your account has been suspended." }, { status: 403 });
+    }
     const parsed = actionSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Invalid poker action." }, { status: 400 });
     const paramsParsed = paramsSchema.safeParse(await context.params);

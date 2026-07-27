@@ -3,8 +3,8 @@ import { z } from "zod";
 import { claimSeat, toSnapshot } from "@/lib/game/engine";
 import { clampBuyIn, TIER_CONFIG } from "@/lib/game/tiers";
 import { findGameByRoomCode, getStoredGame, persistenceMode, persistSeatClaim } from "@/lib/server/game-store";
-import { creditGold, ensureProfile, spendGold, updateProfile } from "@/lib/server/profile-store";
-import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { creditGold, ensureProfile, isBanned, recordSeenIp, spendGold, updateProfile } from "@/lib/server/profile-store";
+import { enforceRateLimit, getClientIp } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withSessionCookie } from "@/lib/server/session";
 
 export const runtime = "nodejs";
@@ -41,6 +41,13 @@ export async function POST(request: NextRequest) {
         accent: profile.accent,
       });
     }
+    if (await isBanned(token)) {
+      return withSessionCookie(
+        NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),
+        token,
+      );
+    }
+    void recordSeenIp(token, getClientIp(request)).catch(() => {});
 
     const config = TIER_CONFIG[loaded.tier];
     const targetSeatIndex = loaded.seats.findIndex((seat) => seat.ownerToken === null);

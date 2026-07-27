@@ -1,6 +1,16 @@
 import { randomUUID } from "crypto";
 import { describe, expect, it } from "vitest";
-import { adjustGold, claimDailyGold, ensureProfile, listProfiles, setUnlimitedGold, spendGold } from "./profile-store";
+import {
+  adjustGold,
+  banProfile,
+  claimDailyGold,
+  ensureProfile,
+  isBanned,
+  listProfiles,
+  recordSeenIp,
+  setUnlimitedGold,
+  spendGold,
+} from "./profile-store";
 
 describe("Gold economy (memory mode)", () => {
   it("gives a brand new profile the starting balance", async () => {
@@ -65,6 +75,33 @@ describe("Gold economy (memory mode)", () => {
     const profile = await ensureProfile(token);
     await expect(adjustGold(profile.id, 0)).rejects.toThrow("Invalid Gold adjustment.");
     await expect(adjustGold(randomUUID(), 100)).rejects.toThrow("Profile not found.");
+  });
+
+  it("bans and unbans a profile by id, checkable via isBanned", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    expect(await isBanned(token)).toBe(false);
+    await banProfile(profile.id, true);
+    expect(await isBanned(token)).toBe(true);
+    await banProfile(profile.id, false);
+    expect(await isBanned(token)).toBe(false);
+  });
+
+  it("rejects banProfile for an unknown profile id", async () => {
+    await expect(banProfile(randomUUID(), true)).rejects.toThrow("Profile not found.");
+  });
+
+  it("treats an unknown token as not banned", async () => {
+    expect(await isBanned(randomUUID())).toBe(false);
+  });
+
+  it("records the last-seen IP for a token and surfaces it via listProfiles", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await recordSeenIp(token, "203.0.113.5");
+    const profiles = await listProfiles();
+    const found = profiles.find((entry) => entry.id === profile.id);
+    expect(found?.lastSeenIp).toBe("203.0.113.5");
   });
 
   it("lists profiles newest first, including one just created", async () => {

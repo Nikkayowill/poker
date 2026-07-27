@@ -1,9 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { PlayerProfile } from "@/lib/profile/types";
+import type { AdminProfileSummary } from "@/lib/server/profile-store";
 
 const SECRET_STORAGE_KEY = "river-room-admin-secret";
+
+interface TableStats {
+  publicTables: number;
+  privateTables: number;
+}
 
 function isSameUtcDay(a: Date, b: Date) {
   return a.getUTCFullYear() === b.getUTCFullYear()
@@ -23,7 +28,7 @@ function AdjustGoldForm({
   pending,
   onAdjust,
 }: {
-  profile: PlayerProfile;
+  profile: AdminProfileSummary;
   pending: boolean;
   onAdjust: (delta: number) => void;
 }) {
@@ -54,7 +59,8 @@ function AdjustGoldForm({
 export function AdminDashboard() {
   const [secret, setSecret] = useState("");
   const [secretInput, setSecretInput] = useState("");
-  const [profiles, setProfiles] = useState<PlayerProfile[] | null>(null);
+  const [profiles, setProfiles] = useState<AdminProfileSummary[] | null>(null);
+  const [tableStats, setTableStats] = useState<TableStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -65,10 +71,18 @@ export function AdminDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/admin/profiles", { headers: { "x-admin-secret": key } });
-      const data = await response.json();
-      if (!response.ok) throw new Error(response.status === 404 ? "Invalid admin key." : data.error);
-      setProfiles(data.profiles);
+      const headers = { "x-admin-secret": key };
+      const [profilesResponse, tablesResponse] = await Promise.all([
+        fetch("/api/admin/profiles", { headers }),
+        fetch("/api/admin/tables", { headers }),
+      ]);
+      const profilesData = await profilesResponse.json();
+      if (!profilesResponse.ok) {
+        throw new Error(profilesResponse.status === 404 ? "Invalid admin key." : profilesData.error);
+      }
+      const tablesData = await tablesResponse.json();
+      setProfiles(profilesData.profiles);
+      if (tablesResponse.ok) setTableStats(tablesData);
       window.sessionStorage.setItem(SECRET_STORAGE_KEY, key);
       setSecret(key);
     } catch (caught) {
@@ -90,7 +104,7 @@ export function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const toggleUnlimited = async (profile: PlayerProfile) => {
+  const toggleUnlimited = async (profile: AdminProfileSummary) => {
     setPendingId(profile.id);
     setError(null);
     try {
@@ -111,7 +125,28 @@ export function AdminDashboard() {
     }
   };
 
-  const adjustGold = async (profile: PlayerProfile, delta: number) => {
+  const toggleBanned = async (profile: AdminProfileSummary) => {
+    setPendingId(profile.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/ban", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ profileId: profile.id, banned: !profile.banned }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not update that profile's ban status.");
+      setProfiles((current) => current?.map((entry) => (
+        entry.id === profile.id ? { ...entry, banned: !profile.banned } : entry
+      )) ?? null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update that profile's ban status.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  const adjustGold = async (profile: AdminProfileSummary, delta: number) => {
     setPendingId(profile.id);
     setError(null);
     try {
@@ -123,7 +158,7 @@ export function AdminDashboard() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not adjust that profile's Gold.");
       setProfiles((current) => current?.map((entry) => (
-        entry.id === profile.id ? data.profile : entry
+        entry.id === profile.id ? { ...entry, ...data.profile } : entry
       )) ?? null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not adjust that profile's Gold.");
@@ -152,6 +187,18 @@ export function AdminDashboard() {
       thisWeek: profiles.filter((profile) => Date.parse(profile.createdAt) >= weekAgo).length,
       goldInCirculation: profiles.reduce((sum, profile) => sum + (profile.goldBalance ?? 0), 0),
     };
+  }, [profiles]);
+
+  // Admin-only signal for spotting multiple accounts played from the same
+  // address (collusion/chip dumping) -- purely a client-side grouping over
+  // data already fetched, no separate detection service.
+  const ipCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const profile of profiles ?? []) {
+      if (!profile.lastSeenIp) continue;
+      counts.set(profile.lastSeenIp, (counts.get(profile.lastSeenIp) ?? 0) + 1);
+    }
+    return counts;
   }, [profiles]);
 
   const filtered = useMemo(() => {
@@ -224,6 +271,18 @@ export function AdminDashboard() {
             <span>Gold in circulation</span>
             <strong>{stats.goldInCirculation.toLocaleString()}</strong>
           </div>
+          {tableStats && (
+            <>
+              <div className="admin-stat">
+                <span>Public tables</span>
+                <strong>{tableStats.publicTables.toLocaleString()}</strong>
+              </div>
+              <div className="admin-stat">
+                <span>Private tables</span>
+                <strong>{tableStats.privateTables.toLocaleString()}</strong>
+              </div>
+            </>
+          )}
         </div>
       )}
       <input
@@ -244,44 +303,65 @@ export function AdminDashboard() {
               <th>Gold</th>
               <th>Unlimited</th>
               <th>Adjust Gold</th>
+              <th>Banned</th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {filtered.map((profile) => (
-              <tr key={profile.id}>
-                <td>{profile.displayName}</td>
-                <td>
-                  <button type="button" className="admin-id-copy" onClick={() => void copyId(profile.id)}>
-                    <code>{profile.id.slice(0, 8)}…</code>
-                    <span>{copiedId === profile.id ? "Copied!" : "Copy"}</span>
-                  </button>
-                </td>
-                <td>{formatDate(profile.createdAt)}</td>
-                <td>{(profile.goldBalance ?? 0).toLocaleString()}</td>
-                <td>{profile.unlimitedGold ? "Yes" : "No"}</td>
-                <td>
-                  <AdjustGoldForm
-                    profile={profile}
-                    pending={pendingId === profile.id}
-                    onAdjust={(delta) => void adjustGold(profile, delta)}
-                  />
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    className="admin-toggle"
-                    disabled={pendingId === profile.id}
-                    onClick={() => void toggleUnlimited(profile)}
-                  >
-                    {profile.unlimitedGold ? "Revoke" : "Grant unlimited"}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {filtered.map((profile) => {
+              const ipCount = profile.lastSeenIp ? ipCounts.get(profile.lastSeenIp) ?? 0 : 0;
+              return (
+                <tr key={profile.id}>
+                  <td>{profile.displayName}</td>
+                  <td>
+                    <button type="button" className="admin-id-copy" onClick={() => void copyId(profile.id)}>
+                      <code>{profile.id.slice(0, 8)}…</code>
+                      <span>{copiedId === profile.id ? "Copied!" : "Copy"}</span>
+                    </button>
+                    {ipCount > 1 && (
+                      <span
+                        className="admin-flag"
+                        title={`${ipCount} profiles have joined a table from this same IP address.`}
+                      >
+                        Shares IP ×{ipCount}
+                      </span>
+                    )}
+                  </td>
+                  <td>{formatDate(profile.createdAt)}</td>
+                  <td>{(profile.goldBalance ?? 0).toLocaleString()}</td>
+                  <td>{profile.unlimitedGold ? "Yes" : "No"}</td>
+                  <td>
+                    <AdjustGoldForm
+                      profile={profile}
+                      pending={pendingId === profile.id}
+                      onAdjust={(delta) => void adjustGold(profile, delta)}
+                    />
+                  </td>
+                  <td>{profile.banned ? "Yes" : "No"}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="admin-toggle"
+                      disabled={pendingId === profile.id}
+                      onClick={() => void toggleUnlimited(profile)}
+                    >
+                      {profile.unlimitedGold ? "Revoke" : "Grant unlimited"}
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-ban"
+                      disabled={pendingId === profile.id}
+                      onClick={() => void toggleBanned(profile)}
+                    >
+                      {profile.banned ? "Unban" : "Ban"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
+                <td colSpan={8} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
               </tr>
             )}
           </tbody>

@@ -6,6 +6,19 @@ import { adminClient } from "./game-store";
 
 interface StoredProfile extends PlayerProfile {
   avatarPath: string | null;
+  /** Admin-only moderation fields -- never leave publicProfile()'s shape. */
+  banned: boolean;
+  lastSeenIp: string | null;
+}
+
+/** The admin dashboard's view of a profile -- adds the moderation fields that publicProfile() deliberately omits from every player-facing response. */
+export type AdminProfileSummary = PlayerProfile & {
+  banned: boolean;
+  lastSeenIp: string | null;
+};
+
+function adminProfileView(profile: StoredProfile): AdminProfileSummary {
+  return { ...publicProfile(profile), banned: profile.banned, lastSeenIp: profile.lastSeenIp };
 }
 
 declare global {
@@ -60,6 +73,8 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     goldBalance: STARTING_GOLD,
     unlimitedGold: false,
     lastDailyClaimAt: null,
+    banned: false,
+    lastSeenIp: null,
   };
 }
 
@@ -77,6 +92,8 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     goldBalance: Number(row.gold_balance),
     unlimitedGold: Boolean(row.unlimited_gold),
     lastDailyClaimAt: row.last_daily_claim_at ? String(row.last_daily_claim_at) : null,
+    banned: Boolean(row.banned),
+    lastSeenIp: row.last_seen_ip ? String(row.last_seen_ip) : null,
   };
 }
 
@@ -346,11 +363,11 @@ export async function claimDailyGold(token: string): Promise<PlayerProfile> {
  * session cookie is first seen (see ensureProfile). Used only by the
  * admin dashboard, so a flat cap replaces real pagination.
  */
-export async function listProfiles(): Promise<PlayerProfile[]> {
+export async function listProfiles(): Promise<AdminProfileSummary[]> {
   const supabase = adminClient();
   if (!supabase) {
     return [...memoryProfiles.values()]
-      .map(publicProfile)
+      .map(adminProfileView)
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   }
   const { data, error } = await supabase
@@ -359,7 +376,61 @@ export async function listProfiles(): Promise<PlayerProfile[]> {
     .order("created_at", { ascending: false })
     .limit(1000);
   if (error) throw new Error(`Could not list profiles: ${error.message}`);
-  return (data ?? []).map((row) => publicProfile(fromRow(row)));
+  return (data ?? []).map((row) => adminProfileView(fromRow(row)));
+}
+
+/** Cheap ban check -- called by every join-flow route and the actions route before letting a token do anything. */
+export async function isBanned(token: string): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) return memoryProfiles.get(token)?.banned ?? false;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("banned")
+    .eq("session_token", token)
+    .maybeSingle();
+  if (error) throw new Error(`Could not check profile status: ${error.message}`);
+  return Boolean(data?.banned);
+}
+
+/** Flags (or unflags) a profile so it can't join a table or act at one -- for blocking toxic players. */
+export async function banProfile(profileId: string, banned: boolean): Promise<void> {
+  const supabase = adminClient();
+  const now = new Date().toISOString();
+  if (!supabase) {
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) throw new Error("Profile not found.");
+    const [token, current] = entry;
+    memoryProfiles.set(token, { ...current, banned, updatedAt: now });
+    return;
+  }
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ banned, updated_at: now })
+    .eq("id", profileId)
+    .select("id");
+  if (error) throw new Error(`Could not update ban status: ${error.message}`);
+  if (!data || data.length === 0) throw new Error("Profile not found.");
+}
+
+/**
+ * Stamps the IP a token most recently joined/hosted a table from -- an
+ * admin-only signal for spotting multiple accounts played from the same
+ * address (collusion/chip dumping), never surfaced to players. Best-effort:
+ * callers swallow failures rather than let this block real play.
+ */
+export async function recordSeenIp(token: string, ip: string): Promise<void> {
+  const supabase = adminClient();
+  const now = new Date().toISOString();
+  if (!supabase) {
+    const current = memoryProfiles.get(token);
+    if (!current) return;
+    memoryProfiles.set(token, { ...current, lastSeenIp: ip, updatedAt: now });
+    return;
+  }
+  await supabase
+    .from("profiles")
+    .update({ last_seen_ip: ip, updated_at: now })
+    .eq("session_token", token);
 }
 
 /**

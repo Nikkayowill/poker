@@ -2503,3 +2503,30 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 
 .admin-toggle:disabled { opacity: 0.6; cursor: default; }
+
+.admin-ban {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 107, 107, 0.4);
+  background: rgba(255, 107, 107, 0.08);
+  color: #ff9e9e;
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+.admin-ban:disabled { opacity: 0.6; cursor: default; }
+
+.admin-flag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(255, 190, 90, 0.12);
+  border: 1px solid rgba(255, 190, 90, 0.35);
+  color: #ffbe5a;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}

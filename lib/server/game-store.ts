@@ -131,6 +131,30 @@ export async function findOpenPublicGame(tier: StakesTier): Promise<string | nul
   return data?.[0]?.game_id ?? null;
 }
 
+/** Every table currently tracked by the store, split by public/private -- there's no separate archival state, so "tracked" is "running." */
+export async function countActiveGames(): Promise<{ publicTables: number; privateTables: number }> {
+  const supabase = adminClient();
+  if (!supabase) {
+    let publicTables = 0;
+    let privateTables = 0;
+    for (const state of memoryGames.values()) {
+      if (state.isPrivate) privateTables += 1;
+      else publicTables += 1;
+    }
+    return { publicTables, privateTables };
+  }
+  const [publicResult, privateResult] = await Promise.all([
+    supabase.from("games").select("id").eq("is_private", false),
+    supabase.from("games").select("id").eq("is_private", true),
+  ]);
+  if (publicResult.error) throw new Error(`Could not count public tables: ${publicResult.error.message}`);
+  if (privateResult.error) throw new Error(`Could not count private tables: ${privateResult.error.message}`);
+  return {
+    publicTables: publicResult.data?.length ?? 0,
+    privateTables: privateResult.data?.length ?? 0,
+  };
+}
+
 /** Resolves a shareable private-room code to its table id. */
 export async function findGameByRoomCode(code: string): Promise<string | null> {
   const supabase = adminClient();

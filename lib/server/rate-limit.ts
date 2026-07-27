@@ -46,13 +46,17 @@ export function checkRateLimit(
   return { ok: true };
 }
 
+/** Best-effort source IP from proxy headers -- "unknown" when neither is present (e.g. local dev). */
+export function getClientIp(request: NextRequest): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  return forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
+}
+
 /** Identifies a caller for rate-limiting: the session token when present, else the source IP. */
 export function callerKey(request: NextRequest): string {
   const token = request.cookies.get("river_session")?.value;
   if (token) return `token:${token}`;
-  const forwarded = request.headers.get("x-forwarded-for");
-  const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
-  return `ip:${ip}`;
+  return `ip:${getClientIp(request)}`;
 }
 
 export function rateLimited(retryAfterSeconds: number) {

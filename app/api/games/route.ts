@@ -3,8 +3,8 @@ import { z } from "zod";
 import { createGame, toSnapshot } from "@/lib/game/engine";
 import { clampBuyIn, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { createStoredGame, persistenceMode } from "@/lib/server/game-store";
-import { creditGold, ensureProfile, spendGold, updateProfile } from "@/lib/server/profile-store";
-import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { creditGold, ensureProfile, isBanned, recordSeenIp, spendGold, updateProfile } from "@/lib/server/profile-store";
+import { enforceRateLimit, getClientIp } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withSessionCookie } from "@/lib/server/session";
 
 export const runtime = "nodejs";
@@ -36,6 +36,13 @@ export async function POST(request: NextRequest) {
         accent: profile.accent,
       });
     }
+    if (await isBanned(hostToken)) {
+      return withSessionCookie(
+        NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),
+        hostToken,
+      );
+    }
+    void recordSeenIp(hostToken, getClientIp(request)).catch(() => {});
     if (!profile.unlimitedGold && profile.goldBalance < config.minBuyIn) {
       return withSessionCookie(
         NextResponse.json(

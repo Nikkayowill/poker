@@ -2300,6 +2300,51 @@ button:disabled { cursor: wait; opacity: .62; }
   }
 }
 
+.cash-out-notice, .broke-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.cash-out-notice {
+  color: var(--gold-light);
+  border: 1px solid rgba(217, 184, 93, 0.35);
+  background: rgba(217, 184, 93, 0.1);
+}
+
+.cash-out-notice svg { flex-shrink: 0; color: var(--gold); }
+.cash-out-notice span { flex: 1; }
+.cash-out-notice strong { font-variant-numeric: tabular-nums; }
+
+.cash-out-notice button {
+  flex-shrink: 0;
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.cash-out-notice button:hover { opacity: 1; background: rgba(217, 184, 93, 0.14); }
+
+.broke-notice {
+  flex-wrap: wrap;
+  color: #ffcfa8;
+  border: 1px solid rgba(255, 157, 103, 0.35);
+  background: rgba(255, 157, 103, 0.09);
+}
+
+.broke-notice span { flex: 1; min-width: 200px; }
+.broke-notice button { flex-shrink: 0; padding: 7px 14px; font-size: 12px; min-height: 0; }
+
 .admin-shell {
   min-height: 100vh;
   min-height: 100svh;

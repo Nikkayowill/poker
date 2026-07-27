@@ -12,6 +12,7 @@ import {
   vacateSeat,
 } from "./engine";
 import { compareScores, describeHand, evaluateHand } from "./evaluator";
+import { TIER_CONFIG } from "./tiers";
 import type { Card, GameState, PlayerAction } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
 
@@ -176,11 +177,16 @@ describe("server game engine", () => {
     let game = createGame(token, "Test");
     let completed = 0;
     let safety = 0;
+    // Rake is the only sanctioned way for chips to leave the table, so the
+    // invariant is "everything still accounted for, minus what the house
+    // took" -- which also proves nothing leaks anywhere else.
+    let rakeTaken = 0;
 
     while (completed < 12) {
       game = advanceBotsUntilHuman(game);
       if (game.status === "complete") {
-        expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0)).toBe(6000);
+        rakeTaken += game.rake;
+        expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0) + rakeTaken).toBe(6000);
         completed += 1;
         if (completed >= 12 || game.seats[0].stack === 0) break;
         game = applyPlayerAction(game, { type: "next-hand" }, token);
@@ -193,13 +199,16 @@ describe("server game engine", () => {
         else action = { type: "all-in" };
         game = applyPlayerAction(game, action, token);
         if (game.status === "playing") {
-          expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0) + game.pot).toBe(6000);
+          expect(
+            game.seats.reduce((sum, seat) => sum + seat.stack, 0) + game.pot + rakeTaken,
+          ).toBe(6000);
         }
       }
       safety += 1;
       expect(safety).toBeLessThan(500);
     }
     expect(completed).toBeGreaterThan(0);
+    expect(rakeTaken).toBeGreaterThan(0);
   });
 
   it("keeps fold available even when checking is free", () => {
@@ -330,9 +339,12 @@ describe("server game engine", () => {
 
     const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
     expect(complete.status).toBe("complete");
-    expect(complete.winners.find((winner) => winner.seatId === complete.seats[0].id)?.amount).toBe(400);
-    expect(complete.winners.find((winner) => winner.seatId === complete.seats[1].id)?.amount).toBe(400);
-    expect(complete.winners.find((winner) => winner.seatId === complete.seats[2].id)?.amount).toBe(200);
+    // Gross side pots are 400/400/200; the 1,000 total is raked 40 (4%, under
+    // the 3xBB cap), split proportionally as 16/16/8.
+    expect(complete.rake).toBe(40);
+    expect(complete.winners.find((winner) => winner.seatId === complete.seats[0].id)?.amount).toBe(384);
+    expect(complete.winners.find((winner) => winner.seatId === complete.seats[1].id)?.amount).toBe(384);
+    expect(complete.winners.find((winner) => winner.seatId === complete.seats[2].id)?.amount).toBe(192);
     expect(complete.winners.some((winner) => winner.seatId === complete.seats[3].id)).toBe(false);
   });
 
@@ -374,8 +386,11 @@ describe("server game engine", () => {
     const complete = applyPlayerAction(game, { type: "check" }, tokens[1]);
     const buttonWinner = complete.winners.find((winner) => winner.seatId === complete.seats[0].id)!;
     const leftWinner = complete.winners.find((winner) => winner.seatId === complete.seats[2].id)!;
-    expect(buttonWinner.amount).toBe(151);
-    expect(leftWinner.amount).toBe(152);
+    // 303 chopped is 151/152 gross, less 12 rake (6 each) -- the odd chip
+    // still lands left of the button, which is what this test is about.
+    expect(complete.rake).toBe(12);
+    expect(buttonWinner.amount).toBe(145);
+    expect(leftWinner.amount).toBe(146);
   });
 });
 
@@ -539,14 +554,14 @@ describe("giving up a seat", () => {
     game = claimed.state;
     expect(game.seats[claimed.seatIndex].name).toBe("Guest");
 
-    game = vacateSeat(game, guestToken);
+    game = vacateSeat(game, guestToken).state;
     const restored = game.seats[claimed.seatIndex];
     expect(restored.isHuman).toBe(false);
     expect(restored.ownerToken).toBeNull();
     expect(restored.name).toBe("Maya");
     expect(restored.personality).toBe("MANIAC");
 
-    game = vacateSeat(game, hostToken);
+    game = vacateSeat(game, hostToken).state;
     expect(game.seats[0].isHuman).toBe(false);
     expect(game.seats[0].ownerToken).toBeNull();
     expect(game.seats[0].name).toBe("Jax");
@@ -701,5 +716,113 @@ describe("stakes tiers and buy-ins", () => {
     game.status = "complete";
     expect(() => applyPlayerAction(game, { type: "rebuy", amount: 1000 }, token))
       .toThrow(/still has chips/i);
+  });
+
+  it("charges a full buy-in even when the outgoing bot left chips on the seat", () => {
+    let game = createGame(crypto.randomUUID(), "Host", undefined, { tier: "micro", buyIn: 1000 });
+    // An active bot mid-session, sitting on chips it won.
+    game.seats[1].stack = 1750;
+
+    const claimed = claimSeat(game, crypto.randomUUID(), testProfile("Guest"), 500);
+    game = claimed.state;
+    // The player pays 500 and gets 500 -- inheriting the bot's 1,750 would be
+    // free chips, and free chips are redeemable for Gold on cash-out.
+    expect(game.seats[claimed.seatIndex].stack).toBe(500);
+  });
+});
+
+describe("rake", () => {
+  /**
+   * A table on the river with two live seats holding equal committed chips,
+   * everyone else folded but still funded, poised so a single check from
+   * seat 0 runs the showdown. Seat 0 always wins with aces.
+   */
+  function riverShowdown(committed: number) {
+    const { game, tokens } = createHumanTable();
+    game.status = "playing";
+    game.street = "river";
+    game.buttonPosition = 5;
+    game.community = cards("2c 3d 7h 8s 9c");
+    game.currentPlayer = 0;
+    game.currentBet = 0;
+    game.seats.forEach((seat) => {
+      seat.acted = true;
+      seat.streetBet = 0;
+      seat.committed = 0;
+      seat.stack = 1000;
+      seat.status = "folded";
+    });
+    Object.assign(game.seats[0], {
+      status: "active",
+      stack: 500,
+      committed,
+      acted: false,
+      holeCards: cards("As Ad"),
+    });
+    Object.assign(game.seats[1], {
+      status: "all-in",
+      stack: 0,
+      committed,
+      holeCards: cards("Ks Kd"),
+    });
+    return { game, tokens };
+  }
+
+  it("takes nothing from a pot below the ten-big-blind floor", () => {
+    const { game, tokens } = riverShowdown(60);
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    // 120 total is under 10 x 20, so the winner is handed the pot whole --
+    // this is what keeps a preflop blind steal unraked.
+    expect(complete.rake).toBe(0);
+    expect(complete.winners[0].amount).toBe(120);
+  });
+
+  it("takes four percent of a pot above the floor", () => {
+    const { game, tokens } = riverShowdown(150);
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    // 300 total, 4% is 12, which is under the 3 x 20 cap.
+    expect(complete.rake).toBe(12);
+    expect(complete.winners[0].amount).toBe(288);
+  });
+
+  it("caps rake at three big blinds however large the pot gets", () => {
+    const { game, tokens } = riverShowdown(5000);
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    // 4% of 10,000 would be 400; the cap holds it to 3 x 20.
+    expect(complete.rake).toBe(60);
+    expect(complete.winners[0].amount).toBe(9940);
+  });
+
+  it("resets to zero when the next hand is dealt", () => {
+    const { game, tokens } = riverShowdown(5000);
+    let complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    expect(complete.rake).toBeGreaterThan(0);
+    complete = applyPlayerAction(complete, { type: "next-hand" }, tokens[0]);
+    expect(complete.rake).toBe(0);
+  });
+});
+
+describe("cashing out", () => {
+  it("returns the departing player's remaining chips and leaves none behind", () => {
+    const token = crypto.randomUUID();
+    const game = createGame(token, "Host", undefined, { tier: "micro", buyIn: 1500 });
+
+    const { state, cashedOut } = vacateSeat(game, token);
+    expect(cashedOut).toBe(1500);
+    // The chips left with the player, so the seat must not still hold them --
+    // otherwise standing up would mint the stack a second time.
+    expect(state.seats[0].stack).toBe(TIER_CONFIG.micro.minBuyIn);
+    expect(state.seats[0].isHuman).toBe(false);
+  });
+
+  it("does not refund chips already committed to the current pot", () => {
+    const token = crypto.randomUUID();
+    const game = createGame(token, "Host", undefined, { tier: "micro", buyIn: 1000 });
+    game.seats[0].stack = 700;
+    game.seats[0].committed = 300;
+
+    // Only what is still in front of them comes back; the 300 in the middle
+    // is contested, exactly as at a real table.
+    expect(vacateSeat(game, token).cashedOut).toBe(700);
   });
 });

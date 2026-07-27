@@ -6,6 +6,8 @@ import { adminClient } from "./game-store";
 
 interface StoredProfile extends PlayerProfile {
   avatarPath: string | null;
+  /** Last broke-player recovery grant, rate limited separately from the daily claim. */
+  lastBackstopAt: string | null;
   /** Admin-only moderation fields -- never leave publicProfile()'s shape. */
   banned: boolean;
   lastSeenIp: string | null;
@@ -42,6 +44,14 @@ function initials(displayName: string) {
 const STARTING_GOLD = 2000;
 const DAILY_GOLD_GRANT = 1000;
 
+/**
+ * The broke-player recovery grant. Deliberately small -- one Micro buy-in,
+ * not a farmable income -- because a player who cannot afford the cheapest
+ * seat has no way back into the game, and a stranded player is a lost one.
+ */
+const BACKSTOP_GRANT = 500;
+const BACKSTOP_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+
 function publicProfile(profile: StoredProfile): PlayerProfile {
   return {
     id: profile.id,
@@ -75,6 +85,7 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     lastDailyClaimAt: null,
     banned: false,
     lastSeenIp: null,
+    lastBackstopAt: null,
   };
 }
 
@@ -94,6 +105,7 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     lastDailyClaimAt: row.last_daily_claim_at ? String(row.last_daily_claim_at) : null,
     banned: Boolean(row.banned),
     lastSeenIp: row.last_seen_ip ? String(row.last_seen_ip) : null,
+    lastBackstopAt: row.last_backstop_at ? String(row.last_backstop_at) : null,
   };
 }
 
@@ -355,6 +367,64 @@ export async function claimDailyGold(token: string): Promise<PlayerProfile> {
     .single();
   if (readError) throw new Error(`Could not load profile: ${readError.message}`);
   return publicProfile(fromRow(row));
+}
+
+/**
+ * Tops a stranded player back up to one Micro buy-in. Only fires when they
+ * genuinely cannot afford the cheapest seat, and only once per cooldown, so
+ * it is a safety net rather than an income stream. Unlimited-Gold profiles
+ * never need it and are rejected outright.
+ */
+export async function claimBackstopGold(token: string, threshold: number): Promise<PlayerProfile> {
+  const now = new Date();
+  const supabase = adminClient();
+
+  const eligible = (balance: number, unlimited: boolean, lastAt: string | null) => {
+    if (unlimited) throw new Error("You have unlimited Gold.");
+    if (balance >= threshold) throw new Error("You still have enough Gold to sit down.");
+    if (lastAt && now.getTime() - Date.parse(lastAt) < BACKSTOP_COOLDOWN_MS) {
+      throw new Error("You've already had a top-up recently. Try again later.");
+    }
+  };
+
+  if (!supabase) {
+    const current = memoryProfiles.get(token);
+    if (!current) throw new Error("Profile not found.");
+    eligible(current.goldBalance, current.unlimitedGold, current.lastBackstopAt);
+    const next: StoredProfile = {
+      ...current,
+      goldBalance: current.goldBalance + BACKSTOP_GRANT,
+      lastBackstopAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
+    memoryProfiles.set(token, next);
+    return publicProfile(next);
+  }
+
+  const { data: row, error: readError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("session_token", token)
+    .single();
+  if (readError) throw new Error("Profile not found.");
+  const current = fromRow(row);
+  eligible(current.goldBalance, current.unlimitedGold, current.lastBackstopAt);
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({
+      gold_balance: current.goldBalance + BACKSTOP_GRANT,
+      last_backstop_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    })
+    .eq("session_token", token)
+    // Only pay out if the balance is still under the threshold, so two
+    // concurrent requests can't both pass the check above and double-grant.
+    .lt("gold_balance", threshold)
+    .select("*")
+    .single();
+  if (error) throw new Error("You've already had a top-up recently. Try again later.");
+  return publicProfile(fromRow(data));
 }
 
 /**

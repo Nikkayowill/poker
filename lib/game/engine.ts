@@ -190,6 +190,7 @@ function setupHand(state: GameState, firstHand = false) {
   state.currentBet = 0;
   state.minRaise = state.bigBlind;
   state.pot = 0;
+  state.rake = 0;
   state.message = "Cards are in the air";
 
   state.seats.forEach((seat) => {
@@ -298,6 +299,7 @@ export function createGame(
     currentBet: 0,
     minRaise: config.bigBlind,
     pot: 0,
+    rake: 0,
     deck: [],
     community: [],
     seats,
@@ -339,7 +341,11 @@ export function claimSeat(
   seat.avatarUrl = profile.avatarUrl;
   seat.avatarPreset = profile.avatarPreset;
   seat.timeCardsRemaining = STARTING_TIME_CARDS;
-  if (seat.stack === 0) seat.stack = buyIn === undefined ? 1000 : clampBuyIn(state.tier, buyIn);
+  // A claimed seat always starts at the buy-in the player actually paid for.
+  // Inheriting whatever chips the outgoing bot happened to be sitting on
+  // would hand out free chips, and those chips are now redeemable for Gold
+  // on cash-out -- which would make sitting down and standing up a faucet.
+  seat.stack = buyIn === undefined ? 1000 : clampBuyIn(state.tier, buyIn);
   if (state.currentPlayer === seatIndex) setCurrentPlayer(state, seatIndex);
 
   state.version += 1;
@@ -352,16 +358,26 @@ export function claimSeat(
  * identity. If it happens to be this seat's turn right now, the following
  * autoPlayBots() call resolves it automatically, since the seat is no longer
  * human-controlled — no separate "resolve their pending turn" step needed.
+ *
+ * Returns the chips the departing player still had in front of them, which
+ * the caller cashes back out to Gold. Chips already committed to the current
+ * pot are deliberately excluded: once they are in the middle they are
+ * contested, exactly as at a real table.
  */
-export function vacateSeat(state: GameState, token: string): GameState {
+export function vacateSeat(state: GameState, token: string): { state: GameState; cashedOut: number } {
   const seatIndex = state.seats.findIndex((seat) => seat.ownerToken === token);
   if (seatIndex === -1) throw new Error("You are not seated at this table.");
 
   const seat = state.seats[seatIndex];
+  const cashedOut = seat.stack;
   restoreBotControl(seat);
+  // Those chips leave the table with the player, so the seat must not keep
+  // them too -- otherwise every departure would mint the stack a second time.
+  // The replacement bot sits down fresh for the table minimum.
+  seat.stack = TIER_CONFIG[state.tier].minBuyIn;
   if (state.currentPlayer === seatIndex) setCurrentPlayer(state, seatIndex);
 
-  return state;
+  return { state, cashedOut };
 }
 
 export function getLegalActions(state: GameState, seatIndex: number): LegalActions {
@@ -399,10 +415,56 @@ function remaining(state: GameState) {
   return state.seats.filter((seat) => seat.status !== "folded" && seat.status !== "out");
 }
 
+/**
+ * The house's cut of each pot, and the Gold economy's primary structural
+ * sink. Tables are populated by bots, so every pot a human wins from an AI
+ * seat would otherwise mint Gold from nothing; rake is the counterweight.
+ *
+ * The minimum-pot floor doubles as this app's "no flop, no drop" rule: a
+ * preflop steal of the blinds never clears 10 big blinds, so small
+ * uncontested pots are handed over whole.
+ */
+const RAKE_RATE = 0.04;
+const RAKE_CAP_BB = 3;
+const RAKE_MIN_POT_BB = 10;
+
+function rakeFor(pot: number, bigBlind: number): number {
+  if (pot < bigBlind * RAKE_MIN_POT_BB) return 0;
+  return Math.min(Math.floor(pot * RAKE_RATE), bigBlind * RAKE_CAP_BB);
+}
+
+/**
+ * Removes rake from a hand's winnings in place and returns the amount taken.
+ * Split across winners in proportion to what each is owed, so a chopped pot
+ * charges both players evenly instead of billing whoever sorts first; the
+ * last winner absorbs the rounding remainder so the books always balance.
+ */
+function deductRake(state: GameState, winnings: Map<string, number>): number {
+  const total = [...winnings.values()].reduce((sum, amount) => sum + amount, 0);
+  const rake = rakeFor(total, state.bigBlind);
+  if (rake <= 0) return 0;
+
+  const ordered = [...winnings.entries()].sort((a, b) => b[1] - a[1]);
+  let outstanding = rake;
+  ordered.forEach(([seatId, amount], index) => {
+    const isLast = index === ordered.length - 1;
+    const share = isLast
+      ? Math.min(outstanding, amount)
+      : Math.min(outstanding, Math.floor((rake * amount) / total));
+    outstanding -= share;
+    winnings.set(seatId, amount - share);
+  });
+  return rake - outstanding;
+}
+
 function awardUncontested(state: GameState, seat: Seat) {
-  const amount = state.seats.reduce((sum, candidate) => sum + candidate.committed, 0);
+  const potTotal = state.seats.reduce((sum, candidate) => sum + candidate.committed, 0);
+  const winnings = new Map([[seat.id, potTotal]]);
+  state.rake = deductRake(state, winnings);
+  const amount = winnings.get(seat.id)!;
+
   seat.stack += amount;
-  state.pot = amount;
+  state.pot = potTotal;
   state.winners = [{ seatId: seat.id, name: seat.name, amount, hand: "Uncontested" }];
   state.street = "showdown";
   state.status = "complete";
@@ -461,6 +523,8 @@ function showdown(state: GameState) {
     }
     previous = level;
   });
+
+  state.rake = deductRake(state, winnings);
 
   const winners: Winner[] = [...winnings.entries()].map(([seatId, amount]) => {
     const seat = state.seats.find((candidate) => candidate.id === seatId)!;
@@ -660,6 +724,8 @@ export function normalizeGameState(state: GameState): GameState {
     // TIER_CONFIG[undefined] crash every reader downstream.
     state.tier = "micro";
   }
+  // Hands dealt before rake existed carry no rake figure; treat them as unraked.
+  if (!Number.isFinite(state.rake)) state.rake = 0;
   state.seats.forEach((seat) => {
     if (!Number.isInteger(seat.timeCardsRemaining)) {
       seat.timeCardsRemaining = seat.isHuman ? STARTING_TIME_CARDS : 0;

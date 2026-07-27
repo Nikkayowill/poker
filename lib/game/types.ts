@@ -61,6 +61,8 @@ export interface GameState {
   roomCode: string | null;
   /** Stakes level; fixes this table's blinds and every seat's buy-in bounds. */
   tier: StakesTier;
+  /** Gold removed from the most recent hand's pot as rake; 0 when the pot was too small to rake. */
+  rake: number;
   version: number;
   status: GameStatus;
   street: Street;

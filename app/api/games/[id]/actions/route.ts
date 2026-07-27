@@ -46,6 +46,14 @@ export async function POST(
     let action = parsed.data;
     let goldSpent = 0;
     let profile: PlayerProfile | undefined;
+
+    // Chips a departing player still has in front of them convert back to
+    // Gold. Read before applying, because vacateSeat clears the seat as part
+    // of handing it to a bot.
+    const cashOutAmount = action.type === "leave-seat"
+      ? game.seats.find((seat) => seat.ownerToken === ownerToken)?.stack ?? 0
+      : 0;
+
     if (action.type === "rebuy") {
       const seat = game.seats.find((candidate) => candidate.ownerToken === ownerToken);
       if (!seat) return NextResponse.json({ error: "You are not seated at this table." }, { status: 403 });
@@ -64,9 +72,15 @@ export async function POST(
     try {
       const updated = applyPlayerAction(game, action, ownerToken);
       await updateStoredGame(updated, action, ownerToken);
+      // Only after the departure is durably persisted -- crediting first
+      // would pay out a player whose seat never actually got released.
+      if (cashOutAmount > 0) {
+        profile = await creditGold(ownerToken, cashOutAmount).catch(() => profile);
+      }
       return NextResponse.json({
         game: toSnapshot(updated, ownerToken),
         persistence: persistenceMode(),
+        ...(cashOutAmount > 0 ? { cashedOut: cashOutAmount } : {}),
         ...(profile ? { profile } : {}),
       });
     } catch (applyError) {

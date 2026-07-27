@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   adjustGold,
   banProfile,
+  claimBackstopGold,
   claimDailyGold,
   deleteProfile,
   ensureProfile,
@@ -118,6 +119,37 @@ describe("Gold economy (memory mode)", () => {
 
   it("rejects deleteProfile for an unknown profile id", async () => {
     await expect(deleteProfile(randomUUID())).rejects.toThrow("Profile not found.");
+  });
+
+  it("tops up a stranded player who cannot afford the cheapest seat", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await adjustGold(profile.id, -1800); // down to 200, below micro's 500 minimum
+    const after = await claimBackstopGold(token, 500);
+    expect(after.goldBalance).toBe(700);
+  });
+
+  it("refuses a top-up for a player who can still afford to sit down", async () => {
+    const token = randomUUID();
+    await ensureProfile(token);
+    await expect(claimBackstopGold(token, 500)).rejects.toThrow("still have enough Gold");
+  });
+
+  it("refuses a second top-up inside the cooldown", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await adjustGold(profile.id, -1900); // down to 100
+    await claimBackstopGold(token, 500);
+    await adjustGold(profile.id, -600); // spend it back down to 0
+    await expect(claimBackstopGold(token, 500)).rejects.toThrow("already had a top-up");
+  });
+
+  it("refuses a top-up for an unlimited-Gold profile", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await setUnlimitedGold(profile.id, true);
+    await adjustGold(profile.id, -2000);
+    await expect(claimBackstopGold(token, 500)).rejects.toThrow("unlimited Gold");
   });
 
   it("lists profiles newest first, including one just created", async () => {

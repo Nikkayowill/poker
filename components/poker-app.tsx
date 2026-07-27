@@ -318,7 +318,18 @@ const PlayerSeat = memo(function PlayerSeat({
   && previous.winAmount === next.winAmount
 ));
 
-function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessionReady, error }: {
+function Lobby({
+  profile,
+  onQuickPlay,
+  onHostPrivate,
+  onJoinCode,
+  loading,
+  sessionReady,
+  error,
+  cashOutNotice,
+  onDismissCashOut,
+  onClaimBackstop,
+}: {
   profile: PlayerProfile | null;
   onQuickPlay: (name: string, tier: StakesTier, buyIn: number) => void;
   onHostPrivate: (name: string, tier: StakesTier, buyIn: number) => void;
@@ -326,6 +337,9 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessi
   loading: boolean;
   sessionReady: boolean;
   error: string | null;
+  cashOutNotice: number | null;
+  onDismissCashOut: () => void;
+  onClaimBackstop: () => void;
 }) {
   const [name, setName] = useState(profile?.displayName ?? "");
   const [joinCode, setJoinCode] = useState("");
@@ -334,9 +348,36 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessi
     event.preventDefault();
     if (joinCode.trim().length === 6) onJoinCode(name.trim() || "You", joinCode.trim());
   };
+  // Below the cheapest buy-in there is no seat in the house they can take,
+  // so offer the recovery grant rather than letting them hit a dead end.
+  const needsTopUp = Boolean(
+    profile && !profile.unlimitedGold && (profile.goldBalance ?? 0) < TIER_CONFIG.micro.minBuyIn,
+  );
   return (
     <main className="lobby">
       <section className="hero">
+        {cashOutNotice !== null && (
+          <div className="cash-out-notice" role="status">
+            <Coins size={15} />
+            <span>
+              Cashed out <strong>{cashOutNotice.toLocaleString()}</strong> Gold from the table.
+            </span>
+            <button type="button" onClick={onDismissCashOut} aria-label="Dismiss">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+        {needsTopUp && (
+          <div className="broke-notice" role="status">
+            <span>
+              You&rsquo;re below the {TIER_CONFIG.micro.minBuyIn.toLocaleString()} Gold minimum for the
+              cheapest seat.
+            </span>
+            <button type="button" className="secondary-action" disabled={loading} onClick={onClaimBackstop}>
+              Claim a top-up
+            </button>
+          </div>
+        )}
         <div className="lobby-kicker">River Room · 6-max</div>
         <h1>No-limit Hold’em.<br /><em>Nothing extra.</em></h1>
         <p>
@@ -1713,6 +1754,7 @@ export function PokerApp() {
   const [profileLoading, setProfileLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connected");
+  const [cashOutNotice, setCashOutNotice] = useState<number | null>(null);
   const gameId = game?.id;
 
   const loadProfile = useCallback(async () => {
@@ -1953,20 +1995,57 @@ export function PokerApp() {
 
   const leaveSeat = async () => {
     if (!game) return;
+    const tableId = game.id;
     setLoading(true);
+    // Drop the table view up front rather than after the round trip: the
+    // player has already decided to go, and it stops the refresh poll from
+    // racing the seat release -- once they are no longer seated, a poll
+    // against a private table is correctly rejected.
+    leave();
     try {
-      await fetch(`/api/games/${game.id}/actions`, {
+      const response = await fetch(`/api/games/${tableId}/actions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "leave-seat" }),
       });
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.profile) setProfile(data.profile);
+      // Chips only become Gold when the player stands up, so this is the one
+      // moment the loop is visible. Say it plainly instead of leaving them to
+      // spot the balance change in the navbar.
+      if (response.ok && typeof data?.cashedOut === "number" && data.cashedOut > 0) {
+        setCashOutNotice(data.cashedOut);
+      }
     } catch {
       // Best effort: the seat still reverts to a bot server-side even if this
       // client never hears back, so there's nothing useful to show here.
     } finally {
       setLoading(false);
-      leave();
     }
+  };
+
+  const claimBackstop = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/profile/gold/backstop", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not top up your Gold.");
+      setProfile(data.profile);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not top up your Gold.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /** Leaving the table while still seated cashes out first, so chips are never stranded. */
+  const leaveTable = () => {
+    if (game?.isSeated) {
+      void leaveSeat();
+      return;
+    }
+    leave();
   };
 
   return (
@@ -1992,7 +2071,7 @@ export function PokerApp() {
             pending={loading}
             error={error}
             onAction={act}
-            onLeave={leave}
+            onLeave={leaveTable}
             onLeaveSeat={leaveSeat}
             profile={profile}
             onCustomize={() => setProfileOpen(true)}
@@ -2010,6 +2089,9 @@ export function PokerApp() {
             loading={loading}
             sessionReady={!profileLoading}
             error={error}
+            cashOutNotice={cashOutNotice}
+            onDismissCashOut={() => setCashOutNotice(null)}
+            onClaimBackstop={claimBackstop}
           />
         )}
       {profileOpen && profile && (

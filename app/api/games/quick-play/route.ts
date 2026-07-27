@@ -72,21 +72,19 @@ export async function POST(request: NextRequest) {
       if (!openGameId) break;
       const loaded = await getStoredGame(openGameId);
       if (!loaded) continue;
-      const targetSeatIndex = loaded.seats.findIndex((seat) => seat.ownerToken === null);
-      // A seat still holding its current stack (an active bot mid-session)
-      // is inherited as-is, no purchase involved. Only a genuinely empty
-      // (busted-out) seat spends Gold for a fresh buy-in.
-      const isFreshBuyIn = targetSeatIndex !== -1 && loaded.seats[targetSeatIndex].stack === 0;
-      if (isFreshBuyIn) profile = await spendGold(token, buyIn);
+      // Every seat claim is a real buy-in. Inheriting an outgoing bot's chips
+      // for free used to be harmless, but those chips are now redeemable for
+      // Gold when the player stands up, so a free seat would be a faucet.
+      profile = await spendGold(token, buyIn);
       try {
         const beforeVersion = loaded.version;
-        const { state, seatIndex } = claimSeat(loaded, token, profile, isFreshBuyIn ? buyIn : undefined);
+        const { state, seatIndex } = claimSeat(loaded, token, profile, buyIn);
         if (state.version !== beforeVersion) {
           await persistSeatClaim(state, state.seats[seatIndex].id);
         }
         joined = state;
       } catch {
-        if (isFreshBuyIn) profile = await creditGold(token, buyIn).catch(() => profile);
+        profile = await creditGold(token, buyIn).catch(() => profile);
         // Someone else claimed the last open seat, or the table filled between
         // our lookup and our claim; loop around and search again.
       }

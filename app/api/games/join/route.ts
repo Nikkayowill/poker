@@ -50,11 +50,9 @@ export async function POST(request: NextRequest) {
     void recordSeenIp(token, getClientIp(request)).catch(() => {});
 
     const config = TIER_CONFIG[loaded.tier];
-    const targetSeatIndex = loaded.seats.findIndex((seat) => seat.ownerToken === null);
-    // As in quick-play: only a genuinely empty (busted-out) seat spends
-    // Gold for a fresh buy-in -- an active bot's seat is inherited as-is.
-    const isFreshBuyIn = targetSeatIndex !== -1 && loaded.seats[targetSeatIndex].stack === 0;
-    if (isFreshBuyIn && !profile.unlimitedGold && profile.goldBalance < config.minBuyIn) {
+    // As in quick-play, every seat claim is a real buy-in: chips are
+    // redeemable for Gold on cash-out, so a free seat would be a faucet.
+    if (!profile.unlimitedGold && profile.goldBalance < config.minBuyIn) {
       return withSessionCookie(
         NextResponse.json(
           { error: `You need at least ${config.minBuyIn.toLocaleString()} Gold to join this table.` },
@@ -66,18 +64,18 @@ export async function POST(request: NextRequest) {
     // Defaults to 1000 (matching the lobby's current "1K buy-in" label)
     // until the buy-in picker UI lands and sends a real chosen amount.
     const buyIn = clampBuyIn(loaded.tier, parsed.data.buyIn ?? 1000);
-    if (isFreshBuyIn) profile = await spendGold(token, buyIn);
+    profile = await spendGold(token, buyIn);
 
     let state;
     let seatIndex;
     try {
       const beforeVersion = loaded.version;
-      ({ state, seatIndex } = claimSeat(loaded, token, profile, isFreshBuyIn ? buyIn : undefined));
+      ({ state, seatIndex } = claimSeat(loaded, token, profile, buyIn));
       if (state.version !== beforeVersion) {
         await persistSeatClaim(state, state.seats[seatIndex].id);
       }
     } catch (claimError) {
-      if (isFreshBuyIn) profile = await creditGold(token, buyIn).catch(() => profile);
+      profile = await creditGold(token, buyIn).catch(() => profile);
       throw claimError;
     }
 

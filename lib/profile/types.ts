@@ -19,6 +19,8 @@ export const profileAccents = [
 export type AvatarPreset = (typeof avatarPresets)[number]["id"];
 
 export interface PlayerProfile {
+  /** Stable, safe-to-share identifier -- distinct from the HttpOnly session token, which never reaches JavaScript. */
+  id: string;
   displayName: string;
   initials: string;
   avatarUrl: string | null;

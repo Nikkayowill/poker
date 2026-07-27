@@ -7,6 +7,7 @@ describe("profile appearance", () => {
   it("is copied into a new seat without exposing session identity", () => {
     const token = crypto.randomUUID();
     const profile: PlayerProfile = {
+      id: crypto.randomUUID(),
       displayName: "Card Shark",
       initials: "CS",
       avatarUrl: "https://example.test/avatar.png",

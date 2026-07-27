@@ -1954,6 +1954,39 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .accent-row button.selected { outline-color: var(--swatch); }
 
+.player-id-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255,255,255,.02);
+}
+.player-id-row > span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.player-id-row small { color: #74827b; font-size: 8px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+.player-id-row code {
+  overflow: hidden;
+  color: #aebbb4;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.player-id-row button {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  color: #c1cbc5;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.player-id-row button:hover { border-color: rgba(217,184,93,.3); color: #f0dfaa; }
+
 .profile-modal-footer {
   min-height: 65px;
   display: flex;

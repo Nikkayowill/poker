@@ -435,6 +435,16 @@ function ProfileModal({
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [idCopied, setIdCopied] = useState(false);
+  const copyPlayerId = async () => {
+    try {
+      await navigator.clipboard.writeText(profile.id);
+      setIdCopied(true);
+      window.setTimeout(() => setIdCopied(false), 1800);
+    } catch {
+      // Clipboard access can be denied by browser policy; the id is still visible to copy by hand.
+    }
+  };
 
   const preview: AvatarView = {
     displayName: displayName || "Player",
@@ -584,6 +594,16 @@ function ProfileModal({
               ))}
             </div>
           </fieldset>
+
+          <div className="player-id-row">
+            <span>
+              <small>Player ID</small>
+              <code>{profile.id}</code>
+            </span>
+            <button type="button" onClick={copyPlayerId}>
+              {idCopied ? "Copied!" : "Copy"}
+            </button>
+          </div>
 
           <footer className="profile-modal-footer">
             <span className={message?.includes("saved") || message?.includes("uploaded") ? "success-message" : ""}>

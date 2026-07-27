@@ -31,6 +31,7 @@ const DAILY_GOLD_GRANT = 1000;
 
 function publicProfile(profile: StoredProfile): PlayerProfile {
   return {
+    id: profile.id,
     displayName: profile.displayName,
     initials: profile.initials,
     avatarUrl: profile.avatarUrl,
@@ -47,6 +48,7 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
 function defaultProfile(displayName = "Player"): StoredProfile {
   const now = new Date().toISOString();
   return {
+    id: randomUUID(),
     displayName,
     initials: initials(displayName),
     avatarUrl: null,
@@ -63,6 +65,7 @@ function defaultProfile(displayName = "Player"): StoredProfile {
 
 function fromRow(row: Record<string, unknown>): StoredProfile {
   return {
+    id: String(row.id),
     displayName: String(row.display_name),
     initials: String(row.initials),
     avatarUrl: row.avatar_url ? String(row.avatar_url) : null,
@@ -303,18 +306,21 @@ export async function claimDailyGold(token: string): Promise<PlayerProfile> {
 }
 
 /** Flags (or unflags) a profile so spendGold never actually deducts from it -- for gifting a specific person free play. */
-export async function setUnlimitedGold(token: string, unlimited: boolean): Promise<void> {
+export async function setUnlimitedGold(profileId: string, unlimited: boolean): Promise<void> {
   const supabase = adminClient();
   const now = new Date().toISOString();
   if (!supabase) {
-    const current = memoryProfiles.get(token);
-    if (!current) throw new Error("Profile not found.");
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) throw new Error("Profile not found.");
+    const [token, current] = entry;
     memoryProfiles.set(token, { ...current, unlimitedGold: unlimited, updatedAt: now });
     return;
   }
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("profiles")
     .update({ unlimited_gold: unlimited, updated_at: now })
-    .eq("session_token", token);
+    .eq("id", profileId)
+    .select("id");
   if (error) throw new Error(`Could not update Gold flag: ${error.message}`);
+  if (!data || data.length === 0) throw new Error("Profile not found.");
 }

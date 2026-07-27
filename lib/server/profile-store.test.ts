@@ -25,10 +25,14 @@ describe("Gold economy (memory mode)", () => {
 
   it("never deducts for an unlimited-Gold profile", async () => {
     const token = randomUUID();
-    await ensureProfile(token);
-    await setUnlimitedGold(token, true);
+    const profile = await ensureProfile(token);
+    await setUnlimitedGold(profile.id, true);
     const after = await spendGold(token, 1_000_000);
     expect(after.goldBalance).toBe(2000);
+  });
+
+  it("rejects setUnlimitedGold for an unknown profile id", async () => {
+    await expect(setUnlimitedGold(randomUUID(), true)).rejects.toThrow("Profile not found.");
   });
 
   it("grants the daily amount once, then rejects a same-day repeat", async () => {

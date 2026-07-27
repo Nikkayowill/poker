@@ -1,6 +1,7 @@
 import {
   hairColor as resolveHairColor,
   mixColor,
+  normalizeAvatar,
   skinTone as resolveSkinTone,
   type AvatarConfig,
   type FaceId,
@@ -27,6 +28,7 @@ const HEAD =
 function palette(config: AvatarConfig, accent: string) {
   const skin = resolveSkinTone(config.skinTone);
   const hair = resolveHairColor(config.hairColor);
+
   return {
     skin: skin.value,
     skinShade: skin.shade,
@@ -244,14 +246,17 @@ export function PlayerAvatar({
   idle = false,
   className,
 }: {
-  config: AvatarConfig;
+  /** Tolerates a missing or partial config: state that predates a category
+   *  should render a default figure, never take the page down with it. */
+  config: AvatarConfig | null | undefined;
   /** The player's chosen accent, worn as their clothing colour. */
   accent: string;
   size?: number | string;
   idle?: boolean;
   className?: string;
 }) {
-  const p = palette(config, accent);
+  const safeConfig = normalizeAvatar(config);
+  const p = palette(safeConfig, accent);
 
   return (
     <svg
@@ -269,20 +274,20 @@ export function PlayerAvatar({
       </defs>
 
       <g className="avatar-body">
-        <Outfit outfit={config.outfit} p={p} />
+        <Outfit outfit={safeConfig.outfit} p={p} />
       </g>
 
       <g className="avatar-head">
-        <HairBack style={config.hairStyle} p={p} />
+        <HairBack style={safeConfig.hairStyle} p={p} />
         <path d="M43.4 58h13.2v20H43.4z" fill={p.skin} />
         {/* The jaw's contact shadow sits over the neck, which is what sells depth. */}
         <path d="M43.4 58h13.2v6.6c-4.4 2.6-8.8 2.6-13.2 0V58Z" fill={p.skinShade} opacity="0.6" />
         <ellipse cx="28.8" cy="45.6" rx="3.6" ry="5" fill={p.skin} />
         <ellipse cx="71.2" cy="45.6" rx="3.6" ry="5" fill={p.skin} />
         <path d={HEAD} fill={p.skin} />
-        <Face face={config.face} p={p} />
-        <FacialHair style={config.facialHair} p={p} />
-        <HairFront style={config.hairStyle} p={p} />
+        <Face face={safeConfig.face} p={p} />
+        <FacialHair style={safeConfig.facialHair} p={p} />
+        <HairFront style={safeConfig.hairStyle} p={p} />
       </g>
     </svg>
   );

@@ -735,6 +735,15 @@ export function normalizeGameState(state: GameState): GameState {
     if (!Number.isInteger(seat.timeCardsRemaining)) {
       seat.timeCardsRemaining = seat.isHuman ? STARTING_TIME_CARDS : 0;
     }
+    // Tables dealt before avatars existed have seats with no avatar at all,
+    // which reaches the renderer as undefined and takes the whole page down.
+    // Bots recover their own face by position rather than every seat
+    // collapsing to one default, which is most of what makes a table look
+    // occupied.
+    if (!seat.avatar) {
+      const fallback = botProfiles[seat.position] ?? botProfiles[0];
+      seat.avatar = seat.isHuman ? defaultAvatar : fallback.avatar;
+    }
   });
   if (state.currentPlayer === null || state.status !== "playing") {
     state.turnStartedAt = null;

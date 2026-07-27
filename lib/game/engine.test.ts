@@ -5,6 +5,7 @@ import {
   claimSeat,
   createGame,
   expireIdleTurn,
+  normalizeGameState,
   STARTING_TIME_CARDS,
   TIME_CARD_EXTENSION_MS,
   TURN_TIMEOUT_MS,
@@ -732,6 +733,35 @@ describe("stakes tiers and buy-ins", () => {
     // The player pays 500 and gets 500 -- inheriting the bot's 1,750 would be
     // free chips, and free chips are redeemable for Gold on cash-out.
     expect(game.seats[claimed.seatIndex].stack).toBe(500);
+  });
+});
+
+describe("legacy state normalization", () => {
+  it("backfills seat avatars on tables dealt before avatars existed", () => {
+    const token = crypto.randomUUID();
+    const game = createGame(token, "Host");
+    // Exactly what a table persisted before Phase 2 looks like coming back
+    // out of storage: every other field intact, no avatar on any seat.
+    game.seats.forEach((seat) => {
+      delete (seat as Partial<typeof seat>).avatar;
+    });
+
+    const normalized = normalizeGameState(game);
+    normalized.seats.forEach((seat) => {
+      expect(seat.avatar).toBeDefined();
+      expect(seat.avatar.skinTone).toBeTruthy();
+    });
+    // Bots keep their own faces rather than all collapsing to one default,
+    // which is most of what makes a table look occupied.
+    const botFaces = new Set(normalized.seats.slice(1).map((seat) => JSON.stringify(seat.avatar)));
+    expect(botFaces.size).toBe(5);
+  });
+
+  it("leaves an avatar that is already present untouched", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    const chosen = { ...defaultAvatar, hairStyle: "curls" as const, face: "sharp" as const };
+    game.seats[0].avatar = chosen;
+    expect(normalizeGameState(game).seats[0].avatar).toEqual(chosen);
   });
 });
 

@@ -195,7 +195,11 @@ const PlayerSeat = memo(function PlayerSeat({
         </span>
       )}
       <div className={clsx("seat-cards", seat.isMine && "own-cards", isWinner && "winning-cards")}>
-        {seat.holeCards.map((card, index) => (
+        {/* Once folded, this seat's cards live only in the transient
+            MuckDrift overlay (see PokerTable) -- not here -- so they read as
+            having actually left the table instead of sitting dimmed at the
+            seat for the rest of the hand. */}
+        {!folded && seat.holeCards.map((card, index) => (
           <span
             className="dealt-card-shell"
             key={`${handNumber}-${index}`}
@@ -583,6 +587,16 @@ function ActionBar({
     const target = Math.round(game.pot * fraction);
     return Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, target));
   };
+  // Purely a visual beat -- the real action always dispatches synchronously,
+  // right here, on click. This only guarantees the pressed look is visible
+  // for a minimum stretch so a fast round trip doesn't make the button feel
+  // like it never registered the tap.
+  const [pressedAction, setPressedAction] = useState<PlayerAction["type"] | null>(null);
+  const dispatch = (action: PlayerAction) => {
+    onAction(action);
+    setPressedAction(action.type);
+    window.setTimeout(() => setPressedAction((current) => (current === action.type ? null : current)), 150);
+  };
 
   if (game.status === "complete") {
     if (!game.isSeated) {
@@ -669,19 +683,30 @@ function ActionBar({
       </div>
       <div className="basic-actions">
         {legal.canFold && (
-          <button disabled={pending} onClick={() => onAction({ type: "fold" })} aria-label="Fold">
+          <button
+            className={clsx(pressedAction === "fold" && "action-pressed")}
+            disabled={pending}
+            onClick={() => dispatch({ type: "fold" })}
+            aria-label="Fold"
+          >
             <FoldVertical size={16} /> Fold
           </button>
         )}
         {legal.canCheck && (
-          <button disabled={pending} onClick={() => onAction({ type: "check" })} aria-label="Check">
+          <button
+            className={clsx(pressedAction === "check" && "action-pressed")}
+            disabled={pending}
+            onClick={() => dispatch({ type: "check" })}
+            aria-label="Check"
+          >
             <Check size={17} /> Check
           </button>
         )}
         {legal.canCall && (
           <button
+            className={clsx(pressedAction === "call" && "action-pressed")}
             disabled={pending}
-            onClick={() => onAction({ type: "call" })}
+            onClick={() => dispatch({ type: "call" })}
             aria-label={`Call ${legal.callAmount} chips`}
           >
             Call <strong>{legal.callAmount}</strong>
@@ -715,9 +740,9 @@ function ActionBar({
       <div className="commit-actions">
         {legal.canRaise && (
           <button
-            className="primary-action"
+            className={clsx("primary-action", pressedAction === "raise" && "action-pressed")}
             disabled={pending}
-            onClick={() => onAction({ type: "raise", amount: raiseTo })}
+            onClick={() => dispatch({ type: "raise", amount: raiseTo })}
             aria-label={`Raise to ${raiseTo} chips`}
           >
             Raise to <span>{raiseTo}</span>
@@ -725,9 +750,9 @@ function ActionBar({
         )}
         {legal.canAllIn && (
           <button
-            className="allin-action"
+            className={clsx("allin-action", pressedAction === "all-in" && "action-pressed")}
             disabled={pending}
-            onClick={() => onAction({ type: "all-in" })}
+            onClick={() => dispatch({ type: "all-in" })}
             aria-label="Go all in"
           >
             All in
@@ -870,6 +895,80 @@ function ChipFlight({
         />
       ))}
     </>
+  );
+}
+
+/**
+ * Bridges a seat's cards from "visible at the seat" to "gone" the moment it
+ * folds, so the disappearance (PlayerSeat stops rendering them once
+ * `folded`) reads as the cards actually leaving rather than an instant cut.
+ * Renders whatever the seat's own `holeCards` already were at the moment of
+ * folding -- real cards for the local player (whose own hand always stays
+ * visible to them, fold or not), already-masked nulls/card-backs for any
+ * other seat -- so it can never surface hidden information itself.
+ */
+function MuckDrift({
+  id,
+  seatId,
+  cards,
+  isMine,
+  tableWrapRef,
+  potRef,
+  seatRefs,
+  onDone,
+}: {
+  id: string;
+  seatId: string;
+  cards: Array<Card | null>;
+  isMine: boolean;
+  tableWrapRef: React.RefObject<HTMLDivElement | null>;
+  potRef: React.RefObject<HTMLDivElement | null>;
+  seatRefs: React.RefObject<Record<string, HTMLElement | null>>;
+  onDone: (id: string) => void;
+}) {
+  const [layout, setLayout] = useState<{ originX: number; originY: number; dx: number; dy: number } | null>(null);
+
+  useEffect(() => {
+    const wrapRect = tableWrapRef.current?.getBoundingClientRect();
+    const potRect = potRef.current?.getBoundingClientRect();
+    const seatEl = seatRefs.current[seatId];
+    if (!wrapRect || !potRect || !seatEl) {
+      onDone(id);
+      return;
+    }
+    const seatRect = seatEl.getBoundingClientRect();
+    setLayout({
+      originX: seatRect.left + seatRect.width / 2 - wrapRect.left,
+      originY: seatRect.top + seatRect.height / 2 - wrapRect.top,
+      dx: potRect.left + potRect.width / 2 - (seatRect.left + seatRect.width / 2),
+      dy: potRect.top + potRect.height / 2 - (seatRect.top + seatRect.height / 2),
+    });
+    const timer = window.setTimeout(() => onDone(id), 560);
+    return () => window.clearTimeout(timer);
+    // One-shot: a self-contained event keyed by its own id, not something
+    // that should react to later layout changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!layout) return null;
+
+  return (
+    <div
+      className="muck-drift"
+      style={{
+        left: `${layout.originX}px`,
+        top: `${layout.originY}px`,
+        "--muck-dx": `${layout.dx}px`,
+        "--muck-dy": `${layout.dy}px`,
+      } as React.CSSProperties}
+      aria-hidden="true"
+    >
+      {cards.map((card, index) => (
+        <span className="muck-drift-card" key={index}>
+          <PlayingCard card={card} small={!isMine} large={isMine} />
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -1099,6 +1198,41 @@ function PokerTable({
     setChipFlights((current) => current.filter((flight) => flight.id !== id));
   }, []);
 
+  // Same shape of guard as the chip-flight tracker above: a null baseline
+  // (mount, or forced on any non-connected state) skips detection for that
+  // snapshot, so a fresh hand's seats resetting to "active" is never misread
+  // as an un-fold, and nothing replays after a refresh or reconnect.
+  const foldStatusRef = useRef<Record<string, boolean> | null>(null);
+  const [muckDrifts, setMuckDrifts] = useState<
+    Array<{ id: string; seatId: string; cards: Array<Card | null>; isMine: boolean }>
+  >([]);
+  useEffect(() => {
+    if (connectionState !== "connected") {
+      foldStatusRef.current = null;
+    }
+  }, [connectionState]);
+  useEffect(() => {
+    const prev = foldStatusRef.current;
+    if (prev !== null) {
+      const newlyFolded = game.seats.filter((seat) => seat.status === "folded" && !prev[seat.id]);
+      if (newlyFolded.length) {
+        setMuckDrifts((current) => [
+          ...current,
+          ...newlyFolded.map((seat) => ({
+            id: `${game.handNumber}-${seat.id}-muck`,
+            seatId: seat.id,
+            cards: seat.holeCards,
+            isMine: seat.isMine,
+          })),
+        ]);
+      }
+    }
+    foldStatusRef.current = Object.fromEntries(game.seats.map((seat) => [seat.id, seat.status === "folded"]));
+  }, [game.seats, game.handNumber]);
+  const removeMuckDrift = useCallback((id: string) => {
+    setMuckDrifts((current) => current.filter((drift) => drift.id !== id));
+  }, []);
+
   // A silent auto-fold/check is easy to miss on a first turn; call it out
   // explicitly instead of only leaving a trace in the activity log. Derived
   // during render (React's "adjusting state" pattern) rather than in an
@@ -1253,6 +1387,19 @@ function PokerTable({
                 potRef={potRef}
                 seatRefs={seatRefs}
                 onDone={removeChipFlight}
+              />
+            ))}
+            {muckDrifts.map((drift) => (
+              <MuckDrift
+                key={drift.id}
+                id={drift.id}
+                seatId={drift.seatId}
+                cards={drift.cards}
+                isMine={drift.isMine}
+                tableWrapRef={tableWrapRef}
+                potRef={potRef}
+                seatRefs={seatRefs}
+                onDone={removeMuckDrift}
               />
             ))}
             {orderedSeats.map((seat, index) => (

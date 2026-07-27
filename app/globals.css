@@ -838,6 +838,27 @@ button:disabled { cursor: wait; opacity: .62; }
   }
 }
 
+/* Bridges a folded seat's cards from "at the seat" to "gone" -- positioned
+   via inline left/top (the seat's measured position, same technique as
+   .seat-chip-flight) so it works for any of the six placements without a
+   fixed anchor. */
+.muck-drift {
+  position: absolute;
+  z-index: 7;
+  display: flex;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: muck-drift-away .5s cubic-bezier(.4,.1,.4,1) both;
+}
+.muck-drift-card + .muck-drift-card { margin-left: -12px; }
+@keyframes muck-drift-away {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--muck-dx)), calc(-50% + var(--muck-dy))) scale(.55) rotate(-14deg);
+  }
+}
+
 .chip-stack-icon, .chip-dot {
   display: inline-block;
   width: 13px;
@@ -1468,7 +1489,12 @@ button:disabled { cursor: wait; opacity: .62; }
   transition: background-color .12s ease, border-color .12s ease, transform .08s ease, box-shadow .08s ease;
 }
 .basic-actions button:hover, .raise-buttons button:hover { background: #22302a; border-color: rgba(217,184,93,.32); color: #f0dfaa; }
-.basic-actions button:active:not(:disabled), .raise-buttons button:active:not(:disabled), .allin-action:active:not(:disabled) {
+/* .action-pressed mirrors :active but is held for a guaranteed minimum
+   stretch by JS (see ActionBar's dispatch helper) -- a real click/tap
+   already gets this look for free while the pointer is down, but a fast
+   round trip can otherwise resolve before that ever renders. */
+.basic-actions button:active:not(:disabled), .raise-buttons button:active:not(:disabled), .allin-action:active:not(:disabled),
+.basic-actions button.action-pressed:not(:disabled), .allin-action.action-pressed:not(:disabled) {
   transform: translateY(2px);
   box-shadow: 0 0 0 rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.18);
 }
@@ -1514,7 +1540,7 @@ button:disabled { cursor: wait; opacity: .62; }
   transition: transform .08s ease, box-shadow .08s ease;
 }
 .commit-actions .primary-action span { font-family: Georgia, serif; }
-.commit-actions .primary-action:active:not(:disabled) {
+.commit-actions .primary-action:active:not(:disabled), .commit-actions .primary-action.action-pressed:not(:disabled) {
   transform: translateY(2px);
   box-shadow: 0 0 0 rgba(120,94,20,.55), 0 2px 8px rgba(0,0,0,.2);
 }
@@ -2135,6 +2161,7 @@ button:disabled { cursor: wait; opacity: .62; }
   .community-card-flipper,
   .pot-chip-flight,
   .seat-chip-flight,
+  .muck-drift,
   .seat-current::after,
   .action-countdown.countdown-critical,
   .turn-ring {

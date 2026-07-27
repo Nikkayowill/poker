@@ -21,7 +21,7 @@ import {
 import { ChangeEvent, FormEvent, memo, useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import type { Card, GameSnapshot, PlayerAction, PublicSeat, Winner } from "@/lib/game/types";
-import { TIER_CONFIG } from "@/lib/game/tiers";
+import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { avatarPresets, profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 
@@ -319,8 +319,8 @@ const PlayerSeat = memo(function PlayerSeat({
 
 function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessionReady, error }: {
   profile: PlayerProfile | null;
-  onQuickPlay: (name: string) => void;
-  onHostPrivate: (name: string) => void;
+  onQuickPlay: (name: string, tier: StakesTier, buyIn: number) => void;
+  onHostPrivate: (name: string, tier: StakesTier, buyIn: number) => void;
   onJoinCode: (name: string, code: string) => void;
   loading: boolean;
   sessionReady: boolean;
@@ -328,10 +328,7 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessi
 }) {
   const [name, setName] = useState(profile?.displayName ?? "");
   const [joinCode, setJoinCode] = useState("");
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    onQuickPlay(name.trim() || "You");
-  };
+  const [buyInMode, setBuyInMode] = useState<"join" | "host" | null>(null);
   const submitJoin = (event: FormEvent) => {
     event.preventDefault();
     if (joinCode.trim().length === 6) onJoinCode(name.trim() || "You", joinCode.trim());
@@ -342,10 +339,10 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessi
         <div className="lobby-kicker">River Room · 6-max</div>
         <h1>No-limit Hold’em.<br /><em>Nothing extra.</em></h1>
         <p>
-          Buy in for 1,000 chips, take a seat, and play. Start a quick table
-          or open a private room for friends.
+          Pick your stakes, choose a buy-in, and take a seat. Start a quick
+          table or open a private room for friends.
         </p>
-        <form className="start-form" onSubmit={submit}>
+        <div className="start-form">
           <div className="form-label-row">
             <label htmlFor="player-name">Player name</label>
           </div>
@@ -360,19 +357,29 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessi
             />
           </div>
           <div className="lobby-actions">
-            <button type="submit" className="primary-action" disabled={loading || !sessionReady}>
+            <button
+              type="button"
+              className="primary-action"
+              disabled={loading || !sessionReady}
+              onClick={() => setBuyInMode("join")}
+            >
               {!sessionReady
                 ? "Preparing your seat…"
                 : loading
                   ? "Joining table…"
-                  : <>Join table · 1K buy-in <ArrowRight size={17} /></>}
+                  : <>Join table <ArrowRight size={17} /></>}
             </button>
-            <button type="button" className="secondary-action" disabled={loading || !sessionReady} onClick={() => onHostPrivate(name.trim() || "You")}>
+            <button
+              type="button"
+              className="secondary-action"
+              disabled={loading || !sessionReady}
+              onClick={() => setBuyInMode("host")}
+            >
               <UsersRound size={15} /> Private table
             </button>
           </div>
           {error && <p className="form-error"><X size={14} /> {error}</p>}
-        </form>
+        </div>
         <form className="join-form" onSubmit={submitJoin}>
           <label htmlFor="join-code">Join a private table</label>
           <div className="join-row">
@@ -389,8 +396,8 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessi
         </form>
         <div className="table-facts" aria-label="Table details">
           <span><strong>6</strong> seats</span>
-          <span><strong>10 / 20</strong> blinds</span>
-          <span><strong>1,000</strong> buy-in</span>
+          <span><strong>3</strong> stakes tiers</span>
+          <span><strong>500 – 40,000</strong> buy-in</span>
         </div>
       </section>
       <aside className="lobby-preview">
@@ -415,6 +422,25 @@ function Lobby({ profile, onQuickPlay, onHostPrivate, onJoinCode, loading, sessi
           </div>
         </div>
       </aside>
+      {buyInMode && (
+        <BuyInModal
+          title={buyInMode === "host" ? "Host a private table" : "Join a table"}
+          description={
+            buyInMode === "host"
+              ? "Pick your stakes and buy-in, then share the room code with friends."
+              : "Pick a stakes tier and how much of your Gold to buy in for."
+          }
+          goldBalance={profile?.goldBalance ?? 0}
+          unlimitedGold={profile?.unlimitedGold ?? false}
+          confirmLabel={buyInMode === "host" ? "Host table" : "Join table"}
+          pending={loading}
+          onClose={() => setBuyInMode(null)}
+          onConfirm={(tier, buyIn) => {
+            if (buyInMode === "host") onHostPrivate(name.trim() || "You", tier, buyIn);
+            else onQuickPlay(name.trim() || "You", tier, buyIn);
+          }}
+        />
+      )}
     </main>
   );
 }
@@ -620,6 +646,133 @@ function ProfileModal({
   );
 }
 
+/**
+ * Picks a stakes tier (unless locked, e.g. rebuying at an already-seated
+ * table) and a buy-in amount within that tier's range -- reused for
+ * quick-play, hosting a private table, and rebuying after busting.
+ * Resolves to (tier, buyIn); the caller decides what request that becomes.
+ */
+function BuyInModal({
+  title,
+  description,
+  goldBalance,
+  unlimitedGold,
+  lockedTier,
+  confirmLabel,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  title: string;
+  description: string;
+  goldBalance: number;
+  unlimitedGold: boolean;
+  lockedTier?: StakesTier;
+  confirmLabel: string;
+  pending: boolean;
+  onClose: () => void;
+  onConfirm: (tier: StakesTier, buyIn: number) => void;
+}) {
+  const [tier, setTier] = useState<StakesTier>(lockedTier ?? "micro");
+  const config = TIER_CONFIG[tier];
+  const affordableMax = unlimitedGold ? config.maxBuyIn : Math.min(config.maxBuyIn, goldBalance);
+  const [buyIn, setBuyIn] = useState(() => Math.max(config.minBuyIn, Math.min(affordableMax, config.maxBuyIn)));
+
+  const selectTier = (next: StakesTier) => {
+    if (lockedTier) return;
+    const nextConfig = TIER_CONFIG[next];
+    const nextAffordableMax = unlimitedGold ? nextConfig.maxBuyIn : Math.min(nextConfig.maxBuyIn, goldBalance);
+    setTier(next);
+    setBuyIn(Math.max(nextConfig.minBuyIn, Math.min(nextAffordableMax, nextConfig.maxBuyIn)));
+  };
+
+  const canAfford = (candidate: StakesTier) => unlimitedGold || goldBalance >= TIER_CONFIG[candidate].minBuyIn;
+  const affordableNow = canAfford(tier) && buyIn <= affordableMax;
+
+  return (
+    <div className="profile-overlay" role="presentation" onMouseDown={(event) => {
+      if (event.currentTarget === event.target) onClose();
+    }}>
+      <section className="profile-modal buyin-modal" role="dialog" aria-modal="true" aria-labelledby="buyin-title">
+        <header className="profile-modal-header">
+          <div>
+            <span>BUY-IN</span>
+            <h2 id="buyin-title">{title}</h2>
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </header>
+        <div className="buyin-body">
+          <p className="buyin-description">{description}</p>
+
+          {!lockedTier && (
+            <div className="tier-grid">
+              {STAKES_TIERS.map((candidate) => {
+                const candidateConfig = TIER_CONFIG[candidate];
+                const affordable = canAfford(candidate);
+                return (
+                  <button
+                    type="button"
+                    key={candidate}
+                    className={clsx("tier-card", tier === candidate && "selected", !affordable && "unaffordable")}
+                    disabled={!affordable}
+                    onClick={() => selectTier(candidate)}
+                  >
+                    <strong>{candidateConfig.label}</strong>
+                    <span>{candidateConfig.smallBlind} / {candidateConfig.bigBlind} blinds</span>
+                    <small>
+                      {affordable
+                        ? `${candidateConfig.minBuyIn.toLocaleString()} – ${candidateConfig.maxBuyIn.toLocaleString()}`
+                        : `Need ${candidateConfig.minBuyIn.toLocaleString()}+ Gold`}
+                    </small>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="buyin-amount">
+            <div className="range-row">
+              <span>Buy in for</span>
+              <strong>{buyIn.toLocaleString()} chips</strong>
+            </div>
+            <input
+              aria-label="Buy-in amount"
+              type="range"
+              min={config.minBuyIn}
+              max={Math.max(config.minBuyIn, affordableMax)}
+              step={config.bigBlind}
+              value={Math.min(buyIn, Math.max(config.minBuyIn, affordableMax))}
+              onChange={(event) => setBuyIn(Number(event.target.value))}
+              disabled={!canAfford(tier)}
+            />
+            <div className="buyin-gold-row">
+              <span>Gold balance</span>
+              <strong>{unlimitedGold ? "Unlimited" : goldBalance.toLocaleString()}</strong>
+            </div>
+            {!unlimitedGold && (
+              <div className="buyin-gold-row">
+                <span>Remaining after buy-in</span>
+                <strong>{Math.max(0, goldBalance - buyIn).toLocaleString()}</strong>
+              </div>
+            )}
+          </div>
+
+          <footer className="buyin-footer">
+            <button
+              className="primary-action"
+              type="button"
+              disabled={pending || !affordableNow}
+              onClick={() => onConfirm(tier, buyIn)}
+            >
+              {pending ? "Please wait…" : confirmLabel}
+            </button>
+          </footer>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function TurnProgressBar({ remainingFraction }: { remainingFraction: number }) {
   return (
     <div className="turn-progress-track">
@@ -638,6 +791,7 @@ function ActionBar({
   onLeave,
   secondsRemaining,
   remainingFraction,
+  profile,
 }: {
   game: GameSnapshot;
   pending: boolean;
@@ -645,10 +799,12 @@ function ActionBar({
   onLeave: () => void;
   secondsRemaining: number;
   remainingFraction: number;
+  profile: PlayerProfile | null;
 }) {
   const legal = game.legalActions;
   const currentSeat = game.seats.find((seat) => seat.isCurrent);
   const mySeat = game.seats.find((seat) => seat.isMine);
+  const [showRebuyModal, setShowRebuyModal] = useState(false);
   const [raiseTo, setRaiseTo] = useState(legal?.minRaiseTo ?? 0);
   const potPreset = (fraction: number) => {
     if (!legal) return 0;
@@ -681,7 +837,6 @@ function ActionBar({
       );
     }
     if (mySeat?.stack === 0) {
-      const rebuyAmount = TIER_CONFIG[game.tier].maxBuyIn;
       return (
         <div className="action-bar hand-complete busted-player">
           <div>
@@ -699,11 +854,24 @@ function ActionBar({
             <button
               className="primary-action"
               disabled={pending}
-              onClick={() => onAction({ type: "rebuy", amount: rebuyAmount })}
+              onClick={() => setShowRebuyModal(true)}
             >
-              Rebuy {rebuyAmount.toLocaleString()}
+              Rebuy
             </button>
           </div>
+          {showRebuyModal && (
+            <BuyInModal
+              title="Rebuy"
+              description={`Buy back in at this table's ${TIER_CONFIG[game.tier].label} stakes.`}
+              goldBalance={profile?.goldBalance ?? 0}
+              unlimitedGold={profile?.unlimitedGold ?? false}
+              lockedTier={game.tier}
+              confirmLabel="Rebuy"
+              pending={pending}
+              onClose={() => setShowRebuyModal(false)}
+              onConfirm={(_tier, buyIn) => onAction({ type: "rebuy", amount: buyIn })}
+            />
+          )}
         </div>
       );
     }
@@ -1510,6 +1678,7 @@ function PokerTable({
             onLeave={onLeave}
             secondsRemaining={secondsRemaining}
             remainingFraction={remainingFraction}
+            profile={profile}
           />
         </div>
       </section>
@@ -1704,14 +1873,14 @@ export function PokerApp() {
     return () => window.clearTimeout(timeout);
   }, [game?.turnDeadlineAt, gameId, persistence, refresh]);
 
-  const quickPlay = async (name: string) => {
+  const quickPlay = async (name: string, tier: StakesTier, buyIn: number) => {
     setLoading(true);
     setError(null);
     try {
       const response = await fetch("/api/games/quick-play", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, tier, buyIn }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not find you a table.");
@@ -1724,14 +1893,14 @@ export function PokerApp() {
     }
   };
 
-  const hostPrivate = async (name: string) => {
+  const hostPrivate = async (name: string, tier: StakesTier, buyIn: number) => {
     setLoading(true);
     setError(null);
     try {
       const response = await fetch("/api/games", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, isPrivate: true }),
+        body: JSON.stringify({ name, isPrivate: true, tier, buyIn }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not host a table.");

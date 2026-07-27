@@ -2007,6 +2007,51 @@ button:disabled { cursor: wait; opacity: .62; }
 .profile-modal-footer .success-message { color: #73c99f; }
 .profile-modal-footer .primary-action { min-width: 140px; }
 
+.buyin-modal { width: min(500px, 100%); }
+.buyin-body { padding: 22px 27px 27px; }
+.buyin-description { margin: 0 0 18px; color: #9ca9a2; font-size: 12px; line-height: 1.5; }
+
+.tier-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+.tier-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 10px;
+  color: #c1cbc5;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255,255,255,.02);
+  cursor: pointer;
+  text-align: left;
+}
+.tier-card strong { font: 600 13px Georgia, serif; color: #edf1eb; }
+.tier-card span { font-size: 10px; color: #8f9d95; }
+.tier-card small { margin-top: 2px; font-size: 9px; color: #74827b; }
+.tier-card.selected { border-color: rgba(217,184,93,.5); background: rgba(217,184,93,.08); }
+.tier-card.selected strong { color: var(--gold-light); }
+.tier-card.unaffordable { opacity: .45; cursor: not-allowed; }
+.tier-card.unaffordable small { color: #ff9c8a; }
+
+.buyin-amount { margin-bottom: 6px; }
+.buyin-amount input[type="range"] {
+  width: 100%;
+  height: 3px;
+  margin-bottom: 14px;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+.buyin-gold-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  color: #8f9d95;
+  font-size: 11px;
+}
+.buyin-gold-row strong { color: #d9e0dc; font-weight: 700; }
+
+.buyin-footer { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.buyin-footer .primary-action { width: 100%; }
+
 @media (max-width: 1020px) {
   .poker-table-wrap { width: min(780px, calc(100% - 40px)); }
 }

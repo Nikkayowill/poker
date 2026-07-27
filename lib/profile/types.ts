@@ -1,4 +1,5 @@
 import type { AvatarConfig } from "@/lib/avatar/catalog";
+import type { EquippedCosmetics } from "@/lib/cosmetics/catalog";
 
 export const avatarPresets = [
   { id: "ace", label: "The Ace", symbol: "A♠" },
@@ -29,6 +30,8 @@ export interface PlayerProfile {
   avatarPreset: AvatarPreset;
   /** The layered avatar's chosen options; falls back to defaults when never customized. */
   avatar: AvatarConfig;
+  /** Equipped cosmetic per slot; falls back to the room defaults. */
+  equipped: EquippedCosmetics;
   accent: string;
   createdAt: string;
   updatedAt: string;

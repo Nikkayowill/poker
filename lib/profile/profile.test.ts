@@ -3,6 +3,7 @@ import { createGame, toSnapshot } from "../game/engine";
 import { detectImage } from "./image";
 import type { PlayerProfile } from "./types";
 import { defaultAvatar } from "@/lib/avatar/catalog";
+import { defaultEquipped } from "@/lib/cosmetics/catalog";
 
 describe("profile appearance", () => {
   it("is copied into a new seat without exposing session identity", () => {
@@ -14,6 +15,7 @@ describe("profile appearance", () => {
       avatarUrl: "https://example.test/avatar.png",
       avatarPreset: "crown",
       avatar: defaultAvatar,
+      equipped: defaultEquipped,
       accent: "#c08dff",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

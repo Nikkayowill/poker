@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { avatarPresets, profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile, ProfileUpdate } from "@/lib/profile/types";
 import { defaultAvatar, normalizeAvatar } from "@/lib/avatar/catalog";
+import { defaultEquipped, normalizeEquipped, type EquippedCosmetics } from "@/lib/cosmetics/catalog";
 import { adminClient } from "./game-store";
 
 // isRegistered is omitted and derived from userId in publicProfile, so the
@@ -66,6 +67,7 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     avatarUrl: profile.avatarUrl,
     avatarPreset: profile.avatarPreset,
     avatar: profile.avatar,
+    equipped: profile.equipped,
     accent: profile.accent,
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt,
@@ -86,6 +88,7 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     avatarPath: null,
     avatarPreset: "ace",
     avatar: defaultAvatar,
+    equipped: defaultEquipped,
     accent: "#e7c66a",
     createdAt: now,
     updatedAt: now,
@@ -108,6 +111,7 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     avatarPath: row.avatar_path ? String(row.avatar_path) : null,
     avatarPreset: String(row.avatar_preset) as AvatarPreset,
     avatar: normalizeAvatar(row.avatar_config),
+    equipped: normalizeEquipped(row.equipped),
     accent: String(row.accent),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
@@ -119,6 +123,17 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     lastSeenIp: row.last_seen_ip ? String(row.last_seen_ip) : null,
     lastBackstopAt: row.last_backstop_at ? String(row.last_backstop_at) : null,
   };
+}
+
+
+/**
+ * Memory-mode equip. Lives here because the profile map is module-private;
+ * the Supabase path writes the column directly from the cosmetics store.
+ */
+export function setEquippedInMemory(token: string, equipped: EquippedCosmetics, now: string): void {
+  const current = memoryProfiles.get(token);
+  if (!current) return;
+  memoryProfiles.set(token, { ...current, equipped, updatedAt: now });
 }
 
 /** UTC calendar-day comparison -- "daily" resets at midnight UTC, not per-user local time. */

@@ -1,0 +1,78 @@
+import { randomUUID } from "crypto";
+import { describe, expect, it } from "vitest";
+import { DEFAULT_CARD_BACK } from "@/lib/cosmetics/catalog";
+import { equipCosmetic, listOwnedCosmetics, purchaseCosmetic } from "./cosmetics-store";
+import { adjustGold, ensureProfile, setUnlimitedGold } from "./profile-store";
+
+describe("cosmetic ownership (memory mode)", () => {
+  it("grants free items to everyone without storing ownership", async () => {
+    const profile = await ensureProfile(randomUUID());
+    expect(await listOwnedCosmetics(profile.id)).toContain(DEFAULT_CARD_BACK);
+  });
+
+  it("buys an item, debits the price, and records ownership once", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const result = await purchaseCosmetic(token, profile, "back-oxblood");
+
+    expect(result.profile.goldBalance).toBe(800); // 2000 starting - 1200
+    expect(result.owned).toContain("back-oxblood");
+    expect(result.owned.filter((id) => id === "back-oxblood")).toHaveLength(1);
+  });
+
+  it("refuses a second purchase of the same item", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await purchaseCosmetic(token, profile, "back-oxblood");
+    const after = await ensureProfile(token);
+    await expect(purchaseCosmetic(token, after, "back-oxblood")).rejects.toThrow("already own");
+  });
+
+  it("refuses a purchase the player cannot afford, leaving Gold untouched", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await expect(purchaseCosmetic(token, profile, "back-ivory")).rejects.toThrow("Not enough Gold.");
+    expect((await ensureProfile(token)).goldBalance).toBe(2000);
+  });
+
+  it("refuses to sell a Signature item at any balance", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await adjustGold(profile.id, 500_000);
+    const rich = await ensureProfile(token);
+    // The rule that keeps the best-looking things at the table unbuyable.
+    await expect(purchaseCosmetic(token, rich, "back-riverwood"))
+      .rejects.toThrow("earned, not bought");
+  });
+
+  it("rejects an item id that isn't in the catalog", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await expect(purchaseCosmetic(token, profile, "back-does-not-exist"))
+      .rejects.toThrow("doesn't exist");
+  });
+
+  it("gives an unlimited-Gold profile the item without charging it", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await setUnlimitedGold(profile.id, true);
+    const unlimited = await ensureProfile(token);
+
+    const result = await purchaseCosmetic(token, unlimited, "back-brass");
+    expect(result.owned).toContain("back-brass");
+    expect(result.profile.goldBalance).toBe(2000);
+  });
+
+  it("equips an owned item and refuses one the player does not own", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await purchaseCosmetic(token, profile, "back-slate");
+
+    const owner = await ensureProfile(token);
+    expect((await equipCosmetic(token, owner, "back-slate")).cardBack).toBe("back-slate");
+    expect((await ensureProfile(token)).equipped.cardBack).toBe("back-slate");
+
+    // The store only offers what you own, but the endpoint cannot assume that.
+    await expect(equipCosmetic(token, owner, "back-ivory")).rejects.toThrow("don't own");
+  });
+});

@@ -14,7 +14,7 @@ import type {
   Winner,
 } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { clampBuyIn, TIER_CONFIG, type StakesTier } from "./tiers";
+import { clampBuyIn, isStakesTier, TIER_CONFIG, type StakesTier } from "./tiers";
 
 const suits: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
 const ranks: Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
@@ -653,6 +653,13 @@ export function autoPlayBots(state: GameState): GameState {
  * The normalized fields are persisted with the next ordinary state update.
  */
 export function normalizeGameState(state: GameState): GameState {
+  if (!isStakesTier(state.tier)) {
+    // Games created before stakes tiers existed (stale in-memory dev state,
+    // or Supabase rows persisted before this field was added) have no tier
+    // -- fall back to the app's original, only-ever tier rather than letting
+    // TIER_CONFIG[undefined] crash every reader downstream.
+    state.tier = "micro";
+  }
   state.seats.forEach((seat) => {
     if (!Number.isInteger(seat.timeCardsRemaining)) {
       seat.timeCardsRemaining = seat.isHuman ? STARTING_TIME_CARDS : 0;

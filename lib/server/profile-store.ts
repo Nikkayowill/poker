@@ -362,6 +362,46 @@ export async function listProfiles(): Promise<PlayerProfile[]> {
   return (data ?? []).map((row) => publicProfile(fromRow(row)));
 }
 
+/**
+ * Admin override: adds (or, with a negative delta, subtracts) Gold directly
+ * by profile id, clamped at 0. Bypasses spendGold's unlimited-Gold/
+ * insufficient-funds guard entirely -- this is a manual correction tool (bug
+ * fixes, tournament prizes), not a purchase.
+ */
+export async function adjustGold(profileId: string, delta: number): Promise<PlayerProfile> {
+  if (!Number.isInteger(delta) || delta === 0) throw new Error("Invalid Gold adjustment.");
+  const now = new Date().toISOString();
+  const supabase = adminClient();
+  if (!supabase) {
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) throw new Error("Profile not found.");
+    const [token, current] = entry;
+    const next: StoredProfile = {
+      ...current,
+      goldBalance: Math.max(0, current.goldBalance + delta),
+      updatedAt: now,
+    };
+    memoryProfiles.set(token, next);
+    return publicProfile(next);
+  }
+
+  const { data: current, error: readError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", profileId)
+    .single();
+  if (readError) throw new Error("Profile not found.");
+  const nextBalance = Math.max(0, Number(current.gold_balance) + delta);
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ gold_balance: nextBalance, updated_at: now })
+    .eq("id", profileId)
+    .select("*")
+    .single();
+  if (error) throw new Error(`Could not adjust Gold: ${error.message}`);
+  return publicProfile(fromRow(data));
+}
+
 /** Flags (or unflags) a profile so spendGold never actually deducts from it -- for gifting a specific person free play. */
 export async function setUnlimitedGold(profileId: string, unlimited: boolean): Promise<void> {
   const supabase = adminClient();

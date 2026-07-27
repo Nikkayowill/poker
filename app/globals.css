@@ -2394,6 +2394,70 @@ button:disabled { cursor: wait; opacity: .62; }
 .admin-stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .admin-stat strong { font-size: 22px; }
 
+.admin-search {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.admin-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 20px 14px;
+}
+
+.admin-id-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.admin-id-copy:hover { border-color: var(--line); background: var(--surface-2); }
+.admin-id-copy code { font-size: 12px; }
+.admin-id-copy span { font-size: 11px; color: var(--gold-light); }
+
+.admin-adjust {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.admin-adjust input {
+  width: 72px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.admin-adjust button {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.admin-adjust button:disabled { opacity: 0.5; cursor: default; }
+
 .admin-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);

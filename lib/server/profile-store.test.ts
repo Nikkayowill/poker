@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { describe, expect, it } from "vitest";
-import { claimDailyGold, ensureProfile, listProfiles, setUnlimitedGold, spendGold } from "./profile-store";
+import { adjustGold, claimDailyGold, ensureProfile, listProfiles, setUnlimitedGold, spendGold } from "./profile-store";
 
 describe("Gold economy (memory mode)", () => {
   it("gives a brand new profile the starting balance", async () => {
@@ -51,9 +51,26 @@ describe("Gold economy (memory mode)", () => {
     await expect(spendGold(token, -50)).rejects.toThrow("Invalid Gold amount.");
   });
 
+  it("adjusts Gold by an admin-supplied delta, clamped at 0", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const credited = await adjustGold(profile.id, 500);
+    expect(credited.goldBalance).toBe(2500);
+    const debited = await adjustGold(profile.id, -10_000);
+    expect(debited.goldBalance).toBe(0);
+  });
+
+  it("rejects an invalid (zero) Gold adjustment and an unknown profile id", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await expect(adjustGold(profile.id, 0)).rejects.toThrow("Invalid Gold adjustment.");
+    await expect(adjustGold(randomUUID(), 100)).rejects.toThrow("Profile not found.");
+  });
+
   it("lists profiles newest first, including one just created", async () => {
     const token = randomUUID();
     const created = await ensureProfile(token, "Newest Signup");
+    await new Promise((resolve) => setTimeout(resolve, 100)); // Wait a bit to ensure different timestamps
     const profiles = await listProfiles();
     expect(profiles.some((profile) => profile.id === created.id)).toBe(true);
     for (let i = 1; i < profiles.length; i += 1) {

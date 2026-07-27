@@ -18,6 +18,39 @@ function formatDate(iso: string) {
   });
 }
 
+function AdjustGoldForm({
+  profile,
+  pending,
+  onAdjust,
+}: {
+  profile: PlayerProfile;
+  pending: boolean;
+  onAdjust: (delta: number) => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const submit = (sign: 1 | -1) => {
+    const parsed = Math.trunc(Number(amount));
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    onAdjust(sign * parsed);
+    setAmount("");
+  };
+  return (
+    <div className="admin-adjust">
+      <input
+        type="number"
+        min={1}
+        inputMode="numeric"
+        placeholder="Amount"
+        value={amount}
+        onChange={(event) => setAmount(event.target.value)}
+        aria-label={`Adjust ${profile.displayName}'s Gold`}
+      />
+      <button type="button" disabled={pending || !amount} onClick={() => submit(1)} title="Add Gold">+</button>
+      <button type="button" disabled={pending || !amount} onClick={() => submit(-1)} title="Subtract Gold">−</button>
+    </div>
+  );
+}
+
 export function AdminDashboard() {
   const [secret, setSecret] = useState("");
   const [secretInput, setSecretInput] = useState("");
@@ -25,6 +58,8 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const load = useCallback(async (key: string) => {
     setLoading(true);
@@ -76,6 +111,37 @@ export function AdminDashboard() {
     }
   };
 
+  const adjustGold = async (profile: PlayerProfile, delta: number) => {
+    setPendingId(profile.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/gold/adjust", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ profileId: profile.id, delta }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not adjust that profile's Gold.");
+      setProfiles((current) => current?.map((entry) => (
+        entry.id === profile.id ? data.profile : entry
+      )) ?? null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not adjust that profile's Gold.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  const copyId = async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 1500);
+    } catch {
+      // Clipboard access can be denied by browser policy; the id is still visible to copy by hand.
+    }
+  };
+
   const stats = useMemo(() => {
     if (!profiles) return null;
     const now = new Date();
@@ -84,8 +150,18 @@ export function AdminDashboard() {
       total: profiles.length,
       today: profiles.filter((profile) => isSameUtcDay(new Date(profile.createdAt), now)).length,
       thisWeek: profiles.filter((profile) => Date.parse(profile.createdAt) >= weekAgo).length,
+      goldInCirculation: profiles.reduce((sum, profile) => sum + (profile.goldBalance ?? 0), 0),
     };
   }, [profiles]);
+
+  const filtered = useMemo(() => {
+    if (!profiles) return [];
+    const needle = query.trim().toLowerCase();
+    if (!needle) return profiles;
+    return profiles.filter((profile) => (
+      profile.displayName.toLowerCase().includes(needle) || profile.id.toLowerCase().includes(needle)
+    ));
+  }, [profiles, query]);
 
   if (!profiles) {
     return (
@@ -144,8 +220,20 @@ export function AdminDashboard() {
             <span>Last 7 days</span>
             <strong>{stats.thisWeek.toLocaleString()}</strong>
           </div>
+          <div className="admin-stat" title="Sum of every profile's Gold balance -- watch this for economy inflation.">
+            <span>Gold in circulation</span>
+            <strong>{stats.goldInCirculation.toLocaleString()}</strong>
+          </div>
         </div>
       )}
+      <input
+        type="search"
+        className="admin-search"
+        placeholder="Search by name or Player ID…"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        aria-label="Search players"
+      />
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
@@ -155,17 +243,30 @@ export function AdminDashboard() {
               <th>Joined</th>
               <th>Gold</th>
               <th>Unlimited</th>
+              <th>Adjust Gold</th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {profiles.map((profile) => (
+            {filtered.map((profile) => (
               <tr key={profile.id}>
                 <td>{profile.displayName}</td>
-                <td><code>{profile.id}</code></td>
+                <td>
+                  <button type="button" className="admin-id-copy" onClick={() => void copyId(profile.id)}>
+                    <code>{profile.id.slice(0, 8)}…</code>
+                    <span>{copiedId === profile.id ? "Copied!" : "Copy"}</span>
+                  </button>
+                </td>
                 <td>{formatDate(profile.createdAt)}</td>
-                <td>{profile.goldBalance.toLocaleString()}</td>
+                <td>{(profile.goldBalance ?? 0).toLocaleString()}</td>
                 <td>{profile.unlimitedGold ? "Yes" : "No"}</td>
+                <td>
+                  <AdjustGoldForm
+                    profile={profile}
+                    pending={pendingId === profile.id}
+                    onAdjust={(delta) => void adjustGold(profile, delta)}
+                  />
+                </td>
                 <td>
                   <button
                     type="button"
@@ -178,6 +279,11 @@ export function AdminDashboard() {
                 </td>
               </tr>
             ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={7} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

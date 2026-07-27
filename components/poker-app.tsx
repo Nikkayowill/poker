@@ -2146,9 +2146,13 @@ export function PokerApp() {
   };
 
   const signOut = async () => {
-    const client = authClient();
-    if (!client) return;
-    await client.auth.signOut();
+    setError(null);
+    // Clear the provider session and the session cookie. The cookie is the
+    // credential the server trusts, so skipping it would leave this browser
+    // still holding the signed-in profile while the UI claimed otherwise.
+    await authClient()?.auth.signOut().catch(() => {});
+    await fetch("/api/auth/signout", { method: "POST" }).catch(() => {});
+    setGame(null);
     setAuthNotice("Signed out. This browser is a guest again.");
     await loadProfile().catch(() => {});
   };

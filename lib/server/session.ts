@@ -23,3 +23,20 @@ export function withSessionCookie<T extends NextResponse>(response: T, token: st
   });
   return response;
 }
+
+/**
+ * Drops the session cookie, which is what actually ends a sign-in: this
+ * cookie is the credential every gameplay route trusts, so clearing the
+ * provider's session alone would leave the next person at this browser
+ * holding the previous player's profile.
+ */
+export function withoutSessionCookie<T extends NextResponse>(response: T): T {
+  response.cookies.set(COOKIE_NAME, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  });
+  return response;
+}

@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { describe, expect, it } from "vitest";
-import { claimDailyGold, ensureProfile, setUnlimitedGold, spendGold } from "./profile-store";
+import { claimDailyGold, ensureProfile, listProfiles, setUnlimitedGold, spendGold } from "./profile-store";
 
 describe("Gold economy (memory mode)", () => {
   it("gives a brand new profile the starting balance", async () => {
@@ -49,5 +49,15 @@ describe("Gold economy (memory mode)", () => {
     await ensureProfile(token);
     await expect(spendGold(token, 0)).rejects.toThrow("Invalid Gold amount.");
     await expect(spendGold(token, -50)).rejects.toThrow("Invalid Gold amount.");
+  });
+
+  it("lists profiles newest first, including one just created", async () => {
+    const token = randomUUID();
+    const created = await ensureProfile(token, "Newest Signup");
+    const profiles = await listProfiles();
+    expect(profiles.some((profile) => profile.id === created.id)).toBe(true);
+    for (let i = 1; i < profiles.length; i += 1) {
+      expect(profiles[i - 1].createdAt >= profiles[i].createdAt).toBe(true);
+    }
   });
 });

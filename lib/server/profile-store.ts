@@ -340,6 +340,28 @@ export async function claimDailyGold(token: string): Promise<PlayerProfile> {
   return publicProfile(fromRow(row));
 }
 
+/**
+ * Every profile, newest first -- the closest thing this authless app has to
+ * a "signups" list, since a profile is created the moment a new visitor's
+ * session cookie is first seen (see ensureProfile). Used only by the
+ * admin dashboard, so a flat cap replaces real pagination.
+ */
+export async function listProfiles(): Promise<PlayerProfile[]> {
+  const supabase = adminClient();
+  if (!supabase) {
+    return [...memoryProfiles.values()]
+      .map(publicProfile)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+  }
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(1000);
+  if (error) throw new Error(`Could not list profiles: ${error.message}`);
+  return (data ?? []).map((row) => publicProfile(fromRow(row)));
+}
+
 /** Flags (or unflags) a profile so spendGold never actually deducts from it -- for gifting a specific person free play. */
 export async function setUnlimitedGold(profileId: string, unlimited: boolean): Promise<void> {
   const supabase = adminClient();

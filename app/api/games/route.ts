@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
       profile = await updateProfile(hostToken, {
         displayName: parsed.data.name,
         avatarPreset: profile.avatarPreset,
+        avatar: profile.avatar,
         accent: profile.accent,
       });
     }

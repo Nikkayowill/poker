@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { normalizeAvatar } from "@/lib/avatar/catalog";
 import { ensureProfile, updateProfile } from "@/lib/server/profile-store";
 import { persistenceMode } from "@/lib/server/game-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -10,6 +11,10 @@ export const runtime = "nodejs";
 const updateSchema = z.object({
   displayName: z.string().trim().min(1).max(18),
   avatarPreset: z.enum(["ace", "crown", "diamond", "lucky", "bolt", "river"]),
+  // Loosely typed on the way in and tightened by normalizeAvatar, which
+  // drops anything unrecognised: a client cannot invent a hairstyle, and an
+  // older client that omits a newer category still saves cleanly.
+  avatar: z.record(z.string(), z.unknown()).optional(),
   accent: z.enum(["#e7c66a", "#c08dff", "#ff9e78", "#79c9ff", "#65d6a2", "#f08ca7"]),
   clearUpload: z.boolean().optional(),
 });
@@ -54,7 +59,10 @@ export async function PUT(request: NextRequest) {
         { status: 400 },
       );
     }
-    const profile = await updateProfile(token, parsed.data);
+    const profile = await updateProfile(token, {
+      ...parsed.data,
+      avatar: normalizeAvatar(parsed.data.avatar),
+    });
     return NextResponse.json({ profile, persistence: persistenceMode() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not save your profile.";

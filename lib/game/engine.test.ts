@@ -15,13 +15,17 @@ import { compareScores, describeHand, evaluateHand } from "./evaluator";
 import { TIER_CONFIG } from "./tiers";
 import type { Card, GameState, PlayerAction } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { defaultAvatar } from "@/lib/avatar/catalog";
 
-const testProfile = (name: string): Pick<PlayerProfile, "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset"> => ({
+const testProfile = (
+  name: string,
+): Pick<PlayerProfile, "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "avatar"> => ({
   displayName: name,
   initials: name.slice(0, 2).toUpperCase(),
   accent: "#79c9ff",
   avatarUrl: null,
   avatarPreset: "ace",
+  avatar: defaultAvatar,
 });
 
 const cards = (values: string): Card[] =>

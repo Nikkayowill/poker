@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
       profile = await updateProfile(token, {
         displayName: parsed.data.name,
         avatarPreset: profile.avatarPreset,
+        avatar: profile.avatar,
         accent: profile.accent,
       });
     }

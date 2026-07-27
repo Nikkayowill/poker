@@ -23,7 +23,12 @@ import clsx from "clsx";
 import type { Card, GameSnapshot, PlayerAction, PublicSeat, Winner } from "@/lib/game/types";
 import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
-import { avatarPresets, profileAccents } from "@/lib/profile/types";
+import { PlayerAvatar } from "@/components/avatar/player-avatar";
+import {
+  faces, facialHairs, hairColors, hairStyles, outfits, skinTones, starterAvatars,
+  type AvatarConfig,
+} from "@/lib/avatar/catalog";
+import { profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 
 const suitPaths: Record<Exclude<Card["suit"], "clubs">, string> = {
@@ -68,7 +73,7 @@ const spokenRanks: Record<Card["rank"], string> = {
   A: "Ace",
 };
 
-type AvatarView = Pick<PlayerProfile, "displayName" | "initials" | "avatarUrl" | "avatarPreset" | "accent">;
+type AvatarView = Pick<PlayerProfile, "displayName" | "initials" | "avatarUrl" | "avatarPreset" | "accent" | "avatar">;
 
 function ProfileAvatar({
   profile,
@@ -79,10 +84,13 @@ function ProfileAvatar({
   className?: string;
   showTurn?: boolean;
 }) {
-  const preset = avatarPresets.find((candidate) => candidate.id === profile.avatarPreset) ?? avatarPresets[0];
   return (
     <span
-      className={clsx("profile-avatar", className, profile.avatarUrl && "has-avatar-image")}
+      className={clsx(
+        "profile-avatar",
+        className,
+        profile.avatarUrl ? "has-avatar-image" : "has-avatar-figure",
+      )}
       style={{
         "--avatar-accent": profile.accent,
         ...(profile.avatarUrl ? { backgroundImage: `url("${profile.avatarUrl}")` } : {}),
@@ -90,9 +98,55 @@ function ProfileAvatar({
       role="img"
       aria-label={`${profile.displayName}'s avatar`}
     >
-      {!profile.avatarUrl && <span>{preset.symbol}</span>}
+      {/* An uploaded photo still wins -- someone who chose their own picture
+          shouldn't have it replaced by a generated figure. */}
+      {!profile.avatarUrl && (
+        <PlayerAvatar config={profile.avatar} accent={profile.accent} size="100%" idle={showTurn} />
+      )}
       {showTurn && <span className="turn-ring" />}
     </span>
+  );
+}
+
+/**
+ * One row of the avatar builder. Colour options show the colour itself;
+ * everything else shows its name, because a hairstyle can't be conveyed by a
+ * swatch and rendering six full avatars per row would be both slow and
+ * harder to scan than a word.
+ */
+function AvatarChoiceRow<Id extends string, Option extends { id: Id; label: string }>({
+  label,
+  options,
+  selected,
+  swatch,
+  onSelect,
+}: {
+  label: string;
+  options: Option[];
+  selected: Id;
+  swatch?: (option: Option) => string;
+  onSelect: (id: Id) => void;
+}) {
+  return (
+    <div className="builder-row">
+      <span className="builder-label">{label}</span>
+      <div className={clsx("builder-options", swatch && "builder-swatches")}>
+        {options.map((option) => (
+          <button
+            type="button"
+            key={option.id}
+            className={clsx("builder-option", selected === option.id && "selected")}
+            onClick={() => onSelect(option.id)}
+            title={option.label}
+            aria-label={option.label}
+            aria-pressed={selected === option.id}
+            style={swatch ? ({ "--swatch": swatch(option) } as React.CSSProperties) : undefined}
+          >
+            {swatch ? <span className="builder-swatch" /> : option.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -290,6 +344,7 @@ const PlayerSeat = memo(function PlayerSeat({
             initials: seat.initials,
             avatarUrl: seat.avatarUrl,
             avatarPreset: seat.avatarPreset as AvatarPreset,
+            avatar: seat.avatar,
             accent: seat.accent,
           }}
           showTurn={seat.isCurrent}
@@ -553,8 +608,11 @@ function ProfileModal({
   onSaved: (profile: PlayerProfile) => void;
 }) {
   const [displayName, setDisplayName] = useState(profile.displayName);
-  const [avatarPreset, setAvatarPreset] = useState<AvatarPreset>(profile.avatarPreset);
+  // Legacy field: still sent so the existing column stays populated, but the
+  // layered avatar has replaced it as what players actually choose.
+  const [avatarPreset] = useState<AvatarPreset>(profile.avatarPreset);
   const [accent, setAccent] = useState(profile.accent);
+  const [avatar, setAvatar] = useState<AvatarConfig>(profile.avatar);
   const [previewUrl, setPreviewUrl] = useState<string | null>(profile.avatarUrl);
   const [usingUpload, setUsingUpload] = useState(Boolean(profile.avatarUrl));
   const [saving, setSaving] = useState(false);
@@ -577,6 +635,7 @@ function ProfileModal({
     avatarUrl: usingUpload ? previewUrl : null,
     avatarPreset,
     accent,
+    avatar,
   };
 
   const save = async (event: FormEvent) => {
@@ -591,6 +650,7 @@ function ProfileModal({
           displayName,
           avatarPreset,
           accent,
+          avatar,
           clearUpload: !usingUpload,
         }),
       });
@@ -656,7 +716,7 @@ function ProfileModal({
             </div>
             <div>
               <strong>{displayName || "Player"}</strong>
-              <span>{usingUpload ? "Personal photo" : avatarPresets.find((preset) => preset.id === avatarPreset)?.label}</span>
+              <span>{usingUpload ? "Personal photo" : "Your table look"}</span>
               <label className="upload-button">
                 <Upload size={13} /> {uploading ? "Uploading…" : "Upload photo"}
                 <input
@@ -684,23 +744,72 @@ function ProfileModal({
           </div>
 
           <fieldset className="preset-fieldset">
-            <legend>Choose an avatar</legend>
-            <div className="preset-grid">
-              {avatarPresets.map((preset) => (
+            <legend>Start from a look</legend>
+            <div className="starter-grid">
+              {starterAvatars.map((starter) => (
                 <button
                   type="button"
-                  key={preset.id}
-                  className={clsx(avatarPreset === preset.id && !usingUpload && "selected")}
+                  key={starter.id}
+                  className={clsx(
+                    "starter-option",
+                    !usingUpload
+                      && JSON.stringify(avatar) === JSON.stringify(starter.config)
+                      && "selected",
+                  )}
                   onClick={() => {
-                    setAvatarPreset(preset.id);
+                    setAvatar(starter.config);
                     setUsingUpload(false);
                   }}
-                  aria-label={preset.label}
+                  aria-label={starter.label}
                 >
-                  <span>{preset.symbol}</span>
-                  <small>{preset.label}</small>
+                  <PlayerAvatar config={starter.config} accent={accent} size={52} />
+                  <small>{starter.label}</small>
                 </button>
               ))}
+            </div>
+          </fieldset>
+
+          <fieldset className="preset-fieldset">
+            <legend>Make it yours</legend>
+            <div className="avatar-builder">
+              <AvatarChoiceRow
+                label="Skin"
+                options={skinTones}
+                selected={avatar.skinTone}
+                swatch={(option) => option.value}
+                onSelect={(id) => { setAvatar((a) => ({ ...a, skinTone: id })); setUsingUpload(false); }}
+              />
+              <AvatarChoiceRow
+                label="Hair colour"
+                options={hairColors}
+                selected={avatar.hairColor}
+                swatch={(option) => option.value}
+                onSelect={(id) => { setAvatar((a) => ({ ...a, hairColor: id })); setUsingUpload(false); }}
+              />
+              <AvatarChoiceRow
+                label="Hair"
+                options={hairStyles}
+                selected={avatar.hairStyle}
+                onSelect={(id) => { setAvatar((a) => ({ ...a, hairStyle: id })); setUsingUpload(false); }}
+              />
+              <AvatarChoiceRow
+                label="Face"
+                options={faces}
+                selected={avatar.face}
+                onSelect={(id) => { setAvatar((a) => ({ ...a, face: id })); setUsingUpload(false); }}
+              />
+              <AvatarChoiceRow
+                label="Facial hair"
+                options={facialHairs}
+                selected={avatar.facialHair}
+                onSelect={(id) => { setAvatar((a) => ({ ...a, facialHair: id })); setUsingUpload(false); }}
+              />
+              <AvatarChoiceRow
+                label="Outfit"
+                options={outfits}
+                selected={avatar.outfit}
+                onSelect={(id) => { setAvatar((a) => ({ ...a, outfit: id })); setUsingUpload(false); }}
+              />
             </div>
           </fieldset>
 

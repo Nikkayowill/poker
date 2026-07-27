@@ -1,3 +1,5 @@
+import type { AvatarConfig } from "@/lib/avatar/catalog";
+
 export const avatarPresets = [
   { id: "ace", label: "The Ace", symbol: "A♠" },
   { id: "crown", label: "High Roller", symbol: "♛" },
@@ -25,6 +27,8 @@ export interface PlayerProfile {
   initials: string;
   avatarUrl: string | null;
   avatarPreset: AvatarPreset;
+  /** The layered avatar's chosen options; falls back to defaults when never customized. */
+  avatar: AvatarConfig;
   accent: string;
   createdAt: string;
   updatedAt: string;
@@ -45,6 +49,7 @@ export interface PlayerProfile {
 export interface ProfileUpdate {
   displayName: string;
   avatarPreset: AvatarPreset;
+  avatar: AvatarConfig;
   accent: string;
   clearUpload?: boolean;
 }

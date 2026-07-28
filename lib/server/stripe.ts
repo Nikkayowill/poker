@@ -1,8 +1,19 @@
 import "server-only";
 import Stripe from "stripe";
 
-let client: Stripe | null | undefined;
-let rebuyConfig: Promise<StripeRebuyConfig> | null = null;
+/**
+ * Live and test share one webhook endpoint (Stripe supports registering both
+ * against the same URL, each with its own signing secret). Which mode a
+ * request is in is decided once, in the webhook route, by which secret
+ * verifies the raw-body signature -- never by anything the browser sends.
+ * Every function below that resolves a Price or verifies a session takes
+ * that already-decided mode as a parameter; nothing here re-derives it.
+ */
+export type StripeMode = "live" | "test";
+
+let liveClient: Stripe | null | undefined;
+let testClient: Stripe | null | undefined;
+const rebuyConfig: Partial<Record<StripeMode, Promise<StripeRebuyConfig>>> = {};
 
 export interface StripeRebuyConfig {
   priceId: string;
@@ -11,15 +22,33 @@ export interface StripeRebuyConfig {
   currency: string;
 }
 
+function clientFor(mode: StripeMode): Stripe | null {
+  if (mode === "live") {
+    if (liveClient !== undefined) return liveClient;
+    const secret = process.env.STRIPE_SECRET_KEY?.trim();
+    liveClient = secret ? new Stripe(secret) : null;
+    return liveClient;
+  }
+  if (testClient !== undefined) return testClient;
+  const secret = process.env.STRIPE_TEST_SECRET_KEY?.trim();
+  testClient = secret ? new Stripe(secret) : null;
+  return testClient;
+}
+
 export function stripeClient(): Stripe | null {
-  if (client !== undefined) return client;
-  const secret = process.env.STRIPE_SECRET_KEY?.trim();
-  client = secret ? new Stripe(secret) : null;
-  return client;
+  return clientFor("live");
+}
+
+export function stripeTestClient(): Stripe | null {
+  return clientFor("test");
 }
 
 export function stripeWebhookSecret(): string | null {
   return process.env.STRIPE_WEBHOOK_SECRET?.trim() || null;
+}
+
+export function stripeTestWebhookSecret(): string | null {
+  return process.env.STRIPE_SIGNING_SECRET_TEST_KEY?.trim() || null;
 }
 
 export function stripeRebuyPriceId(): string | null {
@@ -32,20 +61,25 @@ export function stripeRebuyGoldAmount(): number {
   return amount;
 }
 
+function rebuyPriceIdFor(mode: StripeMode): string | null {
+  if (mode === "live") return stripeRebuyPriceId();
+  return process.env.STRIPE_TEST_PRICE_STARTER?.trim() || null;
+}
+
 /**
  * Reads the Price from Stripe rather than trusting environment metadata.
  * Checkout and both fulfillment paths share this cached validation.
  */
-export function stripeRebuyConfig(): Promise<StripeRebuyConfig> {
-  if (rebuyConfig) return rebuyConfig;
-  rebuyConfig = (async () => {
-    const stripe = stripeClient();
-    const priceId = stripeRebuyPriceId();
+export function stripeRebuyConfig(mode: StripeMode = "live"): Promise<StripeRebuyConfig> {
+  const cached = rebuyConfig[mode];
+  if (cached) return cached;
+  const work = (async () => {
+    const stripe = clientFor(mode);
+    const priceId = rebuyPriceIdFor(mode);
     if (!stripe || !priceId) throw new Error("Rebuy payments are not configured yet.");
 
     const price = await stripe.prices.retrieve(priceId);
-    const secretIsLive = process.env.STRIPE_SECRET_KEY?.trim().startsWith("sk_live_") ?? false;
-    if (price.livemode !== secretIsLive) {
+    if (price.livemode !== (mode === "live")) {
       throw new Error("The Stripe rebuy Price and secret key are from different modes.");
     }
     if (!price.active || price.type !== "one_time" || price.unit_amount === null) {
@@ -68,16 +102,17 @@ export function stripeRebuyConfig(): Promise<StripeRebuyConfig> {
       currency: price.currency,
     };
   })().catch((error) => {
-    rebuyConfig = null;
+    delete rebuyConfig[mode];
     throw error;
   });
-  return rebuyConfig;
+  rebuyConfig[mode] = work;
+  return work;
 }
 
-export async function verifiedRebuySession(sessionId: string, expectedProfileId?: string) {
-  const stripe = stripeClient();
+export async function verifiedRebuySession(sessionId: string, expectedProfileId?: string, mode: StripeMode = "live") {
+  const stripe = clientFor(mode);
   if (!stripe) throw new Error("Stripe payments are not configured yet.");
-  const config = await stripeRebuyConfig();
+  const config = await stripeRebuyConfig(mode);
   const session = await stripe.checkout.sessions.retrieve(sessionId, {
     expand: ["line_items.data.price"],
   });
@@ -87,7 +122,7 @@ export async function verifiedRebuySession(sessionId: string, expectedProfileId?
   const metadata = session.metadata ?? {};
   const valid = (
     session.mode === "payment"
-    && session.livemode === (process.env.STRIPE_SECRET_KEY?.trim().startsWith("sk_live_") ?? false)
+    && session.livemode === (mode === "live")
     && session.currency === config.currency
     && session.amount_total === config.unitAmount
     && lineItems.length === 1
@@ -120,6 +155,8 @@ export interface GoldTierDef {
   goldAmount: number;
   /** Which env var holds this tier's live Stripe Price id. */
   envVar: string;
+  /** Which env var holds this tier's test-mode Price id, for verification. */
+  testEnvVar: string;
 }
 
 /**
@@ -135,6 +172,7 @@ export const GOLD_TIERS: GoldTierDef[] = [
     description: "A quick top-up to get back in.",
     goldAmount: 5000,
     envVar: "STRIPE_REBUY_PRICE_ID",
+    testEnvVar: "STRIPE_TEST_PRICE_STARTER",
   },
   {
     key: "value",
@@ -142,6 +180,7 @@ export const GOLD_TIERS: GoldTierDef[] = [
     description: "Our most popular pack.",
     goldAmount: 11000,
     envVar: "STRIPE_PRICE_VALUE",
+    testEnvVar: "STRIPE_TEST_PRICE_VALUE",
   },
   {
     key: "stack",
@@ -149,6 +188,7 @@ export const GOLD_TIERS: GoldTierDef[] = [
     description: "For a full session at the higher stakes.",
     goldAmount: 24000,
     envVar: "STRIPE_PRICE_STACK",
+    testEnvVar: "STRIPE_TEST_PRICE_STACK",
   },
   {
     key: "high_roller",
@@ -156,6 +196,7 @@ export const GOLD_TIERS: GoldTierDef[] = [
     description: "The whole ladder, all at once.",
     goldAmount: 70000,
     envVar: "STRIPE_PRICE_HIGH_ROLLER",
+    testEnvVar: "STRIPE_TEST_PRICE_HIGH_ROLLER",
   },
 ];
 
@@ -178,23 +219,23 @@ const resolvedTierCache = new Map<string, Promise<ResolvedGoldTier>>();
 /**
  * Reads a tier's Price from Stripe rather than trusting anything stored
  * locally -- the same validation shape as stripeRebuyConfig, generalized to
- * whichever tier was asked for. Cached per tier key so a burst of checkout
- * requests does not hit the Stripe API once per request.
+ * whichever tier was asked for. Cached per mode+tier key so a burst of
+ * checkout requests does not hit the Stripe API once per request.
  */
-export function resolveGoldTier(key: string): Promise<ResolvedGoldTier> {
-  const cached = resolvedTierCache.get(key);
+export function resolveGoldTier(key: string, mode: StripeMode = "live"): Promise<ResolvedGoldTier> {
+  const cacheKey = `${mode}:${key}`;
+  const cached = resolvedTierCache.get(cacheKey);
   if (cached) return cached;
 
   const work = (async () => {
     const def = goldTierByKey(key);
     if (!def) throw new Error("That Gold pack does not exist.");
-    const stripe = stripeClient();
-    const priceId = process.env[def.envVar]?.trim();
+    const stripe = clientFor(mode);
+    const priceId = process.env[mode === "live" ? def.envVar : def.testEnvVar]?.trim();
     if (!stripe || !priceId) throw new Error("That Gold pack is not configured yet.");
 
     const price = await stripe.prices.retrieve(priceId);
-    const secretIsLive = process.env.STRIPE_SECRET_KEY?.trim().startsWith("sk_live_") ?? false;
-    if (price.livemode !== secretIsLive) {
+    if (price.livemode !== (mode === "live")) {
       throw new Error(`The ${key} Price and secret key are from different modes.`);
     }
     if (!price.active || price.type !== "one_time" || price.unit_amount === null) {
@@ -217,8 +258,8 @@ export function resolveGoldTier(key: string): Promise<ResolvedGoldTier> {
     };
   })();
 
-  resolvedTierCache.set(key, work);
-  work.catch(() => resolvedTierCache.delete(key));
+  resolvedTierCache.set(cacheKey, work);
+  work.catch(() => resolvedTierCache.delete(cacheKey));
   return work;
 }
 
@@ -226,15 +267,16 @@ export function resolveGoldTier(key: string): Promise<ResolvedGoldTier> {
  * Every tier that has a Price configured, resolved and validated -- a tier
  * whose env var is unset simply does not appear, so the storefront can ship
  * before every tier's Price exists rather than one missing var breaking the
- * whole page.
+ * whole page. Always live: the public storefront never sells a test-mode
+ * pack, so this default is never overridden by a caller.
  */
 export async function listGoldTiers(): Promise<ResolvedGoldTier[]> {
   const settled = await Promise.allSettled(GOLD_TIERS.map((tier) => resolveGoldTier(tier.key)));
   return settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
 }
 
-export async function verifiedTierSession(sessionId: string, expectedProfileId?: string) {
-  const stripe = stripeClient();
+export async function verifiedTierSession(sessionId: string, expectedProfileId?: string, mode: StripeMode = "live") {
+  const stripe = clientFor(mode);
   if (!stripe) throw new Error("Stripe payments are not configured yet.");
   const session = await stripe.checkout.sessions.retrieve(sessionId, {
     expand: ["line_items.data.price"],
@@ -242,14 +284,14 @@ export async function verifiedTierSession(sessionId: string, expectedProfileId?:
   const metadata = session.metadata ?? {};
   const tierKey = metadata.tier_key;
   if (!tierKey) throw new Error("Stripe session has no River Room tier metadata.");
-  const tier = await resolveGoldTier(tierKey);
+  const tier = await resolveGoldTier(tierKey, mode);
 
   const lineItems = session.line_items?.data ?? [];
   const item = lineItems[0];
   const itemPriceId = typeof item?.price === "string" ? item.price : item?.price?.id;
   const valid = (
     session.mode === "payment"
-    && session.livemode === (process.env.STRIPE_SECRET_KEY?.trim().startsWith("sk_live_") ?? false)
+    && session.livemode === (mode === "live")
     && session.currency === tier.currency
     && session.amount_total === tier.unitAmount
     && lineItems.length === 1

@@ -25,14 +25,13 @@ import Image from "next/image";
 import type { Card, GameSnapshot, PlayerAction, PublicSeat, Winner } from "@/lib/game/types";
 import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
-import { avatarFace, cosmeticById } from "@/lib/cosmetics/catalog";
+import { avatarFace, avatarFigure, cosmeticById } from "@/lib/cosmetics/catalog";
 import {
   atmosphere,
   FIRST_PERSON_SCALE,
-  flatZ,
-  occlusionEnabled,
   radiiForWidth,
   seatGeometry,
+  seatZ,
 } from "@/lib/game/table-geometry";
 import { profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
@@ -276,6 +275,60 @@ function PlayingCard({
   );
 }
 
+/**
+ * A player at the table, drawn as the whole cut-out figure rather than a disc.
+ *
+ * This is what the artwork is for: half-body, hands on a rail. A circular crop
+ * throws away the posture and the hands and leaves a headshot that could
+ * belong to any product. Sitting the figure at the seat, with the table's own
+ * rail crossing it at the elbows, is the entire difference between a board
+ * game with portraits on it and a room with people in it.
+ */
+function SeatFigure({ seat, active }: { seat: PublicSeat; active: boolean }) {
+  const [, forceRerender] = useState(0);
+  const declared = seat.avatarCosmetic ? avatarFigure(seat.avatarCosmetic) : null;
+  const artwork = declared && !missingArtwork.has(declared) ? declared : null;
+
+  return (
+    <div className={clsx("seat-figure", active && "seat-figure-active")}>
+      {/* An uploaded photo has no cut-out to stand up, so it stays a disc
+          where the head would be rather than being stretched into a body. */}
+      {seat.avatarUrl
+        ? (
+          <span
+            className="seat-figure-photo"
+            style={{ backgroundImage: `url("${seat.avatarUrl}")` }}
+            role="img"
+            aria-label={`${seat.name}'s avatar`}
+          />
+        )
+        : (
+          <>
+            {/* The monogram sits underneath and the figure lays over it, so a
+                file that is missing or still loading never leaves a hole where
+                a player should be. */}
+            <span className="seat-figure-fallback" aria-hidden={artwork ? "true" : undefined}>
+              {seat.initials}
+            </span>
+            {artwork && (
+              <Image
+                src={artwork}
+                alt=""
+                fill
+                sizes="180px"
+                className="seat-figure-art"
+                onError={() => {
+                  missingArtwork.add(artwork);
+                  forceRerender((n) => n + 1);
+                }}
+              />
+            )}
+          </>
+        )}
+    </div>
+  );
+}
+
 const PlayerSeat = memo(function PlayerSeat({
   seat,
   placement,
@@ -310,11 +363,6 @@ const PlayerSeat = memo(function PlayerSeat({
       )}
       style={{ "--seat-accent": seat.accent, ...seatStyle } as React.CSSProperties}
     >
-      {(seat.isSmallBlind || seat.isBigBlind) && (
-        <span className="blind-silhouette" aria-label={seat.isBigBlind ? "Big blind" : "Small blind"}>
-          <span>{seat.isBigBlind ? "BIG BLIND" : "SMALL BLIND"}</span>
-        </span>
-      )}
       <div className={clsx("seat-cards", seat.isMine && "own-cards", isWinner && "winning-cards")}>
         {/* Once folded, this seat's cards live only in the transient
             MuckDrift overlay (see PokerTable) -- not here -- so they read as
@@ -330,46 +378,33 @@ const PlayerSeat = memo(function PlayerSeat({
           </span>
         ))}
       </div>
-      <div className="seat-profile">
-        <ProfileAvatar
-          className="seat-avatar"
-          profile={{
-            displayName: seat.name,
-            initials: seat.initials,
-            avatarUrl: seat.avatarUrl,
-            avatarPreset: seat.avatarPreset as AvatarPreset,
-            avatarCosmetic: seat.avatarCosmetic,
-            accent: seat.accent,
-          }}
-          showTurn={seat.isCurrent}
-        />
-        <div className="seat-copy">
-          <div className="seat-name-row">
-            <strong>{seat.name}</strong>
-            {!seat.isHuman && <span className="ai-badge">AI</span>}
-            {seat.isMine && <span className="you-chip">You</span>}
-            {seat.isSmallBlind && <span className="blind-label">SB</span>}
-            {seat.isBigBlind && <span className="blind-label">BB</span>}
-          </div>
-          <span
-            className={clsx(
-              "seat-stack",
-              seat.isMine && "seat-stack-mine",
-              isWinner && "seat-stack-win",
-            )}
-            aria-label={`${seat.stack.toLocaleString()} chips`}
-          >
-            <span className="chip-dot" />
-            <strong>{seat.stack.toLocaleString()}</strong>
-            {seat.isMine && <small>chips</small>}
-          </span>
-          {seat.isMine && seat.handLabel && (
-            <span className="hand-strength" aria-live="polite">
-              {seat.handLabel}
-            </span>
-          )}
+      <SeatFigure seat={seat} active={seat.isCurrent} />
+      {/* Name over stack on one flat plate, tucked under the figure's hands --
+          the nameplate every poker client uses, because it is read at a glance
+          and nothing about it should compete with the felt. */}
+      <div className="seat-plate">
+        <div className="seat-name-row">
+          <strong>{seat.name}</strong>
+          {!seat.isHuman && <span className="ai-badge">AI</span>}
+          {seat.isMine && <span className="you-chip">You</span>}
+          {seat.isSmallBlind && <span className="blind-label">SB</span>}
+          {seat.isBigBlind && <span className="blind-label">BB</span>}
         </div>
+        <span
+          className={clsx("seat-stack", isWinner && "seat-stack-win")}
+          aria-label={`${seat.stack.toLocaleString()} chips`}
+        >
+          <span className="chip-dot" />
+          <strong>{seat.stack.toLocaleString()}</strong>
+        </span>
       </div>
+      {/* Below the plate, not inside it: what you are holding is a different
+          kind of fact from who you are and what you have left. */}
+      {seat.isMine && seat.handLabel && (
+        <span className="hand-strength" aria-live="polite">
+          {seat.handLabel}
+        </span>
+      )}
       {seat.lastAction && <span className="action-pill">{seat.lastAction}</span>}
       {seat.status === "folded" && <span className="status-pill">Folded</span>}
       {seat.status === "all-in" && <span className="status-pill all-in">All in</span>}
@@ -1425,6 +1460,23 @@ function HandHistoryDrawer({
   );
 }
 
+/**
+ * A seat's width, as a fraction of the table's width and of its height.
+ * Everything about a seat is measured from this -- the figure, where its cards
+ * sit at the hands, how far a bet travels -- so the whole ring scales with the
+ * table instead of each piece needing its own breakpoint.
+ *
+ * Both bounds are needed. A figure is square, so on a landscape phone, where
+ * the table is squeezed to 740x247, sizing off width alone gave each seat 64%
+ * of the table's height and the ring closed over the board.
+ */
+const SEAT_WIDTH_RATIO = 0.17;
+const SEAT_HEIGHT_RATIO = 0.3;
+
+function seatWidthFor(table: { width: number; height: number }): number {
+  return Math.round(Math.min(table.width * SEAT_WIDTH_RATIO, table.height * SEAT_HEIGHT_RATIO));
+}
+
 function PokerTable({
   game,
   persistence,
@@ -1471,6 +1523,47 @@ function PokerTable({
     };
   }, []);
 
+  // A seat is sized off the table, not the window. The table is capped by the
+  // height left over as well as by width, so a short landscape phone can shrink
+  // it to a third of its desktop width while the viewport is still wide --
+  // seats measured against the viewport stayed huge and buried the board.
+  const [tableSize, setTableSize] = useState({ width: 850, height: 494 });
+  // How far the foreground player hangs below the felt.
+  //
+  // This cannot be a constant. The gap between the bottom of the table and the
+  // top of the action bar is not proportional to anything: the table is capped
+  // by width on a desktop and by leftover height on a short one, so the same
+  // overhang that looks right on a desktop (118px of room) slides your own
+  // nameplate under the buttons on a tablet (53px). Measured, it is right
+  // everywhere and needs no breakpoint.
+  const [foregroundDrop, setForegroundDrop] = useState(44);
+  // The room left for the foreground figure: from the bottom of the community
+  // cards to the top of the action bar. Your own head must not cover the board.
+  const [boardToBar, setBoardToBar] = useState(298);
+  const actionLayerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const wrap = tableWrapRef.current;
+    const bar = actionLayerRef.current;
+    if (!wrap || !bar) return;
+    const measure = () => {
+      const rect = wrap.getBoundingClientRect();
+      setTableSize({ width: rect.width, height: rect.height });
+      const barTop = bar.getBoundingClientRect().top;
+      setForegroundDrop(Math.max(0, Math.round(barTop - rect.bottom - 6)));
+      const board = wrap.querySelector(".community-cards");
+      if (board) setBoardToBar(Math.max(0, Math.round(barTop - board.getBoundingClientRect().bottom)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrap);
+    observer.observe(bar);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
   const [clockNow, setClockNow] = useState(() => Date.now());
   useEffect(() => {
     const portraitPhone = window.matchMedia("(max-width: 600px) and (orientation: portrait)");
@@ -1501,7 +1594,6 @@ function PokerTable({
   const remainingFraction = turnDurationMs > 0
     ? Math.max(0, Math.min(1, (deadline - clockNow) / turnDurationMs))
     : 0;
-  const currentSeat = game.seats.find((seat) => seat.isCurrent);
   const mySeatIndex = game.seats.findIndex((seat) => seat.isMine);
   const orderedSeats = mySeatIndex <= 0
     ? game.seats
@@ -1546,6 +1638,9 @@ function PokerTable({
         top: `${geometry.y}%`,
         "--seat-depth": geometry.scale,
         "--seat-haze": `brightness(${haze.brightness.toFixed(3)}) saturate(${haze.saturate.toFixed(3)})`,
+        // Depth order for the figure; the plate derives a much higher one from
+        // it so no nameplate is ever hidden behind a neighbour's shoulder.
+        "--seat-z": seatZ(geometry.depth),
         // The direction from this seat toward the pot, as a bare unit vector.
         // Anything that hangs off a seat picks its own distance in CSS and
         // multiplies -- bets travel inward, the turn timer outward -- which
@@ -1553,7 +1648,6 @@ function PokerTable({
         // rule rather than stranded in here.
         "--seat-dx": geometry.towardPot.x.toFixed(3),
         "--seat-dy": geometry.towardPot.y.toFixed(3),
-        zIndex: occlusionEnabled(viewportWidth) ? geometry.z : flatZ(geometry.depth),
       } as React.CSSProperties;
     }),
     [orderedSeats, viewportWidth],
@@ -1564,7 +1658,7 @@ function PokerTable({
   // ring. Deliberately not --seat-depth, which scales the whole seat box --
   // your cards are already sized by hand and must not move.
   const firstPersonStyle = useMemo(
-    () => ({ "--portrait-scale": FIRST_PERSON_SCALE }) as React.CSSProperties,
+    () => ({ "--portrait-scale": FIRST_PERSON_SCALE, "--seat-z": 150 }) as React.CSSProperties,
     [],
   );
 
@@ -1743,7 +1837,15 @@ function PokerTable({
 
       <section className="game-content">
         <div className="table-area">
-          <div className="poker-table-wrap" ref={tableWrapRef}>
+          <div
+            className="poker-table-wrap"
+            ref={tableWrapRef}
+            style={{
+              "--seat-width": `${seatWidthFor(tableSize)}px`,
+              "--foreground-drop": `${foregroundDrop}px`,
+              "--board-to-bar": `${boardToBar}px`,
+            } as React.CSSProperties}
+          >
             <div className="poker-rail">
               <div className="poker-felt">
                 <div className="felt-texture" />
@@ -1777,13 +1879,6 @@ function PokerTable({
                   ))}
                 </div>
                 <span className="street-label">{game.street}</span>
-                {currentSeat && (
-                  <div className={clsx("turn-callout", currentSeat.isMine && "turn-callout-mine")}>
-                    <span>{currentSeat.isMine ? "YOU’RE UP" : currentSeat.isHuman ? "PLAYER TURN" : "AI TURN"}</span>
-                    <strong>{currentSeat.name}</strong>
-                    <b>{secondsRemaining}s</b>
-                  </div>
-                )}
               </div>
             </div>
             {dealerSeatId && (
@@ -1845,7 +1940,7 @@ function PokerTable({
           </div>
         </div>
 
-        <div className="action-layer">
+        <div className="action-layer" ref={actionLayerRef}>
           {error && <div className="table-toast"><X size={15} /> {error}</div>}
           {!error && timeoutFlash && (
             <div className="timeout-toast"><TimerReset size={14} /> {timeoutFlash}</div>
@@ -2079,6 +2174,19 @@ export function PokerApp() {
   // poll so multiple local browsers still stay synchronized.
   useEffect(() => {
     if (!gameId || !game?.isSeated) return;
+    // Every seated browser used to schedule the same deadline advance. That
+    // is safe at the database layer, but it creates N competing RPCs and
+    // serialization work for every bot turn. Elect one browser per table:
+    // the player whose turn it is when the actor is human, otherwise the
+    // lowest-position human. Realtime state changes naturally re-elect the
+    // next browser when that seat leaves.
+    const currentSeat = game.seats.find((seat) => seat.isCurrent);
+    const humanSeats = game.seats
+      .filter((seat) => seat.isHuman)
+      .sort((a, b) => a.position - b.position);
+    const timerLeader = currentSeat?.isHuman ? currentSeat : humanSeats[0];
+    if (!timerLeader?.isMine) return;
+
     const advanceClock = () => {
       if (!window.navigator.onLine) {
         setConnectionState("offline");
@@ -2129,7 +2237,7 @@ export function PokerApp() {
       disposed = true;
       window.clearTimeout(timeout);
     };
-  }, [advanceTable, game?.isSeated, game?.turnDeadlineAt, game?.version, gameId, persistence]);
+  }, [advanceTable, game?.isSeated, game?.seats, game?.turnDeadlineAt, game?.version, gameId, persistence]);
 
   const quickPlay = async (name: string, tier: StakesTier, buyIn: number) => {
     setLoading(true);

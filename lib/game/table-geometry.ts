@@ -17,13 +17,16 @@
 const NEAR_ANGLE_DEG = 90;
 
 /**
- * Ellipse radii as a percentage of the table's bounding box. Sized so a seat
- * straddles the rail: most of it outside, its lower edge tucked behind. Pull
- * these in further and the rail starts eating names and stacks, which trades
- * information for atmosphere -- the wrong way round.
+ * Ellipse radii as a percentage of the table's bounding box.
+ *
+ * Sized so a seat's centre lands on the rail itself, which is where the figure
+ * meets its own drawn rail -- the player then reads as sitting at this table
+ * rather than hovering outside it. The rail is inset 8% of the box, so these
+ * track that inset rather than reaching for the corners the way they did when
+ * a seat was a small floating card.
  */
-const RADIUS_X = 53;
-const RADIUS_Y = 51;
+const RADIUS_X = 44;
+const RADIUS_Y = 44;
 
 /**
  * Narrow viewports cannot afford the full horizontal radius: a seat is a
@@ -45,21 +48,23 @@ export function isNarrow(viewportWidth: number): boolean {
 }
 
 /**
- * Whether the far seats should pass behind the rail.
+ * Stacking order for a seat: depth-sorted, and always in front of the rail.
  *
- * Occlusion is a luxury that costs legibility. On a narrow screen the ring is
- * pulled in to fit, which puts the upper seats inside the rail's outline
- * rather than straddling its edge -- they would be swallowed whole instead of
- * tucked. There, every seat draws in front: a phone player needs to read who
- * is in the hand more than they need the table to look deep.
+ * Seats used to pass *behind* the rail, which looked right until the seat
+ * became a whole figure with a nameplate and two cards attached. A seat is
+ * scaled, so it is its own stacking context, and its children cannot climb out
+ * of it: putting the body behind the rail put that player's hole cards and
+ * their name behind it too. Measured on a six-handed table, three seats lost
+ * their cards to the felt and the far seat lost its nameplate entirely.
+ *
+ * Nothing is given up by dropping it, because the artwork already carries a
+ * rail with the player's elbows resting on it. The depth cue that survives --
+ * perspective scale and distance haze -- is the part that was doing the work
+ * anyway, and the ordering here still keeps near figures over far ones where
+ * two seats overlap.
  */
-export function occlusionEnabled(viewportWidth: number): boolean {
-  return !isNarrow(viewportWidth);
-}
-
-/** Stacking order when occlusion is off: still depth-sorted, but all above the rail. */
-export function flatZ(depth: number): number {
-  return RAIL_Z + 1 + Math.round(depth * 40);
+export function seatZ(depth: number): number {
+  return RAIL_Z + 10 + Math.round(depth * 40);
 }
 
 /**
@@ -159,9 +164,12 @@ export function seatGeometry(
  * What the geometry does constrain is the ordering. Your portrait has to be
  * larger than the nearest seat on the ring (which projects at scale 1), or the
  * scene says the closest figure to the camera is the furthest away. That
- * invariant is a test; the exact value is a legibility choice.
+ * invariant is a test; the exact value is a legibility choice, and it is
+ * bounded from above by something real: the figure, its nameplate and its hand
+ * label have to fit between the community cards and the action bar. Past about
+ * 1.5 your own head starts covering the board.
  */
-export const FIRST_PERSON_SCALE = 1.6;
+export const FIRST_PERSON_SCALE = 1.45;
 
 /**
  * Distance haze. Far seats lose a little contrast and colour, which reads as

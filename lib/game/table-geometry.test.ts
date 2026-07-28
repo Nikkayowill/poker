@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atmosphere, FIRST_PERSON_SCALE, RAIL_Z, seatGeometry } from "./table-geometry";
+import { atmosphere, FIRST_PERSON_SCALE, RAIL_Z, seatGeometry, seatZ } from "./table-geometry";
 
 const SEATS = 6;
 
@@ -50,17 +50,23 @@ describe("table geometry", () => {
     expect(linearMidpoint - atHalfDepth).toBeGreaterThan(0.005);
   });
 
-  it("orders seats far-to-near so the rail can sit between them", () => {
+  it("orders seats far-to-near without letting the rail cut any of them", () => {
     const order = [0, 1, 2, 3, 4, 5].map((slot) => seatGeometry(slot, SEATS));
-    const far = seatGeometry(3, SEATS);
-    const near = seatGeometry(0, SEATS);
 
-    expect(far.z).toBeLessThan(RAIL_Z);
-    expect(near.z).toBeGreaterThan(RAIL_Z);
     // Every seat's order must follow its depth, or the painter's algorithm
-    // breaks and a far player draws over a near one.
+    // breaks and a far player draws over a near one where the two overlap.
     const byDepth = [...order].sort((a, b) => a.depth - b.depth);
     expect(byDepth.map((s) => s.z)).toEqual([...byDepth.map((s) => s.z)].sort((a, b) => a - b));
+
+    // ...but all of them stay in front of the rail. A seat is scaled, so it is
+    // its own stacking context and its children cannot climb out: putting a
+    // body behind the rail put that player's hole cards and nameplate behind
+    // it too. Measured on this table, three seats lost their cards and the far
+    // seat lost its name entirely.
+    for (const seat of order) {
+      expect(seatZ(seat.depth)).toBeGreaterThan(RAIL_Z);
+    }
+    expect(seatZ(1)).toBeGreaterThan(seatZ(0));
   });
 
   it("points every seat at the pot, normalised to the seat's box", () => {

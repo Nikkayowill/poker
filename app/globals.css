@@ -747,7 +747,11 @@ button:disabled { cursor: wait; opacity: .62; }
   pointer-events: none;
 }
 
+/* Stacking level for the table itself. Seats compute a z-index either side
+   of this (see RAIL_Z), so the far side of the ring is genuinely occluded by
+   the rail instead of floating in front of it. */
 .poker-rail {
+  z-index: 50;
   position: absolute;
   inset: 8%;
   padding: 12px;
@@ -1138,16 +1142,18 @@ button:disabled { cursor: wait; opacity: .62; }
     translate .25s cubic-bezier(.2,.8,.3,1), scale .25s;
 }
 
-/* Six seats around an oval: bottom-center is always the local player (seats
-   are rotated relative to them before rendering), the rest fan out clockwise.
-   --deal-x/--deal-y point from each seat toward the pot, reused by both the
-   card-deal and chip-funnel animations. */
-.seat-top { --seat-depth: .90; --deal-x: 0px; --deal-y: 150px; left: 50%; top: 0; transform: translate(-50%, -16%); }
-.seat-bottom { --deal-x: 0px; --deal-y: -150px; left: 50%; bottom: 0; transform: translate(-50%, 20%); }
-.seat-upper-left { --seat-depth: .94; --deal-x: 165px; --deal-y: 85px; left: 3%; top: 26%; transform: translate(-16%, -50%); }
-.seat-lower-left { --seat-depth: 1; --deal-x: 165px; --deal-y: -85px; left: 3%; bottom: 8%; transform: translate(-16%, 50%); }
-.seat-upper-right { --seat-depth: .94; --deal-x: -165px; --deal-y: 85px; right: 3%; top: 26%; transform: translate(16%, -50%); }
-.seat-lower-right { --seat-depth: 1; --deal-x: -165px; --deal-y: -85px; right: 3%; bottom: 8%; transform: translate(16%, 50%); }
+/* Seats are positioned from lib/game/table-geometry.ts rather than tuned by
+   hand: left/top land on the projected ellipse, --seat-depth carries the
+   perspective scale, --seat-haze the distance falloff, and z-index the
+   painter's-algorithm order that lets the rail cut between far and near. */
+.seat-ring {
+  transform: translate(-50%, -50%);
+  filter: var(--seat-haze, none);
+}
+
+/* Deal animations still need a direction to fly in from, derived from which
+   side of the table the seat landed on. */
+.seat-ring { --deal-x: 0px; --deal-y: 120px; }
 
 .seat-current {
   z-index: 9;
@@ -2881,7 +2887,9 @@ button:disabled { cursor: wait; opacity: .62; }
      cards are the one thing on the felt that must always stay readable. */
   bottom: -78px;
   transform: translateX(-50%);
-  z-index: 12;
+  /* Nearest thing to the camera, so it must sit above the rail (z 50) --
+     below it the rail cuts straight through your own hand. */
+  z-index: 120;
   width: auto;
   min-width: 220px;
   min-height: 0;

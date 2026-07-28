@@ -18,7 +18,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { ChangeEvent, FormEvent, memo, useCallback, useEffect, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import Link from "next/link";
 import Image from "next/image";
@@ -26,6 +26,7 @@ import type { Card, GameSnapshot, PlayerAction, PublicSeat, Winner } from "@/lib
 import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
 import { cosmeticById } from "@/lib/cosmetics/catalog";
+import { atmosphere, flatZ, occlusionEnabled, radiiForWidth, seatGeometry } from "@/lib/game/table-geometry";
 import { profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 
@@ -274,6 +275,7 @@ const PlayerSeat = memo(function PlayerSeat({
   secondsRemaining,
   winAmount,
   elementRef,
+  seatStyle,
 }: {
   seat: PublicSeat;
   placement: string;
@@ -281,6 +283,8 @@ const PlayerSeat = memo(function PlayerSeat({
   secondsRemaining: number;
   winAmount?: number;
   elementRef?: (el: HTMLElement | null) => void;
+  /** Computed ellipse position, perspective scale and stacking order. */
+  seatStyle?: React.CSSProperties;
 }) {
   const folded = seat.status === "folded" || seat.status === "out";
   const isWinner = winAmount !== undefined;
@@ -296,7 +300,7 @@ const PlayerSeat = memo(function PlayerSeat({
         folded && "seat-muted",
         isWinner && "seat-winner",
       )}
-      style={{ "--seat-accent": seat.accent } as React.CSSProperties}
+      style={{ "--seat-accent": seat.accent, ...seatStyle } as React.CSSProperties}
     >
       {(seat.isSmallBlind || seat.isBigBlind) && (
         <span className="blind-silhouette" aria-label={seat.isBigBlind ? "Big blind" : "Small blind"}>
@@ -377,6 +381,7 @@ const PlayerSeat = memo(function PlayerSeat({
   && previous.handNumber === next.handNumber
   && previous.secondsRemaining === next.secondsRemaining
   && previous.winAmount === next.winAmount
+  && previous.seatStyle === next.seatStyle
 ));
 
 function Lobby({
@@ -1437,14 +1442,6 @@ function PokerTable({
   onProfileChange: (profile: PlayerProfile) => void;
   connectionState: ConnectionState;
 }) {
-  const placements = [
-    "seat-bottom",
-    "seat-lower-left",
-    "seat-upper-left",
-    "seat-top",
-    "seat-upper-right",
-    "seat-lower-right",
-  ];
   const [historyOpen, setHistoryOpen] = useState(false);
   const [showOrientationHint, setShowOrientationHint] = useState(false);
   const historyButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -1452,6 +1449,20 @@ function PokerTable({
     setHistoryOpen(false);
     window.requestAnimationFrame(() => historyButtonRef.current?.focus());
   }, []);
+  // The ring's horizontal radius depends on how much width there is to
+  // spend, so the geometry has to recompute when the window changes.
+  const [viewportWidth, setViewportWidth] = useState(1280);
+  useEffect(() => {
+    const measure = () => setViewportWidth(window.innerWidth);
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, []);
+
   const [clockNow, setClockNow] = useState(() => Date.now());
   useEffect(() => {
     const portraitPhone = window.matchMedia("(max-width: 600px) and (orientation: portrait)");
@@ -1515,6 +1526,24 @@ function PokerTable({
       window.requestAnimationFrame(() => setDealerAnimated(true));
     }
   }, [dealerSeatId]);
+  // Opponents ring the table on a projected ellipse. Slot 0 is the near edge
+  // where the local player sits; they are drawn in the foreground instead, so
+  // the ring geometry for slot 0 is simply unused.
+  const ringGeometry = useMemo(
+    () => orderedSeats.map((_, index) => {
+      const geometry = seatGeometry(index, orderedSeats.length, radiiForWidth(viewportWidth));
+      const haze = atmosphere(geometry.depth);
+      return {
+        left: `${geometry.x}%`,
+        top: `${geometry.y}%`,
+        "--seat-depth": geometry.scale,
+        "--seat-haze": `brightness(${haze.brightness.toFixed(3)}) saturate(${haze.saturate.toFixed(3)})`,
+        zIndex: occlusionEnabled(viewportWidth) ? geometry.z : flatZ(geometry.depth),
+      } as React.CSSProperties;
+    }),
+    [orderedSeats, viewportWidth],
+  );
+
   const seatOrderKey = orderedSeats.map((seat) => seat.id).join(",");
   useEffect(() => {
     measureDealer();
@@ -1781,7 +1810,8 @@ function PokerTable({
                 // foreground. Still a PlayerSeat, so its seat ref stays
                 // registered and chip flights, the muck drift and the dealer
                 // puck keep measuring the right spot.
-                placement={seat.isMine ? "seat-first-person" : placements[index]}
+                placement={seat.isMine ? "seat-first-person" : "seat-ring"}
+                seatStyle={seat.isMine ? undefined : ringGeometry[index]}
                 handNumber={game.handNumber}
                 secondsRemaining={seat.isCurrent ? secondsRemaining : 0}
                 winAmount={showFunnel ? game.winners.find((winner) => winner.seatId === seat.id)?.amount : undefined}

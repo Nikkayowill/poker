@@ -1,11 +1,15 @@
 "use client";
 
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import type { RealtimeChannel, Session } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import type { StakesTier } from "@/lib/game/tiers";
-import { authClient } from "@/lib/auth/client";
-import { browserSupabase } from "@/lib/supabase/browser-client";
+import { accountsEnabled, authClient } from "@/lib/auth/client";
+import {
+  browserSupabase,
+  readRememberAuthSession,
+  setRememberAuthSession,
+} from "@/lib/supabase/browser-client";
 import { planTurnClock, type TurnClockInput } from "@/lib/game/turn-clock";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
@@ -19,7 +23,6 @@ import { PokerTable, type ConnectionState } from "@/components/table/poker-table
 
 const SOUND_STORAGE_KEY = "river-room:sound-enabled";
 
-
 export function PokerApp() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
@@ -31,16 +34,28 @@ export function PokerApp() {
   const [connectionState, setConnectionState] = useState<ConnectionState>("connected");
   const [cashOutNotice, setCashOutNotice] = useState<number | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [entryComplete, setEntryComplete] = useState(false);
+  const [authReady, setAuthReady] = useState(!accountsEnabled());
+  const [rememberSession, setRememberSession] = useState(true);
+  const [signInPending, setSignInPending] = useState(false);
+  const [savePromptDismissed, setSavePromptDismissed] = useState(false);
   const [soundEnabled, setSoundEnabledState] = useState(true);
   const gameId = game?.id;
   const gameVersionRef = useRef(game?.version ?? 0);
   const previousGameRef = useRef<GameSnapshot | null>(null);
+  const linkedAccountIdRef = useRef<string | null>(null);
+  const accountLinkPromiseRef = useRef<Promise<boolean> | null>(null);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(SOUND_STORAGE_KEY);
     const enabled = stored !== "false";
     setSoundEnabled(enabled);
     const timer = window.setTimeout(() => setSoundEnabledState(enabled), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setRememberSession(readRememberAuthSession()), 0);
     return () => window.clearTimeout(timer);
   }, []);
 
@@ -160,6 +175,7 @@ export function PokerApp() {
   }, [gameId, refresh]);
 
   useEffect(() => {
+    if (!entryComplete) return;
     const params = new URLSearchParams(window.location.search);
     const tableId = params.get("table");
     const code = params.get("code");
@@ -172,7 +188,7 @@ export function PokerApp() {
       });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [refresh, joinByCode]);
+  }, [entryComplete, refresh, joinByCode]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -542,33 +558,111 @@ export function PokerApp() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not save your progress.");
       setProfile(data.profile);
-      setAuthNotice(data.restored ? "Welcome back — your progress is restored." : "Progress saved to your account.");
+      setSavePromptDismissed(false);
+      setAuthNotice(
+        data.restored
+          ? "Welcome back — your Gold, profile, and collection are ready."
+          : "Progress secured — this profile now travels with your account.",
+      );
+      return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save your progress.");
+      return false;
+    } finally {
+      setSignInPending(false);
     }
   }, []);
 
   useEffect(() => {
+    if (profileLoading) return;
     const client = authClient();
     if (!client) return;
-    // Fires on the redirect back from the provider, and again on refresh
-    // while a session is cached, which is what keeps a returning player
-    // signed in without a second trip through the provider.
-    const { data } = client.auth.onAuthStateChange((_event, session) => {
-      if (session?.access_token) void linkAccount(session.access_token);
+
+    let active = true;
+    const restore = async (session: Session | null) => {
+      if (!active || !session?.access_token) {
+        if (active) setAuthReady(true);
+        return;
+      }
+      const accountId = session.user.id;
+      if (linkedAccountIdRef.current === accountId) {
+        if (accountLinkPromiseRef.current) await accountLinkPromiseRef.current;
+        if (active) setAuthReady(true);
+        return;
+      }
+      linkedAccountIdRef.current = accountId;
+      const linkPromise = linkAccount(session.access_token);
+      accountLinkPromiseRef.current = linkPromise;
+      const linked = await linkPromise;
+      if (accountLinkPromiseRef.current === linkPromise) accountLinkPromiseRef.current = null;
+      if (!linked) linkedAccountIdRef.current = null;
+      if (active) setAuthReady(true);
+    };
+
+    // getSession resolves the already-cached cookie/browser state without
+    // changing layouts. Auth events use the same path for the OAuth return.
+    void client.auth.getSession()
+      .then(({ data }) => restore(data.session))
+      .catch(() => {
+        if (active) setAuthReady(true);
+      });
+    const { data } = client.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        linkedAccountIdRef.current = null;
+        if (active) setAuthReady(true);
+        return;
+      }
+      void restore(session);
     });
-    return () => data.subscription.unsubscribe();
-  }, [linkAccount]);
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
+  }, [linkAccount, profileLoading]);
 
   const signIn = async () => {
     const client = authClient();
     if (!client) return;
     setError(null);
-    const { error: signInError } = await client.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: window.location.origin },
+    setSignInPending(true);
+    setRememberAuthSession(rememberSession);
+    try {
+      await applySessionPreference();
+      const { error: signInError } = await client.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}${window.location.pathname}${window.location.search}`,
+        },
+      });
+      if (signInError) throw signInError;
+    } catch {
+      setSignInPending(false);
+      setError("Could not open Google sign-in. Try again.");
+    }
+  };
+
+  const applySessionPreference = async () => {
+    setRememberAuthSession(rememberSession);
+    const response = await fetch("/api/auth/session-preference", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ remember: rememberSession }),
     });
-    if (signInError) setError("Could not open Google sign-in. Try again.");
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.error ?? "Could not save your sign-in preference.");
+  };
+
+  const continueWithAccount = async () => {
+    setError(null);
+    setSignInPending(true);
+    try {
+      await applySessionPreference();
+      setEntryComplete(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not open the lobby.");
+    } finally {
+      setSignInPending(false);
+    }
   };
 
   const signOut = async () => {
@@ -579,8 +673,23 @@ export function PokerApp() {
     await authClient()?.auth.signOut().catch(() => {});
     await fetch("/api/auth/signout", { method: "POST" }).catch(() => {});
     setGame(null);
-    setAuthNotice("Signed out. This browser is a guest again.");
+    linkedAccountIdRef.current = null;
+    setEntryComplete(false);
+    setAuthNotice("Signed out — you can keep playing as a guest on this browser.");
     await loadProfile().catch(() => {});
+  };
+
+  const continueAsGuest = async () => {
+    setError(null);
+    setSignInPending(true);
+    try {
+      await applySessionPreference();
+      setEntryComplete(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not open the lobby.");
+    } finally {
+      setSignInPending(false);
+    }
   };
 
   /** Leaving the table while still seated cashes out first, so chips are never stranded. */
@@ -602,11 +711,16 @@ export function PokerApp() {
           </div>
           <div className="header-actions">
             <div className="header-status">No-limit Hold’em · 6-max</div>
-            {profile && <GoldBadge profile={profile} onClaimed={setProfile} />}
+            {entryComplete && profile && <GoldBadge profile={profile} onClaimed={setProfile} />}
             <AuthButton profile={profile} onSignIn={() => void signIn()} onSignOut={() => void signOut()} />
-            <Link className="auth-button" href="/leaderboard">Leaderboard</Link>
-            <Link className="auth-button" href="/collection">Collection</Link>
-            {profile && <ProfileTrigger profile={profile} onClick={() => setProfileOpen(true)} />}
+            {entryComplete && <Link className="auth-button" href="/leaderboard">Leaderboard</Link>}
+            {entryComplete && <Link className="auth-button" href="/collection">Collection</Link>}
+            {entryComplete && (
+              <Link className="auth-button" href={gameId ? `/store?table=${gameId}` : "/store"}>Buy Gold</Link>
+            )}
+            {entryComplete && profile && (
+              <ProfileTrigger profile={profile} onClick={() => setProfileOpen(true)} />
+            )}
           </div>
         </header>
       )}
@@ -647,6 +761,16 @@ export function PokerApp() {
             authNotice={authNotice}
             onDismissAuthNotice={() => setAuthNotice(null)}
             onSaveProgress={signIn}
+            onDismissSaveProgress={() => setSavePromptDismissed(true)}
+            savePromptDismissed={savePromptDismissed}
+            entryComplete={entryComplete}
+            authReady={authReady}
+            signInPending={signInPending}
+            rememberSession={rememberSession}
+            onRememberSessionChange={setRememberSession}
+            onContinueAccount={() => void continueWithAccount()}
+            onContinueAsGuest={continueAsGuest}
+            onSignOut={() => void signOut()}
           />
         )}
       {profileOpen && profile && (

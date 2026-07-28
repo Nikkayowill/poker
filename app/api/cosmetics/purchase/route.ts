@@ -3,7 +3,7 @@ import { z } from "zod";
 import { purchaseCosmetic } from "@/lib/server/cosmetics-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
-import { readOrCreateSessionToken, withSessionCookie } from "@/lib/server/session";
+import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     const token = readOrCreateSessionToken(request);
     const profile = await ensureProfile(token);
     const result = await purchaseCosmetic(token, profile, parsed.data.cosmeticId);
-    return withSessionCookie(
+    return withRequestSessionCookie(request,
       NextResponse.json({ profile: result.profile, owned: result.owned }),
       token,
     );

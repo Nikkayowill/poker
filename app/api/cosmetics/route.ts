@@ -3,7 +3,7 @@ import { cosmetics } from "@/lib/cosmetics/catalog";
 import { listOwnedCosmetics } from "@/lib/server/cosmetics-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
-import { readOrCreateSessionToken, withSessionCookie } from "@/lib/server/session";
+import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     const token = readOrCreateSessionToken(request);
     const profile = await ensureProfile(token);
     const owned = await listOwnedCosmetics(profile.id);
-    return withSessionCookie(
+    return withRequestSessionCookie(request,
       NextResponse.json({ cosmetics, owned, equipped: profile.equipped, profile }),
       token,
     );

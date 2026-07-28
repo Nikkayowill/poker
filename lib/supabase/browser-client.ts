@@ -2,6 +2,57 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+const REMEMBER_AUTH_KEY = "river-room:remember-auth";
+const authStorageKeys = new Set<string>();
+
+function browserStorage() {
+  if (typeof window === "undefined") return null;
+  return readRememberAuthSession() ? window.localStorage : window.sessionStorage;
+}
+
+/**
+ * Supabase normally persists auth in localStorage. This adapter keeps that
+ * behavior only when the player asks to stay signed in; otherwise the same
+ * session is scoped to the current browser session.
+ */
+const authStorage = {
+  getItem(key: string) {
+    authStorageKeys.add(key);
+    return browserStorage()?.getItem(key) ?? null;
+  },
+  setItem(key: string, value: string) {
+    authStorageKeys.add(key);
+    browserStorage()?.setItem(key, value);
+  },
+  removeItem(key: string) {
+    authStorageKeys.add(key);
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem(key);
+    window.sessionStorage.removeItem(key);
+  },
+};
+
+export function readRememberAuthSession(): boolean {
+  if (typeof window === "undefined") return true;
+  return window.localStorage.getItem(REMEMBER_AUTH_KEY) !== "false";
+}
+
+/**
+ * Moves only the Supabase keys this client has actually used. That avoids
+ * touching sessions belonging to another Supabase project on the same host.
+ */
+export function setRememberAuthSession(remember: boolean): void {
+  if (typeof window === "undefined") return;
+  const source = remember ? window.sessionStorage : window.localStorage;
+  const destination = remember ? window.localStorage : window.sessionStorage;
+  for (const key of authStorageKeys) {
+    const value = source.getItem(key);
+    if (value !== null) destination.setItem(key, value);
+    source.removeItem(key);
+  }
+  window.localStorage.setItem(REMEMBER_AUTH_KEY, String(remember));
+}
+
 /**
  * The one Supabase client the browser is allowed to have.
  *
@@ -24,7 +75,12 @@ export function browserSupabase(): SupabaseClient | null {
   if (!url || !key) return null;
   if (!client) {
     client = createClient(url, key, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storage: authStorage,
+      },
     });
   }
   return client;

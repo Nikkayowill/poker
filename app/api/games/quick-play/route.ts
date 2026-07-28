@@ -11,7 +11,7 @@ import {
 } from "@/lib/server/game-store";
 import { creditGold, ensureProfile, isBanned, recordSeenIp, spendGold, updateProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit, getClientIp } from "@/lib/server/rate-limit";
-import { readOrCreateSessionToken, withSessionCookie } from "@/lib/server/session";
+import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -46,14 +46,14 @@ export async function POST(request: NextRequest) {
       });
     }
     if (await isBanned(token)) {
-      return withSessionCookie(
+      return withRequestSessionCookie(request,
         NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),
         token,
       );
     }
     void recordSeenIp(token, getClientIp(request)).catch(() => {});
     if (!profile.unlimitedGold && profile.goldBalance < config.minBuyIn) {
-      return withSessionCookie(
+      return withRequestSessionCookie(request,
         NextResponse.json(
           { error: `You need at least ${config.minBuyIn.toLocaleString()} Gold to play ${config.label} stakes.` },
           { status: 400 },
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       persistence: persistenceMode(),
       profile,
     });
-    return withSessionCookie(response, token);
+    return withRequestSessionCookie(request, response, token);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not find you a table.";
     return NextResponse.json({ error: message }, { status: 500 });

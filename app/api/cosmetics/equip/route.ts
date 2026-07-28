@@ -3,7 +3,7 @@ import { z } from "zod";
 import { equipCosmetic } from "@/lib/server/cosmetics-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
-import { readOrCreateSessionToken, withSessionCookie } from "@/lib/server/session";
+import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     const token = readOrCreateSessionToken(request);
     const profile = await ensureProfile(token);
     const equipped = await equipCosmetic(token, profile, parsed.data.cosmeticId);
-    return withSessionCookie(NextResponse.json({ equipped }), token);
+    return withRequestSessionCookie(request, NextResponse.json({ equipped }), token);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not equip that item.";
     return NextResponse.json({ error: message }, { status: 400 });

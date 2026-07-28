@@ -4,7 +4,7 @@ import { z } from "zod";
 import { ensureProfile, findSessionByUserId, linkProfileToUser } from "@/lib/server/profile-store";
 import { persistenceMode } from "@/lib/server/game-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
-import { readOrCreateSessionToken, withSessionCookie } from "@/lib/server/session";
+import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 import { readSupabaseRuntimeConfig } from "@/lib/server/runtime-config";
 
 export const runtime = "nodejs";
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       // Restore. Any Gold on the guest profile this browser was using is
       // deliberately left behind rather than merged: merging balances across
       // sessions is exactly the mechanic that makes multi-accounting pay.
-      return withSessionCookie(
+      return withRequestSessionCookie(request,
         NextResponse.json({ profile: existing.profile, restored: true, persistence: persistenceMode() }),
         existing.token,
       );
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     const token = readOrCreateSessionToken(request);
     await ensureProfile(token);
     const profile = await linkProfileToUser(token, userId);
-    return withSessionCookie(
+    return withRequestSessionCookie(request,
       NextResponse.json({ profile, restored: false, persistence: persistenceMode() }),
       token,
     );

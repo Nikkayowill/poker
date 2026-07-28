@@ -1,11 +1,12 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { ArrowRight, Check, Coins, UsersRound, X } from "lucide-react";
+import { ArrowRight, Check, Cloud, Coins, ShieldCheck, UsersRound, X } from "lucide-react";
 import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { Card } from "@/lib/game/types";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { accountsEnabled } from "@/lib/auth/client";
+import { AccountEntryCard } from "@/components/auth/account-entry-card";
 import { BuyInModal } from "./buy-in-modal";
 import { PlayingCard } from "@/components/table/playing-card";
 
@@ -23,6 +24,16 @@ export function Lobby({
   authNotice,
   onDismissAuthNotice,
   onSaveProgress,
+  onDismissSaveProgress,
+  savePromptDismissed,
+  entryComplete,
+  authReady,
+  signInPending,
+  rememberSession,
+  onRememberSessionChange,
+  onContinueAccount,
+  onContinueAsGuest,
+  onSignOut,
 }: {
   profile: PlayerProfile | null;
   onQuickPlay: (name: string, tier: StakesTier, buyIn: number) => void;
@@ -37,6 +48,16 @@ export function Lobby({
   authNotice: string | null;
   onDismissAuthNotice: () => void;
   onSaveProgress: () => void;
+  onDismissSaveProgress: () => void;
+  savePromptDismissed: boolean;
+  entryComplete: boolean;
+  authReady: boolean;
+  signInPending: boolean;
+  rememberSession: boolean;
+  onRememberSessionChange: (remember: boolean) => void;
+  onContinueAccount: () => void;
+  onContinueAsGuest: () => void;
+  onSignOut: () => void;
 }) {
   const [name, setName] = useState(profile?.displayName ?? "");
   const [joinCode, setJoinCode] = useState("");
@@ -54,9 +75,30 @@ export function Lobby({
   // sitting on its untouched starting balance has nothing worth saving yet,
   // and prompting then is asking for a signup with no reason behind it.
   const showSavePrompt = Boolean(
-    accountsEnabled() && profile && !profile.isRegistered && profile.lastDailyClaimAt === null
-    && profile.goldBalance !== 2000,
+    !savePromptDismissed && accountsEnabled() && profile && !profile.isRegistered
+    && profile.lastDailyClaimAt === null
+    && (profile.goldBalance !== 2000 || profile.updatedAt !== profile.createdAt),
   );
+  if (!entryComplete) {
+    return (
+      <main className="account-entry-page">
+        <AccountEntryCard
+          ready={authReady && sessionReady}
+          accountsAvailable={accountsEnabled()}
+          pending={signInPending}
+          profile={profile}
+          remember={rememberSession}
+          error={error}
+          onRememberChange={onRememberSessionChange}
+          onSignIn={onSaveProgress}
+          onContinueAccount={onContinueAccount}
+          onContinueAsGuest={onContinueAsGuest}
+          onSignOut={onSignOut}
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="lobby">
       <section className="hero">
@@ -81,14 +123,24 @@ export function Lobby({
           </div>
         )}
         {showSavePrompt && (
-          <div className="save-progress-notice" role="status">
-            <span>
-              You&rsquo;re playing as a guest. Save your progress to keep your Gold and claim
-              daily rewards.
-            </span>
-            <button type="button" className="secondary-action" onClick={onSaveProgress}>
-              Save progress
-            </button>
+          <div className="save-progress-notice" role="status" aria-label="Save guest progress">
+            <div className="save-progress-icon" aria-hidden="true"><Cloud size={18} /></div>
+            <div className="save-progress-copy">
+              <strong>Your run is worth keeping</strong>
+              <span>
+                This guest profile lives only in this browser. Save your Gold, avatar,
+                and collection to an account before they get left behind.
+              </span>
+              <small><ShieldCheck size={12} /> Google sign-in · No password to remember</small>
+            </div>
+            <div className="save-progress-actions">
+              <button type="button" className="save-progress-primary" onClick={onSaveProgress}>
+                Save progress
+              </button>
+              <button type="button" className="save-progress-later" onClick={onDismissSaveProgress}>
+                Maybe later
+              </button>
+            </div>
           </div>
         )}
         {needsTopUp && (
@@ -167,25 +219,27 @@ export function Lobby({
         </div>
       </section>
       <aside className="lobby-preview">
-        <div className="preview-heading">
-          <span>No limit · 6-max</span>
-        </div>
-        <div className="mini-table">
-          <span className="mini-seat mini-top">RV</span>
-          <span className="mini-seat mini-upper-left">MA</span>
-          <span className="mini-seat mini-upper-right">PR</span>
-          <span className="mini-seat mini-lower-left">TH</span>
-          <span className="mini-seat mini-lower-right">WR</span>
-          <span className="mini-seat mini-bottom">YOU</span>
-          <div className="mini-pot"><Coins size={14} /> 240</div>
-          <div className="mini-cards">
-            {[
-              { rank: "A", suit: "spades" },
-              { rank: "10", suit: "hearts" },
-              { rank: "K", suit: "diamonds" },
-            ].map((card) => <PlayingCard key={card.rank} card={card as Card} small />)}
-          </div>
-        </div>
+        <>
+            <div className="preview-heading">
+              <span>No limit · 6-max</span>
+            </div>
+            <div className="mini-table">
+              <span className="mini-seat mini-top">RV</span>
+              <span className="mini-seat mini-upper-left">MA</span>
+              <span className="mini-seat mini-upper-right">PR</span>
+              <span className="mini-seat mini-lower-left">TH</span>
+              <span className="mini-seat mini-lower-right">WR</span>
+              <span className="mini-seat mini-bottom">YOU</span>
+              <div className="mini-pot"><Coins size={14} /> 240</div>
+              <div className="mini-cards">
+                {[
+                  { rank: "A", suit: "spades" },
+                  { rank: "10", suit: "hearts" },
+                  { rank: "K", suit: "diamonds" },
+                ].map((card) => <PlayingCard key={card.rank} card={card as Card} small />)}
+              </div>
+            </div>
+          </>
       </aside>
       {buyInMode && (
         <BuyInModal

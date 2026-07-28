@@ -5,7 +5,7 @@ import { clampBuyIn, TIER_CONFIG } from "@/lib/game/tiers";
 import { findGameByRoomCode, getStoredGame, persistenceMode, persistSeatClaim } from "@/lib/server/game-store";
 import { creditGold, ensureProfile, isBanned, recordSeenIp, spendGold, updateProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit, getClientIp } from "@/lib/server/rate-limit";
-import { readOrCreateSessionToken, withSessionCookie } from "@/lib/server/session";
+import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       });
     }
     if (await isBanned(token)) {
-      return withSessionCookie(
+      return withRequestSessionCookie(request,
         NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),
         token,
       );
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     // As in quick-play, every seat claim is a real buy-in: chips are
     // redeemable for Gold on cash-out, so a free seat would be a faucet.
     if (!profile.unlimitedGold && profile.goldBalance < config.minBuyIn) {
-      return withSessionCookie(
+      return withRequestSessionCookie(request,
         NextResponse.json(
           { error: `You need at least ${config.minBuyIn.toLocaleString()} Gold to join this table.` },
           { status: 400 },
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
       persistence: persistenceMode(),
       profile,
     });
-    return withSessionCookie(response, token);
+    return withRequestSessionCookie(request, response, token);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not join that table.";
     const status = message.includes("full") ? 409 : 500;

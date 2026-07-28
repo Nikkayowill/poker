@@ -26,7 +26,11 @@ const NEAR_ANGLE_DEG = 90;
  * a seat was a small floating card.
  */
 const RADIUS_X = 44;
-const RADIUS_Y = 44;
+/* Pull the vertical arc inward without shrinking the figures. At 44%, the
+   opposite seat was anchored at y=6%; subtracting half its layout height put
+   the top of the avatar outside the scene. A 34% radius leaves a real 16%
+   safe area above the far seat while preserving the wide table silhouette. */
+const RADIUS_Y = 34;
 
 /**
  * Narrow viewports cannot afford the full horizontal radius: a seat is a
@@ -64,7 +68,7 @@ export function isNarrow(viewportWidth: number): boolean {
  * two seats overlap.
  */
 export function seatZ(depth: number): number {
-  return RAIL_Z + 10 + Math.round(depth * 40);
+  return 4 + Math.round(depth);
 }
 
 /**
@@ -113,8 +117,8 @@ export interface SeatGeometry {
   towardPot: { x: number; y: number };
 }
 
-/** The rail's own stacking level. Seats below it are occluded by it. */
-export const RAIL_Z = 50;
+/** The rail's own stacking level inside the isolated table scene. */
+export const RAIL_Z = 1;
 
 /**
  * Geometry for one seat on a ring of `count`, offset by `slot` places from
@@ -154,25 +158,6 @@ export function seatGeometry(
     towardPot: { x: inwardX / dominant, y: inwardY / dominant },
   };
 }
-
-/**
- * How much larger the local player's own portrait is than a seat on the ring.
- *
- * Unlike everything else here, this is *not* a projection output, and it would
- * be dishonest to dress it up as one: you are not on the ellipse. You are at
- * the camera, outside the projected scene, so there is no z to feed the divide
- * -- any value I claimed to derive would just be a size I picked by eye with
- * the maths written in afterwards.
- *
- * What the geometry does constrain is the ordering. Your portrait has to be
- * larger than the nearest seat on the ring (which projects at scale 1), or the
- * scene says the closest figure to the camera is the furthest away. That
- * invariant is a test; the exact value is a legibility choice, and it is
- * bounded from above by something real: the figure, its nameplate and its hand
- * label have to fit between the community cards and the action bar. Past about
- * 1.5 your own head starts covering the board.
- */
-export const FIRST_PERSON_SCALE = 1.45;
 
 /**
  * Distance haze -- aerial perspective. Air between the viewer and the far rail

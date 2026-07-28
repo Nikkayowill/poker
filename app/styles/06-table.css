@@ -37,7 +37,7 @@
   --table-aspect: 1.84;
   --table-reserve: 254px;
   /* Seats are sized from the table's measured width (SEAT_WIDTH_RATIO in
-     poker-app.tsx), which arrives as an inline --seat-width on this element.
+     poker-table.tsx), which arrives as an inline --seat-width on this element.
      Declared here rather than on .player-seat: a custom property set on the
      seat itself beats the value inherited from here, so the fallback would
      silently win and every seat would stay desktop-sized on a phone. */
@@ -46,6 +46,7 @@
   aspect-ratio: var(--table-aspect);
   margin: auto;
   position: relative;
+  isolation: isolate;
 }
 
 /* A soft contact shadow grounding the table on the page behind it, distinct
@@ -63,35 +64,10 @@
   pointer-events: none;
 }
 
-/* The far rail is a separate visual lip. It sits above the avatar artwork but
-   below labels, so distant players feel seated behind the table instead of
-   floating in front of it.
-
-   255 puts it above every figure (60..100, see seatZ) and below every
-   nameplate (260..290, --seat-z + 200). It was 260, which is the bottom of the
-   nameplate band: the far player's name only stayed readable because the lip
-   comes earlier in the DOM and loses the tie. */
-.poker-table-wrap::before {
-  content: "";
-  position: absolute;
-  top: 7.1%;
-  left: 2.5%;
-  right: 2.5%;
-  height: 16%;
-  z-index: 255;
-  border-top: clamp(8px, 1.2vw, 15px) solid rgba(24, 18, 14, .8);
-  border-radius: 50% 50% 0 0;
-  box-shadow:
-    0 -2px 0 rgba(238, 202, 119, .25),
-    0 10px 18px rgba(0, 0, 0, .36);
-  pointer-events: none;
-}
-
-/* Stacking level for the table itself. Seats compute a z-index either side
-   of this (see RAIL_Z), so the far side of the ring is genuinely occluded by
-   the rail instead of floating in front of it. */
+/* Layer 1 of the isolated table scene. Felt content lives inside this shell;
+   avatar, card, and plate layers are defined explicitly in 08-seat.css. */
 .poker-rail {
-  z-index: 50;
+  z-index: 1;
   position: absolute;
   inset: 7% 3% 4%;
   padding: 16px;

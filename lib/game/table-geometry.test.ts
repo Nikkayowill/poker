@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atmosphere, FIRST_PERSON_SCALE, RAIL_Z, seatGeometry, seatZ } from "./table-geometry";
+import { atmosphere, RAIL_Z, seatGeometry, seatZ } from "./table-geometry";
 
 const SEATS = 6;
 
@@ -84,14 +84,6 @@ describe("table geometry", () => {
       const larger = Math.max(Math.abs(seat.towardPot.x), Math.abs(seat.towardPot.y));
       expect(larger).toBeCloseTo(1, 6);
     }
-  });
-
-  it("draws the local player larger than the nearest seat on the ring", () => {
-    // You sit closer to the camera than anyone at the table. If your own
-    // portrait were not the largest, the scene would be claiming the closest
-    // figure is the furthest away, and the whole depth illusion inverts.
-    const nearestOnRing = seatGeometry(0, SEATS).scale;
-    expect(FIRST_PERSON_SCALE).toBeGreaterThan(nearestOnRing);
   });
 
   it("hazes the far rail without crushing legibility", () => {

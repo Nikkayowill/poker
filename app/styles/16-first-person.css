@@ -1,129 +1,136 @@
-/* The foreground player. Declared last so it wins over the seat rules. */
+/* The local player uses a dedicated two-column layout. Opponent seats are
+   anchored around the ellipse; the local player lives between the near rail
+   and the action bar and must reserve separate space for portrait, cards,
+   hand strength, and stack. */
 
-/* ---- First-person local player ----
-   The player who is *you* leaves the ring of seat boxes and becomes the
-   foreground: cards held large and fanned toward the camera, with your own
-   details tucked underneath rather than in a card of their own. It is still
-   a .player-seat, so the dealer puck, chip flights and muck drift keep
-   measuring from the same element. */
 .seat-first-person {
   --seat-depth: 1;
+  --local-avatar-size: clamp(62px, calc(var(--seat-width) * .8), 96px);
   left: 50%;
-  /* Measured, not guessed: --foreground-drop is the real gap between the felt
-     and the action bar (see poker-app.tsx). No constant works, because that gap
-     is 118px on a desktop and 53px on a tablet -- the table is capped by width
-     on one and by leftover height on the other. */
   bottom: calc(-1 * var(--foreground-drop, 44px));
-  transform: translateX(-50%);
-  /* This one *is* a layer of its own, and should be: it is centred with a
-     transform, which makes a stacking context whatever else is done, and you
-     sit nearer the camera than anyone at the table. Above the highest plate a
-     ring seat can reach, so nobody's nameplate paints over your hand. */
-  z-index: 400;
-  width: auto;
-  min-width: 220px;
+  z-index: 8;
+  width: min(320px, calc(100vw - 24px));
   min-height: 0;
   padding: 0;
-  border: none;
+  border: 0;
   background: transparent;
   box-shadow: none;
+  transform: translateX(-50%);
+}
+
+.local-seat-layout {
+  display: grid;
+  grid-template-columns: var(--local-avatar-size) minmax(150px, 1fr);
+  align-items: end;
+  gap: clamp(8px, 1.5vw, 14px);
+  width: 100%;
+}
+
+/* The portrait is intentionally compact and beside the hand. It can never
+   share the cards' centerline, so cards cannot cover eyes, hair, or cosmetics. */
+.local-avatar-slot {
+  position: relative;
+  z-index: 5;
+  width: var(--local-avatar-size);
+  align-self: end;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(217, 184, 93, .18);
+  border-radius: 0 0 45% 45%;
+}
+
+.local-avatar-slot .seat-figure {
+  width: var(--local-avatar-size);
+  scale: 1;
+  filter: none;
+}
+
+.local-hand-column {
+  position: relative;
+  z-index: 6;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
-/* Your own cards are the largest type on screen; nothing may shrink them.
-   They are held at your hands like everyone else's, just bigger -- in normal
-   flow above the figure they pushed the whole column up until they were
-   sitting on the community cards, and your hand covering the board is the one
-   collision that makes a table unplayable. */
+/* Unlike opponent cards, local cards participate in layout. Their full height
+   is reserved above the status and nameplate instead of being absolutely
+   positioned through the avatar. */
 .seat-first-person .seat-cards {
-  top: calc(var(--fp-figure) * .78);
-  filter: drop-shadow(0 18px 26px rgba(0,0,0,.55));
+  position: relative;
+  top: auto;
+  left: auto;
+  z-index: 6;
+  display: flex;
+  align-items: flex-end;
+  transform: none;
+  filter: drop-shadow(0 14px 20px rgba(0, 0, 0, .5));
 }
 
-/* Your own hole cards are the most important thing on the screen and were the
-   smallest: 59px against the board's 88px, because they were sized as a
-   fraction of a figure that the vertical budget had already squeezed. They are
-   now bigger than a community card at every size.
-   
-   A card is 10/7 as tall as it is wide, so at .55 of the figure wide and
-   centred .78 down, the pair spans .39 to 1.17 of the figure -- below the eyes,
-   and running behind the nameplate, which starts at 1 and paints over them.
-   Held higher or wider than this they cover the face; smaller and they lose to
-   the board again. */
-.seat-first-person .playing-card { width: clamp(38px, calc(var(--fp-figure) * .55), 104px); }
-
-/* A shallow fan, so they read as held rather than laid flat on the felt.
-   Set on the card itself, since the shell rotation would compound with the
-   rotate already applied there and splay them too far. */
-.seat-first-person .dealt-card-shell:first-child .playing-card { transform: rotate(-7deg) translateY(2px); }
-.seat-first-person .dealt-card-shell:last-child .playing-card { transform: rotate(7deg) translateY(2px); }
-
-/* You are the nearest figure to the camera, so you are the largest -- but only
-   as large as the room between the community cards and the action bar allows.
-   A short viewport gives that room up first, and a figure sized purely off the
-   table's width put your own head through the board.
-
-   Named, because your cards and their size are both measured from it. When the
-   clamp bit and this stopped equalling seat-width * scale, anything still
-   assuming that formula drifted -- which is how the cards ended up over the
-   nameplate on a tablet. */
-.seat-first-person {
-  --fp-figure: clamp(
-    48px,
-    min(
-      /* Never smaller than this if there is room: derived purely from the ring
-         it is 93px on a phone, where the cards then cover your whole face. */
-      max(calc(var(--seat-width) * var(--portrait-scale, 1)), 120px),
-      /* less the nameplate, the hand label and the gaps below them */
-      calc(var(--board-to-bar, 298px) - 106px)
-    ),
-    260px
-  );
+.seat-first-person .playing-card {
+  width: clamp(48px, calc(var(--seat-width) * .5), 78px);
 }
 
-/* No overlap between figure and plate here, unlike the ring. The ring's -13%
-   resolves against the seat's width, and this seat is stretched wide by its
-   nameplate's min-width -- so the same rule pulled the plate 29px up into the
-   cards instead of 12px into the figure, and buried your own name. Stacked
-   strictly, the arithmetic below is exact: cards centred at .6 of the figure
-   and .45 of it wide end at .92, and the plate starts at 1. */
-.seat-first-person .seat-figure {
-  width: var(--fp-figure);
+.seat-first-person .dealt-card-shell:first-child .playing-card {
+  transform: rotate(-6deg) translateY(2px);
 }
 
-.seat-first-person .seat-plate { margin-top: 0; }
+.seat-first-person .dealt-card-shell:last-child .playing-card {
+  transform: rotate(6deg) translateY(2px);
+}
 
-/* Your own name and stack carry the extra size the figure sets up; at ring
-   scale they look stranded beneath it. */
+.local-status-area {
+  min-height: 18px;
+  display: grid;
+  place-items: center;
+}
+
+.seat-first-person .hand-strength {
+  z-index: 7;
+  margin: 0;
+}
+
 .seat-first-person .seat-plate {
-  min-width: 168px;
+  z-index: 7;
+  width: min(190px, 100%);
+  min-width: 150px;
+  margin: 0;
   padding: 5px 14px 6px;
+  scale: 1;
 }
-.seat-first-person .seat-name-row strong { font-size: 14px; }
-.seat-first-person .seat-stack { font-size: 13px; }
-.seat-first-person .seat-stack strong { font-size: 15px; }
 
-.seat-first-person .hand-strength { margin-top: 5px; }
-/* Everyone else's bet slides toward the pot; yours cannot. Your hand is held
-   at the near edge with its top all but touching the community cards, so the
-   space between you and the pot -- where the chip belongs by convention -- is
-   the board itself, and a bet placed there covers the one thing that must stay
-   readable. It goes beside the hand instead, level with the cards. */
+.seat-first-person .seat-name-row strong { font-size: 13px; }
+.seat-first-person .seat-stack { font-size: 12px; }
+.seat-first-person .seat-stack strong { font-size: 14px; }
+
 .seat-first-person .table-bet {
   left: auto;
-  right: -14px;
-  top: 64px;
+  right: 20px;
+  top: 36px;
   transform: none;
 }
-.seat-first-person .seat-turn-status { left: 50%; right: auto; top: auto; bottom: -34px; transform: translateX(-50%); }
 
-/* Active and folded states still apply, minus the box chrome that no longer
-   exists here -- and minus the lean. Everyone else leans in and grows a little
-   on their turn; you are already the foreground, and growing 5% put your head
-   through the community cards. The glow under the figure says it instead. */
+.seat-first-person > .action-pill { display: none; }
+.seat-first-person > .status-pill { bottom: -24px; }
+
 .seat-first-person.seat-current { translate: 0; }
-.seat-first-person.seat-current .seat-figure { scale: var(--seat-depth); }
+.seat-first-person.seat-current .seat-figure { scale: 1; translate: 0; }
 .seat-first-person.seat-muted { translate: 0 2px; }
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .seat-first-person {
+    --local-avatar-size: 54px;
+    width: min(250px, calc(100vw - 16px));
+  }
+
+  .local-seat-layout {
+    grid-template-columns: var(--local-avatar-size) minmax(128px, 1fr);
+    gap: 6px;
+  }
+
+  .seat-first-person .playing-card { width: 44px; }
+  .seat-first-person .seat-plate { min-width: 128px; padding: 4px 9px 5px; }
+  .seat-first-person .seat-name-row strong { font-size: 11px; }
+  .seat-first-person .seat-stack strong { font-size: 12px; }
+}

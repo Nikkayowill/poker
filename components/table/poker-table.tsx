@@ -7,7 +7,6 @@ import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   atmosphere,
-  FIRST_PERSON_SCALE,
   radiiForWidth,
   seatGeometry,
   seatZ,
@@ -112,9 +111,6 @@ export function PokerTable({
   // nameplate under the buttons on a tablet (53px). Measured, it is right
   // everywhere and needs no breakpoint.
   const [foregroundDrop, setForegroundDrop] = useState(44);
-  // The room left for the foreground figure: from the bottom of the community
-  // cards to the top of the action bar. Your own head must not cover the board.
-  const [boardToBar, setBoardToBar] = useState(298);
   const actionLayerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const wrap = tableWrapRef.current;
@@ -125,8 +121,6 @@ export function PokerTable({
       setTableSize({ width: rect.width, height: rect.height });
       const barTop = bar.getBoundingClientRect().top;
       setForegroundDrop(Math.max(0, Math.round(barTop - rect.bottom - 6)));
-      const board = wrap.querySelector(".community-cards");
-      if (board) setBoardToBar(Math.max(0, Math.round(barTop - board.getBoundingClientRect().bottom)));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -236,7 +230,7 @@ export function PokerTable({
   // ring. Deliberately not --seat-depth, which scales the whole seat box --
   // your cards are already sized by hand and must not move.
   const firstPersonStyle = useMemo(
-    () => ({ "--portrait-scale": FIRST_PERSON_SCALE, "--seat-z": 150 }) as React.CSSProperties,
+    () => ({ "--seat-z": 5 }) as React.CSSProperties,
     [],
   );
 
@@ -431,7 +425,6 @@ export function PokerTable({
             style={{
               "--seat-width": `${seatWidthFor(tableSize)}px`,
               "--foreground-drop": `${foregroundDrop}px`,
-              "--board-to-bar": `${boardToBar}px`,
             } as React.CSSProperties}
           >
             <div className="poker-rail">
@@ -520,7 +513,6 @@ export function PokerTable({
                 placement={seat.isMine ? "seat-first-person" : "seat-ring"}
                 seatStyle={seat.isMine ? firstPersonStyle : ringGeometry[index]}
                 handNumber={game.handNumber}
-                secondsRemaining={seat.isCurrent ? secondsRemaining : 0}
                 winAmount={showFunnel ? game.winners.find((winner) => winner.seatId === seat.id)?.amount : undefined}
                 elementRef={(el) => { seatRefs.current[seat.id] = el; }}
               />

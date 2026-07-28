@@ -62,11 +62,57 @@ export function SeatFigure({ seat, active }: { seat: PublicSeat; active: boolean
   );
 }
 
+function SeatCards({
+  seat,
+  handNumber,
+  folded,
+  isWinner,
+}: {
+  seat: PublicSeat;
+  handNumber: number;
+  folded: boolean;
+  isWinner: boolean;
+}) {
+  return (
+    <div className={clsx("seat-cards", seat.isMine && "own-cards", isWinner && "winning-cards")}>
+      {!folded && seat.holeCards.map((card, index) => (
+        <span
+          className="dealt-card-shell"
+          key={`${handNumber}-${index}`}
+          style={{ animationDelay: `${160 + seat.position * 115 + index * 460}ms` }}
+        >
+          <PlayingCard card={card} small={!seat.isMine} large={seat.isMine} />
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function SeatNameplate({ seat, isWinner }: { seat: PublicSeat; isWinner: boolean }) {
+  return (
+    <div className="seat-plate">
+      <div className="seat-name-row">
+        <strong>{seat.name}</strong>
+        {!seat.isHuman && <span className="ai-badge">AI</span>}
+        {seat.isMine && <span className="you-chip">You</span>}
+        {seat.isSmallBlind && <span className="blind-label">SB</span>}
+        {seat.isBigBlind && <span className="blind-label">BB</span>}
+      </div>
+      <span
+        className={clsx("seat-stack", isWinner && "seat-stack-win")}
+        aria-label={`${seat.stack.toLocaleString()} chips`}
+      >
+        <span className="chip-dot" />
+        <strong>{seat.stack.toLocaleString()}</strong>
+      </span>
+    </div>
+  );
+}
+
 export const PlayerSeat = memo(function PlayerSeat({
   seat,
   placement,
   handNumber,
-  secondsRemaining,
   winAmount,
   elementRef,
   seatStyle,
@@ -74,7 +120,6 @@ export const PlayerSeat = memo(function PlayerSeat({
   seat: PublicSeat;
   placement: string;
   handNumber: number;
-  secondsRemaining: number;
   winAmount?: number;
   elementRef?: (el: HTMLElement | null) => void;
   /** Computed ellipse position, perspective scale and stacking order. */
@@ -84,6 +129,27 @@ export const PlayerSeat = memo(function PlayerSeat({
   const isWinner = winAmount !== undefined;
   const seatNear = Number((seatStyle as Record<string, string | number> | undefined)?.["--seat-near"] ?? 1);
   const isFarSeat = placement === "seat-ring" && Number.isFinite(seatNear) && seatNear < 0.38;
+  const cards = (
+    <SeatCards
+      seat={seat}
+      handNumber={handNumber}
+      folded={folded}
+      isWinner={isWinner}
+    />
+  );
+  const figure = <SeatFigure seat={seat} active={seat.isCurrent} />;
+  const nameplate = <SeatNameplate seat={seat} isWinner={isWinner} />;
+  const handStrength = seat.isMine && seat.handLabel
+    ? <span className="hand-strength" aria-live="polite">{seat.handLabel}</span>
+    : null;
+  const status = folded
+    ? { label: "Folded", className: "status-pill" }
+    : seat.status === "all-in"
+      ? { label: "All in", className: "status-pill all-in" }
+      : seat.lastAction
+        ? { label: seat.lastAction, className: "action-pill" }
+        : null;
+
   return (
     <article
       ref={elementRef}
@@ -104,66 +170,33 @@ export const PlayerSeat = memo(function PlayerSeat({
           <span aria-hidden="true">♛</span> Winner
         </span>
       )}
-      <div className={clsx("seat-cards", seat.isMine && "own-cards", isWinner && "winning-cards")}>
-        {/* Once folded, this seat's cards live only in the transient
-            MuckDrift overlay (see PokerTable) -- not here -- so they read as
-            having actually left the table instead of sitting dimmed at the
-            seat for the rest of the hand. */}
-        {!folded && seat.holeCards.map((card, index) => (
-          <span
-            className="dealt-card-shell"
-            key={`${handNumber}-${index}`}
-            style={{ animationDelay: `${160 + seat.position * 115 + index * 460}ms` }}
-          >
-            <PlayingCard card={card} small={!seat.isMine} large={seat.isMine} />
-          </span>
-        ))}
-      </div>
-      <SeatFigure seat={seat} active={seat.isCurrent} />
-      {/* Name over stack on one flat plate, tucked under the figure's hands --
-          the nameplate every poker client uses, because it is read at a glance
-          and nothing about it should compete with the felt. */}
-      <div className="seat-plate">
-        <div className="seat-name-row">
-          <strong>{seat.name}</strong>
-          {!seat.isHuman && <span className="ai-badge">AI</span>}
-          {seat.isMine && <span className="you-chip">You</span>}
-          {seat.isSmallBlind && <span className="blind-label">SB</span>}
-          {seat.isBigBlind && <span className="blind-label">BB</span>}
-        </div>
-        <span
-          className={clsx("seat-stack", isWinner && "seat-stack-win")}
-          aria-label={`${seat.stack.toLocaleString()} chips`}
-        >
-          <span className="chip-dot" />
-          <strong>{seat.stack.toLocaleString()}</strong>
-        </span>
-      </div>
-      {/* Below the plate, not inside it: what you are holding is a different
-          kind of fact from who you are and what you have left. */}
-      {seat.isMine && seat.handLabel && (
-        <span className="hand-strength" aria-live="polite">
-          {seat.handLabel}
-        </span>
-      )}
-      {seat.lastAction && <span className="action-pill">{seat.lastAction}</span>}
-      {seat.status === "folded" && <span className="status-pill">Folded</span>}
-      {seat.status === "all-in" && <span className="status-pill all-in">All in</span>}
+      {seat.isMine
+        ? (
+          <div className="local-seat-layout">
+            <div className="local-avatar-slot">{figure}</div>
+            <div className="local-hand-column">
+              {cards}
+              <div className="local-status-area">{handStrength}</div>
+              {nameplate}
+            </div>
+          </div>
+        )
+        : (
+          <>
+            {figure}
+            {cards}
+            {nameplate}
+          </>
+        )}
+      {status && <span className={status.className}>{status.label}</span>}
       {seat.streetBet > 0 && <span className="table-bet">{seat.streetBet}</span>}
       {isWinner && <span className="win-amount-float">+{winAmount.toLocaleString()}</span>}
-      {seat.isCurrent && (
-        <div className="seat-turn-status" aria-live="polite">
-          <span>{seat.isMine ? "YOUR TURN" : seat.isHuman ? "THINKING" : "AI THINKING"}</span>
-          <strong>{secondsRemaining}s</strong>
-        </div>
-      )}
     </article>
   );
 }, (previous, next) => (
   previous.seat === next.seat
   && previous.placement === next.placement
   && previous.handNumber === next.handNumber
-  && previous.secondsRemaining === next.secondsRemaining
   && previous.winAmount === next.winAmount
   && previous.seatStyle === next.seatStyle
 ));

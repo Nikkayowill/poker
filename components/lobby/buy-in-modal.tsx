@@ -120,9 +120,12 @@ export function BuyInModal({
 
           <footer className="buyin-footer">
             {lockedTier && onBuyGold && !unlimitedGold && (
-              <button className="secondary-action" type="button" disabled={pending} onClick={onBuyGold}>
-                Buy Gold for rebuy
-              </button>
+              <div className="buyin-purchase">
+                <button className="secondary-action" type="button" disabled={pending} onClick={onBuyGold}>
+                  Buy 5,000 Gold for rebuy
+                </button>
+                <small>Gold has no cash value and cannot be redeemed or withdrawn.</small>
+              </div>
             )}
             <button
               className="primary-action"

@@ -22,6 +22,14 @@
   .lobby-actions { grid-template-columns: 1fr; }
   .join-form { margin-left: auto; margin-right: auto; }
   .lobby-preview { display: none; }
+  .account-entry-page {
+    width: calc(100% - 30px);
+    min-height: calc(100vh - 68px);
+    min-height: calc(100svh - 68px);
+    padding: 24px 0 42px;
+  }
+  .account-entry-card { padding: 29px 24px; border-radius: 17px; text-align: left; }
+  .account-entry-card h1 { font-size: 38px; }
   .game-header {
     height: 56px;
     padding: 0 12px;
@@ -55,13 +63,7 @@
   .seat-plate { padding: 3px 5px 4px; }
   .seat-stack { font-size: 9px; }
   .seat-stack strong { font-size: 10px; }
-  /* Thrown outward from the seat, these leave the screen entirely at the far
-     left and right of a narrow ring. The status line under the table already
-     names whose turn it is, so the badge is the one to give up. */
-  .seat-turn-status { display: none; }
   .table-bet { --bet-reach: 52px; }
-  .seat-turn-status span { font-size: 5px; }
-  .seat-turn-status strong { font-size: 12px; }
       .action-layer { padding: 0 4px calc(6px + env(safe-area-inset-bottom)); padding-left: max(4px, env(safe-area-inset-left)); padding-right: max(4px, env(safe-area-inset-right)); }
   .action-bar { margin-top: 6px; padding: 8px; gap: 8px; }
   .turn-tools { width: 100%; min-height: 54px; }
@@ -153,12 +155,6 @@
   }
   .poker-table-wrap { --table-aspect: 3; --table-reserve: 120px; }
   .card-large { width: clamp(32px, 7.5vw, 42px); }
-  /* No room for a per-seat timer here; the status line under the table says
-     whose turn it is. (This rule lost its selector to a careless regex when
-     the central turn callout was removed -- it read ".seat-turn-status,
-     .action-layer { padding-bottom: ... }", so the timer came back and the
-     action layer kept the padding.) */
-  .seat-turn-status { display: none; }
   .action-layer { padding-bottom: env(safe-area-inset-bottom); }
   .action-bar {
     min-height: 50px;

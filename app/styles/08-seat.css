@@ -25,15 +25,15 @@
    whole table: figures interleave by depth, and every plate sits above every
    figure. A name and a stack are information; a shoulder is atmosphere. */
 .seat-figure {
-  z-index: var(--seat-z, 60);
+  z-index: var(--seat-z, 4);
   scale: var(--seat-depth);
   filter: var(--seat-haze, none);
   transition: filter .25s, scale .25s, translate .25s cubic-bezier(.2,.8,.3,1), opacity .2s;
 }
 
-.seat-cards { z-index: calc(var(--seat-z, 60) + 1); }
+.seat-cards { z-index: calc(var(--seat-z, 4) + 1); }
 
-.seat-plate { z-index: calc(var(--seat-z, 60) + 200); }
+.seat-plate { z-index: calc(var(--seat-z, 4) + 2); }
 
 /* The figure. Contained rather than cropped, anchored to its own base, so the
    artwork's own rail line lands at the bottom of the box whatever the source
@@ -131,7 +131,7 @@
   mask-image: linear-gradient(to bottom, #000 0 68%, transparent 98%);
   -webkit-mask-image: linear-gradient(to bottom, #000 0 68%, transparent 98%);
 }
-.seat-far .seat-plate { margin-top: -25%; }
+.seat-far .seat-plate { margin-top: -18%; }
 
 /* The nameplate: flat, solid, one weight of type. It overlaps the base of the
    figure so the two read as one object rather than a label parked underneath. */
@@ -210,7 +210,7 @@
 }
 .seat-muted .seat-plate { opacity: .62; }
 
-.seat-winner .seat-figure { z-index: calc(var(--seat-z, 60) + 5); }
+.seat-winner .seat-figure { z-index: calc(var(--seat-z, 4) + 1); }
 
 .winner-badge {
   position: absolute;
@@ -405,7 +405,7 @@
 .seat-cards {
   position: absolute;
   left: 50%;
-  top: calc(var(--seat-width) * .8);
+  top: calc(var(--seat-width) * .94);
   display: flex;
   transform: translate(-50%, -50%);
 }
@@ -437,35 +437,6 @@
   72% { opacity: 1; }
   100% { opacity: 1; transform: translate(0, 0) scale(1) rotate(0); filter: blur(0); }
 }
-
-/* The turn timer takes the same vector the other way -- negated, so it is
-   pushed away from the felt and never comes to rest over the community cards.
-   Horizontal only: seats are wider than they are tall, so throwing it
-   sideways clears the seat box while throwing it vertically would not. */
-.seat-turn-status {
-  --status-gap: 10px;
-  position: absolute;
-  top: 50%;
-  left: calc(50% - var(--seat-dx, -1) * 50%);
-  min-width: 57px;
-  transform: translate(-50%, -50%) translateX(calc(var(--seat-dx, -1) * -1 * var(--status-gap)));
-  padding: 6px 7px;
-  color: #eef5ef;
-  border: 1px solid color-mix(in srgb, var(--seat-accent), transparent 45%);
-  border-radius: 7px;
-  background: rgba(9,17,13,.94);
-  text-align: center;
-  box-shadow: 0 8px 20px rgba(0,0,0,.34);
-}
-
-.seat-turn-status span {
-  display: block;
-  color: var(--seat-accent);
-  font-size: 6px;
-  font-weight: 850;
-  letter-spacing: .1em;
-}
-.seat-turn-status strong { display: block; margin-top: 2px; font: 600 15px Georgia, serif; }
 
 .action-pill, .status-pill {
   position: absolute;

@@ -2,7 +2,6 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { avatarPresets, profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile, ProfileUpdate } from "@/lib/profile/types";
-import { defaultAvatar, normalizeAvatar } from "@/lib/avatar/catalog";
 import { defaultEquipped, normalizeEquipped, type EquippedCosmetics } from "@/lib/cosmetics/catalog";
 import { adminClient } from "./game-store";
 
@@ -66,7 +65,6 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     initials: profile.initials,
     avatarUrl: profile.avatarUrl,
     avatarPreset: profile.avatarPreset,
-    avatar: profile.avatar,
     equipped: profile.equipped,
     accent: profile.accent,
     createdAt: profile.createdAt,
@@ -87,7 +85,6 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     avatarUrl: null,
     avatarPath: null,
     avatarPreset: "ace",
-    avatar: defaultAvatar,
     equipped: defaultEquipped,
     accent: "#e7c66a",
     createdAt: now,
@@ -110,7 +107,6 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     avatarUrl: row.avatar_url ? String(row.avatar_url) : null,
     avatarPath: row.avatar_path ? String(row.avatar_path) : null,
     avatarPreset: String(row.avatar_preset) as AvatarPreset,
-    avatar: normalizeAvatar(row.avatar_config),
     equipped: normalizeEquipped(row.equipped),
     accent: String(row.accent),
     createdAt: String(row.created_at),
@@ -199,7 +195,6 @@ export async function updateProfile(token: string, update: ProfileUpdate): Promi
       displayName,
       initials: initials(displayName),
       avatarPreset: update.avatarPreset,
-      avatar: update.avatar,
       accent: update.accent,
       avatarUrl: update.clearUpload ? null : current.avatarUrl,
       avatarPath: update.clearUpload ? null : current.avatarPath,
@@ -223,7 +218,6 @@ export async function updateProfile(token: string, update: ProfileUpdate): Promi
       display_name: displayName,
       initials: initials(displayName),
       avatar_preset: update.avatarPreset,
-      avatar_config: update.avatar,
       accent: update.accent,
       ...(update.clearUpload ? { avatar_url: null, avatar_path: null } : {}),
       updated_at: now,

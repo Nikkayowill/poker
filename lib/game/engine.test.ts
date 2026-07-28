@@ -16,17 +16,17 @@ import { compareScores, describeHand, evaluateHand } from "./evaluator";
 import { TIER_CONFIG } from "./tiers";
 import type { Card, GameState, PlayerAction } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { defaultAvatar } from "@/lib/avatar/catalog";
+import { defaultEquipped } from "@/lib/cosmetics/catalog";
 
 const testProfile = (
   name: string,
-): Pick<PlayerProfile, "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "avatar"> => ({
+): Pick<PlayerProfile, "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped"> => ({
   displayName: name,
   initials: name.slice(0, 2).toUpperCase(),
   accent: "#79c9ff",
   avatarUrl: null,
   avatarPreset: "ace",
-  avatar: defaultAvatar,
+  equipped: defaultEquipped,
 });
 
 const cards = (values: string): Card[] =>
@@ -740,28 +740,26 @@ describe("legacy state normalization", () => {
   it("backfills seat avatars on tables dealt before avatars existed", () => {
     const token = crypto.randomUUID();
     const game = createGame(token, "Host");
-    // Exactly what a table persisted before Phase 2 looks like coming back
+    // Exactly what a table persisted before avatars looks like coming back
     // out of storage: every other field intact, no avatar on any seat.
     game.seats.forEach((seat) => {
-      delete (seat as Partial<typeof seat>).avatar;
+      delete (seat as Partial<typeof seat>).avatarCosmetic;
     });
 
     const normalized = normalizeGameState(game);
     normalized.seats.forEach((seat) => {
-      expect(seat.avatar).toBeDefined();
-      expect(seat.avatar.skinTone).toBeTruthy();
+      expect(seat.avatarCosmetic).toBeTruthy();
     });
     // Bots keep their own faces rather than all collapsing to one default,
     // which is most of what makes a table look occupied.
-    const botFaces = new Set(normalized.seats.slice(1).map((seat) => JSON.stringify(seat.avatar)));
+    const botFaces = new Set(normalized.seats.slice(1).map((seat) => seat.avatarCosmetic));
     expect(botFaces.size).toBe(5);
   });
 
   it("leaves an avatar that is already present untouched", () => {
     const game = createGame(crypto.randomUUID(), "Host");
-    const chosen = { ...defaultAvatar, hairStyle: "curls" as const, face: "sharp" as const };
-    game.seats[0].avatar = chosen;
-    expect(normalizeGameState(game).seats[0].avatar).toEqual(chosen);
+    game.seats[0].avatarCosmetic = "avatar-nightowl";
+    expect(normalizeGameState(game).seats[0].avatarCosmetic).toBe("avatar-nightowl");
   });
 });
 

@@ -1,4 +1,3 @@
-import type { AvatarConfig } from "@/lib/avatar/catalog";
 import type { EquippedCosmetics } from "@/lib/cosmetics/catalog";
 
 export const avatarPresets = [
@@ -28,8 +27,6 @@ export interface PlayerProfile {
   initials: string;
   avatarUrl: string | null;
   avatarPreset: AvatarPreset;
-  /** The layered avatar's chosen options; falls back to defaults when never customized. */
-  avatar: AvatarConfig;
   /** Equipped cosmetic per slot; falls back to the room defaults. */
   equipped: EquippedCosmetics;
   accent: string;
@@ -52,7 +49,6 @@ export interface PlayerProfile {
 export interface ProfileUpdate {
   displayName: string;
   avatarPreset: AvatarPreset;
-  avatar: AvatarConfig;
   accent: string;
   clearUpload?: boolean;
 }

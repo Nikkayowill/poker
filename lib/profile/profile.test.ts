@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { createGame, toSnapshot } from "../game/engine";
 import { detectImage } from "./image";
 import type { PlayerProfile } from "./types";
-import { defaultAvatar } from "@/lib/avatar/catalog";
 import { defaultEquipped } from "@/lib/cosmetics/catalog";
 
 describe("profile appearance", () => {
@@ -14,7 +13,6 @@ describe("profile appearance", () => {
       initials: "CS",
       avatarUrl: "https://example.test/avatar.png",
       avatarPreset: "crown",
-      avatar: defaultAvatar,
       equipped: defaultEquipped,
       accent: "#c08dff",
       createdAt: new Date().toISOString(),

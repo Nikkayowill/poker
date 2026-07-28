@@ -1,4 +1,3 @@
-import type { AvatarConfig } from "@/lib/avatar/catalog";
 import type { StakesTier } from "./tiers";
 
 export type Suit = "clubs" | "diamonds" | "hearts" | "spades";
@@ -23,8 +22,8 @@ export interface Seat {
   accent: string;
   avatarUrl: string | null;
   avatarPreset: string;
-  /** Layered avatar selection, so opponents render as characters rather than initials. */
-  avatar: AvatarConfig;
+  /** Equipped avatar cosmetic id, so opponents render the character they bought. */
+  avatarCosmetic: string;
   position: number;
   isHuman: boolean;
   /** The session token of the human seated here; null for an open/bot seat. Never sent to clients. */

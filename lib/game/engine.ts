@@ -14,7 +14,7 @@ import type {
   Winner,
 } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { defaultAvatar, type AvatarConfig } from "@/lib/avatar/catalog";
+import { DEFAULT_AVATAR_COSMETIC } from "@/lib/cosmetics/catalog";
 import { clampBuyIn, isStakesTier, TIER_CONFIG, type StakesTier } from "./tiers";
 
 const suits: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
@@ -35,15 +35,15 @@ const botProfiles: Array<{
   accent: string;
   avatarUrl: null;
   avatarPreset: string;
-  avatar: AvatarConfig;
+  avatarCosmetic: string;
   personality: BotPersonality;
 }> = [
-  { avatar: { skinTone: "sand", hairStyle: "crop", hairColor: "coffee", face: "stoic", facialHair: "stubble", outfit: "shirt" }, name: "Jax", initials: "JX", accent: "#8fd6a8", avatarUrl: null, avatarPreset: "lucky", personality: "ROCK" },
-  { avatar: { skinTone: "porcelain", hairStyle: "long", hairColor: "jet", face: "sharp", facialHair: "clean", outfit: "jacket" }, name: "Maya", initials: "MA", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond", personality: "MANIAC" },
-  { avatar: { skinTone: "amber", hairStyle: "curls", hairColor: "chestnut", face: "bright", facialHair: "goatee", outfit: "tee" }, name: "Theo", initials: "TH", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt", personality: "CALLING_STATION" },
-  { avatar: { skinTone: "espresso", hairStyle: "tied", hairColor: "jet", face: "calm", facialHair: "clean", outfit: "roll" }, name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
-  { avatar: { skinTone: "sienna", hairStyle: "sweep", hairColor: "coffee", face: "wry", facialHair: "clean", outfit: "waistcoat" }, name: "Priya", initials: "PR", accent: "#65d6a2", avatarUrl: null, avatarPreset: "ace", personality: "MANIAC" },
-  { avatar: { skinTone: "umber", hairStyle: "shaved", hairColor: "ash", face: "weary", facialHair: "full", outfit: "jacket" }, name: "Wren", initials: "WR", accent: "#f08ca7", avatarUrl: null, avatarPreset: "crown", personality: "CALLING_STATION" },
+  { avatarCosmetic: "avatar-regular", name: "Jax", initials: "JX", accent: "#8fd6a8", avatarUrl: null, avatarPreset: "lucky", personality: "ROCK" },
+  { avatarCosmetic: "avatar-shark", name: "Maya", initials: "MA", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond", personality: "MANIAC" },
+  { avatarCosmetic: "avatar-veteran", name: "Theo", initials: "TH", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt", personality: "CALLING_STATION" },
+  { avatarCosmetic: "avatar-closer", name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
+  { avatarCosmetic: "avatar-nightowl", name: "Priya", initials: "PR", accent: "#65d6a2", avatarUrl: null, avatarPreset: "ace", personality: "MANIAC" },
+  { avatarCosmetic: "avatar-housename", name: "Wren", initials: "WR", accent: "#f08ca7", avatarUrl: null, avatarPreset: "crown", personality: "CALLING_STATION" },
 ];
 
 // Humans get a short decision clock plus three optional time-bank cards.
@@ -124,7 +124,7 @@ function restoreBotControl(seat: Seat) {
   seat.accent = fallback.accent;
   seat.avatarUrl = fallback.avatarUrl;
   seat.avatarPreset = fallback.avatarPreset;
-  seat.avatar = fallback.avatar;
+  seat.avatarCosmetic = fallback.avatarCosmetic;
   seat.timeCardsRemaining = 0;
 }
 
@@ -232,7 +232,7 @@ function setupHand(state: GameState, firstHand = false) {
 export function createGame(
   hostToken: string,
   playerName = "You",
-  appearance?: Pick<PlayerProfile, "initials" | "accent" | "avatarUrl" | "avatarPreset" | "avatar">,
+  appearance?: Pick<PlayerProfile, "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped">,
   options?: { isPrivate?: boolean; tier?: StakesTier; buyIn?: number },
 ): GameState {
   const now = new Date().toISOString();
@@ -252,7 +252,7 @@ export function createGame(
       accent: appearance?.accent ?? "#e7c66a",
       avatarUrl: appearance?.avatarUrl ?? null,
       avatarPreset: appearance?.avatarPreset ?? "ace",
-      avatar: appearance?.avatar ?? defaultAvatar,
+      avatarCosmetic: appearance?.equipped?.avatar ?? DEFAULT_AVATAR_COSMETIC,
       position: 0,
       isHuman: true,
       ownerToken: hostToken,
@@ -326,7 +326,7 @@ export function createGame(
 export function claimSeat(
   state: GameState,
   token: string,
-  profile: Pick<PlayerProfile, "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "avatar" | "avatar">,
+  profile: Pick<PlayerProfile, "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped">,
   buyIn?: number,
 ): { state: GameState; seatIndex: number } {
   const existing = state.seats.findIndex((seat) => seat.ownerToken === token);
@@ -344,7 +344,7 @@ export function claimSeat(
   seat.accent = profile.accent;
   seat.avatarUrl = profile.avatarUrl;
   seat.avatarPreset = profile.avatarPreset;
-  seat.avatar = profile.avatar;
+  seat.avatarCosmetic = profile.equipped.avatar;
   seat.timeCardsRemaining = STARTING_TIME_CARDS;
   // A claimed seat always starts at the buy-in the player actually paid for.
   // Inheriting whatever chips the outgoing bot happened to be sitting on
@@ -740,9 +740,9 @@ export function normalizeGameState(state: GameState): GameState {
     // Bots recover their own face by position rather than every seat
     // collapsing to one default, which is most of what makes a table look
     // occupied.
-    if (!seat.avatar) {
+    if (!seat.avatarCosmetic) {
       const fallback = botProfiles[seat.position] ?? botProfiles[0];
-      seat.avatar = seat.isHuman ? defaultAvatar : fallback.avatar;
+      seat.avatarCosmetic = seat.isHuman ? DEFAULT_AVATAR_COSMETIC : fallback.avatarCosmetic;
     }
   });
   if (state.currentPlayer === null || state.status !== "playing") {

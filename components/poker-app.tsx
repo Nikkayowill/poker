@@ -1,10 +1,12 @@
 "use client";
 
-import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import type { StakesTier } from "@/lib/game/tiers";
 import { authClient } from "@/lib/auth/client";
+import { browserSupabase } from "@/lib/supabase/browser-client";
+import { planTurnClock, type TurnClockInput } from "@/lib/game/turn-clock";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
 import { Lobby } from "@/components/lobby/lobby";
@@ -17,8 +19,6 @@ import { PokerTable, type ConnectionState } from "@/components/table/poker-table
 
 const SOUND_STORAGE_KEY = "river-room:sound-enabled";
 
-const MAX_ADVANCE_RETRIES = 3;
-const ADVANCE_RETRY_BASE_MS = 300;
 
 export function PokerApp() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
@@ -228,10 +228,10 @@ export function PokerApp() {
   }, []);
 
   useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!gameId || !url || !key) return;
-    const supabase = createClient(url, key);
+    // The shared client, never a fresh one: a second createClient here means
+    // a second GoTrueClient racing the first to refresh the same session.
+    const supabase = browserSupabase();
+    if (!gameId || !supabase) return;
     let disposed = false;
     let refreshRunning = false;
     let pendingVersion = gameVersionRef.current;
@@ -287,76 +287,74 @@ export function PokerApp() {
     };
   }, [gameId, refresh]);
 
-  // Supabase Realtime delivers actions immediately, so persistent tables only
-  // need one deadline-aligned advance request for the current bot/human timer.
-  // In-memory development has no Realtime channel and keeps a modest fallback
-  // poll so multiple local browsers still stay synchronized.
+  // ---- The table clock -------------------------------------------------
+  //
+  // One request, at one deadline, from one browser. What this replaces:
+  //
+  //  - memory mode ran setInterval(advance, 1500) unconditionally. Measured
+  //    idle at a table: 18 POST /advance in 30s with nobody doing anything.
+  //  - the persistent path scheduled its timeout with Math.max(200, ...) and
+  //    listed `game.seats` in its dependencies. `seats` is a fresh array on
+  //    every snapshot, so every refresh rebuilt the timer, and an already-
+  //    overdue deadline floored the delay to 200ms -- each advance changed
+  //    `version`, which re-ran the effect, which scheduled another 200ms.
+  //
+  // The primitives below are all that decision needs, so the effect re-runs
+  // only when one of them genuinely changes.
+  const currentSeat = game?.seats.find((seat) => seat.isCurrent) ?? null;
+  const humanSeats = (game?.seats ?? [])
+    .filter((seat) => seat.isHuman)
+    .sort((a, b) => a.position - b.position);
+  const clockInput: TurnClockInput = {
+    isSeated: Boolean(game?.isSeated),
+    turnDeadlineAt: game?.turnDeadlineAt ?? null,
+    currentIsHuman: Boolean(currentSeat?.isHuman),
+    currentIsMine: Boolean(currentSeat?.isMine),
+    myHumanRank: humanSeats.findIndex((seat) => seat.isMine),
+  };
+  const { isSeated, turnDeadlineAt, currentIsHuman, currentIsMine, myHumanRank } = clockInput;
+
   useEffect(() => {
-    if (!gameId || !game?.isSeated) return;
-    // Every seated browser used to schedule the same deadline advance. That
-    // is safe at the database layer, but it creates N competing RPCs and
-    // serialization work for every bot turn. Elect one browser per table:
-    // the player whose turn it is when the actor is human, otherwise the
-    // lowest-position human. Realtime state changes naturally re-elect the
-    // next browser when that seat leaves.
-    const currentSeat = game.seats.find((seat) => seat.isCurrent);
-    const humanSeats = game.seats
-      .filter((seat) => seat.isHuman)
-      .sort((a, b) => a.position - b.position);
-    const timerLeader = currentSeat?.isHuman ? currentSeat : humanSeats[0];
-    if (!timerLeader?.isMine) return;
+    if (!gameId) return;
+    const plan = planTurnClock(
+      { isSeated, turnDeadlineAt, currentIsHuman, currentIsMine, myHumanRank },
+      Date.now(),
+    );
+    if (plan.kind === "idle") return;
 
-    const advanceClock = () => {
-      if (!window.navigator.onLine) {
-        setConnectionState("offline");
-        return;
-      }
-      void advanceTable(gameId).catch(() => setConnectionState("reconnecting"));
-    };
-
-    if (persistence === "memory") {
-      const interval = window.setInterval(advanceClock, 1500);
-      return () => window.clearInterval(interval);
-    }
-
-    // Realtime refreshes are strictly read-only. Only a seated player may ask
-    // the dedicated endpoint to resolve an expired server-authored deadline.
-    const deadline = Date.parse(game?.turnDeadlineAt ?? "");
-    if (!Number.isFinite(deadline)) return;
     let disposed = false;
-    let timeout: number;
-    let retryAttempt = 0;
-    const runAdvance = () => {
+    const timeout = window.setTimeout(() => {
+      if (disposed) return;
       if (!window.navigator.onLine) {
         setConnectionState("offline");
         return;
       }
-      void advanceTable(gameId)
-        .then((data) => {
-          if (
-            !disposed
-            && data.game.version === game.version
-            && typeof data.retryAfterMs === "number"
-            && data.retryAfterMs > 0
-          ) {
-            timeout = window.setTimeout(runAdvance, Math.max(200, data.retryAfterMs + 120));
-          }
-        })
-        .catch(() => {
-          if (disposed) return;
-          setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
-          if (!window.navigator.onLine || retryAttempt >= MAX_ADVANCE_RETRIES) return;
-          const retryDelay = ADVANCE_RETRY_BASE_MS * (2 ** retryAttempt);
-          retryAttempt += 1;
-          timeout = window.setTimeout(runAdvance, retryDelay);
-        });
-    };
-    timeout = window.setTimeout(runAdvance, Math.max(200, deadline - Date.now() + 120));
+      // Deliberately no retry timer. The response updates `version`, which
+      // re-runs this effect with the server's next deadline; a failure is
+      // picked up by the next snapshot. Retrying on a timer here is what made
+      // a stalled table generate traffic forever.
+      void advanceTable(gameId).catch(() => {
+        if (!disposed) setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
+      });
+    }, plan.delayMs);
+
     return () => {
       disposed = true;
       window.clearTimeout(timeout);
     };
-  }, [advanceTable, game?.isSeated, game?.seats, game?.turnDeadlineAt, game?.version, gameId, persistence]);
+  }, [advanceTable, gameId, isSeated, turnDeadlineAt, currentIsHuman, currentIsMine, myHumanRank]);
+
+  // Memory-mode development has no Realtime channel, so a second local browser
+  // would never hear about a change. It gets a slow *read-only* refresh --
+  // never /advance, which is a write and was the thing generating load.
+  useEffect(() => {
+    if (!gameId || persistence !== "memory") return;
+    const interval = window.setInterval(() => {
+      if (!window.navigator.onLine) return;
+      void refresh(gameId).catch(() => undefined);
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [gameId, persistence, refresh]);
 
   const quickPlay = async (name: string, tier: StakesTier, buyIn: number) => {
     setLoading(true);
@@ -452,9 +450,18 @@ export function PokerApp() {
       const response = await fetch(`/api/games/${game.id}/actions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(action),
+        // The version this decision was made against. If the table moved on
+        // between the click and the request, the server declines rather than
+        // betting again on our behalf.
+        body: JSON.stringify({ action, expectedVersion: game.version }),
       });
       const data = await response.json();
+      if (response.status === 409 && data?.stale && data?.game) {
+        // Already applied. Adopt the server's state; this is not an error the
+        // player needs to see.
+        ingest(data);
+        return;
+      }
       if (!response.ok) throw new Error(data.error ?? "That action was not accepted.");
       ingest(data);
     } catch (caught) {

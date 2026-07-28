@@ -15,6 +15,7 @@ function dueGame() {
   return game;
 }
 
+
 describe("game deadline persistence (memory mode)", () => {
   it("keeps ordinary snapshot reads strictly read-only", async () => {
     const game = dueGame();
@@ -62,5 +63,68 @@ describe("game deadline persistence (memory mode)", () => {
     expect(new Set(results).size).toBe(1);
     expect(results.every((state) => state.version === game.version + 1)).toBe(true);
     expect((await getStoredGame(game.id))?.version).toBe(game.version + 1);
+  });
+
+  it("leaves no due turn behind, so the browser has nothing to poll for", async () => {
+    // The invariant that lets the client stop polling: after one request,
+    // whatever is on turn is either waiting on a clock that has not run out
+    // or is not there at all. If a due turn could survive a request, the
+    // browser would have to keep asking -- which is what it used to do.
+    const game = dueGame();
+    await createStoredGame(game);
+
+    const advanced = await advanceStoredGameWithTimeouts((await getStoredGame(game.id))!);
+
+    expect(advanced.version).toBeGreaterThan(game.version);
+    const deadline = Date.parse(advanced.turnDeadlineAt ?? "");
+    const stillDue = advanced.currentPlayer !== null
+      && Number.isFinite(deadline)
+      && deadline <= Date.now();
+    expect(stillDue).toBe(false);
+  });
+
+  it("does not act for a human whose clock is still running", async () => {
+    // "Stops when human input is required" concretely: a seated human with
+    // time left must be left alone. (An *expired* human clock is a different
+    // thing -- that is the auto-fold, and it is meant to fire.)
+    const token = randomUUID();
+    const game = createGame(token);
+    const human = game.seats.findIndex((seat) => seat.isHuman);
+    expect(human).toBeGreaterThanOrEqual(0);
+    game.currentPlayer = human;
+    game.turnStartedAt = new Date().toISOString();
+    game.turnDeadlineAt = new Date(Date.now() + 15_000).toISOString();
+    await createStoredGame(game);
+
+    const advanced = await advanceStoredGameWithTimeouts((await getStoredGame(game.id))!);
+
+    expect(advanced.version).toBe(game.version);
+    expect(advanced.currentPlayer).toBe(human);
+  });
+
+  it("does not advance a table whose deadline has not arrived", async () => {
+    const token = randomUUID();
+    const game = createGame(token);
+    game.turnDeadlineAt = new Date(Date.now() + 60_000).toISOString();
+    await createStoredGame(game);
+
+    const advanced = await advanceStoredGameWithTimeouts((await getStoredGame(game.id))!);
+
+    expect(advanced.version).toBe(game.version);
+  });
+
+  it("is idempotent: a repeated advance does not take a second turn", async () => {
+    const game = dueGame();
+    await createStoredGame(game);
+
+    const first = await advanceStoredGameWithTimeouts((await getStoredGame(game.id))!);
+    // A duplicate request, arriving after the first has fully settled -- the
+    // retry case, not the race case the tests above cover.
+    const second = await advanceStoredGameWithTimeouts((await getStoredGame(game.id))!);
+
+    // The second request found nothing due, because the seat it would have
+    // acted for now has a fresh deadline in the future.
+    expect(second.version).toBe(first.version);
+    expect((await getStoredGame(game.id))?.version).toBe(first.version);
   });
 });

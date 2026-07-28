@@ -2,13 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { applyPlayerAction, toSnapshot } from "@/lib/game/engine";
 import { clampBuyIn } from "@/lib/game/tiers";
-import { loadGameWithTimeouts, persistenceMode, updateStoredGame } from "@/lib/server/game-store";
+import { loadGameWithTimeouts, logTurn, persistenceMode, updateStoredGame } from "@/lib/server/game-store";
 import { creditGold, isBanned, spendGold } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 export const runtime = "nodejs";
 
+/**
+ * The action itself, plus the version of the state the player was looking at
+ * when they chose it. `expectedVersion` is optional so an older client keeps
+ * working, but when it is sent a stale duplicate is rejected before it can be
+ * applied a second time.
+ */
 const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("fold") }),
   z.object({ type: z.literal("check") }),
@@ -20,6 +26,11 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("leave-seat") }),
   z.object({ type: z.literal("rebuy"), amount: z.number().int().positive() }),
 ]);
+
+const bodySchema = z.object({
+  action: actionSchema,
+  expectedVersion: z.number().int().nonnegative().optional(),
+});
 
 const paramsSchema = z.object({ id: z.string().uuid() });
 
@@ -35,7 +46,12 @@ export async function POST(
     if (await isBanned(ownerToken)) {
       return NextResponse.json({ error: "Your account has been suspended." }, { status: 403 });
     }
-    const parsed = actionSchema.safeParse(await request.json());
+    const raw = await request.json();
+    // Accepts either shape: {type: "call"} from an older client, or
+    // {action: {...}, expectedVersion: n} from this one.
+    const parsed = bodySchema.safeParse(
+      raw && typeof raw === "object" && "action" in raw ? raw : { action: raw },
+    );
     if (!parsed.success) return NextResponse.json({ error: "Invalid poker action." }, { status: 400 });
     const paramsParsed = paramsSchema.safeParse(await context.params);
     if (!paramsParsed.success) return NextResponse.json({ error: "Table not found." }, { status: 404 });
@@ -43,7 +59,24 @@ export async function POST(
     const game = await loadGameWithTimeouts(id);
     if (!game) return NextResponse.json({ error: "Table not found." }, { status: 404 });
 
-    let action = parsed.data;
+    // Optimistic concurrency. A retried or double-submitted action arrives
+    // carrying the version its player was looking at; if the table has moved
+    // on, applying it again would be a second bet nobody asked for. Answering
+    // 409 with the current state is a no-op the client can simply adopt.
+    const { expectedVersion } = parsed.data;
+    if (typeof expectedVersion === "number" && expectedVersion !== game.version) {
+      return NextResponse.json(
+        {
+          error: "That action was already applied.",
+          stale: true,
+          game: toSnapshot(game, ownerToken),
+          persistence: persistenceMode(),
+        },
+        { status: 409 },
+      );
+    }
+
+    let action = parsed.data.action;
     let goldSpent = 0;
     let profile: PlayerProfile | undefined;
 
@@ -71,6 +104,7 @@ export async function POST(
 
     try {
       const updated = applyPlayerAction(game, action, ownerToken);
+      logTurn(updated, "player action applied", { action: action.type, expectedVersion });
       await updateStoredGame(updated, action, ownerToken);
       // Only after the departure is durably persisted -- crediting first
       // would pay out a player whose seat never actually got released.

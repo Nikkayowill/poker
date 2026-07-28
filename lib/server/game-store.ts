@@ -202,12 +202,92 @@ export async function advanceStoredGameWithTimeouts(state: GameState): Promise<G
   }
 }
 
+/**
+ * The most consecutive due turns one request will resolve.
+ *
+ * A bound, not a target. Each turn the engine resolves writes the next seat a
+ * fresh think deadline in the future, so in normal play this loop runs exactly
+ * once and stops -- the pacing between bots is preserved. It only iterates
+ * when several deadlines are already in the past, which happens when nobody
+ * was awake to advance them: a backgrounded tab, a dropped connection, a
+ * server that just came up. Catching those up in one request is the whole
+ * reason the browser no longer needs to poll.
+ */
+const MAX_ADVANCE_STEPS = 12;
+
 async function resolveTimedAdvance(state: GameState): Promise<GameState> {
-  const advanced = advanceTimedTurn(state);
-  if (!advanced.action || !advanced.actorSeatId) return state;
-  const persisted = await persistTimedTurn(advanced.state, advanced.actorSeatId, advanced.action);
-  if (persisted) return advanced.state;
-  return await getStoredGame(state.id) ?? state;
+  let current = state;
+
+  for (let step = 0; step < MAX_ADVANCE_STEPS; step += 1) {
+    const advanced = advanceTimedTurn(current);
+    // Nothing was due: either it is a human's turn and their clock is still
+    // running, or the hand is over. Either way this is where we stop, and it
+    // is the normal exit.
+    if (!advanced.action || !advanced.actorSeatId) {
+      logAdvance(current, step, "nothing due");
+      return current;
+    }
+
+    const persisted = await persistTimedTurn(advanced.state, advanced.actorSeatId, advanced.action);
+    if (!persisted) {
+      // Another request got there first. Its state is authoritative; ours is
+      // stale, so adopt theirs rather than replaying our own decision on top.
+      logAdvance(current, step, "lost the optimistic write; adopting stored state");
+      return await getStoredGame(state.id) ?? current;
+    }
+
+    current = advanced.state;
+    logAdvance(current, step, `applied ${advanced.action.type}`);
+
+    // Stop the moment a human is on the clock. Their deadline is minutes of
+    // wall time away in machine terms, and resolving it here would be taking
+    // their turn for them.
+    if (current.currentPlayer !== null && current.seats[current.currentPlayer]?.isHuman) {
+      logAdvance(current, step, "human on turn");
+      return current;
+    }
+  }
+
+  logAdvance(current, MAX_ADVANCE_STEPS, "hit the step ceiling");
+  return current;
+}
+
+/**
+ * Development tracing for the turn flow. Off unless RIVER_TRACE_TURNS=1, and
+ * never in production or under test. This exists so "why did it advance
+ * again" is answerable from a terminal instead of by reasoning about it.
+ *
+ *   RIVER_TRACE_TURNS=1 npm run dev
+ */
+export function logTurn(state: GameState, why: string, extra: Record<string, unknown> = {}): void {
+  if (process.env.NODE_ENV === "production" || process.env.VITEST) return;
+  if (process.env.RIVER_TRACE_TURNS !== "1") return;
+  const seat = state.currentPlayer === null ? null : state.seats[state.currentPlayer];
+  // Who still owes a decision this street, by the engine's own rule. If this
+  // is empty and the street has not changed, the round should have closed.
+  const owed = state.seats
+    .filter((s) => s.status === "active" && s.stack > 0 && !(s.acted && s.streetBet === state.currentBet))
+    .map((s) => s.name);
+  console.info(
+    "[turn]",
+    JSON.stringify({
+      game: state.id.slice(0, 8),
+      version: state.version,
+      street: state.street,
+      currentSeat: state.currentPlayer,
+      acting: seat ? `${seat.name}${seat.isHuman ? " (human)" : " (bot)"}` : null,
+      currentBet: state.currentBet,
+      pot: state.pot,
+      owedAction: owed,
+      roundClosed: owed.length === 0,
+      stopped: why,
+      ...extra,
+    }),
+  );
+}
+
+function logAdvance(state: GameState, step: number, why: string): void {
+  logTurn(state, why, { step });
 }
 
 export async function getStoredGame(id: string): Promise<GameState | null> {

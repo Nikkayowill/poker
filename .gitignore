@@ -9,3 +9,5 @@ test-results
 playwright-report
 npm-debug.log*
 tsconfig.tsbuildinfo
+.vercel
+.env*

@@ -1,0 +1,35 @@
+/* Short landscape phones. Last of all, deliberately. */
+
+/* Landscape phones: vertical space is the scarce resource, so the hand sits
+   closer in and its plinth compacts. Declared after the base first-person
+   rules above -- placed before them it would simply be overridden. */
+@media (max-height: 500px) and (orientation: landscape) {
+  /* There is not enough height here for the board, a full-size hand and the
+     action bar at once. Cards win -- they are the thing being read -- so the
+     name and stack drop out and are carried by the action bar instead. */
+  .seat-first-person { gap: 0; }
+  .seat-first-person .hand-strength { display: none; }
+
+  /* The figure stays, though. It is the one thing that says which player you
+     are, so it moves alongside the hand and out of the vertical stack --
+     lifted out of flow it costs no height at all, which is the only reason
+     the rest of this block had to give anything up. */
+  .seat-first-person .seat-figure {
+    position: absolute;
+    right: calc(100% + 6px);
+    bottom: 0;
+    width: var(--fp-figure);
+  }
+  .seat-first-person .seat-plate { min-width: 0; padding: 3px 10px 4px; }
+
+  /* Three across instead of stacked: figure, nameplate, hand. There are only
+     about 60px between the board and the action bar here and the plate alone
+     is most of that, so anything placed above or below the plate is either
+     under the board or under the buttons. */
+  .seat-first-person .seat-cards {
+    top: auto;
+    bottom: 6px;
+    left: calc(100% + 6px);
+    transform: none;
+  }
+}

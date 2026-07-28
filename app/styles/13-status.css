@@ -1,0 +1,94 @@
+/* Cash-out, broke and save-progress notices. */
+
+.cash-out-notice, .broke-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.cash-out-notice {
+  color: var(--gold-light);
+  border: 1px solid rgba(217, 184, 93, 0.35);
+  background: rgba(217, 184, 93, 0.1);
+}
+
+.cash-out-notice svg { flex-shrink: 0; color: var(--gold); }
+.cash-out-notice span { flex: 1; }
+.cash-out-notice strong { font-variant-numeric: tabular-nums; }
+
+.cash-out-notice button {
+  flex-shrink: 0;
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.cash-out-notice button:hover { opacity: 1; background: rgba(217, 184, 93, 0.14); }
+
+.broke-notice {
+  flex-wrap: wrap;
+  color: #ffcfa8;
+  border: 1px solid rgba(255, 157, 103, 0.35);
+  background: rgba(255, 157, 103, 0.09);
+}
+
+.broke-notice span { flex: 1; min-width: 200px; }
+.broke-notice button { flex-shrink: 0; padding: 7px 14px; font-size: 12px; min-height: 0; }
+
+.save-progress-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.save-progress-notice span { flex: 1; min-width: 220px; }
+.save-progress-notice button { flex-shrink: 0; padding: 7px 14px; font-size: 12px; min-height: 0; }
+
+.auth-button {
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.auth-button:hover { border-color: var(--gold); }
+.game-header-actions .auth-button { padding: 7px 10px; font-size: 10px; }
+.auth-button-save { border-color: rgba(217, 184, 93, 0.45); color: var(--gold-light); }
+.auth-button-save:hover { background: rgba(217, 184, 93, 0.12); }
+
+.admin-shell {
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: 32px clamp(16px, 4vw, 48px) 64px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(217, 184, 93, 0.07), transparent 28rem),
+    #0a100e;
+}
+
+.admin-shell > * { width: min(1440px, 100%); margin-left: auto; margin-right: auto; }

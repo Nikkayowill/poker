@@ -1,0 +1,213 @@
+/* Narrow and short viewports. ORDER MATTERS: these override everything above. */
+
+@media (max-width: 600px) {
+  .lobby-header {
+    height: 68px;
+    padding: 0 18px;
+    padding-left: max(18px, env(safe-area-inset-left));
+    padding-right: max(18px, env(safe-area-inset-right));
+  }
+  .header-status { display: none; }
+  .lobby {
+    width: calc(100% - 30px);
+    min-height: calc(100vh - 68px);
+    min-height: calc(100svh - 68px);
+    padding: 42px 0 60px;
+  }
+  .hero h1 { font-size: 48px; }
+  .hero > p { font-size: 15px; }
+  .name-row { display: block; padding: 6px; }
+  .name-row input { width: 100%; height: 48px; text-align: center; }
+  .name-row button { width: 100%; }
+  .lobby-actions { grid-template-columns: 1fr; }
+  .join-form { margin-left: auto; margin-right: auto; }
+  .lobby-preview { display: none; }
+  .game-header {
+    height: 56px;
+    padding: 0 12px;
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+  .game-header .wordmark > span:last-child, .table-meta span:not(:first-child) { display: none; }
+  .leave-button, .give-up-seat-button, .history-toggle, .sound-toggle, .game-header-actions .auth-button { padding: 7px; font-size: 9px; }
+  .history-toggle span { display: none; }
+  .table-area {
+    padding: 4px 4px 0;
+    padding-left: max(4px, env(safe-area-inset-left));
+    padding-right: max(4px, env(safe-area-inset-right));
+  }
+  .poker-table-wrap {
+    width: calc(100% - 6px);
+    --table-aspect: 1.05;
+  }
+  .poker-rail { inset: 3% 1%; }
+  .playing-card { width: clamp(30px, 8.5vw, 40px); }
+  .card-large { width: clamp(42px, 13vw, 52px); }
+  .card-small { width: clamp(24px, 6.5vw, 32px); }
+  .community-cards {
+    gap: 3px;
+    /* Lifted on a narrow table, where the ring is proportionally larger and
+       the seats either side of the near edge otherwise sit across the bottom
+       row of the board. Verified: removing this puts two figures over it. */
+    top: 47%;
+  }
+  .seat-name-row strong { font-size: 9px; }
+  .seat-plate { padding: 3px 5px 4px; }
+  .seat-stack { font-size: 9px; }
+  .seat-stack strong { font-size: 10px; }
+  /* Thrown outward from the seat, these leave the screen entirely at the far
+     left and right of a narrow ring. The status line under the table already
+     names whose turn it is, so the badge is the one to give up. */
+  .seat-turn-status { display: none; }
+  .table-bet { --bet-reach: 52px; }
+  .seat-turn-status span { font-size: 5px; }
+  .seat-turn-status strong { font-size: 12px; }
+      .action-layer { padding: 0 4px calc(6px + env(safe-area-inset-bottom)); padding-left: max(4px, env(safe-area-inset-left)); padding-right: max(4px, env(safe-area-inset-right)); }
+  .action-bar { margin-top: 6px; padding: 8px; gap: 8px; }
+  .turn-tools { width: 100%; min-height: 54px; }
+  .action-countdown { flex: 1; width: auto; grid-template-columns: auto auto auto; align-items: baseline; gap: 5px; }
+  .action-countdown strong { font-size: 22px; }
+  .time-card-button { min-width: 80px; flex-direction: row; gap: 5px; }
+  .basic-actions { flex: 1; }
+  .basic-actions button { flex: 1; padding: 0 10px; min-height: 48px; }
+  .commit-actions .primary-action { min-width: 95px; padding: 12px; min-height: 48px; }
+  .allin-action { min-height: 48px; }
+  .hand-complete { flex-wrap: nowrap; }
+  .hand-complete strong { max-width: 180px; font-size: 11px; }
+  .header-actions .header-status { display: none; }
+  .profile-trigger:not(.profile-trigger-compact) {
+    min-width: 0;
+    padding: 4px 7px 4px 4px;
+  }
+  .profile-trigger:not(.profile-trigger-compact) > span:nth-child(2) { display: none; }
+  .profile-overlay { padding: 0; align-items: end; }
+  .profile-modal {
+    width: 100%;
+    max-height: 92svh;
+    border-radius: 9px 9px 0 0;
+  }
+  .profile-modal-header { padding: 21px 19px 17px; }
+  .profile-modal-header h2 { font-size: 24px; }
+  .profile-modal form { padding: 18px 19px calc(22px + env(safe-area-inset-bottom)); }
+  .preset-grid { grid-template-columns: repeat(3, 1fr); }
+  .profile-preview { padding: 14px; }
+
+  /* Hand history becomes a bottom sheet rather than a side drawer. */
+  .history-drawer {
+    top: auto;
+    right: 0;
+    left: 0;
+    width: auto;
+    max-height: 75svh;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -20px 60px rgba(0,0,0,.4);
+  }
+  .orientation-hint {
+    position: fixed;
+    top: calc(62px + env(safe-area-inset-top));
+    left: 50%;
+    z-index: 45;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 8px;
+    transform: translateX(-50%);
+    padding: 8px 12px;
+    color: #f2e3ac;
+    border: 1px solid rgba(217,184,93,.28);
+    border-radius: 999px;
+    background: rgba(16,25,21,.94);
+    box-shadow: 0 8px 24px rgba(0,0,0,.28);
+    font-size: 10px;
+    font-weight: 750;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .orientation-hint > span {
+    grid-row: 1 / 3;
+    font-size: 18px;
+  }
+  .orientation-hint small {
+    color: #87968e;
+    font-size: 7px;
+    font-weight: 600;
+    text-align: left;
+  }
+  @keyframes history-in { from { transform: translateY(100%); } }
+}
+
+/* A phone held sideways for the table view is short, not narrow: the
+   width-keyed breakpoints above don't fire, and without this the top seat
+   and the action bar both run past the viewport edge. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .game-header, .lobby-header {
+    height: 42px;
+    padding-top: env(safe-area-inset-top);
+  }
+  .game-header .wordmark small, .lobby-header .wordmark small { display: none; }
+  .table-area {
+    padding-top: 2px;
+    padding-bottom: 0;
+  }
+  .poker-table-wrap { --table-aspect: 3; --table-reserve: 120px; }
+  .card-large { width: clamp(32px, 7.5vw, 42px); }
+  /* No room for a per-seat timer here; the status line under the table says
+     whose turn it is. (This rule lost its selector to a careless regex when
+     the central turn callout was removed -- it read ".seat-turn-status,
+     .action-layer { padding-bottom: ... }", so the timer came back and the
+     action layer kept the padding.) */
+  .seat-turn-status { display: none; }
+  .action-layer { padding-bottom: env(safe-area-inset-bottom); }
+  .action-bar {
+    min-height: 50px;
+    margin-top: 4px;
+    padding: 5px 10px;
+  }
+  .basic-actions button, .allin-action { min-height: 40px; padding: 0 12px; }
+  .commit-actions .primary-action { min-height: 42px; }
+  .raise-buttons button { min-height: 30px; }
+  .hand-complete { min-height: 0; }
+  .range-row { margin-bottom: 2px; }
+  .raise-buttons { margin-top: 2px; }
+  .turn-tools { width: auto; min-height: 0; }
+  .action-countdown { width: 48px; display: grid; }
+  .action-countdown span, .action-countdown small { display: none; }
+  .action-countdown strong { font-size: 19px; }
+  .time-card-button { min-width: 48px; }
+  .time-card-button > span:nth-child(2) { display: none; }
+  .history-drawer { width: min(300px, 82%); }
+}
+
+/* Older/smaller handsets (e.g. iPhone SE 1st-gen landscape, 568x320) need a
+   second, more aggressive tier on top of the one above. */
+@media (max-height: 340px) and (orientation: landscape) {
+  .game-header, .lobby-header { height: 34px; }
+  .table-area { padding-top: 0; }
+  .poker-table-wrap { --table-aspect: 3.6; --table-reserve: 96px; }
+  .card-large { width: clamp(26px, 6.5vw, 34px); }
+  .action-bar { min-height: 42px; margin-top: 3px; padding: 4px 8px; }
+  .basic-actions button, .allin-action { min-height: 36px; }
+  .commit-actions .primary-action { min-height: 38px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dealt-card-shell,
+  .community-card-flipper,
+  .pot-chip-flight,
+  .seat-chip-flight,
+  .muck-drift,
+  .seat-current::after,
+  .action-countdown.countdown-critical,
+  .turn-ring,
+  .avatar-idle,
+  .gold-badge-claimed .gold-balance strong {
+    animation: none;
+  }
+  .dealer-puck-animated,
+  /* The depth/lean/settle changes still apply, they just arrive instantly. */
+  .player-seat {
+    transition: none;
+  }
+}

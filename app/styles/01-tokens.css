@@ -1,0 +1,37 @@
+/* Custom properties, reset and base typography. */
+
+:root {
+  --ink: #edf3ee;
+  --muted: #8e9f97;
+  --gold: #d9b85d;
+  --gold-light: #efd98d;
+  --surface: #111a17;
+  --surface-2: #17221e;
+  --line: rgba(255, 255, 255, 0.09);
+  --felt: #164f3a;
+  --felt-dark: #0e392a;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; min-height: 100%; background: #09110f; color: var(--ink); }
+
+html {
+  /* A rapid Fold/Call/Raise tap sequence shouldn't be read as a double-tap
+     zoom gesture, and a swipe near the top of the table shouldn't trigger
+     the browser's native pull-to-refresh mid-hand. */
+  overscroll-behavior-y: none;
+}
+
+body {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0a100e;
+  -webkit-tap-highlight-color: transparent;
+  /* Fixed-width digits everywhere -- pot/stack/timer numerals update
+     constantly during chip animations and shouldn't jitter or reflow. */
+  font-variant-numeric: tabular-nums;
+}
+
+button, input { font: inherit; }
+button { color: inherit; touch-action: manipulation; }
+input[type="range"] { touch-action: pan-x; }

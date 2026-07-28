@@ -1,0 +1,361 @@
+/* The felt, the rail, the pot and the flying chips. */
+
+.table-area {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  padding: clamp(6px, 2vh, 26px) clamp(10px, 3vw, 28px) 0;
+  padding-left: max(clamp(10px, 3vw, 28px), env(safe-area-inset-left));
+  padding-right: max(clamp(10px, 3vw, 28px), env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* A dedicated, never-pushed layer for the local player's decision: it sits
+   at a fixed flex slot below the table (flex: 0 0 auto), so nothing above it
+   growing or shrinking can ever move it vertically. */
+.action-layer {
+  flex: 0 0 auto;
+  position: relative;
+  padding: 0 clamp(10px, 3vw, 28px) calc(clamp(8px, 1.6vh, 20px) + env(safe-area-inset-bottom));
+  padding-left: max(clamp(10px, 3vw, 28px), env(safe-area-inset-left));
+  padding-right: max(clamp(10px, 3vw, 28px), env(safe-area-inset-right));
+}
+
+.poker-table-wrap {
+  /* Capped by both max table width AND an estimate of the vertical room the
+     header and action layer leave behind, so the table shrinks to fit a
+     short-but-wide viewport instead of overflowing it (aspect-ratio alone
+     only reacts to width, never to how little height is actually left). */
+  /* One aspect ratio, used twice. These were separate numbers, and a
+     breakpoint that overrode the aspect-ratio without the width cap left the
+     table capped as though it were still 1.72 wide -- 261px across and 87
+     tall on a landscape phone, with every seat piled on the board. */
+  --table-aspect: 1.84;
+  --table-reserve: 254px;
+  /* Seats are sized from the table's measured width (SEAT_WIDTH_RATIO in
+     poker-app.tsx), which arrives as an inline --seat-width on this element.
+     Declared here rather than on .player-seat: a custom property set on the
+     seat itself beats the value inherited from here, so the fallback would
+     silently win and every seat would stay desktop-sized on a phone. */
+  --seat-width: 122px;
+  width: min(980px, 100%, calc((100dvh - var(--table-reserve)) * var(--table-aspect)));
+  aspect-ratio: var(--table-aspect);
+  margin: auto;
+  position: relative;
+}
+
+/* A soft contact shadow grounding the table on the page behind it, distinct
+   from .poker-rail's own drop shadow -- purely decorative, stays behind
+   every seat/table layer. */
+.poker-table-wrap::after {
+  content: "";
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: -16px;
+  height: 32px;
+  z-index: -1;
+  background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,.38), transparent 72%);
+  pointer-events: none;
+}
+
+/* The far rail is a separate visual lip. It sits above the avatar artwork but
+   below labels, so distant players feel seated behind the table instead of
+   floating in front of it.
+
+   255 puts it above every figure (60..100, see seatZ) and below every
+   nameplate (260..290, --seat-z + 200). It was 260, which is the bottom of the
+   nameplate band: the far player's name only stayed readable because the lip
+   comes earlier in the DOM and loses the tie. */
+.poker-table-wrap::before {
+  content: "";
+  position: absolute;
+  top: 7.1%;
+  left: 2.5%;
+  right: 2.5%;
+  height: 16%;
+  z-index: 255;
+  border-top: clamp(8px, 1.2vw, 15px) solid rgba(24, 18, 14, .8);
+  border-radius: 50% 50% 0 0;
+  box-shadow:
+    0 -2px 0 rgba(238, 202, 119, .25),
+    0 10px 18px rgba(0, 0, 0, .36);
+  pointer-events: none;
+}
+
+/* Stacking level for the table itself. Seats compute a z-index either side
+   of this (see RAIL_Z), so the far side of the ring is genuinely occluded by
+   the rail instead of floating in front of it. */
+.poker-rail {
+  z-index: 50;
+  position: absolute;
+  inset: 7% 3% 4%;
+  padding: 16px;
+  border-radius: 48%;
+  background:
+    linear-gradient(145deg, #2b2119, #111715 35%, #503a26 64%, #161916),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.04) 0 1px, transparent 1px 16px);
+  box-shadow:
+    0 48px 90px rgba(0,0,0,.58),
+    inset 0 0 0 1px rgba(239,216,144,.32),
+    inset 0 0 0 7px rgba(4,8,7,.72),
+    inset 0 0 22px rgba(0,0,0,.7);
+}
+
+.poker-felt {
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  border-radius: inherit;
+  border: 2px solid rgba(237,216,139,.28);
+  background:
+    /* The far half of the cloth falls into shadow. A lamp hangs over a real
+       table, so the felt is never evenly lit -- and an evenly lit surface is
+       the fastest way to make a 2.5D scene look like a flat diagram, however
+       hard the figures on it fall away with distance. Kept light because the
+       rail lip above already darkens the far edge; at .34 the two stacked into
+       a murky band across the top of the table. */
+    linear-gradient(to bottom, rgba(0,0,0,.18) 0%, rgba(0,0,0,.04) 38%, rgba(0,0,0,0) 66%),
+    /* Warm overhead spotlight, layered above the existing green highlight
+       and base gradient rather than replacing them. */
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(255,247,214,.09), transparent 62%),
+    radial-gradient(ellipse at 50% 40%, rgba(52,133,98,.45), transparent 58%),
+    linear-gradient(135deg, var(--felt), var(--felt-dark));
+  box-shadow: inset 0 0 45px rgba(0,0,0,.42);
+}
+
+.poker-felt::before {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border: 1px solid rgba(226,235,224,.13);
+  border-radius: 48%;
+  box-shadow: inset 0 0 18px rgba(0,0,0,.1);
+  pointer-events: none;
+}
+
+.poker-felt::after {
+  content: "RIVER ROOM  ·  NO LIMIT HOLD’EM";
+  position: absolute;
+  left: 50%;
+  bottom: 27%;
+  transform: translateX(-50%);
+  color: rgba(228,237,229,.1);
+  font: 600 clamp(7px, .8vw, 10px) Georgia, serif;
+  letter-spacing: .28em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.felt-texture {
+  position: absolute;
+  inset: 0;
+  opacity: .12;
+  background-image:
+    repeating-linear-gradient(45deg, transparent 0 3px, rgba(255,255,255,.025) 3px 4px),
+    repeating-linear-gradient(-45deg, transparent 0 4px, rgba(0,0,0,.04) 4px 5px);
+}
+
+/* Below the far player's nameplate, which now reaches about a quarter of the
+   way down the felt -- a seat is a whole person and takes the room one needs. */
+.pot-display {
+  position: absolute;
+  top: 26%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+}
+
+.pot-display > span {
+  display: block;
+  color: rgba(232,238,230,.55);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.pot-display strong {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: #f2dc90;
+  font: 500 19px Georgia, serif;
+  transition: transform .15s ease;
+}
+
+.pot-display-paid strong { animation: pot-drain .5s ease .75s both; }
+@keyframes pot-drain {
+  0% { transform: scale(1); opacity: 1; }
+  40% { transform: scale(1.12); }
+  100% { transform: scale(.85); opacity: .35; }
+}
+
+/* A shuffled spray of denomination-coloured chips travels from the pot to
+   each winner. Distances are measured at runtime, so every chip lands on the
+   correct responsive seat instead of following a hardcoded path. */
+.pot-chip-flight {
+  position: absolute;
+  top: 19%;
+  left: 50%;
+  z-index: 9;
+  width: 15px;
+  height: 10px;
+  border: 2px dashed rgba(255,255,255,.82);
+  border-radius: 50%;
+  background: #be3538;
+  box-shadow: 0 2px 4px rgba(0,0,0,.4), inset 0 0 0 2px rgba(0,0,0,.13);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: chip-shuffle-to-winner 1.18s cubic-bezier(.2,.78,.2,1) var(--chip-delay) both;
+  box-shadow: 0 1px 3px rgba(0,0,0,.55), inset 0 1px 1px rgba(255,255,255,.38);
+}
+.chip-color-1 { background: #2f67a8; }
+.chip-color-2 { background: #2c805c; }
+.chip-color-3 { background: #24292b; border-color: #d6c77f; }
+.chip-color-4 { background: #d39b36; border-color: #fff2c4; }
+@keyframes chip-shuffle-to-winner {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.45) rotate(0deg); }
+  18% {
+    opacity: 1;
+    transform: translate(
+      calc(-50% + var(--shuffle-x)),
+      calc(-50% + var(--shuffle-y))
+    ) scale(1.04) rotate(120deg);
+  }
+  44% {
+    opacity: 1;
+    transform: translate(
+      calc(-50% - var(--shuffle-x)),
+      calc(-50% + 7px)
+    ) scale(.96) rotate(250deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(
+      calc(-50% + var(--funnel-dx)),
+      calc(-50% + var(--funnel-dy))
+    ) scale(.52) rotate(520deg);
+  }
+}
+
+/* A small, conservative spray of chips from an acting seat to the pot --
+   fires far more often than the pot-to-winner funnel (every bet/call/raise/
+   blind, for any of six seats), so it stays intentionally lighter: three
+   chips, no shuffle detour, just a quick direct arc. Positioned via inline
+   left/top (the seat's measured position) rather than a fixed anchor, since
+   unlike the pot or the dealer puck, the origin differs per seat. */
+.seat-chip-flight {
+  position: absolute;
+  z-index: 8;
+  width: 11px;
+  height: 7px;
+  border: 2px dashed rgba(255,255,255,.8);
+  border-radius: 50%;
+  background: #be3538;
+  box-shadow: 0 2px 3px rgba(0,0,0,.4), inset 0 0 0 2px rgba(0,0,0,.13);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: chip-fly-to-pot .48s cubic-bezier(.3,.7,.28,1) var(--flight-delay, 0ms) both;
+}
+@keyframes chip-fly-to-pot {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.5); }
+  16% { opacity: 1; }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--flight-dx)), calc(-50% + var(--flight-dy))) scale(.8);
+  }
+}
+
+/* Bridges a folded seat's cards from "at the seat" to "gone" -- positioned
+   via inline left/top (the seat's measured position, same technique as
+   .seat-chip-flight) so it works for any of the six placements without a
+   fixed anchor. */
+.muck-drift {
+  position: absolute;
+  z-index: 7;
+  display: flex;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: muck-drift-away .5s cubic-bezier(.4,.1,.4,1) both;
+}
+.muck-drift-card + .muck-drift-card { margin-left: -12px; }
+@keyframes muck-drift-away {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--muck-dx)), calc(-50% + var(--muck-dy))) scale(.55) rotate(-14deg);
+  }
+}
+
+.chip-stack-icon, .chip-dot {
+  display: inline-block;
+  width: 13px;
+  height: 9px;
+  border-radius: 50%;
+  background: repeating-linear-gradient(90deg, #b93438 0 3px, #f2e6c6 3px 5px);
+  box-shadow: 0 -3px 0 #276da3, 0 3px 0 #31805b;
+}
+
+.community-cards {
+  position: absolute;
+  left: 50%;
+  top: 51%;
+  display: flex;
+  gap: clamp(6px, .9vw, 12px);
+  padding: 7px 10px;
+  border: 1px solid rgba(238, 210, 132, .13);
+  border-radius: 14px;
+  background: rgba(18, 13, 10, .18);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .16);
+  transform: translate(-50%, -50%);
+}
+
+.community-card-shell {
+  display: grid;
+  perspective: 850px;
+}
+
+.community-card-flipper {
+  display: grid;
+  transform-style: preserve-3d;
+  animation: community-flip .74s cubic-bezier(.18,.78,.2,1) var(--community-delay) both;
+}
+
+.community-card-face,
+.community-card-backface {
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+}
+.community-card-backface { transform: rotateY(180deg); }
+
+@keyframes community-flip {
+  0% {
+    opacity: 0;
+    transform: translate(155px, -105px) scale(.72) rotateZ(13deg) rotateY(180deg);
+  }
+  16% { opacity: 1; }
+  48% {
+    transform: translate(22px, -18px) scale(.95) rotateZ(-3deg) rotateY(180deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1) rotateZ(0) rotateY(0);
+  }
+}
+
+.street-label {
+  position: absolute;
+  left: 50%;
+  bottom: 17%;
+  transform: translateX(-50%);
+  color: rgba(222,232,225,.27);
+  font: italic 14px Georgia, serif;
+  text-transform: capitalize;
+  letter-spacing: .08em;
+}

@@ -1,0 +1,138 @@
+/* The two headers and the shells the app hangs in. */
+
+.app-root { min-height: 100vh; min-height: 100svh; overflow: hidden; }
+
+.lobby-header, .game-header {
+  height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(24px, 5vw, 76px);
+  /* Keep the header clear of a landscape notch/camera cutout without
+     affecting devices that report no inset (env() resolves to 0). */
+  padding-left: max(clamp(24px, 5vw, 76px), env(safe-area-inset-left));
+  padding-right: max(clamp(24px, 5vw, 76px), env(safe-area-inset-right));
+  border-bottom: 1px solid var(--line);
+  background: #0b1210;
+  position: relative;
+  z-index: 20;
+}
+
+.wordmark {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #f7f4e9;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 19px;
+  letter-spacing: .02em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wordmark small {
+  display: block;
+  margin-top: 3px;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 8px;
+  letter-spacing: .24em;
+  color: #829087;
+}
+
+.mark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  color: #0a130f;
+  font-size: 0;
+  font-style: italic;
+  font-weight: 700;
+  border: 1px solid #f4df96;
+  transform: rotate(45deg);
+  border-radius: 5px;
+  background: #d9b85d;
+}
+
+.mark::after {
+  content: "R";
+  display: block;
+  font-size: 21px;
+  transform: rotate(-45deg);
+}
+.wordmark .mark { font-family: Georgia, serif; }
+
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #829088;
+  font-size: 12px;
+}
+
+.header-actions, .game-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.profile-trigger {
+  appearance: none;
+  min-width: 174px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 9px 6px 6px;
+  color: #8f9d95;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.profile-trigger:hover {
+  color: #e2e8e3;
+  border-color: rgba(217,184,93,.24);
+  background: rgba(217,184,93,.035);
+}
+
+.profile-trigger > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-trigger strong {
+  display: block;
+  max-width: 100px;
+  overflow: hidden;
+  color: #e4eae5;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-trigger small {
+  display: block;
+  margin-top: 2px;
+  color: #64736b;
+  font-size: 8px;
+}
+
+.profile-trigger-compact {
+  min-width: 0;
+  padding: 4px 7px 4px 4px;
+}
+
+.gold-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid rgba(217,184,93,.22);
+  border-radius: 6px;
+  background: rgba(217,184,93,.05);
+}

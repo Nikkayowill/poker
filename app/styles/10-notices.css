@@ -1,0 +1,52 @@
+/* Toasts and inline notices over the table. */
+
+.timeout-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 122px;
+  z-index: 16;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transform: translateX(-50%);
+  padding: 9px 14px;
+  color: #f5e2ac;
+  border: 1px solid rgba(217,184,93,.32);
+  border-radius: 7px;
+  background: #2c2413;
+  font-size: 12px;
+  animation: toast-in .3s ease both;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* Hand history is an overlay, not a document-flow sidebar: position:fixed
+   guarantees it can never affect the table/action-layer's size regardless of
+   whether it's open, closed, or how much content it holds. */
+.history-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(3,9,7,.55);
+  animation: overlay-in .18s ease both;
+}
+
+.history-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(360px, 100%);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: #101a16;
+  box-shadow: -30px 0 70px rgba(0,0,0,.4);
+  animation: history-in .22s ease both;
+}
+
+@keyframes history-in { from { transform: translateX(100%); } }
+
+.activity-empty { margin: 20px 0; color: #5c6b63; font-size: 11px; text-align: center; }

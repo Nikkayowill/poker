@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { ChangeEvent, FormEvent, memo, useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
+import Link from "next/link";
 import type { Card, GameSnapshot, PlayerAction, PublicSeat, Winner } from "@/lib/game/types";
 import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
@@ -2299,6 +2300,7 @@ export function PokerApp() {
                   </button>
                 )
             )}
+            <Link className="auth-button" href="/collection">Collection</Link>
             {profile && <ProfileTrigger profile={profile} onClick={() => setProfileOpen(true)} />}
           </div>
         </header>

@@ -19,7 +19,7 @@ export const rarityLabels: Record<Rarity, string> = {
   signature: "Signature",
 };
 
-export type CosmeticSlot = "cardBack";
+export type CosmeticSlot = "cardBack" | "avatar";
 
 export interface Cosmetic {
   id: string;
@@ -29,8 +29,18 @@ export interface Cosmetic {
   rarity: Rarity;
   /** Gold price. Null means it cannot be bought at any price -- see below. */
   price: number | null;
-  /** Two colours and a pattern, interpreted by the card-back renderer. */
-  art: { base: string; ink: string; pattern: "lattice" | "chevron" | "rings" | "pinstripe" | "crest" };
+  /**
+   * Card backs are drawn from two colours and a pattern; avatars are supplied
+   * artwork. Exactly one of these is set per item, which is what lets a single
+   * ownership and purchase path serve both.
+   */
+  art?: { base: string; ink: string; pattern: "lattice" | "chevron" | "rings" | "pinstripe" | "crest" };
+  /**
+   * Path under /public for an image-based item. Missing files degrade to the
+   * generated figure rather than a broken image, so catalog entries can land
+   * before their artwork does.
+   */
+  image?: string;
 }
 
 /**
@@ -39,7 +49,7 @@ export interface Cosmetic {
  * keeps status meaningful and is the main defence against the product
  * reading as pay-to-flex. They are granted by achievement instead.
  */
-export const cosmetics: Cosmetic[] = [
+const cardBackCosmetics: Cosmetic[] = [
   {
     id: "back-house",
     slot: "cardBack",
@@ -105,8 +115,77 @@ export const cosmetics: Cosmetic[] = [
   },
 ];
 
+/**
+ * Avatars. Supplied artwork rather than composed layers -- one image per
+ * character, sold through exactly the same ownership and purchase path as
+ * card backs, which is what makes this a single system instead of two.
+ *
+ * Drop the artwork at public/avatars/<id>.png to match each id below. Until
+ * a file exists the entry still lists and sells; it simply renders the
+ * generated figure in the meantime, so artwork and catalog can land apart.
+ */
+export const avatarCosmetics: Cosmetic[] = [
+  {
+    id: "avatar-regular",
+    slot: "avatar",
+    name: "The Regular",
+    description: "Knows the room, knows the rake. Yours from the start.",
+    rarity: "standard",
+    price: 0,
+    image: "/avatars/avatar-regular.png",
+  },
+  {
+    id: "avatar-shark",
+    slot: "avatar",
+    name: "The Shark",
+    description: "Quiet until the river.",
+    rarity: "standard",
+    price: 1500,
+    image: "/avatars/avatar-shark.png",
+  },
+  {
+    id: "avatar-veteran",
+    slot: "avatar",
+    name: "The Veteran",
+    description: "Has folded better hands than you've shown.",
+    rarity: "premium",
+    price: 4000,
+    image: "/avatars/avatar-veteran.png",
+  },
+  {
+    id: "avatar-closer",
+    slot: "avatar",
+    name: "The Closer",
+    description: "Never leaves a pot on the table.",
+    rarity: "premium",
+    price: 4000,
+    image: "/avatars/avatar-closer.png",
+  },
+  {
+    id: "avatar-nightowl",
+    slot: "avatar",
+    name: "The Night Owl",
+    description: "Plays best after everyone sensible has gone home.",
+    rarity: "rare",
+    price: 12000,
+    image: "/avatars/avatar-nightowl.png",
+  },
+  {
+    id: "avatar-housename",
+    slot: "avatar",
+    name: "House Name",
+    description: "Awarded for taking a High-stakes pot. Not for sale.",
+    rarity: "signature",
+    price: null,
+    image: "/avatars/avatar-housename.png",
+  },
+];
+
 /** What a brand-new profile has, and falls back to if anything goes missing. */
 export const DEFAULT_CARD_BACK = "back-house";
+export const DEFAULT_AVATAR_COSMETIC = "avatar-regular";
+
+export const cosmetics: Cosmetic[] = [...cardBackCosmetics, ...avatarCosmetics];
 
 export function cosmeticById(id: string): Cosmetic | null {
   return cosmetics.find((item) => item.id === id) ?? null;
@@ -124,9 +203,13 @@ export function isPurchasable(item: Cosmetic): boolean {
 /** A player's equipped choices, one per slot. */
 export interface EquippedCosmetics {
   cardBack: string;
+  avatar: string;
 }
 
-export const defaultEquipped: EquippedCosmetics = { cardBack: DEFAULT_CARD_BACK };
+export const defaultEquipped: EquippedCosmetics = {
+  cardBack: DEFAULT_CARD_BACK,
+  avatar: DEFAULT_AVATAR_COSMETIC,
+};
 
 /**
  * Coerces stored or client-sent equipment into something renderable, and
@@ -134,8 +217,12 @@ export const defaultEquipped: EquippedCosmetics = { cardBack: DEFAULT_CARD_BACK 
  */
 export function normalizeEquipped(raw: unknown): EquippedCosmetics {
   const input = (raw ?? {}) as Partial<Record<keyof EquippedCosmetics, unknown>>;
-  const cardBack = typeof input.cardBack === "string" ? cosmeticById(input.cardBack) : null;
+  const pick = (value: unknown, slot: CosmeticSlot, fallback: string) => {
+    const item = typeof value === "string" ? cosmeticById(value) : null;
+    return item && item.slot === slot ? item.id : fallback;
+  };
   return {
-    cardBack: cardBack && cardBack.slot === "cardBack" ? cardBack.id : DEFAULT_CARD_BACK,
+    cardBack: pick(input.cardBack, "cardBack", DEFAULT_CARD_BACK),
+    avatar: pick(input.avatar, "avatar", DEFAULT_AVATAR_COSMETIC),
   };
 }

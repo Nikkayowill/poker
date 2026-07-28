@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { describe, expect, it } from "vitest";
 import { createGame } from "@/lib/game/engine";
+import { getPlayerStanding } from "./stats-store";
 import {
   advanceStoredGameWithTimeouts,
   createStoredGame,
@@ -126,5 +127,52 @@ describe("game deadline persistence (memory mode)", () => {
     // acted for now has a fresh deadline in the future.
     expect(second.version).toBe(first.version);
     expect((await getStoredGame(game.id))?.version).toBe(first.version);
+  });
+});
+
+describe("stats recording through the real advance path (memory mode)", () => {
+  /**
+   * A regression test for a bug that hand-built fixtures in stats-store.test
+   * .ts could not have caught, because they construct an already-finished
+   * hand directly rather than reaching "complete" through this module's own
+   * advance loop.
+   *
+   * The bug: advanceTimedTurn mutates its input state in place (it calls
+   * applyTurnAction(state, action), which sets fields directly on the object
+   * it was given), so inside resolveTimedAdvance, `current` and
+   * `advanced.state` become the same reference the moment the call returns.
+   * The hook used to read `current.status` *after* that call, which means it
+   * was comparing that object's status to itself -- always false once a hand
+   * genuinely completes. A human's own action was immune (the /actions route
+   * captures its "was it already complete" flag as a boolean *before*
+   * calling into the engine), so this only ever failed when a bot's timed
+   * action was what closed the hand. Driving a whole hand through repeated,
+   * independent advanceStoredGameWithTimeouts calls -- one per simulated
+   * request, exactly like separate browsers hitting /advance -- is what
+   * exercises that path for real.
+   */
+  it("records a stat when a bot's action closes the hand, not just a human's", async () => {
+    const token = randomUUID();
+    const game = createGame(token, "Hero");
+    await createStoredGame(game);
+
+    let current = (await getStoredGame(game.id))!;
+    let guard = 0;
+    while (current.status === "playing" && guard < 200) {
+      // Every seat here is a bot except the human's, so whichever seat is on
+      // turn when the deadline is checked, it is overwhelmingly a bot's
+      // action that ends up closing the hand -- which is exactly the path
+      // that silently never recorded anything.
+      current.turnDeadlineAt = new Date(0).toISOString();
+      await createStoredGame(current);
+      current = await advanceStoredGameWithTimeouts((await getStoredGame(game.id))!);
+      guard += 1;
+    }
+    expect(current.status).toBe("complete");
+
+    const { ensureProfile } = await import("./profile-store");
+    const profile = await ensureProfile(token);
+    const standing = await getPlayerStanding(profile.id, "lifetime");
+    expect(standing?.stats.handsPlayed).toBe(1);
   });
 });

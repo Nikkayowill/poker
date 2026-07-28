@@ -214,6 +214,7 @@ function setupHand(state: GameState, firstHand = false) {
     seat.committed = 0;
     seat.acted = false;
     seat.lastAction = null;
+    seat.vpip = false;
   });
 
   for (let round = 0; round < 2; round += 1) {
@@ -276,6 +277,7 @@ export function createGame(
       acted: false,
       lastAction: null,
       timeCardsRemaining: STARTING_TIME_CARDS,
+      vpip: false,
     },
     ...botProfiles.slice(1).map((bot, index): Seat => ({
       id: randomUUID(),
@@ -292,6 +294,7 @@ export function createGame(
       acted: false,
       lastAction: null,
       timeCardsRemaining: 0,
+      vpip: false,
     })),
   ];
 
@@ -607,6 +610,13 @@ function applyTurnAction(state: GameState, action: TurnAction) {
   const legal = getLegalActions(state, actorIndex);
   const toCall = legal.toCall;
 
+  // VPIP: every path below except fold and check commits chips, and a check
+  // preflop only exists when toCall is 0 (nobody raised) -- so "not fold, not
+  // check, preflop" already means "chose to put money in beyond the blind."
+  if (state.street === "preflop" && action.type !== "fold" && action.type !== "check") {
+    seat.vpip = true;
+  }
+
   if (action.type === "fold") {
     if (!legal.canFold) throw new Error("Folding is not available.");
     seat.status = "folded";
@@ -776,6 +786,9 @@ export function normalizeGameState(state: GameState): GameState {
     if (!seat.avatarCosmetic) {
       seat.avatarCosmetic = seat.isHuman ? DEFAULT_AVATAR_COSMETIC : botAvatarFor(seat.position);
     }
+    // Hands in flight before VPIP existed have no opinion either way; treat
+    // as false rather than let `undefined` leak into a stats comparison.
+    seat.vpip = Boolean(seat.vpip);
   });
   if (state.currentPlayer === null || state.status !== "playing") {
     state.turnStartedAt = null;

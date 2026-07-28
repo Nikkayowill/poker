@@ -1,5 +1,5 @@
 import "server-only";
-import { adminClient } from "./game-store";
+import { adminClient } from "./supabase-admin";
 
 /**
  * Applies a paid Checkout Session exactly once. The database unique key is

@@ -1,9 +1,12 @@
 import "server-only";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { advanceTimedTurn, normalizeGameState } from "@/lib/game/engine";
 import type { GameState, PlayerAction } from "@/lib/game/types";
 import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
-import { readSupabaseRuntimeConfig } from "./runtime-config";
+import { adminClient } from "./supabase-admin";
+import { recordHandStats } from "./stats-store";
+
+// Re-exported for the many existing callers that import it from here.
+export { adminClient };
 
 declare global {
   var __riverRoomGames: Map<string, GameState> | undefined;
@@ -14,14 +17,6 @@ const memoryGames = globalThis.__riverRoomGames ?? new Map<string, GameState>();
 globalThis.__riverRoomGames = memoryGames;
 const timedAdvances = globalThis.__riverRoomTimedAdvances ?? new Map<string, Promise<GameState>>();
 globalThis.__riverRoomTimedAdvances = timedAdvances;
-
-export function adminClient(): SupabaseClient | null {
-  const config = readSupabaseRuntimeConfig();
-  if (!config) return null;
-  return createClient(config.url, config.serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-}
 
 function clone(state: GameState): GameState {
   return structuredClone(state);
@@ -219,6 +214,22 @@ async function resolveTimedAdvance(state: GameState): Promise<GameState> {
   let current = state;
 
   for (let step = 0; step < MAX_ADVANCE_STEPS; step += 1) {
+    // Captured as a primitive, before the call below -- not `current.status`
+    // read afterward. advanceTimedTurn mutates its input in place (it calls
+    // applyTurnAction(state, action), which sets fields directly on the same
+    // object), so `current` and `advanced.state` are the same reference by
+    // the time both are readable. A comparison written as
+    // `current.status !== "complete" && advanced.state.status === "complete"`
+    // is really comparing that object's status to itself: once a hand
+    // actually completes, both sides read the post-mutation value and the
+    // condition is false forever. This is why a bot action closing a hand
+    // never recorded a stat, while a human's own action did -- the /actions
+    // route captures its "was it already complete" flag as a boolean before
+    // calling applyPlayerAction, which is immune to this exact trap. Found by
+    // running an end-to-end test repeatedly: it worked whenever *my* action
+    // closed the hand and silently failed whenever a bot's did, which is
+    // exactly the signature of comparing a mutated object to itself.
+    const wasPlaying = current.status === "playing";
     const advanced = advanceTimedTurn(current);
     // Nothing was due: either it is a human's turn and their clock is still
     // running, or the hand is over. Either way this is where we stop, and it
@@ -234,6 +245,17 @@ async function resolveTimedAdvance(state: GameState): Promise<GameState> {
       // stale, so adopt theirs rather than replaying our own decision on top.
       logAdvance(current, step, "lost the optimistic write; adopting stored state");
       return await getStoredGame(state.id) ?? current;
+    }
+
+    // A bot's action or a human's expired clock (auto-check/auto-fold) just
+    // closed the hand. This is the other place that can happen -- the direct
+    // human-action path is hooked in the /actions route -- and it is the one
+    // this function exists to reach on its own, without anyone polling for
+    // it. Best-effort: a stats failure must never surface as a broken table.
+    if (wasPlaying && advanced.state.status === "complete") {
+      void recordHandStats(advanced.state).catch((error) => {
+        console.error("Could not record hand stats", error);
+      });
     }
 
     current = advanced.state;

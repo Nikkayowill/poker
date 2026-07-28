@@ -38,6 +38,15 @@ export interface Seat {
   lastAction: string | null;
   /** Consumable 20-second extensions. Human players receive three when they take a seat. */
   timeCardsRemaining: number;
+  /**
+   * Voluntarily Put In Pot: true once this seat calls, raises or goes all-in
+   * preflop of its own choice. Posting a blind does not set it -- that's the
+   * whole reason VPIP is worth tracking, since it separates a hand a player
+   * chose to play from one they only had chips in because they were the
+   * blind. Reset at the start of every hand; read once, at showdown/award,
+   * to record that hand's stat and never touched again until the next deal.
+   */
+  vpip: boolean;
 }
 
 export interface Winner {

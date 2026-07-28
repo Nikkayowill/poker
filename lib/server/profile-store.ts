@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { avatarPresets, profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile, ProfileUpdate } from "@/lib/profile/types";
 import { defaultEquipped, normalizeEquipped, type EquippedCosmetics } from "@/lib/cosmetics/catalog";
-import { adminClient } from "./game-store";
+import { adminClient } from "./supabase-admin";
 
 // isRegistered is omitted and derived from userId in publicProfile, so the
 // owning account is the single source of truth rather than a flag that can
@@ -548,6 +548,30 @@ export async function claimBackstopGold(token: string, threshold: number): Promi
  * session cookie is first seen (see ensureProfile). Used only by the
  * admin dashboard, so a flat cap replaces real pagination.
  */
+/**
+ * Public profile fields for a batch of ids, keyed by id. Used to decorate a
+ * leaderboard (built from player_stats/season_stats, which know nothing
+ * about display names or avatars) without every reader needing to know the
+ * profiles table's column names.
+ */
+export async function getPublicProfilesByIds(ids: string[]): Promise<Map<string, PlayerProfile>> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  const supabase = adminClient();
+  if (!supabase) {
+    const byId = new Map([...memoryProfiles.values()].map((profile) => [profile.id, profile]));
+    return new Map(
+      unique.flatMap((id) => {
+        const profile = byId.get(id);
+        return profile ? [[id, publicProfile(profile)] as const] : [];
+      }),
+    );
+  }
+  const { data, error } = await supabase.from("profiles").select("*").in("id", unique);
+  if (error) throw new Error(`Could not load profiles: ${error.message}`);
+  return new Map((data ?? []).map((row) => [String(row.id), publicProfile(fromRow(row))]));
+}
+
 export async function listProfiles(): Promise<AdminProfileSummary[]> {
   const supabase = adminClient();
   if (!supabase) {

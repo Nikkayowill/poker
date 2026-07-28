@@ -1,0 +1,170 @@
+/* The public leaderboard: standalone route, own shell, mirrors the
+   collection page's structure (header + back link + status copy) rather
+   than inventing a second visual language for "a full page besides the
+   table." */
+
+.leaderboard-shell {
+  min-height: 100vh;
+  min-height: 100svh;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 32px clamp(16px, 4vw, 48px) 72px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+.leaderboard-header h1 { margin: 0 0 4px; font-size: 22px; }
+.leaderboard-header p { margin: 0; color: var(--muted); font-size: 13px; max-width: 46ch; }
+
+.leaderboard-back {
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.leaderboard-back:hover { color: var(--ink); border-color: var(--gold); }
+
+.leaderboard-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.leaderboard-scope-button {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.leaderboard-scope-button:hover { color: var(--ink); border-color: rgba(217,184,93,.3); }
+.leaderboard-scope-active {
+  border-color: var(--gold);
+  background: rgba(217,184,93,.1);
+  color: var(--gold-light);
+}
+
+.leaderboard-season-window {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.leaderboard-error { color: #ff9e9e; margin: 0 0 14px; font-size: 13px; }
+.leaderboard-empty {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.leaderboard-empty svg { color: var(--gold); flex-shrink: 0; }
+
+.leaderboard-table {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 28px 30px 1fr 56px 52px 76px 84px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+}
+.leaderboard-row:first-child { border-top: none; }
+
+.leaderboard-row-head {
+  border-top: none;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: var(--surface-2);
+}
+
+.leaderboard-row-mine { background: rgba(217,184,93,.06); }
+
+.leaderboard-rank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.leaderboard-crown-1 { color: #f5d976; }
+.leaderboard-crown-2 { color: #cbd5d1; }
+.leaderboard-crown-3 { color: #d3a06a; }
+
+.leaderboard-avatar {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--avatar-accent, var(--gold)), transparent 55%);
+  background: color-mix(in srgb, var(--avatar-accent, var(--gold)), transparent 88%);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.leaderboard-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+.leaderboard-name em { margin-left: 5px; color: var(--gold-light); font-style: normal; font-size: 11px; }
+
+.leaderboard-stat {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.leaderboard-profit {
+  text-align: right;
+  font-size: 13px;
+  font-weight: 700;
+}
+.leaderboard-profit-up { color: #7fd9a8; }
+.leaderboard-profit-down { color: #ff9e9e; }
+
+.leaderboard-divider {
+  height: 10px;
+  background: repeating-linear-gradient(90deg, var(--line) 0 6px, transparent 6px 12px);
+}
+
+@media (max-width: 560px) {
+  .leaderboard-row { grid-template-columns: 22px 26px 1fr 44px 76px; gap: 7px; padding: 8px 10px; }
+  /* VPIP and best-pot columns give way first; net profit and hand count
+     are the two numbers worth keeping on a phone. */
+  .leaderboard-row > :nth-child(5),
+  .leaderboard-row > :nth-child(6) { display: none; }
+}

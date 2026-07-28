@@ -604,6 +604,7 @@ export function PokerApp() {
             <div className="header-status">No-limit Hold’em · 6-max</div>
             {profile && <GoldBadge profile={profile} onClaimed={setProfile} />}
             <AuthButton profile={profile} onSignIn={() => void signIn()} onSignOut={() => void signOut()} />
+            <Link className="auth-button" href="/leaderboard">Leaderboard</Link>
             <Link className="auth-button" href="/collection">Collection</Link>
             {profile && <ProfileTrigger profile={profile} onClick={() => setProfileOpen(true)} />}
           </div>

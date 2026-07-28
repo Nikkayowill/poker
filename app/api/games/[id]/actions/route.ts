@@ -5,6 +5,7 @@ import { clampBuyIn } from "@/lib/game/tiers";
 import { loadGameWithTimeouts, logTurn, persistenceMode, updateStoredGame } from "@/lib/server/game-store";
 import { creditGold, isBanned, spendGold } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { recordHandStats } from "@/lib/server/stats-store";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 export const runtime = "nodejs";
@@ -103,6 +104,7 @@ export async function POST(
     }
 
     try {
+      const wasComplete = game.status === "complete";
       const updated = applyPlayerAction(game, action, ownerToken);
       logTurn(updated, "player action applied", { action: action.type, expectedVersion });
       await updateStoredGame(updated, action, ownerToken);
@@ -110,6 +112,14 @@ export async function POST(
       // would pay out a player whose seat never actually got released.
       if (cashOutAmount > 0) {
         profile = await creditGold(ownerToken, cashOutAmount).catch(() => profile);
+      }
+      // A human action just closed the hand (e.g. the last call that ends
+      // the river). Recording is idempotent and best-effort -- a stats write
+      // failing here must never turn a completed poker action into an error.
+      if (!wasComplete && updated.status === "complete") {
+        void recordHandStats(updated).catch((error) => {
+          console.error("Could not record hand stats", error);
+        });
       }
       return NextResponse.json({
         game: toSnapshot(updated, ownerToken),

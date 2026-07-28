@@ -222,3 +222,82 @@ describe("turn ownership", () => {
     expect(game.seats[actor].committed).toBe(committed);
   });
 });
+
+describe("VPIP", () => {
+  it("is not set by posting a blind", () => {
+    const game = allHumanTable();
+    const small = game.seats.find((seat) => seat.lastAction?.startsWith("Small blind"))!;
+    const big = game.seats.find((seat) => seat.lastAction?.startsWith("Big blind"))!;
+    expect(small.vpip).toBe(false);
+    expect(big.vpip).toBe(false);
+  });
+
+  it("is not set by folding or by the big blind's free check", () => {
+    const game = allHumanTable();
+    // Identified before anyone acts: the round-closing check that follows
+    // clears lastAction table-wide as part of dealing the next street (see
+    // advanceStreet), so "Big blind" would no longer be findable afterward.
+    const bigIndex = game.seats.findIndex((seat) => seat.lastAction?.startsWith("Big blind"));
+    expect(bigIndex).toBeGreaterThanOrEqual(0);
+
+    const folder = current(game)!;
+    act(game, { type: "fold" });
+    expect(game.seats[folder].vpip).toBe(false);
+
+    let guard = 0;
+    let bigChecked = false;
+    while (game.street === "preflop" && guard < 20) {
+      const idx = current(game)!;
+      const seat = game.seats[idx];
+      const willCheck = seat.streetBet === game.currentBet;
+      act(game, willCheck ? { type: "check" } : { type: "call" });
+      if (idx === bigIndex) bigChecked = willCheck;
+      guard += 1;
+    }
+    // The BB really did get its free option here, rather than the street
+    // closing before it acted at all.
+    expect(bigChecked).toBe(true);
+    expect(game.seats[bigIndex].vpip).toBe(false);
+  });
+
+  it("is set by calling, raising or shoving preflop, and stays set for the rest of the hand", () => {
+    const game = allHumanTable();
+    const caller = current(game)!;
+    act(game, { type: "call" });
+    expect(game.seats[caller].vpip).toBe(true);
+
+    const raiser = current(game)!;
+    act(game, { type: "raise", amount: game.bigBlind * 4 });
+    expect(game.seats[raiser].vpip).toBe(true);
+
+    let guard = 0;
+    while (game.street === "preflop" && guard < 20) {
+      const seat = game.seats[current(game)!];
+      act(game, seat.streetBet === game.currentBet ? { type: "check" } : { type: "call" });
+      guard += 1;
+    }
+    // Checking the flop is not a preflop action and must not clear it.
+    expect(game.street).toBe("flop");
+    act(game, { type: "check" });
+    expect(game.seats[caller].vpip).toBe(true);
+    expect(game.seats[raiser].vpip).toBe(true);
+  });
+
+  it("resets every seat at the start of the next hand", () => {
+    const game = allHumanTable();
+    act(game, { type: "raise", amount: game.bigBlind * 4 });
+    let guard = 0;
+    while (game.status === "playing" && guard < 60) {
+      const seat = game.seats[current(game)!];
+      act(game, seat.streetBet === game.currentBet ? { type: "check" } : { type: "call" });
+      guard += 1;
+    }
+    expect(game.seats.some((seat) => seat.vpip)).toBe(true);
+
+    // Not through the act() helper: by now the hand is complete and nobody
+    // is "on turn", but next-hand doesn't require turn ownership -- any
+    // seated player can deal the next one in.
+    applyPlayerAction(game, { type: "next-hand" }, tokenOf(game, 0));
+    expect(game.seats.every((seat) => seat.vpip === false)).toBe(true);
+  });
+});

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminClient } from "@/lib/server/game-store";
+import { adminClient } from "@/lib/server/supabase-admin";
 import { readSupabaseRuntimeConfig } from "@/lib/server/runtime-config";
 
 export const runtime = "nodejs";

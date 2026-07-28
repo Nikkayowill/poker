@@ -7,7 +7,7 @@ import {
   type EquippedCosmetics,
 } from "@/lib/cosmetics/catalog";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { adminClient } from "./game-store";
+import { adminClient } from "./supabase-admin";
 
 declare global {
   var __riverRoomCosmetics: Map<string, Set<string>> | undefined;

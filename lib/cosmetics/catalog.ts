@@ -120,7 +120,7 @@ const cardBackCosmetics: Cosmetic[] = [
  * character, sold through exactly the same ownership and purchase path as
  * card backs, which is what makes this a single system instead of two.
  *
- * Drop the artwork at public/avatars/<id>.png to match each id below. Until
+ * Drop the artwork at public/avatars/<id>.webp to match each id below. Until
  * a file exists the entry still lists and sells; it simply renders the
  * generated figure in the meantime, so artwork and catalog can land apart.
  */
@@ -132,7 +132,7 @@ export const avatarCosmetics: Cosmetic[] = [
     description: "Knows the room, knows the rake. Yours from the start.",
     rarity: "standard",
     price: 0,
-    image: "/avatars/avatar-regular.png",
+    image: "/avatars/avatar-regular.webp",
   },
   {
     id: "avatar-shark",
@@ -141,7 +141,7 @@ export const avatarCosmetics: Cosmetic[] = [
     description: "Quiet until the river.",
     rarity: "standard",
     price: 1500,
-    image: "/avatars/avatar-shark.png",
+    image: "/avatars/avatar-shark.webp",
   },
   {
     id: "avatar-veteran",
@@ -150,7 +150,7 @@ export const avatarCosmetics: Cosmetic[] = [
     description: "Has folded better hands than you've shown.",
     rarity: "premium",
     price: 4000,
-    image: "/avatars/avatar-veteran.png",
+    image: "/avatars/avatar-veteran.webp",
   },
   {
     id: "avatar-closer",
@@ -159,7 +159,7 @@ export const avatarCosmetics: Cosmetic[] = [
     description: "Never leaves a pot on the table.",
     rarity: "premium",
     price: 4000,
-    image: "/avatars/avatar-closer.png",
+    image: "/avatars/avatar-closer.webp",
   },
   {
     id: "avatar-nightowl",
@@ -168,7 +168,7 @@ export const avatarCosmetics: Cosmetic[] = [
     description: "Plays best after everyone sensible has gone home.",
     rarity: "rare",
     price: 12000,
-    image: "/avatars/avatar-nightowl.png",
+    image: "/avatars/avatar-nightowl.webp",
   },
   {
     id: "avatar-housename",
@@ -177,7 +177,7 @@ export const avatarCosmetics: Cosmetic[] = [
     description: "Awarded for taking a High-stakes pot. Not for sale.",
     rarity: "signature",
     price: null,
-    image: "/avatars/avatar-housename.png",
+    image: "/avatars/avatar-housename.webp",
   },
 ];
 

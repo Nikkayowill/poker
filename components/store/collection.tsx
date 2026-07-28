@@ -60,6 +60,7 @@ export function Collection() {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<Cosmetic | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -81,6 +82,10 @@ export function Collection() {
   }, [load]);
 
   const act = async (item: Cosmetic, path: "purchase" | "equip") => {
+    // Spending Gold is irreversible, so a second click while one request is
+    // already in flight must not start another.
+    if (pendingId) return;
+    setConfirming(null);
     setPendingId(item.id);
     setError(null);
     setNotice(null);
@@ -129,6 +134,38 @@ export function Collection() {
       {error && <p className="collection-error">{error}</p>}
       {notice && <p className="collection-notice">{notice}</p>}
 
+      {confirming && (
+        <div className="confirm-overlay" role="presentation" onClick={() => setConfirming(null)}>
+          <div
+            className="confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="confirm-title">Buy {confirming.name}?</h2>
+            <p>
+              This spends <strong>{confirming.price!.toLocaleString()}</strong> Gold.
+              {!unlimited && (
+                <> You&rsquo;ll have <strong>{(balance - confirming.price!).toLocaleString()}</strong> left.</>
+              )}
+            </p>
+            <div className="confirm-actions">
+              <button type="button" className="cosmetic-action" onClick={() => setConfirming(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="cosmetic-action cosmetic-buy"
+                onClick={() => void act(confirming, "purchase")}
+              >
+                Buy it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {SLOTS.map(({ slot, title, blurb }) => {
         const items = catalog.filter((item) => item.slot === slot);
         if (items.length === 0) return null;
@@ -176,7 +213,7 @@ export function Collection() {
                             type="button"
                             className="cosmetic-action cosmetic-buy"
                             disabled={busy || !affordable}
-                            onClick={() => void act(item, "purchase")}
+                            onClick={() => setConfirming(item)}
                             title={affordable ? undefined : "Not enough Gold"}
                           >
                             {busy ? "…" : <><Coins size={13} /> {item.price!.toLocaleString()}</>}

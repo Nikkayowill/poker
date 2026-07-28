@@ -87,6 +87,22 @@ export interface SeatGeometry {
    * rail, near seats draw over it. The rail itself sits at RAIL_Z.
    */
   z: number;
+  /**
+   * Direction from the seat toward the middle of the table, for the things
+   * that belong between a player and the pot -- their posted bet above all.
+   * Derived rather than enumerated: a wager slides toward the centre no matter
+   * how many seats are in play, where a per-position rule has to be rewritten
+   * every time the ring changes size.
+   *
+   * Normalised so the larger component is exactly 1 -- a box norm, not the
+   * usual Euclidean one. That is deliberate. A seat is a rectangle, and
+   * scaling a Euclidean unit vector by half the box lands on the rectangle's
+   * *inscribed ellipse*, which is inside it everywhere except the four edge
+   * midpoints. A seat on a diagonal would put its bet chip in the corner
+   * region, on top of the player's own name. Dividing by the larger component
+   * instead puts the dominant axis exactly on its edge.
+   */
+  towardPot: { x: number; y: number };
 }
 
 /** The rail's own stacking level. Seats below it are occluded by it. */
@@ -114,8 +130,38 @@ export function seatGeometry(
   // Perspective divide: z is distance into the scene, 0 near and 1 far.
   const scale = FOCAL / (FOCAL + (1 - depth));
 
-  return { x, y, depth, scale, z: Math.round(depth * 100) };
+  // Toward (50, 50). The components are in percentage space, so a very wide
+  // table skews the direction slightly -- harmless at the short distances a
+  // bet chip travels, and not worth threading the pixel size in to correct.
+  const inwardX = 50 - x;
+  const inwardY = 50 - y;
+  const dominant = Math.max(Math.abs(inwardX), Math.abs(inwardY)) || 1;
+
+  return {
+    x,
+    y,
+    depth,
+    scale,
+    z: Math.round(depth * 100),
+    towardPot: { x: inwardX / dominant, y: inwardY / dominant },
+  };
 }
+
+/**
+ * How much larger the local player's own portrait is than a seat on the ring.
+ *
+ * Unlike everything else here, this is *not* a projection output, and it would
+ * be dishonest to dress it up as one: you are not on the ellipse. You are at
+ * the camera, outside the projected scene, so there is no z to feed the divide
+ * -- any value I claimed to derive would just be a size I picked by eye with
+ * the maths written in afterwards.
+ *
+ * What the geometry does constrain is the ordering. Your portrait has to be
+ * larger than the nearest seat on the ring (which projects at scale 1), or the
+ * scene says the closest figure to the camera is the furthest away. That
+ * invariant is a test; the exact value is a legibility choice.
+ */
+export const FIRST_PERSON_SCALE = 1.6;
 
 /**
  * Distance haze. Far seats lose a little contrast and colour, which reads as

@@ -26,7 +26,14 @@ import type { Card, GameSnapshot, PlayerAction, PublicSeat, Winner } from "@/lib
 import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
 import { cosmeticById } from "@/lib/cosmetics/catalog";
-import { atmosphere, flatZ, occlusionEnabled, radiiForWidth, seatGeometry } from "@/lib/game/table-geometry";
+import {
+  atmosphere,
+  FIRST_PERSON_SCALE,
+  flatZ,
+  occlusionEnabled,
+  radiiForWidth,
+  seatGeometry,
+} from "@/lib/game/table-geometry";
 import { profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 
@@ -1538,10 +1545,26 @@ function PokerTable({
         top: `${geometry.y}%`,
         "--seat-depth": geometry.scale,
         "--seat-haze": `brightness(${haze.brightness.toFixed(3)}) saturate(${haze.saturate.toFixed(3)})`,
+        // The direction from this seat toward the pot, as a bare unit vector.
+        // Anything that hangs off a seat picks its own distance in CSS and
+        // multiplies -- bets travel inward, the turn timer outward -- which
+        // keeps the per-breakpoint distances alongside every other breakpoint
+        // rule rather than stranded in here.
+        "--seat-dx": geometry.towardPot.x.toFixed(3),
+        "--seat-dy": geometry.towardPot.y.toFixed(3),
         zIndex: occlusionEnabled(viewportWidth) ? geometry.z : flatZ(geometry.depth),
       } as React.CSSProperties;
     }),
     [orderedSeats, viewportWidth],
+  );
+
+  // Your own portrait, sized off the one geometric fact that does apply to a
+  // player sitting at the camera: it has to out-scale the nearest seat on the
+  // ring. Deliberately not --seat-depth, which scales the whole seat box --
+  // your cards are already sized by hand and must not move.
+  const firstPersonStyle = useMemo(
+    () => ({ "--portrait-scale": FIRST_PERSON_SCALE }) as React.CSSProperties,
+    [],
   );
 
   const seatOrderKey = orderedSeats.map((seat) => seat.id).join(",");
@@ -1811,7 +1834,7 @@ function PokerTable({
                 // registered and chip flights, the muck drift and the dealer
                 // puck keep measuring the right spot.
                 placement={seat.isMine ? "seat-first-person" : "seat-ring"}
-                seatStyle={seat.isMine ? undefined : ringGeometry[index]}
+                seatStyle={seat.isMine ? firstPersonStyle : ringGeometry[index]}
                 handNumber={game.handNumber}
                 secondsRemaining={seat.isCurrent ? secondsRemaining : 0}
                 winAmount={showFunnel ? game.winners.find((winner) => winner.seatId === seat.id)?.amount : undefined}
@@ -1859,6 +1882,8 @@ function PokerTable({
 }
 
 type ConnectionState = "connected" | "reconnecting" | "offline";
+const MAX_ADVANCE_RETRIES = 3;
+const ADVANCE_RETRY_BASE_MS = 300;
 
 export function PokerApp() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
@@ -1872,6 +1897,10 @@ export function PokerApp() {
   const [cashOutNotice, setCashOutNotice] = useState<number | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const gameId = game?.id;
+  const gameVersionRef = useRef(game?.version ?? 0);
+  useEffect(() => {
+    gameVersionRef.current = game?.version ?? 0;
+  }, [game?.version]);
 
   const loadProfile = useCallback(async () => {
     const response = await fetch("/api/profile", { cache: "no-store" });
@@ -1902,6 +1931,14 @@ export function PokerApp() {
     if (!response.ok) throw new Error(data.error ?? "Could not refresh the table.");
     ingest(data);
     return data as { game: GameSnapshot; persistence: string };
+  }, [ingest]);
+
+  const advanceTable = useCallback(async (id: string) => {
+    const response = await fetch(`/api/games/${id}/advance`, { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? "Could not advance the table.");
+    ingest(data);
+    return data as { game: GameSnapshot; persistence: string; retryAfterMs: number | null };
   }, [ingest]);
 
   const joinByCode = useCallback(async (code: string, name?: string) => {
@@ -1980,12 +2017,43 @@ export function PokerApp() {
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!gameId || !url || !key) return;
     const supabase = createClient(url, key);
+    let disposed = false;
+    let refreshRunning = false;
+    let pendingVersion = gameVersionRef.current;
+
+    const refreshLatest = () => {
+      if (disposed || refreshRunning) return;
+      refreshRunning = true;
+      void (async () => {
+        try {
+          while (!disposed) {
+            const requestedVersion = pendingVersion;
+            const data = await refresh(gameId);
+            if (data.game.version >= pendingVersion) break;
+            if (pendingVersion <= requestedVersion) break;
+          }
+        } catch {
+          setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
+        } finally {
+          refreshRunning = false;
+        }
+      })();
+    };
+
     let channel: RealtimeChannel | null = supabase
       .channel(`table:${gameId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "game_signals", filter: `game_id=eq.${gameId}` },
-        () => void refresh(gameId),
+        (payload) => {
+          const version = Number((payload.new as { version?: unknown }).version);
+          if (
+            !Number.isFinite(version)
+            || version <= Math.max(pendingVersion, gameVersionRef.current)
+          ) return;
+          pendingVersion = version;
+          refreshLatest();
+        },
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") setConnectionState("connected");
@@ -1998,38 +2066,69 @@ export function PokerApp() {
         }
       });
     return () => {
+      disposed = true;
       if (channel) void supabase.removeChannel(channel);
       channel = null;
     };
   }, [gameId, refresh]);
 
   // Supabase Realtime delivers actions immediately, so persistent tables only
-  // need one deadline-aligned refresh to resolve the current bot/human timer.
+  // need one deadline-aligned advance request for the current bot/human timer.
   // In-memory development has no Realtime channel and keeps a modest fallback
   // poll so multiple local browsers still stay synchronized.
   useEffect(() => {
-    if (!gameId) return;
-    const refreshTable = () => {
+    if (!gameId || !game?.isSeated) return;
+    const advanceClock = () => {
       if (!window.navigator.onLine) {
         setConnectionState("offline");
         return;
       }
-      void refresh(gameId).catch(() => setConnectionState("reconnecting"));
+      void advanceTable(gameId).catch(() => setConnectionState("reconnecting"));
     };
 
     if (persistence === "memory") {
-      const interval = window.setInterval(refreshTable, 1500);
+      const interval = window.setInterval(advanceClock, 1500);
       return () => window.clearInterval(interval);
     }
 
+    // Realtime refreshes are strictly read-only. Only a seated player may ask
+    // the dedicated endpoint to resolve an expired server-authored deadline.
     const deadline = Date.parse(game?.turnDeadlineAt ?? "");
     if (!Number.isFinite(deadline)) return;
-    const timeout = window.setTimeout(
-      refreshTable,
-      Math.max(200, deadline - Date.now() + 120),
-    );
-    return () => window.clearTimeout(timeout);
-  }, [game?.turnDeadlineAt, gameId, persistence, refresh]);
+    let disposed = false;
+    let timeout: number;
+    let retryAttempt = 0;
+    const runAdvance = () => {
+      if (!window.navigator.onLine) {
+        setConnectionState("offline");
+        return;
+      }
+      void advanceTable(gameId)
+        .then((data) => {
+          if (
+            !disposed
+            && data.game.version === game.version
+            && typeof data.retryAfterMs === "number"
+            && data.retryAfterMs > 0
+          ) {
+            timeout = window.setTimeout(runAdvance, Math.max(200, data.retryAfterMs + 120));
+          }
+        })
+        .catch(() => {
+          if (disposed) return;
+          setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
+          if (!window.navigator.onLine || retryAttempt >= MAX_ADVANCE_RETRIES) return;
+          const retryDelay = ADVANCE_RETRY_BASE_MS * (2 ** retryAttempt);
+          retryAttempt += 1;
+          timeout = window.setTimeout(runAdvance, retryDelay);
+        });
+    };
+    timeout = window.setTimeout(runAdvance, Math.max(200, deadline - Date.now() + 120));
+    return () => {
+      disposed = true;
+      window.clearTimeout(timeout);
+    };
+  }, [advanceTable, game?.isSeated, game?.turnDeadlineAt, game?.version, gameId, persistence]);
 
   const quickPlay = async (name: string, tier: StakesTier, buyIn: number) => {
     setLoading(true);

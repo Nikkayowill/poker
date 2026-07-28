@@ -1263,11 +1263,15 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .seat-profile { display: flex; align-items: center; gap: 9px; }
 
+/* --portrait-scale is set only on the local player, whose portrait has to be
+   the largest at the table -- they sit nearest the camera. Defaulting it to 1
+   means the ring keeps its own size, and every responsive override below
+   scales along with it instead of needing a first-person twin. */
 .seat-avatar {
-  width: 39px;
-  height: 39px;
+  width: calc(39px * var(--portrait-scale, 1));
+  height: calc(39px * var(--portrait-scale, 1));
   flex: 0 0 auto;
-  font-size: 10px;
+  font-size: calc(10px * var(--portrait-scale, 1));
 }
 
 .turn-ring {
@@ -1412,12 +1416,17 @@ button:disabled { cursor: wait; opacity: .62; }
   100% { opacity: 1; transform: translate(0, 0) scale(1) rotate(0); filter: blur(0); }
 }
 
+/* The turn timer takes the same vector the other way -- negated, so it is
+   pushed away from the felt and never comes to rest over the community cards.
+   Horizontal only: seats are wider than they are tall, so throwing it
+   sideways clears the seat box while throwing it vertically would not. */
 .seat-turn-status {
+  --status-gap: 10px;
   position: absolute;
   top: 50%;
-  right: -67px;
+  left: calc(50% - var(--seat-dx, -1) * 50%);
   min-width: 57px;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%) translateX(calc(var(--seat-dx, -1) * -1 * var(--status-gap)));
   padding: 6px 7px;
   color: #eef5ef;
   border: 1px solid color-mix(in srgb, var(--seat-accent), transparent 45%);
@@ -1427,7 +1436,6 @@ button:disabled { cursor: wait; opacity: .62; }
   box-shadow: 0 8px 20px rgba(0,0,0,.34);
 }
 
-.seat-upper-right .seat-turn-status, .seat-lower-right .seat-turn-status { right: auto; left: -67px; }
 .seat-turn-status span {
   display: block;
   color: var(--seat-accent);
@@ -1454,15 +1462,28 @@ button:disabled { cursor: wait; opacity: .62; }
 .status-pill { color: #87948d; }
 .status-pill.all-in { color: #f0d989; border-color: rgba(217,184,93,.3); }
 
+/* A posted bet belongs between its player and the pot, so it rides the inward
+   vector the seat geometry hands down (--bet-x/--bet-y). This used to be four
+   rules keyed off which quadrant a seat sat in, which only ever covered the
+   six-seat ring those classes described. */
+/* Anchored to the seat's edge, not a fixed distance from its centre: a
+   percentage in left/top resolves against the seat box, so 50% + dx*50% lands
+   exactly on whichever edge faces the pot whatever size that box is. A fixed
+   distance cannot do this -- tuned to clear a wide desktop seat it flies off a
+   narrow one, and tuned to the narrow one it sits on top of the player's own
+   name. --bet-gap then pushes it clear of the border. */
 .table-bet {
+  --bet-gap: 13px;
   position: absolute;
+  left: calc(50% + var(--seat-dx, 0) * 50%);
+  top: calc(50% + var(--seat-dy, -1) * 50%);
+  transform:
+    translate(-50%, -50%)
+    translate(calc(var(--seat-dx, 0) * var(--bet-gap)), calc(var(--seat-dy, -1) * var(--bet-gap)));
   color: var(--gold-light);
   font: 700 10px Georgia, serif;
+  white-space: nowrap;
 }
-.seat-top .table-bet { left: 50%; bottom: -48px; transform: translateX(-50%); }
-.seat-bottom .table-bet { left: 50%; top: -62px; transform: translateX(-50%); }
-.seat-upper-left .table-bet, .seat-lower-left .table-bet { right: -42px; top: 50%; }
-.seat-upper-right .table-bet, .seat-lower-right .table-bet { left: -42px; top: 50%; }
 
 .action-bar {
   position: relative;
@@ -2116,8 +2137,6 @@ button:disabled { cursor: wait; opacity: .62; }
   .table-meta span:nth-child(2) { display: none; }
   .poker-table-wrap { width: calc(100% - 24px); }
   .player-seat { width: 122px; }
-  .seat-upper-left, .seat-lower-left { left: 1%; }
-  .seat-upper-right, .seat-lower-right { right: 1%; }
   .history-drawer { width: min(320px, 100%); }
   .action-bar { flex-wrap: wrap; }
   .turn-tools {
@@ -2174,20 +2193,17 @@ button:disabled { cursor: wait; opacity: .62; }
   .card-small { width: clamp(24px, 6.5vw, 32px); }
   .community-cards { gap: 3px; }
   .player-seat { width: 94px; min-height: 50px; padding: 6px; }
-  .seat-avatar { width: 27px; height: 27px; }
+  .seat-avatar {
+    width: calc(27px * var(--portrait-scale, 1));
+    height: calc(27px * var(--portrait-scale, 1));
+  }
   .seat-name-row strong { max-width: 42px; font-size: 9px; }
-  .seat-top { transform: translate(-50%, -42%); }
-  .seat-bottom { transform: translate(-50%, 42%); }
-  .seat-upper-left { left: 0; top: 24%; transform: translate(-8%, -50%); }
-  .seat-lower-left { left: 0; bottom: 10%; transform: translate(-8%, 50%); }
-  .seat-upper-right { right: 0; top: 24%; transform: translate(8%, -50%); }
-  .seat-lower-right { right: 0; bottom: 10%; transform: translate(8%, 50%); }
   .seat-cards { top: -26px; }
   .seat-cards.own-cards { top: -58px; }
   .seat-cards:not(.own-cards) .playing-card { width: 26px; }
   .seat-cards.own-cards .playing-card { width: clamp(42px, 13vw, 52px); }
-  .seat-turn-status { right: -48px; min-width: 42px; padding: 4px; }
-  .seat-upper-right .seat-turn-status, .seat-lower-right .seat-turn-status { right: auto; left: -48px; }
+  .seat-turn-status { --status-gap: 6px; min-width: 42px; padding: 4px; }
+  .table-bet { --bet-gap: 9px; }
   .seat-turn-status span { font-size: 5px; }
   .seat-turn-status strong { font-size: 12px; }
   .blind-silhouette > span { display: none; }
@@ -2284,10 +2300,6 @@ button:disabled { cursor: wait; opacity: .62; }
   }
   .poker-table-wrap { aspect-ratio: 3; }
   .player-seat { min-height: 42px; padding: 4px 8px; }
-  .seat-upper-left, .seat-lower-left { left: 3%; }
-  .seat-upper-right, .seat-lower-right { right: 3%; }
-  .seat-upper-left, .seat-upper-right { top: 18%; }
-  .seat-lower-left, .seat-lower-right { bottom: 2%; }
   .seat-cards { top: -22px; }
   .seat-cards.own-cards { top: -46px; }
   .seat-cards:not(.own-cards) .playing-card { width: 22px; }
@@ -2322,8 +2334,6 @@ button:disabled { cursor: wait; opacity: .62; }
   .table-area { padding-top: 0; }
   .poker-table-wrap { aspect-ratio: 3.6; }
   .player-seat { min-height: 36px; padding: 3px 6px; }
-  .seat-upper-left, .seat-upper-right { top: 14%; }
-  .seat-lower-left, .seat-lower-right { bottom: 0; }
   .seat-cards { top: -18px; }
   .seat-cards.own-cards { top: -40px; }
   .seat-cards:not(.own-cards) .playing-card { width: 18px; }
@@ -2924,17 +2934,45 @@ button:disabled { cursor: wait; opacity: .62; }
 .seat-first-person .dealt-card-shell:first-child .playing-card { transform: rotate(-7deg) translateY(2px); }
 .seat-first-person .dealt-card-shell:last-child .playing-card { transform: rotate(7deg) translateY(2px); }
 
-/* Name, stack and avatar sit on a low plinth beneath the hand. */
+/* Your portrait, name and stack sit on a low plinth beneath the hand. The
+   portrait leads it: --portrait-scale (set on the seat from the table
+   geometry) makes it the largest at the table, which is the only reading
+   consistent with sitting nearest the camera. */
 .seat-first-person .seat-profile {
-  padding: 6px 14px;
-  border-radius: 10px;
+  gap: 12px;
+  padding: 8px 16px 8px 10px;
+  border-radius: 12px;
   border: 1px solid rgba(255,255,255,.09);
   background: rgba(15, 24, 20, .92);
   box-shadow: 0 10px 26px rgba(0,0,0,.4);
 }
 
+/* A warm rim on the portrait, as though lit by the lamp over the table --
+   the near figure catches more of it than anyone on the far rail. */
+.seat-first-person .seat-avatar {
+  border: 2px solid color-mix(in srgb, var(--seat-accent), transparent 55%);
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.5),
+    0 6px 18px rgba(0,0,0,.45);
+}
+
+/* Your own name and stack carry the extra size the portrait sets up; at ring
+   scale they look stranded next to it. */
+.seat-first-person .seat-name-row strong { max-width: none; font-size: 14px; }
+.seat-first-person .seat-stack strong { font-size: 15px; }
+
 .seat-first-person .hand-strength { margin-top: 2px; }
-.seat-first-person .table-bet { left: 50%; top: -74px; transform: translateX(-50%); }
+/* Everyone else's bet slides toward the pot; yours cannot. Your hand is held
+   at the near edge with its top all but touching the community cards, so the
+   space between you and the pot -- where the chip belongs by convention -- is
+   the board itself, and a bet placed there covers the one thing that must stay
+   readable. It goes beside the hand instead, level with the cards. */
+.seat-first-person .table-bet {
+  left: auto;
+  right: -14px;
+  top: 64px;
+  transform: none;
+}
 .seat-first-person .seat-turn-status { left: 50%; right: auto; top: auto; bottom: -34px; transform: translateX(-50%); }
 
 /* Active and folded states still apply, minus the box chrome that no
@@ -2948,9 +2986,23 @@ button:disabled { cursor: wait; opacity: .62; }
 @media (max-height: 500px) and (orientation: landscape) {
   /* There is not enough height here for the board, a full-size hand and the
      action bar at once. Cards win -- they are the thing being read -- so the
-     plinth drops out and the stack is carried by the action bar instead. */
+     name and stack drop out and are carried by the action bar instead. */
   .seat-first-person { bottom: 2px; gap: 0; }
   .seat-first-person .playing-card { width: clamp(44px, 7vw, 56px); }
-  .seat-first-person .seat-profile,
+  .seat-first-person .seat-copy,
   .seat-first-person .hand-strength { display: none; }
+
+  /* The portrait stays, though. It is the one thing that says which player
+     you are, so it moves alongside the hand and out of the vertical stack --
+     lifted out of flow it costs no height at all, which is the only reason
+     the rest of this block had to give anything up. */
+  .seat-first-person .seat-profile {
+    position: absolute;
+    right: calc(100% + 10px);
+    bottom: 4px;
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+  }
 }

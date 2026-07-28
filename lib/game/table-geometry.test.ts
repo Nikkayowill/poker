@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atmosphere, RAIL_Z, seatGeometry } from "./table-geometry";
+import { atmosphere, FIRST_PERSON_SCALE, RAIL_Z, seatGeometry } from "./table-geometry";
 
 const SEATS = 6;
 
@@ -61,6 +61,31 @@ describe("table geometry", () => {
     // breaks and a far player draws over a near one.
     const byDepth = [...order].sort((a, b) => a.depth - b.depth);
     expect(byDepth.map((s) => s.z)).toEqual([...byDepth.map((s) => s.z)].sort((a, b) => a - b));
+  });
+
+  it("points every seat at the pot, normalised to the seat's box", () => {
+    for (const slot of [0, 1, 2, 3, 4, 5]) {
+      const seat = seatGeometry(slot, SEATS);
+      // Pointing inward: following the vector from the seat must reduce the
+      // distance to the middle of the table.
+      const before = Math.hypot(50 - seat.x, 50 - seat.y);
+      const after = Math.hypot(50 - (seat.x + seat.towardPot.x), 50 - (seat.y + seat.towardPot.y));
+      expect(after).toBeLessThan(before);
+
+      // Box norm, not Euclidean. A Euclidean unit vector scaled by half a seat
+      // lands on the box's inscribed ellipse -- inside the rectangle for any
+      // diagonal seat, which drops the bet chip on the player's own name.
+      const larger = Math.max(Math.abs(seat.towardPot.x), Math.abs(seat.towardPot.y));
+      expect(larger).toBeCloseTo(1, 6);
+    }
+  });
+
+  it("draws the local player larger than the nearest seat on the ring", () => {
+    // You sit closer to the camera than anyone at the table. If your own
+    // portrait were not the largest, the scene would be claiming the closest
+    // figure is the furthest away, and the whole depth illusion inverts.
+    const nearestOnRing = seatGeometry(0, SEATS).scale;
+    expect(FIRST_PERSON_SCALE).toBeGreaterThan(nearestOnRing);
   });
 
   it("hazes the far rail without crushing legibility", () => {

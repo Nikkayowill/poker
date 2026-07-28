@@ -1777,7 +1777,11 @@ function PokerTable({
               <PlayerSeat
                 key={seat.id}
                 seat={seat}
-                placement={placements[index]}
+                // The local player leaves the ring and becomes the
+                // foreground. Still a PlayerSeat, so its seat ref stays
+                // registered and chip flights, the muck drift and the dealer
+                // puck keep measuring the right spot.
+                placement={seat.isMine ? "seat-first-person" : placements[index]}
                 handNumber={game.handNumber}
                 secondsRemaining={seat.isCurrent ? secondsRemaining : 0}
                 winAmount={showFunnel ? game.winners.find((winner) => winner.seatId === seat.id)?.amount : undefined}

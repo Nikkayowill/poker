@@ -16,7 +16,7 @@ import { compareScores, describeHand, evaluateHand } from "./evaluator";
 import { TIER_CONFIG } from "./tiers";
 import type { Card, GameState, PlayerAction } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { defaultEquipped } from "@/lib/cosmetics/catalog";
+import { avatarCosmetics, defaultEquipped } from "@/lib/cosmetics/catalog";
 
 const testProfile = (
   name: string,
@@ -750,10 +750,11 @@ describe("legacy state normalization", () => {
     normalized.seats.forEach((seat) => {
       expect(seat.avatarCosmetic).toBeTruthy();
     });
-    // Bots keep their own faces rather than all collapsing to one default,
-    // which is most of what makes a table look occupied.
+    // Bots keep distinct faces rather than all collapsing to one default,
+    // which is most of what makes a table look occupied. Derived from the
+    // catalog size so adding or removing artwork never breaks this.
     const botFaces = new Set(normalized.seats.slice(1).map((seat) => seat.avatarCosmetic));
-    expect(botFaces.size).toBe(5);
+    expect(botFaces.size).toBe(Math.min(5, avatarCosmetics.length));
   });
 
   it("leaves an avatar that is already present untouched", () => {

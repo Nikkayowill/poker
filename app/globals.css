@@ -1129,24 +1129,30 @@ button:disabled { cursor: wait; opacity: .62; }
   border-radius: 7px;
   background: #131e1a;
   box-shadow: 0 14px 30px rgba(0,0,0,.3);
-  transition: opacity .2s, border-color .25s, translate .25s cubic-bezier(.2,.8,.3,1), scale .25s;
+  /* Seats further across the table sit slightly smaller. Depth is a variable
+     rather than a fixed scale so the active lean and the folded settle can
+     multiply it instead of fighting it. */
+  --seat-depth: 1;
+  scale: var(--seat-depth);
+  transition: opacity .2s, border-color .25s, filter .25s,
+    translate .25s cubic-bezier(.2,.8,.3,1), scale .25s;
 }
 
 /* Six seats around an oval: bottom-center is always the local player (seats
    are rotated relative to them before rendering), the rest fan out clockwise.
    --deal-x/--deal-y point from each seat toward the pot, reused by both the
    card-deal and chip-funnel animations. */
-.seat-top { --deal-x: 0px; --deal-y: 150px; left: 50%; top: 0; transform: translate(-50%, -16%); }
+.seat-top { --seat-depth: .90; --deal-x: 0px; --deal-y: 150px; left: 50%; top: 0; transform: translate(-50%, -16%); }
 .seat-bottom { --deal-x: 0px; --deal-y: -150px; left: 50%; bottom: 0; transform: translate(-50%, 20%); }
-.seat-upper-left { --deal-x: 165px; --deal-y: 85px; left: 3%; top: 26%; transform: translate(-16%, -50%); }
-.seat-lower-left { --deal-x: 165px; --deal-y: -85px; left: 3%; bottom: 8%; transform: translate(-16%, 50%); }
-.seat-upper-right { --deal-x: -165px; --deal-y: 85px; right: 3%; top: 26%; transform: translate(16%, -50%); }
-.seat-lower-right { --deal-x: -165px; --deal-y: -85px; right: 3%; bottom: 8%; transform: translate(16%, 50%); }
+.seat-upper-left { --seat-depth: .94; --deal-x: 165px; --deal-y: 85px; left: 3%; top: 26%; transform: translate(-16%, -50%); }
+.seat-lower-left { --seat-depth: 1; --deal-x: 165px; --deal-y: -85px; left: 3%; bottom: 8%; transform: translate(-16%, 50%); }
+.seat-upper-right { --seat-depth: .94; --deal-x: -165px; --deal-y: 85px; right: 3%; top: 26%; transform: translate(16%, -50%); }
+.seat-lower-right { --seat-depth: 1; --deal-x: -165px; --deal-y: -85px; right: 3%; bottom: 8%; transform: translate(16%, 50%); }
 
 .seat-current {
   z-index: 9;
   translate: 0 -8px;
-  scale: 1.045;
+  scale: calc(var(--seat-depth) * 1.05);
   border-color: color-mix(in srgb, var(--seat-accent), transparent 28%);
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--seat-accent), transparent 70%),
@@ -1169,7 +1175,14 @@ button:disabled { cursor: wait; opacity: .62; }
   50% { opacity: .34; box-shadow: 0 0 24px var(--seat-accent); }
 }
 
-.seat-muted { opacity: .5; }
+/* A folded seat leans back out of the hand: dimmer, fractionally smaller and
+   drained of colour, so the live seats read first without anyone vanishing. */
+.seat-muted {
+  opacity: .45;
+  translate: 0 3px;
+  scale: calc(var(--seat-depth) * .97);
+  filter: saturate(.55);
+}
 
 .seat-winner {
   z-index: 8;
@@ -2328,7 +2341,9 @@ button:disabled { cursor: wait; opacity: .62; }
   .gold-badge-claimed .gold-balance strong {
     animation: none;
   }
-  .dealer-puck-animated {
+  .dealer-puck-animated,
+  /* The depth/lean/settle changes still apply, they just arrive instantly. */
+  .player-seat {
     transition: none;
   }
 }

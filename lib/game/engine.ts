@@ -14,7 +14,7 @@ import type {
   Winner,
 } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { DEFAULT_AVATAR_COSMETIC } from "@/lib/cosmetics/catalog";
+import { avatarCosmetics, DEFAULT_AVATAR_COSMETIC } from "@/lib/cosmetics/catalog";
 import { clampBuyIn, isStakesTier, TIER_CONFIG, type StakesTier } from "./tiers";
 
 const suits: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
@@ -35,16 +35,27 @@ const botProfiles: Array<{
   accent: string;
   avatarUrl: null;
   avatarPreset: string;
-  avatarCosmetic: string;
   personality: BotPersonality;
 }> = [
-  { avatarCosmetic: "avatar-regular", name: "Jax", initials: "JX", accent: "#8fd6a8", avatarUrl: null, avatarPreset: "lucky", personality: "ROCK" },
-  { avatarCosmetic: "avatar-shark", name: "Maya", initials: "MA", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond", personality: "MANIAC" },
-  { avatarCosmetic: "avatar-veteran", name: "Theo", initials: "TH", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt", personality: "CALLING_STATION" },
-  { avatarCosmetic: "avatar-closer", name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
-  { avatarCosmetic: "avatar-nightowl", name: "Priya", initials: "PR", accent: "#65d6a2", avatarUrl: null, avatarPreset: "ace", personality: "MANIAC" },
-  { avatarCosmetic: "avatar-housename", name: "Wren", initials: "WR", accent: "#f08ca7", avatarUrl: null, avatarPreset: "crown", personality: "CALLING_STATION" },
+  { name: "Jax", initials: "JX", accent: "#8fd6a8", avatarUrl: null, avatarPreset: "lucky", personality: "ROCK" },
+  { name: "Maya", initials: "MA", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond", personality: "MANIAC" },
+  { name: "Theo", initials: "TH", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt", personality: "CALLING_STATION" },
+  { name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
+  { name: "Priya", initials: "PR", accent: "#65d6a2", avatarUrl: null, avatarPreset: "ace", personality: "MANIAC" },
+  { name: "Wren", initials: "WR", accent: "#f08ca7", avatarUrl: null, avatarPreset: "crown", personality: "CALLING_STATION" },
 ];
+
+
+/**
+ * A bot's face, taken from whatever avatars the catalog currently holds
+ * rather than naming ids. Adding or removing artwork changes the cast
+ * automatically and can never leave a bot pointing at an item that no
+ * longer exists.
+ */
+function botAvatarFor(position: number): string {
+  if (avatarCosmetics.length === 0) return DEFAULT_AVATAR_COSMETIC;
+  return avatarCosmetics[position % avatarCosmetics.length].id;
+}
 
 // Humans get a short decision clock plus three optional time-bank cards.
 // Bot deadlines are also persisted so polling/realtime can pace decisions
@@ -124,7 +135,7 @@ function restoreBotControl(seat: Seat) {
   seat.accent = fallback.accent;
   seat.avatarUrl = fallback.avatarUrl;
   seat.avatarPreset = fallback.avatarPreset;
-  seat.avatarCosmetic = fallback.avatarCosmetic;
+  seat.avatarCosmetic = botAvatarFor(seat.position);
   seat.timeCardsRemaining = 0;
 }
 
@@ -269,6 +280,7 @@ export function createGame(
     ...botProfiles.slice(1).map((bot, index): Seat => ({
       id: randomUUID(),
       ...bot,
+      avatarCosmetic: botAvatarFor(index + 1),
       position: index + 1,
       isHuman: false,
       ownerToken: null,
@@ -741,8 +753,7 @@ export function normalizeGameState(state: GameState): GameState {
     // collapsing to one default, which is most of what makes a table look
     // occupied.
     if (!seat.avatarCosmetic) {
-      const fallback = botProfiles[seat.position] ?? botProfiles[0];
-      seat.avatarCosmetic = seat.isHuman ? DEFAULT_AVATAR_COSMETIC : fallback.avatarCosmetic;
+      seat.avatarCosmetic = seat.isHuman ? DEFAULT_AVATAR_COSMETIC : botAvatarFor(seat.position);
     }
   });
   if (state.currentPlayer === null || state.status !== "playing") {

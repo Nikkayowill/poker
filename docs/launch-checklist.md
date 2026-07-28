@@ -65,3 +65,35 @@ The current session identity is an HttpOnly random cookie rather than a
 verified email/social login. It preserves seats across refreshes and duplicate
 tabs on the same browser profile, but account recovery and cross-device identity
 require Supabase Auth before a broad public launch.
+
+### Timed-action load guarantees
+
+- `GET /api/games/[id]` is read-only. A Realtime invalidation can never produce
+  another database write or another invalidation.
+- Supabase-backed games do not poll. Each seated browser schedules one request
+  at the persisted deadline; transient failures receive at most three retries.
+- Requests for the same game version are coalesced inside each Next.js process.
+  Across processes, the database version compare-and-swap permits one commit.
+- An expected timed-action loser returns `false`; it does not emit SQLSTATE
+  `40001` or create a Postgres error log.
+- Every committed version produces one action-ledger row and one upserted
+  `game_signals` row.
+
+These bounds make database work proportional to active tables and committed
+actions, rather than browser refresh frequency.
+
+### Production observation gate
+
+After deploying a gameplay or persistence change, keep the release invite-only
+until a 15-minute live session with multiple browsers satisfies all of these:
+
+- no new `Concurrent game update` Postgres errors;
+- database CPU remains below 60% outside brief spikes;
+- active database connections remain below 70% of the configured maximum;
+- gameplay API 5xx responses remain below 1%;
+- p95 snapshot and action latency remains below 500 ms.
+
+The current filtered Postgres Changes channel is intentionally limited to one
+small signal row per table. Before approaching roughly 3,000 concurrent
+Realtime subscribers, migrate this invalidation fan-out to Realtime Broadcast
+and load-test it; Supabase recommends Broadcast for that scale.

@@ -68,6 +68,15 @@ export function AdminDashboard() {
   const [query, setQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  const lock = () => {
+    window.sessionStorage.removeItem(SECRET_STORAGE_KEY);
+    setSecret("");
+    setSecretInput("");
+    setProfiles(null);
+    setTableStats(null);
+    setError(null);
+  };
+
   const load = useCallback(async (key: string) => {
     setLoading(true);
     setError(null);
@@ -241,7 +250,10 @@ export function AdminDashboard() {
             void load(secretInput);
           }}
         >
-          <h1>River Room admin</h1>
+          <div className="admin-brand" aria-hidden="true"><span>R</span></div>
+          <p className="admin-eyebrow">River Room / Operations</p>
+          <h1>Admin console</h1>
+          <p className="admin-subtitle">Private tools for player support, moderation, and the Gold economy.</p>
           <label htmlFor="admin-secret">Admin key</label>
           <input
             id="admin-secret"
@@ -263,7 +275,11 @@ export function AdminDashboard() {
   return (
     <main className="admin-shell">
       <header className="admin-header">
-        <h1>River Room admin</h1>
+        <div>
+          <p className="admin-eyebrow">River Room / Operations</p>
+          <h1>Admin console</h1>
+          <p className="admin-subtitle">Player support, moderation, and table health.</p>
+        </div>
         <div className="admin-header-actions">
           <Link className="admin-back" href="/">← Back to the table</Link>
           <button
@@ -274,11 +290,19 @@ export function AdminDashboard() {
           >
             {loading ? "Refreshing…" : "Refresh"}
           </button>
+          <button type="button" className="admin-lock" onClick={lock}>Lock</button>
         </div>
       </header>
       {error && <p className="admin-error">{error}</p>}
       {stats && (
-        <div className="admin-stats">
+        <section className="admin-section" aria-labelledby="overview-heading">
+          <div className="admin-section-heading">
+            <div>
+              <h2 id="overview-heading">Overview</h2>
+              <p>Quick signals from the current player and table data.</p>
+            </div>
+          </div>
+          <div className="admin-stats">
           <div className="admin-stat">
             <span>Total signups</span>
             <strong>{stats.total.toLocaleString()}</strong>
@@ -307,17 +331,25 @@ export function AdminDashboard() {
               </div>
             </>
           )}
-        </div>
+          </div>
+        </section>
       )}
-      <input
-        type="search"
-        className="admin-search"
-        placeholder="Search by name or Player ID…"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        aria-label="Search players"
-      />
-      <div className="admin-table-wrap">
+      <section className="admin-section" aria-labelledby="players-heading">
+        <div className="admin-section-heading admin-player-heading">
+          <div>
+            <h2 id="players-heading">Players</h2>
+            <p>{filtered.length.toLocaleString()} of {(profiles?.length ?? 0).toLocaleString()} profiles shown.</p>
+          </div>
+          <input
+            type="search"
+            className="admin-search"
+            placeholder="Search by name or Player ID…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label="Search players"
+          />
+        </div>
+        <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
             <tr>
@@ -402,7 +434,8 @@ export function AdminDashboard() {
 
           </tbody>
         </table>
-      </div>
+        </div>
+      </section>
     </main>
   );
 }

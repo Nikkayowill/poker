@@ -7,10 +7,13 @@ import { readSupabaseRuntimeConfig } from "./runtime-config";
 
 declare global {
   var __riverRoomGames: Map<string, GameState> | undefined;
+  var __riverRoomTimedAdvances: Map<string, Promise<GameState>> | undefined;
 }
 
 const memoryGames = globalThis.__riverRoomGames ?? new Map<string, GameState>();
 globalThis.__riverRoomGames = memoryGames;
+const timedAdvances = globalThis.__riverRoomTimedAdvances ?? new Map<string, Promise<GameState>>();
+globalThis.__riverRoomTimedAdvances = timedAdvances;
 
 export function adminClient(): SupabaseClient | null {
   const config = readSupabaseRuntimeConfig();
@@ -171,23 +174,40 @@ export async function findGameByRoomCode(code: string): Promise<string | null> {
 
 /**
  * Loads a table and advances one due server-authoritative turn before
- * returning it: an expired human clock or one paced bot decision.
- * Any route that reads a table (a poll, an action, a spectator view) should
- * go through this rather than getStoredGame directly.
+ * returning it: an expired human clock or one paced bot decision. Mutation
+ * routes use this helper; snapshot GETs deliberately call getStoredGame.
  */
 export async function loadGameWithTimeouts(id: string): Promise<GameState | null> {
   const state = await getStoredGame(id);
   if (!state) return null;
+  return advanceStoredGameWithTimeouts(state);
+}
+
+/**
+ * Advances one due turn from an already-authorized snapshot. Timed actions use
+ * a no-throw optimistic RPC because several seated browsers can wake at the
+ * same deadline; a loser simply reads and returns the winner's state.
+ */
+export async function advanceStoredGameWithTimeouts(state: GameState): Promise<GameState> {
+  const key = `${state.id}:${state.version}`;
+  const existing = timedAdvances.get(key);
+  if (existing) return existing;
+
+  const work = resolveTimedAdvance(state);
+  timedAdvances.set(key, work);
+  try {
+    return await work;
+  } finally {
+    if (timedAdvances.get(key) === work) timedAdvances.delete(key);
+  }
+}
+
+async function resolveTimedAdvance(state: GameState): Promise<GameState> {
   const advanced = advanceTimedTurn(state);
   if (!advanced.action || !advanced.actorSeatId) return state;
-  try {
-    await persistTimedTurn(advanced.state, advanced.actorSeatId, advanced.action);
-    return advanced.state;
-  } catch {
-    // Another request already changed the table between our read and this
-    // write; serve its latest state instead of failing an otherwise-passive read.
-    return getStoredGame(id);
-  }
+  const persisted = await persistTimedTurn(advanced.state, advanced.actorSeatId, advanced.action);
+  if (persisted) return advanced.state;
+  return await getStoredGame(state.id) ?? state;
 }
 
 export async function getStoredGame(id: string): Promise<GameState | null> {
@@ -270,19 +290,19 @@ async function persistTimedTurn(
   state: GameState,
   actorSeatId: string,
   action: Exclude<PlayerAction, { type: "next-hand" | "leave-seat" | "use-time-card" }>,
-): Promise<void> {
+): Promise<boolean> {
   const supabase = adminClient();
   if (!supabase) {
     const current = memoryGames.get(state.id);
     if (current && current.version !== state.version - 1) {
-      throw new Error("The table changed. Refresh and try again.");
+      return false;
     }
     memoryGames.set(state.id, clone(state));
-    return;
+    return true;
   }
 
   const previousVersion = state.version - 1;
-  const { error } = await supabase.rpc("persist_game_action", {
+  const { data, error } = await supabase.rpc("try_persist_timed_game_action", {
     p_game_id: state.id,
     p_expected_version: previousVersion,
     p_state: state,
@@ -291,7 +311,7 @@ async function persistTimedTurn(
     p_actor_seat_id: actorSeatId,
   });
   if (error) {
-    if (error.code === "40001") throw new Error("The table changed. Refresh and try again.");
     throw new Error(`Could not update the table: ${error.message}`);
   }
+  return data === true;
 }

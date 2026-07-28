@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { toSnapshot } from "@/lib/game/engine";
-import { loadGameWithTimeouts, persistenceMode } from "@/lib/server/game-store";
+import { getStoredGame, persistenceMode } from "@/lib/server/game-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
@@ -18,7 +18,9 @@ export async function GET(
     const paramsParsed = paramsSchema.safeParse(await context.params);
     if (!paramsParsed.success) return NextResponse.json({ error: "Table not found." }, { status: 404 });
     const { id } = paramsParsed.data;
-    const game = await loadGameWithTimeouts(id);
+    // Snapshot reads must never advance the game. Realtime invalidations call
+    // this route, so writing here would turn every signal into another signal.
+    const game = await getStoredGame(id);
     if (!game) return NextResponse.json({ error: "Table not found." }, { status: 404 });
     const ownerToken = request.cookies.get("river_session")?.value ?? "";
     if (

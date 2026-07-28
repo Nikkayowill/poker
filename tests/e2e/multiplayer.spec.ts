@@ -8,6 +8,7 @@ type Snapshot = {
   street: string;
   currentPlayer: number | null;
   pot: number;
+  rake: number;
   community: unknown[];
   log: unknown[];
   legalActions: {
@@ -50,10 +51,11 @@ test("a first-time mobile player can join from the lobby and always see their st
     const page = await context.newPage();
     await page.goto("/");
 
-    const joinButton = page.getByRole("button", { name: /Join table · 1K buy-in/i });
+    const joinButton = page.getByRole("button", { name: /^Join table/i });
     await expect(joinButton).toBeEnabled();
     await page.getByLabel("Player name").fill("Mobile Player");
     await joinButton.click();
+    await page.getByRole("dialog").getByRole("button", { name: /^Join table$/i }).click();
 
     await expect(page.locator(".poker-table-wrap")).toBeVisible();
     await expect(page.locator(".orientation-hint")).toBeVisible();
@@ -189,7 +191,7 @@ test("six isolated players keep private cards, action order, layout, pot, and re
     expect(folded).toBe(true);
     expect([...boardSizes]).toEqual(expect.arrayContaining([3, 4, 5]));
     expect(state.community).toHaveLength(5);
-    expect(state.seats.reduce((sum, seat) => sum + seat.stack, 0)).toBe(6000);
+    expect(state.seats.reduce((sum, seat) => sum + seat.stack, 0) + state.rake).toBe(6000);
 
     const nextActor = state.seats.find((seat) => seat.stack > 0)!.position;
     const next = await contexts[nextActor].request.post(`/api/games/${id}/actions`, {

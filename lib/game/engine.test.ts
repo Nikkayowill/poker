@@ -482,6 +482,41 @@ describe("multi-human seating", () => {
     expect(state.seats[1].name).toBe("Guest");
   });
 
+  it("does not mint a posted blind when a player claims that bot seat", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    const chipsBefore = game.seats.reduce(
+      (sum, seat) => sum + seat.stack + seat.committed,
+      0,
+    );
+
+    const { state, seatIndex } = claimSeat(
+      game,
+      crypto.randomUUID(),
+      testProfile("Guest"),
+      1000,
+    );
+    const claimed = state.seats[seatIndex];
+
+    expect(claimed.committed).toBeGreaterThan(0);
+    expect(claimed.stack + claimed.committed).toBe(1000);
+    expect(state.seats.reduce(
+      (sum, seat) => sum + seat.stack + seat.committed,
+      0,
+    )).toBe(chipsBefore);
+  });
+
+  it("rejects a buy-in smaller than chips the open seat already committed", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    game.seats[1].committed = 600;
+
+    expect(() => claimSeat(
+      game,
+      crypto.randomUUID(),
+      testProfile("Guest"),
+      500,
+    )).toThrow(/covers this seat's committed chips/i);
+  });
+
   it("returns the same seat on a repeat claim instead of taking another one", () => {
     const hostToken = crypto.randomUUID();
     const guestToken = crypto.randomUUID();
@@ -690,15 +725,13 @@ describe("stakes tiers and buy-ins", () => {
   it("clamps a claimed seat's buy-in into the table's own tier bounds", () => {
     const hostToken = crypto.randomUUID();
     let game = createGame(hostToken, "Host", undefined, { tier: "high", buyIn: 20_000 });
-    // Only an empty (busted-out) seat takes a fresh buy-in on claim -- claiming
-    // an active bot's seat mid-hand inherits its current stack instead, which
-    // is exercised separately above. Simulate a busted seat here.
     game.seats[1].stack = 0;
     const guestToken = crypto.randomUUID();
     const claimed = claimSeat(game, guestToken, testProfile("Guest"), 999_999);
     game = claimed.state;
     expect(claimed.seatIndex).toBe(1);
-    expect(game.seats[claimed.seatIndex].stack).toBe(40_000); // clamped down to high's maxBuyIn
+    const seat = game.seats[claimed.seatIndex];
+    expect(seat.stack + seat.committed).toBe(40_000); // clamped down to high's maxBuyIn
   });
 
   it("lets a busted seat rebuy between hands, clamped to the table's tier", () => {
@@ -730,9 +763,10 @@ describe("stakes tiers and buy-ins", () => {
 
     const claimed = claimSeat(game, crypto.randomUUID(), testProfile("Guest"), 500);
     game = claimed.state;
-    // The player pays 500 and gets 500 -- inheriting the bot's 1,750 would be
-    // free chips, and free chips are redeemable for Gold on cash-out.
-    expect(game.seats[claimed.seatIndex].stack).toBe(500);
+    // The player pays 500 and gets 500 total, including the blind already in
+    // the pot -- inheriting the bot's 1,750 would be redeemable free chips.
+    const seat = game.seats[claimed.seatIndex];
+    expect(seat.stack + seat.committed).toBe(500);
   });
 });
 

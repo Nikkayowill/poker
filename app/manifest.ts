@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "River Room — Texas Hold’em",
+    name: "River Room - Texas Hold’em",
     short_name: "River Room",
     description: "A server-authoritative six-max Texas Hold’em table.",
     start_url: "/",

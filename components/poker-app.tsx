@@ -17,6 +17,8 @@ import {
   UsersRound,
   Upload,
   X,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { ChangeEvent, FormEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
@@ -35,6 +37,9 @@ import {
 } from "@/lib/game/table-geometry";
 import { profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
+import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
+
+const SOUND_STORAGE_KEY = "river-room:sound-enabled";
 
 const suitPaths: Record<Exclude<Card["suit"], "clubs">, string> = {
   hearts:
@@ -363,6 +368,11 @@ const PlayerSeat = memo(function PlayerSeat({
       )}
       style={{ "--seat-accent": seat.accent, ...seatStyle } as React.CSSProperties}
     >
+      {isWinner && (
+        <span className="winner-badge" aria-label={`${seat.name} won the hand`}>
+          <span aria-hidden="true">♛</span> Winner
+        </span>
+      )}
       <div className={clsx("seat-cards", seat.isMine && "own-cards", isWinner && "winning-cards")}>
         {/* Once folded, this seat's cards live only in the transient
             MuckDrift overlay (see PokerTable) -- not here -- so they read as
@@ -628,6 +638,36 @@ function Lobby({
   );
 }
 
+function AuthButton({
+  profile,
+  onSignIn,
+  onSignOut,
+}: {
+  profile: PlayerProfile | null;
+  onSignIn: () => void;
+  onSignOut: () => void;
+}) {
+  const available = accountsEnabled();
+  if (profile?.isRegistered) {
+    return (
+      <button type="button" className="auth-button" onClick={onSignOut}>
+        Sign out
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="auth-button auth-button-save"
+      onClick={onSignIn}
+      disabled={!available}
+      title={available ? "Sign in with Google to save your progress" : "Sign-in is unavailable until Supabase is configured"}
+    >
+      Sign in
+    </button>
+  );
+}
+
 function ProfileModal({
   profile,
   onClose,
@@ -832,6 +872,7 @@ function BuyInModal({
   pending,
   onClose,
   onConfirm,
+  onBuyGold,
 }: {
   title: string;
   description: string;
@@ -842,6 +883,7 @@ function BuyInModal({
   pending: boolean;
   onClose: () => void;
   onConfirm: (tier: StakesTier, buyIn: number) => void;
+  onBuyGold?: () => void;
 }) {
   const [tier, setTier] = useState<StakesTier>(lockedTier ?? "micro");
   const config = TIER_CONFIG[tier];
@@ -928,6 +970,11 @@ function BuyInModal({
           </div>
 
           <footer className="buyin-footer">
+            {lockedTier && onBuyGold && !unlimitedGold && (
+              <button className="secondary-action" type="button" disabled={pending} onClick={onBuyGold}>
+                Buy Gold for rebuy
+              </button>
+            )}
             <button
               className="primary-action"
               type="button"
@@ -962,6 +1009,7 @@ function ActionBar({
   secondsRemaining,
   remainingFraction,
   profile,
+  onPurchaseRebuy,
 }: {
   game: GameSnapshot;
   pending: boolean;
@@ -970,6 +1018,7 @@ function ActionBar({
   secondsRemaining: number;
   remainingFraction: number;
   profile: PlayerProfile | null;
+  onPurchaseRebuy: () => void;
 }) {
   const legal = game.legalActions;
   const currentSeat = game.seats.find((seat) => seat.isCurrent);
@@ -1039,6 +1088,7 @@ function ActionBar({
               confirmLabel="Rebuy"
               pending={pending}
               onClose={() => setShowRebuyModal(false)}
+              onBuyGold={onPurchaseRebuy}
               onConfirm={(_tier, buyIn) => onAction({ type: "rebuy", amount: buyIn })}
             />
           )}
@@ -1206,7 +1256,8 @@ function PotFunnel({
     winners.forEach((winner) => {
       const seatEl = seatRefs.current[winner.seatId];
       if (!seatEl) return;
-      const seatRect = seatEl.getBoundingClientRect();
+      const stashEl = seatEl.querySelector<HTMLElement>(".seat-stack") ?? seatEl;
+      const seatRect = stashEl.getBoundingClientRect();
       next.push({
         seatId: winner.seatId,
         dx: seatRect.left + seatRect.width / 2 - potCenterX,
@@ -1489,6 +1540,11 @@ function PokerTable({
   onCustomize,
   onProfileChange,
   connectionState,
+  soundEnabled,
+  onToggleSound,
+  onPurchaseRebuy,
+  onSignIn,
+  onSignOut,
 }: {
   game: GameSnapshot;
   persistence: string;
@@ -1501,6 +1557,11 @@ function PokerTable({
   onCustomize: () => void;
   onProfileChange: (profile: PlayerProfile) => void;
   connectionState: ConnectionState;
+  soundEnabled: boolean;
+  onToggleSound: () => void;
+  onPurchaseRebuy: () => void;
+  onSignIn: () => void;
+  onSignOut: () => void;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [showOrientationHint, setShowOrientationHint] = useState(false);
@@ -1803,6 +1864,7 @@ function PokerTable({
         </div>
         <div className="game-header-actions">
           {profile && <GoldBadge profile={profile} onClaimed={onProfileChange} />}
+          <AuthButton profile={profile} onSignIn={onSignIn} onSignOut={onSignOut} />
           {profile && <ProfileTrigger profile={profile} onClick={onCustomize} compact />}
           <button
             ref={historyButtonRef}
@@ -1812,6 +1874,15 @@ function PokerTable({
             aria-haspopup="dialog"
           >
             <History size={15} /> <span>History</span>
+          </button>
+          <button
+            type="button"
+            className="sound-toggle"
+            onClick={onToggleSound}
+            aria-label={soundEnabled ? "Mute sound effects" : "Enable sound effects"}
+            title={soundEnabled ? "Mute sound effects" : "Enable sound effects"}
+          >
+            {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
           </button>
           {game.isSeated && (
             <button className="give-up-seat-button" onClick={onLeaveSeat} title="Give up your seat; a bot takes over">
@@ -1954,6 +2025,7 @@ function PokerTable({
             secondsRemaining={secondsRemaining}
             remainingFraction={remainingFraction}
             profile={profile}
+            onPurchaseRebuy={onPurchaseRebuy}
           />
         </div>
       </section>
@@ -1992,8 +2064,61 @@ export function PokerApp() {
   const [connectionState, setConnectionState] = useState<ConnectionState>("connected");
   const [cashOutNotice, setCashOutNotice] = useState<number | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [soundEnabled, setSoundEnabledState] = useState(true);
   const gameId = game?.id;
   const gameVersionRef = useRef(game?.version ?? 0);
+  const previousGameRef = useRef<GameSnapshot | null>(null);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(SOUND_STORAGE_KEY);
+    const enabled = stored !== "false";
+    setSoundEnabled(enabled);
+    const timer = window.setTimeout(() => setSoundEnabledState(enabled), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const toggleSound = useCallback(() => {
+    setSoundEnabledState((current) => {
+      const next = !current;
+      setSoundEnabled(next);
+      window.localStorage.setItem(SOUND_STORAGE_KEY, String(next));
+      if (next) playSound("ui");
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const current = game;
+    const previous = previousGameRef.current;
+    previousGameRef.current = current;
+    if (!current || !previous || current.id !== previous.id || current.version <= previous.version) return;
+
+    if (current.handNumber > previous.handNumber) {
+      playSound("deal");
+    } else {
+      const revealedCommunity = current.community.length - previous.community.length;
+      if (revealedCommunity === 3 && previous.community.length === 0) playSound("flop");
+      else if (revealedCommunity > 0) playSound("card");
+
+      const chipsMoved = current.seats.some((seat) => {
+        const priorSeat = previous.seats.find((candidate) => candidate.id === seat.id);
+        return priorSeat && seat.streetBet > priorSeat.streetBet;
+      });
+      if (chipsMoved) playSound("chips");
+    }
+
+    if (current.status === "complete" && previous.status !== "complete") {
+      const mineWon = current.winners.some((winner) =>
+        current.seats.some((seat) => seat.isMine && seat.id === winner.seatId),
+      );
+      playSound(mineWon ? "win" : "lose");
+    }
+
+    const latestLog = current.log[0];
+    if (latestLog && latestLog.id !== previous.log[0]?.id && latestLog.text.includes("ran out of time")) {
+      playSound("timeout");
+    }
+  }, [game]);
   useEffect(() => {
     gameVersionRef.current = game?.version ?? 0;
   }, [game?.version]);
@@ -2046,6 +2171,7 @@ export function PokerApp() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "Could not join that table.");
     ingest(data);
+    playSound("deal");
     window.history.replaceState({}, "", `/?table=${data.game.id}`);
   }, [ingest]);
 
@@ -2080,6 +2206,32 @@ export function PokerApp() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [refresh, joinByCode]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get("payment");
+    const sessionId = params.get("session_id");
+    if (payment !== "success" || !sessionId) return;
+    const timer = window.setTimeout(() => {
+      void fetch(`/api/stripe/checkout-session/verify?session_id=${encodeURIComponent(sessionId)}`, {
+        cache: "no-store",
+      })
+        .then(async (response) => {
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error ?? "Could not verify the payment.");
+          if (data.profile) setProfile(data.profile);
+          setAuthNotice(data.paid ? "Payment received — your rebuy Gold is ready." : "Payment is still processing.");
+        })
+        .catch((caught) => setError(caught instanceof Error ? caught.message : "Could not verify the payment."))
+        .finally(() => {
+          params.delete("payment");
+          params.delete("session_id");
+          const query = params.toString();
+          window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+        });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -2251,6 +2403,7 @@ export function PokerApp() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not find you a table.");
       ingest(data);
+      playSound("deal");
       window.history.pushState({}, "", `/?table=${data.game.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not find you a table.");
@@ -2271,6 +2424,7 @@ export function PokerApp() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not host a table.");
       ingest(data);
+      playSound("deal");
       window.history.pushState({}, "", `/?table=${data.game.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not host a table.");
@@ -2291,8 +2445,40 @@ export function PokerApp() {
     }
   };
 
+  const purchaseRebuy = async () => {
+    if (!game || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/stripe/checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gameId: game.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not start rebuy checkout.");
+      window.location.assign(data.url);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not start rebuy checkout.");
+      setLoading(false);
+    }
+  };
+
   const act = async (action: PlayerAction) => {
     if (!game || loading) return;
+    const actionSound: Partial<Record<PlayerAction["type"], Parameters<typeof playSound>[0]>> = {
+      fold: "fold",
+      check: "check",
+      call: "call",
+      raise: "raise",
+      "all-in": "all-in",
+      "use-time-card": "time-card",
+      "next-hand": "ui",
+      "leave-seat": "ui",
+      rebuy: "ui",
+    };
+    const effect = actionSound[action.type];
+    if (effect) playSound(effect);
     setLoading(true);
     setError(null);
     try {
@@ -2443,19 +2629,7 @@ export function PokerApp() {
           <div className="header-actions">
             <div className="header-status">No-limit Hold’em · 6-max</div>
             {profile && <GoldBadge profile={profile} onClaimed={setProfile} />}
-            {accountsEnabled() && profile && (
-              profile.isRegistered
-                ? (
-                  <button type="button" className="auth-button" onClick={() => void signOut()}>
-                    Sign out
-                  </button>
-                )
-                : (
-                  <button type="button" className="auth-button auth-button-save" onClick={() => void signIn()}>
-                    Save progress
-                  </button>
-                )
-            )}
+            <AuthButton profile={profile} onSignIn={() => void signIn()} onSignOut={() => void signOut()} />
             <Link className="auth-button" href="/collection">Collection</Link>
             {profile && <ProfileTrigger profile={profile} onClick={() => setProfileOpen(true)} />}
           </div>
@@ -2475,6 +2649,11 @@ export function PokerApp() {
             onCustomize={() => setProfileOpen(true)}
             onProfileChange={setProfile}
             connectionState={connectionState}
+            soundEnabled={soundEnabled}
+            onToggleSound={toggleSound}
+            onPurchaseRebuy={purchaseRebuy}
+            onSignIn={() => void signIn()}
+            onSignOut={() => void signOut()}
           />
         )
         : (

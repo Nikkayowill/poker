@@ -348,6 +348,10 @@ export function claimSeat(
   if (seatIndex === -1) throw new Error("This table is full.");
 
   const seat = state.seats[seatIndex];
+  const paidBuyIn = buyIn === undefined ? 1000 : clampBuyIn(state.tier, buyIn);
+  if (seat.committed > paidBuyIn) {
+    throw new Error("Choose a buy-in that covers this seat's committed chips.");
+  }
   seat.isHuman = true;
   seat.ownerToken = token;
   seat.personality = null;
@@ -358,11 +362,10 @@ export function claimSeat(
   seat.avatarPreset = profile.avatarPreset;
   seat.avatarCosmetic = profile.equipped.avatar;
   seat.timeCardsRemaining = STARTING_TIME_CARDS;
-  // A claimed seat always starts at the buy-in the player actually paid for.
-  // Inheriting whatever chips the outgoing bot happened to be sitting on
-  // would hand out free chips, and those chips are now redeemable for Gold
-  // on cash-out -- which would make sitting down and standing up a faucet.
-  seat.stack = buyIn === undefined ? 1000 : clampBuyIn(state.tier, buyIn);
+  // A claimed seat owns exactly the buy-in the player paid for, including chips
+  // this seat already committed before the bot was replaced. Resetting the
+  // behind-stack to the full buy-in would mint every posted blind/bet again.
+  seat.stack = paidBuyIn - seat.committed;
   if (state.currentPlayer === seatIndex) setCurrentPlayer(state, seatIndex);
 
   state.version += 1;
@@ -660,6 +663,7 @@ const personalityProfiles: Record<
   {
     pressureFactor: number; // fraction of stack that counts as "under pressure"
     pressureFoldRoll: number; // 0-100 chance to fold to pressure without a decent hand
+    postflopFoldRoll: number; // 0-100 chance to release a weak hand once the board is out
     raiseRoll: number; // 0-100 chance to raise with a decent hand
     raiseWide: boolean; // will also treat a single high card as decent
     raiseSizeBB: number; // raise-to size, in big blinds over the current bet
@@ -669,6 +673,7 @@ const personalityProfiles: Record<
   MANIAC: {
     pressureFactor: 0.55,
     pressureFoldRoll: 30,
+    postflopFoldRoll: 18,
     raiseRoll: 65,
     raiseWide: true,
     raiseSizeBB: 4,
@@ -677,6 +682,7 @@ const personalityProfiles: Record<
   ROCK: {
     pressureFactor: 0.18,
     pressureFoldRoll: 85,
+    postflopFoldRoll: 58,
     raiseRoll: 25,
     raiseWide: false,
     raiseSizeBB: 2,
@@ -684,7 +690,8 @@ const personalityProfiles: Record<
   },
   CALLING_STATION: {
     pressureFactor: 0.9,
-    pressureFoldRoll: 10,
+    pressureFoldRoll: 28,
+    postflopFoldRoll: 36,
     raiseRoll: 10,
     raiseWide: false,
     raiseSizeBB: 2,
@@ -698,10 +705,24 @@ function chooseBotAction(state: GameState, seatIndex: number): TurnAction {
   const profile = personalityProfiles[seat.personality ?? "ROCK"];
   const highRanks = seat.holeCards.filter((card) => ["A", "K", "Q", "J"].includes(card.rank)).length;
   const pair = seat.holeCards[0]?.rank === seat.holeCards[1]?.rank;
-  const decent = pair || highRanks === 2 || (profile.raiseWide && highRanks === 1);
+  const boardScore = state.community.length >= 3
+    ? evaluateHand([...seat.holeCards, ...state.community]).values[0]
+    : -1;
+  const madeHand = boardScore >= 1;
+  const decent = madeHand || pair || highRanks === 2 || (profile.raiseWide && highRanks === 1);
   const roll = randomInt(100);
-  if (legal.toCall > seat.stack * profile.pressureFactor && !decent && roll < profile.pressureFoldRoll) {
+  const potOdds = legal.toCall / Math.max(1, state.pot + legal.toCall);
+  const facingPressure = legal.toCall > seat.stack * profile.pressureFactor || potOdds >= 0.28;
+  if (
+    legal.toCall > 0
+    && !decent
+    && facingPressure
+    && roll < profile.pressureFoldRoll
+  ) {
     return { type: "fold" };
+  }
+  if (state.community.length >= 3 && boardScore === 0 && roll < profile.postflopFoldRoll) {
+    return legal.canFold ? { type: "fold" } : { type: "check" };
   }
   if (legal.canRaise && decent && roll < profile.raiseRoll) {
     const target = Math.min(

@@ -76,7 +76,10 @@ export function seatZ(depth: number): number {
  * Solved so the far edge lands at FAR_SCALE:
  *   FAR_SCALE = f / (f + 1)  =>  f = FAR_SCALE / (1 - FAR_SCALE)
  */
-const FAR_SCALE = 0.82;
+/* 0.82 was too gentle to read as distance: an 18% size drop across the whole
+   table is inside the range a player reads as "that seat is just a bit
+   smaller", not "that seat is further away". */
+const FAR_SCALE = 0.62;
 const FOCAL = FAR_SCALE / (1 - FAR_SCALE);
 
 export interface SeatGeometry {
@@ -172,13 +175,18 @@ export function seatGeometry(
 export const FIRST_PERSON_SCALE = 1.45;
 
 /**
- * Distance haze. Far seats lose a little contrast and colour, which reads as
- * air between the viewer and the far rail. Kept subtle -- names and stacks
- * still have to be legible over there.
+ * Distance haze -- aerial perspective. Air between the viewer and the far rail
+ * scatters light, so distant things lose contrast, lose colour and lose their
+ * hard edges. All three together are what separates a receding table from a
+ * ring of differently-sized cut-outs; size alone never sells it.
+ *
+ * The blur is deliberately tiny. Anything past about a pixel stops reading as
+ * distance and starts reading as a rendering fault, and these are faces.
  */
-export function atmosphere(depth: number): { brightness: number; saturate: number } {
+export function atmosphere(depth: number): { brightness: number; saturate: number; blur: number } {
   return {
-    brightness: 0.78 + 0.22 * depth,
-    saturate: 0.7 + 0.3 * depth,
+    brightness: 0.66 + 0.34 * depth,
+    saturate: 0.55 + 0.45 * depth,
+    blur: 0.9 * (1 - depth),
   };
 }

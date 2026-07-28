@@ -799,6 +799,11 @@ button:disabled { cursor: wait; opacity: .62; }
   border-radius: inherit;
   border: 2px solid rgba(237,216,139,.28);
   background:
+    /* The far half of the cloth falls into shadow. A lamp hangs over a real
+       table, so the felt is never evenly lit -- and an evenly lit surface is
+       the fastest way to make a 2.5D scene look like a flat diagram, however
+       hard the figures on it fall away with distance. */
+    linear-gradient(to bottom, rgba(0,0,0,.34) 0%, rgba(0,0,0,.06) 34%, rgba(0,0,0,0) 62%),
     /* Warm overhead spotlight, layered above the existing green highlight
        and base gradient rather than replacing them. */
     radial-gradient(ellipse 70% 55% at 50% 42%, rgba(255,247,214,.09), transparent 62%),
@@ -1166,6 +1171,25 @@ button:disabled { cursor: wait; opacity: .62; }
   filter: drop-shadow(0 12px 18px rgba(0,0,0,.55));
 }
 
+/* The pool of shadow a player casts on the felt. Cut-outs with nothing beneath
+   them hover, and a hovering figure has no distance -- this is the cue that
+   says the near players are standing closer to you rather than merely drawn
+   bigger. It tightens and darkens as it comes forward. */
+.seat-figure::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 1%;
+  z-index: -1;
+  width: calc(58% + 14% * var(--seat-near, 1));
+  aspect-ratio: 3.6;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,.6), rgba(0,0,0,0) 70%);
+  opacity: calc(.3 + .5 * var(--seat-near, 1));
+  pointer-events: none;
+}
+
 /* Shown until the artwork paints, and left underneath it forever after, so a
    missing or slow file never leaves a hole where a player should be. */
 .seat-figure-fallback {
@@ -1227,6 +1251,10 @@ button:disabled { cursor: wait; opacity: .62; }
      long name reaches into the neighbouring seat on a cramped table and buries
      their stack; the name ellipsises instead. */
   width: 100%;
+  /* Falls off with distance too, but far more gently than the figure: a name
+     and a stack still have to be read at the far rail, so this is a depth cue
+     that stops well short of the perspective the figure follows. */
+  scale: calc(.74 + .26 * var(--seat-near, 1));
   margin-top: -13%;
   padding: 4px 8px 5px;
   border: 1px solid rgba(255,255,255,.08);
@@ -1494,7 +1522,7 @@ button:disabled { cursor: wait; opacity: .62; }
    the player holding them at every table size without a breakpoint of their
    own. */
 .seat-cards:not(.own-cards) .playing-card {
-  width: calc(var(--seat-width) * .34);
+  width: calc(var(--seat-width) * .34 * var(--seat-depth, 1));
   border-radius: 3px;
 }
 
@@ -3062,16 +3090,17 @@ button:disabled { cursor: wait; opacity: .62; }
    sitting on the community cards, and your hand covering the board is the one
    collision that makes a table unplayable. */
 .seat-first-person .seat-cards {
-  top: calc(var(--fp-figure) * .7);
+  top: calc(var(--fp-figure) * .8);
   filter: drop-shadow(0 18px 26px rgba(0,0,0,.55));
 }
 
-/* Sized from the figure so they come to rest at its hands, below its face and
-   above its nameplate. A card is 10/7 as tall as it is wide, so at .38 of the
-   figure wide and centred .7 down, the pair spans .43 to .97 of the figure --
-   clear of the face above and of the plate, which starts at 1. Held at .45
-   wide they covered everything from the chin up. */
-.seat-first-person .playing-card { width: clamp(34px, calc(var(--fp-figure) * .38), 104px); }
+/* Sized from the figure so they come to rest below its face and against its
+   nameplate. A card is 10/7 as tall as it is wide, so at .34 of the figure
+   wide and centred .8 down, the pair spans .56 to 1.04 -- under a face that
+   ends around .62, and running just behind the plate, which starts at 1 and
+   paints over them. These portraits are mostly head, so the older .38-at-.7
+   put two cards across the chin. */
+.seat-first-person .playing-card { width: clamp(30px, calc(var(--fp-figure) * .34), 104px); }
 
 /* A shallow fan, so they read as held rather than laid flat on the felt.
    Set on the card itself, since the shell rotation would compound with the

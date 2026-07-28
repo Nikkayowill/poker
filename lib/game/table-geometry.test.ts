@@ -27,7 +27,7 @@ describe("table geometry", () => {
   it("shrinks monotonically with distance", () => {
     const slots = [0, 1, 2, 3].map((slot) => seatGeometry(slot, SEATS));
     expect(slots[0].scale).toBeCloseTo(1, 5);
-    expect(slots[3].scale).toBeCloseTo(0.82, 2);
+    expect(slots[3].scale).toBeCloseTo(0.62, 2);
 
     const byDepthDescending = [...slots].sort((a, b) => b.depth - a.depth);
     for (let i = 1; i < byDepthDescending.length; i += 1) {
@@ -41,7 +41,7 @@ describe("table geometry", () => {
     // receding table and a ring of progressively smaller boxes -- if this
     // ever equals the midpoint, someone has replaced the divide with a lerp.
     const nearScale = 1;
-    const farScale = 0.82;
+    const farScale = 0.62;
     const focal = farScale / (1 - farScale);
     const atHalfDepth = focal / (focal + 0.5);
     const linearMidpoint = (nearScale + farScale) / 2;
@@ -98,9 +98,14 @@ describe("table geometry", () => {
     const near = atmosphere(1);
     const far = atmosphere(0);
     expect(near.brightness).toBeCloseTo(1, 5);
+    expect(near.blur).toBeCloseTo(0, 5);
     expect(far.brightness).toBeLessThan(1);
-    // Names and stacks still have to be readable over there.
-    expect(far.brightness).toBeGreaterThan(0.7);
-    expect(far.saturate).toBeGreaterThan(0.6);
+    expect(far.saturate).toBeLessThan(1);
+    expect(far.blur).toBeGreaterThan(0);
+    // Faces still have to be faces over there: past about a pixel of blur this
+    // stops reading as distance and starts reading as a rendering fault.
+    expect(far.blur).toBeLessThan(1.2);
+    expect(far.brightness).toBeGreaterThan(0.6);
+    expect(far.saturate).toBeGreaterThan(0.5);
   });
 });

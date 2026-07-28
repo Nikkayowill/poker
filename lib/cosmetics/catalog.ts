@@ -45,7 +45,18 @@ export interface Cosmetic {
  *
  * scripts/prepare-avatars.sh writes both from a single source image.
  */
-/** The whole half-body figure, for the store card. */
+/**
+ * The whole figure, for the store card and the seat at the table.
+ *
+ * No cache-busting version on these paths, deliberately. Ids are stable so
+ * ownership survives an art change, which leaves the URL stable too -- but
+ * both the raw file and the optimised one are served `max-age=0,
+ * must-revalidate`, so a browser asks every time and replaced artwork appears
+ * immediately. The only cache that does hold the old file is Next's own
+ * server-side optimiser cache, which a deploy rebuilds. A `?v=` query was
+ * tried and reverted: next/image rejects query strings on local sources
+ * unless they are enumerated in images.localPatterns.
+ */
 export function avatarFigure(id: string): string {
   return `/avatars/${id}.webp`;
 }
@@ -168,6 +179,22 @@ export const avatarCosmetics: Cosmetic[] = [
     price: 1500,
   },
   {
+    id: "avatar-prospect",
+    slot: "avatar",
+    name: "The Prospect",
+    description: "New to the room and already hard to read.",
+    rarity: "standard",
+    price: 1500,
+  },
+  {
+    id: "avatar-rock",
+    slot: "avatar",
+    name: "The Rock",
+    description: "Folds for an hour, then takes your stack.",
+    rarity: "standard",
+    price: 1500,
+  },
+  {
     id: "avatar-rounder",
     slot: "avatar",
     name: "The Rounder",
@@ -200,6 +227,30 @@ export const avatarCosmetics: Cosmetic[] = [
     price: 4000,
   },
   {
+    id: "avatar-maniac",
+    slot: "avatar",
+    name: "The Maniac",
+    description: "Raises. You will find out why later.",
+    rarity: "premium",
+    price: 4000,
+  },
+  {
+    id: "avatar-crusher",
+    slot: "avatar",
+    name: "The Crusher",
+    description: "Table changes when they sit down.",
+    rarity: "premium",
+    price: 4000,
+  },
+  {
+    id: "avatar-latereg",
+    slot: "avatar",
+    name: "The Late Reg",
+    description: "Arrives on the second break and still finishes ahead.",
+    rarity: "premium",
+    price: 4000,
+  },
+  {
     id: "avatar-nightowl",
     slot: "avatar",
     name: "The Night Owl",
@@ -216,10 +267,50 @@ export const avatarCosmetics: Cosmetic[] = [
     price: 12000,
   },
   {
+    id: "avatar-chipleader",
+    slot: "avatar",
+    name: "The Chip Leader",
+    description: "Counts it in towers because it no longer fits in stacks.",
+    rarity: "rare",
+    price: 12000,
+  },
+  {
+    id: "avatar-nosebleed",
+    slot: "avatar",
+    name: "The Nosebleed",
+    description: "Plays stakes the rest of the room comes to watch.",
+    rarity: "rare",
+    price: 12000,
+  },
+  {
+    id: "avatar-ambassador",
+    slot: "avatar",
+    name: "The Ambassador",
+    description: "The face the room puts on its poster.",
+    rarity: "rare",
+    price: 12000,
+  },
+  {
     id: "avatar-housename",
     slot: "avatar",
     name: "House Name",
     description: "Awarded for taking a High-stakes pot. Not for sale.",
+    rarity: "signature",
+    price: null,
+  },
+  {
+    id: "avatar-finaltable",
+    slot: "avatar",
+    name: "Final Table",
+    description: "Awarded for being the last player with chips. Not for sale.",
+    rarity: "signature",
+    price: null,
+  },
+  {
+    id: "avatar-ace",
+    slot: "avatar",
+    name: "The Ace",
+    description: "The room's own. Earned, never bought.",
     rarity: "signature",
     price: null,
   },

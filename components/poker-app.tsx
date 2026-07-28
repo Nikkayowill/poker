@@ -1698,7 +1698,10 @@ function PokerTable({
         left: `${geometry.x}%`,
         top: `${geometry.y}%`,
         "--seat-depth": geometry.scale,
-        "--seat-haze": `brightness(${haze.brightness.toFixed(3)}) saturate(${haze.saturate.toFixed(3)})`,
+        "--seat-haze": `brightness(${haze.brightness.toFixed(3)}) saturate(${haze.saturate.toFixed(3)}) blur(${haze.blur.toFixed(2)}px)`,
+        // 0 at the far rail, 1 nearest. Everything that should fall off with
+        // distance but is not the figure itself derives from this.
+        "--seat-near": geometry.depth.toFixed(3),
         // Depth order for the figure; the plate derives a much higher one from
         // it so no nameplate is ever hidden behind a neighbour's shoulder.
         "--seat-z": seatZ(geometry.depth),

@@ -33,7 +33,7 @@ FACE_SIZE=256
 # Percentages of figure height. HEAD_FRACTION is the square's side; it wants
 # head, neck and a little shoulder, so the circle does not crop to the chin.
 # HEAD_LEAD lifts the top edge so hair is not shaved off.
-HEAD_FRACTION=42
+HEAD_FRACTION=62
 HEAD_LEAD=1
 
 if [[ -z "$SRC" || ! -d "$SRC" ]]; then
@@ -77,12 +77,18 @@ for src in "${sources[@]}"; do
   side=$(( fig_h * HEAD_FRACTION / 100 ))
   top=$(( fig_y - fig_h * HEAD_LEAD / 100 ))
   (( top < 0 )) && top=0
-  # Heads are centred in frame, so centre the crop on the canvas rather than on
-  # the figure's bounding box -- long hair drags that box off to one side.
-  left=$(( (img_w - side) / 2 ))
+  # Heads are centred within the figure, so centre the crop on the figure's own
+  # box rather than on the canvas -- these are not all framed alike, and one
+  # sitting off to one side would be cropped through the ear.
+  left=$(( fig_x + (fig_w - side) / 2 ))
   (( left < 0 )) && left=0
 
+  # Trimmed to the drawn figure before anything else. The generator leaves a
+  # different amount of empty canvas around each one, and untrimmed that margin
+  # becomes size: at a seat, two avatars drawn at the same scale would appear
+  # noticeably different heights for no reason a player could see.
   magick "$src" -auto-orient \
+    -crop "${fig_w}x${fig_h}+${fig_x}+${fig_y}" +repage \
     -resize "${FIGURE_WIDTH}x" \
     -quality 82 -define webp:method=6 \
     "$OUT/$id.webp"

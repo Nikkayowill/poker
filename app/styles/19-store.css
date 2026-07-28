@@ -1,0 +1,136 @@
+/* The Gold storefront: browse-any-time tiers, distinct from the one-click
+   rebuy button at the table. Mirrors the leaderboard/collection page shell
+   pattern rather than inventing a new one. */
+
+.gold-store-shell {
+  min-height: 100vh;
+  min-height: 100svh;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 32px clamp(16px, 4vw, 48px) 72px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.gold-store-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+.gold-store-header h1 { margin: 0 0 4px; font-size: 22px; }
+.gold-store-header p { margin: 0; color: var(--muted); font-size: 13px; max-width: 46ch; }
+
+.gold-store-header-actions { display: flex; align-items: center; gap: 10px; }
+
+.gold-store-balance {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border-radius: 9px;
+  border: 1px solid rgba(217,184,93,.3);
+  background: rgba(217,184,93,.08);
+  color: var(--gold-light);
+  font-size: 13px;
+}
+.gold-store-balance svg { color: var(--gold); }
+
+.gold-store-back {
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.gold-store-back:hover { color: var(--ink); border-color: var(--gold); }
+
+.gold-store-error { color: #ff9e9e; margin: 0 0 14px; font-size: 13px; }
+.gold-store-notice { color: var(--gold-light); margin: 0 0 14px; font-size: 13px; }
+
+.gold-store-legal {
+  padding: 18px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.gold-store-legal h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 14px;
+  font-size: 15px;
+}
+.gold-store-legal h2 svg { color: var(--gold); }
+
+.gold-store-legal-doc { margin-bottom: 16px; }
+.gold-store-legal-doc h3 { margin: 0 0 6px; font-size: 13px; color: var(--gold-light); }
+.gold-store-legal-doc p { margin: 0 0 8px; color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+
+.gold-store-legal-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.gold-store-legal .primary-action { margin-top: 4px; }
+.gold-store-legal .primary-action:disabled { opacity: .5; cursor: default; }
+
+.gold-store-tiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.gold-store-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.gold-store-tier-amount {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--gold-light);
+}
+.gold-store-tier-amount svg { color: var(--gold); }
+.gold-store-tier-amount strong { font-size: 17px; }
+.gold-store-tier-amount span { color: var(--muted); font-size: 12px; }
+
+.gold-store-tier h3 { margin: 0; font-size: 14px; }
+.gold-store-tier p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; flex: 1; }
+
+.gold-store-tier-buy {
+  border: 1px solid rgba(217,184,93,.4);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--gold-light);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.gold-store-tier-buy:hover:not(:disabled) { border-color: var(--gold); }
+.gold-store-tier-buy:disabled { opacity: .55; cursor: default; }
+
+.gold-store-empty {
+  grid-column: 1 / -1;
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+}

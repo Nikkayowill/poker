@@ -1,13 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureProfile } from "@/lib/server/profile-store";
-import { stripeClient, stripeRebuyGoldAmount } from "@/lib/server/stripe";
+import { stripeClient, verifiedRebuySession, verifiedTierSession } from "@/lib/server/stripe";
 import { fulfillStripePayment } from "@/lib/server/stripe-store";
 
 export const runtime = "nodejs";
 
 const sessionSchema = z.string().min(10).max(200);
 
+/**
+ * The success-page recovery path: called when a player lands back on
+ * ?payment=success, in case the webhook has not landed yet (or at all --
+ * this is also the only fulfillment path in local/dev environments with no
+ * public URL for Stripe to reach). Shares fulfillStripePayment with the
+ * webhook, which is what makes a refresh here safe: the database's unique
+ * session id is the idempotency key, not "did we already show a message."
+ */
 export async function GET(request: NextRequest) {
   try {
     const ownerToken = request.cookies.get("river_session")?.value;
@@ -18,21 +26,24 @@ export async function GET(request: NextRequest) {
     if (!stripe) return NextResponse.json({ error: "Stripe payments are not configured yet." }, { status: 503 });
 
     const profile = await ensureProfile(ownerToken);
-    const session = await stripe.checkout.sessions.retrieve(sessionId.data);
-    const metadata = session.metadata ?? {};
-    const expectedAmount = String(stripeRebuyGoldAmount());
-    if (
-      metadata.kind !== "rebuy_gold"
-      || metadata.profile_id !== profile.id
-      || metadata.gold_amount !== expectedAmount
-    ) {
-      return NextResponse.json({ error: "That payment does not belong to this player." }, { status: 403 });
-    }
-    if (session.payment_status !== "paid") {
-      return NextResponse.json({ paid: false, profile });
+
+    // A cheap, unexpanded peek at which kind this session is, so only one
+    // full (expanded, validated) verification runs -- not one per branch,
+    // which is what trying the tier path and falling back to rebuy on
+    // failure would cost on every legacy rebuy verification.
+    const peek = await stripe.checkout.sessions.retrieve(sessionId.data);
+    let paid: boolean;
+    if (peek.metadata?.kind === "gold_purchase") {
+      const { session, tier, profileId } = await verifiedTierSession(sessionId.data, profile.id);
+      paid = session.payment_status === "paid";
+      if (paid) await fulfillStripePayment(session.id, profileId, tier.goldAmount, { kind: "gold_purchase", tierKey: tier.key });
+    } else {
+      const { session, config, profileId } = await verifiedRebuySession(sessionId.data, profile.id);
+      paid = session.payment_status === "paid";
+      if (paid) await fulfillStripePayment(session.id, profileId, config.goldAmount);
     }
 
-    await fulfillStripePayment(session.id, profile.id, stripeRebuyGoldAmount());
+    if (!paid) return NextResponse.json({ paid: false, profile });
     return NextResponse.json({ paid: true, profile: await ensureProfile(ownerToken) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not verify Stripe payment.";

@@ -25,7 +25,7 @@ import Image from "next/image";
 import type { Card, GameSnapshot, PlayerAction, PublicSeat, Winner } from "@/lib/game/types";
 import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
-import { cosmeticById } from "@/lib/cosmetics/catalog";
+import { avatarFace, cosmeticById } from "@/lib/cosmetics/catalog";
 import {
   atmosphere,
   FIRST_PERSON_SCALE,
@@ -95,7 +95,8 @@ function ProfileAvatar({
   showTurn?: boolean;
 }) {
   const [, forceRerender] = useState(0);
-  const declared = cosmeticById(profile.avatarCosmetic)?.image ?? null;
+  // The head crop, not the figure: this is always drawn as a small circle.
+  const declared = cosmeticById(profile.avatarCosmetic) ? avatarFace(profile.avatarCosmetic) : null;
   // Six seats can wear the same avatar, so remember a missing file once
   // rather than firing a failed request per seat, per render.
   const artwork = declared && !missingArtwork.has(declared) ? declared : null;

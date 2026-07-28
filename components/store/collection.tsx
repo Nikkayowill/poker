@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Coins } from "lucide-react";
 import {
+  avatarFigure,
   rarityLabels,
   type Cosmetic,
   type CosmeticSlot,
@@ -28,14 +29,14 @@ function CosmeticArt({ item }: { item: Cosmetic }) {
 
   if (item.art) return <CardBackArt art={item.art} className="cosmetic-art" />;
 
-  if (item.image && !failed) {
-    // next/image rather than a plain tag: the source artwork is high
-    // resolution but displayed at ~120px here and ~40px at a seat, so
-    // letting Next resize and re-encode it is the difference between a
-    // few kilobytes and a few megabytes per avatar.
+  if (item.slot === "avatar" && !failed) {
+    // The whole figure here, not the head crop the seat plate uses. This is
+    // the card someone decides to spend Gold on, and what they are buying is
+    // a person sitting at a table -- the jacket, the posture and the hands on
+    // the rail are the product.
     return (
       <Image
-        src={item.image}
+        src={avatarFigure(item.id)}
         alt=""
         fill
         sizes="(max-width: 640px) 40vw, 160px"

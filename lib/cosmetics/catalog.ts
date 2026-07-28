@@ -35,12 +35,27 @@ export interface Cosmetic {
    * ownership and purchase path serve both.
    */
   art?: { base: string; ink: string; pattern: "lattice" | "chevron" | "rings" | "pinstripe" | "crest" };
-  /**
-   * Path under /public for an image-based item. Missing files degrade to the
-   * generated figure rather than a broken image, so catalog entries can land
-   * before their artwork does.
-   */
-  image?: string;
+}
+
+/**
+ * Where an avatar's artwork lives, by convention from its id rather than a
+ * field on the entry. Adding a character is then one catalog entry and two
+ * files with matching names -- there is no third place to update and no path
+ * to typo, and a half-added avatar cannot render someone else's face.
+ *
+ * scripts/prepare-avatars.sh writes both from a single source image.
+ */
+/** The whole half-body figure, for the store card. */
+export function avatarFigure(id: string): string {
+  return `/avatars/${id}.webp`;
+}
+
+/**
+ * A square crop of the head, for anywhere the avatar is a small circle. The
+ * full figure is mostly jacket and hands; at 40px it reads as a smudge.
+ */
+export function avatarFace(id: string): string {
+  return `/avatars/${id}-face.webp`;
 }
 
 /**
@@ -120,9 +135,12 @@ const cardBackCosmetics: Cosmetic[] = [
  * character, sold through exactly the same ownership and purchase path as
  * card backs, which is what makes this a single system instead of two.
  *
- * Drop the artwork at public/avatars/<id>.webp to match each id below. Until
- * a file exists the entry still lists and sells; it simply renders the
- * generated figure in the meantime, so artwork and catalog can land apart.
+ * Artwork is matched by id -- see avatarFigure/avatarFace above. Until the
+ * files exist an entry still lists and sells; it renders the player's monogram
+ * in the meantime, so a character and its artwork can land apart.
+ *
+ * Adding one is a matter of appending here and dropping a source image named
+ * <id>.png through the prepare script. Nothing counts the roster.
  */
 export const avatarCosmetics: Cosmetic[] = [
   {
@@ -132,7 +150,14 @@ export const avatarCosmetics: Cosmetic[] = [
     description: "Knows the room, knows the rake. Yours from the start.",
     rarity: "standard",
     price: 0,
-    image: "/avatars/avatar-regular.webp",
+  },
+  {
+    id: "avatar-grinder",
+    slot: "avatar",
+    name: "The Grinder",
+    description: "Plays the long session. Counts profit by the month, not the hand.",
+    rarity: "standard",
+    price: 1500,
   },
   {
     id: "avatar-shark",
@@ -141,16 +166,14 @@ export const avatarCosmetics: Cosmetic[] = [
     description: "Quiet until the river.",
     rarity: "standard",
     price: 1500,
-    image: "/avatars/avatar-shark.webp",
   },
   {
-    id: "avatar-veteran",
+    id: "avatar-rounder",
     slot: "avatar",
-    name: "The Veteran",
-    description: "Has folded better hands than you've shown.",
+    name: "The Rounder",
+    description: "Makes a living in rooms like this one.",
     rarity: "premium",
     price: 4000,
-    image: "/avatars/avatar-veteran.webp",
   },
   {
     id: "avatar-closer",
@@ -159,7 +182,22 @@ export const avatarCosmetics: Cosmetic[] = [
     description: "Never leaves a pot on the table.",
     rarity: "premium",
     price: 4000,
-    image: "/avatars/avatar-closer.webp",
+  },
+  {
+    id: "avatar-host",
+    slot: "avatar",
+    name: "The Host",
+    description: "Runs the room, and remembers every hand you've played in it.",
+    rarity: "premium",
+    price: 4000,
+  },
+  {
+    id: "avatar-veteran",
+    slot: "avatar",
+    name: "The Veteran",
+    description: "Has folded better hands than you've shown.",
+    rarity: "premium",
+    price: 4000,
   },
   {
     id: "avatar-nightowl",
@@ -168,7 +206,14 @@ export const avatarCosmetics: Cosmetic[] = [
     description: "Plays best after everyone sensible has gone home.",
     rarity: "rare",
     price: 12000,
-    image: "/avatars/avatar-nightowl.webp",
+  },
+  {
+    id: "avatar-highroller",
+    slot: "avatar",
+    name: "The High Roller",
+    description: "Buys in for the maximum. Every time, without asking the price.",
+    rarity: "rare",
+    price: 12000,
   },
   {
     id: "avatar-housename",
@@ -177,7 +222,6 @@ export const avatarCosmetics: Cosmetic[] = [
     description: "Awarded for taking a High-stakes pot. Not for sale.",
     rarity: "signature",
     price: null,
-    image: "/avatars/avatar-housename.webp",
   },
 ];
 

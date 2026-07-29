@@ -62,6 +62,7 @@ export function Collection() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<Cosmetic | null>(null);
+  const [previewing, setPreviewing] = useState<Cosmetic | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -167,6 +168,54 @@ export function Collection() {
         </div>
       )}
 
+      {previewing && (
+        <div className="confirm-overlay" role="presentation" onClick={() => setPreviewing(null)}>
+          <div
+            className="confirm-dialog preview-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="preview-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="preview-art-frame">
+              <CosmeticArt item={previewing} />
+            </div>
+            <h2 id="preview-title">{previewing.name}</h2>
+            <p>{previewing.description}</p>
+            <div className="confirm-actions">
+              <button type="button" className="cosmetic-action" onClick={() => setPreviewing(null)}>
+                Close
+              </button>
+              {owned.includes(previewing.id) && equipped?.[previewing.slot] !== previewing.id && (
+                <button
+                  type="button"
+                  className="cosmetic-action cosmetic-buy"
+                  onClick={() => {
+                    setPreviewing(null);
+                    void act(previewing, "equip");
+                  }}
+                >
+                  Equip
+                </button>
+              )}
+              {!owned.includes(previewing.id) && typeof previewing.price === "number" && previewing.price > 0 && (
+                <button
+                  type="button"
+                  className="cosmetic-action cosmetic-buy"
+                  disabled={!unlimited && balance < previewing.price}
+                  onClick={() => {
+                    setPreviewing(null);
+                    setConfirming(previewing);
+                  }}
+                >
+                  <Coins size={13} /> {previewing.price.toLocaleString()}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {SLOTS.map(({ slot, title, blurb }) => {
         const items = catalog.filter((item) => item.slot === slot);
         if (items.length === 0) return null;
@@ -187,10 +236,16 @@ export function Collection() {
                     key={item.id}
                     className={`cosmetic-card rarity-${item.rarity}${isEquipped ? " is-equipped" : ""}`}
                   >
-                    <div className="cosmetic-art-frame">
+                    <button
+                      type="button"
+                      className="cosmetic-art-frame cosmetic-art-preview"
+                      onClick={() => setPreviewing(item)}
+                      aria-label={`Preview ${item.name}`}
+                    >
                       <CosmeticArt item={item} />
                       {isEquipped && <span className="equipped-flag">Equipped</span>}
-                    </div>
+                      {!isOwned && <span className="preview-flag">Preview</span>}
+                    </button>
                     <div className="cosmetic-meta">
                       <strong>{item.name}</strong>
                       <span className={`rarity-tag rarity-${item.rarity}`}>{rarityLabels[item.rarity]}</span>

@@ -46,16 +46,22 @@ function initials(displayName: string) {
     .toUpperCase();
 }
 
-/** A brand new profile's starting balance, and the flat amount a daily claim grants. */
+/**
+ * A guest's starting balance. Registering (linking a real account) tops a
+ * profile up to SIGNUP_GOLD_TARGET instead -- see linkProfileToUser -- so
+ * the free-guest number and the signup number are deliberately different.
+ */
 const STARTING_GOLD = 2000;
+const SIGNUP_GOLD_TARGET = 10000;
 const DAILY_GOLD_GRANT = 1000;
 
 /**
- * The broke-player recovery grant. Deliberately small -- one Micro buy-in,
- * not a farmable income -- because a player who cannot afford the cheapest
- * seat has no way back into the game, and a stranded player is a lost one.
+ * The broke-player recovery grant. Deliberately small -- exactly one seat at
+ * the cheapest table, not a farmable income -- because a player who cannot
+ * afford the cheapest seat has no way back into the game, and a stranded
+ * player is a lost one.
  */
-const BACKSTOP_GRANT = 500;
+const BACKSTOP_GRANT = 1000;
 const BACKSTOP_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 function publicProfile(profile: StoredProfile): PlayerProfile {
@@ -432,7 +438,13 @@ export async function linkProfileToUser(token: string, userId: string): Promise<
     if (current.userId && current.userId !== userId) {
       throw new Error("This profile already belongs to another account.");
     }
-    const next: StoredProfile = { ...current, userId, updatedAt: now };
+    // The signup bonus fires exactly once, on the transition from guest
+    // (userId null) to registered -- re-linking the same account later never
+    // tops up again, and a profile that already earned or bought past
+    // SIGNUP_GOLD_TARGET is never reduced.
+    const isFirstLink = current.userId === null;
+    const goldBalance = isFirstLink ? Math.max(current.goldBalance, SIGNUP_GOLD_TARGET) : current.goldBalance;
+    const next: StoredProfile = { ...current, userId, goldBalance, updatedAt: now };
     memoryProfiles.set(token, next);
     return publicProfile(next);
   }
@@ -448,9 +460,12 @@ export async function linkProfileToUser(token: string, userId: string): Promise<
     throw new Error("This profile already belongs to another account.");
   }
 
+  const isFirstLink = current.userId === null;
+  const goldBalance = isFirstLink ? Math.max(current.goldBalance, SIGNUP_GOLD_TARGET) : current.goldBalance;
+
   const { data, error } = await supabase
     .from("profiles")
-    .update({ user_id: userId, updated_at: now })
+    .update({ user_id: userId, gold_balance: goldBalance, updated_at: now })
     .eq("session_token", token)
     .select("*")
     .single();

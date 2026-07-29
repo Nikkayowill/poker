@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { ArrowRight, Check, Cloud, Coins, ShieldCheck, UsersRound, X } from "lucide-react";
-import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
+import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { Card } from "@/lib/game/types";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { accountsEnabled } from "@/lib/auth/client";
@@ -69,7 +69,7 @@ export function Lobby({
   // Below the cheapest buy-in there is no seat in the house they can take,
   // so offer the recovery grant rather than letting them hit a dead end.
   const needsTopUp = Boolean(
-    profile && !profile.unlimitedGold && (profile.goldBalance ?? 0) < TIER_CONFIG.micro.minBuyIn,
+    profile && !profile.unlimitedGold && (profile.goldBalance ?? 0) < TIER_CONFIG[CHEAPEST_TIER].minBuyIn,
   );
   // Only nudge a guest once they have actually played -- a profile still
   // sitting on its untouched starting balance has nothing worth saving yet,
@@ -146,7 +146,7 @@ export function Lobby({
         {needsTopUp && (
           <div className="broke-notice" role="status">
             <span>
-              You&rsquo;re below the {TIER_CONFIG.micro.minBuyIn.toLocaleString()} Gold minimum for the
+              You&rsquo;re below the {TIER_CONFIG[CHEAPEST_TIER].minBuyIn.toLocaleString()} Gold minimum for the
               cheapest seat.
             </span>
             <button type="button" className="secondary-action" disabled={loading} onClick={onClaimBackstop}>
@@ -214,8 +214,8 @@ export function Lobby({
         </form>
         <div className="table-facts" aria-label="Table details">
           <span><strong>6</strong> seats</span>
-          <span><strong>3</strong> stakes tiers</span>
-          <span><strong>500 – 40,000</strong> buy-in</span>
+          <span><strong>8</strong> stakes tiers</span>
+          <span><strong>1,000 – 500,000</strong> buy-in</span>
         </div>
       </section>
       <aside className="lobby-preview">

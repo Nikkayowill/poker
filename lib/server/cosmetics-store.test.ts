@@ -13,9 +13,11 @@ describe("cosmetic ownership (memory mode)", () => {
   it("buys an item, debits the price, and records ownership once", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
-    const result = await purchaseCosmetic(token, profile, "back-oxblood");
+    await adjustGold(profile.id, 28000); // 30,000 total -- enough for the 25,000 item
+    const funded = await ensureProfile(token);
+    const result = await purchaseCosmetic(token, funded, "back-oxblood");
 
-    expect(result.profile.goldBalance).toBe(800); // 2000 starting - 1200
+    expect(result.profile.goldBalance).toBe(5000); // 30,000 - 25,000
     expect(result.owned).toContain("back-oxblood");
     expect(result.owned.filter((id) => id === "back-oxblood")).toHaveLength(1);
   });
@@ -23,7 +25,9 @@ describe("cosmetic ownership (memory mode)", () => {
   it("refuses a second purchase of the same item", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
-    await purchaseCosmetic(token, profile, "back-oxblood");
+    await adjustGold(profile.id, 28000);
+    const funded = await ensureProfile(token);
+    await purchaseCosmetic(token, funded, "back-oxblood");
     const after = await ensureProfile(token);
     await expect(purchaseCosmetic(token, after, "back-oxblood")).rejects.toThrow("already own");
   });
@@ -66,7 +70,9 @@ describe("cosmetic ownership (memory mode)", () => {
   it("equips an owned item and refuses one the player does not own", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
-    await purchaseCosmetic(token, profile, "back-slate");
+    await adjustGold(profile.id, 28000); // enough for the 25,000 item
+    const funded = await ensureProfile(token);
+    await purchaseCosmetic(token, funded, "back-slate");
 
     const owner = await ensureProfile(token);
     expect((await equipCosmetic(token, owner, "back-slate")).cardBack).toBe("back-slate");

@@ -91,7 +91,7 @@ const cardBackCosmetics: Cosmetic[] = [
     name: "Oxblood",
     description: "Deep red stock with a tight chevron weave.",
     rarity: "standard",
-    price: 1200,
+    price: 25000,
     art: { base: "#5a1f22", ink: "#d9a2a0", pattern: "chevron" },
   },
   {
@@ -100,7 +100,7 @@ const cardBackCosmetics: Cosmetic[] = [
     name: "Slate",
     description: "Cool grey, pinstriped like a good suit.",
     rarity: "standard",
-    price: 1200,
+    price: 25000,
     art: { base: "#2b3138", ink: "#9aa7b2", pattern: "pinstripe" },
   },
   {
@@ -109,7 +109,7 @@ const cardBackCosmetics: Cosmetic[] = [
     name: "Brass",
     description: "Warm metal rings under the lamp.",
     rarity: "premium",
-    price: 3500,
+    price: 250000,
     art: { base: "#4a3a1c", ink: "#d9b85d", pattern: "rings" },
   },
   {
@@ -118,7 +118,7 @@ const cardBackCosmetics: Cosmetic[] = [
     name: "Midnight",
     description: "Near-black with a quiet lattice you only catch up close.",
     rarity: "premium",
-    price: 3500,
+    price: 250000,
     art: { base: "#141a22", ink: "#6f7f96", pattern: "lattice" },
   },
   {
@@ -127,7 +127,7 @@ const cardBackCosmetics: Cosmetic[] = [
     name: "Ivory Crest",
     description: "Bone stock, engraved crest. Rare enough to notice.",
     rarity: "rare",
-    price: 11000,
+    price: 400000,
     art: { base: "#ded6c2", ink: "#8a6a22", pattern: "crest" },
   },
   {
@@ -168,7 +168,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Grinder",
     description: "Plays the long session. Counts profit by the month, not the hand.",
     rarity: "standard",
-    price: 1500,
+    price: 150000,
   },
   {
     id: "avatar-shark",
@@ -176,7 +176,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Shark",
     description: "Quiet until the river.",
     rarity: "standard",
-    price: 1500,
+    price: 150000,
   },
   {
     id: "avatar-prospect",
@@ -184,7 +184,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Prospect",
     description: "New to the room and already hard to read.",
     rarity: "standard",
-    price: 1500,
+    price: 150000,
   },
   {
     id: "avatar-rock",
@@ -192,7 +192,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Rock",
     description: "Folds for an hour, then takes your stack.",
     rarity: "standard",
-    price: 1500,
+    price: 150000,
   },
   {
     id: "avatar-rounder",
@@ -200,7 +200,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Rounder",
     description: "Makes a living in rooms like this one.",
     rarity: "premium",
-    price: 4000,
+    price: 150000,
   },
   {
     id: "avatar-closer",
@@ -208,7 +208,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Closer",
     description: "Never leaves a pot on the table.",
     rarity: "premium",
-    price: 4000,
+    price: 150000,
   },
   {
     id: "avatar-host",
@@ -216,7 +216,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Host",
     description: "Runs the room, and remembers every hand you've played in it.",
     rarity: "premium",
-    price: 4000,
+    price: 150000,
   },
   {
     id: "avatar-veteran",
@@ -224,7 +224,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Veteran",
     description: "Has folded better hands than you've shown.",
     rarity: "premium",
-    price: 4000,
+    price: 150000,
   },
   {
     id: "avatar-maniac",
@@ -232,7 +232,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Maniac",
     description: "Raises. You will find out why later.",
     rarity: "premium",
-    price: 4000,
+    price: 150000,
   },
   {
     id: "avatar-crusher",
@@ -240,7 +240,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Crusher",
     description: "Table changes when they sit down.",
     rarity: "premium",
-    price: 4000,
+    price: 150000,
   },
   {
     id: "avatar-latereg",
@@ -248,7 +248,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Late Reg",
     description: "Arrives on the second break and still finishes ahead.",
     rarity: "premium",
-    price: 4000,
+    price: 150000,
   },
   {
     id: "avatar-nightowl",
@@ -256,7 +256,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Night Owl",
     description: "Plays best after everyone sensible has gone home.",
     rarity: "rare",
-    price: 12000,
+    price: 150000,
   },
   {
     id: "avatar-highroller",
@@ -264,7 +264,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The High Roller",
     description: "Buys in for the maximum. Every time, without asking the price.",
     rarity: "rare",
-    price: 12000,
+    price: 150000,
   },
   {
     id: "avatar-chipleader",
@@ -272,7 +272,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Chip Leader",
     description: "Counts it in towers because it no longer fits in stacks.",
     rarity: "rare",
-    price: 12000,
+    price: 150000,
   },
   {
     id: "avatar-nosebleed",
@@ -280,7 +280,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Nosebleed",
     description: "Plays stakes the rest of the room comes to watch.",
     rarity: "rare",
-    price: 12000,
+    price: 150000,
   },
   {
     id: "avatar-ambassador",
@@ -288,7 +288,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Ambassador",
     description: "The face the room puts on its poster.",
     rarity: "rare",
-    price: 12000,
+    price: 150000,
   },
   {
     id: "avatar-housename",

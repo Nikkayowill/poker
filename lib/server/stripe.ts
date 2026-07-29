@@ -48,7 +48,22 @@ export function stripeWebhookSecret(): string | null {
 }
 
 export function stripeTestWebhookSecret(): string | null {
-  return process.env.STRIPE_SIGNING_SECRET_TEST_KEY?.trim() || null;
+  return process.env.STRIPE_TEST_WEBHOOK_SECRET?.trim() || null;
+}
+
+/**
+ * Which profiles may ever attempt a Stripe test-mode purchase. Server-only
+ * and never derived from anything the browser sends -- a request for a test
+ * profile not on this list is rejected the same way an ordinary player's
+ * would be.
+ */
+export function isTestPurchaseAllowed(profileId: string): boolean {
+  const allowed = process.env.STRIPE_TEST_ALLOWED_PROFILE_IDS ?? "";
+  return allowed
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .includes(profileId);
 }
 
 export function stripeRebuyPriceId(): string | null {
@@ -170,7 +185,7 @@ export const GOLD_TIERS: GoldTierDef[] = [
     key: "starter",
     label: "Starter",
     description: "A quick top-up to get back in.",
-    goldAmount: 5000,
+    goldAmount: 50000,
     envVar: "STRIPE_REBUY_PRICE_ID",
     testEnvVar: "STRIPE_TEST_PRICE_STARTER",
   },
@@ -178,7 +193,7 @@ export const GOLD_TIERS: GoldTierDef[] = [
     key: "value",
     label: "Value Pack",
     description: "Our most popular pack.",
-    goldAmount: 11000,
+    goldAmount: 120000,
     envVar: "STRIPE_PRICE_VALUE",
     testEnvVar: "STRIPE_TEST_PRICE_VALUE",
   },
@@ -186,7 +201,7 @@ export const GOLD_TIERS: GoldTierDef[] = [
     key: "stack",
     label: "Stack",
     description: "For a full session at the higher stakes.",
-    goldAmount: 24000,
+    goldAmount: 270000,
     envVar: "STRIPE_PRICE_STACK",
     testEnvVar: "STRIPE_TEST_PRICE_STACK",
   },
@@ -194,7 +209,7 @@ export const GOLD_TIERS: GoldTierDef[] = [
     key: "high_roller",
     label: "High Roller",
     description: "The whole ladder, all at once.",
-    goldAmount: 70000,
+    goldAmount: 750000,
     envVar: "STRIPE_PRICE_HIGH_ROLLER",
     testEnvVar: "STRIPE_TEST_PRICE_HIGH_ROLLER",
   },

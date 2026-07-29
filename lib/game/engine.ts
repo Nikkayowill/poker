@@ -15,7 +15,7 @@ import type {
 } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { avatarCosmetics, DEFAULT_AVATAR_COSMETIC } from "@/lib/cosmetics/catalog";
-import { clampBuyIn, isStakesTier, TIER_CONFIG, type StakesTier } from "./tiers";
+import { CHEAPEST_TIER, clampBuyIn, isStakesTier, TIER_CONFIG, type StakesTier } from "./tiers";
 
 const suits: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
 const ranks: Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
@@ -248,7 +248,7 @@ export function createGame(
   options?: { isPrivate?: boolean; tier?: StakesTier; buyIn?: number },
 ): GameState {
   const now = new Date().toISOString();
-  const tier = options?.tier ?? "micro";
+  const tier = options?.tier ?? CHEAPEST_TIER;
   const config = TIER_CONFIG[tier];
   // Defaults to 1000 (not the tier's own range) so every existing caller
   // that doesn't pass a buyIn -- every test, and any not-yet-updated route --
@@ -768,9 +768,9 @@ export function normalizeGameState(state: GameState): GameState {
   if (!isStakesTier(state.tier)) {
     // Games created before stakes tiers existed (stale in-memory dev state,
     // or Supabase rows persisted before this field was added) have no tier
-    // -- fall back to the app's original, only-ever tier rather than letting
+    // -- fall back to the cheapest tier rather than letting
     // TIER_CONFIG[undefined] crash every reader downstream.
-    state.tier = "micro";
+    state.tier = CHEAPEST_TIER;
   }
   // Hands dealt before rake existed carry no rake figure; treat them as unraked.
   if (!Number.isFinite(state.rake)) state.rake = 0;

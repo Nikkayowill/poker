@@ -3,7 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { X } from "lucide-react";
-import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
+import { CHEAPEST_TIER, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 
 /**
  * Picks a stakes tier (unless locked, e.g. rebuying at an already-seated
@@ -34,7 +34,7 @@ export function BuyInModal({
   onConfirm: (tier: StakesTier, buyIn: number) => void;
   onBuyGold?: () => void;
 }) {
-  const [tier, setTier] = useState<StakesTier>(lockedTier ?? "micro");
+  const [tier, setTier] = useState<StakesTier>(lockedTier ?? CHEAPEST_TIER);
   const config = TIER_CONFIG[tier];
   const affordableMax = unlimitedGold ? config.maxBuyIn : Math.min(config.maxBuyIn, goldBalance);
   const [buyIn, setBuyIn] = useState(() => Math.max(config.minBuyIn, Math.min(affordableMax, config.maxBuyIn)));
@@ -82,8 +82,8 @@ export function BuyInModal({
                     <span>{candidateConfig.smallBlind} / {candidateConfig.bigBlind} blinds</span>
                     <small>
                       {affordable
-                        ? `${candidateConfig.minBuyIn.toLocaleString()} – ${candidateConfig.maxBuyIn.toLocaleString()}`
-                        : `Need ${candidateConfig.minBuyIn.toLocaleString()}+ Gold`}
+                        ? `${candidateConfig.minBuyIn.toLocaleString()} Gold buy-in`
+                        : `Need ${candidateConfig.minBuyIn.toLocaleString()} Gold`}
                     </small>
                   </button>
                 );
@@ -96,16 +96,18 @@ export function BuyInModal({
               <span>Buy in for</span>
               <strong>{buyIn.toLocaleString()} chips</strong>
             </div>
-            <input
-              aria-label="Buy-in amount"
-              type="range"
-              min={config.minBuyIn}
-              max={Math.max(config.minBuyIn, affordableMax)}
-              step={config.bigBlind}
-              value={Math.min(buyIn, Math.max(config.minBuyIn, affordableMax))}
-              onChange={(event) => setBuyIn(Number(event.target.value))}
-              disabled={!canAfford(tier)}
-            />
+            {config.minBuyIn < config.maxBuyIn && (
+              <input
+                aria-label="Buy-in amount"
+                type="range"
+                min={config.minBuyIn}
+                max={Math.max(config.minBuyIn, affordableMax)}
+                step={config.bigBlind}
+                value={Math.min(buyIn, Math.max(config.minBuyIn, affordableMax))}
+                onChange={(event) => setBuyIn(Number(event.target.value))}
+                disabled={!canAfford(tier)}
+              />
+            )}
             <div className="buyin-gold-row">
               <span>Gold balance</span>
               <strong>{unlimitedGold ? "Unlimited" : goldBalance.toLocaleString()}</strong>
@@ -122,7 +124,7 @@ export function BuyInModal({
             {lockedTier && onBuyGold && !unlimitedGold && (
               <div className="buyin-purchase">
                 <button className="secondary-action" type="button" disabled={pending} onClick={onBuyGold}>
-                  Buy 5,000 Gold for rebuy
+                  Buy 50,000 Gold for rebuy
                 </button>
                 <small>Gold has no cash value and cannot be redeemed or withdrawn.</small>
               </div>

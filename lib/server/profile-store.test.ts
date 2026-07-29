@@ -70,9 +70,9 @@ describe("Gold economy (memory mode)", () => {
   it("grants the daily amount once, then rejects a same-day repeat", async () => {
     const token = randomUUID();
     await ensureProfile(token);
-    await linkProfileToUser(token, randomUUID());
+    await linkProfileToUser(token, randomUUID()); // guest 2,000 tops up to the 10,000 signup target
     const claimed = await claimDailyGold(token);
-    expect(claimed.goldBalance).toBe(3000);
+    expect(claimed.goldBalance).toBe(11000);
     expect(claimed.lastDailyClaimAt).not.toBeNull();
     await expect(claimDailyGold(token)).rejects.toThrow("already claimed");
   });
@@ -145,9 +145,9 @@ describe("Gold economy (memory mode)", () => {
   it("tops up a stranded player who cannot afford the cheapest seat", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
-    await adjustGold(profile.id, -1800); // down to 200, below micro's 500 minimum
+    await adjustGold(profile.id, -1800); // down to 200, below the cheapest table's 500-test threshold
     const after = await claimBackstopGold(token, 500);
-    expect(after.goldBalance).toBe(700);
+    expect(after.goldBalance).toBe(1200);
   });
 
   it("refuses a top-up for a player who can still afford to sit down", async () => {
@@ -160,8 +160,8 @@ describe("Gold economy (memory mode)", () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
     await adjustGold(profile.id, -1900); // down to 100
-    await claimBackstopGold(token, 500);
-    await adjustGold(profile.id, -600); // spend it back down to 0
+    await claimBackstopGold(token, 500); // grants 1,000, balance now 1,100
+    await adjustGold(profile.id, -1000); // spend back down to 100, below threshold again
     await expect(claimBackstopGold(token, 500)).rejects.toThrow("already had a top-up");
   });
 
@@ -179,16 +179,24 @@ describe("Gold economy (memory mode)", () => {
     await expect(claimDailyGold(token)).rejects.toThrow("Save your progress");
   });
 
-  it("links an account to a guest profile without disturbing its Gold", async () => {
+  it("tops a guest up to the signup target on first link", async () => {
     const token = randomUUID();
     const guest = await ensureProfile(token);
-    await spendGold(token, 500); // play a little first, so there is progress to keep
+    await spendGold(token, 500); // play a little first, so guest has 1,500 -- still under the signup target
     expect(guest.isRegistered).toBe(false);
 
     const linked = await linkProfileToUser(token, randomUUID());
     expect(linked.isRegistered).toBe(true);
     expect(linked.id).toBe(guest.id);
-    expect(linked.goldBalance).toBe(1500);
+    expect(linked.goldBalance).toBe(10000);
+  });
+
+  it("does not reduce a guest already richer than the signup target on first link", async () => {
+    const token = randomUUID();
+    const guest = await ensureProfile(token);
+    await adjustGold(guest.id, 40000); // 42,000, well above the signup target
+    const linked = await linkProfileToUser(token, randomUUID());
+    expect(linked.goldBalance).toBe(42000);
   });
 
   it("is idempotent for the same account and refuses a different one", async () => {

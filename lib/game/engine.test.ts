@@ -344,12 +344,13 @@ describe("server game engine", () => {
 
     const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
     expect(complete.status).toBe("complete");
-    // Gross side pots are 400/400/200; the 1,000 total is raked 40 (4%, under
-    // the 3xBB cap), split proportionally as 16/16/8.
-    expect(complete.rake).toBe(40);
-    expect(complete.winners.find((winner) => winner.seatId === complete.seats[0].id)?.amount).toBe(384);
-    expect(complete.winners.find((winner) => winner.seatId === complete.seats[1].id)?.amount).toBe(384);
-    expect(complete.winners.find((winner) => winner.seatId === complete.seats[2].id)?.amount).toBe(192);
+    // Gross side pots are 400/400/200; 4% of the 1,000 total would be 40, but
+    // the 3xBB cap (bigBlind 10) holds it to 30, split proportionally as
+    // 12/12/6.
+    expect(complete.rake).toBe(30);
+    expect(complete.winners.find((winner) => winner.seatId === complete.seats[0].id)?.amount).toBe(388);
+    expect(complete.winners.find((winner) => winner.seatId === complete.seats[1].id)?.amount).toBe(388);
+    expect(complete.winners.find((winner) => winner.seatId === complete.seats[2].id)?.amount).toBe(194);
     expect(complete.winners.some((winner) => winner.seatId === complete.seats[3].id)).toBe(false);
   });
 
@@ -507,7 +508,9 @@ describe("multi-human seating", () => {
 
   it("rejects a buy-in smaller than chips the open seat already committed", () => {
     const game = createGame(crypto.randomUUID(), "Host");
-    game.seats[1].committed = 600;
+    // Above even the table's fixed buy-in (1000), so clamping the requested
+    // amount up to that fixed buy-in still isn't enough to cover it.
+    game.seats[1].committed = 1500;
 
     expect(() => claimSeat(
       game,
@@ -703,45 +706,45 @@ describe("time cards", () => {
 });
 
 describe("stakes tiers and buy-ins", () => {
-  it("defaults to the micro tier's blinds and a 1000 stack when no tier/buyIn is given", () => {
+  it("defaults to the cheapest tier's blinds and a 1000 stack when no tier/buyIn is given", () => {
     const game = createGame(crypto.randomUUID(), "Host");
-    expect(game.tier).toBe("micro");
-    expect(game.smallBlind).toBe(10);
-    expect(game.bigBlind).toBe(20);
+    expect(game.tier).toBe("1k");
+    expect(game.smallBlind).toBe(5);
+    expect(game.bigBlind).toBe(10);
     expect(game.seats[0].stack).toBe(1000);
   });
 
-  it("applies a tier's blinds and clamps an out-of-range buy-in into bounds", () => {
-    const tooLow = createGame(crypto.randomUUID(), "Host", undefined, { tier: "mid", buyIn: 100 });
-    expect(tooLow.tier).toBe("mid");
+  it("applies a tier's blinds and clamps any buy-in to that tier's fixed amount", () => {
+    const tooLow = createGame(crypto.randomUUID(), "Host", undefined, { tier: "10k", buyIn: 100 });
+    expect(tooLow.tier).toBe("10k");
     expect(tooLow.smallBlind).toBe(50);
     expect(tooLow.bigBlind).toBe(100);
-    expect(tooLow.seats[0].stack).toBe(2500); // clamped up to mid's minBuyIn
+    expect(tooLow.seats[0].stack).toBe(10_000); // clamped up to 10k's fixed buy-in
 
-    const tooHigh = createGame(crypto.randomUUID(), "Host", undefined, { tier: "mid", buyIn: 999_999 });
-    expect(tooHigh.seats[0].stack).toBe(10_000); // clamped down to mid's maxBuyIn
+    const tooHigh = createGame(crypto.randomUUID(), "Host", undefined, { tier: "10k", buyIn: 999_999 });
+    expect(tooHigh.seats[0].stack).toBe(10_000); // clamped down to 10k's fixed buy-in
   });
 
-  it("clamps a claimed seat's buy-in into the table's own tier bounds", () => {
+  it("clamps a claimed seat's buy-in to the table's own fixed tier amount", () => {
     const hostToken = crypto.randomUUID();
-    let game = createGame(hostToken, "Host", undefined, { tier: "high", buyIn: 20_000 });
+    let game = createGame(hostToken, "Host", undefined, { tier: "500k", buyIn: 500_000 });
     game.seats[1].stack = 0;
     const guestToken = crypto.randomUUID();
     const claimed = claimSeat(game, guestToken, testProfile("Guest"), 999_999);
     game = claimed.state;
     expect(claimed.seatIndex).toBe(1);
     const seat = game.seats[claimed.seatIndex];
-    expect(seat.stack + seat.committed).toBe(40_000); // clamped down to high's maxBuyIn
+    expect(seat.stack + seat.committed).toBe(500_000); // clamped down to 500k's fixed buy-in
   });
 
   it("lets a busted seat rebuy between hands, clamped to the table's tier", () => {
     const token = crypto.randomUUID();
-    let game = createGame(token, "Host", undefined, { tier: "micro", buyIn: 1000 });
+    let game = createGame(token, "Host", undefined, { tier: "1k", buyIn: 1000 });
     game.status = "complete";
     game.seats[0].stack = 0;
 
     game = applyPlayerAction(game, { type: "rebuy", amount: 5_000_000 }, token);
-    expect(game.seats[0].stack).toBe(2000); // clamped down to micro's maxBuyIn
+    expect(game.seats[0].stack).toBe(1000); // clamped down to 1k's fixed buy-in
     expect(game.status).toBe("playing"); // rebuy immediately deals the next hand
   });
 
@@ -757,16 +760,16 @@ describe("stakes tiers and buy-ins", () => {
   });
 
   it("charges a full buy-in even when the outgoing bot left chips on the seat", () => {
-    let game = createGame(crypto.randomUUID(), "Host", undefined, { tier: "micro", buyIn: 1000 });
+    let game = createGame(crypto.randomUUID(), "Host", undefined, { tier: "1k", buyIn: 1000 });
     // An active bot mid-session, sitting on chips it won.
     game.seats[1].stack = 1750;
 
-    const claimed = claimSeat(game, crypto.randomUUID(), testProfile("Guest"), 500);
+    const claimed = claimSeat(game, crypto.randomUUID(), testProfile("Guest"), 50);
     game = claimed.state;
-    // The player pays 500 and gets 500 total, including the blind already in
-    // the pot -- inheriting the bot's 1,750 would be redeemable free chips.
+    // Whatever was requested clamps to the table's fixed 1,000 buy-in --
+    // inheriting the bot's 1,750 would be redeemable free chips.
     const seat = game.seats[claimed.seatIndex];
-    expect(seat.stack + seat.committed).toBe(500);
+    expect(seat.stack + seat.committed).toBe(1000);
   });
 });
 
@@ -836,12 +839,12 @@ describe("rake", () => {
   }
 
   it("takes nothing from a pot below the ten-big-blind floor", () => {
-    const { game, tokens } = riverShowdown(60);
+    const { game, tokens } = riverShowdown(45);
     const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
-    // 120 total is under 10 x 20, so the winner is handed the pot whole --
+    // 90 total is under 10 x 10, so the winner is handed the pot whole --
     // this is what keeps a preflop blind steal unraked.
     expect(complete.rake).toBe(0);
-    expect(complete.winners[0].amount).toBe(120);
+    expect(complete.winners[0].amount).toBe(90);
   });
 
   it("takes four percent of a pot above the floor", () => {
@@ -855,9 +858,9 @@ describe("rake", () => {
   it("caps rake at three big blinds however large the pot gets", () => {
     const { game, tokens } = riverShowdown(5000);
     const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
-    // 4% of 10,000 would be 400; the cap holds it to 3 x 20.
-    expect(complete.rake).toBe(60);
-    expect(complete.winners[0].amount).toBe(9940);
+    // 4% of 10,000 would be 400; the cap holds it to 3 x 10.
+    expect(complete.rake).toBe(30);
+    expect(complete.winners[0].amount).toBe(9970);
   });
 
   it("resets to zero when the next hand is dealt", () => {
@@ -872,19 +875,19 @@ describe("rake", () => {
 describe("cashing out", () => {
   it("returns the departing player's remaining chips and leaves none behind", () => {
     const token = crypto.randomUUID();
-    const game = createGame(token, "Host", undefined, { tier: "micro", buyIn: 1500 });
+    const game = createGame(token, "Host", undefined, { tier: "1k", buyIn: 1000 });
 
     const { state, cashedOut } = vacateSeat(game, token);
-    expect(cashedOut).toBe(1500);
+    expect(cashedOut).toBe(1000);
     // The chips left with the player, so the seat must not still hold them --
     // otherwise standing up would mint the stack a second time.
-    expect(state.seats[0].stack).toBe(TIER_CONFIG.micro.minBuyIn);
+    expect(state.seats[0].stack).toBe(TIER_CONFIG["1k"].minBuyIn);
     expect(state.seats[0].isHuman).toBe(false);
   });
 
   it("does not refund chips already committed to the current pot", () => {
     const token = crypto.randomUUID();
-    const game = createGame(token, "Host", undefined, { tier: "micro", buyIn: 1000 });
+    const game = createGame(token, "Host", undefined, { tier: "1k", buyIn: 1000 });
     game.seats[0].stack = 700;
     game.seats[0].committed = 300;
 

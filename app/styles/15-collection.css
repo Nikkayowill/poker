@@ -109,6 +109,33 @@
   text-transform: uppercase;
 }
 
+/* The art frame doubles as a preview trigger -- reset the button chrome it
+   inherits by being a <button> rather than a <div>. */
+.cosmetic-art-preview {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.preview-flag {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(10, 15, 12, .78);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+.cosmetic-art-preview:hover .preview-flag,
+.cosmetic-art-preview:focus-visible .preview-flag { opacity: 1; }
+
 .cosmetic-meta { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .cosmetic-meta strong { font-size: 13px; }
 
@@ -179,3 +206,17 @@
 .confirm-dialog p { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .confirm-dialog strong { color: var(--gold-light); font-variant-numeric: tabular-nums; }
 .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* A locked item's preview: same dialog chrome, wider, with a large render up
+   top -- looking at something you don't own yet must never itself equip it. */
+.preview-dialog { width: min(320px, 100%); }
+.preview-art-frame {
+  position: relative;
+  aspect-ratio: 5 / 6;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #101714;
+  margin-bottom: 14px;
+}
+.preview-art-frame .cosmetic-art,
+.preview-art-frame .cosmetic-art-image { width: 100%; height: 100%; object-fit: cover; }

@@ -5,38 +5,62 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 
+/**
+ * A one-time PKCE code can end up processed more than once for the same
+ * sign-in -- a browser's speculative preload of the redirect target, a
+ * security extension probing the URL, or simply this effect re-running.
+ * Whichever attempt loses that race gets back a real error
+ * (flow_state_already_used) even though sign-in itself succeeded via the
+ * other attempt. Reacting to onAuthStateChange rather than trusting a
+ * single getSession() call means a session that lands moments after this
+ * particular attempt errored is still caught, instead of showing a false
+ * failure for something that actually worked.
+ */
+const SETTLE_TIMEOUT_MS = 6_000;
+
 export default function AuthCallbackPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
+    let settled = false;
 
-    const finishSignIn = async () => {
-      const client = authClient();
-      if (!client) {
-        if (active) setError("Account sign-in is not configured.");
-        return;
-      }
+    const client = authClient();
+    if (!client) {
+      const timer = window.setTimeout(() => setError("Account sign-in is not configured."), 0);
+      return () => window.clearTimeout(timer);
+    }
 
-      // browserSupabase is configured for PKCE and begins exchanging the
-      // one-time callback code during client initialization. getSession waits
-      // for that initialization, so no token ever needs to be handled here.
-      const { data, error: sessionError } = await client.auth.getSession();
-      if (!active) return;
-
-      if (sessionError || !data.session) {
-        setError("Google sign-in could not be completed. Please start again.");
-        return;
-      }
-
+    const succeed = () => {
+      if (!active || settled) return;
+      settled = true;
       router.replace("/");
       router.refresh();
     };
 
-    void finishSignIn();
+    const { data: subscription } = client.auth.onAuthStateChange((event, session) => {
+      if (session && (event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED")) {
+        succeed();
+      }
+    });
+
+    // The fast path: a session may already be there (or arrive within a
+    // normal exchange) well before the settle timeout below ever matters.
+    void client.auth.getSession().then(({ data }) => {
+      if (data.session) succeed();
+    });
+
+    const timeout = window.setTimeout(() => {
+      if (!active || settled) return;
+      settled = true;
+      setError("Google sign-in could not be completed. Please start again.");
+    }, SETTLE_TIMEOUT_MS);
+
     return () => {
       active = false;
+      window.clearTimeout(timeout);
+      subscription.subscription.unsubscribe();
     };
   }, [router]);
 

@@ -7,6 +7,7 @@ import {
   claimDailyGold,
   creditGold,
   deleteProfile,
+  deleteProfiles,
   ensureProfile,
   findSessionByUserId,
   isBanned,
@@ -140,6 +141,25 @@ describe("Gold economy (memory mode)", () => {
 
   it("rejects deleteProfile for an unknown profile id", async () => {
     await expect(deleteProfile(randomUUID())).rejects.toThrow("Profile not found.");
+  });
+
+  it("bulk deletes many profiles in one request and reports exactly what was removed", async () => {
+    const first = await ensureProfile(randomUUID(), "Bulk One");
+    const second = await ensureProfile(randomUUID(), "Bulk Two");
+    const survivor = await ensureProfile(randomUUID(), "Keep Me");
+    const missing = randomUUID();
+
+    const deleted = await deleteProfiles([first.id, second.id, first.id, missing]);
+    expect(new Set(deleted)).toEqual(new Set([first.id, second.id]));
+
+    const profiles = await listProfiles();
+    expect(profiles.some((profile) => profile.id === first.id)).toBe(false);
+    expect(profiles.some((profile) => profile.id === second.id)).toBe(false);
+    expect(profiles.some((profile) => profile.id === survivor.id)).toBe(true);
+  });
+
+  it("rejects an empty bulk deletion request", async () => {
+    await expect(deleteProfiles([])).rejects.toThrow("Choose at least one profile.");
   });
 
   it("tops up a stranded player who cannot afford the cheapest seat", async () => {

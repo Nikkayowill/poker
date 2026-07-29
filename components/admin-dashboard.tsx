@@ -1,10 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { AdminProfileSummary } from "@/lib/server/profile-store";
-
-const SECRET_STORAGE_KEY = "river-room-admin-secret";
 
 interface TableStats {
   publicTables: number;
@@ -58,43 +56,54 @@ function AdjustGoldForm({
 }
 
 export function AdminDashboard() {
-  const [secret, setSecret] = useState("");
-  const [secretInput, setSecretInput] = useState("");
+  const [unlocked, setUnlocked] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [profiles, setProfiles] = useState<AdminProfileSummary[] | null>(null);
   const [tableStats, setTableStats] = useState<TableStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [bulkPending, setBulkPending] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [query, setQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const lock = () => {
-    window.sessionStorage.removeItem(SECRET_STORAGE_KEY);
-    setSecret("");
-    setSecretInput("");
+  const lock = async () => {
+    await fetch("/api/admin/session", { method: "DELETE" }).catch(() => null);
+    setUnlocked(false);
     setProfiles(null);
     setTableStats(null);
+    setSelectedIds(new Set());
     setError(null);
   };
 
-  const load = useCallback(async (key: string) => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const headers = { "x-admin-secret": key };
       const [profilesResponse, tablesResponse] = await Promise.all([
-        fetch("/api/admin/profiles", { headers }),
-        fetch("/api/admin/tables", { headers }),
+        fetch("/api/admin/profiles"),
+        fetch("/api/admin/tables"),
       ]);
       const profilesData = await profilesResponse.json();
       if (!profilesResponse.ok) {
-        throw new Error(profilesResponse.status === 404 ? "Invalid admin key." : profilesData.error);
+        if (profilesResponse.status === 404 || profilesResponse.status === 401) setUnlocked(false);
+        throw new Error(
+          profilesResponse.status === 404 || profilesResponse.status === 401
+            ? "Your admin session expired. Unlock again."
+            : profilesData.error,
+        );
       }
       const tablesData = await tablesResponse.json();
       setProfiles(profilesData.profiles);
+      setSelectedIds((current) => {
+        const available = new Set<string>(
+          profilesData.profiles.map((profile: AdminProfileSummary) => profile.id),
+        );
+        return new Set([...current].filter((id) => available.has(id)));
+      });
       if (tablesResponse.ok) setTableStats(tablesData);
-      window.sessionStorage.setItem(SECRET_STORAGE_KEY, key);
-      setSecret(key);
+      setUnlocked(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load signups.");
       setProfiles(null);
@@ -104,15 +113,45 @@ export function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const stored = window.sessionStorage.getItem(SECRET_STORAGE_KEY);
-      if (stored) void load(stored);
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch("/api/admin/session");
+        if (response.ok) {
+          setUnlocked(true);
+          await load();
+        }
+      } finally {
+        setCheckingSession(false);
+      }
     }, 0);
     return () => window.clearTimeout(timer);
-    // Deliberately mount-only -- `load` is stable (empty dep array), and
-    // re-running this on every render would replay the stored key forever.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
+
+  const unlock = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const key = String(new FormData(form).get("secret") ?? "");
+    if (!key) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: key }),
+      });
+      const data = await response.json();
+      form.reset();
+      if (!response.ok) throw new Error(data.error ?? "Could not unlock admin.");
+      setUnlocked(true);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not unlock admin.");
+      setUnlocked(false);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const toggleUnlimited = async (profile: AdminProfileSummary) => {
     setPendingId(profile.id);
@@ -120,7 +159,7 @@ export function AdminDashboard() {
     try {
       const response = await fetch("/api/admin/gold/unlimited", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profileId: profile.id, unlimited: !profile.unlimitedGold }),
       });
       const data = await response.json();
@@ -141,7 +180,7 @@ export function AdminDashboard() {
     try {
       const response = await fetch("/api/admin/ban", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profileId: profile.id, banned: !profile.banned }),
       });
       const data = await response.json();
@@ -162,7 +201,7 @@ export function AdminDashboard() {
     try {
       const response = await fetch("/api/admin/gold/adjust", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profileId: profile.id, delta }),
       });
       const data = await response.json();
@@ -177,23 +216,31 @@ export function AdminDashboard() {
     }
   };
 
-  const removeProfile = async (profile: AdminProfileSummary) => {
-    if (!window.confirm(`Permanently delete ${profile.displayName}'s profile? This can't be undone.`)) return;
-    setPendingId(profile.id);
+  const removeProfiles = async (targets: AdminProfileSummary[]) => {
+    if (targets.length === 0) return;
+    const message = targets.length === 1
+      ? `Permanently delete ${targets[0].displayName}'s profile?\n\nPurchase audit records will be retained but detached. This can't be undone.`
+      : `Permanently delete ${targets.length.toLocaleString()} selected profiles?\n\nThis removes their stats, cosmetics, and profile data. Purchase audit records are retained but detached. This can't be undone.`;
+    if (!window.confirm(message)) return;
+    if (targets.length === 1) setPendingId(targets[0].id);
+    else setBulkPending(true);
     setError(null);
     try {
       const response = await fetch("/api/admin/delete-profile", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
-        body: JSON.stringify({ profileId: profile.id }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileIds: targets.map((profile) => profile.id) }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not delete that profile.");
-      setProfiles((current) => current?.filter((entry) => entry.id !== profile.id) ?? null);
+      if (!response.ok) throw new Error(data.error ?? "Could not delete the selected profiles.");
+      const deleted = new Set<string>(data.deletedIds ?? []);
+      setProfiles((current) => current?.filter((entry) => !deleted.has(entry.id)) ?? null);
+      setSelectedIds((current) => new Set([...current].filter((id) => !deleted.has(id))));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not delete that profile.");
+      setError(caught instanceof Error ? caught.message : "Could not delete the selected profiles.");
     } finally {
       setPendingId(null);
+      setBulkPending(false);
     }
   };
 
@@ -240,15 +287,46 @@ export function AdminDashboard() {
     ));
   }, [profiles, query]);
 
-  if (!profiles) {
+  const selectedProfiles = useMemo(
+    () => (profiles ?? []).filter((profile) => selectedIds.has(profile.id)),
+    [profiles, selectedIds],
+  );
+  const allFilteredSelected = filtered.length > 0
+    && filtered.every((profile) => selectedIds.has(profile.id));
+  const toggleSelected = (profileId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(profileId)) next.delete(profileId);
+      else next.add(profileId);
+      return next;
+    });
+  };
+  const toggleAllFiltered = () => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (allFilteredSelected) filtered.forEach((profile) => next.delete(profile.id));
+      else filtered.forEach((profile) => next.add(profile.id));
+      return next;
+    });
+  };
+
+  if (checkingSession) {
+    return (
+      <main className="admin-shell admin-locked">
+        <div className="admin-unlock admin-session-check">
+          <p className="admin-eyebrow">River Room / Operations</p>
+          <h1>Checking secure session…</h1>
+        </div>
+      </main>
+    );
+  }
+
+  if (!unlocked) {
     return (
       <main className="admin-shell admin-locked">
         <form
           className="admin-unlock"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void load(secretInput);
-          }}
+          onSubmit={(event) => void unlock(event)}
         >
           <div className="admin-brand" aria-hidden="true"><span>R</span></div>
           <p className="admin-eyebrow">River Room / Operations</p>
@@ -257,17 +335,35 @@ export function AdminDashboard() {
           <label htmlFor="admin-secret">Admin key</label>
           <input
             id="admin-secret"
+            name="secret"
             type="password"
-            autoComplete="off"
-            value={secretInput}
-            onChange={(event) => setSecretInput(event.target.value)}
+            autoComplete="current-password"
             placeholder="Paste ADMIN_SECRET"
           />
-          <button type="submit" disabled={loading || !secretInput}>
+          <small className="admin-security-note">
+            Exchanged once for a four-hour HttpOnly session, then cleared from this page.
+          </small>
+          <button type="submit" disabled={loading}>
             {loading ? "Checking…" : "Unlock"}
           </button>
           {error && <p className="admin-error">{error}</p>}
         </form>
+      </main>
+    );
+  }
+
+  if (!profiles) {
+    return (
+      <main className="admin-shell admin-locked">
+        <div className="admin-unlock">
+          <p className="admin-eyebrow">River Room / Operations</p>
+          <h1>Couldn’t load operations</h1>
+          {error && <p className="admin-error">{error}</p>}
+          <button type="button" onClick={() => void load()} disabled={loading}>
+            {loading ? "Retrying…" : "Retry"}
+          </button>
+          <button type="button" className="admin-lock" onClick={() => void lock()}>Lock session</button>
+        </div>
       </main>
     );
   }
@@ -285,12 +381,12 @@ export function AdminDashboard() {
           <button
             type="button"
             className="admin-refresh"
-            onClick={() => void load(secret)}
+            onClick={() => void load()}
             disabled={loading}
           >
             {loading ? "Refreshing…" : "Refresh"}
           </button>
-          <button type="button" className="admin-lock" onClick={lock}>Lock</button>
+          <button type="button" className="admin-lock" onClick={() => void lock()}>Lock</button>
         </div>
       </header>
       {error && <p className="admin-error">{error}</p>}
@@ -349,10 +445,48 @@ export function AdminDashboard() {
             aria-label="Search players"
           />
         </div>
+        <div className="admin-bulk-bar" aria-live="polite">
+          <strong>{selectedProfiles.length.toLocaleString()} selected</strong>
+          <span>Selection follows your search, so you can delete a filtered group in one operation.</span>
+          <div>
+            <button type="button" onClick={toggleAllFiltered} disabled={filtered.length === 0 || bulkPending}>
+              {allFilteredSelected
+                ? "Clear visible"
+                : `Select all ${filtered.length.toLocaleString()} visible`}
+            </button>
+            {selectedProfiles.length > 0 && (
+              <button
+                type="button"
+                className="admin-clear-selection"
+                onClick={() => setSelectedIds(new Set())}
+                disabled={bulkPending}
+              >
+                Clear selection
+              </button>
+            )}
+            <button
+              type="button"
+              className="admin-bulk-delete"
+              disabled={selectedProfiles.length === 0 || bulkPending || pendingId !== null}
+              onClick={() => void removeProfiles(selectedProfiles)}
+            >
+              {bulkPending ? "Deleting…" : `Delete ${selectedProfiles.length.toLocaleString()}`}
+            </button>
+          </div>
+        </div>
         <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
             <tr>
+              <th className="admin-select-cell">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleAllFiltered}
+                  disabled={filtered.length === 0 || bulkPending}
+                  aria-label={allFilteredSelected ? "Clear all visible profiles" : "Select all visible profiles"}
+                />
+              </th>
               <th>Player</th>
               <th>Player ID</th>
               <th>Joined</th>
@@ -368,7 +502,16 @@ export function AdminDashboard() {
             {filtered.map((profile) => {
               const ipCount = profile.lastSeenIp ? ipCounts.get(profile.lastSeenIp) ?? 0 : 0;
               return (
-                <tr key={profile.id}>
+                <tr key={profile.id} className={selectedIds.has(profile.id) ? "admin-row-selected" : undefined}>
+                  <td className="admin-select-cell">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(profile.id)}
+                      onChange={() => toggleSelected(profile.id)}
+                      disabled={bulkPending || pendingId === profile.id}
+                      aria-label={`Select ${profile.displayName}`}
+                    />
+                  </td>
                   <td>{profile.displayName}</td>
                   <td>
                     <button type="button" className="admin-id-copy" onClick={() => void copyId(profile.id)}>
@@ -390,7 +533,7 @@ export function AdminDashboard() {
                   <td>
                     <AdjustGoldForm
                       profile={profile}
-                      pending={pendingId === profile.id}
+                      pending={bulkPending || pendingId === profile.id}
                       onAdjust={(delta) => void adjustGold(profile, delta)}
                     />
                   </td>
@@ -399,7 +542,7 @@ export function AdminDashboard() {
                     <button
                       type="button"
                       className="admin-toggle"
-                      disabled={pendingId === profile.id}
+                      disabled={bulkPending || pendingId === profile.id}
                       onClick={() => void toggleUnlimited(profile)}
                     >
                       {profile.unlimitedGold ? "Revoke" : "Grant unlimited"}
@@ -407,7 +550,7 @@ export function AdminDashboard() {
                     <button
                       type="button"
                       className="admin-ban"
-                      disabled={pendingId === profile.id}
+                      disabled={bulkPending || pendingId === profile.id}
                       onClick={() => void toggleBanned(profile)}
                     >
                       {profile.banned ? "Unban" : "Ban"}
@@ -417,10 +560,10 @@ export function AdminDashboard() {
                     <button
                       type="button"
                       className="admin-delete"
-                      disabled={pendingId === profile.id}
-                      onClick={() => void removeProfile(profile)}
+                      disabled={bulkPending || pendingId === profile.id}
+                      onClick={() => void removeProfiles([profile])}
                     >
-                      Delete
+                      {pendingId === profile.id ? "Deleting…" : "Delete"}
                     </button>
                   </td>
                 </tr>
@@ -428,7 +571,7 @@ export function AdminDashboard() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
+                <td colSpan={10} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
               </tr>
             )}
 

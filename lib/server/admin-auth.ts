@@ -1,20 +1,64 @@
 import "server-only";
-import { createHash, timingSafeEqual } from "crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import type { NextRequest } from "next/server";
+
+export const ADMIN_SESSION_COOKIE = "river_room_admin_session";
+export const ADMIN_SESSION_TTL_SECONDS = 4 * 60 * 60;
+
+function safeTextEqual(first: string, second: string): boolean {
+  const firstHash = createHash("sha256").update(first).digest();
+  const secondHash = createHash("sha256").update(second).digest();
+  return timingSafeEqual(firstHash, secondHash);
+}
+
+export function isAdminSecretValid(provided: string): boolean {
+  const configured = process.env.ADMIN_SECRET;
+  return Boolean(configured) && safeTextEqual(provided, configured!);
+}
+
+function sessionSignature(payload: string, secret: string): string {
+  return createHmac("sha256", secret)
+    .update(`river-room-admin:${payload}`)
+    .digest("base64url");
+}
+
+/**
+ * Creates a short-lived signed browser session. The cookie contains an
+ * expiry, a random nonce and an HMAC — never the ADMIN_SECRET itself.
+ */
+export function createAdminSessionToken(now = Date.now()): string {
+  const secret = process.env.ADMIN_SECRET;
+  if (!secret) throw new Error("Admin access is not configured.");
+  const expiresAt = Math.floor(now / 1000) + ADMIN_SESSION_TTL_SECONDS;
+  const payload = `${expiresAt}.${randomBytes(18).toString("base64url")}`;
+  return `${payload}.${sessionSignature(payload, secret)}`;
+}
+
+export function verifyAdminSessionToken(token: string, now = Date.now()): boolean {
+  const secret = process.env.ADMIN_SECRET;
+  if (!secret) return false;
+  const [expiresRaw, nonce, providedSignature, ...extra] = token.split(".");
+  if (!expiresRaw || !nonce || !providedSignature || extra.length > 0) return false;
+  const expiresAt = Number(expiresRaw);
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(now / 1000)) return false;
+  // Reject tokens claiming an implausibly long lifetime even when correctly
+  // signed, so changing the configured TTL also constrains old sessions.
+  if (expiresAt > Math.floor(now / 1000) + ADMIN_SESSION_TTL_SECONDS) return false;
+  const payload = `${expiresRaw}.${nonce}`;
+  return safeTextEqual(providedSignature, sessionSignature(payload, secret));
+}
 
 /**
  * Shared gate for every /api/admin/* route. Comparing SHA-256 digests
  * (always 32 bytes) rather than the raw strings keeps timingSafeEqual valid
- * regardless of either string's length, without leaking length via an early
- * mismatch. Unset ADMIN_SECRET disables every admin route outright.
+ * regardless of either string's length. Browser requests use an HttpOnly
+ * signed session; the raw header remains only as a server/API compatibility
+ * path and is no longer stored or replayed by the dashboard.
  */
 export function isAdminAuthorized(request: NextRequest): boolean {
-  const configured = process.env.ADMIN_SECRET;
-  if (!configured) return false;
-  const provided = request.headers.get("x-admin-secret") ?? "";
-  const providedHash = createHash("sha256").update(provided).digest();
-  const configuredHash = createHash("sha256").update(configured).digest();
-  return timingSafeEqual(providedHash, configuredHash);
+  const session = request.cookies.get(ADMIN_SESSION_COOKIE)?.value ?? "";
+  if (verifyAdminSessionToken(session)) return true;
+  return isAdminSecretValid(request.headers.get("x-admin-secret") ?? "");
 }
 
 /**

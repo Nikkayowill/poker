@@ -44,6 +44,15 @@
   color: var(--ink);
 }
 
+.admin-security-note {
+  color: #7f9188;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.admin-session-check { text-align: center; }
+.admin-session-check h1 { margin: 0; }
+
 .admin-unlock button {
   margin-top: 6px;
   padding: 10px 14px;
@@ -157,6 +166,55 @@
   color: var(--ink);
 }
 
+.admin-bulk-bar {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 9px 11px 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.admin-bulk-bar > strong {
+  min-width: 78px;
+  color: var(--gold-light);
+  font-size: 12px;
+}
+
+.admin-bulk-bar > span {
+  flex: 1;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.admin-bulk-bar > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.admin-bulk-bar button {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.admin-bulk-bar button:disabled { opacity: .45; cursor: default; }
+.admin-bulk-bar .admin-clear-selection { color: var(--muted); }
+.admin-bulk-bar .admin-bulk-delete {
+  border-color: rgba(255,107,107,.5);
+  background: rgba(255,107,107,.14);
+  color: #ffb3b3;
+  font-weight: 700;
+}
+
 .admin-empty {
   text-align: center;
   color: var(--muted);
@@ -210,7 +268,8 @@
 .admin-adjust button:disabled { opacity: 0.5; cursor: default; }
 
 .admin-table-wrap {
-  overflow-x: auto;
+  max-height: min(64vh, 720px);
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: rgba(17, 26, 23, 0.7);
@@ -230,6 +289,9 @@
 }
 
 .admin-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   color: var(--muted);
   text-transform: uppercase;
   font-size: 11px;
@@ -238,6 +300,23 @@
 }
 
 .admin-table tbody tr:hover { background: var(--surface-2); }
+.admin-table tbody .admin-row-selected { background: rgba(217,184,93,.075); }
+.admin-table tbody .admin-row-selected:hover { background: rgba(217,184,93,.11); }
+
+.admin-select-cell {
+  width: 36px;
+  padding-left: 12px !important;
+  padding-right: 6px !important;
+  text-align: center !important;
+}
+
+.admin-select-cell input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
 
 .admin-table code {
   font-size: 12px;
@@ -304,4 +383,8 @@
   .admin-section-heading, .admin-player-heading { align-items: stretch; flex-direction: column; }
   .admin-search { width: 100%; }
   .admin-stat { flex: 1 1 calc(50% - 12px); min-width: 0; }
+  .admin-bulk-bar { align-items: flex-start; flex-wrap: wrap; }
+  .admin-bulk-bar > span { flex-basis: calc(100% - 100px); }
+  .admin-bulk-bar > div { width: 100%; overflow-x: auto; }
+  .admin-bulk-bar button { flex: 0 0 auto; }
 }

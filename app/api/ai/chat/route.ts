@@ -1,19 +1,23 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
-const ai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-});
-
 export async function POST(request: Request) {
   try {
-    if (!process.env.OPENROUTER_API_KEY) {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+
+    if (!apiKey) {
       return NextResponse.json(
-        { error: "OPENROUTER_API_KEY is missing." },
-        { status: 500 }
+        { error: "Local AI chat is not configured on this deployment." },
+        { status: 503 }
       );
     }
+
+    // Create the client only when this route is called. Keeping it out of
+    // module scope lets production builds succeed without local AI credentials.
+    const ai = new OpenAI({
+      apiKey,
+      baseURL: "https://openrouter.ai/api/v1",
+    });
 
     const body = await request.json();
     const message = body.message;

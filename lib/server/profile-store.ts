@@ -637,29 +637,57 @@ export async function banProfile(profileId: string, banned: boolean): Promise<vo
 }
 
 /**
- * Permanently erases a profile by id. Distinct from banProfile: a ban blocks
- * future play but keeps the record; this removes it outright (e.g. cleaning
- * up duplicate test/throwaway signups -- this app has no login, so every new
- * browser/cleared-cookie visit creates a fresh profile). Any of that
- * profile's historical game_seats rows are retained but detached
- * (profile_id -> null via the FK's own ON DELETE SET NULL) rather than
- * deleted, so past hand history isn't corrupted.
+ * Permanently erases up to 1,000 profiles in one atomic database operation.
+ * Historical game seats and Stripe payments are retained but detached by
+ * their foreign-key policies, while profile-owned cosmetics, stats and legal
+ * acceptances cascade away with the profile.
  */
-export async function deleteProfile(profileId: string): Promise<void> {
+export async function deleteProfiles(profileIds: string[]): Promise<string[]> {
+  const uniqueIds = [...new Set(profileIds)];
+  if (uniqueIds.length === 0) throw new Error("Choose at least one profile.");
+  if (uniqueIds.length > 1000) throw new Error("Delete at most 1,000 profiles at once.");
+
   const supabase = adminClient();
   if (!supabase) {
-    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
-    if (!entry) throw new Error("Profile not found.");
-    memoryProfiles.delete(entry[0]);
-    return;
+    const requested = new Set(uniqueIds);
+    const deleted: string[] = [];
+    for (const [token, stored] of memoryProfiles.entries()) {
+      if (!requested.has(stored.id)) continue;
+      memoryProfiles.delete(token);
+      deleted.push(stored.id);
+    }
+    return deleted;
   }
-  const { data, error } = await supabase
+
+  // Capture avatar object paths before the rows disappear. Object cleanup is
+  // best-effort after the atomic database delete: a missing image must never
+  // roll back or falsely report a profile that was already removed.
+  const { data: candidates, error: candidateError } = await supabase
     .from("profiles")
-    .delete()
-    .eq("id", profileId)
-    .select("id");
-  if (error) throw new Error(`Could not delete profile: ${error.message}`);
-  if (!data || data.length === 0) throw new Error("Profile not found.");
+    .select("id, avatar_path")
+    .in("id", uniqueIds);
+  if (candidateError) throw new Error(`Could not prepare profile deletion: ${candidateError.message}`);
+
+  const { data, error } = await supabase.rpc("delete_profiles", {
+    p_profile_ids: uniqueIds,
+  });
+  if (error) throw new Error(`Could not delete profiles: ${error.message}`);
+
+  const deletedIds = Array.isArray(data) ? data.map(String) : [];
+  const deletedSet = new Set(deletedIds);
+  const avatarPaths = (candidates ?? [])
+    .filter((row) => deletedSet.has(String(row.id)) && row.avatar_path)
+    .map((row) => String(row.avatar_path));
+  if (avatarPaths.length > 0) {
+    await supabase.storage.from("avatars").remove(avatarPaths);
+  }
+  return deletedIds;
+}
+
+/** Single-profile compatibility wrapper used outside the bulk admin route. */
+export async function deleteProfile(profileId: string): Promise<void> {
+  const deletedIds = await deleteProfiles([profileId]);
+  if (!deletedIds.includes(profileId)) throw new Error("Profile not found.");
 }
 
 /**

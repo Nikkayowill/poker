@@ -631,7 +631,13 @@ export function PokerApp() {
       const { error: signInError } = await client.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}${window.location.pathname}${window.location.search}`,
+          // Keep the callback on the origin that began PKCE: its verifier is
+          // stored in this origin's browser storage and cannot be exchanged
+          // by localhost or another deployment.
+          redirectTo: new URL(
+            `${window.location.pathname}${window.location.search}`,
+            window.location.origin,
+          ).toString(),
         },
       });
       if (signInError) throw signInError;
@@ -684,21 +690,10 @@ export function PokerApp() {
     setSignInPending(true);
     try {
       await applySessionPreference();
-
-const response = await fetch("/api/profile", {
-  method: "POST",
-});
-
-const data = await response.json();
-
-if (!response.ok) {
-  throw new Error(data.error ?? "Could not create guest profile.");
-}
-
-setProfile(data.profile);
-setPersistence(data.persistence);
-
-setEntryComplete(true);
+      // The entry card is enabled only after loadProfile has completed. That
+      // GET has already created the guest profile and set its HttpOnly
+      // session cookie, so a second profile request is unnecessary.
+      setEntryComplete(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not open the lobby.");
     } finally {

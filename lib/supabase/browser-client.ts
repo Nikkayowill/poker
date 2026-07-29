@@ -79,6 +79,11 @@ export function browserSupabase(): SupabaseClient | null {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
+        // OAuth callbacks should carry a short-lived authorization code, not
+        // access, refresh, and provider tokens in the URL fragment. The
+        // client exchanges the code on the same origin and removes it from
+        // the address bar during initialization.
+        flowType: "pkce",
         storage: authStorage,
       },
     });

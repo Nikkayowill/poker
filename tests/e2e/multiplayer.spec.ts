@@ -45,11 +45,17 @@ async function assertFixedActionBar(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
 }
 
+async function continueAsGuest(page: Page) {
+  await expect(page.locator(".account-entry-page")).toBeVisible();
+  await page.getByRole("button", { name: "Play as guest" }).click();
+}
+
 test("a first-time mobile player can join from the lobby and always see their stack", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   try {
     const page = await context.newPage();
     await page.goto("/");
+    await continueAsGuest(page);
 
     const joinButton = page.getByRole("button", { name: /^Join table/i });
     await expect(joinButton).toBeEnabled();
@@ -61,9 +67,9 @@ test("a first-time mobile player can join from the lobby and always see their st
     await expect(page.locator(".orientation-hint")).toBeVisible();
     const mine = page.locator(".player-seat:has(.you-chip)");
     const cards = mine.locator(".own-cards");
-    const stack = mine.locator(".seat-stack-mine");
+    const stack = mine.locator(".seat-stack");
     await expect(stack).toBeVisible();
-    await expect(stack).toContainText("chips");
+    await expect(stack).toHaveAttribute("aria-label", /chips$/);
 
     const cardsBox = await cards.boundingBox();
     const stackBox = await stack.boundingBox();
@@ -118,6 +124,7 @@ test("six isolated players keep private cards, action order, layout, pot, and re
       const page = await contexts[index].newPage();
       pages.push(page);
       await page.goto(`/?table=${id}`);
+      await continueAsGuest(page);
       await expect(page.locator(".poker-table-wrap")).toBeVisible();
       const mine = page.locator(".player-seat:has(.you-chip)");
       await expect(mine.locator(".own-cards .playing-card")).toHaveCount(2);
@@ -137,6 +144,7 @@ test("six isolated players keep private cards, action order, layout, pot, and re
     const beforeRefresh = await readGame(contexts[1], id);
     const beforeMine = beforeRefresh.seats.find((seat) => seat.isMine)!;
     await pages[1].reload();
+    await continueAsGuest(pages[1]);
     await expect(pages[1].locator(".poker-table-wrap")).toBeVisible();
     const afterRefresh = await readGame(contexts[1], id);
     const afterMine = afterRefresh.seats.find((seat) => seat.isMine)!;
@@ -202,6 +210,7 @@ test("six isolated players keep private cards, action order, layout, pot, and re
     expect(nextState.handNumber).toBe(state.handNumber + 1);
     expect(nextState.status).toBe("playing");
     await pages[0].reload();
+    await continueAsGuest(pages[0]);
     await assertFixedActionBar(pages[0]);
   } finally {
     await Promise.all(contexts.map((context) => context.close()));

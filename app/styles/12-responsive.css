@@ -39,6 +39,25 @@
   .game-header .wordmark > span:last-child, .table-meta span:not(:first-child) { display: none; }
   .leave-button, .give-up-seat-button, .history-toggle, .sound-toggle, .game-header-actions .auth-button { padding: 7px; font-size: 9px; }
   .history-toggle span { display: none; }
+  /* However much still doesn't fit -- the exact count varies by auth state
+     and whether a seat is claimed -- scrolls instead of clipping or
+     overlapping the table-meta cluster beside it. Nothing here is ever
+     literally unreachable, just occasionally a swipe away. */
+  .header-actions, .game-header-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    max-width: 60vw;
+  }
+  .header-actions::-webkit-scrollbar, .game-header-actions::-webkit-scrollbar { display: none; }
+  .header-actions > *, .game-header-actions > * { flex-shrink: 0; }
+  .table-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* The 122px desktop offset clears a one-row action bar; on mobile, a
+     decision with the raise slider expanded is taller than that and the
+     toast lands on top of Fold/Call instead of above them. */
+  .timeout-toast { bottom: 250px; }
   .table-area {
     padding: 4px 4px 0;
     padding-left: max(4px, env(safe-area-inset-left));
@@ -46,7 +65,10 @@
   }
   .poker-table-wrap {
     width: calc(100% - 6px);
-    --table-aspect: 1.05;
+    /* Taller than the landscape/desktop oval on purpose: portrait has width
+       to spare vertically that a wide, flat table would waste as dead space
+       above and below it once centered in .table-area. */
+    --table-aspect: 0.82;
   }
   .poker-rail { inset: 3% 1%; }
   .playing-card { width: clamp(30px, 8.5vw, 40px); }
@@ -148,6 +170,21 @@
     height: 42px;
     padding-top: env(safe-area-inset-top);
   }
+  /* Same fix as the narrow-portrait breakpoint: a wide phone in landscape is
+     still not wide enough for wordmark + table-meta + every header action
+     at once, and without this the Gold badge sits on top of the table-meta
+     text instead of beside it. */
+  .header-actions, .game-header-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    max-width: 46vw;
+  }
+  .header-actions::-webkit-scrollbar, .game-header-actions::-webkit-scrollbar { display: none; }
+  .header-actions > *, .game-header-actions > * { flex-shrink: 0; }
+  .table-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
   .game-header .wordmark small, .lobby-header .wordmark small { display: none; }
   .table-area {
     padding-top: 2px;

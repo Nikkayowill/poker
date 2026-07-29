@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import type { StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
+import { oauthCallbackUrl } from "@/lib/auth/oauth-redirect";
 import {
   browserSupabase,
   readRememberAuthSession,
@@ -631,13 +632,10 @@ export function PokerApp() {
       const { error: signInError } = await client.auth.signInWithOAuth({
         provider: "google",
         options: {
-          // Keep the callback on the origin that began PKCE: its verifier is
-          // stored in this origin's browser storage and cannot be exchanged
-          // by localhost or another deployment.
-          redirectTo: new URL(
-            `${window.location.pathname}${window.location.search}`,
-            window.location.origin,
-          ).toString(),
+          // PKCE verifiers are origin-scoped, so return to the exact origin
+          // that started sign-in. A dedicated callback path also keeps the
+          // OAuth `code` parameter separate from poker room invite codes.
+          redirectTo: oauthCallbackUrl(window.location.origin),
         },
       });
       if (signInError) throw signInError;

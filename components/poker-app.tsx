@@ -684,7 +684,21 @@ export function PokerApp() {
     setSignInPending(true);
     try {
       await applySessionPreference();
-      setEntryComplete(true);
+
+const response = await fetch("/api/profile", {
+  method: "POST",
+});
+
+const data = await response.json();
+
+if (!response.ok) {
+  throw new Error(data.error ?? "Could not create guest profile.");
+}
+
+setProfile(data.profile);
+setPersistence(data.persistence);
+
+setEntryComplete(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not open the lobby.");
     } finally {

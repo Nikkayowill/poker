@@ -621,7 +621,7 @@ export function PokerApp() {
     };
   }, [linkAccount, profileLoading]);
 
-  const signIn = async () => {
+  const signIn = async (): Promise<void> => {
     const client = authClient();
     if (!client) return;
     setError(null);
@@ -635,11 +635,15 @@ export function PokerApp() {
           // PKCE verifiers are origin-scoped, so return to the exact origin
           // that started sign-in. A dedicated callback path also keeps the
           // OAuth `code` parameter separate from poker room invite codes.
-          redirectTo: oauthCallbackUrl(window.location.origin),
+          redirectTo: oauthCallbackUrl(),
         },
       });
       if (signInError) throw signInError;
-    } catch {
+    } catch (caught) {
+      console.error(
+        "Google OAuth sign-in failed:",
+        caught instanceof Error ? caught.message : caught,
+      );
       setSignInPending(false);
       setError("Could not open Google sign-in. Try again.");
     }

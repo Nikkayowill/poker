@@ -24,6 +24,8 @@ export function Lobby({
   authNotice,
   onDismissAuthNotice,
   onSaveProgress,
+  onEmailSignIn,
+  onEmailSignUp,
   onDismissSaveProgress,
   savePromptDismissed,
   entryComplete,
@@ -48,6 +50,8 @@ export function Lobby({
   authNotice: string | null;
   onDismissAuthNotice: () => void;
   onSaveProgress: () => void;
+  onEmailSignIn: (email: string, password: string) => void;
+  onEmailSignUp: (email: string, password: string) => void;
   onDismissSaveProgress: () => void;
   savePromptDismissed: boolean;
   entryComplete: boolean;
@@ -91,6 +95,8 @@ export function Lobby({
           error={error}
           onRememberChange={onRememberSessionChange}
           onSignIn={onSaveProgress}
+          onEmailSignIn={onEmailSignIn}
+          onEmailSignUp={onEmailSignUp}
           onContinueAccount={onContinueAccount}
           onContinueAsGuest={onContinueAsGuest}
           onSignOut={onSignOut}

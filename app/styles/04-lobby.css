@@ -502,6 +502,54 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .account-entry-spinner { animation: account-entry-spin 800ms linear infinite; }
 
+.account-email-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 4px;
+  color: #8a988f;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.account-email-toggle:hover:not(:disabled) { color: #d9b85d; }
+
+.account-email-form {
+  display: grid;
+  gap: 9px;
+  padding-top: 2px;
+}
+
+.account-email-fields {
+  display: grid;
+  gap: 8px;
+  padding: 3px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 9px;
+  background: rgba(255,255,255,.025);
+}
+
+.account-email-fields input {
+  min-height: 44px;
+  padding: 0 13px;
+  /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
+  font-size: 16px;
+  color: #f4f5ed;
+  border: 0;
+  border-radius: 7px;
+  outline: 0;
+  background: transparent;
+}
+
+.account-email-fields input:focus { background: rgba(255,255,255,.035); }
+.account-email-fields input::placeholder { color: #526159; }
+.account-email-fields input + input { border-top: 1px solid rgba(255,255,255,.08); border-radius: 0 0 7px 7px; }
+
 @keyframes account-entry-spin {
   to { transform: rotate(360deg); }
 }

@@ -649,6 +649,49 @@ export function PokerApp() {
     }
   };
 
+  /**
+   * Email/password sign-in and sign-up. Both end the same way Google does --
+   * a Supabase session appears, the onAuthStateChange listener above notices
+   * it, and linkAccount attaches it to whatever profile this browser is
+   * already using. Neither function links anything itself.
+   */
+  const signInWithEmail = async (email: string, password: string) => {
+    const client = authClient();
+    if (!client) return;
+    setError(null);
+    setSignInPending(true);
+    try {
+      await applySessionPreference();
+      const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
+    } catch (caught) {
+      setSignInPending(false);
+      setError(caught instanceof Error ? caught.message : "Could not sign in.");
+    }
+  };
+
+  const signUpWithEmail = async (email: string, password: string) => {
+    const client = authClient();
+    if (!client) return;
+    setError(null);
+    setSignInPending(true);
+    try {
+      await applySessionPreference();
+      const { data, error: signUpError } = await client.auth.signUp({ email, password });
+      if (signUpError) throw signUpError;
+      // A Supabase project with email confirmation turned on returns a user
+      // but no session here -- onAuthStateChange never fires, so this is the
+      // only place that outcome is visible.
+      if (!data.session) {
+        setSignInPending(false);
+        setAuthNotice("Check your email to confirm your account, then sign in.");
+      }
+    } catch (caught) {
+      setSignInPending(false);
+      setError(caught instanceof Error ? caught.message : "Could not create your account.");
+    }
+  };
+
   const applySessionPreference = async () => {
     setRememberAuthSession(rememberSession);
     const response = await fetch("/api/auth/session-preference", {
@@ -772,6 +815,8 @@ export function PokerApp() {
             authNotice={authNotice}
             onDismissAuthNotice={() => setAuthNotice(null)}
             onSaveProgress={signIn}
+            onEmailSignIn={(email, password) => void signInWithEmail(email, password)}
+            onEmailSignUp={(email, password) => void signUpWithEmail(email, password)}
             onDismissSaveProgress={() => setSavePromptDismissed(true)}
             savePromptDismissed={savePromptDismissed}
             entryComplete={entryComplete}

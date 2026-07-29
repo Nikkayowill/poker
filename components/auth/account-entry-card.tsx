@@ -1,7 +1,10 @@
 "use client";
 
-import { ArrowRight, LoaderCircle, LogOut } from "lucide-react";
+import { ArrowRight, LoaderCircle, LogOut, Mail } from "lucide-react";
+import { FormEvent, useState } from "react";
 import type { PlayerProfile } from "@/lib/profile/types";
+
+const MIN_PASSWORD_LENGTH = 6;
 
 export function AccountEntryCard({
   ready,
@@ -12,6 +15,8 @@ export function AccountEntryCard({
   error,
   onRememberChange,
   onSignIn,
+  onEmailSignIn,
+  onEmailSignUp,
   onContinueAccount,
   onContinueAsGuest,
   onSignOut,
@@ -24,11 +29,29 @@ export function AccountEntryCard({
   error: string | null;
   onRememberChange: (remember: boolean) => void;
   onSignIn: () => void;
+  onEmailSignIn: (email: string, password: string) => void;
+  onEmailSignUp: (email: string, password: string) => void;
   onContinueAccount: () => void;
   onContinueAsGuest: () => void;
   onSignOut: () => void;
 }) {
   const signedIn = Boolean(profile?.isRegistered);
+  const [emailFormOpen, setEmailFormOpen] = useState(false);
+  const [emailMode, setEmailMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const submitEmailForm = (event: FormEvent) => {
+    event.preventDefault();
+    setFormError(null);
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setFormError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
+    if (emailMode === "sign-in") onEmailSignIn(email.trim(), password);
+    else onEmailSignUp(email.trim(), password);
+  };
 
   return (
     <section className="account-entry-card" aria-labelledby="account-entry-title">
@@ -111,6 +134,64 @@ export function AccountEntryCard({
             >
               Play as guest
             </button>
+
+            {accountsAvailable && (
+              emailFormOpen ? (
+                <form className="account-email-form" onSubmit={submitEmailForm}>
+                  <div className="account-email-fields">
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      placeholder="Email"
+                      value={email}
+                      disabled={!ready || pending}
+                      onChange={(event) => setEmail(event.target.value)}
+                      required
+                    />
+                    <input
+                      type="password"
+                      autoComplete={emailMode === "sign-in" ? "current-password" : "new-password"}
+                      placeholder="Password"
+                      value={password}
+                      disabled={!ready || pending}
+                      onChange={(event) => setPassword(event.target.value)}
+                      minLength={MIN_PASSWORD_LENGTH}
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="account-primary-action"
+                    disabled={!ready || pending}
+                  >
+                    {pending
+                      ? <><LoaderCircle className="account-entry-spinner" size={17} /> {emailMode === "sign-in" ? "Signing in…" : "Creating account…"}</>
+                      : emailMode === "sign-in" ? <>Sign in <ArrowRight size={17} /></> : <>Create account <ArrowRight size={17} /></>}
+                  </button>
+                  <button
+                    type="button"
+                    className="account-email-toggle"
+                    disabled={!ready || pending}
+                    onClick={() => {
+                      setEmailMode((current) => (current === "sign-in" ? "sign-up" : "sign-in"));
+                      setFormError(null);
+                    }}
+                  >
+                    {emailMode === "sign-in" ? "New here? Create an account" : "Already have an account? Sign in"}
+                  </button>
+                  {formError && <p className="account-entry-error" role="alert">{formError}</p>}
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  className="account-email-toggle"
+                  disabled={!ready || pending}
+                  onClick={() => setEmailFormOpen(true)}
+                >
+                  <Mail size={14} /> Continue with email
+                </button>
+              )
+            )}
           </>
         )}
       </div>

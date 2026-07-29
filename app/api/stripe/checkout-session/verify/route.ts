@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureProfile } from "@/lib/server/profile-store";
 import {
+  isTestPurchaseAllowed,
   stripeClient,
   stripeTestClient,
   verifiedRebuySession,
@@ -44,6 +45,10 @@ export async function GET(request: NextRequest) {
 
     const profile = await ensureProfile(ownerToken);
 
+    if (mode === "test" && !isTestPurchaseAllowed(profile.id)) {
+      return NextResponse.json({ error: "Test-mode purchases are not available on this profile." }, { status: 403 });
+    }
+
     // A cheap, unexpanded peek at which kind this session is, so only one
     // full (expanded, validated) verification runs -- not one per branch,
     // which is what trying the tier path and falling back to rebuy on
@@ -53,11 +58,17 @@ export async function GET(request: NextRequest) {
     if (peek.metadata?.kind === "gold_purchase") {
       const { session, tier, profileId } = await verifiedTierSession(sessionId.data, profile.id, mode);
       paid = session.payment_status === "paid";
-      if (paid) await fulfillStripePayment(session.id, profileId, tier.goldAmount, { kind: "gold_purchase", tierKey: tier.key });
+      if (paid) {
+        await fulfillStripePayment(session.id, profileId, tier.goldAmount, {
+          kind: "gold_purchase",
+          tierKey: tier.key,
+          livemode: mode === "live",
+        });
+      }
     } else {
       const { session, config, profileId } = await verifiedRebuySession(sessionId.data, profile.id, mode);
       paid = session.payment_status === "paid";
-      if (paid) await fulfillStripePayment(session.id, profileId, config.goldAmount);
+      if (paid) await fulfillStripePayment(session.id, profileId, config.goldAmount, { livemode: mode === "live" });
     }
 
     if (!paid) return NextResponse.json({ paid: false, profile });

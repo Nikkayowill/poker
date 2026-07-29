@@ -11,12 +11,17 @@ export type StripePaymentKind = "rebuy_gold" | "gold_purchase";
  * `kind` defaults to the original single-product rebuy so every existing
  * caller keeps working unchanged; the general storefront passes
  * `kind: "gold_purchase"` and its tier key explicitly.
+ *
+ * `livemode` defaults to true (the real economy). A false value credits the
+ * profile's isolated test_gold_balance instead of gold_balance -- see the
+ * fulfill_stripe_payment migration. Callers must have already confirmed the
+ * profile is on the test allowlist; this function does not check that.
  */
 export async function fulfillStripePayment(
   stripeSessionId: string,
   profileId: string,
   goldAmount: number,
-  options: { kind?: StripePaymentKind; tierKey?: string } = {},
+  options: { kind?: StripePaymentKind; tierKey?: string; livemode?: boolean } = {},
 ): Promise<boolean> {
   const supabase = adminClient();
   if (!supabase) throw new Error("Stripe purchases require Supabase persistence.");
@@ -26,6 +31,7 @@ export async function fulfillStripePayment(
     p_gold_amount: goldAmount,
     p_kind: options.kind ?? "rebuy_gold",
     p_tier_key: options.tierKey ?? null,
+    p_livemode: options.livemode ?? true,
   });
   if (error) throw new Error(`Could not fulfill Stripe payment: ${error.message}`);
   return data === true;

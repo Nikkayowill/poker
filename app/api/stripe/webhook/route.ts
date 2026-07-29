@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import {
+  isTestPurchaseAllowed,
   stripeClient,
   stripeTestClient,
   stripeTestWebhookSecret,
@@ -86,14 +87,24 @@ export async function POST(request: NextRequest) {
     if (eventSession.metadata?.kind === "gold_purchase") {
       const { session, tier, profileId } = await verifiedTierSession(eventSession.id, undefined, mode);
       if (session.payment_status !== "paid") return NextResponse.json({ received: true });
+      // A test-mode event for a profile not on the allowlist is acknowledged
+      // (so Stripe stops retrying) but never fulfilled -- ordinary players
+      // are never on this list, so this only ever blocks a stray test event.
+      if (mode === "test" && !isTestPurchaseAllowed(profileId)) {
+        return NextResponse.json({ received: true });
+      }
       await fulfillStripePayment(session.id, profileId, tier.goldAmount, {
         kind: "gold_purchase",
         tierKey: tier.key,
+        livemode: mode === "live",
       });
     } else {
       const { session, config, profileId } = await verifiedRebuySession(eventSession.id, undefined, mode);
       if (session.payment_status !== "paid") return NextResponse.json({ received: true });
-      await fulfillStripePayment(session.id, profileId, config.goldAmount);
+      if (mode === "test" && !isTestPurchaseAllowed(profileId)) {
+        return NextResponse.json({ received: true });
+      }
+      await fulfillStripePayment(session.id, profileId, config.goldAmount, { livemode: mode === "live" });
     }
     return NextResponse.json({ received: true });
   } catch (error) {

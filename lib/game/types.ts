@@ -35,6 +35,13 @@ export interface Seat {
   streetBet: number;
   committed: number;
   acted: boolean;
+  /**
+   * The table bet this seat was facing when it last acted this street.
+   * Needed for the no-limit reopening rule: one short all-in does not let a
+   * player who already acted raise again, while cumulative short all-ins
+   * totaling a full raise do.
+   */
+  actedAtBet: number | null;
   lastAction: string | null;
   /** Consumable 20-second extensions. Human players receive three when they take a seat. */
   timeCardsRemaining: number;

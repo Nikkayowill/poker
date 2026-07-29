@@ -36,7 +36,8 @@
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
   }
-  .game-header .wordmark > span:last-child, .table-meta span:not(:first-child) { display: none; }
+  .game-header .wordmark > span:last-child,
+  .table-meta > span:not(:first-child):not(.blind-structure) { display: none; }
   .leave-button, .give-up-seat-button, .history-toggle, .sound-toggle, .game-header-actions .auth-button { padding: 7px; font-size: 9px; }
   .history-toggle span { display: none; }
   /* However much still doesn't fit -- the exact count varies by auth state
@@ -65,10 +66,9 @@
   }
   .poker-table-wrap {
     width: calc(100% - 6px);
-    /* Taller than the landscape/desktop oval on purpose: portrait has width
-       to spare vertically that a wide, flat table would waste as dead space
-       above and below it once centered in .table-area. */
-    --table-aspect: 0.82;
+    /* Keep the overhead table recognisably wide even in portrait. Stretching
+       it into a vertical oval made the scene feel like a diagram. */
+    --table-aspect: 1.34;
   }
   .poker-rail { inset: 3% 1%; }
   .playing-card { width: clamp(30px, 8.5vw, 40px); }
@@ -83,6 +83,8 @@
   }
   .seat-name-row strong { font-size: 9px; }
   .seat-plate { padding: 3px 5px 4px; }
+  .blind-label { height: 17px; padding: 0 4px; }
+  .blind-label span { display: none; }
   .seat-stack { font-size: 9px; }
   .seat-stack strong { font-size: 10px; }
   .table-bet { --bet-reach: 52px; }

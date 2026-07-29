@@ -76,10 +76,13 @@
     linear-gradient(145deg, #2b2119, #111715 35%, #503a26 64%, #161916),
     repeating-linear-gradient(90deg, rgba(255,255,255,.04) 0 1px, transparent 1px 16px);
   box-shadow:
-    0 48px 90px rgba(0,0,0,.58),
+    0 54px 82px rgba(0,0,0,.62),
+    0 18px 0 -10px rgba(45,31,20,.72),
     inset 0 0 0 1px rgba(239,216,144,.32),
     inset 0 0 0 7px rgba(4,8,7,.72),
     inset 0 0 22px rgba(0,0,0,.7);
+  transform: perspective(1050px) rotateX(10deg);
+  transform-origin: 50% 64%;
 }
 
 .poker-felt {

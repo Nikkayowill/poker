@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atmosphere, RAIL_Z, seatGeometry, seatZ } from "./table-geometry";
+import { RAIL_Z, seatGeometry, seatZ } from "./table-geometry";
 
 const SEATS = 6;
 
@@ -24,32 +24,6 @@ describe("table geometry", () => {
     expect(left.depth).toBeCloseTo(right.depth, 5);
   });
 
-  it("shrinks monotonically with distance", () => {
-    const slots = [0, 1, 2, 3].map((slot) => seatGeometry(slot, SEATS));
-    expect(slots[0].scale).toBeCloseTo(1, 5);
-    expect(slots[3].scale).toBeCloseTo(0.62, 2);
-
-    const byDepthDescending = [...slots].sort((a, b) => b.depth - a.depth);
-    for (let i = 1; i < byDepthDescending.length; i += 1) {
-      expect(byDepthDescending[i].scale).toBeLessThanOrEqual(byDepthDescending[i - 1].scale);
-    }
-  });
-
-  it("follows a perspective divide rather than a linear ramp", () => {
-    // scale = f / (f + z) is convex, so the curve sits *below* the straight
-    // line between its endpoints. That gap is the whole difference between a
-    // receding table and a ring of progressively smaller boxes -- if this
-    // ever equals the midpoint, someone has replaced the divide with a lerp.
-    const nearScale = 1;
-    const farScale = 0.62;
-    const focal = farScale / (1 - farScale);
-    const atHalfDepth = focal / (focal + 0.5);
-    const linearMidpoint = (nearScale + farScale) / 2;
-
-    expect(atHalfDepth).toBeLessThan(linearMidpoint);
-    expect(linearMidpoint - atHalfDepth).toBeGreaterThan(0.005);
-  });
-
   it("orders seats far-to-near without letting the rail cut any of them", () => {
     const order = [0, 1, 2, 3, 4, 5].map((slot) => seatGeometry(slot, SEATS));
 
@@ -58,11 +32,8 @@ describe("table geometry", () => {
     const byDepth = [...order].sort((a, b) => a.depth - b.depth);
     expect(byDepth.map((s) => s.z)).toEqual([...byDepth.map((s) => s.z)].sort((a, b) => a - b));
 
-    // ...but all of them stay in front of the rail. A seat is scaled, so it is
-    // its own stacking context and its children cannot climb out: putting a
-    // body behind the rail put that player's hole cards and nameplate behind
-    // it too. Measured on this table, three seats lost their cards and the far
-    // seat lost its name entirely.
+    // ...but all of them stay in front of the rail, so names and hole cards
+    // remain readable while the figures still overlap in natural depth order.
     for (const seat of order) {
       expect(seatZ(seat.depth)).toBeGreaterThan(RAIL_Z);
     }
@@ -84,20 +55,5 @@ describe("table geometry", () => {
       const larger = Math.max(Math.abs(seat.towardPot.x), Math.abs(seat.towardPot.y));
       expect(larger).toBeCloseTo(1, 6);
     }
-  });
-
-  it("hazes the far rail without crushing legibility", () => {
-    const near = atmosphere(1);
-    const far = atmosphere(0);
-    expect(near.brightness).toBeCloseTo(1, 5);
-    expect(near.blur).toBeCloseTo(0, 5);
-    expect(far.brightness).toBeLessThan(1);
-    expect(far.saturate).toBeLessThan(1);
-    expect(far.blur).toBeGreaterThan(0);
-    // Faces still have to be faces over there: past about a pixel of blur this
-    // stops reading as distance and starts reading as a rendering fault.
-    expect(far.blur).toBeLessThan(1.2);
-    expect(far.brightness).toBeGreaterThan(0.6);
-    expect(far.saturate).toBeGreaterThan(0.5);
   });
 });

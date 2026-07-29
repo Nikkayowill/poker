@@ -17,6 +17,19 @@
 
 .table-meta span { display: flex; align-items: center; gap: 7px; }
 
+.table-meta .blind-structure {
+  gap: 5px;
+  padding: 5px 8px;
+  color: #d9e1dc;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 6px;
+  background: rgba(255,255,255,.035);
+  letter-spacing: .04em;
+}
+.blind-structure b:first-child { color: #8fc7ff; }
+.blind-structure b:last-child { color: #ffc06f; }
+.blind-structure i { color: #53625a; font-style: normal; }
+
 .room-code-chip {
   display: inline-flex;
   align-items: center;
@@ -118,19 +131,11 @@
     linear-gradient(180deg, #0b1210 0%, #080d0b 58%, #060a08 100%);
 }
 
-/* A quiet lounge atmosphere behind the table keeps the felt from reading as
-   a floating green oval. It is intentionally texture-free so gameplay remains
-   the visual priority and the background never competes with card ranks. */
+/* Keep the room behind the table completely smooth. The previous repeating
+   panel gradient produced vertical lines on real devices and did not add
+   useful depth. */
 .game-shell::before {
-  content: "";
-  position: absolute;
-  inset: 82px 0 0;
-  z-index: -1;
-  opacity: .72;
-  background:
-    linear-gradient(90deg, rgba(5, 9, 7, .9), transparent 18%, transparent 82%, rgba(5, 9, 7, .9)),
-    repeating-linear-gradient(90deg, transparent 0 14%, rgba(166, 107, 57, .035) 14.2% 14.5%, transparent 14.7% 28%);
-  pointer-events: none;
+  display: none;
 }
 
 .connection-overlay {

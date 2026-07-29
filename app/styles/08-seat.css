@@ -26,8 +26,7 @@
    figure. A name and a stack are information; a shoulder is atmosphere. */
 .seat-figure {
   z-index: var(--seat-z, 4);
-  scale: var(--seat-depth);
-  filter: var(--seat-haze, none);
+  scale: 1;
   transition: filter .25s, scale .25s, translate .25s cubic-bezier(.2,.8,.3,1), opacity .2s;
 }
 
@@ -143,10 +142,7 @@
      it shrank with the ring until "Player" rendered as "Pla...". */
   width: max(100%, 86px);
   max-width: 150%;
-  /* Falls off with distance too, but far more gently than the figure: a name
-     and a stack still have to be read at the far rail, so this is a depth cue
-     that stops well short of the perspective the figure follows. */
-  scale: calc(.74 + .26 * var(--seat-near, 1));
+  scale: 1;
   margin-top: -13%;
   padding: 4px 8px 5px;
   border: 1px solid rgba(255,255,255,.08);
@@ -165,10 +161,26 @@
   box-shadow: 0 0 0 1px rgba(217,184,93,.28), 0 6px 16px rgba(0,0,0,.5);
 }
 
+.seat-small-blind .seat-plate {
+  border-color: rgba(91,164,239,.62);
+  box-shadow:
+    0 0 0 1px rgba(74,144,218,.16),
+    0 0 18px rgba(65,132,205,.16),
+    0 6px 14px rgba(0,0,0,.45);
+}
+
+.seat-big-blind .seat-plate {
+  border-color: rgba(244,158,70,.72);
+  box-shadow:
+    0 0 0 1px rgba(226,128,41,.2),
+    0 0 21px rgba(217,119,35,.2),
+    0 6px 14px rgba(0,0,0,.45);
+}
+
 /* Seats are positioned from lib/game/table-geometry.ts rather than tuned by
-   hand: left/top land on the projected ellipse, --seat-depth carries the
-   perspective scale, --seat-haze the distance falloff, and z-index the
-   painter's-algorithm order that lets the rail cut between far and near. */
+   hand: left/top land on the projected ellipse and z-index provides the
+   painter's-algorithm order. Avatar size stays consistent around the ring;
+   the tilted table plane now carries the perspective. */
 /* Centred on the ellipse by margin, not by transform. A transform -- like a
    filter, or an opacity below 1 -- makes the seat a stacking context, and then
    nothing inside it can be ordered against the rest of the table: a nameplate
@@ -191,7 +203,7 @@
 
 .seat-current .seat-figure {
   translate: 0 -8px;
-  scale: calc(var(--seat-depth) * 1.05);
+  scale: 1;
 }
 
 @keyframes active-seat-glow {
@@ -205,7 +217,7 @@
 .seat-muted .seat-figure {
   opacity: .62;
   translate: 0 3px;
-  scale: calc(var(--seat-depth) * .97);
+  scale: 1;
   filter: grayscale(.65) brightness(.8);
 }
 .seat-muted .seat-plate { opacity: .62; }
@@ -340,16 +352,32 @@
 
 .blind-label {
   width: auto;
-  padding: 0 5px;
+  height: 19px;
+  grid-auto-flow: column;
+  gap: 4px;
+  padding: 0 6px;
   border: 1px solid rgba(99,157,233,.28);
-  border-radius: 4px;
+  border-radius: 5px;
   color: #9dc9ff;
-  background: rgba(49,105,177,.18);
+  background: linear-gradient(180deg, rgba(58,123,202,.28), rgba(35,78,139,.22));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+}
+.blind-label b {
+  font-size: 9px;
+  letter-spacing: .04em;
+}
+.blind-label span {
+  color: rgba(220,235,251,.78);
+  font-size: 7px;
+  font-variant-numeric: tabular-nums;
 }
 .seat-big-blind .blind-label {
   color: #ffc078;
-  border-color: rgba(232,147,57,.34);
-  background: rgba(168,88,28,.2);
+  border-color: rgba(244,158,70,.52);
+  background: linear-gradient(180deg, rgba(188,99,29,.34), rgba(119,59,20,.26));
+}
+.seat-big-blind .blind-label span {
+  color: rgba(255,226,191,.82);
 }
 .you-chip {
   width: auto;

@@ -6,7 +6,6 @@ import { History, TimerReset, Volume2, VolumeX, X } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
-  atmosphere,
   radiiForWidth,
   seatGeometry,
   seatZ,
@@ -201,14 +200,12 @@ export function PokerTable({
   const ringGeometry = useMemo(
     () => orderedSeats.map((_, index) => {
       const geometry = seatGeometry(index, orderedSeats.length, radiiForWidth(viewportWidth));
-      const haze = atmosphere(geometry.depth);
       return {
         left: `${geometry.x}%`,
         top: `${geometry.y}%`,
-        "--seat-depth": geometry.scale,
-        "--seat-haze": `brightness(${haze.brightness.toFixed(3)}) saturate(${haze.saturate.toFixed(3)}) blur(${haze.blur.toFixed(2)}px)`,
-        // 0 at the far rail, 1 nearest. Everything that should fall off with
-        // distance but is not the figure itself derives from this.
+        // Avatars remain one consistent size. Depth now comes from the tilted
+        // table plane, overlap order and rail occlusion rather than shrinking
+        // or blurring people around the table.
         "--seat-near": geometry.depth.toFixed(3),
         // Depth order for the figure; the plate derives a much higher one from
         // it so no nameplate is ever hidden behind a neighbour's shoulder.
@@ -371,7 +368,14 @@ export function PokerTable({
           {game.isPrivate && game.roomCode
             ? <RoomCodeChip code={game.roomCode} />
             : <span>Table {game.id.slice(0, 6).toUpperCase()}</span>}
-          <span>Blinds {game.smallBlind}/{game.bigBlind}</span>
+          <span
+            className="blind-structure"
+            title={`Small Blind ${game.smallBlind.toLocaleString()} · Big Blind ${game.bigBlind.toLocaleString()}`}
+          >
+            <b>SB</b> {game.smallBlind.toLocaleString()}
+            <i aria-hidden="true">·</i>
+            <b>BB</b> {game.bigBlind.toLocaleString()}
+          </span>
         </div>
         <div className="game-header-actions">
           {profile && <GoldBadge profile={profile} onClaimed={onProfileChange} />}
@@ -513,6 +517,8 @@ export function PokerTable({
                 placement={seat.isMine ? "seat-first-person" : "seat-ring"}
                 seatStyle={seat.isMine ? firstPersonStyle : ringGeometry[index]}
                 handNumber={game.handNumber}
+                smallBlind={game.smallBlind}
+                bigBlind={game.bigBlind}
                 winAmount={showFunnel ? game.winners.find((winner) => winner.seatId === seat.id)?.amount : undefined}
                 elementRef={(el) => { seatRefs.current[seat.id] = el; }}
               />

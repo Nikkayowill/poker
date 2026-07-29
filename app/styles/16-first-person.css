@@ -105,10 +105,11 @@
 .seat-first-person .seat-stack strong { font-size: 14px; }
 
 .seat-first-person .table-bet {
-  left: auto;
-  right: 20px;
-  top: 36px;
-  transform: none;
+  left: 50%;
+  right: auto;
+  top: auto;
+  bottom: calc(var(--foreground-drop, 44px) + 12px);
+  transform: translateX(-50%);
 }
 
 .seat-first-person > .action-pill { display: none; }

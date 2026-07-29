@@ -19,6 +19,7 @@ import { CHEAPEST_TIER, clampBuyIn, isStakesTier, TIER_CONFIG, type StakesTier }
 
 const suits: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
 const ranks: Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
+const deckTemplate: Card[] = suits.flatMap((suit) => ranks.map((rank) => ({ rank, suit })));
 const streetOrder: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
 type TurnAction = Exclude<
   PlayerAction,
@@ -63,8 +64,8 @@ function botAvatarFor(position: number): string {
 export const TURN_TIMEOUT_MS = 15_000;
 export const TIME_CARD_EXTENSION_MS = 20_000;
 export const STARTING_TIME_CARDS = 3;
-export const BOT_DECISION_MIN_MS = 1_800;
-export const BOT_DECISION_MAX_MS = 3_200;
+export const BOT_DECISION_MIN_MS = 1_200;
+export const BOT_DECISION_MAX_MS = 5_200;
 
 // Excludes visually ambiguous characters (0/O, 1/I/L) from shareable room codes.
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -78,7 +79,7 @@ export function generateRoomCode(): string {
 }
 
 function makeDeck(): Card[] {
-  const deck = suits.flatMap((suit) => ranks.map((rank) => ({ rank, suit })));
+  const deck = deckTemplate.map((card) => ({ ...card }));
   for (let index = deck.length - 1; index > 0; index -= 1) {
     const swapWith = randomInt(index + 1);
     [deck[index], deck[swapWith]] = [deck[swapWith], deck[index]];
@@ -115,9 +116,16 @@ function setCurrentPlayer(state: GameState, index: number | null, now = Date.now
     return;
   }
   state.turnStartedAt = new Date(now).toISOString();
-  const duration = state.seats[index].isHuman
+  const seat = state.seats[index];
+  const botThinkRanges: Record<BotPersonality, [number, number]> = {
+    MANIAC: [BOT_DECISION_MIN_MS, 3_600],
+    ROCK: [2_100, BOT_DECISION_MAX_MS],
+    CALLING_STATION: [1_600, 4_400],
+  };
+  const [minimum, maximum] = botThinkRanges[seat.personality ?? "ROCK"];
+  const duration = seat.isHuman
     ? TURN_TIMEOUT_MS
-    : randomInt(BOT_DECISION_MIN_MS, BOT_DECISION_MAX_MS + 1);
+    : randomInt(minimum, maximum + 1);
   state.turnDeadlineAt = new Date(now + duration).toISOString();
 }
 
@@ -213,6 +221,7 @@ function setupHand(state: GameState, firstHand = false) {
     seat.streetBet = 0;
     seat.committed = 0;
     seat.acted = false;
+    seat.actedAtBet = null;
     seat.lastAction = null;
     seat.vpip = false;
   });
@@ -235,7 +244,10 @@ function setupHand(state: GameState, firstHand = false) {
   const bigPaid = commit(state.seats[big], state.bigBlind);
   state.seats[small].lastAction = `Small blind · ${smallPaid}`;
   state.seats[big].lastAction = `Big blind · ${bigPaid}`;
-  state.currentBet = Math.max(smallPaid, bigPaid);
+  // A short-stacked big blind may post less than the blind, but every player
+  // with enough chips still faces the full big blind as the minimum bring-in.
+  // The short blind's actual contribution remains correct for side pots.
+  state.currentBet = state.bigBlind;
   state.pot = state.seats.reduce((sum, seat) => sum + seat.committed, 0);
   setCurrentPlayer(state, nextSeat(state, big, canAct));
   addLog(state, `Hand ${state.handNumber} dealt · blinds ${state.smallBlind}/${state.bigBlind}`, "deal");
@@ -275,6 +287,7 @@ export function createGame(
       streetBet: 0,
       committed: 0,
       acted: false,
+      actedAtBet: null,
       lastAction: null,
       timeCardsRemaining: STARTING_TIME_CARDS,
       vpip: false,
@@ -292,6 +305,7 @@ export function createGame(
       streetBet: 0,
       committed: 0,
       acted: false,
+      actedAtBet: null,
       lastAction: null,
       timeCardsRemaining: 0,
       vpip: false,
@@ -409,14 +423,23 @@ export function getLegalActions(state: GameState, seatIndex: number): LegalActio
   const toCall = Math.max(0, state.currentBet - seat.streetBet);
   const maxRaiseTo = seat.streetBet + seat.stack;
   const minRaiseTo = state.currentBet + state.minRaise;
+  const raiseReopened = !seat.acted
+    || seat.actedAtBet === null
+    || state.currentBet - seat.actedAtBet >= state.minRaise;
+  const canMakeAggressiveAction = raiseReopened || maxRaiseTo <= state.currentBet;
   return {
     // Folding when a check is available is strategically unusual but legal,
     // and players expect the control to remain available on every street.
     canFold: isTurn,
     canCheck: isTurn && toCall === 0,
     canCall: isTurn && toCall > 0 && seat.stack > 0,
-    canRaise: isTurn && maxRaiseTo > state.currentBet && maxRaiseTo >= minRaiseTo,
-    canAllIn: isTurn && seat.stack > 0,
+    canRaise: isTurn
+      && raiseReopened
+      && maxRaiseTo > state.currentBet
+      && maxRaiseTo >= minRaiseTo,
+    // An all-in button cannot bypass the reopening rule. When action has not
+    // reopened, shoving is available only if it is no more than a call.
+    canAllIn: isTurn && seat.stack > 0 && canMakeAggressiveAction,
     toCall,
     callAmount: Math.min(toCall, seat.stack),
     minRaiseTo: Math.min(minRaiseTo, maxRaiseTo),
@@ -576,6 +599,7 @@ function advanceStreet(state: GameState) {
   state.seats.forEach((seat) => {
     seat.streetBet = 0;
     seat.acted = false;
+    seat.actedAtBet = null;
     seat.lastAction = null;
   });
   addLog(state, `${next[0].toUpperCase()}${next.slice(1)} dealt`, "deal");
@@ -635,6 +659,12 @@ function applyTurnAction(state: GameState, action: TurnAction) {
     seat.lastAction = paid < toCall ? `All-in · ${paid}` : `Call · ${paid}`;
     addLog(state, `${seat.name} ${paid < toCall ? "is all-in for" : "calls"} ${paid}`);
   } else {
+    if (action.type === "raise" && !legal.canRaise) {
+      throw new Error("Raising is not available.");
+    }
+    if (action.type === "all-in" && !legal.canAllIn) {
+      throw new Error("Going all-in would be an illegal raise.");
+    }
     const raiseTo = action.type === "all-in" ? legal.maxRaiseTo : Math.floor(action.amount);
     if (raiseTo <= state.currentBet) {
       if (action.type === "all-in") {
@@ -645,6 +675,7 @@ function applyTurnAction(state: GameState, action: TurnAction) {
       } else throw new Error("Raise must exceed the current bet.");
     } else {
       if (raiseTo > legal.maxRaiseTo) throw new Error("That raise exceeds your stack.");
+      const openingBet = state.currentBet === 0;
       const raiseSize = raiseTo - state.currentBet;
       const isShortAllIn = raiseTo === legal.maxRaiseTo && raiseSize < state.minRaise;
       if (raiseSize < state.minRaise && !isShortAllIn) {
@@ -659,90 +690,351 @@ function applyTurnAction(state: GameState, action: TurnAction) {
       }
       state.currentBet = raiseTo;
       seat.acted = true;
-      seat.lastAction = seat.status === "all-in" ? `All-in · ${raiseTo}` : `Raise to · ${raiseTo}`;
-      addLog(state, `${seat.name} ${seat.status === "all-in" ? "is all-in for" : "raises to"} ${raiseTo}`);
+      seat.lastAction = seat.status === "all-in"
+        ? `All-in · ${raiseTo}`
+        : openingBet ? `Bet · ${raiseTo}` : `Raise to · ${raiseTo}`;
+      addLog(
+        state,
+        `${seat.name} ${
+          seat.status === "all-in" ? "is all-in for" : openingBet ? "bets" : "raises to"
+        } ${raiseTo}`,
+      );
     }
   }
+  seat.actedAtBet = state.currentBet;
   progressAfterAction(state, actorIndex);
 }
 
-// Tuning knobs per personality; all thresholds/rolls follow the same shape
-// as the original single-profile heuristic, just widened or narrowed.
+type BotRandom = () => number;
+
+const secureBotRandom: BotRandom = () => randomInt(1_000_000) / 1_000_000;
+
 const personalityProfiles: Record<
   BotPersonality,
   {
-    pressureFactor: number; // fraction of stack that counts as "under pressure"
-    pressureFoldRoll: number; // 0-100 chance to fold to pressure without a decent hand
-    postflopFoldRoll: number; // 0-100 chance to release a weak hand once the board is out
-    raiseRoll: number; // 0-100 chance to raise with a decent hand
-    raiseWide: boolean; // will also treat a single high card as decent
-    raiseSizeBB: number; // raise-to size, in big blinds over the current bet
-    looseFoldRoll: number; // 0-100 chance to fold instead of call when calling is optional
+    aggression: number;
+    callTolerance: number;
+    equityAdjustment: number;
+    slowPlayFrequency: number;
+    postflopBetSizes: number[];
   }
 > = {
   MANIAC: {
-    pressureFactor: 0.55,
-    pressureFoldRoll: 30,
-    postflopFoldRoll: 18,
-    raiseRoll: 65,
-    raiseWide: true,
-    raiseSizeBB: 4,
-    looseFoldRoll: 4,
+    aggression: 0.7,
+    callTolerance: 0.025,
+    equityAdjustment: 0.025,
+    slowPlayFrequency: 0.06,
+    postflopBetSizes: [0.5, 0.66, 0.75, 1],
   },
   ROCK: {
-    pressureFactor: 0.18,
-    pressureFoldRoll: 85,
-    postflopFoldRoll: 58,
-    raiseRoll: 25,
-    raiseWide: false,
-    raiseSizeBB: 2,
-    looseFoldRoll: 22,
+    aggression: 0.44,
+    callTolerance: -0.025,
+    equityAdjustment: -0.015,
+    slowPlayFrequency: 0.18,
+    postflopBetSizes: [0.33, 0.5, 0.66, 0.75],
   },
   CALLING_STATION: {
-    pressureFactor: 0.9,
-    pressureFoldRoll: 28,
-    postflopFoldRoll: 36,
-    raiseRoll: 10,
-    raiseWide: false,
-    raiseSizeBB: 2,
-    looseFoldRoll: 3,
+    aggression: 0.2,
+    callTolerance: 0.085,
+    equityAdjustment: 0.015,
+    slowPlayFrequency: 0.12,
+    postflopBetSizes: [0.4, 0.5, 0.66],
   },
 };
 
-function chooseBotAction(state: GameState, seatIndex: number): TurnAction {
+export type PreflopHandTier = "premium" | "strong" | "playable" | "speculative" | "trash";
+
+const rankOrder: Record<Rank, number> = {
+  "2": 2,
+  "3": 3,
+  "4": 4,
+  "5": 5,
+  "6": 6,
+  "7": 7,
+  "8": 8,
+  "9": 9,
+  "10": 10,
+  J: 11,
+  Q: 12,
+  K: 13,
+  A: 14,
+};
+
+const premiumPreflopHands = new Set(["AA", "KK", "QQ", "JJ", "AKs", "AKo"]);
+const strongPreflopHands = new Set(["TT", "99", "AQs", "AQo", "AJs", "KQs"]);
+const playablePreflopHands = new Set([
+  "88", "77", "66", "55", "44", "33", "22",
+  "ATs", "A9s", "A8s", "A7s", "A6s", "A5s", "A4s", "A3s", "A2s",
+  "KJs", "KTs", "QJs", "QTs", "JTs", "T9s", "98s", "87s", "76s",
+  "AJo", "KQo",
+]);
+const speculativePreflopHands = new Set([
+  "K9s", "Q9s", "J9s", "T8s", "97s", "86s", "75s", "65s", "54s",
+  "ATo", "KJo", "QJo", "JTo",
+]);
+
+function preflopKey([first, second]: Card[]): string {
+  if (!first || !second) return "";
+  if (first.rank === second.rank) return `${first.rank}${second.rank}`;
+  const [high, low] = rankOrder[first.rank] >= rankOrder[second.rank]
+    ? [first, second]
+    : [second, first];
+  return `${high.rank}${low.rank}${first.suit === second.suit ? "s" : "o"}`;
+}
+
+/**
+ * A compact six-max starting-hand chart. Sklansky-Chubukov numbers are
+ * heads-up open-shove limits rather than a general cash-game opening chart,
+ * so the bot uses their core idea (starting-hand discipline) without turning
+ * a 100-BB six-max table into push/fold poker.
+ */
+export function preflopHandTier(holeCards: Card[]): PreflopHandTier {
+  const key = preflopKey(holeCards);
+  if (premiumPreflopHands.has(key)) return "premium";
+  if (strongPreflopHands.has(key)) return "strong";
+  if (playablePreflopHands.has(key)) return "playable";
+  if (speculativePreflopHands.has(key)) return "speculative";
+  return "trash";
+}
+
+const cardKey = (card: Card) => `${card.rank}:${card.suit}`;
+const clampUnit = (value: number) => Math.max(0, Math.min(1, value));
+const BOT_BLUFF_FREQUENCY = 0.05;
+
+function drawUnknownCard(pool: Card[], random: BotRandom): Card {
+  const roll = clampUnit(random());
+  const index = Math.min(pool.length - 1, Math.floor(roll * pool.length));
+  return pool.splice(index, 1)[0];
+}
+
+/**
+ * Estimates showdown equity using only information the bot is entitled to:
+ * its own cards, the public board, and the number of live opponents. Actual
+ * opponent cards and the server's remaining deck are deliberately ignored.
+ */
+export function estimateBotEquity(
+  state: GameState,
+  seatIndex: number,
+  simulations = 56,
+  random: BotRandom = secureBotRandom,
+): number {
+  const seat = state.seats[seatIndex];
+  if (seat.holeCards.length !== 2) return 0;
+
+  const opponents = state.seats.filter(
+    (candidate, index) =>
+      index !== seatIndex
+      && candidate.status !== "folded"
+      && candidate.status !== "out",
+  ).length;
+  if (opponents === 0) return 1;
+
+  const known = new Set([...seat.holeCards, ...state.community].map(cardKey));
+  const unknown = deckTemplate.filter((card) => !known.has(cardKey(card)));
+  let equity = 0;
+
+  for (let simulation = 0; simulation < simulations; simulation += 1) {
+    const pool = [...unknown];
+    const opponentHands = Array.from({ length: opponents }, () => [
+      drawUnknownCard(pool, random),
+      drawUnknownCard(pool, random),
+    ]);
+    const board = [...state.community];
+    while (board.length < 5) board.push(drawUnknownCard(pool, random));
+
+    const heroScore = evaluateHand([...seat.holeCards, ...board]);
+    let tiedWinners = 1;
+    let beaten = false;
+    opponentHands.forEach((hand) => {
+      const comparison = compareScores(evaluateHand([...hand, ...board]), heroScore);
+      if (comparison > 0) beaten = true;
+      else if (comparison === 0) tiedWinners += 1;
+    });
+    if (!beaten) equity += 1 / tiedWinners;
+  }
+
+  return equity / Math.max(1, simulations);
+}
+
+function positionAdvantage(state: GameState, seatIndex: number): number {
+  const order: number[] = [];
+  let cursor = state.buttonPosition;
+  for (let count = 0; count < state.seats.length; count += 1) {
+    const next = nextSeat(
+      state,
+      cursor,
+      (seat) => seat.status !== "folded" && seat.status !== "out",
+    );
+    if (next === null || order.includes(next)) break;
+    order.push(next);
+    cursor = next;
+  }
+  const position = order.indexOf(seatIndex);
+  return position < 0 || order.length < 2 ? 0.5 : position / (order.length - 1);
+}
+
+function botRaiseTarget(
+  state: GameState,
+  legal: LegalActions,
+  style: (typeof personalityProfiles)[BotPersonality],
+  random: BotRandom,
+): number {
+  let target: number;
+  if (state.street === "preflop") {
+    const limpers = state.seats.filter(
+      (seat) => seat.vpip && seat.streetBet === state.currentBet,
+    ).length;
+    target = state.currentBet <= state.bigBlind
+      ? state.bigBlind * (2.25 + random() * 0.9 + limpers)
+      : state.currentBet * (2.35 + random() * 0.75);
+  } else {
+    const sizes = style.postflopBetSizes;
+    const fraction = sizes[Math.min(sizes.length - 1, Math.floor(clampUnit(random()) * sizes.length))];
+    const potAfterCall = Math.max(state.bigBlind, state.pot + legal.toCall);
+    target = state.currentBet === 0
+      ? potAfterCall * fraction
+      : state.currentBet + Math.max(state.minRaise, potAfterCall * fraction);
+  }
+
+  const rounded = Math.max(
+    legal.minRaiseTo,
+    Math.round(target / state.bigBlind) * state.bigBlind,
+  );
+  // Normal bets stop at one pot and deliberately leave at least one big
+  // blind behind. Committing the stack is a separate, tightly gated decision
+  // below; a rounded raise must never accidentally turn into another shove.
+  const potSizedCap = state.currentBet === 0
+    ? Math.max(state.bigBlind, state.pot)
+    : state.currentBet + state.pot + legal.toCall;
+  const nonAllInCap = legal.maxRaiseTo - Math.min(state.bigBlind, legal.maxRaiseTo);
+  return Math.min(potSizedCap, nonAllInCap, rounded);
+}
+
+/**
+ * Mixed, equity-aware bot strategy. The random source is injectable so rule
+ * and strategy tests can exercise exact branches without flaky outcomes.
+ */
+export function chooseBotAction(
+  state: GameState,
+  seatIndex: number,
+  random: BotRandom = secureBotRandom,
+): TurnAction {
   const legal = getLegalActions(state, seatIndex);
   const seat = state.seats[seatIndex];
-  const profile = personalityProfiles[seat.personality ?? "ROCK"];
-  const highRanks = seat.holeCards.filter((card) => ["A", "K", "Q", "J"].includes(card.rank)).length;
-  const pair = seat.holeCards[0]?.rank === seat.holeCards[1]?.rank;
-  const boardScore = state.community.length >= 3
-    ? evaluateHand([...seat.holeCards, ...state.community]).values[0]
-    : -1;
-  const madeHand = boardScore >= 1;
-  const decent = madeHand || pair || highRanks === 2 || (profile.raiseWide && highRanks === 1);
-  const roll = randomInt(100);
+  const style = personalityProfiles[seat.personality ?? "ROCK"];
+  const liveOpponents = state.seats.filter(
+    (candidate, index) =>
+      index !== seatIndex
+      && candidate.status !== "folded"
+      && candidate.status !== "out",
+  );
+  const opponents = Math.max(1, liveOpponents.length);
+  const allInOpponents = liveOpponents.filter((candidate) => candidate.status === "all-in").length;
+  const baselineEquity = 1 / (opponents + 1);
+  const rawEquity = estimateBotEquity(state, seatIndex, 56, random);
+  const position = positionAdvantage(state, seatIndex);
+  const effectiveEquity = clampUnit(
+    rawEquity
+      + style.equityAdjustment
+      + (position - 0.5) * (state.street === "preflop" ? 0.08 : 0.045),
+  );
   const potOdds = legal.toCall / Math.max(1, state.pot + legal.toCall);
-  const facingPressure = legal.toCall > seat.stack * profile.pressureFactor || potOdds >= 0.28;
+  const decisionRoll = random();
+  const startingTier = preflopHandTier(seat.holeCards);
+  const tierStrength: Record<PreflopHandTier, number> = {
+    premium: 4,
+    strong: 3,
+    playable: 2,
+    speculative: 1,
+    trash: 0,
+  };
+  const preflopStrength = tierStrength[startingTier];
+  const multiwayRiskPremium = Math.min(
+    0.24,
+    Math.max(0, opponents - 1) * 0.025 + allInOpponents * 0.065,
+  );
+  const valueRaiseThreshold = Math.max(
+    baselineEquity + 0.12 - style.aggression * 0.035,
+    potOdds + 0.12 + multiwayRiskPremium,
+  );
+  const hasValueRaise = effectiveEquity >= valueRaiseThreshold;
+  const bluffWindow = position >= 0.58
+    && effectiveEquity < baselineEquity + 0.04
+    && decisionRoll < BOT_BLUFF_FREQUENCY;
+  const potSizedCap = state.currentBet === 0
+    ? Math.max(state.bigBlind, state.pot)
+    : state.currentBet + state.pot + legal.toCall;
+  const nonAllInCap = legal.maxRaiseTo - Math.min(state.bigBlind, legal.maxRaiseTo);
+  const shouldRaise = legal.canRaise
+    && (hasValueRaise || bluffWindow)
+    && legal.minRaiseTo <= Math.min(potSizedCap, nonAllInCap)
+    && decisionRoll < Math.min(0.96, style.aggression + Math.max(0, effectiveEquity - baselineEquity));
+
+  if (legal.toCall > 0) {
+    // Weak offsuit holdings do not drift into multiway pots because a Monte
+    // Carlo roll happened to land high. The one exception is the explicit
+    // five-percent bluff gate, and even that raises rather than open-shoves.
+    if (
+      state.street === "preflop"
+      && startingTier === "trash"
+      && !bluffWindow
+    ) {
+      return { type: "fold" };
+    }
+
+    const stackInBigBlinds = seat.stack / Math.max(1, state.bigBlind);
+    const criticallyShort = stackInBigBlinds < 10;
+    const potIsMassive = state.pot >= seat.stack;
+    const preflopShove = state.street === "preflop"
+      && (
+        (criticallyShort && preflopStrength >= (stackInBigBlinds < 6 ? 2 : 3))
+        || (potIsMassive && startingTier === "premium")
+      );
+    const postflopShove = state.street !== "preflop"
+      && (
+        (
+          criticallyShort
+          && effectiveEquity >= potOdds + multiwayRiskPremium + 0.18
+        )
+        || (
+          potIsMassive
+          && effectiveEquity >= (opponents > 1 ? 0.9 : 0.82)
+        )
+      );
+    if (
+      legal.canAllIn
+      && (preflopShove || postflopShove)
+      && decisionRoll < Math.min(0.9, style.aggression + 0.08)
+    ) {
+      return { type: "all-in" };
+    }
+    if (shouldRaise && decisionRoll >= style.slowPlayFrequency) {
+      return { type: "raise", amount: botRaiseTarget(state, legal, style, random) };
+    }
+    if (
+      effectiveEquity + style.callTolerance < potOdds + multiwayRiskPremium
+      || (
+        state.street === "preflop"
+        && allInOpponents > 0
+        && preflopStrength < (allInOpponents > 1 ? 4 : 3)
+      )
+    ) {
+      return { type: "fold" };
+    }
+    return legal.canCall ? { type: "call" } : { type: "fold" };
+  }
+
   if (
-    legal.toCall > 0
-    && !decent
-    && facingPressure
-    && roll < profile.pressureFoldRoll
+    state.street === "preflop"
+    && startingTier === "trash"
+    && !bluffWindow
   ) {
-    return { type: "fold" };
+    return legal.canCheck ? { type: "check" } : { type: "fold" };
   }
-  if (state.community.length >= 3 && boardScore === 0 && roll < profile.postflopFoldRoll) {
-    return legal.canFold ? { type: "fold" } : { type: "check" };
+  if (shouldRaise && decisionRoll >= style.slowPlayFrequency) {
+    return { type: "raise", amount: botRaiseTarget(state, legal, style, random) };
   }
-  if (legal.canRaise && decent && roll < profile.raiseRoll) {
-    const target = Math.min(
-      legal.maxRaiseTo,
-      Math.max(legal.minRaiseTo, state.currentBet + state.bigBlind * profile.raiseSizeBB),
-    );
-    return { type: "raise", amount: target };
-  }
-  if (legal.canCall) return roll < profile.looseFoldRoll && legal.canFold ? { type: "fold" } : { type: "call" };
-  return { type: "check" };
+  return legal.canCheck ? { type: "check" } : { type: "fold" };
 }
 
 export function autoPlayBots(state: GameState): GameState {
@@ -789,6 +1081,13 @@ export function normalizeGameState(state: GameState): GameState {
     // Hands in flight before VPIP existed have no opinion either way; treat
     // as false rather than let `undefined` leak into a stats comparison.
     seat.vpip = Boolean(seat.vpip);
+    if (seat.actedAtBet !== null && !Number.isFinite(seat.actedAtBet)) {
+      seat.actedAtBet = seat.acted ? seat.streetBet : null;
+    } else if (seat.actedAtBet === undefined) {
+      // Forward compatibility for persisted hands created before betting
+      // reopening tracked the amount each player had already faced.
+      seat.actedAtBet = seat.acted ? seat.streetBet : null;
+    }
   });
   if (state.currentPlayer === null || state.status !== "playing") {
     state.turnStartedAt = null;

@@ -3,9 +3,12 @@ import {
   advanceTimedTurn,
   applyPlayerAction,
   claimSeat,
+  chooseBotAction,
   createGame,
+  estimateBotEquity,
   expireIdleTurn,
   normalizeGameState,
+  preflopHandTier,
   STARTING_TIME_CARDS,
   TIME_CARD_EXTENSION_MS,
   TURN_TIMEOUT_MS,
@@ -37,6 +40,17 @@ const cards = (values: string): Card[] =>
       suit: suitMap[value.at(-1)! as keyof typeof suitMap],
     };
   });
+
+const seededRandom = (initialSeed: number) => {
+  let seed = initialSeed;
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let value = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+    return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
+  };
+};
 
 function advanceBotsUntilHuman(state: GameState): GameState {
   let game = state;
@@ -301,6 +315,127 @@ describe("server game engine", () => {
     expect(allIn.minRaise).toBe(20);
   });
 
+  it("does not reopen raising after one short all-in", () => {
+    const { game, tokens } = createHumanTable();
+    game.status = "playing";
+    game.street = "flop";
+    game.currentBet = 100;
+    game.minRaise = 100;
+    game.seats.forEach((seat) => {
+      seat.status = "out";
+      seat.stack = 0;
+      seat.streetBet = 0;
+      seat.committed = 0;
+      seat.acted = true;
+      seat.actedAtBet = null;
+    });
+    Object.assign(game.seats[0], {
+      status: "active",
+      stack: 900,
+      streetBet: 100,
+      committed: 100,
+      acted: true,
+      actedAtBet: 100,
+    });
+    Object.assign(game.seats[1], {
+      status: "active",
+      stack: 50,
+      streetBet: 100,
+      committed: 100,
+      acted: false,
+      actedAtBet: null,
+    });
+    game.currentPlayer = 1;
+    game.pot = 200;
+
+    const afterShortRaise = applyPlayerAction(game, { type: "all-in" }, tokens[1]);
+    expect(afterShortRaise.currentBet).toBe(150);
+    expect(afterShortRaise.minRaise).toBe(100);
+    expect(afterShortRaise.currentPlayer).toBe(0);
+
+    const legal = toSnapshot(afterShortRaise, tokens[0]).legalActions!;
+    expect(legal.toCall).toBe(50);
+    expect(legal.canCall).toBe(true);
+    expect(legal.canRaise).toBe(false);
+    expect(legal.canAllIn).toBe(false);
+    expect(() => applyPlayerAction(afterShortRaise, { type: "all-in" }, tokens[0]))
+      .toThrow(/illegal raise/i);
+  });
+
+  it("reopens raising once cumulative short all-ins equal a full raise", () => {
+    const { game, tokens } = createHumanTable();
+    game.status = "playing";
+    game.street = "flop";
+    game.currentBet = 100;
+    game.minRaise = 100;
+    game.seats.forEach((seat) => {
+      seat.status = "out";
+      seat.stack = 0;
+      seat.streetBet = 0;
+      seat.committed = 0;
+      seat.acted = true;
+      seat.actedAtBet = null;
+    });
+    Object.assign(game.seats[0], {
+      status: "active",
+      stack: 900,
+      streetBet: 100,
+      committed: 100,
+      acted: true,
+      actedAtBet: 100,
+    });
+    Object.assign(game.seats[1], {
+      status: "active",
+      stack: 50,
+      streetBet: 100,
+      committed: 100,
+      acted: false,
+    });
+    Object.assign(game.seats[2], {
+      status: "active",
+      stack: 100,
+      streetBet: 100,
+      committed: 100,
+      acted: false,
+    });
+    game.currentPlayer = 1;
+    game.pot = 300;
+
+    const firstShortRaise = applyPlayerAction(game, { type: "all-in" }, tokens[1]);
+    expect(firstShortRaise.currentPlayer).toBe(2);
+    const secondShortRaise = applyPlayerAction(firstShortRaise, { type: "all-in" }, tokens[2]);
+    expect(secondShortRaise.currentBet).toBe(200);
+    expect(secondShortRaise.minRaise).toBe(100);
+    expect(secondShortRaise.currentPlayer).toBe(0);
+
+    const legal = toSnapshot(secondShortRaise, tokens[0]).legalActions!;
+    expect(legal.toCall).toBe(100);
+    expect(legal.canRaise).toBe(true);
+    expect(legal.canAllIn).toBe(true);
+    expect(legal.minRaiseTo).toBe(300);
+  });
+
+  it("keeps the full big blind as the bring-in when the BB is short stacked", () => {
+    const hostToken = crypto.randomUUID();
+    const game = createGame(hostToken, "Host");
+    game.status = "complete";
+    game.buttonPosition = 5;
+    game.seats.forEach((seat, index) => {
+      seat.stack = index < 3 ? 1000 : 0;
+    });
+    game.seats[2].stack = 7;
+
+    const nextHand = applyPlayerAction(game, { type: "next-hand" }, hostToken);
+    const view = toSnapshot(nextHand, hostToken);
+    expect(view.seats[1].isSmallBlind).toBe(true);
+    expect(nextHand.seats[1].committed).toBe(5);
+    expect(view.seats[2].isBigBlind).toBe(true);
+    expect(nextHand.seats[2].committed).toBe(7);
+    expect(nextHand.seats[2].status).toBe("all-in");
+    expect(nextHand.currentBet).toBe(10);
+    expect(view.legalActions?.toCall).toBe(10);
+  });
+
   it("awards main and side pots by contribution and excludes a folded best hand", () => {
     const { game, tokens } = createHumanTable();
     game.status = "playing";
@@ -415,6 +550,143 @@ describe("bot identity", () => {
     expect(game.seats.slice(1).every((seat) => !seat.isHuman)).toBe(true);
     // Every bot seat gets a visually distinct identity (no repeats among bots).
     expect(new Set(game.seats.slice(1).map((seat) => seat.avatarPreset)).size).toBe(5);
+  });
+
+  it("bases decisions on estimated equity without reading opponents' cards", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    game.seats.forEach((seat, index) => {
+      seat.status = index === 0 || index === 3 ? "active" : "folded";
+    });
+    game.currentPlayer = 3;
+    game.street = "river";
+    game.community = cards("2c 7d 9h Js Qs");
+    game.currentBet = 300;
+    game.minRaise = 100;
+    game.pot = 400;
+    Object.assign(game.seats[3], {
+      stack: 700,
+      streetBet: 0,
+      committed: 0,
+      acted: false,
+      actedAtBet: null,
+      holeCards: cards("Ah Ad"),
+    });
+
+    const premiumEquity = estimateBotEquity(game, 3, 400, seededRandom(7));
+    const premiumAction = chooseBotAction(game, 3, seededRandom(19));
+
+    game.seats[3].holeCards = cards("3c 4d");
+    const trashEquity = estimateBotEquity(game, 3, 400, seededRandom(7));
+    const trashAction = chooseBotAction(game, 3, seededRandom(19));
+
+    expect(premiumEquity).toBeGreaterThan(0.75);
+    expect(trashEquity).toBeLessThan(0.2);
+    expect(["call", "raise", "all-in"]).toContain(premiumAction.type);
+    expect(trashAction.type).toBe("fold");
+  });
+
+  it("uses a disciplined six-max preflop starting-hand chart", () => {
+    expect(preflopHandTier(cards("As Ah"))).toBe("premium");
+    expect(preflopHandTier(cards("Ac Kc"))).toBe("premium");
+    expect(preflopHandTier(cards("8s 8d"))).toBe("playable");
+    expect(preflopHandTier(cards("7h 6h"))).toBe("playable");
+    expect(preflopHandTier(cards("7c 2d"))).toBe("trash");
+  });
+
+  it("immediately folds low offsuit trash preflop outside the bluff gate", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    game.seats.forEach((seat, index) => {
+      seat.status = index === 0 || index === 3 ? "active" : "folded";
+    });
+    Object.assign(game.seats[3], {
+      holeCards: cards("7c 2d"),
+      stack: 1000,
+      streetBet: 0,
+      acted: false,
+      actedAtBet: null,
+    });
+    game.currentPlayer = 3;
+    game.street = "preflop";
+    game.currentBet = 10;
+    game.minRaise = 10;
+    game.pot = 15;
+
+    expect(chooseBotAction(game, 3, () => 0.5)).toEqual({ type: "fold" });
+  });
+
+  it("caps normal raises at one pot and never turns a deep-stack raise into an all-in", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    game.seats.forEach((seat, index) => {
+      seat.status = index === 0 || index === 1 ? "active" : "folded";
+    });
+    Object.assign(game.seats[1], {
+      holeCards: cards("As Ah"),
+      stack: 1000,
+      streetBet: 0,
+      committed: 0,
+      acted: false,
+      actedAtBet: null,
+    });
+    game.currentPlayer = 1;
+    game.street = "preflop";
+    game.currentBet = 10;
+    game.minRaise = 10;
+    game.pot = 15;
+
+    const action = chooseBotAction(game, 1, () => 0.5);
+    expect(action.type).toBe("raise");
+    if (action.type === "raise") {
+      // Facing 10 into a 15 pot: the bot calls 10, then may raise by at most
+      // the resulting 25-chip pot, making 35 the largest allowed raise-to.
+      expect(action.amount).toBeLessThanOrEqual(35);
+      expect(action.amount).toBeLessThan(game.seats[1].stack);
+    }
+  });
+
+  it("reserves preflop all-ins for strong hands with fewer than ten big blinds", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    game.seats.forEach((seat, index) => {
+      seat.status = index === 0 || index === 3 ? "active" : "folded";
+    });
+    Object.assign(game.seats[3], {
+      holeCards: cards("As Ah"),
+      stack: 80,
+      streetBet: 0,
+      committed: 0,
+      acted: false,
+      actedAtBet: null,
+    });
+    game.currentPlayer = 3;
+    game.street = "preflop";
+    game.currentBet = 20;
+    game.minRaise = 10;
+    game.pot = 30;
+
+    expect(chooseBotAction(game, 3, () => 0.5)).toEqual({ type: "all-in" });
+  });
+
+  it("declines marginal hands after multiple opponents are already all-in", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    game.seats.forEach((seat, index) => {
+      seat.status = index < 4 ? "active" : "folded";
+    });
+    game.seats[1].status = "all-in";
+    game.seats[2].status = "all-in";
+    Object.assign(game.seats[3], {
+      holeCards: cards("8s 8d"),
+      stack: 900,
+      streetBet: 100,
+      committed: 100,
+      acted: false,
+      actedAtBet: null,
+    });
+    game.currentPlayer = 3;
+    game.street = "preflop";
+    game.currentBet = 1000;
+    game.minRaise = 900;
+    game.pot = 2200;
+
+    expect(chooseBotAction(game, 3, () => 0.5)).toEqual({ type: "fold" });
   });
 });
 

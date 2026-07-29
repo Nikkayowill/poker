@@ -7,10 +7,9 @@
  * on an ellipse is not a stylistic choice, it is what a real round table
  * looks like from a player's chair.
  *
- * Everything else follows from one number per seat: its depth into the
- * scene. Scale, stacking order and atmospheric falloff are all derived from
- * it, which is why the far side reads as further away rather than merely
- * smaller.
+ * Depth determines overlap order while avatar size stays constant. The table
+ * plane itself supplies the perspective cue; changing people's size made them
+ * look inconsistent rather than distant.
  */
 
 /** Seat 0 sits nearest the viewer; screen y grows downward, so 90deg is the near edge. */
@@ -71,29 +70,12 @@ export function seatZ(depth: number): number {
   return 4 + Math.round(depth);
 }
 
-/**
- * Focal length for the perspective divide, in units where the table is one
- * deep. Real perspective is scale = f / (f + z), not a linear ramp: the
- * falloff is steeper near the camera, which is exactly the cue that makes a
- * flat ring read as a receding table.
- *
- * Solved so the far edge lands at FAR_SCALE:
- *   FAR_SCALE = f / (f + 1)  =>  f = FAR_SCALE / (1 - FAR_SCALE)
- */
-/* 0.82 was too gentle to read as distance: an 18% size drop across the whole
-   table is inside the range a player reads as "that seat is just a bit
-   smaller", not "that seat is further away". */
-const FAR_SCALE = 0.62;
-const FOCAL = FAR_SCALE / (1 - FAR_SCALE);
-
 export interface SeatGeometry {
   /** Percentage across the table's bounding box. */
   x: number;
   y: number;
   /** 0 at the far rail, 1 nearest the viewer. */
   depth: number;
-  /** Perspective foreshortening, FAR_SCALE..1. */
-  scale: number;
   /**
    * Painter's-algorithm order: far seats draw first and therefore behind the
    * rail, near seats draw over it. The rail itself sits at RAIL_Z.
@@ -139,9 +121,6 @@ export function seatGeometry(
   // sin(theta) is +1 at the near edge and -1 at the far rail.
   const depth = (Math.sin(theta) + 1) / 2;
 
-  // Perspective divide: z is distance into the scene, 0 near and 1 far.
-  const scale = FOCAL / (FOCAL + (1 - depth));
-
   // Toward (50, 50). The components are in percentage space, so a very wide
   // table skews the direction slightly -- harmless at the short distances a
   // bet chip travels, and not worth threading the pixel size in to correct.
@@ -153,25 +132,7 @@ export function seatGeometry(
     x,
     y,
     depth,
-    scale,
     z: Math.round(depth * 100),
     towardPot: { x: inwardX / dominant, y: inwardY / dominant },
-  };
-}
-
-/**
- * Distance haze -- aerial perspective. Air between the viewer and the far rail
- * scatters light, so distant things lose contrast, lose colour and lose their
- * hard edges. All three together are what separates a receding table from a
- * ring of differently-sized cut-outs; size alone never sells it.
- *
- * The blur is deliberately tiny. Anything past about a pixel stops reading as
- * distance and starts reading as a rendering fault, and these are faces.
- */
-export function atmosphere(depth: number): { brightness: number; saturate: number; blur: number } {
-  return {
-    brightness: 0.66 + 0.34 * depth,
-    saturate: 0.55 + 0.45 * depth,
-    blur: 0.9 * (1 - depth),
   };
 }

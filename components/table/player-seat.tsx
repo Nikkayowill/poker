@@ -88,15 +88,38 @@ function SeatCards({
   );
 }
 
-function SeatNameplate({ seat, isWinner }: { seat: PublicSeat; isWinner: boolean }) {
+function SeatNameplate({
+  seat,
+  isWinner,
+  smallBlind,
+  bigBlind,
+}: {
+  seat: PublicSeat;
+  isWinner: boolean;
+  smallBlind: number;
+  bigBlind: number;
+}) {
+  const blind = seat.isSmallBlind
+    ? { abbreviation: "SB", name: "Small Blind", amount: smallBlind }
+    : seat.isBigBlind
+      ? { abbreviation: "BB", name: "Big Blind", amount: bigBlind }
+      : null;
   return (
     <div className="seat-plate">
       <div className="seat-name-row">
         <strong>{seat.name}</strong>
         {!seat.isHuman && <span className="ai-badge">AI</span>}
         {seat.isMine && <span className="you-chip">You</span>}
-        {seat.isSmallBlind && <span className="blind-label">SB</span>}
-        {seat.isBigBlind && <span className="blind-label">BB</span>}
+        {blind && (
+          <span
+            className="blind-label"
+            aria-label={`${blind.name}, ${blind.amount.toLocaleString()} chips`}
+            title={`${blind.name}: ${blind.amount.toLocaleString()} chips`}
+          >
+            <b>{blind.abbreviation}</b>
+            <span>{blind.amount.toLocaleString()}</span>
+          </span>
+        )}
       </div>
       <span
         className={clsx("seat-stack", isWinner && "seat-stack-win")}
@@ -114,6 +137,8 @@ export const PlayerSeat = memo(function PlayerSeat({
   placement,
   handNumber,
   winAmount,
+  smallBlind,
+  bigBlind,
   elementRef,
   seatStyle,
 }: {
@@ -121,8 +146,10 @@ export const PlayerSeat = memo(function PlayerSeat({
   placement: string;
   handNumber: number;
   winAmount?: number;
+  smallBlind: number;
+  bigBlind: number;
   elementRef?: (el: HTMLElement | null) => void;
-  /** Computed ellipse position, perspective scale and stacking order. */
+  /** Computed position and stacking order around the tilted table plane. */
   seatStyle?: React.CSSProperties;
 }) {
   const folded = seat.status === "folded" || seat.status === "out";
@@ -138,7 +165,14 @@ export const PlayerSeat = memo(function PlayerSeat({
     />
   );
   const figure = <SeatFigure seat={seat} active={seat.isCurrent} />;
-  const nameplate = <SeatNameplate seat={seat} isWinner={isWinner} />;
+  const nameplate = (
+    <SeatNameplate
+      seat={seat}
+      isWinner={isWinner}
+      smallBlind={smallBlind}
+      bigBlind={bigBlind}
+    />
+  );
   const handStrength = seat.isMine && seat.handLabel
     ? <span className="hand-strength" aria-live="polite">{seat.handLabel}</span>
     : null;
@@ -198,5 +232,7 @@ export const PlayerSeat = memo(function PlayerSeat({
   && previous.placement === next.placement
   && previous.handNumber === next.handNumber
   && previous.winAmount === next.winAmount
+  && previous.smallBlind === next.smallBlind
+  && previous.bigBlind === next.bigBlind
   && previous.seatStyle === next.seatStyle
 ));

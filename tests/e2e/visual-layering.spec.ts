@@ -35,7 +35,7 @@ async function openQuickTable(browser: Browser, viewport: ViewportCase) {
     viewport: { width: viewport.width, height: viewport.height },
   });
   const response = await context.request.post("/api/games/quick-play", {
-    data: { name: "Visual QA", tier: "micro", buyIn: 500 },
+    data: { name: "Visual QA", tier: "1k", buyIn: 1000 },
   });
   expect(response.ok()).toBe(true);
   const payload = await response.json();

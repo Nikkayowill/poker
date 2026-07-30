@@ -14,6 +14,20 @@ import {
 import type { PlayerProfile } from "@/lib/profile/types";
 import { CardBackArt } from "./card-back-art";
 
+interface UnlockStats {
+  handsWon: number;
+  totalChipsWon: number;
+}
+
+/** How close a player is to a progress-gated avatar, for display only -- the server is the only place this is enforced. */
+function unlockProgress(item: Cosmetic, stats: UnlockStats | null): { current: number; goal: number; label: string } | null {
+  if (!item.unlock || !stats) return null;
+  if ("handsWon" in item.unlock) {
+    return { current: stats.handsWon, goal: item.unlock.handsWon, label: "hands won" };
+  }
+  return { current: stats.totalChipsWon, goal: item.unlock.chipsWon, label: "Gold won" };
+}
+
 const SLOTS: { slot: CosmeticSlot; title: string; blurb: string }[] = [
   { slot: "avatar", title: "Avatars", blurb: "Who you are at the table." },
   { slot: "cardBack", title: "Card backs", blurb: "Seen by the whole table, on every hidden hand." },
@@ -58,6 +72,7 @@ export function Collection() {
   const [owned, setOwned] = useState<string[]>([]);
   const [equipped, setEquipped] = useState<EquippedCosmetics | null>(null);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  const [stats, setStats] = useState<UnlockStats | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -73,6 +88,7 @@ export function Collection() {
       setOwned(data.owned);
       setEquipped(data.equipped);
       setProfile(data.profile);
+      setStats(data.stats);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load the collection.");
     }
@@ -182,6 +198,19 @@ export function Collection() {
             </div>
             <h2 id="preview-title">{previewing.name}</h2>
             <p>{previewing.description}</p>
+            {!owned.includes(previewing.id) && (() => {
+              const progress = unlockProgress(previewing, stats);
+              if (!progress) return null;
+              const pct = Math.min(100, Math.round((progress.current / progress.goal) * 100));
+              return (
+                <div className="cosmetic-unlock-progress">
+                  <div className="cosmetic-unlock-bar">
+                    <div className="cosmetic-unlock-fill" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span>{progress.current.toLocaleString()} / {progress.goal.toLocaleString()} {progress.label}</span>
+                </div>
+              );
+            })()}
             <div className="confirm-actions">
               <button type="button" className="cosmetic-action" onClick={() => setPreviewing(null)}>
                 Close
@@ -275,11 +304,25 @@ export function Collection() {
                             {busy ? "…" : <><Coins size={13} /> {item.price!.toLocaleString()}</>}
                           </button>
                         )
-                        : (
-                          // Signature items are earned. Saying so plainly beats
-                          // a disabled price that implies a number would buy it.
-                          <span className="cosmetic-locked">Earned, not sold</span>
-                        )}
+                        : (() => {
+                          const progress = unlockProgress(item, stats);
+                          // Signature items are earned with no visible progress
+                          // bar (a specific moment, not a grind). Premium-tier
+                          // avatars carry a real threshold, so show how close
+                          // this profile actually is to it.
+                          if (!progress) {
+                            return <span className="cosmetic-locked">Earned, not sold</span>;
+                          }
+                          const pct = Math.min(100, Math.round((progress.current / progress.goal) * 100));
+                          return (
+                            <div className="cosmetic-unlock-progress" title={`${progress.current.toLocaleString()} / ${progress.goal.toLocaleString()} ${progress.label}`}>
+                              <div className="cosmetic-unlock-bar">
+                                <div className="cosmetic-unlock-fill" style={{ width: `${pct}%` }} />
+                              </div>
+                              <span>{progress.current.toLocaleString()} / {progress.goal.toLocaleString()} {progress.label}</span>
+                            </div>
+                          );
+                        })()}
                   </article>
                 );
               })}

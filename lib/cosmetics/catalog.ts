@@ -35,6 +35,15 @@ export interface Cosmetic {
    * ownership and purchase path serve both.
    */
   art?: { base: string; ink: string; pattern: "lattice" | "chevron" | "rings" | "pinstripe" | "crest" };
+  /**
+   * Avatar-only progress unlock, checked against lifetime PlayerStats after
+   * every hand (lib/server/avatar-unlocks.ts) instead of a Gold purchase.
+   * Exactly one of the two is set per unlockable item -- never both, so a
+   * player is never stuck needing two separate kinds of progress to earn one
+   * avatar. price stays null on these: they are earned, not for sale, same
+   * rule as the signature tier below just gated on a lower bar.
+   */
+  unlock?: { handsWon: number } | { chipsWon: number };
 }
 
 /**
@@ -152,6 +161,20 @@ const cardBackCosmetics: Cosmetic[] = [
  *
  * Adding one is a matter of appending here and dropping a source image named
  * <id>.png through the prepare script. Nothing counts the roster.
+ *
+ * Four tiers, in order:
+ *  - standard (5): the starter roster. Free from the moment a profile
+ *    exists -- a new player picks whichever one looks like them, not just
+ *    whichever came first.
+ *  - premium (7): earned by playing, not bought. price stays null and
+ *    unlock carries a lifetime hands-won or chips-won threshold, checked by
+ *    lib/server/avatar-unlocks.ts after every hand. The two conditions
+ *    alternate so grinding either style of game makes progress.
+ *  - rare (5): the limited tier -- purchasable, deliberately expensive, the
+ *    thing a signature avatar is not. Priced in lib/server/stripe.ts's
+ *    Gold-pack economy, not arbitrarily.
+ *  - signature (3): unchanged -- earned via a specific one-off achievement,
+ *    never for sale, no relation to the hands/chips-won unlock ladder.
  */
 export const avatarCosmetics: Cosmetic[] = [
   {
@@ -168,7 +191,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Grinder",
     description: "Plays the long session. Counts profit by the month, not the hand.",
     rarity: "standard",
-    price: 150000,
+    price: 0,
   },
   {
     id: "avatar-shark",
@@ -176,7 +199,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Shark",
     description: "Quiet until the river.",
     rarity: "standard",
-    price: 150000,
+    price: 0,
   },
   {
     id: "avatar-prospect",
@@ -184,7 +207,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Prospect",
     description: "New to the room and already hard to read.",
     rarity: "standard",
-    price: 150000,
+    price: 0,
   },
   {
     id: "avatar-rock",
@@ -192,7 +215,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Rock",
     description: "Folds for an hour, then takes your stack.",
     rarity: "standard",
-    price: 150000,
+    price: 0,
   },
   {
     id: "avatar-rounder",
@@ -200,7 +223,8 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Rounder",
     description: "Makes a living in rooms like this one.",
     rarity: "premium",
-    price: 150000,
+    price: null,
+    unlock: { handsWon: 25 },
   },
   {
     id: "avatar-closer",
@@ -208,7 +232,8 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Closer",
     description: "Never leaves a pot on the table.",
     rarity: "premium",
-    price: 150000,
+    price: null,
+    unlock: { chipsWon: 50000 },
   },
   {
     id: "avatar-host",
@@ -216,7 +241,8 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Host",
     description: "Runs the room, and remembers every hand you've played in it.",
     rarity: "premium",
-    price: 150000,
+    price: null,
+    unlock: { handsWon: 75 },
   },
   {
     id: "avatar-veteran",
@@ -224,7 +250,8 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Veteran",
     description: "Has folded better hands than you've shown.",
     rarity: "premium",
-    price: 150000,
+    price: null,
+    unlock: { chipsWon: 250000 },
   },
   {
     id: "avatar-maniac",
@@ -232,7 +259,8 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Maniac",
     description: "Raises. You will find out why later.",
     rarity: "premium",
-    price: 150000,
+    price: null,
+    unlock: { handsWon: 200 },
   },
   {
     id: "avatar-crusher",
@@ -240,7 +268,8 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Crusher",
     description: "Table changes when they sit down.",
     rarity: "premium",
-    price: 150000,
+    price: null,
+    unlock: { chipsWon: 1000000 },
   },
   {
     id: "avatar-latereg",
@@ -248,7 +277,8 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Late Reg",
     description: "Arrives on the second break and still finishes ahead.",
     rarity: "premium",
-    price: 150000,
+    price: null,
+    unlock: { handsWon: 500 },
   },
   {
     id: "avatar-nightowl",
@@ -256,7 +286,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Night Owl",
     description: "Plays best after everyone sensible has gone home.",
     rarity: "rare",
-    price: 150000,
+    price: 750000,
   },
   {
     id: "avatar-highroller",
@@ -264,7 +294,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The High Roller",
     description: "Buys in for the maximum. Every time, without asking the price.",
     rarity: "rare",
-    price: 150000,
+    price: 1500000,
   },
   {
     id: "avatar-chipleader",
@@ -272,7 +302,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Chip Leader",
     description: "Counts it in towers because it no longer fits in stacks.",
     rarity: "rare",
-    price: 150000,
+    price: 2500000,
   },
   {
     id: "avatar-nosebleed",
@@ -280,7 +310,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Nosebleed",
     description: "Plays stakes the rest of the room comes to watch.",
     rarity: "rare",
-    price: 150000,
+    price: 4000000,
   },
   {
     id: "avatar-ambassador",
@@ -288,7 +318,7 @@ export const avatarCosmetics: Cosmetic[] = [
     name: "The Ambassador",
     description: "The face the room puts on its poster.",
     rarity: "rare",
-    price: 150000,
+    price: 6000000,
   },
   {
     id: "avatar-housename",

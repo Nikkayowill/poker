@@ -11,6 +11,13 @@ export interface PlayerStats {
   vpipHands: number;
   netProfit: number;
   biggestPotWon: number;
+  /**
+   * Gold won across every hand ever won, lifetime scope only -- unlike
+   * netProfit this never nets out a loss, which is what makes it usable as
+   * avatar-unlock progress: a losing streak can't make it go backwards.
+   * Not tracked per-season, so this is 0 outside the "lifetime" scope.
+   */
+  totalChipsWon: number;
 }
 
 export interface LeaderboardEntry extends PlayerStats {
@@ -35,6 +42,7 @@ const emptyStats = (profileId: string): PlayerStats => ({
   vpipHands: 0,
   netProfit: 0,
   biggestPotWon: 0,
+  totalChipsWon: 0,
 });
 
 // ---- memory-mode mirror --------------------------------------------------
@@ -102,8 +110,12 @@ interface HandOutcome {
  *
  * Deliberately best-effort: a stats failure must never surface as a failed
  * poker action. Callers wrap this in a catch that only logs.
+ *
+ * Returns the profile ids whose lifetime stats this call touched, so a
+ * caller can check those specific profiles for newly-earned avatar unlocks
+ * without rescanning every player at the table.
  */
-export async function recordHandStats(state: GameState): Promise<void> {
+export async function recordHandStats(state: GameState): Promise<string[]> {
   const outcomes: HandOutcome[] = [];
 
   for (const seat of state.seats) {
@@ -122,7 +134,7 @@ export async function recordHandStats(state: GameState): Promise<void> {
     });
   }
 
-  if (outcomes.length === 0) return;
+  if (outcomes.length === 0) return [];
 
   const supabase = adminClient();
   if (!supabase) {
@@ -139,6 +151,7 @@ export async function recordHandStats(state: GameState): Promise<void> {
         vpipHands: current.vpipHands + (outcome.vpip ? 1 : 0),
         netProfit: current.netProfit + outcome.netProfit,
         biggestPotWon: Math.max(current.biggestPotWon, outcome.amountWon),
+        totalChipsWon: current.totalChipsWon + outcome.amountWon,
       });
 
       const season = memoryActiveSeason();
@@ -155,7 +168,7 @@ export async function recordHandStats(state: GameState): Promise<void> {
         });
       }
     }
-    return;
+    return outcomes.map((outcome) => outcome.profileId);
   }
 
   for (const outcome of outcomes) {
@@ -170,6 +183,7 @@ export async function recordHandStats(state: GameState): Promise<void> {
     });
     if (error) throw new Error(`Could not record hand result: ${error.message}`);
   }
+  return outcomes.map((outcome) => outcome.profileId);
 }
 
 // ---- reading ---------------------------------------------------------------
@@ -223,6 +237,8 @@ export async function getLeaderboard(scope: LeaderboardScope, limit = 10): Promi
         vpipHands: row.vpipHands,
         netProfit: row.netProfit,
         biggestPotWon: row.biggestPotWon,
+        // Season stats don't track this -- unlock progress is lifetime-only.
+        totalChipsWon: 0,
       }));
     return decorate(rows);
   }
@@ -257,6 +273,9 @@ function rowToPlayerStats(row: Record<string, unknown>): PlayerStats {
     vpipHands: Number(row.vpip_hands ?? 0),
     netProfit: Number(row.net_profit),
     biggestPotWon: Number(row.biggest_pot_won),
+    // season_stats has no total_chips_won column -- unlock progress is
+    // lifetime-only, so this is 0 for any season-scoped row.
+    totalChipsWon: Number(row.total_chips_won ?? 0),
   };
 }
 

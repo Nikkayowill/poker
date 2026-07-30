@@ -37,13 +37,17 @@ describe("cosmetic catalog", () => {
     expect(cosmeticById(DEFAULT_CARD_BACK)?.slot).toBe("cardBack");
   });
 
-  it("gives away exactly one avatar and one card back", () => {
-    // A new player has to arrive wearing something, and it has to be the same
-    // something every time or the default equipment cannot be relied upon.
+  it("gives away the starter roster and exactly one card back", () => {
+    // A new player has to arrive wearing something, and the default has to be
+    // among the free choices every time or the default equipment cannot be
+    // relied upon. Avatars are the starter tier, not just one -- an NBA 2K
+    // MyTeam-style pick of five rather than a single forced default.
     const free = cosmetics.filter((item) => item.price === 0);
-    expect(free.map((item) => item.id).sort()).toEqual(
-      [DEFAULT_AVATAR_COSMETIC, DEFAULT_CARD_BACK].sort(),
-    );
+    const freeAvatars = free.filter((item) => item.slot === "avatar");
+    const freeCardBacks = free.filter((item) => item.slot === "cardBack");
+    expect(freeAvatars.map((item) => item.id)).toContain(DEFAULT_AVATAR_COSMETIC);
+    expect(freeAvatars).toHaveLength(5);
+    expect(freeCardBacks.map((item) => item.id)).toEqual([DEFAULT_CARD_BACK]);
   });
 
   it("never prices a signature item", () => {
@@ -51,6 +55,22 @@ describe("cosmetic catalog", () => {
     // cosmetic economy leans on.
     for (const item of cosmetics.filter((entry) => entry.rarity === "signature")) {
       expect(item.price).toBeNull();
+    }
+  });
+
+  it("never puts a Gold price on a progress-unlocked avatar", () => {
+    // A hands-won/chips-won avatar is earned, exactly like a signature item --
+    // Gold must never also buy a shortcut around the same threshold.
+    for (const item of avatarCosmetics.filter((entry) => entry.unlock)) {
+      expect(item.price).toBeNull();
+    }
+  });
+
+  it("unlocks each progress-gated avatar on exactly one metric", () => {
+    for (const item of avatarCosmetics.filter((entry) => entry.unlock)) {
+      const keys = Object.keys(item.unlock!);
+      expect(keys).toHaveLength(1);
+      expect(["handsWon", "chipsWon"]).toContain(keys[0]);
     }
   });
 

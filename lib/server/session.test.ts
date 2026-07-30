@@ -8,7 +8,7 @@ import {
 } from "./session";
 
 describe("session persistence preference", () => {
-  it("defaults to a persistent River Room identity", () => {
+  it("defaults to a persistent StackChips identity", () => {
     const request = new NextRequest("https://river-room.test/");
     const response = withRequestSessionCookie(request, NextResponse.json({ ok: true }), "player-token");
 

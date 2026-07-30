@@ -720,7 +720,7 @@ export function PokerApp() {
       const { error: signInError } = await client.auth.signInWithOAuth({
         provider: "google",
         options: {
-          // Production is pinned to the canonical River Room origin; a
+          // Production is pinned to the canonical StackChips origin; a
           // loopback callback is used only when this browser is genuinely
           // running the local app. The dedicated path also keeps the OAuth
           // `code` parameter separate from poker room invite codes.
@@ -849,8 +849,8 @@ export function PokerApp() {
       {!game && (
         <header className="lobby-header">
           <div className="wordmark">
-            <span className="mark">R</span>
-            <span>River Room<small>NO LIMIT HOLD’EM</small></span>
+            <span className="mark">S</span>
+            <span>StackChips<small>NO LIMIT HOLD’EM</small></span>
           </div>
           <div className="header-actions">
             <div className="header-status">No-limit Hold’em · 6-max</div>

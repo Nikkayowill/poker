@@ -1,5 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <rect width="512" height="512" rx="96" fill="#09110f"/>
-  <rect x="94" y="94" width="324" height="324" rx="44" fill="#d9b85d" transform="rotate(45 256 256)"/>
-  <path d="M176 352V150h93c52 0 84 26 84 70 0 31-17 54-48 64l64 68h-72l-55-61h-4v61h-62zm62-112h27c18 0 28-8 28-23s-10-22-28-22h-27v45z" fill="#09110f"/>
+  <rect x="114" y="312" width="284" height="30" rx="15" fill="#6b2a2c"/>
+  <ellipse cx="256" cy="312" rx="142" ry="40" fill="#6b2a2c"/>
+  <ellipse cx="256" cy="312" rx="142" ry="40" fill="none" stroke="#3a1416" stroke-width="6"/>
+  <rect x="114" y="260" width="284" height="28" rx="14" fill="#ded6c2"/>
+  <ellipse cx="256" cy="260" rx="142" ry="40" fill="#ded6c2"/>
+  <ellipse cx="256" cy="260" rx="142" ry="40" fill="none" stroke="#a89a78" stroke-width="6"/>
+  <rect x="114" y="208" width="284" height="26" rx="13" fill="#d9b85d"/>
+  <ellipse cx="256" cy="208" rx="142" ry="38" fill="#d9b85d"/>
+  <ellipse cx="256" cy="208" rx="142" ry="38" fill="none" stroke="#8a6a22" stroke-width="6"/>
 </svg>

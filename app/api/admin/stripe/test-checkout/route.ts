@@ -11,7 +11,7 @@ const bodySchema = z.object({
   tierKey: z.string().min(1),
 });
 
-const noCashValueNotice = "River Room Gold is virtual entertainment currency with no cash value and cannot be redeemed, exchanged, or withdrawn for real money.";
+const noCashValueNotice = "StackChips Gold is virtual entertainment currency with no cash value and cannot be redeemed, exchanged, or withdrawn for real money.";
 
 /**
  * The only way a Stripe test-mode Checkout Session ever gets created for

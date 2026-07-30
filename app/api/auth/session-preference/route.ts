@@ -10,7 +10,7 @@ import {
 const bodySchema = z.object({ remember: z.boolean() });
 
 /**
- * Keeps River Room's HttpOnly gameplay identity aligned with the Supabase
+ * Keeps StackChips' HttpOnly gameplay identity aligned with the Supabase
  * browser session. A session cookie (no max-age) expires with the browser;
  * a persistent cookie is retained for returning players.
  *

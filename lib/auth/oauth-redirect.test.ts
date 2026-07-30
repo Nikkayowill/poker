@@ -9,20 +9,20 @@ describe("oauthCallbackUrl", () => {
   it("uses the canonical production URL during server-side execution", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://vercel.app/");
 
-    expect(oauthSiteOrigin(undefined)).toBe("https://poker-navy-six.vercel.app");
+    expect(oauthSiteOrigin(undefined)).toBe("https://www.stackchips.app");
     expect(oauthCallbackUrl()).toBe(
-      "https://poker-navy-six.vercel.app/auth/callback",
+      "https://www.stackchips.app/auth/callback",
     );
   });
 
   it("pins deployed callbacks to the canonical production origin", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://wrong-host.example/");
 
-    expect(oauthSiteOrigin("https://poker-preview.vercel.app")).toBe(
-      "https://poker-navy-six.vercel.app",
+    expect(oauthSiteOrigin("https://preview.stackchips.app")).toBe(
+      "https://www.stackchips.app",
     );
-    expect(oauthCallbackUrl(oauthSiteOrigin("https://poker-preview.vercel.app"))).toBe(
-      "https://poker-navy-six.vercel.app/auth/callback",
+    expect(oauthCallbackUrl(oauthSiteOrigin("https://preview.stackchips.app"))).toBe(
+      "https://www.stackchips.app/auth/callback",
     );
   });
 
@@ -36,15 +36,15 @@ describe("oauthCallbackUrl", () => {
   it("does not let a stale production environment value force localhost", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "http://localhost:3000");
 
-    expect(oauthSiteOrigin("https://poker-navy-six.vercel.app")).toBe(
-      "https://poker-navy-six.vercel.app",
+    expect(oauthSiteOrigin("https://www.stackchips.app")).toBe(
+      "https://www.stackchips.app",
     );
-    expect(oauthSiteOrigin(undefined)).toBe("https://poker-navy-six.vercel.app");
+    expect(oauthSiteOrigin(undefined)).toBe("https://www.stackchips.app");
   });
 
   it("never carries a poker route or query into the OAuth callback", () => {
-    expect(oauthCallbackUrl("https://poker-navy-six.vercel.app/table?code=RIVER")).toBe(
-      "https://poker-navy-six.vercel.app/auth/callback",
+    expect(oauthCallbackUrl("https://www.stackchips.app/table?code=RIVER")).toBe(
+      "https://www.stackchips.app/auth/callback",
     );
   });
 

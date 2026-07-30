@@ -611,7 +611,7 @@ export class TableManager<TState, TAction, TPublicState> {
 
   private assertSixMaxLayout(): void {
     if (this.seats.length !== MAX_SEATS) {
-      throw new Error("A River Room table must contain exactly six seats.");
+      throw new Error("A StackChips table must contain exactly six seats.");
     }
     const ids = this.seats.map((seat) => seat.seatId);
     if (new Set(ids).size !== MAX_SEATS || ids.some((id) => id < 1 || id > MAX_SEATS)) {

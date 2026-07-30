@@ -1,5 +1,5 @@
 export const OAUTH_CALLBACK_PATH = "/auth/callback";
-export const PRODUCTION_SITE_ORIGIN = "https://poker-navy-six.vercel.app";
+export const PRODUCTION_SITE_ORIGIN = "https://www.stackchips.app";
 
 function normalizedHttpOrigin(origin: string): string {
   const parsedOrigin = new URL(origin);
@@ -19,7 +19,7 @@ function isLocalDevelopmentOrigin(origin: string): boolean {
 }
 
 /**
- * Production sign-in must always return to the canonical River Room host.
+ * Production sign-in must always return to the canonical StackChips host.
  *
  * A stale/mistyped Vercel NEXT_PUBLIC_SITE_URL must never be allowed to send a
  * production OAuth exchange to localhost. Localhost remains supported only

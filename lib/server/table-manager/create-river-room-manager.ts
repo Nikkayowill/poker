@@ -30,7 +30,7 @@ function createSeatLayout(
   sessions: CashGameSession[],
 ): Seat[] {
   if (state.seats.length !== 6) {
-    throw new Error("A River Room table must have exactly six engine seats.");
+    throw new Error("A StackChips table must have exactly six engine seats.");
   }
   const sessionByToken = new Map(
     sessions.map((session) => [session.sessionToken, session]),

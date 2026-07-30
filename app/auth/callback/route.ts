@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
     // exchangeCodeForSession already wrote the Supabase auth cookies via
     // cookies() (next/headers), which a Route Handler applies to the
     // response regardless of which NextResponse instance is returned.
-    // Only River Room's own gameplay-identity cookie needs adding here.
+    // Only StackChips' own gameplay-identity cookie needs adding here.
     const result = await linkAuthenticatedUser(data.session.user.id, request);
     return withRequestSessionCookie(request, NextResponse.redirect(origin), result.token);
   } catch (linkError) {

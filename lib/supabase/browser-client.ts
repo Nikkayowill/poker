@@ -27,7 +27,7 @@ export function setRememberAuthSession(remember: boolean): void {
  * client-side PKCE verifier living in origin-scoped storage that a
  * redirect, a duplicate effect run, or a wrong storage backend could lose.
  *
- * "Stay signed in" is enforced by River Room's own river_session cookie
+ * "Stay signed in" is enforced by StackChips' own river_session cookie
  * (lib/server/session.ts), which is what actually gates gameplay identity.
  * This Supabase cookie is left on the library's default lifetime rather than
  * switched per-toggle -- at most that means a browser Supabase still

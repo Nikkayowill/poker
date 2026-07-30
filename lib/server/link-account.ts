@@ -6,7 +6,7 @@ import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
- * Turns an authenticated Supabase user into a River Room profile.
+ * Turns an authenticated Supabase user into a StackChips profile.
  *
  * Shared by the OAuth callback route handler and the email/password link
  * route: both already know the caller is who they say they are (the

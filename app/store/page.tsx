@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { GoldStore } from "@/components/store/gold-store";
 
 export const metadata: Metadata = {
-  title: "Buy Gold · River Room",
+  title: "Buy Gold · StackChips",
 };
 
 export default async function StorePage({

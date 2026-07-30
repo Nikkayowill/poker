@@ -62,7 +62,7 @@ export function PlayingCard({
     return (
       <div className={clsx("playing-card card-back", sizeClass)} aria-label="Hidden card">
         <span className="card-back-emblem">
-          <span>R</span>
+          <span>S</span>
         </span>
       </div>
     );

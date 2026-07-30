@@ -349,8 +349,8 @@ export function PokerTable({
     <main className="game-shell">
       <header className="game-header">
         <button className="wordmark" onClick={onLeave} aria-label="Leave table">
-          <span className="mark">R</span>
-          <span>River Room<small>NO LIMIT HOLD’EM</small></span>
+          <span className="mark">S</span>
+          <span>StackChips<small>NO LIMIT HOLD’EM</small></span>
         </button>
         <div className="table-meta">
           <span>

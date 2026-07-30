@@ -160,7 +160,7 @@ export function Lobby({
             </button>
           </div>
         )}
-        <div className="lobby-kicker">River Room · 6-max</div>
+        <div className="lobby-kicker">StackChips · 6-max</div>
         <h1>No-limit Hold’em.<br /><em>Nothing extra.</em></h1>
         <p>
           Pick your stakes, choose a buy-in, and take a seat. Start a quick

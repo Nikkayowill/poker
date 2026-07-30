@@ -1,0 +1,26 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4] [cursor=pointer]:
+        - generic [ref=e5]: R R
+        - generic [ref=e6]: River Room
+      - generic [ref=e7]:
+        - generic [ref=e8]: No-limit Hold’em · 6-max
+        - button "Sign in" [ref=e9] [cursor=pointer]
+    - main [ref=e10]:
+      - region [ref=e11]:
+        - generic [ref=e12]: R
+        - generic [ref=e14]: River Room · No-limit Hold’em
+        - heading "River Room" [level=1] [ref=e15]
+        - status [ref=e16]: Checking your player session…
+        - generic [ref=e19] [cursor=pointer]:
+          - checkbox "Stay signed in Remember this player on this device" [checked] [disabled] [ref=e20]
+          - generic [ref=e21]:
+            - strong [ref=e22]: Stay signed in
+            - generic [ref=e23]: Remember this player on this device
+        - generic [ref=e24]:
+          - button "Continue with Google" [disabled] [ref=e25]
+          - button "Play as guest" [disabled] [ref=e28]
+          - button "Continue with email" [disabled] [ref=e29]
+        - paragraph [ref=e33]: Guest progress stays in this browser. River Room Gold has no cash value and cannot be redeemed or withdrawn.
+  - alert [ref=e34]

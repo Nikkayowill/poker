@@ -1,4 +1,5 @@
 export const OAUTH_CALLBACK_PATH = "/auth/callback";
+export const PRODUCTION_SITE_ORIGIN = "https://poker-navy-six.vercel.app";
 
 function normalizedHttpOrigin(origin: string): string {
   const parsedOrigin = new URL(origin);
@@ -9,23 +10,38 @@ function normalizedHttpOrigin(origin: string): string {
   return parsedOrigin.origin;
 }
 
-export function oauthSiteOrigin(): string {
-  const origin =
-    typeof window !== "undefined"
-      ? window.location.origin
-      : process.env.NEXT_PUBLIC_SITE_URL;
-
-  if (!origin) {
-    throw new Error("NEXT_PUBLIC_SITE_URL is required outside the browser.");
-  }
-
-  return normalizedHttpOrigin(origin);
+function isLocalDevelopmentOrigin(origin: string): boolean {
+  const { hostname, protocol } = new URL(origin);
+  return (
+    protocol === "http:" &&
+    (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]")
+  );
 }
 
 /**
- * Keep the PKCE callback on the origin that initiated sign-in. The verifier
- * lives in origin-scoped browser storage, so changing hosts mid-flow would
- * make an otherwise valid Google callback impossible to exchange.
+ * Production sign-in must always return to the canonical River Room host.
+ *
+ * A stale/mistyped Vercel NEXT_PUBLIC_SITE_URL must never be allowed to send a
+ * production OAuth exchange to localhost. Localhost remains supported only
+ * when the sign-in was genuinely initiated from a loopback browser origin.
+ */
+export function oauthSiteOrigin(
+  browserOrigin: string | undefined =
+    typeof window !== "undefined" ? window.location.origin : undefined,
+): string {
+  if (browserOrigin) {
+    const normalizedBrowserOrigin = normalizedHttpOrigin(browserOrigin);
+    if (isLocalDevelopmentOrigin(normalizedBrowserOrigin)) {
+      return normalizedBrowserOrigin;
+    }
+  }
+
+  return PRODUCTION_SITE_ORIGIN;
+}
+
+/**
+ * Keep local PKCE exchanges local, but make every deployed exchange return to
+ * the one canonical production callback.
  */
 export function oauthCallbackUrl(origin: string = oauthSiteOrigin()): string {
   return new URL(OAUTH_CALLBACK_PATH, normalizedHttpOrigin(origin)).toString();

@@ -669,9 +669,10 @@ export function PokerApp() {
       const { error: signInError } = await client.auth.signInWithOAuth({
         provider: "google",
         options: {
-          // PKCE verifiers are origin-scoped, so return to the exact origin
-          // that started sign-in. A dedicated callback path also keeps the
-          // OAuth `code` parameter separate from poker room invite codes.
+          // Production is pinned to the canonical River Room origin; a
+          // loopback callback is used only when this browser is genuinely
+          // running the local app. The dedicated path also keeps the OAuth
+          // `code` parameter separate from poker room invite codes.
           redirectTo: oauthCallbackUrl(),
         },
       });

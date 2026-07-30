@@ -51,15 +51,3 @@ export function reportStrayAuthCode(exchanged: boolean): void {
   });
 }
 
-/** A callback that never produced a session, with why-it-might-have-failed context. */
-export function reportOAuthCallbackFailure(reason: string): void {
-  Sentry.captureMessage("oauth.callback_failed", {
-    level: "error",
-    extra: {
-      reason,
-      origin: window.location.origin,
-      href: window.location.href,
-      buildSiteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? null,
-    },
-  });
-}

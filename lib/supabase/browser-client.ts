@@ -1,71 +1,43 @@
 "use client";
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const REMEMBER_AUTH_KEY = "river-room:remember-auth";
-const authStorageKeys = new Set<string>();
 
-function browserStorage() {
-  if (typeof window === "undefined") return null;
-  return readRememberAuthSession() ? window.localStorage : window.sessionStorage;
-}
-
-/**
- * Supabase normally persists auth in localStorage. This adapter keeps that
- * behavior only when the player asks to stay signed in; otherwise the same
- * session is scoped to the current browser session.
- */
-const authStorage = {
-  getItem(key: string) {
-    authStorageKeys.add(key);
-    return browserStorage()?.getItem(key) ?? null;
-  },
-  setItem(key: string, value: string) {
-    authStorageKeys.add(key);
-    browserStorage()?.setItem(key, value);
-  },
-  removeItem(key: string) {
-    authStorageKeys.add(key);
-    if (typeof window === "undefined") return;
-    window.localStorage.removeItem(key);
-    window.sessionStorage.removeItem(key);
-  },
-};
-
+/** Only the UI's "Stay signed in" checkbox default -- see the client docstring below. */
 export function readRememberAuthSession(): boolean {
   if (typeof window === "undefined") return true;
   return window.localStorage.getItem(REMEMBER_AUTH_KEY) !== "false";
 }
 
-/**
- * Moves only the Supabase keys this client has actually used. That avoids
- * touching sessions belonging to another Supabase project on the same host.
- */
 export function setRememberAuthSession(remember: boolean): void {
   if (typeof window === "undefined") return;
-  const source = remember ? window.sessionStorage : window.localStorage;
-  const destination = remember ? window.localStorage : window.sessionStorage;
-  for (const key of authStorageKeys) {
-    const value = source.getItem(key);
-    if (value !== null) destination.setItem(key, value);
-    source.removeItem(key);
-  }
   window.localStorage.setItem(REMEMBER_AUTH_KEY, String(remember));
 }
 
 /**
  * The one Supabase client the browser is allowed to have.
  *
- * supabase-js builds a GoTrueClient per call to createClient, and each one
- * registers its own storage listener and refresh timer against the same
- * session. Two of them race to refresh the same token and the library warns
- * about it. There were two: a cached one for sign-in, and a fresh one built
- * inside the Realtime effect on every mount -- doubled again by StrictMode in
- * development, which mounts, unmounts and mounts again.
+ * Session state lives in cookies (via @supabase/ssr), not localStorage. That
+ * is what lets the OAuth callback route handler -- a plain server request,
+ * no client JS involved -- exchange the code and have the resulting session
+ * already be visible to this client and to every other server request on
+ * the next render. It also removes the class of bug this app hit earlier: a
+ * client-side PKCE verifier living in origin-scoped storage that a
+ * redirect, a duplicate effect run, or a wrong storage backend could lose.
  *
- * Module scope is the right lifetime here. It survives remounts and Fast
+ * "Stay signed in" is enforced by River Room's own river_session cookie
+ * (lib/server/session.ts), which is what actually gates gameplay identity.
+ * This Supabase cookie is left on the library's default lifetime rather than
+ * switched per-toggle -- at most that means a browser Supabase still
+ * recognizes after "don't remember me", which the account-entry screen
+ * already treats as "here's your account, continue or sign out", not as an
+ * automatic seat.
+ *
+ * Module scope is the right lifetime here: it survives remounts and Fast
  * Refresh, so a component can ask for the client as often as it likes and
- * still get one auth instance and one websocket.
+ * still get one auth instance.
  */
 let client: SupabaseClient | null = null;
 
@@ -74,19 +46,7 @@ export function browserSupabase(): SupabaseClient | null {
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return null;
   if (!client) {
-    client = createClient(url, key, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-        // OAuth callbacks should carry a short-lived authorization code, not
-        // access, refresh, and provider tokens in the URL fragment. The
-        // client exchanges the code on the same origin and removes it from
-        // the address bar during initialization.
-        flowType: "pkce",
-        storage: authStorage,
-      },
-    });
+    client = createBrowserClient(url, key);
   }
   return client;
 }

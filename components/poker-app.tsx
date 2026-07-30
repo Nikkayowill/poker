@@ -584,16 +584,15 @@ export function PokerApp() {
     }
   };
 
-  // Completes a sign-in: Supabase has redirected back with a session, so
-  // hand its access token to the server, which verifies it and either links
-  // this guest profile or restores the one the account already owns.
-  const linkAccount = useCallback(async (accessToken: string) => {
+  // Completes a sign-in: Supabase's session cookie already proves who this
+  // browser is, so the server reads it directly (getUser()) and either
+  // links this guest profile or restores the one the account already owns.
+  // For Google this is a safety-net re-run of what the OAuth callback route
+  // already did server-side before redirecting here; linkAuthenticatedUser
+  // is idempotent, so a duplicate call just restores the same profile.
+  const linkAccount = useCallback(async () => {
     try {
-      const response = await fetch("/api/auth/link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken }),
-      });
+      const response = await fetch("/api/auth/link", { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not save your progress.");
       setProfile(data.profile);
@@ -630,7 +629,7 @@ export function PokerApp() {
         return;
       }
       linkedAccountIdRef.current = accountId;
-      const linkPromise = linkAccount(session.access_token);
+      const linkPromise = linkAccount();
       accountLinkPromiseRef.current = linkPromise;
       const linked = await linkPromise;
       if (accountLinkPromiseRef.current === linkPromise) accountLinkPromiseRef.current = null;
@@ -689,6 +688,23 @@ export function PokerApp() {
       active = false;
       window.clearTimeout(timer);
     };
+  }, []);
+
+  /**
+   * The OAuth callback route handler redirects here with this flag when the
+   * code exchange itself failed server-side (an expired or already-used
+   * code, a Supabase outage). It already reported the specific reason to
+   * Sentry -- this only has to surface that something went wrong and clean
+   * the marker out of the address bar.
+   */
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("authError")) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    const timer = window.setTimeout(
+      () => setError("Google sign-in could not be completed. Please try again."),
+      0,
+    );
+    return () => window.clearTimeout(timer);
   }, []);
 
   const signIn = async (): Promise<void> => {

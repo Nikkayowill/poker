@@ -12,10 +12,16 @@ import * as Sentry from "@sentry/nextjs";
  * the moment of the click, which is the only place that truth exists.
  */
 
-/** What the browser is about to hand Supabase as the post-Google destination. */
+/**
+ * What the browser is about to hand Supabase as the post-Google destination.
+ *
+ * The destination is deliberately not called *Url: Sentry's data scrubber
+ * redacted the first version of this field, and a diagnostic that arrives as
+ * "[Filtered]" is no diagnostic at all.
+ */
 export function reportOAuthStart(callbackUrl: string): void {
   const detail = {
-    callbackUrl,
+    redirectTarget: callbackUrl,
     origin: window.location.origin,
     href: window.location.href,
     buildSiteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? null,

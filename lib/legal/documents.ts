@@ -15,6 +15,16 @@
 
 export type LegalDocumentSlug = "terms_of_service" | "gold_disclosure";
 
+/**
+ * Every slug that needs accepting, in prompt order. A caller with no profile
+ * yet has accepted none of them, so this doubles as the "nothing accepted"
+ * answer -- worth sharing rather than restating the list per call site.
+ */
+export const LEGAL_DOCUMENT_SLUGS: readonly LegalDocumentSlug[] = [
+  "terms_of_service",
+  "gold_disclosure",
+];
+
 export interface LegalDocument {
   slug: LegalDocumentSlug;
   version: number;

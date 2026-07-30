@@ -1,6 +1,6 @@
 import "server-only";
 import { adminClient } from "./supabase-admin";
-import { currentVersion, type LegalDocumentSlug } from "@/lib/legal/documents";
+import { LEGAL_DOCUMENT_SLUGS, currentVersion, type LegalDocumentSlug } from "@/lib/legal/documents";
 
 declare global {
   var __riverRoomLegalAcceptances: Set<string> | undefined;
@@ -58,7 +58,8 @@ export async function hasAcceptedCurrent(profileId: string, slug: LegalDocumentS
  * uses it to decide whether to show the prompt at all.
  */
 export async function pendingAcceptances(profileId: string): Promise<LegalDocumentSlug[]> {
-  const slugs: LegalDocumentSlug[] = ["terms_of_service", "gold_disclosure"];
-  const results = await Promise.all(slugs.map((slug) => hasAcceptedCurrent(profileId, slug)));
-  return slugs.filter((_, index) => !results[index]);
+  const results = await Promise.all(
+    LEGAL_DOCUMENT_SLUGS.map((slug) => hasAcceptedCurrent(profileId, slug)),
+  );
+  return LEGAL_DOCUMENT_SLUGS.filter((_, index) => !results[index]);
 }

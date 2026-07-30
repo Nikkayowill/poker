@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { LEGAL_DOCUMENTS } from "@/lib/legal/documents";
+import { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_SLUGS } from "@/lib/legal/documents";
 import { listGoldTiers } from "@/lib/server/stripe";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { pendingAcceptances } from "@/lib/server/legal-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
-import { readOrCreateSessionToken, withSessionCookie } from "@/lib/server/session";
+import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -19,20 +19,20 @@ export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request, "stripe:tiers", 60, 60 * 1000);
   if (limited) return limited;
   try {
-    const token = readOrCreateSessionToken(request);
-    const profile = await ensureProfile(token);
+    // Rendering the storefront must not create a player. Checkout is where a
+    // real session is required, and it enforces that itself.
+    const token = readSessionToken(request);
     const [tiers, pending] = await Promise.all([
       listGoldTiers(),
-      pendingAcceptances(profile.id),
+      token
+        ? ensureProfile(token).then((profile) => pendingAcceptances(profile.id))
+        : Promise.resolve([...LEGAL_DOCUMENT_SLUGS]),
     ]);
-    return withSessionCookie(
-      NextResponse.json({
-        tiers,
-        pendingAcceptances: pending,
-        pendingDocuments: pending.map((slug) => LEGAL_DOCUMENTS[slug]),
-      }),
-      token,
-    );
+    return NextResponse.json({
+      tiers,
+      pendingAcceptances: pending,
+      pendingDocuments: pending.map((slug) => LEGAL_DOCUMENTS[slug]),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not load the Gold storefront.";
     return NextResponse.json({ error: message }, { status: 500 });

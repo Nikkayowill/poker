@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
-import { readOrCreateSessionToken, withSessionCookie } from "@/lib/server/session";
+import { readSessionToken } from "@/lib/server/session";
 import { getActiveSeason, getLeaderboard, getPlayerStanding, type LeaderboardScope } from "@/lib/server/stats-store";
 
 export const runtime = "nodejs";
@@ -26,9 +26,12 @@ export async function GET(request: NextRequest) {
     if (!parsed.success) return NextResponse.json({ error: "Invalid leaderboard scope." }, { status: 400 });
     const scope: LeaderboardScope = parsed.data.scope;
 
-    const token = readOrCreateSessionToken(request);
+    // Reading the board is anonymous-safe: someone with no session simply has
+    // no standing of their own. Creating a profile just to answer "you are
+    // unranked" would fill the roster with players who never sat down.
+    const token = readSessionToken(request);
     const [profile, entries, season] = await Promise.all([
-      ensureProfile(token),
+      token ? ensureProfile(token) : Promise.resolve(null),
       getLeaderboard(scope, 10),
       getActiveSeason(),
     ]);
@@ -37,20 +40,22 @@ export async function GET(request: NextRequest) {
     // querying again; otherwise fetch their standing and decorate it with the
     // profile we already have in hand, so both branches produce the same
     // shape for the client.
-    const inTopTen = entries.find((entry) => entry.profileId === profile.id);
-    const mine = inTopTen ?? (await getPlayerStanding(profile.id, scope).then((standing) =>
-      standing && standing.rank !== null
-        ? {
-          ...standing.stats,
-          rank: standing.rank,
-          displayName: profile.displayName,
-          avatarUrl: profile.avatarUrl,
-          accent: profile.accent,
-        }
-        : null
-    ));
+    const inTopTen = profile ? entries.find((entry) => entry.profileId === profile.id) : undefined;
+    const mine = !profile
+      ? null
+      : inTopTen ?? (await getPlayerStanding(profile.id, scope).then((standing) =>
+        standing && standing.rank !== null
+          ? {
+            ...standing.stats,
+            rank: standing.rank,
+            displayName: profile.displayName,
+            avatarUrl: profile.avatarUrl,
+            accent: profile.accent,
+          }
+          : null
+      ));
 
-    return withSessionCookie(NextResponse.json({ scope, season, entries, mine }), token);
+    return NextResponse.json({ scope, season, entries, mine });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not load the leaderboard.";
     return NextResponse.json({ error: message }, { status: 500 });

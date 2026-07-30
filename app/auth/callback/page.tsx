@@ -4,10 +4,11 @@ import { ArrowRight, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
+import { reportOAuthCallbackFailure } from "@/lib/auth/oauth-diagnostics";
 
 /**
  * A one-time PKCE code can end up processed more than once for the same
- * sign-in -- a browser's speculative preload of the redirect target, a
+ * -in -- a browser's speculative preload of the redirect target, a
  * security extension probing the URL, or simply this effect re-running.
  * Whichever attempt loses that race gets back a real error
  * (flow_state_already_used) even though sign-in itself succeeded via the
@@ -54,6 +55,7 @@ export default function AuthCallbackPage() {
     const timeout = window.setTimeout(() => {
       if (!active || settled) return;
       settled = true;
+      reportOAuthCallbackFailure("no session within settle timeout");
       setError("Google sign-in could not be completed. Please start again.");
     }, SETTLE_TIMEOUT_MS);
 

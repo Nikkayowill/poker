@@ -6,6 +6,7 @@ import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import type { StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
 import { oauthCallbackUrl } from "@/lib/auth/oauth-redirect";
+import { reportOAuthStart, reportStrayAuthCode } from "@/lib/auth/oauth-diagnostics";
 import {
   browserSupabase,
   readRememberAuthSession,
@@ -658,6 +659,38 @@ export function PokerApp() {
     };
   }, [linkAccount, profileLoading]);
 
+  /**
+   * An authorization code landing here rather than /auth/callback means the
+   * flow recorded a bare origin as its destination -- something this code
+   * never asks for, so the flow was begun by a stale bundle or an older
+   * deployment. detectSessionInUrl still redeems it when the verifier belongs
+   * to this origin, so the only job here is to report it and, when it cannot
+   * be redeemed, say so instead of leaving a dead ?code= in the address bar.
+   */
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("code")) return;
+    if (window.location.pathname !== "/") return;
+    const client = authClient();
+    if (!client) return;
+
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void client.auth.getSession().then(({ data }) => {
+        if (!active) return;
+        reportStrayAuthCode(Boolean(data.session));
+        window.history.replaceState(null, "", window.location.pathname);
+        if (!data.session) {
+          setError("That sign-in link was for a different address. Please sign in again.");
+        }
+      });
+    }, 2_000);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, []);
+
   const signIn = async (): Promise<void> => {
     const client = authClient();
     if (!client) return;
@@ -666,6 +699,8 @@ export function PokerApp() {
     setRememberAuthSession(rememberSession);
     try {
       await applySessionPreference();
+      const callbackUrl = oauthCallbackUrl();
+      reportOAuthStart(callbackUrl);
       const { error: signInError } = await client.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -673,7 +708,7 @@ export function PokerApp() {
           // loopback callback is used only when this browser is genuinely
           // running the local app. The dedicated path also keeps the OAuth
           // `code` parameter separate from poker room invite codes.
-          redirectTo: oauthCallbackUrl(),
+          redirectTo: callbackUrl,
         },
       });
       if (signInError) throw signInError;

@@ -23,6 +23,9 @@ import { ProfileTrigger } from "@/components/profile/profile-avatar";
 import { PokerTable, type ConnectionState } from "@/components/table/poker-table";
 
 const SOUND_STORAGE_KEY = "river-room:sound-enabled";
+const MAX_REFRESH_RETRIES = 4;
+const REFRESH_RETRY_BASE_MS = 250;
+const REFRESH_RETRY_MAX_MS = 2_000;
 
 export function PokerApp() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
@@ -251,34 +254,79 @@ export function PokerApp() {
     if (!gameId || !supabase) return;
     let disposed = false;
     let refreshRunning = false;
+    let refreshQueued = false;
     let pendingVersion = gameVersionRef.current;
+    let consecutiveRetries = 0;
+    let retryTimer: number | null = null;
+
+    const clearRefreshRetry = () => {
+      if (retryTimer === null) return;
+      window.clearTimeout(retryTimer);
+      retryTimer = null;
+    };
+
+    const scheduleRefreshRetry = () => {
+      if (disposed || retryTimer !== null) return;
+      if (consecutiveRetries >= MAX_REFRESH_RETRIES) {
+        refreshQueued = false;
+        consecutiveRetries = 0;
+        setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
+        return;
+      }
+      const delay = Math.min(
+        REFRESH_RETRY_BASE_MS * 2 ** consecutiveRetries,
+        REFRESH_RETRY_MAX_MS,
+      );
+      consecutiveRetries += 1;
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null;
+        refreshLatest();
+      }, delay);
+    };
 
     const refreshLatest = () => {
-      if (disposed || refreshRunning) return;
+      if (disposed) return;
+      if (refreshRunning) {
+        refreshQueued = true;
+        return;
+      }
+      clearRefreshRetry();
       refreshRunning = true;
-      void (async () => {
-        try {
-          while (!disposed) {
-            const requestedVersion = pendingVersion;
-            const data = await refresh(gameId);
-            if (data.game.version >= pendingVersion) break;
-            if (pendingVersion <= requestedVersion) break;
+      refreshQueued = false;
+      void refresh(gameId)
+        .then((data) => {
+          if (data.game.version < pendingVersion) {
+            refreshQueued = true;
+            return;
           }
-        } catch {
+          consecutiveRetries = 0;
+        })
+        .catch(() => {
+          refreshQueued = true;
           setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
-        } finally {
+        })
+        .finally(() => {
           refreshRunning = false;
-        }
-      })();
+          if (disposed) return;
+          if (refreshQueued) {
+            scheduleRefreshRetry();
+          } else {
+            consecutiveRetries = 0;
+          }
+        });
     };
 
     let channel: RealtimeChannel | null = supabase
       .channel(`table:${gameId}`)
       .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "game_signals", filter: `game_id=eq.${gameId}` },
+        "broadcast",
+        { event: "TABLE_STATE_CHANGED" },
         (payload) => {
-          const version = Number((payload.new as { version?: unknown }).version);
+          const body = payload.payload as {
+            version?: unknown;
+            state?: { version?: unknown };
+          } | undefined;
+          const version = Number(body?.version ?? body?.state?.version);
           if (
             !Number.isFinite(version)
             || version <= Math.max(pendingVersion, gameVersionRef.current)
@@ -299,6 +347,7 @@ export function PokerApp() {
       });
     return () => {
       disposed = true;
+      clearRefreshRetry();
       if (channel) void supabase.removeChannel(channel);
       channel = null;
     };
@@ -360,18 +409,6 @@ export function PokerApp() {
       window.clearTimeout(timeout);
     };
   }, [advanceTable, gameId, isSeated, turnDeadlineAt, currentIsHuman, currentIsMine, myHumanRank]);
-
-  // Memory-mode development has no Realtime channel, so a second local browser
-  // would never hear about a change. It gets a slow *read-only* refresh --
-  // never /advance, which is a write and was the thing generating load.
-  useEffect(() => {
-    if (!gameId || persistence !== "memory") return;
-    const interval = window.setInterval(() => {
-      if (!window.navigator.onLine) return;
-      void refresh(gameId).catch(() => undefined);
-    }, 4000);
-    return () => window.clearInterval(interval);
-  }, [gameId, persistence, refresh]);
 
   const quickPlay = async (name: string, tier: StakesTier, buyIn: number) => {
     setLoading(true);

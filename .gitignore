@@ -11,3 +11,6 @@ npm-debug.log*
 tsconfig.tsbuildinfo
 .vercel
 .env*
+
+# Sentry Config File
+.env.sentry-build-plugin

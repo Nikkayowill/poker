@@ -149,7 +149,7 @@ export async function verifiedRebuySession(sessionId: string, expectedProfileId?
     && session.client_reference_id === metadata.profile_id
     && (!expectedProfileId || metadata.profile_id === expectedProfileId)
   );
-  if (!valid) throw new Error("Stripe payment details did not match the River Room rebuy.");
+  if (!valid) throw new Error("Stripe payment details did not match the StackChips rebuy.");
   return { session, config, profileId: metadata.profile_id! };
 }
 
@@ -179,13 +179,21 @@ export interface GoldTierDef {
  * rebuy Price/env var rather than minting a duplicate -- it is the same
  * product Codex's rebuy flow already sells, just also reachable from the
  * general storefront now.
+ *
+ * goldAmount is the only thing changed for the launch repricing -- the
+ * dollar price (unitAmount) is read from Stripe, not set here, and stays
+ * exactly what it was. Gold-per-dollar rises with tier on purpose: a bigger
+ * pack should feel disproportionately generous, not just linearly bigger,
+ * and the top tier is sized so a single High Roller pack can outright buy
+ * the cheapest rare avatar (avatar-nightowl, 750,000) rather than leaving
+ * every limited avatar feeling unreachable without repeat purchases.
  */
 export const GOLD_TIERS: GoldTierDef[] = [
   {
     key: "starter",
     label: "Starter",
     description: "A quick top-up to get back in.",
-    goldAmount: 50000,
+    goldAmount: 100000,
     envVar: "STRIPE_REBUY_PRICE_ID",
     testEnvVar: "STRIPE_TEST_PRICE_STARTER",
   },
@@ -193,7 +201,7 @@ export const GOLD_TIERS: GoldTierDef[] = [
     key: "value",
     label: "Value Pack",
     description: "Our most popular pack.",
-    goldAmount: 120000,
+    goldAmount: 300000,
     envVar: "STRIPE_PRICE_VALUE",
     testEnvVar: "STRIPE_TEST_PRICE_VALUE",
   },
@@ -201,7 +209,7 @@ export const GOLD_TIERS: GoldTierDef[] = [
     key: "stack",
     label: "Stack",
     description: "For a full session at the higher stakes.",
-    goldAmount: 270000,
+    goldAmount: 750000,
     envVar: "STRIPE_PRICE_STACK",
     testEnvVar: "STRIPE_TEST_PRICE_STACK",
   },
@@ -209,7 +217,7 @@ export const GOLD_TIERS: GoldTierDef[] = [
     key: "high_roller",
     label: "High Roller",
     description: "The whole ladder, all at once.",
-    goldAmount: 750000,
+    goldAmount: 2500000,
     envVar: "STRIPE_PRICE_HIGH_ROLLER",
     testEnvVar: "STRIPE_TEST_PRICE_HIGH_ROLLER",
   },
@@ -298,7 +306,7 @@ export async function verifiedTierSession(sessionId: string, expectedProfileId?:
   });
   const metadata = session.metadata ?? {};
   const tierKey = metadata.tier_key;
-  if (!tierKey) throw new Error("Stripe session has no River Room tier metadata.");
+  if (!tierKey) throw new Error("Stripe session has no StackChips tier metadata.");
   const tier = await resolveGoldTier(tierKey, mode);
 
   const lineItems = session.line_items?.data ?? [];

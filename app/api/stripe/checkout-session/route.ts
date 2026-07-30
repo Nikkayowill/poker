@@ -27,7 +27,7 @@ const bodySchema = z.union([
   z.object({ tierKey: z.string().min(1), gameId: z.string().uuid().optional() }),
 ]);
 
-const noCashValueNotice = "River Room Gold is virtual entertainment currency with no cash value and cannot be redeemed, exchanged, or withdrawn for real money.";
+const noCashValueNotice = "StackChips Gold is virtual entertainment currency with no cash value and cannot be redeemed, exchanged, or withdrawn for real money.";
 
 export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, "stripe:checkout", 5, 60 * 1000);

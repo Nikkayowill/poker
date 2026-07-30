@@ -12,6 +12,9 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://*.supabase.co",
   "font-src 'self' data:",
+  // Sentry's session-replay integration compresses events in a Worker
+  // constructed from a blob: URL; without this it silently fails to record.
+  "worker-src 'self' blob:",
   `connect-src 'self' https://*.supabase.co wss://*.supabase.co${isDev ? " ws:" : ""}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",

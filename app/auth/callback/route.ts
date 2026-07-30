@@ -26,6 +26,14 @@ export async function GET(request: NextRequest) {
   const authError = searchParams.get("error_description") ?? searchParams.get("error");
 
   if (!code) {
+    // console.error alongside Sentry: Vercel's own runtime logs are directly
+    // readable without a Sentry read-scoped token, which this deployment
+    // doesn't have one of yet.
+    console.error("[auth/callback] missing code", {
+      origin,
+      authError,
+      paramKeys: [...searchParams.keys()],
+    });
     Sentry.captureMessage("oauth.callback_missing_code", {
       level: "error",
       extra: { origin, authError },
@@ -35,11 +43,18 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createServerSupabase();
   if (!supabase) {
+    console.error("[auth/callback] no Supabase config on server");
     return NextResponse.redirect(`${origin}/?authError=1`);
   }
 
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error || !data.session) {
+    console.error("[auth/callback] exchangeCodeForSession failed", {
+      origin,
+      status: error?.status,
+      code: error?.code,
+      message: error?.message,
+    });
     Sentry.captureMessage("oauth.exchange_failed", {
       level: "error",
       extra: { origin, reason: error?.message ?? "no session returned" },
@@ -55,6 +70,7 @@ export async function GET(request: NextRequest) {
     const result = await linkAuthenticatedUser(data.session.user.id, request);
     return withRequestSessionCookie(request, NextResponse.redirect(origin), result.token);
   } catch (linkError) {
+    console.error("[auth/callback] linkAuthenticatedUser failed", linkError);
     Sentry.captureException(linkError, { extra: { origin, stage: "link_account" } });
     return NextResponse.redirect(`${origin}/?authError=1`);
   }

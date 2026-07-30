@@ -4,7 +4,9 @@ import { ArrowRight, LoaderCircle, LogOut, Mail } from "lucide-react";
 import { FormEvent, useState } from "react";
 import type { PlayerProfile } from "@/lib/profile/types";
 
-const MIN_PASSWORD_LENGTH = 6;
+// Matches Supabase's password_min_length (Authentication -> Providers ->
+// Email). NIST SP 800-63B and OWASP ASVS L1 both put the floor at 8.
+const MIN_PASSWORD_LENGTH = 8;
 
 export function AccountEntryCard({
   ready,
@@ -56,9 +58,9 @@ export function AccountEntryCard({
   return (
     <section className="account-entry-card" aria-labelledby="account-entry-title">
       <div className="account-entry-glow" aria-hidden="true" />
-      <div className="account-entry-mark" aria-hidden="true"><span>R</span></div>
-      <div className="account-entry-eyebrow">River Room · No-limit Hold’em</div>
-      <h1 id="account-entry-title">River Room</h1>
+      <div className="account-entry-mark" aria-hidden="true"><span>S</span></div>
+      <div className="account-entry-eyebrow">StackChips · No-limit Hold’em</div>
+      <h1 id="account-entry-title">StackChips</h1>
 
       {!ready ? (
         <p className="account-entry-status" role="status">
@@ -101,7 +103,7 @@ export function AccountEntryCard({
             >
               {pending
                 ? <><LoaderCircle className="account-entry-spinner" size={17} /> Preparing your seat…</>
-                : <>Enter River Room <ArrowRight size={17} /></>}
+                : <>Enter StackChips <ArrowRight size={17} /></>}
             </button>
             <button
               type="button"
@@ -198,7 +200,7 @@ export function AccountEntryCard({
 
       {error && <p className="account-entry-error" role="alert">{error}</p>}
       <p className="account-entry-footnote">
-        Guest progress stays in this browser. River Room Gold has no cash value
+        Guest progress stays in this browser. StackChips Gold has no cash value
         and cannot be redeemed or withdrawn.
       </p>
     </section>

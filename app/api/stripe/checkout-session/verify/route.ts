@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureProfile } from "@/lib/server/profile-store";
+import { enforceRateLimit } from "@/lib/server/rate-limit";
 import {
   isTestPurchaseAllowed,
   stripeClient,
@@ -33,6 +34,8 @@ const sessionSchema = z.string().min(10).max(200);
  * against Stripe's own record of the session, never taken from the request.
  */
 export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request, "stripe:verify", 20, 60 * 1000);
+  if (limited) return limited;
   try {
     const ownerToken = request.cookies.get("river_session")?.value;
     if (!ownerToken) return NextResponse.json({ error: "Your table session expired." }, { status: 401 });

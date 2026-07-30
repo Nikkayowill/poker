@@ -4,6 +4,7 @@ import type { GameState, PlayerAction } from "@/lib/game/types";
 import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { adminClient } from "./supabase-admin";
 import { recordHandStats } from "./stats-store";
+import { checkAvatarUnlocks } from "./avatar-unlocks";
 
 // Re-exported for the many existing callers that import it from here.
 export { adminClient };
@@ -129,21 +130,27 @@ export async function findOpenPublicGame(tier: StakesTier): Promise<string | nul
   return data?.[0]?.game_id ?? null;
 }
 
-/** Every table currently tracked by the store, split by public/private -- there's no separate archival state, so "tracked" is "running." */
+/**
+ * Tables actually still live, split by public/private -- a completed or
+ * archived game is history, not a running table, so those statuses are
+ * deliberately excluded rather than counting every row the store has ever
+ * seen.
+ */
 export async function countActiveGames(): Promise<{ publicTables: number; privateTables: number }> {
   const supabase = adminClient();
   if (!supabase) {
     let publicTables = 0;
     let privateTables = 0;
     for (const state of memoryGames.values()) {
+      if (state.status !== "playing") continue;
       if (state.isPrivate) privateTables += 1;
       else publicTables += 1;
     }
     return { publicTables, privateTables };
   }
   const [publicResult, privateResult] = await Promise.all([
-    supabase.from("games").select("id").eq("is_private", false),
-    supabase.from("games").select("id").eq("is_private", true),
+    supabase.from("games").select("id").eq("is_private", false).in("status", ["waiting", "playing"]),
+    supabase.from("games").select("id").eq("is_private", true).in("status", ["waiting", "playing"]),
   ]);
   if (publicResult.error) throw new Error(`Could not count public tables: ${publicResult.error.message}`);
   if (privateResult.error) throw new Error(`Could not count private tables: ${privateResult.error.message}`);
@@ -253,9 +260,11 @@ async function resolveTimedAdvance(state: GameState): Promise<GameState> {
     // this function exists to reach on its own, without anyone polling for
     // it. Best-effort: a stats failure must never surface as a broken table.
     if (wasPlaying && advanced.state.status === "complete") {
-      void recordHandStats(advanced.state).catch((error) => {
-        console.error("Could not record hand stats", error);
-      });
+      void recordHandStats(advanced.state)
+        .then((profileIds) => checkAvatarUnlocks(profileIds))
+        .catch((error) => {
+          console.error("Could not record hand stats", error);
+        });
     }
 
     current = advanced.state;

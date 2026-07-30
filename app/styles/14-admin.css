@@ -166,6 +166,58 @@
   color: var(--ink);
 }
 
+.admin-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-account-filter {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.admin-account-filter button {
+  padding: 8px 12px;
+  border: none;
+  border-right: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.admin-account-filter button:last-child { border-right: none; }
+
+.admin-account-filter button.admin-filter-active {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.admin-account-registered,
+.admin-account-guest {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.admin-account-registered {
+  background: rgba(120, 210, 150, 0.12);
+  border: 1px solid rgba(120, 210, 150, 0.35);
+  color: #7dd6a0;
+}
+
+.admin-account-guest {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
 .admin-bulk-bar {
   min-height: 52px;
   display: flex;
@@ -381,6 +433,9 @@
   .admin-header-actions { width: 100%; flex-wrap: wrap; }
   .admin-header-actions > * { flex: 1 1 auto; text-align: center; }
   .admin-section-heading, .admin-player-heading { align-items: stretch; flex-direction: column; }
+  .admin-player-controls { flex-direction: column; align-items: stretch; }
+  .admin-account-filter { justify-content: stretch; }
+  .admin-account-filter button { flex: 1 1 auto; }
   .admin-search { width: 100%; }
   .admin-stat { flex: 1 1 calc(50% - 12px); min-width: 0; }
   .admin-bulk-bar { align-items: flex-start; flex-wrap: wrap; }

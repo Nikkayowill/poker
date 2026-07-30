@@ -4,6 +4,7 @@ import { createGame } from "@/lib/game/engine";
 import { getPlayerStanding } from "./stats-store";
 import {
   advanceStoredGameWithTimeouts,
+  countActiveGames,
   createStoredGame,
   getStoredGame,
   loadGameWithTimeouts,
@@ -174,5 +175,20 @@ describe("stats recording through the real advance path (memory mode)", () => {
     const profile = await ensureProfile(token);
     const standing = await getPlayerStanding(profile.id, "lifetime");
     expect(standing?.stats.handsPlayed).toBe(1);
+  });
+});
+
+describe("countActiveGames (memory mode)", () => {
+  it("counts only tables still playing, not every table the store has ever seen", async () => {
+    const before = await countActiveGames();
+
+    const finished = createGame(randomUUID());
+    finished.status = "complete";
+    await createStoredGame(finished);
+    expect((await countActiveGames()).publicTables).toBe(before.publicTables);
+
+    const live = createGame(randomUUID());
+    await createStoredGame(live);
+    expect((await countActiveGames()).publicTables).toBe(before.publicTables + 1);
   });
 });

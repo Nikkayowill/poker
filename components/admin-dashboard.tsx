@@ -66,6 +66,7 @@ export function AdminDashboard() {
   const [bulkPending, setBulkPending] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [query, setQuery] = useState("");
+  const [accountFilter, setAccountFilter] = useState<"all" | "registered" | "guest">("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const lock = async () => {
@@ -258,10 +259,13 @@ export function AdminDashboard() {
     if (!profiles) return null;
     const now = new Date();
     const weekAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+    const confirmed = profiles.filter((profile) => profile.isRegistered);
     return {
       total: profiles.length,
-      today: profiles.filter((profile) => isSameUtcDay(new Date(profile.createdAt), now)).length,
-      thisWeek: profiles.filter((profile) => Date.parse(profile.createdAt) >= weekAgo).length,
+      confirmed: confirmed.length,
+      guests: profiles.length - confirmed.length,
+      today: confirmed.filter((profile) => isSameUtcDay(new Date(profile.createdAt), now)).length,
+      thisWeek: confirmed.filter((profile) => Date.parse(profile.createdAt) >= weekAgo).length,
       goldInCirculation: profiles.reduce((sum, profile) => sum + (profile.goldBalance ?? 0), 0),
     };
   }, [profiles]);
@@ -281,11 +285,13 @@ export function AdminDashboard() {
   const filtered = useMemo(() => {
     if (!profiles) return [];
     const needle = query.trim().toLowerCase();
-    if (!needle) return profiles;
-    return profiles.filter((profile) => (
-      profile.displayName.toLowerCase().includes(needle) || profile.id.toLowerCase().includes(needle)
-    ));
-  }, [profiles, query]);
+    return profiles.filter((profile) => {
+      if (accountFilter === "registered" && !profile.isRegistered) return false;
+      if (accountFilter === "guest" && profile.isRegistered) return false;
+      if (!needle) return true;
+      return profile.displayName.toLowerCase().includes(needle) || profile.id.toLowerCase().includes(needle);
+    });
+  }, [profiles, query, accountFilter]);
 
   const selectedProfiles = useMemo(
     () => (profiles ?? []).filter((profile) => selectedIds.has(profile.id)),
@@ -314,7 +320,7 @@ export function AdminDashboard() {
     return (
       <main className="admin-shell admin-locked">
         <div className="admin-unlock admin-session-check">
-          <p className="admin-eyebrow">River Room / Operations</p>
+          <p className="admin-eyebrow">StackChips / Operations</p>
           <h1>Checking secure session…</h1>
         </div>
       </main>
@@ -328,8 +334,8 @@ export function AdminDashboard() {
           className="admin-unlock"
           onSubmit={(event) => void unlock(event)}
         >
-          <div className="admin-brand" aria-hidden="true"><span>R</span></div>
-          <p className="admin-eyebrow">River Room / Operations</p>
+          <div className="admin-brand" aria-hidden="true"><span>S</span></div>
+          <p className="admin-eyebrow">StackChips / Operations</p>
           <h1>Admin console</h1>
           <p className="admin-subtitle">Private tools for player support, moderation, and the Gold economy.</p>
           <label htmlFor="admin-secret">Admin key</label>
@@ -356,7 +362,7 @@ export function AdminDashboard() {
     return (
       <main className="admin-shell admin-locked">
         <div className="admin-unlock">
-          <p className="admin-eyebrow">River Room / Operations</p>
+          <p className="admin-eyebrow">StackChips / Operations</p>
           <h1>Couldn’t load operations</h1>
           {error && <p className="admin-error">{error}</p>}
           <button type="button" onClick={() => void load()} disabled={loading}>
@@ -372,7 +378,7 @@ export function AdminDashboard() {
     <main className="admin-shell">
       <header className="admin-header">
         <div>
-          <p className="admin-eyebrow">River Room / Operations</p>
+          <p className="admin-eyebrow">StackChips / Operations</p>
           <h1>Admin console</h1>
           <p className="admin-subtitle">Player support, moderation, and table health.</p>
         </div>
@@ -399,16 +405,24 @@ export function AdminDashboard() {
             </div>
           </div>
           <div className="admin-stats">
-          <div className="admin-stat">
-            <span>Total signups</span>
+          <div className="admin-stat" title="Every profile, guest sessions included.">
+            <span>Total players</span>
             <strong>{stats.total.toLocaleString()}</strong>
           </div>
-          <div className="admin-stat">
-            <span>Today</span>
+          <div className="admin-stat" title="Signed in with Google or email -- a real account, not a browser session.">
+            <span>Confirmed accounts</span>
+            <strong>{stats.confirmed.toLocaleString()}</strong>
+          </div>
+          <div className="admin-stat" title="Playing without signing in. Progress lives only in this browser.">
+            <span>Guest profiles</span>
+            <strong>{stats.guests.toLocaleString()}</strong>
+          </div>
+          <div className="admin-stat" title="Confirmed accounts created today, not guest sessions.">
+            <span>Signups today</span>
             <strong>{stats.today.toLocaleString()}</strong>
           </div>
-          <div className="admin-stat">
-            <span>Last 7 days</span>
+          <div className="admin-stat" title="Confirmed accounts created in the last 7 days, not guest sessions.">
+            <span>Signups, last 7 days</span>
             <strong>{stats.thisWeek.toLocaleString()}</strong>
           </div>
           <div className="admin-stat" title="Sum of every profile's Gold balance -- watch this for economy inflation.">
@@ -436,14 +450,33 @@ export function AdminDashboard() {
             <h2 id="players-heading">Players</h2>
             <p>{filtered.length.toLocaleString()} of {(profiles?.length ?? 0).toLocaleString()} profiles shown.</p>
           </div>
-          <input
-            type="search"
-            className="admin-search"
-            placeholder="Search by name or Player ID…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            aria-label="Search players"
-          />
+          <div className="admin-player-controls">
+            <div className="admin-account-filter" role="group" aria-label="Filter by account type">
+              {([
+                ["all", "All"],
+                ["registered", "Confirmed"],
+                ["guest", "Guests"],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={accountFilter === value ? "admin-filter-active" : undefined}
+                  onClick={() => setAccountFilter(value)}
+                  aria-pressed={accountFilter === value}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <input
+              type="search"
+              className="admin-search"
+              placeholder="Search by name or Player ID…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              aria-label="Search players"
+            />
+          </div>
         </div>
         <div className="admin-bulk-bar" aria-live="polite">
           <strong>{selectedProfiles.length.toLocaleString()} selected</strong>
@@ -488,6 +521,7 @@ export function AdminDashboard() {
                 />
               </th>
               <th>Player</th>
+              <th>Account</th>
               <th>Player ID</th>
               <th>Joined</th>
               <th>Gold</th>
@@ -513,6 +547,11 @@ export function AdminDashboard() {
                     />
                   </td>
                   <td>{profile.displayName}</td>
+                  <td>
+                    <span className={profile.isRegistered ? "admin-account-registered" : "admin-account-guest"}>
+                      {profile.isRegistered ? "Confirmed" : "Guest"}
+                    </span>
+                  </td>
                   <td>
                     <button type="button" className="admin-id-copy" onClick={() => void copyId(profile.id)}>
                       <code>{profile.id.slice(0, 8)}…</code>
@@ -571,7 +610,7 @@ export function AdminDashboard() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={10} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
+                <td colSpan={11} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
               </tr>
             )}
 

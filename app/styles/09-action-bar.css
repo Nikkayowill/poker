@@ -48,7 +48,7 @@
   gap: var(--space-5, 10px);
   height: var(--action-bar-height, 76px);
   width: min(950px, 100%);
-  margin: var(--space-12, 24px) auto 0;
+  margin: var(--space-6, 12px) auto 0;
   padding: var(--space-4, 8px) var(--space-6, 12px);
   /* Deliberately not overflow:hidden -- the raise drawer is a child and has
      to escape this box. The progress bar keeps square corners inside a

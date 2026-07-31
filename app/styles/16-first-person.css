@@ -69,7 +69,7 @@
 }
 
 .seat-first-person .playing-card {
-  width: clamp(48px, calc(var(--seat-width) * .5), 78px);
+  width: clamp(58px, calc(var(--seat-width) * .62), 96px);
 }
 
 .seat-first-person .dealt-card-shell:first-child .playing-card {
@@ -130,7 +130,7 @@
     gap: 6px;
   }
 
-  .seat-first-person .playing-card { width: 44px; }
+  .seat-first-person .playing-card { width: 62px; }
   .seat-first-person .seat-plate { min-width: 128px; padding: 4px 9px 5px; }
   .seat-first-person .seat-name-row strong { font-size: 11px; }
   .seat-first-person .seat-stack strong { font-size: 12px; }

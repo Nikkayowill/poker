@@ -58,7 +58,7 @@
     padding-left: max(4px, env(safe-area-inset-left));
     padding-right: max(4px, env(safe-area-inset-right));
   }
-  .game-shell { --chrome-height: 56px; --action-bar-height: 68px; }
+  .game-shell { --chrome-height: 56px; --action-bar-height: 68px; --foreground-allowance: 138px; }
   .poker-table-wrap {
     width: min(calc(100% - 6px), var(--table-height-cap));
     /* A portrait phone gets the tall plate, so the box turns tall with it.
@@ -76,9 +76,9 @@
     inset: 9% 7%;
     background-image: url("/pokertable/table-mobile.png");
   }
-  .playing-card { width: clamp(30px, 8.5vw, 40px); }
-  .card-large { width: clamp(42px, 13vw, 52px); }
-  .card-small { width: clamp(24px, 6.5vw, 32px); }
+  .playing-card { width: clamp(38px, 10.5vw, 48px); }
+  .card-large { width: clamp(56px, 16vw, 68px); }
+  .card-small { width: clamp(28px, 7.6vw, 36px); }
   .community-cards {
     gap: 3px;
     /* Lifted on a narrow table, where the ring is proportionally larger and
@@ -155,7 +155,7 @@
     padding-top: 2px;
     padding-bottom: 0;
   }
-  .game-shell { --chrome-height: 42px; --action-bar-height: 56px; }
+  .game-shell { --chrome-height: 42px; --action-bar-height: 56px; --foreground-allowance: 74px; }
   .poker-table-wrap { --table-aspect: 3; }
   .card-large { width: clamp(32px, 7.5vw, 42px); }
   .action-layer { padding-bottom: env(safe-area-inset-bottom); }
@@ -167,7 +167,7 @@
 @media (max-height: 340px) and (orientation: landscape) {
   .game-header, .lobby-header { height: 34px; }
   .table-area { padding-top: 0; }
-  .game-shell { --chrome-height: 34px; --action-bar-height: 48px; }
+  .game-shell { --chrome-height: 34px; --action-bar-height: 48px; --foreground-allowance: 60px; }
   .poker-table-wrap { --table-aspect: 3.6; }
   .card-large { width: clamp(26px, 6.5vw, 34px); }
 }

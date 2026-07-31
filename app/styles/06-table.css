@@ -5,7 +5,7 @@
   min-height: 0;
   min-width: 0;
   position: relative;
-  padding: clamp(6px, 2vh, 26px) clamp(10px, 3vw, 28px) 0;
+  padding: clamp(4px, 1vh, 12px) clamp(10px, 3vw, 28px) 0;
   padding-left: max(clamp(10px, 3vw, 28px), env(safe-area-inset-left));
   padding-right: max(clamp(10px, 3vw, 28px), env(safe-area-inset-right));
   display: flex;
@@ -39,7 +39,7 @@
      until the action bar had a fixed height. Chrome above, controls below,
      plus the padding between them -- each breakpoint restates the two
      heights that actually apply there and the arithmetic follows. */
-  --table-reserve: calc(var(--chrome-height) + var(--action-bar-height) + 44px);
+  --table-reserve: calc(var(--chrome-height) + var(--action-bar-height) + var(--foreground-allowance) + 16px);
   /* Defect D1: every override below used to replace the whole min() and drop
      this term, so the table was sized from width alone and could be any
      height at all -- which is how a nameplate ended up underneath the
@@ -52,7 +52,7 @@
      seat itself beats the value inherited from here, so the fallback would
      silently win and every seat would stay desktop-sized on a phone. */
   --seat-width: 122px;
-  width: min(980px, 100%, var(--table-height-cap));
+  width: min(1180px, 100%, var(--table-height-cap));
   aspect-ratio: var(--table-aspect);
   margin: auto;
   position: relative;

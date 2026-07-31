@@ -129,9 +129,6 @@ export function PokerTable({
   }, [game.turnDeadlineAt, game.currentPlayer]);
   const deadline = Date.parse(game.turnDeadlineAt ?? "");
   const startedAt = Date.parse(game.turnStartedAt ?? "");
-  const secondsRemaining = Number.isFinite(deadline)
-    ? Math.max(0, Math.ceil((deadline - clockNow) / 1000))
-    : 0;
   const turnDurationMs = Number.isFinite(deadline) && Number.isFinite(startedAt) ? deadline - startedAt : 0;
   const remainingFraction = turnDurationMs > 0
     ? Math.max(0, Math.min(1, (deadline - clockNow) / turnDurationMs))
@@ -546,7 +543,6 @@ export function PokerTable({
             pending={pending || connectionState !== "connected"}
             onAction={onAction}
             onLeave={onLeave}
-            secondsRemaining={secondsRemaining}
             remainingFraction={remainingFraction}
             profile={profile}
             onPurchaseRebuy={onPurchaseRebuy}

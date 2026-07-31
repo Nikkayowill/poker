@@ -44,7 +44,6 @@ export function ActionBar({
   pending,
   onAction,
   onLeave,
-  secondsRemaining,
   remainingFraction,
   profile,
   onPurchaseRebuy,
@@ -53,13 +52,11 @@ export function ActionBar({
   pending: boolean;
   onAction: (action: PlayerAction) => void;
   onLeave: () => void;
-  secondsRemaining: number;
   remainingFraction: number;
   profile: PlayerProfile | null;
   onPurchaseRebuy: () => void;
 }) {
   const legal = game.legalActions;
-  const currentSeat = game.seats.find((seat) => seat.isCurrent);
   const mySeat = game.seats.find((seat) => seat.isMine);
   const [showRebuyModal, setShowRebuyModal] = useState(false);
   const [raiseOpen, setRaiseOpen] = useState(false);
@@ -159,11 +156,11 @@ export function ActionBar({
     <div className={clsx("action-bar", myTurn && "action-bar-your-turn")}>
       <TurnProgressBar remainingFraction={myTurn ? remainingFraction : 0} />
 
+      {/* No countdown here any more: the fuse burning around the seat on the
+          clock carries it, right where the player is already looking. This
+          column is just the time gems now, and everything it used to take
+          goes to the three decisions. */}
       <div className="action-slot-tools">
-        <div className={clsx("action-countdown", myTurn && secondsRemaining <= 5 && "countdown-critical")}>
-          <span>{myTurn ? "Your turn" : "Waiting"}</span>
-          <strong>{currentSeat ? secondsRemaining : "—"}</strong>
-        </div>
         <button
           type="button"
           className="time-card-button"

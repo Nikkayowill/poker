@@ -110,6 +110,12 @@
      them. Each breakpoint restates the pair; everything else derives. */
   --chrome-height: 68px;
   --action-bar-height: 76px;
+  /* Room below the felt for the seat that hangs off it -- your portrait,
+     your cards, your plate. Without a term for this the table grows until
+     poker-table.tsx's measured --foreground-drop clamps to zero, and your
+     own hole cards ride up onto the cloth over the board. Making the table
+     bigger is exactly what exposes it. */
+  --foreground-allowance: 152px;
   height: 100dvh;
   min-height: 0;
   display: flex;

@@ -374,7 +374,7 @@
 }
 
 @media (max-width: 1020px) {
-  .poker-table-wrap { width: min(780px, calc(100% - 40px), var(--table-height-cap)); }
+  .poker-table-wrap { width: min(940px, calc(100% - 32px), var(--table-height-cap)); }
 }
 
 @media (max-width: 800px) {

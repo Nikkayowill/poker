@@ -253,6 +253,41 @@
   pointer-events: none;
 }
 
+/* Column 1 of the HUD grid, which has been empty since the pot took the
+   middle. Reads bottom-up like a chat log so the newest line sits nearest the
+   table, and fades with age so the eye can ignore it entirely while a
+   decision is on. pointer-events stay off -- it is something to glance at,
+   never something to hit. */
+.table-feed {
+  grid-column: 1;
+  justify-self: start;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  max-width: min(30ch, 24vw);
+  list-style: none;
+  font-size: 10px;
+  line-height: 1.35;
+  color: rgba(226,235,228,.5);
+  pointer-events: none;
+}
+
+.table-feed li {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Oldest first in the DOM order the column-reverse produces, so the fade runs
+   away from the newest line rather than toward it. */
+.table-feed li:nth-child(2) { opacity: .58; }
+.table-feed li:nth-child(3) { opacity: .32; }
+
+.table-feed .table-feed-win { color: rgba(242,220,144,.82); }
+.table-feed .table-feed-deal { color: rgba(226,235,228,.38); }
+
 .pot-display { grid-column: 2; text-align: center; }
 
 .pot-display > span {

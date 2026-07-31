@@ -20,6 +20,7 @@ import {
 } from "@/lib/game/table-channel";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
+import { soundForSeatAction } from "@/lib/audio/seat-action-sound";
 import { Coins, Layers, LogOut, Settings2, Trophy, UserPlus } from "lucide-react";
 import { Lobby } from "@/components/lobby/lobby";
 import { ProfileModal } from "@/components/profile/profile-modal";
@@ -101,13 +102,32 @@ export function PokerApp() {
         return priorSeat && seat.streetBet > priorSeat.streetBet;
       });
       if (chipsMoved) playSound("chips");
+
+      // Everyone else's action, which used to make no sound at all: fold,
+      // check, call and raise fired only from the local player's own act(),
+      // so five other players could be doing all of it in silence.
+      //
+      // Own seat skipped because act() has already played it on tap -- that
+      // one is deliberately optimistic so a decision feels immediate rather
+      // than waiting on a round trip.
+      //
+      // One sound per snapshot, not one per seat. A catch-up advance can
+      // resolve several overdue turns in a single response, and playing all
+      // of them at once is a clatter rather than a table.
+      const acted = current.seats.find((seat) => {
+        if (seat.isMine) return false;
+        const priorSeat = previous.seats.find((candidate) => candidate.id === seat.id);
+        return priorSeat && seat.lastAction !== priorSeat.lastAction;
+      });
+      const seatSound = soundForSeatAction(acted?.lastAction ?? null);
+      if (seatSound) playSound(seatSound);
     }
 
     if (current.status === "complete" && previous.status !== "complete") {
-      const mineWon = current.winners.some((winner) =>
-        current.seats.some((seat) => seat.isMine && seat.id === winner.seatId),
-      );
-      playSound(mineWon ? "win" : "lose");
+      // The room cheers for whoever won it, not only when it is you. `lose`
+      // has no file behind it, so the old branch meant most hands at a
+      // six-handed table ended in silence.
+      playSound("win");
     }
 
     const latestLog = current.log[0];

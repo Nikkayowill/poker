@@ -61,6 +61,11 @@
      colliding the moment it is someone's turn. */
   .table-hud { padding-top: 2px; }
   .table-hud .pot-display > span { font-size: 8px; letter-spacing: .12em; }
+  /* One line on a phone. The band is 38px and the feed shares it with a pot
+     and a stakes pill, so three lines would either overflow the black space
+     or push into the top seat's head. */
+  .table-feed { font-size: 8px; max-width: 32vw; }
+  .table-feed li:nth-child(n + 2) { display: none; }
   .game-shell { --chrome-height: 56px; --action-bar-height: 68px; --foreground-allowance: 138px; }
   .poker-table-wrap {
     width: min(calc(100% - 6px), var(--table-height-cap));
@@ -176,6 +181,8 @@
   .table-hud .pot-display > span { font-size: 8px; letter-spacing: .1em; }
   .table-hud .pot-display strong { margin-top: 0; font-size: 17px; }
   .table-hud .blind-structure { padding: 2px 7px; font-size: 9px; }
+  /* 18px of band: a pot and the stakes already fill it. */
+  .table-feed { display: none; }
   .card-large { width: clamp(32px, 7.5vw, 42px); }
   .action-layer { padding-bottom: env(safe-area-inset-bottom); }
   .history-drawer { width: min(300px, 82%); }

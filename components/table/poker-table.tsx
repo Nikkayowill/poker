@@ -40,8 +40,13 @@ export type ConnectionState = "connected" | "reconnecting" | "offline";
    ring the table without lying across it -- half of every player ended up on
    the cloth. Smaller figures plus the rail inset in 06-table.css put them
    around the perimeter instead of on the board. */
-export const SEAT_WIDTH_RATIO = 0.155;
-export const SEAT_HEIGHT_RATIO = 0.235;
+/* Raised from .155/.235 once the nameplates lost their boxes. Six bordered
+   panels were most of what made the ring feel crowded, so the figures had to
+   stay small to leave room between them; without the boxes the same ellipse
+   carries noticeably more person. Still well under the .17/.3 that put half
+   of every player on the cloth -- the constraint is the ring, not the felt. */
+export const SEAT_WIDTH_RATIO = 0.175;
+export const SEAT_HEIGHT_RATIO = 0.265;
 
 export function seatWidthFor(table: { width: number; height: number }): number {
   return Math.round(Math.min(table.width * SEAT_WIDTH_RATIO, table.height * SEAT_HEIGHT_RATIO));
@@ -494,6 +499,16 @@ export function PokerTable({
               still comes from --table-height-cap alone, which is what keeps
               this milestone's geometry separate from the dealing work. */}
           <div className="table-hud">
+            {/* The table talking, in the black space that was doing nothing.
+                Who just folded, who raised and by how much -- the activity
+                drawer has always held this, two taps away, which is not
+                where anyone looks mid-hand. Newest first, and the count
+                drops to one on a phone where the band is 38px tall. */}
+            <ul className="table-feed" aria-live="polite">
+              {game.log.slice(0, 3).map((entry) => (
+                <li key={entry.id} className={`table-feed-${entry.kind}`}>{entry.text}</li>
+              ))}
+            </ul>
             <div className={clsx("pot-display", showFunnel && "pot-display-paid")}>
               <span>MAIN POT</span>
               <strong><span className="chip-stack-icon" />{game.pot.toLocaleString()}</strong>

@@ -1,5 +1,15 @@
 /* Custom properties, reset and base typography. */
 
+/*
+ * The scales below are declared but not yet consumed -- adopting them is done
+ * per file, by the milestone that is already editing that file, so a token
+ * change is never the only thing in a diff. Nothing here changes a rendered
+ * pixel on its own.
+ *
+ * They were derived by counting what the 19 stylesheets actually use, not
+ * from a generic design-system template, so most adoption is a pure rename.
+ * Where that is not true it is called out on the scale itself.
+ */
 :root {
   --ink: #edf3ee;
   --muted: #8e9f97;
@@ -10,6 +20,96 @@
   --line: rgba(255, 255, 255, 0.09);
   --felt: #164f3a;
   --felt-dark: #0e392a;
+
+  /* Spacing.
+     The one scale that is a proposal rather than a description. Gaps and
+     padding currently use nearly every integer from 3 to 14 -- 8px (19 uses),
+     7px (15), 10px (12), 6px (10), 5px (9) -- which is ad hoc, not a system.
+     Every even value maps exactly; 3/5/7/9/13 round by one pixel, so adopting
+     these in a file is a visual change, however small, and has to be checked
+     against the screenshot baselines rather than assumed safe. */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-8: 16px;
+  --space-10: 20px;
+  --space-12: 24px;
+  --space-14: 28px;
+
+  /* Radii. Every rung is a value already in use, so adoption is exact.
+     --radius-pill and --radius-round are the two shapes that are not sizes:
+     999px for a stadium, 50% for a disc or a chip. */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 9px;
+  --radius-xl: 12px;
+  --radius-2xl: 14px;
+  --radius-pill: 999px;
+  --radius-round: 50%;
+
+  /* Motion. Durations are the ones already in the sheets, so adoption is a
+     rename. Note that these describe *interface* motion -- a hover, a press,
+     a panel opening. Table choreography (a card dealt, chips flying, the pot
+     funnelling to a winner) is deliberately not tokenised: those durations
+     are tuned against each other and against the server's own pacing, and
+     flattening them onto a generic scale would break the timing rather than
+     tidy it. */
+  --duration-instant: .08s;
+  --duration-fast: .12s;
+  --duration-base: .15s;
+  --duration-slow: .22s;
+  --duration-slower: .25s;
+
+  /* Easings. Eight distinct cubic-beziers are in use, all one-offs; these are
+     the two shapes they cluster into. Decelerate is the default for anything
+     that arrives and stops. Overshoot is for something that should feel
+     physical -- a chip landing, a puck sliding into place. */
+  --ease-decelerate: cubic-bezier(.2, .8, .3, 1);
+  --ease-overshoot: cubic-bezier(.2, .9, .25, 1.2);
+
+  /* Elevation. Each is a shadow already in the sheets, ordered by how far the
+     surface reads as lifted off what is behind it. */
+  --elevation-1: 0 2px 4px rgba(0, 0, 0, .4);
+  --elevation-2: 0 6px 14px rgba(0, 0, 0, .3);
+  --elevation-3: 0 8px 18px rgba(0, 0, 0, .35);
+  --elevation-4: 0 15px 35px rgba(0, 0, 0, .22);
+  --elevation-5: 0 40px 120px rgba(0, 0, 0, .5);
+
+  /*
+   * Stacking, in three tiers. This one is a description of the existing
+   * layering, exact to the value, and it is the most load-bearing scale here:
+   * the table's order was arrived at by fixing real bugs (see the comments in
+   * 08-seat.css and lib/game/table-geometry.ts, which explain why a seat must
+   * not pass behind the rail and why depth lives on the figure rather than
+   * the seat). Treat a change to these as a change to that layering.
+   *
+   * Scene -- inside .poker-table-wrap, which is its own stacking context, so
+   * these never compete with chrome. Seats occupy 4 upward: table-geometry's
+   * seatZ() returns 4 + depth, and a seat's cards and plate derive +1 and +2
+   * from it so a nameplate is never hidden behind a neighbour's shoulder.
+   */
+  --z-scene-backdrop: -1;
+  --z-rail: 1;
+  --z-seat-base: 4;
+  --z-local-avatar: 5;
+  --z-local-hand: 6;
+  --z-muck: 7;
+  --z-chip-flight: 8;
+  --z-pot-flight: 9;
+
+  /* Chrome -- above the scene, below anything modal. */
+  --z-toast: 15;
+  --z-toast-timeout: 16;
+  --z-header: 20;
+
+  /* Overlays -- status first, then anything that takes focus. */
+  --z-status-overlay: 50;
+  --z-modal: 60;
 }
 
 * { box-sizing: border-box; }

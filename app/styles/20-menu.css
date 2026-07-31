@@ -89,3 +89,65 @@
 @media (prefers-reduced-motion: reduce) {
   .app-menu-panel { animation: none; }
 }
+
+/* Fallback trigger when there is no profile yet (a guest whose profile is
+   still being created). Same footprint as the avatar so the header does not
+   reflow when the real one arrives. */
+.app-menu-fallback {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-round, 50%);
+  color: #8f9d95;
+}
+
+/* The one-shot share sheet after hosting a private room.
+   components/table/room-created-modal.tsx */
+.room-created-modal { max-width: 420px; }
+
+.room-created-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6, 12px);
+  padding: 0 var(--space-12, 24px) var(--space-12, 24px);
+  text-align: center;
+}
+
+.room-created-body > p { margin: 0; color: var(--muted); font-size: 13px; }
+
+.room-created-code {
+  display: block;
+  padding: var(--space-5, 10px) var(--space-8, 16px);
+  border: 1px solid rgba(217, 184, 93, .3);
+  border-radius: var(--radius-xl, 12px);
+  background: rgba(217, 184, 93, .07);
+  color: var(--gold-light);
+  font: 600 30px/1 Georgia, "Times New Roman", serif;
+  /* Wide tracking so the code can be read aloud a character at a time. */
+  letter-spacing: .22em;
+  text-indent: .22em;
+}
+
+.room-created-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-4, 8px);
+  width: 100%;
+}
+
+.room-created-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3, 6px);
+  min-height: 44px;
+}
+
+.room-created-hint { color: #64736b; font-size: 11px; }
+
+@media (max-width: 600px) {
+  .room-created-actions > * { flex: 1 1 auto; justify-content: center; }
+}

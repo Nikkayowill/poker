@@ -15,12 +15,14 @@ import {
 import { planTurnClock, type TurnClockInput } from "@/lib/game/turn-clock";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
+import { Coins, Layers, LogOut, Settings2, Trophy, UserPlus } from "lucide-react";
 import { Lobby } from "@/components/lobby/lobby";
 import { ProfileModal } from "@/components/profile/profile-modal";
-import Link from "next/link";
+import { Menu, type MenuItem } from "@/components/nav/menu";
 import { AuthButton } from "@/components/profile/auth-button";
 import { GoldBadge } from "@/components/profile/gold-badge";
-import { ProfileTrigger } from "@/components/profile/profile-avatar";
+import { ProfileAvatar } from "@/components/profile/profile-avatar";
+import { RoomCreatedModal } from "@/components/table/room-created-modal";
 import { PokerTable, type ConnectionState } from "@/components/table/poker-table";
 
 const SOUND_STORAGE_KEY = "river-room:sound-enabled";
@@ -44,6 +46,9 @@ export function PokerApp() {
   const [signInPending, setSignInPending] = useState(false);
   const [savePromptDismissed, setSavePromptDismissed] = useState(false);
   const [soundEnabled, setSoundEnabledState] = useState(true);
+  // Set only by hostPrivate, cleared on dismiss: the share sheet is a
+  // one-shot moment right after creating a room, not table state.
+  const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null);
   const gameId = game?.id;
   const gameVersionRef = useRef(game?.version ?? 0);
   const previousGameRef = useRef<GameSnapshot | null>(null);
@@ -484,6 +489,7 @@ export function PokerApp() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not host a table.");
       ingest(data);
+      if (data.game?.roomCode) setCreatedRoomCode(data.game.roomCode);
       playSound("deal");
       window.history.pushState({}, "", `/?table=${data.game.id}`);
     } catch (caught) {
@@ -878,6 +884,17 @@ export function PokerApp() {
     }
   };
 
+  const lobbyMenuItems: MenuItem[] = [
+    { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
+    { kind: "link", label: "Buy Gold", href: gameId ? `/store?table=${gameId}` : "/store", icon: <Coins size={15} /> },
+    { kind: "link", label: "Leaderboard", href: "/leaderboard", icon: <Trophy size={15} /> },
+    { kind: "separator" },
+    ...(profile ? [{ kind: "action" as const, label: "Edit profile", onSelect: () => setProfileOpen(true), icon: <Settings2 size={15} /> }] : []),
+    profile?.isRegistered
+      ? { kind: "action", label: "Sign out", onSelect: () => void signOut(), icon: <LogOut size={15} /> }
+      : { kind: "action", label: "Save progress", onSelect: () => void signIn(), icon: <UserPlus size={15} /> },
+  ];
+
   /** Leaving the table while still seated cashes out first, so chips are never stranded. */
   const leaveTable = () => {
     if (game?.isSeated) {
@@ -895,18 +912,23 @@ export function PokerApp() {
             <span className="mark">S</span>
             <span>StackChips<small>NO LIMIT HOLD’EM</small></span>
           </div>
+          {/* The hub tiles already carry Collection, Buy Gold and the
+              leaderboard, so repeating them here was three chances to tap the
+              same thing. Gold stays visible because it is the number a player
+              checks before choosing stakes. */}
           <div className="header-actions">
-            <div className="header-status">No-limit Hold’em · 6-max</div>
             {entryComplete && profile && <GoldBadge profile={profile} onClaimed={setProfile} />}
-            <AuthButton profile={profile} onSignIn={() => void signIn()} onSignOut={() => void signOut()} />
-            {entryComplete && <Link className="auth-button" href="/leaderboard">Leaderboard</Link>}
-            {entryComplete && <Link className="auth-button" href="/collection">Collection</Link>}
-            {entryComplete && (
-              <Link className="auth-button" href={gameId ? `/store?table=${gameId}` : "/store"}>Buy Gold</Link>
-            )}
-            {entryComplete && profile && (
-              <ProfileTrigger profile={profile} onClick={() => setProfileOpen(true)} />
-            )}
+            {entryComplete
+              ? (
+                <Menu
+                  label="Open player menu"
+                  trigger={profile
+                    ? <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />
+                    : <span className="app-menu-fallback"><Settings2 size={16} /></span>}
+                  items={lobbyMenuItems}
+                />
+              )
+              : <AuthButton profile={profile} onSignIn={() => void signIn()} onSignOut={() => void signOut()} />}
           </div>
         </header>
       )}
@@ -959,6 +981,9 @@ export function PokerApp() {
             onSignOut={() => void signOut()}
           />
         )}
+      {createdRoomCode && (
+        <RoomCreatedModal code={createdRoomCode} onClose={() => setCreatedRoomCode(null)} />
+      )}
       {profileOpen && profile && (
         <ProfileModal
           profile={profile}

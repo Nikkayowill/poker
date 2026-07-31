@@ -30,12 +30,22 @@ function overlaps(
     && a.y + a.height > b.y;
 }
 
-async function openQuickTable(browser: Browser, viewport: ViewportCase) {
+async function openIsolatedTable(browser: Browser, viewport: ViewportCase) {
   const context = await browser.newContext({
     viewport: { width: viewport.width, height: viewport.height },
   });
-  const response = await context.request.post("/api/games/quick-play", {
-    data: { name: "Visual QA", tier: "1k", buyIn: 1000 },
+  // A private table, deliberately, rather than quick play.
+  //
+  // Quick play seats you at the oldest open *public* table at this tier, so
+  // the moment any other spec file leaves one behind, this one stops
+  // measuring what it thinks it is measuring: it inherits that table at
+  // whatever street, turn and seat those tests left it in. That is not a
+  // layout this file asserts anything about, and it made the suite's result
+  // depend on file order. findOpenPublicGame filters on is_private, so a
+  // private table can never be handed to another test -- every viewport
+  // below now gets its own fresh six-max table with this context at seat 0.
+  const response = await context.request.post("/api/games", {
+    data: { name: "Visual QA", isPrivate: true, tier: "1k", buyIn: 1000 },
   });
   expect(response.ok()).toBe(true);
   const payload = await response.json();
@@ -96,7 +106,7 @@ async function verifyOpponentLayout(page: Page) {
 
 test("table layers keep cards, portraits, status and controls in reserved space", async ({ browser }) => {
   for (const viewport of viewports) {
-    const { context, page } = await openQuickTable(browser, viewport);
+    const { context, page } = await openIsolatedTable(browser, viewport);
     try {
       await test.step(viewport.name, async () => {
         await verifyLocalLayout(page);

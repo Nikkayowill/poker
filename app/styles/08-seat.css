@@ -484,12 +484,17 @@
    panel drawn over them. Take the panel away and the collision is simply
    there. 75% lands them across the lower torso, which is where a player
    holds cards, with their bottom edge just clear of where the name starts.
-   Both ends are constrained: tests/e2e/visual-layering.spec.ts requires cards
-   to stay below 48% of the figure so they never cover a face. */
+   Both ends are constrained, and tightly. The floor is the face: 48% is what
+   tests/e2e/visual-layering.spec.ts enforces, but the artwork's chin sits
+   lower than that, so 61% is where a card stops reading as a mask. The
+   ceiling is the name, which now starts at the bottom of the figure instead
+   of tucking up under it. Two backs at 26% of the seat's width fit between
+   those exactly; they were 34%, which did not, and the difference was hidden
+   for as long as the nameplate was an opaque panel drawn over the top. */
 .seat-cards {
   position: absolute;
   left: 50%;
-  top: calc(var(--seat-width) * .75);
+  top: calc(var(--seat-width) * .80);
   display: flex;
   transform: translate(-50%, -50%);
 }
@@ -498,7 +503,7 @@
    the player holding them at every table size without a breakpoint of their
    own. */
 .seat-cards:not(.own-cards) .playing-card {
-  width: calc(var(--seat-width) * .34 * var(--seat-depth, 1));
+  width: calc(var(--seat-width) * .26 * var(--seat-depth, 1));
   border-radius: 3px;
 }
 

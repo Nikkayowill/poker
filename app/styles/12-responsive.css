@@ -66,7 +66,7 @@
      or push into the top seat's head. */
   .table-feed { font-size: 8px; max-width: 32vw; }
   .table-feed li:nth-child(n + 2) { display: none; }
-  .game-shell { --chrome-height: 56px; --action-bar-height: 68px; --foreground-allowance: 138px; }
+  .game-shell { --chrome-height: 56px; --action-bar-height: 68px; --foreground-allowance: 64px; }
   .poker-table-wrap {
     width: min(calc(100% - 6px), var(--table-height-cap));
     /* A portrait phone gets the tall plate, so the box turns tall with it.
@@ -160,7 +160,7 @@
     padding-top: 2px;
     padding-bottom: 0;
   }
-  .game-shell { --chrome-height: 42px; --action-bar-height: 56px; --foreground-allowance: 74px; }
+  .game-shell { --chrome-height: 42px; --action-bar-height: 56px; --foreground-allowance: 34px; }
   .poker-table-wrap { --table-aspect: 3; }
   /* The one place the table HUD cannot be a centred stack. Measured at
      844x390 there are 18px between the top of .table-area and the highest
@@ -193,7 +193,7 @@
 @media (max-height: 340px) and (orientation: landscape) {
   .game-header, .lobby-header { height: 34px; }
   .table-area { padding-top: 0; }
-  .game-shell { --chrome-height: 34px; --action-bar-height: 48px; --foreground-allowance: 60px; }
+  .game-shell { --chrome-height: 34px; --action-bar-height: 48px; --foreground-allowance: 28px; }
   .poker-table-wrap { --table-aspect: 3.6; }
   .card-large { width: clamp(26px, 6.5vw, 34px); }
 }

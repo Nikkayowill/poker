@@ -47,7 +47,12 @@
      poker-table.tsx's measured --foreground-drop clamps to zero, and your
      own hole cards ride up onto the cloth over the board. Making the table
      bigger is exactly what exposes it. */
-  --foreground-allowance: 152px;
+  /* Room below the felt for the part of the near seat that hangs past it.
+     Was 152px, when the local player was a whole separate block parked under
+     the table -- portrait, cards, hand strength and nameplate stacked. On the
+     ring they overhang by half a seat box like every other seat, so most of
+     that reservation is now simply table the felt never got to use. */
+  --foreground-allowance: 70px;
   height: 100dvh;
   min-height: 0;
   display: flex;

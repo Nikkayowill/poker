@@ -1,5 +1,4 @@
-/* Short landscape phones. Last of all, deliberately. The local player's
-   two-column structure remains intact; only its scale changes.
+/* Short landscape phones. Last of all, deliberately.
 
    Keyed on max-height, and deliberately NOT inverted to min-height when the
    width breakpoints went mobile-first. Those form a ladder: portrait mobile is
@@ -12,39 +11,30 @@
    The split with 12-responsive.css is by concern, not by accident: that file's
    landscape blocks carry the header, table and action bar, this one carries
    only the local seat, and it loads last so the seat wins. Nothing here shares
-   a selector with anything there. */
+   a selector with anything there.
+
+   This file used to rescale a whole second layout for the local player. Now
+   that they sit on the ring like everyone else there is only one thing left
+   that landscape genuinely needs: a 3:1 table is barely a hundred pixels tall,
+   so the hand held beside the near seat has to come in close and shrink or it
+   runs off the bottom of the screen. */
 
 @media (max-height: 500px) and (orientation: landscape) {
-  .seat-first-person {
-    --local-avatar-size: 46px;
-    width: 214px;
+  .seat-mine .seat-cards { top: calc(var(--seat-width) * .42); }
+
+  .seat-mine .own-cards .playing-card { width: clamp(34px, calc(var(--seat-width) * .62), 52px); }
+  .seat-mine .own-cards .dealt-card-shell + .dealt-card-shell {
+    margin-left: calc(var(--seat-width) * -.2);
   }
 
-  .local-seat-layout {
-    grid-template-columns: var(--local-avatar-size) 158px;
-    gap: 6px;
+  .seat-mine .hand-strength {
+    top: calc(var(--seat-width) * .96);
+    padding: 2px 5px;
+    font-size: 6px;
   }
-
-  .seat-first-person .playing-card { width: 36px; }
-  .local-status-area { min-height: 13px; }
-  .seat-first-person .hand-strength { padding: 2px 5px; font-size: 6px; }
-  .seat-first-person .seat-plate { min-width: 0; padding: 3px 9px 4px; }
-  .seat-first-person .seat-name-row strong { font-size: 9px; }
-  .seat-first-person .seat-stack strong { font-size: 10px; }
 }
 
 @media (max-height: 340px) and (orientation: landscape) {
-  .seat-first-person {
-    --local-avatar-size: 38px;
-    width: 184px;
-  }
-
-  .local-seat-layout {
-    grid-template-columns: var(--local-avatar-size) 140px;
-    gap: 5px;
-  }
-
-  .seat-first-person .playing-card { width: 30px; }
-  .local-status-area { min-height: 11px; }
-  .seat-first-person .hand-strength { font-size: 5px; }
+  .seat-mine .own-cards .playing-card { width: clamp(28px, calc(var(--seat-width) * .56), 42px); }
+  .seat-mine .hand-strength { font-size: 5px; }
 }

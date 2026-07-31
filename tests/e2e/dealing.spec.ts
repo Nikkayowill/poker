@@ -35,7 +35,7 @@ test("every hole card is dealt from the deck on the felt", async ({ browser }) =
         const style = cards ? getComputedStyle(cards) : null;
         const rect = seat.getBoundingClientRect();
         return {
-          isMine: seat.classList.contains("seat-first-person"),
+          isMine: seat.classList.contains("seat-mine"),
           // Where the card starts, resolved from the variables actually in
           // effect -- so a fallback that never got overridden is visible here
           // as the wrong number rather than as a passing test.
@@ -51,8 +51,9 @@ test("every hole card is dealt from the deck on the felt", async ({ browser }) =
 
     expect(seats).not.toBeNull();
     expect(seats!.length).toBe(6);
-    // One seat is the local player, drawn in the foreground rather than on the
-    // ring. It is the seat that previously animated from nowhere at all.
+    // One seat is the local player. They sit on the ring like everyone else
+    // now; what still makes them worth naming here is that theirs was the
+    // seat that used to animate from nowhere at all.
     expect(seats!.filter((seat) => seat.isMine)).toHaveLength(1);
 
     // seat centre + vector == the deck. This is the whole claim of the
@@ -97,7 +98,7 @@ test("the local player is dealt first, and the whole deal clears quickly", async
   try {
     const delays = await page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>(".player-seat")].map((seat) => ({
-        isMine: seat.classList.contains("seat-first-person"),
+        isMine: seat.classList.contains("seat-mine"),
         delays: [...seat.querySelectorAll<HTMLElement>(".dealt-card-shell")].map((shell) =>
           Number.parseFloat(getComputedStyle(shell).animationDelay) * 1000,
         ),

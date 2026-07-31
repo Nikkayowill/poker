@@ -1,137 +1,76 @@
-/* The local player uses a dedicated two-column layout. Opponent seats are
-   anchored around the ellipse; the local player lives between the near rail
-   and the action bar and must reserve separate space for portrait, cards,
-   hand strength, and stack. */
+/* Your own seat.
+   Last of the seat sheets, deliberately, so everything here beats 08-seat.css.
 
-.seat-first-person {
-  --seat-depth: 1;
-  --local-avatar-size: clamp(62px, calc(var(--seat-width) * .8), 96px);
-  left: 50%;
-  bottom: calc(-1 * var(--foreground-drop, 44px));
-  z-index: 8;
-  width: min(320px, calc(100vw - 24px));
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  transform: translateX(-50%);
+   This file used to hold a whole second layout: the local player was drawn
+   below the felt in a two-column grid -- portrait on the left, cards and
+   nameplate on the right -- while slot 0 of the seat ellipse, the near edge
+   nearest the camera, sat empty. That is exactly where the person holding the
+   seat is sitting, so they sit there now, and all of that arrangement is
+   gone with it.
+
+   What is genuinely different about your seat turns out to be smaller than it
+   looked: your cards are face up, they are the largest thing on the table
+   because they are what you decide from, and they sit beside the figure
+   rather than across it so they cover nobody. */
+
+.seat-mine {
+  /* Above the ring whatever the ellipse's depth ordering says. Your own seat
+     is never the one that should be behind someone else's shoulder. */
+  --seat-z: 9;
 }
 
-.local-seat-layout {
-  display: grid;
-  grid-template-columns: var(--local-avatar-size) minmax(150px, 1fr);
-  align-items: end;
-  gap: clamp(8px, 1.5vw, 14px);
-  width: 100%;
+/* Beside the figure, not over it.
+   Opponent cards sit across the lower torso at 75% of the seat's width, which
+   is fine for two backs. Yours are several times the area and face up, so in
+   that position they would bury the player they belong to. Offset to the side
+   and lifted to the chest they read as a hand held at the rail -- and the
+   black space beside the near edge of the table is empty, which is what makes
+   the room for them. */
+/* Anchored to the seat's right edge, not offset by a fraction of its width.
+   The fraction version overlapped the figure on a phone and nowhere else,
+   which took a measurement to see: your cards carry a 58px minimum so a pair
+   of them is wider than a 79px seat, and no multiple of the seat's own width
+   can clear a box that is bigger than the seat. left:100% is the edge itself,
+   so the two cannot overlap at any table size. */
+.seat-mine .seat-cards {
+  left: 100%;
+  top: calc(var(--seat-width) * .54);
+  margin-left: 4px;
+  transform: translateY(-50%);
+  z-index: 12;
+  filter: drop-shadow(0 14px 20px rgba(0,0,0,.5));
 }
 
-/* The portrait is intentionally compact and beside the hand. It can never
-   share the cards' centerline, so cards cannot cover eyes, hair, or cosmetics. */
-.local-avatar-slot {
-  position: relative;
-  z-index: 5;
-  width: var(--local-avatar-size);
-  align-self: end;
-  overflow: hidden;
-  border-bottom: 1px solid rgba(217, 184, 93, .18);
-  border-radius: 0 0 45% 45%;
+.seat-mine .own-cards .playing-card {
+  width: clamp(58px, calc(var(--seat-width) * .78), 104px);
+  border-radius: 8px;
 }
 
-.local-avatar-slot .seat-figure {
-  width: var(--local-avatar-size);
-  scale: 1;
-  filter: none;
+/* Enough overlap that the pair reads as one hand, not enough to hide a rank. */
+.seat-mine .own-cards .dealt-card-shell + .dealt-card-shell {
+  margin-left: calc(var(--seat-width) * -.24);
 }
 
-.local-hand-column {
-  position: relative;
-  z-index: 6;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
+.seat-mine .own-cards .dealt-card-shell:first-child .playing-card {
+  transform: rotate(-6deg);
 }
 
-/* Unlike opponent cards, local cards participate in layout. Their full height
-   is reserved above the status and nameplate instead of being absolutely
-   positioned through the avatar. */
-.seat-first-person .seat-cards {
-  position: relative;
-  top: auto;
-  left: auto;
-  z-index: 6;
-  display: flex;
-  align-items: flex-end;
-  transform: none;
-  filter: drop-shadow(0 14px 20px rgba(0, 0, 0, .5));
+.seat-mine .own-cards .dealt-card-shell:last-child .playing-card {
+  transform: rotate(6deg);
 }
 
-.seat-first-person .playing-card {
-  width: clamp(58px, calc(var(--seat-width) * .62), 96px);
+/* The made-hand label belongs to the cards, so it sits under them rather than
+   under the name. Absolutely positioned for the same reason they are: nothing
+   about your seat may change the height of a seat box, or the ring stops
+   being a ring. */
+.seat-mine .hand-strength {
+  position: absolute;
+  left: 100%;
+  top: calc(var(--seat-width) * 1.22);
+  z-index: 12;
+  margin: 0 0 0 4px;
+  white-space: nowrap;
 }
 
-.seat-first-person .dealt-card-shell:first-child .playing-card {
-  transform: rotate(-6deg) translateY(2px);
-}
-
-.seat-first-person .dealt-card-shell:last-child .playing-card {
-  transform: rotate(6deg) translateY(2px);
-}
-
-.local-status-area {
-  min-height: 18px;
-  display: grid;
-  place-items: center;
-}
-
-.seat-first-person .hand-strength {
-  z-index: 7;
-  margin: 0;
-}
-
-.seat-first-person .seat-plate {
-  z-index: 7;
-  width: min(190px, 100%);
-  min-width: 150px;
-  margin: 0;
-  padding: 5px 14px 6px;
-  scale: 1;
-}
-
-.seat-first-person .seat-name-row strong { font-size: 13px; }
-.seat-first-person .seat-stack { font-size: 12px; }
-.seat-first-person .seat-stack strong { font-size: 14px; }
-
-.seat-first-person .table-bet {
-  left: 50%;
-  right: auto;
-  top: auto;
-  bottom: calc(var(--foreground-drop, 44px) + 12px);
-  transform: translateX(-50%);
-}
-
-.seat-first-person > .action-pill { display: none; }
-.seat-first-person > .status-pill { bottom: -24px; }
-
-.seat-first-person.seat-current { translate: 0; }
-.seat-first-person.seat-current .seat-figure { scale: 1; translate: 0; }
-.seat-first-person.seat-muted { translate: 0 2px; }
-
-@media (max-width: 600px) and (orientation: portrait) {
-  .seat-first-person {
-    --local-avatar-size: 54px;
-    width: min(250px, calc(100vw - 16px));
-  }
-
-  .local-seat-layout {
-    grid-template-columns: var(--local-avatar-size) minmax(128px, 1fr);
-    gap: 6px;
-  }
-
-  .seat-first-person .playing-card { width: 62px; }
-  .seat-first-person .seat-plate { min-width: 128px; padding: 4px 9px 5px; }
-  .seat-first-person .seat-name-row strong { font-size: 11px; }
-  .seat-first-person .seat-stack strong { font-size: 12px; }
-}
+/* Your own name, slightly brighter than the room. */
+.seat-mine .seat-name-row strong { color: #f4f8f4; }

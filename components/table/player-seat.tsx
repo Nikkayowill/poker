@@ -263,6 +263,7 @@ export const PlayerSeat = memo(function PlayerSeat({
       className={clsx(
         "player-seat",
         placement,
+        seat.isMine && "seat-mine",
         seat.isCurrent && "seat-current",
         seat.isSmallBlind && "seat-small-blind",
         seat.isBigBlind && "seat-big-blind",
@@ -277,24 +278,18 @@ export const PlayerSeat = memo(function PlayerSeat({
           <span aria-hidden="true">♛</span> Winner
         </span>
       )}
-      {seat.isMine
-        ? (
-          <div className="local-seat-layout">
-            <div className="local-avatar-slot">{figure}</div>
-            <div className="local-hand-column">
-              {cards}
-              <div className="local-status-area">{handStrength}</div>
-              {nameplate}
-            </div>
-          </div>
-        )
-        : (
-          <>
-            {figure}
-            {cards}
-            {nameplate}
-          </>
-        )}
+      {/* One tree for every seat, including yours.
+          There used to be a second, two-column layout for the local player,
+          who was drawn below the felt rather than at it: portrait in one
+          column, cards and plate in the other. Sitting on the ring means the
+          same figure, cards and nameplate as everyone else -- what is
+          different about your seat is only that your cards are face up,
+          bigger, and set to one side, and that is CSS on .seat-mine rather
+          than a separate arrangement of elements. */}
+      {figure}
+      {cards}
+      {handStrength}
+      {nameplate}
       {status && <span className={status.className}>{status.label}</span>}
       {seat.streetBet > 0 && <span className="table-bet">{seat.streetBet}</span>}
       {isWinner && <span className="win-amount-float">+{winAmount.toLocaleString()}</span>}

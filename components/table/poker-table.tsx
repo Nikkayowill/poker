@@ -40,13 +40,17 @@ export type ConnectionState = "connected" | "reconnecting" | "offline";
    ring the table without lying across it -- half of every player ended up on
    the cloth. Smaller figures plus the rail inset in 06-table.css put them
    around the perimeter instead of on the board. */
-/* Raised from .155/.235 once the nameplates lost their boxes. Six bordered
-   panels were most of what made the ring feel crowded, so the figures had to
-   stay small to leave room between them; without the boxes the same ellipse
-   carries noticeably more person. Still well under the .17/.3 that put half
-   of every player on the cloth -- the constraint is the ring, not the felt. */
-export const SEAT_WIDTH_RATIO = 0.175;
-export const SEAT_HEIGHT_RATIO = 0.265;
+/* Raised twice, for two different reasons.
+   .155 -> .175 when the nameplates lost their boxes: six bordered panels were
+   most of what made the ring feel crowded, so the figures had to stay small
+   to leave room between them.
+   .175 -> .21 for phones specifically. A desktop table is bound by the height
+   term (1082x588 gives min(227, 156) = 156), so raising the width fraction
+   moves nothing there; a portrait phone is bound by width, which is exactly
+   where the figures were too small to read. The height fraction rises with it
+   so a short landscape table does not suddenly become the binding case. */
+export const SEAT_WIDTH_RATIO = 0.21;
+export const SEAT_HEIGHT_RATIO = 0.27;
 
 export function seatWidthFor(table: { width: number; height: number }): number {
   return Math.round(Math.min(table.width * SEAT_WIDTH_RATIO, table.height * SEAT_HEIGHT_RATIO));
@@ -94,30 +98,21 @@ export function PokerTable({
   // it to a third of its desktop width while the viewport is still wide --
   // seats measured against the viewport stayed huge and buried the board.
   const [tableSize, setTableSize] = useState({ width: 850, height: 494 });
-  // How far the foreground player hangs below the felt.
-  //
-  // This cannot be a constant. The gap between the bottom of the table and the
-  // top of the action bar is not proportional to anything: the table is capped
-  // by width on a desktop and by leftover height on a short one, so the same
-  // overhang that looks right on a desktop (118px of room) slides your own
-  // nameplate under the buttons on a tablet (53px). Measured, it is right
-  // everywhere and needs no breakpoint.
-  const [foregroundDrop, setForegroundDrop] = useState(44);
+  // --foreground-drop is gone with the foreground seat that consumed it. It
+  // existed to hang the local player a measured distance below the felt; on
+  // the ring they are placed by the same ellipse as everyone else, and the
+  // only thing still measured here is the table's own box.
   const actionLayerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const wrap = tableWrapRef.current;
-    const bar = actionLayerRef.current;
-    if (!wrap || !bar) return;
+    if (!wrap) return;
     const measure = () => {
       const rect = wrap.getBoundingClientRect();
       setTableSize({ width: rect.width, height: rect.height });
-      const barTop = bar.getBoundingClientRect().top;
-      setForegroundDrop(Math.max(0, Math.round(barTop - rect.bottom - 6)));
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(wrap);
-    observer.observe(bar);
     window.addEventListener("resize", measure);
     return () => {
       observer.disconnect();
@@ -223,9 +218,9 @@ export function PokerTable({
     });
   }, []);
 
-  // Opponents ring the table on a projected ellipse. Slot 0 is the near edge
-  // where the local player sits; they are drawn in the foreground instead, so
-  // the ring geometry for slot 0 is simply unused.
+  // Every seat rings the table on a projected ellipse, the local player
+  // included: slot 0 is the near edge, nearest the camera, which is exactly
+  // where the person holding it is sitting.
   const ringGeometry = useMemo(
     () => orderedSeats.map((_, index) => {
       const geometry = seatGeometry(index, orderedSeats.length, radiiForTable(tableSize));
@@ -252,15 +247,6 @@ export function PokerTable({
     // can hold a wide plate or a tall one depending on how much room the
     // header and action bar left behind, and only the box knows which.
     [orderedSeats, tableSize],
-  );
-
-  // Your own portrait, sized off the one geometric fact that does apply to a
-  // player sitting at the camera: it has to out-scale the nearest seat on the
-  // ring. Deliberately not --seat-depth, which scales the whole seat box --
-  // your cards are already sized by hand and must not move.
-  const firstPersonStyle = useMemo(
-    () => ({ "--seat-z": 5 }) as React.CSSProperties,
-    [],
   );
 
   const seatOrderKey = orderedSeats.map((seat) => seat.id).join(",");
@@ -541,10 +527,7 @@ export function PokerTable({
           <div
             className="poker-table-wrap"
             ref={tableWrapRef}
-            style={{
-              "--seat-width": `${seatWidthFor(tableSize)}px`,
-              "--foreground-drop": `${foregroundDrop}px`,
-            } as React.CSSProperties}
+            style={{ "--seat-width": `${seatWidthFor(tableSize)}px` } as React.CSSProperties}
           >
             <div className="poker-rail">
               <div className="poker-felt">
@@ -646,8 +629,11 @@ export function PokerTable({
                 // foreground. Still a PlayerSeat, so its seat ref stays
                 // registered and chip flights, the muck drift and the dealer
                 // puck keep measuring the right spot.
-                placement={seat.isMine ? "seat-first-person" : "seat-ring"}
-                seatStyle={seat.isMine ? firstPersonStyle : ringGeometry[index]}
+                // Slot 0 of the ellipse is the near edge, and it has always
+                // been where the local player sits -- it was simply left
+                // empty while they were drawn separately below the felt.
+                placement="seat-ring"
+                seatStyle={ringGeometry[index]}
                 // The ring slot, not the engine's seat position: dealing runs
                 // round the table as it looks from this chair, which puts the
                 // local player first. See lib/game/deal-choreography.ts.

@@ -113,7 +113,7 @@ test("D1: the nameplate stays above the controls at 390x844, raise open", async 
       await expect(page.locator(".raise-drawer")).toBeVisible();
     }
 
-    const plate = await page.locator(".seat-first-person .seat-plate").boundingBox();
+    const plate = await page.locator(".seat-mine .seat-plate").boundingBox();
     const bar = await page.locator(".action-bar").boundingBox();
     expect(plate).not.toBeNull();
     expect(bar).not.toBeNull();

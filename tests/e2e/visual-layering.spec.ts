@@ -60,8 +60,8 @@ async function openIsolatedTable(browser: Browser, viewport: ViewportCase) {
 }
 
 async function verifyLocalLayout(page: Page) {
-  const local = page.locator(".seat-first-person");
-  const avatar = local.locator(".local-avatar-slot");
+  const local = page.locator(".seat-mine");
+  const avatar = local.locator(".seat-figure");
   const cards = local.locator(".own-cards");
   const plate = local.locator(".seat-plate");
 
@@ -87,9 +87,9 @@ async function verifyLocalLayout(page: Page) {
       if (rect.width === 0 && rect.height === 0) return null;
       return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
     };
-    const seat = document.querySelector(".seat-first-person");
+    const seat = document.querySelector(".seat-mine");
     return {
-      avatarBox: seat ? read(".local-avatar-slot", seat) : null,
+      avatarBox: seat ? read(".seat-figure", seat) : null,
       cardsBox: seat ? read(".own-cards", seat) : null,
       plateBox: seat ? read(".seat-plate", seat) : null,
       actionBox: read(".action-bar"),
@@ -100,13 +100,27 @@ async function verifyLocalLayout(page: Page) {
   expect(cardsBox).not.toBeNull();
   expect(plateBox).not.toBeNull();
   expect(actionBox).not.toBeNull();
+
+  // Your seat is on the ring now, so the old vertical stack -- cards above
+  // status above plate, all below the felt -- is not what this is any more.
+  // Two things still have to hold, and they are the two that were actually
+  // load-bearing.
+  //
+  // Your hand sits beside the figure rather than over it: it is the largest
+  // thing on the table and would otherwise bury the player it belongs to.
   expect(overlaps(avatarBox!, cardsBox!)).toBe(false);
-  expect(cardsBox!.y + cardsBox!.height).toBeLessThanOrEqual(plateBox!.y);
+  // And defect D1, which is the reason --table-height-cap exists: whatever
+  // the table does, your own name never ends up underneath the controls.
   expect(plateBox!.y + plateBox!.height).toBeLessThanOrEqual(actionBox!.y);
 }
 
 async function verifyOpponentLayout(page: Page) {
-  const seats = page.locator(".seat-ring");
+  // Everyone except you. Your seat is on the ring too now, but the rule below
+  // -- a card back must never ride up over a face -- is about cards drawn
+  // across a figure, and yours are held beside it. verifyLocalLayout asserts
+  // the thing that actually matters for your seat, which is that the two do
+  // not overlap at all.
+  const seats = page.locator(".seat-ring:not(.seat-mine)");
   const count = await seats.count();
   for (let index = 0; index < count; index += 1) {
     const seat = seats.nth(index);

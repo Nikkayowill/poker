@@ -4,6 +4,11 @@ const port = 3107;
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  // Asks the running server which store it is using and aborts unless it is
+  // the in-memory one. The env below only controls the server this config
+  // starts, so it cannot vouch for a server started any other way -- and this
+  // suite deletes profiles. See tests/e2e/global-setup.ts.
+  globalSetup: "./tests/e2e/global-setup.ts",
   fullyParallel: false,
   timeout: 120_000,
   expect: { timeout: 10_000 },

@@ -505,18 +505,8 @@
   white-space: nowrap;
 }
 
-.action-bar {
-  position: relative;
-  min-height: 92px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  width: min(950px, 100%);
-  margin: 22px auto 0;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: rgba(17,27,23,.9);
-  box-shadow: 0 15px 35px rgba(0,0,0,.22);
-  overflow: hidden;
-}
+/* .action-bar lives entirely in 09-action-bar.css. A second copy used to sit
+   here and, because this file loads first, the newer rule overrode its
+   display and height but not its overflow -- which clipped the raise drawer
+   away completely while getBoundingClientRect still reported a box, so it
+   looked present to a test and was invisible to a player. */

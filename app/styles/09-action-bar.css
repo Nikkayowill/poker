@@ -5,6 +5,8 @@
    empties out as the deadline approaches. */
 .turn-progress-track {
   position: absolute;
+  overflow: hidden;
+  border-radius: 0 0 var(--radius-xl, 12px) var(--radius-xl, 12px);
   left: 0;
   right: 0;
   bottom: 0;
@@ -45,7 +47,12 @@
   align-items: stretch;
   gap: var(--space-5, 10px);
   height: var(--action-bar-height, 76px);
+  width: min(950px, 100%);
+  margin: var(--space-12, 24px) auto 0;
   padding: var(--space-4, 8px) var(--space-6, 12px);
+  /* Deliberately not overflow:hidden -- the raise drawer is a child and has
+     to escape this box. The progress bar keeps square corners inside a
+     rounded bar by clipping itself instead. */
   border: 1px solid var(--line);
   border-radius: var(--radius-xl, 12px);
   background: rgba(14, 21, 18, .92);
@@ -163,12 +170,34 @@
 .action-slot-wide { grid-column: span 2; }
 
 .action-slot-controls button:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
-.action-slot-controls button:not(:disabled):hover { background: #22302a; border-color: rgba(217,184,93,.32); color: #f0dfaa; }
-.action-button-fold { color: #f0a093; border-color: rgba(224, 75, 54, .25) !important; background: rgba(110, 33, 27, .22) !important; }
-.action-button-check { color: #f0dfaa; border-color: rgba(217, 184, 93, .25) !important; background: rgba(112, 85, 28, .2) !important; }
-.action-button-call { color: #bfe0c5; border-color: rgba(91, 161, 104, .25) !important; background: rgba(28, 86, 47, .22) !important; }
-.action-button-raise { color: #e6c4f2; border-color: rgba(183, 95, 222, .42) !important; background: linear-gradient(145deg, rgba(91, 37, 111, .72), rgba(46, 24, 59, .88)) !important; }
-.action-button-raise.action-open { border-color: rgba(217,184,93,.6) !important; }
+.action-slot-controls button:not(:disabled):hover { filter: brightness(1.14) saturate(1.08); }
+.action-button-fold {
+  color: #ffd8d0;
+  border-color: rgba(232, 104, 82, .55) !important;
+  background: linear-gradient(180deg, #a8382b, #6f2119) !important;
+}
+.action-button-check {
+  color: #fff1cd;
+  border-color: rgba(232, 196, 96, .55) !important;
+  background: linear-gradient(180deg, #b98d2c, #7a5a15) !important;
+}
+.action-button-call {
+  color: #dcf7e3;
+  border-color: rgba(96, 196, 126, .55) !important;
+  background: linear-gradient(180deg, #2f8f52, #185c33) !important;
+}
+.action-button-raise {
+  color: #f6e4ff;
+  border-color: rgba(196, 118, 236, .6) !important;
+  background: linear-gradient(180deg, #8a4ac4, #4e2276) !important;
+}
+/* Open, it is a way out rather than a commit, so it deliberately stops
+   looking like the gold confirm sitting in the drawer above it. */
+.action-button-raise.action-open {
+  color: #cfd8d2;
+  border-color: rgba(255,255,255,.22) !important;
+  background: linear-gradient(180deg, #2b3833, #1c2723) !important;
+}
 .action-slot-controls .primary-action { color: #12180f; border-color: rgba(217,184,93,.5) !important; background: linear-gradient(180deg, var(--gold-light), var(--gold)) !important; }
 
 /* .action-pressed mirrors :active but is held for a guaranteed minimum
@@ -210,6 +239,14 @@
 .raise-drawer-label { color: #74827b; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
 .raise-drawer-amount { min-width: 74px; color: var(--gold-light); font: 600 17px Georgia, serif; }
 .raise-drawer-row input { flex: 1; height: 3px; accent-color: var(--gold); cursor: pointer; }
+.raise-drawer-behind {
+  flex-shrink: 0;
+  color: #74827b;
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.raise-drawer-behind b { color: #cfd8d2; font-weight: 700; }
 
 .raise-drawer-presets {
   display: grid;
@@ -258,4 +295,15 @@
   border: 1px solid rgba(255,125,105,.2);
   border-radius: 7px;
   background: #2a1714;
+}
+
+/* A phone cannot fit six preset labels on one line at desktop sizing -- they
+   were wrapping to two rows and pushing the drawer taller. Self-contained
+   here rather than in 12-responsive.css, same reasoning as 20-menu.css. */
+@media (max-width: 600px) {
+  .raise-drawer-presets button { min-height: 44px; padding: 0 2px; font-size: 10px; }
+  .raise-drawer-confirm { grid-column: span 3; font-size: 12px; }
+  .raise-drawer-row { flex-wrap: wrap; row-gap: var(--space-3, 6px); }
+  .raise-drawer-row input { flex-basis: 100%; order: 3; }
+  .raise-drawer-behind { margin-left: auto; }
 }

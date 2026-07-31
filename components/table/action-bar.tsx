@@ -208,20 +208,43 @@ export function ActionBar({
           className={clsx("action-button-raise", raiseOpen && "action-open")}
           disabled={!(legal?.canRaise || legal?.canAllIn) || pending}
           aria-expanded={raiseOpen}
-          onClick={() => {
-            if (legal?.canRaise) setRaiseOpen((open) => !open);
-            else dispatch({ type: "all-in" });
-          }}
+          onClick={() => setRaiseOpen((open) => !open)}
         >
-          {legal?.canRaise ? "Bet / Raise" : "All in"}
+          {/* Open, this is the way back out, not a second confirm. The commit
+              lives in the drawer, once, so there are never two gold buttons
+              both reading "Raise to 20" and only one of them spending chips.
+              Shoving also used to fire the instant this was touched when
+              raising was unavailable -- the largest decision in poker, on a
+              single tap, with nothing between. */}
+          {raiseOpen ? "Cancel" : legal?.canRaise ? "Bet / Raise" : "All in"}
         </button>
       </div>
 
-      {raiseOpen && legal?.canRaise && (
+      {raiseOpen && legal && (
         <div className="raise-drawer" role="group" aria-label="Choose a raise amount">
+          {!legal.canRaise && (
+            <div className="raise-drawer-row">
+              <span className="raise-drawer-label">All in for</span>
+              <strong className="raise-drawer-amount">{legal.maxRaiseTo.toLocaleString()}</strong>
+              <button
+                type="button"
+                className="primary-action raise-drawer-confirm"
+                disabled={pending}
+                onClick={() => dispatch({ type: "all-in" })}
+              >
+                Confirm all in
+              </button>
+            </div>
+          )}
+          {legal.canRaise && (
           <div className="raise-drawer-row">
             <span className="raise-drawer-label">Raise to</span>
             <strong className="raise-drawer-amount">{raiseTo.toLocaleString()}</strong>
+            {/* The drawer covers your own nameplate, and your stack is the one
+                number you actually need while sizing a bet, so it comes with. */}
+            <span className="raise-drawer-behind">
+              Behind <b>{Math.max(0, (mySeat?.stack ?? 0) - (raiseTo - (mySeat?.streetBet ?? 0))).toLocaleString()}</b>
+            </span>
             <input
               aria-label="Raise amount"
               type="range"
@@ -232,6 +255,8 @@ export function ActionBar({
               onChange={(event) => setRaiseTo(Number(event.target.value))}
             />
           </div>
+          )}
+          {legal.canRaise && (
           <div className="raise-drawer-presets">
             <button type="button" onClick={() => setRaiseTo(legal.minRaiseTo)}>Min</button>
             <button type="button" onClick={() => setRaiseTo(potPreset(0.5))}>½ Pot</button>
@@ -247,6 +272,7 @@ export function ActionBar({
               Raise to {raiseTo.toLocaleString()}
             </button>
           </div>
+          )}
         </div>
       )}
     </div>

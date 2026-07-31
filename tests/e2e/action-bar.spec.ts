@@ -65,6 +65,21 @@ test("opening the raise controls does not move the buttons", async ({ page }) =>
     await raise.click();
     await expect(page.locator(".raise-drawer")).toBeVisible();
 
+    /**
+     * toBeVisible() is not enough, and this is the assertion that would have
+     * caught the real bug: a stale `.action-bar { overflow: hidden }` in
+     * 08-seat.css clipped the drawer away entirely, while
+     * getBoundingClientRect still returned a full-size box. Playwright called
+     * that visible; a player saw nothing at all. Hit-testing the centre point
+     * is the difference between "has a box" and "is on screen".
+     */
+    const paintedAtCentre = await page.locator(".raise-drawer").evaluate((drawer) => {
+      const box = drawer.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return Boolean(hit && drawer.contains(hit));
+    });
+    expect(paintedAtCentre).toBe(true);
+
     const after = await controls(page).evaluateAll((nodes) =>
       nodes.map((node) => {
         const box = node.getBoundingClientRect();

@@ -24,12 +24,14 @@ const NEAR_ANGLE_DEG = 90;
  * track that inset rather than reaching for the corners the way they did when
  * a seat was a small floating card.
  */
-const RADIUS_X = 44;
+const RADIUS_X = 46;
 /* Pull the vertical arc inward without shrinking the figures. At 44%, the
    opposite seat was anchored at y=6%; subtracting half its layout height put
    the top of the avatar outside the scene. A 34% radius leaves a real 16%
-   safe area above the far seat while preserving the wide table silhouette. */
-const RADIUS_Y = 34;
+   safe area above the far seat while preserving the wide table silhouette.
+   Now 36: .poker-rail's inset gives the ring a band outside the felt to sit
+   in, so the arc can push back out without the far seat leaving the box. */
+const RADIUS_Y = 36;
 
 /**
  * Narrow viewports cannot afford the full horizontal radius: a seat is a
@@ -40,10 +42,40 @@ const RADIUS_Y = 34;
 const NARROW_RADIUS_X = 38;
 const NARROW_BREAKPOINT_PX = 620;
 
-export function radiiForWidth(viewportWidth: number): { rx: number; ry: number } {
-  return isNarrow(viewportWidth)
+/**
+ * A portrait phone gets the tall table plate, and a ring shaped for a wide
+ * oval does not fit a tall one: keeping ry at 34 leaves the side seats
+ * stranded in the middle of the felt with empty rail above and below them.
+ * Both radii are near-equal here because the tall plate's felt is close to
+ * as far from centre vertically as horizontally once the box is taller than
+ * it is wide.
+ */
+/* Not equal, and rx is the smaller of the two on purpose. A nameplate is at
+   least 86px wide whatever the table does, so on a ~376px portrait plate an
+   rx of 43 hung the side plates off both edges of the screen -- the same
+   trap NARROW_RADIUS_X exists to avoid. ry can stay generous because a tall
+   plate is where the vertical room actually is. */
+const PORTRAIT_RADIUS_X = 37;
+const PORTRAIT_RADIUS_Y = 44;
+
+/**
+ * Radii for the table's actual measured box, not the viewport.
+ *
+ * Keyed off the table rather than the window because the table is capped by
+ * leftover height as well as by width -- the same viewport can hold a wide
+ * plate or a tall one depending on how much room the header and action bar
+ * took, and only the box itself knows which happened.
+ */
+export function radiiForTable(table: { width: number; height: number }): { rx: number; ry: number } {
+  if (isPortrait(table)) return { rx: PORTRAIT_RADIUS_X, ry: PORTRAIT_RADIUS_Y };
+  return isNarrow(table.width)
     ? { rx: NARROW_RADIUS_X, ry: RADIUS_Y }
     : { rx: RADIUS_X, ry: RADIUS_Y };
+}
+
+/** True once the table is taller than it is wide, i.e. showing the tall plate. */
+export function isPortrait(table: { width: number; height: number }): boolean {
+  return table.height > 0 && table.width / table.height < 1;
 }
 
 export function isNarrow(viewportWidth: number): boolean {

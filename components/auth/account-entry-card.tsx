@@ -60,7 +60,7 @@ export function AccountEntryCard({
       <div className="account-entry-glow" aria-hidden="true" />
       <div className="account-entry-mark" aria-hidden="true"><span>S</span></div>
       <div className="account-entry-eyebrow">StackChips · No-limit Hold’em</div>
-      <h1 id="account-entry-title">StackChips</h1>
+      <h1 id="account-entry-title">Play Free, Stack Chips.</h1>
 
       {!ready ? (
         <p className="account-entry-status" role="status">

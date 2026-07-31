@@ -1,18 +1,18 @@
 /* Everything before you sit down. */
 
+/* The signed-in hub. Was a two-column marketing split with a decorative
+   mini-table beside a name field, which read as a SaaS signup rather than a
+   game. It is now a single scrollable column of tiles -- the shape a PWA
+   home screen wants on a phone, and the same shape widened on a desktop. */
 .lobby {
-  width: min(1240px, calc(100% - 48px));
-  min-height: calc(100vh - 82px);
-  min-height: calc(100svh - 82px);
-  margin: auto;
-  display: grid;
-  grid-template-columns: 1.05fr .95fr;
-  gap: clamp(40px, 8vw, 110px);
-  align-items: center;
-  padding: 70px 0 90px;
+  width: min(920px, calc(100% - 32px));
+  height: calc(100vh - 82px);
+  height: calc(100svh - 82px);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  margin: 0 auto;
+  padding: 34px 0 calc(40px + env(safe-area-inset-bottom));
 }
-
-.hero { max-width: 610px; }
 
 .lobby-kicker {
   color: #8b9a92;
@@ -37,76 +37,16 @@
   max-width: 570px;
 }
 
-.start-form {
-  margin-top: 40px;
-  width: min(100%, 520px);
-}
 
-.start-form label {
-  display: block;
-  margin-bottom: 9px;
-  color: #a9b6af;
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
 
-.form-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 
-.form-label-row button {
-  appearance: none;
-  margin-bottom: 9px;
-  padding: 0;
-  color: #887944;
-  border: 0;
-  background: transparent;
-  font-size: 10px;
-  cursor: pointer;
-}
 
-.form-label-row button:hover { color: var(--gold-light); }
 
-.name-row {
-  display: flex;
-  padding: 5px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: #111b17;
-  border-radius: 12px;
-  box-shadow: 0 16px 60px rgba(0,0,0,.2);
-}
 
-.name-row:focus-within { border-color: rgba(217,184,93,.55); }
 
-.name-row input {
-  min-width: 0;
-  flex: 1;
-  padding: 0 15px;
-  /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
-  font-size: 16px;
-  color: #f4f5ed;
-  border: 0;
-  outline: 0;
-  background: transparent;
-}
 
-.name-row input::placeholder { color: #526159; }
 
-.lobby-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 9px;
-  margin-top: 10px;
-}
 
-.lobby-actions > button {
-  min-height: 46px;
-  width: 100%;
-}
 
 .secondary-action {
   display: inline-flex;
@@ -128,55 +68,12 @@
   border-color: rgba(255,255,255,.24);
 }
 
-.join-form {
-  width: min(100%, 520px);
-  margin-top: 20px;
-  padding-top: 18px;
-  border-top: 1px solid rgba(255,255,255,.08);
-}
 
-.join-form > label {
-  display: block;
-  margin-bottom: 8px;
-  color: #718078;
-  font-size: 9px;
-  font-weight: 650;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
 
-.join-row {
-  display: grid;
-  grid-template-columns: 1fr 80px;
-  gap: 8px;
-}
 
-.join-row input {
-  min-width: 0;
-  height: 42px;
-  padding: 0 12px;
-  color: #e9eee9;
-  border: 1px solid rgba(255,255,255,.11);
-  border-radius: 5px;
-  outline: none;
-  background: transparent;
-  font-size: 16px;
-  letter-spacing: .18em;
-}
 
-.join-row input:focus { border-color: rgba(217,184,93,.48); }
 
-.join-row button {
-  color: #d8c985;
-  border: 1px solid rgba(217,184,93,.25);
-  border-radius: 5px;
-  background: transparent;
-  font-size: 10px;
-  font-weight: 700;
-  cursor: pointer;
-}
 
-.join-row button:disabled { color: #59645e; border-color: rgba(255,255,255,.08); }
 
 .name-row button, .primary-action {
   border: 0;
@@ -203,114 +100,35 @@ button:disabled { cursor: wait; opacity: .62; }
   font-size: 12px;
 }
 
-.table-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0;
-  margin-top: 26px;
-  color: #68766f;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-}
 
-.table-facts span {
-  padding: 0 14px;
-  border-left: 1px solid rgba(255,255,255,.1);
-}
 
-.table-facts span:first-child { padding-left: 0; border-left: 0; }
-.table-facts strong { color: #b8c2bc; font-weight: 650; }
 
-.lobby-preview {
-  position: relative;
-  padding: 26px 0 0;
-}
 
-.preview-heading {
-  width: min(100%, 490px);
-  margin: 0 auto 18px;
-  display: flex;
-  justify-content: space-between;
-  color: #59665f;
-  font-size: 9px;
-  font-weight: 650;
-  letter-spacing: .13em;
-  text-transform: uppercase;
-}
 
-.mini-table {
-  position: relative;
-  z-index: 1;
-  width: min(100%, 490px);
-  aspect-ratio: 1.44;
-  margin: auto;
-  border: 10px solid #2d2a24;
-  outline: 2px solid #8b7032;
-  border-radius: 48%;
-  background:
-    radial-gradient(ellipse, rgba(255,255,255,.05), transparent 55%),
-    #15513a;
-  box-shadow: inset 0 0 0 3px rgba(255,255,255,.05), 0 34px 100px rgba(0,0,0,.48);
-  transform: perspective(900px) rotateX(10deg) rotateZ(-2deg);
-}
 
-.mini-table::after {
-  content: "";
-  position: absolute;
-  inset: 14px;
-  border: 1px solid rgba(226, 207, 143, .2);
-  border-radius: inherit;
-}
 
-.mini-seat {
-  position: absolute;
-  z-index: 3;
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: #1c2823;
-  border: 3px solid #b39053;
-  color: #eef1ea;
-  font-size: 11px;
-  font-weight: 800;
-  box-shadow: 0 8px 22px rgba(0,0,0,.4);
-}
 
-.mini-top { left: 50%; top: 0; transform: translate(-50%, -62%); }
-.mini-bottom { left: 50%; bottom: 0; transform: translate(-50%, 65%); border-color: var(--gold); width: 58px; height: 58px; }
-.mini-upper-left { left: 6%; top: 22%; transform: translate(-60%, -50%); }
-.mini-lower-left { left: 6%; bottom: 10%; transform: translate(-60%, 50%); }
-.mini-upper-right { right: 6%; top: 22%; transform: translate(60%, -50%); }
-.mini-lower-right { right: 6%; bottom: 10%; transform: translate(60%, 50%); }
 
-.mini-pot {
-  position: absolute;
-  top: 33%;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 5px;
-  color: var(--gold-light);
-  font-size: 11px;
-  font-weight: 700;
-}
 
-.mini-cards { position: absolute; display: flex; gap: 4px; left: 50%; top: 50%; transform: translateX(-50%); }
 
 /* One stable account surface is kept on screen while Supabase restores a
    session. Only its controls and copy update, so a remembered cookie cannot
    flash the promotional lobby before replacing it with another layout. */
+/* The signed-out page is now a full landing page rather than a lone card, so
+   it owns its own scroll. It has to: .app-root is overflow:hidden (the game
+   screen must never scroll the document), which would otherwise clip
+   everything below the fold instead of letting the page scroll. */
 .account-entry-page {
-  width: min(100% - 32px, 520px);
-  min-height: calc(100vh - 82px);
-  min-height: calc(100svh - 82px);
+  width: 100%;
+  height: calc(100vh - 82px);
+  height: calc(100svh - 82px);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   margin: 0 auto;
-  display: grid;
-  place-items: center;
-  padding: 42px 0 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 42px 16px calc(24px + env(safe-area-inset-bottom));
 }
 
 .account-entry-card {
@@ -552,4 +370,380 @@ button:disabled { cursor: wait; opacity: .62; }
 
 @keyframes account-entry-spin {
   to { transform: rotate(360deg); }
+}
+
+/* ---------------------------------------------------------------------------
+   Signed-out landing page: everything below the sign-in block.
+   See components/auth/landing-sections.tsx.
+   --------------------------------------------------------------------------- */
+
+/* The sign-in block keeps its original card width; the sections under it are
+   allowed to run wider, so the page reads as a page rather than one long
+   column of card. */
+.account-entry-page > .account-entry-card {
+  width: min(100%, 520px);
+  flex: 0 0 auto;
+}
+
+.landing-features,
+.landing-cta,
+.landing-footer,
+.landing-offer {
+  width: min(100%, 1080px);
+  flex: 0 0 auto;
+}
+
+.landing-features { margin-top: 72px; }
+.landing-features h2 {
+  margin: 0 0 22px;
+  color: var(--ink);
+  font: 600 clamp(24px, 3.2vw, 34px)/1.1 Georgia, serif;
+  letter-spacing: -.01em;
+}
+
+.landing-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.landing-feature {
+  padding: 20px 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(23,34,30,.72), rgba(15,23,20,.72));
+  transition: border-color .18s ease, transform .18s ease;
+}
+.landing-feature:hover {
+  border-color: rgba(217,184,93,.28);
+  transform: translateY(-2px);
+}
+.landing-feature-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 12px;
+  color: var(--gold-light);
+  border: 1px solid rgba(217,184,93,.24);
+  border-radius: 9px;
+  background: rgba(217,184,93,.07);
+}
+.landing-feature h3 {
+  margin: 0 0 7px;
+  color: #eef3ee;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.landing-feature p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.landing-offer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin: 40px auto 0;
+  padding: 11px 18px;
+  width: auto;
+  max-width: 100%;
+  color: #f2e3ac;
+  border: 1px solid rgba(217,184,93,.26);
+  border-radius: 999px;
+  background: rgba(217,184,93,.07);
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.landing-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 56px;
+  padding: 28px clamp(20px, 4vw, 38px);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(26,40,34,.9), rgba(14,22,19,.9));
+}
+.landing-cta h2 {
+  margin: 0 0 6px;
+  color: var(--ink);
+  font: 600 clamp(21px, 2.6vw, 28px)/1.15 Georgia, serif;
+}
+.landing-cta p { margin: 0; color: var(--muted); font-size: 13px; }
+.landing-cta-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.landing-cta-primary,
+.landing-cta-secondary {
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: filter .15s ease, border-color .15s ease;
+}
+.landing-cta-primary {
+  color: #17170f;
+  border: 1px solid rgba(217,184,93,.5);
+  background: linear-gradient(180deg, var(--gold-light), var(--gold));
+}
+.landing-cta-primary:hover:not(:disabled) { filter: brightness(1.07); }
+.landing-cta-primary:disabled { opacity: .5; cursor: not-allowed; }
+.landing-cta-secondary {
+  color: #e6ebe7;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.04);
+}
+.landing-cta-secondary:hover { border-color: rgba(217,184,93,.3); color: var(--gold-light); }
+
+.landing-cta-primary:focus-visible,
+.landing-cta-secondary:focus-visible,
+.landing-footer a:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 2px;
+}
+
+.landing-footer {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.4fr) repeat(3, minmax(120px, 1fr));
+  gap: 28px 20px;
+  margin-top: 64px;
+  padding: 34px 0 8px;
+  border-top: 1px solid var(--line);
+}
+.landing-footer-name {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+  font: 600 18px Georgia, serif;
+}
+.landing-footer-brand p { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+
+.landing-socials { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.landing-socials a {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  transition: color .15s ease, border-color .15s ease;
+}
+.landing-socials a:hover { color: var(--gold-light); border-color: rgba(217,184,93,.3); }
+
+.landing-footer-column h3 {
+  margin: 0 0 10px;
+  color: #b9c4bd;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.landing-footer-column ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.landing-footer-column a {
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: none;
+  transition: color .15s ease;
+}
+.landing-footer-column a:hover { color: var(--gold-light); }
+
+.landing-footer-legal {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  color: #6f7d76;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .landing-footer { grid-template-columns: 1fr 1fr; }
+  .landing-cta { flex-direction: column; align-items: stretch; }
+  .landing-cta-actions > * { flex: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-feature { transition: none; }
+  .landing-feature:hover { transform: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Signed-in hub tiles. See components/lobby/lobby.tsx.
+   --------------------------------------------------------------------------- */
+
+.hub-head { margin-bottom: 22px; }
+.hub-head h1 {
+  margin: 10px 0 18px;
+  font: 500 clamp(30px, 5vw, 46px)/1 Georgia, "Times New Roman", serif;
+  letter-spacing: -.03em;
+}
+
+.hub-name { display: block; max-width: 380px; }
+.hub-name > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #a9b6af;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.hub-name input {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px;
+  color: #f4f5ed;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 11px;
+  outline: 0;
+  background: #111b17;
+  /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
+  font-size: 16px;
+}
+.hub-name input:focus { border-color: rgba(217,184,93,.55); }
+.hub-name input::placeholder { color: #526159; }
+
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* A tile is a single tap target with artwork behind it, not a card with an
+   icon sitting in a rounded square. --tile-art is the real asset; the overlay
+   gradient is what keeps the label readable over it. */
+.hub-tile {
+  --tile-art: none;
+  --tile-tint: rgba(217,184,93,.10);
+  position: relative;
+  min-height: 116px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  overflow: hidden;
+  padding: 16px;
+  text-align: left;
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  /* background-image, not the `background` shorthand: a bare colour is only
+     legal as the final layer of a layer list, so putting --tile-tint in the
+     middle made the whole declaration invalid and every tile rendered flat.
+     The tint is a two-stop gradient instead, which is a valid image layer. */
+  background-color: #0e1613;
+  /* The scrim runs left-to-right, not top-to-bottom. The label sits bottom
+     left and the art bottom right, so a vertical fade dimmed precisely the
+     thing it was supposed to be showing off. */
+  background-image:
+    linear-gradient(90deg, rgba(9,15,13,.94) 0%, rgba(9,15,13,.74) 46%, rgba(9,15,13,.10) 100%),
+    linear-gradient(var(--tile-tint), var(--tile-tint)),
+    var(--tile-art),
+    linear-gradient(160deg, #17241f, #0e1613);
+  background-size: auto, auto, cover, auto;
+  background-position: center, center, center, center;
+  background-repeat: no-repeat;
+  cursor: pointer;
+  transition: border-color .16s ease, transform .16s ease;
+}
+.hub-tile:hover { border-color: rgba(217,184,93,.34); transform: translateY(-2px); }
+.hub-tile:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.hub-tile:disabled { opacity: .55; cursor: wait; transform: none; }
+
+.hub-tile-wide { grid-column: 1 / -1; min-height: 148px; }
+
+.hub-tile-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.hub-tile-body strong {
+  color: #f2f6f1;
+  font: 600 17px Georgia, serif;
+  letter-spacing: -.01em;
+}
+.hub-tile-wide .hub-tile-body strong { font-size: 22px; }
+.hub-tile-body small { color: #9fb0a7; font-size: 11.5px; line-height: 1.4; }
+.hub-tile-go { flex-shrink: 0; color: var(--gold-light); }
+
+/* Real artwork per tile, from public/. */
+/* The play tile shows the felt itself, zoomed past the rail so the arcs of
+   the plate's ends don't read as stray lines across the tile. */
+.hub-tile-play {
+  --tile-art: url("/pokertable/table-desktop.png");
+  --tile-tint: rgba(22,79,58,.30);
+  background-size: auto, auto, 190% auto, auto;
+  background-position: center, center, center 58%, center;
+}
+.hub-tile-private { --tile-art: url("/chips/cluster-three.webp"); background-size: auto, auto, 96px, auto; background-position: center, center, right 14px bottom 12px, center; }
+.hub-tile-gold { --tile-art: url("/chips/stack-three.webp"); background-size: auto, auto, 108px, auto; background-position: center, center, right 12px bottom 10px, center; }
+.hub-tile-collection { --tile-art: url("/avatars/avatar-shark-face.webp"); background-size: auto, auto, 104px, auto; background-position: center, center, right 10px bottom -6px, center; }
+.hub-tile-leaderboard { --tile-art: url("/chips/chip-royal-spade.webp"); background-size: auto, auto, 92px, auto; background-position: center, center, right 16px bottom 12px, center; }
+
+/* The room-code tile is a form, so it stacks rather than bottom-aligning. */
+.hub-tile-code {
+  --tile-tint: rgba(255,255,255,.02);
+  grid-column: 1 / -1;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 9px;
+  min-height: 0;
+  cursor: default;
+}
+.hub-tile-code:hover { transform: none; border-color: var(--line); }
+.hub-tile-code > label {
+  color: #718078;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.hub-code-row { display: grid; grid-template-columns: 1fr 88px; gap: 8px; }
+.hub-code-row input {
+  min-width: 0;
+  height: 44px;
+  padding: 0 13px;
+  color: #e9eee9;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 10px;
+  outline: none;
+  background: rgba(0,0,0,.25);
+  font-size: 16px;
+  letter-spacing: .18em;
+}
+.hub-code-row input:focus { border-color: rgba(217,184,93,.48); }
+.hub-code-row button {
+  color: #d8c985;
+  border: 1px solid rgba(217,184,93,.25);
+  border-radius: 10px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.hub-code-row button:disabled { color: #59645e; border-color: rgba(255,255,255,.08); cursor: not-allowed; }
+
+@media (max-width: 560px) {
+  .hub-grid { grid-template-columns: 1fr; }
+  .hub-tile { min-height: 104px; }
+  .hub-tile-wide { min-height: 132px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-tile { transition: none; }
+  .hub-tile:hover { transform: none; }
 }

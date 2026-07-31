@@ -64,7 +64,6 @@ test("a first-time mobile player can join from the lobby and always see their st
     await page.getByRole("dialog").getByRole("button", { name: /^Join table$/i }).click();
 
     await expect(page.locator(".poker-table-wrap")).toBeVisible();
-    await expect(page.locator(".orientation-hint")).toBeVisible();
     const mine = page.locator(".player-seat:has(.you-chip)");
     const cards = mine.locator(".own-cards");
     const stack = mine.locator(".seat-stack");

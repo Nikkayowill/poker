@@ -7,11 +7,23 @@
 // Stale-while-revalidate fixes it structurally rather than just once: a
 // cached response still answers instantly, but every fetch also updates the
 // cache in the background, so staleness is at most one visit, not forever.
-const CACHE_NAME = "river-room-shell-v2";
-const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
+// v3: dropped the 192/512 PNG entries (no such files pending a replacement
+// icon set) and stopped precaching atomically.
+//
+// cache.addAll() rejects the whole batch if any single request 404s, and the
+// rejection here was swallowed by .catch(() => {}) -- so deleting one icon
+// silently took the entire offline shell with it, including "/". That is a
+// lot of blast radius for one missing decorative file. Caching each entry
+// independently means a missing asset costs exactly itself.
+const CACHE_NAME = "river-room-shell-v3";
+const SHELL = ["/", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)).catch(() => {}));
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => Promise.all(
+      SHELL.map((url) => cache.add(url).catch(() => {})),
+    )).catch(() => {}),
+  );
   self.skipWaiting();
 });
 

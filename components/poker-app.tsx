@@ -824,9 +824,21 @@ export function PokerApp() {
     setSignInPending(true);
     try {
       await applySessionPreference();
-      // The entry card is enabled only after loadProfile has completed. That
-      // GET has already created the guest profile and set its HttpOnly
-      // session cookie, so a second profile request is unnecessary.
+      // KNOWN BUG -- a first-time guest reaches the lobby with `profile` still
+      // null and therefore 0 Gold, so every stakes tier reads "Need N Gold"
+      // and the buy-in modal's confirm never enables. The comment that used to
+      // sit here claimed the entry card's own loadProfile had already created
+      // the guest profile; 3bbc117 ("Stop read-only routes from creating a
+      // player per request") made that false -- the initial GET now answers
+      // {profile: null} and creates nothing.
+      //
+      // Awaiting loadProfile() here does fix that path and makes
+      // multiplayer.spec.ts:53 pass, but it reorders this against the
+      // `?table=` effect below (whose refresh/joinByCode identities change
+      // when profile/persistence are set) and breaks resuming an existing
+      // table: the local seat renders with no hole cards. Verified both ways
+      // by stashing. Needs a proper look at the profile/session/refresh
+      // sequencing rather than an extra await here.
       setEntryComplete(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not open the lobby.");

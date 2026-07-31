@@ -6,7 +6,7 @@ import { History, TimerReset, Volume2, VolumeX, X } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
-  radiiForWidth,
+  radiiForTable,
   seatGeometry,
   seatZ,
 } from "@/lib/game/table-geometry";
@@ -33,8 +33,12 @@ import { RoomCodeChip } from "./room-code-chip";
 /** How the table reports its live connection, shown in the header. */
 export type ConnectionState = "connected" | "reconnecting" | "offline";
 
-export const SEAT_WIDTH_RATIO = 0.17;
-export const SEAT_HEIGHT_RATIO = 0.3;
+/* Trimmed from 0.17/0.3. A figure that was 30% of the table's height could not
+   ring the table without lying across it -- half of every player ended up on
+   the cloth. Smaller figures plus the rail inset in 06-table.css put them
+   around the perimeter instead of on the board. */
+export const SEAT_WIDTH_RATIO = 0.155;
+export const SEAT_HEIGHT_RATIO = 0.235;
 
 export function seatWidthFor(table: { width: number; height: number }): number {
   return Math.round(Math.min(table.width * SEAT_WIDTH_RATIO, table.height * SEAT_HEIGHT_RATIO));
@@ -76,26 +80,11 @@ export function PokerTable({
   onSignOut: () => void;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [showOrientationHint, setShowOrientationHint] = useState(false);
   const historyButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeHistory = useCallback(() => {
     setHistoryOpen(false);
     window.requestAnimationFrame(() => historyButtonRef.current?.focus());
   }, []);
-  // The ring's horizontal radius depends on how much width there is to
-  // spend, so the geometry has to recompute when the window changes.
-  const [viewportWidth, setViewportWidth] = useState(1280);
-  useEffect(() => {
-    const measure = () => setViewportWidth(window.innerWidth);
-    measure();
-    window.addEventListener("resize", measure);
-    window.addEventListener("orientationchange", measure);
-    return () => {
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("orientationchange", measure);
-    };
-  }, []);
-
   // A seat is sized off the table, not the window. The table is capped by the
   // height left over as well as by width, so a short landscape phone can shrink
   // it to a third of its desktop width while the viewport is still wide --
@@ -133,17 +122,6 @@ export function PokerTable({
   }, []);
 
   const [clockNow, setClockNow] = useState(() => Date.now());
-  useEffect(() => {
-    const portraitPhone = window.matchMedia("(max-width: 600px) and (orientation: portrait)");
-    const updateHint = () => setShowOrientationHint(portraitPhone.matches);
-    updateHint();
-    portraitPhone.addEventListener("change", updateHint);
-    const timer = window.setTimeout(() => setShowOrientationHint(false), 6500);
-    return () => {
-      portraitPhone.removeEventListener("change", updateHint);
-      window.clearTimeout(timer);
-    };
-  }, []);
   useEffect(() => {
     if (!game.turnDeadlineAt || game.currentPlayer === null) return;
     const initialTick = window.setTimeout(() => setClockNow(Date.now()), 0);
@@ -199,7 +177,7 @@ export function PokerTable({
   // the ring geometry for slot 0 is simply unused.
   const ringGeometry = useMemo(
     () => orderedSeats.map((_, index) => {
-      const geometry = seatGeometry(index, orderedSeats.length, radiiForWidth(viewportWidth));
+      const geometry = seatGeometry(index, orderedSeats.length, radiiForTable(tableSize));
       return {
         left: `${geometry.x}%`,
         top: `${geometry.y}%`,
@@ -219,7 +197,10 @@ export function PokerTable({
         "--seat-dy": geometry.towardPot.y.toFixed(3),
       } as React.CSSProperties;
     }),
-    [orderedSeats, viewportWidth],
+    // Depends on the measured box rather than the window: the same viewport
+    // can hold a wide plate or a tall one depending on how much room the
+    // header and action bar left behind, and only the box knows which.
+    [orderedSeats, tableSize],
   );
 
   // Your own portrait, sized off the one geometric fact that does apply to a
@@ -408,18 +389,6 @@ export function PokerTable({
         </div>
       </header>
 
-      {showOrientationHint && (
-        <button
-          type="button"
-          className="orientation-hint"
-          onClick={() => setShowOrientationHint(false)}
-          aria-label="Dismiss landscape orientation suggestion"
-        >
-          <span aria-hidden="true">↻</span>
-          Rotate for a wider table
-          <small>Portrait still works</small>
-        </button>
-      )}
 
       <section className="game-content">
         <div className="table-area">
@@ -433,7 +402,6 @@ export function PokerTable({
           >
             <div className="poker-rail">
               <div className="poker-felt">
-                <div className="felt-texture" />
                 <div className={clsx("pot-display", showFunnel && "pot-display-paid")} ref={potRef}>
                   <span>MAIN POT</span>
                   <strong><span className="chip-stack-icon" />{game.pot.toLocaleString()}</strong>

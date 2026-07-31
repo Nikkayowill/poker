@@ -1,14 +1,14 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { ArrowRight, Check, Cloud, Coins, ShieldCheck, UsersRound, X } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Check, Cloud, Coins, ShieldCheck, X } from "lucide-react";
 import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
-import type { Card } from "@/lib/game/types";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { accountsEnabled } from "@/lib/auth/client";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
+import { LandingSections } from "@/components/auth/landing-sections";
 import { BuyInModal } from "./buy-in-modal";
-import { PlayingCard } from "@/components/table/playing-card";
 
 export function Lobby({
   profile,
@@ -101,13 +101,17 @@ export function Lobby({
           onContinueAsGuest={onContinueAsGuest}
           onSignOut={onSignOut}
         />
+        <LandingSections
+          primaryDisabled={!(authReady && sessionReady) || signInPending}
+          onPrimary={onContinueAsGuest}
+        />
       </main>
     );
   }
 
   return (
-    <main className="lobby">
-      <section className="hero">
+    <main className="lobby lobby-hub">
+      <section className="hub">
         {cashOutNotice !== null && (
           <div className="cash-out-notice" role="status">
             <Coins size={15} />
@@ -160,17 +164,11 @@ export function Lobby({
             </button>
           </div>
         )}
-        <div className="lobby-kicker">StackChips · 6-max</div>
-        <h1>No-limit Hold’em.<br /><em>Nothing extra.</em></h1>
-        <p>
-          Pick your stakes, choose a buy-in, and take a seat. Start a quick
-          table or open a private room for friends.
-        </p>
-        <div className="start-form">
-          <div className="form-label-row">
-            <label htmlFor="player-name">Enter Your Player Name</label>
-          </div>
-          <div className="name-row">
+        <div className="hub-head">
+          <div className="lobby-kicker">StackChips · 6-max</div>
+          <h1>Pick your game.</h1>
+          <label className="hub-name" htmlFor="player-name">
+            <span>Player name</span>
             <input
               id="player-name"
               value={name}
@@ -179,74 +177,78 @@ export function Lobby({
               placeholder="Enter your name"
               autoComplete="nickname"
             />
-          </div>
-          <div className="lobby-actions">
-            <button
-              type="button"
-              className="primary-action"
-              disabled={loading || !sessionReady}
-              onClick={() => setBuyInMode("join")}
-            >
-              {!sessionReady
-                ? "Preparing your seat…"
-                : loading
-                  ? "Joining table…"
-                  : <>Join table <ArrowRight size={17} /></>}
-            </button>
-            <button
-              type="button"
-              className="secondary-action"
-              disabled={loading || !sessionReady}
-              onClick={() => setBuyInMode("host")}
-            >
-              <UsersRound size={15} /> Private table
-            </button>
-          </div>
+          </label>
           {error && <p className="form-error"><X size={14} /> {error}</p>}
         </div>
-        <form className="join-form" onSubmit={submitJoin}>
-          <label htmlFor="join-code">Join a private table</label>
-          <div className="join-row">
-            <input
-              id="join-code"
-              value={joinCode}
-              maxLength={6}
-              onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
-              placeholder="ROOM CODE"
-              autoComplete="off"
-            />
-            <button type="submit" disabled={loading || !sessionReady || joinCode.trim().length !== 6}>Join</button>
-          </div>
-        </form>
-        <div className="table-facts" aria-label="Table details">
-          <span><strong>6</strong> seats</span>
-          <span><strong>8</strong> stakes tiers</span>
-          <span><strong>1,000 – 500,000</strong> buy-in</span>
+
+        {/* Tiles carry the real artwork -- the same table plate the game
+            renders and the chip/avatar art from public/ -- rather than a flat
+            card with an icon dropped in it. */}
+        <div className="hub-grid">
+          <button
+            type="button"
+            className="hub-tile hub-tile-wide hub-tile-play"
+            disabled={loading || !sessionReady}
+            onClick={() => setBuyInMode("join")}
+          >
+            <span className="hub-tile-body">
+              <strong>{!sessionReady ? "Preparing your seat…" : loading ? "Joining table…" : "Join table"}</strong>
+              <small>Quick seat at six-max, stakes of your choosing</small>
+            </span>
+            <ArrowRight className="hub-tile-go" size={18} aria-hidden="true" />
+          </button>
+
+          <button
+            type="button"
+            className="hub-tile hub-tile-private"
+            disabled={loading || !sessionReady}
+            onClick={() => setBuyInMode("host")}
+          >
+            <span className="hub-tile-body">
+              <strong>Private table</strong>
+              <small>Open a room, share the code</small>
+            </span>
+          </button>
+
+          <Link className="hub-tile hub-tile-gold" href="/store">
+            <span className="hub-tile-body">
+              <strong>Buy Gold</strong>
+              <small>{(profile?.goldBalance ?? 0).toLocaleString()} in your stack</small>
+            </span>
+          </Link>
+
+          <Link className="hub-tile hub-tile-collection" href="/collection">
+            <span className="hub-tile-body">
+              <strong>Collection</strong>
+              <small>Avatars and card backs</small>
+            </span>
+          </Link>
+
+          <Link className="hub-tile hub-tile-leaderboard" href="/leaderboard">
+            <span className="hub-tile-body">
+              <strong>Leaderboard</strong>
+              <small>This season&rsquo;s standings</small>
+            </span>
+          </Link>
+
+          <form className="hub-tile hub-tile-code" onSubmit={submitJoin}>
+            <label htmlFor="join-code">Join with a room code</label>
+            <div className="hub-code-row">
+              <input
+                id="join-code"
+                value={joinCode}
+                maxLength={6}
+                onChange={(event) => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                placeholder="ROOM CODE"
+                autoComplete="off"
+              />
+              <button type="submit" disabled={loading || !sessionReady || joinCode.trim().length !== 6}>
+                Join
+              </button>
+            </div>
+          </form>
         </div>
       </section>
-      <aside className="lobby-preview">
-        <>
-            <div className="preview-heading">
-              <span>No limit · 6-max</span>
-            </div>
-            <div className="mini-table">
-              <span className="mini-seat mini-top">RV</span>
-              <span className="mini-seat mini-upper-left">MA</span>
-              <span className="mini-seat mini-upper-right">PR</span>
-              <span className="mini-seat mini-lower-left">TH</span>
-              <span className="mini-seat mini-lower-right">WR</span>
-              <span className="mini-seat mini-bottom">YOU</span>
-              <div className="mini-pot"><Coins size={14} /> 240</div>
-              <div className="mini-cards">
-                {[
-                  { rank: "A", suit: "spades" },
-                  { rank: "10", suit: "hearts" },
-                  { rank: "K", suit: "diamonds" },
-                ].map((card) => <PlayingCard key={card.rank} card={card as Card} small />)}
-              </div>
-            </div>
-          </>
-      </aside>
       {buyInMode && (
         <BuyInModal
           title={buyInMode === "host" ? "Host a private table" : "Join a table"}

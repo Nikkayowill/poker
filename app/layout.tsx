@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "StackChips — Texas Hold’em",
+  title: "Play Free, StackChips - Texas Hold’em",
   description: "A server-authoritative Texas Hold’em table powered by Supabase.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {

@@ -66,59 +66,47 @@
 
 /* Layer 1 of the isolated table scene. Felt content lives inside this shell;
    avatar, card, and plate layers are defined explicitly in 08-seat.css. */
+/* The table artwork carries its own rail, felt, trim line and betting
+   positions (public/pokertable/), so this element no longer draws a table --
+   it only places the art and supplies the camera tilt the seat ellipse in
+   lib/game/table-geometry.ts is already drawn for.
+
+   The shadow is a filter rather than a box-shadow because the art is a
+   transparent oval inside a rectangular box: box-shadow would trace the box
+   and print a rectangle of shadow around a round table. A filter follows the
+   alpha channel, so the shadow takes the table's actual shape. Safe here
+   because .poker-rail is a *sibling* of the seats (both are children of
+   .poker-table-wrap) -- the stacking context it creates contains only the
+   felt content, never a seat, so nothing in 08-seat.css's depth ordering is
+   trapped by it. */
+/* The inset is the seat ring's living space, not padding.
+   The table used to fill almost the whole wrap (7% 3% 4%), which left nowhere
+   for a player to stand: the ring had to be drawn *inside* the felt, so about
+   four fifths of every figure sat on the cloth and the top seat ran off the
+   top of the box entirely (measured y:-2%, clipped by .table-area's
+   overflow). Pulling the table in gives the ring a band to occupy, so figures
+   meet the rail from outside the way a person at a table actually does. */
 .poker-rail {
   z-index: 1;
   position: absolute;
-  inset: 7% 3% 4%;
+  inset: 15% 4% 8%;
   padding: 16px;
-  border-radius: 48%;
-  background:
-    linear-gradient(145deg, #2b2119, #111715 35%, #503a26 64%, #161916),
-    repeating-linear-gradient(90deg, rgba(255,255,255,.04) 0 1px, transparent 1px 16px);
-  box-shadow:
-    0 54px 82px rgba(0,0,0,.62),
-    0 18px 0 -10px rgba(45,31,20,.72),
-    inset 0 0 0 1px rgba(239,216,144,.32),
-    inset 0 0 0 7px rgba(4,8,7,.72),
-    inset 0 0 22px rgba(0,0,0,.7);
+  background: url("/pokertable/table-desktop.png") center / 100% 100% no-repeat;
+  filter: drop-shadow(0 34px 44px rgba(0,0,0,.55));
   transform: perspective(1050px) rotateX(10deg);
   transform-origin: 50% 64%;
 }
 
+/* Transparent: the felt is painted by the artwork behind it. This element
+   survives purely as the positioning context the pot, the board and the
+   street label are already laid out against in percentages. */
 .poker-felt {
   height: 100%;
-  overflow: hidden;
   position: relative;
-  border-radius: inherit;
-  border: 2px solid rgba(237,216,139,.28);
-  background:
-    /* The far half of the cloth falls into shadow. A lamp hangs over a real
-       table, so the felt is never evenly lit -- and an evenly lit surface is
-       the fastest way to make a 2.5D scene look like a flat diagram, however
-       hard the figures on it fall away with distance. Kept light because the
-       rail lip above already darkens the far edge; at .34 the two stacked into
-       a murky band across the top of the table. */
-    linear-gradient(to bottom, rgba(0,0,0,.18) 0%, rgba(0,0,0,.04) 38%, rgba(0,0,0,0) 66%),
-    /* Warm overhead spotlight, layered above the existing green highlight
-       and base gradient rather than replacing them. */
-    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(255,247,214,.09), transparent 62%),
-    radial-gradient(ellipse at 50% 40%, rgba(52,133,98,.45), transparent 58%),
-    linear-gradient(135deg, var(--felt), var(--felt-dark));
-  box-shadow: inset 0 0 45px rgba(0,0,0,.42);
-}
-
-.poker-felt::before {
-  content: "";
-  position: absolute;
-  inset: 12%;
-  border: 1px solid rgba(226,235,224,.13);
-  border-radius: 48%;
-  box-shadow: inset 0 0 18px rgba(0,0,0,.1);
-  pointer-events: none;
 }
 
 .poker-felt::after {
-  content: "RIVER ROOM  ·  NO LIMIT HOLD’EM";
+  content: "STACKCHIPS  ·  NO LIMIT HOLD’EM";
   position: absolute;
   left: 50%;
   bottom: 27%;
@@ -128,15 +116,6 @@
   letter-spacing: .28em;
   white-space: nowrap;
   pointer-events: none;
-}
-
-.felt-texture {
-  position: absolute;
-  inset: 0;
-  opacity: .12;
-  background-image:
-    repeating-linear-gradient(45deg, transparent 0 3px, rgba(255,255,255,.025) 3px 4px),
-    repeating-linear-gradient(-45deg, transparent 0 4px, rgba(0,0,0,.04) 4px 5px);
 }
 
 /* Below the far player's nameplate, which now reaches about a quarter of the

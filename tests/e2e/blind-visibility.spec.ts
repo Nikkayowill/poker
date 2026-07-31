@@ -23,6 +23,35 @@ for (const viewport of [
       await expect(structure).toBeVisible();
       await expect(structure).toContainText("SB 5");
       await expect(structure).toContainText("BB 10");
+
+      // The pot and the stakes read in the black space around the table, not
+      // on the cloth. Asserted as "no pixel of either overlaps the rail",
+      // because the defect this replaced was an overlap and not an absence:
+      // both elements were perfectly visible while the blinds line was drawn
+      // across the top of the community card row.
+      const overlap = await page.evaluate(() => {
+        const rect = (selector: string) =>
+          document.querySelector(selector)?.getBoundingClientRect() ?? null;
+        const rail = rect(".poker-rail");
+        const intersects = (box: DOMRect | null) =>
+          Boolean(box && rail
+            && box.left < rail.right && box.right > rail.left
+            && box.top < rail.bottom && box.bottom > rail.top);
+        return {
+          foundRail: Boolean(rail),
+          pot: intersects(rect(".pot-display")),
+          blinds: intersects(rect(".blind-structure")),
+          // The chip-flight target stays behind on the felt; if this ever
+          // stops overlapping the rail, chips are flying to the margin.
+          anchorOnFelt: intersects(rect(".pot-anchor")),
+        };
+      });
+      expect(overlap).toEqual({
+        foundRail: true,
+        pot: false,
+        blinds: false,
+        anchorOnFelt: true,
+      });
       await expect(page.locator(".seat-small-blind .blind-label")).toBeVisible();
       await expect(page.locator(".seat-big-blind .blind-label")).toBeVisible();
 

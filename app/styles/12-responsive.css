@@ -58,6 +58,13 @@
     padding-left: max(4px, env(safe-area-inset-left));
     padding-right: max(4px, env(safe-area-inset-right));
   }
+  /* 58px of black between the top of .table-area and the highest seat, and
+     the seat is not a fixed height -- it grows by about 12px when the turn
+     clock mounts its ring. Trimming the padding here buys back the margin
+     that variance needs, rather than sizing to the seat's quiet state and
+     colliding the moment it is someone's turn. */
+  .table-hud { padding-top: 2px; }
+  .table-hud .pot-display > span { font-size: 8px; letter-spacing: .12em; }
   .game-shell { --chrome-height: 56px; --action-bar-height: 68px; --foreground-allowance: 138px; }
   .poker-table-wrap {
     width: min(calc(100% - 6px), var(--table-height-cap));
@@ -157,6 +164,25 @@
   }
   .game-shell { --chrome-height: 42px; --action-bar-height: 56px; --foreground-allowance: 74px; }
   .poker-table-wrap { --table-aspect: 3; }
+  /* The one place the table HUD cannot be a centred stack. Measured at
+     844x390 there are 18px between the top of .table-area and the highest
+     seat -- not a pot, let alone a pot and the stakes. There is width to
+     burn instead: the topmost seat sits at x 399-446, so a row starting at
+     the left edge clears it completely, and the band above .poker-table-wrap
+     is ~40px whether the phone is 390 or 500 tall. */
+  .table-hud {
+    /* Back to a flex row: the centred grid above would hold the pot on the
+       table's centre line, which here is exactly where the top seat is. */
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 10px;
+    padding: 2px 8px 0;
+  }
+  .table-hud .pot-display { display: flex; align-items: baseline; gap: 7px; }
+  .table-hud .pot-display > span { font-size: 8px; letter-spacing: .1em; }
+  .table-hud .pot-display strong { margin-top: 0; font-size: 17px; }
+  .table-hud .blind-structure { padding: 2px 7px; font-size: 9px; }
   .card-large { width: clamp(32px, 7.5vw, 42px); }
   .action-layer { padding-bottom: env(safe-area-inset-bottom); }
   .history-drawer { width: min(300px, 82%); }

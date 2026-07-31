@@ -415,6 +415,30 @@ export function PokerTable({
 
       <section className="game-content">
         <div className="table-area">
+          {/* The pot and the stakes, in the black space around the table
+              rather than on the cloth. On the felt they had to be small
+              enough not to fight the board, and at 1440x900 the blinds line
+              was drawn straight across the top of the community card row.
+              Out here there is room to read them.
+
+              A sibling of .poker-table-wrap and absolutely positioned, so it
+              takes part in no layout the table depends on: the wrap's size
+              still comes from --table-height-cap alone, which is what keeps
+              this milestone's geometry separate from the dealing work. */}
+          <div className="table-hud">
+            <div className={clsx("pot-display", showFunnel && "pot-display-paid")}>
+              <span>MAIN POT</span>
+              <strong><span className="chip-stack-icon" />{game.pot.toLocaleString()}</strong>
+            </div>
+            <span
+              className="blind-structure"
+              title={`Small Blind ${game.smallBlind.toLocaleString()} · Big Blind ${game.bigBlind.toLocaleString()}`}
+            >
+              <b>SB</b> {game.smallBlind.toLocaleString()}
+              <i aria-hidden="true">/</i>
+              <b>BB</b> {game.bigBlind.toLocaleString()}
+            </span>
+          </div>
           <div
             className="poker-table-wrap"
             ref={tableWrapRef}
@@ -425,23 +449,16 @@ export function PokerTable({
           >
             <div className="poker-rail">
               <div className="poker-felt">
-                <div className={clsx("pot-display", showFunnel && "pot-display-paid")} ref={potRef}>
-                  <span>MAIN POT</span>
-                  <strong><span className="chip-stack-icon" />{game.pot.toLocaleString()}</strong>
-                </div>
-                {/* The stakes moved out of the header with the rest of the
-                    chrome, and they belong here rather than in a menu: they
-                    are gameplay information a player reads mid-hand. A
-                    sibling of .pot-display, not a child, so potRef's measured
-                    centre -- which every chip flight aims at -- is unchanged. */}
-                <span
-                  className="blind-structure"
-                  title={`Small Blind ${game.smallBlind.toLocaleString()} · Big Blind ${game.bigBlind.toLocaleString()}`}
-                >
-                  <b>SB</b> {game.smallBlind.toLocaleString()}
-                  <i aria-hidden="true">/</i>
-                  <b>BB</b> {game.bigBlind.toLocaleString()}
-                </span>
+                {/* Where the chips go, now that the number that counts them
+                    lives outside the table. Three separate effects measure
+                    this element's centre -- chips flying in from a seat, the
+                    pot funnelling out to the winners, and folded cards
+                    drifting to the muck -- and all three have to converge on
+                    the cloth, not on a readout in the margin. Sized to the
+                    box .pot-display used to occupy here (45x35 at every
+                    breakpoint, because its two font sizes are fixed), so the
+                    target has not moved by a pixel. */}
+                <div className="pot-anchor" ref={potRef} aria-hidden="true" />
                 {showFunnel && <PotFunnel key={game.handNumber} winners={game.winners} potRef={potRef} seatRefs={seatRefs} />}
                 <div className="community-cards">
                   {[0, 1, 2, 3, 4].map((index) => (

@@ -1142,6 +1142,77 @@ describe("rake", () => {
     complete = applyPlayerAction(complete, { type: "next-hand" }, tokens[0]);
     expect(complete.rake).toBe(0);
   });
+
+  /**
+   * Everyone folded to seat 0 with chips already in the middle and no board
+   * dealt. `street` stays preflop and `community` stays empty, which is the
+   * whole condition "no flop, no drop" turns on.
+   */
+  function preflopUncontested(committed: number) {
+    const { game, tokens } = createHumanTable();
+    game.status = "playing";
+    game.street = "preflop";
+    game.community = [];
+    game.buttonPosition = 5;
+    game.currentPlayer = 0;
+    game.currentBet = committed;
+    game.seats.forEach((seat) => {
+      seat.acted = true;
+      seat.streetBet = 0;
+      seat.committed = 0;
+      seat.stack = 1000;
+      seat.status = "folded";
+    });
+    Object.assign(game.seats[0], {
+      status: "active",
+      stack: 500,
+      streetBet: committed,
+      committed,
+      acted: false,
+      holeCards: cards("As Ad"),
+    });
+    Object.assign(game.seats[1], {
+      status: "folded",
+      committed,
+      holeCards: cards("Ks Kd"),
+    });
+    return { game, tokens };
+  }
+
+  it("takes nothing from a pot that never saw a flop, however big it got", () => {
+    // 300 total clears the ten-big-blind floor comfortably and would have
+    // been raked 12 under the old rule. Raising, taking it down uncontested,
+    // and still losing chips to the house is exactly what this prevents.
+    const { game, tokens } = preflopUncontested(150);
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    expect(complete.community).toHaveLength(0);
+    expect(complete.rake).toBe(0);
+    expect(complete.winners[0].amount).toBe(300);
+  });
+
+  it("still rakes an uncontested pot once a flop is out", () => {
+    // Same shape, but a board exists -- the house dealt a flop, so it takes
+    // its cut even though nobody reached showdown.
+    const { game, tokens } = preflopUncontested(150);
+    game.street = "flop";
+    game.community = cards("2c 3d 7h");
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    expect(complete.rake).toBe(12);
+    expect(complete.winners[0].amount).toBe(288);
+  });
+
+  it("rakes an all-in pot that was run out from preflop", () => {
+    // The board is dealt by showdown() itself here, so `community` is empty
+    // when the hand begins resolving and five cards long by the time rake is
+    // computed. A flop was dealt, so this is raked -- the guard must key off
+    // the board at deduction time, not off the street the action ended on.
+    const { game, tokens } = riverShowdown(150);
+    game.street = "preflop";
+    game.community = [];
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    expect(complete.community).toHaveLength(5);
+    expect(complete.rake).toBe(12);
+  });
 });
 
 describe("cashing out", () => {

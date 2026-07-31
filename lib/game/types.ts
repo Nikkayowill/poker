@@ -79,7 +79,7 @@ export interface GameState {
   roomCode: string | null;
   /** Stakes level; fixes this table's blinds and every seat's buy-in bounds. */
   tier: StakesTier;
-  /** Gold removed from the most recent hand's pot as rake; 0 when the pot was too small to rake. */
+  /** Chips removed from the most recent hand's pot as rake; 0 when the pot was too small, or when the hand ended before a flop. */
   rake: number;
   version: number;
   status: GameStatus;

@@ -466,9 +466,17 @@ function remaining(state: GameState) {
  * sink. Tables are populated by bots, so every pot a human wins from an AI
  * seat would otherwise mint Gold from nothing; rake is the counterweight.
  *
- * The minimum-pot floor doubles as this app's "no flop, no drop" rule: a
- * preflop steal of the blinds never clears 10 big blinds, so small
- * uncontested pots are handed over whole.
+ * Two things hold rake off a pot. The minimum-pot floor keeps the house out
+ * of small pots at all. Separately, and regardless of size, nothing is taken
+ * from a hand that never saw a flop -- the standard "no flop, no drop" rule,
+ * enforced in deductRake below.
+ *
+ * The floor alone used to be described as covering that, on the reasoning
+ * that a preflop steal of the blinds never clears ten big blinds. True of a
+ * steal, but not of the hand it was standing in for: at 5/10 an open to 30
+ * and a three-bet to 100 leaves a 135 pot, which cleared the floor and got
+ * raked. Raising, taking it down uncontested, and still losing chips to the
+ * house is the single worst-feeling outcome a poker client can produce.
  */
 const RAKE_RATE = 0.04;
 const RAKE_CAP_BB = 3;
@@ -486,6 +494,12 @@ function rakeFor(pot: number, bigBlind: number): number {
  * last winner absorbs the rounding remainder so the books always balance.
  */
 function deductRake(state: GameState, winnings: Map<string, number>): number {
+  // No flop, no drop. Only reachable from awardUncontested: showdown() runs
+  // the board out to five cards before it rakes, so a hand that got all-in
+  // preflop and was dealt a run-out is still raked -- a flop was dealt, and
+  // the house did provide the pot. This guard is for the hand that ended
+  // before any board existed at all.
+  if (state.community.length === 0) return 0;
   const total = [...winnings.values()].reduce((sum, amount) => sum + amount, 0);
   const rake = rakeFor(total, state.bigBlind);
   if (rake <= 0) return 0;

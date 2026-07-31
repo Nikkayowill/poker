@@ -14,3 +14,8 @@ tsconfig.tsbuildinfo
 
 # Sentry Config File
 .env.sentry-build-plugin
+
+# Playwright writes these on every run and the cards dealt are random, so the
+# bytes differ each time. They are regenerable build output, not layout specs --
+# tracking them meant `git status` was never clean after a test run.
+artifacts/screenshots/

@@ -492,9 +492,11 @@
   border-radius: 3px;
 }
 
+/* .5s matches DEAL_FLIGHT_MS in lib/game/deal-choreography.ts, which is what
+   the schedule's total is computed from and asserted against. */
 .dealt-card-shell {
   display: block;
-  animation: deal-to-seat .62s cubic-bezier(.18,.82,.22,1.08) both;
+  animation: deal-to-seat .5s cubic-bezier(.18,.82,.22,1.08) both;
 }
 
 .dealt-card-shell + .dealt-card-shell { margin-left: -12px; }
@@ -502,10 +504,18 @@
 .dealt-card-shell:first-child .playing-card { transform: rotate(-5deg); }
 .dealt-card-shell:last-child .playing-card { transform: rotate(5deg); }
 
+/* The fallbacks are not decoration. A bare var(--deal-x) that resolves to
+   nothing makes the whole transform invalid at computed-value time, so the
+   property falls back to `none` and the card animates from its own resting
+   place -- no movement at all. That is exactly what the local player got:
+   .seat-ring declared these variables and .seat-first-person never did, so
+   your own cards only ever faded in. poker-table.tsx now measures a real
+   vector per seat and sets them inline; these values are what a hand dealt
+   before that first measurement uses. */
 @keyframes deal-to-seat {
   0% {
     opacity: 0;
-    transform: translate(var(--deal-x), var(--deal-y)) scale(.35) rotate(-18deg);
+    transform: translate(var(--deal-x, 0px), var(--deal-y, 120px)) scale(.35) rotate(-18deg);
     filter: blur(1px);
   }
   72% { opacity: 1; }

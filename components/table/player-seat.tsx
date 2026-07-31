@@ -5,6 +5,7 @@ import clsx from "clsx";
 import Image from "next/image";
 import type { PublicSeat } from "@/lib/game/types";
 import { avatarFigure } from "@/lib/cosmetics/catalog";
+import { dealDelayMs } from "@/lib/game/deal-choreography";
 import { missingArtwork } from "@/components/artwork-cache";
 import { PlayingCard } from "./playing-card";
 import { SeatTimer } from "./seat-timer";
@@ -68,19 +69,35 @@ function SeatCards({
   handNumber,
   folded,
   isWinner,
+  dealSlot,
+  dealSeatCount,
+  dealVector,
 }: {
   seat: PublicSeat;
   handNumber: number;
   folded: boolean;
   isWinner: boolean;
+  dealSlot: number;
+  dealSeatCount: number;
+  dealVector: { dx: number; dy: number } | null;
 }) {
   return (
-    <div className={clsx("seat-cards", seat.isMine && "own-cards", isWinner && "winning-cards")}>
+    <div
+      className={clsx("seat-cards", seat.isMine && "own-cards", isWinner && "winning-cards")}
+      // Left unset until the table has been measured, so 08-seat.css's
+      // fallback applies for that first paint rather than a zero vector
+      // freezing the cards in place. A hand dealt before the first
+      // measurement lands still animates -- just from below the seat, the
+      // way it always used to.
+      style={dealVector
+        ? ({ "--deal-x": `${dealVector.dx}px`, "--deal-y": `${dealVector.dy}px` } as React.CSSProperties)
+        : undefined}
+    >
       {!folded && seat.holeCards.map((card, index) => (
         <span
           className="dealt-card-shell"
           key={`${handNumber}-${index}`}
-          style={{ animationDelay: `${160 + seat.position * 115 + index * 460}ms` }}
+          style={{ animationDelay: `${dealDelayMs(dealSlot, index, dealSeatCount)}ms` }}
         >
           <PlayingCard card={card} small={!seat.isMine} large={seat.isMine} />
         </span>
@@ -155,6 +172,9 @@ export const PlayerSeat = memo(function PlayerSeat({
   turnDeadlineAt,
   elementRef,
   seatStyle,
+  dealSlot,
+  dealSeatCount,
+  dealVector,
 }: {
   seat: PublicSeat;
   placement: string;
@@ -162,6 +182,11 @@ export const PlayerSeat = memo(function PlayerSeat({
   winAmount?: number;
   smallBlind: number;
   bigBlind: number;
+  /** Position on the ring as drawn, 0 being the local player's near edge. */
+  dealSlot: number;
+  dealSeatCount: number;
+  /** Offset from this seat to the deck, measured; null until that has happened. */
+  dealVector: { dx: number; dy: number } | null;
   /** ISO strings, so they are stable props and the memo below still holds. */
   turnStartedAt: string | null;
   turnDeadlineAt: string | null;
@@ -179,6 +204,9 @@ export const PlayerSeat = memo(function PlayerSeat({
       handNumber={handNumber}
       folded={folded}
       isWinner={isWinner}
+      dealSlot={dealSlot}
+      dealSeatCount={dealSeatCount}
+      dealVector={dealVector}
     />
   );
   const figure = <SeatFigure seat={seat} active={seat.isCurrent} />;
@@ -256,4 +284,15 @@ export const PlayerSeat = memo(function PlayerSeat({
   && previous.turnStartedAt === next.turnStartedAt
   && previous.turnDeadlineAt === next.turnDeadlineAt
   && previous.seatStyle === next.seatStyle
+  && previous.dealSlot === next.dealSlot
+  && previous.dealSeatCount === next.dealSeatCount
+  // By value, not identity. The vector arrives from a measurement that runs
+  // on every observed resize; comparing the object would re-render all six
+  // seats whenever the table was measured again to the same numbers. Leaving
+  // it out of the comparator entirely is the other trap -- a seat would keep
+  // the vector it was first rendered with and deal from the wrong place for
+  // the rest of the session, which is how the turn timer nearly shipped
+  // never mounting at all.
+  && previous.dealVector?.dx === next.dealVector?.dx
+  && previous.dealVector?.dy === next.dealVector?.dy
 ));

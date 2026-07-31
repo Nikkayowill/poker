@@ -165,6 +165,50 @@ export function PokerTable({
       window.requestAnimationFrame(() => setDealerAnimated(true));
     }
   }, [dealerSeatId]);
+
+  // Where each seat's cards come from: the deck, which is the same point on
+  // the felt that every chip flies to. Measured against .pot-anchor rather
+  // than derived from the seat ellipse, for two reasons. The ellipse is in
+  // percentages of the table box and knows nothing about how far .seat-cards
+  // hangs below a seat's anchor, and the local player is not on the ellipse
+  // at all -- they are in the foreground at a distance that is itself
+  // measured (foregroundDrop). One measurement covers both, at every
+  // breakpoint, with no arithmetic to keep in step with the stylesheets.
+  //
+  // The old value was a flat --deal-y: 120px on .seat-ring, so every card
+  // rose from directly beneath its own seat, and the local player -- whose
+  // .seat-first-person never declared the variables at all -- got an
+  // invalid transform and no movement whatsoever.
+  const [dealVectors, setDealVectors] = useState<Record<string, { dx: number; dy: number }>>({});
+  const measureDealVectors = useCallback(() => {
+    const anchorEl = potRef.current;
+    if (!anchorEl) return;
+    const anchor = anchorEl.getBoundingClientRect();
+    const anchorX = anchor.left + anchor.width / 2;
+    const anchorY = anchor.top + anchor.height / 2;
+    setDealVectors((previous) => {
+      const next: Record<string, { dx: number; dy: number }> = {};
+      let changed = false;
+      for (const [seatId, element] of Object.entries(seatRefs.current)) {
+        if (!element) continue;
+        const rect = element.getBoundingClientRect();
+        // Deck minus seat: the offset the card starts at, relative to where
+        // it will come to rest.
+        const dx = Math.round(anchorX - (rect.left + rect.width / 2));
+        const dy = Math.round(anchorY - (rect.top + rect.height / 2));
+        next[seatId] = { dx, dy };
+        if (previous[seatId]?.dx !== dx || previous[seatId]?.dy !== dy) changed = true;
+      }
+      // Bail out on an unchanged measurement. This runs from a ResizeObserver,
+      // and returning a fresh object every time would re-render every seat on
+      // any observed resize for no reason.
+      if (!changed && Object.keys(next).length === Object.keys(previous).length) {
+        return previous;
+      }
+      return next;
+    });
+  }, []);
+
   // Opponents ring the table on a projected ellipse. Slot 0 is the near edge
   // where the local player sits; they are drawn in the foreground instead, so
   // the ring geometry for slot 0 is simply unused.
@@ -206,20 +250,28 @@ export function PokerTable({
   );
 
   const seatOrderKey = orderedSeats.map((seat) => seat.id).join(",");
-  useEffect(() => {
+  // Both vectors answer the same question -- where is this seat, relative to
+  // the middle of the table -- so they are measured together and on exactly
+  // the same triggers. Splitting them would mean two sets of observers that
+  // could disagree about the layout after a resize.
+  const measureTableVectors = useCallback(() => {
+    measureDealVectors();
     measureDealer();
-  }, [measureDealer, seatOrderKey, historyOpen]);
+  }, [measureDealVectors, measureDealer]);
+  useEffect(() => {
+    measureTableVectors();
+  }, [measureTableVectors, seatOrderKey, historyOpen]);
   useEffect(() => {
     const wrap = tableWrapRef.current;
     if (!wrap) return;
-    const observer = new ResizeObserver(() => measureDealer());
+    const observer = new ResizeObserver(() => measureTableVectors());
     observer.observe(wrap);
-    window.addEventListener("orientationchange", measureDealer);
+    window.addEventListener("orientationchange", measureTableVectors);
     return () => {
       observer.disconnect();
-      window.removeEventListener("orientationchange", measureDealer);
+      window.removeEventListener("orientationchange", measureTableVectors);
     };
-  }, [measureDealer]);
+  }, [measureTableVectors]);
 
   // Chips fly from a seat to the pot only for an authoritative *increase* in
   // that seat's committed-this-street amount versus the last snapshot on the
@@ -537,6 +589,12 @@ export function PokerTable({
                 // puck keep measuring the right spot.
                 placement={seat.isMine ? "seat-first-person" : "seat-ring"}
                 seatStyle={seat.isMine ? firstPersonStyle : ringGeometry[index]}
+                // The ring slot, not the engine's seat position: dealing runs
+                // round the table as it looks from this chair, which puts the
+                // local player first. See lib/game/deal-choreography.ts.
+                dealSlot={index}
+                dealSeatCount={orderedSeats.length}
+                dealVector={dealVectors[seat.id] ?? null}
                 handNumber={game.handNumber}
                 smallBlind={game.smallBlind}
                 bigBlind={game.bigBlind}

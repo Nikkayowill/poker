@@ -253,7 +253,13 @@
   to { opacity: 1; transform: translate(-50%, 0) scale(1); filter: blur(0); }
 }
 
-.winning-cards { animation: winning-cards-glow 1.1s ease-in-out .7s 2; }
+/* One pulse, not two. It used to beat twice because this glow was the only
+   thing marking a winning hand; M9 gives the five cards that actually won a
+   gold ring and a lift of their own, so a second pulse over the whole pair is
+   repeating a point already made -- and it was the single longest thing on a
+   finished table, at 2.9s, which is dead air now that nobody has a button to
+   press during it. */
+.winning-cards { animation: winning-cards-glow 1.1s ease-in-out .7s 1; }
 @keyframes winning-cards-glow {
   50% { filter: drop-shadow(0 0 10px rgba(240,220,150,.85)); }
 }

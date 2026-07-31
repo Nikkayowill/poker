@@ -87,11 +87,20 @@ export function ActionBar({
 
   if (game.status === "complete") {
     const busted = game.isSeated && mySeat?.stack === 0;
+    // A finished hand carries a deadline for the next one unless the table
+    // cannot deal another -- fewer than two seats with chips left. The Deal
+    // button used to be the way out of that; with the deal automatic there is
+    // no button, so without this the controls are simply empty and the only
+    // exit is the header. Reading the deadline rather than counting stacks
+    // keeps this agreeing with scheduleNextHand by construction.
+    const tableIsDone = game.isSeated && !busted && !game.nextHandAt;
     return (
       <div className="action-bar">
         <div className="action-slot-status">
           <span className="action-kicker">
-            {!game.isSeated ? "Seat closed" : busted ? "Stack exhausted" : "Hand complete"}
+            {!game.isSeated
+              ? "Seat closed"
+              : busted ? "Stack exhausted" : tableIsDone ? "Table finished" : "Hand complete"}
           </span>
           <strong>
             {!game.isSeated
@@ -100,7 +109,7 @@ export function ActionBar({
           </strong>
         </div>
         <div className="action-slot-controls">
-          {!game.isSeated && (
+          {(!game.isSeated || tableIsDone) && (
             <button className="primary-action action-slot-wide" onClick={onLeave}>Return to lobby</button>
           )}
           {game.isSeated && busted && (

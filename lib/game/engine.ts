@@ -77,11 +77,17 @@ export const STARTING_TIME_CARDS = 3;
 /**
  * How long a finished hand stays on screen before the next one is dealt.
  *
- * Long enough to read the result and watch the pot travel: the winner badge
- * lands at .55s and the chip funnel runs 1.18s from a .78s offset, so the
- * celebration is over by about two seconds and this leaves a beat after it.
+ * Derived from the celebration rather than chosen: the longest animation on a
+ * finished table is win-amount-rise, 1.4s from a .78s offset, so everything is
+ * over at 2.18s and this leaves a beat after it. app/styles/stylesheets.test.ts
+ * reads the stylesheets and fails if any celebration animation grows past this,
+ * which is the only way the two can be kept honest -- nothing else in the
+ * toolchain reads both a TypeScript constant and a CSS keyframe.
+ *
+ * Was 4s. Shortened once the deal became automatic: with no button to press,
+ * the wait is dead air rather than a chance to act.
  */
-export const NEXT_HAND_DELAY_MS = 4_000;
+export const NEXT_HAND_DELAY_MS = 2_800;
 
 /**
  * The same wait, for a table where a seated human has just lost their last

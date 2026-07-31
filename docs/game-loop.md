@@ -76,10 +76,14 @@ the same thing forever.
 
 Two delays:
 
-- `NEXT_HAND_DELAY_MS` (4s) — long enough to read the result and watch the pot
-  travel. The winner badge lands at .55s and the chip funnel runs 1.18s from a
-  .78s offset, so the celebration is over around two seconds and this leaves a
-  beat after it.
+- `NEXT_HAND_DELAY_MS` (2.8s) — derived from the celebration rather than
+  chosen. The longest animation on a finished table is `win-amount-rise`, 1.4s
+  from a .78s offset, so everything is over at 2.18s and this leaves a beat
+  after it. `app/styles/stylesheets.test.ts` reads the stylesheets and fails if
+  any celebration animation grows past the constant, because nothing else in
+  the toolchain reads both a TypeScript value and a CSS keyframe. It was 4s
+  while a player still pressed a button to move on; once the deal became
+  automatic that extra second was dead air rather than a chance to act.
 - `BUSTED_REBUY_GRACE_MS` (20s) — when a seated *human* has just lost their
   last chip. Dealing on the normal beat runs `releaseBustedHumanSeats` and
   hands their seat to a bot with the rebuy dialog still open in front of them.
@@ -126,6 +130,15 @@ here for three separate reasons, any one of which is fatal.
 - A `setTimeout` inside `waitUntil` holds a billed serverless isolate idle for
   the whole delay, per completed hand, per table — and still does not deliver
   sub-second responsiveness, because it is explicitly waiting.
+
+**A manual "Deal next hand" button.** This is what the table used to have, and
+it was removed rather than kept alongside the timer: two ways to start a hand
+means a button that is usually a no-op by the time it is pressed, and clutter
+in the one strip that has to stay legible. The one place it survives is the
+busted player's "Close seat", which is a different decision wearing the same
+action. The cost is that a table which *cannot* deal again has no button to
+offer, so ActionBar reads `nextHandAt` and offers "Return to lobby" instead of
+an empty control row.
 
 **A persistent Node worker.** The code for one exists in
 `lib/server/table-manager/`, and `assertPersistentTableRuntime()` throws

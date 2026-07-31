@@ -232,6 +232,50 @@ export function PokerApp() {
     return () => window.clearTimeout(timer);
   }, [loadProfile]);
 
+  /**
+   * Gives a first-time visitor an actual profile once they enter the lobby.
+   *
+   * The load above deliberately creates nothing -- 3bbc117 stopped read-only
+   * routes minting a player per request -- and the session token itself is
+   * not minted until POST /api/auth/session-preference, the first call
+   * either entry path makes. So a brand-new browser reaches the lobby
+   * holding a fresh cookie with nothing behind it: profile null, 0 Gold,
+   * every stakes tier reading "Need N Gold", and the buy-in modal's confirm
+   * disabled with no way to ever enable it.
+   *
+   * Deliberately its own effect rather than an await inside continueAsGuest.
+   * Awaiting there fixes this path too, but it puts setEntryComplete behind
+   * a network round trip and so changes when the ?table= effect below runs
+   * -- and that effect is what puts you back at a table you were already
+   * sitting at. Creating the profile alongside it instead leaves that timing
+   * byte-for-byte unchanged and needs no edit to either entry handler.
+   *
+   * POST /api/profile is the only route that both mints the token and calls
+   * ensureProfile, and it is idempotent per token, so arriving here with a
+   * profile that already exists costs a lookup and nothing else. A failure
+   * is not retried on a timer: the deps cannot change while profile stays
+   * null, which is what keeps a dead network from becoming a request loop.
+   */
+  useEffect(() => {
+    if (!entryComplete || profile || profileLoading) return;
+    let active = true;
+    void fetch("/api/profile", { method: "POST" })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "Could not start your profile.");
+        if (!active) return;
+        setProfile(data.profile);
+        setPersistence(data.persistence);
+      })
+      .catch((caught) => {
+        if (!active) return;
+        setError(caught instanceof Error ? caught.message : "Could not start your profile.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [entryComplete, profile, profileLoading]);
+
   useEffect(() => {
     if (!("serviceWorker" in window.navigator)) return;
     if (process.env.NODE_ENV === "production") {
@@ -824,21 +868,12 @@ export function PokerApp() {
     setSignInPending(true);
     try {
       await applySessionPreference();
-      // KNOWN BUG -- a first-time guest reaches the lobby with `profile` still
-      // null and therefore 0 Gold, so every stakes tier reads "Need N Gold"
-      // and the buy-in modal's confirm never enables. The comment that used to
-      // sit here claimed the entry card's own loadProfile had already created
-      // the guest profile; 3bbc117 ("Stop read-only routes from creating a
-      // player per request") made that false -- the initial GET now answers
-      // {profile: null} and creates nothing.
-      //
-      // Awaiting loadProfile() here does fix that path and makes
-      // multiplayer.spec.ts:53 pass, but it reorders this against the
-      // `?table=` effect below (whose refresh/joinByCode identities change
-      // when profile/persistence are set) and breaks resuming an existing
-      // table: the local seat renders with no hole cards. Verified both ways
-      // by stashing. Needs a proper look at the profile/session/refresh
-      // sequencing rather than an extra await here.
+      // Nothing is awaited between minting the session and opening the lobby,
+      // on purpose. The profile a first-time guest needs is created by the
+      // effect near loadProfile above, which runs off `entryComplete` rather
+      // than blocking it -- so the `?table=` effect below still fires on the
+      // same tick it always did and resuming a table you were seated at is
+      // untouched. Adding an await here is what breaks that.
       setEntryComplete(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not open the lobby.");

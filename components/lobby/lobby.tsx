@@ -109,6 +109,27 @@ export function Lobby({
     );
   }
 
+  // The hub below is keyed on the profile where it is rendered, so mounting
+  // it before one exists means React tears the whole thing down and rebuilds
+  // it the moment the profile lands -- wiping the name being typed and
+  // resetting buyInMode, which silently closes the buy-in modal mid-flow.
+  // A first-time visitor is the only case where this is null, and only for
+  // as long as one POST takes, so waiting is both cheap and the honest thing
+  // to show: there is no balance to render yet.
+  if (!profile) {
+    return (
+      <main className="lobby lobby-hub">
+        <section className="hub">
+          <div className="hub-head">
+            <div className="lobby-kicker">StackChips · 6-max</div>
+            <h1>Preparing your seat…</h1>
+            {error && <p className="form-error"><X size={14} /> {error}</p>}
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="lobby lobby-hub">
       <section className="hub">

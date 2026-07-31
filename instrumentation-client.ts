@@ -5,6 +5,18 @@
 import * as Sentry from "@sentry/nextjs";
 
 Sentry.init({
+  // Production only. The DSN below is a literal, so without this every
+  // `npm run dev` session and every Playwright run reported into the live
+  // project -- half-written code and deliberately-exercised error paths
+  // landing beside real user errors, against the same event quota.
+  //
+  // It also cost real time. Browser events are tunnelled through this app's
+  // own server (tunnelRoute in next.config.ts), so when Sentry is slow or
+  // unreachable the dev server blocks on the outbound socket rather than
+  // just dropping a beacon. That is what made tests/e2e/multiplayer.spec.ts:89
+  // fail: its six-player setup has to finish inside the 15s turn clock that
+  // starts when the hand is dealt, and queued tunnel requests pushed it past.
+  enabled: process.env.NODE_ENV === "production",
   dsn: "https://efb9926f9cb083a49673e5d2c9dfd59e@o4511821964509184.ingest.us.sentry.io/4511821967130624",
 
   // Add optional integrations for additional features

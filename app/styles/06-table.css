@@ -227,24 +227,25 @@
 }
 
 /* The black space around the table, put to work.
-   Pinned to the top of .table-area rather than centred in it: the measured
-   gap between the top of that box and the highest seat is 70px on desktop
-   and 58px on a portrait phone, which is room enough to read a pot at a size
-   the felt never had room for. A short landscape phone has only 18px there,
-   so 12-responsive.css turns this into a left-aligned row and spends the
-   horizontal room instead -- that file already owns the landscape table. */
+   Pinned to the top of .table-area rather than centred in it.
+
+   The margins of this band, never the middle. The seat ring overhangs the
+   felt at the top by more than the band is tall -- measured at 1440x900 the
+   top seat starts at y=101 while .poker-table-wrap starts at y=117 -- so the
+   centre of this strip is occupied by a player's head, and the band is only
+   really free at the left and right edges where the table narrows away. The
+   pot was drawn here across the top seat until it moved to the header; what
+   is left is a log on one side and the stakes on the other, both of which sit
+   outside the ring at every breakpoint. */
 .table-hud {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   z-index: 4;
-  /* Three columns rather than a centred flex row, so the pot sits on the
-     table's true centre line instead of being pushed off it by the width of
-     the stakes pill beside it. The pot is the number people look for. */
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: clamp(10px, 1.6vw, 20px);
   padding: clamp(2px, .7vh, 7px) 12px 0;
   /* Decoration over the workspace: never intercepts a drag aimed at the
@@ -253,14 +254,11 @@
   pointer-events: none;
 }
 
-/* Column 1 of the HUD grid, which has been empty since the pot took the
-   middle. Reads bottom-up like a chat log so the newest line sits nearest the
-   table, and fades with age so the eye can ignore it entirely while a
-   decision is on. pointer-events stay off -- it is something to glance at,
-   never something to hit. */
+/* The left margin of the band. Reads bottom-up like a chat log so the newest
+   line sits nearest the table, and fades with age so the eye can ignore it
+   entirely while a decision is on. pointer-events stay off -- it is something
+   to glance at, never something to hit. */
 .table-feed {
-  grid-column: 1;
-  justify-self: start;
   display: flex;
   flex-direction: column-reverse;
   gap: 1px;
@@ -288,7 +286,17 @@
 .table-feed .table-feed-win { color: rgba(242,220,144,.82); }
 .table-feed .table-feed-deal { color: rgba(226,235,228,.38); }
 
-.pot-display { grid-column: 2; text-align: center; }
+/* The pot lives in .game-header now, not in this band -- but its type stays
+   here with the rest of the table's readouts rather than moving to
+   05-game-header.css, because what it says belongs to the hand and not to the
+   chrome it happens to be printed on. Where it sits in that header is a
+   question about the header, and is answered there. */
+.pot-display {
+  text-align: center;
+  /* Never in the way of the header actions, which scroll horizontally on a
+     phone and would otherwise lose a swipe that started over the pot. */
+  pointer-events: none;
+}
 
 .pot-display > span {
   display: block;
@@ -318,13 +326,11 @@
   100% { transform: scale(.85); opacity: .35; }
 }
 
-/* The stakes, beside the pot rather than under it. On the felt this line sat
+/* The stakes, on the right margin of the band. On the felt this line sat
    at 26% + 46px, which at 1440x900 put it at y=407 -- eleven pixels into the
    community card row it was supposed to sit above. Out here it has its own
    room and can be read without competing with the board. */
 .blind-structure {
-  grid-column: 3;
-  justify-self: start;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -516,13 +522,11 @@
   to { opacity: .38; filter: saturate(.45) brightness(.82); }
 }
 
-/* The result, in the black space beside the pot rather than at the far end of
-   the action bar from the cards it is about. Column 3 of .table-hud's grid --
-   the same slot the stakes pill uses, which is why the pill steps aside for
-   it while a hand is being paid out. */
+/* The result, in the black space above the table rather than at the far end
+   of the action bar from the cards it is about. The right margin of the band
+   -- the same place the stakes pill sits, which is why the pill steps aside
+   for it while a hand is being paid out. */
 .hand-result {
-  grid-column: 3;
-  justify-self: start;
   display: flex;
   flex-direction: column;
   gap: 2px;

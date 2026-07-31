@@ -25,31 +25,53 @@ for (const viewport of [
       await expect(structure).toContainText("BB 10");
 
       // The pot and the stakes read in the black space around the table, not
-      // on the cloth. Asserted as "no pixel of either overlaps the rail",
-      // because the defect this replaced was an overlap and not an absence:
-      // both elements were perfectly visible while the blinds line was drawn
-      // across the top of the community card row.
+      // on the cloth. Asserted as an overlap and not an absence: the defect
+      // this replaced had both elements perfectly visible while the blinds
+      // line was drawn across the top of the community card row.
+      //
+      // Against the seats as well as the rail, because the rail alone is the
+      // weaker claim and it passed while the pot was unreadable. The ring
+      // overhangs the felt -- at 1440x900 the top seat begins 16px above
+      // .poker-table-wrap -- so growing the table in the Slot 0 refactor
+      // walked a player's head up into the HUD band and printed the pot
+      // across it, 20px deep on desktop and 10px on a phone, with this
+      // spec green throughout. A readout that clears the cloth but not the
+      // person sitting at it has not cleared anything.
       const overlap = await page.evaluate(() => {
         const rect = (selector: string) =>
           document.querySelector(selector)?.getBoundingClientRect() ?? null;
+        const hits = (box: DOMRect | null, other: DOMRect | null) =>
+          Boolean(box && other
+            && box.left < other.right && box.right > other.left
+            && box.top < other.bottom && box.bottom > other.top);
         const rail = rect(".poker-rail");
-        const intersects = (box: DOMRect | null) =>
-          Boolean(box && rail
-            && box.left < rail.right && box.right > rail.left
-            && box.top < rail.bottom && box.bottom > rail.top);
+        const seats = [...document.querySelectorAll(".player-seat")]
+          .map((seat) => seat.getBoundingClientRect());
+        const clearOfSeats = (selector: string) => {
+          const box = rect(selector);
+          return Boolean(box) && !seats.some((seat) => hits(box, seat));
+        };
         return {
           foundRail: Boolean(rail),
-          pot: intersects(rect(".pot-display")),
-          blinds: intersects(rect(".blind-structure")),
+          seatCount: seats.length,
+          potOnRail: hits(rect(".pot-display"), rail),
+          blindsOnRail: hits(rect(".blind-structure"), rail),
+          potClearOfSeats: clearOfSeats(".pot-display"),
+          blindsClearOfSeats: clearOfSeats(".blind-structure"),
+          feedClearOfSeats: clearOfSeats(".table-feed"),
           // The chip-flight target stays behind on the felt; if this ever
           // stops overlapping the rail, chips are flying to the margin.
-          anchorOnFelt: intersects(rect(".pot-anchor")),
+          anchorOnFelt: hits(rect(".pot-anchor"), rail),
         };
       });
       expect(overlap).toEqual({
         foundRail: true,
-        pot: false,
-        blinds: false,
+        seatCount: 6,
+        potOnRail: false,
+        blindsOnRail: false,
+        potClearOfSeats: true,
+        blindsClearOfSeats: true,
+        feedClearOfSeats: true,
         anchorOnFelt: true,
       });
       await expect(page.locator(".seat-small-blind .blind-label")).toBeVisible();

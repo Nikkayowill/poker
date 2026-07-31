@@ -1,6 +1,36 @@
 /* The bar above the felt while a hand is running. */
 
 .game-header { height: 68px; padding: 0 28px; }
+
+/* The pot reads in the middle of this bar during a hand, so the bar becomes
+   three columns with equal sides -- which puts that middle on the viewport's
+   true centre, and therefore on the table's centre, directly above the chips
+   it is counting.
+ *
+ * Centring it absolutely would have been fewer lines and was wrong. The
+ * wordmark is 32px on a phone and the actions are ~112px, so an absolutely
+ * centred pot leaves 50px of unused room on its left while running into the
+ * buttons on its right: measured at 320x568 with the widest pot this app can
+ * make (six 500k stacks, all in, "3,000,000"), an 18.6px overlap, and only
+ * 8.9px of clearance at 375. Laid out as siblings they cannot overlap at any
+ * width for any pot -- the sides give way instead, and the header actions
+ * already scroll horizontally on a phone for exactly that reason.
+ *
+ * minmax(0, 1fr) rather than 1fr: a bare 1fr floors at the column's
+ * min-content, and the wordmark's is wider than the actions', which pushed
+ * the middle column 6px off centre at every width tested. */
+.game-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+}
+/* The wordmark is the "leave table" button. Stretched to its column it would
+   be clickable across a third of the bar, so a tap on empty black would drop
+   you out of a hand. The actions do stretch, deliberately: the box is the
+   horizontal scroller 12-responsive.css relies on, and flex-end keeps the
+   buttons against the right edge whenever the content does fit. */
+.game-header .wordmark { justify-self: start; }
+.game-header .game-header-actions { justify-content: flex-end; }
 .game-header .mark { width: 32px; height: 32px; font-size: 17px; }
 .game-header .mark::after { font-size: 17px; }
 .game-header .wordmark { font-size: 16px; }

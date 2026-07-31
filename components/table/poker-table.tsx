@@ -457,6 +457,21 @@ export function PokerTable({
           <span className="mark">S</span>
           <span>StackChips<small>NO LIMIT HOLD’EM</small></span>
         </button>
+        {/* The pot, in the one strip of the screen no seat can ever reach.
+            It spent its last two milestones in .table-hud, pinned to the top
+            of .table-area -- which was correct while there were 70 clear
+            pixels there. The Slot 0 refactor spent most of them on a bigger
+            table, and the ring's top seat now overhangs the felt far enough
+            up that the pot was drawn across its head: 20px of overlap at
+            1440x900, 10px on a 390px phone, measured. The header is chrome,
+            laid out above .game-content entirely, so nothing on the table can
+            grow into it no matter what the geometry does next. It also sits
+            on the same centre line as the pot on the cloth, directly above
+            the chips it is counting. */}
+        <div className={clsx("pot-display", showFunnel && "pot-display-paid")}>
+          <span>MAIN POT</span>
+          <strong><span className="chip-stack-icon" />{game.pot.toLocaleString()}</strong>
+        </div>
         <div className="game-header-actions">
           <button className="leave-button" onClick={onLeave}>Leave table</button>
           <Menu
@@ -489,16 +504,16 @@ export function PokerTable({
                 Who just folded, who raised and by how much -- the activity
                 drawer has always held this, two taps away, which is not
                 where anyone looks mid-hand. Newest first, and the count
-                drops to one on a phone where the band is 38px tall. */}
+                drops to one on a phone where the band is 38px tall.
+
+                Left and right margins only, now that the pot has moved to the
+                header. The middle of this band is where the top seat's head
+                is; anything drawn there collides with it. */}
             <ul className="table-feed" aria-live="polite">
               {game.log.slice(0, 3).map((entry) => (
                 <li key={entry.id} className={`table-feed-${entry.kind}`}>{entry.text}</li>
               ))}
             </ul>
-            <div className={clsx("pot-display", showFunnel && "pot-display-paid")}>
-              <span>MAIN POT</span>
-              <strong><span className="chip-stack-icon" />{game.pot.toLocaleString()}</strong>
-            </div>
             {/* The result, where the eye already is. The same sentence has
                 always been in the action bar, but that is the busiest strip
                 on the screen and it is at the far end of it from the cards

@@ -64,19 +64,38 @@ async function verifyLocalLayout(page: Page) {
   const avatar = local.locator(".local-avatar-slot");
   const cards = local.locator(".own-cards");
   const plate = local.locator(".seat-plate");
-  const actionBar = page.locator(".action-bar");
 
   await expect(avatar).toBeVisible();
   await expect(cards).toBeVisible();
   await expect(plate).toBeVisible();
   await expect(local.locator(".seat-turn-status")).toHaveCount(0);
 
-  const [avatarBox, cardsBox, plateBox, actionBox] = await Promise.all([
-    avatar.boundingBox(),
-    cards.boundingBox(),
-    plate.boundingBox(),
-    actionBar.boundingBox(),
-  ]);
+  // One synchronous pass in the page, not four round trips.
+  //
+  // ActionBar is keyed on game.version, so it remounts every time the table
+  // moves -- and since continuous play landed, the table moves on its own
+  // whether or not this test is doing anything. Four separate boundingBox()
+  // calls could therefore read four different renders, and the bar's node
+  // could be detached by the time its turn came, which surfaced as a null box
+  // and a test that passed alone and failed in the suite. Comparing four
+  // rectangles only means something if they were all measured at once anyway.
+  const boxes = await page.evaluate(() => {
+    const read = (selector: string, root: ParentNode = document) => {
+      const element = root.querySelector(selector);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return null;
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    };
+    const seat = document.querySelector(".seat-first-person");
+    return {
+      avatarBox: seat ? read(".local-avatar-slot", seat) : null,
+      cardsBox: seat ? read(".own-cards", seat) : null,
+      plateBox: seat ? read(".seat-plate", seat) : null,
+      actionBox: read(".action-bar"),
+    };
+  });
+  const { avatarBox, cardsBox, plateBox, actionBox } = boxes;
   expect(avatarBox).not.toBeNull();
   expect(cardsBox).not.toBeNull();
   expect(plateBox).not.toBeNull();

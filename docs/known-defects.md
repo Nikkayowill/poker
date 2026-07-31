@@ -6,7 +6,17 @@ a test asserts the corrected behaviour.
 
 ---
 
-## D1 — Local nameplate is overlapped by the action bar at 390×844
+## D1 — Local nameplate is overlapped by the action bar at 390×844 — CLOSED
+
+**Closed:** 2026-07-31. Fixed in M5 (`942f4fb`), which made the action bar a
+fixed height and gave every `.poker-table-wrap` width override a
+`--table-height-cap` term, and again in the playtest fixes (`bc6b2a1`), which
+added `--foreground-allowance` for the part of the seat that hangs below the
+felt. Asserted by `tests/e2e/action-bar.spec.ts:103`, which puts the local
+player on turn with the raise drawer open and compares `.seat-plate` against
+`.action-bar` -- the test the notes below asked for. Kept in full because the
+diagnosis is the useful part: the first version of this entry was wrong, and
+the way it was wrong recurs.
 
 **Found:** 2026-07-31, during M1. **Owner:** M5 (action bar rebuild). **Severity:** high — the affected state is "it is your turn on a phone", the most common state in mobile play.
 

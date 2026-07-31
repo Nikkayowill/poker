@@ -19,7 +19,7 @@ function wonHand(token: string, amountWon: number) {
   seat.holeCards = [{ rank: "A", suit: "spades" }, { rank: "K", suit: "spades" }];
   seat.committed = 500;
   seat.vpip = true;
-  state.winners = [{ seatId: seat.id, name: seat.name, amount: amountWon, hand: "Flush" }];
+  state.winners = [{ seatId: seat.id, name: seat.name, amount: amountWon, hand: "Flush", bestFive: null }];
   return state;
 }
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { Check, FoldVertical, RotateCcw, TimerReset } from "lucide-react";
+import { Check, FoldVertical, TimerReset } from "lucide-react";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { TIER_CONFIG } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -120,15 +120,6 @@ export function ActionBar({
                 Rebuy
               </button>
             </>
-          )}
-          {game.isSeated && !busted && (
-            <button
-              className="primary-action action-slot-wide"
-              disabled={pending}
-              onClick={() => onAction({ type: "next-hand" })}
-            >
-              <RotateCcw size={16} /> Deal next hand
-            </button>
           )}
         </div>
         {showRebuyModal && (

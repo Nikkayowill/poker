@@ -33,7 +33,7 @@ function finishedHand(overrides: Partial<{
   });
   const winnerIndex = overrides.winnerIndex ?? 0;
   const amount = overrides.amount ?? 250;
-  game.winners = [{ seatId: game.seats[winnerIndex].id, name: game.seats[winnerIndex].name, amount, hand: "Flush" }];
+  game.winners = [{ seatId: game.seats[winnerIndex].id, name: game.seats[winnerIndex].name, amount, hand: "Flush", bestFive: null }];
   game.status = "complete";
   game.street = "showdown";
   game.currentPlayer = null;

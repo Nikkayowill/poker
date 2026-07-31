@@ -61,6 +61,15 @@ export interface Winner {
   name: string;
   amount: number;
   hand: string;
+  /**
+   * The exact five cards that won, so the table can show why.
+   *
+   * Null unless the hand reached a genuine showdown. An uncontested pot is
+   * won without showing anything, and publishing the winner's best five there
+   * would expose hole cards that every other player folded without seeing --
+   * the same rule the handLabel on a seat follows.
+   */
+  bestFive: Card[] | null;
 }
 
 export interface LogEntry {

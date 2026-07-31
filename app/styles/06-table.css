@@ -365,6 +365,76 @@
 }
 .community-card-backface { transform: rotateY(180deg); }
 
+/* The five cards that won, and the ones that did not.
+   Both halves matter. Lighting the winners alone reads as decoration; muting
+   everything else is what turns the board into an explanation -- you can see
+   which cards were used and, just as usefully, which were not. */
+.community-card-winning {
+  animation: winning-card-lift .5s cubic-bezier(.2,.9,.25,1.1) .35s both;
+}
+
+.community-card-winning .playing-card,
+.dealt-card-winning .playing-card {
+  border-color: rgba(242,220,144,.75);
+  box-shadow:
+    0 0 0 2px rgba(242,220,144,.55),
+    0 10px 26px rgba(0,0,0,.4),
+    0 0 26px rgba(242,220,144,.28);
+}
+
+.community-card-spent,
+.dealt-card-spent {
+  animation: spent-card-fade .45s ease .35s both;
+}
+
+@keyframes winning-card-lift {
+  0% { transform: translateY(0) scale(1); }
+  60% { transform: translateY(-9px) scale(1.06); }
+  100% { transform: translateY(-5px) scale(1.04); }
+}
+
+@keyframes spent-card-fade {
+  to { opacity: .38; filter: saturate(.45) brightness(.82); }
+}
+
+/* The result, in the black space beside the pot rather than at the far end of
+   the action bar from the cards it is about. Column 3 of .table-hud's grid --
+   the same slot the stakes pill uses, which is why the pill steps aside for
+   it while a hand is being paid out. */
+.hand-result {
+  grid-column: 3;
+  justify-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: hand-result-in .45s cubic-bezier(.2,.9,.25,1.08) .3s both;
+}
+
+.hand-result-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.hand-result-line b { color: #edf3ee; font-weight: 700; }
+.hand-result-amount { color: #7ee0a6; font-weight: 700; }
+.hand-result-line i {
+  color: rgba(226,235,228,.6);
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: .04em;
+}
+
+@keyframes hand-result-in {
+  from { opacity: 0; transform: translateY(-5px); }
+}
+
+/* Two things cannot share column 3. The result is the news; the stakes are
+   always true and can wait four seconds. */
+.table-hud:has(.hand-result) .blind-structure { display: none; }
+
 @keyframes community-flip {
   0% {
     opacity: 0;

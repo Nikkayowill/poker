@@ -6,6 +6,7 @@ import Image from "next/image";
 import type { PublicSeat } from "@/lib/game/types";
 import { avatarFigure } from "@/lib/cosmetics/catalog";
 import { dealDelayMs } from "@/lib/game/deal-choreography";
+import { isWinningCard } from "@/lib/game/winning-cards";
 import { missingArtwork } from "@/components/artwork-cache";
 import { PlayingCard } from "./playing-card";
 import { SeatTimer } from "./seat-timer";
@@ -72,6 +73,7 @@ function SeatCards({
   dealSlot,
   dealSeatCount,
   dealVector,
+  winningKeys,
 }: {
   seat: PublicSeat;
   handNumber: number;
@@ -80,6 +82,7 @@ function SeatCards({
   dealSlot: number;
   dealSeatCount: number;
   dealVector: { dx: number; dy: number } | null;
+  winningKeys: string | null;
 }) {
   return (
     <div
@@ -95,7 +98,16 @@ function SeatCards({
     >
       {!folded && seat.holeCards.map((card, index) => (
         <span
-          className="dealt-card-shell"
+          className={clsx(
+            "dealt-card-shell",
+            // Only the winner's own cards are marked. A losing contender's
+            // cards are face up at a showdown too, and dimming those would
+            // say "these lost" about a card that may well be the same rank
+            // as one that won.
+            isWinner && winningKeys && (isWinningCard(winningKeys, card)
+              ? "dealt-card-winning"
+              : "dealt-card-spent"),
+          )}
           key={`${handNumber}-${index}`}
           style={{ animationDelay: `${dealDelayMs(dealSlot, index, dealSeatCount)}ms` }}
         >
@@ -175,6 +187,7 @@ export const PlayerSeat = memo(function PlayerSeat({
   dealSlot,
   dealSeatCount,
   dealVector,
+  winningKeys,
 }: {
   seat: PublicSeat;
   placement: string;
@@ -187,6 +200,8 @@ export const PlayerSeat = memo(function PlayerSeat({
   dealSeatCount: number;
   /** Offset from this seat to the deck, measured; null until that has happened. */
   dealVector: { dx: number; dy: number } | null;
+  /** Cards that made the winning hand, as one comparable string. */
+  winningKeys: string | null;
   /** ISO strings, so they are stable props and the memo below still holds. */
   turnStartedAt: string | null;
   turnDeadlineAt: string | null;
@@ -207,6 +222,7 @@ export const PlayerSeat = memo(function PlayerSeat({
       dealSlot={dealSlot}
       dealSeatCount={dealSeatCount}
       dealVector={dealVector}
+      winningKeys={winningKeys}
     />
   );
   const figure = <SeatFigure seat={seat} active={seat.isCurrent} />;
@@ -295,4 +311,7 @@ export const PlayerSeat = memo(function PlayerSeat({
   // never mounting at all.
   && previous.dealVector?.dx === next.dealVector?.dx
   && previous.dealVector?.dy === next.dealVector?.dy
+  // A plain === because it is a string; see winning-cards.ts for why it is
+  // one rather than the Set it wants to be.
+  && previous.winningKeys === next.winningKeys
 ));

@@ -82,22 +82,53 @@ export function compareScores(a: HandScore, b: HandScore): number {
   return 0;
 }
 
-export function evaluateHand(cards: Card[]): HandScore {
+/**
+ * The same exhaustive search, carrying the winning combination out with the
+ * score instead of discarding it.
+ *
+ * Scoring is untouched -- scoreFive and compareScores decide, exactly as
+ * before, and evaluateHand still returns precisely what it always returned.
+ * The only new thing is that the five cards which produced the best score are
+ * no longer thrown away, so a showdown can point at them.
+ */
+function searchBestFive(cards: Card[]): { score: HandScore; cards: Card[] } {
   if (cards.length < 5) throw new Error("At least five cards are required.");
   let best: HandScore | null = null;
+  let bestCards: Card[] = [];
   for (let a = 0; a < cards.length - 4; a += 1) {
     for (let b = a + 1; b < cards.length - 3; b += 1) {
       for (let c = b + 1; c < cards.length - 2; c += 1) {
         for (let d = c + 1; d < cards.length - 1; d += 1) {
           for (let e = d + 1; e < cards.length; e += 1) {
-            const candidate = scoreFive([cards[a], cards[b], cards[c], cards[d], cards[e]]);
-            if (!best || compareScores(candidate, best) > 0) best = candidate;
+            const five = [cards[a], cards[b], cards[c], cards[d], cards[e]];
+            const candidate = scoreFive(five);
+            // Strictly greater, so ties keep the first combination found and
+            // the result stays deterministic for a given input order.
+            if (!best || compareScores(candidate, best) > 0) {
+              best = candidate;
+              bestCards = five;
+            }
           }
         }
       }
     }
   }
-  return best!;
+  return { score: best!, cards: bestCards };
+}
+
+export function evaluateHand(cards: Card[]): HandScore {
+  return searchBestFive(cards).score;
+}
+
+/**
+ * The exact five cards that make the best hand out of `cards`.
+ *
+ * Used to show a player *why* they won rather than only that they did. Callers
+ * must be sure the cards are legitimately visible first -- at a genuine
+ * showdown -- because this is derived from hole cards.
+ */
+export function bestFiveCards(cards: Card[]): Card[] {
+  return searchBestFive(cards).cards;
 }
 
 /**

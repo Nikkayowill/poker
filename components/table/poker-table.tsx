@@ -19,6 +19,7 @@ import { ChipFlight, MuckDrift, PotFunnel } from "./table-effects";
 import { HandHistoryDrawer } from "./hand-history-drawer";
 import { PlayerSeat } from "./player-seat";
 import { PlayingCard } from "./playing-card";
+import { isWinningCard, winningCardKeys } from "@/lib/game/winning-cards";
 
 /**
  * A seat's width, as a fraction of the table's width and of its height.
@@ -141,6 +142,12 @@ export function PokerTable({
   const seatRefs = useRef<Record<string, HTMLElement | null>>({});
   const tableWrapRef = useRef<HTMLDivElement | null>(null);
   const showFunnel = game.status === "complete" && game.winners.length > 0;
+  // Null unless the hand reached a genuine showdown: an uncontested pot has no
+  // bestFive to point at, because nobody saw the cards that won it.
+  const winningKeys = useMemo(
+    () => (showFunnel ? winningCardKeys(game.winners) : null),
+    [showFunnel, game.winners],
+  );
 
   const dealerSeatId = game.seats.find((seat) => seat.isDealer)?.id ?? null;
   const [dealerVector, setDealerVector] = useState<{ dx: number; dy: number } | null>(null);
@@ -482,6 +489,22 @@ export function PokerTable({
               <span>MAIN POT</span>
               <strong><span className="chip-stack-icon" />{game.pot.toLocaleString()}</strong>
             </div>
+            {/* The result, where the eye already is. The same sentence has
+                always been in the action bar, but that is the busiest strip
+                on the screen and it is at the far end of it from the cards
+                the hand was decided by. Keyed on the hand so it re-enters
+                for each one rather than sitting through the next deal. */}
+            {showFunnel && (
+              <div className="hand-result" key={game.handNumber} role="status" aria-live="polite">
+                {game.winners.map((winner) => (
+                  <span className="hand-result-line" key={winner.seatId}>
+                    <b>{winner.name}</b>
+                    <span className="hand-result-amount">+{winner.amount.toLocaleString()}</span>
+                    <i>{winner.hand}</i>
+                  </span>
+                ))}
+              </div>
+            )}
             <span
               className="blind-structure"
               title={`Small Blind ${game.smallBlind.toLocaleString()} · Big Blind ${game.bigBlind.toLocaleString()}`}
@@ -515,7 +538,17 @@ export function PokerTable({
                 <div className="community-cards">
                   {[0, 1, 2, 3, 4].map((index) => (
                     <span
-                      className={clsx("community-card-shell", game.community[index] && "community-card-revealed")}
+                      className={clsx(
+                        "community-card-shell",
+                        game.community[index] && "community-card-revealed",
+                        // Only ever both-or-neither: once there is a winning
+                        // hand to point at, every board card is either part of
+                        // it or explicitly not, so the five that won read as
+                        // chosen rather than merely lit.
+                        winningKeys && (isWinningCard(winningKeys, game.community[index])
+                          ? "community-card-winning"
+                          : "community-card-spent"),
+                      )}
                       key={`${game.handNumber}-${index}`}
                       style={{
                         "--community-delay": `${index < 3 ? index * 110 : 0}ms`,
@@ -595,6 +628,7 @@ export function PokerTable({
                 dealSlot={index}
                 dealSeatCount={orderedSeats.length}
                 dealVector={dealVectors[seat.id] ?? null}
+                winningKeys={winningKeys}
                 handNumber={game.handNumber}
                 smallBlind={game.smallBlind}
                 bigBlind={game.bigBlind}

@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from "crypto";
-import { compareScores, describeHand, evaluateHand, type HandScore } from "./evaluator";
+import { bestFiveCards, compareScores, describeHand, evaluateHand, type HandScore } from "./evaluator";
 import type {
   BotPersonality,
   Card,
@@ -576,7 +576,7 @@ function awardUncontested(state: GameState, seat: Seat) {
 
   seat.stack += amount;
   state.pot = potTotal;
-  state.winners = [{ seatId: seat.id, name: seat.name, amount, hand: "Uncontested" }];
+  state.winners = [{ seatId: seat.id, name: seat.name, amount, hand: "Uncontested", bestFive: null }];
   state.street = "showdown";
   state.status = "complete";
   setCurrentPlayer(state, null);
@@ -641,7 +641,16 @@ function showdown(state: GameState) {
   const winners: Winner[] = [...winnings.entries()].map(([seatId, amount]) => {
     const seat = state.seats.find((candidate) => candidate.id === seatId)!;
     seat.stack += amount;
-    return { seatId, name: seat.name, amount, hand: scores.get(seatId)!.name };
+    return {
+      seatId,
+      name: seat.name,
+      amount,
+      hand: scores.get(seatId)!.name,
+      // Safe here and only here: this is the showdown path, so these hole
+      // cards are already revealed to everyone by toSnapshot. awardUncontested
+      // deliberately leaves this null -- see the field's comment in types.ts.
+      bestFive: bestFiveCards([...seat.holeCards, ...state.community]),
+    };
   });
   state.winners = winners.sort((a, b) => b.amount - a.amount);
   state.pot = state.seats.reduce((sum, seat) => sum + seat.committed, 0);

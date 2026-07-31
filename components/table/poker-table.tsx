@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { History, TimerReset, Volume2, VolumeX, X } from "lucide-react";
+import {
+  Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, TimerReset, Trophy, Volume2, VolumeX, X,
+} from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
@@ -10,15 +12,13 @@ import {
   seatGeometry,
   seatZ,
 } from "@/lib/game/table-geometry";
-import { AuthButton } from "@/components/profile/auth-button";
-import { GoldBadge } from "@/components/profile/gold-badge";
-import { ProfileTrigger } from "@/components/profile/profile-avatar";
+import { Menu, type MenuItem } from "@/components/nav/menu";
+import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ActionBar } from "./action-bar";
 import { ChipFlight, MuckDrift, PotFunnel } from "./table-effects";
 import { HandHistoryDrawer } from "./hand-history-drawer";
 import { PlayerSeat } from "./player-seat";
 import { PlayingCard } from "./playing-card";
-import { RoomCodeChip } from "./room-code-chip";
 
 /**
  * A seat's width, as a fraction of the table's width and of its height.
@@ -46,7 +46,6 @@ export function seatWidthFor(table: { width: number; height: number }): number {
 
 export function PokerTable({
   game,
-  persistence,
   pending,
   error,
   onAction,
@@ -54,7 +53,6 @@ export function PokerTable({
   onLeaveSeat,
   profile,
   onCustomize,
-  onProfileChange,
   connectionState,
   soundEnabled,
   onToggleSound,
@@ -63,7 +61,6 @@ export function PokerTable({
   onSignOut,
 }: {
   game: GameSnapshot;
-  persistence: string;
   pending: boolean;
   error: string | null;
   onAction: (action: PlayerAction) => void;
@@ -71,7 +68,6 @@ export function PokerTable({
   onLeaveSeat: () => void;
   profile: PlayerProfile | null;
   onCustomize: () => void;
-  onProfileChange: (profile: PlayerProfile) => void;
   connectionState: ConnectionState;
   soundEnabled: boolean;
   onToggleSound: () => void;
@@ -326,66 +322,96 @@ export function PokerTable({
     const timer = window.setTimeout(() => setTimeoutFlash(null), 4000);
     return () => window.clearTimeout(timer);
   }, [timeoutFlash]);
+
+  const [roomCodeCopied, setRoomCodeCopied] = useState(false);
+  const copyRoomCode = useCallback(async () => {
+    if (!game.roomCode) return;
+    try {
+      await navigator.clipboard.writeText(game.roomCode);
+      setRoomCodeCopied(true);
+      window.setTimeout(() => setRoomCodeCopied(false), 1800);
+    } catch {
+      // Clipboard access can be denied by policy; the code is still readable
+      // in the menu, so there is nothing useful to recover here.
+    }
+  }, [game.roomCode]);
+
+  const menuItems = useMemo((): MenuItem[] => {
+    const items: MenuItem[] = [
+      {
+        kind: "action",
+        label: soundEnabled ? "Mute sound" : "Enable sound",
+        onSelect: onToggleSound,
+        icon: soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />,
+      },
+      {
+        kind: "action",
+        label: "Hand history",
+        onSelect: () => setHistoryOpen(true),
+        icon: <History size={15} />,
+      },
+    ];
+    if (game.isPrivate && game.roomCode) {
+      items.push({
+        kind: "action",
+        label: roomCodeCopied ? "Room code copied" : `Room code · ${game.roomCode}`,
+        onSelect: () => void copyRoomCode(),
+        icon: <Copy size={15} />,
+      });
+    }
+    items.push(
+      { kind: "separator" },
+      { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
+      { kind: "link", label: "Buy Gold", href: `/store?table=${game.id}`, icon: <Coins size={15} /> },
+      { kind: "link", label: "Leaderboard", href: "/leaderboard", icon: <Trophy size={15} /> },
+      { kind: "separator" },
+    );
+    if (profile) {
+      items.push({ kind: "action", label: "Edit profile", onSelect: onCustomize, icon: <Settings2 size={15} /> });
+    }
+    items.push(
+      profile?.isRegistered
+        ? { kind: "action", label: "Sign out", onSelect: onSignOut, icon: <LogOut size={15} /> }
+        : { kind: "action", label: "Sign in", onSelect: onSignIn, icon: <LogIn size={15} /> },
+    );
+    if (game.isSeated) {
+      items.push({
+        kind: "action",
+        label: "Give up seat",
+        onSelect: onLeaveSeat,
+        icon: <DoorOpen size={15} />,
+        tone: "danger",
+      });
+    }
+    return items;
+  }, [
+    soundEnabled, onToggleSound, game.isPrivate, game.roomCode, game.id, game.isSeated,
+    roomCodeCopied, copyRoomCode, profile, onCustomize, onSignIn, onSignOut, onLeaveSeat,
+  ]);
   return (
     <main className="game-shell">
+      {/* Gameplay only. The spec puts three things in the table HUD -- logo,
+          Leave Table, avatar -- so everything that is not one of those moved
+          into the avatar's menu. Leave Table stays a first-class button
+          rather than a menu entry: it is the one control a player may want
+          in a hurry, and burying it two taps deep to satisfy a rule about
+          tidiness would be the wrong trade. */}
       <header className="game-header">
         <button className="wordmark" onClick={onLeave} aria-label="Leave table">
           <span className="mark">S</span>
           <span>StackChips<small>NO LIMIT HOLD’EM</small></span>
         </button>
-        <div className="table-meta">
-          <span>
-            <span className={clsx(
-              "live-dot",
-              persistence === "memory" && "demo-dot",
-              connectionState !== "connected" && "connection-dot-warning",
-            )} />
-            {connectionState === "offline"
-              ? "Offline"
-              : connectionState === "reconnecting"
-                ? "Reconnecting"
-                : persistence === "supabase" ? "Realtime" : "Demo table"}
-          </span>
-          {game.isPrivate && game.roomCode
-            ? <RoomCodeChip code={game.roomCode} />
-            : <span>Table {game.id.slice(0, 6).toUpperCase()}</span>}
-          <span
-            className="blind-structure"
-            title={`Small Blind ${game.smallBlind.toLocaleString()} · Big Blind ${game.bigBlind.toLocaleString()}`}
-          >
-            <b>SB</b> {game.smallBlind.toLocaleString()}
-            <i aria-hidden="true">·</i>
-            <b>BB</b> {game.bigBlind.toLocaleString()}
-          </span>
-        </div>
         <div className="game-header-actions">
-          {profile && <GoldBadge profile={profile} onClaimed={onProfileChange} />}
-          <AuthButton profile={profile} onSignIn={onSignIn} onSignOut={onSignOut} />
-          {profile && <ProfileTrigger profile={profile} onClick={onCustomize} compact />}
-          <button
-            ref={historyButtonRef}
-            className="history-toggle"
-            onClick={() => setHistoryOpen(true)}
-            aria-label="Open hand history"
-            aria-haspopup="dialog"
-          >
-            <History size={15} /> <span>History</span>
-          </button>
-          <button
-            type="button"
-            className="sound-toggle"
-            onClick={onToggleSound}
-            aria-label={soundEnabled ? "Mute sound effects" : "Enable sound effects"}
-            title={soundEnabled ? "Mute sound effects" : "Enable sound effects"}
-          >
-            {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
-          </button>
-          {game.isSeated && (
-            <button className="give-up-seat-button" onClick={onLeaveSeat} title="Give up your seat; a bot takes over">
-              Give up seat
-            </button>
-          )}
           <button className="leave-button" onClick={onLeave}>Leave table</button>
+          <Menu
+            label="Open player menu"
+            trigger={
+              profile
+                ? <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />
+                : <span className="app-menu-fallback"><Settings2 size={16} /></span>
+            }
+            items={menuItems}
+          />
         </div>
       </header>
 
@@ -406,6 +432,19 @@ export function PokerTable({
                   <span>MAIN POT</span>
                   <strong><span className="chip-stack-icon" />{game.pot.toLocaleString()}</strong>
                 </div>
+                {/* The stakes moved out of the header with the rest of the
+                    chrome, and they belong here rather than in a menu: they
+                    are gameplay information a player reads mid-hand. A
+                    sibling of .pot-display, not a child, so potRef's measured
+                    centre -- which every chip flight aims at -- is unchanged. */}
+                <span
+                  className="blind-structure"
+                  title={`Small Blind ${game.smallBlind.toLocaleString()} · Big Blind ${game.bigBlind.toLocaleString()}`}
+                >
+                  <b>SB</b> {game.smallBlind.toLocaleString()}
+                  <i aria-hidden="true">/</i>
+                  <b>BB</b> {game.bigBlind.toLocaleString()}
+                </span>
                 {showFunnel && <PotFunnel key={game.handNumber} winners={game.winners} potRef={potRef} seatRefs={seatRefs} />}
                 <div className="community-cards">
                   {[0, 1, 2, 3, 4].map((index) => (

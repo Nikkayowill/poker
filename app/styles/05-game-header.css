@@ -17,18 +17,6 @@
 
 .table-meta span { display: flex; align-items: center; gap: 7px; }
 
-.table-meta .blind-structure {
-  gap: 5px;
-  padding: 5px 8px;
-  color: #d9e1dc;
-  border: 1px solid rgba(255,255,255,.1);
-  border-radius: 6px;
-  background: rgba(255,255,255,.035);
-  letter-spacing: .04em;
-}
-.blind-structure b:first-child { color: #8fc7ff; }
-.blind-structure b:last-child { color: #ffc06f; }
-.blind-structure i { color: #53625a; font-style: normal; }
 
 .room-code-chip {
   display: inline-flex;

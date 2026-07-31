@@ -32,7 +32,6 @@ export function PokerApp() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [persistence, setPersistence] = useState("memory");
   const [loading, setLoading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +114,6 @@ export function PokerApp() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "Could not load your profile.");
     setProfile(data.profile);
-    setPersistence(data.persistence);
   }, []);
 
   const ingest = useCallback((data: { game: GameSnapshot; persistence: string; profile?: PlayerProfile }) => {
@@ -124,7 +122,6 @@ export function PokerApp() {
         ? current
         : data.game
     ));
-    setPersistence(data.persistence);
     setConnectionState("connected");
     setError(null);
     // Present whenever the action spent or credited Gold (a buy-in, a
@@ -265,7 +262,6 @@ export function PokerApp() {
         if (!response.ok) throw new Error(data.error ?? "Could not start your profile.");
         if (!active) return;
         setProfile(data.profile);
-        setPersistence(data.persistence);
       })
       .catch((caught) => {
         if (!active) return;
@@ -918,7 +914,6 @@ export function PokerApp() {
         ? (
           <PokerTable
             game={game}
-            persistence={persistence}
             pending={loading}
             error={error}
             onAction={act}
@@ -926,7 +921,6 @@ export function PokerApp() {
             onLeaveSeat={leaveSeat}
             profile={profile}
             onCustomize={() => setProfileOpen(true)}
-            onProfileChange={setProfile}
             connectionState={connectionState}
             soundEnabled={soundEnabled}
             onToggleSound={toggleSound}

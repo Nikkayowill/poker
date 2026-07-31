@@ -19,6 +19,26 @@ export function TurnProgressBar({ remainingFraction }: { remainingFraction: numb
   );
 }
 
+/**
+ * The controls, in one shape that never changes.
+ *
+ * What this replaces: every button was conditionally rendered, so the bar was
+ * a different arrangement on almost every turn. Facing a bet you got
+ * Fold/Call; checked to, you got Fold/Check -- and Call and Check occupied the
+ * same spot on screen. Whichever one you had learned to reach for, the other
+ * was under your thumb half the time. That is the opposite of muscle memory,
+ * and on a phone it is how you fold a hand you meant to call.
+ *
+ * So the three decisions now own three permanent slots -- fold, the passive
+ * action, the aggressive one -- and an unavailable action is disabled in
+ * place rather than removed. Check and Call share a slot because they are
+ * mutually exclusive by the rules: you are never offered both.
+ *
+ * The raise controls open *over* the felt rather than inside the bar. Adding
+ * a row would push the three buttons down exactly when a player is mid-
+ * decision, which is the one moment movement is least forgivable -- and it
+ * would change the bar's height, which the table's own sizing now depends on.
+ */
 export function ActionBar({
   game,
   pending,
@@ -42,207 +62,193 @@ export function ActionBar({
   const currentSeat = game.seats.find((seat) => seat.isCurrent);
   const mySeat = game.seats.find((seat) => seat.isMine);
   const [showRebuyModal, setShowRebuyModal] = useState(false);
+  const [raiseOpen, setRaiseOpen] = useState(false);
   const [raiseTo, setRaiseTo] = useState(legal?.minRaiseTo ?? 0);
+  const [pressedAction, setPressedAction] = useState<PlayerAction["type"] | null>(null);
+
+  // No reset effect: poker-table.tsx keys this component on game.version, so
+  // every turn already remounts it and both useState initialisers re-seed.
+  // Nobody else can act while it is your turn, so the drawer cannot be pulled
+  // out from under you mid-decision either.
+
   const potPreset = (fraction: number) => {
     if (!legal) return 0;
     const target = Math.round(game.pot * fraction);
     return Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, target));
   };
+
   // Purely a visual beat -- the real action always dispatches synchronously,
   // right here, on click. This only guarantees the pressed look is visible
   // for a minimum stretch so a fast round trip doesn't make the button feel
   // like it never registered the tap.
-  const [pressedAction, setPressedAction] = useState<PlayerAction["type"] | null>(null);
   const dispatch = (action: PlayerAction) => {
     onAction(action);
+    setRaiseOpen(false);
     setPressedAction(action.type);
     window.setTimeout(() => setPressedAction((current) => (current === action.type ? null : current)), 150);
   };
 
   if (game.status === "complete") {
-    if (!game.isSeated) {
-      return (
-        <div className="action-bar hand-complete busted-player">
-          <div>
-            <span className="action-kicker">Seat closed</span>
-            <strong>You’re out of chips. Start a fresh table when you’re ready.</strong>
-          </div>
-          <button className="primary-action" onClick={onLeave}>
-            Return to lobby
-          </button>
+    const busted = game.isSeated && mySeat?.stack === 0;
+    return (
+      <div className="action-bar">
+        <div className="action-slot-status">
+          <span className="action-kicker">
+            {!game.isSeated ? "Seat closed" : busted ? "Stack exhausted" : "Hand complete"}
+          </span>
+          <strong>
+            {!game.isSeated
+              ? "You’re out of chips. Start a fresh table when you’re ready."
+              : busted ? "Rebuy to keep playing, or close your seat." : game.message}
+          </strong>
         </div>
-      );
-    }
-    if (mySeat?.stack === 0) {
-      return (
-        <div className="action-bar hand-complete busted-player">
-          <div>
-            <span className="action-kicker">Stack exhausted</span>
-            <strong>You’re out of chips. Rebuy to keep playing, or close your seat.</strong>
-          </div>
-          <div className="busted-actions">
+        <div className="action-slot-controls">
+          {!game.isSeated && (
+            <button className="primary-action action-slot-wide" onClick={onLeave}>Return to lobby</button>
+          )}
+          {game.isSeated && busted && (
+            <>
+              <button
+                className="action-button-fold"
+                disabled={pending}
+                onClick={() => onAction({ type: "next-hand" })}
+              >
+                Close seat
+              </button>
+              <button
+                className="primary-action action-slot-wide"
+                disabled={pending}
+                onClick={() => setShowRebuyModal(true)}
+              >
+                Rebuy
+              </button>
+            </>
+          )}
+          {game.isSeated && !busted && (
             <button
-              className="secondary-action"
+              className="primary-action action-slot-wide"
               disabled={pending}
               onClick={() => onAction({ type: "next-hand" })}
             >
-              Close seat
+              <RotateCcw size={16} /> Deal next hand
             </button>
-            <button
-              className="primary-action"
-              disabled={pending}
-              onClick={() => setShowRebuyModal(true)}
-            >
-              Rebuy
-            </button>
-          </div>
-          {showRebuyModal && (
-            <BuyInModal
-              title="Rebuy"
-              description={`Buy back in at this table's ${TIER_CONFIG[game.tier].label} stakes.`}
-              goldBalance={profile?.goldBalance ?? 0}
-              unlimitedGold={profile?.unlimitedGold ?? false}
-              lockedTier={game.tier}
-              confirmLabel="Rebuy"
-              pending={pending}
-              onClose={() => setShowRebuyModal(false)}
-              onBuyGold={onPurchaseRebuy}
-              onConfirm={(_tier, buyIn) => onAction({ type: "rebuy", amount: buyIn })}
-            />
           )}
         </div>
-      );
-    }
-    return (
-      <div className="action-bar hand-complete">
-        <div>
-          <span className="action-kicker">Hand complete</span>
-          <strong>{game.message}</strong>
-        </div>
-        <button className="primary-action" disabled={pending} onClick={() => onAction({ type: "next-hand" })}>
-          <RotateCcw size={16} /> Deal next hand
-        </button>
+        {showRebuyModal && (
+          <BuyInModal
+            title="Rebuy"
+            description={`Buy back in at this table's ${TIER_CONFIG[game.tier].label} stakes.`}
+            goldBalance={profile?.goldBalance ?? 0}
+            unlimitedGold={profile?.unlimitedGold ?? false}
+            lockedTier={game.tier}
+            confirmLabel="Rebuy"
+            pending={pending}
+            onClose={() => setShowRebuyModal(false)}
+            onBuyGold={onPurchaseRebuy}
+            onConfirm={(_tier, buyIn) => onAction({ type: "rebuy", amount: buyIn })}
+          />
+        )}
       </div>
     );
   }
 
-  if (!legal) {
-    return (
-      <div className="action-bar waiting-bar">
-        <span className="waiting-dot" />
-        <span className="waiting-copy">
-          <strong>{currentSeat ? `${currentSeat.name} is thinking` : "Waiting for the next hand"}</strong>
-          <small>{currentSeat?.isHuman ? "Player decision" : "AI decision is being made server-side"}</small>
-        </span>
-        {currentSeat && <span className="waiting-countdown">{secondsRemaining}s</span>}
-        {currentSeat && <TurnProgressBar remainingFraction={remainingFraction} />}
-      </div>
-    );
-  }
+  const myTurn = Boolean(legal);
+  const passiveIsCall = Boolean(legal?.canCall);
 
   return (
-    <div className="action-bar action-bar-your-turn">
-      <TurnProgressBar remainingFraction={remainingFraction} />
-      <div className="turn-tools">
-        <div className={clsx("action-countdown", secondsRemaining <= 5 && "countdown-critical")}>
-          <span>Your turn</span>
-          <strong>{secondsRemaining}</strong>
-          <small>seconds</small>
+    <div className={clsx("action-bar", myTurn && "action-bar-your-turn")}>
+      <TurnProgressBar remainingFraction={myTurn ? remainingFraction : 0} />
+
+      <div className="action-slot-tools">
+        <div className={clsx("action-countdown", myTurn && secondsRemaining <= 5 && "countdown-critical")}>
+          <span>{myTurn ? "Your turn" : "Waiting"}</span>
+          <strong>{currentSeat ? secondsRemaining : "—"}</strong>
         </div>
         <button
           type="button"
           className="time-card-button"
-          disabled={pending || !mySeat || mySeat.timeCardsRemaining <= 0}
+          disabled={!myTurn || pending || !mySeat || mySeat.timeCardsRemaining <= 0}
           onClick={() => onAction({ type: "use-time-card" })}
           title="Add 20 seconds to this turn"
         >
           <TimerReset size={16} />
-          <span>+20s</span>
-          <span className="time-card-stack" aria-label={`${mySeat?.timeCardsRemaining ?? 0} time cards remaining`}>
+          <span className="time-card-stack" aria-label={`${mySeat?.timeCardsRemaining ?? 0} time gems remaining`}>
             {[0, 1, 2].map((index) => (
               <i key={index} className={index < (mySeat?.timeCardsRemaining ?? 0) ? "available" : ""} />
             ))}
           </span>
         </button>
       </div>
-      <div className="basic-actions">
-        {legal.canFold && (
-          <button
-            className={clsx("action-button-fold", pressedAction === "fold" && "action-pressed")}
-            disabled={pending}
-            onClick={() => dispatch({ type: "fold" })}
-            aria-label="Fold"
-          >
-            <FoldVertical size={16} /> Fold
-          </button>
-        )}
-        {legal.canCheck && (
-          <button
-            className={clsx("action-button-check", pressedAction === "check" && "action-pressed")}
-            disabled={pending}
-            onClick={() => dispatch({ type: "check" })}
-            aria-label="Check"
-          >
-            <Check size={17} /> Check
-          </button>
-        )}
-        {legal.canCall && (
-          <button
-            className={clsx("action-button-call", pressedAction === "call" && "action-pressed")}
-            disabled={pending}
-            onClick={() => dispatch({ type: "call" })}
-            aria-label={`Call ${legal.callAmount} chips`}
-          >
-            Call <strong>{legal.callAmount}</strong>
-          </button>
-        )}
+
+      {/* Three permanent slots. An action you cannot take is disabled, never
+          absent, so nothing to its right slides across to fill the gap. */}
+      <div className="action-slot-controls">
+        <button
+          className={clsx("action-button-fold", pressedAction === "fold" && "action-pressed")}
+          disabled={!legal?.canFold || pending}
+          onClick={() => dispatch({ type: "fold" })}
+        >
+          <FoldVertical size={16} /> Fold
+        </button>
+
+        <button
+          className={clsx(
+            passiveIsCall ? "action-button-call" : "action-button-check",
+            (pressedAction === "call" || pressedAction === "check") && "action-pressed",
+          )}
+          disabled={!(legal?.canCheck || legal?.canCall) || pending}
+          onClick={() => dispatch({ type: passiveIsCall ? "call" : "check" })}
+        >
+          {passiveIsCall
+            ? <>Call <strong>{legal?.callAmount?.toLocaleString()}</strong></>
+            : <><Check size={17} /> Check</>}
+        </button>
+
+        <button
+          className={clsx("action-button-raise", raiseOpen && "action-open")}
+          disabled={!(legal?.canRaise || legal?.canAllIn) || pending}
+          aria-expanded={raiseOpen}
+          onClick={() => {
+            if (legal?.canRaise) setRaiseOpen((open) => !open);
+            else dispatch({ type: "all-in" });
+          }}
+        >
+          {legal?.canRaise ? "Bet / Raise" : "All in"}
+        </button>
       </div>
-      {legal.canRaise && (
-        <div className="raise-control">
-          <div className="range-row">
-            <span>Raise to</span>
-            <strong>{raiseTo}</strong>
+
+      {raiseOpen && legal?.canRaise && (
+        <div className="raise-drawer" role="group" aria-label="Choose a raise amount">
+          <div className="raise-drawer-row">
+            <span className="raise-drawer-label">Raise to</span>
+            <strong className="raise-drawer-amount">{raiseTo.toLocaleString()}</strong>
+            <input
+              aria-label="Raise amount"
+              type="range"
+              min={legal.minRaiseTo}
+              max={legal.maxRaiseTo}
+              step={game.bigBlind}
+              value={raiseTo}
+              onChange={(event) => setRaiseTo(Number(event.target.value))}
+            />
           </div>
-          <input
-            aria-label="Raise amount"
-            type="range"
-            min={legal.minRaiseTo}
-            max={legal.maxRaiseTo}
-            step={game.bigBlind}
-            value={raiseTo}
-            onChange={(event) => setRaiseTo(Number(event.target.value))}
-          />
-          <div className="raise-buttons">
+          <div className="raise-drawer-presets">
             <button type="button" onClick={() => setRaiseTo(legal.minRaiseTo)}>Min</button>
             <button type="button" onClick={() => setRaiseTo(potPreset(0.5))}>½ Pot</button>
-            <button type="button" onClick={() => setRaiseTo(potPreset(2 / 3))}>⅔ Pot</button>
+            <button type="button" onClick={() => setRaiseTo(potPreset(0.75))}>¾ Pot</button>
             <button type="button" onClick={() => setRaiseTo(potPreset(1))}>Pot</button>
-            <button type="button" className="allin-preset" onClick={() => setRaiseTo(legal.maxRaiseTo)}>All-in</button>
+            <button type="button" className="allin-preset" onClick={() => setRaiseTo(legal.maxRaiseTo)}>All in</button>
+            <button
+              type="button"
+              className="primary-action raise-drawer-confirm"
+              disabled={pending}
+              onClick={() => dispatch({ type: "raise", amount: raiseTo })}
+            >
+              Raise to {raiseTo.toLocaleString()}
+            </button>
           </div>
         </div>
       )}
-      <div className="commit-actions">
-        {legal.canRaise && (
-          <button
-            className={clsx("primary-action", "action-button-raise", pressedAction === "raise" && "action-pressed")}
-            disabled={pending}
-            onClick={() => dispatch({ type: "raise", amount: raiseTo })}
-            aria-label={`Raise to ${raiseTo} chips`}
-          >
-            Raise to <span>{raiseTo}</span>
-          </button>
-        )}
-        {legal.canAllIn && (
-          <button
-            className={clsx("allin-action", pressedAction === "all-in" && "action-pressed")}
-            disabled={pending}
-            onClick={() => dispatch({ type: "all-in" })}
-            aria-label="Go all in"
-          >
-            All in
-          </button>
-        )}
-      </div>
     </div>
   );
 }

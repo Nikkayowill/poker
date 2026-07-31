@@ -35,14 +35,24 @@
      table capped as though it were still 1.72 wide -- 261px across and 87
      tall on a landscape phone, with every seat piled on the board. */
   --table-aspect: 1.84;
-  --table-reserve: 254px;
+  /* The reserve is now derived rather than guessed, which it could not be
+     until the action bar had a fixed height. Chrome above, controls below,
+     plus the padding between them -- each breakpoint restates the two
+     heights that actually apply there and the arithmetic follows. */
+  --table-reserve: calc(var(--chrome-height) + var(--action-bar-height) + 44px);
+  /* Defect D1: every override below used to replace the whole min() and drop
+     this term, so the table was sized from width alone and could be any
+     height at all -- which is how a nameplate ended up underneath the
+     controls at 390x844. Naming the cap means an override can narrow the
+     table without silently discarding its height limit. */
+  --table-height-cap: calc((100dvh - var(--table-reserve)) * var(--table-aspect));
   /* Seats are sized from the table's measured width (SEAT_WIDTH_RATIO in
      poker-table.tsx), which arrives as an inline --seat-width on this element.
      Declared here rather than on .player-seat: a custom property set on the
      seat itself beats the value inherited from here, so the fallback would
      silently win and every seat would stay desktop-sized on a phone. */
   --seat-width: 122px;
-  width: min(980px, 100%, calc((100dvh - var(--table-reserve)) * var(--table-aspect)));
+  width: min(980px, 100%, var(--table-height-cap));
   aspect-ratio: var(--table-aspect);
   margin: auto;
   position: relative;

@@ -105,6 +105,11 @@
    below uses flex:1 + min-height:0 so it shrinks to fit instead of growing
    past the viewport and pushing the page into document-flow scrolling. */
 .game-shell {
+  /* Both the table and the controls need these, and they sit in sibling
+     subtrees, so the shell is the nearest common ancestor that can carry
+     them. Each breakpoint restates the pair; everything else derives. */
+  --chrome-height: 68px;
+  --action-bar-height: 76px;
   height: 100dvh;
   min-height: 0;
   display: flex;

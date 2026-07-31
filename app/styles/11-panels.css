@@ -374,19 +374,12 @@
 }
 
 @media (max-width: 1020px) {
-  .poker-table-wrap { width: min(780px, calc(100% - 40px)); }
+  .poker-table-wrap { width: min(780px, calc(100% - 40px), var(--table-height-cap)); }
 }
 
 @media (max-width: 800px) {
   .lobby { grid-template-columns: 1fr; padding-top: 50px; }
   .table-meta span:nth-child(2) { display: none; }
-  .poker-table-wrap { width: calc(100% - 24px); }
+  .poker-table-wrap { width: min(calc(100% - 24px), var(--table-height-cap)); }
   .history-drawer { width: min(320px, 100%); }
-  .action-bar { flex-wrap: wrap; }
-  .turn-tools {
-    flex: 1 0 auto;
-    padding-right: 0;
-    border-right: 0;
-  }
-  .raise-control { order: 3; flex-basis: 100%; }
 }

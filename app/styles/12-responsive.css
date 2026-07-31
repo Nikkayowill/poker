@@ -58,8 +58,9 @@
     padding-left: max(4px, env(safe-area-inset-left));
     padding-right: max(4px, env(safe-area-inset-right));
   }
+  .game-shell { --chrome-height: 56px; --action-bar-height: 68px; }
   .poker-table-wrap {
-    width: calc(100% - 6px);
+    width: min(calc(100% - 6px), var(--table-height-cap));
     /* A portrait phone gets the tall plate, so the box turns tall with it.
        Not the artwork's own 0.497 -- that is nearly twice as tall as it is
        wide and, once the header and action bar take their share, leaves the
@@ -93,17 +94,6 @@
   .seat-stack strong { font-size: 10px; }
   .table-bet { --bet-reach: 52px; }
       .action-layer { padding: 0 4px calc(6px + env(safe-area-inset-bottom)); padding-left: max(4px, env(safe-area-inset-left)); padding-right: max(4px, env(safe-area-inset-right)); }
-  .action-bar { margin-top: 6px; padding: 8px; gap: 8px; }
-  .turn-tools { width: 100%; min-height: 54px; }
-  .action-countdown { flex: 1; width: auto; grid-template-columns: auto auto auto; align-items: baseline; gap: 5px; }
-  .action-countdown strong { font-size: 22px; }
-  .time-card-button { min-width: 80px; flex-direction: row; gap: 5px; }
-  .basic-actions { flex: 1; }
-  .basic-actions button { flex: 1; padding: 0 10px; min-height: 48px; }
-  .commit-actions .primary-action { min-width: 95px; padding: 12px; min-height: 48px; }
-  .allin-action { min-height: 48px; }
-  .hand-complete { flex-wrap: nowrap; }
-  .hand-complete strong { max-width: 180px; font-size: 11px; }
   .header-actions .header-status { display: none; }
   .profile-trigger:not(.profile-trigger-compact) {
     min-width: 0;
@@ -165,26 +155,10 @@
     padding-top: 2px;
     padding-bottom: 0;
   }
-  .poker-table-wrap { --table-aspect: 3; --table-reserve: 120px; }
+  .game-shell { --chrome-height: 42px; --action-bar-height: 56px; }
+  .poker-table-wrap { --table-aspect: 3; }
   .card-large { width: clamp(32px, 7.5vw, 42px); }
   .action-layer { padding-bottom: env(safe-area-inset-bottom); }
-  .action-bar {
-    min-height: 50px;
-    margin-top: 4px;
-    padding: 5px 10px;
-  }
-  .basic-actions button, .allin-action { min-height: 40px; padding: 0 12px; }
-  .commit-actions .primary-action { min-height: 42px; }
-  .raise-buttons button { min-height: 30px; }
-  .hand-complete { min-height: 0; }
-  .range-row { margin-bottom: 2px; }
-  .raise-buttons { margin-top: 2px; }
-  .turn-tools { width: auto; min-height: 0; }
-  .action-countdown { width: 48px; display: grid; }
-  .action-countdown span, .action-countdown small { display: none; }
-  .action-countdown strong { font-size: 19px; }
-  .time-card-button { min-width: 48px; }
-  .time-card-button > span:nth-child(2) { display: none; }
   .history-drawer { width: min(300px, 82%); }
 }
 
@@ -193,11 +167,9 @@
 @media (max-height: 340px) and (orientation: landscape) {
   .game-header, .lobby-header { height: 34px; }
   .table-area { padding-top: 0; }
-  .poker-table-wrap { --table-aspect: 3.6; --table-reserve: 96px; }
+  .game-shell { --chrome-height: 34px; --action-bar-height: 48px; }
+  .poker-table-wrap { --table-aspect: 3.6; }
   .card-large { width: clamp(26px, 6.5vw, 34px); }
-  .action-bar { min-height: 42px; margin-top: 3px; padding: 4px 8px; }
-  .basic-actions button, .allin-action { min-height: 36px; }
-  .commit-actions .primary-action { min-height: 38px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

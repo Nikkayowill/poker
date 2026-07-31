@@ -36,6 +36,10 @@ export default defineConfig({
       NEXT_PUBLIC_SUPABASE_ANON_KEY: "",
       SUPABASE_SERVICE_ROLE_KEY: "",
       ADMIN_SECRET: "playwright-admin-secret",
+      // Six seats driven over HTTP cannot beat a 15s clock that starts when
+      // the hand is dealt, and the margin shrinks every time the suite grows.
+      // Timeout behaviour is unit-tested with injected time; see engine.ts.
+      RIVER_TURN_TIMEOUT_MS: "120000",
     },
   },
 });

@@ -28,13 +28,58 @@
   box-shadow: 0 15px 35px rgba(0,0,0,.22), 0 0 32px rgba(217,184,93,.045);
 }
 
-.turn-tools {
-  align-self: stretch;
+/* ---------------------------------------------------------------------------
+   One shape, every state.
+
+   .action-bar is a fixed-height grid of exactly two areas: a tools column on
+   the left and the controls on the right. Nothing here is conditional, so no
+   state change can move a button, and the bar's height is a constant the
+   table's own sizing can be computed against -- see --action-bar-height in
+   06-table.css, which is what finally makes the height reserve honest.
+   --------------------------------------------------------------------------- */
+
+.action-bar {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--space-5, 10px);
+  height: var(--action-bar-height, 76px);
+  padding: var(--space-4, 8px) var(--space-6, 12px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl, 12px);
+  background: rgba(14, 21, 18, .92);
+  box-shadow: var(--elevation-4, 0 15px 35px rgba(0, 0, 0, .22));
+}
+
+.action-bar-your-turn {
+  border-color: rgba(217,184,93,.18);
+  box-shadow: 0 15px 35px rgba(0,0,0,.22), 0 0 32px rgba(217,184,93,.045);
+}
+
+.action-slot-tools {
   display: flex;
   align-items: stretch;
-  gap: 7px;
-  padding-right: 12px;
+  gap: var(--space-3, 6px);
+  padding-right: var(--space-5, 10px);
   border-right: 1px solid var(--line);
+}
+
+.action-slot-status {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1, 2px);
+  padding-right: var(--space-5, 10px);
+  border-right: 1px solid var(--line);
+}
+.action-slot-status strong {
+  overflow: hidden;
+  color: #f0dfaa;
+  font: 500 13px Georgia, serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .action-countdown {
@@ -43,7 +88,7 @@
   place-content: center;
   text-align: center;
   border: 1px solid rgba(217,184,93,.18);
-  border-radius: 9px;
+  border-radius: var(--radius-lg, 9px);
   background: rgba(217,184,93,.045);
 }
 .action-countdown span {
@@ -54,7 +99,6 @@
   text-transform: uppercase;
 }
 .action-countdown strong { color: #f5e7ad; font: 600 24px/.9 Georgia, serif; }
-.action-countdown small { margin-top: 2px; color: #68776f; font-size: 6px; letter-spacing: .08em; text-transform: uppercase; }
 .action-countdown.countdown-critical {
   border-color: rgba(255,113,90,.45);
   background: rgba(164,54,38,.12);
@@ -64,21 +108,20 @@
 @keyframes critical-clock { 50% { box-shadow: 0 0 20px rgba(255,99,75,.17); } }
 
 .time-card-button {
-  min-width: 56px;
+  min-width: 52px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: var(--space-1, 2px);
   color: #d8c881;
   border: 1px solid rgba(217,184,93,.18);
-  border-radius: 9px;
+  border-radius: var(--radius-lg, 9px);
   background: rgba(217,184,93,.04);
   cursor: pointer;
 }
-.time-card-button > span:nth-child(2) { font-size: 8px; font-weight: 750; }
 .time-card-button:disabled { opacity: .35; cursor: not-allowed; }
-.time-card-stack { display: flex; gap: 2px; margin-top: 2px; }
+.time-card-stack { display: flex; gap: 2px; }
 .time-card-stack i {
   width: 9px;
   height: 5px;
@@ -89,109 +132,111 @@
 }
 .time-card-stack i.available { border-color: #cbb963; background: #cbb963; }
 
-.basic-actions, .commit-actions { display: flex; gap: 8px; }
-.basic-actions button, .raise-buttons button, .allin-action {
-  min-height: 48px;
+/* Equal shares, so the three decisions sit in the same place on every turn
+   regardless of which of them happens to be legal. */
+.action-slot-controls {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--space-4, 8px);
+}
+
+.action-slot-controls button {
+  min-height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3, 6px);
+  padding: 0 var(--space-6, 12px);
   border: 1px solid rgba(255,255,255,.06);
-  border-radius: 10px;
+  border-radius: var(--radius-xl, 12px);
   color: #e6ebe7;
   background: #1b2620;
-  padding: 0 17px;
-  cursor: pointer;
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  gap: 7px;
   font-size: 13px;
   font-weight: 700;
+  cursor: pointer;
   box-shadow: 0 2px 0 rgba(0,0,0,.3), 0 6px 14px rgba(0,0,0,.2);
   transition: background-color .12s ease, border-color .12s ease, transform .08s ease, box-shadow .08s ease;
 }
-.basic-actions button:hover, .raise-buttons button:hover { background: #22302a; border-color: rgba(217,184,93,.32); color: #f0dfaa; }
-.basic-actions .action-button-fold { color: #f0a093; border-color: rgba(224, 75, 54, .25); background: rgba(110, 33, 27, .22); }
-.basic-actions .action-button-check { color: #f0dfaa; border-color: rgba(217, 184, 93, .25); background: rgba(112, 85, 28, .2); }
-.basic-actions .action-button-call { color: #bfe0c5; border-color: rgba(91, 161, 104, .25); background: rgba(28, 86, 47, .22); }
-.commit-actions .action-button-raise { color: #e6c4f2; border-color: rgba(183, 95, 222, .42); background: linear-gradient(145deg, rgba(91, 37, 111, .72), rgba(46, 24, 59, .88)); }
-.basic-actions .action-button-fold:hover,
-.basic-actions .action-button-check:hover,
-.basic-actions .action-button-call:hover,
-.commit-actions .action-button-raise:hover { filter: brightness(1.16); }
+/* A wider share for the one-button states, which have nothing to line up
+   against and read better with some weight behind them. */
+.action-slot-wide { grid-column: span 2; }
+
+.action-slot-controls button:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+.action-slot-controls button:not(:disabled):hover { background: #22302a; border-color: rgba(217,184,93,.32); color: #f0dfaa; }
+.action-button-fold { color: #f0a093; border-color: rgba(224, 75, 54, .25) !important; background: rgba(110, 33, 27, .22) !important; }
+.action-button-check { color: #f0dfaa; border-color: rgba(217, 184, 93, .25) !important; background: rgba(112, 85, 28, .2) !important; }
+.action-button-call { color: #bfe0c5; border-color: rgba(91, 161, 104, .25) !important; background: rgba(28, 86, 47, .22) !important; }
+.action-button-raise { color: #e6c4f2; border-color: rgba(183, 95, 222, .42) !important; background: linear-gradient(145deg, rgba(91, 37, 111, .72), rgba(46, 24, 59, .88)) !important; }
+.action-button-raise.action-open { border-color: rgba(217,184,93,.6) !important; }
+.action-slot-controls .primary-action { color: #12180f; border-color: rgba(217,184,93,.5) !important; background: linear-gradient(180deg, var(--gold-light), var(--gold)) !important; }
+
 /* .action-pressed mirrors :active but is held for a guaranteed minimum
    stretch by JS (see ActionBar's dispatch helper) -- a real click/tap
    already gets this look for free while the pointer is down, but a fast
    round trip can otherwise resolve before that ever renders. */
-.basic-actions button:active:not(:disabled), .raise-buttons button:active:not(:disabled), .allin-action:active:not(:disabled),
-.basic-actions button.action-pressed:not(:disabled), .allin-action.action-pressed:not(:disabled) {
+.action-slot-controls button:active:not(:disabled),
+.action-slot-controls button.action-pressed:not(:disabled) {
   transform: translateY(2px);
   box-shadow: 0 0 0 rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.18);
 }
-.basic-actions button:focus-visible, .raise-buttons button:focus-visible, .commit-actions button:focus-visible, .allin-action:focus-visible {
+.action-slot-controls button:focus-visible {
   outline: 2px solid var(--gold-light);
   outline-offset: 2px;
 }
-.basic-actions button strong { color: var(--gold-light); }
+.action-slot-controls button strong { color: var(--gold-light); }
 
-.raise-control {
-  flex: 1;
-  min-width: 180px;
-  padding: 0 5px;
+/* Opens over the felt, never inside the bar: a new row would push the three
+   buttons down at the exact moment someone is reaching for one. */
+.raise-drawer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + var(--space-4, 8px));
+  z-index: var(--z-toast, 15);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 8px);
+  padding: var(--space-6, 12px);
+  border: 1px solid rgba(217,184,93,.22);
+  border-radius: var(--radius-xl, 12px);
+  background: rgba(14, 21, 18, .97);
+  box-shadow: var(--elevation-5, 0 40px 120px rgba(0, 0, 0, .5));
+  animation: raise-drawer-in .12s ease-out both;
 }
+@keyframes raise-drawer-in { from { opacity: 0; transform: translateY(6px); } }
 
-.range-row { display: flex; justify-content: space-between; margin-bottom: 7px; color: #74827b; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
-.range-row strong { color: var(--gold-light); font-size: 12px; }
+.raise-drawer-row { display: flex; align-items: center; gap: var(--space-6, 12px); }
+.raise-drawer-label { color: #74827b; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.raise-drawer-amount { min-width: 74px; color: var(--gold-light); font: 600 17px Georgia, serif; }
+.raise-drawer-row input { flex: 1; height: 3px; accent-color: var(--gold); cursor: pointer; }
 
-.raise-control input {
-  width: 100%;
-  height: 3px;
-  accent-color: var(--gold);
+.raise-drawer-presets {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--space-3, 6px);
+}
+.raise-drawer-presets button {
+  min-height: 40px;
+  padding: 0 var(--space-4, 8px);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: var(--radius-lg, 9px);
+  color: #e6ebe7;
+  background: #1b2620;
+  font-size: 11px;
+  font-weight: 700;
   cursor: pointer;
 }
+.raise-drawer-presets button:hover { border-color: rgba(217,184,93,.32); color: #f0dfaa; }
+.raise-drawer-presets .allin-preset { color: #e9d88e; }
+.raise-drawer-confirm {
+  grid-column: span 2;
+  color: #12180f !important;
+  border-color: rgba(217,184,93,.5) !important;
+  background: linear-gradient(180deg, var(--gold-light), var(--gold)) !important;
+}
 
-.raise-buttons { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
-.raise-buttons button { min-height: 36px; padding: 0 10px; font-size: 9px; }
-/* The all-in preset sits apart from the ordinary bet-sizing presets so it's
-   never mistaken for one of them. */
-.raise-buttons .allin-preset {
-  margin-left: 6px;
-  padding-left: 12px;
-  border-left: 1px solid rgba(255,255,255,.14);
-  color: #e9d88e;
-}
-.commit-actions { margin-left: auto; }
-.commit-actions .primary-action {
-  min-height: 52px;
-  min-width: 130px;
-  font-size: 13px;
-  border-radius: 10px;
-  box-shadow: 0 2px 0 rgba(120,94,20,.55), 0 6px 16px rgba(0,0,0,.25);
-  transition: transform .08s ease, box-shadow .08s ease;
-}
-.commit-actions .primary-action span { font-family: Georgia, serif; }
-.commit-actions .primary-action:active:not(:disabled), .commit-actions .primary-action.action-pressed:not(:disabled) {
-  transform: translateY(2px);
-  box-shadow: 0 0 0 rgba(120,94,20,.55), 0 2px 8px rgba(0,0,0,.2);
-}
-.allin-action { color: #e9d88e; border-color: rgba(217,184,93,.25); min-height: 52px; border-radius: 10px; }
-
-.waiting-bar {
-  justify-content: center;
-  color: #78867e;
-  font-size: 12px;
-}
-.waiting-copy { display: flex; flex-direction: column; gap: 3px; }
-.waiting-copy strong { color: #b7c2bc; font: 500 13px Georgia, serif; }
-.waiting-copy small { color: #5f6d65; font-size: 8px; }
-.waiting-countdown {
-  min-width: 38px;
-  margin-left: 8px;
-  padding: 6px 8px;
-  color: #e4d58d;
-  border: 1px solid rgba(217,184,93,.17);
-  border-radius: 999px;
-  background: rgba(217,184,93,.05);
-  font: 600 12px Georgia, serif;
-  text-align: center;
-}
 .waiting-dot {
   width: 7px;
   height: 7px;
@@ -201,11 +246,7 @@
 }
 @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(217,184,93,0); } 0%, 100% { box-shadow: 0 0 0 0 rgba(217,184,93,.3); } }
 
-.hand-complete { justify-content: space-between; }
-.hand-complete > div { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-.hand-complete strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 14px Georgia, serif; color: #f0dfaa; }
 .action-kicker { color: #77867e; font-size: 8px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
-.busted-actions { display: flex; gap: 10px; flex-shrink: 0; }
 
 .table-toast {
   position: absolute;

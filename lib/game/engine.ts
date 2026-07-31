@@ -61,7 +61,16 @@ function botAvatarFor(position: number): string {
 // Humans get a short decision clock plus three optional time-bank cards.
 // Bot deadlines are also persisted so polling/realtime can pace decisions
 // without trusting a browser timer.
-export const TURN_TIMEOUT_MS = 15_000;
+//
+// Overridable for tests only, and it defaults to exactly the value it has
+// always had. tests/e2e/multiplayer.spec.ts drives six human seats through a
+// hand over HTTP, and all of that has to finish inside one clock that starts
+// when the hand is dealt -- so as the suite grew it began losing the race and
+// the server auto-folded the first actor out from under it. Timeout behaviour
+// itself is covered deterministically by the unit tests, which inject time
+// rather than waiting for it; there is nothing to be gained by also making
+// the browser suite race a wall clock.
+export const TURN_TIMEOUT_MS = Number(process.env.RIVER_TURN_TIMEOUT_MS) || 15_000;
 export const TIME_CARD_EXTENSION_MS = 20_000;
 export const STARTING_TIME_CARDS = 3;
 export const BOT_DECISION_MIN_MS = 1_200;

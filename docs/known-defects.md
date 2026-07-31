@@ -16,33 +16,37 @@ a 52px overlap.
 
 ### Why it happens
 
-`.poker-table-wrap` sizes itself from a fixed reserve in `app/styles/06-table.css`:
+Corrected 2026-07-31. The first version of this entry blamed `--table-reserve`
+for being too small. That was wrong in a way worth recording: **the reserve is
+never applied at this viewport at all.**
 
-    width: min(980px, 100%, calc((100dvh - var(--table-reserve)) * var(--table-aspect)))
+`.poker-table-wrap` has four width rules across three files, and only the base
+carries a height term:
 
-At 390×844 the responsive block sets `--table-aspect: 0.62` while
-`--table-reserve` stays at its base `254px`, giving:
+| load order | rule | caps by height? |
+|---|---|---|
+| `06-table.css:45` | `min(980px, 100%, calc((100dvh - var(--table-reserve)) * var(--table-aspect)))` | yes |
+| `11-panels.css` @max-1020 | `min(780px, calc(100% - 40px))` | no |
+| `11-panels.css` @max-800 | `calc(100% - 24px)` | no |
+| `12-responsive.css` @max-600 | `calc(100% - 6px)` | no |
 
-    width  = min(980, 384, (844 - 254) * 0.62) = 365.8px
-    height = 365.8 / 0.62                      = 590px
+Each override replaces the whole `min()`, so below 1021px the table is sized
+purely from available *width* and may end up any height at all. At 390x844:
 
-With the 56px mobile header the table's bottom edge lands at **646**.
+    content width = 390 - 8 (.table-area padding) = 382
+    width         = calc(100% - 6px)              = 376
+    height        = 376 / 0.62 (--table-aspect)   = 606.5
+    table bottom  = 56 (header) + 4 (padding) + 606.5 = 666.5
 
-`components/table/poker-table.tsx` then measures how far the foreground seat
-hangs below the felt:
+`components/table/poker-table.tsx` then measures the foreground seat's drop:
 
     setForegroundDrop(Math.max(0, Math.round(barTop - rect.bottom - 6)))
 
-The expanded your-turn bar (countdown, time gems, fold/check/call, raise
-slider, commit row) occupies 230px, so `barTop` is 614 — *above* the table's
-own bottom edge. The expression goes negative, clamps to `0`, and the seat
-sits flush at the felt's bottom with its nameplate extending to 666, i.e.
-52px into the controls.
-
-The root cause is the reserve itself: header (56) + expanded bar (230) = **286px
-actually needed** against a **254px** reserve. `--table-reserve` is not
-overridden in the `max-width: 600px` block, so mobile portrait inherits a value
-computed for a shorter bar.
+The expanded your-turn bar occupies 230px, putting `barTop` at 614 -- above the
+table's own bottom edge -- so the expression goes negative, clamps to 0, and the
+nameplate lands at 666.5 against a measured 666.44. That arithmetic closes; the
+first version's did not, and deriving 646 from a formula that never runs here is
+exactly the error to avoid repeating.
 
 ### Reproducing
 
@@ -56,9 +60,22 @@ visible, and compare `.seat-plate` against `.action-bar`:
 
 ### Notes for M5
 
-- Do not fix by shrinking the nameplate. The reserve is the broken number.
-- `--table-reserve` needs a mobile-portrait value that covers the *expanded*
-  bar, not the waiting bar — or the bar needs a fixed height, which M5 is
-  introducing anyway ("buttons should never move").
+- Do not fix by shrinking the nameplate, and do not fix by only raising
+  `--table-reserve`: that variable is inert below 1021px, so changing it moves
+  nothing at the viewport this defect is about.
+- The fix is that every width override has to keep a height term. Any rule that
+  replaces the base `min()` with a width-only value re-opens this, at whatever
+  breakpoint it applies to. The tablet range (601-1020px) has the same hole and
+  is only saved by having more vertical room to waste.
+- The bar getting a fixed height ("buttons should never move", which M5 is
+  introducing anyway) makes the height term computable instead of guessed.
 - Whatever lands, add the plate-vs-bar assertion to a test that actually puts
   the local player on turn, otherwise this regresses silently.
+
+### Why this blocks part of M3
+
+Inverting `11-panels.css`'s two `.poker-table-wrap` rules to mobile-first means
+deciding what the base width formula is -- which is the same decision as fixing
+this defect. Doing it as a pure refactor first would move those rules once for
+the inversion and again for the fix, and the intermediate state has the height
+cap in a different place at every breakpoint. Left for M5 to do once.

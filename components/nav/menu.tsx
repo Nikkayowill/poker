@@ -71,6 +71,26 @@ export function Menu({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open, close]);
 
+  /**
+   * Escape is bound to the document, not to the panel.
+   *
+   * Opening with a mouse leaves focus on the trigger, which is outside the
+   * panel -- so a handler that only sits on the panel never sees the key, and
+   * Escape silently does nothing for anyone who clicked rather than tabbed.
+   * Caught by tests/e2e/nav-menu.spec.ts; it is invisible in a screenshot,
+   * because a menu that will not close still looks entirely correct.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      close();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, close]);
+
   // The table repositions on rotate and the menu is absolutely placed against
   // a header that moves with it, so a menu left open across an orientation
   // change ends up detached from its trigger. Closing is the honest fix.
@@ -185,6 +205,10 @@ export function Menu({
               tabIndex: index === activeIndex ? 0 : -1,
               onMouseEnter: () => setActiveIndex(index),
             };
+            // One child, not two. Spreading props alongside multiple children
+            // makes React compile them as a dynamic list and ask for keys on
+            // static content; a fragment keeps it a single static child.
+            const content = <>{item.icon}<span>{item.label}</span></>;
             if (item.kind === "link") {
               return (
                 <Link
@@ -194,8 +218,7 @@ export function Menu({
                   ref={(el) => { itemRefs.current[index] = el; }}
                   onClick={() => close(false)}
                 >
-                  {item.icon}
-                  <span>{item.label}</span>
+                  {content}
                 </Link>
               );
             }
@@ -210,8 +233,7 @@ export function Menu({
                   item.onSelect();
                 }}
               >
-                {item.icon}
-                <span>{item.label}</span>
+                {content}
               </button>
             );
           })}

@@ -5,6 +5,7 @@ import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { adminClient } from "./supabase-admin";
 import { recordHandStats } from "./stats-store";
 import { checkAvatarUnlocks } from "./avatar-unlocks";
+import { creditGold } from "./profile-store";
 
 // Re-exported for the many existing callers that import it from here.
 export { adminClient };
@@ -235,6 +236,29 @@ async function resolveTimedAdvance(state: GameState): Promise<GameState> {
     }
     current = opening.state;
     logAdvance(current, 0, "dealt the next hand");
+
+    // Only after the release is durably stored. Crediting first would pay a
+    // player whose seat had not actually been given up if the write then lost
+    // its race -- the same ordering the actions route uses for a deliberate
+    // departure, and for the same reason.
+    //
+    // Awaited rather than fired and forgotten: this is somebody's balance,
+    // and the request is already returning a state that says they left the
+    // table with it. A failure here is logged loudly because it is the one
+    // way this feature can cost a player chips.
+    for (const seat of opening.released) {
+      try {
+        await creditGold(seat.ownerToken, seat.cashedOut);
+        logAdvance(current, 0, `released ${seat.name} and returned ${seat.cashedOut}`);
+      } catch (error) {
+        console.error("table.inactive_release_credit_failed", {
+          gameId: current.id,
+          player: seat.name,
+          cashedOut: seat.cashedOut,
+          error,
+        });
+      }
+    }
   }
 
   for (let step = 0; step < MAX_ADVANCE_STEPS; step += 1) {

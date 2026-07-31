@@ -21,6 +21,7 @@ import { PlayerSeat } from "./player-seat";
 import { PlayingCard } from "./playing-card";
 import { PotPile } from "./pot-pile";
 import { isWinningCard, winningCardKeys } from "@/lib/game/winning-cards";
+import { MAX_MISSED_TURNS } from "@/lib/game/engine";
 
 /**
  * A seat's width, as a fraction of the table's width and of its height.
@@ -367,10 +368,17 @@ export function PokerTable({
     const entry = game.log[0];
     const mySeat = game.seats.find((seat) => seat.isMine);
     if (previouslyObserved && entry && mySeat && entry.text.startsWith(`${mySeat.name} ran out of time`)) {
+      // What happened, and what happens next. A player who has just missed a
+      // turn is the one person who needs to know a seat can be lost this way,
+      // and the activity log is not where they are looking.
+      const auto = mySeat.lastAction === "Timed out · Check"
+        ? "you checked automatically"
+        : "you folded automatically";
+      const remaining = MAX_MISSED_TURNS - mySeat.missedTurns;
       setTimeoutFlash(
-        mySeat.lastAction === "Timed out · Check"
-          ? "Time's up — you checked automatically."
-          : "Time's up — you folded automatically.",
+        remaining <= 0
+          ? "You’ve been away too long — your seat goes back to the table."
+          : `Time’s up — ${auto}. ${remaining} more and you lose the seat.`,
       );
     }
   }

@@ -6,6 +6,7 @@ import Image from "next/image";
 import type { PublicSeat } from "@/lib/game/types";
 import { avatarFigure } from "@/lib/cosmetics/catalog";
 import { dealDelayMs } from "@/lib/game/deal-choreography";
+import { MAX_MISSED_TURNS } from "@/lib/game/engine";
 import { isWinningCard } from "@/lib/game/winning-cards";
 import { missingArtwork } from "@/components/artwork-cache";
 import { PlayingCard } from "./playing-card";
@@ -239,13 +240,22 @@ export const PlayerSeat = memo(function PlayerSeat({
   const handStrength = seat.isMine && seat.handLabel
     ? <span className="hand-strength" aria-live="polite">{seat.handLabel}</span>
     : null;
-  const status = folded
-    ? { label: "Folded", className: "status-pill" }
-    : seat.status === "all-in"
-      ? { label: "All in", className: "status-pill all-in" }
-      : seat.lastAction
-        ? { label: seat.lastAction, className: "action-pill" }
-        : null;
+  // Ahead of "Folded", because it is the more important thing to know about a
+  // seat: folded is this hand, away is the player. Only for humans -- a bot
+  // cannot be absent, and its clock is pacing rather than attention.
+  const away = seat.isHuman && seat.missedTurns > 0;
+  const status = away
+    ? {
+        label: `Away · ${seat.missedTurns}/${MAX_MISSED_TURNS}`,
+        className: "status-pill status-away",
+      }
+    : folded
+      ? { label: "Folded", className: "status-pill" }
+      : seat.status === "all-in"
+        ? { label: "All in", className: "status-pill all-in" }
+        : seat.lastAction
+          ? { label: seat.lastAction, className: "action-pill" }
+          : null;
 
   return (
     <article

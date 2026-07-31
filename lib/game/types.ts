@@ -46,6 +46,16 @@ export interface Seat {
   /** Consumable 20-second extensions. Human players receive three when they take a seat. */
   timeCardsRemaining: number;
   /**
+   * Turns in a row this seat let the clock resolve for it.
+   *
+   * Counts only a human's expired clock, and only consecutively: any
+   * deliberate action resets it to zero, because a player who is acting is
+   * present by definition. Persisted across hands on purpose -- somebody who
+   * has walked away misses one turn per hand, so a per-hand counter would
+   * never reach a threshold no matter how long they were gone.
+   */
+  missedTurns: number;
+  /**
    * Voluntarily Put In Pot: true once this seat calls, raises or goes all-in
    * preflop of its own choice. Posting a blind does not set it -- that's the
    * whole reason VPIP is worth tracking, since it separates a hand a player

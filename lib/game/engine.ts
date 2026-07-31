@@ -97,6 +97,17 @@ export const NEXT_HAND_DELAY_MS = 2_800;
  * rather than stalling forever on someone who has walked away.
  */
 export const BUSTED_REBUY_GRACE_MS = 20_000;
+
+/**
+ * Consecutive expired clocks before a seat is given back to the table.
+ *
+ * Three, because two is a bad connection and three is a person who has gone.
+ * At a 15s clock that is roughly 45 seconds of a seat folding itself while
+ * five other players wait for it, which is about as long as a table should
+ * carry someone -- and it is deliberately not a wall-clock timer: a player
+ * who is present but slow is never counted, because acting resets it.
+ */
+export const MAX_MISSED_TURNS = 3;
 export const BOT_DECISION_MIN_MS = 1_200;
 export const BOT_DECISION_MAX_MS = 5_200;
 
@@ -178,6 +189,7 @@ function restoreBotControl(seat: Seat) {
   seat.avatarPreset = fallback.avatarPreset;
   seat.avatarCosmetic = botAvatarFor(seat.position);
   seat.timeCardsRemaining = 0;
+  seat.missedTurns = 0;
 }
 
 /**
@@ -346,6 +358,7 @@ export function createGame(
       actedAtBet: null,
       lastAction: null,
       timeCardsRemaining: STARTING_TIME_CARDS,
+      missedTurns: 0,
       vpip: false,
     },
     ...botProfiles.slice(1).map((bot, index): Seat => ({
@@ -364,6 +377,7 @@ export function createGame(
       actedAtBet: null,
       lastAction: null,
       timeCardsRemaining: 0,
+      missedTurns: 0,
       vpip: false,
     })),
   ];
@@ -429,6 +443,8 @@ export function claimSeat(
   seat.isHuman = true;
   seat.ownerToken = token;
   seat.personality = null;
+  // Whoever sat here before does not follow the new occupant into the seat.
+  seat.missedTurns = 0;
   seat.name = profile.displayName.slice(0, 18) || "Player";
   seat.initials = profile.initials;
   seat.accent = profile.accent;
@@ -1152,6 +1168,12 @@ export function normalizeGameState(state: GameState): GameState {
   // is the safe reading: the table waits for someone to press Deal, exactly
   // as it did when that row was written.
   if (typeof state.nextHandAt !== "string") state.nextHandAt = null;
+  // Seats persisted before inactivity was tracked have missed nothing that
+  // anyone recorded, so they start from zero rather than from undefined --
+  // which would make every comparison below NaN and release nobody, silently.
+  state.seats.forEach((seat) => {
+    if (!Number.isInteger(seat.missedTurns) || seat.missedTurns < 0) seat.missedTurns = 0;
+  });
   state.seats.forEach((seat) => {
     if (!Number.isInteger(seat.timeCardsRemaining)) {
       seat.timeCardsRemaining = seat.isHuman ? STARTING_TIME_CARDS : 0;
@@ -1218,19 +1240,66 @@ export interface TimedTurnAdvance {
  * was written that way, and the browser sat on a finished table forever
  * because every advance re-dealt a hand nobody ever saved.
  */
+/** A seat handed back to the table, and what its occupant is owed for it. */
+export interface ReleasedSeat {
+  ownerToken: string;
+  name: string;
+  /** Chips that left the table with them, to be credited as Gold. */
+  cashedOut: number;
+}
+
+/**
+ * Hands back every seat whose occupant has stopped acting.
+ *
+ * Returns what it released rather than settling it, because settling is not
+ * something the engine can do: chips become Gold through creditGold, which
+ * talks to the profile store. vacateSeat has always had the same split -- it
+ * returns `cashedOut` and the actions route pays it -- and this is the same
+ * contract for the path where nobody pressed anything.
+ *
+ * Getting that wrong would be quiet and expensive. restoreBotControl leaves
+ * the stack where it is, so releasing a seat without reporting the balance
+ * would simply hand a player's chips to the bot that replaced them.
+ *
+ * Between hands only. Releasing mid-hand would drop a bot into a seat with
+ * chips already committed to the pot and a hand it never chose to play.
+ */
+export function releaseInactiveSeats(state: GameState): ReleasedSeat[] {
+  const released: ReleasedSeat[] = [];
+  state.seats.forEach((seat) => {
+    if (!seat.isHuman || !seat.ownerToken) return;
+    if (seat.missedTurns < MAX_MISSED_TURNS) return;
+
+    const record: ReleasedSeat = {
+      ownerToken: seat.ownerToken,
+      name: seat.name,
+      cashedOut: Math.max(0, seat.stack),
+    };
+    addLog(state, `${seat.name} is away and gives up the seat`);
+    restoreBotControl(seat);
+    // Same reasoning as vacateSeat: those chips leave with the player, so the
+    // seat must not keep them as well or every departure mints a stack.
+    seat.stack = TIER_CONFIG[state.tier].minBuyIn;
+    released.push(record);
+  });
+  return released;
+}
+
 export function dealNextHandIfDue(
   state: GameState,
   now = Date.now(),
-): { state: GameState; dealt: boolean } {
+): { state: GameState; dealt: boolean; released: ReleasedSeat[] } {
   normalizeGameState(state);
-  if (state.status !== "complete") return { state, dealt: false };
+  if (state.status !== "complete") return { state, dealt: false, released: [] };
   const due = Date.parse(state.nextHandAt ?? "");
-  if (!Number.isFinite(due) || now < due) return { state, dealt: false };
+  if (!Number.isFinite(due) || now < due) return { state, dealt: false, released: [] };
 
+  // Before the deal, so the next hand is dealt to whoever is actually here.
+  const released = releaseInactiveSeats(state);
   setupHand(state);
   state.version += 1;
   state.updatedAt = new Date(now).toISOString();
-  return { state, dealt: true };
+  return { state, dealt: true, released };
 }
 
 export function advanceTimedTurn(state: GameState, now = Date.now()): TimedTurnAdvance {
@@ -1253,8 +1322,16 @@ export function advanceTimedTurn(state: GameState, now = Date.now()): TimedTurnA
 
   applyTurnAction(state, action);
   if (timedOut) {
+    // Only a human's expired clock counts. A bot has no attention to lose,
+    // and its deadline is a pacing device rather than a decision timer.
+    seat.missedTurns += 1;
     seat.lastAction = action.type === "check" ? "Timed out · Check" : "Timed out · Fold";
-    addLog(state, `${seat.name} ran out of time`);
+    addLog(
+      state,
+      seat.missedTurns >= MAX_MISSED_TURNS
+        ? `${seat.name} ran out of time and forfeits the seat`
+        : `${seat.name} ran out of time (${seat.missedTurns}/${MAX_MISSED_TURNS})`,
+    );
   }
   state.version += 1;
   state.updatedAt = new Date(now).toISOString();
@@ -1287,6 +1364,7 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
     if (seat.timeCardsRemaining <= 0) throw new Error("You have no time cards left.");
     const deadline = Math.max(Date.now(), Date.parse(state.turnDeadlineAt ?? ""));
     seat.timeCardsRemaining -= 1;
+    seat.missedTurns = 0;
     state.turnDeadlineAt = new Date(deadline + TIME_CARD_EXTENSION_MS).toISOString();
     seat.lastAction = `Time card · ${seat.timeCardsRemaining} left`;
     addLog(state, `${seat.name} uses a time card (+20s)`);
@@ -1306,6 +1384,9 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
   } else {
     if (state.status !== "playing") throw new Error("This hand is complete.");
     if (state.currentPlayer !== seatIndex) throw new Error("Wait for your turn.");
+    // Present, by definition. Reset before the action rather than after, so a
+    // throw inside applyTurnAction cannot leave the count wrong either way.
+    state.seats[seatIndex].missedTurns = 0;
     applyTurnAction(state, action);
   }
   state.version += 1;

@@ -528,6 +528,16 @@
   100% { opacity: 1; transform: translate(0, 0) scale(1) rotate(0); filter: blur(0); }
 }
 
+/* An absent player, marked ahead of anything about the hand itself: folded
+   is this hand, away is the person, and the second matters more to everyone
+   still waiting on the seat. Amber rather than red -- nothing has gone wrong
+   yet, and the count says exactly how much rope is left. */
+.status-away {
+  color: #f2c879;
+  border-color: rgba(242,200,121,.34);
+  background: rgba(120,84,20,.34);
+}
+
 .action-pill, .status-pill {
   position: absolute;
   left: 50%;

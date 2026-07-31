@@ -22,21 +22,6 @@
   text-transform: uppercase;
 }
 
-.hero h1 {
-  margin: 24px 0 24px;
-  font: 500 clamp(52px, 6.5vw, 88px)/.96 Georgia, "Times New Roman", serif;
-  letter-spacing: -.045em;
-}
-
-.hero h1 em { color: var(--gold-light); font-weight: 400; }
-
-.hero > p {
-  color: #98a8a0;
-  font-size: clamp(16px, 1.5vw, 19px);
-  line-height: 1.7;
-  max-width: 570px;
-}
-
 
 
 

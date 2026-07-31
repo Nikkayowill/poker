@@ -379,10 +379,6 @@
 
 @media (max-width: 800px) {
   .lobby { grid-template-columns: 1fr; padding-top: 50px; }
-  .hero { text-align: center; margin: auto; }
-  .hero > p, .start-form { margin-left: auto; margin-right: auto; }
-  .table-facts { justify-content: center; }
-  .lobby-preview { margin-top: 30px; }
   .table-meta span:nth-child(2) { display: none; }
   .poker-table-wrap { width: calc(100% - 24px); }
   .history-drawer { width: min(320px, 100%); }

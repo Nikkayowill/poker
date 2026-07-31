@@ -1,5 +1,5 @@
 import "server-only";
-import { advanceTimedTurn, normalizeGameState } from "@/lib/game/engine";
+import { advanceTimedTurn, dealNextHandIfDue, normalizeGameState } from "@/lib/game/engine";
 import type { GameState, PlayerAction } from "@/lib/game/types";
 import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { adminClient } from "./supabase-admin";
@@ -220,6 +220,23 @@ const MAX_ADVANCE_STEPS = 12;
 async function resolveTimedAdvance(state: GameState): Promise<GameState> {
   let current = state;
 
+  // A finished hand whose time is up becomes the next one, before the turn
+  // loop below runs -- so a single request both deals and gets the first bot
+  // thinking, the same way one request already resolves a run of overdue
+  // turns. Persisted through the same optimistic write as every other
+  // deadline, so several browsers waking together still produce one deal:
+  // the losers read back the winner's state instead of dealing again.
+  const opening = dealNextHandIfDue(current);
+  if (opening.dealt) {
+    const persisted = await persistTimedTurn(opening.state, null, { type: "next-hand" });
+    if (!persisted) {
+      logAdvance(current, 0, "lost the next-hand race; adopting stored state");
+      return await getStoredGame(state.id) ?? current;
+    }
+    current = opening.state;
+    logAdvance(current, 0, "dealt the next hand");
+  }
+
   for (let step = 0; step < MAX_ADVANCE_STEPS; step += 1) {
     // Captured as a primitive, before the call below -- not `current.status`
     // read afterward. advanceTimedTurn mutates its input in place (it calls
@@ -397,10 +414,17 @@ export async function persistSeatClaim(state: GameState, seatId: string): Promis
 }
 
 /** Persists one due bot action or human timeout produced by advanceTimedTurn. */
+/**
+ * `actorSeatId` is nullable because one deadline has no actor: the one that
+ * replaces a finished hand. game_actions.actor_seat_id has always been
+ * nullable and `next_hand` has always been in the action_type enum -- the
+ * human-driven Deal button writes exactly this row -- so nothing about the
+ * schema changes to let the clock write it too.
+ */
 async function persistTimedTurn(
   state: GameState,
-  actorSeatId: string,
-  action: Exclude<PlayerAction, { type: "next-hand" | "leave-seat" | "use-time-card" }>,
+  actorSeatId: string | null,
+  action: Exclude<PlayerAction, { type: "leave-seat" | "use-time-card" }>,
 ): Promise<boolean> {
   const supabase = adminClient();
   if (!supabase) {

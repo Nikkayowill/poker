@@ -73,6 +73,24 @@ function botAvatarFor(position: number): string {
 export const TURN_TIMEOUT_MS = Number(process.env.RIVER_TURN_TIMEOUT_MS) || 15_000;
 export const TIME_CARD_EXTENSION_MS = 20_000;
 export const STARTING_TIME_CARDS = 3;
+
+/**
+ * How long a finished hand stays on screen before the next one is dealt.
+ *
+ * Long enough to read the result and watch the pot travel: the winner badge
+ * lands at .55s and the chip funnel runs 1.18s from a .78s offset, so the
+ * celebration is over by about two seconds and this leaves a beat after it.
+ */
+export const NEXT_HAND_DELAY_MS = 4_000;
+
+/**
+ * The same wait, for a table where a seated human has just lost their last
+ * chip. Dealing on the normal delay would call releaseBustedHumanSeats and
+ * hand their seat to a bot while the rebuy dialog was still open in front of
+ * them -- so they get a real chance to decide, and the table still moves on
+ * rather than stalling forever on someone who has walked away.
+ */
+export const BUSTED_REBUY_GRACE_MS = 20_000;
 export const BOT_DECISION_MIN_MS = 1_200;
 export const BOT_DECISION_MAX_MS = 5_200;
 
@@ -156,6 +174,25 @@ function restoreBotControl(seat: Seat) {
   seat.timeCardsRemaining = 0;
 }
 
+/**
+ * Marks a finished hand as due to be replaced.
+ *
+ * Called only where a hand actually played out, never where setupHand gave up
+ * for want of funded seats: a table that cannot deal must not advertise a
+ * deadline, or every seated browser would wake at it, ask the server to
+ * advance, and be told the same thing forever.
+ */
+export function scheduleNextHand(state: GameState, now = Date.now()) {
+  const canContinue = state.seats.filter((seat) => seat.stack > 0).length >= 2;
+  if (!canContinue) {
+    state.nextHandAt = null;
+    return;
+  }
+  const bustedHuman = state.seats.some((seat) => seat.isHuman && seat.stack <= 0);
+  const delay = bustedHuman ? BUSTED_REBUY_GRACE_MS : NEXT_HAND_DELAY_MS;
+  state.nextHandAt = new Date(now + delay).toISOString();
+}
+
 function releaseBustedHumanSeats(state: GameState) {
   state.seats.forEach((seat) => {
     if (!seat.isHuman || seat.stack > 0) return;
@@ -200,6 +237,10 @@ function dealToCommunity(state: GameState, count: number) {
 
 function setupHand(state: GameState, firstHand = false) {
   if (!firstHand) releaseBustedHumanSeats(state);
+  // Cleared before the funded check, so the dead-table branch below leaves it
+  // null rather than inheriting the deadline that brought us here -- which
+  // would have every browser retry an advance that can never succeed.
+  state.nextHandAt = null;
   const funded = state.seats.filter((seat) => seat.stack > 0);
   if (funded.length < 2) {
     state.status = "complete";
@@ -338,6 +379,7 @@ export function createGame(
     currentPlayer: null,
     turnStartedAt: null,
     turnDeadlineAt: null,
+    nextHandAt: null,
     currentBet: 0,
     minRaise: config.bigBlind,
     pot: 0,
@@ -538,6 +580,7 @@ function awardUncontested(state: GameState, seat: Seat) {
   state.street = "showdown";
   state.status = "complete";
   setCurrentPlayer(state, null);
+  scheduleNextHand(state);
   state.message = `${seat.name} wins ${amount}`;
   addLog(state, `${seat.name} wins ${amount} uncontested`, "win");
 }
@@ -605,6 +648,7 @@ function showdown(state: GameState) {
   state.street = "showdown";
   state.status = "complete";
   setCurrentPlayer(state, null);
+  scheduleNextHand(state);
   state.message = winners.map((winner) => `${winner.name} wins ${winner.amount} · ${winner.hand}`).join(" / ");
   addLog(state, state.message, "win");
 }
@@ -1089,6 +1133,10 @@ export function normalizeGameState(state: GameState): GameState {
   }
   // Hands dealt before rake existed carry no rake figure; treat them as unraked.
   if (!Number.isFinite(state.rake)) state.rake = 0;
+  // Tables persisted before continuous play carry no next-hand deadline. Null
+  // is the safe reading: the table waits for someone to press Deal, exactly
+  // as it did when that row was written.
+  if (typeof state.nextHandAt !== "string") state.nextHandAt = null;
   state.seats.forEach((seat) => {
     if (!Number.isInteger(seat.timeCardsRemaining)) {
       seat.timeCardsRemaining = seat.isHuman ? STARTING_TIME_CARDS : 0;
@@ -1144,6 +1192,32 @@ export interface TimedTurnAdvance {
  * think deadline; the next bot receives a fresh deadline, which creates
  * visible pacing instead of resolving a whole table in one request.
  */
+/**
+ * Replaces a finished hand with the next one, once its deadline has passed.
+ *
+ * The whole of continuous play. Deliberately separate from advanceTimedTurn
+ * rather than folded into it: that function's contract is "an action and an
+ * actor, or nothing happened", and its caller in game-store.ts stops on a
+ * null action without persisting anything. A hand dealt inside it would be
+ * dealt in memory and thrown away -- which is exactly what happened when it
+ * was written that way, and the browser sat on a finished table forever
+ * because every advance re-dealt a hand nobody ever saved.
+ */
+export function dealNextHandIfDue(
+  state: GameState,
+  now = Date.now(),
+): { state: GameState; dealt: boolean } {
+  normalizeGameState(state);
+  if (state.status !== "complete") return { state, dealt: false };
+  const due = Date.parse(state.nextHandAt ?? "");
+  if (!Number.isFinite(due) || now < due) return { state, dealt: false };
+
+  setupHand(state);
+  state.version += 1;
+  state.updatedAt = new Date(now).toISOString();
+  return { state, dealt: true };
+}
+
 export function advanceTimedTurn(state: GameState, now = Date.now()): TimedTurnAdvance {
   normalizeGameState(state);
   if (state.status !== "playing" || state.currentPlayer === null || !state.turnDeadlineAt) {

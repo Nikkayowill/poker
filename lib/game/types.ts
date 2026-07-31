@@ -93,6 +93,13 @@ export interface GameState {
   turnStartedAt: string | null;
   /** Server-authored deadline for the current human or bot action. */
   turnDeadlineAt: string | null;
+  /**
+   * When a completed hand should be replaced by the next one. Null while a
+   * hand is in play, and null on a table that cannot continue -- the two
+   * cases where nothing should be scheduled at all. Written by the engine
+   * and honoured by the same seated-browser clock that resolves turns.
+   */
+  nextHandAt: string | null;
   currentBet: number;
   minRaise: number;
   pot: number;

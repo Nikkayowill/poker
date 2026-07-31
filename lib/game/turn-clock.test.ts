@@ -7,6 +7,7 @@ const at = (offsetMs: number) => new Date(NOW + offsetMs).toISOString();
 const input = (over: Partial<TurnClockInput> = {}): TurnClockInput => ({
   isSeated: true,
   turnDeadlineAt: at(2_000),
+  nextHandAt: null,
   currentIsHuman: false,
   currentIsMine: false,
   myHumanRank: 0,

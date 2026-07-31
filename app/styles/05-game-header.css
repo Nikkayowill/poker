@@ -5,19 +5,6 @@
 .game-header .mark::after { font-size: 17px; }
 .game-header .wordmark { font-size: 16px; }
 
-.table-meta {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  color: #77867e;
-  font-size: 10px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-
-.table-meta span { display: flex; align-items: center; gap: 7px; }
-
-
 .room-code-chip {
   display: inline-flex;
   align-items: center;
@@ -35,20 +22,6 @@
 
 .room-code-chip > span { color: #65736b; font-weight: 500; }
 
-.live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #4bd690;
-  box-shadow: 0 0 0 4px rgba(75,214,144,.08);
-}
-
-.demo-dot { background: var(--gold); }
-.connection-dot-warning {
-  background: #ff9d67;
-  box-shadow: 0 0 0 4px rgba(255,157,103,.1);
-}
-
 .leave-button {
   border: 1px solid var(--line);
   color: #86948c;
@@ -58,47 +31,6 @@
   font-size: 11px;
   cursor: pointer;
 }
-
-.give-up-seat-button {
-  border: 1px solid rgba(255,138,122,.22);
-  color: #d99a90;
-  background: rgba(255,138,122,.04);
-  padding: 9px 13px;
-  border-radius: 7px;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.give-up-seat-button:hover { border-color: rgba(255,138,122,.4); color: #ffac9d; }
-
-.history-toggle {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid var(--line);
-  color: #9aa8a0;
-  background: rgba(255,255,255,.025);
-  padding: 9px 13px;
-  border-radius: 7px;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.history-toggle:hover { border-color: rgba(217,184,93,.28); color: #f0dfaa; }
-
-.sound-toggle {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  color: #9aa8a0;
-  background: rgba(255,255,255,.025);
-  cursor: pointer;
-}
-
-.sound-toggle:hover { border-color: rgba(217,184,93,.28); color: #f0dfaa; }
 
 /* The game screen must never scroll: a fixed viewport-height shell with a
    flex column of (fixed-height header) + (squeezable content). Every level

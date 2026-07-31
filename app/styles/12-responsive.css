@@ -7,7 +7,6 @@
     padding-left: max(18px, env(safe-area-inset-left));
     padding-right: max(18px, env(safe-area-inset-right));
   }
-  .header-status { display: none; }
   .lobby {
     width: calc(100% - 24px);
     height: calc(100vh - 68px);
@@ -30,14 +29,12 @@
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
   }
-  .game-header .wordmark > span:last-child,
-  .table-meta > span:not(:first-child):not(.blind-structure) { display: none; }
-  .leave-button, .give-up-seat-button, .history-toggle, .sound-toggle, .game-header-actions .auth-button { padding: 7px; font-size: 9px; }
-  .history-toggle span { display: none; }
+  .game-header .wordmark > span:last-child { display: none; }
+  .leave-button, .game-header-actions .auth-button { padding: 7px; font-size: 9px; }
   /* However much still doesn't fit -- the exact count varies by auth state
      and whether a seat is claimed -- scrolls instead of clipping or
-     overlapping the table-meta cluster beside it. Nothing here is ever
-     literally unreachable, just occasionally a swipe away. */
+     overlapping the wordmark beside it. Nothing here is ever literally
+     unreachable, just occasionally a swipe away. */
   .header-actions, .game-header-actions {
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -48,7 +45,6 @@
   }
   .header-actions::-webkit-scrollbar, .game-header-actions::-webkit-scrollbar { display: none; }
   .header-actions > *, .game-header-actions > * { flex-shrink: 0; }
-  .table-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   /* The 122px desktop offset clears a one-row action bar; on mobile, a
      decision with the raise slider expanded is taller than that and the
      toast lands on top of Fold/Call instead of above them. */
@@ -101,7 +97,6 @@
   .seat-stack strong { font-size: 10px; }
   .table-bet { --bet-reach: 52px; }
       .action-layer { padding: 0 4px calc(6px + env(safe-area-inset-bottom)); padding-left: max(4px, env(safe-area-inset-left)); padding-right: max(4px, env(safe-area-inset-right)); }
-  .header-actions .header-status { display: none; }
   .profile-trigger:not(.profile-trigger-compact) {
     min-width: 0;
     padding: 4px 7px 4px 4px;
@@ -116,7 +111,6 @@
   .profile-modal-header { padding: 21px 19px 17px; }
   .profile-modal-header h2 { font-size: 24px; }
   .profile-modal form { padding: 18px 19px calc(22px + env(safe-area-inset-bottom)); }
-  .preset-grid { grid-template-columns: repeat(3, 1fr); }
   .profile-preview { padding: 14px; }
 
   /* Hand history becomes a bottom sheet rather than a side drawer. */
@@ -143,9 +137,9 @@
     padding-top: env(safe-area-inset-top);
   }
   /* Same fix as the narrow-portrait breakpoint: a wide phone in landscape is
-     still not wide enough for wordmark + table-meta + every header action
-     at once, and without this the Gold badge sits on top of the table-meta
-     text instead of beside it. */
+     still not wide enough for the wordmark and every header action at once,
+     and without this the Gold badge sits on top of the wordmark instead of
+     beside it. */
   .header-actions, .game-header-actions {
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -156,7 +150,6 @@
   }
   .header-actions::-webkit-scrollbar, .game-header-actions::-webkit-scrollbar { display: none; }
   .header-actions > *, .game-header-actions > * { flex-shrink: 0; }
-  .table-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
   .game-header .wordmark small, .lobby-header .wordmark small { display: none; }
   .table-area {
     padding-top: 2px;
@@ -205,8 +198,6 @@
   .seat-chip-flight,
   .muck-drift,
   .seat-current::after,
-  .action-countdown.countdown-critical,
-  .avatar-idle,
   .gold-badge-claimed .gold-balance strong {
     animation: none;
   }

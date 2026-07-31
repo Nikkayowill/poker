@@ -87,9 +87,3 @@
   line-height: 1.5;
 }
 .avatar-hint a { color: var(--gold-light); }
-
-.avatar-idle { animation: avatar-breathe 4.2s ease-in-out infinite; }
-@keyframes avatar-breathe {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-1.5%); }
-}

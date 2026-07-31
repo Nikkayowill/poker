@@ -421,16 +421,19 @@ export function PokerApp() {
   const clockInput: TurnClockInput = {
     isSeated: Boolean(game?.isSeated),
     turnDeadlineAt: game?.turnDeadlineAt ?? null,
+    nextHandAt: game?.nextHandAt ?? null,
     currentIsHuman: Boolean(currentSeat?.isHuman),
     currentIsMine: Boolean(currentSeat?.isMine),
     myHumanRank: humanSeats.findIndex((seat) => seat.isMine),
   };
-  const { isSeated, turnDeadlineAt, currentIsHuman, currentIsMine, myHumanRank } = clockInput;
+  const {
+    isSeated, turnDeadlineAt, nextHandAt, currentIsHuman, currentIsMine, myHumanRank,
+  } = clockInput;
 
   useEffect(() => {
     if (!gameId) return;
     const plan = planTurnClock(
-      { isSeated, turnDeadlineAt, currentIsHuman, currentIsMine, myHumanRank },
+      { isSeated, turnDeadlineAt, nextHandAt, currentIsHuman, currentIsMine, myHumanRank },
       Date.now(),
     );
     if (plan.kind === "idle") return;
@@ -455,7 +458,7 @@ export function PokerApp() {
       disposed = true;
       window.clearTimeout(timeout);
     };
-  }, [advanceTable, gameId, isSeated, turnDeadlineAt, currentIsHuman, currentIsMine, myHumanRank]);
+  }, [advanceTable, gameId, isSeated, turnDeadlineAt, nextHandAt, currentIsHuman, currentIsMine, myHumanRank]);
 
   const quickPlay = async (name: string, tier: StakesTier, buyIn: number) => {
     setLoading(true);

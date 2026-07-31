@@ -1,0 +1,254 @@
+import { describe, expect, it } from "vitest";
+import {
+  advanceTimedTurn,
+  applyPlayerAction,
+  dealNextHandIfDue,
+  BUSTED_REBUY_GRACE_MS,
+  claimSeat,
+  createGame,
+  NEXT_HAND_DELAY_MS,
+  normalizeGameState,
+  scheduleNextHand,
+} from "./engine";
+import { planTurnClock, type TurnClockInput } from "./turn-clock";
+import type { GameState } from "./types";
+import { defaultEquipped } from "@/lib/cosmetics/catalog";
+
+/**
+ * Continuous play, which is one deadline and one branch.
+ *
+ * The behaviour these lock down is not "a hand ends and another starts" --
+ * that already worked when a player pressed Deal. It is that a finished hand
+ * carries a deadline, that the deadline is honoured exactly once and only
+ * when it is due, and that the two states where a table must NOT deal itself
+ * are still respected: a table with nobody left to play, and a human who has
+ * just busted and is looking at a rebuy dialog.
+ */
+
+const profile = (name: string) => ({
+  displayName: name,
+  initials: name.slice(0, 2).toUpperCase(),
+  accent: "#79c9ff",
+  avatarUrl: null,
+  avatarPreset: "ace" as const,
+  equipped: defaultEquipped,
+});
+
+function tableWithTwoHumans() {
+  const tokens = [crypto.randomUUID(), crypto.randomUUID()];
+  let game = createGame(tokens[0], "Player 1");
+  game = claimSeat(game, tokens[1], profile("Player 2")).state;
+  return { game, tokens };
+}
+
+/** Folds every seat but one, which is the shortest route to a finished hand. */
+function foldToOneWinner(start: GameState): GameState {
+  let game = start;
+  for (let guard = 0; guard < 40 && game.status === "playing"; guard += 1) {
+    const index = game.currentPlayer;
+    if (index === null) break;
+    const seat = game.seats[index];
+    if (!seat.isHuman || !seat.ownerToken) {
+      game = advanceTimedTurn(game, Date.parse(game.turnDeadlineAt ?? "") + 1).state;
+      continue;
+    }
+    game = applyPlayerAction(game, { type: "fold" }, seat.ownerToken);
+  }
+  return game;
+}
+
+describe("a finished hand schedules the next one", () => {
+  it("writes a deadline the moment the hand completes", () => {
+    const before = Date.now();
+    const game = foldToOneWinner(tableWithTwoHumans().game);
+    expect(game.status).toBe("complete");
+
+    const due = Date.parse(game.nextHandAt ?? "");
+    expect(Number.isFinite(due)).toBe(true);
+    expect(due).toBeGreaterThanOrEqual(before + NEXT_HAND_DELAY_MS);
+    expect(due).toBeLessThanOrEqual(Date.now() + NEXT_HAND_DELAY_MS + 50);
+  });
+
+  it("does nothing at all before the deadline", () => {
+    const game = foldToOneWinner(tableWithTwoHumans().game);
+    const due = Date.parse(game.nextHandAt ?? "");
+    const handNumber = game.handNumber;
+    const version = game.version;
+
+    const early = dealNextHandIfDue(game, due - 1).state;
+    expect(early.status).toBe("complete");
+    expect(early.handNumber).toBe(handNumber);
+    // Version untouched, because a no-op that bumps the version wakes every
+    // other browser over the broadcast for nothing.
+    expect(early.version).toBe(version);
+  });
+
+  it("deals the next hand once the deadline passes", () => {
+    const game = foldToOneWinner(tableWithTwoHumans().game);
+    const due = Date.parse(game.nextHandAt ?? "");
+    const handNumber = game.handNumber;
+    // Captured, not read back off `game` afterwards: the engine mutates the
+    // state in place and returns the same object, so `game` IS `dealt`.
+    const version = game.version;
+
+    const dealt = dealNextHandIfDue(game, due).state;
+    expect(dealt.status).toBe("playing");
+    expect(dealt.handNumber).toBe(handNumber + 1);
+    expect(dealt.version).toBeGreaterThan(version);
+    // Cleared, or the next call would deal again on the stale deadline.
+    expect(dealt.nextHandAt).toBeNull();
+    expect(dealt.turnDeadlineAt).not.toBeNull();
+  });
+
+  it("keeps dealing, hand after hand, with no player input", () => {
+    let game = tableWithTwoHumans().game;
+    const first = game.handNumber;
+    for (let hand = 0; hand < 3; hand += 1) {
+      game = foldToOneWinner(game);
+      expect(game.status).toBe("complete");
+      game = dealNextHandIfDue(game, Date.parse(game.nextHandAt ?? "")).state;
+    }
+    expect(game.handNumber).toBe(first + 3);
+    expect(game.status).toBe("playing");
+  });
+});
+
+describe("the two tables that must not deal themselves", () => {
+  it("schedules nothing when too few seats still have chips", () => {
+    const game = foldToOneWinner(tableWithTwoHumans().game);
+    // Strip the table down to one funded seat, the state setupHand refuses.
+    const broke: GameState = {
+      ...game,
+      seats: game.seats.map((seat, index) => (index === 0 ? seat : { ...seat, stack: 0 })),
+    };
+    const finished = foldToOneWinner({ ...broke, status: "complete" });
+
+    const settled = dealNextHandIfDue(
+      { ...finished, nextHandAt: new Date(Date.now() - 1).toISOString() },
+      Date.now(),
+    ).state;
+    // setupHand gave up, and must not leave a deadline behind: every seated
+    // browser would wake at it, ask to advance, and be told the same thing
+    // forever.
+    expect(settled.nextHandAt).toBeNull();
+    expect(settled.status).toBe("complete");
+  });
+
+  /**
+   * Driven directly rather than by playing a hand out. Reaching "a human is
+   * all in, loses, and ends on nothing" through real play depends on the
+   * cards, so the test that did it that way had to bail out when the setup
+   * did not happen -- and a test that can decline to assert is not a test.
+   */
+  describe("the delay itself", () => {
+    const NOW = Date.parse("2026-07-31T12:00:00.000Z");
+    const withStacks = (stacks: Array<{ stack: number; isHuman: boolean }>): GameState => {
+      const base = tableWithTwoHumans().game;
+      return {
+        ...base,
+        seats: stacks.map((entry, index) => ({
+          ...base.seats[index % base.seats.length],
+          id: `seat-${index}`,
+          stack: entry.stack,
+          isHuman: entry.isHuman,
+          ownerToken: entry.isHuman ? `token-${index}` : null,
+        })),
+      };
+    };
+
+    it("waits the normal beat when everyone still has chips", () => {
+      const state = withStacks([
+        { stack: 900, isHuman: true },
+        { stack: 1_100, isHuman: false },
+      ]);
+      scheduleNextHand(state, NOW);
+      expect(state.nextHandAt).toBe(new Date(NOW + NEXT_HAND_DELAY_MS).toISOString());
+    });
+
+    it("waits the grace period when a human has just lost their last chip", () => {
+      // Dealing on the normal beat would run releaseBustedHumanSeats and hand
+      // their seat to a bot with the rebuy dialog still open in front of them.
+      const state = withStacks([
+        { stack: 0, isHuman: true },
+        { stack: 1_000, isHuman: false },
+        { stack: 1_000, isHuman: false },
+      ]);
+      scheduleNextHand(state, NOW);
+      expect(state.nextHandAt).toBe(new Date(NOW + BUSTED_REBUY_GRACE_MS).toISOString());
+    });
+
+    it("does not extend the wait for a busted bot", () => {
+      // A bot has no rebuy dialog to read, so nobody is waiting on anything.
+      const state = withStacks([
+        { stack: 900, isHuman: true },
+        { stack: 1_100, isHuman: false },
+        { stack: 0, isHuman: false },
+      ]);
+      scheduleNextHand(state, NOW);
+      expect(state.nextHandAt).toBe(new Date(NOW + NEXT_HAND_DELAY_MS).toISOString());
+    });
+
+    it("schedules nothing when only one seat still has chips", () => {
+      const state = withStacks([
+        { stack: 2_000, isHuman: true },
+        { stack: 0, isHuman: false },
+      ]);
+      state.nextHandAt = new Date(NOW).toISOString();
+      scheduleNextHand(state, NOW);
+      expect(state.nextHandAt).toBeNull();
+    });
+  });
+});
+
+describe("the browser clock between hands", () => {
+  const NOW = Date.parse("2026-07-31T12:00:00.000Z");
+  const at = (offset: number) => new Date(NOW + offset).toISOString();
+  const input = (over: Partial<TurnClockInput> = {}): TurnClockInput => ({
+    isSeated: true,
+    turnDeadlineAt: null,
+    nextHandAt: null,
+    currentIsHuman: false,
+    currentIsMine: false,
+    myHumanRank: 0,
+    ...over,
+  });
+
+  it("waits for the next hand when no turn is running", () => {
+    // Previously "no turn deadline" meant idle, which is exactly why a
+    // finished table sat there until somebody pressed Deal.
+    const plan = planTurnClock(input({ nextHandAt: at(4_000) }), NOW);
+    expect(plan).toEqual({ kind: "advance-at", delayMs: 4_000, rank: 0 });
+  });
+
+  it("still rests when there is nothing to wait for", () => {
+    expect(planTurnClock(input(), NOW).kind).toBe("idle");
+  });
+
+  it("keeps the backup queue between hands, so a closed tab is covered", () => {
+    const plan = planTurnClock(input({ nextHandAt: at(4_000), myHumanRank: 2 }), NOW);
+    expect(plan.kind).toBe("advance-at");
+    if (plan.kind === "advance-at") expect(plan.delayMs).toBeGreaterThan(4_000);
+  });
+
+  it("prefers a live turn deadline over a stale next-hand one", () => {
+    const plan = planTurnClock(
+      input({ turnDeadlineAt: at(1_000), nextHandAt: at(9_000) }),
+      NOW,
+    );
+    expect(plan).toEqual({ kind: "advance-at", delayMs: 1_000, rank: 0 });
+  });
+});
+
+describe("tables persisted before continuous play", () => {
+  it("reads a missing deadline as null rather than dealing immediately", () => {
+    const game = foldToOneWinner(tableWithTwoHumans().game);
+    const legacy: Record<string, unknown> = { ...game };
+    delete legacy.nextHandAt;
+
+    const normalized = normalizeGameState(legacy as unknown as GameState);
+    expect(normalized.nextHandAt).toBeNull();
+    // And with no deadline, the timed advance leaves it exactly as it was.
+    expect(dealNextHandIfDue(normalized, Date.now() + 60_000).dealt).toBe(false);
+    expect(normalized.status).toBe("complete");
+  });
+});

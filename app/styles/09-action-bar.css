@@ -89,31 +89,6 @@
   white-space: nowrap;
 }
 
-.action-countdown {
-  width: 58px;
-  display: grid;
-  place-content: center;
-  text-align: center;
-  border: 1px solid rgba(217,184,93,.18);
-  border-radius: var(--radius-lg, 9px);
-  background: rgba(217,184,93,.045);
-}
-.action-countdown span {
-  color: var(--gold);
-  font-size: 6px;
-  font-weight: 850;
-  letter-spacing: .11em;
-  text-transform: uppercase;
-}
-.action-countdown strong { color: #f5e7ad; font: 600 24px/.9 Georgia, serif; }
-.action-countdown.countdown-critical {
-  border-color: rgba(255,113,90,.45);
-  background: rgba(164,54,38,.12);
-  animation: critical-clock .7s ease-in-out infinite;
-}
-.countdown-critical strong, .countdown-critical span { color: #ff9a87; }
-@keyframes critical-clock { 50% { box-shadow: 0 0 20px rgba(255,99,75,.17); } }
-
 .time-card-button {
   min-width: 52px;
   display: flex;

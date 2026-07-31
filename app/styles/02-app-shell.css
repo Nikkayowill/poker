@@ -65,14 +65,6 @@
 }
 .wordmark .mark { font-family: Georgia, serif; }
 
-.header-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #829088;
-  font-size: 12px;
-}
-
 .header-actions, .game-header-actions {
   display: flex;
   align-items: center;

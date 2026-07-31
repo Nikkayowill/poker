@@ -34,6 +34,16 @@ export interface TurnClockInput {
   isSeated: boolean;
   /** ISO deadline the server wrote for the seat on turn, if any. */
   turnDeadlineAt: string | null;
+  /**
+   * ISO deadline for replacing a finished hand, if the table has one.
+   *
+   * This is what makes play continuous. A completed hand has no turn and so
+   * no turn deadline, which is why the table used to rest here until somebody
+   * pressed Deal. Both deadlines are resolved by the same request to the same
+   * route, so the queue, the stagger and the optimistic write all carry over
+   * without a second mechanism.
+   */
+  nextHandAt: string | null;
   /** Whether the seat currently on turn is a human. */
   currentIsHuman: boolean;
   /** Is the seat on turn mine? */
@@ -69,10 +79,16 @@ export function planTurnClock(input: TurnClockInput, now: number): TurnClockPlan
   const rank = advanceRank(input);
   if (rank < 0) return { kind: "idle", reason: "not a seated human" };
 
-  const deadline = Date.parse(input.turnDeadlineAt ?? "");
-  // No deadline means no turn is running -- between hands, or a finished
-  // table. This is the state a table rests in, and it must generate nothing.
-  if (!Number.isFinite(deadline)) return { kind: "idle", reason: "no turn deadline" };
+  // A turn deadline when a hand is in play, a next-hand deadline when one has
+  // just finished. Never both: the engine clears the turn when it completes a
+  // hand and clears nextHandAt when it deals one.
+  const turn = Date.parse(input.turnDeadlineAt ?? "");
+  const nextHand = Date.parse(input.nextHandAt ?? "");
+  const deadline = Number.isFinite(turn) ? turn : nextHand;
+  // Neither means there is nothing to wait for: a table with no funded
+  // opponents, or one still waiting for players. That is the state a table
+  // rests in, and it must generate nothing.
+  if (!Number.isFinite(deadline)) return { kind: "idle", reason: "no deadline" };
 
   // Overdue: go now, once. A minimum delay here is what produced the retry
   // storm, because the deadline stayed overdue between attempts.

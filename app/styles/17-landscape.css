@@ -1,5 +1,18 @@
 /* Short landscape phones. Last of all, deliberately. The local player's
-   two-column structure remains intact; only its scale changes. */
+   two-column structure remains intact; only its scale changes.
+
+   Keyed on max-height, and deliberately NOT inverted to min-height when the
+   width breakpoints went mobile-first. Those form a ladder: portrait mobile is
+   the base and wider viewports add to it, so min-width reads as "expand from
+   the default". Height here is not a ladder. A phone turned sideways is an
+   exception to the primary experience, not a smaller rung of it, and inverting
+   these would make a 320px-tall landscape handset the base that everything
+   else overrides -- which is backwards, and would put the exception in charge.
+
+   The split with 12-responsive.css is by concern, not by accident: that file's
+   landscape blocks carry the header, table and action bar, this one carries
+   only the local seat, and it loads last so the seat wins. Nothing here shares
+   a selector with anything there. */
 
 @media (max-height: 500px) and (orientation: landscape) {
   .seat-first-person {

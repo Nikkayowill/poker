@@ -141,6 +141,7 @@ const engine: TableEnginePort<FakeState, FakeAction, FakeState & { phase: TableP
   currentChips: (value, seatId) => value.chips[seatId] ?? 0,
   winningSeatIds: (value) => value.winners,
   handKey: (value) => String(value.hand),
+  stateVersion: (value) => value.hand,
   publicState: (value, phase) => ({ ...value, phase }),
 };
 

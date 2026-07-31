@@ -232,6 +232,10 @@ export const riverRoomEngineAdapter: TableEnginePort<
     return `${state.id}:${state.handNumber}`;
   },
 
+  stateVersion(state) {
+    return state.version;
+  },
+
   publicState(state, phase) {
     return {
       version: state.version,

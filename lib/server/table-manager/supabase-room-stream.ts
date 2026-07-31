@@ -4,6 +4,10 @@ import type {
   RealtimeChannelSendResponse,
   SupabaseClient,
 } from "@supabase/supabase-js";
+import {
+  tableChannelName,
+  tableStateChangedPayload,
+} from "@/lib/game/table-channel";
 import type { TableRoomEvent, TableRoomStream } from "./types";
 
 const SUBSCRIBE_TIMEOUT_MS = 10_000;
@@ -26,7 +30,7 @@ export class SupabaseRoomStream<TPublicState>
   open(): Promise<void> {
     if (this.openPromise) return this.openPromise;
     const opening = new Promise<void>((resolve, reject) => {
-      const channel = this.client.channel(`table:${this.tableId}`, {
+      const channel = this.client.channel(tableChannelName(this.tableId), {
         config: { private: false },
       });
       this.channel = channel;
@@ -76,10 +80,14 @@ export class SupabaseRoomStream<TPublicState>
     if (!channel) {
       throw new Error(`Realtime room ${this.tableId} was closed before publish.`);
     }
+    // The envelope, not the internal event: `tableId` is already the channel
+    // and `phase`/`state` are facts the receiver's own snapshot fetch carries
+    // with per-viewer redaction applied. Sending the event verbatim is how
+    // the version ended up nested under `state` in the first place.
     const response: RealtimeChannelSendResponse = await channel.send({
       type: "broadcast",
       event: event.type,
-      payload: event,
+      payload: tableStateChangedPayload(event.version, new Date().toISOString()),
     });
     if (response !== "ok") {
       throw new Error(`Realtime publish failed for ${this.tableId}: ${response}.`);

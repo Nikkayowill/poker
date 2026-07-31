@@ -13,6 +13,11 @@ import {
   setRememberAuthSession,
 } from "@/lib/supabase/browser-client";
 import { planTurnClock, type TurnClockInput } from "@/lib/game/turn-clock";
+import {
+  TABLE_STATE_CHANGED,
+  parseTableStateChanged,
+  tableChannelName,
+} from "@/lib/game/table-channel";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
 import { Coins, Layers, LogOut, Settings2, Trophy, UserPlus } from "lucide-react";
@@ -363,21 +368,17 @@ export function PokerApp() {
     };
 
     let channel: RealtimeChannel | null = supabase
-      .channel(`table:${gameId}`)
+      .channel(tableChannelName(gameId))
       .on(
         "broadcast",
-        { event: "TABLE_STATE_CHANGED" },
+        { event: TABLE_STATE_CHANGED },
         (payload) => {
-          const body = payload.payload as {
-            version?: unknown;
-            state?: { version?: unknown };
-          } | undefined;
-          const version = Number(body?.version ?? body?.state?.version);
+          const event = parseTableStateChanged(payload.payload);
           if (
-            !Number.isFinite(version)
-            || version <= Math.max(pendingVersion, gameVersionRef.current)
+            !event
+            || event.version <= Math.max(pendingVersion, gameVersionRef.current)
           ) return;
-          pendingVersion = version;
+          pendingVersion = event.version;
           refreshLatest();
         },
       )

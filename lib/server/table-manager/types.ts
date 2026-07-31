@@ -89,6 +89,12 @@ export interface TableEnginePort<TState, TAction, TPublicState> {
   currentChips(state: TState, seatId: SeatId): number;
   winningSeatIds(state: TState): SeatId[];
   handKey(state: TState): string;
+  /**
+   * The monotonic version a broadcast announces. Separate from publicState
+   * because TableManager is generic over TPublicState and so cannot reach
+   * into it for a field; asking the engine keeps the wire envelope typed.
+   */
+  stateVersion(state: TState): number;
   publicState(state: TState, phase: TablePhase): TPublicState;
 }
 
@@ -103,6 +109,8 @@ export interface TableRoomEvent<TPublicState> {
   type: "TABLE_STATE_CHANGED" | "TABLE_HALTED";
   tableId: string;
   phase: TablePhase;
+  /** Announced on the wire; see lib/game/table-channel.ts for the contract. */
+  version: number;
   state: TPublicState | null;
 }
 

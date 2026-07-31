@@ -527,6 +527,7 @@ export class TableManager<TState, TAction, TPublicState> {
         type: "TABLE_HALTED",
         tableId: this.tableId,
         phase: "RestartCheck",
+        version: this.options.engine.stateVersion(this.state),
         state: null,
       });
     } catch (error) {
@@ -585,6 +586,7 @@ export class TableManager<TState, TAction, TPublicState> {
       type: "TABLE_STATE_CHANGED",
       tableId: this.tableId,
       phase: this.phase,
+      version: this.options.engine.stateVersion(this.state),
       state: this.options.engine.publicState(this.state, this.phase),
     });
   }

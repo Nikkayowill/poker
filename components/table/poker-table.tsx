@@ -19,6 +19,7 @@ import { ChipFlight, MuckDrift, PotFunnel } from "./table-effects";
 import { HandHistoryDrawer } from "./hand-history-drawer";
 import { PlayerSeat } from "./player-seat";
 import { PlayingCard } from "./playing-card";
+import { PotPile } from "./pot-pile";
 import { isWinningCard, winningCardKeys } from "@/lib/game/winning-cards";
 
 /**
@@ -533,7 +534,9 @@ export function PokerTable({
                     box .pot-display used to occupy here (45x35 at every
                     breakpoint, because its two font sizes are fixed), so the
                     target has not moved by a pixel. */}
-                <div className="pot-anchor" ref={potRef} aria-hidden="true" />
+                <div className="pot-anchor" ref={potRef} aria-hidden="true">
+                  <PotPile pot={game.pot} bigBlind={game.bigBlind} paying={showFunnel} />
+                </div>
                 {showFunnel && <PotFunnel key={game.handNumber} winners={game.winners} potRef={potRef} seatRefs={seatRefs} />}
                 <div className="community-cards">
                   {[0, 1, 2, 3, 4].map((index) => (

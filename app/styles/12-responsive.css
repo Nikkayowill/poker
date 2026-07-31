@@ -194,10 +194,15 @@
 @media (prefers-reduced-motion: reduce) {
   .dealt-card-shell,
   .community-card-flipper,
+  .pot-pile-chip,
   .seat-current::after,
   .gold-badge-claimed .gold-balance strong {
     animation: none;
   }
+  /* The pile is real state, not a transient, so it stays -- but it clears
+     itself by fading, and `animation: none` would leave the pot piled on the
+     felt after it had been paid out. */
+  .pot-pile-paying { display: none; }
   /* Not `animation: none` -- these three exist only to be in motion, and
      turning the motion off leaves them parked instead of gone. Verified with
      Playwright's reducedMotion emulation: .pot-chip-flight computed to

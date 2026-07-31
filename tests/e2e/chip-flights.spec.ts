@@ -61,6 +61,7 @@ test("the pot lands on the winner it was paid to", async ({ browser }) => {
       worstDx: number;
       worstDy: number;
       target: { x: number; y: number } | null;
+      pileOpacity: number;
     } | null = null;
 
     while (Date.now() < deadline && !landing) {
@@ -80,12 +81,21 @@ test("the pot lands on the winner it was paid to", async ({ browser }) => {
           const chips = [...document.querySelectorAll(".pot-chip-flight")]
             .map(centre)
             .filter((c): c is { x: number; y: number } => c !== null);
-          if (!target || chips.length === 0) return { chips: chips.length, worstDx: 0, worstDy: 0, target };
+          // The handoff: by the time funnel chips are visible, the static pile
+          // must be gone. PotFunnel's chips are transparent for their first
+          // 18% -- ~210ms of a 1.18s flight -- and the pile clears in 200ms,
+          // so the felt is never both piled and paying.
+          const pile = document.querySelector(".pot-pile");
+          const pileOpacity = pile ? Number(getComputedStyle(pile).opacity) : 0;
+          if (!target || chips.length === 0) {
+            return { chips: chips.length, worstDx: 0, worstDy: 0, target, pileOpacity };
+          }
           return {
             chips: chips.length,
             worstDx: Math.max(...chips.map((c) => Math.abs(c.x - target.x))),
             worstDy: Math.max(...chips.map((c) => Math.abs(c.y - target.y))),
             target,
+            pileOpacity,
           };
         });
         break;
@@ -103,6 +113,78 @@ test("the pot lands on the winner it was paid to", async ({ browser }) => {
     // replaced was fifty pixels, five times the widest legitimate spread.
     expect(landing!.worstDx).toBeLessThanOrEqual(22);
     expect(landing!.worstDy).toBeLessThanOrEqual(22);
+    // And the pile has handed over rather than sitting under the payout.
+    expect(landing!.pileOpacity).toBeLessThanOrEqual(0.05);
+  } finally {
+    await context.close();
+  }
+});
+
+/**
+ * The pot pile is drawn inside .pot-anchor, and .pot-anchor is the one point
+ * four separate effects measure: chips in from a seat, the pot out to the
+ * winners, folded cards to the muck, and every hole card dealt. If a growing
+ * pile could resize that box it would drag all four trajectories with it, and
+ * the symptom would be that everything on the table was slightly off rather
+ * than anything visibly breaking.
+ */
+test("the pot pile never moves the anchor every trajectory is measured from", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  try {
+    await context.request.post("/api/profile");
+    const created = await context.request.post("/api/games", {
+      data: { name: "Pile QA", isPrivate: true, tier: "1k", buyIn: 1000 },
+    });
+    expect(created.ok()).toBe(true);
+    const gameId = (await created.json()).game.id as string;
+
+    const page = await context.newPage();
+    await page.goto(`/?table=${gameId}`);
+    await page.getByRole("button", { name: "Play as guest" }).click();
+    await expect(page.locator(".poker-table-wrap")).toBeVisible();
+
+    const anchorBox = async () =>
+      page.evaluate(() => {
+        const el = document.querySelector(".pot-anchor");
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          w: Math.round(r.width),
+          h: Math.round(r.height),
+          cx: Math.round(r.x + r.width / 2),
+          cy: Math.round(r.y + r.height / 2),
+          chips: el.querySelectorAll(".pot-pile-chip").length,
+        };
+      });
+
+    const before = await anchorBox();
+    expect(before).not.toBeNull();
+
+    // Drive the pot up. Calling into a raised pot is the quickest way to make
+    // the pile grow several denominations without waiting for a whole hand.
+    const deadline = Date.now() + 60_000;
+    let biggest = before!;
+    while (Date.now() < deadline) {
+      const current = await anchorBox();
+      if (current && current.chips > biggest.chips) biggest = current;
+      if (biggest.chips >= 3) break;
+      for (const label of [/^Call/, /^Check/]) {
+        const button = page.getByRole("button", { name: label }).first();
+        if (await button.isEnabled({ timeout: 300 }).catch(() => false)) {
+          await button.click({ timeout: 1_500 }).catch(() => undefined);
+          break;
+        }
+      }
+      await page.waitForTimeout(350);
+    }
+
+    // The pile did grow -- otherwise this asserts nothing about a pile.
+    expect(biggest.chips).toBeGreaterThan(0);
+    // And the anchor did not budge while it did.
+    expect({ w: biggest.w, h: biggest.h }).toEqual({ w: before!.w, h: before!.h });
+    expect(Math.abs(biggest.cx - before!.cx)).toBeLessThanOrEqual(1);
+    expect(Math.abs(biggest.cy - before!.cy)).toBeLessThanOrEqual(1);
   } finally {
     await context.close();
   }

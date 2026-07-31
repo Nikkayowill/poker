@@ -162,6 +162,70 @@
   pointer-events: none;
 }
 
+/* The pot as chips, stacked on the deck point.
+   Absolutely positioned out of flow, every one of them: .pot-anchor is
+   measured by four separate effects and must keep its fixed 45x35 box no
+   matter how big the pot gets. A pile that resized the anchor would drag
+   every trajectory on the table with it, and nothing would look obviously
+   wrong -- see the assertion in tests/e2e/chip-flights.spec.ts. */
+.pot-pile {
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  /* Sized off the seat, like everything else that has to stay in proportion
+     to the table rather than to the window -- .poker-table-wrap sets
+     --seat-width from its own measured box, so this follows the felt down to
+     a landscape phone without a breakpoint of its own. Clamped at both ends:
+     the raw fraction is 21px on a desktop and 8px on a portrait phone, and
+     8px reads as a smudge rather than a chip. */
+  --pile-chip-w: clamp(14px, calc(var(--seat-width, 122px) * .15), 22px);
+  --pile-chip-h: calc(var(--pile-chip-w) * .66);
+}
+
+/* Chips stack upward, away from the board rather than onto it. */
+.pot-pile-column {
+  position: relative;
+  width: var(--pile-chip-w);
+  height: var(--pile-chip-h);
+}
+
+.pot-pile-chip {
+  position: absolute;
+  left: 0;
+  bottom: calc(var(--pile-index) * var(--pile-chip-h) * .42);
+  width: var(--pile-chip-w);
+  height: var(--pile-chip-h);
+  border: 2px dashed rgba(255,255,255,.72);
+  border-radius: 50%;
+  background: #be3538;
+  box-shadow: 0 1px 3px rgba(0,0,0,.5), inset 0 1px 1px rgba(255,255,255,.32);
+  /* Delayed by the length of chip-fly-to-pot, so the pile grows as the bet
+     lands rather than a beat before it does. A chip that has not arrived yet
+     is not drawn at all -- `both` holds the 0% frame through the delay. */
+  animation: pot-chip-settle .22s cubic-bezier(.2,.85,.3,1) .48s both;
+}
+
+@keyframes pot-chip-settle {
+  0% { opacity: 0; transform: translateY(-9px) scale(.7); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* The handoff. PotFunnel's chips are invisible for their first 18% -- about
+   210ms of a 1.18s flight -- so the pile has that long to get out of the way,
+   and clearing in 200ms means the felt is never both piled and paying. */
+.pot-pile-paying {
+  animation: pot-pile-away .2s ease both;
+}
+
+@keyframes pot-pile-away {
+  to { opacity: 0; transform: translateX(-50%) scale(.82); }
+}
+
 /* The black space around the table, put to work.
    Pinned to the top of .table-area rather than centred in it: the measured
    gap between the top of that box and the highest seat is 70px on desktop

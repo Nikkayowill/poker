@@ -180,7 +180,6 @@
   .muck-drift,
   .seat-current::after,
   .action-countdown.countdown-critical,
-  .turn-ring,
   .avatar-idle,
   .gold-badge-claimed .gold-balance strong {
     animation: none;

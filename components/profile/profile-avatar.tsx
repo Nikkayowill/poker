@@ -14,11 +14,9 @@ export type AvatarView = Pick<PlayerProfile, "displayName" | "initials" | "avata
 export function ProfileAvatar({
   profile,
   className,
-  showTurn = false,
 }: {
   profile: AvatarView;
   className?: string;
-  showTurn?: boolean;
 }) {
   const [, forceRerender] = useState(0);
   // The head crop, not the figure: this is always drawn as a small circle.
@@ -62,7 +60,6 @@ export function ProfileAvatar({
           )}
         </>
       )}
-      {showTurn && <span className="turn-ring" />}
     </span>
   );
 }

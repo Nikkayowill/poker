@@ -7,6 +7,7 @@ import type { PublicSeat } from "@/lib/game/types";
 import { avatarFigure } from "@/lib/cosmetics/catalog";
 import { missingArtwork } from "@/components/artwork-cache";
 import { PlayingCard } from "./playing-card";
+import { SeatTimer } from "./seat-timer";
 
 /**
  * A player at the table, drawn as the whole cut-out figure rather than a disc.
@@ -93,11 +94,15 @@ function SeatNameplate({
   isWinner,
   smallBlind,
   bigBlind,
+  turnStartedAt,
+  turnDeadlineAt,
 }: {
   seat: PublicSeat;
   isWinner: boolean;
   smallBlind: number;
   bigBlind: number;
+  turnStartedAt: string | null;
+  turnDeadlineAt: string | null;
 }) {
   const blind = seat.isSmallBlind
     ? { abbreviation: "SB", name: "Small Blind", amount: smallBlind }
@@ -121,13 +126,20 @@ function SeatNameplate({
           </span>
         )}
       </div>
-      <span
-        className={clsx("seat-stack", isWinner && "seat-stack-win")}
-        aria-label={`${seat.stack.toLocaleString()} chips`}
-      >
-        <span className="chip-dot" />
-        <strong>{seat.stack.toLocaleString()}</strong>
-      </span>
+      <div className="seat-stack-row">
+        <span
+          className={clsx("seat-stack", isWinner && "seat-stack-win")}
+          aria-label={`${seat.stack.toLocaleString()} chips`}
+        >
+          <span className="chip-dot" />
+          <strong>{seat.stack.toLocaleString()}</strong>
+        </span>
+        {/* Only the seat on the clock carries one, so it doubles as the
+            "whose turn is it" cue and there is never more than one burning. */}
+        {seat.isCurrent && (
+          <SeatTimer startedAt={turnStartedAt} deadlineAt={turnDeadlineAt} large={seat.isMine} />
+        )}
+      </div>
     </div>
   );
 }
@@ -139,6 +151,8 @@ export const PlayerSeat = memo(function PlayerSeat({
   winAmount,
   smallBlind,
   bigBlind,
+  turnStartedAt,
+  turnDeadlineAt,
   elementRef,
   seatStyle,
 }: {
@@ -148,6 +162,9 @@ export const PlayerSeat = memo(function PlayerSeat({
   winAmount?: number;
   smallBlind: number;
   bigBlind: number;
+  /** ISO strings, so they are stable props and the memo below still holds. */
+  turnStartedAt: string | null;
+  turnDeadlineAt: string | null;
   elementRef?: (el: HTMLElement | null) => void;
   /** Computed position and stacking order around the tilted table plane. */
   seatStyle?: React.CSSProperties;
@@ -171,6 +188,8 @@ export const PlayerSeat = memo(function PlayerSeat({
       isWinner={isWinner}
       smallBlind={smallBlind}
       bigBlind={bigBlind}
+      turnStartedAt={turnStartedAt}
+      turnDeadlineAt={turnDeadlineAt}
     />
   );
   const handStrength = seat.isMine && seat.handLabel
@@ -234,5 +253,7 @@ export const PlayerSeat = memo(function PlayerSeat({
   && previous.winAmount === next.winAmount
   && previous.smallBlind === next.smallBlind
   && previous.bigBlind === next.bigBlind
+  && previous.turnStartedAt === next.turnStartedAt
+  && previous.turnDeadlineAt === next.turnDeadlineAt
   && previous.seatStyle === next.seatStyle
 ));

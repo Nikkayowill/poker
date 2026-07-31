@@ -12,6 +12,10 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["lib/**/*.test.ts"],
+    // app/ included so the stylesheet structure checks run. Nothing else
+    // reads CSS -- tsc and eslint are blind to it by construction -- so an
+    // unparseable stylesheet otherwise passes every gate and only shows up
+    // as an unstyled page at runtime.
+    include: ["lib/**/*.test.ts", "app/**/*.test.ts"],
   },
 });

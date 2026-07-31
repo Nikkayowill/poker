@@ -526,6 +526,8 @@ export function PokerTable({
                 handNumber={game.handNumber}
                 smallBlind={game.smallBlind}
                 bigBlind={game.bigBlind}
+                turnStartedAt={game.turnStartedAt}
+                turnDeadlineAt={game.turnDeadlineAt}
                 winAmount={showFunnel ? game.winners.find((winner) => winner.seatId === seat.id)?.amount : undefined}
                 elementRef={(el) => { seatRefs.current[seat.id] = el; }}
               />

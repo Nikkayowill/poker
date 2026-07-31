@@ -1248,7 +1248,20 @@ export function toSnapshot(state: GameState, callerToken: string): GameSnapshot 
       return {
         ...publicSeat,
         holeCards: seat.holeCards.map((card) => (revealed ? card : null)),
-        handLabel: isMine && seat.holeCards.length > 0
+        /**
+         * Gated on `revealed`, the same flag the cards themselves use, and
+         * deliberately not on a rule of its own.
+         *
+         * A made-hand label is a lossy description of exactly the cards
+         * beside it, so tying the two together makes it impossible for the
+         * label to say more than the hand already shows: mid-hand you get
+         * your own, and at a genuine showdown everyone still in gets theirs.
+         * Any separate condition here would be a second place for the
+         * redaction rule to drift out of step with the first -- and the
+         * failure mode is silent, because "Full house" next to two face-down
+         * cards looks like a feature rather than a leak.
+         */
+        handLabel: revealed && seat.holeCards.length > 0
           ? describeHand([...seat.holeCards, ...state.community])
           : null,
         isDealer: seat.position === state.buttonPosition,

@@ -189,6 +189,75 @@ describe("server game engine", () => {
       .forEach((seat) => {
         expect(seat.holeCards.every((card) => card === null)).toBe(true);
       });
+    // And no hand label either. A label is a lossy description of exactly the
+    // cards next to it, so leaking one past an uncontested win would give away
+    // what the muck is entitled to keep.
+    view.seats
+      .filter((seat) => !seat.isMine)
+      .forEach((seat) => {
+        expect(seat.handLabel).toBeNull();
+      });
+  });
+
+  describe("hand strength visibility", () => {
+    it("shows you your own made hand and nobody else's mid-hand", () => {
+      const { game, tokens } = createHumanTable();
+      const view = toSnapshot(game, tokens[0]);
+      const mine = view.seats.find((seat) => seat.isMine)!;
+
+      expect(mine.handLabel).not.toBeNull();
+      view.seats
+        .filter((seat) => !seat.isMine)
+        .forEach((seat) => expect(seat.handLabel).toBeNull());
+    });
+
+    it("shows every contender's made hand once a real showdown happens", () => {
+      const { game, tokens } = createHumanTable();
+      game.status = "playing";
+      game.street = "river";
+      game.community = cards("2c 3d 7h 8s 9c");
+      game.currentPlayer = 0;
+      game.currentBet = 0;
+      game.seats.forEach((seat) => {
+        seat.acted = true;
+        seat.streetBet = 0;
+        seat.committed = 100;
+        seat.stack = 900;
+        seat.status = "folded";
+      });
+      // Distinct labels on purpose: pocket aces make only a pair against this
+      // board, so two pocket pairs would both read "One pair" and the
+      // assertion would pass without proving each seat is described
+      // separately. Sevens hit the board and make trips.
+      Object.assign(game.seats[0], { status: "active", acted: false, holeCards: cards("As Ad") });
+      Object.assign(game.seats[1], { status: "all-in", stack: 0, holeCards: cards("7s 7c") });
+
+      const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+      expect(complete.status).toBe("complete");
+
+      // Read as seat 2, who folded: they still see both contenders, because a
+      // genuine showdown is public information at any real table.
+      const view = toSnapshot(complete, tokens[2]);
+      expect(view.seats[0].handLabel).toBe("One pair");
+      expect(view.seats[1].handLabel).toBe("Three of a kind");
+      // Their own folded hand stays their business, and the label follows the
+      // cards rather than having a rule of its own.
+      expect(view.seats[3].handLabel).toBeNull();
+      expect(view.seats[3].holeCards.every((card) => card === null)).toBe(true);
+    });
+
+    it("never labels a hand it would not also reveal", () => {
+      const { game, tokens } = createHumanTable();
+      // The invariant that matters, asserted directly: a label is a lossy
+      // description of the cards beside it, so a seat showing face-down cards
+      // must never carry one.
+      [0, 1, 2].forEach((viewer) => {
+        toSnapshot(game, tokens[viewer]).seats.forEach((seat) => {
+          const hidden = seat.holeCards.some((card) => card === null);
+          if (hidden) expect(seat.handLabel).toBeNull();
+        });
+      });
+    });
   });
 
   it("plays repeated complete hands while conserving chips", () => {

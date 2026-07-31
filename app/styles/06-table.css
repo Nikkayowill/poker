@@ -113,6 +113,18 @@
 .poker-felt {
   height: 100%;
   position: relative;
+  /* The deck: one point on the cloth that everything in flight agrees on.
+     Chips fly here from a seat, the pot funnels out from here to the winners,
+     folded cards drift here, and hole cards are dealt from here.
+
+     It is a variable because it used to be two numbers. .pot-anchor sat at
+     26% and the pot funnel's own chips started at 19%, while their travel
+     vectors were measured from the anchor -- so every chip paid out landed
+     that difference short of the seat it was going to. Measured at 1440x900:
+     the winner's chip stack at y=777, chips vanishing at y=727. Fifty pixels
+     high, in the one animation whose whole job is to connect a pot to a
+     player. Two declarations cannot drift apart if there is only one. */
+  --deck-y: 26%;
 }
 
 .poker-felt::after {
@@ -130,17 +142,23 @@
 
 /* The chip-flight target, left behind on the felt when the pot readout moved
    out to .table-hud. No content and aria-hidden: its only job is to be
-   measured. The size is the box .pot-display used to occupy here -- 45x35 at
-   desktop, mobile and landscape alike, because its "MAIN POT" label and its
-   amount were both fixed font sizes -- so every trajectory that aims at this
-   centre still aims exactly where it did. */
+   measured -- three effects take its centre (chips in from a seat, the pot
+   out to the winners, folded cards to the muck) and M8's deal vectors take a
+   fourth.
+
+   Centred on --deck-y rather than hung below it. It used to keep the exact
+   45x35 box .pot-display occupied here, with only an X translate, so its
+   centre sat 17px below the coordinate it declared. Harmless on its own and
+   deliberate at the time; the cost was that nothing else could reuse the
+   coordinate without repeating the offset, which is how the funnel came to
+   start somewhere else entirely. */
 .pot-anchor {
   position: absolute;
-  top: 26%;
+  top: var(--deck-y);
   left: 50%;
   width: 45px;
   height: 35px;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   pointer-events: none;
 }
 
@@ -229,10 +247,12 @@
 
 /* A shuffled spray of denomination-coloured chips travels from the pot to
    each winner. Distances are measured at runtime, so every chip lands on the
-   correct responsive seat instead of following a hardcoded path. */
+   correct responsive seat instead of following a hardcoded path -- but only
+   if it sets off from the point those distances were measured from, which is
+   --deck-y and was 19% for as long as this animation has existed. */
 .pot-chip-flight {
   position: absolute;
-  top: 19%;
+  top: var(--deck-y);
   left: 50%;
   z-index: 9;
   width: 15px;

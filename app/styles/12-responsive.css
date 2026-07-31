@@ -194,12 +194,21 @@
 @media (prefers-reduced-motion: reduce) {
   .dealt-card-shell,
   .community-card-flipper,
-  .pot-chip-flight,
-  .seat-chip-flight,
-  .muck-drift,
   .seat-current::after,
   .gold-badge-claimed .gold-balance strong {
     animation: none;
+  }
+  /* Not `animation: none` -- these three exist only to be in motion, and
+     turning the motion off leaves them parked instead of gone. Verified with
+     Playwright's reducedMotion emulation: .pot-chip-flight computed to
+     animation-name none, opacity 1, 15x9px, so twelve opaque chips sat
+     stacked at the middle of the felt for the whole 2.8s between hands. The
+     others are shorter-lived versions of the same thing. A player who has
+     asked for less motion wants the chips not to fly, not to be littered. */
+  .pot-chip-flight,
+  .seat-chip-flight,
+  .muck-drift {
+    display: none;
   }
   .dealer-puck-animated,
   /* The depth/lean/settle changes still apply, they just arrive instantly. */

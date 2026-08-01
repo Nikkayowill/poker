@@ -344,8 +344,12 @@ describe("server game engine", () => {
     game = applyPlayerAction(game, { type: "next-hand" }, hostToken);
     expect(game.seats[0].ownerToken).toBeNull();
     expect(game.seats[0].isHuman).toBe(false);
-    expect(game.seats[0].status).toBe("out");
     expect(toSnapshot(game, hostToken).isSeated).toBe(false);
+    // The replacement bot sits down funded, the same way it does when a player
+    // leaves or is released for inactivity. This asserted "out" while the seat
+    // was handed over holding nothing -- see lib/game/busted-seat.test.ts.
+    expect(game.seats[0].status).toBe("active");
+    expect(game.seats[0].stack).toBe(TIER_CONFIG[game.tier].minBuyIn);
   });
 
   it("rejects a check facing a bet and enforces the minimum raise", () => {
@@ -767,19 +771,16 @@ describe("bot identity", () => {
 describe("heads-up blinds", () => {
   it("makes the button also the small blind once a table shrinks to two funded seats", () => {
     const hostToken = crypto.randomUUID();
+    const guestToken = crypto.randomUUID();
     let game = createGame(hostToken, "Host");
-    const guestTokens = [
-      crypto.randomUUID(),
-      crypto.randomUUID(),
-      crypto.randomUUID(),
-      crypto.randomUUID(),
-      crypto.randomUUID(),
-    ];
-    ["Guest1", "Guest2", "Guest3", "Guest4", "Guest5"].forEach((name, index) => {
-      game = claimSeat(game, guestTokens[index], testProfile(name)).state;
-    });
+    game = claimSeat(game, guestToken, testProfile("Guest")).state;
 
-    // Simulate four seats busting out, leaving exactly two funded players.
+    // Four *bot* seats bust out, leaving exactly two funded players.
+    //
+    // Bots on purpose: a busted human's seat is handed back to a funded bot, so
+    // busting humans -- which is how this test used to shrink the table -- no
+    // longer shrinks anything. Bots are the only seats nothing refunds, which
+    // makes them the only way a table genuinely gets down to heads-up.
     game.seats[2].stack = 0;
     game.seats[3].stack = 0;
     game.seats[4].stack = 0;

@@ -220,12 +220,37 @@ export function scheduleNextHand(state: GameState, now = Date.now()) {
   state.nextHandAt = new Date(now + delay).toISOString();
 }
 
+/**
+ * Hands a busted human's seat back to a bot, funded.
+ *
+ * The refill is the whole point and was missing: `restoreBotControl` leaves the
+ * stack alone, so without it the seat became a bot holding zero chips, which
+ * `setupHand` then reads as unfunded and marks `"out"` forever. Nothing ever
+ * refunds a bot, so every player who busted and let the rebuy grace lapse
+ * permanently removed a seat -- a continuous table walked 6 -> 5 -> 4 down to
+ * "Not enough players with chips to continue" and stopped.
+ *
+ * `vacateSeat` and `releaseInactiveSeats` have always ended with this same
+ * line; this is the third of the three release paths, not a new rule. Minting
+ * the bot's stack is not a conservation break: bot chips are not backed by
+ * Gold, and the invariant that matters -- a human's chips and their Gold are
+ * the same chips -- is enforced by the `cashedOut` contract those two paths
+ * carry, which a busted seat has no need of because its stack is zero.
+ *
+ * Status is set here rather than left to `setupHand`'s own recompute, even
+ * though the only caller runs that recompute a few lines later: `setupHand`
+ * bails out early when fewer than two seats are funded, and that branch returns
+ * before the recompute, which would strand this seat on last hand's `"folded"`
+ * while holding a fresh stack. `"out"` -- what this line used to say -- now
+ * contradicts a funded seat either way.
+ */
 function releaseBustedHumanSeats(state: GameState) {
   state.seats.forEach((seat) => {
     if (!seat.isHuman || seat.stack > 0) return;
     const playerName = seat.name;
     restoreBotControl(seat);
-    seat.status = "out";
+    seat.stack = TIER_CONFIG[state.tier].minBuyIn;
+    seat.status = "active";
     addLog(state, `${playerName} is out of chips and leaves the table`);
   });
 }

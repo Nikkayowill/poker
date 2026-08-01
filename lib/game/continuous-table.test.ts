@@ -9,6 +9,7 @@ import {
   NEXT_HAND_DELAY_MS,
   normalizeGameState,
   scheduleNextHand,
+  vacateSeat,
 } from "./engine";
 import { planTurnClock, type TurnClockInput } from "./turn-clock";
 import type { GameState } from "./types";
@@ -115,13 +116,20 @@ describe("a finished hand schedules the next one", () => {
 
 describe("the two tables that must not deal themselves", () => {
   it("schedules nothing when too few seats still have chips", () => {
-    const game = foldToOneWinner(tableWithTwoHumans().game);
+    const { game: started, tokens } = tableWithTwoHumans();
+    const game = foldToOneWinner(started);
     // Strip the table down to one funded seat, the state setupHand refuses.
-    const broke: GameState = {
-      ...game,
-      seats: game.seats.map((seat, index) => (index === 0 ? seat : { ...seat, stack: 0 })),
+    //
+    // The second human has to *leave* rather than simply be zeroed: a busted
+    // human's seat is handed back to a funded bot, so zeroing it -- which is
+    // how this test used to strip the table -- leaves two funded seats and the
+    // table deals. Player 2 gives up the seat, then every remaining bot busts,
+    // and nothing refunds a bot.
+    const afterLeave = vacateSeat({ ...game, status: "complete" }, tokens[1]).state;
+    const finished: GameState = {
+      ...afterLeave,
+      seats: afterLeave.seats.map((seat, index) => (index === 0 ? seat : { ...seat, stack: 0 })),
     };
-    const finished = foldToOneWinner({ ...broke, status: "complete" });
 
     const settled = dealNextHandIfDue(
       { ...finished, nextHandAt: new Date(Date.now() - 1).toISOString() },

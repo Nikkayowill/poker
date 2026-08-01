@@ -49,8 +49,8 @@ export type ConnectionState = "connected" | "reconnecting" | "offline";
    moves nothing there; a portrait phone is bound by width, which is exactly
    where the figures were too small to read. The height fraction rises with it
    so a short landscape table does not suddenly become the binding case. */
-export const SEAT_WIDTH_RATIO = 0.21;
-export const SEAT_HEIGHT_RATIO = 0.27;
+export const SEAT_WIDTH_RATIO = 0.26;
+export const SEAT_HEIGHT_RATIO = 0.30;
 
 export function seatWidthFor(table: { width: number; height: number }): number {
   return Math.round(Math.min(table.width * SEAT_WIDTH_RATIO, table.height * SEAT_HEIGHT_RATIO));

@@ -82,7 +82,7 @@
      the table -- portrait, cards, hand strength and nameplate stacked. On the
      ring they overhang by half a seat box like every other seat, so most of
      that reservation is now simply table the felt never got to use. */
-  --foreground-allowance: 70px;
+  --foreground-allowance: 116px;
   height: 100dvh;
   min-height: 0;
   display: flex;

@@ -9,6 +9,17 @@
   aspect-ratio: .7;
   position: relative;
   overflow: hidden;
+  /* Everything printed on the card is measured against the card.
+     The indices used to be sized in vw and fixed px, which meant they did not
+     shrink with the thing they are printed on: from desktop to a 390px phone
+     the card lost 41% of its width while the rank lost 29% and the suit glyph
+     lost nothing at all. Measured, the two corner stacks took 88% of the
+     card's height on a phone and 94% on a 320px one, and overlapped each
+     other through the middle by 16px and 21px respectively. A card is a fixed
+     shape at every size, so its contents belong in proportions, not in
+     breakpoints -- and this is what lets the whole block of per-tier and
+     per-viewport font overrides below go away. */
+  container-type: inline-size;
   color: #17211d;
   background: #f2f0e8;
   border: 1px solid rgba(0,0,0,.12);
@@ -24,11 +35,15 @@
    like a real card, plus a subtle centered suit watermark. Readability
    over decoration: the glyph is small at the corners and low-opacity in
    the center so it never competes with the rank for a glance-read. */
+/* Proportions taken from the desktop card, which was the one size that read
+   correctly: a 104px .card-large carried a 28px rank (27%), a 15px glyph
+   (14.4%) and a 9px inset (8.7%). Expressed against the card's own width they
+   hold at every size instead of only that one. */
 .card-index { position: absolute; display: flex; flex-direction: column; align-items: center; line-height: 1; }
-.card-index-top { top: 7px; left: 8px; }
-.card-index-bottom { bottom: 7px; right: 8px; transform: rotate(180deg); }
-.card-index-rank { font: 700 clamp(17px, 2.2vw, 24px) Georgia, serif; }
-.card-index-glyph { width: 13px; height: 13px; margin-top: 2px; }
+.card-index-top { top: 8cqw; left: 9cqw; }
+.card-index-bottom { bottom: 8cqw; right: 9cqw; transform: rotate(180deg); }
+.card-index-rank { font: 700 27cqw Georgia, serif; }
+.card-index-glyph { width: 14.5cqw; height: 14.5cqw; margin-top: 2cqw; }
 .card-index-glyph svg { display: block; width: 100%; height: 100%; }
 .card-suit-large {
   position: absolute;
@@ -40,14 +55,10 @@
 }
 .card-suit-large svg { width: 56%; height: 56%; }
 
-.card-large .card-index-rank { font-size: clamp(20px, 2.6vw, 28px); }
-.card-large .card-index-top { top: 9px; left: 10px; }
-.card-large .card-index-bottom { bottom: 9px; right: 10px; }
-.card-large .card-index-glyph { width: 15px; height: 15px; }
-.card-small .card-index-rank { font-size: 12px; }
-.card-small .card-index-top { top: 3px; left: 4px; }
-.card-small .card-index-bottom { bottom: 3px; right: 4px; }
-.card-small .card-index-glyph { width: 8px; height: 8px; }
+/* The three size tiers used to restate every index dimension, and
+   12-responsive.css restated the widths again on top of that -- five sets of
+   numbers describing one card. The proportions above cover all of them, so a
+   tier is now only how wide the card is. */
 
 /* The white stock, and nothing else.
    The pattern used to be painted here as two repeating gradients over a fixed

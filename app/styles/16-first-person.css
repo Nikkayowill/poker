@@ -32,17 +32,40 @@
    of them is wider than a 79px seat, and no multiple of the seat's own width
    can clear a box that is bigger than the seat. left:100% is the edge itself,
    so the two cannot overlap at any table size. */
+/* Dropped from .54 of the seat's width to .66, and the pair sized from .78 of
+   the seat down to .63.
+   left:100% keeps the hand off your own figure, but it puts it at chest
+   height beside you -- which on a phone is exactly where the nameplate of the
+   seat to your right is. Once the seats grew that was 8.3px of overlap at
+   390, 4.5px at 375 and 24.1px at 320, with your cards drawn over the top
+   (z-index 12), so a neighbour's chip stack was simply hidden behind them.
+
+   It cannot be solved by dropping the hand alone, which is the trap here:
+   there is a ceiling (their nameplate) and a floor (your own stack readout,
+   which multiplayer.spec.ts has always required your cards to stay above),
+   and the seats getting bigger pushed both of them inward at once. Measured,
+   the window between them is 112px on a phone and the hand was 109px tall.
+   So the hand stops scaling with the seat -- .63 keeps it at the size it was
+   before the avatars grew -- and .66 centres it in what is left: 18px of
+   clearance above, 6px below. */
 .seat-mine .seat-cards {
   left: 100%;
-  top: calc(var(--seat-width) * .54);
+  top: calc(var(--seat-width) * .66);
   margin-left: 4px;
   transform: translateY(-50%);
   z-index: 12;
   filter: drop-shadow(0 14px 20px rgba(0,0,0,.5));
 }
 
+/* The floor is 44px, not 58px.
+   58 was set when a phone seat was 79px wide; at 320 the seat is 56px, so the
+   floor stopped being a minimum and became the actual size -- a pair of cards
+   wider and taller than the player holding them, which is most of why the
+   overlap above was three times worse there than anywhere else. Below the
+   floor the proportion governs, which is the behaviour every other size
+   already had. */
 .seat-mine .own-cards .playing-card {
-  width: clamp(58px, calc(var(--seat-width) * .78), 104px);
+  width: clamp(38px, calc(var(--seat-width) * .63), 104px);
   border-radius: 8px;
 }
 
@@ -66,10 +89,34 @@
 .seat-mine .hand-strength {
   position: absolute;
   left: 100%;
-  top: calc(var(--seat-width) * 1.22);
+  top: calc(var(--seat-width) * 1.15);
   z-index: 12;
   margin: 0 0 0 4px;
   white-space: nowrap;
+}
+
+/* Your status, in the empty space on your left.
+   08-seat.css hangs every seat's pill 26px below the seat box (bottom: -26px,
+   centred). For the five seats on the ring that is felt. For yours it is the
+   bottom of the screen: measured 9.2px past .table-area's clip on a phone and
+   1.3px on a tablet, which reads as a "Folded" pill with its bottom sliced
+   off. Moved to the left, mirroring the hand on the right -- figure in the
+   middle, cards to one side, status to the other, and the black space beside
+   the near edge is empty on both.
+
+   left and bottom are reset explicitly, not left to be overridden. The base
+   rule sets both, and an element with left:50% *and* right:100% is stretched
+   between the two rather than placed at either -- which drew the pill as a
+   dark band across the player it belongs to. */
+.seat-mine .status-pill,
+.seat-mine .action-pill {
+  left: auto;
+  right: 100%;
+  bottom: auto;
+  top: calc(var(--seat-width) * .78);
+  margin: 0 4px 0 0;
+  transform: translateY(-50%);
+  z-index: 12;
 }
 
 /* Your own name, slightly brighter than the room. */

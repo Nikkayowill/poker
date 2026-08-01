@@ -70,6 +70,16 @@ async function verifyLocalLayout(page: Page) {
   await expect(plate).toBeVisible();
   await expect(local.locator(".seat-turn-status")).toHaveCount(0);
 
+  // Let the deal finish first. The shells inside .own-cards fly in from the
+  // middle of the felt under a transform, and a parent's bounding box
+  // includes its children's transformed boxes -- so measuring mid-flight
+  // reports a hand that is several times its resting size and in the wrong
+  // place. Caught as one spurious failure in four runs of the overlap check
+  // below, which is exactly the sort of thing that gets dismissed as noise.
+  await page.locator(".seat-mine .dealt-card-shell").first().evaluate((shell) =>
+    Promise.all(shell.getAnimations().map((animation) => animation.finished.catch(() => undefined))),
+  );
+
   // One synchronous pass in the page, not four round trips.
   //
   // ActionBar is keyed on game.version, so it remounts every time the table
@@ -93,13 +103,28 @@ async function verifyLocalLayout(page: Page) {
       cardsBox: seat ? read(".own-cards", seat) : null,
       plateBox: seat ? read(".seat-plate", seat) : null,
       actionBox: read(".action-bar"),
+      // Every other seat's nameplate, measured in the same pass for the same
+      // reason the four above are.
+      neighbourPlates: [...document.querySelectorAll(".player-seat:not(.seat-mine)")]
+        .map((other) => {
+          const plate = other.querySelector(".seat-plate");
+          if (!plate) return null;
+          const rect = plate.getBoundingClientRect();
+          const name = other.querySelector(".seat-name-row strong");
+          return {
+            name: name?.textContent ?? "?",
+            x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null),
     };
   });
-  const { avatarBox, cardsBox, plateBox, actionBox } = boxes;
+  const { avatarBox, cardsBox, plateBox, actionBox, neighbourPlates } = boxes;
   expect(avatarBox).not.toBeNull();
   expect(cardsBox).not.toBeNull();
   expect(plateBox).not.toBeNull();
   expect(actionBox).not.toBeNull();
+  expect(neighbourPlates.length).toBeGreaterThan(0);
 
   // Your seat is on the ring now, so the old vertical stack -- cards above
   // status above plate, all below the felt -- is not what this is any more.
@@ -109,6 +134,24 @@ async function verifyLocalLayout(page: Page) {
   // Your hand sits beside the figure rather than over it: it is the largest
   // thing on the table and would otherwise bury the player it belongs to.
   expect(overlaps(avatarBox!, cardsBox!)).toBe(false);
+  // And it does not bury anyone else either. Held beside your figure, the
+  // pair reaches sideways into the seat on your right at chest height, and it
+  // is drawn above everything (z-index 12) -- so an overlap here is not a
+  // near miss, it is a neighbour's chip stack hidden behind your cards.
+  //
+  // Third time this placement has regressed: once overlapping your own
+  // figure, once when the seats grew for Slot 0, and once when they grew
+  // again. All three were found by measuring and none by looking, so it is
+  // asserted rather than watched. One pixel of tolerance for the rotated
+  // bounding box a fanned pair reports.
+  for (const neighbour of neighbourPlates) {
+    const overlapX = Math.min(cardsBox!.x + cardsBox!.width, neighbour.x + neighbour.width)
+      - Math.max(cardsBox!.x, neighbour.x);
+    const overlapY = Math.min(cardsBox!.y + cardsBox!.height, neighbour.y + neighbour.height)
+      - Math.max(cardsBox!.y, neighbour.y);
+    expect({ seat: neighbour.name, covered: overlapX > 1 && overlapY > 1 })
+      .toEqual({ seat: neighbour.name, covered: false });
+  }
   // And defect D1, which is the reason --table-height-cap exists: whatever
   // the table does, your own name never ends up underneath the controls.
   expect(plateBox!.y + plateBox!.height).toBeLessThanOrEqual(actionBox!.y);

@@ -3,7 +3,7 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const REMEMBER_AUTH_KEY = "river-room:remember-auth";
+const REMEMBER_AUTH_KEY = "stackchips:remember-auth";
 
 /** Only the UI's "Stay signed in" checkbox default -- see the client docstring below. */
 export function readRememberAuthSession(): boolean {

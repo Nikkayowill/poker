@@ -31,7 +31,7 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RoomCreatedModal } from "@/components/table/room-created-modal";
 import { PokerTable, type ConnectionState } from "@/components/table/poker-table";
 
-const SOUND_STORAGE_KEY = "river-room:sound-enabled";
+const SOUND_STORAGE_KEY = "stackchips:sound-enabled";
 const MAX_REFRESH_RETRIES = 4;
 const REFRESH_RETRY_BASE_MS = 250;
 const REFRESH_RETRY_MAX_MS = 2_000;

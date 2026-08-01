@@ -15,7 +15,7 @@
 // silently took the entire offline shell with it, including "/". That is a
 // lot of blast radius for one missing decorative file. Caching each entry
 // independently means a missing asset costs exactly itself.
-const CACHE_NAME = "river-room-shell-v3";
+const CACHE_NAME = "stackchips-shell-v4";
 const SHELL = ["/", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {

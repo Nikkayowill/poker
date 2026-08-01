@@ -20,7 +20,7 @@ import {
 } from "@/lib/game/table-channel";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
-import { soundForSeatAction } from "@/lib/audio/seat-action-sound";
+import { tableSounds } from "@/lib/audio/table-sounds";
 import { Coins, Layers, LogOut, Settings2, Trophy, UserPlus } from "lucide-react";
 import { Lobby } from "@/components/lobby/lobby";
 import { ProfileModal } from "@/components/profile/profile-modal";
@@ -85,55 +85,12 @@ export function PokerApp() {
   }, []);
 
   useEffect(() => {
-    const current = game;
+    // Every rule about what the table sounds like lives in tableSounds, where
+    // it can be tested. This effect's only job is to hold the previous
+    // snapshot and play what comes back.
     const previous = previousGameRef.current;
-    previousGameRef.current = current;
-    if (!current || !previous || current.id !== previous.id || current.version <= previous.version) return;
-
-    if (current.handNumber > previous.handNumber) {
-      playSound("deal");
-    } else {
-      const revealedCommunity = current.community.length - previous.community.length;
-      if (revealedCommunity === 3 && previous.community.length === 0) playSound("flop");
-      else if (revealedCommunity > 0) playSound("card");
-
-      const chipsMoved = current.seats.some((seat) => {
-        const priorSeat = previous.seats.find((candidate) => candidate.id === seat.id);
-        return priorSeat && seat.streetBet > priorSeat.streetBet;
-      });
-      if (chipsMoved) playSound("chips");
-
-      // Everyone else's action, which used to make no sound at all: fold,
-      // check, call and raise fired only from the local player's own act(),
-      // so five other players could be doing all of it in silence.
-      //
-      // Own seat skipped because act() has already played it on tap -- that
-      // one is deliberately optimistic so a decision feels immediate rather
-      // than waiting on a round trip.
-      //
-      // One sound per snapshot, not one per seat. A catch-up advance can
-      // resolve several overdue turns in a single response, and playing all
-      // of them at once is a clatter rather than a table.
-      const acted = current.seats.find((seat) => {
-        if (seat.isMine) return false;
-        const priorSeat = previous.seats.find((candidate) => candidate.id === seat.id);
-        return priorSeat && seat.lastAction !== priorSeat.lastAction;
-      });
-      const seatSound = soundForSeatAction(acted?.lastAction ?? null);
-      if (seatSound) playSound(seatSound);
-    }
-
-    if (current.status === "complete" && previous.status !== "complete") {
-      // The room cheers for whoever won it, not only when it is you. `lose`
-      // has no file behind it, so the old branch meant most hands at a
-      // six-handed table ended in silence.
-      playSound("win");
-    }
-
-    const latestLog = current.log[0];
-    if (latestLog && latestLog.id !== previous.log[0]?.id && latestLog.text.includes("ran out of time")) {
-      playSound("timeout");
-    }
+    previousGameRef.current = game;
+    for (const effect of tableSounds(previous, game)) playSound(effect);
   }, [game]);
   useEffect(() => {
     gameVersionRef.current = game?.version ?? 0;

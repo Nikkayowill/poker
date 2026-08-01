@@ -1,17 +1,34 @@
-import { SOUND_FILES, type SoundEffect } from "./manifest";
+import { AUDIBLE_EFFECTS, SOUND_FILES, soundGain, type SoundEffect } from "./manifest";
 
 export type { SoundEffect };
 
 let enabled = true;
-const players = new Map<string, HTMLAudioElement>();
+/**
+ * Keyed by effect, not by file.
+ *
+ * It was by file, which was correct while every sound played at volume 1.0
+ * and two effects sharing an asset were genuinely interchangeable. They are
+ * not interchangeable now: `raise` and `all-in` are the same recording at
+ * -29 and -26 dBFS, and one shared element means whichever played last leaves
+ * its gain behind for the other. An all-in would announce itself at raise
+ * volume, or a raise would shout. One element per effect costs four extra
+ * <audio> objects for the whole app and makes the mix mean what it says.
+ */
+const players = new Map<SoundEffect, HTMLAudioElement>();
 let primed = false;
 
-function playerFor(src: string): HTMLAudioElement {
-  const cached = players.get(src);
+function playerFor(effect: SoundEffect): HTMLAudioElement | null {
+  const cached = players.get(effect);
   if (cached) return cached;
+  const src = SOUND_FILES[effect];
+  if (!src) return null;
   const audio = new Audio(src);
   audio.preload = "auto";
-  players.set(src, audio);
+  // Set once here and never touched again: the gain belongs to the effect,
+  // and re-applying it per play would be the same shared-mutable-state bug in
+  // a slower form.
+  audio.volume = soundGain(effect);
+  players.set(effect, audio);
   return audio;
 }
 
@@ -25,9 +42,7 @@ function playerFor(src: string): HTMLAudioElement {
 function primeOnce() {
   if (primed || typeof window === "undefined") return;
   primed = true;
-  for (const src of new Set(Object.values(SOUND_FILES))) {
-    if (src) playerFor(src);
-  }
+  for (const effect of AUDIBLE_EFFECTS) playerFor(effect);
 }
 
 if (typeof window !== "undefined") {
@@ -41,9 +56,8 @@ export function setSoundEnabled(value: boolean) {
 
 export function playSound(effect: SoundEffect) {
   if (!enabled) return;
-  const src = SOUND_FILES[effect];
-  if (!src) return;
-  const audio = playerFor(src);
+  const audio = playerFor(effect);
+  if (!audio) return;
   audio.currentTime = 0;
   void audio.play().catch(() => {
     // Autoplay can still be blocked before any gesture reaches this tab;

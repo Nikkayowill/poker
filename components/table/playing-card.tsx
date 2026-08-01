@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import type { Card } from "@/lib/game/types";
+import { CardBackFor } from "@/components/card-back-art";
 
 const suitPaths: Record<Exclude<Card["suit"], "clubs">, string> = {
   hearts:
@@ -50,20 +51,29 @@ export function PlayingCard({
   small = false,
   large = false,
   ghost = false,
+  back,
 }: {
   card: Card | null;
   small?: boolean;
   large?: boolean;
   ghost?: boolean;
+  /**
+   * Which card back to draw, as a cosmetic id. Undefined resolves to the
+   * house deck, so every existing caller keeps working and a card is never
+   * drawn blank while a seat is missing its cosmetic.
+   */
+  back?: string | null;
 }) {
   const sizeClass = large ? "card-large" : small ? "card-small" : null;
   if (ghost) return <div className={clsx("playing-card card-ghost", sizeClass)} />;
   if (!card) {
+    // Seven backs were in the catalog, purchasable, equippable and previewed
+    // in the collection, and the table drew the same hardcoded green for all
+    // of them -- so the one item the store describes as "seen by the whole
+    // table" was the one thing a player could never see.
     return (
       <div className={clsx("playing-card card-back", sizeClass)} aria-label="Hidden card">
-        <span className="card-back-emblem">
-          <span>S</span>
-        </span>
+        <CardBackFor id={back} className="card-back-art" />
       </div>
     );
   }

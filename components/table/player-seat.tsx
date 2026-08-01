@@ -112,7 +112,15 @@ function SeatCards({
           key={`${handNumber}-${index}`}
           style={{ animationDelay: `${dealDelayMs(dealSlot, index, dealSeatCount)}ms` }}
         >
-          <PlayingCard card={card} small={!seat.isMine} large={seat.isMine} />
+          {/* This seat's own back, not the table's. Your opponents' hidden
+              cards are where a card back is actually seen, which is the
+              entire proposition the store sells them on. */}
+          <PlayingCard
+            card={card}
+            small={!seat.isMine}
+            large={seat.isMine}
+            back={seat.cardBackCosmetic}
+          />
         </span>
       ))}
     </div>

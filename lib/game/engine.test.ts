@@ -19,7 +19,12 @@ import { compareScores, describeHand, evaluateHand } from "./evaluator";
 import { TIER_CONFIG } from "./tiers";
 import type { Card, GameState, PlayerAction } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { avatarCosmetics, defaultEquipped } from "@/lib/cosmetics/catalog";
+import {
+  avatarCosmetics,
+  cosmeticById,
+  DEFAULT_CARD_BACK,
+  defaultEquipped,
+} from "@/lib/cosmetics/catalog";
 
 const testProfile = (
   name: string,
@@ -1139,6 +1144,72 @@ describe("legacy state normalization", () => {
     const game = createGame(crypto.randomUUID(), "Host");
     game.seats[0].avatarCosmetic = "avatar-nightowl";
     expect(normalizeGameState(game).seats[0].avatarCosmetic).toBe("avatar-nightowl");
+  });
+
+  it("backfills card backs on tables dealt before they reached the felt", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    game.seats.forEach((seat) => {
+      delete (seat as Partial<typeof seat>).cardBackCosmetic;
+    });
+
+    const normalized = normalizeGameState(game);
+    // undefined here reaches an SVG fill attribute and draws a blank
+    // rectangle where every hidden card should be -- on a table that was
+    // mid-hand when it was persisted.
+    normalized.seats.forEach((seat) => {
+      expect({ id: seat.id, back: cosmeticById(seat.cardBackCosmetic)?.slot })
+        .toEqual({ id: seat.id, back: "cardBack" });
+    });
+    expect(normalized.seats[0].cardBackCosmetic).toBe(DEFAULT_CARD_BACK);
+  });
+
+  it("leaves a card back that is already present untouched", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    game.seats[0].cardBackCosmetic = "back-ivory";
+    expect(normalizeGameState(game).seats[0].cardBackCosmetic).toBe("back-ivory");
+  });
+});
+
+describe("card backs follow the player, not the seat", () => {
+  it("gives a claimed seat the back the player equipped", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    const token = crypto.randomUUID();
+    const profile = {
+      ...testProfile("Buyer"),
+      equipped: { ...defaultEquipped, cardBack: "back-ivory" },
+    };
+
+    const seated = claimSeat(game, token, profile).state;
+    const mine = seated.seats.find((seat) => seat.ownerToken === token)!;
+    expect(mine.cardBackCosmetic).toBe("back-ivory");
+  });
+
+  it("takes the back back when the seat returns to a bot", () => {
+    // A player who leaves, or who is released for missing three turns
+    // (MAX_MISSED_TURNS), must not leave a 400,000 Gold card back behind for
+    // a bot to keep dealing with.
+    const game = createGame(crypto.randomUUID(), "Host");
+    const token = crypto.randomUUID();
+    const seated = claimSeat(game, token, {
+      ...testProfile("Buyer"),
+      equipped: { ...defaultEquipped, cardBack: "back-riverwood" },
+    }).state;
+    const seatId = seated.seats.find((seat) => seat.ownerToken === token)!.id;
+    expect(seated.seats.find((seat) => seat.id === seatId)!.cardBackCosmetic).toBe("back-riverwood");
+
+    const left = vacateSeat(seated, token).state;
+    const released = left.seats.find((seat) => seat.id === seatId)!;
+    expect(released.isHuman).toBe(false);
+    expect(released.cardBackCosmetic).not.toBe("back-riverwood");
+    expect(cosmeticById(released.cardBackCosmetic)?.rarity).toBe("standard");
+  });
+
+  it("deals every seat at a fresh table a real card back", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    for (const seat of game.seats) {
+      const item = cosmeticById(seat.cardBackCosmetic);
+      expect({ position: seat.position, slot: item?.slot }).toEqual({ position: seat.position, slot: "cardBack" });
+    }
   });
 });
 

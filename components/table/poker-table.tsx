@@ -137,6 +137,15 @@ export function PokerTable({
     ? Math.max(0, Math.min(1, (deadline - clockNow) / turnDurationMs))
     : 0;
   const mySeatIndex = game.seats.findIndex((seat) => seat.isMine);
+  // The deck the board is dealt from, drawn as your own back.
+  //
+  // Every other face-down card at this table belongs to a seat and carries
+  // that seat's back. The board belongs to the room, so it needs an answer of
+  // its own -- and yours is the right one, because it is otherwise the single
+  // thing a buyer never gets to look at. Your hole cards are face up to you;
+  // your back is shown to everyone except you. Half a second of it on each
+  // board card is the only time you see what you paid for.
+  const myCardBack = mySeatIndex >= 0 ? game.seats[mySeatIndex].cardBackCosmetic : undefined;
   const orderedSeats = mySeatIndex <= 0
     ? game.seats
     : game.seats.map((_, index) => game.seats[(mySeatIndex + index) % game.seats.length]);
@@ -582,7 +591,7 @@ export function PokerTable({
                         ? (
                           <span className="community-card-flipper">
                             <span className="community-card-backface" aria-hidden="true">
-                              <PlayingCard card={null} />
+                              <PlayingCard card={null} back={myCardBack} />
                             </span>
                             <span className="community-card-face">
                               <PlayingCard card={game.community[index]} />

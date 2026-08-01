@@ -24,6 +24,16 @@ export interface Seat {
   avatarPreset: string;
   /** Equipped avatar cosmetic id, so opponents render the character they bought. */
   avatarCosmetic: string;
+  /**
+   * Equipped card back id, drawn on this seat's hidden cards.
+   *
+   * Per seat rather than per table, which is not how a real deck works and is
+   * deliberate: the catalog sells these as "seen by the whole table, on every
+   * hidden hand", and a single shared deck would mean the item is only ever
+   * visible to the one person who did not buy it. Six backs at one table is
+   * the price of the thing being worth owning.
+   */
+  cardBackCosmetic: string;
   position: number;
   isHuman: boolean;
   /** The session token of the human seated here; null for an open/bot seat. Never sent to clients. */

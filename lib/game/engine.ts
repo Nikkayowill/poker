@@ -14,7 +14,12 @@ import type {
   Winner,
 } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { avatarCosmetics, DEFAULT_AVATAR_COSMETIC } from "@/lib/cosmetics/catalog";
+import {
+  avatarCosmetics,
+  botCardBackFor,
+  DEFAULT_AVATAR_COSMETIC,
+  DEFAULT_CARD_BACK,
+} from "@/lib/cosmetics/catalog";
 import { CHEAPEST_TIER, clampBuyIn, isStakesTier, TIER_CONFIG, type StakesTier } from "./tiers";
 
 const suits: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
@@ -188,6 +193,10 @@ function restoreBotControl(seat: Seat) {
   seat.avatarUrl = fallback.avatarUrl;
   seat.avatarPreset = fallback.avatarPreset;
   seat.avatarCosmetic = botAvatarFor(seat.position);
+  // The deck goes back with the seat. A player who leaves -- or is released
+  // for missing three turns -- must not leave a 400,000 Gold card back behind
+  // for a bot to keep playing with.
+  seat.cardBackCosmetic = botCardBackFor(seat.position);
   seat.timeCardsRemaining = 0;
   seat.missedTurns = 0;
 }
@@ -345,6 +354,7 @@ export function createGame(
       avatarUrl: appearance?.avatarUrl ?? null,
       avatarPreset: appearance?.avatarPreset ?? "ace",
       avatarCosmetic: appearance?.equipped?.avatar ?? DEFAULT_AVATAR_COSMETIC,
+      cardBackCosmetic: appearance?.equipped?.cardBack ?? DEFAULT_CARD_BACK,
       position: 0,
       isHuman: true,
       ownerToken: hostToken,
@@ -365,6 +375,7 @@ export function createGame(
       id: randomUUID(),
       ...bot,
       avatarCosmetic: botAvatarFor(index + 1),
+      cardBackCosmetic: botCardBackFor(index + 1),
       position: index + 1,
       isHuman: false,
       ownerToken: null,
@@ -451,6 +462,7 @@ export function claimSeat(
   seat.avatarUrl = profile.avatarUrl;
   seat.avatarPreset = profile.avatarPreset;
   seat.avatarCosmetic = profile.equipped.avatar;
+  seat.cardBackCosmetic = profile.equipped.cardBack;
   seat.timeCardsRemaining = STARTING_TIME_CARDS;
   // A claimed seat owns exactly the buy-in the player paid for, including chips
   // this seat already committed before the bot was replaced. Resetting the
@@ -1185,6 +1197,12 @@ export function normalizeGameState(state: GameState): GameState {
     // occupied.
     if (!seat.avatarCosmetic) {
       seat.avatarCosmetic = seat.isHuman ? DEFAULT_AVATAR_COSMETIC : botAvatarFor(seat.position);
+    }
+    // Same story for the deck: every table dealt before this milestone has
+    // seats with no card back, and an id of undefined reaches an SVG fill and
+    // draws nothing at all where a hidden card should be.
+    if (!seat.cardBackCosmetic) {
+      seat.cardBackCosmetic = seat.isHuman ? DEFAULT_CARD_BACK : botCardBackFor(seat.position);
     }
     // Hands in flight before VPIP existed have no opinion either way; treat
     // as false rather than let `undefined` leak into a stats comparison.

@@ -356,6 +356,44 @@ export function cosmeticById(id: string): Cosmetic | null {
   return cosmetics.find((item) => item.id === id) ?? null;
 }
 
+export type CardBackArtwork = NonNullable<Cosmetic["art"]>;
+
+/**
+ * The three values a card back is drawn from, for any id.
+ *
+ * Total rather than nullable, and that is the point: this is called for every
+ * face-down card on the table, several times per seat per hand. A seat
+ * carrying an id from a since-renamed item, a table dealt before card backs
+ * reached the felt, a bot with nothing equipped -- each resolves to the house
+ * deck instead of putting `undefined` into a fill attribute and blanking the
+ * card. The store's own preview goes through here too, so what a player is
+ * shown before buying is drawn by the same code as what they get.
+ */
+export function cardBackArt(id: string | null | undefined): CardBackArtwork {
+  const item = typeof id === "string" ? cosmeticById(id) : null;
+  if (item?.slot === "cardBack" && item.art) return item.art;
+  return cosmeticById(DEFAULT_CARD_BACK)!.art!;
+}
+
+/**
+ * The backs a bot may be dealt, by seat position.
+ *
+ * Standard tier only. Bots cycle the *whole* avatar roster (botAvatarFor)
+ * because a face is just a face, but a card back is something a player is
+ * asked to spend 400,000 Gold on, and a table where the bots are holding the
+ * rare items devalues the only thing this catalog sells. Restricting them to
+ * the free and cheap tier keeps a real player's back the most interesting one
+ * at the table, while still showing the feature exists to someone playing
+ * their first hand against five bots -- who would otherwise see six identical
+ * house decks and no reason to visit the store.
+ */
+const botCardBacks = cardBackCosmetics.filter((item) => item.rarity === "standard");
+
+export function botCardBackFor(position: number): string {
+  if (botCardBacks.length === 0) return DEFAULT_CARD_BACK;
+  return botCardBacks[position % botCardBacks.length].id;
+}
+
 /** Items granted to everyone -- free, so never held in the ownership table. */
 export function isFreeCosmetic(item: Cosmetic): boolean {
   return item.price === 0;

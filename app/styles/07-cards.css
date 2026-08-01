@@ -49,32 +49,30 @@
 .card-small .card-index-bottom { bottom: 3px; right: 4px; }
 .card-small .card-index-glyph { width: 8px; height: 8px; }
 
+/* The white stock, and nothing else.
+   The pattern used to be painted here as two repeating gradients over a fixed
+   green, which is why all seven catalog card backs looked identical on the
+   felt: the design was in the stylesheet and the items were in TypeScript,
+   and the two never met. The artwork is an inline SVG now, drawn from the
+   equipped cosmetic, so this rule keeps only what every back shares -- the
+   border and the shape of the card it is printed on. */
 .card-back {
   display: grid;
   place-items: center;
+  overflow: hidden;
   border: 3px solid #e7e2d2;
-  background:
-    repeating-linear-gradient(45deg, rgba(224,199,112,.13) 0 1px, transparent 1px 9px),
-    repeating-linear-gradient(-45deg, rgba(224,199,112,.13) 0 1px, transparent 1px 9px),
-    #193e31;
+  background: #193e31;
 }
 
-.card-back-emblem {
-  width: 42%;
-  aspect-ratio: 1;
-  display: grid;
-  place-items: center;
-  transform: rotate(45deg);
-  border: 1px solid rgba(238,215,137,.55);
-  border-radius: 22%;
-  background: rgba(224,199,112,.16);
+/* Fills the stock inside the border. The SVG carries its own 6px corner
+   radius for the store's larger preview; at card size that reads as a sliver
+   of green in each corner, so the art is inset past it rather than rounded
+   again here. */
+.card-back-art {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
 }
-.card-back-emblem span {
-  transform: rotate(-45deg);
-  font: italic 700 clamp(9px, 2.6vw, 15px) Georgia, serif;
-  color: rgba(243,227,166,.88);
-}
-.card-large .card-back-emblem span { font-size: clamp(11px, 3vw, 17px); }
-.card-small .card-back-emblem span { font-size: clamp(7px, 1.8vw, 10px); }
 
 .card-ghost { box-shadow: none; border: 1px dashed rgba(255,255,255,.12); background: rgba(0,0,0,.08); }

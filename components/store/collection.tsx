@@ -12,7 +12,7 @@ import {
   type EquippedCosmetics,
 } from "@/lib/cosmetics/catalog";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { CardBackArt } from "./card-back-art";
+import { CardBackArt } from "@/components/card-back-art";
 
 interface UnlockStats {
   handsWon: number;

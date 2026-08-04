@@ -1,5 +1,6 @@
 import "server-only";
 import { checkAvatarUnlocks } from "./avatar-unlocks";
+import { archiveCompletedHand } from "./hand-archive-store";
 import { recordHandStats } from "./stats-store";
 import type { GameState } from "@/lib/game/types";
 
@@ -29,10 +30,20 @@ import type { GameState } from "@/lib/game/types";
 export async function onHandCompleted(state: GameState): Promise<void> {
   const failures: unknown[] = [];
 
-  // Stats first, and unlocks strictly after them -- not merely for
-  // ordering's sake: unlock thresholds are read back out of the lifetime
-  // stats this call writes, so an unlock checked first would test the
-  // pre-hand totals.
+  // The archive is a true sibling of the stats write, not a step after it:
+  // it reads the completed state directly and shares nothing with the stats
+  // path, so a stats failure must still leave the hand reviewable and an
+  // archive failure must still leave the hand counted. Both are idempotent
+  // per (game, hand), so a retry of either is a no-op.
+  try {
+    await archiveCompletedHand(state);
+  } catch (error) {
+    failures.push(error);
+  }
+
+  // Stats next, and unlocks strictly after them -- not merely for ordering's
+  // sake: unlock thresholds are read back out of the lifetime stats this
+  // call writes, so an unlock checked first would test the pre-hand totals.
   let touchedProfileIds: string[] = [];
   try {
     touchedProfileIds = await recordHandStats(state);

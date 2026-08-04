@@ -1437,24 +1437,48 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
   return state;
 }
 
+/**
+ * Whether this hand reached a real showdown: the street is `showdown` and
+ * 2+ players actually got there.
+ *
+ * An uncontested win (everyone else folded) lets the winner muck without
+ * showing, exactly like a real showdown never happened -- and for anyone who
+ * folded earlier, their cards stay hidden from other seats forever.
+ */
+export function handReachedShowdown(state: GameState): boolean {
+  return state.street === "showdown" && remaining(state).length > 1;
+}
+
+/**
+ * Whether a seat's hole cards became public knowledge at the table.
+ *
+ * The one place this rule is written down. `toSnapshot` reads it for the
+ * live table and lib/server/hand-archive-store.ts reads it when persisting a
+ * finished hand, because a second copy of the rule is a second place for it
+ * to drift -- and the drift is silent in the direction that matters, since
+ * replaying a hand with an opponent's mucked cards visible looks like a
+ * feature rather than a leak.
+ *
+ * Note this is about the table, not about any one viewer: a player always
+ * sees their own cards, which is the caller's business to add, not this
+ * function's.
+ */
+export function seatCardsWereShown(state: GameState, seat: Seat): boolean {
+  return handReachedShowdown(state) && seat.status !== "folded" && seat.status !== "out";
+}
+
 export function toSnapshot(state: GameState, callerToken: string): GameSnapshot {
   const mySeatIndex = state.seats.findIndex((seat) => seat.ownerToken === callerToken);
   const publicState = Object.fromEntries(
     Object.entries(state).filter(([key]) => key !== "deck" && key !== "hostToken" && key !== "seats"),
   ) as Omit<GameState, "deck" | "hostToken" | "seats">;
   const { small, big } = blindPositions(state);
-  // A hand only reveals cards to the table when 2+ players actually reached
-  // showdown. An uncontested win (everyone else folded) lets the winner muck
-  // without showing, exactly like a real showdown never happened for anyone
-  // who folded earlier — their cards stay hidden from other seats forever.
-  const contenders = remaining(state);
-  const genuineShowdown = state.street === "showdown" && contenders.length > 1;
   return {
     ...publicState,
     isSeated: mySeatIndex !== -1,
     seats: state.seats.map((seat, index) => {
       const isMine = index === mySeatIndex;
-      const revealed = isMine || (genuineShowdown && seat.status !== "folded" && seat.status !== "out");
+      const revealed = isMine || seatCardsWereShown(state, seat);
       const publicSeat = Object.fromEntries(
         Object.entries(seat).filter(([key]) => key !== "ownerToken"),
       ) as Omit<Seat, "ownerToken">;

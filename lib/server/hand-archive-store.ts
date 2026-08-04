@@ -293,7 +293,14 @@ export async function listHandHistory(
   profileId: string,
   options: { limit?: number; cursor?: string | null } = {},
 ): Promise<HandHistoryPage> {
-  const limit = Math.min(Math.max(options.limit ?? HISTORY_PAGE_SIZE, 1), MAX_HISTORY_PAGE_SIZE);
+  // `??` catches undefined but not NaN, and NaN survives both Math.max and
+  // Math.min -- a non-finite limit would reach PostgREST as `limit=NaN`. The
+  // route's zod schema rejects it first, but this function is exported and
+  // the clamp is where the guarantee belongs.
+  const requested = Number(options.limit);
+  const limit = Number.isFinite(requested)
+    ? Math.min(Math.max(requested, 1), MAX_HISTORY_PAGE_SIZE)
+    : HISTORY_PAGE_SIZE;
   const cursor = decodeCursor(options.cursor ?? null);
 
   const supabase = adminClient();

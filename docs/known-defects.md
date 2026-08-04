@@ -4,6 +4,12 @@ Reproducible bugs that are understood but deliberately not fixed yet, with the
 milestone that owns the fix. A defect leaves this file when its fix lands and
 a test asserts the corrected behaviour.
 
+Two kinds of entry are kept rather than deleted, and are marked as such in
+their heading: CLOSED, where the fix landed and a named test holds it, and
+WITHDRAWN, where measurement showed there was no defect. Both are retained
+because the reasoning that produced them is the part worth having — a wrong
+diagnosis that gets deleted is one somebody repeats.
+
 ---
 
 ## D1 — Local nameplate is overlapped by the action bar at 390×844 — CLOSED

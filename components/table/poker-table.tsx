@@ -17,6 +17,7 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ActionBar } from "./action-bar";
 import { ChipFlight, MuckDrift, PotFunnel } from "./table-effects";
 import { HandHistoryDrawer } from "./hand-history-drawer";
+import { RebuyCheckout } from "./rebuy-checkout";
 import { PlayerSeat } from "./player-seat";
 import { PlayingCard } from "./playing-card";
 import { PotPile } from "./pot-pile";
@@ -99,6 +100,10 @@ export function PokerTable({
   onSignOut: () => void;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Owned here rather than in ActionBar because ActionBar is keyed on
+  // game.version: a bump would otherwise unmount an open checkout and buy a
+  // second Stripe session when it came back.
+  const [showCheckout, setShowCheckout] = useState(false);
   const historyButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeHistory = useCallback(() => {
     setHistoryOpen(false);
@@ -700,9 +705,18 @@ export function PokerTable({
             onLeave={onLeave}
 
             profile={profile}
+            onOpenCheckout={() => setShowCheckout(true)}
           />
         </div>
       </section>
+
+      {/* Deliberately outside the `key={game.version}` subtree above.
+          Mounting RebuyCheckout posts for a Stripe Checkout Session, so a
+          remount is a second purchase -- and the key changes on every table
+          version, which is every action any player takes. */}
+      {showCheckout && (
+        <RebuyCheckout gameId={game.id} onClose={() => setShowCheckout(false)} />
+      )}
 
       {connectionState !== "connected" && (
         <div className="connection-overlay" role="status" aria-live="assertive">

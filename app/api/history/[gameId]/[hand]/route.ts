@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { requireRegisteredProfile } from "@/lib/server/api-auth";
 import { getArchivedHand } from "@/lib/server/hand-archive-store";
-import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
-import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -28,25 +27,19 @@ export async function GET(
   if (limited) return limited;
 
   try {
-    const token = readSessionToken(request);
-    if (!token) {
-      return NextResponse.json({ error: "Sign in to review your hand history." }, { status: 401 });
-    }
+    const auth = await requireRegisteredProfile(
+      request,
+      "Create an account to keep and review your hand history.",
+      "Sign in to review your hand history.",
+    );
+    if (auth.response) return auth.response;
 
     const parsed = paramsSchema.safeParse(await context.params);
     if (!parsed.success) {
       return NextResponse.json({ error: "Hand not found." }, { status: 404 });
     }
 
-    const profile = await ensureProfile(token);
-    if (!profile.isRegistered) {
-      return NextResponse.json(
-        { error: "Create an account to keep and review your hand history." },
-        { status: 403 },
-      );
-    }
-
-    const hand = await getArchivedHand(profile.id, parsed.data.gameId, parsed.data.hand);
+    const hand = await getArchivedHand(auth.profile.id, parsed.data.gameId, parsed.data.hand);
     if (!hand) return NextResponse.json({ error: "Hand not found." }, { status: 404 });
 
     return NextResponse.json({ hand });

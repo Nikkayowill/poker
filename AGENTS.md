@@ -49,9 +49,15 @@ Realtime is invalidation only: clients receive a version signal, then refetch a 
 ## Active milestone
 
 - Track: `ui-redesign-foundation`
-- Active slice: M16 — friends and table invites (schema landed, no routes/UI yet).
+- Active slice: M16 — friends and table invites. The friends half is landed end
+  to end: `lib/server/friends-store.ts`, the `/api/friends/*` routes, and the
+  drawer plus lobby tile in `components/social/friends-drawer.tsx`. The table
+  invite half is untouched — `table_invites` has a schema and nothing else.
 - State: M12–M15 landed. M15's server half (hand archives, `archive_hand` RPC,
   `/api/history` routes) is unchanged and still has no UI reading it.
+- No seat-based discovery yet: seats now carry `profileId` in the snapshot, but
+  nothing sends a friend request with it, so there is no in-app way to start
+  one. That is the next slice. See `CLAUDE.md` for the full M16 notes.
 - Bot lifecycle: busted seats are released and reseated at the head of
   `setupHand` via `releaseBustedSeats` — busted *bots* used to stay busted, so
   a table walked 6 → 5 → 4 and stopped. Refill stops at `TABLE_FUNDED_FLOOR`

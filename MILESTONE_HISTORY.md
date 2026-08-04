@@ -22,8 +22,10 @@ Short handoff ledger derived from Git history through 2026-08-01. Milestones wer
 
 ## Current Claude Code handoff
 
-- Documented active slice: M15, personal hand history and replay. Everything through M14b is committed and verified.
-- M15's server half is uncommitted in the working tree: the `hand_archives` / `hand_archive_players` migration and `archive_hand` RPC, `lib/server/hand-archive-store.ts` with its memory-mode mirror, and `GET /api/history` plus `GET /api/history/[gameId]/[hand]`. There is no history UI yet.
+- Updated 2026-08-04. The August 1 entries above are the historical record and are unchanged.
+- Documented active slice: M16, friends and table invites. Everything through M14b is committed and verified.
+- M15's server half is now committed (`114b643`): the `hand_archives` / `hand_archive_players` migration and `archive_hand` RPC, `lib/server/hand-archive-store.ts` with its memory-mode mirror, and `GET /api/history` plus `GET /api/history/[gameId]/[hand]`. There is still no history UI.
+- M16's friends half is **uncommitted in the working tree**: `lib/server/friends-store.ts` and its tests, `lib/server/api-auth.ts`, `/api/friends/*`, `lib/social/types.ts`, `components/social/friends-drawer.tsx` with `app/styles/21-friends.css`, `Seat.profileId` through the engine and snapshot, and the `accept_friend_request` + `revoke_archive_hand_from_public` migrations. Table invites are schema-only.
 - Landed alongside it: `lib/server/hand-completion.ts`, the single `onHandCompleted` hook both completion paths now call. It replaced two `recordHandStats` call sites that had drifted — the human-action path never checked avatar unlocks, so a player who ended their own hand had unlocks evaluated late, whenever a later hand happened to end on a bot action or a timeout instead.
 - Also landed: `lib/supabase/public-env.ts` resolves the browser-safe key from either `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` or the legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY`, the prerequisite `FUTURE_M15_M19.md` names for M15.
 - The card-redaction rule now lives in one exported place, `lib/game/engine.ts`'s `seatCardsWereShown`, read by both `toSnapshot` and the archiver. Do not add a second copy: a replay that unmucks folded cards is a silent leak.

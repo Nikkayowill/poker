@@ -30,9 +30,66 @@ export function RebuyCheckout({ gameId, onClose }: { gameId: string; onClose: ()
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
+  // Mirrors `busy` for the key handler, which is registered once and would
+  // otherwise close over the value from its first render. Synced in an effect
+  // rather than during render, which React forbids for refs.
+  const busyRef = useRef(true);
+  useEffect(() => { busyRef.current = busy; }, [busy]);
   // React 18 mounts effects twice in development. Without this the component
   // asks Stripe for two Checkout Sessions on every open.
   const started = useRef(false);
+  const dialogRef = useRef<HTMLElement | null>(null);
+
+  /**
+   * Focus management for a dialog that takes money.
+   *
+   * It had none: focus stayed on whatever was behind it, so Tab walked
+   * straight through the consent checkboxes into the table underneath, and a
+   * screen reader was never told the dialog had opened. That matters more here
+   * than on the other modals because the thing being tabbed past is the
+   * agreement gating a charge.
+   *
+   * Escape closes only when not busy, matching the overlay's existing
+   * click-outside guard -- there is a window where a Checkout Session is being
+   * created and dismissing would strand it.
+   */
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    // The first control in the dialog, rather than the dialog itself, so the
+    // first Tab continues from a real position in the order.
+    dialog?.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled])')?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (!busyRef.current) onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialogRef.current?.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      if (!dialog || dialog.contains(document.activeElement)) opener?.focus?.();
+    };
+    // Deliberately not keyed on `busy`: re-running would re-steal focus every
+    // time the request state flips. The handler reads it through a ref instead.
+  }, [onClose]);
 
   const startCheckout = useCallback(async () => {
     setBusy(true);
@@ -105,6 +162,7 @@ export function RebuyCheckout({ gameId, onClose }: { gameId: string; onClose: ()
       if (event.currentTarget === event.target && !busy) onClose();
     }}>
       <section
+        ref={dialogRef}
         className="profile-modal rebuy-checkout"
         role="dialog"
         aria-modal="true"

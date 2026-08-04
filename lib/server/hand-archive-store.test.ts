@@ -280,3 +280,36 @@ describe("listHandHistory", () => {
     }
   });
 });
+
+describe("history page size", () => {
+  it("falls back to the default when the requested limit is not a number", async () => {
+    const hero = randomUUID();
+    const villain = randomUUID();
+    await archiveCompletedHand(await twoHandedHand({
+      heroToken: hero,
+      villainToken: villain,
+      street: "showdown",
+      villainStatus: "active",
+    }));
+    const profile = await ensureProfile(hero);
+
+    // `?? HISTORY_PAGE_SIZE` catches undefined but not NaN, and NaN survives
+    // both Math.max and Math.min -- so this used to reach PostgREST as
+    // `limit=NaN` rather than being clamped.
+    const page = await listHandHistory(profile.id, { limit: Number.NaN });
+    expect(page.entries.length).toBeGreaterThan(0);
+  });
+
+  it("still clamps a real limit into range", async () => {
+    const hero = randomUUID();
+    await archiveCompletedHand(await twoHandedHand({
+      heroToken: hero,
+      villainToken: randomUUID(),
+      street: "showdown",
+      villainStatus: "active",
+    }));
+    const profile = await ensureProfile(hero);
+    expect((await listHandHistory(profile.id, { limit: 0 })).entries.length).toBeLessThanOrEqual(1);
+    expect((await listHandHistory(profile.id, { limit: 9_999 })).entries.length).toBeLessThanOrEqual(50);
+  });
+});

@@ -27,6 +27,8 @@ import { defaultEquipped } from "@/lib/cosmetics/catalog";
  */
 
 const profile = (name: string) => ({
+  id: crypto.randomUUID(),
+  isRegistered: true,
   displayName: name,
   initials: name.slice(0, 2).toUpperCase(),
   accent: "#79c9ff",

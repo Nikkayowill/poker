@@ -295,6 +295,9 @@ function restoreBotControl(seat: Seat, identity: number = seat.position) {
   const fallback = botProfileFor(identity);
   seat.isHuman = false;
   seat.ownerToken = null;
+  // Clears with the token, never after it. A chair that keeps the departed
+  // player's profile id is a seat the table can still address as them.
+  seat.profileId = null;
   seat.botIdentity = identity;
   seat.personality = fallback.personality;
   seat.name = fallback.name;
@@ -521,7 +524,10 @@ function setupHand(state: GameState, firstHand = false) {
 export function createGame(
   hostToken: string,
   playerName = "You",
-  appearance?: Pick<PlayerProfile, "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped">,
+  appearance?: Pick<
+    PlayerProfile,
+    "id" | "isRegistered" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped"
+  >,
   options?: { isPrivate?: boolean; tier?: StakesTier; buyIn?: number },
 ): GameState {
   const now = new Date().toISOString();
@@ -546,6 +552,9 @@ export function createGame(
       position: 0,
       isHuman: true,
       ownerToken: hostToken,
+      // Guests get null, so the host seat of a guest-created table carries no
+      // durable identity -- see Seat.profileId.
+      profileId: appearance?.isRegistered ? appearance.id : null,
       botIdentity: null,
       personality: null,
       stack: buyIn,
@@ -571,6 +580,7 @@ export function createGame(
       position: index + 1,
       isHuman: false,
       ownerToken: null,
+      profileId: null,
       botIdentity: index + 1,
       stack: buyIn,
       status: "active",
@@ -630,7 +640,10 @@ export function createGame(
 export function claimSeat(
   state: GameState,
   token: string,
-  profile: Pick<PlayerProfile, "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped">,
+  profile: Pick<
+    PlayerProfile,
+    "id" | "isRegistered" | "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped"
+  >,
   buyIn?: number,
 ): { state: GameState; seatIndex: number } {
   const existing = state.seats.findIndex((seat) => seat.ownerToken === token);
@@ -646,6 +659,10 @@ export function claimSeat(
   }
   seat.isHuman = true;
   seat.ownerToken = token;
+  // The one place a profile id enters a seat. Guests stay null: a guest
+  // profile dies with its cookie, and a friend request addressed to one can
+  // never be accepted. See Seat.profileId.
+  seat.profileId = profile.isRegistered ? profile.id : null;
   // The chair stops wearing a pool identity the moment a person is in it, so
   // the normalize path cannot re-derive a bot's face over the top of theirs.
   seat.botIdentity = null;
@@ -1401,6 +1418,17 @@ export function normalizeGameState(state: GameState): GameState {
       seat.botIdentity = null;
     } else if (!Number.isInteger(seat.botIdentity)) {
       seat.botIdentity = seat.position;
+    }
+    // Seats persisted before profile ids existed carry undefined, which would
+    // reach the client as a missing key and read as "no id" anyway -- but only
+    // by accident. Null is the same answer said deliberately.
+    //
+    // Forcing non-humans to null is the load-bearing half. Unlike botIdentity
+    // this is never re-derived, so the only way a bot seat could hold an id is
+    // if a release path failed to clear one; pinning it here means a stale id
+    // cannot survive a single round trip through the store.
+    if (!seat.isHuman || typeof seat.profileId !== "string") {
+      seat.profileId = null;
     }
     // Tables dealt before avatars existed have seats with no avatar at all,
     // which reaches the renderer as undefined and takes the whole page down.

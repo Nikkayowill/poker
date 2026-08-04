@@ -8,7 +8,6 @@ import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { TIER_CONFIG } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { BuyInModal } from "@/components/lobby/buy-in-modal";
-import { RebuyCheckout } from "./rebuy-checkout";
 
 /**
  * The bar under the controls, burning down on the same clock as the seat ring.
@@ -65,17 +64,28 @@ export function ActionBar({
   onAction,
   onLeave,
   profile,
+  onOpenCheckout,
 }: {
   game: GameSnapshot;
   pending: boolean;
   onAction: (action: PlayerAction) => void;
   onLeave: () => void;
   profile: PlayerProfile | null;
+  /**
+   * Opens the real-money checkout, which is owned by PokerTable rather than
+   * by this component.
+   *
+   * It has to live above the `key={game.version}` on this element: a new key
+   * unmounts the whole subtree, and mounting RebuyCheckout *is* the purchase
+   * intent -- it posts for a Stripe Checkout Session immediately. Kept here,
+   * any table version bump (an opponent acting, a card landing) would close
+   * the modal mid-purchase and buy a second session on the way back.
+   */
+  onOpenCheckout: () => void;
 }) {
   const legal = game.legalActions;
   const mySeat = game.seats.find((seat) => seat.isMine);
   const [showRebuyModal, setShowRebuyModal] = useState(false);
-  const [showCheckout, setShowCheckout] = useState(false);
   const [raiseOpen, setRaiseOpen] = useState(false);
   const [raiseTo, setRaiseTo] = useState(legal?.minRaiseTo ?? 0);
   const [pressedAction, setPressedAction] = useState<PlayerAction["type"] | null>(null);
@@ -161,7 +171,7 @@ export function ActionBar({
                 <button
                   className="primary-action action-slot-wide"
                   disabled={pending}
-                  onClick={() => setShowCheckout(true)}
+                  onClick={onOpenCheckout}
                 >
                   Buy Gold to rebuy
                 </button>
@@ -181,13 +191,10 @@ export function ActionBar({
             onClose={() => setShowRebuyModal(false)}
             onBuyGold={() => {
               setShowRebuyModal(false);
-              setShowCheckout(true);
+              onOpenCheckout();
             }}
             onConfirm={(_tier, buyIn) => onAction({ type: "rebuy", amount: buyIn })}
           />
-        )}
-        {showCheckout && (
-          <RebuyCheckout gameId={game.id} onClose={() => setShowCheckout(false)} />
         )}
       </div>
     );

@@ -44,9 +44,55 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 ## Active milestone
 
 - Track: `ui-redesign-foundation`
-- Active slice: M16 — friends and table invites (schema landed, no routes/UI yet).
+- Active slice: M16 — friends and table invites. The friends half is landed
+  end to end: `lib/server/friends-store.ts`, `/api/friends/*`, and the drawer
+  plus lobby tile in `components/social/friends-drawer.tsx`. The table invite
+  half is untouched — `table_invites` has a schema and nothing else.
 - State: M12–M15 landed. M15's server half (hand archives, `archive_hand` RPC,
   `/api/history` routes) is unchanged and still has no UI reading it.
+- Friends are registered-accounts-only, matching `/api/history`: 401 with no
+  session, 403 for a guest. `requireRegisteredProfile` in
+  `lib/server/api-auth.ts` is the single place that split lives.
+- `friends-store.ts` projects to its own `FriendSummary`/`PendingRequest`
+  rather than returning `PlayerProfile`. Deliberate: `publicProfile()` carries
+  `goldBalance`/`unlimitedGold`/`lastDailyClaimAt`, which are fine to show an
+  owner about themselves and wrong to show about anyone else. A test asserts
+  the absence.
+- Accepting a request goes through the `accept_friend_request` RPC
+  (`20260804140000_accept_friend_request.sql`), not two PostgREST calls. Split,
+  a failure between settle and insert leaves "accepted but not friends", which
+  no retry can detect because the request is no longer pending.
+- Duplicate/crossed friend requests are detected by the two partial unique
+  indexes and surfaced from a `23505`, not by a check-then-insert. Checking
+  first cannot see the crossed case (A asks B while B asks A) without a lock.
+- `Seat.profileId` carries a *registered* human's profile id into the public
+  snapshot, so one player can name another without the client ever holding
+  `ownerToken`. Persisted at seat time, not resolved on read: `toSnapshot` is
+  pure and synchronous, and `ensureProfile` both writes and would run per seat
+  per fetch. Guests stay null — a request addressed to a cookie-lived profile
+  can never be accepted. `normalizeGameState` pins non-humans to null, so a
+  stale id cannot survive one round trip.
+- Every path that makes a seat human must set `profileId`. `claimSeat` sets it;
+  `applyHumanIdentity` in the table-manager adapter *clears* it (that worker
+  has only a session token) — it mutates a seat that may still hold the last
+  occupant's id, and normalize cannot catch it because the seat is human.
+  Worker-run tables therefore cannot add friends, which is the honest answer.
+- The friends drawer (`components/social/friends-drawer.tsx`) opens from a
+  lobby hub tile and owns its own fetch; no state is lifted into
+  `poker-app.tsx`. It reuses `.history-overlay`/`.history-drawer` and
+  `ProfileAvatar` rather than restating them — `app/styles/21-friends.css`
+  holds only list-specific rules.
+- Wire types live in `lib/social/types.ts`, not the store: `friends-store.ts`
+  is `server-only`, so a client import would drag the service-role client into
+  the browser bundle. Same reasoning as `lib/game/table-channel.ts`.
+- **No seat-based discovery yet.** The snapshot carries the id, but nothing
+  sends a request with it — the seat menu that would is the next slice. The
+  drawer renders whatever `/api/friends` returns, so existing friendships and
+  pending requests do display; what is missing is any in-app way to *start* a
+  request, which is why a new account sees an empty list.
+- Neither M16 migration has been applied to a live Postgres. No local Postgres
+  or `psql` is available here, so `20260804140000_accept_friend_request.sql`
+  is unverified SQL; the memory-mode branch is what the 22 store tests cover.
 - Bot lifecycle: busted seats are released and reseated at the head of
   `setupHand` via `releaseBustedSeats` — busted *bots* used to stay busted, so
   a table walked 6 → 5 → 4 and stopped. Refill stops at `TABLE_FUNDED_FLOOR`

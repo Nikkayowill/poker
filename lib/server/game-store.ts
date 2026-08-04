@@ -1,5 +1,5 @@
 import "server-only";
-import { advanceTimedTurn, dealNextHandIfDue, normalizeGameState } from "@/lib/game/engine";
+import { SEAT_COUNT, advanceTimedTurn, dealNextHandIfDue, normalizeGameState } from "@/lib/game/engine";
 import type { GameState, PlayerAction } from "@/lib/game/types";
 import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { adminClient } from "./supabase-admin";
@@ -158,16 +158,24 @@ export async function findOpenPublicGame(tier: StakesTier): Promise<string | nul
     .eq("games.small_blind", config.smallBlind)
     .eq("games.big_blind", config.bigBlind)
     .order("created_at", { referencedTable: "games", ascending: true })
-    .limit(MATCHMAKING_CANDIDATES);
+    // Rows, not tables. Every open seat is its own row, so a freshly created
+    // table contributes up to SEAT_COUNT of them -- limiting to
+    // MATCHMAKING_CANDIDATES here would have capped the field at four or five
+    // distinct games, not twenty, and silently dropped every eligible table
+    // after them. The de-duplication below is what applies the real cap.
+    .limit(MATCHMAKING_CANDIDATES * SEAT_COUNT);
   if (error) throw new Error(`Could not search for an open table: ${error.message}`);
   const candidates = data ?? [];
   if (candidates.length === 0) return null;
 
   // Ordered oldest-first by the query above, and de-duplicated here because a
-  // table with three open seats comes back three times.
+  // table with three open seats comes back three times. This is where
+  // MATCHMAKING_CANDIDATES is actually enforced: it is a budget of distinct
+  // tables to rank, which is what the second query below is sized against.
   const candidateIds: string[] = [];
   for (const row of candidates) {
     if (!candidateIds.includes(row.game_id)) candidateIds.push(row.game_id);
+    if (candidateIds.length === MATCHMAKING_CANDIDATES) break;
   }
 
   const { data: occupied, error: occupiedError } = await supabase

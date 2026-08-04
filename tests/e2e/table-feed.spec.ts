@@ -63,8 +63,12 @@ for (const viewport of [
           collidingSeats: seats.filter((seat) =>
             box.left < seat.right && box.right > seat.left
             && box.top < seat.bottom && box.bottom > seat.top).length,
-          // Nothing may be pushed off the left edge or past the viewport.
-          insideViewport: box.left >= 0 && box.right <= window.innerWidth,
+          // Nothing may be pushed off any edge. Horizontal alone was the
+          // original check and it cannot see the failure this guard is for:
+          // an eight-seat ring pushes the feed *up*, so a feed clipped by the
+          // top of the viewport passed while being invisible.
+          insideViewport: box.left >= 0 && box.right <= window.innerWidth
+            && box.top >= 0 && box.bottom <= window.innerHeight,
         };
       });
 

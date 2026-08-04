@@ -32,6 +32,17 @@ import { RoomCreatedModal } from "@/components/table/room-created-modal";
 import { PokerTable, type ConnectionState } from "@/components/table/poker-table";
 
 const SOUND_STORAGE_KEY = "stackchips:sound-enabled";
+/**
+ * The pre-rename key, still read once so the rename is not a silent reset.
+ *
+ * `river-room:sound-enabled` is where every existing player's preference
+ * lives. The StackChips rename (f7a7cbb) moved the key without migrating it,
+ * and because the default is "enabled unless the value is exactly false",
+ * anyone who had muted the app got sound turned back on and no way to tell
+ * why. Same class of legacy id as the `river_*` cookies -- kept for
+ * compatibility, not for style.
+ */
+const LEGACY_SOUND_STORAGE_KEY = "river-room:sound-enabled";
 const MAX_REFRESH_RETRIES = 4;
 const REFRESH_RETRY_BASE_MS = 250;
 const REFRESH_RETRY_MAX_MS = 2_000;
@@ -62,7 +73,19 @@ export function PokerApp() {
   const accountLinkPromiseRef = useRef<Promise<boolean> | null>(null);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(SOUND_STORAGE_KEY);
+    // New key first; fall back to the pre-rename one exactly once, then carry
+    // the value across and drop the old key so this only ever happens on the
+    // first load after the rename. Someone with neither key keeps the
+    // "enabled by default" behaviour untouched.
+    let stored = window.localStorage.getItem(SOUND_STORAGE_KEY);
+    if (stored === null) {
+      const legacy = window.localStorage.getItem(LEGACY_SOUND_STORAGE_KEY);
+      if (legacy !== null) {
+        stored = legacy;
+        window.localStorage.setItem(SOUND_STORAGE_KEY, legacy);
+        window.localStorage.removeItem(LEGACY_SOUND_STORAGE_KEY);
+      }
+    }
     const enabled = stored !== "false";
     setSoundEnabled(enabled);
     const timer = window.setTimeout(() => setSoundEnabledState(enabled), 0);

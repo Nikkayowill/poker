@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   advanceTimedTurn,
   applyPlayerAction,
@@ -26,15 +26,37 @@ import {
   defaultEquipped,
 } from "@/lib/cosmetics/catalog";
 
+/**
+ * Registered by default, because that is the case with something to check:
+ * a registered profile is the only one that puts an id on the seat.
+ * Pass `{ isRegistered: false }` for the guest path.
+ */
+/**
+ * RIVER_TABLE_FUNDED_FLOOR is stubbed by two tests below, and vitest.config.ts
+ * sets no automatic env restoration -- so without this the second stub, and
+ * then every later test in this file, ran against a floor the test never asked
+ * for. continuous-table.test.ts already cleans up after itself this way.
+ */
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 const testProfile = (
   name: string,
-): Pick<PlayerProfile, "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped"> => ({
+  overrides: Partial<Pick<PlayerProfile, "id" | "isRegistered">> = {},
+): Pick<
+  PlayerProfile,
+  "id" | "isRegistered" | "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped"
+> => ({
+  id: crypto.randomUUID(),
+  isRegistered: true,
   displayName: name,
   initials: name.slice(0, 2).toUpperCase(),
   accent: "#79c9ff",
   avatarUrl: null,
   avatarPreset: "ace",
   equipped: defaultEquipped,
+  ...overrides,
 });
 
 const cards = (values: string): Card[] =>
@@ -1423,5 +1445,121 @@ describe("cashing out", () => {
     // Only what is still in front of them comes back; the 300 in the middle
     // is contested, exactly as at a real table.
     expect(vacateSeat(game, token).cashedOut).toBe(700);
+  });
+});
+
+describe("seat profile ids in the public snapshot", () => {
+  it("shows a registered player's profile id to everyone at the table", () => {
+    // The whole point of the field: another player has to be able to name you
+    // as a friend target without ever holding your session token.
+    const game = createGame(crypto.randomUUID(), "Host");
+    const token = crypto.randomUUID();
+    const profile = testProfile("Registered");
+    const seated = claimSeat(game, token, profile).state;
+
+    const onlooker = toSnapshot(seated, crypto.randomUUID());
+    const seat = onlooker.seats.find((row) => row.name === "Registered")!;
+    expect(seat.profileId).toBe(profile.id);
+  });
+
+  it("never puts the session token in the snapshot", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    const token = crypto.randomUUID();
+    const seated = claimSeat(game, token, testProfile("Registered")).state;
+
+    const view = toSnapshot(seated, crypto.randomUUID());
+    // The reason profileId exists at all is that this must stay true.
+    expect(JSON.stringify(view)).not.toContain(token);
+    view.seats.forEach((seat) => expect(seat).not.toHaveProperty("ownerToken"));
+  });
+
+  it("gives a guest no profile id", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    const token = crypto.randomUUID();
+    const guest = testProfile("Guest", { isRegistered: false });
+    const seated = claimSeat(game, token, guest).state;
+
+    // A guest profile dies with its cookie, so a friend request addressed to
+    // one could never be accepted.
+    const seat = toSnapshot(seated, token).seats.find((row) => row.name === "Guest")!;
+    expect(seat.profileId).toBeNull();
+  });
+
+  it("leaves bots and open seats with no profile id", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    toSnapshot(game, crypto.randomUUID()).seats
+      .filter((seat) => !seat.isHuman)
+      .forEach((seat) => expect(seat.profileId).toBeNull());
+  });
+
+  it("drops the profile id when the seat returns to a bot", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    const token = crypto.randomUUID();
+    const seated = claimSeat(game, token, testProfile("Leaver")).state;
+    const seatId = seated.seats.find((seat) => seat.ownerToken === token)!.id;
+
+    const left = vacateSeat(seated, token).state;
+    const released = left.seats.find((seat) => seat.id === seatId)!;
+    // Same rule as the card back above: nothing of the departed player stays
+    // in the chair for the bot -- or the next occupant -- to wear.
+    expect(released.isHuman).toBe(false);
+    expect(released.profileId).toBeNull();
+  });
+
+  it("does not let a new occupant inherit the previous player's profile id", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    const firstToken = crypto.randomUUID();
+    const first = testProfile("First");
+    const seated = claimSeat(game, firstToken, first).state;
+    const seatId = seated.seats.find((seat) => seat.ownerToken === firstToken)!.id;
+
+    const left = vacateSeat(seated, firstToken).state;
+    const second = testProfile("Second");
+    const reseated = claimSeat(left, crypto.randomUUID(), second).state;
+
+    const seat = reseated.seats.find((row) => row.id === seatId)!;
+    // If this ever reads `first.id`, the table is telling everyone the new
+    // player is somebody else.
+    expect(seat.profileId).not.toBe(first.id);
+  });
+
+  it("turns a legacy seat's missing profile id into a deliberate null", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    const seated = claimSeat(game, crypto.randomUUID(), testProfile("Human")).state;
+
+    // A table persisted before this field existed carries undefined, which
+    // would reach the client as an absent key and read as "no id" by accident.
+    const legacy = structuredClone(seated) as GameState;
+    legacy.seats.forEach((seat) => {
+      delete (seat as Partial<GameState["seats"][number]>).profileId;
+    });
+
+    normalizeGameState(legacy).seats.forEach((seat) => {
+      expect(seat.profileId).toBeNull();
+    });
+  });
+
+  it("keeps a seated human's profile id across a normalize", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    const profile = testProfile("Human");
+    const seated = claimSeat(game, crypto.randomUUID(), profile).state;
+
+    // The other half of the backfill: it must not flatten live ids on the way
+    // through, which is the failure botIdentity actually shipped with once.
+    const normalized = normalizeGameState(structuredClone(seated) as GameState);
+    const seat = normalized.seats.find((row) => row.name === "Human")!;
+    expect(seat.profileId).toBe(profile.id);
+  });
+
+  it("strips a profile id from a seat that is not human", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    const tampered = structuredClone(game) as GameState;
+    const bot = tampered.seats.find((seat) => !seat.isHuman)!;
+    bot.profileId = crypto.randomUUID();
+
+    // Belt and braces for the release paths: a stale id cannot survive one
+    // round trip through the store, whatever put it there.
+    const normalized = normalizeGameState(tampered);
+    expect(normalized.seats.find((seat) => seat.id === bot.id)!.profileId).toBeNull();
   });
 });

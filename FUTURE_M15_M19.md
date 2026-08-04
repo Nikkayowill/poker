@@ -1,7 +1,16 @@
 # StackChips: proposed M15-M19 architecture
 
-Planning handoff for Claude Code. These are feature proposals, not landed scope or migrations.
-Implement in order; each milestone gets one new imperative migration, a server store with a memory-mode mirror, API tests, and an E2E happy path.
+Planning handoff for Claude Code. Most of this is still proposal, with two exceptions:
+M15's archive/history server half has landed (`hand_archives`, the `archive_hand` RPC,
+`lib/server/hand-archive-store.ts`, `/api/history/*`), and M16's friends half has landed
+across two migrations plus `/api/friends/*` and the friends drawer. Table invites, M17–M19,
+and every UI not named here remain proposals.
+
+Implement in order; each milestone gets one or more append-only imperative migrations, a
+server store with a memory-mode mirror, API tests, and an E2E happy path. One migration per
+milestone is the norm, not a rule — M16 needed a second for the `accept_friend_request` RPC
+and a third to revoke a default grant. Always add a new migration for a schema change; never
+rewrite a migration that has been deployed.
 
 ## Fixed rules
 
@@ -35,7 +44,7 @@ Implement in order; each milestone gets one new imperative migration, a server s
 
 **Schema**
 
-- `friend_requests(id, from_profile_id, to_profile_id, status, created_at, responded_at)`; partial unique index for one pending direction.
+- `friend_requests(id, requester_id, addressee_id, status, created_at, responded_at)`; **two** partial unique indexes, both `where status = 'pending'`: one on `(requester_id, addressee_id)` stopping a duplicate request in the same direction, and one on `(least(...), greatest(...))` stopping the crossed pair — A asking B while B is asking A, which is a different ordered pair and would otherwise let both be accepted into the same friendship. Partial on status so a declined pair can ask again. Keep both indexes and let a conflicting insert surface as SQLSTATE `23505`; do not replace them with check-then-insert, which cannot see the crossed case without a lock.
 - `friendships(profile_low_id, profile_high_id, created_at)`; canonical ordering check + composite PK.
 - `profile_blocks(blocker_id, blocked_id, created_at)`; directional PK.
 - `table_invites(id, game_id, inviter_id, invitee_id, expires_at, accepted_at, revoked_at)`; index open invites by invitee/expiry.

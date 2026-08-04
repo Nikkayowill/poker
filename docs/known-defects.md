@@ -89,3 +89,46 @@ deciding what the base width formula is -- which is the same decision as fixing
 this defect. Doing it as a pure refactor first would move those rules once for
 the inversion and again for the fix, and the intermediate state has the height
 cap in a different place at every breakpoint. Left for M5 to do once.
+
+## D2 — WITHDRAWN: the 10:30 seat does not collide with the live feed
+
+Recorded on 2026-08-04 as a blocker on eight-max seating, then measured and
+withdrawn the same day. **There is no defect here.** Kept rather than deleted
+because the reasoning that produced it is easy to repeat.
+
+The claim was that an eight-seat ring introduces a seat at 10:30 which lands
+under `.table-feed` on a phone, and that the feed would have to move before
+`SEAT_COUNT` could change. The arithmetic behind it mixed two coordinate
+spaces: the seat position was computed relative to `.poker-table-wrap` (y=61
+inside the table box) and compared against a feed position measured from the
+top of the viewport. Those share no origin.
+
+Measured in Chromium at the feed's true maximum height -- three entries, which
+is all `poker-table.tsx` ever renders (`game.log.slice(0, 3)`), with the
+stylesheet's own per-viewport wrapping and hiding applied:
+
+    viewport          feed bottom   8-max 10:30 seat top   clearance
+    desktop  1440x900       179.3                  207.0      27.7px
+    portrait  390x844       138.2                  183.6      45.4px
+    landscape 844x390        65.4                   99.0      33.6px
+
+The feed never reaches the ring because it never reaches the table. It lives in
+`.table-hud`, which is a sibling of `.poker-table-wrap` and sits above it: on
+the portrait phone the feed ends at y=101.6 and the wrap does not begin until
+y=107.
+
+`tests/e2e/table-feed.spec.ts` now holds this as a measured guard on all three
+viewports, with a 16px minimum on the gap rather than a bare non-overlap
+assertion. It computes the 10:30 rectangle from the same constants
+`lib/game/table-geometry.ts` uses, because `SEAT_COUNT` is still 6 and there is
+no such seat in the DOM to measure -- which is also why the older assertion in
+that file, which measures real `.player-seat` boxes, cannot catch this class of
+problem on its own.
+
+Two things that are worth keeping from the original note, because they are
+true: eight-max geometry is otherwise ready (`seatGeometry` is parametric and
+`lib/game/table-geometry.test.ts` locks the eight clock positions), and
+`seatWidthFor` takes a count so adjacent seats keep their spacing at eight. The
+remaining blocker on eight-max is not layout at all -- it is `SEAT_COUNT`, the
+`MAX_SEATS` assertion in the table manager, and the live `seat_number between 1
+and 6` constraint on `cash_game_sessions`.

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   advanceTimedTurn,
   applyPlayerAction,
@@ -498,6 +498,10 @@ describe("server game engine", () => {
     const game = createGame(hostToken, "Host");
     game.status = "complete";
     game.buttonPosition = 5;
+    // Floor dropped to 3 so the three empty seats stay empty; this is a
+    // three-handed bring-in rule, and the shipped floor of 4 would refill one
+    // of them and make it a four-handed table instead.
+    vi.stubEnv("RIVER_TABLE_FUNDED_FLOOR", "3");
     game.seats.forEach((seat, index) => {
       seat.stack = index < 3 ? 1000 : 0;
     });
@@ -779,8 +783,14 @@ describe("heads-up blinds", () => {
     //
     // Bots on purpose: a busted human's seat is handed back to a funded bot, so
     // busting humans -- which is how this test used to shrink the table -- no
-    // longer shrinks anything. Bots are the only seats nothing refunds, which
-    // makes them the only way a table genuinely gets down to heads-up.
+    // longer shrinks anything.
+    //
+    // The floor is dropped to 2 so those four stay busted. At the shipped
+    // floor of 4 a table cannot reach heads-up by busting at all, which is the
+    // deliberate cost of keeping tables populated -- but the heads-up blind
+    // rule is still a real rule, it still governs any table that gets there,
+    // and it is worth holding to it.
+    vi.stubEnv("RIVER_TABLE_FUNDED_FLOOR", "2");
     game.seats[2].stack = 0;
     game.seats[3].stack = 0;
     game.seats[4].stack = 0;
@@ -936,7 +946,15 @@ describe("multi-human seating", () => {
 });
 
 describe("giving up a seat", () => {
-  it("restores the seat's original bot identity, including for the host's own seat", () => {
+  /**
+   * A vacated seat used to be handed back to the identity that chair started
+   * with -- seat 1 was always Maya. It now draws a fresh one, so a player who
+   * sits for an hour is not watching the same six names cycle. What has to
+   * hold is weaker but is the part that matters: a bot takes the seat, it is
+   * somebody from the pool, and nobody at the table is wearing that identity
+   * twice.
+   */
+  it("hands the seat to a fresh bot identity, including for the host's own seat", () => {
     const hostToken = crypto.randomUUID();
     const guestToken = crypto.randomUUID();
     let game = createGame(hostToken, "Host");
@@ -948,13 +966,40 @@ describe("giving up a seat", () => {
     const restored = game.seats[claimed.seatIndex];
     expect(restored.isHuman).toBe(false);
     expect(restored.ownerToken).toBeNull();
-    expect(restored.name).toBe("Maya");
-    expect(restored.personality).toBe("MANIAC");
+    expect(restored.botIdentity).not.toBeNull();
+    expect(restored.name).toBeTruthy();
+    expect(["MANIAC", "ROCK", "CALLING_STATION"]).toContain(restored.personality);
 
     game = vacateSeat(game, hostToken).state;
     expect(game.seats[0].isHuman).toBe(false);
     expect(game.seats[0].ownerToken).toBeNull();
-    expect(game.seats[0].name).toBe("Jax");
+    expect(game.seats[0].botIdentity).not.toBeNull();
+
+    // No duplicates: drawing an identity per seat without checking the table
+    // is exactly what puts two players called Maya in the same hand.
+    const identities = game.seats.map((seat) => seat.botIdentity);
+    expect(new Set(identities).size).toBe(identities.length);
+    expect(new Set(game.seats.map((seat) => seat.name)).size).toBe(game.seats.length);
+  });
+
+  it("keeps a rotated identity across a persist/reload cycle", () => {
+    // The regression that makes rotation worth having a persisted field for:
+    // bot faces used to be recomputed from `position` on every load, so a
+    // rotated seat reverted on the next snapshot and the change was real in
+    // memory and invisible in production.
+    const hostToken = crypto.randomUUID();
+    const guestToken = crypto.randomUUID();
+    let game = createGame(hostToken, "Host");
+    const claimed = claimSeat(game, guestToken, testProfile("Guest"));
+    game = vacateSeat(claimed.state, guestToken).state;
+
+    const rotated = game.seats[claimed.seatIndex];
+    const { name, botIdentity, avatarCosmetic } = rotated;
+
+    const reloaded = normalizeGameState(JSON.parse(JSON.stringify(game)) as GameState);
+    expect(reloaded.seats[claimed.seatIndex].botIdentity).toBe(botIdentity);
+    expect(reloaded.seats[claimed.seatIndex].name).toBe(name);
+    expect(reloaded.seats[claimed.seatIndex].avatarCosmetic).toBe(avatarCosmetic);
   });
 
   it("rejects vacating a seat you don't own", () => {

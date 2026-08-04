@@ -101,16 +101,49 @@ export async function createStoredGame(state: GameState): Promise<void> {
  * columns on `games`) rather than adding a new `tier` column -- blinds
  * uniquely determine tier in this app's fixed 3-tier config.
  */
+/**
+ * How many open public tables to weigh against each other before picking one.
+ *
+ * Bounded because the choice below needs a second query over the candidates,
+ * and an unbounded first query would make that second one grow with the number
+ * of live tables. Twenty is far more than a tier ever has open at once, so in
+ * practice this ranks the whole field.
+ */
+const MATCHMAKING_CANDIDATES = 20;
+
+/**
+ * An open seat at a public table of this tier, preferring one that already has
+ * a person at it.
+ *
+ * The preference is the point. Quick-play has always joined an existing table
+ * before creating one, but it took the *oldest* open table, and every table is
+ * created full of bots -- so two players arriving a minute apart were reliably
+ * sent to two different tables, each to sit with six bots, and the game looked
+ * unplayed even when it was not. Ranking a populated table first is what makes
+ * two people who press Play at the same time end up in the same hand.
+ *
+ * Falls back to the oldest open table, and then to nothing, which the caller
+ * reads as "create one". A table with only bots is still a perfectly good
+ * answer -- it is just the second-best one.
+ */
 export async function findOpenPublicGame(tier: StakesTier): Promise<string | null> {
   const config = TIER_CONFIG[tier];
   const supabase = adminClient();
   if (!supabase) {
     let best: GameState | null = null;
+    let bestHasHuman = false;
     for (const state of memoryGames.values()) {
       if (state.isPrivate || state.status !== "playing") continue;
       if (state.tier !== tier) continue;
       if (!state.seats.some((seat) => seat.ownerToken === null)) continue;
-      if (!best || state.createdAt < best.createdAt) best = state;
+      const hasHuman = state.seats.some((seat) => seat.ownerToken !== null);
+      // A populated table beats any empty one; between two of the same kind,
+      // the older one still wins, so tables fill up rather than all filling
+      // one seat each.
+      if (!best || (hasHuman && !bestHasHuman) || (hasHuman === bestHasHuman && state.createdAt < best.createdAt)) {
+        best = state;
+        bestHasHuman = hasHuman;
+      }
     }
     return best?.id ?? null;
   }
@@ -125,9 +158,29 @@ export async function findOpenPublicGame(tier: StakesTier): Promise<string | nul
     .eq("games.small_blind", config.smallBlind)
     .eq("games.big_blind", config.bigBlind)
     .order("created_at", { referencedTable: "games", ascending: true })
-    .limit(1);
+    .limit(MATCHMAKING_CANDIDATES);
   if (error) throw new Error(`Could not search for an open table: ${error.message}`);
-  return data?.[0]?.game_id ?? null;
+  const candidates = data ?? [];
+  if (candidates.length === 0) return null;
+
+  // Ordered oldest-first by the query above, and de-duplicated here because a
+  // table with three open seats comes back three times.
+  const candidateIds: string[] = [];
+  for (const row of candidates) {
+    if (!candidateIds.includes(row.game_id)) candidateIds.push(row.game_id);
+  }
+
+  const { data: occupied, error: occupiedError } = await supabase
+    .from("game_seats")
+    .select("game_id")
+    .in("game_id", candidateIds)
+    .not("owner_token", "is", null);
+  // A failure to rank is not a failure to match: the oldest open table is
+  // still a table, and sending someone to it beats refusing to seat them.
+  if (occupiedError) return candidateIds[0];
+
+  const populated = new Set((occupied ?? []).map((row) => row.game_id));
+  return candidateIds.find((id) => populated.has(id)) ?? candidateIds[0];
 }
 
 /**

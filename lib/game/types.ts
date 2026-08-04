@@ -38,6 +38,18 @@ export interface Seat {
   isHuman: boolean;
   /** The session token of the human seated here; null for an open/bot seat. Never sent to clients. */
   ownerToken: string | null;
+  /**
+   * Which entry of the bot identity pool this seat is currently wearing.
+   *
+   * Null on a human seat. Persisted rather than derived, which is the whole
+   * point: a bot's face used to be recomputed from `position` on every load,
+   * so a rotated identity was silently reverted by the next normalizeGameState
+   * -- the seat would show a new player for one request and then change back.
+   * Tables written before rotation existed carry no value here and are
+   * backfilled from `position`, which is the identity they were already
+   * showing, so no live table changes its cast on deploy.
+   */
+  botIdentity: number | null;
   personality: BotPersonality | null;
   stack: number;
   status: SeatStatus;

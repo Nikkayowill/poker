@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useFuse } from "./use-fuse";
 import clsx from "clsx";
 import { Check, FoldVertical, TimerReset } from "lucide-react";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
@@ -9,13 +10,31 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import { BuyInModal } from "@/components/lobby/buy-in-modal";
 import { RebuyCheckout } from "./rebuy-checkout";
 
-export function TurnProgressBar({ remainingFraction }: { remainingFraction: number }) {
+/**
+ * The bar under the controls, burning down on the same clock as the seat ring.
+ *
+ * Took a `remainingFraction` number until this milestone, which sounds
+ * harmless and was not: nothing on this table can compute that fraction
+ * without a ticking clock, so the state that produced it lived in PokerTable
+ * -- the root of the whole table tree -- and updated four times a second for
+ * the length of every turn. Every seat, card and plate re-rendered with it,
+ * to move one bar. Taking the two timestamps instead moves the animation into
+ * CSS and takes that state out of the tree entirely.
+ *
+ * scaleX rather than width, unchanged: transform is the one property here that
+ * the compositor can animate without laying the bar out again on every frame.
+ */
+export function TurnProgressBar({
+  startedAt,
+  deadlineAt,
+}: {
+  startedAt: string | null;
+  deadlineAt: string | null;
+}) {
+  const fuseRef = useFuse(startedAt, deadlineAt);
   return (
-    <div className="turn-progress-track">
-      <div
-        className={clsx("turn-progress-fill", remainingFraction <= 0.25 && "progress-critical")}
-        style={{ transform: `scaleX(${remainingFraction})` }}
-      />
+    <div className="turn-progress-track" ref={fuseRef as React.RefObject<HTMLDivElement>}>
+      <div className="turn-progress-fill" />
     </div>
   );
 }
@@ -45,14 +64,12 @@ export function ActionBar({
   pending,
   onAction,
   onLeave,
-  remainingFraction,
   profile,
 }: {
   game: GameSnapshot;
   pending: boolean;
   onAction: (action: PlayerAction) => void;
   onLeave: () => void;
-  remainingFraction: number;
   profile: PlayerProfile | null;
 }) {
   const legal = game.legalActions;
@@ -181,7 +198,13 @@ export function ActionBar({
 
   return (
     <div className={clsx("action-bar", myTurn && "action-bar-your-turn")}>
-      <TurnProgressBar remainingFraction={myTurn ? remainingFraction : 0} />
+      {/* Only your own turn burns the bar. Passing nulls otherwise leaves the
+          fuse properties unset, which is what makes the track sit empty
+          rather than animating somebody else's clock under your controls. */}
+      <TurnProgressBar
+        startedAt={myTurn ? game.turnStartedAt : null}
+        deadlineAt={myTurn ? game.turnDeadlineAt : null}
+      />
 
       {/* No countdown here any more: the fuse burning around the seat on the
           clock carries it, right where the player is already looking. This

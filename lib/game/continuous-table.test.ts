@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   advanceTimedTurn,
   applyPlayerAction,
@@ -115,31 +115,33 @@ describe("a finished hand schedules the next one", () => {
 });
 
 describe("the two tables that must not deal themselves", () => {
-  it("schedules nothing when too few seats still have chips", () => {
+  it("refills busted bots and keeps dealing rather than stalling the table", () => {
     const { game: started, tokens } = tableWithTwoHumans();
     const game = foldToOneWinner(started);
-    // Strip the table down to one funded seat, the state setupHand refuses.
-    //
-    // The second human has to *leave* rather than simply be zeroed: a busted
-    // human's seat is handed back to a funded bot, so zeroing it -- which is
-    // how this test used to strip the table -- leaves two funded seats and the
-    // table deals. Player 2 gives up the seat, then every remaining bot busts,
-    // and nothing refunds a bot.
+    // One human, and every other seat ground down to nothing. This used to be
+    // the state setupHand refused -- one funded seat -- because nothing ever
+    // refunded a bot, so a table walked 6 -> 5 -> 4 and stopped for good.
+    // Busted bots are now released and reseated at the head of setupHand, so
+    // the table plays on.
     const afterLeave = vacateSeat({ ...game, status: "complete" }, tokens[1]).state;
     const finished: GameState = {
       ...afterLeave,
       seats: afterLeave.seats.map((seat, index) => (index === 0 ? seat : { ...seat, stack: 0 })),
     };
 
+    // Guards the ordering, which is the part that is easy to get wrong:
+    // scheduleNextHand runs at hand end, *before* the refill, so counting only
+    // seats funded at that instant would null the deadline and leave the table
+    // stalled forever on a refill it never reached.
+    scheduleNextHand(finished);
+    expect(finished.nextHandAt).not.toBeNull();
+
     const settled = dealNextHandIfDue(
       { ...finished, nextHandAt: new Date(Date.now() - 1).toISOString() },
       Date.now(),
     ).state;
-    // setupHand gave up, and must not leave a deadline behind: every seated
-    // browser would wake at it, ask to advance, and be told the same thing
-    // forever.
-    expect(settled.nextHandAt).toBeNull();
-    expect(settled.status).toBe("complete");
+    expect(settled.status).toBe("playing");
+    expect(settled.seats.filter((seat) => seat.stack > 0).length).toBeGreaterThanOrEqual(2);
   });
 
   /**
@@ -196,7 +198,18 @@ describe("the two tables that must not deal themselves", () => {
       expect(state.nextHandAt).toBe(new Date(NOW + NEXT_HAND_DELAY_MS).toISOString());
     });
 
-    it("schedules nothing when only one seat still has chips", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("schedules nothing when only one seat still has chips and none can refill", () => {
+      // The floor is dropped to 1 so the busted bot is not topped back up.
+      // At the shipped floor of 4 this table refills and deals, which is the
+      // point of the floor -- but the branch being locked down here is the
+      // other one: when nothing *can* be refilled, a table that cannot deal
+      // must not leave a deadline behind, or every seated browser wakes at it,
+      // asks the server to advance, and is told the same thing forever.
+      vi.stubEnv("RIVER_TABLE_FUNDED_FLOOR", "1");
       const state = withStacks([
         { stack: 2_000, isHuman: true },
         { stack: 0, isHuman: false },

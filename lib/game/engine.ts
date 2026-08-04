@@ -31,10 +31,27 @@ type TurnAction = Exclude<
   { type: "next-hand" } | { type: "leave-seat" } | { type: "use-time-card" }
 >;
 // A table always has SEAT_COUNT total seats; any not claimed by a human are
-// bot-controlled. Indexed by seat position, so a vacated seat can always be
-// restored to its original bot identity regardless of who claimed it since.
+// bot-controlled.
 export const SEAT_COUNT = 6;
 
+/**
+ * The cast a table draws its bots from.
+ *
+ * Longer than SEAT_COUNT on purpose: a seat that turns over picks an identity
+ * that nobody at the table is currently wearing, so a player who sits for an
+ * hour does not watch the same six names cycle back around. The first
+ * SEAT_COUNT entries are the original cast and are deliberately left in their
+ * original order -- identity indices are persisted on seats, and every live
+ * table backfills its bots from `position`, so reordering these would rename
+ * the players at every table in flight.
+ *
+ * `personality` is the archetype, and the three that exist are the three worth
+ * having: MANIAC is the aggressive one, CALLING_STATION the loose-passive one,
+ * and ROCK the disciplined one that plays a tight-aggressive baseline. They
+ * are spread evenly across the pool so a random draw cannot produce a table of
+ * six maniacs. The names are the compatibility IDs here, not the labels --
+ * personalityProfiles and the preflop chart are both keyed on them.
+ */
 const botProfiles: Array<{
   name: string;
   initials: string;
@@ -49,18 +66,81 @@ const botProfiles: Array<{
   { name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
   { name: "Priya", initials: "PR", accent: "#65d6a2", avatarUrl: null, avatarPreset: "ace", personality: "MANIAC" },
   { name: "Wren", initials: "WR", accent: "#f08ca7", avatarUrl: null, avatarPreset: "crown", personality: "CALLING_STATION" },
+  { name: "Cole", initials: "CO", accent: "#9ad9c0", avatarUrl: null, avatarPreset: "lucky", personality: "ROCK" },
+  { name: "Nadia", initials: "ND", accent: "#e0a4ff", avatarUrl: null, avatarPreset: "diamond", personality: "MANIAC" },
+  { name: "Marco", initials: "MC", accent: "#ffb38c", avatarUrl: null, avatarPreset: "bolt", personality: "CALLING_STATION" },
+  { name: "Dmitri", initials: "DM", accent: "#8ec4f0", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
+  { name: "Aisha", initials: "AS", accent: "#7fd8b4", avatarUrl: null, avatarPreset: "ace", personality: "MANIAC" },
+  { name: "Sofia", initials: "SF", accent: "#f5a0bd", avatarUrl: null, avatarPreset: "crown", personality: "CALLING_STATION" },
+  { name: "Kenji", initials: "KJ", accent: "#a8cf8f", avatarUrl: null, avatarPreset: "lucky", personality: "ROCK" },
+  { name: "Rosa", initials: "RS", accent: "#cf9bf0", avatarUrl: null, avatarPreset: "diamond", personality: "MANIAC" },
+  { name: "Emeka", initials: "EM", accent: "#ffc79a", avatarUrl: null, avatarPreset: "bolt", personality: "CALLING_STATION" },
+  { name: "Lena", initials: "LE", accent: "#96bfe8", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
+  { name: "Tobias", initials: "TB", accent: "#6fcfa8", avatarUrl: null, avatarPreset: "ace", personality: "MANIAC" },
+  { name: "Yara", initials: "YA", accent: "#eb9db4", avatarUrl: null, avatarPreset: "crown", personality: "CALLING_STATION" },
 ];
 
+function botProfileFor(identity: number): (typeof botProfiles)[number] {
+  const length = botProfiles.length;
+  return botProfiles[((identity % length) + length) % length];
+}
+
+/**
+ * A stable 32-bit hash (FNV-1a) of the string that identifies one replacement.
+ *
+ * Deliberately not Math.random. Two writers reach a seat replacement for the
+ * same hand -- a human's action route and the server-timed advance -- and only
+ * one of them wins the version check. With a random draw the loser would
+ * recompute a different name and the seat would appear to change identity
+ * again on retry; seeded on state that both writers already agree about, they
+ * compute the same answer and a retry is a no-op.
+ */
+function identityHash(seed: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * An identity for a seat that is turning over, unique among the bots currently
+ * sitting at this table.
+ *
+ * Uniqueness is checked table-wide rather than per seat: drawing independently
+ * per seat is what produces two players called Maya, which is the exact thing
+ * rotation is meant to stop. Walking forward from the seeded offset rather
+ * than re-drawing keeps it deterministic and bounded.
+ */
+function pickBotIdentity(state: GameState, position: number): number {
+  const taken = new Set(
+    state.seats
+      .filter((seat) => seat.position !== position && !seat.isHuman && seat.botIdentity !== null)
+      .map((seat) => seat.botIdentity),
+  );
+  const offset = identityHash(`${state.id}:${state.handNumber}:${position}`);
+  for (let step = 0; step < botProfiles.length; step += 1) {
+    const candidate = (offset + step) % botProfiles.length;
+    if (!taken.has(candidate)) return candidate;
+  }
+  // Unreachable while the pool is larger than SEAT_COUNT, but a table can
+  // never be left without an identity to hand out.
+  return offset % botProfiles.length;
+}
 
 /**
  * A bot's face, taken from whatever avatars the catalog currently holds
  * rather than naming ids. Adding or removing artwork changes the cast
  * automatically and can never leave a bot pointing at an item that no
  * longer exists.
+ *
+ * Keyed on the seat's identity rather than its position, so a rotated bot
+ * brings its own face with it instead of inheriting the chair's.
  */
-function botAvatarFor(position: number): string {
+function botAvatarFor(identity: number): string {
   if (avatarCosmetics.length === 0) return DEFAULT_AVATAR_COSMETIC;
-  return avatarCosmetics[position % avatarCosmetics.length].id;
+  return avatarCosmetics[identity % avatarCosmetics.length].id;
 }
 
 // Humans get a short decision clock plus three optional time-bank cards.
@@ -96,7 +176,7 @@ export const NEXT_HAND_DELAY_MS = 2_800;
 
 /**
  * The same wait, for a table where a seated human has just lost their last
- * chip. Dealing on the normal delay would call releaseBustedHumanSeats and
+ * chip. Dealing on the normal delay would call releaseBustedSeats and
  * hand their seat to a bot while the rebuy dialog was still open in front of
  * them -- so they get a real chance to decide, and the table still moves on
  * rather than stalling forever on someone who has walked away.
@@ -113,6 +193,27 @@ export const BUSTED_REBUY_GRACE_MS = 20_000;
  * who is present but slow is never counted, because acting resets it.
  */
 export const MAX_MISSED_TURNS = 3;
+
+/**
+ * How many funded seats the table tops itself back up to when bots bust.
+ *
+ * Four, not six. A busted bot used to stay busted, so a table walked
+ * 6 -> 5 -> 4 and eventually stopped dead; refilling every one of them
+ * instead pins the table at six forever, which quietly deletes short-handed
+ * play and turns bot stacks into a renewable chip source. Four keeps a table
+ * that reads as busy while leaving both bounded.
+ *
+ * Read through fundedFloor() rather than directly, and overridable by env for
+ * the same reason TURN_TIMEOUT_MS is: the blind rules for a table that has
+ * shrunk below the floor are still real rules worth testing, and the tests
+ * that cover them need to be able to produce that table.
+ */
+export const TABLE_FUNDED_FLOOR = 4;
+
+function fundedFloor(): number {
+  const override = Number(process.env.RIVER_TABLE_FUNDED_FLOOR);
+  return Number.isFinite(override) && override > 0 ? override : TABLE_FUNDED_FLOOR;
+}
 export const BOT_DECISION_MIN_MS = 1_200;
 export const BOT_DECISION_MAX_MS = 5_200;
 
@@ -182,23 +283,48 @@ function canAct(seat: Seat) {
   return seat.status === "active" && seat.stack > 0;
 }
 
-function restoreBotControl(seat: Seat) {
-  const fallback = botProfiles[seat.position] ?? botProfiles[0];
+/**
+ * Puts a bot in the seat, wearing `identity` from the pool.
+ *
+ * Callers pass an identity from pickBotIdentity so the replacement is somebody
+ * new. It defaults to the seat's position -- the identity that chair has worn
+ * since the table was created -- which is what the normalize path wants when
+ * it is backfilling a table written before rotation existed.
+ */
+function restoreBotControl(seat: Seat, identity: number = seat.position) {
+  const fallback = botProfileFor(identity);
   seat.isHuman = false;
   seat.ownerToken = null;
+  seat.botIdentity = identity;
   seat.personality = fallback.personality;
   seat.name = fallback.name;
   seat.initials = fallback.initials;
   seat.accent = fallback.accent;
   seat.avatarUrl = fallback.avatarUrl;
   seat.avatarPreset = fallback.avatarPreset;
-  seat.avatarCosmetic = botAvatarFor(seat.position);
+  seat.avatarCosmetic = botAvatarFor(identity);
   // The deck goes back with the seat. A player who leaves -- or is released
   // for missing three turns -- must not leave a 400,000 Gold card back behind
   // for a bot to keep playing with.
-  seat.cardBackCosmetic = botCardBackFor(seat.position);
+  seat.cardBackCosmetic = botCardBackFor(identity);
   seat.timeCardsRemaining = 0;
   seat.missedTurns = 0;
+}
+
+/**
+ * How many seats will hold chips once releaseBustedSeats has run.
+ *
+ * The mirror of that function, and it has to stay one: every busted human
+ * becomes a funded bot, and busted bots are then topped up only as far as the
+ * floor. Kept next to scheduleNextHand because that is the only caller and the
+ * only reason it exists -- the deadline is written before the release happens.
+ */
+function fundedSeatsAfterRelease(state: GameState): number {
+  const funded = state.seats.filter((seat) => seat.stack > 0).length;
+  const bustedHumans = state.seats.filter((seat) => seat.isHuman && seat.stack <= 0).length;
+  const bustedBots = state.seats.filter((seat) => !seat.isHuman && seat.stack <= 0).length;
+  const afterHumans = funded + bustedHumans;
+  return afterHumans + Math.min(bustedBots, Math.max(0, fundedFloor() - afterHumans));
 }
 
 /**
@@ -210,7 +336,13 @@ function restoreBotControl(seat: Seat) {
  * advance, and be told the same thing forever.
  */
 export function scheduleNextHand(state: GameState, now = Date.now()) {
-  const canContinue = state.seats.filter((seat) => seat.stack > 0).length >= 2;
+  // Counts seats that will be funded when the next hand is actually set up,
+  // not seats funded right now. The two differ because releaseBustedSeats runs
+  // at the head of setupHand -- so a table whose bots have been ground down
+  // below the floor is about to refill and deal, and reading only current
+  // stacks here would null the deadline, stall the table, and never reach the
+  // refill that was going to fix it.
+  const canContinue = fundedSeatsAfterRelease(state) >= 2;
   if (!canContinue) {
     state.nextHandAt = null;
     return;
@@ -221,14 +353,22 @@ export function scheduleNextHand(state: GameState, now = Date.now()) {
 }
 
 /**
- * Hands a busted human's seat back to a bot, funded.
+ * Hands every busted seat back to a freshly-identified bot, funded.
  *
  * The refill is the whole point and was missing: `restoreBotControl` leaves the
  * stack alone, so without it the seat became a bot holding zero chips, which
  * `setupHand` then reads as unfunded and marks `"out"` forever. Nothing ever
- * refunds a bot, so every player who busted and let the rebuy grace lapse
+ * refunded a bot, so every player who busted and let the rebuy grace lapse
  * permanently removed a seat -- a continuous table walked 6 -> 5 -> 4 down to
  * "Not enough players with chips to continue" and stopped.
+ *
+ * Busted *bots* have the same problem and used not to be covered here at all:
+ * a bot that lost its last chip to a hot player was marked `"out"` and stayed
+ * there, so a table left running long enough emptied itself the same way. They
+ * are released on exactly the same terms, and this runs at the head of
+ * `setupHand` -- before funded seats are counted and before any card is dealt,
+ * which is what makes "the seats are refilled before the next hand" a property
+ * of the deal rather than a race with it.
  *
  * `vacateSeat` and `releaseInactiveSeats` have always ended with this same
  * line; this is the third of the three release paths, not a new rule. Minting
@@ -244,15 +384,38 @@ export function scheduleNextHand(state: GameState, now = Date.now()) {
  * while holding a fresh stack. `"out"` -- what this line used to say -- now
  * contradicts a funded seat either way.
  */
-function releaseBustedHumanSeats(state: GameState) {
+function reseat(state: GameState, seat: Seat) {
+  restoreBotControl(seat, pickBotIdentity(state, seat.position));
+  seat.stack = TIER_CONFIG[state.tier].minBuyIn;
+  seat.status = "active";
+}
+
+function releaseBustedSeats(state: GameState) {
+  // Busted humans first, and unconditionally: their seat is reclaimed because
+  // they are gone, not to keep the table populated, so the floor has no say in
+  // it. Doing them first also means the bots below count the seats these just
+  // funded and top up less.
   state.seats.forEach((seat) => {
     if (!seat.isHuman || seat.stack > 0) return;
     const playerName = seat.name;
-    restoreBotControl(seat);
-    seat.stack = TIER_CONFIG[state.tier].minBuyIn;
-    seat.status = "active";
+    reseat(state, seat);
     addLog(state, `${playerName} is out of chips and leaves the table`);
   });
+
+  // Busted bots only up to the floor. Refilling every one of them on the spot
+  // would pin the table at six funded seats forever, which costs two things
+  // worth keeping: short-handed play stops existing, and the bot stacks --
+  // minted, not backed by Gold -- become a renewable source of chips that a
+  // winning player converts to Gold on cash-out. Stopping at the floor keeps
+  // the table looking alive and bounds both.
+  const floor = fundedFloor();
+  for (const seat of state.seats) {
+    if (seat.isHuman || seat.stack > 0) continue;
+    if (state.seats.filter((other) => other.stack > 0).length >= floor) break;
+    const departingName = seat.name;
+    reseat(state, seat);
+    addLog(state, `${departingName} busts out — ${seat.name} takes the seat`);
+  }
 }
 
 function blindPositions(state: GameState) {
@@ -288,7 +451,7 @@ function dealToCommunity(state: GameState, count: number) {
 }
 
 function setupHand(state: GameState, firstHand = false) {
-  if (!firstHand) releaseBustedHumanSeats(state);
+  if (!firstHand) releaseBustedSeats(state);
   // Cleared before the funded check, so the dead-table branch below leaves it
   // null rather than inheriting the deadline that brought us here -- which
   // would have every browser retry an advance that can never succeed.
@@ -383,6 +546,7 @@ export function createGame(
       position: 0,
       isHuman: true,
       ownerToken: hostToken,
+      botIdentity: null,
       personality: null,
       stack: buyIn,
       status: "active",
@@ -396,7 +560,10 @@ export function createGame(
       missedTurns: 0,
       vpip: false,
     },
-    ...botProfiles.slice(1).map((bot, index): Seat => ({
+    // Bounded by SEAT_COUNT, not by the pool: the pool is deliberately longer
+    // than the table so rotation has somewhere to draw from, and slicing it
+    // open-ended would seat one player per identity.
+    ...botProfiles.slice(1, SEAT_COUNT).map((bot, index): Seat => ({
       id: randomUUID(),
       ...bot,
       avatarCosmetic: botAvatarFor(index + 1),
@@ -404,6 +571,7 @@ export function createGame(
       position: index + 1,
       isHuman: false,
       ownerToken: null,
+      botIdentity: index + 1,
       stack: buyIn,
       status: "active",
       holeCards: [],
@@ -478,6 +646,9 @@ export function claimSeat(
   }
   seat.isHuman = true;
   seat.ownerToken = token;
+  // The chair stops wearing a pool identity the moment a person is in it, so
+  // the normalize path cannot re-derive a bot's face over the top of theirs.
+  seat.botIdentity = null;
   seat.personality = null;
   // Whoever sat here before does not follow the new occupant into the seat.
   seat.missedTurns = 0;
@@ -517,7 +688,7 @@ export function vacateSeat(state: GameState, token: string): { state: GameState;
 
   const seat = state.seats[seatIndex];
   const cashedOut = seat.stack;
-  restoreBotControl(seat);
+  restoreBotControl(seat, pickBotIdentity(state, seat.position));
   // Those chips leave the table with the player, so the seat must not keep
   // them too -- otherwise every departure would mint the stack a second time.
   // The replacement bot sits down fresh for the table minimum.
@@ -1215,19 +1386,39 @@ export function normalizeGameState(state: GameState): GameState {
     if (!Number.isInteger(seat.timeCardsRemaining)) {
       seat.timeCardsRemaining = seat.isHuman ? STARTING_TIME_CARDS : 0;
     }
+    // Which identity this bot is wearing, for tables persisted before seats
+    // carried one. `position` is the right backfill and not merely a safe
+    // one: it is the identity that seat has been showing all along, so a
+    // table in flight keeps its cast across the deploy instead of renaming
+    // every bot at once under its players.
+    //
+    // Reading a persisted value here rather than recomputing from position is
+    // the whole mechanism. This block used to derive the face from the chair
+    // on every load, which meant a rotated bot reverted to the old identity on
+    // the very next snapshot -- the rotation was real in memory and invisible
+    // in production.
+    if (seat.isHuman) {
+      seat.botIdentity = null;
+    } else if (!Number.isInteger(seat.botIdentity)) {
+      seat.botIdentity = seat.position;
+    }
     // Tables dealt before avatars existed have seats with no avatar at all,
     // which reaches the renderer as undefined and takes the whole page down.
-    // Bots recover their own face by position rather than every seat
+    // Bots recover their own face from their identity rather than every seat
     // collapsing to one default, which is most of what makes a table look
     // occupied.
     if (!seat.avatarCosmetic) {
-      seat.avatarCosmetic = seat.isHuman ? DEFAULT_AVATAR_COSMETIC : botAvatarFor(seat.position);
+      seat.avatarCosmetic = seat.isHuman
+        ? DEFAULT_AVATAR_COSMETIC
+        : botAvatarFor(seat.botIdentity ?? seat.position);
     }
     // Same story for the deck: every table dealt before this milestone has
     // seats with no card back, and an id of undefined reaches an SVG fill and
     // draws nothing at all where a hidden card should be.
     if (!seat.cardBackCosmetic) {
-      seat.cardBackCosmetic = seat.isHuman ? DEFAULT_CARD_BACK : botCardBackFor(seat.position);
+      seat.cardBackCosmetic = seat.isHuman
+        ? DEFAULT_CARD_BACK
+        : botCardBackFor(seat.botIdentity ?? seat.position);
     }
     // Hands in flight before VPIP existed have no opinion either way; treat
     // as false rather than let `undefined` leak into a stats comparison.
@@ -1319,7 +1510,7 @@ export function releaseInactiveSeats(state: GameState): ReleasedSeat[] {
       cashedOut: Math.max(0, seat.stack),
     };
     addLog(state, `${seat.name} is away and gives up the seat`);
-    restoreBotControl(seat);
+    restoreBotControl(seat, pickBotIdentity(state, seat.position));
     // Same reasoning as vacateSeat: those chips leave with the player, so the
     // seat must not keep them as well or every departure mints a stack.
     seat.stack = TIER_CONFIG[state.tier].minBuyIn;
@@ -1419,7 +1610,7 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
     const seat = state.seats[seatIndex];
     if (seat.stack > 0) throw new Error("Your seat still has chips.");
     // Refill and immediately deal, in one action -- refilling first means
-    // setupHand's own releaseBustedHumanSeats (which only reclaims seats
+    // setupHand's own releaseBustedSeats (which only reclaims seats
     // still at 0) leaves this seat alone rather than handing it to a bot.
     seat.stack = clampBuyIn(state.tier, action.amount);
     seat.status = "active";

@@ -311,11 +311,45 @@
 .seat-timer circle { fill: none; stroke-width: 2.5; stroke-linecap: round; }
 .seat-timer-track { stroke: rgba(255, 255, 255, .1); }
 
+/* The arc, burned down by the browser rather than by React.
+   --fuse-duration and --fuse-delay are written once per turn by useFuse
+   (components/table/use-fuse.ts): the duration is the whole turn, and the
+   delay is negative elapsed, which is what lets a clock that mounts mid-turn
+   -- a reload, a reconnect, a seat that appears late -- start part-way round
+   instead of snapping back to full.
+
+   Without those properties the shorthand has no duration, so nothing animates
+   and the ring simply sits full. That is the correct resting state for a seat
+   whose turn it is not, and it is why there is no separate "no clock" rule. */
 .seat-timer-fuse {
   stroke: var(--fuse-colour, #5cc98a);
-  /* Matches the 250ms tick, so the arc glides between samples instead of
-     stepping four times a second. */
-  transition: stroke-dashoffset .25s linear, stroke .4s ease;
+  animation: seat-fuse-burn var(--fuse-duration) linear var(--fuse-delay) forwards;
+}
+
+@keyframes seat-fuse-burn {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: var(--fuse-circumference); }
+}
+
+/* Colour runs as its own animation on the container so the arc and the digit
+   below it change together off one timeline.
+
+   --fuse-colour is an unregistered custom property, which animates discretely
+   -- it flips at each stop rather than interpolating. That is exactly what is
+   wanted here: the clock is meant to change gear at thresholds, not fade
+   continuously from green to red. The stops are elapsed percentages of the
+   turn, so they are the old remaining-fraction thresholds inverted:
+   .6 remaining is 40% elapsed, .35 is 65%, .15 is 85%. */
+.seat-timer {
+  --fuse-colour: #5cc98a;
+  animation: seat-fuse-tone var(--fuse-duration) linear var(--fuse-delay) forwards;
+}
+
+@keyframes seat-fuse-tone {
+  0% { --fuse-colour: #5cc98a; }
+  40% { --fuse-colour: #e2c65f; }
+  65% { --fuse-colour: #e89a4c; }
+  85% { --fuse-colour: #e8604c; }
 }
 
 /* The countdown sits in the middle -- the black space inside the ring. */
@@ -325,11 +359,18 @@
   font-variant-numeric: tabular-nums;
 }
 
-.seat-timer-safe { --fuse-colour: #5cc98a; }
-.seat-timer-warn { --fuse-colour: #e2c65f; }
-.seat-timer-urgent { --fuse-colour: #e89a4c; }
-.seat-timer-critical { --fuse-colour: #e8604c; }
-.seat-timer-critical b { animation: fuse-urgent .7s ease-in-out infinite; }
+/* The last-seconds pulse. Used to be a `.seat-timer-critical` class that React
+   toggled once the remaining fraction crossed .15, which meant a render.
+
+   It is now a delayed animation instead: the delay is the time from now until
+   the 85% mark, which is `85% of the turn` minus `however much has already
+   elapsed` -- and --fuse-delay is already negative elapsed, so it is a sum.
+   A clock that mounts past the threshold gets a negative delay and starts
+   part-way through a pulse, which is the same rule the arc follows. */
+.seat-timer b {
+  animation: fuse-urgent .7s ease-in-out infinite
+    calc(var(--fuse-duration) * .85 + var(--fuse-delay));
+}
 @keyframes fuse-urgent { 50% { opacity: .45; } }
 
 /* Your own seat runs the whole width of the plate, so its clock can afford

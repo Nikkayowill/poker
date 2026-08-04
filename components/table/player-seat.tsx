@@ -150,7 +150,6 @@ function SeatNameplate({
     <div className="seat-plate">
       <div className="seat-name-row">
         <strong>{seat.name}</strong>
-        {!seat.isHuman && <span className="ai-badge">AI</span>}
         {seat.isMine && <span className="you-chip">You</span>}
         {blind && (
           <span

@@ -36,10 +36,16 @@ export interface LegalDocument {
 export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
   terms_of_service: {
     slug: "terms_of_service",
-    version: 1,
+    // Bumped to 2 when the computer-opponent disclosure below was added. That
+    // re-prompts every existing player, which is the intended cost: it is the
+    // only disclosure in the product that opponents may not be people, and
+    // grandfathering players in under language that never mentioned it is
+    // exactly what the version mechanism exists to prevent.
+    version: 2,
     title: "Terms of Service",
     body: [
       "StackChips is a free-to-play social poker game played with Gold, an in-app entertainment currency. Nothing in StackChips is real-money gambling: no hand you play, and no amount of Gold you hold, wins, buys, or can be exchanged for real money, cryptocurrency, or any prize of monetary value.",
+      "Tables are filled with computer-controlled opponents. Any seat at your table that is not held by another player is played by StackChips software, and seats can change hands between hands as players join and leave. Computer opponents follow the same rules, the same betting limits, and the same shuffled deck as every other seat; they cannot see your cards, and they receive no advantage of any kind.",
       "You must be at least 18 years old, or the age of majority where you live if that is higher, to play. By continuing you confirm you meet that requirement.",
       "Your Gold balance, table history, and cosmetics belong to your StackChips profile and have no value outside the app. We can suspend or terminate a profile that cheats, abuses other players, colludes, or attempts to convert Gold into anything of real-world value.",
       "We may change these Terms as the game changes. Continuing to play after a change takes effect means you accept the current version; if you were asked to accept again, it is because something material changed.",

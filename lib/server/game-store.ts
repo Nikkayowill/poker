@@ -3,8 +3,7 @@ import { advanceTimedTurn, dealNextHandIfDue, normalizeGameState } from "@/lib/g
 import type { GameState, PlayerAction } from "@/lib/game/types";
 import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { adminClient } from "./supabase-admin";
-import { recordHandStats } from "./stats-store";
-import { checkAvatarUnlocks } from "./avatar-unlocks";
+import { onHandCompleted } from "./hand-completion";
 import { creditGold } from "./profile-store";
 
 // Re-exported for the many existing callers that import it from here.
@@ -301,11 +300,9 @@ async function resolveTimedAdvance(state: GameState): Promise<GameState> {
     // this function exists to reach on its own, without anyone polling for
     // it. Best-effort: a stats failure must never surface as a broken table.
     if (wasPlaying && advanced.state.status === "complete") {
-      void recordHandStats(advanced.state)
-        .then((profileIds) => checkAvatarUnlocks(profileIds))
-        .catch((error) => {
-          console.error("Could not record hand stats", error);
-        });
+      void onHandCompleted(advanced.state).catch((error) => {
+        console.error("Could not record hand stats", error);
+      });
     }
 
     current = advanced.state;

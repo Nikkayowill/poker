@@ -136,47 +136,44 @@ export function ActionBar({
           <strong>
             {!game.isSeated
               ? "You’re out of chips. Start a fresh table when you’re ready."
-              : busted ? "Rebuy to keep playing, or close your seat." : game.message}
+              : busted ? "You’re sat out until you rebuy. Leave table, above, to give up the seat." : game.message}
           </strong>
         </div>
         <div className="action-slot-controls">
           {(!game.isSeated || tableIsDone) && (
             <button className="primary-action action-slot-wide" onClick={onLeave}>Return to lobby</button>
           )}
+          {/* No "close seat" control here on purpose: the header's Leave
+              table button already calls leave-seat for a seated player (see
+              leaveTable in poker-app.tsx), which is the one exit a busted
+              player needs -- a second, seat-scoped exit button was redundant
+              with it. Rebuy is the only slot-controls action while busted, so
+              it is already the full-width gold primary-action rather than
+              sharing the row with a fold-styled sibling. Out of chips means
+              two different situations, and they want different buttons. With
+              Gold in hand the rebuy is free of any purchase, so it opens the
+              Gold modal as it always has. With none, that modal was a step to
+              nowhere -- a slider you cannot afford to move, with the real
+              purchase buried behind a secondary button inside it. That case
+              goes straight to checkout instead. */}
           {game.isSeated && busted && (
-            <>
+            canRebuyWithGold ? (
               <button
-                className="action-button-fold"
+                className="primary-action action-slot-wide"
                 disabled={pending}
-                onClick={() => onAction({ type: "next-hand" })}
+                onClick={() => setShowRebuyModal(true)}
               >
-                Close seat
+                Rebuy
               </button>
-              {/* Out of chips means two different situations, and they want
-                  different buttons. With Gold in hand the rebuy is free of
-                  any purchase, so it opens the Gold modal as it always has.
-                  With none, that modal was a step to nowhere -- a slider you
-                  cannot afford to move, with the real purchase buried behind
-                  a secondary button inside it. That case goes straight to
-                  checkout instead. */}
-              {canRebuyWithGold ? (
-                <button
-                  className="primary-action action-slot-wide"
-                  disabled={pending}
-                  onClick={() => setShowRebuyModal(true)}
-                >
-                  Rebuy
-                </button>
-              ) : (
-                <button
-                  className="primary-action action-slot-wide"
-                  disabled={pending}
-                  onClick={onOpenCheckout}
-                >
-                  Buy Gold to rebuy
-                </button>
-              )}
-            </>
+            ) : (
+              <button
+                className="primary-action action-slot-wide"
+                disabled={pending}
+                onClick={onOpenCheckout}
+              >
+                Buy Gold to rebuy
+              </button>
+            )
           )}
         </div>
         {showRebuyModal && (

@@ -521,6 +521,33 @@ function setupHand(state: GameState, firstHand = false) {
   addLog(state, `Hand ${state.handNumber} dealt · blinds ${state.smallBlind}/${state.bigBlind}`, "deal");
 }
 
+/**
+ * How deep a bot's starting stack can run, as a multiple of the table's
+ * fixed buy-in.
+ *
+ * TIER_CONFIG's minBuyIn === maxBuyIn deliberately -- a human always buys in
+ * for exactly the tier's number, see tiers.ts. That invariant is about what a
+ * player pays, not what a bot happens to be carrying when the table is first
+ * drawn, so giving the six bot chairs a spread of stacks does not touch it: a
+ * fresh table reading as new money sitting at 1x next to a grinder up to 3x is
+ * what a table that has actually been running looks like, and a row of six
+ * identical stacks is the tell that it has not.
+ */
+const BOT_STACK_DEEP_MULTIPLE = 3;
+
+/**
+ * A bot's starting stack: uniform in [buyIn, buyIn * BOT_STACK_DEEP_MULTIPLE],
+ * snapped to the nearest big blind so it reads as a real stack rather than a
+ * random integer. buyIn is always an exact multiple of bigBlind (100 of them,
+ * for every tier in TIER_CONFIG), and so is the ceiling, so rounding here can
+ * never land outside the intended range.
+ */
+function randomBotStack(buyIn: number, bigBlind: number): number {
+  const ceiling = buyIn * BOT_STACK_DEEP_MULTIPLE;
+  const raw = buyIn + randomInt(ceiling - buyIn + 1);
+  return Math.round(raw / bigBlind) * bigBlind;
+}
+
 export function createGame(
   hostToken: string,
   playerName = "You",
@@ -582,7 +609,7 @@ export function createGame(
       ownerToken: null,
       profileId: null,
       botIdentity: index + 1,
-      stack: buyIn,
+      stack: randomBotStack(buyIn, config.bigBlind),
       status: "active",
       holeCards: [],
       streetBet: 0,

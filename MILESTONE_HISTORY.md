@@ -18,13 +18,16 @@ Short handoff ledger derived from Git history through 2026-08-01. Milestones wer
 | M12 | Equipped card-back cosmetics now render on hidden felt cards. |
 | M13 | Completed hands auto-deal through persisted deadlines, browser prompts, and optimistic server writes. |
 | M14a | Repeatedly inactive humans are released; their stacks return to Gold and a bot takes the seat. |
+| M14b | The seat a busted player leaves behind is funded again when their rebuy grace expires. |
 
 ## Current Claude Code handoff
 
-- Documented active slice: M12 follow-up for felt cosmetics and responsive seat/card geometry. M12 and the geometry polish are at `HEAD`; verification/next-slice choice is pending.
-- Current uncommitted work also includes an M14 follow-up that funds the replacement bot after a busted human's rebuy grace expires, with regression coverage for all three seat-release paths.
-- Other uncommitted cleanup: StackChips display/storage naming migration and a stronger admin-secret storage assertion. Legacy `river_*` cookies/modules and Sentry identifiers remain compatibility IDs unless deliberately migrated.
-- Treat these items as in progress, not landed, until tests pass and commits exist. Preserve the dirty worktree.
+- Documented active slice: M15, personal hand history and replay. Everything through M14b is committed and verified.
+- M15's server half is uncommitted in the working tree: the `hand_archives` / `hand_archive_players` migration and `archive_hand` RPC, `lib/server/hand-archive-store.ts` with its memory-mode mirror, and `GET /api/history` plus `GET /api/history/[gameId]/[hand]`. There is no history UI yet.
+- Landed alongside it: `lib/server/hand-completion.ts`, the single `onHandCompleted` hook both completion paths now call. It replaced two `recordHandStats` call sites that had drifted — the human-action path never checked avatar unlocks, so a player who ended their own hand had unlocks evaluated late, whenever a later hand happened to end on a bot action or a timeout instead.
+- Also landed: `lib/supabase/public-env.ts` resolves the browser-safe key from either `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` or the legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY`, the prerequisite `FUTURE_M15_M19.md` names for M15.
+- The card-redaction rule now lives in one exported place, `lib/game/engine.ts`'s `seatCardsWereShown`, read by both `toSnapshot` and the archiver. Do not add a second copy: a replay that unmucks folded cards is a silent leak.
+- Treat these items as in progress, not landed, until commits exist. Preserve the dirty worktree.
 
 ## Next proposed track
 

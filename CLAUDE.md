@@ -44,6 +44,15 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 ## Active milestone
 
 - Track: `ui-redesign-foundation`
-- Active slice: M12 follow-up — felt card-back cosmetics plus responsive seat/card geometry.
-- State: M12 landed; geometry polish is at HEAD; verification/next slice pending.
+- Active slice: M15 — personal hand history and replay.
+- State: M12, M13, M14a and M14b are landed and verified. M15's server half is
+  in the working tree: the `hand_archives`/`hand_archive_players` migration,
+  `archive_hand` RPC, `lib/server/hand-archive-store.ts`, and the two
+  `/api/history` routes. No history UI yet — nothing in `components/` reads
+  these routes.
+- Two supporting changes landed with it: `lib/server/hand-completion.ts` is now
+  the single post-hand hook (it replaced two drifted `recordHandStats` call
+  sites, one of which never checked avatar unlocks), and
+  `lib/supabase/public-env.ts` accepts Supabase's publishable-key env name
+  alongside the legacy anon-key name.
 - Keep this section synchronized with `AGENTS.md` when scope changes.

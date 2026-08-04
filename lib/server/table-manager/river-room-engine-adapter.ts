@@ -67,6 +67,24 @@ function resetTransientSeatFields(seat: EngineSeat): void {
 function applyHumanIdentity(seat: EngineSeat, player: PlayerObject): void {
   seat.isHuman = true;
   seat.ownerToken = player.sessionToken;
+  /**
+   * Cleared, not carried, and not merely omitted.
+   *
+   * This function mutates a seat that may still hold the previous occupant's
+   * profile id, and it is the one path that sets isHuman true without going
+   * through claimSeat -- so normalizeGameState's "non-humans have no id" sweep
+   * cannot catch a stale value here. Leaving the assignment out would hand the
+   * new player the old player's identity.
+   *
+   * Null rather than a real id because a PlayerObject carries only a session
+   * token and a display name; this worker has no profile to resolve it
+   * against. The cost is that friend-adding is unavailable at worker-run
+   * tables, which is the honest answer rather than a wrong one.
+   */
+  seat.profileId = null;
+  // The chair stops wearing a pool identity the moment a person is in it,
+  // matching claimSeat, so no snapshot shows a human seat with a bot identity.
+  seat.botIdentity = null;
   seat.personality = null;
   seat.name = player.displayName.slice(0, 18) || "Player";
   seat.initials = player.displayName

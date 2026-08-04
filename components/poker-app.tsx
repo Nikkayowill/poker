@@ -31,7 +31,18 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RoomCreatedModal } from "@/components/table/room-created-modal";
 import { PokerTable, type ConnectionState } from "@/components/table/poker-table";
 
-const SOUND_STORAGE_KEY = "river-room:sound-enabled";
+const SOUND_STORAGE_KEY = "stackchips:sound-enabled";
+/**
+ * The pre-rename key, still read once so the rename is not a silent reset.
+ *
+ * `river-room:sound-enabled` is where every existing player's preference
+ * lives. The StackChips rename (f7a7cbb) moved the key without migrating it,
+ * and because the default is "enabled unless the value is exactly false",
+ * anyone who had muted the app got sound turned back on and no way to tell
+ * why. Same class of legacy id as the `river_*` cookies -- kept for
+ * compatibility, not for style.
+ */
+const LEGACY_SOUND_STORAGE_KEY = "river-room:sound-enabled";
 const MAX_REFRESH_RETRIES = 4;
 const REFRESH_RETRY_BASE_MS = 250;
 const REFRESH_RETRY_MAX_MS = 2_000;
@@ -62,7 +73,19 @@ export function PokerApp() {
   const accountLinkPromiseRef = useRef<Promise<boolean> | null>(null);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(SOUND_STORAGE_KEY);
+    // New key first; fall back to the pre-rename one exactly once, then carry
+    // the value across and drop the old key so this only ever happens on the
+    // first load after the rename. Someone with neither key keeps the
+    // "enabled by default" behaviour untouched.
+    let stored = window.localStorage.getItem(SOUND_STORAGE_KEY);
+    if (stored === null) {
+      const legacy = window.localStorage.getItem(LEGACY_SOUND_STORAGE_KEY);
+      if (legacy !== null) {
+        stored = legacy;
+        window.localStorage.setItem(SOUND_STORAGE_KEY, legacy);
+        window.localStorage.removeItem(LEGACY_SOUND_STORAGE_KEY);
+      }
+    }
     const enabled = stored !== "false";
     setSoundEnabled(enabled);
     const timer = window.setTimeout(() => setSoundEnabledState(enabled), 0);
@@ -492,24 +515,13 @@ export function PokerApp() {
     }
   };
 
-  const purchaseRebuy = async () => {
-    if (!game || loading) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/stripe/checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gameId: game.id }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not start rebuy checkout.");
-      window.location.assign(data.url);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not start rebuy checkout.");
-      setLoading(false);
-    }
-  };
+  // The in-game rebuy purchase used to live here. It posted for a Checkout
+  // Session and treated every non-OK response the same way -- including the
+  // 412 the route returns when the Terms have not been accepted, which it
+  // surfaced as a bare error string with no way to accept from the table.
+  // That is why buying Gold from the lobby worked and buying it after
+  // busting did not. It now lives in components/table/rebuy-checkout.tsx,
+  // next to the acceptance step that answers that 412 in place.
 
   const act = async (action: PlayerAction) => {
     if (!game || loading) return;
@@ -927,7 +939,6 @@ export function PokerApp() {
             connectionState={connectionState}
             soundEnabled={soundEnabled}
             onToggleSound={toggleSound}
-            onPurchaseRebuy={purchaseRebuy}
             onSignIn={() => void signIn()}
             onSignOut={() => void signOut()}
           />

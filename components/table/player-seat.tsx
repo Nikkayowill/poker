@@ -6,7 +6,6 @@ import Image from "next/image";
 import type { PublicSeat } from "@/lib/game/types";
 import { avatarFigure } from "@/lib/cosmetics/catalog";
 import { dealDelayMs } from "@/lib/game/deal-choreography";
-import { MAX_MISSED_TURNS } from "@/lib/game/engine";
 import { isWinningCard } from "@/lib/game/winning-cards";
 import { missingArtwork } from "@/components/artwork-cache";
 import { PlayingCard } from "./playing-card";
@@ -151,7 +150,6 @@ function SeatNameplate({
     <div className="seat-plate">
       <div className="seat-name-row">
         <strong>{seat.name}</strong>
-        {!seat.isHuman && <span className="ai-badge">AI</span>}
         {seat.isMine && <span className="you-chip">You</span>}
         {blind && (
           <span
@@ -248,22 +246,14 @@ export const PlayerSeat = memo(function PlayerSeat({
   const handStrength = seat.isMine && seat.handLabel
     ? <span className="hand-strength" aria-live="polite">{seat.handLabel}</span>
     : null;
-  // Ahead of "Folded", because it is the more important thing to know about a
-  // seat: folded is this hand, away is the player. Only for humans -- a bot
-  // cannot be absent, and its clock is pacing rather than attention.
-  const away = seat.isHuman && seat.missedTurns > 0;
-  const status = away
-    ? {
-        label: `Away · ${seat.missedTurns}/${MAX_MISSED_TURNS}`,
-        className: "status-pill status-away",
-      }
-    : folded
-      ? { label: "Folded", className: "status-pill" }
-      : seat.status === "all-in"
-        ? { label: "All in", className: "status-pill all-in" }
-        : seat.lastAction
-          ? { label: seat.lastAction, className: "action-pill" }
-          : null;
+  // No status pill under the seat any more. It printed a variable-length
+  // string ("Fenwick raises to 2400") into a fixed, absolutely-positioned
+  // slot, so the long end of that range ran out from under the seat and
+  // under the table container. The table feed carries the same events, in
+  // one place, at a size that can be read -- see .table-feed in
+  // 06-table.css. What the seat still says for itself, it says without
+  // prose: folded seats are dimmed via .seat-muted, the winner gets its
+  // badge, and the turn clock burns around whoever is on it.
 
   return (
     <article
@@ -298,7 +288,6 @@ export const PlayerSeat = memo(function PlayerSeat({
       {cards}
       {handStrength}
       {nameplate}
-      {status && <span className={status.className}>{status.label}</span>}
       {seat.streetBet > 0 && <span className="table-bet">{seat.streetBet}</span>}
       {isWinner && <span className="win-amount-float">+{winAmount.toLocaleString()}</span>}
     </article>

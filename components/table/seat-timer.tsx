@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import clsx from "clsx";
+import { useFuse, useFuseDigit } from "./use-fuse";
 
 /**
  * The turn clock, as a fuse burning around the seat rather than a bar under
@@ -10,9 +10,14 @@ import clsx from "clsx";
  * Self-contained on purpose. PlayerSeat is memoised with a hand-written
  * comparator, so feeding it a value that changes four times a second would
  * either re-render the entire seat -- figure, cards, plate -- on every tick,
- * or, if the comparator were left alone, silently never update at all. Taking
- * the two ISO strings and running its own interval means the only thing that
- * repaints is this element, and the props it receives stay stable.
+ * or, if the comparator were left alone, silently never update at all.
+ *
+ * It used to run its own 250ms interval and re-render itself on each tick,
+ * with a CSS transition smoothing the gaps between the four samples a second
+ * it produced. Now it renders once per turn: useFuse hands the two timestamps
+ * to the stylesheet as a duration and a negative delay, and the browser
+ * animates the arc and the colour without React in the loop at all. Only the
+ * digit still ticks, and it ticks through a ref rather than through state.
  *
  * Drawn with stroke-dashoffset rather than a conic-gradient: conic repaints
  * poorly on mobile, and six of these can be on screen during a hand.
@@ -20,14 +25,6 @@ import clsx from "clsx";
 
 const RADIUS = 15;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-
-/** Green while there is time, then a deliberate slide to red at the end. */
-function toneFor(fraction: number): string {
-  if (fraction > 0.6) return "safe";
-  if (fraction > 0.35) return "warn";
-  if (fraction > 0.15) return "urgent";
-  return "critical";
-}
 
 export function SeatTimer({
   startedAt,
@@ -38,31 +35,26 @@ export function SeatTimer({
   deadlineAt: string | null;
   large?: boolean;
 }) {
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!deadlineAt) return;
-    // 250ms rather than requestAnimationFrame: the ring transitions between
-    // ticks in CSS, so a faster loop would spend frames to draw the same arc.
-    const interval = window.setInterval(() => setNow(Date.now()), 250);
-    return () => window.clearInterval(interval);
-  }, [deadlineAt]);
+  const fuseRef = useFuse(startedAt, deadlineAt);
+  const digitRef = useFuseDigit(startedAt, deadlineAt);
 
   const deadline = Date.parse(deadlineAt ?? "");
   const started = Date.parse(startedAt ?? "");
   if (!Number.isFinite(deadline) || !Number.isFinite(started)) return null;
-
-  const total = deadline - started;
-  if (total <= 0) return null;
-
-  const fraction = Math.max(0, Math.min(1, (deadline - now) / total));
-  const seconds = Math.max(0, Math.ceil((deadline - now) / 1000));
+  if (deadline - started <= 0) return null;
 
   return (
     <span
-      className={clsx("seat-timer", `seat-timer-${toneFor(fraction)}`, large && "seat-timer-large")}
+      ref={fuseRef as React.RefObject<HTMLSpanElement>}
+      className={clsx("seat-timer", large && "seat-timer-large")}
       role="timer"
-      aria-label={`${seconds} seconds to act`}
+      // Replaced by useFuseDigit on its first frame; this is what a screen
+      // reader gets in the gap before it, and if scripting never runs.
+      aria-label="Time to act"
+      // The dash length the keyframes animate towards. Passed as a property
+      // rather than written into the stylesheet because it is derived from the
+      // radius, and the two must not be able to drift apart.
+      style={{ ["--fuse-circumference" as string]: CIRCUMFERENCE }}
     >
       <svg viewBox="0 0 36 36" aria-hidden="true">
         <circle className="seat-timer-track" cx="18" cy="18" r={RADIUS} />
@@ -72,12 +64,9 @@ export function SeatTimer({
           cy="18"
           r={RADIUS}
           strokeDasharray={CIRCUMFERENCE}
-          // Full ring at 1, empty at 0. The stroke is rotated to start at the
-          // top in CSS so it reads as a clock rather than starting at 3 o'clock.
-          strokeDashoffset={CIRCUMFERENCE * (1 - fraction)}
         />
       </svg>
-      <b aria-hidden="true">{seconds}</b>
+      <b ref={digitRef as React.RefObject<HTMLElement>} aria-hidden="true" />
     </span>
   );
 }

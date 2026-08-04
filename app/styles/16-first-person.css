@@ -95,29 +95,16 @@
   white-space: nowrap;
 }
 
-/* Your status, in the empty space on your left.
-   08-seat.css hangs every seat's pill 26px below the seat box (bottom: -26px,
-   centred). For the five seats on the ring that is felt. For yours it is the
-   bottom of the screen: measured 9.2px past .table-area's clip on a phone and
-   1.3px on a tablet, which reads as a "Folded" pill with its bottom sliced
-   off. Moved to the left, mirroring the hand on the right -- figure in the
-   middle, cards to one side, status to the other, and the black space beside
-   the near edge is empty on both.
+/* The status pill that used to sit in the empty space on your left is gone
+   with the element itself; see 08-seat.css and player-seat.tsx.
 
-   left and bottom are reset explicitly, not left to be overridden. The base
-   rule sets both, and an element with left:50% *and* right:100% is stretched
-   between the two rather than placed at either -- which drew the pill as a
-   dark band across the player it belongs to. */
-.seat-mine .status-pill,
-.seat-mine .action-pill {
-  left: auto;
-  right: 100%;
-  bottom: auto;
-  top: calc(var(--seat-width) * .78);
-  margin: 0 4px 0 0;
-  transform: translateY(-50%);
-  z-index: 12;
-}
+   Worth keeping the measurement that killed it: 08-seat.css hung every
+   seat's pill 26px below the seat box (bottom: -26px, centred). For the five
+   seats on the ring that is felt. For yours it was the bottom of the screen
+   -- 9.2px past .table-area's clip on a phone and 1.3px on a tablet, which
+   read as a "Folded" pill with its bottom sliced off. Moving it sideways
+   fixed that seat and left the ring's long action strings still running out
+   from under their seats. The table feed carries those events now. */
 
 /* Your own name, slightly brighter than the room. */
 .seat-mine .seat-name-row strong { color: #f4f8f4; }

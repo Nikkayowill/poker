@@ -9,7 +9,7 @@ import {
 
 describe("session persistence preference", () => {
   it("defaults to a persistent StackChips identity", () => {
-    const request = new NextRequest("https://river-room.test/");
+    const request = new NextRequest("https://stackchips.test/");
     const response = withRequestSessionCookie(request, NextResponse.json({ ok: true }), "player-token");
 
     expect(readSessionPersistence(request)).toBe(true);
@@ -17,7 +17,7 @@ describe("session persistence preference", () => {
   });
 
   it("keeps subsequent gameplay cookies session-only when remember is off", () => {
-    const request = new NextRequest("https://river-room.test/", {
+    const request = new NextRequest("https://stackchips.test/", {
       headers: { cookie: "river_remember=false" },
     });
     const response = withRequestSessionCookie(request, NextResponse.json({ ok: true }), "player-token");

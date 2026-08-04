@@ -254,21 +254,36 @@
   pointer-events: none;
 }
 
-/* The left margin of the band. Reads bottom-up like a chat log so the newest
-   line sits nearest the table, and fades with age so the eye can ignore it
-   entirely while a decision is on. pointer-events stay off -- it is something
-   to glance at, never something to hit. */
+/* The left margin of the band, and now the table's primary running account of
+   itself. Reads bottom-up like a chat log so the newest line sits nearest the
+   table, and fades with age so the eye can ignore it entirely while a
+   decision is on. pointer-events stay off -- it is something to glance at,
+   never something to hit.
+
+   This carries what the per-seat status pills used to say. Those printed a
+   variable-length string into a fixed slot under an absolutely-positioned
+   seat and ran out from under the table; this has a column of its own and can
+   afford the type. Sized in clamp() off the viewport rather than at a fixed
+   px so the same rule serves a phone and a desktop -- the mobile override in
+   12-responsive.css now only trims the line count, not the legibility. */
 .table-feed {
   display: flex;
   flex-direction: column-reverse;
-  gap: 1px;
+  gap: 3px;
   margin: 0;
-  padding: 0;
-  max-width: min(30ch, 24vw);
+  padding: 6px 10px;
+  max-width: min(38ch, 32vw);
   list-style: none;
-  font-size: 10px;
-  line-height: 1.35;
-  color: rgba(226,235,228,.5);
+  font-size: clamp(12px, 1.15vw, 15px);
+  line-height: 1.4;
+  font-weight: 500;
+  color: rgba(233,241,234,.86);
+  /* Its own plate. At this size the text crosses both the felt's rail and the
+     black beside it, and unbacked it was legible over exactly one of them. */
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(9,16,12,.58), rgba(9,16,12,.34));
+  backdrop-filter: blur(3px);
+  text-shadow: 0 1px 2px rgba(0,0,0,.6);
   pointer-events: none;
 }
 
@@ -279,12 +294,15 @@
 }
 
 /* Oldest first in the DOM order the column-reverse produces, so the fade runs
-   away from the newest line rather than toward it. */
-.table-feed li:nth-child(2) { opacity: .58; }
-.table-feed li:nth-child(3) { opacity: .32; }
+   away from the newest line rather than toward it. Shallower than it was:
+   with the seat pills gone this is the only place a folded or a raise is
+   written down, so the older lines have to stay readable rather than merely
+   suggest that something happened. */
+.table-feed li:nth-child(2) { opacity: .74; }
+.table-feed li:nth-child(3) { opacity: .5; }
 
-.table-feed .table-feed-win { color: rgba(242,220,144,.82); }
-.table-feed .table-feed-deal { color: rgba(226,235,228,.38); }
+.table-feed .table-feed-win { color: rgba(246,226,157,.95); font-weight: 600; }
+.table-feed .table-feed-deal { color: rgba(226,235,228,.6); }
 
 /* The pot lives in .game-header now, not in this band -- but its type stays
    here with the rest of the table's readouts rather than moving to

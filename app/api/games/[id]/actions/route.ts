@@ -5,7 +5,7 @@ import { clampBuyIn } from "@/lib/game/tiers";
 import { loadGameWithTimeouts, logTurn, persistenceMode, updateStoredGame } from "@/lib/server/game-store";
 import { creditGold, isBanned, spendGold } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
-import { recordHandStats } from "@/lib/server/stats-store";
+import { onHandCompleted } from "@/lib/server/hand-completion";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 export const runtime = "nodejs";
@@ -117,7 +117,7 @@ export async function POST(
       // the river). Recording is idempotent and best-effort -- a stats write
       // failing here must never turn a completed poker action into an error.
       if (!wasComplete && updated.status === "complete") {
-        void recordHandStats(updated).catch((error) => {
+        void onHandCompleted(updated).catch((error) => {
           console.error("Could not record hand stats", error);
         });
       }

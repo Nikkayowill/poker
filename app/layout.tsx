@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import Script from "next/script";
 
 export const metadata: Metadata = {
   title: "Play Free, StackChips - Texas Hold’em",
@@ -22,7 +23,28 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+
+          {/* 1. Adsterra Configuration Options Script */}
+        <Script id="adsterra-options" strategy="afterInteractive">
+          {`
+            window.atOptions = {
+              'key' : '9**********a28b6f',
+              'format' : 'iframe',
+              'height' : 250,
+              'width' : 300,
+              'params' : {}
+            };
+          `}
+        </Script>
+
+        {/* 2. Adsterra Execution Invocation Script */}
+        <Script 
+          src="https://pl30614360.effectivecpmnetwork.com/c7/0f/54/c70f542f472123eecce05e14a79898f8.js"
+          strategy="afterInteractive" 
+        />
+        {children}
+      </body>
     </html>
   );
 }

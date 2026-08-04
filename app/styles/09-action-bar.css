@@ -13,17 +13,42 @@
   height: 4px;
   background: rgba(255,255,255,.05);
 }
+/* Burned down by the browser off the two fuse properties that useFuse writes
+   onto .turn-progress-track (components/table/use-fuse.ts) -- see the same
+   pattern on .seat-timer-fuse in 08-seat.css.
+
+   The bar used to be handed a scaleX by React on a 250ms interval, which is
+   what put a 4Hz re-render at the root of the whole table. With no duration
+   set -- which is how the component renders it when it is not your turn --
+   the shorthand has nothing to run and the bar sits empty.
+
+   scaleX rather than width so the compositor can move it without a layout
+   pass, which matters more here than on the seat ring: this bar spans the
+   full width of the controls. */
 .turn-progress-fill {
   height: 100%;
   transform-origin: left;
+  transform: scaleX(0);
   background: linear-gradient(90deg, var(--gold), var(--gold-light));
-  transition: transform .22s linear, background-color .22s linear;
+  animation:
+    turn-progress-burn var(--fuse-duration) linear var(--fuse-delay) forwards,
+    turn-progress-critical .5s ease-in-out infinite
+      calc(var(--fuse-duration) * .75 + var(--fuse-delay));
 }
-.turn-progress-fill.progress-critical {
-  background: linear-gradient(90deg, #e04b36, #ff8a72);
-  animation: progress-flash .5s ease-in-out infinite;
+
+@keyframes turn-progress-burn {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
-@keyframes progress-flash { 50% { opacity: .55; } }
+
+/* The last quarter of the clock, on a delay rather than on a class React
+   toggled at remainingFraction <= .25. Recolouring here rather than in the
+   burn keyframes keeps the two independent: one owns the length, one owns
+   the alarm. */
+@keyframes turn-progress-critical {
+  0%, 100% { background: linear-gradient(90deg, #e04b36, #ff8a72); opacity: 1; }
+  50% { background: linear-gradient(90deg, #e04b36, #ff8a72); opacity: .55; }
+}
 
 .action-bar-your-turn {
   border-color: rgba(217,184,93,.18);

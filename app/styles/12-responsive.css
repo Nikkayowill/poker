@@ -59,10 +59,35 @@
      that variance needs, rather than sizing to the seat's quiet state and
      colliding the moment it is someone's turn. */
   .table-hud { padding-top: 2px; }
-  /* One line on a phone. Three would either overflow the 38px band or reach
-     down into the top seat's head. */
-  .table-feed { font-size: 8px; max-width: 32vw; }
-  .table-feed li:nth-child(n + 2) { display: none; }
+  /* Two entries on a phone, at a size meant to be read rather than sensed.
+     This is the only running account of the hand now that the per-seat
+     status pills are gone, so 8px single-line -- which is what it was -- is
+     no longer a trade worth making.
+
+     The width is the hard constraint, and it is measured, not chosen:
+     at 390px the top seat's box begins at x=147 and the feed starts at
+     x=12, so anything wider than about 135px reaches into it. tests/e2e/
+     table-feed.spec.ts holds that line. 33vw leaves ~6px of margin.
+
+     Which is why these wrap instead of ellipsing. In a column this narrow
+     a single nowrap line would truncate nearly every message -- "Fenwick
+     raises to…" is not an account of anything -- so each entry gets up to
+     two wrapped lines and grows downward into the empty corner above the
+     left seat, which does not start until y=200. */
+  .table-feed {
+    font-size: 12px;
+    max-width: 33vw;
+    padding: 5px 7px;
+    gap: 3px;
+  }
+  .table-feed li {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+    overflow: hidden;
+  }
+  .table-feed li:nth-child(n + 3) { display: none; }
   .game-shell { --chrome-height: 56px; --action-bar-height: 68px; --foreground-allowance: 100px; }
   .poker-table-wrap {
     width: min(calc(100% - 6px), var(--table-height-cap));
@@ -95,6 +120,53 @@
        the seats either side of the near edge otherwise sit across the bottom
        row of the board. Verified: removing this puts two figures over it. */
     top: 47%;
+  }
+  /* The showdown, at a size a phone can actually settle a hand with.
+     Everything below had no mobile rule at all and inherited the desktop
+     values, which are the smallest type in the app: an 11px winner line, a
+     10px hand name and a 9px badge, read at arm's length, deciding whether
+     you just won or what you lost to. This is the one moment on the table
+     where nothing is time-critical, so it can afford the room. */
+  /* Stacked here, not laid out in a row as it is on desktop. At this type
+     size the row ran 179px wide and, being right-aligned in the band, its
+     left edge landed at x=199 -- inside the top seat's box, which begins at
+     x=147. Measured: at the old 11px it cleared, so the collision arrived
+     with the enlargement and had to be paid for somewhere. Stacking spends
+     the height the band has rather than the width it does not, and the
+     result reads as three facts about one hand either way. */
+  .hand-result { gap: 4px; max-width: 32vw; }
+  .hand-result-line {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    font-size: 17px;
+    text-align: right;
+  }
+  /* A long display name is the one thing here that is not bounded. */
+  .hand-result-line b {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hand-result-amount { font-size: 19px; }
+  .hand-result-line i { font-size: 14px; letter-spacing: .02em; }
+  .winner-badge {
+    top: -27px;
+    padding: 5px 11px 5px 9px;
+    font-size: 11px;
+  }
+  .winner-badge > span { font-size: 19px; }
+  .win-amount-float { font-size: 20px; top: -12px; }
+  /* The winner's revealed hole cards, and only theirs. Opponent cards are
+     sized off their seat so they stay in proportion to the figure holding
+     them (08-seat.css); scaling that rule for every seat would enlarge six
+     face-down backs through the whole hand. This lifts the one pair the
+     result is about, once the hand is over and there is nothing left to
+     collide with. Transform rather than width so it grows about its own
+     centre without moving the seat's layout. */
+  .seat-winner .seat-cards:not(.own-cards) {
+    transform: translate(-50%, -50%) scale(1.5);
+    transform-origin: center;
   }
   .seat-name-row strong { font-size: 9px; }
   .seat-plate { padding: 3px 5px 4px; }
@@ -165,11 +237,25 @@
   .game-shell { --chrome-height: 42px; --action-bar-height: 56px; --foreground-allowance: 48px; }
   .poker-table-wrap { --table-aspect: 3; }
   /* Measured at 844x390 there are 18px between the top of .table-area and the
-     highest seat, so the band is only good for one short pill. The stakes are
-     it; the feed is dropped below and the pot is in the header. */
+     highest seat, so the band itself is only good for one short pill. The
+     feed used to be dropped entirely here; with the seat pills gone that
+     left a landscape phone with nowhere at all to read what just happened.
+
+     So it comes back as an overlay rather than a band member: one line,
+     absolutely placed into the top-left corner over the black margin beside
+     the 3:1 oval, where nothing else is drawn. The band keeps its stakes
+     pill and its own height, untouched. */
   .table-hud { gap: 10px; padding: 2px 8px 0; }
   .table-hud .blind-structure { padding: 2px 7px; font-size: 9px; }
-  .table-feed { display: none; }
+  .table-feed {
+    position: absolute;
+    top: 2px;
+    left: max(6px, env(safe-area-inset-left));
+    font-size: 11px;
+    max-width: 40vw;
+    padding: 3px 7px;
+  }
+  .table-feed li:nth-child(n + 2) { display: none; }
   /* A 42px header cannot take the stacked label-over-number the taller
      breakpoints use, so the pot lies down into a single baseline row. */
   .game-header .pot-display { display: flex; align-items: baseline; gap: 7px; }

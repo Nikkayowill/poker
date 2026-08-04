@@ -1,6 +1,6 @@
-# River Room launch checklist
+# StackChips launch checklist
 
-River Room is suitable for a small invite-only beta once every item below is
+StackChips is suitable for a small invite-only beta once every item below is
 complete. It is not intended for real-money wagering.
 
 ## Deployment

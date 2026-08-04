@@ -1,4 +1,4 @@
-# River Room security audit
+# StackChips security audit
 
 Audited 2026-07-26 against the application migrations, server routes, runtime
 configuration, and the live Supabase project `gykxzlqwkraiflbfxtps`.

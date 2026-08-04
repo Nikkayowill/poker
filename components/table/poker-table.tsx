@@ -17,6 +17,7 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ActionBar } from "./action-bar";
 import { ChipFlight, MuckDrift, PotFunnel } from "./table-effects";
 import { HandHistoryDrawer } from "./hand-history-drawer";
+import { RebuyCheckout } from "./rebuy-checkout";
 import { PlayerSeat } from "./player-seat";
 import { PlayingCard } from "./playing-card";
 import { PotPile } from "./pot-pile";
@@ -52,8 +53,21 @@ export type ConnectionState = "connected" | "reconnecting" | "offline";
 export const SEAT_WIDTH_RATIO = 0.26;
 export const SEAT_HEIGHT_RATIO = 0.30;
 
-export function seatWidthFor(table: { width: number; height: number }): number {
-  return Math.round(Math.min(table.width * SEAT_WIDTH_RATIO, table.height * SEAT_HEIGHT_RATIO));
+/**
+ * How much a seat shrinks per extra place at the table.
+ *
+ * A ring of eight puts its seats 45 degrees apart where six puts them 60, so
+ * the gap between adjacent boxes closes by a quarter without the boxes
+ * themselves changing. On a desktop plate there is room to absorb that; on the
+ * narrow plate the measured clearance between neighbours falls to about 4px,
+ * which is touching. Scaling the box by the ratio of the two spacings keeps
+ * the same clearance at any count -- and leaves six-max, which is what ships
+ * today, at exactly the size it has always been.
+ */
+export function seatWidthFor(table: { width: number; height: number }, count = 6): number {
+  const base = Math.min(table.width * SEAT_WIDTH_RATIO, table.height * SEAT_HEIGHT_RATIO);
+  const spacingScale = count <= 6 ? 1 : Math.sin(Math.PI / count) / Math.sin(Math.PI / 6);
+  return Math.round(base * spacingScale);
 }
 
 export function PokerTable({
@@ -68,7 +82,6 @@ export function PokerTable({
   connectionState,
   soundEnabled,
   onToggleSound,
-  onPurchaseRebuy,
   onSignIn,
   onSignOut,
 }: {
@@ -83,11 +96,14 @@ export function PokerTable({
   connectionState: ConnectionState;
   soundEnabled: boolean;
   onToggleSound: () => void;
-  onPurchaseRebuy: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Owned here rather than in ActionBar because ActionBar is keyed on
+  // game.version: a bump would otherwise unmount an open checkout and buy a
+  // second Stripe session when it came back.
+  const [showCheckout, setShowCheckout] = useState(false);
   const historyButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeHistory = useCallback(() => {
     setHistoryOpen(false);
@@ -120,22 +136,15 @@ export function PokerTable({
     };
   }, []);
 
-  const [clockNow, setClockNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!game.turnDeadlineAt || game.currentPlayer === null) return;
-    const initialTick = window.setTimeout(() => setClockNow(Date.now()), 0);
-    const interval = window.setInterval(() => setClockNow(Date.now()), 250);
-    return () => {
-      window.clearTimeout(initialTick);
-      window.clearInterval(interval);
-    };
-  }, [game.turnDeadlineAt, game.currentPlayer]);
-  const deadline = Date.parse(game.turnDeadlineAt ?? "");
-  const startedAt = Date.parse(game.turnStartedAt ?? "");
-  const turnDurationMs = Number.isFinite(deadline) && Number.isFinite(startedAt) ? deadline - startedAt : 0;
-  const remainingFraction = turnDurationMs > 0
-    ? Math.max(0, Math.min(1, (deadline - clockNow) / turnDurationMs))
-    : 0;
+  // No clock state here any more, deliberately.
+  //
+  // There used to be a `clockNow` that a 250ms interval advanced for the whole
+  // of every turn, purely so the action bar could be handed a remaining
+  // fraction. It sat at the root of the table, so each of those ticks
+  // re-rendered every seat, every card and every plate -- four times a second,
+  // all turn, to move one bar. Both fuses now take the server's two timestamps
+  // and animate in CSS (components/table/use-fuse.ts), which leaves this
+  // component re-rendering only when the game state actually changes.
   const mySeatIndex = game.seats.findIndex((seat) => seat.isMine);
   // The deck the board is dealt from, drawn as your own back.
   //
@@ -512,12 +521,18 @@ export function PokerTable({
             {/* The table talking, in the black space that was doing nothing.
                 Who just folded, who raised and by how much -- the activity
                 drawer has always held this, two taps away, which is not
-                where anyone looks mid-hand. Newest first, and the count
-                drops to one on a phone where the band is 38px tall.
+                where anyone looks mid-hand.
+
+                Sized to be read rather than glanced at, on every viewport,
+                because the per-seat status pills that used to repeat this
+                are about to stop existing. See .table-feed in 06-table.css
+                and its two overrides in 12-responsive.css.
 
                 Left and right margins only, now that the pot has moved to the
                 header. The middle of this band is where the top seat's head
-                is; anything drawn there collides with it. */}
+                is; anything drawn there collides with it, which is why this
+                grows downward on the left rather than making the band
+                taller. */}
             <ul className="table-feed" aria-live="polite">
               {game.log.slice(0, 3).map((entry) => (
                 <li key={entry.id} className={`table-feed-${entry.kind}`}>{entry.text}</li>
@@ -551,7 +566,7 @@ export function PokerTable({
           <div
             className="poker-table-wrap"
             ref={tableWrapRef}
-            style={{ "--seat-width": `${seatWidthFor(tableSize)}px` } as React.CSSProperties}
+            style={{ "--seat-width": `${seatWidthFor(tableSize, orderedSeats.length)}px` } as React.CSSProperties}
           >
             <div className="poker-rail">
               <div className="poker-felt">
@@ -688,12 +703,20 @@ export function PokerTable({
             pending={pending || connectionState !== "connected"}
             onAction={onAction}
             onLeave={onLeave}
-            remainingFraction={remainingFraction}
+
             profile={profile}
-            onPurchaseRebuy={onPurchaseRebuy}
+            onOpenCheckout={() => setShowCheckout(true)}
           />
         </div>
       </section>
+
+      {/* Deliberately outside the `key={game.version}` subtree above.
+          Mounting RebuyCheckout posts for a Stripe Checkout Session, so a
+          remount is a second purchase -- and the key changes on every table
+          version, which is every action any player takes. */}
+      {showCheckout && (
+        <RebuyCheckout gameId={game.id} onClose={() => setShowCheckout(false)} />
+      )}
 
       {connectionState !== "connected" && (
         <div className="connection-overlay" role="status" aria-live="assertive">

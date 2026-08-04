@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useFuse } from "./use-fuse";
 import clsx from "clsx";
 import { Check, FoldVertical, TimerReset } from "lucide-react";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
@@ -8,13 +9,31 @@ import { TIER_CONFIG } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { BuyInModal } from "@/components/lobby/buy-in-modal";
 
-export function TurnProgressBar({ remainingFraction }: { remainingFraction: number }) {
+/**
+ * The bar under the controls, burning down on the same clock as the seat ring.
+ *
+ * Took a `remainingFraction` number until this milestone, which sounds
+ * harmless and was not: nothing on this table can compute that fraction
+ * without a ticking clock, so the state that produced it lived in PokerTable
+ * -- the root of the whole table tree -- and updated four times a second for
+ * the length of every turn. Every seat, card and plate re-rendered with it,
+ * to move one bar. Taking the two timestamps instead moves the animation into
+ * CSS and takes that state out of the tree entirely.
+ *
+ * scaleX rather than width, unchanged: transform is the one property here that
+ * the compositor can animate without laying the bar out again on every frame.
+ */
+export function TurnProgressBar({
+  startedAt,
+  deadlineAt,
+}: {
+  startedAt: string | null;
+  deadlineAt: string | null;
+}) {
+  const fuseRef = useFuse(startedAt, deadlineAt);
   return (
-    <div className="turn-progress-track">
-      <div
-        className={clsx("turn-progress-fill", remainingFraction <= 0.25 && "progress-critical")}
-        style={{ transform: `scaleX(${remainingFraction})` }}
-      />
+    <div className="turn-progress-track" ref={fuseRef as React.RefObject<HTMLDivElement>}>
+      <div className="turn-progress-fill" />
     </div>
   );
 }
@@ -44,17 +63,25 @@ export function ActionBar({
   pending,
   onAction,
   onLeave,
-  remainingFraction,
   profile,
-  onPurchaseRebuy,
+  onOpenCheckout,
 }: {
   game: GameSnapshot;
   pending: boolean;
   onAction: (action: PlayerAction) => void;
   onLeave: () => void;
-  remainingFraction: number;
   profile: PlayerProfile | null;
-  onPurchaseRebuy: () => void;
+  /**
+   * Opens the real-money checkout, which is owned by PokerTable rather than
+   * by this component.
+   *
+   * It has to live above the `key={game.version}` on this element: a new key
+   * unmounts the whole subtree, and mounting RebuyCheckout *is* the purchase
+   * intent -- it posts for a Stripe Checkout Session immediately. Kept here,
+   * any table version bump (an opponent acting, a card landing) would close
+   * the modal mid-purchase and buy a second session on the way back.
+   */
+  onOpenCheckout: () => void;
 }) {
   const legal = game.legalActions;
   const mySeat = game.seats.find((seat) => seat.isMine);
@@ -94,6 +121,10 @@ export function ActionBar({
     // exit is the header. Reading the deadline rather than counting stacks
     // keeps this agreeing with scheduleNextHand by construction.
     const tableIsDone = game.isSeated && !busted && !game.nextHandAt;
+    // Whether a rebuy is reachable without spending money. Unlimited Gold
+    // always is; otherwise it takes this table's minimum buy-in.
+    const canRebuyWithGold = Boolean(profile?.unlimitedGold)
+      || (profile?.goldBalance ?? 0) >= TIER_CONFIG[game.tier].minBuyIn;
     return (
       <div className="action-bar">
         <div className="action-slot-status">
@@ -121,13 +152,30 @@ export function ActionBar({
               >
                 Close seat
               </button>
-              <button
-                className="primary-action action-slot-wide"
-                disabled={pending}
-                onClick={() => setShowRebuyModal(true)}
-              >
-                Rebuy
-              </button>
+              {/* Out of chips means two different situations, and they want
+                  different buttons. With Gold in hand the rebuy is free of
+                  any purchase, so it opens the Gold modal as it always has.
+                  With none, that modal was a step to nowhere -- a slider you
+                  cannot afford to move, with the real purchase buried behind
+                  a secondary button inside it. That case goes straight to
+                  checkout instead. */}
+              {canRebuyWithGold ? (
+                <button
+                  className="primary-action action-slot-wide"
+                  disabled={pending}
+                  onClick={() => setShowRebuyModal(true)}
+                >
+                  Rebuy
+                </button>
+              ) : (
+                <button
+                  className="primary-action action-slot-wide"
+                  disabled={pending}
+                  onClick={onOpenCheckout}
+                >
+                  Buy Gold to rebuy
+                </button>
+              )}
             </>
           )}
         </div>
@@ -141,7 +189,10 @@ export function ActionBar({
             confirmLabel="Rebuy"
             pending={pending}
             onClose={() => setShowRebuyModal(false)}
-            onBuyGold={onPurchaseRebuy}
+            onBuyGold={() => {
+              setShowRebuyModal(false);
+              onOpenCheckout();
+            }}
             onConfirm={(_tier, buyIn) => onAction({ type: "rebuy", amount: buyIn })}
           />
         )}
@@ -154,7 +205,13 @@ export function ActionBar({
 
   return (
     <div className={clsx("action-bar", myTurn && "action-bar-your-turn")}>
-      <TurnProgressBar remainingFraction={myTurn ? remainingFraction : 0} />
+      {/* Only your own turn burns the bar. Passing nulls otherwise leaves the
+          fuse properties unset, which is what makes the track sit empty
+          rather than animating somebody else's clock under your controls. */}
+      <TurnProgressBar
+        startedAt={myTurn ? game.turnStartedAt : null}
+        deadlineAt={myTurn ? game.turnDeadlineAt : null}
+      />
 
       {/* No countdown here any more: the fuse burning around the seat on the
           clock carries it, right where the player is already looking. This

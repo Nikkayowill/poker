@@ -1,4 +1,6 @@
-# River Room
+# StackChips
+
+A free-to-play social poker game at `stackchips.app`.
 
 A compact, server-authoritative no-limit Texas Hold’em game built with Next.js and
 Supabase. It is immediately playable at a six-max table with server-controlled opponents and
@@ -10,7 +12,7 @@ are validated by size and file signature on the server, then stored in the publi
 `avatars` Supabase Storage bucket.
 
 The supplied video is **“Build a Planning Poker Game with Supabase”** by Angular
-Love. River Room applies its session + realtime update pattern to actual Texas
+Love. StackChips applies its session + realtime update pattern to actual Texas
 Hold’em; the poker rules and visual product are original to this project.
 
 ## Run it

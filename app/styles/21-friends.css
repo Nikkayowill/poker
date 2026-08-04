@@ -1,0 +1,96 @@
+/* Friends drawer.
+ *
+ * The shell -- .history-overlay and .history-drawer -- is reused from the hand
+ * history drawer in 10-notices.css rather than re-declared. That is where the
+ * slide-in, the z-index, and the phone bottom-sheet treatment in
+ * 12-responsive.css already live, and a second drawer with its own copy of all
+ * three is a second drawer that stops matching the first.
+ *
+ * This file holds only what is specific to a list of people. It loads last, so
+ * .friends-drawer can safely narrow .history-drawer.
+ */
+
+.friends-drawer { width: min(380px, 100%); }
+
+.friends-list {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 19px 12px;
+}
+
+.friends-section { margin-bottom: 18px; }
+.friends-section h3 {
+  margin: 12px 0 6px;
+  color: #64736b;
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: .17em;
+  text-transform: uppercase;
+}
+
+.friend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+}
+.friend-row-muted { opacity: .68; }
+
+/* No avatar rules here on purpose: .profile-avatar in 03-profile.css is
+   already a 34px accent-coloured circle that handles both an uploaded photo
+   and the monogram fallback. Restating any of that would be a second copy to
+   drift. */
+
+/* min-width:0 so a long display name ellipsizes instead of shoving the
+   buttons off the edge of the drawer -- a flex item's default min-width is
+   auto, which refuses to shrink below its content. */
+.friend-identity { flex: 1; min-width: 0; }
+.friend-identity strong {
+  display: block;
+  overflow: hidden;
+  color: #dfe5df;
+  font: 500 12px Georgia, serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.friend-identity small { color: #5c6b63; font-size: 9px; }
+
+.friend-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.friend-actions button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: #8e9f97;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: rgba(255,255,255,.025);
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease;
+}
+.friend-actions button:disabled { opacity: .45; cursor: default; }
+.friend-accept:not(:disabled):hover { color: #6fd3a2; border-color: rgba(111,211,162,.4); }
+.friend-decline:not(:disabled):hover,
+.friend-remove:not(:disabled):hover { color: #e08d8d; border-color: rgba(224,141,141,.4); }
+
+.friends-loading,
+.friends-error { margin: 18px 0; color: #5c6b63; font-size: 11px; text-align: center; }
+.friends-error { color: #e08d8d; }
+
+.friends-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin: 34px 0;
+  padding: 0 12px;
+  color: #5c6b63;
+  text-align: center;
+}
+.friends-empty strong { color: #9eaaa3; font: 500 13px Georgia, serif; }
+.friends-empty p { margin: 0; font-size: 10px; line-height: 1.5; }
+.friends-upsell svg { color: var(--gold); }
+
+@media (prefers-reduced-motion: reduce) {
+  .friends-drawer { animation: none; }
+}

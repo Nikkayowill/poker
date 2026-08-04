@@ -2,6 +2,7 @@ import "server-only";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { readSupabasePublicKey, readSupabaseUrl } from "./public-env";
 
 /**
  * The server-side counterpart to lib/supabase/browser-client.ts's cookie
@@ -16,8 +17,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * persisted by middleware.ts, which runs before the Component does.
  */
 export async function createServerSupabase(): Promise<SupabaseClient | null> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = readSupabaseUrl();
+  const key = readSupabasePublicKey();
   if (!url || !key) return null;
 
   const cookieStore = await cookies();

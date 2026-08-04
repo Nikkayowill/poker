@@ -2,12 +2,13 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Check, Cloud, Coins, ShieldCheck, X } from "lucide-react";
+import { ArrowRight, Check, Cloud, Coins, ShieldCheck, Users, X } from "lucide-react";
 import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { accountsEnabled } from "@/lib/auth/client";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
 import { LandingSections } from "@/components/auth/landing-sections";
+import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { BuyInModal } from "./buy-in-modal";
 
 export function Lobby({
@@ -66,6 +67,10 @@ export function Lobby({
   const [name, setName] = useState(profile?.displayName ?? "");
   const [joinCode, setJoinCode] = useState("");
   const [buyInMode, setBuyInMode] = useState<"join" | "host" | null>(null);
+  // Local rather than lifted to poker-app.tsx: nothing outside the lobby opens
+  // this, and the drawer owns its own fetch, so there is no shared state for
+  // the parent to hold.
+  const [friendsOpen, setFriendsOpen] = useState(false);
   const submitJoin = (event: FormEvent) => {
     event.preventDefault();
     if (joinCode.trim().length === 6) onJoinCode(name.trim() || "You", joinCode.trim());
@@ -252,6 +257,21 @@ export function Lobby({
             </span>
           </Link>
 
+          {/* Shown to guests too. The drawer answers the 403 with the reason
+              an account is needed, which is a better prompt to sign up than a
+              tile that is simply missing. */}
+          <button
+            type="button"
+            className="hub-tile hub-tile-friends"
+            onClick={() => setFriendsOpen(true)}
+          >
+            <span className="hub-tile-body">
+              <strong>Friends</strong>
+              <small>People you play with</small>
+            </span>
+            <Users className="hub-tile-go" size={18} aria-hidden="true" />
+          </button>
+
           <form className="hub-tile hub-tile-code" onSubmit={submitJoin}>
             <label htmlFor="join-code">Join with a room code</label>
             <div className="hub-code-row">
@@ -270,6 +290,7 @@ export function Lobby({
           </form>
         </div>
       </section>
+      {friendsOpen && <FriendsDrawer onClose={() => setFriendsOpen(false)} />}
       {buyInMode && (
         <BuyInModal
           title={buyInMode === "host" ? "Host a private table" : "Join a table"}

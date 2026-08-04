@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { readSupabasePublicKey, readSupabaseUrl } from "@/lib/supabase/public-env";
 
 /**
  * Refreshes the Supabase auth cookie before it expires.
@@ -12,8 +13,8 @@ import { NextResponse, type NextRequest } from "next/server";
  * renders Server Components.
  */
 export async function middleware(request: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = readSupabaseUrl();
+  const key = readSupabasePublicKey();
   if (!url || !key) return NextResponse.next();
 
   let response = NextResponse.next({ request });

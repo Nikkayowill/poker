@@ -21,9 +21,19 @@ test("admin uses an HttpOnly session and bulk deletes a filtered profile group",
     await page.getByRole("button", { name: "Unlock" }).click();
     await expect(page.getByRole("heading", { name: "Players" })).toBeVisible();
 
-    expect(
-      await page.evaluate(() => window.sessionStorage.getItem("river-room-admin-secret")),
-    ).toBeNull();
+    // Scanned by value rather than by key name. This used to read one
+    // hardcoded key that no source file has ever written, so it returned null
+    // and passed whatever the dashboard did with the secret -- including
+    // storing it under any other name. The point of the assertion is that the
+    // key the operator typed does not survive in client-readable storage, so
+    // that is what it checks.
+    const storedSecret = await page.evaluate(() => {
+      const readAll = (storage: Storage) =>
+        Object.keys(storage).map((key) => `${key}=${storage.getItem(key) ?? ""}`);
+      return [...readAll(window.sessionStorage), ...readAll(window.localStorage)];
+    });
+    expect(storedSecret.filter((entry) => entry.includes("playwright-admin-secret"))).toEqual([]);
+
     const adminCookie = (await adminContext.cookies()).find(
       (cookie) => cookie.name === "river_room_admin_session",
     );

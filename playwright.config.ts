@@ -33,6 +33,10 @@ export default defineConfig({
     env: {
       ...process.env,
       NEXT_PUBLIC_SUPABASE_URL: "",
+      // Both key names, always. Blanking only one would let a developer who
+      // has migrated their shell to the other name run the whole E2E suite
+      // against a real project.
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
       NEXT_PUBLIC_SUPABASE_ANON_KEY: "",
       SUPABASE_SERVICE_ROLE_KEY: "",
       ADMIN_SECRET: "playwright-admin-secret",

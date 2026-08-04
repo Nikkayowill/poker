@@ -2,6 +2,7 @@
 
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { hasSupabasePublicConfig, readSupabasePublicKey, readSupabaseUrl } from "./public-env";
 
 const REMEMBER_AUTH_KEY = "stackchips:remember-auth";
 
@@ -42,8 +43,8 @@ export function setRememberAuthSession(remember: boolean): void {
 let client: SupabaseClient | null = null;
 
 export function browserSupabase(): SupabaseClient | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = readSupabaseUrl();
+  const key = readSupabasePublicKey();
   if (!url || !key) return null;
   if (!client) {
     client = createBrowserClient(url, key);
@@ -53,5 +54,5 @@ export function browserSupabase(): SupabaseClient | null {
 
 /** Whether accounts are available at all in this deployment. */
 export function supabaseConfigured(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  return hasSupabasePublicConfig();
 }

@@ -492,24 +492,13 @@ export function PokerApp() {
     }
   };
 
-  const purchaseRebuy = async () => {
-    if (!game || loading) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/stripe/checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gameId: game.id }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not start rebuy checkout.");
-      window.location.assign(data.url);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not start rebuy checkout.");
-      setLoading(false);
-    }
-  };
+  // The in-game rebuy purchase used to live here. It posted for a Checkout
+  // Session and treated every non-OK response the same way -- including the
+  // 412 the route returns when the Terms have not been accepted, which it
+  // surfaced as a bare error string with no way to accept from the table.
+  // That is why buying Gold from the lobby worked and buying it after
+  // busting did not. It now lives in components/table/rebuy-checkout.tsx,
+  // next to the acceptance step that answers that 412 in place.
 
   const act = async (action: PlayerAction) => {
     if (!game || loading) return;
@@ -927,7 +916,6 @@ export function PokerApp() {
             connectionState={connectionState}
             soundEnabled={soundEnabled}
             onToggleSound={toggleSound}
-            onPurchaseRebuy={purchaseRebuy}
             onSignIn={() => void signIn()}
             onSignOut={() => void signOut()}
           />

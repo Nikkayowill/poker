@@ -7,6 +7,7 @@ import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { TIER_CONFIG } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { BuyInModal } from "@/components/lobby/buy-in-modal";
+import { RebuyCheckout } from "./rebuy-checkout";
 
 export function TurnProgressBar({ remainingFraction }: { remainingFraction: number }) {
   return (
@@ -46,7 +47,6 @@ export function ActionBar({
   onLeave,
   remainingFraction,
   profile,
-  onPurchaseRebuy,
 }: {
   game: GameSnapshot;
   pending: boolean;
@@ -54,11 +54,11 @@ export function ActionBar({
   onLeave: () => void;
   remainingFraction: number;
   profile: PlayerProfile | null;
-  onPurchaseRebuy: () => void;
 }) {
   const legal = game.legalActions;
   const mySeat = game.seats.find((seat) => seat.isMine);
   const [showRebuyModal, setShowRebuyModal] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
   const [raiseOpen, setRaiseOpen] = useState(false);
   const [raiseTo, setRaiseTo] = useState(legal?.minRaiseTo ?? 0);
   const [pressedAction, setPressedAction] = useState<PlayerAction["type"] | null>(null);
@@ -94,6 +94,10 @@ export function ActionBar({
     // exit is the header. Reading the deadline rather than counting stacks
     // keeps this agreeing with scheduleNextHand by construction.
     const tableIsDone = game.isSeated && !busted && !game.nextHandAt;
+    // Whether a rebuy is reachable without spending money. Unlimited Gold
+    // always is; otherwise it takes this table's minimum buy-in.
+    const canRebuyWithGold = Boolean(profile?.unlimitedGold)
+      || (profile?.goldBalance ?? 0) >= TIER_CONFIG[game.tier].minBuyIn;
     return (
       <div className="action-bar">
         <div className="action-slot-status">
@@ -121,13 +125,30 @@ export function ActionBar({
               >
                 Close seat
               </button>
-              <button
-                className="primary-action action-slot-wide"
-                disabled={pending}
-                onClick={() => setShowRebuyModal(true)}
-              >
-                Rebuy
-              </button>
+              {/* Out of chips means two different situations, and they want
+                  different buttons. With Gold in hand the rebuy is free of
+                  any purchase, so it opens the Gold modal as it always has.
+                  With none, that modal was a step to nowhere -- a slider you
+                  cannot afford to move, with the real purchase buried behind
+                  a secondary button inside it. That case goes straight to
+                  checkout instead. */}
+              {canRebuyWithGold ? (
+                <button
+                  className="primary-action action-slot-wide"
+                  disabled={pending}
+                  onClick={() => setShowRebuyModal(true)}
+                >
+                  Rebuy
+                </button>
+              ) : (
+                <button
+                  className="primary-action action-slot-wide"
+                  disabled={pending}
+                  onClick={() => setShowCheckout(true)}
+                >
+                  Buy Gold to rebuy
+                </button>
+              )}
             </>
           )}
         </div>
@@ -141,9 +162,15 @@ export function ActionBar({
             confirmLabel="Rebuy"
             pending={pending}
             onClose={() => setShowRebuyModal(false)}
-            onBuyGold={onPurchaseRebuy}
+            onBuyGold={() => {
+              setShowRebuyModal(false);
+              setShowCheckout(true);
+            }}
             onConfirm={(_tier, buyIn) => onAction({ type: "rebuy", amount: buyIn })}
           />
+        )}
+        {showCheckout && (
+          <RebuyCheckout gameId={game.id} onClose={() => setShowCheckout(false)} />
         )}
       </div>
     );

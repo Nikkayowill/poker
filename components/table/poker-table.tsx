@@ -68,7 +68,6 @@ export function PokerTable({
   connectionState,
   soundEnabled,
   onToggleSound,
-  onPurchaseRebuy,
   onSignIn,
   onSignOut,
 }: {
@@ -83,7 +82,6 @@ export function PokerTable({
   connectionState: ConnectionState;
   soundEnabled: boolean;
   onToggleSound: () => void;
-  onPurchaseRebuy: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
 }) {
@@ -696,7 +694,6 @@ export function PokerTable({
             onLeave={onLeave}
             remainingFraction={remainingFraction}
             profile={profile}
-            onPurchaseRebuy={onPurchaseRebuy}
           />
         </div>
       </section>

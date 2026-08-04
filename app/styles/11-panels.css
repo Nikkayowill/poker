@@ -345,6 +345,52 @@
   text-align: center;
 }
 
+/* The real-money rebuy, opened from the table rather than the store.
+   components/table/rebuy-checkout.tsx. Narrower than the buy-in modal
+   because it has one decision in it, not a tier grid and a slider. */
+.rebuy-checkout { width: min(460px, 100%); }
+
+.rebuy-checkout-status,
+.rebuy-checkout-legal { padding: 24px 27px 25px; }
+
+.rebuy-checkout h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 12px;
+  font-size: 16px;
+  color: #edf3ee;
+}
+.rebuy-checkout h2 svg { color: var(--gold, #e7c66a); }
+.rebuy-checkout-status p { margin: 0; color: #9ca9a2; font-size: 12.5px; line-height: 1.55; }
+
+/* Scrolls rather than growing the dialog past the viewport: two documents of
+   body copy is taller than a landscape phone. */
+.rebuy-checkout-legal { max-height: min(70vh, 560px); overflow-y: auto; }
+.rebuy-checkout-doc { margin-bottom: 16px; }
+.rebuy-checkout-doc h3 { margin: 0 0 6px; font-size: 13px; color: var(--gold-light, #f0d989); }
+.rebuy-checkout-doc p { margin: 0 0 8px; color: #9ca9a2; font-size: 12.5px; line-height: 1.55; }
+
+.rebuy-checkout-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #d8e0da;
+  cursor: pointer;
+}
+
+.rebuy-checkout-error { color: #f0a3a3; font-size: 12.5px; line-height: 1.5; }
+.rebuy-checkout small { display: block; color: #6f7e76; font-size: 9px; line-height: 1.45; }
+
+.rebuy-checkout-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.rebuy-checkout-actions button { flex: 1; min-height: 42px; }
+.rebuy-checkout-actions .primary-action:disabled { opacity: .5; cursor: default; }
+
 @media (max-width: 1020px) {
   .poker-table-wrap { width: min(940px, calc(100% - 32px), var(--table-height-cap)); }
 }

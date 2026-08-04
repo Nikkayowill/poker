@@ -47,3 +47,34 @@ export interface FriendsOverview {
   incoming: PendingRequest[];
   outgoing: PendingRequest[];
 }
+
+/**
+ * A live "come play with me" the caller has been sent.
+ *
+ * Flattened around the inviter exactly like PendingRequest: this is also "the
+ * other party, plus the row", and nesting one and flattening the other would
+ * make the drawer read two shapes for the same idea.
+ *
+ * There is deliberately no room code here. The invite row carries the private
+ * table's code so that accepting can join without either party ever seeing it
+ * -- see the column comment in 20260804120000_friends_and_table_invites.sql.
+ * Putting it in this payload would hand every invitee a code they could pass
+ * on, which is the one thing the server-side carry exists to prevent.
+ */
+export interface PendingTableInvite {
+  id: string;
+  /** The other party -- always the inviter, since these are inbound only. */
+  profileId: string;
+  displayName: string;
+  initials: string;
+  avatarUrl: string | null;
+  avatarPreset: AvatarPreset;
+  accent: string;
+  gameId: string;
+  /** Stakes, so the notification can say what it is inviting you to. */
+  smallBlind: number;
+  bigBlind: number;
+  createdAt: string;
+  /** When this invite stops being offered. The client may count down to it; the server does not trust it to. */
+  expiresAt: string;
+}

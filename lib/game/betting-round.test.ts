@@ -16,6 +16,17 @@ function allHumanTable(): GameState {
     seat.isHuman = true;
     seat.ownerToken = `seat-${index}-token`;
     seat.personality = null;
+    // Pinned back to the uniform default buy-in: createGame now spreads bot
+    // seats across a randomized stack range (see randomBotStack in
+    // engine.ts) for table feel, which these tests never asked for and would
+    // otherwise pull an incidental side-pot/short-all-in scenario into a
+    // suite that is specifically about turn order, not stack depth.
+    //
+    // 1000 - committed, not a flat 1000: createGame has already dealt hand 1
+    // and posted blinds by the time this runs, so the small/big blind seats
+    // already hold part of their 1000 in committed. Overwriting stack alone
+    // would hand a blind seat 1000 *more* than it bought in for.
+    seat.stack = 1000 - seat.committed;
   });
   normalizeGameState(game);
   return game;

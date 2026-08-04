@@ -290,6 +290,13 @@ describe("server game engine", () => {
   it("plays repeated complete hands while conserving chips", () => {
     const token = crypto.randomUUID();
     let game = createGame(token, "Test");
+    // Bot seats start at a randomized multiple of the buy-in (see
+    // randomBotStack in engine.ts), so the table's total is no longer a fixed
+    // 6000 -- it is whatever this particular table drew, captured once here.
+    // stack + committed, not stack alone: createGame deals hand 1 and posts
+    // blinds before returning, so two seats' stacks are already down by their
+    // blind at this point, with that amount sitting in committed instead.
+    const startingTotal = game.seats.reduce((sum, seat) => sum + seat.stack + seat.committed, 0);
     let completed = 0;
     let safety = 0;
     // Rake is the only sanctioned way for chips to leave the table, so the
@@ -301,7 +308,7 @@ describe("server game engine", () => {
       game = advanceBotsUntilHuman(game);
       if (game.status === "complete") {
         rakeTaken += game.rake;
-        expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0) + rakeTaken).toBe(6000);
+        expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0) + rakeTaken).toBe(startingTotal);
         completed += 1;
         if (completed >= 12 || game.seats[0].stack === 0) break;
         game = applyPlayerAction(game, { type: "next-hand" }, token);
@@ -316,7 +323,7 @@ describe("server game engine", () => {
         if (game.status === "playing") {
           expect(
             game.seats.reduce((sum, seat) => sum + seat.stack, 0) + game.pot + rakeTaken,
-          ).toBe(6000);
+          ).toBe(startingTotal);
         }
       }
       safety += 1;
@@ -864,10 +871,14 @@ describe("multi-human seating", () => {
 
   it("does not mint a posted blind when a player claims that bot seat", () => {
     const game = createGame(crypto.randomUUID(), "Host");
-    const chipsBefore = game.seats.reduce(
-      (sum, seat) => sum + seat.stack + seat.committed,
-      0,
-    );
+    // Per seat, not a table total: bot seats now start at a randomized stack
+    // (see randomBotStack in engine.ts), so claiming one at a fixed 1000
+    // buy-in legitimately changes the table's total by however much more or
+    // less than 1000 that bot happened to be carrying -- that difference is
+    // bot chips, never Gold-backed, so it neither mints nor steals anything.
+    // What must hold regardless is narrower: the claimed seat nets to exactly
+    // what was paid, and every *other* seat is untouched.
+    const othersBefore = game.seats.map((seat) => seat.stack + seat.committed);
 
     const { state, seatIndex } = claimSeat(
       game,
@@ -879,10 +890,10 @@ describe("multi-human seating", () => {
 
     expect(claimed.committed).toBeGreaterThan(0);
     expect(claimed.stack + claimed.committed).toBe(1000);
-    expect(state.seats.reduce(
-      (sum, seat) => sum + seat.stack + seat.committed,
-      0,
-    )).toBe(chipsBefore);
+    state.seats.forEach((seat, index) => {
+      if (index === seatIndex) return;
+      expect(seat.stack + seat.committed).toBe(othersBefore[index]);
+    });
   });
 
   it("rejects a buy-in smaller than chips the open seat already committed", () => {
@@ -1126,6 +1137,30 @@ describe("stakes tiers and buy-ins", () => {
     expect(game.smallBlind).toBe(5);
     expect(game.bigBlind).toBe(10);
     expect(game.seats[0].stack).toBe(1000);
+  });
+
+  it("gives the human seat exactly the chosen buy-in but spreads bot stacks from 1x up to a deep stack", () => {
+    const buyIn = TIER_CONFIG["10k"].minBuyIn;
+    const game = createGame(crypto.randomUUID(), "Host", undefined, { tier: "10k", buyIn });
+    // stack + committed, not stack alone: createGame deals hand 1 and posts
+    // blinds before returning, so a seat in a blind position already has part
+    // of its starting stack sitting in committed by the time this reads it.
+
+    // The human always gets exactly what they paid for -- randomization is a
+    // bot-only table-feel detail, never something that shorts a real buy-in.
+    expect(game.seats[0].stack + game.seats[0].committed).toBe(buyIn);
+
+    const botStacks = game.seats.slice(1).map((seat) => seat.stack + seat.committed);
+    for (const stack of botStacks) {
+      expect(stack).toBeGreaterThanOrEqual(buyIn);
+      expect(stack).toBeLessThanOrEqual(buyIn * 3);
+      // Snapped to a real chip denomination, not an arbitrary integer.
+      expect(stack % game.bigBlind).toBe(0);
+    }
+    // Not every bot dealt the exact same stack -- otherwise this is just
+    // createGame's old uniform behaviour wearing a new comment. Flaky only in
+    // the astronomically unlikely case all five draw the same value.
+    expect(new Set(botStacks).size).toBeGreaterThan(1);
   });
 
   it("applies a tier's blinds and clamps any buy-in to that tier's fixed amount", () => {

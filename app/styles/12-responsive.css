@@ -121,6 +121,53 @@
        row of the board. Verified: removing this puts two figures over it. */
     top: 47%;
   }
+  /* The showdown, at a size a phone can actually settle a hand with.
+     Everything below had no mobile rule at all and inherited the desktop
+     values, which are the smallest type in the app: an 11px winner line, a
+     10px hand name and a 9px badge, read at arm's length, deciding whether
+     you just won or what you lost to. This is the one moment on the table
+     where nothing is time-critical, so it can afford the room. */
+  /* Stacked here, not laid out in a row as it is on desktop. At this type
+     size the row ran 179px wide and, being right-aligned in the band, its
+     left edge landed at x=199 -- inside the top seat's box, which begins at
+     x=147. Measured: at the old 11px it cleared, so the collision arrived
+     with the enlargement and had to be paid for somewhere. Stacking spends
+     the height the band has rather than the width it does not, and the
+     result reads as three facts about one hand either way. */
+  .hand-result { gap: 4px; max-width: 32vw; }
+  .hand-result-line {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    font-size: 17px;
+    text-align: right;
+  }
+  /* A long display name is the one thing here that is not bounded. */
+  .hand-result-line b {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hand-result-amount { font-size: 19px; }
+  .hand-result-line i { font-size: 14px; letter-spacing: .02em; }
+  .winner-badge {
+    top: -27px;
+    padding: 5px 11px 5px 9px;
+    font-size: 11px;
+  }
+  .winner-badge > span { font-size: 19px; }
+  .win-amount-float { font-size: 20px; top: -12px; }
+  /* The winner's revealed hole cards, and only theirs. Opponent cards are
+     sized off their seat so they stay in proportion to the figure holding
+     them (08-seat.css); scaling that rule for every seat would enlarge six
+     face-down backs through the whole hand. This lifts the one pair the
+     result is about, once the hand is over and there is nothing left to
+     collide with. Transform rather than width so it grows about its own
+     centre without moving the seat's layout. */
+  .seat-winner .seat-cards:not(.own-cards) {
+    transform: translate(-50%, -50%) scale(1.5);
+    transform-origin: center;
+  }
   .seat-name-row strong { font-size: 9px; }
   .seat-plate { padding: 3px 5px 4px; }
   .blind-label { height: 17px; padding: 0 4px; }

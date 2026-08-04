@@ -512,12 +512,18 @@ export function PokerTable({
             {/* The table talking, in the black space that was doing nothing.
                 Who just folded, who raised and by how much -- the activity
                 drawer has always held this, two taps away, which is not
-                where anyone looks mid-hand. Newest first, and the count
-                drops to one on a phone where the band is 38px tall.
+                where anyone looks mid-hand.
+
+                Sized to be read rather than glanced at, on every viewport,
+                because the per-seat status pills that used to repeat this
+                are about to stop existing. See .table-feed in 06-table.css
+                and its two overrides in 12-responsive.css.
 
                 Left and right margins only, now that the pot has moved to the
                 header. The middle of this band is where the top seat's head
-                is; anything drawn there collides with it. */}
+                is; anything drawn there collides with it, which is why this
+                grows downward on the left rather than making the band
+                taller. */}
             <ul className="table-feed" aria-live="polite">
               {game.log.slice(0, 3).map((entry) => (
                 <li key={entry.id} className={`table-feed-${entry.kind}`}>{entry.text}</li>

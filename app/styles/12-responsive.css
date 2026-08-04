@@ -59,10 +59,35 @@
      that variance needs, rather than sizing to the seat's quiet state and
      colliding the moment it is someone's turn. */
   .table-hud { padding-top: 2px; }
-  /* One line on a phone. Three would either overflow the 38px band or reach
-     down into the top seat's head. */
-  .table-feed { font-size: 8px; max-width: 32vw; }
-  .table-feed li:nth-child(n + 2) { display: none; }
+  /* Two entries on a phone, at a size meant to be read rather than sensed.
+     This is the only running account of the hand now that the per-seat
+     status pills are gone, so 8px single-line -- which is what it was -- is
+     no longer a trade worth making.
+
+     The width is the hard constraint, and it is measured, not chosen:
+     at 390px the top seat's box begins at x=147 and the feed starts at
+     x=12, so anything wider than about 135px reaches into it. tests/e2e/
+     table-feed.spec.ts holds that line. 33vw leaves ~6px of margin.
+
+     Which is why these wrap instead of ellipsing. In a column this narrow
+     a single nowrap line would truncate nearly every message -- "Fenwick
+     raises to…" is not an account of anything -- so each entry gets up to
+     two wrapped lines and grows downward into the empty corner above the
+     left seat, which does not start until y=200. */
+  .table-feed {
+    font-size: 12px;
+    max-width: 33vw;
+    padding: 5px 7px;
+    gap: 3px;
+  }
+  .table-feed li {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+    overflow: hidden;
+  }
+  .table-feed li:nth-child(n + 3) { display: none; }
   .game-shell { --chrome-height: 56px; --action-bar-height: 68px; --foreground-allowance: 100px; }
   .poker-table-wrap {
     width: min(calc(100% - 6px), var(--table-height-cap));
@@ -165,11 +190,25 @@
   .game-shell { --chrome-height: 42px; --action-bar-height: 56px; --foreground-allowance: 48px; }
   .poker-table-wrap { --table-aspect: 3; }
   /* Measured at 844x390 there are 18px between the top of .table-area and the
-     highest seat, so the band is only good for one short pill. The stakes are
-     it; the feed is dropped below and the pot is in the header. */
+     highest seat, so the band itself is only good for one short pill. The
+     feed used to be dropped entirely here; with the seat pills gone that
+     left a landscape phone with nowhere at all to read what just happened.
+
+     So it comes back as an overlay rather than a band member: one line,
+     absolutely placed into the top-left corner over the black margin beside
+     the 3:1 oval, where nothing else is drawn. The band keeps its stakes
+     pill and its own height, untouched. */
   .table-hud { gap: 10px; padding: 2px 8px 0; }
   .table-hud .blind-structure { padding: 2px 7px; font-size: 9px; }
-  .table-feed { display: none; }
+  .table-feed {
+    position: absolute;
+    top: 2px;
+    left: max(6px, env(safe-area-inset-left));
+    font-size: 11px;
+    max-width: 40vw;
+    padding: 3px 7px;
+  }
+  .table-feed li:nth-child(n + 2) { display: none; }
   /* A 42px header cannot take the stacked label-over-number the taller
      breakpoints use, so the pot lies down into a single baseline row. */
   .game-header .pot-display { display: flex; align-items: baseline; gap: 7px; }

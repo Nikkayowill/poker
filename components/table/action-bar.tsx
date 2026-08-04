@@ -197,6 +197,23 @@ export function ActionBar({
     );
   }
 
+  // A seat can be claimed mid-hand -- the new occupant sits out the hand
+  // already in progress (see claimSeat in lib/game/engine.ts) rather than
+  // inheriting whatever the bot she replaced was holding. `status === "out"`
+  // while the table is otherwise `"playing"` only ever means this: every
+  // other reason a seat reads "out" happens between hands, where the
+  // `game.status === "complete"` branch above already returns first.
+  if (game.isSeated && mySeat?.status === "out") {
+    return (
+      <div className="action-bar">
+        <div className="action-slot-status">
+          <span className="action-kicker">Sat out</span>
+          <strong>You’re in for the next hand -- sit tight while this one finishes.</strong>
+        </div>
+      </div>
+    );
+  }
+
   const myTurn = Boolean(legal);
   const passiveIsCall = Boolean(legal?.canCall);
 

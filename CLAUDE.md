@@ -207,4 +207,94 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   are all live on `www.stackchips.app` as of PR #2 (merge commit
   `3285d5c`) — verified against the Production deployment's own status, not
   assumed from the merge alone.
+- `claimSeat` (`lib/game/engine.ts`) no longer lets a mid-hand seat claim buy
+  into the hand already running. Previously it converted the bot to a human
+  but left `holeCards`/`status`/`acted` untouched, so a player who sat down
+  on a bot mid-hand inherited its actual cards and turn — including, if the
+  bot was the last seat needing to act, an uncontested win off cards they
+  never saw dealt. The new occupant is now forced `status = "out"` for the
+  rest of that hand (cleared `holeCards`, never in `nextSeat`'s `canAct`
+  rotation), with `remaining(state).length === 1` / `wasCurrentTurn` handled
+  the same way an ordinary fold is, and returns to `"active"` automatically
+  at the next `setupHand`. `action-bar.tsx` shows a "Sat out" status card
+  (reusing `.action-slot-status`/`.action-kicker`, not a new per-seat pill —
+  see the note below on why one was deliberately removed) whenever
+  `game.status === "playing"` and the caller's own seat is `"out"`, which
+  given the fix can now only mean "claimed mid-hand, waiting for next deal."
+- The reported "multi-human freeze" (a busted human stalling the table with
+  other humans seated) and "expired rebuy squatting" did not reproduce.
+  `canAct`/`nextSeat` already skip a busted seat within a hand regardless of
+  how many humans are at the table (`commit` marks it `"all-in"`, not
+  `"active"`, the instant its stack hits zero), and `turn-clock.ts` already
+  queues every seated human as a backup clock-advancer rather than electing
+  one — a repro test driving a 6-human table through an all-in bust and past
+  its `BUSTED_REBUY_GRACE_MS` deadline completed the hand and dealt the next
+  one without a stall, and `busted-seat.test.ts`'s existing "does not lose a
+  seat per bust" test already covers four *sequential* human busts staying
+  funded. If this is still observed live, it likely needs exact repro steps
+  (timing, seat count, Supabase vs. memory mode) rather than another look at
+  this code path in isolation.
+- Bot personality (`lib/game/engine.ts`) is now rolled independently per seat
+  via `pickBotPersonality()` (`randomInt`-weighted MANIAC/ROCK/CALLING_STATION
+  35/45/20 — "Loose Cannon"/"Table Captain"/"Whale"), not baked onto a fixed
+  pool-identity pattern the way it used to be. `botProfiles[]` is identity
+  (name/face) only now; personality is a separate axis, called fresh from
+  `createGame` and every `restoreBotControl` reseat, so a bot sitting back
+  down needn't play like the one that left. The type names weren't renamed —
+  `personalityProfiles` and the preflop chart are still keyed on
+  `MANIAC`/`ROCK`/`CALLING_STATION` — only the flavor mapping and the
+  assignment mechanism changed.
+- The actual "boring preflop folding" fix is `trashContinueChance`, a new
+  per-personality field on `personalityProfiles`: previously *every*
+  personality hard-folded a "trash"-tier hand preflop outside a fixed 5%
+  bluff roll, so no archetype ever played a visibly different range. Now that
+  gate is `!bluffWindow && !trashContinueRoll`, where `trashContinueRoll`
+  reads the *same* `decisionRoll` the bluff gate already consumes (no extra
+  `random()` call, so it doesn't shift any downstream draw a seeded test
+  depends on) against a personality-specific threshold. Calibrated against a
+  new Monte Carlo VPIP test (`lib/game/bot-personality.test.ts`, seeded
+  hole cards + seeded decision rolls, fully deterministic) to land ROCK
+  ~26%, MANIAC ~45%, CALLING_STATION ~64% — inside the requested 25–35% /
+  40–50% / 60%+ bands. `MANIAC` also gets a `shoveEquityDiscount` (reaches
+  for all-in with merely-good equity/a strong draw, not just the nuts) and
+  `ROCK` a `limperPunishBonus` (raises limps more readily); both are small,
+  additive nudges to the existing shove/raise-decision thresholds, not new
+  decision paths.
+- Table traffic: `TABLE_FUNDED_FLOOR` is 6 now, not 4 — the old floor of 4
+  was a blunt cap on bot stacks becoming a renewable Gold-farming source, but
+  to a real player two permanently-empty seats reads as a shrinking
+  tournament, not a cash table. The actual guardrail moved from *whether* a
+  seat refills to *when*: a bot that busts from losing its stack still
+  refills the same hand it always has (unaffected), but a **healthy** bot can
+  now voluntarily stand up between hands (`BOT_VOLUNTARY_LEAVE_CHANCE` in
+  `releaseBustedSeats`, never below 3 funded seats) and its seat then sits
+  out — reusing the existing `"out"`/`.seat-muted` dimmed rendering, no new
+  UI — until a randomized `Seat.reseatEligibleAt` timestamp
+  (`BOT_REENTRY_DELAY_MIN_MS`/`MAX_MS`, ~30s–3min) elapses. `botVoluntaryLeaveChance()`
+  is `0` whenever `process.env.VITEST` is set (same guard `logTurn` in
+  `game-store.ts` already uses) regardless of its env override, because it
+  rolls inside `releaseBustedSeats`, which hundreds of existing tests reach
+  indirectly through `setupHand`/`dealNextHandIfDue` — without the guard, an
+  unpredictable subset of the whole suite would go flaky the moment any test
+  happened to run enough hands to hit the roll. Tests that exercise it set
+  `RIVER_BOT_LEAVE_CHANCE` to exactly `0` or `1` (read manually, not via the
+  file's usual `Number(...) || default` idiom, since `Number("0") || 0.05`
+  would silently discard an explicit "disable this"). Raising the floor
+  alone broke one existing test's chip-conservation invariant
+  (`engine.test.ts`'s "plays repeated complete hands" — a single bot bust now
+  refills immediately instead of only past 2+ busts, minting chips more
+  often) — fixed by tracking minted amounts explicitly rather than assuming
+  a fixed table total.
+- Gold: `creditGold`'s Supabase path (`lib/server/profile-store.ts`) used to
+  be a plain read-then-write, unlike `spendGold`'s guarded `spend_gold` RPC —
+  a real (pre-existing, not bot-specific) lost-update race under concurrent
+  credits, e.g. a rebuy refund racing a cash-out credit. Closed with a new
+  `credit_gold` RPC (`supabase/migrations/20260804160000_credit_gold_rpc.sql`)
+  mirroring `spend_gold`/`claim_daily_gold`'s exact `SELECT ... FOR UPDATE`
+  pattern; `creditGold` now calls it instead of reading then writing. No
+  behavior change to the in-memory branch (already single-threaded) or to
+  any caller's contract. Not yet applied to the live Supabase project — no
+  local Postgres is available here, same constraint as the M15/M16
+  migrations; needs the same one-at-a-time dry-run-then-push treatment
+  before it's live.
 - Update this section when scope changes; keep `CLAUDE.md` synchronized.

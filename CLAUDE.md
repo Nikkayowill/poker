@@ -47,7 +47,32 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 - Active slice: M16 — friends and table invites. The friends half is landed
   end to end: `lib/server/friends-store.ts`, `/api/friends/*`, and the drawer
   plus lobby tile in `components/social/friends-drawer.tsx`. The table invite
-  half is untouched — `table_invites` has a schema and nothing else.
+  half now has its read path: `lib/server/table-invite-store.ts` and
+  `GET /api/invites/pending`. Still missing: the POST route that sends one
+  (and with it the "inviter must be seated here" check), accept/decline, and
+  any UI.
+- Invite freshness is a predicate on each row's `expires_at`, never a
+  consequence of the sweep. `getPendingTableInvites` filters
+  `expires_at > now()`, so a lapsed invite disappears the second it lapses
+  even if nothing has marked it `expired`. `expireStaleTableInvites` is
+  housekeeping — throttled to once a minute per process off the polled read,
+  and called unconditionally by `createTableInvite`, which is the one caller
+  whose correctness needs it: `table_invites_one_pending_per_target` is
+  partial on `status = 'pending'`, so a timed-out row still marked pending
+  would hold the slot and turn a legitimate re-invite into `already_pending`.
+- `app/styles/21-friends.css`'s `.friends-list`/`.friend-row` padding now
+  matches `.activity-list`/`.activity-item` in `11-panels.css` (12px, not
+  8px/10px) — both share the exact `.history-drawer` shell, and the two
+  panels ticking at different paddings was the only real inconsistency a
+  rendered check turned up. `.friends-list` also hides its scrollbar
+  cross-browser (`scrollbar-width: none` + `::-webkit-scrollbar`) while
+  staying scrollable; verified against a live dev-mode render with a mocked
+  `/api/friends` payload, not just by reading the CSS.
+- Invites are private-table-only, and that is schema, not policy:
+  `table_invites.room_code` is not null and a public table's `roomCode` is
+  null. The code stays server-side — `PendingTableInvite` omits it and the
+  read never selects it, so accepting can join without either party being
+  handed something they could forward. A test asserts the absence.
 - State: M12–M15 landed. M15's server half (hand archives, `archive_hand` RPC,
   `/api/history` routes) is unchanged and still has no UI reading it.
 - Friends are registered-accounts-only, matching `/api/history`: 401 with no
@@ -90,9 +115,19 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   drawer renders whatever `/api/friends` returns, so existing friendships and
   pending requests do display; what is missing is any in-app way to *start* a
   request, which is why a new account sees an empty list.
-- Neither M16 migration has been applied to a live Postgres. No local Postgres
-  or `psql` is available here, so `20260804140000_accept_friend_request.sql`
-  is unverified SQL; the memory-mode branch is what the 22 store tests cover.
+- All four M15/M16 migrations (`hand_archives`, `friends_and_table_invites`,
+  `accept_friend_request`, `revoke_archive_hand_from_public`) are now applied
+  to the live production Supabase project, pushed one at a time with a
+  dry-run and a health check between each. `service_role`'s EXECUTE on
+  `archive_hand`/RPCs comes from an independent per-role grant (verified via
+  `aclexplode` against production), not from the PUBLIC grant the last
+  migration revokes — confirmed before pushing, not assumed. No local
+  Postgres/`psql` is available here, so this is still what verified it, not a
+  local run; the memory-mode branch is what the 22+ store tests cover.
+- The friends routes were live in production (returning 401, not 404) before
+  their backing tables existed, so any real registered user opening the
+  friends drawer before this push was almost certainly hitting a 500 from
+  `friends-store.ts`'s missing-relation error. That is now fixed.
 - Bot lifecycle: busted seats are released and reseated at the head of
   `setupHand` via `releaseBustedSeats` — busted *bots* used to stay busted, so
   a table walked 6 → 5 → 4 and stopped. Refill stops at `TABLE_FUNDED_FLOOR`
@@ -119,6 +154,57 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   exist (D2 in `docs/known-defects.md` is withdrawn); a guard in
   `tests/e2e/table-feed.spec.ts` holds the clearance. The real blockers are
   `SEAT_COUNT`, the `MAX_SEATS` assertion, and the DB seat_number constraint.
-- M16 migration `20260804120000_friends_and_table_invites.sql` is written but
-  has NOT been applied or verified against a live Postgres.
+- Busted-seat UI (`components/table/action-bar.tsx`) no longer offers a
+  "Close seat" button. There never was a separate "Close Seat" concept
+  anywhere else in the codebase — this was the only one, and it just forced
+  an immediate `next-hand` action rather than waiting out
+  `BUSTED_REBUY_GRACE_MS`. The header's persistent "Leave table" button
+  already calls `leave-seat` for a seated player (`leaveTable` in
+  `poker-app.tsx`), which is the actual, already-working exit; the busted
+  branch now renders only the (already gold-styled, via
+  `.action-slot-controls .primary-action`) Rebuy/Buy-Gold-to-rebuy button.
+  No engine change was needed or made: `setupHand` already marks a busted
+  seat `"out"` (skipped from turn order) between hands, and
+  `releaseBustedSeats` + `scheduleNextHand`'s `BUSTED_REBUY_GRACE_MS` +
+  `dealNextHandIfDue` already auto-advance and auto-reseat a busted human to
+  a bot if they let the grace window lapse, all without a UI action —
+  `busted-seat.test.ts`/`continuous-table.test.ts` already cover this and
+  keep passing. A per-seat "Sat Out" status pill was deliberately not added:
+  `83c585d` removed the last per-seat status pill for a real clipping bug the
+  day before this note was written, with dedicated e2e coverage
+  (`tests/e2e/table-feed.spec.ts`) asserting no seat renders one; `"out"` in
+  `SeatStatus` already *is* sat-out and is already wired through
+  `inHand`/`canAct`/the seat-dimming `folded` check.
+- `createGame` (`lib/game/engine.ts`) now gives each bot seat a randomized
+  starting stack via `randomBotStack` — uniform in `[buyIn, buyIn * 3]`,
+  snapped to the nearest big blind. The human seat is never randomized. This
+  does not touch `TIER_CONFIG` (`minBuyIn === maxBuyIn` per tier is still
+  exactly true; a human still buys in for precisely the tier's number) — only
+  what a freshly-created bot seat happens to be carrying. `claimSeat` already
+  discards whatever a bot seat was holding and resets to the claiming
+  player's own paid buy-in, so this cannot leak un-backed bot chips to a
+  human. Fixed three tests that had baked in the old uniform-1000-per-seat
+  assumption (two hardcoded `6000` chip-conservation totals in
+  `engine.test.ts`, now computed dynamically; `betting-round.test.ts`'s
+  `allHumanTable()` fixture, which now explicitly pins every seat back to a
+  clean `1000 - committed` since it needs a deterministic table and
+  `createGame` already posts hand 1's blinds before returning).
+- **Vercel's production branch is `main`, not `ui-redesign-foundation`.**
+  Pushing to `ui-redesign-foundation` only ever produces a Preview
+  deployment — confirmed via the GitHub Deployments API (`environment` field)
+  after a push sat live-but-not-live for several minutes. `main` reached its
+  current state via a single PR merge (#1) from `ui-redesign-foundation` at
+  `b753717`; there was no other divergence. Getting new work on
+  `ui-redesign-foundation` in front of players means a PR into `main` (`gh pr
+  create --base main --head ui-redesign-foundation`) and merging it, the same
+  way #1 did — not a direct push. Verify a deploy actually landed against the
+  *Production* environment (`gh api repos/Nikkayowill/poker/deployments`),
+  not just that the merge succeeded, and confirm against the live site
+  itself (e.g. a route that only exists in the new code, like
+  `/api/invites/pending`, flipping from `404` to a real status).
+- The four M15/M16 migrations, the friends-drawer scrollbar/spacing polish,
+  the busted-seat "Close seat" removal, and randomized bot starting stacks
+  are all live on `www.stackchips.app` as of PR #2 (merge commit
+  `3285d5c`) — verified against the Production deployment's own status, not
+  assumed from the merge alone.
 - Update this section when scope changes; keep `CLAUDE.md` synchronized.

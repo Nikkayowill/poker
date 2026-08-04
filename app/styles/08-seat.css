@@ -537,32 +537,11 @@
   100% { opacity: 1; transform: translate(0, 0) scale(1) rotate(0); filter: blur(0); }
 }
 
-/* An absent player, marked ahead of anything about the hand itself: folded
-   is this hand, away is the person, and the second matters more to everyone
-   still waiting on the seat. Amber rather than red -- nothing has gone wrong
-   yet, and the count says exactly how much rope is left. */
-.status-away {
-  color: #f2c879;
-  border-color: rgba(242,200,121,.34);
-  background: rgba(120,84,20,.34);
-}
-
-.action-pill, .status-pill {
-  position: absolute;
-  left: 50%;
-  bottom: -26px;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  color: #d8e0da;
-  border: 1px solid rgba(255,255,255,.1);
-  border-radius: 999px;
-  background: #19241f;
-  padding: 5px 9px;
-  font-size: 9px;
-}
-
-.status-pill { color: #87948d; }
-.status-pill.all-in { color: #f0d989; border-color: rgba(217,184,93,.3); }
+/* The seat status pill (.status-pill/.action-pill/.status-away) was removed
+   with the element that used it -- see components/table/player-seat.tsx. It
+   hung at bottom:-26px outside an absolutely-positioned seat and printed a
+   variable-length string into it, so a long action ran under the table
+   container. The table feed carries those events instead. */
 
 /* A posted bet belongs between its player and the pot, so it rides the inward
    vector the seat geometry hands down (--bet-x/--bet-y). This used to be four

@@ -15,8 +15,18 @@
 .friends-list {
   flex: 1;
   overflow: auto;
-  padding: 8px 19px 12px;
+  /* 12px/19px matches .activity-list in 11-panels.css -- the sibling list
+     that reuses this exact .history-drawer shell. Diverging here reads as a
+     wobble between two panels wearing identical chrome. */
+  padding: 12px 19px;
+  /* Scrollable, not scrollbar-drawn: this is a felt-dark overlay, and a
+     platform scrollbar (light track on Windows/Firefox, or a persistent one
+     under `always show scrollbars`) cuts a bright seam down it. Firefox/IE
+     take the standard property; everything else takes the pseudo-element. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.friends-list::-webkit-scrollbar { display: none; }
 
 .friends-section { margin-bottom: 18px; }
 .friends-section h3 {
@@ -32,7 +42,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 0;
+  /* Matches .activity-item's row cadence for the same reason as .friends-list's padding above. */
+  padding: 12px 0;
   border-bottom: 1px solid rgba(255,255,255,.05);
 }
 .friend-row-muted { opacity: .68; }

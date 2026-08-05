@@ -5,6 +5,7 @@ import {
   claimSeat,
   chooseBotAction,
   createGame,
+  dealNextHandIfDue,
   estimateBotEquity,
   expireIdleTurn,
   normalizeGameState,
@@ -303,15 +304,27 @@ describe("server game engine", () => {
     // invariant is "everything still accounted for, minus what the house
     // took" -- which also proves nothing leaks anywhere else.
     let rakeTaken = 0;
+    // A busted *bot* seat refilling is a sanctioned way for chips to
+    // *arrive* -- `reseat`'s minted stack is not backed by Gold, and with
+    // TABLE_FUNDED_FLOOR now the whole table (6, not 4) a single bot bust is
+    // enough to trigger one, not just several at once. Twelve hands is
+    // plenty for that to happen, so it has to be tracked rather than
+    // assumed away.
+    let mintedTotal = 0;
 
     while (completed < 12) {
       game = advanceBotsUntilHuman(game);
       if (game.status === "complete") {
         rakeTaken += game.rake;
-        expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0) + rakeTaken).toBe(startingTotal);
+        expect(game.seats.reduce((sum, seat) => sum + seat.stack, 0) + rakeTaken)
+          .toBe(startingTotal + mintedTotal);
         completed += 1;
         if (completed >= 12 || game.seats[0].stack === 0) break;
+        const wasBustedBot = game.seats.map((seat) => !seat.isHuman && seat.stack <= 0);
         game = applyPlayerAction(game, { type: "next-hand" }, token);
+        game.seats.forEach((seat, index) => {
+          if (wasBustedBot[index] && seat.stack > 0) mintedTotal += TIER_CONFIG[game.tier].minBuyIn;
+        });
       } else {
         const legal = toSnapshot(game, token).legalActions;
         expect(legal).not.toBeNull();
@@ -323,7 +336,7 @@ describe("server game engine", () => {
         if (game.status === "playing") {
           expect(
             game.seats.reduce((sum, seat) => sum + seat.stack, 0) + game.pot + rakeTaken,
-          ).toBe(startingTotal);
+          ).toBe(startingTotal + mintedTotal);
         }
       }
       safety += 1;
@@ -647,17 +660,15 @@ describe("server game engine", () => {
 });
 
 describe("bot identity", () => {
-  it("seats a six-max table with a distinct AI personality per bot seat and none for the host", () => {
+  it("seats a six-max table with an AI personality per bot seat and none for the host", () => {
     const game = createGame(crypto.randomUUID(), "Host");
     expect(game.seats).toHaveLength(6);
     expect(game.seats[0].personality).toBeNull();
-    expect(game.seats.slice(1).map((seat) => seat.personality)).toEqual([
-      "MANIAC",
-      "CALLING_STATION",
-      "ROCK",
-      "MANIAC",
-      "CALLING_STATION",
-    ]);
+    // Personality is rolled independently of identity (see pickBotPersonality),
+    // so it's no longer a fixed sequence -- just a valid archetype per seat.
+    game.seats.slice(1).forEach((seat) => {
+      expect(["MANIAC", "ROCK", "CALLING_STATION"]).toContain(seat.personality);
+    });
     expect(game.seats.slice(1).every((seat) => !seat.isHuman)).toBe(true);
     // Every bot seat gets a visually distinct identity (no repeats among bots).
     expect(new Set(game.seats.slice(1).map((seat) => seat.avatarPreset)).size).toBe(5);
@@ -704,7 +715,7 @@ describe("bot identity", () => {
     expect(preflopHandTier(cards("7c 2d"))).toBe("trash");
   });
 
-  it("immediately folds low offsuit trash preflop outside the bluff gate", () => {
+  it("immediately folds low offsuit trash preflop outside the bluff gate, for the disciplined personality", () => {
     const game = createGame(crypto.randomUUID(), "Host");
     game.seats.forEach((seat, index) => {
       seat.status = index === 0 || index === 3 ? "active" : "folded";
@@ -715,6 +726,13 @@ describe("bot identity", () => {
       streetBet: 0,
       acted: false,
       actedAtBet: null,
+      // Personality is rolled independently of seat index now (see
+      // pickBotPersonality), so it's pinned explicitly here: this test is
+      // about the disciplined "Table Captain" baseline, whose trash-continue
+      // chance (0.06) stays below the mock's fixed 0.5 roll. The looser
+      // personalities are exactly what the new VPIP tests in
+      // bot-personality.test.ts cover instead.
+      personality: "ROCK",
     });
     game.currentPlayer = 3;
     game.street = "preflop";
@@ -737,6 +755,10 @@ describe("bot identity", () => {
       committed: 0,
       acted: false,
       actedAtBet: null,
+      // Pinned: personality is rolled independently of seat index now (see
+      // pickBotPersonality), and this test is about raise-sizing math, not
+      // about which archetype is aggressive enough to raise AA at all.
+      personality: "MANIAC",
     });
     game.currentPlayer = 1;
     game.street = "preflop";
@@ -766,6 +788,10 @@ describe("bot identity", () => {
       committed: 0,
       acted: false,
       actedAtBet: null,
+      // Pinned for the same reason as above: this test is about the
+      // short-stack shove rule itself, not about which personality is
+      // aggressive enough to take it at a 0.5 roll.
+      personality: "MANIAC",
     });
     game.currentPlayer = 3;
     game.street = "preflop";
@@ -790,6 +816,11 @@ describe("bot identity", () => {
       committed: 100,
       acted: false,
       actedAtBet: null,
+      // Pinned defensively, same as the two tests above: the guaranteed-fold
+      // clause this exercises doesn't read `style` at all, but a fixed roll
+      // meeting a random personality's thresholds elsewhere in the function
+      // is exactly the kind of thing worth not leaving to chance.
+      personality: "ROCK",
     });
     game.currentPlayer = 3;
     game.street = "preflop";
@@ -940,7 +971,7 @@ describe("multi-human seating", () => {
     expect(() => applyPlayerAction(game, { type: "check" }, crypto.randomUUID())).toThrow(/not seated/i);
   });
 
-  it("lets a second human act on their own turn, while hiding cards from each other", () => {
+  it("sits a mid-hand claim out of the hand already in progress, then plays for real next hand", () => {
     const hostToken = crypto.randomUUID();
     const guestToken = crypto.randomUUID();
     let game = createGame(hostToken, "Host");
@@ -949,32 +980,36 @@ describe("multi-human seating", () => {
     const claimed = claimSeat(game, guestToken, testProfile("Guest"));
     game = claimed.state;
     const guestSeatIndex = claimed.seatIndex;
-    const versionAfterClaim = game.version;
 
-    game = advanceBotsUntilHuman(game);
-
-    // The opening bot decision is paced. Once it resolves, action reaches the
-    // host, so the guest still cannot act out of turn.
-    expect(game.currentPlayer).not.toBe(guestSeatIndex);
+    // No hand to inherit: no cards, no turn, no legal actions, whatever the
+    // bot she replaced was holding.
+    expect(game.seats[guestSeatIndex].status).toBe("out");
+    expect(game.seats[guestSeatIndex].holeCards).toHaveLength(0);
+    const guestView = toSnapshot(game, guestToken);
+    expect(guestView.legalActions).toBeNull();
+    expect(guestView.seats[guestSeatIndex].holeCards.every((card) => card === null)).toBe(true);
     expect(() => applyPlayerAction(game, { type: "check" }, guestToken)).toThrow(/turn/i);
 
-    // The host folding hands the turn straight to the guest, since she is the
-    // next active seat and has not acted yet this betting round.
-    game = applyPlayerAction(game, { type: "fold" }, hostToken);
-    expect(game.currentPlayer).toBe(guestSeatIndex);
+    // Play the rest of the hand out -- the host's one action, then bots --
+    // and the guest never once comes up on the clock.
+    let guard = 0;
+    while (game.status === "playing" && guard < 60) {
+      expect(game.currentPlayer).not.toBe(guestSeatIndex);
+      game = game.currentPlayer === 0
+        ? applyPlayerAction(game, { type: "fold" }, hostToken)
+        : advanceTimedTurn(game, Date.parse(game.turnDeadlineAt ?? new Date().toISOString())).state;
+      guard += 1;
+    }
+    expect(game.status).toBe("complete");
+    expect(game.nextHandAt).not.toBeNull();
 
-    const guestView = toSnapshot(game, guestToken);
-    expect(guestView.legalActions).not.toBeNull();
-    expect(guestView.seats[guestSeatIndex].holeCards.every(Boolean)).toBe(true);
-    expect(guestView.seats[0].holeCards.every((card) => card === null)).toBe(true);
-
-    const hostView = toSnapshot(game, hostToken);
-    expect(hostView.legalActions).toBeNull();
-    expect(hostView.seats[guestSeatIndex].holeCards.every((card) => card === null)).toBe(true);
-
-    expect(() => applyPlayerAction(game, { type: "check" }, hostToken)).toThrow(/turn/i);
-    game = applyPlayerAction(game, { type: "call" }, guestToken);
-    expect(game.version).toBeGreaterThan(versionAfterClaim);
+    // The next deal is the guest's first real hand: a normal, active seat
+    // with her own two cards.
+    const { state: dealt, dealt: didDeal } = dealNextHandIfDue(game, Date.parse(game.nextHandAt!) + 1);
+    expect(didDeal).toBe(true);
+    expect(dealt.status).toBe("playing");
+    expect(dealt.seats[guestSeatIndex].status).toBe("active");
+    expect(dealt.seats[guestSeatIndex].holeCards).toHaveLength(2);
   });
 });
 

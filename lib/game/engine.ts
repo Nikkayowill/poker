@@ -45,12 +45,9 @@ export const SEAT_COUNT = 6;
  * table backfills its bots from `position`, so reordering these would rename
  * the players at every table in flight.
  *
- * `personality` is the archetype, and the three that exist are the three worth
- * having: MANIAC is the aggressive one, CALLING_STATION the loose-passive one,
- * and ROCK the disciplined one that plays a tight-aggressive baseline. They
- * are spread evenly across the pool so a random draw cannot produce a table of
- * six maniacs. The names are the compatibility IDs here, not the labels --
- * personalityProfiles and the preflop chart are both keyed on them.
+ * Identity (name/face) and personality (how it plays) are deliberately
+ * separate axes -- see `pickBotPersonality` below for the latter. This pool
+ * is only ever the former.
  */
 const botProfiles: Array<{
   name: string;
@@ -58,31 +55,59 @@ const botProfiles: Array<{
   accent: string;
   avatarUrl: null;
   avatarPreset: string;
-  personality: BotPersonality;
 }> = [
-  { name: "Jax", initials: "JX", accent: "#8fd6a8", avatarUrl: null, avatarPreset: "lucky", personality: "ROCK" },
-  { name: "Maya", initials: "MA", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond", personality: "MANIAC" },
-  { name: "Theo", initials: "TH", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt", personality: "CALLING_STATION" },
-  { name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
-  { name: "Priya", initials: "PR", accent: "#65d6a2", avatarUrl: null, avatarPreset: "ace", personality: "MANIAC" },
-  { name: "Wren", initials: "WR", accent: "#f08ca7", avatarUrl: null, avatarPreset: "crown", personality: "CALLING_STATION" },
-  { name: "Cole", initials: "CO", accent: "#9ad9c0", avatarUrl: null, avatarPreset: "lucky", personality: "ROCK" },
-  { name: "Nadia", initials: "ND", accent: "#e0a4ff", avatarUrl: null, avatarPreset: "diamond", personality: "MANIAC" },
-  { name: "Marco", initials: "MC", accent: "#ffb38c", avatarUrl: null, avatarPreset: "bolt", personality: "CALLING_STATION" },
-  { name: "Dmitri", initials: "DM", accent: "#8ec4f0", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
-  { name: "Aisha", initials: "AS", accent: "#7fd8b4", avatarUrl: null, avatarPreset: "ace", personality: "MANIAC" },
-  { name: "Sofia", initials: "SF", accent: "#f5a0bd", avatarUrl: null, avatarPreset: "crown", personality: "CALLING_STATION" },
-  { name: "Kenji", initials: "KJ", accent: "#a8cf8f", avatarUrl: null, avatarPreset: "lucky", personality: "ROCK" },
-  { name: "Rosa", initials: "RS", accent: "#cf9bf0", avatarUrl: null, avatarPreset: "diamond", personality: "MANIAC" },
-  { name: "Emeka", initials: "EM", accent: "#ffc79a", avatarUrl: null, avatarPreset: "bolt", personality: "CALLING_STATION" },
-  { name: "Lena", initials: "LE", accent: "#96bfe8", avatarUrl: null, avatarPreset: "river", personality: "ROCK" },
-  { name: "Tobias", initials: "TB", accent: "#6fcfa8", avatarUrl: null, avatarPreset: "ace", personality: "MANIAC" },
-  { name: "Yara", initials: "YA", accent: "#eb9db4", avatarUrl: null, avatarPreset: "crown", personality: "CALLING_STATION" },
+  { name: "Jax", initials: "JX", accent: "#8fd6a8", avatarUrl: null, avatarPreset: "lucky" },
+  { name: "Maya", initials: "MA", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond" },
+  { name: "Theo", initials: "TH", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt" },
+  { name: "River", initials: "RV", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river" },
+  { name: "Priya", initials: "PR", accent: "#65d6a2", avatarUrl: null, avatarPreset: "ace" },
+  { name: "Wren", initials: "WR", accent: "#f08ca7", avatarUrl: null, avatarPreset: "crown" },
+  { name: "Cole", initials: "CO", accent: "#9ad9c0", avatarUrl: null, avatarPreset: "lucky" },
+  { name: "Nadia", initials: "ND", accent: "#e0a4ff", avatarUrl: null, avatarPreset: "diamond" },
+  { name: "Marco", initials: "MC", accent: "#ffb38c", avatarUrl: null, avatarPreset: "bolt" },
+  { name: "Dmitri", initials: "DM", accent: "#8ec4f0", avatarUrl: null, avatarPreset: "river" },
+  { name: "Aisha", initials: "AS", accent: "#7fd8b4", avatarUrl: null, avatarPreset: "ace" },
+  { name: "Sofia", initials: "SF", accent: "#f5a0bd", avatarUrl: null, avatarPreset: "crown" },
+  { name: "Kenji", initials: "KJ", accent: "#a8cf8f", avatarUrl: null, avatarPreset: "lucky" },
+  { name: "Rosa", initials: "RS", accent: "#cf9bf0", avatarUrl: null, avatarPreset: "diamond" },
+  { name: "Emeka", initials: "EM", accent: "#ffc79a", avatarUrl: null, avatarPreset: "bolt" },
+  { name: "Lena", initials: "LE", accent: "#96bfe8", avatarUrl: null, avatarPreset: "river" },
+  { name: "Tobias", initials: "TB", accent: "#6fcfa8", avatarUrl: null, avatarPreset: "ace" },
+  { name: "Yara", initials: "YA", accent: "#eb9db4", avatarUrl: null, avatarPreset: "crown" },
 ];
 
 function botProfileFor(identity: number): (typeof botProfiles)[number] {
   const length = botProfiles.length;
   return botProfiles[((identity % length) + length) % length];
+}
+
+/**
+ * How a bot plays, rolled independently of which name/face (`botIdentity`)
+ * it happens to be wearing -- unlike identity, personality is not required to
+ * be unique at a table; a real cash game has more than one loose-passive
+ * player in it at once.
+ *
+ * The three that exist are the three worth having, and the names are
+ * compatibility IDs rather than labels (`personalityProfiles` and the
+ * preflop chart are both keyed on them):
+ *
+ *  - `MANIAC` -- "Loose Cannon": very aggressive, plays a wide range, shoves
+ *    with merely-good equity rather than only the nuts.
+ *  - `ROCK` -- "Table Captain": balanced-aggressive, plays a tighter range
+ *    well and punishes limpers.
+ *  - `CALLING_STATION` -- "Whale": very loose, very passive, wants to see
+ *    almost every flop and rarely raises without a monster.
+ *
+ * Weighted 35/45/20 (Loose Cannon/Table Captain/Whale) rather than the even
+ * split the pool identities used to imply, and rolled with `randomInt` (not
+ * `Math.random`) to match every other source of table randomness in this
+ * file.
+ */
+function pickBotPersonality(): BotPersonality {
+  const roll = randomInt(100);
+  if (roll < 35) return "MANIAC";
+  if (roll < 80) return "ROCK";
+  return "CALLING_STATION";
 }
 
 /**
@@ -195,25 +220,77 @@ export const BUSTED_REBUY_GRACE_MS = 20_000;
 export const MAX_MISSED_TURNS = 3;
 
 /**
- * How many funded seats the table tops itself back up to when bots bust.
+ * How many funded seats the table tops itself back up to.
  *
- * Four, not six. A busted bot used to stay busted, so a table walked
- * 6 -> 5 -> 4 and eventually stopped dead; refilling every one of them
- * instead pins the table at six forever, which quietly deletes short-handed
- * play and turns bot stacks into a renewable chip source. Four keeps a table
- * that reads as busy while leaving both bounded.
+ * Six -- the whole table. Used to be four, deliberately: a busted bot that
+ * refilled instantly, forever, read as bot stacks becoming a renewable chip
+ * source, and this was the blunt cap on that. It's a worse trade than it
+ * looks: to a real player two seats sitting empty indefinitely reads as a
+ * shrinking tournament, not a cash table they can walk back into. The actual
+ * guardrail now lives in *when* a seat refills, not *whether* it's allowed
+ * to: a bot that busts from losing its stack still refills the same hand it
+ * always has, but a healthy bot's voluntary departure
+ * (`BOT_VOLUNTARY_LEAVE_CHANCE` below) is staggered by
+ * `BOT_REENTRY_DELAY_MIN_MS`/`MAX_MS` rather than instant -- which is also
+ * what keeps the table from just pinning at six occupied seats all the time.
  *
  * Read through fundedFloor() rather than directly, and overridable by env for
  * the same reason TURN_TIMEOUT_MS is: the blind rules for a table that has
  * shrunk below the floor are still real rules worth testing, and the tests
  * that cover them need to be able to produce that table.
  */
-export const TABLE_FUNDED_FLOOR = 4;
+export const TABLE_FUNDED_FLOOR = 6;
 
 function fundedFloor(): number {
   const override = Number(process.env.RIVER_TABLE_FUNDED_FLOOR);
   return Number.isFinite(override) && override > 0 ? override : TABLE_FUNDED_FLOOR;
 }
+
+/**
+ * Chance, per hand boundary, that a currently-funded bot seat decides it's
+ * done and stands up on its own -- what makes a table feel like real
+ * traffic instead of a fixed cast that only ever turns over by losing.
+ *
+ * Zero whenever `process.env.VITEST` is set (the same guard `logTurn` in
+ * `lib/server/game-store.ts` already uses), regardless of the env override
+ * below. This rolls inside `releaseBustedSeats`, which hundreds of existing
+ * tests reach directly or indirectly through `setupHand`/`dealNextHandIfDue`,
+ * and none of them expect a seat count to change out from under a
+ * deterministic assertion -- so production gets real randomness and the test
+ * suite gets none, by default, unless a test explicitly opts in.
+ *
+ * `RIVER_BOT_LEAVE_CHANCE` is read manually rather than through the `|| `
+ * idiom used elsewhere in this file: `Number("0") || 0.05` would silently
+ * discard an explicit "disable this" override, and the tests that exercise
+ * this feature need to set it to exactly `0` or `1` and have that stick.
+ */
+function botVoluntaryLeaveChance(): number {
+  const raw = process.env.RIVER_BOT_LEAVE_CHANCE;
+  if (raw !== undefined) {
+    const override = Number(raw);
+    if (Number.isFinite(override)) return override;
+  }
+  return process.env.VITEST ? 0 : 0.05;
+}
+
+/**
+ * How long a bot seat that voluntarily left stays empty before it's eligible
+ * to be refilled -- the staggered "weird timing" a real table's traffic has,
+ * versus an empty chair refilling itself the instant it empties. A seat
+ * busted from losing its stack never sets this; only a voluntary departure
+ * (see `releaseBustedSeats`) does.
+ *
+ * Functions, not top-level constants, for the same reason `fundedFloor()` is:
+ * a plain `export const` reads its env override exactly once, at module
+ * import, before any test's `vi.stubEnv` has run.
+ */
+function botReentryDelayMinMs(): number {
+  return Number(process.env.RIVER_BOT_REENTRY_DELAY_MIN_MS) || 30_000;
+}
+function botReentryDelayMaxMs(): number {
+  return Number(process.env.RIVER_BOT_REENTRY_DELAY_MAX_MS) || 180_000;
+}
+
 export const BOT_DECISION_MIN_MS = 1_200;
 export const BOT_DECISION_MAX_MS = 5_200;
 
@@ -299,7 +376,10 @@ function restoreBotControl(seat: Seat, identity: number = seat.position) {
   // player's profile id is a seat the table can still address as them.
   seat.profileId = null;
   seat.botIdentity = identity;
-  seat.personality = fallback.personality;
+  // Rolled fresh on every reseat, not carried over from whoever wore this
+  // identity last -- the bot that sits back down needn't play like the one
+  // that left, and it decouples "which name/face" from "how it plays".
+  seat.personality = pickBotPersonality();
   seat.name = fallback.name;
   seat.initials = fallback.initials;
   seat.accent = fallback.accent;
@@ -312,6 +392,10 @@ function restoreBotControl(seat: Seat, identity: number = seat.position) {
   seat.cardBackCosmetic = botCardBackFor(identity);
   seat.timeCardsRemaining = 0;
   seat.missedTurns = 0;
+  // Cleared on every reseat, not just set by the voluntary-leave path that
+  // uses it: a seat coming back under any circumstance is funded and playing
+  // again, so a stale future timestamp must not linger.
+  seat.reseatEligibleAt = null;
 }
 
 /**
@@ -393,7 +477,7 @@ function reseat(state: GameState, seat: Seat) {
   seat.status = "active";
 }
 
-function releaseBustedSeats(state: GameState) {
+function releaseBustedSeats(state: GameState, now: number = Date.now()) {
   // Busted humans first, and unconditionally: their seat is reclaimed because
   // they are gone, not to keep the table populated, so the floor has no say in
   // it. Doing them first also means the bots below count the seats these just
@@ -405,15 +489,41 @@ function releaseBustedSeats(state: GameState) {
     addLog(state, `${playerName} is out of chips and leaves the table`);
   });
 
-  // Busted bots only up to the floor. Refilling every one of them on the spot
-  // would pin the table at six funded seats forever, which costs two things
-  // worth keeping: short-handed play stops existing, and the bot stacks --
-  // minted, not backed by Gold -- become a renewable source of chips that a
-  // winning player converts to Gold on cash-out. Stopping at the floor keeps
-  // the table looking alive and bounds both.
+  // A healthy bot occasionally decides it's done and stands up on its own --
+  // this, not busting, is now the main way a table's cast turns over, since
+  // busted bots refill the same hand they always have (below). Never below
+  // three funded seats (itself plus at least two others), so this can never
+  // be what strands a table for want of players.
+  const leaveChance = botVoluntaryLeaveChance();
+  if (leaveChance > 0) {
+    for (const seat of state.seats) {
+      if (seat.isHuman || seat.stack <= 0) continue;
+      if (state.seats.filter((other) => other.stack > 0).length <= 2) break;
+      if (secureBotRandom() >= leaveChance) continue;
+      const departingName = seat.name;
+      seat.status = "out";
+      seat.stack = 0;
+      // The one place this ever gets set. A seat that busts from losing its
+      // stack (below) leaves it null and refills immediately, same as today.
+      seat.reseatEligibleAt = new Date(
+        now + randomInt(botReentryDelayMinMs(), botReentryDelayMaxMs() + 1),
+      ).toISOString();
+      addLog(state, `${departingName} cashes out and heads home`);
+    }
+  }
+
+  // Busted bots -- from losing their stack, or from voluntarily leaving just
+  // above -- refill up to the floor, skipping any seat still waiting out its
+  // own stagger. Refilling every one of them on the spot would pin the table
+  // at six funded seats forever, which costs two things worth keeping:
+  // short-handed play stops existing, and the bot stacks -- minted, not
+  // backed by Gold -- become a renewable source of chips that a winning
+  // player converts to Gold on cash-out. The floor (now six, see
+  // TABLE_FUNDED_FLOOR) plus the stagger above are what bound that instead.
   const floor = fundedFloor();
   for (const seat of state.seats) {
     if (seat.isHuman || seat.stack > 0) continue;
+    if (seat.reseatEligibleAt && Date.parse(seat.reseatEligibleAt) > now) continue;
     if (state.seats.filter((other) => other.stack > 0).length >= floor) break;
     const departingName = seat.name;
     reseat(state, seat);
@@ -453,8 +563,8 @@ function dealToCommunity(state: GameState, count: number) {
   }
 }
 
-function setupHand(state: GameState, firstHand = false) {
-  if (!firstHand) releaseBustedSeats(state);
+function setupHand(state: GameState, firstHand = false, now: number = Date.now()) {
+  if (!firstHand) releaseBustedSeats(state, now);
   // Cleared before the funded check, so the dead-table branch below leaves it
   // null rather than inheriting the deadline that brought us here -- which
   // would have every browser retry an advance that can never succeed.
@@ -595,6 +705,7 @@ export function createGame(
       timeCardsRemaining: STARTING_TIME_CARDS,
       missedTurns: 0,
       vpip: false,
+      reseatEligibleAt: null,
     },
     // Bounded by SEAT_COUNT, not by the pool: the pool is deliberately longer
     // than the table so rotation has somewhere to draw from, and slicing it
@@ -609,6 +720,7 @@ export function createGame(
       ownerToken: null,
       profileId: null,
       botIdentity: index + 1,
+      personality: pickBotPersonality(),
       stack: randomBotStack(buyIn, config.bigBlind),
       status: "active",
       holeCards: [],
@@ -620,6 +732,7 @@ export function createGame(
       timeCardsRemaining: 0,
       missedTurns: 0,
       vpip: false,
+      reseatEligibleAt: null,
     })),
   ];
 
@@ -663,6 +776,10 @@ export function createGame(
  * seat under their session token. If they already own a seat here (e.g.
  * revisiting a room-code link), returns that seat instead of claiming a new
  * one. A seat a previous occupant busted out of gets a fresh buy-in.
+ *
+ * Claiming a seat mid-hand does not buy into the hand already in progress:
+ * the new occupant sits out (see `takingOverLiveHand` below) and joins at the
+ * next deal, same as sitting down between hands at a real table.
  */
 export function claimSeat(
   state: GameState,
@@ -684,6 +801,16 @@ export function claimSeat(
   if (seat.committed > paidBuyIn) {
     throw new Error("Choose a buy-in that covers this seat's committed chips.");
   }
+  // The bot in this seat can be mid-hand -- dealt in, maybe already acted or
+  // folded -- the instant a human claims it. Those hole cards and that
+  // position were never this player's to inherit: without this, they took
+  // over the bot's actual hand, which could hand them a live turn (or even an
+  // uncontested win) on cards they never saw dealt. `status !== "out"`
+  // excludes the seat that was already sitting out this hand for want of
+  // funding at the table floor -- there is nothing to neutralize there.
+  const takingOverLiveHand = state.status === "playing" && seat.status !== "out";
+  const wasCurrentTurn = state.currentPlayer === seatIndex;
+
   seat.isHuman = true;
   seat.ownerToken = token;
   // The one place a profile id enters a seat. Guests stay null: a guest
@@ -708,7 +835,35 @@ export function claimSeat(
   // this seat already committed before the bot was replaced. Resetting the
   // behind-stack to the full buy-in would mint every posted blind/bet again.
   seat.stack = paidBuyIn - seat.committed;
-  if (state.currentPlayer === seatIndex) setCurrentPlayer(state, seatIndex);
+  // Never inherited, live hand or not: stale hole cards left over from
+  // whoever or whatever sat here before are not this occupant's to see.
+  seat.holeCards = [];
+
+  if (takingOverLiveHand) {
+    // Sat out for the rest of this hand -- the same status setupHand already
+    // gives a seat with no stake in the current hand, and the one it will
+    // overwrite back to "active" at the very next deal. The seat keeps
+    // whatever it already committed to this pot; that is now contested chips,
+    // exactly as when any other seat leaves mid-hand.
+    seat.status = "out";
+    seat.acted = false;
+    seat.actedAtBet = null;
+    seat.lastAction = null;
+    const contenders = remaining(state);
+    if (contenders.length === 1) {
+      awardUncontested(state, contenders[0]);
+    } else if (wasCurrentTurn) {
+      // It was this seat's turn the moment it changed hands. Nobody can act
+      // in its place, so play moves on exactly as it would if this seat had
+      // just folded.
+      if (bettingComplete(state)) {
+        advanceStreet(state);
+      } else {
+        setCurrentPlayer(state, nextSeat(state, seatIndex, canAct));
+        if (state.currentPlayer === null) advanceStreet(state);
+      }
+    }
+  }
 
   state.version += 1;
   state.updatedAt = new Date().toISOString();
@@ -1067,28 +1222,61 @@ const personalityProfiles: Record<
     equityAdjustment: number;
     slowPlayFrequency: number;
     postflopBetSizes: number[];
+    /**
+     * Chance to ignore the tier chart's hard preflop fold on a "trash" hand
+     * and fall through to the normal call/raise/fold cascade instead, same as
+     * the personality-independent `BOT_BLUFF_FREQUENCY` gate already does at
+     * 5% -- this is the actual VPIP knob per personality; everything else
+     * here only shapes what happens once a hand is already being played.
+     */
+    trashContinueChance: number;
+    /**
+     * Shaves this many percentage points off the equity bar a shove needs to
+     * clear postflop (see `postflopShove` in `chooseBotAction`). Zero for
+     * everyone but the Loose Cannon, who reaches for all-in with merely-good
+     * equity/a strong draw rather than only the nuts.
+     */
+    shoveEquityDiscount: number;
+    /**
+     * Added to the raise-decision threshold when at least one seat has
+     * already limped in preflop. Zero for everyone but the Table Captain,
+     * whose whole thing is punishing a limp with a raise.
+     */
+    limperPunishBonus: number;
   }
 > = {
+  // "Loose Cannon" -- very aggressive, wide range, shoves early.
   MANIAC: {
-    aggression: 0.7,
-    callTolerance: 0.025,
-    equityAdjustment: 0.025,
+    aggression: 0.72,
+    callTolerance: 0.08,
+    equityAdjustment: 0.02,
     slowPlayFrequency: 0.06,
-    postflopBetSizes: [0.5, 0.66, 0.75, 1],
+    postflopBetSizes: [0.6, 0.75, 0.9, 1.25],
+    trashContinueChance: 0.38,
+    shoveEquityDiscount: 0.08,
+    limperPunishBonus: 0,
   },
+  // "Table Captain" -- balanced-aggressive, plays a tighter range well.
   ROCK: {
-    aggression: 0.44,
-    callTolerance: -0.025,
-    equityAdjustment: -0.015,
+    aggression: 0.5,
+    callTolerance: 0,
+    equityAdjustment: -0.005,
     slowPlayFrequency: 0.18,
-    postflopBetSizes: [0.33, 0.5, 0.66, 0.75],
+    postflopBetSizes: [0.33, 0.5, 0.66, 0.75, 1],
+    trashContinueChance: 0.14,
+    shoveEquityDiscount: 0,
+    limperPunishBonus: 0.18,
   },
+  // "Whale" -- very loose, very passive, wants to see almost every flop.
   CALLING_STATION: {
-    aggression: 0.2,
-    callTolerance: 0.085,
-    equityAdjustment: 0.015,
+    aggression: 0.14,
+    callTolerance: 0.18,
+    equityAdjustment: 0,
     slowPlayFrequency: 0.12,
     postflopBetSizes: [0.4, 0.5, 0.66],
+    trashContinueChance: 0.55,
+    shoveEquityDiscount: 0,
+    limperPunishBonus: 0,
   },
 };
 
@@ -1311,6 +1499,14 @@ export function chooseBotAction(
   const bluffWindow = position >= 0.58
     && effectiveEquity < baselineEquity + 0.04
     && decisionRoll < BOT_BLUFF_FREQUENCY;
+  // The actual VPIP knob: a personality-specific chance to play a "trash"
+  // hand anyway rather than being blocked from ever trying, on the same
+  // `decisionRoll` the bluff gate above already reads -- no extra random()
+  // call, so this doesn't shift any downstream draw a seeded test depends on.
+  const trashContinueRoll = decisionRoll < style.trashContinueChance;
+  const preflopLimpers = state.street === "preflop"
+    ? state.seats.filter((candidate) => candidate.vpip && candidate.streetBet === state.currentBet).length
+    : 0;
   const potSizedCap = state.currentBet === 0
     ? Math.max(state.bigBlind, state.pot)
     : state.currentBet + state.pot + legal.toCall;
@@ -1318,16 +1514,22 @@ export function chooseBotAction(
   const shouldRaise = legal.canRaise
     && (hasValueRaise || bluffWindow)
     && legal.minRaiseTo <= Math.min(potSizedCap, nonAllInCap)
-    && decisionRoll < Math.min(0.96, style.aggression + Math.max(0, effectiveEquity - baselineEquity));
+    && decisionRoll < Math.min(
+      0.96,
+      style.aggression
+        + Math.max(0, effectiveEquity - baselineEquity)
+        + (preflopLimpers > 0 ? style.limperPunishBonus : 0),
+    );
 
   if (legal.toCall > 0) {
-    // Weak offsuit holdings do not drift into multiway pots because a Monte
-    // Carlo roll happened to land high. The one exception is the explicit
-    // five-percent bluff gate, and even that raises rather than open-shoves.
+    // Weak offsuit holdings mostly do not drift into multiway pots because a
+    // Monte Carlo roll happened to land high -- the bluff gate and the
+    // personality's own looseness are the two ways in.
     if (
       state.street === "preflop"
       && startingTier === "trash"
       && !bluffWindow
+      && !trashContinueRoll
     ) {
       return { type: "fold" };
     }
@@ -1344,11 +1546,11 @@ export function chooseBotAction(
       && (
         (
           criticallyShort
-          && effectiveEquity >= potOdds + multiwayRiskPremium + 0.18
+          && effectiveEquity >= potOdds + multiwayRiskPremium + 0.18 - style.shoveEquityDiscount
         )
         || (
           potIsMassive
-          && effectiveEquity >= (opponents > 1 ? 0.9 : 0.82)
+          && effectiveEquity >= (opponents > 1 ? 0.9 : 0.82) - style.shoveEquityDiscount
         )
       );
     if (
@@ -1378,6 +1580,7 @@ export function chooseBotAction(
     state.street === "preflop"
     && startingTier === "trash"
     && !bluffWindow
+    && !trashContinueRoll
   ) {
     return legal.canCheck ? { type: "check" } : { type: "fold" };
   }
@@ -1425,6 +1628,12 @@ export function normalizeGameState(state: GameState): GameState {
   // which would make every comparison below NaN and release nobody, silently.
   state.seats.forEach((seat) => {
     if (!Number.isInteger(seat.missedTurns) || seat.missedTurns < 0) seat.missedTurns = 0;
+  });
+  // Tables persisted before staggered bot re-entry existed carry no
+  // eligibility timestamp at all -- null reads as "immediately eligible",
+  // which is exactly how every seat already behaved before this existed.
+  state.seats.forEach((seat) => {
+    if (typeof seat.reseatEligibleAt !== "string") seat.reseatEligibleAt = null;
   });
   state.seats.forEach((seat) => {
     if (!Number.isInteger(seat.timeCardsRemaining)) {
@@ -1585,7 +1794,7 @@ export function dealNextHandIfDue(
 
   // Before the deal, so the next hand is dealt to whoever is actually here.
   const released = releaseInactiveSeats(state);
-  setupHand(state);
+  setupHand(state, false, now);
   state.version += 1;
   state.updatedAt = new Date(now).toISOString();
   return { state, dealt: true, released };

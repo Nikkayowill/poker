@@ -327,9 +327,18 @@ export async function spendGold(token: string, amount: number): Promise<PlayerPr
 /**
  * Returns Gold to a player: a cash-out when they leave a table, or a refund
  * for a spend that bought nothing (a seat claim or rebuy that failed to
- * persist). This is a rare path rather than the spend hot path, so it uses a
- * plain read-then-write rather than a guarded RPC -- a slight race here would
- * only ever over-refund in the player's favor.
+ * persist).
+ *
+ * The Supabase path uses the `credit_gold` RPC (a guarded read-lock-then-
+ * write, mirroring `spend_gold`) rather than a read-then-write, for the same
+ * reason `spendGold` does: two concurrent credits to the same token -- a
+ * rebuy refund racing a cash-out credit, or two browser tabs -- could
+ * otherwise both read the same stale balance, and the second write would
+ * silently drop the first. This used to be a plain read-then-write on the
+ * reasoning that a slight race here would only ever over-refund; in fact the
+ * race under-credits (a lost update), and bot seats now carry deeper,
+ * randomized stacks (see `randomBotStack` in `lib/game/engine.ts`), so the
+ * amount a dropped credit could cost is no longer small.
  *
  * Mirrors spendGold's unlimited-Gold handling exactly, and must keep doing
  * so: an unlimited profile is never charged a buy-in, so paying its stack
@@ -348,21 +357,17 @@ export async function creditGold(token: string, amount: number): Promise<PlayerP
     return publicProfile(next);
   }
 
-  const { data: current, error: readError } = await supabase
+  const { data, error } = await supabase.rpc("credit_gold", { p_token: token, p_amount: amount }).single();
+  if (error) throw new Error(`Could not credit Gold: ${error.message}`);
+  const result = data as { success: boolean; gold_balance: number } | null;
+  if (!result?.success) throw new Error("Profile not found.");
+  const { data: row, error: readError } = await supabase
     .from("profiles")
     .select("*")
     .eq("session_token", token)
     .single();
   if (readError) throw new Error(`Could not load profile: ${readError.message}`);
-  if (current.unlimited_gold) return publicProfile(fromRow(current));
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({ gold_balance: Number(current.gold_balance) + amount, updated_at: now })
-    .eq("session_token", token)
-    .select("*")
-    .single();
-  if (error) throw new Error(`Could not credit Gold: ${error.message}`);
-  return publicProfile(fromRow(data));
+  return publicProfile(fromRow(row));
 }
 
 /**

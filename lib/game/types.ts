@@ -108,6 +108,19 @@ export interface Seat {
    * to record that hand's stat and never touched again until the next deal.
    */
   vpip: boolean;
+  /**
+   * ISO timestamp before which an empty bot seat (`stack <= 0`, `!isHuman`)
+   * must not be refilled; `null` means immediately eligible.
+   *
+   * Only ever set by a *healthy* bot voluntarily standing up between hands
+   * (see `releaseBustedSeats` in `lib/game/engine.ts`) -- a bot that busts
+   * from losing its stack is refilled the same hand it always was, exactly
+   * as a real seat with no bankroll left is removed immediately. This is
+   * what staggers a fresh bot's entry rather than an empty seat refilling
+   * itself the instant it empties, without inventing a new occupancy state:
+   * the seat renders exactly like any other `"out"` seat in the meantime.
+   */
+  reseatEligibleAt: string | null;
 }
 
 export interface Winner {

@@ -9,6 +9,7 @@ import { accountsEnabled } from "@/lib/auth/client";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
 import { LandingSections } from "@/components/auth/landing-sections";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
+import { InstallPrompt } from "@/components/install-prompt";
 import { BuyInModal } from "./buy-in-modal";
 
 export function Lobby({
@@ -190,6 +191,7 @@ export function Lobby({
             </button>
           </div>
         )}
+        <InstallPrompt />
         <div className="hub-head">
           <div className="lobby-kicker">StackChips · 6-max</div>
           <h1>Pick your game.</h1>

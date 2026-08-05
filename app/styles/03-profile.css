@@ -1,10 +1,10 @@
 /* Gold badge, avatar disc and the profile trigger. */
 
 .gold-balance {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  color: #f0dfaa;
+  gap: 4px;
+  white-space: nowrap;
 }
 .gold-balance strong { display: inline-block; font-size: 12px; font-weight: 750; }
 .gold-balance svg { color: var(--gold); }

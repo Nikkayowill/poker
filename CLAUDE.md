@@ -52,9 +52,10 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   a Preview deployment for review, then explicitly reverted at the user's
   request before it reached `main` — the palette stays green-felt/gold-brass,
   full stop, per `feedback_stackchips_visual_identity` in project memory.
-  Don't resurrect that work without a fresh explicit instruction. M16's
-  remaining invite work is still parked, not abandoned — see the M16 note
-  below.
+  Don't resurrect that work without a fresh explicit instruction. Active
+  slice is now the "away" bot-departure visual (see its own bullet below).
+  M16's remaining invite work is still parked, not abandoned — see the M16
+  note below.
 - Manifest (`app/manifest.ts`) now locks `orientation: "portrait-primary"`
   and ships real icons: `public/icons/icon-192.png` / `icon-512.png` /
   `icon-512-maskable.png`, rasterized from the existing `app/icon.svg` mark
@@ -128,7 +129,35 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 - `GoldBadge` (`components/profile/gold-badge.tsx`, the navbar balance) no
   longer prefixes the number with a `"Gold: "` label — just the coin icon and
   the amount (or `Unlimited`). `.gold-balance` is a flex row with `gap: 4px`
-  between children, so dropping the label span needed no CSS change.
+  between children, so dropping the label span needed no CSS change. The
+  `.gold-badge` pill's own border is gone too (`app/styles/02-app-shell.css`)
+  — background/padding/radius stay, just no outline around it.
+- A departed bot's seat no longer vanishes or resets on the spot — it was
+  already almost true at the data layer (`reseat()` in engine.ts is the
+  *only* place a departed bot's identity gets overwritten; a voluntary leave
+  only ever touches `status`/`stack`/`reseatEligibleAt`, per that field's own
+  comment on `Seat` in `lib/game/types.ts`), so this was a client-rendering
+  gap, not an engine change. `lib/game/seat-presence.ts` exports
+  `isBotAway(seat)` — `status === "out" && reseatEligibleAt !== null`, the
+  one signal that tells a bot's voluntary departure apart from every other
+  `"out"` seat (a busted human's rebuy grace, a seat claimed mid-hand).
+  `components/table/player-seat.tsx` uses it for a `.seat-away` class (fuller
+  grayscale + dimmer than an ordinary `.seat-muted` fold, in
+  `app/styles/08-seat.css`) and swaps the stack row's chip count — which
+  would otherwise misleadingly read "0" — for a fixed "Sitting out" label.
+  That label is intentionally not the old removed status-pill pattern:
+  `table-feed.spec.ts` asserts no seat prints a `.status-pill`/`.action-pill`
+  (variable-length prose that clipped under the table), and this is a
+  different class, a constant string, sitting in the stack row's existing box
+  rather than a new floating element, so it can't reproduce that bug. Pure
+  logic lives in `lib/game` rather than on the component specifically so it's
+  reachable by `npm test` — `vitest.config.ts`'s `include` only covers `lib/`
+  and `app/`, so nothing under `components/` runs today, which is also why
+  there's no React/RTL test here, only the six-case unit test on `isBotAway`
+  itself. Verified live, not just by reading the CSS: a memory-mode dev
+  server with `RIVER_BOT_LEAVE_CHANCE=1` forced multiple bots away in one
+  hand, and a Playwright check confirmed the grayscale/opacity/label on the
+  rendered seats and screenshotted the result.
 - Active slice (parked): M16 — friends and table invites. The friends half is landed
   end to end: `lib/server/friends-store.ts`, `/api/friends/*`, and the drawer
   plus lobby tile in `components/social/friends-drawer.tsx`. The table invite

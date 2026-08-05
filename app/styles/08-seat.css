@@ -218,6 +218,31 @@
 }
 .seat-muted .seat-plate { opacity: .62; }
 
+/* A bot that stood up on its own between hands (isBotAway in player-seat.tsx),
+   not merely folded this hand -- same figure, same name, so a table's
+   traffic reads as people leaving and arriving rather than seats blinking
+   in and out of existence. .seat-muted alone doesn't say "gone for a while"
+   versus "sat out this hand", so this pushes further: fully desaturated and
+   dimmer than an ordinary fold, on top of (source order, after) .seat-muted
+   so these values win over its lighter ones. Name stays at .seat-muted's
+   opacity -- readable is the point, "who's away" shouldn't require a squint. */
+.seat-away .seat-figure {
+  opacity: .4;
+  filter: grayscale(1) brightness(.65);
+}
+.seat-away .seat-plate { opacity: .55; }
+
+/* The label that replaces the (meaningless, zero) chip stack in .seat-
+   stack-row while away -- see the comment on that swap in player-seat.tsx
+   for why this is safe against the clipping bug the old status pills had. */
+.seat-away-badge {
+  color: #8a978f;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
 .seat-winner .seat-figure { z-index: calc(var(--seat-z, 4) + 1); }
 
 .winner-badge {

@@ -48,8 +48,13 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   safe-area fixes, the Adsterra CSP fix) — see the deploy note further down
   for the exact commit/PR this shipped in. Menu music is done as an *engine*
   (still silent — see its own bullet below for what "done" means there).
-  M16's remaining invite work is still parked, not abandoned — see the M16
-  note below.
+  Active slice is now Prestige Platinum UI: a silver/platinum metallic
+  treatment for the app's chrome (primary CTA buttons, the account entry
+  mark, the app menu dropdown, the hub tiles' accent color), landed on the
+  branch behind the PWA/CSP deploy rather than in the same push — see its
+  own bullet below for scope and why the felt/in-hand action buttons were
+  deliberately left alone. M16's remaining invite work is still parked, not
+  abandoned — see the M16 note below.
 - Manifest (`app/manifest.ts`) now locks `orientation: "portrait-primary"`
   and ships real icons: `public/icons/icon-192.png` / `icon-512.png` /
   `icon-512-maskable.png`, rasterized from the existing `app/icon.svg` mark
@@ -104,6 +109,26 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   hand-tuned, per that file's own comment about avoiding banding on real
   devices) or the green/gold palette itself, per prior guidance on this
   project.
+- Prestige Platinum UI: the first deliberate departure from the locked
+  green-felt/gold-brass palette (see `feedback_stackchips_visual_identity`
+  in project memory — that note requires an explicit new instruction before
+  touching palette, and the user's own "design a silver/platinum logo, give
+  the menu and action buttons a metallic platinum treatment" request is that
+  instruction). Scoped narrowly on purpose: a new `--platinum`/`--platinum-
+  light`/`--platinum-dark`/`--platinum-ink`/`--platinum-line` scale in
+  `app/styles/01-tokens.css`, applied to the app's *chrome* — every
+  `.primary-action`-family button (lobby CTAs, account entry, the action
+  bar's "Return to lobby"/rebuy/raise-confirm buttons), the account-entry
+  mark, the app menu dropdown (`20-menu.css`), and the hub tiles' focus/icon
+  accent color. Deliberately did **not** touch the felt, the four color-coded
+  in-hand action buttons (fold/check/call/raise — those are gameplay
+  affordances, not brand chrome, and recoloring them uniformly would cost
+  legibility), or the landing page's lower-scroll gold accents (social links,
+  footer, the secondary landing CTA) — flagging that scoping choice
+  explicitly rather than silently deciding the whole app repaints. Passing
+  tests/lint/build; held on the branch rather than deployed with the PWA/CSP
+  batch so it can be reviewed live before going to production — see the
+  deploy note for how to preview it.
 - The Adsterra CSP block (`app/layout.tsx`'s hardcoded ad script against
   `next.config.ts`'s CSP, previously flagged and left unfixed) is now fixed:
   `next.config.ts` adds `https://*.effectivecpmnetwork.com` to `script-src`

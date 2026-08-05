@@ -15,6 +15,21 @@
   --muted: #8e9f97;
   --gold: #d9b85d;
   --gold-light: #efd98d;
+  /* Prestige Platinum: the accent for chrome that is *not* the felt/table --
+     primary CTA buttons, the account/hub mark, and the app menu. Deliberately
+     a separate axis from --gold/--gold-light rather than a replacement of
+     them: the felt stays green, the in-hand action buttons (fold/check/
+     call/raise) stay their existing color-coded hues for gameplay legibility,
+     and chip/pot copy on the felt stays gold. Only the app's own chrome --
+     the stuff that reads as "the menu" rather than "the table" -- moved to
+     this cooler, brushed-steel palette. See feedback_stackchips_visual_
+     identity in project memory for why this needed an explicit new
+     instruction before touching anything gold. */
+  --platinum: #b8c0c6;
+  --platinum-light: #f2f5f7;
+  --platinum-dark: #6e767d;
+  --platinum-ink: #14171a;
+  --platinum-line: rgba(197, 205, 212, .35);
   --surface: #111a17;
   --surface-2: #17221e;
   --line: rgba(255, 255, 255, 0.09);

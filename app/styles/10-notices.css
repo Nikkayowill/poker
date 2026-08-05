@@ -45,6 +45,14 @@
   background: #101a16;
   box-shadow: -30px 0 70px rgba(0,0,0,.4);
   animation: history-in .22s ease both;
+  /* Pinned flush to the top/right/bottom edges above, so a notch or a
+     landscape home-indicator sits directly over the close button and the
+     history list otherwise -- unlike the header/action-bar chrome, nothing
+     else in this shell was already absorbing that inset. Zero on any
+     display without one. */
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 @keyframes history-in { from { transform: translateX(100%); } }

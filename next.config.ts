@@ -6,9 +6,18 @@ import type { NextConfig } from "next";
 // Next.js dev mode (Fast Refresh, React's dev-mode error overlay) relies on
 // eval(); that never ships in a production bundle, so it's only relaxed here.
 const isDev = process.env.NODE_ENV !== "production";
+// app/layout.tsx loads an Adsterra ad unit (the atOptions inline script plus
+// its effectivecpmnetwork.com loader). Adsterra serves that unit's creative
+// from other subdomains of the same registrable domain rather than a fixed
+// host, and a 'format: iframe' unit renders its creative inside an iframe --
+// so this needs the wildcard on both script-src (the loader) and a new
+// frame-src (the ad iframe itself), not just the one exact host from
+// app/layout.tsx. Everything else in the CSP is unchanged and still governs
+// the rest of the app; this widens the allow-list for exactly one ad vendor.
+const adsterraOrigin = "https://*.effectivecpmnetwork.com";
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' ${adsterraOrigin}${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://*.supabase.co",
   "font-src 'self' data:",
@@ -16,6 +25,7 @@ const csp = [
   // constructed from a blob: URL; without this it silently fails to record.
   "worker-src 'self' blob:",
   `connect-src 'self' https://*.supabase.co wss://*.supabase.co${isDev ? " ws:" : ""}`,
+  `frame-src ${adsterraOrigin}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

@@ -44,7 +44,83 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 ## Active milestone
 
 - Track: `ui-redesign-foundation`
-- Active slice: M16 — friends and table invites. The friends half is landed
+- Mobile PWA launch prep is done and live on production (installable shell,
+  safe-area fixes, the Adsterra CSP fix) — see the deploy note further down
+  for the exact commit/PR this shipped in. Menu music is done as an *engine*
+  (still silent — see its own bullet below for what "done" means there).
+  M16's remaining invite work is still parked, not abandoned — see the M16
+  note below.
+- Manifest (`app/manifest.ts`) now locks `orientation: "portrait-primary"`
+  and ships real icons: `public/icons/icon-192.png` / `icon-512.png` /
+  `icon-512-maskable.png`, rasterized from the existing `app/icon.svg` mark
+  via ImageMagick (the maskable variant pads the same art to an ~80% safe
+  zone on a solid background rather than reusing the flat SVG, which Android
+  would otherwise center-crop). `public/sw.js` bumped to
+  `stackchips-shell-v5` to precache them. New `components/install-prompt.tsx`
+  captures `beforeinstallprompt` for Android/desktop Chrome and shows an
+  instructional "Share → Add to Home Screen" variant on iOS Safari (which
+  never fires that event); it reuses the existing `.save-progress-notice`
+  shell from `components/lobby/lobby.tsx` verbatim rather than inventing a
+  new banner style, and its own dismissal persists to `localStorage` with a
+  14-day cooldown, not permanently. Mounted in the lobby hub, gated on
+  `entryComplete && profile && !game`.
+- Mobile safe-area audit found the app shell/action-bar/header already
+  handled `env(safe-area-inset-*)` correctly everywhere except one shared
+  shell: `.history-drawer` (`app/styles/10-notices.css`, reused verbatim by
+  `.friends-drawer`) had zero inset handling on any side, in either its
+  desktop right-slide-in form or its mobile bottom-sheet override
+  (`app/styles/12-responsive.css`). Fixed following the codebase's own
+  `max(Npx, env(...))` idiom — right/top insets on the side-drawer form,
+  left inset + a 16px-floored bottom inset on the bottom-sheet form (whose
+  `padding-top` is explicitly zeroed since that form no longer touches the
+  top edge). Verified against actual computed styles via a headless
+  Playwright check, not just by reading the CSS.
+- Menu music is now plug-and-play but still silent: `lib/audio/music-
+  manifest.ts` + `lib/audio/menu-music.ts` mirror the existing SFX
+  architecture (`lib/audio/manifest.ts` + `sound-effects.ts`) exactly —
+  cached looping `<audio>`, fade in/out, autoplay-blocked retry on the next
+  gesture — but `MENU_MUSIC_TRACK` is `null` by design, the same "no
+  verified asset yet" convention `lose`/`timeout`/`time-card` already use in
+  the SFX manifest. No royalty-free track was sourced or embedded — that
+  needs a real licensed file, which isn't something to fabricate or fetch
+  blind. Dropping one at the documented path and flipping that one constant
+  is the entire remaining step. Wired into `poker-app.tsx` exactly like the
+  existing `soundEnabled`/`toggleSound`/`SOUND_STORAGE_KEY` block (new
+  `musicEnabled`/`toggleMenuMusic`/`MUSIC_STORAGE_KEY`, a "Menu music: On/Off"
+  entry in `lobbyMenuItems`), started/stopped on the one screen boundary
+  that actually exists in this app: `!game` (lobby/hub) vs. `game` truthy
+  (seated at a table, hand or no hand in progress).
+- UI polish pass: the repeated flat 2-stop `linear-gradient(180deg, …)`
+  button fills across `app/styles/09-action-bar.css` (fold/check/call/raise/
+  primary, all six action buttons) and the gold CTAs in
+  `app/styles/04-lobby.css` (`.primary-action`, `.account-primary-action`,
+  `.landing-cta-primary`) were the clearest "generic template" tell — same
+  flat fade repeated on every button with no differentiation. Replaced with
+  a shared 3-stop, steeper-angle treatment (a lighter highlight stop near
+  the top) plus a thin inset top highlight on `.action-slot-controls
+  button`'s base box-shadow, so buttons read as an enameled/beveled surface
+  rather than a CSS-101 gradient swatch. Deliberately did not touch
+  `05-game-header.css`'s felt-lighting radial-gradients (already
+  hand-tuned, per that file's own comment about avoiding banding on real
+  devices) or the green/gold palette itself, per prior guidance on this
+  project.
+- The Adsterra CSP block (`app/layout.tsx`'s hardcoded ad script against
+  `next.config.ts`'s CSP, previously flagged and left unfixed) is now fixed:
+  `next.config.ts` adds `https://*.effectivecpmnetwork.com` to `script-src`
+  (the loader) and a new `frame-src` directive (the ad unit itself renders in
+  an iframe per its `format: 'iframe'` config, and CSP's `frame-src` falls
+  back to `default-src 'self'` when absent, which was blocking the iframe
+  independently of the script). Wildcarded on the subdomain rather than
+  pinned to `pl30614360...` because Adsterra serves creative from other
+  subdomains of the same registrable domain, not a fixed host. Worth noting
+  for whoever picks this back up: Adsterra is a known-aggressive ad network
+  (popunders/redirect creative are common complaints against it), and CSP
+  only constrains where a resource can load *from* — it doesn't vet what
+  that resource does once loaded. If the ad unit still doesn't render fully
+  live, or renders something that looks like a redirect/popunder rather than
+  a banner, the next domains to check are `img-src`/`connect-src`, not
+  `script-src`/`frame-src` again.
+- Active slice (parked): M16 — friends and table invites. The friends half is landed
   end to end: `lib/server/friends-store.ts`, `/api/friends/*`, and the drawer
   plus lobby tile in `components/social/friends-drawer.tsx`. The table invite
   half now has its read path: `lib/server/table-invite-store.ts` and

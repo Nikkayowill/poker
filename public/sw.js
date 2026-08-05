@@ -15,8 +15,18 @@
 // silently took the entire offline shell with it, including "/". That is a
 // lot of blast radius for one missing decorative file. Caching each entry
 // independently means a missing asset costs exactly itself.
-const CACHE_NAME = "stackchips-shell-v4";
-const SHELL = ["/", "/manifest.webmanifest", "/icon.svg"];
+//
+// v5: the 192/512/maskable PNG icons now exist (generated from icon.svg),
+// so they're back in SHELL.
+const CACHE_NAME = "stackchips-shell-v5";
+const SHELL = [
+  "/",
+  "/manifest.webmanifest",
+  "/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-512-maskable.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

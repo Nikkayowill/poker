@@ -203,6 +203,13 @@
     border-top: 1px solid var(--line);
     border-radius: 16px 16px 0 0;
     box-shadow: 0 -20px 60px rgba(0,0,0,.4);
+    /* No longer pinned to the top edge, so the base rule's top inset would
+       just be dead space here; left now matters since the sheet spans full
+       width edge to edge, and bottom gets a floor because this is the form
+       that actually sits over a home-indicator gesture bar. */
+    padding-top: 0;
+    padding-left: env(safe-area-inset-left);
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
   }
   @keyframes history-in { from { transform: translateY(100%); } }
 }

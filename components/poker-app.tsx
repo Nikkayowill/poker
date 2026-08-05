@@ -21,7 +21,8 @@ import {
 import type { PlayerProfile } from "@/lib/profile/types";
 import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
 import { tableSounds } from "@/lib/audio/table-sounds";
-import { Coins, Layers, LogOut, Settings2, Trophy, UserPlus } from "lucide-react";
+import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
+import { Coins, Layers, LogOut, Music2, Settings2, Trophy, UserPlus } from "lucide-react";
 import { Lobby } from "@/components/lobby/lobby";
 import { ProfileModal } from "@/components/profile/profile-modal";
 import { Menu, type MenuItem } from "@/components/nav/menu";
@@ -43,6 +44,7 @@ const SOUND_STORAGE_KEY = "stackchips:sound-enabled";
  * compatibility, not for style.
  */
 const LEGACY_SOUND_STORAGE_KEY = "river-room:sound-enabled";
+const MUSIC_STORAGE_KEY = "stackchips:menu-music-enabled";
 const MAX_REFRESH_RETRIES = 4;
 const REFRESH_RETRY_BASE_MS = 250;
 const REFRESH_RETRY_MAX_MS = 2_000;
@@ -63,6 +65,7 @@ export function PokerApp() {
   const [signInPending, setSignInPending] = useState(false);
   const [savePromptDismissed, setSavePromptDismissed] = useState(false);
   const [soundEnabled, setSoundEnabledState] = useState(true);
+  const [musicEnabled, setMusicEnabledState] = useState(true);
   // Set only by hostPrivate, cleared on dismiss: the share sheet is a
   // one-shot moment right after creating a room, not table state.
   const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null);
@@ -93,6 +96,14 @@ export function PokerApp() {
   }, []);
 
   useEffect(() => {
+    const stored = window.localStorage.getItem(MUSIC_STORAGE_KEY);
+    const enabled = stored !== "false";
+    setMenuMusicEnabled(enabled);
+    const timer = window.setTimeout(() => setMusicEnabledState(enabled), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => setRememberSession(readRememberAuthSession()), 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -106,6 +117,25 @@ export function PokerApp() {
       return next;
     });
   }, []);
+
+  const toggleMenuMusic = useCallback(() => {
+    setMusicEnabledState((current) => {
+      const next = !current;
+      window.localStorage.setItem(MUSIC_STORAGE_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    // The only screen boundary that actually exists in this app: `game` is
+    // null for the whole entry/lobby/hub experience and non-null for the
+    // whole time you're seated at a table, hand or no hand in progress. That
+    // is also exactly "menu" vs. "in-game" as far as menu music is concerned.
+    setMenuMusicEnabled(musicEnabled);
+    if (!musicEnabled) return;
+    if (game) stopMenuMusic();
+    else startMenuMusic();
+  }, [game, musicEnabled]);
 
   useEffect(() => {
     // Every rule about what the table sounds like lives in tableSounds, where
@@ -881,6 +911,13 @@ export function PokerApp() {
     { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
     { kind: "link", label: "Buy Gold", href: gameId ? `/store?table=${gameId}` : "/store", icon: <Coins size={15} /> },
     { kind: "link", label: "Leaderboard", href: "/leaderboard", icon: <Trophy size={15} /> },
+    { kind: "separator" },
+    {
+      kind: "action",
+      label: musicEnabled ? "Menu music: On" : "Menu music: Off",
+      onSelect: toggleMenuMusic,
+      icon: <Music2 size={15} />,
+    },
     { kind: "separator" },
     ...(profile ? [{ kind: "action" as const, label: "Edit profile", onSelect: () => setProfileOpen(true), icon: <Settings2 size={15} /> }] : []),
     profile?.isRegistered

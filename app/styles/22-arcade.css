@@ -1,0 +1,134 @@
+/* Arcade & Puzzles panel.
+ *
+ * The shell -- .hub-tile -- is reused from 04-lobby.css rather than
+ * re-declared, the same way .friends-drawer reuses .history-drawer in
+ * 21-friends.css. The border, radius, 16px padding, background layers and
+ * hover all come from there; this file only overrides what a list panel
+ * cannot inherit (it stacks top-down instead of bottom-aligning a label, and
+ * it is not a tap target) and then styles the rows.
+ *
+ * Loads after 04, so .hub-tile-arcade can safely narrow .hub-tile.
+ */
+
+.hub-tile-arcade {
+  --tile-tint: rgba(217,184,93,.06);
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 10px;
+  /* The whole panel is not clickable -- the per-row buttons are. */
+  cursor: default;
+  /* The art scrim in .hub-tile fades left-to-right for a bottom-left label.
+     This panel fills its whole box with text, so it takes an even wash. */
+  background-image:
+    linear-gradient(90deg, rgba(9,15,13,.94) 0%, rgba(9,15,13,.9) 100%),
+    linear-gradient(var(--tile-tint), var(--tile-tint)),
+    linear-gradient(160deg, #17241f, #0e1613);
+}
+.hub-tile-arcade:hover { transform: none; border-color: var(--line); }
+
+.arcade-head { display: flex; flex: 0 0 auto; align-items: center; gap: 9px; }
+.arcade-head svg { flex-shrink: 0; color: var(--gold-light); }
+.arcade-head-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.arcade-head-copy strong {
+  color: #f2f6f1;
+  font: 600 17px Georgia, serif;
+  letter-spacing: -.01em;
+}
+.arcade-head-copy small { color: #9fb0a7; font-size: 11.5px; line-height: 1.4; }
+
+.arcade-list {
+  flex: 1;
+  /* A flex item's min-height is auto, which refuses to shrink below its
+     content -- ten ~51px rows -- so the panel grew to 509px and dragged
+     every tile sharing its grid rows up with it. min-height:0 lets the cap
+     below actually bite and the list scroll instead.
+     230px is deliberately not a whole number of rows: it cuts the fifth one
+     in half, which is the only affordance saying "there is more here" now
+     that the scrollbar is hidden. */
+  min-height: 0;
+  max-height: 230px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  /* Scrollable, not scrollbar-drawn -- same reasoning as .friends-list in
+     21-friends.css: a platform scrollbar cuts a bright seam down felt-dark
+     chrome. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.arcade-list::-webkit-scrollbar { display: none; }
+
+.arcade-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* 10px rather than .friend-row's 12px: this list carries ten rows in a
+     grid cell, not a full-height drawer. */
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+}
+.arcade-row:last-child { border-bottom: 0; }
+.arcade-row-blocked { opacity: .72; }
+
+/* min-width:0 so a long name ellipsizes instead of shoving the stake and the
+   button off the edge -- a flex item's default min-width is auto. */
+.arcade-identity { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.arcade-identity strong {
+  overflow: hidden;
+  color: #dfe5df;
+  font: 500 12.5px Georgia, serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.arcade-identity small {
+  overflow: hidden;
+  color: #5c6b63;
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* .gold-balance (03-profile.css) draws the coin and the amount; this only
+   reserves the column so ten stakes of different widths stay in line. */
+.arcade-stake { flex: 0 0 auto; color: #d8c985; }
+.arcade-stake .gold-balance strong { font-size: 11px; }
+.arcade-free {
+  color: #7f9084;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* Both a <button> (blocked) and a next/link <a> (playable) wear this, so it
+   states the box explicitly rather than relying on button defaults. */
+.arcade-play {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 54px;
+  padding: 6px 10px;
+  color: #d8c985;
+  text-decoration: none;
+  border: 1px solid rgba(217,184,93,.25);
+  border-radius: 8px;
+  background: transparent;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color .16s ease, color .16s ease;
+}
+.arcade-play:hover:not(:disabled) { color: #f0dfaa; border-color: rgba(217,184,93,.5); }
+.arcade-play:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.arcade-play:disabled {
+  color: #59645e;
+  border-color: rgba(255,255,255,.08);
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arcade-play { transition: none; }
+}

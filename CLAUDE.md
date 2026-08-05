@@ -158,6 +158,119 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   server with `RIVER_BOT_LEAVE_CHANCE=1` forced multiple bots away in one
   hand, and a Playwright check confirmed the grayscale/opacity/label on the
   rendered seats and screenshotted the result.
+- The hub grid is four columns on desktop (`≥1024px`) and no longer leaves a
+  hole. The hole was arithmetic, not styling: at the old two-column cap the
+  small tiles were private/gold/collection/leaderboard/friends — five items in
+  a two-wide grid, so the last row held one tile and one empty cell, and
+  simply widening to four would have moved the hole rather than closed it. A
+  new fourth panel (`components/lobby/arcade-panel.tsx`, "Arcade & Puzzles")
+  plus explicit spans is what makes every cell land: arcade takes a 2×2 block,
+  friends and the room-code form take two columns each, and `.hub-tile-wide`
+  keeps its existing `1 / -1`. `.hub-tile-code`'s base `1 / -1` is
+  deliberately narrowed at that breakpoint — full width there would strand the
+  two cells beside friends. **Placement is by DOM order**, so the panel is
+  rendered between Buy Gold and Collection in `lobby.tsx`; moving it in the
+  source reopens the hole. Verified against real computed rects at
+  1440/820/390 via headless Playwright, not by reading the CSS.
+- The arcade panel is a `.hub-tile` (same border/radius/16px padding/hover as
+  every other panel) with a scrolling list inside, the same way
+  `.friends-drawer` reuses `.history-drawer`; `app/styles/22-arcade.css` holds
+  only list rules and is imported last in `app/globals.css`. `.arcade-list`
+  needs `min-height: 0` — a flex item's `min-height` is `auto`, so without it
+  the ten rows refused to shrink, the panel grew to 509px and dragged every
+  tile sharing its grid rows to 290px. The `max-height: 230px` cap is
+  deliberately not a whole number of rows: the half-cut fifth row is the only
+  "there is more here" affordance, since the scrollbar is hidden (same
+  reasoning as `.friends-list`).
+- **Blackjack 21 is the first live arcade game** (`lib/arcade/blackjack.ts`,
+  `/games/blackjack` via `app/(lobby)/games/blackjack/page.tsx` — `(lobby)` is
+  a route group, so the parens are not a path segment). The engine is pure and
+  synchronous like `lib/game/engine.ts`: every function takes a round and
+  returns the next one, which is what makes the whole rule set reachable from
+  `npm test` (37 cases) and what would let a server route own a round later
+  without rewriting any of it. House rules: one deck reshuffled per round,
+  dealer **stands on soft 17** (`total < DEALER_STANDS_ON`, one expression
+  covering hard and soft), naturals pay 3:2 and two naturals push, double down
+  on the opening two cards only, no split/insurance/surrender. `handTotal`
+  counts aces down from all-elevens so A-A-9 lands on 21 rather than 12 or 31.
+  `dealerUpCards` is what the view renders from, so the hole card is genuinely
+  absent from client state until the dealer's turn rather than merely hidden.
+- **Blackjack now settles against real Gold, and the server owns the deck.**
+  The client no longer deals: `app/api/arcade/blackjack` (GET resume, POST
+  deal) and `.../blackjack/actions` (POST hit/stand/double) hold the round,
+  and `components/arcade/blackjack-table.tsx` replaces its one snapshot with
+  whatever the API returns. The engine was already written for this and did
+  not change shape — `dealRound` takes `RandomInt`, so the route hands it
+  `node:crypto`'s `randomInt`.
+- Three ordering rules are the entire safety argument for that route, and
+  they are restated at the top of `lib/server/blackjack-service.ts` because
+  breaking any one of them is a silent money bug: (1) the stake is debited
+  *before* the round exists, and a deal that fails to persist refunds — the
+  reverse order deals a hand nobody paid for; (2) a payout is credited only
+  after the version-guarded write that settles the round is confirmed;
+  (3) because the stake already left the wallet, settlement is a single
+  credit of `stake + netGold` (`settlementPayout`) rather than a second debit
+  on a loss — a loss returns 0, a push the stake, a win twice it.
+- `blackjack_rounds.version` is the settlement idempotency key, not just a
+  concurrency guard. `advanceBlackjackRound` is an `UPDATE ... where version =
+  <what the client last saw> and status = 'active'` and returns **null** on a
+  lost race; null must never pay out. That is what makes a double-clicked
+  Stand, a retried request or two tabs settle exactly once. Verified live
+  against a memory-mode dev server, not just by unit test: 15/15 three-way
+  simultaneous settles accepted exactly one and credited exactly one payout,
+  and 10/10 three-way simultaneous deals charged exactly one stake. (When
+  racing that server by hand, establish the session cookie with a GET first —
+  concurrent cookieless requests each mint their own profile via
+  `readOrCreateSessionToken`, which looks exactly like a broken guard.)
+- The orchestration lives in `lib/server/blackjack-service.ts` rather than in
+  the handlers for the reason `lib/arcade/games.ts` and
+  `lib/game/seat-presence.ts` exist: `vitest.config.ts` collects only `lib/`
+  and `app/`. `toBlackjackErrorResponse` is in there too and returns a
+  `NextResponse` — every other file under `app/api` is a `route.ts`, and
+  `lib/server/api-auth.ts` already established that a `lib/server` module may
+  hand one back.
+- The service tests deliberately do **not** stack a deck: a seam to override
+  the route's randomness is a seam an attacker would want. They assert the
+  invariant `final balance === starting balance + netGold`, which has to hold
+  across wins, losses, pushes, naturals and busts alike; the per-outcome
+  payout arithmetic is pinned separately on `settlementPayout` in
+  `lib/arcade/blackjack.test.ts`.
+- A live round is resumed, never re-dealt. A refresh, a back-button or a
+  second tab hitting POST gets `resumed: true` and the existing round back
+  untouched — dealing again would debit twice for one hand. One live round
+  per profile is enforced by a partial unique index (and the equivalent check
+  in the memory branch), caught from the `23505` rather than by a
+  check-then-insert, since two concurrent deals both pass a read-first check
+  after each has already taken a stake.
+- `toBlackjackSnapshot` is the redaction boundary, and it is a real one: the
+  payload has no `deck` field at all (a test asserts `"deck" in snapshot` is
+  false, not merely that it is empty) and `dealerHand` is `dealerUpCards`, so
+  the hole card is absent from the wire until the dealer's turn rather than
+  merely unrendered. `canCoverStake` stays a pure display predicate — it
+  decides which stake buttons appear; `spendGold` is the authority.
+- `lib/game/deck.ts` is new: `SUITS`/`RANKS`/`DECK_TEMPLATE`/`makeDeck`, lifted
+  out of `engine.ts` unchanged so the arcade deals from the same deck the poker
+  table does. The shuffle takes `randomInt` as an argument rather than
+  importing it — `engine.ts` passes `node:crypto`'s, which a client page has no
+  access to, and importing it inside the shared module would drag it into the
+  browser bundle of anything wanting a deck. Fisher-Yates is byte-identical, so
+  no seeded test shifted.
+- The catalogue itself is `lib/arcade/games.ts`, not data inside the
+  component — `vitest.config.ts`'s `include` only covers `lib/` and `app/`, so
+  anything under `components/` is unreachable by `npm test` (same reason
+  `lib/game/seat-presence.ts` exists). Blackjack is `status: "live"` with an
+  `href`; the other nine are `"coming-soon"` with a null href, the same "shape
+  is finished, the switch is two fields" convention `MENU_MUSIC_TRACK` uses. A
+  test asserts live-iff-href, since a live entry with a null href renders an
+  unclickable Play and a coming-soon entry with an href is a 404 waiting to be
+  linked. Rows are already wallet-aware:
+  `toArcadeWallet`/`canAffordArcadeGame`/`arcadeBlockedReason` treat a missing
+  profile as an empty wallet (never unlimited — the hub renders during the
+  first-POST window before a profile exists) and honour `unlimitedGold` the
+  way the rest of the app does, and the stake renders through `.gold-balance`,
+  the navbar badge's own coin+amount layout. Casino entries are priced on the
+  `TIER_CONFIG` ladder (250–5,000); `kind: "puzzle"` is free and is a field
+  rather than something inferred from a zero cost.
 - Active slice (parked): M16 — friends and table invites. The friends half is landed
   end to end: `lib/server/friends-store.ts`, `/api/friends/*`, and the drawer
   plus lobby tile in `components/social/friends-drawer.tsx`. The table invite
@@ -407,8 +520,31 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   mirroring `spend_gold`/`claim_daily_gold`'s exact `SELECT ... FOR UPDATE`
   pattern; `creditGold` now calls it instead of reading then writing. No
   behavior change to the in-memory branch (already single-threaded) or to
-  any caller's contract. Not yet applied to the live Supabase project — no
-  local Postgres is available here, same constraint as the M15/M16
-  migrations; needs the same one-at-a-time dry-run-then-push treatment
-  before it's live.
+  any caller's contract.
+- **That `credit_gold` migration shipped its calling code to production
+  without ever being applied, and it cost players real Gold for a day.** The
+  code that calls the RPC went live in `ba3b5a4`; the migration sat local-only
+  until 2026-08-05. In between, `credit_gold` did not exist in the production
+  database, so every `creditGold` threw `PGRST202` — and both cash-out paths
+  (`app/api/games/[id]/actions/route.ts:114` and `lib/server/game-store.ts:311`)
+  swallow that failure by design, so a player leaving a table had their seat
+  released, was told `cashedOut: N`, and was credited nothing. The buy-in
+  refund paths (`games/route.ts`, `join/route.ts`, `quick-play/route.ts`) lost
+  their refunds the same silent way. Now applied and verified: `credit_gold`
+  returns 200 for `service_role`, 401 `permission denied` for `anon`, and
+  `migration list --linked` shows `local == remote`.
+- The lesson is a checklist item, not a one-off: **a migration and the code
+  that calls it are one change and must ship together.** Before merging
+  anything that adds a `.rpc(...)` call or reads a new table, run
+  `supabase migration list --linked` and confirm the backing migration is on
+  the remote — a Vercel deploy will happily ship code against a schema that
+  does not exist, and a `.catch(() => profile)` will hide it. `npx supabase`
+  (no local install needed) with `SUPABASE_ACCESS_TOKEN` from `.env.local` is
+  how this project talks to the live project; `supabase/.temp/project-ref`
+  holds the ref.
+- `supabase/migrations/20260805120000_blackjack_rounds.sql` (the
+  `blackjack_rounds` table) is the current pending one — **not yet applied to
+  production**, and the Blackjack routes are unusable there until it is. Same
+  one-at-a-time dry-run-then-push treatment, and per the point above it must
+  land *before or with* the code that reads it, not after.
 - Update this section when scope changes; keep `CLAUDE.md` synchronized.

@@ -263,6 +263,46 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   the hole card is absent from the wire until the dealer's turn rather than
   merely unrendered. `canCoverStake` stays a pure display predicate — it
   decides which stake buttons appear; `spendGold` is the authority.
+- **Cosmetics now travel to the arcade.** Blackjack was carrying neither slot:
+  the face-down card called `<PlayingCard card={null} large />` with no `back`
+  prop, so it drew the house deck no matter what the player had equipped — the
+  exact defect `PlayingCard`'s `back` prop was added to fix at the poker table
+  — and no avatar was rendered at all. Both slots of `EquippedCosmetics` are
+  wired now: `back={profile?.equipped.cardBack}` on the hole card, and
+  `<ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />`
+  beside the player's hand, which is the identical call `poker-table.tsx`
+  makes. The player's hand is labelled with their `displayName`, not "You" —
+  a generic label beside a face they chose reads as somebody else's seat.
+  Verified by buying and equipping a *non-default* pair on a live dev server
+  and reading the rendered result, not by assuming defaults prove the path:
+  the face-down card's base fill went `#1d4636` (house) → `#5a1f22` (oxblood)
+  and the avatar resolved to `/avatars/avatar-grinder-face.webp`.
+- The house dealer is **Vera** (`lib/arcade/dealer.ts` — name plus
+  `dealerLine(phase, outcome)`, in `lib/` because `vitest.config.ts` collects
+  only `lib/` and `app/`). The drawing is
+  `components/arcade/dealer-avatar.tsx`, inline SVG on the
+  `components/card-back-art.tsx` precedent rather than a shipped asset. It is
+  deliberately **not** a `ProfileAvatar` wearing some avatar cosmetic id: that
+  catalog is player property — bought, or earned via
+  `lib/server/avatar-unlocks.ts` — so dressing the house in one would imply
+  the dealer is a player and quietly devalue an item somebody ground for.
+- That dealer avatar must stay framed as a **face crop**, not a figure. The
+  first version drew a whole croupier inside the disc; at the 34px it actually
+  renders, the head was ~11px and the visor a green bar across it, reading as
+  a smudge beside the photographic `avatarFace()` crops it sits next to. Judge
+  any change to it against a real 34px render, not the 64-unit viewBox.
+- `dealerLine` returns constants, and a test caps them at 28 characters. Same
+  reasoning as the removed per-seat status pills: variable-length prose on the
+  felt is what clipped before. `.bj-hand-caption` also pins one line with an
+  ellipsis so a longer line added later clips instead of reflowing the felt.
+- **Blackjack is still the only arcade game that exists.** The other nine
+  entries in `lib/arcade/games.ts` are `status: "coming-soon"` with
+  `href: null` — catalogue rows, no engines, no routes, no client. There is
+  nothing there to server-validate; the poker table has been
+  server-authoritative from the start. When one of the nine is built, the
+  shape to copy is `lib/arcade/blackjack.ts` (pure engine, randomness by
+  injection) plus `lib/server/blackjack-service.ts` (the three ordering rules)
+  and a version-guarded round row.
 - `lib/game/deck.ts` is new: `SUITS`/`RANKS`/`DECK_TEMPLATE`/`makeDeck`, lifted
   out of `engine.ts` unchanged so the arcade deals from the same deck the poker
   table does. The shuffle takes `randomInt` as an argument rather than

@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { PlayingCard } from "@/components/table/playing-card";
+import { ProfileAvatar } from "@/components/profile/profile-avatar";
+import { DealerAvatar } from "@/components/arcade/dealer-avatar";
+import { DEALER_NAME, dealerLine } from "@/lib/arcade/dealer";
 import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { Card } from "@/lib/game/types";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -44,6 +47,9 @@ function Hand({
   total,
   hideTotal = false,
   faceDown = false,
+  avatar,
+  caption,
+  cardBack,
 }: {
   cards: Card[];
   label: string;
@@ -51,11 +57,24 @@ function Hand({
   hideTotal?: boolean;
   /** Draws the dealer's hole card while it is still hidden. */
   faceDown?: boolean;
+  /** Whose hand this is: the house dealer, or the player wearing their equipped avatar. */
+  avatar?: ReactNode;
+  /** A line under the name -- the dealer's patter. */
+  caption?: string;
+  /**
+   * The player's equipped card-back cosmetic, for the one face-down card at
+   * this table. Undefined resolves to the house deck inside PlayingCard.
+   */
+  cardBack?: string | null;
 }) {
   return (
     <div className="bj-hand">
       <div className="bj-hand-head">
-        <span className="bj-hand-label">{label}</span>
+        {avatar}
+        <span className="bj-hand-who">
+          <span className="bj-hand-label">{label}</span>
+          {caption && <span className="bj-hand-caption">{caption}</span>}
+        </span>
         {!hideTotal && <span className="bj-hand-total">{total}</span>}
       </div>
       {/* PlayingCard is reused as-is rather than restyled: .card-large is
@@ -65,7 +84,7 @@ function Hand({
         {cards.map((card) => (
           <PlayingCard key={`${card.rank}-${card.suit}`} card={card} large />
         ))}
-        {faceDown && <PlayingCard card={null} large />}
+        {faceDown && <PlayingCard card={null} large back={cardBack} />}
       </div>
     </div>
   );
@@ -207,11 +226,18 @@ export function BlackjackTable() {
 
       <section className="bj-felt" aria-live="polite" aria-busy={busy}>
         <Hand
-          label="Dealer"
+          label={DEALER_NAME}
+          caption={dealerLine(round?.phase ?? null, round?.outcome ?? null)}
+          avatar={<DealerAvatar />}
           cards={dealerCards}
           total={dealerTotal ? `${dealerTotal.total}${dealerTotal.soft ? " soft" : ""}` : ""}
           hideTotal={!round}
           faceDown={Boolean(round?.dealerHoleHidden)}
+          // The hole card is the one back anyone sees at this table, so it is
+          // the player's own -- a cosmetic sold as "seen by the whole table"
+          // that the arcade drew as the house deck would be the same defect
+          // PlayingCard's `back` prop was added to fix.
+          cardBack={profile?.equipped.cardBack}
         />
 
         <div className="bj-verdict">
@@ -236,7 +262,16 @@ export function BlackjackTable() {
         </div>
 
         <Hand
-          label={round?.doubled ? "You · doubled" : "You"}
+          // The player's own name, not "You" -- they are wearing their avatar
+          // and their card back here, and a generic label beside a face they
+          // chose reads as somebody else's seat.
+          label={profile?.displayName ?? "You"}
+          caption={round?.doubled ? "Doubled" : undefined}
+          avatar={
+            profile
+              ? <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />
+              : undefined
+          }
           cards={round?.playerHand ?? []}
           total={playerTotal ? `${playerTotal.total}${playerTotal.soft ? " soft" : ""}` : ""}
           hideTotal={!round}

@@ -46,6 +46,19 @@ export interface TableSceneProps {
   seats: PublicSeat[];
   pot: number;
   bigBlind: number;
+  /**
+   * Each seat's committed-this-street amount, by ring slot. These render as
+   * standing chip piles in front of the bettors; the centre pile shows the
+   * pot minus their sum, so the felt's chips always total the pot the HUD
+   * states.
+   */
+  streetBets: Array<{ slot: number; amount: number }>;
+  /**
+   * The current street. When it changes within a hand, the standing bets
+   * sweep into the middle — the dealer pulling the action in before the
+   * next card.
+   */
+  street: string;
   /** The hand is over and the pot is on its way to the winners. */
   paying: boolean;
   /**
@@ -95,6 +108,8 @@ export function TableScene({
   seats,
   pot,
   bigBlind,
+  streetBets,
+  street,
   paying,
   winners,
   handNumber,
@@ -338,14 +353,54 @@ export function TableScene({
   }, [seats]);
 
   /* ------------------------------------------------------------------ *
-   * The pot, as a pile.
+   * The street turning over: sweep the standing bets in before anything
+   * else about the new street renders. Keyed on the street *within* a
+   * hand — a new hand starting on preflop is not a sweep, it is a clear
+   * (handled below), and an all-in runout that jumps several streets at
+   * once still sweeps exactly once.
+   * ------------------------------------------------------------------ */
+  const streetRef = useRef<{ handNumber: number; street: string } | null>(null);
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const previous = streetRef.current;
+    streetRef.current = { handNumber, street };
+    if (!previous) return;
+    if (previous.handNumber !== handNumber) {
+      // A hand boundary, handled here rather than in its own effect so it
+      // runs BEFORE the sync effect below on the same commit — a trailing
+      // effect would clear the new hand's just-synced blinds. Nothing from
+      // the old hand stays in the air, and no stale standing bet sweeps
+      // across the boundary; the new blinds re-sync as their own piles.
+      engine.handledFlights.clear();
+      engine.chips.clearFlights();
+      engine.chips.clearBets();
+      pumpRef.current?.();
+    } else if (previous.street !== street) {
+      engine.chips.sweepBets();
+      pumpRef.current?.();
+    }
+  }, [street, handNumber]);
+
+  /* ------------------------------------------------------------------ *
+   * The pot, as a pile — minus what is still standing in front of the
+   * bettors, so the felt's chips always sum to the pot the HUD states.
+   * The standing bets themselves sync through the same keyed discipline
+   * the pile uses. During the payout both are cleared: the pot flying
+   * out already contains every bet.
    * ------------------------------------------------------------------ */
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine) return;
-    engine.chips.syncPile(pot, bigBlind, paying);
+    const standing = streetBets.reduce((sum, bet) => sum + bet.amount, 0);
+    engine.chips.syncPile(Math.max(0, pot - standing), bigBlind, paying);
+    if (paying) {
+      engine.chips.clearBets();
+    } else {
+      engine.chips.syncBets(streetBets, engine.seatCount, bigBlind);
+    }
     pumpRef.current?.();
-  }, [pot, bigBlind, paying]);
+  }, [pot, bigBlind, paying, streetBets]);
 
   /* ------------------------------------------------------------------ *
    * Bets in, pot out.
@@ -386,17 +441,6 @@ export function TableScene({
     engine.chips.spawnFunnel(winners, engine.seatCount, bigBlind);
     pumpRef.current?.();
   }, [paying, winners, handNumber, bigBlind]);
-
-  /* ------------------------------------------------------------------ *
-   * A new hand: nothing from the last one should still be in the air.
-   * ------------------------------------------------------------------ */
-  useEffect(() => {
-    const engine = engineRef.current;
-    if (!engine) return;
-    engine.handledFlights.clear();
-    engine.chips.clearFlights();
-    pumpRef.current?.();
-  }, [handNumber]);
 
   return <div className="table-scene" ref={hostRef} aria-hidden="true" />;
 }

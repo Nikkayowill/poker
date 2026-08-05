@@ -397,6 +397,15 @@ export function PokerTable({
       .filter((flight) => flight.slot >= 0),
     [chipFlights, slotOf],
   );
+  // Standing street bets by ring slot, for the scene: what each seat has
+  // committed this street rests in front of them as chips until the street
+  // closes. Slots, not seat ids, for the same reason betFlights uses them.
+  const sceneStreetBets = useMemo(
+    () => orderedSeats
+      .map((seat, slot) => ({ slot, amount: seat.streetBet }))
+      .filter((bet) => bet.amount > 0),
+    [orderedSeats],
+  );
   const sceneWinners = useMemo(
     () => (showFunnel
       ? game.winners
@@ -599,6 +608,8 @@ export function PokerTable({
             seats={orderedSeats}
             pot={game.pot}
             bigBlind={game.bigBlind}
+            streetBets={sceneStreetBets}
+            street={game.street}
             paying={showFunnel}
             winners={sceneWinners}
             handNumber={game.handNumber}

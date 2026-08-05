@@ -34,7 +34,7 @@ import {
 } from "./chip-physics";
 import { MAX_CHIPS_PER_COLUMN, potChipStacks } from "@/lib/game/pot-chips";
 import { FELT, type Vec3 } from "./scene-config";
-import { POT_POSITION, ringPoint, seatBetOrigin } from "./seat-ring";
+import { POT_POSITION, ringPoint, seatAngle, seatBetOrigin } from "./seat-ring";
 
 /** The token: a 39mm chip against a 2.1m table, near enough exactly right. */
 export const CHIP_RADIUS = 0.4;
@@ -45,6 +45,17 @@ const COLUMN_SPACING = 0.98;
 
 /** How high a newly added pile chip drops in from. */
 const PILE_DROP = 1.1;
+
+/**
+ * A standing bet's columns stand a little tighter than the pot's, and drop
+ * in from lower: a bet is a hand's-width of chips pushed out by one player,
+ * not the table's whole middle.
+ */
+const BET_COLUMN_SPACING = 0.88;
+const BET_DROP = 0.7;
+
+/** Per-chip stagger when a street's standing bets sweep into the pot. */
+const SWEEP_STAGGER_MS = 14;
 
 export interface SceneChip {
   denomination: number;
@@ -75,6 +86,14 @@ export class ChipLayer {
   private readonly moving: MovingChip[] = [];
   /** Pile chips by their identity in the breakdown, so a settled one is reused. */
   private readonly pile = new Map<string, SceneChip>();
+  /**
+   * Standing street bets, keyed `slot:denomination:index` — the chips
+   * resting in front of each bettor until the street closes. The same keyed
+   * sync discipline as the pile: a raise *adds* chips to a stack that is
+   * already there, and a re-fetched snapshot re-hands every settled chip
+   * its identical spot.
+   */
+  private readonly bets = new Map<string, SceneChip>();
   private paying = false;
 
   constructor(private readonly onChanged: () => void) {}
@@ -139,14 +158,130 @@ export class ChipLayer {
   }
 
   /**
-   * A bet: the amount actually committed, as chips, pushed from a seat's
-   * edge of the felt to the pot 20ms apart — smallest denominations first,
-   * so the big chips land on top where they read. The old fixed three-chip
-   * decorative spray survives only as the fallback for a malformed amount,
-   * where showing something is better than a silent bet.
+   * The standing bets: each seat's committed-this-street amount as chips,
+   * resting at that seat's edge of the felt until the street closes — the
+   * way a real bet sits in front of its player, not in the pot it is not
+   * yet part of. The centre pile's amount is the pot *minus* these, so the
+   * felt's chips always sum to the pot the HUD states.
+   *
+   * Columns spread along the ellipse's tangent at the seat, not along the
+   * screen's X: a side seat's bet would otherwise stack its columns into
+   * the rail.
+   */
+  syncBets(bets: Array<{ slot: number; amount: number }>, seatCount: number, bigBlind: number): void {
+    const wanted = new Set<string>();
+    for (const { slot, amount } of bets) {
+      const stacks = potChipStacks(amount, bigBlind);
+      if (stacks.length === 0) continue;
+      const origin = seatBetOrigin(slot, seatCount);
+      const theta = seatAngle(slot, seatCount);
+      // Plan-space tangent of the ellipse at this seat, unit length.
+      const tangent = { x: -Math.sin(theta), z: Math.cos(theta) };
+      const spread = (stacks.length - 1) / 2;
+      stacks.forEach((stack, column) => {
+        for (let index = 0; index < stack.count; index += 1) {
+          const key = `${slot}:${stack.denomination}:${index}`;
+          wanted.add(key);
+          if (this.bets.has(key)) continue;
+          const jitter = chipSettleJitter(stack.denomination, index);
+          const along = (column - spread) * BET_COLUMN_SPACING;
+          const rest: Vec3 = {
+            x: origin.x + tangent.x * along + jitter.x,
+            y: FELT.y + CHIP_THICKNESS / 2 + index * CHIP_THICKNESS,
+            z: origin.z + tangent.z * along + jitter.z,
+          };
+          const chip: SceneChip = {
+            denomination: stack.denomination,
+            position: { x: rest.x, y: rest.y + BET_DROP, z: rest.z },
+          };
+          this.bets.set(key, chip);
+          this.moving.push({
+            chip,
+            base: { ...chip.position },
+            target: rest,
+            originalDistance: BET_DROP,
+            delayMs: index * 18,
+            keepOnArrival: true,
+          });
+          this.onChanged();
+        }
+      });
+    }
+
+    for (const [key, chip] of this.bets) {
+      if (wanted.has(key)) continue;
+      // A standing bet only ever shrinks outside a sweep on a reconnect or
+      // divergent refetch; the honest correction there is instant, exactly
+      // as the pile's is.
+      const index = this.moving.findIndex((entry) => entry.chip === chip);
+      if (index >= 0) this.moving.splice(index, 1);
+      this.bets.delete(key);
+      this.onChanged();
+    }
+  }
+
+  /**
+   * The street closing: every standing bet slides into the middle, the way
+   * a dealer sweeps the action in before the next card. The chips are
+   * *transferred* out of the standing map into flight — not cleared and
+   * re-spawned — so each one leaves from exactly where it was resting.
+   * Immediately after this the pot pile grows by the swept amount via its
+   * own keyed sync, which is the same arrive-then-drop duality every bet
+   * spray has always had.
+   */
+  sweepBets(): void {
+    let order = 0;
+    for (const chip of this.bets.values()) {
+      // A chip still dropping in sweeps from wherever it is; drop its
+      // settle flight so it is not animated twice.
+      const pending = this.moving.findIndex((entry) => entry.chip === chip);
+      if (pending >= 0) this.moving.splice(pending, 1);
+      const jitter = chipSettleJitter(chip.denomination, order);
+      const target: Vec3 = {
+        x: POT_POSITION.x + jitter.x * 4,
+        y: FELT.y + CHIP_THICKNESS / 2,
+        z: POT_POSITION.z + jitter.z * 4,
+      };
+      this.moving.push({
+        chip,
+        base: { ...chip.position },
+        target,
+        originalDistance: distance(chip.position, target),
+        delayMs: order * SWEEP_STAGGER_MS,
+        keepOnArrival: false,
+      });
+      order += 1;
+    }
+    if (order > 0) this.onChanged();
+    this.bets.clear();
+  }
+
+  /**
+   * Standing bets, gone at once — for the moments a sweep would lie: a new
+   * hand mounting over a stale one, or the payout, where the pot the bets
+   * already joined is the thing flying out.
+   */
+  clearBets(): void {
+    for (const chip of this.bets.values()) {
+      const index = this.moving.findIndex((entry) => entry.chip === chip);
+      if (index >= 0) this.moving.splice(index, 1);
+    }
+    if (this.bets.size > 0) this.onChanged();
+    this.bets.clear();
+  }
+
+  /**
+   * A bet: the amount actually committed, as chips, pushed from the
+   * player's own rail to their bet spot 20ms apart — smallest denominations
+   * first, so the big chips land on top where they read. The spray lands
+   * where the standing bet (`syncBets`) is about to appear, which is what
+   * makes the arrive-then-settle read as one gesture. The old fixed
+   * three-chip decorative spray survives only as the fallback for a
+   * malformed amount, where showing something is better than a silent bet.
    */
   spawnBet(slot: number, seatCount: number, amount: number, bigBlind: number): void {
-    const origin = seatBetOrigin(slot, seatCount);
+    const origin = ringPoint(slot, seatCount, 0.98, FELT.y);
+    const spot = seatBetOrigin(slot, seatCount);
     const denominations = betSprayDenominations(amount, bigBlind);
     const spray = denominations.length > 0
       ? denominations
@@ -154,9 +289,9 @@ export class ChipLayer {
     spray.forEach((denomination, index) => {
       const jitter = chipSettleJitter(denomination, index);
       const target: Vec3 = {
-        x: POT_POSITION.x + jitter.x * 4,
+        x: spot.x + jitter.x * 3,
         y: FELT.y + CHIP_THICKNESS / 2,
-        z: POT_POSITION.z + jitter.z * 4,
+        z: spot.z + jitter.z * 3,
       };
       const start: Vec3 = {
         x: origin.x,
@@ -272,11 +407,12 @@ export class ChipLayer {
    * position is this module's.
    */
   drawList(): SceneChip[] {
-    // A pile chip that is still dropping in is in both collections under the
-    // same identity; listing it once from the pile is what stops it being
-    // painted twice.
+    // A pile or standing-bet chip that is still dropping in is in two
+    // collections under the same identity; listing it once from its keyed
+    // map is what stops it being painted twice.
     return [
       ...this.pile.values(),
+      ...this.bets.values(),
       ...this.moving.filter((entry) => !entry.keepOnArrival).map((entry) => entry.chip),
     ];
   }
@@ -293,5 +429,10 @@ export class ChipLayer {
   /** Chips currently resting in the pot pile, for the same test seam. */
   debugPileSize(): number {
     return this.pile.size;
+  }
+
+  /** Chips standing in front of bettors, for the same test seam. */
+  debugBetChips(): number {
+    return this.bets.size;
   }
 }

@@ -112,6 +112,93 @@ describe("sprays", () => {
   });
 });
 
+describe("standing street bets", () => {
+  const BETS = [{ slot: 1, amount: 70 }, { slot: 4, amount: 250 }];
+
+  it("stands each seat's bet as its own exact breakdown", () => {
+    const { chips } = layer();
+    chips.syncBets(BETS, 6, BB);
+    // 7 BB -> 5+1+1 (3 chips); 25 BB -> 25 (1 chip).
+    expect(chips.debugBetChips()).toBe(4);
+  });
+
+  it("adds chips on a raise without rebuilding the stack", () => {
+    const { chips } = layer();
+    chips.syncBets([{ slot: 2, amount: 50 }], 6, BB);   // 5 BB -> one chip
+    settle(chips);
+    const before = chips.drawList().map((chip) => ({ ...chip.position }));
+    chips.syncBets([{ slot: 2, amount: 100 }], 6, BB);  // 10 BB -> 5+5
+    expect(chips.debugBetChips()).toBe(2);
+    // The settled chip kept its exact spot; only the second chip is new.
+    const after = chips.drawList();
+    expect(after.some((chip) =>
+      chip.position.x === before[0].x && chip.position.z === before[0].z)).toBe(true);
+  });
+
+  it("re-hands a settled chip its identical spot on a refetch", () => {
+    const { chips } = layer();
+    chips.syncBets(BETS, 6, BB);
+    settle(chips);
+    const before = chips.drawList().map((chip) => ({ ...chip.position }));
+    chips.syncBets(BETS, 6, BB);
+    const after = chips.drawList().map((chip) => ({ ...chip.position }));
+    expect(after).toEqual(before);
+  });
+
+  it("keeps the felt summing to the pot: pile plus standing equals the whole", () => {
+    // The invariant the split exists for. A pot of 500 with 320 still
+    // standing shows 180 in the middle; the chips drawn are exactly the
+    // breakdowns of those two numbers, never a double count.
+    const { chips } = layer();
+    chips.syncPile(180, BB, false);
+    chips.syncBets([{ slot: 1, amount: 200 }, { slot: 3, amount: 120 }], 6, BB);
+    settle(chips);
+    expect(chips.drawList().length).toBe(
+      chips.debugPileSize() + chips.debugBetChips(),
+    );
+  });
+
+  it("sweeps every standing chip into the middle from where it rested", () => {
+    const { chips } = layer();
+    chips.syncBets(BETS, 6, BB);
+    settle(chips);
+    const standing = chips.debugBetChips();
+    chips.sweepBets();
+    expect(chips.debugBetChips()).toBe(0);
+    // The same chips, now in flight toward the pot -- transferred, not
+    // respawned.
+    expect(chips.debugChipPositions().length).toBe(standing);
+    settle(chips, 20_000);
+    expect(chips.debugChipPositions().length).toBe(0);
+  });
+
+  it("sweeps a chip that was still dropping in without animating it twice", () => {
+    const { chips } = layer();
+    chips.syncBets(BETS, 6, BB);   // no settle: everything mid-drop
+    chips.sweepBets();
+    expect(chips.debugChipPositions().length).toBe(4);
+  });
+
+  it("clears instantly at a hand boundary or payout instead of sweeping", () => {
+    const { chips } = layer();
+    chips.syncBets(BETS, 6, BB);
+    chips.clearBets();
+    expect(chips.debugBetChips()).toBe(0);
+    expect(chips.debugChipPositions().length).toBe(0);
+  });
+
+  it("spreads a wide bet along the seat's tangent, staying on the felt", () => {
+    const { chips } = layer();
+    // 131 BB -> four denominations, four columns, at a side seat.
+    chips.syncBets([{ slot: 1, amount: 1310 }], 6, BB);
+    settle(chips);
+    for (const chip of chips.drawList()) {
+      const inside = (chip.position.x / FELT.radiusX) ** 2 + (chip.position.z / FELT.radiusZ) ** 2;
+      expect(inside).toBeLessThan(1);
+    }
+  });
+});
+
 describe("motion lifecycle", () => {
   it("actually arrives within the solved flight duration, arc and all", () => {
     // The regression this pins: the WebGL predecessor fed the arc-inflated

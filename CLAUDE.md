@@ -98,6 +98,21 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   primary, closed-form fit asserted exactly on desktop and portrait-phone
   viewports, and a loop-sleeps test the WebGL room could never have passed);
   `chip-flights.spec.ts` runs unchanged against the preserved seam.
+- Standing street bets: a seat's committed-this-street chips now *rest in
+  front of the bettor* (`ChipLayer.syncBets`, keyed `slot:denom:index`,
+  columns spread along the seat's ellipse tangent so side-seat bets stay on
+  the felt) and sweep into the middle when the street turns
+  (`sweepBets` — the chips are transferred into flight from where they
+  rested, not respawned; an all-in runout that jumps streets sweeps once).
+  The centre pile renders `pot − Σ streetBet` so the felt's chips always
+  sum to the pot the HUD states — a unit test pins that invariant. Bet
+  sprays now land on the bettor's own spot (rail → bet spot), not the pot.
+  Hand boundaries and payouts `clearBets` instantly instead of sweeping;
+  the hand-boundary clear lives in the street effect in `table-scene.tsx`,
+  deliberately *before* the sync effect in declaration order — a trailing
+  new-hand effect would clear the incoming blinds' just-synced piles on the
+  same commit. `streetBets`/`street` are new `TableScene` props fed from
+  `seat.streetBet`/`game.street`.
 - Manifest (`app/manifest.ts`) now locks `orientation: "portrait-primary"`
   and ships real icons: `public/icons/icon-192.png` / `icon-512.png` /
   `icon-512-maskable.png`, rasterized from the existing `app/icon.svg` mark

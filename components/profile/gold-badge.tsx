@@ -47,7 +47,6 @@ export function GoldBadge({
       <div className="gold-badge">
         <span className="gold-balance">
           <Coins size={14} />
-          <span>Gold: </span>
           <strong title="This profile plays for free">Unlimited</strong>
         </span>
       </div>
@@ -58,7 +57,6 @@ export function GoldBadge({
     <div className={clsx("gold-badge", justClaimed && "gold-badge-claimed")}>
       <span className="gold-balance">
         <Coins size={14} />
-        <span>Gold: </span>
         <strong>{(profile.goldBalance ?? 0).toLocaleString()}</strong>
       </span>
       <button

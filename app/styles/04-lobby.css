@@ -64,7 +64,10 @@
   border: 0;
   border-radius: 5px;
   color: #11130e;
-  background: #d9b85d;
+  /* A flat fill read as unfinished next to every other gold control in the
+     app, which all carry some kind of sheen (see .account-primary-action,
+     .action-slot-controls .primary-action below/in 09-action-bar.css). */
+  background: linear-gradient(160deg, #f0d57d 0%, #d9b85d 55%, #c49f46 100%);
   font-weight: 750;
   cursor: pointer;
   display: inline-flex;
@@ -72,7 +75,7 @@
   justify-content: center;
   gap: 9px;
   padding: 14px 20px;
-  box-shadow: none;
+  box-shadow: inset 0 1px rgba(255,255,255,.25), 0 4px 14px rgba(0,0,0,.18);
 }
 
 button:disabled { cursor: wait; opacity: .62; }
@@ -265,12 +268,12 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-primary-action {
   color: #12150f;
   border: 1px solid #ead17c;
-  background: linear-gradient(180deg, #e6ca70, #c49f46);
-  box-shadow: 0 12px 35px rgba(206, 170, 71, .13);
+  background: linear-gradient(160deg, #f3e2a0 0%, #e6ca70 42%, #c49f46 100%);
+  box-shadow: inset 0 1px rgba(255,255,255,.3), 0 12px 35px rgba(206, 170, 71, .13);
 }
 
 .account-primary-action:hover:not(:disabled) {
-  background: linear-gradient(180deg, #f0d987, #d0ad53);
+  background: linear-gradient(160deg, #f8ecb3 0%, #f0d987 42%, #d0ad53 100%);
   transform: translateY(-1px);
 }
 
@@ -486,7 +489,8 @@ button:disabled { cursor: wait; opacity: .62; }
 .landing-cta-primary {
   color: #17170f;
   border: 1px solid rgba(217,184,93,.5);
-  background: linear-gradient(180deg, var(--gold-light), var(--gold));
+  background: linear-gradient(160deg, #f3e2a0 0%, var(--gold-light) 42%, var(--gold) 100%);
+  box-shadow: inset 0 1px rgba(255,255,255,.25);
 }
 .landing-cta-primary:hover:not(:disabled) { filter: brightness(1.07); }
 .landing-cta-primary:disabled { opacity: .5; cursor: not-allowed; }

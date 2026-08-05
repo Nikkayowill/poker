@@ -295,7 +295,8 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   reasoning as the removed per-seat status pills: variable-length prose on the
   felt is what clipped before. `.bj-hand-caption` also pins one line with an
   ellipsis so a longer line added later clips instead of reflowing the felt.
-- **Hi-Lo is the second live game** (`lib/arcade/hi-lo.ts`, `/games/hi-lo`,
+- **Hi-Lo is the second live game**, live on `www.stackchips.app` via PR #9
+  (merge `0cde686`) (`lib/arcade/hi-lo.ts`, `/games/hi-lo`,
   `app/api/arcade/hi-lo` + `.../actions`). One card face up, one call, one
   draw, settled. Same three ordering rules as blackjack, restated in
   `lib/server/hi-lo-service.ts` rather than referenced — breaking one is a
@@ -657,8 +658,12 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   — that is the CLI's edge-functions component and is unrelated to the SQL;
   confirm against `migration list --linked` and a real query rather than
   reading the push output.
-- `supabase/migrations/20260805180000_arcade_rounds.sql` is **pending — not
-  applied to production**, and the Hi-Lo routes will fail there until it is.
-  Per the checklist point above it must land *before* the code that reads it,
-  which for Hi-Lo means pushing the migration and only then merging to `main`.
+- `supabase/migrations/20260805180000_arcade_rounds.sql` is applied to
+  production and verified: table present, `service_role` reads it, `anon` gets
+  `42501 permission denied`. It was pushed and checked *before* the PR that
+  ships the Hi-Lo routes was opened — the ordering the checklist point above
+  exists to enforce, followed deliberately this time rather than discovered
+  afterwards.
+- There are no pending migrations. The next one must ship with (or before) its
+  calling code.
 - Update this section when scope changes; keep `CLAUDE.md` synchronized.

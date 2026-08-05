@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
@@ -11,37 +11,32 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import { toArcadeWallet } from "@/lib/arcade/games";
 import {
   canCoverStake,
-  dealRound,
-  dealerUpCards,
-  doubleDown,
   handTotal,
-  hit,
-  legalBlackjackActions,
   outcomeLabel,
-  stand,
-  type BlackjackRound,
+  type BlackjackSnapshot,
 } from "@/lib/arcade/blackjack";
 
 /**
  * Blackjack 21.
  *
- * The rules all live in lib/arcade/blackjack.ts; this file is the felt. It
- * holds one round in state and replaces it wholesale on every action, because
- * the engine is pure and returns the next round rather than mutating one.
+ * The rules live in lib/arcade/blackjack.ts and the round lives on the
+ * server. This file is the felt: it holds one snapshot and replaces it
+ * wholesale with whatever the API returns, because every action is a request
+ * and the response is the new truth.
  *
- * The round is dealt in the browser, which is exactly why it does not settle
- * against real Gold: a client that owns the deck can report any result it
- * likes, and CLAUDE.md's first rule is that the server is the only authority
- * on game truth. So the wallet is *read* -- it gates which stakes can be
- * selected and whether a double is offered -- and the running total is shown
- * as a session score, clearly marked. Making the Gold real means a route that
- * owns the deck and returns the round, the same shape as
- * app/api/games/[id]/actions; the engine is already written to drop straight
- * into one.
+ * Nothing is dealt or decided here any more. The client cannot see the
+ * undealt deck (the snapshot has no `deck` field to see) and cannot see the
+ * dealer's hole card until the dealer's turn, so it also cannot report a
+ * result -- which is what makes it safe for this table to settle real Gold.
+ * Every button below is a hint about what the server will accept, never a
+ * decision; `snapshot.legal` is computed from the same engine call the route
+ * re-runs before it moves anything.
  */
 
-/** Math.random is fine here: nothing is settled against it. A server round would pass crypto's randomInt. */
-const browserRandomInt = (maxExclusive: number) => Math.floor(Math.random() * maxExclusive);
+interface BlackjackResponse {
+  round: BlackjackSnapshot | null;
+  profile: PlayerProfile;
+}
 
 function Hand({
   cards,
@@ -80,27 +75,66 @@ export function BlackjackTable() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [tier, setTier] = useState<StakesTier>("1k");
-  const [round, setRound] = useState<BlackjackRound | null>(null);
-  /** Play-money running total across the session. Deliberately not persisted -- see the file comment. */
+  const [round, setRound] = useState<BlackjackSnapshot | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [sessionNet, setSessionNet] = useState(0);
   const [handsPlayed, setHandsPlayed] = useState(0);
+  /**
+   * Which round ids have already been added to the session tally. Scoring on
+   * "the snapshot says settled" alone would double-count every time a settled
+   * round came back twice -- which a resume after a refresh does by design.
+   */
+  const scored = useRef<Set<string>>(new Set());
 
-  const load = useCallback(async () => {
-    try {
-      const response = await fetch("/api/profile", { cache: "no-store" });
-      const data = await response.json();
-      if (response.ok) setProfile(data.profile ?? data);
-    } catch {
-      // The table is playable without a profile; it just cannot gate stakes.
-    } finally {
-      setLoaded(true);
-    }
+  const absorb = useCallback((next: BlackjackSnapshot | null) => {
+    setRound(next);
+    if (!next || next.phase !== "settled" || scored.current.has(next.id)) return;
+    scored.current.add(next.id);
+    setSessionNet((total) => total + next.netGold);
+    setHandsPlayed((count) => count + 1);
   }, []);
 
+  /**
+   * One request path for all three verbs. Errors are shown rather than
+   * swallowed -- this table moves real Gold now, so "nothing happened" is not
+   * an acceptable thing for a click to mean. A 409 carries the true round, so
+   * a client that fell behind resyncs from the error instead of staying stuck.
+   */
+  const send = useCallback(
+    async (url: string, body?: unknown) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const response = await fetch(url, {
+          method: body === undefined ? "GET" : "POST",
+          cache: "no-store",
+          ...(body === undefined
+            ? {}
+            : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+        });
+        const data = (await response.json()) as Partial<BlackjackResponse> & { error?: string };
+        if (data.profile) setProfile(data.profile);
+        if (!response.ok) {
+          setError(data.error ?? "That did not go through. Try again.");
+          if (data.round !== undefined) absorb(data.round);
+          return;
+        }
+        absorb(data.round ?? null);
+      } catch {
+        setError("Could not reach the table. Check your connection.");
+      } finally {
+        setBusy(false);
+        setLoaded(true);
+      }
+    },
+    [absorb],
+  );
+
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0);
+    const timer = window.setTimeout(() => void send("/api/arcade/blackjack"), 0);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [send]);
 
   const wallet = toArcadeWallet(profile);
   const stake = TIER_CONFIG[tier].minBuyIn;
@@ -109,34 +143,27 @@ export function BlackjackTable() {
   // default, but it must not be *worded* as a verdict -- "Not enough Gold"
   // before the balance has arrived is simply untrue.
   const cover = canCoverStake(stake, wallet);
-  const live = round && round.phase !== "settled";
-  const actions = round ? legalBlackjackActions(round) : { hit: false, stand: false, double: false };
-
-  const settleInto = (next: BlackjackRound, previous: BlackjackRound) => {
-    setRound(next);
-    if (next.phase === "settled" && previous.phase !== "settled") {
-      setSessionNet((total) => total + next.netGold);
-      setHandsPlayed((count) => count + 1);
-    }
-  };
+  const live = Boolean(round && round.phase !== "settled");
+  const actions = round?.legal ?? { hit: false, stand: false, double: false };
+  // The opening wager is already debited, so doubling needs one more of it in
+  // the wallet -- not two.
+  const canAffordDouble = round ? canCoverStake(round.baseStake, wallet).open : false;
 
   const deal = () => {
-    if (!cover.open) return;
-    const next = dealRound(stake, browserRandomInt);
-    setRound(next);
-    // A natural settles inside dealRound, so it has to score here too.
-    if (next.phase === "settled") {
-      setSessionNet((total) => total + next.netGold);
-      setHandsPlayed((count) => count + 1);
-    }
+    if (!cover.open || busy) return;
+    void send("/api/arcade/blackjack", { tier });
   };
 
-  const act = (move: (current: BlackjackRound) => BlackjackRound) => {
-    if (!round) return;
-    settleInto(move(round), round);
+  const act = (action: "hit" | "stand" | "double") => {
+    if (!round || busy) return;
+    void send("/api/arcade/blackjack/actions", {
+      roundId: round.id,
+      version: round.version,
+      action,
+    });
   };
 
-  const dealerCards = round ? dealerUpCards(round) : [];
+  const dealerCards = round?.dealerHand ?? [];
   const dealerTotal = round ? handTotal(dealerCards) : null;
   const playerTotal = round ? handTotal(round.playerHand) : null;
 
@@ -169,20 +196,22 @@ export function BlackjackTable() {
         </div>
       </header>
 
-      {/* Said once, plainly, rather than buried: this table does not move real
-          Gold, and pretending otherwise would be the dishonest option. */}
+      {/* Said once, plainly, rather than buried -- this table stakes real
+          Gold, and a player deserves to know that before the first click. */}
       <p className="bj-practice-note">
-        Practice table — rounds are dealt in your browser, so nothing is staked against your real
-        balance yet. Your Gold sets which stakes you can sit at.
+        Rounds are dealt on the server and settled against your real balance. Your stake leaves your
+        Gold when the hand is dealt and any winnings are paid when it finishes.
       </p>
 
-      <section className="bj-felt" aria-live="polite">
+      {error && <p className="bj-error" role="alert">{error}</p>}
+
+      <section className="bj-felt" aria-live="polite" aria-busy={busy}>
         <Hand
           label="Dealer"
           cards={dealerCards}
           total={dealerTotal ? `${dealerTotal.total}${dealerTotal.soft ? " soft" : ""}` : ""}
           hideTotal={!round}
-          faceDown={Boolean(live)}
+          faceDown={Boolean(round?.dealerHoleHidden)}
         />
 
         <div className="bj-verdict">
@@ -224,7 +253,7 @@ export function BlackjackTable() {
                 type="button"
                 className={clsx("bj-stake", entry === tier && "bj-stake-on")}
                 // Locked mid-round: the wager is already committed.
-                disabled={Boolean(live) || !loaded || !affordable}
+                disabled={live || busy || !loaded || !affordable}
                 title={!loaded || affordable ? undefined : "More Gold needed for this stake"}
                 onClick={() => setTier(entry)}
               >
@@ -238,21 +267,21 @@ export function BlackjackTable() {
           {live
             ? (
               <>
-                <button type="button" className="bj-action" disabled={!actions.hit} onClick={() => act(hit)}>
+                <button type="button" className="bj-action" disabled={!actions.hit || busy} onClick={() => act("hit")}>
                   Hit
                 </button>
-                <button type="button" className="bj-action" disabled={!actions.stand} onClick={() => act(stand)}>
+                <button type="button" className="bj-action" disabled={!actions.stand || busy} onClick={() => act("stand")}>
                   Stand
                 </button>
                 <button
                   type="button"
                   className="bj-action"
-                  // Two gates, not one: the engine says whether doubling is
-                  // legal on this hand, the wallet says whether the doubled
-                  // stake is covered.
-                  disabled={!actions.double || !cover.double}
-                  title={!cover.double && actions.double ? "Not enough Gold to double" : undefined}
-                  onClick={() => act(doubleDown)}
+                  // Two gates, not one: the server says whether doubling is
+                  // legal on this hand, the wallet says whether the second
+                  // wager is covered. The route re-checks both.
+                  disabled={!actions.double || !canAffordDouble || busy}
+                  title={!canAffordDouble && actions.double ? "Not enough Gold to double" : undefined}
+                  onClick={() => act("double")}
                 >
                   Double
                 </button>
@@ -262,14 +291,16 @@ export function BlackjackTable() {
               <button
                 type="button"
                 className="bj-action bj-action-deal"
-                disabled={!loaded || !cover.open}
+                disabled={!loaded || !cover.open || busy}
                 onClick={deal}
               >
                 {!loaded
                   ? "Loading your Gold…"
-                  : !cover.open
-                    ? "Not enough Gold"
-                    : round ? "Deal again" : `Deal · ${stake.toLocaleString()}`}
+                  : busy
+                    ? "Dealing…"
+                    : !cover.open
+                      ? "Not enough Gold"
+                      : round ? "Deal again" : `Deal · ${stake.toLocaleString()}`}
               </button>
             )}
         </div>

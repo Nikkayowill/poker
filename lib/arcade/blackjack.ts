@@ -4,8 +4,9 @@
  * Pure and synchronous, like lib/game/engine.ts: every function takes a round
  * and returns the next one, nothing here reads a clock, a store or a request.
  * That is what makes the whole rule set reachable from `npm test`, and it is
- * also what would let a server route own the round later without rewriting
- * any of it -- see the note on settlement at the bottom of this file.
+ * what let the server route (app/api/arcade/blackjack) take ownership of the
+ * round without rewriting any of it -- see the note on settlement at the
+ * bottom of this file.
  *
  * House rules, fixed and deliberately few (this is the fast arcade game, not
  * a casino simulator):
@@ -249,6 +250,74 @@ export function dealerUpCards(round: BlackjackRound): Card[] {
   return round.phase === "player-turn" ? round.dealerHand.slice(0, 1) : round.dealerHand;
 }
 
+/**
+ * What a settled round pays back to the player, given the stake was already
+ * debited when the round opened.
+ *
+ * The stake leaves the wallet up front (and again on a double), so settlement
+ * is a single credit of stake + netGold rather than a second debit on a loss:
+ * a loss returns 0, a push returns the stake, a win returns twice it, and a
+ * natural returns the stake plus the 3:2. Deriving it from netGold rather
+ * than re-switching on the outcome means the payout cannot drift away from
+ * the number the felt just showed the player.
+ */
+export function settlementPayout(round: BlackjackRound): number {
+  if (round.phase !== "settled") return 0;
+  return round.stake + round.netGold;
+}
+
+/**
+ * The round as the browser is allowed to see it.
+ *
+ * Two things are removed, and both matter now that Gold is real: `deck` (the
+ * undealt cards -- handing those over would let a player see every card
+ * before deciding whether to hit) and, while it is still the player's turn,
+ * the dealer's hole card. `dealerHand` here is `dealerUpCards`, so the hidden
+ * card is genuinely absent from the payload rather than merely unrendered --
+ * the same redaction contract lib/game/snapshot.ts holds for hole cards at
+ * the poker table.
+ *
+ * `legal` is computed here rather than on the client so the buttons and the
+ * route agree on what is allowed by construction; the route re-checks anyway,
+ * because a disabled button is a hint, not a rule.
+ */
+export interface BlackjackSnapshot {
+  id: string;
+  version: number;
+  playerHand: Card[];
+  /** Up cards only until the dealer's turn. Never the full hand before then. */
+  dealerHand: Card[];
+  /** True while a hole card exists but is being withheld, so the view can draw a face-down card. */
+  dealerHoleHidden: boolean;
+  baseStake: number;
+  stake: number;
+  doubled: boolean;
+  phase: BlackjackPhase;
+  outcome: BlackjackOutcome | null;
+  netGold: number;
+  legal: LegalBlackjackActions;
+}
+
+export function toBlackjackSnapshot(
+  round: BlackjackRound,
+  meta: { id: string; version: number },
+): BlackjackSnapshot {
+  return {
+    id: meta.id,
+    version: meta.version,
+    playerHand: [...round.playerHand],
+    dealerHand: dealerUpCards(round),
+    dealerHoleHidden: round.phase === "player-turn",
+    baseStake: round.baseStake,
+    stake: round.stake,
+    doubled: round.doubled,
+    phase: round.phase,
+    outcome: round.outcome,
+    netGold: round.netGold,
+    legal: legalBlackjackActions(round),
+  };
+}
+
 export function outcomeLabel(outcome: BlackjackOutcome): string {
   switch (outcome) {
     case "player-blackjack":
@@ -270,13 +339,12 @@ export function outcomeLabel(outcome: BlackjackOutcome): string {
  * Whether a wallet can open at this stake, and whether it could still cover a
  * double on top of it.
  *
- * This is a *display* predicate. Nothing here debits anyone -- netGold is a
- * number a settled round reports, not one it applies. A round played in the
- * browser cannot be allowed to move real Gold (the client would simply report
- * whatever result it liked), so wiring this to the wallet means a server route
- * that owns the deck and returns the round, exactly as
- * app/api/games/[id]/actions does for poker. Until that exists the arcade
- * table is play-money and says so.
+ * This is a *display* predicate, and it stays one. Nothing here debits
+ * anyone -- netGold is a number a settled round reports, not one it applies.
+ * The Gold is moved by app/api/arcade/blackjack, which owns the deck and
+ * re-checks the balance itself through spendGold; this only decides which
+ * stake buttons are offered and whether Double is worth showing. A client
+ * that lies to this function gets a button it cannot use.
  */
 export function canCoverStake(
   stake: number,

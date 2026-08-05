@@ -9,8 +9,10 @@ import {
   hit,
   isNatural,
   legalBlackjackActions,
+  settlementPayout,
   stand,
   startRound,
+  toBlackjackSnapshot,
 } from "./blackjack";
 
 /** "AS" -> ace of spades. Terse because these tests are mostly hand fixtures. */
@@ -252,5 +254,100 @@ describe("canCoverStake", () => {
   it("lets an unlimited profile cover anything", () => {
     expect(canCoverStake(500000, { goldBalance: 0, unlimitedGold: true }))
       .toEqual({ open: true, double: true });
+  });
+});
+
+describe("settlementPayout", () => {
+  // The stake is debited when the round opens, so settlement is one credit
+  // back rather than a second debit on a loss. Every case below is
+  // "start - stake + payout" landing on start + netGold.
+  it("returns nothing on a loss", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["10S", "6H"], ["10D", "9C"]) });
+    const settled = stand(round);
+    expect(settled.outcome).toBe("dealer-win");
+    expect(settled.netGold).toBe(-1000);
+    expect(settlementPayout(settled)).toBe(0);
+  });
+
+  it("returns the stake on a push", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["10S", "9H"], ["10D", "9C"]) });
+    const settled = stand(round);
+    expect(settled.outcome).toBe("push");
+    expect(settlementPayout(settled)).toBe(1000);
+  });
+
+  it("returns twice the stake on an ordinary win", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["10S", "9H"], ["10D", "8C"]) });
+    const settled = stand(round);
+    expect(settled.outcome).toBe("player-win");
+    expect(settlementPayout(settled)).toBe(2000);
+  });
+
+  it("returns the stake plus 3:2 on a natural", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["AS", "KH"], ["10D", "8C"]) });
+    expect(round.outcome).toBe("player-blackjack");
+    expect(settlementPayout(round)).toBe(2500);
+  });
+
+  it("pays a double at the doubled stake", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["6S", "5H"], ["10D", "8C"], ["9C"]) });
+    const settled = doubleDown(round);
+    expect(settled.stake).toBe(2000);
+    expect(settled.outcome).toBe("player-win");
+    // 2000 staked (1000 at the deal, 1000 more to double) comes back doubled.
+    expect(settlementPayout(settled)).toBe(4000);
+  });
+
+  it("pays nothing on a round that is still running", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["6S", "5H"], ["10D", "8C"]) });
+    expect(round.phase).toBe("player-turn");
+    expect(settlementPayout(round)).toBe(0);
+  });
+});
+
+describe("toBlackjackSnapshot", () => {
+  const meta = { id: "round-1", version: 3 };
+
+  it("never carries the undealt deck", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["6S", "5H"], ["10D", "8C"]) });
+    const snapshot = toBlackjackSnapshot(round, meta);
+    // Not "is empty" -- the field must not exist at all, so that no future
+    // refactor can quietly start populating it.
+    expect("deck" in snapshot).toBe(false);
+    expect(JSON.stringify(snapshot)).not.toContain("deck");
+  });
+
+  it("withholds the hole card until the dealer's turn", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["6S", "5H"], ["10D", "8C"]) });
+    const during = toBlackjackSnapshot(round, meta);
+    expect(during.dealerHand).toEqual(hand("10D"));
+    expect(during.dealerHoleHidden).toBe(true);
+    // The withheld card is genuinely absent from the payload, not merely
+    // unrendered: a player reading the network tab still cannot see it.
+    expect(JSON.stringify(during.dealerHand)).not.toContain("clubs");
+
+    const after = toBlackjackSnapshot(stand(round), meta);
+    expect(after.dealerHoleHidden).toBe(false);
+    expect(after.dealerHand.length).toBeGreaterThanOrEqual(2);
+    expect(after.dealerHand[1]).toEqual(card("8C"));
+  });
+
+  it("carries the id, version and legal moves the client acts on", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["6S", "5H"], ["10D", "8C"]) });
+    const snapshot = toBlackjackSnapshot(round, meta);
+    expect(snapshot.id).toBe("round-1");
+    expect(snapshot.version).toBe(3);
+    expect(snapshot.legal).toEqual({ hit: true, stand: true, double: true });
+    expect(snapshot.netGold).toBe(0);
+    expect(snapshot.outcome).toBeNull();
+  });
+
+  it("reports a settled round's outcome and net", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["AS", "KH"], ["10D", "8C"]) });
+    const snapshot = toBlackjackSnapshot(round, meta);
+    expect(snapshot.phase).toBe("settled");
+    expect(snapshot.outcome).toBe("player-blackjack");
+    expect(snapshot.netGold).toBe(1500);
+    expect(snapshot.legal).toEqual({ hit: false, stand: false, double: false });
   });
 });

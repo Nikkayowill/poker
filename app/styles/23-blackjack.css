@@ -84,6 +84,21 @@
   line-height: 1.5;
 }
 
+/* Reuses .bj-practice-note's box wholesale and only re-tints it: an error
+   here occupies the same slot and wants the same shape, and restating the
+   padding/radius/type would be two rules to keep in step instead of one. */
+.bj-error {
+  margin: 0;
+  padding: 10px 13px;
+  color: #f4b9b2;
+  border: 1px solid rgba(220,110,95,.28);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: rgba(220,110,95,.08);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
 /* ---- Felt ---- */
 
 .bj-felt {

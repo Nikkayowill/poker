@@ -3,7 +3,9 @@
 import { useEffect, useRef } from "react";
 import type { PublicSeat } from "@/lib/game/types";
 import { ChipLayer } from "@/lib/scene/chip-layer";
-import { fitView, project, type SceneView } from "@/lib/scene/projection";
+import {
+  fitView, project, projectedFeltDepth, projectedFeltWidth, type SceneView,
+} from "@/lib/scene/projection";
 import { FELT, MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
 import { ringPoint } from "@/lib/scene/seat-ring";
 import {
@@ -94,6 +96,12 @@ declare global {
       seat: (slot: number) => { x: number; y: number };
       /** CSS pixels per world unit — the whole fit, under orthography. */
       roomScale: () => number;
+      /**
+       * The painted felt's on-screen size, in CSS pixels. Both axes, because
+       * the table's plan shape is solved per fit: `roomScale` alone cannot
+       * tell a wide desktop oval from a tall portrait one.
+       */
+      roomFelt: () => { width: number; height: number };
       /** Where world-origin's screen Y landed, canvas-local. */
       roomLift: () => number;
       /** Ring slots the last payout was aimed at. */
@@ -180,7 +188,7 @@ export function TableScene({
       carpet: ctx.createPattern(carpetTile(), "repeat"),
       chips: new ChipLayer(markChanged),
       scheduler: markDirty(SLEEPING, performance.now()),
-      view: { cx: 0, cy: 0, scale: 1 },
+      view: { cx: 0, cy: 0, scale: 1, radiusZ: FELT.radiusZ },
       size: { width: 0, height: 0 },
       lastFrameMs: performance.now(),
       frames: 0,
@@ -195,13 +203,23 @@ export function TableScene({
     /**
      * Fit the room to the DOM table's measured box.
      *
-     * Closed-form, not a solver: under orthography the felt's projected
-     * width is exactly `2 * radiusX * scale`, so pinning it to
-     * `.poker-table-wrap`'s width is one division. The DPI handling sizes
-     * the backing store to CSS pixels x devicePixelRatio (capped — a phone
-     * reporting 3 or 4 would shade up to sixteen times the pixels for soft
-     * gradients) and folds the ratio into one setTransform, so every draw
-     * call works in CSS pixels.
+     * Closed-form, not a solver: under orthography the projected radii are
+     * exactly `radius * scale`, so fitting the painted rail to a measured
+     * box is two divisions (`fitView`). The DPI handling sizes the backing
+     * store to CSS pixels x devicePixelRatio (capped — a phone reporting 3
+     * or 4 would shade up to sixteen times the pixels for soft gradients)
+     * and folds the ratio into one setTransform, so every draw call works in
+     * CSS pixels.
+     *
+     * `.poker-rail` is the box, not `.poker-table-wrap`. The rail is the
+     * table's outer edge and carries the per-breakpoint insets the artwork
+     * was cut to, so measuring it is what makes the painted table land where
+     * the drawn one did on every plate — including the tall portrait one,
+     * where fitting the wrap's width alone painted a horizontal oval across
+     * a vertical table. Its measured rect includes the CSS perspective tilt
+     * it still carries, which is correct: the board and the pot anchor are
+     * laid out inside that same transformed box, so matching what is on
+     * screen keeps the cloth under the cards it is behind.
      */
     const fit = () => {
       const engine = engineRef.current;
@@ -214,19 +232,23 @@ export function TableScene({
       engine.size = { width: hostBox.width, height: hostBox.height };
 
       const root = host.parentElement ?? host;
-      const wrapBox = root.querySelector<HTMLElement>(".poker-table-wrap")?.getBoundingClientRect();
-      const wrap = wrapBox && wrapBox.width > 1
+      const railBox = root.querySelector<HTMLElement>(".poker-rail")?.getBoundingClientRect();
+      const rail = railBox && railBox.width > 1 && railBox.height > 1
         ? {
-          left: wrapBox.left - hostBox.left,
-          top: wrapBox.top - hostBox.top,
-          width: wrapBox.width,
-          height: wrapBox.height,
+          left: railBox.left - hostBox.left,
+          top: railBox.top - hostBox.top,
+          width: railBox.width,
+          height: railBox.height,
         }
-        // Before React has laid the table out there is no wrap to measure;
+        // Before React has laid the table out there is no rail to measure;
         // a centred approximation holds for the frame or two until the
         // ResizeObserver re-runs this with a real box.
         : { left: hostBox.width * 0.09, top: hostBox.height * 0.2, width: hostBox.width * 0.82, height: hostBox.height * 0.6 };
-      engine.view = fitView(wrap);
+      engine.view = fitView(rail);
+      // The chips ring the same table the room paints, so they need the plan
+      // shape this fit solved for -- otherwise a resize moves the felt and
+      // leaves every future bet spot on the old ellipse.
+      engine.chips.setRadiusZ(engine.view.radiusZ);
       markChanged();
     };
     fit();
@@ -315,9 +337,17 @@ export function TableScene({
         seat: (slot: number) => {
           const engine = engineRef.current;
           if (!engine) return { x: 0, y: 0 };
-          return toViewport(project(engine.view, ringPoint(slot, engine.seatCount, 1, FELT.y)));
+          return toViewport(project(engine.view, ringPoint(slot, engine.seatCount, 1, FELT.y, engine.view.radiusZ)));
         },
         roomScale: () => engineRef.current?.view.scale ?? 0,
+        roomFelt: () => {
+          const engine = engineRef.current;
+          if (!engine) return { width: 0, height: 0 };
+          return {
+            width: projectedFeltWidth(engine.view),
+            height: projectedFeltDepth(engine.view),
+          };
+        },
         roomLift: () => engineRef.current?.view.cy ?? 0,
         lastFunnel: () => engineRef.current?.lastFunnelSlots ?? [],
         awake: () => isAwake(engineRef.current?.scheduler ?? SLEEPING),

@@ -57,7 +57,14 @@ export function carpetTile(): HTMLCanvasElement {
   return tile;
 }
 
-/** An ellipse on the table plane, at a multiple of the felt's radii. */
+/**
+ * An ellipse on the table plane, at a multiple of the felt's radii.
+ *
+ * The depth radius comes off the *view*, not off `FELT`: the table's plan
+ * shape is solved per fit so the painted oval matches the plate it is drawn
+ * into (see `fitView`). Reading the constant here is what painted a wide
+ * horizontal table onto a tall portrait plate.
+ */
 function tableEllipse(ctx: CanvasRenderingContext2D, view: SceneView, scale: number, atY: number): void {
   const centre = project(view, { x: 0, y: atY, z: 0 });
   ctx.beginPath();
@@ -65,7 +72,7 @@ function tableEllipse(ctx: CanvasRenderingContext2D, view: SceneView, scale: num
     centre.x,
     centre.y,
     FELT.radiusX * scale * view.scale,
-    FELT.radiusZ * scale * TILT_SIN * view.scale,
+    view.radiusZ * scale * TILT_SIN * view.scale,
     0, 0, Math.PI * 2,
   );
 }
@@ -89,9 +96,17 @@ export function paintRoom(
   ctx.fillStyle = carpet ?? ROOM.floor;
   ctx.fillRect(0, 0, size.width, size.height);
   const felt = project(view, { x: 0, y: FELT.y, z: 0 });
+  /**
+   * How far the felt reaches from its centre on screen, whichever way is
+   * longer. The vignette and the lamp pool are both circular gradients, so
+   * sizing them off the width alone drew a tight ring on a portrait plate —
+   * where the table is nearly twice as tall as it is wide — and buried the
+   * far and near ends of the cloth in the falloff meant for the carpet.
+   */
+  const reach = Math.max(FELT.radiusX * view.scale, view.radiusZ * TILT_SIN * view.scale);
   const vignette = ctx.createRadialGradient(
-    felt.x, felt.y, FELT.radiusX * view.scale * 0.8,
-    felt.x, felt.y, FELT.radiusX * view.scale * 2.4,
+    felt.x, felt.y, reach * 0.8,
+    felt.x, felt.y, reach * 2.4,
   );
   vignette.addColorStop(0, "rgba(0, 0, 0, 0)");
   vignette.addColorStop(1, "rgba(0, 0, 0, 0.78)");
@@ -120,7 +135,7 @@ export function paintRoom(
   tableEllipse(ctx, view, 1, FELT.y);
   ctx.fillStyle = ROOM.felt;
   ctx.fill();
-  const pool = ctx.createRadialGradient(felt.x, felt.y, 0, felt.x, felt.y, FELT.radiusX * view.scale);
+  const pool = ctx.createRadialGradient(felt.x, felt.y, 0, felt.x, felt.y, reach);
   pool.addColorStop(0, ROOM.lampPool);
   pool.addColorStop(0.75, "rgba(255, 236, 180, 0.02)");
   pool.addColorStop(1, "rgba(0, 0, 0, 0.25)");

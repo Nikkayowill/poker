@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FELT, SEAT_RING } from "./scene-config";
-import { POT_POSITION, ringPoint, seatAngle, seatBetOrigin, seatPlacement } from "./seat-ring";
+import { POT_DEPTH_FRACTION, potPosition, ringPoint, seatAngle, seatBetOrigin, seatPlacement } from "./seat-ring";
 
 /**
  * The world-space ring has one job beyond looking right: agreeing with the
@@ -71,7 +71,31 @@ describe("seat ring", () => {
     }
   });
 
-  it("puts the pot on the felt at the middle of the table", () => {
-    expect(POT_POSITION).toEqual({ x: 0, y: FELT.y, z: 0 });
+  it("rests the pot on the felt, behind the board rather than under it", () => {
+    const pot = potPosition();
+    expect(pot.x).toBe(0);
+    expect(pot.y).toBeCloseTo(FELT.y, 9);
+    // Away from the viewer: world Z grows *nearer*, and the near half of the
+    // felt is where the local player's own figure and hole cards sit. A pot
+    // at z=0 is a pot stacked on the flop.
+    expect(pot.z).toBeLessThan(0);
+    // Still comfortably on the cloth, not pushed off the far rail.
+    expect(Math.abs(pot.z) / FELT.radiusZ).toBeLessThan(0.8);
+  });
+
+  it("keeps the pot at the same fraction of the felt however deep it is", () => {
+    // The plan depth is per-fit -- a portrait plate makes a far deeper
+    // table than a desktop one -- so the offset has to scale with it or the
+    // pot sits on the board on one plate and off the felt on the other.
+    for (const radiusZ of [FELT.radiusZ, 12, 28]) {
+      expect(potPosition(radiusZ).z).toBeCloseTo(-radiusZ * POT_DEPTH_FRACTION, 9);
+    }
+  });
+
+  it("rings a deeper felt further out, and leaves the width alone", () => {
+    const shallow = ringPoint(1, 6, 1, 0, FELT.radiusZ);
+    const deep = ringPoint(1, 6, 1, 0, FELT.radiusZ * 3);
+    expect(deep.x).toBeCloseTo(shallow.x, 9);
+    expect(Math.abs(deep.z)).toBeCloseTo(Math.abs(shallow.z) * 3, 9);
   });
 });

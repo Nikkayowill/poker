@@ -120,37 +120,58 @@ test("the DOM felt yields to the room, and only once the room exists", async ({ 
 });
 
 /**
- * The room is fitted to the table's own plate, at whatever size the
+ * The room is fitted to the table's own rail, at whatever size and shape the
  * viewport left it.
  *
- * `roomScale` is CSS pixels per world unit under the orthographic tilt, so
- * the exact relationship `scale = wrapWidth / (2 * feltRadiusX)` is
- * assertable directly — the closed-form fit either ran against the real
- * plate or it did not. Checked on two very different plates: a desktop
- * table and a portrait phone one, which is also what holds "mobile
- * responsive" to being a measured property rather than a hope.
+ * `.poker-rail` carries the per-breakpoint insets the table artwork was cut
+ * to, and the DOM seat ring in `lib/game/table-geometry.ts` was hand-tuned
+ * against that same box, so the painted rail filling it is exactly what puts
+ * the players back on the edge of the felt. The fit is closed-form, so both
+ * radii are assertable directly against the measured element — it either ran
+ * against the real plate or it did not.
+ *
+ * Checked on two very different plates, because the shape is the whole
+ * point: `--table-aspect` is 1.84 on a desktop and 0.62 on a portrait phone,
+ * and a fit that reads only the width paints the same wide horizontal oval
+ * on both.
  */
 for (const viewport of [
-  { width: 1440, height: 900, label: "desktop" },
-  { width: 390, height: 844, label: "portrait phone" },
+  { width: 1440, height: 900, label: "desktop", wider: true },
+  { width: 390, height: 844, label: "portrait phone", wider: false },
 ]) {
   test(`the room fits the ${viewport.label} table plate`, async ({ browser }) => {
     test.setTimeout(90_000);
     const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
     try {
       const { page } = await seatAtTable(context);
-      const fit = await page.evaluate(() => ({
-        scale: window.__stackchipsScene!.roomScale(),
-        wrap: document.querySelector(".poker-table-wrap")!.getBoundingClientRect().width,
-        canvas: document.querySelector(".table-scene canvas")!.getBoundingClientRect().width,
-      }));
+      const fit = await page.evaluate(() => {
+        const rail = document.querySelector(".poker-rail")!.getBoundingClientRect();
+        return {
+          felt: window.__stackchipsScene!.roomFelt(),
+          rail: { width: rail.width, height: rail.height },
+          canvas: document.querySelector(".table-scene canvas")!.getBoundingClientRect().width,
+        };
+      });
       expect(fit.canvas).toBeGreaterThan(0);
-      expect(fit.wrap).toBeGreaterThan(0);
-      // The felt's world width is 18 units (2 * radiusX); its screen width
-      // is pinned to the wrap. One part in fifty of slack covers a resize
-      // landing between the measure and the assert.
-      expect(fit.scale).toBeGreaterThan((fit.wrap / 18) * 0.98);
-      expect(fit.scale).toBeLessThan((fit.wrap / 18) * 1.02);
+      expect(fit.rail.width).toBeGreaterThan(0);
+      expect(fit.rail.height).toBeGreaterThan(0);
+
+      // RAIL_SCALE (1.14) outside the felt is the painted rail, and that is
+      // what fills the measured box. One part in fifty of slack covers a
+      // resize landing between the measure and the assert.
+      for (const [painted, box] of [
+        [fit.felt.width * 1.14, fit.rail.width],
+        [fit.felt.height * 1.14, fit.rail.height],
+      ]) {
+        expect(painted).toBeGreaterThan(box * 0.98);
+        expect(painted).toBeLessThan(box * 1.02);
+      }
+
+      // The regression itself: a tall plate must get a tall table. Asserted
+      // as an orientation rather than a ratio so it survives a retuned
+      // --table-aspect, and fails loudly if the fit ever goes back to
+      // deriving depth from a constant.
+      expect(fit.felt.width > fit.felt.height).toBe(viewport.wider);
     } finally {
       await context.close();
     }

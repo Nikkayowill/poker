@@ -8,6 +8,8 @@ import { expect, test } from "@playwright/test";
  */
 
 test("every seat deals from its own deck", async ({ browser }) => {
+  // Covers waiting out a hand this player was seated too late to join.
+  test.setTimeout(180_000);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   try {
     const response = await context.request.post("/api/games/quick-play", {
@@ -19,6 +21,18 @@ test("every seat deals from its own deck", async ({ browser }) => {
     await page.goto(`/?table=${payload.game.id}`);
     await page.getByRole("button", { name: "Play as guest" }).click();
     await expect(page.locator(".poker-table-wrap")).toBeVisible();
+    /**
+     * A hand this player is dealt into, not merely a rendered table.
+     *
+     * Sitting down while a hand is running deliberately sits the new occupant
+     * out of it -- `claimSeat` clears their hole cards for the rest of that
+     * hand so nobody inherits a bot's cards mid-hand -- and quick-play
+     * usually has the bots dealt in before the browser has claimed a seat.
+     * Waiting on `.seat-cards` being visible therefore raced the engine, and
+     * failed on the runs that landed mid-hand with a correctly empty box.
+     * See the same wait in dealing.spec.ts.
+     */
+    await expect(page.locator(".own-cards .dealt-card-shell")).toHaveCount(2, { timeout: 90_000 });
     await expect(page.locator(".seat-cards").first()).toBeVisible();
 
     const seats = await page.evaluate(() =>

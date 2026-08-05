@@ -53,9 +53,66 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   request before it reached `main` — the palette stays green-felt/gold-brass,
   full stop, per `feedback_stackchips_visual_identity` in project memory.
   Don't resurrect that work without a fresh explicit instruction. Active
-  slice is now the "away" bot-departure visual (see its own bullet below).
-  M16's remaining invite work is still parked, not abandoned — see the M16
-  note below.
+  slice is now the Canvas 2D renderer swap (see the renderer bullet below);
+  the "away" bot-departure visual landed just before it. M16's remaining
+  invite work is still parked, not abandoned — see the M16 note below.
+- The table renderer is a **Canvas 2D room** now — the three.js/WebGL room
+  that briefly replaced the CSS chip system was itself replaced at the
+  user's explicit request (they preferred the Canvas 2.5D look prototyped in
+  session; the full WebGL implementation is preserved on the
+  `archive/webgl-room` branch, restorable via
+  `git checkout archive/webgl-room -- <path>` — do not resurrect it without
+  an explicit instruction). The old CSS chip system
+  (`.pot-pile-chip`/`components/table/pot-pile.tsx`) stays gone. Current
+  architecture: `lib/scene/` is pure, deterministic logic — an orthographic
+  tilt projection (`projection.ts`: one TILT_DEG angle derives sin/cos
+  coefficients; the fit is closed-form `scale = wrapWidth / (2·radiusX)`,
+  no solver), seat-ring math, chip friction-slide physics
+  (`chip-physics.ts`, unchanged from the WebGL era, including value-based
+  sprays: bets fly the committed delta's denomination breakdown, each
+  winner's funnel flies their own `Winner.amount`, capped at
+  `FUNNEL_CHIP_COUNT` so the `NEXT_HAND_DELAY_MS` budget proof holds), the
+  dirty-flag render scheduler, and `chip-layer.ts` — the whole chip state
+  machine (keyed pile sync, sprays, lifecycle), now pure and unit-tested
+  (66 lib/scene Vitest cases). `components/table/scene/` is just
+  `table-scene.tsx` (canvas mount, scheduler loop, DPI capped at
+  MAX_PIXEL_RATIO, the `window.__stackchipsScene` e2e seam with the same
+  API the WebGL room exposed) and `paint.ts` (carpet/rail/felt/chip
+  painting from `CHIP_PALETTE` — the palette has now survived two renderer
+  changes). The DOM HUD is *unchanged and primary*: `.seat-figure` avatars,
+  nameplates, cards, action bar, feed, sounds all render exactly as before
+  the WebGL era — the sprite avatar layer, `webglAvatars` flag,
+  `onSeatProjection` seat-ring override, and `.scene-avatars` CSS are all
+  gone; the CSS ellipse in `lib/game/table-geometry.ts` is the one layout
+  authority again, and the canvas fits its painted table inside it.
+  `.scene-lit` still gates the DOM felt yielding on `onReady`. three.js and
+  @types/three are uninstalled (~350KB gzip gone; no more code-split chunk
+  needed for the renderer, though the dynamic import stays). Porting
+  exposed a real latent WebGL-era bug, now fixed and pinned by a regression
+  test: `update()` fed the arc-inflated *drawn* position back into
+  `stepChip`, so the arc residue re-amplified near the target and spray
+  chips never actually arrived — they hovered, holding the render loop
+  awake; the slide's `base` is now the motion state and the arc is applied
+  only to the drawn position. `tests/e2e/table-scene.spec.ts` was rewritten
+  for the canvas contract (HUD hit-testing, felt-yield + DOM-figures-
+  primary, closed-form fit asserted exactly on desktop and portrait-phone
+  viewports, and a loop-sleeps test the WebGL room could never have passed);
+  `chip-flights.spec.ts` runs unchanged against the preserved seam.
+- Standing street bets: a seat's committed-this-street chips now *rest in
+  front of the bettor* (`ChipLayer.syncBets`, keyed `slot:denom:index`,
+  columns spread along the seat's ellipse tangent so side-seat bets stay on
+  the felt) and sweep into the middle when the street turns
+  (`sweepBets` — the chips are transferred into flight from where they
+  rested, not respawned; an all-in runout that jumps streets sweeps once).
+  The centre pile renders `pot − Σ streetBet` so the felt's chips always
+  sum to the pot the HUD states — a unit test pins that invariant. Bet
+  sprays now land on the bettor's own spot (rail → bet spot), not the pot.
+  Hand boundaries and payouts `clearBets` instantly instead of sweeping;
+  the hand-boundary clear lives in the street effect in `table-scene.tsx`,
+  deliberately *before* the sync effect in declaration order — a trailing
+  new-hand effect would clear the incoming blinds' just-synced piles on the
+  same commit. `streetBets`/`street` are new `TableScene` props fed from
+  `seat.streetBet`/`game.street`.
 - Manifest (`app/manifest.ts`) now locks `orientation: "portrait-primary"`
   and ships real icons: `public/icons/icon-192.png` / `icon-512.png` /
   `icon-512-maskable.png`, rasterized from the existing `app/icon.svg` mark

@@ -19,11 +19,37 @@ async function seatAtTable(browser: Browser, viewport: { width: number; height: 
   await page.goto(`/?table=${payload.game.id}`);
   await page.getByRole("button", { name: "Play as guest" }).click();
   await expect(page.locator(".poker-table-wrap")).toBeVisible();
-  await expect(page.locator(".seat-cards").first()).toBeVisible();
+  await waitForOwnHoleCards(page);
   return { context, page };
 }
 
+/**
+ * Wait for a hand this player is actually *in*, not merely for the table to
+ * appear.
+ *
+ * Claiming a seat while a hand is already running deliberately sits the new
+ * occupant out of it: `claimSeat` clears their hole cards and forces
+ * `status = "out"` for the rest of that hand, which is what stops somebody
+ * who sits down mid-hand inheriting the bot's cards and turn. Quick-play
+ * hands back a table whose bots have usually already been dealt in by the
+ * time the browser has loaded, claimed a seat and rendered, so the first hand
+ * a test sees is frequently one where `.seat-cards` is correctly empty and
+ * the action bar correctly reads "Sat out".
+ *
+ * Waiting on `.seat-cards` being visible therefore raced the engine rather
+ * than the renderer, and failed on whichever runs happened to land mid-hand.
+ * Waiting for the cards themselves waits out that hand instead. The budget
+ * has to cover a full six-bot hand plus the 2.8s before the next deal, which
+ * is why it is far longer than an ordinary expect timeout.
+ */
+async function waitForOwnHoleCards(page: import("@playwright/test").Page) {
+  await expect(page.locator(".own-cards .dealt-card-shell")).toHaveCount(2, { timeout: 90_000 });
+  await expect(page.locator(".seat-cards").first()).toBeVisible();
+}
+
 test("every hole card is dealt from the deck on the felt", async ({ browser }) => {
+  // Covers waiting out a hand this player was seated too late to join.
+  test.setTimeout(180_000);
   const { context, page } = await seatAtTable(browser, { width: 1440, height: 900 });
   try {
     const seats = await page.evaluate(() => {
@@ -94,6 +120,7 @@ test("every hole card is dealt from the deck on the felt", async ({ browser }) =
 });
 
 test("the local player is dealt first, and the whole deal clears quickly", async ({ browser }) => {
+  test.setTimeout(180_000);
   const { context, page } = await seatAtTable(browser, { width: 390, height: 844 });
   try {
     const delays = await page.evaluate(() =>
@@ -119,6 +146,7 @@ test("the local player is dealt first, and the whole deal clears quickly", async
 });
 
 test("community cards transition in rather than snapping", async ({ browser }) => {
+  test.setTimeout(180_000);
   const { context, page } = await seatAtTable(browser, { width: 1440, height: 900 });
   try {
     // Board slots exist from the start as ghosts; only a real card gets a

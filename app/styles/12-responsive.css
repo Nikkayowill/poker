@@ -286,24 +286,23 @@
 @media (prefers-reduced-motion: reduce) {
   .dealt-card-shell,
   .community-card-flipper,
-  .pot-pile-chip,
   .seat-current::after,
   .gold-badge-claimed .gold-balance strong {
     animation: none;
   }
-  /* The pile is real state, not a transient, so it stays -- but it clears
-     itself by fading, and `animation: none` would leave the pot piled on the
-     felt after it had been paid out. */
-  .pot-pile-paying { display: none; }
-  /* Not `animation: none` -- these three exist only to be in motion, and
-     turning the motion off leaves them parked instead of gone. Verified with
-     Playwright's reducedMotion emulation: .pot-chip-flight computed to
-     animation-name none, opacity 1, 15x9px, so twelve opaque chips sat
-     stacked at the middle of the felt for the whole 2.8s between hands. The
-     others are shorter-lived versions of the same thing. A player who has
-     asked for less motion wants the chips not to fly, not to be littered. */
-  .pot-chip-flight,
-  .seat-chip-flight,
+  /* Not `animation: none` -- this exists only to be in motion, and turning
+     the motion off leaves it parked instead of gone. Verified with
+     Playwright's reducedMotion emulation on the chip sprays that used to be
+     listed here alongside it: they computed to animation-name none, opacity
+     1, and sat stacked at the middle of the felt for the whole 2.8s between
+     hands. A player who has asked for less motion wants the transient not to
+     fly, not to be littered.
+
+     The chips are the scene's now, and they honour the same preference in
+     the place that can do it properly: ChipLayer.update snaps each chip onto
+     its landing spot instead of sliding it there, so the pot still visibly
+     arrives on the player who won it. Removing them the way this rule
+     removes the muck drift would have removed information, not motion. */
   .muck-drift {
     display: none;
   }

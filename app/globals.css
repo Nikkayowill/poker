@@ -28,3 +28,8 @@
 @import "./styles/19-store.css";
 @import "./styles/20-menu.css";
 @import "./styles/21-friends.css";
+/* Last, and it has to be: the WebGL room overrides the painted felt and rail
+   from 06-table.css and the seat figure from 08-seat.css, and the cascade
+   here is load order. Moved earlier, the room draws underneath the flat green
+   ellipse it exists to replace. */
+@import "./styles/22-scene.css";

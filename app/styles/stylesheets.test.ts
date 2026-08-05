@@ -66,10 +66,20 @@ describe("stylesheets", () => {
    * symptom would be that something looked slightly wrong.
    */
   describe("the winner celebration fits inside the wait before the next hand", () => {
-    /** Everything that plays on a table where the hand has just been won. */
+    /**
+     * Everything *in CSS* that plays on a table where the hand has just been
+     * won.
+     *
+     * `chip-shuffle-to-winner` used to head this list. The pot going out to
+     * its winners is meshes on a friction slide now, which has no keyframes
+     * and no declared duration for a stylesheet reader to find -- so its half
+     * of this budget moved to `lib/scene/chip-physics.test.ts`, which solves
+     * for a duration instead of reading one. Between them the two tests still
+     * cover the whole celebration; neither covers it alone, which is worth
+     * knowing before deleting either.
+     */
     const CELEBRATION = [
       "pot-drain",
-      "chip-shuffle-to-winner",
       "winning-card-lift",
       "spent-card-fade",
       "hand-result-in",
@@ -78,14 +88,6 @@ describe("stylesheets", () => {
       "stack-win-pulse",
       "win-amount-rise",
     ];
-
-    /**
-     * The widest stagger the chip funnel applies, from table-effects.tsx:
-     * twelve chips at 34ms apart. It arrives as var(--chip-delay), which is
-     * not a number a stylesheet reader can resolve, so it is stated here and
-     * charged to every animation rather than quietly treated as zero.
-     */
-    const CHIP_STAGGER_MS = 11 * 34;
 
     const seconds = (value: string | undefined) =>
       value === undefined ? 0 : Math.round(Number.parseFloat(value) * 1000);
@@ -102,9 +104,7 @@ describe("stylesheets", () => {
           // Two time values in a shorthand: duration first, delay second.
           const times = [...shorthand.matchAll(/(?<![\w-])(\d*\.?\d+)s(?![\w-])/g)].map((t) => t[0]);
           const duration = seconds(times[0]);
-          const delay = shorthand.includes("var(--chip-delay)")
-            ? CHIP_STAGGER_MS
-            : seconds(times[1]);
+          const delay = seconds(times[1]);
           // A bare trailing integer is the iteration count.
           const iterations = Number.parseInt(shorthand.match(/\s(\d+)\s*$/)?.[1] ?? "1", 10);
           found.set(name, { endsAtMs: delay + duration * iterations, source: sheet });

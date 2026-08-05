@@ -56,6 +56,80 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   slice is now the "away" bot-departure visual (see its own bullet below).
   M16's remaining invite work is still parked, not abandoned — see the M16
   note below.
+- The felt's old CSS chip system (`.pot-pile-chip`/`.pot-chip-flight`/
+  `.seat-chip-flight`, `components/table/pot-pile.tsx`, `potChipSettleJitter`
+  in `lib/game/pot-chips.ts`) is gone, replaced by a real WebGL room:
+  `lib/scene/` (pure, deterministic logic — camera/lighting/layer/chip-physics
+  constants, seat-ring math, a fit solver, a dirty-flag render scheduler, the
+  `webglAvatars` feature flag — 71 Vitest cases, reachable because
+  `vitest.config.ts` covers `lib/`) driving `components/table/scene/`
+  (the three.js renderer: canvas-drawn chip/carpet/shadow textures, the room
+  mesh, a billboarded-sprite avatar layer, a pooled `ChipLayer`, and the
+  mounting `TableScene` component). A fixed cockpit `PerspectiveCamera` at
+  `(0,12,14)` looks at the table; one warm `SpotLight` over the pot is the
+  only real light, its intensity derived from lamp-to-felt distance
+  (`spotlightIntensityFor`) rather than stated flat, because three r155+'s
+  physically-based lights turn a flat "intensity 5" into a near-black table
+  otherwise. Layers A (floor)/B (chairs)/D (rim) always render live, replacing
+  the DOM felt art (`.scene-lit` in `app/styles/22-scene.css` zeroes out
+  `.poker-felt`/`.poker-rail`'s own backgrounds once the room mounts). Layer C
+  (avatar sprites) ships **on by default** (`lib/scene/flags.ts`; verified
+  live by `table-scene.spec.ts`), with `?webglAvatars=0` as an explicit
+  kill switch that falls back to the flat DOM `.seat-figure` plates — kept
+  in the tree for exactly that reason, not deleted. With the sprites
+  drawing, the room is the layout authority and projects its own seat ring
+  back onto the DOM via an `onSeatProjection` callback (`projectSeatRing`
+  in `components/table/scene/room.ts`), because fitting the two independent
+  ring shapes to agree by scale/position alone left a ~184px residual at
+  the side seats. Chip physics
+  (`lib/scene/chip-physics.ts`) is a frame-rate-independent friction-slide
+  lerp (`0.075` per 60fps-equivalent frame, converted via
+  `lerpFactorForDelta` so a 30fps phone takes the same wall-clock time as
+  60fps) with a mid-flight arc, matching the same 3-chip/20ms bet stagger and
+  12-chip/34ms funnel stagger the old CSS system used — `stylesheets.test.ts`
+  no longer asserts a celebration budget on it (nothing to key off, now that
+  chips are meshes) but `lib/scene/chip-physics.test.ts` proves the same
+  budget analytically. `window.__stackchipsScene` is a deliberate,
+  production-shipped debug/test seam (`chips()`, `pileSize()`, `seat(slot)`,
+  `roomScale()`, `roomLift()`, `awake()`, `lastFunnel()`) exposing only
+  already-visible projected coordinates. `next/dynamic(..., { ssr: false })`
+  code-splits the ~350KB gzip of three.js out of the main bundle (measured
+  221KB main / 131KB lazy chunk) so the lobby/store/landing pages never pay
+  for it. `tests/e2e/table-scene.spec.ts` (HUD-hit-testing, fit sanity, the
+  sprite layer's default-on alignment and the `?webglAvatars=0` kill-switch
+  fallback) and a rewritten
+  `tests/e2e/chip-flights.spec.ts` (payout targeting, verified two ways: a
+  direct `funnelSlots`/DOM-`.seat-winner` mapping assertion, plus a
+  rank-based "closed more ground than all but one seat" geometry check —
+  ratio/absolute-distance/nearest-seat variants were all tried and rejected,
+  see the file's own comments) both pass repeatedly (5x-repeat, 10/10). Full
+  `npm test`/`npm run lint`/`npm run build` all clean, with the one
+  pre-existing `bot-personality.test.ts` Monte Carlo VPIP timeout (confirmed
+  reproducible on a clean `main` checkout, unrelated to this work) as the
+  only exception. A separately-reproduced, pre-existing e2e flake —
+  `dealing.spec.ts`'s mobile-viewport quick-play test getting stuck "sat out"
+  across many hands — was confirmed via `git stash` to already fail on clean
+  `main` before any of this session's changes; it is a real bug but not one
+  this work touched or introduced, and remains open.
+- Chip sprays are value-based now, not decorative: `spawnBet`/`spawnFunnel`
+  fly the *amount* as chips — the same greedy `potChipStacks` breakdown the
+  pot pile uses, flattened per-chip by `sprayDenominations`/
+  `betSprayDenominations`/`funnelSprayDenominations` in
+  `lib/scene/chip-physics.ts` (smallest-first flight order so big chips land
+  on top; truncation drops from the small end, keeping the hundreds). The
+  bet spray carries the seat's committed *delta* (a raise to 200 over 50
+  already in flies the 150) — `poker-table.tsx`'s flight detector already
+  computed that delta and used to discard it. The funnel flies each
+  `Winner.amount` individually, so a split pot pays each share as the money
+  it is. Caps: `BET_SPRAY_MAX_CHIPS` (10, legibility only) and
+  `FUNNEL_CHIP_COUNT` (12 — now a hard *ceiling*, not a fixed count; the
+  `NEXT_HAND_DELAY_MS` celebration-budget proof in `chip-physics.test.ts`
+  solves its worst case from it, and a test pins the cap for absurd
+  amounts). `BET_CHIP_COUNT`(3)/`decorativeDenomination` survive only as the
+  fallback spray for malformed inputs (the empty-breakdown case), so a bad
+  snapshot degrades to the old behavior rather than a silent bet. Verified:
+  scene unit tests, lint, `tsc`, build all clean; both scene e2e specs (8
+  tests) pass live post-change.
 - Manifest (`app/manifest.ts`) now locks `orientation: "portrait-primary"`
   and ships real icons: `public/icons/icon-192.png` / `icon-512.png` /
   `icon-512-maskable.png`, rasterized from the existing `app/icon.svg` mark

@@ -34,7 +34,7 @@ import {
 } from "./chip-physics";
 import { MAX_CHIPS_PER_COLUMN, potChipStacks } from "@/lib/game/pot-chips";
 import { FELT, type Vec3 } from "./scene-config";
-import { POT_POSITION, ringPoint, seatAngle, seatBetOrigin } from "./seat-ring";
+import { potPosition, ringPoint, seatAngle, seatBetOrigin } from "./seat-ring";
 
 /** The token: a 39mm chip against a 2.1m table, near enough exactly right. */
 export const CHIP_RADIUS = 0.4;
@@ -95,8 +95,32 @@ export class ChipLayer {
    */
   private readonly bets = new Map<string, SceneChip>();
   private paying = false;
+  /**
+   * The felt's plan depth for the current fit, in world units.
+   *
+   * Every position in here that is "somewhere around the table" rather than
+   * "somewhere on a chip" scales with it — the bet spots, the payout
+   * landings, the pot itself — because the table's plan shape follows the
+   * plate's aspect ratio (see `fitView`). Held as a field and pushed in by
+   * the renderer rather than threaded through nine call sites, and defaulted
+   * to the desktop shape so every unit test that constructs a layer without
+   * one keeps describing the same table it always did.
+   */
+  private radiusZ: number = FELT.radiusZ;
 
   constructor(private readonly onChanged: () => void) {}
+
+  /**
+   * Re-shape the table under the chips already on it.
+   *
+   * Only the spots future chips are given are recomputed; chips already at
+   * rest keep their world positions. A resize is not a game event, and
+   * re-homing a settled pile mid-hand would read as the pot twitching.
+   */
+  setRadiusZ(radiusZ: number): void {
+    if (!Number.isFinite(radiusZ) || radiusZ <= 0 || radiusZ === this.radiusZ) return;
+    this.radiusZ = radiusZ;
+  }
 
   /**
    * The pot, as chips.
@@ -117,6 +141,9 @@ export class ChipLayer {
     const wanted = new Set<string>();
 
     const spread = (stacks.length - 1) / 2;
+    // Named for the spot, not the amount -- `pot` is already this method's
+    // first parameter, and the pile is no longer at the felt's own centre.
+    const centre = potPosition(this.radiusZ);
     stacks.forEach((stack, column) => {
       for (let index = 0; index < stack.count; index += 1) {
         const key = `${stack.denomination}:${index}`;
@@ -125,9 +152,9 @@ export class ChipLayer {
 
         const jitter = chipSettleJitter(stack.denomination, index);
         const rest: Vec3 = {
-          x: (column - spread) * COLUMN_SPACING + jitter.x,
+          x: centre.x + (column - spread) * COLUMN_SPACING + jitter.x,
           y: FELT.y + CHIP_THICKNESS / 2 + index * CHIP_THICKNESS,
-          z: jitter.z,
+          z: centre.z + jitter.z,
         };
         const chip: SceneChip = {
           denomination: stack.denomination,
@@ -173,7 +200,7 @@ export class ChipLayer {
     for (const { slot, amount } of bets) {
       const stacks = potChipStacks(amount, bigBlind);
       if (stacks.length === 0) continue;
-      const origin = seatBetOrigin(slot, seatCount);
+      const origin = seatBetOrigin(slot, seatCount, this.radiusZ);
       const theta = seatAngle(slot, seatCount);
       // Plan-space tangent of the ellipse at this seat, unit length.
       const tangent = { x: -Math.sin(theta), z: Math.cos(theta) };
@@ -231,6 +258,7 @@ export class ChipLayer {
    */
   sweepBets(): void {
     let order = 0;
+    const pot = potPosition(this.radiusZ);
     for (const chip of this.bets.values()) {
       // A chip still dropping in sweeps from wherever it is; drop its
       // settle flight so it is not animated twice.
@@ -238,9 +266,9 @@ export class ChipLayer {
       if (pending >= 0) this.moving.splice(pending, 1);
       const jitter = chipSettleJitter(chip.denomination, order);
       const target: Vec3 = {
-        x: POT_POSITION.x + jitter.x * 4,
+        x: pot.x + jitter.x * 4,
         y: FELT.y + CHIP_THICKNESS / 2,
-        z: POT_POSITION.z + jitter.z * 4,
+        z: pot.z + jitter.z * 4,
       };
       this.moving.push({
         chip,
@@ -280,8 +308,8 @@ export class ChipLayer {
    * malformed amount, where showing something is better than a silent bet.
    */
   spawnBet(slot: number, seatCount: number, amount: number, bigBlind: number): void {
-    const origin = ringPoint(slot, seatCount, 0.98, FELT.y);
-    const spot = seatBetOrigin(slot, seatCount);
+    const origin = ringPoint(slot, seatCount, 0.98, FELT.y, this.radiusZ);
+    const spot = seatBetOrigin(slot, seatCount, this.radiusZ);
     const denominations = betSprayDenominations(amount, bigBlind);
     const spray = denominations.length > 0
       ? denominations
@@ -322,6 +350,7 @@ export class ChipLayer {
    * vaguely leftward rather than anyone being paid.)
    */
   spawnFunnel(winners: Array<{ slot: number; amount: number }>, seatCount: number, bigBlind: number): void {
+    const pot = potPosition(this.radiusZ);
     for (const { slot, amount } of winners) {
       const denominations = funnelSprayDenominations(amount, bigBlind);
       const spray = denominations.length > 0
@@ -329,16 +358,16 @@ export class ChipLayer {
         : Array.from({ length: FUNNEL_CHIP_COUNT }, (_, index) => decorativeDenomination(index));
       spray.forEach((denomination, index) => {
         const jitter = chipSettleJitter(denomination, index);
-        const landing = ringPoint(slot, seatCount, 0.92, FELT.y);
+        const landing = ringPoint(slot, seatCount, 0.92, FELT.y, this.radiusZ);
         const target: Vec3 = {
           x: landing.x + jitter.x * 6 + ((index % 5) - 2) * 0.16,
           y: FELT.y + CHIP_THICKNESS / 2,
           z: landing.z + jitter.z * 6,
         };
         const start: Vec3 = {
-          x: POT_POSITION.x + jitter.x * 2,
+          x: pot.x + jitter.x * 2,
           y: FELT.y + CHIP_THICKNESS / 2 + (index % MAX_CHIPS_PER_COLUMN) * CHIP_THICKNESS,
-          z: POT_POSITION.z + jitter.z * 2,
+          z: pot.z + jitter.z * 2,
         };
         this.moving.push({
           chip: { denomination, position: { ...start } },

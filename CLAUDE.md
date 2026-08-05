@@ -66,8 +66,8 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   (`.pot-pile-chip`/`components/table/pot-pile.tsx`) stays gone. Current
   architecture: `lib/scene/` is pure, deterministic logic — an orthographic
   tilt projection (`projection.ts`: one TILT_DEG angle derives sin/cos
-  coefficients; the fit is closed-form `scale = wrapWidth / (2·radiusX)`,
-  no solver), seat-ring math, chip friction-slide physics
+  coefficients; the fit is closed-form, no solver — see the fit bullet
+  below), seat-ring math, chip friction-slide physics
   (`chip-physics.ts`, unchanged from the WebGL era, including value-based
   sprays: bets fly the committed delta's denomination breakdown, each
   winner's funnel flies their own `Winner.amount`, capped at
@@ -98,6 +98,47 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   primary, closed-form fit asserted exactly on desktop and portrait-phone
   viewports, and a loop-sleeps test the WebGL room could never have passed);
   `chip-flights.spec.ts` runs unchanged against the preserved seam.
+- **The room fits `.poker-rail`'s measured box, and the table's plan shape is
+  solved per fit.** The first Canvas cut pinned the felt to
+  `.poker-table-wrap`'s *width* alone and carried a fixed `radiusX:radiusZ`,
+  which paints one wide horizontal oval at every size — but `--table-aspect`
+  is 1.84 on a desktop, **0.62 on a portrait phone** and 3–3.6 in landscape.
+  On a phone that put a flat pancake across a tall plate with the seat ring
+  looping far above and below it, and on a desktop it painted the felt
+  *wider* than the ring (1180px of felt against a 1086px ring), so the
+  figures read as sitting on the cloth rather than at its edge. Both were the
+  same bug. `fitView` now takes the **rail's** box — `.poker-rail` carries
+  the per-breakpoint insets the artwork was cut to (`15% 4% 8%` desktop,
+  `9% 7%` phone) and is the geometry `lib/game/table-geometry.ts`'s ring was
+  hand-tuned against — and solves both radii so the painted `RAIL_SCALE`
+  ellipse fills it: `scale = (railW/2/RAIL_SCALE)/radiusX`, then
+  `radiusZ = (railH/2/RAIL_SCALE)/(TILT_SIN·scale)`. `SceneView` carries that
+  `radiusZ`; `seat-ring.ts` and `ChipLayer` (via `setRadiusZ`) take it so the
+  ring, bet spots and pot all follow the plate together. Deliberately *not*
+  done as a depth multiplier inside `project()` — that stretches everything
+  on the ground plane including each chip's own face, and a chip is a chip at
+  every breakpoint; elongating the table instead leaves discs round. Measured
+  after: desktop felt 954×407 inside a 1087×464 rail with seats at radial
+  0.94–1.26, portrait felt 291×419 (**tall**), landscape 558×150.
+- The pot is no longer at the felt's centre — `potPosition(radiusZ)` puts it
+  `POT_DEPTH_FRACTION` (0.55) of the felt's depth **away from the viewer**.
+  `.community-cards` lies across the middle (`top: 51%`, 47% on a phone), so
+  a centred pot was chips stacked on the flop with each hiding the other.
+  Behind the board rather than in front of it is an invariant, not a
+  preference: the near half of the felt belongs to the local player's own
+  figure (`SEAT_HEIGHT_RATIO` 0.30) and their hole cards — a pot pushed
+  toward the viewer landed behind that player's own head, measured 11px below
+  the board's bottom edge at 1440×900. It is also where this app has always
+  said the pot lives (`--deck-y: 26%`). Known limit, documented in the
+  constant: a **landscape phone** has no clearance to find at all — the board
+  is 108px tall inside a 150px felt — so the pot still overlaps there; that
+  is a board-size problem, not a pot-position one.
+- `card-backs.spec.ts` ("every seat deals from its own deck") and
+  `dealing.spec.ts` ("the local player is dealt first…") **fail on `main` as
+  of `7f15bd9`, before any of the above** — both time out waiting for
+  `.own-cards .dealt-card-shell` to reach 2. Confirmed by stashing and
+  re-running against a pristine tree, so do not read them as a regression
+  from the fit work; they are an open pre-existing failure.
 - Standing street bets: a seat's committed-this-street chips now *rest in
   front of the bettor* (`ChipLayer.syncBets`, keyed `slot:denom:index`,
   columns spread along the seat's ellipse tangent so side-seat bets stay on

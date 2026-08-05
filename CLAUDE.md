@@ -47,9 +47,14 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 - Mobile PWA launch prep is done and live on production (installable shell,
   safe-area fixes, the Adsterra CSP fix) — see the deploy note further down
   for the exact commit/PR this shipped in. Menu music is done as an *engine*
-  (still silent — see its own bullet below for what "done" means there).
-  M16's remaining invite work is still parked, not abandoned — see the M16
-  note below.
+  (still silent — see its own bullet below for what "done" means there). A
+  silver/platinum "Prestige" reskin of the app chrome was built and pushed to
+  a Preview deployment for review, then explicitly reverted at the user's
+  request before it reached `main` — the palette stays green-felt/gold-brass,
+  full stop, per `feedback_stackchips_visual_identity` in project memory.
+  Don't resurrect that work without a fresh explicit instruction. M16's
+  remaining invite work is still parked, not abandoned — see the M16 note
+  below.
 - Manifest (`app/manifest.ts`) now locks `orientation: "portrait-primary"`
   and ships real icons: `public/icons/icon-192.png` / `icon-512.png` /
   `icon-512-maskable.png`, rasterized from the existing `app/icon.svg` mark
@@ -120,6 +125,10 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   live, or renders something that looks like a redirect/popunder rather than
   a banner, the next domains to check are `img-src`/`connect-src`, not
   `script-src`/`frame-src` again.
+- `GoldBadge` (`components/profile/gold-badge.tsx`, the navbar balance) no
+  longer prefixes the number with a `"Gold: "` label — just the coin icon and
+  the amount (or `Unlimited`). `.gold-balance` is a flex row with `gap: 4px`
+  between children, so dropping the label span needed no CSS change.
 - Active slice (parked): M16 — friends and table invites. The friends half is landed
   end to end: `lib/server/friends-store.ts`, `/api/friends/*`, and the drawer
   plus lobby tile in `components/social/friends-drawer.tsx`. The table invite

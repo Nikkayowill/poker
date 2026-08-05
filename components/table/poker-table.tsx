@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
   Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, TimerReset, Trophy, Volume2, VolumeX, X,
@@ -15,12 +16,11 @@ import {
 import { Menu, type MenuItem } from "@/components/nav/menu";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ActionBar } from "./action-bar";
-import { ChipFlight, MuckDrift, PotFunnel } from "./table-effects";
+import { MuckDrift } from "./table-effects";
 import { HandHistoryDrawer } from "./hand-history-drawer";
 import { RebuyCheckout } from "./rebuy-checkout";
 import { PlayerSeat } from "./player-seat";
 import { PlayingCard } from "./playing-card";
-import { PotPile } from "./pot-pile";
 import { isWinningCard, winningCardKeys } from "@/lib/game/winning-cards";
 import { MAX_MISSED_TURNS } from "@/lib/game/engine";
 
@@ -50,6 +50,30 @@ export type ConnectionState = "connected" | "reconnecting" | "offline";
    moves nothing there; a portrait phone is bound by width, which is exactly
    where the figures were too small to read. The height fraction rises with it
    so a short landscape table does not suddenly become the binding case. */
+/**
+ * The WebGL room, split out of the main bundle.
+ *
+ * `three` is around 350KB gzipped -- comfortably the largest thing this app
+ * ships -- and none of it is needed until somebody actually sits at a table.
+ * Imported statically it lands in the same chunk as the lobby, the store and
+ * the landing page, all of which would then pay for a renderer they never
+ * construct. This is the difference between a mobile PWA that opens quickly
+ * and one that does not.
+ *
+ * `ssr: false` because the whole module is a canvas and a GPU context: there
+ * is nothing for the server to render, and importing `three` into the server
+ * bundle would slow every table request down for output that is thrown away.
+ *
+ * No loading placeholder, deliberately. The DOM table is complete on its own
+ * -- the felt and rail keep painting until `onReady` says the room exists --
+ * so the scene arriving a moment later is a table that gets lit, not a table
+ * with a hole in it.
+ */
+const TableScene = dynamic(
+  () => import("./scene/table-scene").then((module) => module.TableScene),
+  { ssr: false },
+);
+
 export const SEAT_WIDTH_RATIO = 0.26;
 export const SEAT_HEIGHT_RATIO = 0.30;
 
@@ -236,9 +260,11 @@ export function PokerTable({
     });
   }, []);
 
-  // Every seat rings the table on a projected ellipse, the local player
-  // included: slot 0 is the near edge, nearest the camera, which is exactly
-  // where the person holding it is sitting.
+  // Every seat rings the table on the CSS ellipse, the local player
+  // included: slot 0 is the near edge, nearest the viewer, which is exactly
+  // where the person holding it is sitting. The ellipse is the one layout
+  // authority -- the canvas room fits its painted table inside this ring
+  // rather than projecting a competing one back onto it.
   const ringGeometry = useMemo(
     () => orderedSeats.map((_, index) => {
       const geometry = seatGeometry(index, orderedSeats.length, radiiForTable(tableSize));
@@ -300,7 +326,7 @@ export function PokerTable({
   // disconnect -- skips flight generation entirely for that one snapshot,
   // so neither initial hydration nor a reconnect ever replays history.
   const streetBetsRef = useRef<{ handNumber: number; street: string; bets: Record<string, number> } | null>(null);
-  const [chipFlights, setChipFlights] = useState<Array<{ id: string; seatId: string }>>([]);
+  const [chipFlights, setChipFlights] = useState<Array<{ id: string; seatId: string; amount: number }>>([]);
   useEffect(() => {
     if (connectionState !== "connected") {
       streetBetsRef.current = null;
@@ -313,7 +339,14 @@ export function PokerTable({
     if (prev !== null) {
       const arrivals = game.seats
         .filter((seat) => seat.streetBet > (baseline[seat.id] ?? 0))
-        .map((seat) => ({ id: `${game.handNumber}-${game.street}-${seat.id}-${seat.streetBet}`, seatId: seat.id }));
+        .map((seat) => ({
+          id: `${game.handNumber}-${game.street}-${seat.id}-${seat.streetBet}`,
+          seatId: seat.id,
+          // The spray is this number as chips: what this seat just put in,
+          // not its whole street -- a raise to 200 from a seat that already
+          // had 50 committed flies the 150, exactly as a dealer cuts it out.
+          amount: seat.streetBet - (baseline[seat.id] ?? 0),
+        }));
       if (arrivals.length) {
         setChipFlights((current) => [...current, ...arrivals]);
       }
@@ -324,9 +357,54 @@ export function PokerTable({
       bets: Object.fromEntries(game.seats.map((seat) => [seat.id, seat.streetBet])),
     };
   }, [game.seats, game.handNumber, game.street]);
-  const removeChipFlight = useCallback((id: string) => {
-    setChipFlights((current) => current.filter((flight) => flight.id !== id));
-  }, []);
+  /**
+   * The list is a queue of *events*, not of nodes any more.
+   *
+   * Each flight used to be a React component that measured its own
+   * trajectory and removed itself through `onDone` when its CSS animation
+   * ended. The chips are meshes now and the scene owns their motion, so all
+   * this has to do is hand each new bet across exactly once and then stop
+   * growing -- `TableScene` dedupes by id, so clearing the whole list at once
+   * cannot replay anything. The timer restarts whenever another bet arrives,
+   * which is why a whole street of betting still only sweeps up once.
+   */
+  useEffect(() => {
+    if (chipFlights.length === 0) return;
+    const timer = window.setTimeout(() => setChipFlights([]), 900);
+    return () => window.clearTimeout(timer);
+  }, [chipFlights]);
+
+  /**
+   * The scene reports whether it actually got a context. Until it says yes,
+   * the DOM felt and rail keep painting themselves -- see `.scene-lit` in
+   * app/styles/24-scene.css. Assuming success would leave a device without
+   * a working canvas looking at an unpainted table.
+   */
+  const [sceneReady, setSceneReady] = useState(false);
+
+  // Ring slots, not engine seat positions. The scene rings its table from the
+  // local player's chair exactly as the DOM does, so a bet has to be handed
+  // over as "slot 2" rather than "seat abc" or it flies in from the wrong
+  // side of the table for everyone who is not in seat 1.
+  const slotOf = useMemo(() => {
+    const slots = new Map<string, number>();
+    orderedSeats.forEach((seat, index) => slots.set(seat.id, index));
+    return slots;
+  }, [orderedSeats]);
+  const betFlights = useMemo(
+    () => chipFlights
+      .map((flight) => ({ id: flight.id, slot: slotOf.get(flight.seatId) ?? -1, amount: flight.amount }))
+      .filter((flight) => flight.slot >= 0),
+    [chipFlights, slotOf],
+  );
+  const sceneWinners = useMemo(
+    () => (showFunnel
+      ? game.winners
+        .map((winner) => ({ slot: slotOf.get(winner.seatId) ?? -1, amount: winner.amount }))
+        .filter((winner) => winner.slot >= 0)
+      : []),
+    [showFunnel, game.winners, slotOf],
+  );
 
   // Same shape of guard as the chip-flight tracker above: a null baseline
   // (mount, or forced on any non-connected state) skips detection for that
@@ -506,7 +584,27 @@ export function PokerTable({
 
 
       <section className="game-content">
-        <div className="table-area">
+        <div
+          className={clsx(
+            "table-area",
+            // Only once the room is genuinely there to replace them: this
+            // class stops the DOM felt and rail painting.
+            sceneReady && "scene-lit",
+          )}
+        >
+          {/* The room, underneath everything. First child so it is first in
+              paint order as well as lowest in z-index -- the HUD over it is
+              ordinary DOM and needed no z-index changes to land on top. */}
+          <TableScene
+            seats={orderedSeats}
+            pot={game.pot}
+            bigBlind={game.bigBlind}
+            paying={showFunnel}
+            winners={sceneWinners}
+            handNumber={game.handNumber}
+            betFlights={betFlights}
+            onReady={setSceneReady}
+          />
           {/* The pot and the stakes, in the black space around the table
               rather than on the cloth. On the felt they had to be small
               enough not to fight the board, and at 1440x900 the blinds line
@@ -579,10 +677,14 @@ export function PokerTable({
                     box .pot-display used to occupy here (45x35 at every
                     breakpoint, because its two font sizes are fixed), so the
                     target has not moved by a pixel. */}
-                <div className="pot-anchor" ref={potRef} aria-hidden="true">
-                  <PotPile pot={game.pot} bigBlind={game.bigBlind} paying={showFunnel} />
-                </div>
-                {showFunnel && <PotFunnel key={game.handNumber} winners={game.winners} potRef={potRef} seatRefs={seatRefs} />}
+                {/* Empty now, and still load-bearing. The pile that used to
+                    be drawn in here is a stack of meshes on the felt; what
+                    this box still is, is the point three separate DOM
+                    measurements agree on -- folded cards drift here, every
+                    hole card is dealt from here, and an e2e test asserts its
+                    45x35 never moves. Removing it would drag both remaining
+                    trajectories with it and nothing would visibly break. */}
+                <div className="pot-anchor" ref={potRef} aria-hidden="true" />
                 <div className="community-cards">
                   {[0, 1, 2, 3, 4].map((index) => (
                     <span
@@ -636,17 +738,6 @@ export function PokerTable({
                 <span>D</span>
               </div>
             )}
-            {chipFlights.map((flight) => (
-              <ChipFlight
-                key={flight.id}
-                id={flight.id}
-                seatId={flight.seatId}
-                tableWrapRef={tableWrapRef}
-                potRef={potRef}
-                seatRefs={seatRefs}
-                onDone={removeChipFlight}
-              />
-            ))}
             {muckDrifts.map((drift) => (
               <MuckDrift
                 key={drift.id}

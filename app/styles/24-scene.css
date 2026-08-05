@@ -1,0 +1,66 @@
+/* The canvas room, and the seam between it and the DOM drawn over it. */
+
+/* The canvas host.
+   Fills .table-area and sits underneath everything in it. Nothing else in
+   this file raises a z-index: the DOM layers that have to be on top --
+   .poker-table-wrap and its seats, .table-hud, .table-feed -- already sit
+   above a z-index of 0 in their own stylesheets, so the whole HUD lands over
+   the room by being left alone.
+
+   pointer-events is the load-bearing declaration here. The canvas covers the
+   entire play area, including every seat and the felt, so without it the room
+   would swallow taps meant for the action bar's controls -- and the failure
+   would be silent, because a canvas that eats a click looks exactly like a
+   button that did not fire. */
+.table-scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Its own stacking context, so nothing inside the room can ever land
+     between two DOM layers that were meant to be adjacent. */
+  isolation: isolate;
+  /* The room is drawn against the app's own background wherever the floor
+     does not reach -- the renderer clears to transparent for exactly this. */
+  background: transparent;
+}
+
+.table-scene canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The felt the room now draws for itself.
+   .poker-rail and .poker-felt keep their geometry -- they are what the seat
+   ring, the pot anchor and every measured trajectory are positioned against,
+   and .poker-table-wrap's box is what the room is scaled to fit. What they
+   stop doing is painting: the cloth, the rail and the table's shadow are all
+   in the scene now, and leaving the CSS versions on top would put a flat
+   green ellipse over a lit one.
+
+   Deliberately not `display: none` and deliberately not a removal of the
+   elements. Both would take the boxes out of layout, and those boxes are the
+   coordinate system: tests/e2e/chip-flights.spec.ts measures .pot-anchor,
+   poker-table.tsx measures .poker-table-wrap to place every seat, and
+   .poker-felt's overflow is what keeps the community cards clipped to the
+   cloth. They stay exactly where they are and stop being painted. */
+.scene-lit .poker-rail {
+  background: none;
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.scene-lit .poker-felt {
+  background: none;
+  box-shadow: none;
+}
+
+.scene-lit .poker-felt::after {
+  opacity: 0;
+}
+
+.scene-lit .poker-table-wrap::after {
+  opacity: 0;
+}

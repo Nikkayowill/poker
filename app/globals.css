@@ -30,3 +30,8 @@
 @import "./styles/21-friends.css";
 @import "./styles/22-arcade.css";
 @import "./styles/23-blackjack.css";
+/* Last, and it has to be: the canvas room's rules override the painted felt
+   and rail from 06-table.css, and the cascade here is load order. Moved
+   earlier, the room draws underneath the flat green ellipse it exists to
+   replace. */
+@import "./styles/24-scene.css";

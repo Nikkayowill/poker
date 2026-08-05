@@ -162,69 +162,19 @@
   pointer-events: none;
 }
 
-/* The pot as chips, stacked on the deck point.
-   Absolutely positioned out of flow, every one of them: .pot-anchor is
-   measured by four separate effects and must keep its fixed 45x35 box no
-   matter how big the pot gets. A pile that resized the anchor would drag
-   every trajectory on the table with it, and nothing would look obviously
-   wrong -- see the assertion in tests/e2e/chip-flights.spec.ts. */
-.pot-pile {
-  position: absolute;
-  left: 50%;
-  bottom: 50%;
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  transform: translateX(-50%);
-  pointer-events: none;
-  /* Sized off the seat, like everything else that has to stay in proportion
-     to the table rather than to the window -- .poker-table-wrap sets
-     --seat-width from its own measured box, so this follows the felt down to
-     a landscape phone without a breakpoint of its own. Clamped at both ends:
-     the raw fraction is 21px on a desktop and 8px on a portrait phone, and
-     8px reads as a smudge rather than a chip. */
-  --pile-chip-w: clamp(14px, calc(var(--seat-width, 122px) * .15), 22px);
-  --pile-chip-h: calc(var(--pile-chip-w) * .66);
-}
+/* The pot is no longer drawn here.
 
-/* Chips stack upward, away from the board rather than onto it. */
-.pot-pile-column {
-  position: relative;
-  width: var(--pile-chip-w);
-  height: var(--pile-chip-h);
-}
+   It used to be a stack of absolutely-positioned discs inside .pot-anchor,
+   each one an element carrying four background-image layers that together
+   faked a rim, a groove, an eight-wedge inlay and a bright core. All of that
+   is a mesh now -- see components/table/scene/chips.ts, which kept every
+   decision that was about poker (denominations in big blinds, the column
+   cap, the seeded settle jitter) and dropped the ones that were only ever
+   about persuading a flat div to look like a cylinder.
 
-.pot-pile-chip {
-  position: absolute;
-  left: 0;
-  bottom: calc(var(--pile-index) * var(--pile-chip-h) * .42);
-  width: var(--pile-chip-w);
-  height: var(--pile-chip-h);
-  border: 2px dashed rgba(255,255,255,.72);
-  border-radius: 50%;
-  background: #be3538;
-  box-shadow: 0 1px 3px rgba(0,0,0,.5), inset 0 1px 1px rgba(255,255,255,.32);
-  /* Delayed by the length of chip-fly-to-pot, so the pile grows as the bet
-     lands rather than a beat before it does. A chip that has not arrived yet
-     is not drawn at all -- `both` holds the 0% frame through the delay. */
-  animation: pot-chip-settle .22s cubic-bezier(.2,.85,.3,1) .48s both;
-}
-
-@keyframes pot-chip-settle {
-  0% { opacity: 0; transform: translateY(-9px) scale(.7); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* The handoff. PotFunnel's chips are invisible for their first 18% -- about
-   210ms of a 1.18s flight -- so the pile has that long to get out of the way,
-   and clearing in 200ms means the felt is never both piled and paying. */
-.pot-pile-paying {
-  animation: pot-pile-away .2s ease both;
-}
-
-@keyframes pot-pile-away {
-  to { opacity: 0; transform: translateX(-50%) scale(.82); }
-}
+   .pot-anchor itself stays, empty, immediately below. It is still the point
+   the muck drift and every dealt hole card are measured from, and its fixed
+   45x35 box is still asserted by tests/e2e/chip-flights.spec.ts. */
 
 /* The black space around the table, put to work.
    Pinned to the top of .table-area rather than centred in it.
@@ -368,83 +318,18 @@
 .blind-structure b:last-of-type { color: #ffc06f; }
 .blind-structure i { color: #53625a; font-style: normal; }
 
-/* A shuffled spray of denomination-coloured chips travels from the pot to
-   each winner. Distances are measured at runtime, so every chip lands on the
-   correct responsive seat instead of following a hardcoded path -- but only
-   if it sets off from the point those distances were measured from, which is
-   --deck-y and was 19% for as long as this animation has existed. */
-.pot-chip-flight {
-  position: absolute;
-  top: var(--deck-y);
-  left: 50%;
-  z-index: 9;
-  width: 15px;
-  height: 10px;
-  border: 2px dashed rgba(255,255,255,.82);
-  border-radius: 50%;
-  background: #be3538;
-  box-shadow: 0 2px 4px rgba(0,0,0,.4), inset 0 0 0 2px rgba(0,0,0,.13);
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-  animation: chip-shuffle-to-winner 1.18s cubic-bezier(.2,.78,.2,1) var(--chip-delay) both;
-  box-shadow: 0 1px 3px rgba(0,0,0,.55), inset 0 1px 1px rgba(255,255,255,.38);
-}
-.chip-color-1 { background: #2f67a8; }
-.chip-color-2 { background: #2c805c; }
-.chip-color-3 { background: #24292b; border-color: #d6c77f; }
-.chip-color-4 { background: #d39b36; border-color: #fff2c4; }
-@keyframes chip-shuffle-to-winner {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(.45) rotate(0deg); }
-  18% {
-    opacity: 1;
-    transform: translate(
-      calc(-50% + var(--shuffle-x)),
-      calc(-50% + var(--shuffle-y))
-    ) scale(1.04) rotate(120deg);
-  }
-  44% {
-    opacity: 1;
-    transform: translate(
-      calc(-50% - var(--shuffle-x)),
-      calc(-50% + 7px)
-    ) scale(.96) rotate(250deg);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(
-      calc(-50% + var(--funnel-dx)),
-      calc(-50% + var(--funnel-dy))
-    ) scale(.52) rotate(520deg);
-  }
-}
+/* The two chip sprays are no longer drawn here either.
 
-/* A small, conservative spray of chips from an acting seat to the pot --
-   fires far more often than the pot-to-winner funnel (every bet/call/raise/
-   blind, for any of six seats), so it stays intentionally lighter: three
-   chips, no shuffle detour, just a quick direct arc. Positioned via inline
-   left/top (the seat's measured position) rather than a fixed anchor, since
-   unlike the pot or the dealer puck, the origin differs per seat. */
-.seat-chip-flight {
-  position: absolute;
-  z-index: 8;
-  width: 11px;
-  height: 7px;
-  border: 2px dashed rgba(255,255,255,.8);
-  border-radius: 50%;
-  background: #be3538;
-  box-shadow: 0 2px 3px rgba(0,0,0,.4), inset 0 0 0 2px rgba(0,0,0,.13);
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-  animation: chip-fly-to-pot .48s cubic-bezier(.3,.7,.28,1) var(--flight-delay, 0ms) both;
-}
-@keyframes chip-fly-to-pot {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(.5); }
-  16% { opacity: 1; }
-  100% {
-    opacity: 0;
-    transform: translate(calc(-50% + var(--flight-dx)), calc(-50% + var(--flight-dy))) scale(.8);
-  }
-}
+   .pot-chip-flight (pot to winner) and .seat-chip-flight (seat to pot) were
+   CSS keyframe animations over a measured translate vector. Both are meshes
+   on a friction slide now -- lib/scene/chip-physics.ts -- which is why the
+   celebration budget for them moved out of app/styles/stylesheets.test.ts
+   and into lib/scene/chip-physics.test.ts: a slide has no declared duration
+   to read out of a stylesheet, so the budget has to be solved for instead.
+
+   The muck drift below is still CSS, and still the original technique:
+   inline left/top from the seat's measured position. It is one element
+   moving once, which is exactly the case a keyframe is good at. */
 
 /* Bridges a folded seat's cards from "at the seat" to "gone" -- positioned
    via inline left/top (the seat's measured position, same technique as

@@ -252,7 +252,9 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   counts aces down from all-elevens so A-A-9 lands on 21 rather than 12 or 31.
   `dealerUpCards` is what the view renders from, so the hole card is genuinely
   absent from client state until the dealer's turn rather than merely hidden.
-- **Blackjack now settles against real Gold, and the server owns the deck.**
+- **Blackjack now settles against real Gold, and the server owns the deck**,
+  and it is live on `www.stackchips.app` via PR #7 (merge `3a8d4bf`) along
+  with the arcade hub panel and the four-column grid.
   The client no longer deals: `app/api/arcade/blackjack` (GET resume, POST
   deal) and `.../blackjack/actions` (POST hit/stand/double) hold the round,
   and `components/arcade/blackjack-table.tsx` replaces its one snapshot with
@@ -279,6 +281,19 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   racing that server by hand, establish the session cookie with a GET first —
   concurrent cookieless requests each mint their own profile via
   `readOrCreateSessionToken`, which looks exactly like a broken guard.)
+- **The Supabase branch of `blackjack-store.ts` has not been exercised
+  against a real round.** Everything verified so far — the 569-test suite,
+  the concurrency races, the browser run — went through the *memory* branch,
+  because `npm test` and a no-env dev server both take that path. The
+  Supabase branch (the PostgREST version-guarded `UPDATE`, the `23505` catch
+  behind `ActiveBlackjackRoundExists`, `jsonb` round-tripping the round) has
+  only ever been type-checked. What is confirmed in production is that the
+  table exists with the right grants and that the routes respond; the first
+  real hand played there is still the first execution of that code. Watch for
+  it, and note the version guard is the piece whose failure mode is silent
+  and expensive: if the PostgREST `.eq("version", …)` filter did not behave
+  as an atomic compare-and-set, a double-settle would pay twice rather than
+  erroring.
 - The orchestration lives in `lib/server/blackjack-service.ts` rather than in
   the handlers for the reason `lib/arcade/games.ts` and
   `lib/game/seat-presence.ts` exist: `vitest.config.ts` collects only `lib/`
@@ -305,6 +320,96 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   the hole card is absent from the wire until the dealer's turn rather than
   merely unrendered. `canCoverStake` stays a pure display predicate — it
   decides which stake buttons appear; `spendGold` is the authority.
+- **Cosmetics now travel to the arcade.** Blackjack was carrying neither slot:
+  the face-down card called `<PlayingCard card={null} large />` with no `back`
+  prop, so it drew the house deck no matter what the player had equipped — the
+  exact defect `PlayingCard`'s `back` prop was added to fix at the poker table
+  — and no avatar was rendered at all. Both slots of `EquippedCosmetics` are
+  wired now: `back={profile?.equipped.cardBack}` on the hole card, and
+  `<ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />`
+  beside the player's hand, which is the identical call `poker-table.tsx`
+  makes. The player's hand is labelled with their `displayName`, not "You" —
+  a generic label beside a face they chose reads as somebody else's seat.
+  Verified by buying and equipping a *non-default* pair on a live dev server
+  and reading the rendered result, not by assuming defaults prove the path:
+  the face-down card's base fill went `#1d4636` (house) → `#5a1f22` (oxblood)
+  and the avatar resolved to `/avatars/avatar-grinder-face.webp`.
+- The house dealer is **Vera** (`lib/arcade/dealer.ts` — name plus
+  `dealerLine(phase, outcome)`, in `lib/` because `vitest.config.ts` collects
+  only `lib/` and `app/`). The drawing is
+  `components/arcade/dealer-avatar.tsx`, inline SVG on the
+  `components/card-back-art.tsx` precedent rather than a shipped asset. It is
+  deliberately **not** a `ProfileAvatar` wearing some avatar cosmetic id: that
+  catalog is player property — bought, or earned via
+  `lib/server/avatar-unlocks.ts` — so dressing the house in one would imply
+  the dealer is a player and quietly devalue an item somebody ground for.
+- That dealer avatar must stay framed as a **face crop**, not a figure. The
+  first version drew a whole croupier inside the disc; at the 34px it actually
+  renders, the head was ~11px and the visor a green bar across it, reading as
+  a smudge beside the photographic `avatarFace()` crops it sits next to. Judge
+  any change to it against a real 34px render, not the 64-unit viewBox.
+- `dealerLine` returns constants, and a test caps them at 28 characters. Same
+  reasoning as the removed per-seat status pills: variable-length prose on the
+  felt is what clipped before. `.bj-hand-caption` also pins one line with an
+  ellipsis so a longer line added later clips instead of reflowing the felt.
+- **Hi-Lo is the second live game** (`lib/arcade/hi-lo.ts`, `/games/hi-lo`,
+  `app/api/arcade/hi-lo` + `.../actions`). One card face up, one call, one
+  draw, settled. Same three ordering rules as blackjack, restated in
+  `lib/server/hi-lo-service.ts` rather than referenced — breaking one is a
+  silent money bug and the next reader should not have to open another file
+  to learn why the sequence is what it is.
+- **Hi-Lo's odds are derived from the deck, never fixed, and that is
+  load-bearing.** A flat even-money table would be a money pump pointed at
+  the house: calling "higher" on a 2 wins 48 of 51. For a call that wins on
+  `w` unseen cards the fair net multiplier is `(51 - w)/w`, and
+  `HI_LO_HOUSE_EDGE` (3%) comes off that. Because exactly one card leaves the
+  deck, `w` depends only on the base card's rank — which is why the price can
+  honestly be quoted on the button *before* the call.
+- **A tie loses at Hi-Lo, and removing that breaks the game, not just the
+  margin.** With ties pushing, "higher" on a 2 is a certainty, so fair odds
+  pay exactly zero and the player stakes Gold to win nothing. Counting the
+  three same-rank cards as a loss makes even the safest call a real 48/51 bet.
+  The felt says so in as many words.
+- A call no card can win ("lower" on a 2, "higher" on an ace) is disabled, not
+  priced at zero — a button that can only take money is not a choice. The
+  engine returns the round unchanged for it and the service turns that into a
+  409, so a no-op can never look like a played round.
+- Two tests guard the payout table and they do different jobs. The exact one
+  walks all 13 ranks x 2 calls and asserts no combination is positive EV —
+  that is the exploit guard. The seeded 60k-round Monte Carlo exists because a
+  live 300-round sweep read **-9.16% of turnover** against a 3% design, which
+  looks like a mispriced table and is not: the tail is heavy (an 11x payout at
+  4/51). At 60k rounds it lands at -0.43% realized against -1.41% closed-form.
+  Do not "fix" the edge on the strength of a few hundred rounds.
+- `lib/server/arcade-round-store.ts` + `arcade_rounds` (migration
+  `20260805180000`) is blackjack-store generalised over a `game` column,
+  written when the second game arrived rather than guessed at when the first
+  did. Its unique index is on `(profile_id, game)`, not `profile_id`: a player
+  may sit at Hi-Lo and Blackjack at once. **Blackjack still uses its own
+  table on purpose** — it is live, it moves real Gold, and its Supabase path
+  has not yet been exercised by a real hand, so restacking its storage
+  underneath it would pile one unproven thing on another. Folding it in is a
+  clean follow-up once it has settled some real rounds.
+- Game #3 copies: `lib/arcade/<game>.ts` (pure engine, randomness by
+  injection, a `to*Snapshot` that drops the deck), a service holding the three
+  ordering rules, `arcade-round-store` for persistence, two routes, and a
+  `<game>-table.tsx` reusing the `.bj-*` shell. Only what the game genuinely
+  adds gets new CSS — `24-hi-lo.css` is ~60 lines because the rest is
+  Blackjack's.
+- The arcade tables tally settled rounds in a `useEffect` keyed on `round`,
+  not inside the fetch path. `react-hooks/refs` correctly flags a ref read
+  reachable from a click handler, and every path that yields a settled round
+  (an action, a resume, a 409 carrying true state) goes through `round`, so
+  there is one place to get it right instead of three. Both tables match;
+  keep them matching.
+- The eight remaining `lib/arcade/games.ts` entries are still
+  `status: "coming-soon"` with `href: null` — catalogue rows, no engines, no
+  routes, no client. There is nothing there to server-validate, and the poker
+  table has been server-authoritative from the start. A hub blurb must not
+  promise a mechanic the table lacks: Hi-Lo's said "ride the streak" while it
+  was a placeholder and there is no streak, so it was reworded when it went
+  live. Likewise `entryCost` must be a stake the tier ladder can actually
+  select — Hi-Lo's placeholder 500 was not one.
 - `lib/game/deck.ts` is new: `SUITS`/`RANKS`/`DECK_TEMPLATE`/`makeDeck`, lifted
   out of `engine.ts` unchanged so the arcade deals from the same deck the poker
   table does. The shuffle takes `randomInt` as an argument rather than
@@ -600,8 +705,17 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   how this project talks to the live project; `supabase/.temp/project-ref`
   holds the ref.
 - `supabase/migrations/20260805120000_blackjack_rounds.sql` (the
-  `blackjack_rounds` table) is the current pending one — **not yet applied to
-  production**, and the Blackjack routes are unusable there until it is. Same
-  one-at-a-time dry-run-then-push treatment, and per the point above it must
-  land *before or with* the code that reads it, not after.
+  `blackjack_rounds` table) is applied to production and verified: the table
+  is present, `service_role` reads it, and `anon` gets `42501 permission
+  denied`. It was pushed *before* the PR that shipped the routes reading it,
+  which is the ordering the point above exists to enforce. Note that
+  `supabase db push` printed a wall of `sb-compile-edge-runtime` /
+  `main worker has been destroyed` noise around an otherwise successful push
+  — that is the CLI's edge-functions component and is unrelated to the SQL;
+  confirm against `migration list --linked` and a real query rather than
+  reading the push output.
+- `supabase/migrations/20260805180000_arcade_rounds.sql` is **pending — not
+  applied to production**, and the Hi-Lo routes will fail there until it is.
+  Per the checklist point above it must land *before* the code that reads it,
+  which for Hi-Lo means pushing the migration and only then merging to `main`.
 - Update this section when scope changes; keep `CLAUDE.md` synchronized.

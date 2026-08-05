@@ -30,8 +30,12 @@
 @import "./styles/21-friends.css";
 @import "./styles/22-arcade.css";
 @import "./styles/23-blackjack.css";
+/* After 23: Hi-Lo reuses the Blackjack shell and only adds to it, so it must
+   cascade later. */
+@import "./styles/24-hi-lo.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to
-   replace. */
-@import "./styles/24-scene.css";
+   replace. Numbered 99 so it *sorts* last too — new stylesheets take the
+   next number in the ordinary sequence and can never land after this one. */
+@import "./styles/99-scene.css";

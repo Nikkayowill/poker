@@ -377,7 +377,7 @@ export function PokerTable({
   /**
    * The scene reports whether it actually got a context. Until it says yes,
    * the DOM felt and rail keep painting themselves -- see `.scene-lit` in
-   * app/styles/24-scene.css. Assuming success would leave a device without
+   * app/styles/99-scene.css. Assuming success would leave a device without
    * a working canvas looking at an unpainted table.
    */
   const [sceneReady, setSceneReady] = useState(false);

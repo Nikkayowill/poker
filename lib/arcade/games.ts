@@ -100,11 +100,17 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "hi-lo",
     name: "Hi-Lo",
-    blurb: "Call the next card, ride the streak",
+    // Not "ride the streak": there is no streak. One card, one call, settled
+    // -- and a hub blurb promising a mechanic the table does not have is a
+    // promise broken on the click.
+    blurb: "Call the next card, higher or lower",
     kind: "casino",
-    entryCost: 500,
-    status: "coming-soon",
-    href: null,
+    // 1,000, not the 500 this sat at while it was a placeholder: the round
+    // charges TIER_CONFIG's cheapest tier, and the hub must not quote a price
+    // no stake button can actually select.
+    entryCost: 1000,
+    status: "live",
+    href: "/games/hi-lo",
   },
   {
     id: "video-poker",

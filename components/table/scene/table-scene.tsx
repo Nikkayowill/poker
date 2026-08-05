@@ -29,7 +29,7 @@ import { carpetTile, paintChip, paintRoom } from "./paint";
  * chips.
  *
  * MOUNTING. The canvas fills `.table-area` and sits at the bottom of its
- * stacking order (`app/styles/24-scene.css`), so every existing DOM layer
+ * stacking order (`app/styles/99-scene.css`), so every existing DOM layer
  * draws over it with no z-index changes anywhere. It is
  * `pointer-events: none` and `aria-hidden`, so it cannot intercept a tap
  * meant for a button or add a single node to the accessibility tree.
@@ -78,7 +78,7 @@ export interface TableSceneProps {
    * True once a context exists and the room is painting, false if one could
    * not be created or has been torn down. The caller needs this: the DOM
    * felt and rail stop painting themselves only when the room is genuinely
-   * there to replace them (`.scene-lit` in `app/styles/24-scene.css`).
+   * there to replace them (`.scene-lit` in `app/styles/99-scene.css`).
    */
   onReady?: (ready: boolean) => void;
 }

@@ -30,3 +30,6 @@
 @import "./styles/21-friends.css";
 @import "./styles/22-arcade.css";
 @import "./styles/23-blackjack.css";
+/* After 23: Hi-Lo reuses the Blackjack shell and only adds to it, so it must
+   cascade later. */
+@import "./styles/24-hi-lo.css";

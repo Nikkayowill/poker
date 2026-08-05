@@ -106,13 +106,20 @@ export function BlackjackTable() {
    */
   const scored = useRef<Set<string>>(new Set());
 
-  const absorb = useCallback((next: BlackjackSnapshot | null) => {
-    setRound(next);
-    if (!next || next.phase !== "settled" || scored.current.has(next.id)) return;
-    scored.current.add(next.id);
-    setSessionNet((total) => total + next.netGold);
+  /**
+   * Tally settled hands as a reaction to the round changing, not inside the
+   * fetch path. A ref belongs in an effect rather than in a chain reachable
+   * from a click handler, and every path that can produce a settled hand -- an
+   * action, a resume, a 409 carrying the true state -- goes through `round`,
+   * so there is one place to get this right instead of three. Kept identical
+   * to the Hi-Lo table's, since the two are read side by side.
+   */
+  useEffect(() => {
+    if (!round || round.phase !== "settled" || scored.current.has(round.id)) return;
+    scored.current.add(round.id);
+    setSessionNet((total) => total + round.netGold);
     setHandsPlayed((count) => count + 1);
-  }, []);
+  }, [round]);
 
   /**
    * One request path for all three verbs. Errors are shown rather than
@@ -136,10 +143,10 @@ export function BlackjackTable() {
         if (data.profile) setProfile(data.profile);
         if (!response.ok) {
           setError(data.error ?? "That did not go through. Try again.");
-          if (data.round !== undefined) absorb(data.round);
+          if (data.round !== undefined) setRound(data.round);
           return;
         }
-        absorb(data.round ?? null);
+        setRound(data.round ?? null);
       } catch {
         setError("Could not reach the table. Check your connection.");
       } finally {
@@ -147,7 +154,7 @@ export function BlackjackTable() {
         setLoaded(true);
       }
     },
-    [absorb],
+    [],
   );
 
   useEffect(() => {

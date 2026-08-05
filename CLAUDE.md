@@ -295,14 +295,64 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   reasoning as the removed per-seat status pills: variable-length prose on the
   felt is what clipped before. `.bj-hand-caption` also pins one line with an
   ellipsis so a longer line added later clips instead of reflowing the felt.
-- **Blackjack is still the only arcade game that exists.** The other nine
-  entries in `lib/arcade/games.ts` are `status: "coming-soon"` with
-  `href: null` — catalogue rows, no engines, no routes, no client. There is
-  nothing there to server-validate; the poker table has been
-  server-authoritative from the start. When one of the nine is built, the
-  shape to copy is `lib/arcade/blackjack.ts` (pure engine, randomness by
-  injection) plus `lib/server/blackjack-service.ts` (the three ordering rules)
-  and a version-guarded round row.
+- **Hi-Lo is the second live game** (`lib/arcade/hi-lo.ts`, `/games/hi-lo`,
+  `app/api/arcade/hi-lo` + `.../actions`). One card face up, one call, one
+  draw, settled. Same three ordering rules as blackjack, restated in
+  `lib/server/hi-lo-service.ts` rather than referenced — breaking one is a
+  silent money bug and the next reader should not have to open another file
+  to learn why the sequence is what it is.
+- **Hi-Lo's odds are derived from the deck, never fixed, and that is
+  load-bearing.** A flat even-money table would be a money pump pointed at
+  the house: calling "higher" on a 2 wins 48 of 51. For a call that wins on
+  `w` unseen cards the fair net multiplier is `(51 - w)/w`, and
+  `HI_LO_HOUSE_EDGE` (3%) comes off that. Because exactly one card leaves the
+  deck, `w` depends only on the base card's rank — which is why the price can
+  honestly be quoted on the button *before* the call.
+- **A tie loses at Hi-Lo, and removing that breaks the game, not just the
+  margin.** With ties pushing, "higher" on a 2 is a certainty, so fair odds
+  pay exactly zero and the player stakes Gold to win nothing. Counting the
+  three same-rank cards as a loss makes even the safest call a real 48/51 bet.
+  The felt says so in as many words.
+- A call no card can win ("lower" on a 2, "higher" on an ace) is disabled, not
+  priced at zero — a button that can only take money is not a choice. The
+  engine returns the round unchanged for it and the service turns that into a
+  409, so a no-op can never look like a played round.
+- Two tests guard the payout table and they do different jobs. The exact one
+  walks all 13 ranks x 2 calls and asserts no combination is positive EV —
+  that is the exploit guard. The seeded 60k-round Monte Carlo exists because a
+  live 300-round sweep read **-9.16% of turnover** against a 3% design, which
+  looks like a mispriced table and is not: the tail is heavy (an 11x payout at
+  4/51). At 60k rounds it lands at -0.43% realized against -1.41% closed-form.
+  Do not "fix" the edge on the strength of a few hundred rounds.
+- `lib/server/arcade-round-store.ts` + `arcade_rounds` (migration
+  `20260805180000`) is blackjack-store generalised over a `game` column,
+  written when the second game arrived rather than guessed at when the first
+  did. Its unique index is on `(profile_id, game)`, not `profile_id`: a player
+  may sit at Hi-Lo and Blackjack at once. **Blackjack still uses its own
+  table on purpose** — it is live, it moves real Gold, and its Supabase path
+  has not yet been exercised by a real hand, so restacking its storage
+  underneath it would pile one unproven thing on another. Folding it in is a
+  clean follow-up once it has settled some real rounds.
+- Game #3 copies: `lib/arcade/<game>.ts` (pure engine, randomness by
+  injection, a `to*Snapshot` that drops the deck), a service holding the three
+  ordering rules, `arcade-round-store` for persistence, two routes, and a
+  `<game>-table.tsx` reusing the `.bj-*` shell. Only what the game genuinely
+  adds gets new CSS — `24-hi-lo.css` is ~60 lines because the rest is
+  Blackjack's.
+- The arcade tables tally settled rounds in a `useEffect` keyed on `round`,
+  not inside the fetch path. `react-hooks/refs` correctly flags a ref read
+  reachable from a click handler, and every path that yields a settled round
+  (an action, a resume, a 409 carrying true state) goes through `round`, so
+  there is one place to get it right instead of three. Both tables match;
+  keep them matching.
+- The eight remaining `lib/arcade/games.ts` entries are still
+  `status: "coming-soon"` with `href: null` — catalogue rows, no engines, no
+  routes, no client. There is nothing there to server-validate, and the poker
+  table has been server-authoritative from the start. A hub blurb must not
+  promise a mechanic the table lacks: Hi-Lo's said "ride the streak" while it
+  was a placeholder and there is no streak, so it was reworded when it went
+  live. Likewise `entryCost` must be a stake the tier ladder can actually
+  select — Hi-Lo's placeholder 500 was not one.
 - `lib/game/deck.ts` is new: `SUITS`/`RANKS`/`DECK_TEMPLATE`/`makeDeck`, lifted
   out of `engine.ts` unchanged so the arcade deals from the same deck the poker
   table does. The shuffle takes `randomInt` as an argument rather than
@@ -607,6 +657,8 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   — that is the CLI's edge-functions component and is unrelated to the SQL;
   confirm against `migration list --linked` and a real query rather than
   reading the push output.
-- There are no pending migrations. The next one added must ship with its
-  calling code, per the checklist point above.
+- `supabase/migrations/20260805180000_arcade_rounds.sql` is **pending — not
+  applied to production**, and the Hi-Lo routes will fail there until it is.
+  Per the checklist point above it must land *before* the code that reads it,
+  which for Hi-Lo means pushing the migration and only then merging to `main`.
 - Update this section when scope changes; keep `CLAUDE.md` synchronized.

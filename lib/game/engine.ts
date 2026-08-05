@@ -9,7 +9,6 @@ import type {
   PlayerAction,
   Rank,
   Seat,
-  Suit,
   Street,
   Winner,
 } from "./types";
@@ -21,10 +20,8 @@ import {
   DEFAULT_CARD_BACK,
 } from "@/lib/cosmetics/catalog";
 import { CHEAPEST_TIER, clampBuyIn, isStakesTier, TIER_CONFIG, type StakesTier } from "./tiers";
+import { DECK_TEMPLATE, makeDeck } from "./deck";
 
-const suits: Suit[] = ["clubs", "diamonds", "hearts", "spades"];
-const ranks: Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
-const deckTemplate: Card[] = suits.flatMap((suit) => ranks.map((rank) => ({ rank, suit })));
 const streetOrder: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
 type TurnAction = Exclude<
   PlayerAction,
@@ -305,15 +302,6 @@ export function generateRoomCode(): string {
   return code;
 }
 
-function makeDeck(): Card[] {
-  const deck = deckTemplate.map((card) => ({ ...card }));
-  for (let index = deck.length - 1; index > 0; index -= 1) {
-    const swapWith = randomInt(index + 1);
-    [deck[index], deck[swapWith]] = [deck[swapWith], deck[index]];
-  }
-  return deck;
-}
-
 function addLog(state: GameState, text: string, kind: "deal" | "action" | "win" = "action") {
   state.log.unshift({ id: randomUUID(), text, at: new Date().toISOString(), kind });
   state.log = state.log.slice(0, 18);
@@ -582,7 +570,7 @@ function setupHand(state: GameState, firstHand = false, now: number = Date.now()
     state.buttonPosition = nextSeat(state, state.buttonPosition, (seat) => seat.stack > 0) ?? 0;
     state.handNumber += 1;
   }
-  state.deck = makeDeck();
+  state.deck = makeDeck(randomInt);
   state.community = [];
   state.winners = [];
   state.street = "preflop";
@@ -1368,7 +1356,7 @@ export function estimateBotEquity(
   if (opponents === 0) return 1;
 
   const known = new Set([...seat.holeCards, ...state.community].map(cardKey));
-  const unknown = deckTemplate.filter((card) => !known.has(cardKey(card)));
+  const unknown = DECK_TEMPLATE.filter((card) => !known.has(cardKey(card)));
   let equity = 0;
 
   for (let simulation = 0; simulation < simulations; simulation += 1) {

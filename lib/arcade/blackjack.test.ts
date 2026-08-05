@@ -1,0 +1,256 @@
+import { describe, expect, it } from "vitest";
+import type { Card, Rank, Suit } from "@/lib/game/types";
+import {
+  canCoverStake,
+  dealRound,
+  dealerUpCards,
+  doubleDown,
+  handTotal,
+  hit,
+  isNatural,
+  legalBlackjackActions,
+  stand,
+  startRound,
+} from "./blackjack";
+
+/** "AS" -> ace of spades. Terse because these tests are mostly hand fixtures. */
+const suitOf: Record<string, Suit> = { S: "spades", H: "hearts", D: "diamonds", C: "clubs" };
+function card(code: string): Card {
+  return { rank: code.slice(0, -1) as Rank, suit: suitOf[code.slice(-1)] };
+}
+function hand(...codes: string[]): Card[] {
+  return codes.map(card);
+}
+
+/**
+ * startRound deals from the END of the deck, player first, alternating. This
+ * builds a deck that deals the hands given, with `rest` drawn afterwards in
+ * the order written.
+ */
+function stacked(player: string[], dealer: string[], rest: string[] = []): Card[] {
+  const order = [player[0], dealer[0], player[1], dealer[1], ...rest];
+  return order.map(card).reverse();
+}
+
+describe("handTotal", () => {
+  it("counts an ace as 11 until that would bust", () => {
+    expect(handTotal(hand("AS", "9H"))).toEqual({ total: 20, soft: true, busted: false });
+    expect(handTotal(hand("AS", "9H", "5D"))).toEqual({ total: 15, soft: false, busted: false });
+  });
+
+  it("demotes exactly one ace at a time", () => {
+    // A-A-9 is 21, not 12 and not 31.
+    expect(handTotal(hand("AS", "AH", "9D")).total).toBe(21);
+    expect(handTotal(hand("AS", "AH")).total).toBe(12);
+    expect(handTotal(hand("AS", "AH", "AD", "8C")).total).toBe(21);
+  });
+
+  it("values every face card at ten", () => {
+    expect(handTotal(hand("KS", "QH")).total).toBe(20);
+    expect(handTotal(hand("JS", "10H")).total).toBe(20);
+  });
+
+  it("reports a bust rather than clamping", () => {
+    expect(handTotal(hand("KS", "QH", "5D"))).toEqual({ total: 25, soft: false, busted: true });
+  });
+
+  it("calls a soft 17 soft and a hard 17 hard", () => {
+    expect(handTotal(hand("AS", "6H")).soft).toBe(true);
+    expect(handTotal(hand("10S", "7H")).soft).toBe(false);
+  });
+});
+
+describe("isNatural", () => {
+  it("is two cards or nothing", () => {
+    expect(isNatural(hand("AS", "KH"))).toBe(true);
+    // 21 over three cards is not a natural and must not pay 3:2.
+    expect(isNatural(hand("7S", "7H", "7D"))).toBe(false);
+  });
+});
+
+describe("startRound", () => {
+  it("deals two cards each, player first, and leaves 48 in the deck", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["9S", "7H"], ["6D", "5C"]) });
+    expect(round.playerHand).toEqual(hand("9S", "7H"));
+    expect(round.dealerHand).toEqual(hand("6D", "5C"));
+    expect(round.deck).toHaveLength(0);
+    expect(round.phase).toBe("player-turn");
+  });
+
+  it("pays a natural 3:2 immediately", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["AS", "KH"], ["9D", "8C"]) });
+    expect(round.phase).toBe("settled");
+    expect(round.outcome).toBe("player-blackjack");
+    expect(round.netGold).toBe(1500);
+  });
+
+  it("pushes two naturals", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["AS", "KH"], ["AD", "QC"]) });
+    expect(round.outcome).toBe("push");
+    expect(round.netGold).toBe(0);
+  });
+
+  it("loses to a dealer natural before the player acts", () => {
+    const round = startRound({ stake: 1000, deck: stacked(["10S", "9H"], ["AD", "QC"]) });
+    expect(round.outcome).toBe("dealer-win");
+    expect(round.netGold).toBe(-1000);
+  });
+
+  it("rounds a 3:2 payout the house's way on an odd stake", () => {
+    const round = startRound({ stake: 25, deck: stacked(["AS", "KH"], ["9D", "8C"]) });
+    expect(round.netGold).toBe(37);
+  });
+
+  it("rejects a stake that is not a positive number", () => {
+    expect(() => startRound({ stake: 0, deck: stacked(["9S", "7H"], ["6D", "5C"]) })).toThrow();
+    expect(() => startRound({ stake: -5, deck: stacked(["9S", "7H"], ["6D", "5C"]) })).toThrow();
+  });
+
+  it("does not mutate the deck it was handed", () => {
+    const deck = stacked(["9S", "7H"], ["6D", "5C"], ["2S"]);
+    const before = deck.length;
+    startRound({ stake: 100, deck });
+    expect(deck).toHaveLength(before);
+  });
+});
+
+describe("hit", () => {
+  it("draws a card and leaves the turn open", () => {
+    const round = hit(startRound({ stake: 100, deck: stacked(["5S", "4H"], ["6D", "5C"], ["3S"]) }));
+    expect(round.playerHand).toEqual(hand("5S", "4H", "3S"));
+    expect(round.phase).toBe("player-turn");
+  });
+
+  it("settles a bust at the current stake", () => {
+    const round = hit(startRound({ stake: 100, deck: stacked(["10S", "9H"], ["6D", "5C"], ["5S"]) }));
+    expect(round.outcome).toBe("player-bust");
+    expect(round.netGold).toBe(-100);
+  });
+
+  it("stands automatically on a drawn 21 -- there is no card that improves it", () => {
+    // Player 10+5, hits a 6 for 21; dealer 18 stands.
+    const round = hit(startRound({ stake: 100, deck: stacked(["10S", "5H"], ["10D", "8C"], ["6S"]) }));
+    expect(round.phase).toBe("settled");
+    expect(round.outcome).toBe("player-win");
+    // A three-card 21 pays even money, not 3:2.
+    expect(round.netGold).toBe(100);
+  });
+
+  it("is inert once the round is settled", () => {
+    const settled = stand(startRound({ stake: 100, deck: stacked(["10S", "9H"], ["10D", "8C"]) }));
+    expect(hit(settled)).toBe(settled);
+  });
+});
+
+describe("dealer rules", () => {
+  it("stands on a soft 17", () => {
+    // Dealer A-6. S17 means it must not draw the waiting 4.
+    const round = stand(startRound({ stake: 100, deck: stacked(["10S", "8H"], ["AD", "6C"], ["4S"]) }));
+    expect(round.dealerHand).toEqual(hand("AD", "6C"));
+    expect(round.outcome).toBe("player-win");
+  });
+
+  it("stands on a hard 17", () => {
+    const round = stand(startRound({ stake: 100, deck: stacked(["10S", "8H"], ["10D", "7C"], ["4S"]) }));
+    expect(round.dealerHand).toHaveLength(2);
+    expect(round.outcome).toBe("player-win");
+  });
+
+  it("hits under 17 and pays out when it busts", () => {
+    const round = stand(startRound({ stake: 100, deck: stacked(["10S", "6H"], ["10D", "6C"], ["KS"]) }));
+    expect(round.dealerHand).toEqual(hand("10D", "6C", "KS"));
+    expect(round.outcome).toBe("dealer-bust");
+    expect(round.netGold).toBe(100);
+  });
+
+  it("keeps drawing until it reaches 17", () => {
+    const round = stand(startRound({ stake: 100, deck: stacked(["10S", "8H"], ["2D", "3C"], ["4S", "2H", "6D"]) }));
+    expect(round.dealerHand).toEqual(hand("2D", "3C", "4S", "2H", "6D"));
+    expect(handTotal(round.dealerHand).total).toBe(17);
+    expect(round.outcome).toBe("player-win");
+  });
+
+  it("wins the tie for nobody -- equal totals push", () => {
+    const round = stand(startRound({ stake: 100, deck: stacked(["10S", "8H"], ["10D", "8C"]) }));
+    expect(round.outcome).toBe("push");
+    expect(round.netGold).toBe(0);
+  });
+
+  it("takes the pot on a higher total", () => {
+    const round = stand(startRound({ stake: 100, deck: stacked(["10S", "8H"], ["10D", "9C"]) }));
+    expect(round.outcome).toBe("dealer-win");
+    expect(round.netGold).toBe(-100);
+  });
+});
+
+describe("doubleDown", () => {
+  it("doubles the wager, draws exactly one card and ends the turn", () => {
+    const round = doubleDown(
+      startRound({ stake: 100, deck: stacked(["6S", "5H"], ["10D", "7C"], ["10S"]) }),
+    );
+    expect(round.doubled).toBe(true);
+    expect(round.stake).toBe(200);
+    expect(round.baseStake).toBe(100);
+    expect(round.playerHand).toHaveLength(3);
+    expect(round.phase).toBe("settled");
+    expect(round.outcome).toBe("player-win");
+    expect(round.netGold).toBe(200);
+  });
+
+  it("loses the doubled stake when the one card busts", () => {
+    const round = doubleDown(
+      startRound({ stake: 100, deck: stacked(["10S", "6H"], ["10D", "7C"], ["KS"]) }),
+    );
+    expect(round.outcome).toBe("player-bust");
+    expect(round.netGold).toBe(-200);
+  });
+
+  it("is offered on the opening two cards only", () => {
+    const opening = startRound({ stake: 100, deck: stacked(["6S", "5H"], ["10D", "7C"], ["2S", "3H"]) });
+    expect(legalBlackjackActions(opening).double).toBe(true);
+    const afterHit = hit(opening);
+    expect(legalBlackjackActions(afterHit).double).toBe(false);
+    // And the guard holds even if a caller ignores the legal-action list.
+    expect(doubleDown(afterHit)).toBe(afterHit);
+  });
+});
+
+describe("dealerUpCards", () => {
+  it("hides the hole card until the dealer's turn", () => {
+    const live = startRound({ stake: 100, deck: stacked(["10S", "8H"], ["10D", "7C"]) });
+    expect(dealerUpCards(live)).toEqual(hand("10D"));
+    expect(dealerUpCards(stand(live))).toEqual(hand("10D", "7C"));
+  });
+});
+
+describe("dealRound", () => {
+  it("deals from a full shuffled deck with no duplicates", () => {
+    // A deterministic stand-in for crypto's randomInt.
+    let seed = 7;
+    const randomInt = (max: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % max;
+    };
+    const round = dealRound(500, randomInt);
+    const dealt = [...round.playerHand, ...round.dealerHand];
+    expect(round.deck.length + dealt.length).toBe(52);
+    const keys = [...round.deck, ...dealt].map((c) => `${c.rank}${c.suit}`);
+    expect(new Set(keys).size).toBe(52);
+  });
+});
+
+describe("canCoverStake", () => {
+  it("gates opening on the stake and doubling on twice the stake", () => {
+    expect(canCoverStake(1000, { goldBalance: 1500, unlimitedGold: false }))
+      .toEqual({ open: true, double: false });
+    expect(canCoverStake(1000, { goldBalance: 2000, unlimitedGold: false }))
+      .toEqual({ open: true, double: true });
+    expect(canCoverStake(1000, { goldBalance: 999, unlimitedGold: false }))
+      .toEqual({ open: false, double: false });
+  });
+
+  it("lets an unlimited profile cover anything", () => {
+    expect(canCoverStake(500000, { goldBalance: 0, unlimitedGold: true }))
+      .toEqual({ open: true, double: true });
+  });
+});

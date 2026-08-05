@@ -17,6 +17,7 @@ const game = (over: Partial<ArcadeGame> = {}): ArcadeGame => ({
   kind: "casino",
   entryCost: 250,
   status: "coming-soon",
+  href: null,
   ...over,
 });
 
@@ -39,6 +40,15 @@ describe("arcade catalogue", () => {
   it("keeps ids unique", () => {
     const ids = ARCADE_GAMES.map((entry) => entry.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("routes every live game and only live games", () => {
+    // A live entry with a null href renders an unclickable "Play"; a
+    // coming-soon entry with an href is a 404 waiting to be linked.
+    for (const entry of ARCADE_GAMES) {
+      if (entry.status === "live") expect(entry.href).toBeTruthy();
+      else expect(entry.href).toBeNull();
+    }
   });
 
   it("never puts a price on a daily puzzle", () => {

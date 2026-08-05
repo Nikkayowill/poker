@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Coins, Gamepad2 } from "lucide-react";
 import clsx from "clsx";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -55,20 +56,30 @@ export function ArcadePanel({ profile }: { profile: PlayerProfile | null }) {
                   )
                   : <span className="arcade-free">{arcadeEntryLabel(entry)}</span>}
               </span>
-              <button
-                type="button"
-                className="arcade-play"
-                disabled={blocked !== null}
-                title={
-                  blocked === "coming-soon"
-                    ? `${entry.name} is not open yet`
-                    : blocked === "insufficient-gold"
-                      ? `Needs ${arcadeEntryLabel(entry)} Gold to play`
-                      : undefined
-                }
-              >
-                {arcadeActionLabel(entry, wallet)}
-              </button>
+              {/* A playable row is a link, not a button with an onClick --
+                  it navigates, so it should middle-click and open in a new
+                  tab like every other route in the hub. The disabled states
+                  stay buttons: there is nowhere to go. */}
+              {blocked === null && entry.href
+                ? (
+                  <Link className="arcade-play" href={entry.href}>
+                    {arcadeActionLabel(entry, wallet)}
+                  </Link>
+                )
+                : (
+                  <button
+                    type="button"
+                    className="arcade-play"
+                    disabled
+                    title={
+                      blocked === "coming-soon"
+                        ? `${entry.name} is not open yet`
+                        : `Needs ${arcadeEntryLabel(entry)} Gold to play`
+                    }
+                  >
+                    {arcadeActionLabel(entry, wallet)}
+                  </button>
+                )}
             </li>
           );
         })}

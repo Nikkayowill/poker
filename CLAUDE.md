@@ -182,12 +182,46 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   deliberately not a whole number of rows: the half-cut fifth row is the only
   "there is more here" affordance, since the scrollbar is hidden (same
   reasoning as `.friends-list`).
+- **Blackjack 21 is the first live arcade game** (`lib/arcade/blackjack.ts`,
+  `/games/blackjack` via `app/(lobby)/games/blackjack/page.tsx` — `(lobby)` is
+  a route group, so the parens are not a path segment). The engine is pure and
+  synchronous like `lib/game/engine.ts`: every function takes a round and
+  returns the next one, which is what makes the whole rule set reachable from
+  `npm test` (37 cases) and what would let a server route own a round later
+  without rewriting any of it. House rules: one deck reshuffled per round,
+  dealer **stands on soft 17** (`total < DEALER_STANDS_ON`, one expression
+  covering hard and soft), naturals pay 3:2 and two naturals push, double down
+  on the opening two cards only, no split/insurance/surrender. `handTotal`
+  counts aces down from all-elevens so A-A-9 lands on 21 rather than 12 or 31.
+  `dealerUpCards` is what the view renders from, so the hole card is genuinely
+  absent from client state until the dealer's turn rather than merely hidden.
+- **The blackjack table does not settle against real Gold, deliberately.** The
+  round is dealt in the browser, and a client that owns the deck can report
+  any result it likes — that collides head-on with this file's first rule. So
+  the wallet is *read* (it gates which `TIER_CONFIG` stakes are selectable and
+  whether a double is offered, via `canCoverStake`) and the running total is a
+  clearly-labelled session score; a `.bj-practice-note` on the page says so in
+  as many words. Making the Gold real means a route that owns the deck and
+  returns the round, the same shape as `app/api/games/[id]/actions`; the
+  engine already takes its randomness by injection (`RandomInt`) so it can be
+  handed `crypto.randomInt` server-side unchanged. Do not wire `netGold` to
+  `creditGold` without that route.
+- `lib/game/deck.ts` is new: `SUITS`/`RANKS`/`DECK_TEMPLATE`/`makeDeck`, lifted
+  out of `engine.ts` unchanged so the arcade deals from the same deck the poker
+  table does. The shuffle takes `randomInt` as an argument rather than
+  importing it — `engine.ts` passes `node:crypto`'s, which a client page has no
+  access to, and importing it inside the shared module would drag it into the
+  browser bundle of anything wanting a deck. Fisher-Yates is byte-identical, so
+  no seeded test shifted.
 - The catalogue itself is `lib/arcade/games.ts`, not data inside the
   component — `vitest.config.ts`'s `include` only covers `lib/` and `app/`, so
   anything under `components/` is unreachable by `npm test` (same reason
-  `lib/game/seat-presence.ts` exists). All ten entries are
-  `status: "coming-soon"`, the same "shape is finished, the switch is one
-  field" convention `MENU_MUSIC_TRACK` uses. Rows are already wallet-aware:
+  `lib/game/seat-presence.ts` exists). Blackjack is `status: "live"` with an
+  `href`; the other nine are `"coming-soon"` with a null href, the same "shape
+  is finished, the switch is two fields" convention `MENU_MUSIC_TRACK` uses. A
+  test asserts live-iff-href, since a live entry with a null href renders an
+  unclickable Play and a coming-soon entry with an href is a 404 waiting to be
+  linked. Rows are already wallet-aware:
   `toArcadeWallet`/`canAffordArcadeGame`/`arcadeBlockedReason` treat a missing
   profile as an empty wallet (never unlimited — the hub renders during the
   first-POST window before a profile exists) and honour `unlimitedGold` the

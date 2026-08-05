@@ -6,10 +6,11 @@
  * lib/game/seat-presence.ts does: vitest.config.ts's `include` only covers
  * lib/ and app/, so nothing under components/ is reachable by `npm test`.
  *
- * Every entry is `status: "coming-soon"` today. That is the same convention
- * MENU_MUSIC_TRACK and the unverified SFX entries already use here -- the
- * shape is finished and the switch is one field, rather than a stub that has
- * to be redesigned when the game behind it actually lands.
+ * Blackjack 21 is live (lib/arcade/blackjack.ts, /games/blackjack). The other
+ * nine are `status: "coming-soon"` with a null href -- the same convention
+ * MENU_MUSIC_TRACK and the unverified SFX entries already use here: the shape
+ * is finished and going live is two fields, rather than a stub that has to be
+ * redesigned when the game behind it actually lands.
  */
 
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -44,6 +45,12 @@ export interface ArcadeGame {
   /** Gold staked to start a round. Always 0 for `puzzle`. */
   entryCost: number;
   status: ArcadeGameStatus;
+  /**
+   * Where a live game lives. Null while it is coming-soon -- a route that is
+   * not built yet is a 404 waiting for whoever flips the status without
+   * reading this file.
+   */
+  href: string | null;
 }
 
 /**
@@ -69,7 +76,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "Beat the dealer, 3:2 on naturals",
     kind: "casino",
     entryCost: 1000,
-    status: "coming-soon",
+    status: "live",
+    href: "/games/blackjack",
   },
   {
     id: "daily-wordle",
@@ -78,6 +86,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     kind: "puzzle",
     entryCost: 0,
     status: "coming-soon",
+    href: null,
   },
   {
     id: "connections",
@@ -86,6 +95,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     kind: "puzzle",
     entryCost: 0,
     status: "coming-soon",
+    href: null,
   },
   {
     id: "hi-lo",
@@ -94,6 +104,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     kind: "casino",
     entryCost: 500,
     status: "coming-soon",
+    href: null,
   },
   {
     id: "video-poker",
@@ -102,6 +113,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     kind: "casino",
     entryCost: 500,
     status: "coming-soon",
+    href: null,
   },
   {
     id: "roulette-wheel",
@@ -110,6 +122,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     kind: "casino",
     entryCost: 1000,
     status: "coming-soon",
+    href: null,
   },
   {
     id: "daily-sudoku",
@@ -118,6 +131,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     kind: "puzzle",
     entryCost: 0,
     status: "coming-soon",
+    href: null,
   },
   {
     id: "memory-match",
@@ -126,6 +140,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     kind: "puzzle",
     entryCost: 0,
     status: "coming-soon",
+    href: null,
   },
   {
     id: "baccarat",
@@ -134,6 +149,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     kind: "casino",
     entryCost: 5000,
     status: "coming-soon",
+    href: null,
   },
   {
     id: "coin-flip",
@@ -142,6 +158,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     kind: "casino",
     entryCost: 250,
     status: "coming-soon",
+    href: null,
   },
 ];
 

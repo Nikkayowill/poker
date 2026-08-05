@@ -6,6 +6,7 @@ import Image from "next/image";
 import type { PublicSeat } from "@/lib/game/types";
 import { avatarFigure } from "@/lib/cosmetics/catalog";
 import { dealDelayMs } from "@/lib/game/deal-choreography";
+import { isBotAway } from "@/lib/game/seat-presence";
 import { isWinningCard } from "@/lib/game/winning-cards";
 import { missingArtwork } from "@/components/artwork-cache";
 import { PlayingCard } from "./playing-card";
@@ -146,6 +147,7 @@ function SeatNameplate({
     : seat.isBigBlind
       ? { abbreviation: "BB", name: "Big Blind", amount: bigBlind }
       : null;
+  const away = isBotAway(seat);
   return (
     <div className="seat-plate">
       <div className="seat-name-row">
@@ -163,13 +165,23 @@ function SeatNameplate({
         )}
       </div>
       <div className="seat-stack-row">
-        <span
-          className={clsx("seat-stack", isWinner && "seat-stack-win")}
-          aria-label={`${seat.stack.toLocaleString()} chips`}
-        >
-          <span className="chip-dot" />
-          <strong>{seat.stack.toLocaleString()}</strong>
-        </span>
+        {/* A departed bot's stack is 0 -- printing that as a chip count would
+            read as busted rather than away. A short, fixed-length label in
+            the same slot the chip count normally sits in, not a floating
+            pill: table-feed.spec.ts asserts no seat prints one of those any
+            more, and this can't reproduce that clipping bug because it never
+            varies in length or escapes .seat-plate's own box. */}
+        {away
+          ? <span className="seat-away-badge">Sitting out</span>
+          : (
+            <span
+              className={clsx("seat-stack", isWinner && "seat-stack-win")}
+              aria-label={`${seat.stack.toLocaleString()} chips`}
+            >
+              <span className="chip-dot" />
+              <strong>{seat.stack.toLocaleString()}</strong>
+            </span>
+          )}
         {/* Only the seat on the clock carries one, so it doubles as the
             "whose turn is it" cue and there is never more than one burning. */}
         {seat.isCurrent && (
@@ -217,6 +229,7 @@ export const PlayerSeat = memo(function PlayerSeat({
   seatStyle?: React.CSSProperties;
 }) {
   const folded = seat.status === "folded" || seat.status === "out";
+  const away = isBotAway(seat);
   const isWinner = winAmount !== undefined;
   const seatNear = Number((seatStyle as Record<string, string | number> | undefined)?.["--seat-near"] ?? 1);
   const isFarSeat = placement === "seat-ring" && Number.isFinite(seatNear) && seatNear < 0.38;
@@ -252,7 +265,9 @@ export const PlayerSeat = memo(function PlayerSeat({
   // under the table container. The table feed carries the same events, in
   // one place, at a size that can be read -- see .table-feed in
   // 06-table.css. What the seat still says for itself, it says without
-  // prose: folded seats are dimmed via .seat-muted, the winner gets its
+  // prose: folded seats are dimmed via .seat-muted, a departed bot goes
+  // further via .seat-away (see isBotAway above) with a fixed short label
+  // in the stack row rather than a floating pill, the winner gets its
   // badge, and the turn clock burns around whoever is on it.
 
   return (
@@ -266,6 +281,7 @@ export const PlayerSeat = memo(function PlayerSeat({
         seat.isSmallBlind && "seat-small-blind",
         seat.isBigBlind && "seat-big-blind",
         folded && "seat-muted",
+        away && "seat-away",
         isWinner && "seat-winner",
         isFarSeat && "seat-far",
       )}

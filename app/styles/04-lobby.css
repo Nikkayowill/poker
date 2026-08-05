@@ -60,17 +60,11 @@
 
 
 
-/* Prestige Platinum: the app's one generic "primary CTA" shape, everywhere
-   it appears (this file, .account-primary-action/.landing-cta-primary below,
-   .action-slot-controls .primary-action + .raise-drawer-confirm in
-   09-action-bar.css). Brushed-steel fill, same 3-stop sheen shape the old
-   gold treatment used, just a cooler hue -- the felt and the in-hand color-
-   coded action buttons are untouched. */
 .name-row button, .primary-action {
   border: 0;
   border-radius: 5px;
-  color: var(--platinum-ink);
-  background: linear-gradient(160deg, #eef1f3 0%, var(--platinum) 55%, #7d858c 100%);
+  color: #11130e;
+  background: #d9b85d;
   font-weight: 750;
   cursor: pointer;
   display: inline-flex;
@@ -78,7 +72,7 @@
   justify-content: center;
   gap: 9px;
   padding: 14px 20px;
-  box-shadow: inset 0 1px rgba(255,255,255,.4), 0 4px 14px rgba(0,0,0,.22);
+  box-shadow: none;
 }
 
 button:disabled { cursor: wait; opacity: .62; }
@@ -178,11 +172,11 @@ button:disabled { cursor: wait; opacity: .62; }
   display: grid;
   place-items: center;
   margin: 0 auto 30px;
-  color: var(--platinum-ink);
-  border: 1px solid #dde3e7;
+  color: #15170f;
+  border: 1px solid #f4df96;
   border-radius: 13px;
-  background: linear-gradient(145deg, #f5f7f8, #8b939b);
-  box-shadow: 0 13px 36px rgba(150, 160, 168, .22);
+  background: linear-gradient(145deg, #f0d57d, #b58d35);
+  box-shadow: 0 13px 36px rgba(217, 184, 93, .18);
   font: 700 25px/1 Georgia, "Times New Roman", serif;
   transform: rotate(45deg);
 }
@@ -192,7 +186,7 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-entry-eyebrow {
   display: block;
   margin-bottom: 12px;
-  color: #a9b3b9;
+  color: #c8b269;
   font-size: 9px;
   font-weight: 750;
   letter-spacing: .16em;
@@ -269,14 +263,14 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 
 .account-primary-action {
-  color: var(--platinum-ink);
-  border: 1px solid #dde3e7;
-  background: linear-gradient(160deg, #f5f7f8 0%, #ccd3d8 42%, #8b939b 100%);
-  box-shadow: inset 0 1px rgba(255,255,255,.4), 0 12px 35px rgba(150, 160, 168, .16);
+  color: #12150f;
+  border: 1px solid #ead17c;
+  background: linear-gradient(180deg, #e6ca70, #c49f46);
+  box-shadow: 0 12px 35px rgba(206, 170, 71, .13);
 }
 
 .account-primary-action:hover:not(:disabled) {
-  background: linear-gradient(160deg, #ffffff 0%, #dde3e7 42%, #9aa2a9 100%);
+  background: linear-gradient(180deg, #f0d987, #d0ad53);
   transform: translateY(-1px);
 }
 
@@ -490,10 +484,9 @@ button:disabled { cursor: wait; opacity: .62; }
   transition: filter .15s ease, border-color .15s ease;
 }
 .landing-cta-primary {
-  color: var(--platinum-ink);
-  border: 1px solid var(--platinum-line);
-  background: linear-gradient(160deg, #eef1f3 0%, var(--platinum) 42%, #7d858c 100%);
-  box-shadow: inset 0 1px rgba(255,255,255,.4);
+  color: #17170f;
+  border: 1px solid rgba(217,184,93,.5);
+  background: linear-gradient(180deg, var(--gold-light), var(--gold));
 }
 .landing-cta-primary:hover:not(:disabled) { filter: brightness(1.07); }
 .landing-cta-primary:disabled { opacity: .5; cursor: not-allowed; }
@@ -612,7 +605,7 @@ button:disabled { cursor: wait; opacity: .62; }
   /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
   font-size: 16px;
 }
-.hub-name input:focus { border-color: var(--platinum-line); }
+.hub-name input:focus { border-color: rgba(217,184,93,.55); }
 .hub-name input::placeholder { color: #526159; }
 
 .hub-grid {
@@ -659,7 +652,7 @@ button:disabled { cursor: wait; opacity: .62; }
   transition: border-color .16s ease, transform .16s ease;
 }
 .hub-tile:hover { border-color: rgba(217,184,93,.34); transform: translateY(-2px); }
-.hub-tile:focus-visible { outline: 2px solid var(--platinum-light); outline-offset: 2px; }
+.hub-tile:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
 .hub-tile:disabled { opacity: .55; cursor: wait; transform: none; }
 
 .hub-tile-wide { grid-column: 1 / -1; min-height: 132px; }
@@ -672,7 +665,7 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 .hub-tile-wide .hub-tile-body strong { font-size: 22px; }
 .hub-tile-body small { color: #9fb0a7; font-size: 11.5px; line-height: 1.4; }
-.hub-tile-go { flex-shrink: 0; color: var(--platinum-light); }
+.hub-tile-go { flex-shrink: 0; color: var(--gold-light); }
 
 /* Real artwork per tile, from public/. */
 /* The play tile shows the felt itself, zoomed past the rail so the arcs of
@@ -720,10 +713,10 @@ button:disabled { cursor: wait; opacity: .62; }
   font-size: 16px;
   letter-spacing: .18em;
 }
-.hub-code-row input:focus { border-color: var(--platinum-line); }
+.hub-code-row input:focus { border-color: rgba(217,184,93,.48); }
 .hub-code-row button {
-  color: var(--platinum-light);
-  border: 1px solid var(--platinum-line);
+  color: #d8c985;
+  border: 1px solid rgba(217,184,93,.25);
   border-radius: 10px;
   background: transparent;
   font-size: 12px;

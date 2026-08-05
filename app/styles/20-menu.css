@@ -14,9 +14,6 @@
   cursor: pointer;
 }
 
-/* Prestige Platinum: a hairline steel border and a cooler shadow in place of
-   the felt-green line/elevation everywhere else -- the one panel in the app
-   meant to read as a lounge fixture rather than table furniture. */
 .app-menu-panel {
   position: absolute;
   top: calc(100% + var(--space-4, 8px));
@@ -26,10 +23,10 @@
   display: flex;
   flex-direction: column;
   padding: var(--space-3, 6px);
-  border: 1px solid var(--platinum-line);
+  border: 1px solid var(--line);
   border-radius: var(--radius-xl, 12px);
-  background: linear-gradient(165deg, #14191c 0%, #0d1113 100%);
-  box-shadow: var(--elevation-4, 0 15px 35px rgba(0, 0, 0, .22)), inset 0 1px rgba(255,255,255,.05);
+  background: #101917;
+  box-shadow: var(--elevation-4, 0 15px 35px rgba(0, 0, 0, .22));
   animation: app-menu-in .12s ease-out both;
 }
 
@@ -58,13 +55,13 @@
 .app-menu-item:hover,
 .app-menu-item:focus-visible {
   color: var(--ink);
-  background: rgba(197, 205, 212, .08);
+  background: rgba(255, 255, 255, .05);
   outline: none;
 }
 
 /* Focus is still shown for keyboard users -- the hover background alone is
    ambiguous when both a pointer and a keyboard are in play. */
-.app-menu-item:focus-visible { box-shadow: inset 0 0 0 1px var(--platinum-line); }
+.app-menu-item:focus-visible { box-shadow: inset 0 0 0 1px rgba(217, 184, 93, .45); }
 
 .app-menu-item svg { flex-shrink: 0; opacity: .75; }
 

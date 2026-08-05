@@ -158,6 +158,43 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   server with `RIVER_BOT_LEAVE_CHANCE=1` forced multiple bots away in one
   hand, and a Playwright check confirmed the grayscale/opacity/label on the
   rendered seats and screenshotted the result.
+- The hub grid is four columns on desktop (`≥1024px`) and no longer leaves a
+  hole. The hole was arithmetic, not styling: at the old two-column cap the
+  small tiles were private/gold/collection/leaderboard/friends — five items in
+  a two-wide grid, so the last row held one tile and one empty cell, and
+  simply widening to four would have moved the hole rather than closed it. A
+  new fourth panel (`components/lobby/arcade-panel.tsx`, "Arcade & Puzzles")
+  plus explicit spans is what makes every cell land: arcade takes a 2×2 block,
+  friends and the room-code form take two columns each, and `.hub-tile-wide`
+  keeps its existing `1 / -1`. `.hub-tile-code`'s base `1 / -1` is
+  deliberately narrowed at that breakpoint — full width there would strand the
+  two cells beside friends. **Placement is by DOM order**, so the panel is
+  rendered between Buy Gold and Collection in `lobby.tsx`; moving it in the
+  source reopens the hole. Verified against real computed rects at
+  1440/820/390 via headless Playwright, not by reading the CSS.
+- The arcade panel is a `.hub-tile` (same border/radius/16px padding/hover as
+  every other panel) with a scrolling list inside, the same way
+  `.friends-drawer` reuses `.history-drawer`; `app/styles/22-arcade.css` holds
+  only list rules and is imported last in `app/globals.css`. `.arcade-list`
+  needs `min-height: 0` — a flex item's `min-height` is `auto`, so without it
+  the ten rows refused to shrink, the panel grew to 509px and dragged every
+  tile sharing its grid rows to 290px. The `max-height: 230px` cap is
+  deliberately not a whole number of rows: the half-cut fifth row is the only
+  "there is more here" affordance, since the scrollbar is hidden (same
+  reasoning as `.friends-list`).
+- The catalogue itself is `lib/arcade/games.ts`, not data inside the
+  component — `vitest.config.ts`'s `include` only covers `lib/` and `app/`, so
+  anything under `components/` is unreachable by `npm test` (same reason
+  `lib/game/seat-presence.ts` exists). All ten entries are
+  `status: "coming-soon"`, the same "shape is finished, the switch is one
+  field" convention `MENU_MUSIC_TRACK` uses. Rows are already wallet-aware:
+  `toArcadeWallet`/`canAffordArcadeGame`/`arcadeBlockedReason` treat a missing
+  profile as an empty wallet (never unlimited — the hub renders during the
+  first-POST window before a profile exists) and honour `unlimitedGold` the
+  way the rest of the app does, and the stake renders through `.gold-balance`,
+  the navbar badge's own coin+amount layout. Casino entries are priced on the
+  `TIER_CONFIG` ladder (250–5,000); `kind: "puzzle"` is free and is a field
+  rather than something inferred from a zero cost.
 - Active slice (parked): M16 — friends and table invites. The friends half is landed
   end to end: `lib/server/friends-store.ts`, `/api/friends/*`, and the drawer
   plus lobby tile in `components/social/friends-drawer.tsx`. The table invite

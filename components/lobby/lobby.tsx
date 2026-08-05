@@ -10,6 +10,7 @@ import { AccountEntryCard } from "@/components/auth/account-entry-card";
 import { LandingSections } from "@/components/auth/landing-sections";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { InstallPrompt } from "@/components/install-prompt";
+import { ArcadePanel } from "./arcade-panel";
 import { BuyInModal } from "./buy-in-modal";
 
 export function Lobby({
@@ -244,6 +245,12 @@ export function Lobby({
               <small>{(profile?.goldBalance ?? 0).toLocaleString()} in your stack</small>
             </span>
           </Link>
+
+          {/* Sits here, not at the end, because the desktop grid places tiles
+              by DOM order: the panel claims a 2x2 block, and any tile ahead
+              of it in the source takes a cell that block needs, which pushes
+              it down a row and reopens the hole it exists to close. */}
+          <ArcadePanel profile={profile} />
 
           <Link className="hub-tile hub-tile-collection" href="/collection">
             <span className="hub-tile-body">

@@ -736,6 +736,41 @@ button:disabled { cursor: wait; opacity: .62; }
   .hub-tile-wide { min-height: 148px; }
 }
 
+/* Four columns on a desktop viewport.
+ *
+ * The gap this fixes was arithmetic, not styling: at two columns the small
+ * tiles were private/gold/collection/leaderboard/friends -- five items in a
+ * two-wide grid, so the last row held one tile and one empty cell. Simply
+ * widening to four would have moved the hole rather than closed it, because
+ * six one-cell tiles over four columns still leaves two cells over.
+ *
+ * So the spans are explicit and every cell is claimed:
+ *
+ *   [           play, spans 4           ]
+ *   [private ][  gold  ][    arcade     ]
+ *   [collect'][ldrboard][  (c3-4, r2-3) ]
+ *   [    friends x2    ][   code x2     ]
+ *
+ * Arcade takes a 2x2 block deliberately. It is the one panel holding a list
+ * rather than a label, so it needs both the width (ten rows of name + stake
+ * + button do not fit a quarter-width column without truncating the names)
+ * and the height, and a row span is what gives it height without inventing a
+ * min-height the tiles beside it would then have to match.
+ *
+ * Placement is by DOM order, so components/lobby/lobby.tsx renders the panel
+ * between Buy Gold and Collection; moving it in the source moves it here.
+ */
+@media (min-width: 1024px) {
+  .hub-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .hub-tile-arcade { grid-column: span 2; grid-row: span 2; }
+  .hub-tile-friends { grid-column: span 2; }
+  /* Narrowed from the base `1 / -1`: at four columns the form is the last
+     half of a row, not a band of its own, and full width would strand the
+     two cells beside friends. .hub-tile-wide keeps `1 / -1` -- the hero is
+     still the full width of whatever the column count is. */
+  .hub-tile-code { grid-column: span 2; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hub-tile { transition: none; }
   .hub-tile:hover { transform: none; }

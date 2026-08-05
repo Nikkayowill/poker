@@ -195,7 +195,9 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   counts aces down from all-elevens so A-A-9 lands on 21 rather than 12 or 31.
   `dealerUpCards` is what the view renders from, so the hole card is genuinely
   absent from client state until the dealer's turn rather than merely hidden.
-- **Blackjack now settles against real Gold, and the server owns the deck.**
+- **Blackjack now settles against real Gold, and the server owns the deck**,
+  and it is live on `www.stackchips.app` via PR #7 (merge `3a8d4bf`) along
+  with the arcade hub panel and the four-column grid.
   The client no longer deals: `app/api/arcade/blackjack` (GET resume, POST
   deal) and `.../blackjack/actions` (POST hit/stand/double) hold the round,
   and `components/arcade/blackjack-table.tsx` replaces its one snapshot with
@@ -222,6 +224,19 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   racing that server by hand, establish the session cookie with a GET first —
   concurrent cookieless requests each mint their own profile via
   `readOrCreateSessionToken`, which looks exactly like a broken guard.)
+- **The Supabase branch of `blackjack-store.ts` has not been exercised
+  against a real round.** Everything verified so far — the 569-test suite,
+  the concurrency races, the browser run — went through the *memory* branch,
+  because `npm test` and a no-env dev server both take that path. The
+  Supabase branch (the PostgREST version-guarded `UPDATE`, the `23505` catch
+  behind `ActiveBlackjackRoundExists`, `jsonb` round-tripping the round) has
+  only ever been type-checked. What is confirmed in production is that the
+  table exists with the right grants and that the routes respond; the first
+  real hand played there is still the first execution of that code. Watch for
+  it, and note the version guard is the piece whose failure mode is silent
+  and expensive: if the PostgREST `.eq("version", …)` filter did not behave
+  as an atomic compare-and-set, a double-settle would pay twice rather than
+  erroring.
 - The orchestration lives in `lib/server/blackjack-service.ts` rather than in
   the handlers for the reason `lib/arcade/games.ts` and
   `lib/game/seat-presence.ts` exist: `vitest.config.ts` collects only `lib/`
@@ -543,8 +558,15 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   how this project talks to the live project; `supabase/.temp/project-ref`
   holds the ref.
 - `supabase/migrations/20260805120000_blackjack_rounds.sql` (the
-  `blackjack_rounds` table) is the current pending one — **not yet applied to
-  production**, and the Blackjack routes are unusable there until it is. Same
-  one-at-a-time dry-run-then-push treatment, and per the point above it must
-  land *before or with* the code that reads it, not after.
+  `blackjack_rounds` table) is applied to production and verified: the table
+  is present, `service_role` reads it, and `anon` gets `42501 permission
+  denied`. It was pushed *before* the PR that shipped the routes reading it,
+  which is the ordering the point above exists to enforce. Note that
+  `supabase db push` printed a wall of `sb-compile-edge-runtime` /
+  `main worker has been destroyed` noise around an otherwise successful push
+  — that is the CLI's edge-functions component and is unrelated to the SQL;
+  confirm against `migration list --linked` and a real query rather than
+  reading the push output.
+- There are no pending migrations. The next one added must ship with its
+  calling code, per the checklist point above.
 - Update this section when scope changes; keep `CLAUDE.md` synchronized.

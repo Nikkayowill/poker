@@ -49,10 +49,12 @@
   width: min(580px, 100%);
   max-height: calc(100vh - 32px);
   overflow: auto;
-  border: 1px solid rgba(255,255,255,.11);
-  border-radius: 9px;
-  background: #111a17;
-  box-shadow: 0 40px 120px rgba(0,0,0,.64);
+  /* Borderless, like the rest of the chrome: the shadow and the lifted fill
+     do the separating. See the header of the entry block in 04-lobby.css. */
+  border: 0;
+  border-radius: 20px;
+  background: #14111d;
+  box-shadow: 0 40px 120px rgba(0,0,0,.7);
   animation: modal-in .22s ease both;
 }
 
@@ -86,12 +88,15 @@
   height: 40px;
   display: grid;
   place-items: center;
-  color: #718077;
-  border: 1px solid var(--line);
+  color: #9c93b1;
+  border: 0;
   border-radius: 50%;
-  background: rgba(255,255,255,.025);
+  background: rgba(255,255,255,.06);
   cursor: pointer;
+  transition: background var(--duration-base) ease, color var(--duration-base) ease;
 }
+
+.modal-close:hover { color: #ece7f7; background: rgba(255,255,255,.11); }
 
 .profile-modal form { padding: 22px 27px 25px; }
 
@@ -100,9 +105,9 @@
   align-items: center;
   gap: 20px;
   padding: 18px;
-  border: 1px solid rgba(217,184,93,.13);
-  border-radius: 7px;
-  background: #131e1a;
+  border: 0;
+  border-radius: 16px;
+  background: linear-gradient(140deg, rgba(152,63,224,.14), rgba(255,255,255,.04));
 }
 
 .avatar-stage { position: relative; }
@@ -159,10 +164,10 @@
   gap: 6px;
   margin-top: 10px;
   padding: 7px 9px;
-  color: #d8c985;
-  border: 1px solid rgba(217,184,93,.2);
-  border-radius: 6px;
-  background: rgba(217,184,93,.05);
+  color: var(--brand-gold-light);
+  border: 0;
+  border-radius: 9px;
+  background: rgba(219,156,11,.16);
   font-size: 9px;
   font-weight: 700;
   cursor: pointer;
@@ -198,14 +203,16 @@
   padding: 0 50px 0 13px;
   /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
   font-size: 16px;
-  color: #edf1eb;
-  border: 1px solid rgba(255,255,255,.1);
-  border-radius: 8px;
+  color: #f0edf8;
+  border: 0;
+  border-radius: 13px;
   outline: none;
-  background: rgba(255,255,255,.025);
+  background: rgba(255,255,255,.055);
+  transition: background var(--duration-base) ease, box-shadow var(--duration-base) ease;
 }
 
-.profile-field input:focus { border-color: rgba(217,184,93,.42); }
+/* A ring, not a border colour -- there is no border left to recolour. */
+.profile-field input:focus { background: rgba(255,255,255,.09); box-shadow: 0 0 0 2px rgba(152,63,224,.6); }
 
 .profile-field > span {
   position: absolute;
@@ -242,10 +249,10 @@
   justify-content: space-between;
   gap: 12px;
   margin-top: 18px;
-  padding: 9px 11px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: rgba(255,255,255,.02);
+  padding: 11px 13px;
+  border: 0;
+  border-radius: 13px;
+  background: rgba(255,255,255,.045);
 }
 .player-id-row > span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .player-id-row small { color: #74827b; font-size: 8px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
@@ -259,15 +266,16 @@
 .player-id-row button {
   flex-shrink: 0;
   padding: 6px 10px;
-  color: #c1cbc5;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: transparent;
+  color: #c8c0d8;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(255,255,255,.07);
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
+  transition: background var(--duration-base) ease, color var(--duration-base) ease;
 }
-.player-id-row button:hover { border-color: rgba(217,184,93,.3); color: #f0dfaa; }
+.player-id-row button:hover { background: rgba(255,255,255,.13); color: var(--brand-gold-light); }
 
 .profile-modal-footer {
   min-height: 65px;
@@ -298,17 +306,24 @@
   flex-direction: column;
   gap: 4px;
   padding: 12px 10px;
-  color: #c1cbc5;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: rgba(255,255,255,.02);
+  color: #c8c0d8;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255,255,255,.05);
   cursor: pointer;
   text-align: left;
+  transition: background var(--duration-base) ease, box-shadow var(--duration-base) ease;
 }
 .tier-card strong { font: 600 13px Georgia, serif; color: #edf1eb; }
 .tier-card span { font-size: 10px; color: #8f9d95; }
 .tier-card small { margin-top: 2px; font-size: 9px; color: #74827b; }
-.tier-card.selected { border-color: rgba(217,184,93,.5); background: rgba(217,184,93,.08); }
+/* Selection used to be a gold border. With borders gone it needs a signal
+   that is at least as loud, or the sheet stops telling you which tier you
+   picked -- so it is a filled brand wash plus a ring, not a tint alone. */
+.tier-card.selected {
+  background: linear-gradient(140deg, rgba(152,63,224,.3), rgba(219,156,11,.2));
+  box-shadow: 0 0 0 2px rgba(246,201,74,.55), 0 10px 24px rgba(152,63,224,.24);
+}
 .tier-card.selected strong { color: var(--gold-light); }
 .tier-card.unaffordable { opacity: .45; cursor: not-allowed; }
 .tier-card.unaffordable small { color: #ff9c8a; }

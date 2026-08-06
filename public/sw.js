@@ -18,7 +18,11 @@
 //
 // v5: the 192/512/maskable PNG icons now exist (generated from icon.svg),
 // so they're back in SHELL.
-const CACHE_NAME = "stackchips-shell-v5";
+// v6: the icon set and app/icon.svg were both regenerated from the real
+// "High Roller Arcade" logo at the same URLs. Stale-while-revalidate would
+// get there eventually, but a home-screen icon is precisely the asset a
+// player never re-fetches, so the cache name changes to force it.
+const CACHE_NAME = "stackchips-shell-v6";
 const SHELL = [
   "/",
   "/manifest.webmanifest",

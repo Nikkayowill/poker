@@ -7,6 +7,13 @@
     padding-left: max(18px, env(safe-area-inset-left));
     padding-right: max(18px, env(safe-area-inset-right));
   }
+  /* The tagline goes at this width, same as the landscape rule further down
+     already does. "HIGH ROLLER ARCADE" is three characters longer than the
+     "NO LIMIT HOLD'EM" it replaced, which was enough to wrap it to two lines
+     at 390px and shove the Gold badge and avatar off the right edge --
+     measured on a real render, not predicted. */
+  .lobby-header .wordmark small { display: none; }
+  .lobby-header .wordmark > span:last-child { white-space: nowrap; }
   .lobby {
     width: calc(100% - 24px);
     height: calc(100vh - 68px);
@@ -21,8 +28,13 @@
     height: calc(100svh - 68px);
     padding: 24px 14px calc(32px + env(safe-area-inset-bottom));
   }
-  .account-entry-card { padding: 29px 24px; border-radius: 17px; text-align: left; }
-  .account-entry-card h1 { font-size: 38px; }
+  .account-entry-card { padding: 26px 20px; border-radius: 22px; }
+  .account-entry-card h1 { font-size: 32px; }
+  /* The install panel is the first thing under the sign-in card, and a phone
+     is the device that can actually act on it -- so it gets the tighter
+     phone padding rather than inheriting the desktop block's. */
+  .install-cta { margin-top: 38px; padding: 20px; }
+  .landing-games, .landing-features { margin-top: 46px; }
   .game-header {
     height: 56px;
     padding: 0 12px;
@@ -199,9 +211,7 @@
     left: 0;
     width: auto;
     max-height: 75svh;
-    border-left: 0;
-    border-top: 1px solid var(--line);
-    border-radius: 16px 16px 0 0;
+    border-radius: 20px 20px 0 0;
     box-shadow: 0 -20px 60px rgba(0,0,0,.4);
     /* No longer pinned to the top edge, so the base rule's top inset would
        just be dead space here; left now matters since the sheet spans full

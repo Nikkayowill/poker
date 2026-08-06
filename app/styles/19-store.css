@@ -30,33 +30,35 @@
   align-items: center;
   gap: 7px;
   padding: 8px 13px;
-  border-radius: 9px;
-  border: 1px solid rgba(217,184,93,.3);
-  background: rgba(217,184,93,.08);
-  color: var(--gold-light);
+  border-radius: var(--radius-pill);
+  border: 0;
+  background: rgba(219,156,11,.16);
+  color: var(--brand-gold-light);
   font-size: 13px;
 }
 .gold-store-balance svg { color: var(--gold); }
 
 .gold-store-back {
   padding: 8px 14px;
-  border-radius: 9px;
-  border: 1px solid var(--line);
+  border-radius: 11px;
+  border: 0;
+  background: rgba(255,255,255,.06);
   color: var(--muted);
   text-decoration: none;
   font-size: 13px;
   white-space: nowrap;
+  transition: background var(--duration-base) ease, color var(--duration-base) ease;
 }
-.gold-store-back:hover { color: var(--ink); border-color: var(--gold); }
+.gold-store-back:hover { color: var(--ink); background: rgba(255,255,255,.12); }
 
 .gold-store-error { color: #ff9e9e; margin: 0 0 14px; font-size: 13px; }
 .gold-store-notice { color: var(--gold-light); margin: 0 0 14px; font-size: 13px; }
 
 .gold-store-legal {
   padding: 18px 20px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border-radius: 16px;
+  border: 0;
+  background: var(--brand-surface);
 }
 .gold-store-legal h2 {
   display: flex;
@@ -93,10 +95,10 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  padding: 18px;
+  border-radius: 16px;
+  border: 0;
+  background: linear-gradient(160deg, rgba(255,255,255,.065), rgba(255,255,255,.025));
 }
 
 .gold-store-tier-amount {
@@ -113,16 +115,17 @@
 .gold-store-tier p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; flex: 1; }
 
 .gold-store-tier-buy {
-  border: 1px solid rgba(217,184,93,.4);
-  border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--gold-light);
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(152deg, var(--brand-gold-light), var(--brand-gold));
+  color: #1c1305;
   font-size: 13px;
-  font-weight: 700;
-  padding: 10px 12px;
+  font-weight: 750;
+  padding: 12px;
   cursor: pointer;
+  transition: filter var(--duration-base) ease;
 }
-.gold-store-tier-buy:hover:not(:disabled) { border-color: var(--gold); }
+.gold-store-tier-buy:hover:not(:disabled) { filter: brightness(1.07); }
 .gold-store-tier-buy:disabled { opacity: .55; cursor: default; }
 
 .gold-store-empty {
@@ -131,6 +134,7 @@
   text-align: center;
   font-size: 12px;
   color: var(--muted);
-  border: 1px dashed var(--line);
-  border-radius: 8px;
+  border: 0;
+  border-radius: 11px;
+  background: rgba(255,255,255,.035);
 }

@@ -2,70 +2,41 @@
 
 import { useEffect, useState } from "react";
 import { Download, Share2 } from "lucide-react";
+import { useInstallOffer } from "@/components/pwa/use-install-offer";
 
 const DISMISS_STORAGE_KEY = "river.installPromptDismissedAt";
 // Not gone forever on one tap: a player might dismiss out of reflex the
 // first time and still want the nudge next session.
 const DISMISS_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000;
 
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-};
-
-function isStandalone() {
-  return window.matchMedia("(display-mode: standalone)").matches
-    || (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
-}
-
-function isIOS() {
-  return /iphone|ipad|ipod/i.test(window.navigator.userAgent);
-}
-
 /**
  * A non-intrusive "install to home screen" nudge for the lobby hub.
  *
- * Chromium fires `beforeinstallprompt` and lets a saved copy of that event
- * be replayed later from a real button tap -- that's the Android/desktop
- * path below. iOS Safari never fires it at all; there is no programmatic
- * install there, only "Share -> Add to Home Screen", so that case gets
- * instructions instead of a button. Everything else (desktop Firefox,
- * desktop Safari) gets nothing: there's no real install path to offer, and
- * a banner with no working action is worse than no banner.
+ * The platform detection and the captured `beforeinstallprompt` now come from
+ * useInstallOffer, shared with the landing page's install panel -- the two
+ * surfaces must agree about whether the app is already installed, and two
+ * copies of that check is how they stop agreeing.
+ *
+ * What stays local to this component is what makes it a *nudge* rather than a
+ * destination: the dismissal cooldown, and the rule that Android/desktop show
+ * nothing until Chromium actually offers an install. The landing panel
+ * deliberately does not follow that second rule; see its own header for why.
  */
 export function InstallPrompt() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [ios, setIos] = useState(false);
-  const [installed, setInstalled] = useState(true);
+  const { platform, installed, canPrompt, promptInstall } = useInstallOffer();
   // Starts hidden and only reveals once the dismissal cooldown has actually
   // been checked, so a returning visitor never sees a one-frame flash of a
   // banner they already dismissed.
   const [withinCooldown, setWithinCooldown] = useState(true);
 
   useEffect(() => {
-    // Deferred a tick rather than set synchronously in the effect body --
-    // same idiom poker-app.tsx uses for its own mount-time localStorage
-    // reads (soundEnabled/musicEnabled), which exists to avoid the
-    // cascading-render lint rule on setState-in-effect.
+    // Deferred a tick for the same reason useInstallOffer defers its own
+    // reads -- see the note there.
     const timer = window.setTimeout(() => {
-      setInstalled(isStandalone());
-      setIos(isIOS());
       const dismissedAt = Number(window.localStorage.getItem(DISMISS_STORAGE_KEY) ?? 0);
       setWithinCooldown(Boolean(dismissedAt) && Date.now() - dismissedAt < DISMISS_COOLDOWN_MS);
     }, 0);
-
-    const onBeforeInstall = (event: Event) => {
-      event.preventDefault();
-      setDeferredPrompt(event as BeforeInstallPromptEvent);
-    };
-    const onInstalled = () => setInstalled(true);
-    window.addEventListener("beforeinstallprompt", onBeforeInstall);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
-      window.removeEventListener("appinstalled", onInstalled);
-    };
+    return () => window.clearTimeout(timer);
   }, []);
 
   const dismiss = () => {
@@ -74,19 +45,16 @@ export function InstallPrompt() {
   };
 
   const install = async () => {
-    if (!deferredPrompt) return;
-    await deferredPrompt.prompt();
-    const choice = await deferredPrompt.userChoice;
-    setDeferredPrompt(null);
-    if (choice.outcome === "accepted") setInstalled(true);
-    else dismiss();
+    const outcome = await promptInstall();
+    if (outcome === "dismissed") dismiss();
   };
 
-  if (installed || withinCooldown) return null;
+  if (installed || withinCooldown || platform === null) return null;
+  const ios = platform === "ios";
   // Android/desktop Chrome: nothing to show until the browser actually
   // offers an install, which it withholds until its own engagement heuristics
   // are met -- there's no earlier moment to jump the gun from.
-  if (!ios && !deferredPrompt) return null;
+  if (!ios && !canPrompt) return null;
 
   return (
     <div className="save-progress-notice pwa-install-notice" role="status" aria-label="Install StackChips">

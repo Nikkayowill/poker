@@ -66,6 +66,15 @@
 
 .app-menu-item svg { flex-shrink: 0; opacity: .75; }
 
+/* aria-disabled, not :disabled -- the row keeps its place in the arrow-key
+   ring so it can still be read out (see components/nav/menu.tsx). It just
+   stops looking like something that will do anything. */
+.app-menu-item-disabled {
+  color: #6b6579;
+  cursor: default;
+}
+.app-menu-item-disabled:hover { color: #6b6579; background: transparent; }
+
 .app-menu-item-danger { color: #d99a90; }
 .app-menu-item-danger:hover,
 .app-menu-item-danger:focus-visible { color: #ffac9d; background: rgba(255, 138, 122, .08); }

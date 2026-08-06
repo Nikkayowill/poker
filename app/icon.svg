@@ -4,12 +4,17 @@
   Deliberately NOT the full "High Roller Arcade" badge from
   public/brand/stackchips-logo.png. That mark carries a card fan, a banner and
   two lines of type; at the 16-32px a favicon actually renders it collapses
-  into a smudge -- the same lesson components/arcade/dealer-avatar.tsx records
+  into a smudge; the same lesson components/arcade/dealer-avatar.tsx records
   about judging a mark at its rendered size rather than in its viewBox.
 
   What survives the shrink is the badge's one unmistakable element: the
-  purple -> gold -> red arc sweeping over a card. So that is all this draws,
+  purple, gold and red arc sweeping over a card. So that is all this draws,
   in the mark's own sampled colours (#983fe0 / #db9c0b / #dc1413).
+
+  Prose here obeys XML, not the house style: a double hyphen inside a comment
+  is a parse error, and this file is served as image/svg+xml. It rendered as a
+  broken image in any strict parser (librsvg refused it outright) until the
+  em-dash pairs the rest of the codebase uses were taken back out.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>

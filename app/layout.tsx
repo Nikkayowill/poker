@@ -17,7 +17,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#09110f",
+  // Kept in step with app/manifest.ts and the html/body base: this is the
+  // colour the browser paints its own chrome with, so a stale value shows up
+  // as a differently-coloured band above the page.
+  themeColor: "#0a0a0b",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

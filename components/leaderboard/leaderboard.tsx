@@ -94,8 +94,11 @@ export function Leaderboard() {
     <main className="leaderboard-shell">
       <header className="leaderboard-header">
         <div>
-          <h1>Leaderboard</h1>
-          <p>Ranked by Gold won, not Gold bought. Entertainment only -- nothing here can be cashed out.</p>
+          <div className="lobby-kicker">Standings</div>
+          <h1>The leaderboard.</h1>
+          {/* An em dash, not the codebase's `--` comment idiom: this string is
+              rendered prose, and a double hyphen prints as a double hyphen. */}
+          <p>Ranked by Gold won, not Gold bought. Entertainment only &mdash; nothing here can be cashed out.</p>
         </div>
         <Link className="leaderboard-back" href="/">← Back to the table</Link>
       </header>

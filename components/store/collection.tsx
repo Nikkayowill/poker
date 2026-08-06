@@ -137,7 +137,12 @@ export function Collection() {
     <main className="collection-shell">
       <header className="collection-header">
         <div>
-          <h1>Collection</h1>
+          {/* .lobby-kicker is the chrome's one micro-label (10px, .25em) --
+              the same class the hub head and the landing eyebrow use. Its
+              name is from where it first appeared, not from where it is
+              allowed to appear. */}
+          <div className="lobby-kicker">Cosmetics</div>
+          <h1>Your collection.</h1>
           <p>Everything here is cosmetic. Nothing you buy changes a card.</p>
         </div>
         <div className="collection-header-actions">

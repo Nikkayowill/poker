@@ -21,7 +21,10 @@ import Link from "next/link";
 
 export type MenuItem =
   | { kind: "link"; label: string; href: string; icon?: React.ReactNode }
-  | { kind: "action"; label: string; onSelect: () => void; icon?: React.ReactNode; tone?: "danger" }
+  // `disabled` states a fact rather than hiding one: "Daily Gold claimed" is
+  // worth saying, and a row that vanishes on the day you use it reads as the
+  // menu having lost an entry.
+  | { kind: "action"; label: string; onSelect: () => void; icon?: React.ReactNode; tone?: "danger"; disabled?: boolean }
   | { kind: "separator" };
 
 const isFocusable = (item: MenuItem) => item.kind !== "separator";
@@ -199,6 +202,7 @@ export function Menu({
               className: clsx(
                 "app-menu-item",
                 item.kind === "action" && item.tone === "danger" && "app-menu-item-danger",
+                item.kind === "action" && item.disabled && "app-menu-item-disabled",
               ),
               // Roving tabindex: only the active item is tabbable, so the menu
               // is one stop rather than one stop per entry.
@@ -227,8 +231,15 @@ export function Menu({
                 {...shared}
                 key={item.label}
                 type="button"
+                // aria-disabled, not `disabled`: a disabled button is skipped
+                // by the roving tabindex above, so arrowing down the menu
+                // would jump straight past "Daily Gold claimed" as though the
+                // row were not there. It stays focusable and announces itself;
+                // the click is what is refused.
+                aria-disabled={item.disabled || undefined}
                 ref={(el) => { itemRefs.current[index] = el; }}
                 onClick={() => {
+                  if (item.disabled) return;
                   close(false);
                   item.onSelect();
                 }}

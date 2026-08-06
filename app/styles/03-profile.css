@@ -9,25 +9,25 @@
 .gold-balance strong { display: inline-block; font-size: 12px; font-weight: 750; }
 .gold-balance svg { color: var(--gold); }
 
-.gold-claim-button {
-  appearance: none;
-  padding: 5px 9px;
-  color: #17170f;
-  border: 0;
-  border-radius: 5px;
-  background: var(--gold);
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: .02em;
-  cursor: pointer;
-  transition: transform .08s ease, opacity .12s ease;
+/* Where .gold-claim-button used to be. The navbar is a coin, a number and an
+   avatar now; the claim itself is a labelled row in the player menu beside it
+   (components/poker-app.tsx), so all that is left here is the signal that the
+   row is worth opening. 6px of gold, gently breathing -- loud enough to catch
+   the eye against a matte header, quiet enough to sit next to a balance
+   without competing with it. */
+.gold-badge-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--brand-gold-light);
+  box-shadow: 0 0 0 3px rgba(219, 156, 11, .18);
+  animation: gold-ready-pulse 2.4s ease-in-out infinite;
 }
-.gold-claim-button:disabled {
-  color: #6c7570;
-  background: rgba(255,255,255,.06);
-  cursor: default;
+@keyframes gold-ready-pulse {
+  0%, 100% { opacity: .55; }
+  50% { opacity: 1; }
 }
-.gold-claim-button:active:not(:disabled) { transform: translateY(1px); }
 
 .gold-badge-claimed .gold-balance strong {
   animation: gold-claim-pulse .9s ease;

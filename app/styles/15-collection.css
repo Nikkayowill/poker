@@ -4,7 +4,13 @@
 .collection-shell {
   min-height: 100vh;
   min-height: 100svh;
-  padding: 32px clamp(16px, 4vw, 48px) 72px;
+  /* Wider gutters and a real top beat: this page floats on the room now (see
+     .collection-shell::before in 02-app-shell.css) rather than filling a
+     flat black rectangle, so the space around the content is doing the work
+     the removed card borders used to. */
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: clamp(34px, 5vw, 56px) clamp(16px, 4vw, 48px) 96px;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
@@ -15,11 +21,20 @@
   gap: 14px;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 26px;
+  margin-bottom: clamp(38px, 5vw, 58px);
 }
 
-.collection-header h1 { margin: 0 0 4px; font-size: 22px; }
-.collection-header p { margin: 0; color: var(--muted); font-size: 13px; }
+/* The chrome's typography pairing, the same one the landing sections and the
+   hub head wear: a tracked-out micro-label over a large light serif line. A
+   22px bold sans h1 was the last place an interior page still announced
+   itself like a settings screen. */
+.collection-header .lobby-kicker { margin-bottom: 14px; color: #8d84a3; }
+.collection-header h1 {
+  margin: 0 0 10px;
+  font: 400 clamp(32px, 4.6vw, 48px)/1.04 Georgia, "Times New Roman", serif;
+  letter-spacing: -.03em;
+}
+.collection-header p { margin: 0; max-width: 52ch; color: #8d84a3; font-size: 14px; line-height: 1.6; }
 .collection-header-actions { display: flex; align-items: center; gap: 10px; }
 
 .collection-balance {
@@ -51,40 +66,61 @@
 .collection-error { color: #ff9e9e; margin: 0 0 14px; font-size: 13px; }
 .collection-notice { color: var(--gold-light); margin: 0 0 14px; font-size: 13px; }
 
-.collection-section { margin-bottom: 34px; }
-.collection-section h2 { margin: 0 0 3px; font-size: 15px; letter-spacing: .02em; }
-.collection-blurb { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+/* Sections separate by distance, not by sitting in boxes -- the landing
+   page's rule, scaled down for a page that is a catalogue rather than a
+   pitch. */
+.collection-section { margin-bottom: clamp(48px, 6vw, 76px); }
+.collection-section h2 {
+  margin: 0 0 6px;
+  font: 400 clamp(21px, 2.4vw, 27px)/1.1 Georgia, "Times New Roman", serif;
+  letter-spacing: -.02em;
+}
+.collection-blurb { margin: 0 0 22px; color: #8d84a3; font-size: 13px; }
 
 .cosmetic-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-  gap: 12px;
+  /* min(Npx, 100%) rather than a bare 168px floor: a fixed minimum is a width
+     the track cannot go under, which is exactly what turned the landing's
+     game grid into a horizontal pan at 390px. */
+  grid-template-columns: repeat(auto-fill, minmax(min(168px, 100%), 1fr));
+  gap: clamp(16px, 2vw, 26px);
 }
 
+/* No fill and no padding box. The card was a translucent white plate with the
+   art inside it; on the matte room that plate is the only thing between the
+   grid and the page, and it makes eighteen small grey rectangles out of what
+   should read as eighteen pieces of art. The art frame keeps its own surface
+   (it has to -- the avatars are photographic crops with corners), and the
+   copy under it now sits directly on the room. */
 .cosmetic-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border-radius: 16px;
+  gap: 9px;
+  padding: 0;
   border: 0;
-  background: var(--brand-surface);
+  background: none;
 }
 
-/* "Equipped" was a gold border. With borders gone it needs a signal at least
-   as loud -- a ring plus a brand wash -- or the grid stops saying which item
-   you are actually wearing, which is the one fact this page exists to show. */
-.cosmetic-card.is-equipped {
-  background: linear-gradient(160deg, rgba(152,63,224,.26), rgba(219,156,11,.16));
-  box-shadow: 0 0 0 2px rgba(246,201,74,.6), 0 12px 28px rgba(152,63,224,.24);
+/* "Equipped" was a gold border, then a ring plus a wash on the card. The card
+   has no surface left to wash, so the signal moves onto the one surface that
+   remains -- the art frame -- and stays exactly as loud: a gold ring and a
+   violet bloom under it. It must not get quieter than this. Which item you
+   are wearing is the single fact this page exists to state, and it is the
+   first thing a "strip the boxes" pass silently deletes. */
+.cosmetic-card.is-equipped { background: none; }
+.cosmetic-card.is-equipped .cosmetic-art-frame {
+  box-shadow: 0 0 0 2px rgba(246,201,74,.7), 0 14px 32px rgba(152,63,224,.3);
 }
 
 .cosmetic-art-frame {
   position: relative;
   aspect-ratio: 5 / 6;
-  border-radius: 9px;
+  border-radius: 14px;
   overflow: hidden;
-  background: #101714;
+  /* Neutral, not the old green-black: these frames sit in an obsidian room
+     now, and a green plate behind a photographic crop reads as a colour cast
+     on the art itself. */
+  background: #131118;
   display: grid;
   place-items: center;
 }
@@ -259,9 +295,9 @@
 .preview-art-frame {
   position: relative;
   aspect-ratio: 5 / 6;
-  border-radius: 9px;
+  border-radius: 14px;
   overflow: hidden;
-  background: #101714;
+  background: #131118;
   margin-bottom: 14px;
 }
 .preview-art-frame .cosmetic-art,

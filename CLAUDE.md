@@ -145,6 +145,60 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   now, and `.lobby`/`.account-entry-page` carry `overflow-x: hidden`
   backstops. Verified by forcing `scrollLeft = 60` headlessly at 390px on
   both scrollers — it snaps to 0.
+- **The chrome now runs all the way through the signed-in app** (PR #20,
+  merge `f70f30a`, live and verified against the Production deployment's own
+  `success` plus the live site serving `/favicon.ico` 200,
+  `stackchips-shell-v7`, `theme-color: #0a0a0b` and a stylesheet containing
+  `--brand-room`/`--lobby-header-h`/`.gold-badge-dot`). Six things:
+  - `app/icon.svg` **was invalid XML** — a `--` inside a comment, which the
+    house prose style uses everywhere and XML forbids. librsvg refused the
+    file outright, and it is served as `image/svg+xml`, so the tab icon was
+    very likely broken for everyone. Repaired, and the file now carries a
+    note saying prose in it obeys XML rather than the house style.
+    `public/favicon.ico` (16/32/48/64/128) and `app/apple-icon.png` — which
+    was still the *old chip-stack art*, not the mark — are rasterized from
+    it. ImageMagick's SVG delegate failing is a useful canary here: if it
+    cannot read an SVG in this repo, browsers may not be able to either.
+  - Scrollbars are hidden app-wide from one rule in `01-tokens.css` (`*` plus
+    `*::-webkit-scrollbar`), generalising what `.friends-list`,
+    `.arcade-list` and `.history-drawer` each did separately. Rendering only;
+    a headless check pins the gutter at 0px while `scrollTop` still moves.
+  - The navbar is coin + amount + avatar. `GoldBadge` is a readout now; the
+    daily claim is a labelled row in the player menu (`Gift` icon,
+    disabled-but-focusable via `aria-disabled` when already claimed) and is
+    **not rendered at all for a guest** — the old "Save to claim" was a dead
+    button advertising a signup the same menu already offers in words. The
+    state machine is `lib/profile/daily-gold.ts` (`dailyGoldState` →
+    ready/claimed/guest/unlimited, six tests), in `lib/` so `npm test`
+    reaches it; `.gold-badge-dot` is the only indicator left.
+  - **iOS PWA top inset.** `viewportFit: "cover"` + `black-translucent`
+    means the web view starts at y=0, so the lobby header drew behind the
+    clock and battery on an iPhone 14. `.lobby-header` takes
+    `env(safe-area-inset-top)` as *extra height* (padding alone would crush
+    its 82px contents under border-box), and `.lobby`/`.account-entry-page`
+    subtract the same amount. New `--lobby-header-h` token is what keeps all
+    three honest — the phone and both landscape breakpoints redefine one
+    value instead of restating three literals, which 12-responsive.css used
+    to warn about in a comment. `theme_color`/`background_color` and
+    `viewport.themeColor` moved off the green-black `#09110f` to `#0a0a0b`.
+  - The hub head wears the landing's pairing (`.lobby-kicker` at
+    `#8d84a3` + `clamp(38px, 6vw, 64px)` serif) and the hero tile is
+    **"Texas Hold'em"**, not "Join table" — the one tile in a five-game hub
+    that never named its game. Status moved to the sub-line so the title
+    cannot disappear while it loads. Its felt is an *object* bled off the
+    right edge (`background-size: auto 78%`, 56% on a phone), not the card's
+    background: tinting the old full-bleed green purple turned it teal, and
+    a 2:1 plate sized by width gets its ends clipped off. Judge any change
+    here on a render.
+  - Collection and leaderboard stand in the room via `--brand-room`
+    (01-tokens.css holds the whole five-layer stack as one value;
+    `.lobby-hub::before` and the new `.collection-shell::before,
+    .leaderboard-shell::before` in 02-app-shell.css both read it).
+    `.cosmetic-card`'s plate and `.leaderboard-table`'s panel are gone — but
+    note the *equipped* ring moved onto `.cosmetic-art-frame` rather than
+    being deleted with the box it sat on, which is exactly what a
+    "strip the boxes" pass silently loses. Friends' micro-labels were raised
+    from 8px to the chrome's 10px/.25em.
 - The lobby install nudge (`components/install-prompt.tsx`) is a one-line
   `.install-strip` (13-status.css) fixed to the viewport's bottom edge —
   icon, one sentence ("Add StackChips to your Home Screen." + Install App

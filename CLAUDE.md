@@ -199,6 +199,51 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
     being deleted with the box it sat on, which is exactly what a
     "strip the boxes" pass silently loses. Friends' micro-labels were raised
     from 8px to the chrome's 10px/.25em.
+- **Safe-area insets are a token, and that is the whole point** (PR #21, merge
+  `5a1e2cd`, live and verified against the Production status *and* the live
+  site relaid out under simulated insets: header 127px = 68 + 59, its content
+  starting at y=71, header + page summing to exactly 844). `env(safe-area-
+  inset-*)` is supplied by the browser and is **0 in every headless run**, so
+  nothing about a notched layout could be asserted before it reached a real
+  device — which is exactly how the lobby header got fixed for it while the
+  in-game header did not, with no test able to tell. `--safe-top/-right/
+  -bottom/-left` in 01-tokens.css default to `env()` and can be overridden;
+  `tests/e2e/safe-area.spec.ts` sets them to an iPhone 14's real numbers
+  (59/34 portrait, 59/59/21 landscape) and asserts nothing sits in a strip
+  the OS owns and nothing overlaps anything it is not inside. **Write new
+  inset-aware CSS against the tokens, never `env()` directly**, or it drops
+  out of that coverage silently. Three real collisions it found:
+  - The in-game header's contents moved down by the inset while its box
+    stayed 68px, so the pot, blinds, Leave table and feed painted across the
+    felt. The fix first went into `02-app-shell.css` and **did nothing**:
+    `05-game-header.css` re-declares `height` and wins on load order. It is
+    `calc(var(--game-header-h) + var(--safe-top))` there now, and
+    `--chrome-height` derives from that same expression rather than being a
+    second literal every breakpoint had to keep in step.
+  - The same rule's `padding: 0 28px` shorthand was resetting the side-inset
+    maxima the shared rule sets, so a landscape phone drew the wordmark and
+    Leave table under the notch. A shorthand after a longhand is the recurring
+    shape of both these bugs.
+  - On a landscape phone `.table-feed` is an absolutely-placed corner overlay,
+    which leaves `.blind-structure` as `.table-hud`'s only flex child — so
+    `space-between` put it at the *start*, printed over the feed.
+    `margin-left: auto` restores the two-ends band.
+  `--table-reserve` counts both insets now: a standalone `100dvh` is the whole
+  screen, indicator included, so the felt was sized as though the header and
+  action bar had not each grown.
+- **The phone hub is two columns.** Every small tile ran full width with its
+  label bottom-left and art bottom-right — a 116px band mostly empty in the
+  middle, five stacked. Two up with the art moved to the *top* corner (the
+  desktop scrim fades left-to-right, which is the axis that stops existing at
+  183px) fits the same content in 866px instead of 1145px. Spans mirror the
+  desktop's so no cell is left over: hero 1/-1, arcade/friends/code full
+  width, the four small tiles paired. Placement is DOM order, as at 1024px.
+- Noted while testing, not fixed: the Adsterra script now tries to reach
+  `spendsdetachment.com` over `connect-src` and is blocked by the CSP. That
+  is the domain-drift `next.config.ts`'s Adsterra note predicted. It was left
+  blocked deliberately — a beacon to an unrelated domain is the popunder/
+  redirect behaviour that note warns about, and widening `connect-src` for it
+  buys nothing the banner needs.
 - The lobby install nudge (`components/install-prompt.tsx`) is a one-line
   `.install-strip` (13-status.css) fixed to the viewport's bottom edge —
   icon, one sentence ("Add StackChips to your Home Screen." + Install App
@@ -798,11 +843,14 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   per fetch. Guests stay null — a request addressed to a cookie-lived profile
   can never be accepted. `normalizeGameState` pins non-humans to null, so a
   stale id cannot survive one round trip.
-- Every path that makes a seat human must set `profileId`. `claimSeat` sets it;
-  `applyHumanIdentity` in the table-manager adapter *clears* it (that worker
-  has only a session token) — it mutates a seat that may still hold the last
-  occupant's id, and normalize cannot catch it because the seat is human.
-  Worker-run tables therefore cannot add friends, which is the honest answer.
+- Every path that makes a seat human must set `profileId`, and `claimSeat` is
+  now the only such path — it sets it. The rule is worth keeping in mind
+  anyway, because normalize cannot enforce it: a seat that is already human is
+  not something `normalizeGameState` will pin back to null, so a path that
+  turns a bot seat human without writing `profileId` leaves the *previous*
+  occupant's id in place. (The table-manager adapter's `applyHumanIdentity`
+  was exactly that hazard — it cleared the id, having only a session token —
+  and it went with the rest of the dead worker; see the deletion note below.)
 - The friends drawer (`components/social/friends-drawer.tsx`) opens from a
   lobby hub tile and owns its own fetch; no state is lifted into
   `poker-app.tsx`. It reuses `.history-overlay`/`.history-drawer` and

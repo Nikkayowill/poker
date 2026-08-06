@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 type ViewportCase = {
@@ -30,7 +31,7 @@ function overlaps(
     && a.y + a.height > b.y;
 }
 
-async function openIsolatedTable(browser: Browser, viewport: ViewportCase) {
+async function openIsolatedTable(browser: Browser, viewport: ViewportCase, baseURL: string) {
   const context = await browser.newContext({
     viewport: { width: viewport.width, height: viewport.height },
   });
@@ -44,19 +45,35 @@ async function openIsolatedTable(browser: Browser, viewport: ViewportCase) {
   // depend on file order. findOpenPublicGame filters on is_private, so a
   // private table can never be handed to another test -- every viewport
   // below now gets its own fresh six-max table with this context at seat 0.
-  // Own a session before creating anything. `callerKey` in
-  // lib/server/rate-limit.ts keys the limiter on the session token and only
-  // falls back to the source IP -- and local dev has no proxy headers, so
-  // every *cookieless* caller in the suite shares one `ip:unknown` bucket.
-  // POST /api/games allows 10 per five minutes, and a full run creates far
-  // more than that, so whichever spec ran last got a 429 rather than a table.
-  // Minting the profile first makes this context its own caller, which is
-  // what it actually is.
-  await context.request.post("/api/profile");
+  // Own a session before creating anything, and mint it here rather than
+  // asking the server for one. `callerKey` in lib/server/rate-limit.ts keys
+  // the limiter on the river_session cookie and only falls back to the source
+  // IP -- and local dev has no proxy headers, so every *cookieless* caller in
+  // the suite shares one `ip:unknown` bucket. POST /api/games allows 10 per
+  // five minutes, and a full run creates far more than that, so whichever spec
+  // ran last got a 429 rather than a table.
+  //
+  // This used to POST /api/profile first to get out of that bucket, which is
+  // the idiom the rest of the suite uses -- but that request is cookieless
+  // too, and `profile:create` is a tighter 10 per *sixty seconds* on the same
+  // shared key. This file opens four contexts in one test, so as the last spec
+  // in a 41-test run it lost the race there instead: the profile POST 429'd,
+  // no cookie came back, and the games POST then fell into the exhausted IP
+  // bucket. The session token is an opaque unsigned cookie -- readSessionToken
+  // takes whatever is sent and ensureProfile keys a guest off it -- so setting
+  // our own is the same thing the server would have done, minus the request
+  // that could be refused. Nothing here touches the shared bucket at all now.
+  await context.addCookies([
+    { name: "river_session", value: randomUUID(), url: baseURL },
+  ]);
   const response = await context.request.post("/api/games", {
     data: { name: "Visual QA", isPrivate: true, tier: "1k", buyIn: 1000 },
   });
-  expect(response.ok()).toBe(true);
+  // Status and body in the message: a bare `toBe(true)` here reported only
+  // "expected true, received false", which is the same for a 429, a 400 and a
+  // 500 -- and telling them apart is the whole diagnosis.
+  expect(response.ok(), `POST /api/games ${response.status()}: ${await response.text()}`)
+    .toBe(true);
   const payload = await response.json();
   const page = await context.newPage();
   await page.goto(`/?table=${payload.game.id}`);
@@ -189,9 +206,9 @@ async function verifyOpponentLayout(page: Page) {
   }
 }
 
-test("table layers keep cards, portraits, status and controls in reserved space", async ({ browser }) => {
+test("table layers keep cards, portraits, status and controls in reserved space", async ({ browser, baseURL }) => {
   for (const viewport of viewports) {
-    const { context, page } = await openIsolatedTable(browser, viewport);
+    const { context, page } = await openIsolatedTable(browser, viewport, baseURL!);
     try {
       await test.step(viewport.name, async () => {
         await verifyLocalLayout(page);

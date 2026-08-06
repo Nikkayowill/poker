@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import Script from "next/script";
 
 export const metadata: Metadata = {
   title: "Play Free, StackChips - Texas Hold’em",
@@ -23,31 +22,28 @@ export const viewport: Viewport = {
   themeColor: "#0a0a0b",
 };
 
+/*
+ * The Adsterra loader used to sit in this body, as two <Script strategy=
+ * "afterInteractive"> tags. It was removed rather than moved, and it is worth
+ * knowing why before anyone puts it back.
+ *
+ * That unit's invoke script `document.write`s its markup at the position of
+ * its own <script> tag. document.write is only defined during the initial
+ * parse; called on a document that has already closed -- which is exactly what
+ * "afterInteractive" means, since Next appends the tag after hydration -- it
+ * implicitly calls document.open() and BLANKS THE PAGE. In an app whose entire
+ * UI is one client tree, that is the table disappearing mid-hand.
+ *
+ * The unit now renders through components/ads/adsterra-slot.tsx, which gives
+ * it its own sandboxed srcdoc document, so its document.write happens during a
+ * parse (legal) in a document that is not ours (contained). The rewarded-ad
+ * modal mounts it. Anything else wanting a banner should mount that component
+ * too; nothing should reintroduce a loader here.
+ */
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>
-
-          {/* 1. Adsterra Configuration Options Script */}
-        <Script id="adsterra-options" strategy="afterInteractive">
-          {`
-            window.atOptions = {
-              'key' : '9**********a28b6f',
-              'format' : 'iframe',
-              'height' : 250,
-              'width' : 300,
-              'params' : {}
-            };
-          `}
-        </Script>
-
-        {/* 2. Adsterra Execution Invocation Script */}
-        <Script 
-          src="https://pl30614360.effectivecpmnetwork.com/c7/0f/54/c70f542f472123eecce05e14a79898f8.js"
-          strategy="afterInteractive" 
-        />
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

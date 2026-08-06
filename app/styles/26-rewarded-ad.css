@@ -1,0 +1,117 @@
+/* The rewarded-ad offer.
+ *
+ * Rides .profile-overlay/.profile-modal from 11-panels.css rather than
+ * restating a second modal shell, the same way room-created-modal.tsx does --
+ * so this file is only what the offer genuinely adds. Borderless, like the
+ * rest of the chrome: separation is a raised fill and space.
+ *
+ * SAFE AREA
+ *
+ * The overlay is fixed to the viewport, so on an installed iPhone it covers
+ * the strips the OS owns. Its padding is written against the --safe-* tokens
+ * from 01-tokens.css, never env() directly: tests/e2e/safe-area.spec.ts sets
+ * those custom properties to a real device's numbers, and env() is 0 in every
+ * headless run -- so a rule written against env() drops out of that coverage
+ * silently and its notch behaviour becomes untestable. Longhands, not a
+ * padding shorthand: a shorthand after a longhand is what put the in-game
+ * header's wordmark under the notch once already.
+ */
+
+.rewarded-ad-modal {
+  width: min(420px, 100%);
+}
+
+.rewarded-ad-overlay {
+  padding-top: max(24px, var(--safe-top));
+  padding-right: max(24px, var(--safe-right));
+  padding-bottom: max(24px, var(--safe-bottom));
+  padding-left: max(24px, var(--safe-left));
+}
+
+.rewarded-ad-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 27px 25px;
+  text-align: center;
+}
+
+.rewarded-ad-detail {
+  margin: 0;
+  color: #9c93b1;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.rewarded-ad-offer {
+  margin: 0;
+  color: #edf1eb;
+  font: 500 17px/1.35 Georgia, "Times New Roman", serif;
+}
+
+/* The reserved box. Sized by the component's inline style from the unit's own
+   dimensions; this only paints the placeholder underneath it, so a blocked or
+   empty unit reads as a quiet panel rather than as a hole. The height must
+   never be set here -- see the layout note in components/ads/adsterra-slot.tsx
+   about why this box is fixed from first paint. */
+.ad-slot {
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+}
+
+.rewarded-ad-slot {
+  margin: 2px 0;
+}
+
+.rewarded-ad-countdown {
+  margin: 0;
+  color: var(--brand-gold, #db9c0b);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
+
+.rewarded-ad-error {
+  margin: 0;
+  color: #f0928c;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.rewarded-ad-done {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 6px 0;
+  color: #8fe0b4;
+  font-size: 14px;
+}
+
+.rewarded-ad-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  width: 100%;
+}
+
+.rewarded-ad-actions button { flex: 0 1 auto; }
+
+.rewarded-ad-hint {
+  color: #6f6784;
+  font-size: 11px;
+  letter-spacing: .04em;
+}
+
+/* A 300px unit plus the modal's 27px gutters does not fit a 360px phone, so
+   the slot is allowed to scale down. width/height stay on the element for the
+   ad server; the transform is presentation only and changes no layout box the
+   header's height calculation could see. */
+@media (max-width: 400px) {
+  .rewarded-ad-body { padding-left: 16px; padding-right: 16px; }
+  .rewarded-ad-slot { transform: scale(.92); transform-origin: top center; }
+}

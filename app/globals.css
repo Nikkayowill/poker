@@ -36,6 +36,9 @@
 /* After 23/24: the puzzle pages reuse the Blackjack shell and override parts
    of it, so they must cascade later. */
 @import "./styles/25-puzzles.css";
+/* After 11: the rewarded-ad offer rides .profile-overlay/.profile-modal and
+   only adds to them, so it must cascade later. */
+@import "./styles/26-rewarded-ad.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

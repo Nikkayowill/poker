@@ -41,6 +41,8 @@ import { AuthButton } from "@/components/profile/auth-button";
 import { GoldBadge } from "@/components/profile/gold-badge";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RoomCreatedModal } from "@/components/table/room-created-modal";
+import { RewardedAdModal } from "@/components/rewards/rewarded-ad-modal";
+import { useGameAchievements } from "@/components/rewards/use-game-achievements";
 import { PokerTable, type ConnectionState } from "@/components/table/poker-table";
 
 const SOUND_STORAGE_KEY = "stackchips:sound-enabled";
@@ -940,6 +942,17 @@ export function PokerApp() {
   // a claim that lands flips lastDailyClaimAt on the profile this reads.
   const dailyGold = dailyGoldState(profile, new Date());
 
+  /**
+   * When to offer a rewarded ad.
+   *
+   * Everything this component knows about the feature is these two lines and
+   * the modal at the bottom. The rules live in lib/rewards/triggers.ts, the
+   * money in lib/server/rewarded-ad-service.ts, and the pages that have no
+   * snapshot to diff reach it through lib/rewards/events.ts -- so adding a new
+   * trigger never touches this file.
+   */
+  const { offer: rewardOffer, dismiss: dismissRewardOffer } = useGameAchievements(game, profile);
+
   const lobbyMenuItems: MenuItem[] = [
     // First, and only for an account that can actually take it. A guest's
     // path to the reward is "Save progress" at the bottom of this same menu,
@@ -1075,6 +1088,21 @@ export function PokerApp() {
           profile={profile}
           onClose={() => setProfileOpen(false)}
           onSaved={setProfile}
+        />
+      )}
+      {/* Last, and gated on entryComplete: the offer is for a player who is in
+          the app, not for one still deciding whether to sign in. The credited
+          profile lands in state the same way a buy-in's does, so the navbar
+          balance updates without a re-fetch. */}
+      {rewardOffer && entryComplete && (
+        <RewardedAdModal
+          trigger={rewardOffer}
+          onClose={dismissRewardOffer}
+          onCredited={setProfile}
+          onSaveProgress={() => {
+            dismissRewardOffer();
+            void signIn();
+          }}
         />
       )}
     </div>

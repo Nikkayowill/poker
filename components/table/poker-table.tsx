@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
-  Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, TimerReset, Trophy, Volume2, VolumeX, X,
+  Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
+import type { BetAnimationStyle } from "@/lib/scene/bet-style";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   radiiForTable,
@@ -106,6 +107,8 @@ export function PokerTable({
   connectionState,
   soundEnabled,
   onToggleSound,
+  betStyle,
+  onCycleBetStyle,
   onSignIn,
   onSignOut,
 }: {
@@ -120,6 +123,8 @@ export function PokerTable({
   connectionState: ConnectionState;
   soundEnabled: boolean;
   onToggleSound: () => void;
+  betStyle: BetAnimationStyle;
+  onCycleBetStyle: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
 }) {
@@ -507,6 +512,12 @@ export function PokerTable({
       },
       {
         kind: "action",
+        label: betStyle === "neat_slide" ? "Chip style: Neat slide" : "Chip style: Splash",
+        onSelect: onCycleBetStyle,
+        icon: <Sparkles size={15} />,
+      },
+      {
+        kind: "action",
         label: "Hand history",
         onSelect: () => setHistoryOpen(true),
         icon: <History size={15} />,
@@ -546,8 +557,9 @@ export function PokerTable({
     }
     return items;
   }, [
-    soundEnabled, onToggleSound, game.isPrivate, game.roomCode, game.id, game.isSeated,
-    roomCodeCopied, copyRoomCode, profile, onCustomize, onSignIn, onSignOut, onLeaveSeat,
+    soundEnabled, onToggleSound, betStyle, onCycleBetStyle, game.isPrivate, game.roomCode,
+    game.id, game.isSeated, roomCodeCopied, copyRoomCode, profile, onCustomize, onSignIn,
+    onSignOut, onLeaveSeat,
   ]);
   return (
     <main className="game-shell">
@@ -614,6 +626,7 @@ export function PokerTable({
             winners={sceneWinners}
             handNumber={game.handNumber}
             betFlights={betFlights}
+            betStyle={betStyle}
             onReady={setSceneReady}
           />
           {/* The pot and the stakes, in the black space around the table

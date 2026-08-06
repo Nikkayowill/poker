@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ChipLayer } from "./chip-layer";
+import { CHIP_THICKNESS, ChipLayer } from "./chip-layer";
 import { flightDurationMs, FUNNEL_CHIP_COUNT, REFERENCE_FRAME_MS } from "./chip-physics";
+import { NEAT_SLIDE_DURATION_MS, SPLASH_SCATTER_RADIUS } from "./bet-style";
+import { seatBetOrigin } from "./seat-ring";
 import { FELT } from "./scene-config";
 
 /**
@@ -196,6 +198,97 @@ describe("standing street bets", () => {
       const inside = (chip.position.x / FELT.radiusX) ** 2 + (chip.position.z / FELT.radiusZ) ** 2;
       expect(inside).toBeLessThan(1);
     }
+  });
+});
+
+describe("selectable bet styles", () => {
+  it("neat slide flies the bet as one rigid pillar, no scatter, no stagger", () => {
+    const { chips } = layer();
+    chips.setBetStyle("neat_slide");
+    chips.spawnBet(2, 6, 70, BB);      // 3 chips
+    // One frame in, the pillar is still perfectly aligned: every chip on
+    // the same x/z, stacked exactly a thickness apart, because nothing was
+    // staggered and every chip rides the same clock.
+    chips.update(REFERENCE_FRAME_MS, false);
+    const flying = chips.debugChipPositions();
+    expect(flying.length).toBe(3);
+    for (const position of flying) {
+      expect(position.x).toBeCloseTo(flying[0].x, 10);
+      expect(position.z).toBeCloseTo(flying[0].z, 10);
+    }
+    const heights = flying.map((position) => position.y).sort((a, b) => a - b);
+    for (let i = 1; i < heights.length; i += 1) {
+      expect(heights[i] - heights[i - 1]).toBeCloseTo(CHIP_THICKNESS, 10);
+    }
+  });
+
+  it("neat slide terminates exactly on its clock and lets the loop sleep", () => {
+    const { chips } = layer();
+    chips.setBetStyle("neat_slide");
+    chips.spawnBet(1, 6, 250, BB);
+    const frames = Math.ceil(NEAT_SLIDE_DURATION_MS / REFERENCE_FRAME_MS) + 1;
+    for (let i = 0; i < frames; i += 1) chips.update(REFERENCE_FRAME_MS, false);
+    // Every flight chip destroyed on arrival — no ghosts left to paint —
+    // and the layer reports quiet, so the scheduler stops requesting frames.
+    expect(chips.debugChipPositions().length).toBe(0);
+    expect(chips.update(REFERENCE_FRAME_MS, false)).toBe(false);
+  });
+
+  it("splash lands the cluster inside the scatter radius of the bet spot", () => {
+    const { chips } = layer();
+    chips.setBetStyle("splash_chunk");
+    chips.spawnBet(2, 6, 70, BB);
+    const spot = seatBetOrigin(2, 6);
+    // Far enough in that every chip is a whisker from its landing, not so
+    // far that any has arrived and been removed.
+    for (let i = 0; i < 60; i += 1) chips.update(REFERENCE_FRAME_MS, false);
+    const flying = chips.debugChipPositions();
+    expect(flying.length).toBe(3);
+    for (const position of flying) {
+      const planDistance = Math.hypot(position.x - spot.x, position.z - spot.z);
+      expect(planDistance).toBeLessThanOrEqual(SPLASH_SCATTER_RADIUS + 0.2);
+    }
+  });
+
+  it("splash is deterministic: the same bet flies the same frames twice", () => {
+    const run = () => {
+      const { chips } = layer();
+      chips.setBetStyle("splash_chunk");
+      chips.spawnBet(4, 6, 1310, BB);
+      const samples: number[][] = [];
+      for (let i = 0; i < 40; i += 1) {
+        chips.update(REFERENCE_FRAME_MS, false);
+        if (i % 10 === 0) {
+          samples.push(chips.debugChipPositions().flatMap((p) => [p.x, p.y, p.z]));
+        }
+      }
+      return samples;
+    };
+    expect(run()).toEqual(run());
+  });
+
+  it("the default style is splash — continuity with the spray it replaces", () => {
+    const { chips: styled } = layer();
+    styled.setBetStyle("splash_chunk");
+    const { chips: unstyled } = layer();
+    styled.spawnBet(3, 6, 100, BB);
+    unstyled.spawnBet(3, 6, 100, BB);
+    styled.update(REFERENCE_FRAME_MS, false);
+    unstyled.update(REFERENCE_FRAME_MS, false);
+    expect(unstyled.debugChipPositions()).toEqual(styled.debugChipPositions());
+  });
+
+  it("restyling never rewrites a flight already in the air", () => {
+    const { chips } = layer();
+    chips.setBetStyle("splash_chunk");
+    chips.spawnBet(1, 6, 50, BB);
+    chips.update(REFERENCE_FRAME_MS, false);
+    const before = chips.debugChipPositions();
+    chips.setBetStyle("neat_slide");
+    // The in-flight chip keeps its splash trajectory; only future sprays
+    // pick up the new style.
+    chips.update(0, false);
+    expect(chips.debugChipPositions()).toEqual(before);
   });
 });
 

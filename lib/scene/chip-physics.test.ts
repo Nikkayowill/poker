@@ -4,6 +4,9 @@ import { POT_CHIP_DENOMINATIONS_BB } from "@/lib/game/pot-chips";
 import {
   arcHeight,
   BET_SPRAY_MAX_CHIPS,
+  cubicEaseOut,
+  shadeHex,
+  stepGlideChip,
   betSprayDenominations,
   CHIP_ARC_PEAK,
   CHIP_LERP_PER_FRAME,
@@ -260,5 +263,71 @@ describe("settle jitter", () => {
       expect(Math.abs(offset.x)).toBeLessThanOrEqual(0.1);
       expect(Math.abs(offset.z)).toBeLessThanOrEqual(0.1);
     }
+  });
+});
+
+describe("the clocked glide (neat slide)", () => {
+  const from = at(-6, 0.94, 3);
+  const target = at(2, 0.94, -1);
+
+  it("is the cubic ease-out it claims: fast off the line, a heavy stop", () => {
+    expect(cubicEaseOut(0)).toBe(0);
+    expect(cubicEaseOut(1)).toBe(1);
+    expect(cubicEaseOut(0.5)).toBeCloseTo(1 - Math.pow(0.5, 3), 12);
+    // First half covers far more ground than the second: the heavy stop.
+    expect(cubicEaseOut(0.5)).toBeGreaterThan(0.8);
+    // Clamped: a glide asked about before its start or past its end never
+    // extrapolates.
+    expect(cubicEaseOut(-1)).toBe(0);
+    expect(cubicEaseOut(2)).toBe(1);
+  });
+
+  it("parks exactly on target at the duration — the loop always sleeps", () => {
+    const done = stepGlideChip(from, target, 520, 520);
+    expect(done.arrived).toBe(true);
+    expect(done.position).toEqual(target);
+    const overshoot = stepGlideChip(from, target, 9_999, 520);
+    expect(overshoot.position).toEqual(target);
+  });
+
+  it("moves every axis on one eased clock, so a pillar cannot shear", () => {
+    const mid = stepGlideChip(from, target, 260, 520);
+    const eased = cubicEaseOut(0.5);
+    expect(mid.arrived).toBe(false);
+    expect(mid.position.x).toBeCloseTo(from.x + (target.x - from.x) * eased, 12);
+    expect(mid.position.z).toBeCloseTo(from.z + (target.z - from.z) * eased, 12);
+    // No arc: a neat slide stays on the cloth the whole way.
+    expect(mid.position.y).toBeCloseTo(from.y, 12);
+  });
+
+  it("treats a degenerate duration as already arrived", () => {
+    expect(stepGlideChip(from, target, 0, 0).arrived).toBe(true);
+  });
+});
+
+describe("the splash arc override", () => {
+  it("flies a taller parabola when asked, without touching the default", () => {
+    const start = at(-6, 0.94, 3);
+    const target = at(2, 0.94, -1);
+    const gap = distance(start, target);
+    const tall = stepChip(start, target, gap, 400, CHIP_LERP_PER_FRAME, 3);
+    const stock = stepChip(start, target, gap, 400);
+    expect(tall.base).toEqual(stock.base);
+    expect(tall.position.y).toBeGreaterThan(stock.position.y);
+  });
+});
+
+describe("palette shading", () => {
+  it("derives lighter and darker steps from one base colour, clamped", () => {
+    expect(shadeHex(0x808080, 0)).toBe(0x808080);
+    expect(shadeHex(0x808080, 1)).toBe(0xffffff);
+    expect(shadeHex(0x808080, -1)).toBe(0x000000);
+    expect(shadeHex(0xffffff, 5)).toBe(0xffffff);
+    expect(shadeHex(0x000000, -5)).toBe(0x000000);
+    // Direction, per channel: positive lightens, negative darkens.
+    const lighter = shadeHex(0xbe3538, 0.2);
+    const darker = shadeHex(0xbe3538, -0.2);
+    expect(lighter).toBeGreaterThan(0xbe3538);
+    expect(darker).toBeLessThan(0xbe3538);
   });
 });

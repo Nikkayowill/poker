@@ -31,7 +31,15 @@ import {
   FUNNEL_CHIP_STAGGER_MS,
   funnelSprayDenominations,
   stepChip,
+  stepGlideChip,
 } from "./chip-physics";
+import {
+  DEFAULT_BET_STYLE,
+  NEAT_SLIDE_DURATION_MS,
+  SPLASH_ARC_PEAK,
+  splashScatterOffset,
+  type BetAnimationStyle,
+} from "./bet-style";
 import { MAX_CHIPS_PER_COLUMN, potChipStacks } from "@/lib/game/pot-chips";
 import { FELT, type Vec3 } from "./scene-config";
 import { potPosition, ringPoint, seatAngle, seatBetOrigin } from "./seat-ring";
@@ -80,6 +88,14 @@ interface MovingChip {
   delayMs: number;
   /** Pile chips stay when they land; spray chips are removed. */
   keepOnArrival: boolean;
+  /**
+   * Present on a neat-slide chip: a clocked cubic-ease-out glide instead of
+   * the friction slide. The pillar's chips all share one duration, which is
+   * what keeps them a rigid body in flight — see `stepGlideChip`.
+   */
+  glide?: { from: Vec3; durationMs: number; elapsedMs: number };
+  /** A splash chip's taller parabola; absent means the default slide arc. */
+  arcPeak?: number;
 }
 
 export class ChipLayer {
@@ -107,8 +123,20 @@ export class ChipLayer {
    * one keeps describing the same table it always did.
    */
   private radiusZ: number = FELT.radiusZ;
+  /**
+   * How a bet's spray travels — the player's own preference, pushed in by
+   * the renderer. Only future sprays read it: a chip already in flight
+   * finishes the journey it left on, restyling mid-air would be the visual
+   * equivalent of rewriting history.
+   */
+  private betStyle: BetAnimationStyle = DEFAULT_BET_STYLE;
 
   constructor(private readonly onChanged: () => void) {}
+
+  /** Select how future bet sprays travel. No repaint: nothing on screen moves. */
+  setBetStyle(style: BetAnimationStyle): void {
+    this.betStyle = style;
+  }
 
   /**
    * Re-shape the table under the chips already on it.
@@ -299,13 +327,28 @@ export class ChipLayer {
   }
 
   /**
-   * A bet: the amount actually committed, as chips, pushed from the
-   * player's own rail to their bet spot 20ms apart — smallest denominations
-   * first, so the big chips land on top where they read. The spray lands
-   * where the standing bet (`syncBets`) is about to appear, which is what
-   * makes the arrive-then-settle read as one gesture. The old fixed
-   * three-chip decorative spray survives only as the fallback for a
-   * malformed amount, where showing something is better than a silent bet.
+   * A bet: the amount actually committed, as chips, from the player's own
+   * rail to their bet spot — smallest denominations first, so the big chips
+   * end up on top where they read. The spray lands where the standing bet
+   * (`syncBets`) is about to appear, which is what makes the
+   * arrive-then-settle read as one gesture. The old fixed three-chip
+   * decorative spray survives only as the fallback for a malformed amount,
+   * where showing something is better than a silent bet.
+   *
+   * How the chips travel is the selected style:
+   *
+   * "neat_slide" — the whole bet as one rigid pillar, stacked a thickness
+   * apart (which the projection renders as the classic ~3.5px screen rise
+   * per chip at the desktop fit), no scatter, no stagger, no arc: every
+   * chip glides on the same clocked cubic ease-out, off the line fast and
+   * into a heavy stop, exactly aligned the whole way.
+   *
+   * "splash_chunk" — chips thrown in one by one on tall parabolas
+   * (SPLASH_ARC_PEAK over the friction slide), staggered by index so the
+   * cluster visibly blooms, each landing on its own trigonometric
+   * index-wave offset (`splashScatterOffset`) and settling on the slide's
+   * exponential decay. Every offset is a pure function of the chip's
+   * index, so the same bet lands the same cluster every time.
    */
   spawnBet(slot: number, seatCount: number, amount: number, bigBlind: number): void {
     const origin = ringPoint(slot, seatCount, 0.98, FELT.y, this.radiusZ);
@@ -315,25 +358,42 @@ export class ChipLayer {
       ? denominations
       : Array.from({ length: BET_CHIP_COUNT }, (_, index) => decorativeDenomination(index));
     spray.forEach((denomination, index) => {
-      const jitter = chipSettleJitter(denomination, index);
-      const target: Vec3 = {
-        x: spot.x + jitter.x * 3,
-        y: FELT.y + CHIP_THICKNESS / 2,
-        z: spot.z + jitter.z * 3,
-      };
+      const restY = FELT.y + CHIP_THICKNESS / 2;
       const start: Vec3 = {
         x: origin.x,
-        y: FELT.y + CHIP_THICKNESS / 2 + index * CHIP_THICKNESS,
+        y: restY + index * CHIP_THICKNESS,
         z: origin.z,
       };
-      this.moving.push({
-        chip: { denomination, position: { ...start } },
-        base: { ...start },
-        target,
-        originalDistance: distance(start, target),
-        delayMs: index * BET_CHIP_STAGGER_MS,
-        keepOnArrival: false,
-      });
+      if (this.betStyle === "neat_slide") {
+        // The pillar keeps each chip at its own height on both ends, so the
+        // stack that arrives is the stack that left.
+        const target: Vec3 = { x: spot.x, y: restY + index * CHIP_THICKNESS, z: spot.z };
+        this.moving.push({
+          chip: { denomination, position: { ...start } },
+          base: { ...start },
+          target,
+          originalDistance: distance(start, target),
+          delayMs: 0,
+          keepOnArrival: false,
+          glide: { from: { ...start }, durationMs: NEAT_SLIDE_DURATION_MS, elapsedMs: 0 },
+        });
+      } else {
+        const scatter = splashScatterOffset(index);
+        const target: Vec3 = {
+          x: spot.x + scatter.x,
+          y: restY,
+          z: spot.z + scatter.z,
+        };
+        this.moving.push({
+          chip: { denomination, position: { ...start } },
+          base: { ...start },
+          target,
+          originalDistance: distance(start, target),
+          delayMs: index * BET_CHIP_STAGGER_MS,
+          keepOnArrival: false,
+          arcPeak: SPLASH_ARC_PEAK,
+        });
+      }
     });
     this.onChanged();
   }
@@ -417,8 +477,22 @@ export class ChipLayer {
         entry.base = { ...entry.target };
         entry.chip.position = { ...entry.target };
         arrived = true;
+      } else if (entry.glide) {
+        // The clocked glide: elapsed time in, eased position out. No arc —
+        // a neat slide stays on the cloth — and it parks exactly on target
+        // at the duration, so the loop always gets to sleep.
+        entry.glide.elapsedMs += deltaMs;
+        const step = stepGlideChip(
+          entry.glide.from, entry.target, entry.glide.elapsedMs, entry.glide.durationMs,
+        );
+        entry.base = { ...step.position };
+        entry.chip.position = step.position;
+        arrived = step.arrived;
+        moved = true;
       } else {
-        const step = stepChip(entry.base, entry.target, entry.originalDistance, deltaMs);
+        const step = stepChip(
+          entry.base, entry.target, entry.originalDistance, deltaMs, undefined, entry.arcPeak,
+        );
         entry.base = step.base;
         entry.chip.position = step.position;
         arrived = step.arrived;

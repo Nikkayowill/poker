@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { PublicSeat } from "@/lib/game/types";
+import type { BetAnimationStyle } from "@/lib/scene/bet-style";
 import { ChipLayer } from "@/lib/scene/chip-layer";
 import {
   fitView, project, projectedFeltDepth, projectedFeltWidth, type SceneView,
@@ -77,6 +78,12 @@ export interface TableSceneProps {
    */
   betFlights: Array<{ id: string; slot: number; amount: number }>;
   /**
+   * How a bet's chips travel — the player's own preference. Applied to
+   * future sprays only; a chip already in flight finishes the journey it
+   * left on.
+   */
+  betStyle: BetAnimationStyle;
+  /**
    * True once a context exists and the room is painting, false if one could
    * not be created or has been torn down. The caller needs this: the DOM
    * felt and rail stop painting themselves only when the room is genuinely
@@ -122,6 +129,7 @@ export function TableScene({
   winners,
   handNumber,
   betFlights,
+  betStyle,
   onReady,
 }: TableSceneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -381,6 +389,15 @@ export function TableScene({
     if (!engine) return;
     engine.seatCount = Math.max(1, seats.length);
   }, [seats]);
+
+  /* ------------------------------------------------------------------ *
+   * The bet-animation preference. Runs on mount too (effects fire after
+   * the mount effect above), so the layer starts on the player's stored
+   * choice rather than the default.
+   * ------------------------------------------------------------------ */
+  useEffect(() => {
+    engineRef.current?.chips.setBetStyle(betStyle);
+  }, [betStyle]);
 
   /* ------------------------------------------------------------------ *
    * The street turning over: sweep the standing bets in before anything

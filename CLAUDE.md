@@ -184,6 +184,24 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   whole depth range × TILT_SIN stays under one pitch × TILT_COS.
   `CHIP_THICKNESS` also snapped 0.08 → 0.068 (real 39mm×3.3mm proportions,
   thickness = radius × 0.17), so stacks read denser at the smaller radius.
+- **The local player's bet spot has its own inset.** Slot 0 is the only chair
+  whose `.seat-figure` is drawn out over the cloth, so at the ordinary
+  `BET_INSET` 0.74 the local player's avatar (DOM, z-index 4+) painted over
+  their own bet (canvas, z-index 0) — they were the one player who couldn't
+  see their chips go out. `seatBetOrigin` gives slot 0 `NEAR_SEAT_BET_INSET`
+  0.35: the midpoint of the *measured* desktop corridor between the board's
+  bottom card (y=527 at 1440×900) and the figure's crown (y=549), which in
+  inset units is only [0.315, 0.388]. Beware the calibration trap that cost
+  a first cut at 0.30 (landed behind the board): `orderedSeats` rotates the
+  local player to DOM index 0, so measuring "the near figure" with
+  `.seat-figure").last()` measures the *far* seat — use
+  `.player-seat.seat-mine`. `tests/e2e/near-seat-bet.spec.ts` pins the fix
+  against rendered DOM boxes via a new `betSpot` seam on
+  `window.__stackchipsScene`, in two regimes: desktop/portrait assert real
+  clearance both ways; a landscape phone has no corridor at all (the board's
+  box ends 35px *below* the figure's top — same plate-depth limit
+  `POT_DEPTH_FRACTION` documents), so there the spec asserts the relative
+  guarantee (crown-height, not chest-height) instead.
 - Standing street bets: a seat's committed-this-street chips now *rest in
   front of the bettor* (`ChipLayer.syncBets`, keyed `slot:denom:index`,
   columns spread along the seat's ellipse tangent so side-seat bets stay on
@@ -488,7 +506,31 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   (an action, a resume, a 409 carrying true state) goes through `round`, so
   there is one place to get it right instead of three. Both tables match;
   keep them matching.
-- The eight remaining `lib/arcade/games.ts` entries are still
+- **Daily Wordle and Connections are live** — the arcade's first `kind:
+  "puzzle"` entries (free, no stake), shipped end to end in PR #14 (merge
+  `e357225`) and verified against the Production deployment's own status
+  *and* the live pages/APIs responding with real payloads, not just the
+  merge. Architecture: pure engines in `lib/arcade/puzzles/` (wordle.ts,
+  connections.ts, plus the day-keyed rotation in daily.ts and curated data
+  files), services holding the ordering rules
+  (`wordle-service.ts`/`connections-service.ts`), a shared
+  `daily-puzzle-store.ts` over the new `daily_puzzle_rounds` table, four
+  routes, and boards reusing the Blackjack shell (`25-puzzles.css` cascades
+  after 23/24). `daily_puzzle_rounds` is a sibling of `arcade_rounds` with
+  one deliberate difference: its unique index on `(profile_id, game,
+  puzzle_day)` is **unconditional**, not partial on `active` — one attempt
+  per player per day, finished or not, because a replayable daily would make
+  the shared grid a claim nobody could trust.
+- **The emoji share matrices (`lib/arcade/puzzles/share.ts`) are the
+  retention loop, and their anti-leak property is structural**: every
+  generator takes the already-redacted *snapshot*, never the round, so the
+  module cannot leak an answer even by accident. Tests assert the share text
+  contains no answer or guessed word, that an in-progress round refuses to
+  build a share at all, and that the blocks are the palette everyone already
+  reads (🟩🟨⬛; Connections 🟨🟩🟦🟪 by difficulty). Pure string building —
+  no DOM, no `navigator` — so it all runs under `npm test`; the share sheet
+  itself is `components/arcade/share-result-button.tsx`.
+- The six remaining `lib/arcade/games.ts` entries are still
   `status: "coming-soon"` with `href: null` — catalogue rows, no engines, no
   routes, no client. There is nothing there to server-validate, and the poker
   table has been server-authoritative from the start. A hub blurb must not
@@ -800,8 +842,9 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   — that is the CLI's edge-functions component and is unrelated to the SQL;
   confirm against `migration list --linked` and a real query rather than
   reading the push output.
-- `supabase/migrations/20260805180000_arcade_rounds.sql` is **pending — not
-  applied to production**, and the Hi-Lo routes will fail there until it is.
-  Per the checklist point above it must land *before* the code that reads it,
-  which for Hi-Lo means pushing the migration and only then merging to `main`.
+- `supabase/migrations/20260805180000_arcade_rounds.sql` **is applied to
+  production** (confirmed via `migration list --linked`, 2026-08-06 — an
+  earlier version of this note said pending). `20260806120000_daily_puzzle_
+  rounds.sql` is likewise applied and verified (`service_role` 200, `anon`
+  401), pushed *before* the code reading it merged, per the checklist above.
 - Update this section when scope changes; keep `CLAUDE.md` synchronized.

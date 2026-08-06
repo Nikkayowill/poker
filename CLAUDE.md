@@ -139,6 +139,37 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   `.own-cards .dealt-card-shell` to reach 2. Confirmed by stashing and
   re-running against a pristine tree, so do not read them as a regression
   from the fit work; they are an open pre-existing failure.
+- **Bet animation is selectable — "neat_slide" vs. "splash_chunk" — and the
+  chip painter is a layered pipeline now.** `lib/scene/bet-style.ts` (pure,
+  unit-tested) holds the style type, `stackchips:bet-style` localStorage key,
+  normalize/cycle helpers, and the splash scatter math: landing offsets are
+  the trigonometric index wave `sin(index)/cos(index)` (never
+  `Math.random()` — same determinism contract as `chipSettleJitter`), left
+  deliberately *round* in plan space because the spec's 0.62 depth squash
+  ≈ `TILT_SIN` and `project()` already applies it; a test guards against
+  re-adding it (double compression). Splash is the default (continuity with
+  the old spray) and flies staggered friction slides on a taller
+  `SPLASH_ARC_PEAK` parabola; neat slide flies the whole bet as one rigid
+  pillar (stacked by `CHIP_THICKNESS`, no stagger, no arc) on a clocked
+  cubic-ease-out (`stepGlideChip`, `NEAT_SLIDE_DURATION_MS` 520 < the 900ms
+  flight-event window — a test pins that) which *terminates exactly*, so
+  the render loop always sleeps — the friction slide's asymptote never ends
+  a frame early, a glide must not end one late. The preference lives in
+  `poker-app.tsx` exactly like sound/music (deferred-set localStorage
+  idiom), cycles from a "Chip style: …" entry in the table menu, and
+  reaches `ChipLayer.setBetStyle` via a `TableScene` prop; in-flight chips
+  keep the trajectory they left on. `paintChip` (`paint.ts`) now draws rim
+  (3-stop bevel gradient via `shadeHex`, which derives lit/shaded steps
+  from the palette's one base colour), eight true angular-sector edge
+  inserts clipped to the rim ring, a stamped inlay (clipped
+  `ctx.shadowBlur` inset shadow), and the denomination in foreshortened
+  serif print — gated at `NUMERAL_MIN_RADIUS` 8px so a phone-scale chip
+  (rx ≈ 6.6) stays clean rather than smudged (the dealer-avatar lesson).
+  The airborne ground shadow is decoupled: radial-gradient pool (not
+  `ctx.filter: blur`, which forces an intermediate layer per chip) that
+  shrinks and softens with arc height. Verified: 727 unit tests, the
+  chip-flights + table-scene e2e specs (including loop-sleeps), and a live
+  headless run screenshotting both styles and the menu toggle round-trip.
 - Standing street bets: a seat's committed-this-street chips now *rest in
   front of the bettor* (`ChipLayer.syncBets`, keyed `slot:denom:index`,
   columns spread along the seat's ellipse tangent so side-seat bets stay on

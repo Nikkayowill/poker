@@ -133,6 +133,10 @@ export function arcHeight(progress: number, peak = CHIP_ARC_PEAK): number {
  * rather than the arc replacing it: the base Y still has to travel from the
  * seat's felt height to the pot's, and a chip whose Y was pure arc would drop
  * through the table on a table that was not perfectly flat.
+ *
+ * `arcPeak` is per-flight because the splash style throws its chips on a
+ * taller parabola than the default slide arc; everything else keeps the
+ * default.
  */
 export function stepChip(
   current: Vec3,
@@ -140,6 +144,7 @@ export function stepChip(
   originalDistance: number,
   deltaMs: number,
   perFrame = CHIP_LERP_PER_FRAME,
+  arcPeak = CHIP_ARC_PEAK,
 ): { position: Vec3; base: Vec3; progress: number; arrived: boolean } {
   const factor = lerpFactorForDelta(deltaMs, perFrame);
   const base: Vec3 = {
@@ -150,10 +155,49 @@ export function stepChip(
   const progress = flightProgress(base, target, originalDistance);
   const arrived = distance(base, target) <= CHIP_SETTLE_EPSILON;
   return {
-    position: arrived ? { ...target } : { ...base, y: base.y + arcHeight(progress) },
+    position: arrived ? { ...target } : { ...base, y: base.y + arcHeight(progress, arcPeak) },
     base,
     progress,
     arrived,
+  };
+}
+
+/**
+ * Cubic ease-out: fast off the line, a heavy stop. `1 - (1 - t)^3`, clamped,
+ * so a glide can be driven straight off its own clock with no easing table.
+ */
+export function cubicEaseOut(t: number): number {
+  const x = Math.min(1, Math.max(0, t));
+  return 1 - Math.pow(1 - x, 3);
+}
+
+/**
+ * The neat slide's stepper: a clocked glide, where `stepChip` above is a
+ * clockless friction slide. The distinction is the whole feature — a bet
+ * pushed as one rigid pillar must move as one body, and ten chips easing
+ * over the same fixed duration stay perfectly aligned where ten asymptotic
+ * slides would shear apart near the target. Driven by elapsed time rather
+ * than per-frame deltas, it is frame-rate independent by construction, and
+ * it *terminates*: at the duration the chip is parked exactly on target,
+ * so the render loop always gets to sleep.
+ */
+export function stepGlideChip(
+  from: Vec3,
+  target: Vec3,
+  elapsedMs: number,
+  durationMs: number,
+): { position: Vec3; progress: number; arrived: boolean } {
+  const progress = durationMs > 0 ? Math.min(1, Math.max(0, elapsedMs / durationMs)) : 1;
+  if (progress >= 1) return { position: { ...target }, progress: 1, arrived: true };
+  const eased = cubicEaseOut(progress);
+  return {
+    position: {
+      x: lerp(from.x, target.x, eased),
+      y: lerp(from.y, target.y, eased),
+      z: lerp(from.z, target.z, eased),
+    },
+    progress,
+    arrived: false,
   };
 }
 
@@ -205,6 +249,20 @@ export const CHIP_PALETTE: Record<number, ChipPalette> = {
 /** The palette for a denomination, falling back to the smallest chip. */
 export function chipPalette(denomination: number): ChipPalette {
   return CHIP_PALETTE[denomination] ?? CHIP_PALETTE[1];
+}
+
+/**
+ * A palette colour, pushed toward white (positive) or black (negative) by
+ * `amount` in [-1, 1]. This is how the painter derives a chip's bevel
+ * highlight and edge shade from its one base colour instead of the palette
+ * having to triple in size — the palette stays the four hexes that have now
+ * survived two renderer changes, and the lighting is arithmetic on top.
+ */
+export function shadeHex(color: number, amount: number): number {
+  const clamped = Math.min(1, Math.max(-1, amount));
+  const toward = clamped >= 0 ? 255 : 0;
+  const mix = (channel: number) => Math.round(channel + (toward - channel) * Math.abs(clamped));
+  return (mix((color >> 16) & 0xff) << 16) | (mix((color >> 8) & 0xff) << 8) | mix(color & 0xff);
 }
 
 /**

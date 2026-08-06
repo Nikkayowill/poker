@@ -20,6 +20,13 @@ import {
 } from "@/lib/game/table-channel";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
+import {
+  BET_STYLE_STORAGE_KEY,
+  DEFAULT_BET_STYLE,
+  nextBetStyle,
+  normalizeBetStyle,
+  type BetAnimationStyle,
+} from "@/lib/scene/bet-style";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
 import { Coins, Layers, LogOut, Music2, Settings2, Trophy, UserPlus } from "lucide-react";
@@ -66,6 +73,7 @@ export function PokerApp() {
   const [savePromptDismissed, setSavePromptDismissed] = useState(false);
   const [soundEnabled, setSoundEnabledState] = useState(true);
   const [musicEnabled, setMusicEnabledState] = useState(true);
+  const [betStyle, setBetStyleState] = useState<BetAnimationStyle>(DEFAULT_BET_STYLE);
   // Set only by hostPrivate, cleared on dismiss: the share sheet is a
   // one-shot moment right after creating a room, not table state.
   const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null);
@@ -122,6 +130,22 @@ export function PokerApp() {
     setMusicEnabledState((current) => {
       const next = !current;
       window.localStorage.setItem(MUSIC_STORAGE_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    // Same deferred-set idiom as the sound and music preferences above:
+    // hydration renders the default, the stored choice lands a tick later.
+    const stored = normalizeBetStyle(window.localStorage.getItem(BET_STYLE_STORAGE_KEY));
+    const timer = window.setTimeout(() => setBetStyleState(stored), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const cycleBetStyle = useCallback(() => {
+    setBetStyleState((current) => {
+      const next = nextBetStyle(current);
+      window.localStorage.setItem(BET_STYLE_STORAGE_KEY, next);
       return next;
     });
   }, []);
@@ -976,6 +1000,8 @@ export function PokerApp() {
             connectionState={connectionState}
             soundEnabled={soundEnabled}
             onToggleSound={toggleSound}
+            betStyle={betStyle}
+            onCycleBetStyle={cycleBetStyle}
             onSignIn={() => void signIn()}
             onSignOut={() => void signOut()}
           />

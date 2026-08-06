@@ -11,7 +11,7 @@
  * here invents its own coordinates. Pure drawing, no state.
  */
 
-import { CHIP_PALETTE, chipPalette } from "@/lib/scene/chip-physics";
+import { CHIP_PALETTE, chipPalette, shadeHex } from "@/lib/scene/chip-physics";
 import { CHIP_RADIUS, CHIP_THICKNESS, type SceneChip } from "@/lib/scene/chip-layer";
 import { project, type SceneView } from "@/lib/scene/projection";
 import { FELT, RAIL_SCALE, ROOM, TILT_SIN } from "@/lib/scene/scene-config";
@@ -152,9 +152,39 @@ export function paintRoom(
 }
 
 /**
- * One chip: face, edge, and the eight-wedge cadence carried over from both
- * previous renderers, at the size the projection dictates. A soft shadow
- * ellipse grounds any chip that is off the felt mid-arc.
+ * How many edge inserts a chip face carries — the eight-wedge cadence that
+ * has survived both previous renderers, now stamped as true angular
+ * sectors instead of four rectangles.
+ */
+const STRIPE_COUNT = 8;
+
+/**
+ * The face is legible print territory only above this radius, in CSS px.
+ * Below it the numeral is a smudge (the dealer-avatar lesson: judge art at
+ * the size it actually renders), so the inlay stays clean instead.
+ */
+const NUMERAL_MIN_RADIUS = 8;
+
+/**
+ * One chip, as a layered pipeline at the size the projection dictates:
+ *
+ * A — the rim base: face and edge filled with multi-stop linear gradients
+ *     derived from the palette's one base colour (`shadeHex`), a lit top
+ *     stop over a darker lower edge, so the disc reads as a bevelled
+ *     physical token rather than a flat fill.
+ * B — the injection-molded inserts: STRIPE_COUNT angular sectors at the
+ *     (2π / STRIPE_COUNT) cadence, clipped to the rim ring so they sit
+ *     perfectly flush with no bleed into the groove or off the edge.
+ * C — the compressed inlay core: the centre disc under a clipped inset
+ *     shadow (ctx.shadowBlur bleeding in from a stroke drawn just outside
+ *     the clip), stamped with the denomination in foreshortened serif
+ *     numerals when the chip is large enough to carry print.
+ *
+ * The ground shadow is decoupled from the token: it tracks the point on the
+ * felt directly under the chip, shrinking and softening as the chip climbs
+ * its arc. Drawn as a radial gradient rather than ctx.filter blur — a
+ * per-chip filter forces an intermediate layer, which is real money on the
+ * phones this scene is DPI-upscaled for.
  */
 export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: SceneChip): void {
   const palette = chipPalette(chip.denomination);
@@ -162,26 +192,44 @@ export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: 
   const ry = rx * TILT_SIN;
   const { position } = chip;
 
-  // Shadow on the felt, directly under the chip, fading with height.
+  // The decoupled ground shadow, only once the chip is genuinely airborne.
   const height = Math.max(0, position.y - FELT.y);
   if (height > CHIP_THICKNESS) {
     const ground = project(view, { x: position.x, y: FELT.y, z: position.z });
+    // 0..1 over the tallest arc in the system; drives both the shrink and
+    // the softening, so a chip at its apex casts a small, diffuse pool and
+    // one about to land casts a tight, hard one.
+    const lift = Math.min(1, height / 3);
+    const spread = rx * (1.05 - lift * 0.45);
+    const alpha = 0.25 * (1 - lift * 0.55);
+    ctx.save();
+    ctx.translate(ground.x, ground.y);
+    ctx.scale(1, TILT_SIN);
+    const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, spread);
+    pool.addColorStop(0, `rgba(0, 0, 0, ${alpha})`);
+    pool.addColorStop(Math.max(0.05, 0.65 - lift * 0.45), `rgba(0, 0, 0, ${alpha * 0.85})`);
+    pool.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = pool;
     ctx.beginPath();
-    ctx.ellipse(ground.x, ground.y, rx * 0.9, ry * 0.9, 0, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(0, 0, 0, ${Math.max(0.08, 0.3 - height * 0.12)})`;
+    ctx.arc(0, 0, spread, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
 
   const bottom = project(view, { x: position.x, y: position.y - CHIP_THICKNESS / 2, z: position.z });
   const top = project(view, { x: position.x, y: position.y + CHIP_THICKNESS / 2, z: position.z });
 
-  // Edge: the band between the two ellipse levels plus the lower arc.
+  // Edge: the band between the two ellipse levels plus the lower arc,
+  // shaded darker toward the felt so the cylinder turns away from the lamp.
   ctx.beginPath();
   ctx.ellipse(bottom.x, bottom.y, rx, ry, 0, 0, Math.PI);
   ctx.lineTo(top.x - rx, top.y);
   ctx.lineTo(top.x + rx, top.y);
   ctx.closePath();
-  ctx.fillStyle = hex(palette.base);
+  const edgeShade = ctx.createLinearGradient(0, top.y, 0, bottom.y + ry);
+  edgeShade.addColorStop(0, hex(shadeHex(palette.base, -0.08)));
+  edgeShade.addColorStop(1, hex(shadeHex(palette.base, -0.38)));
+  ctx.fillStyle = edgeShade;
   ctx.fill();
 
   // Edge stripes at the wedge cadence — the tell that a cylinder is a chip.
@@ -193,20 +241,92 @@ export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: 
     }
   }
 
-  // Face: rim, groove, core — outside-in, as the texture drew it.
+  // Layer A: the rim base. Three stops, lit at the top of the face and
+  // falling to a darker rim at the bottom — the fake bevel.
   ctx.beginPath();
   ctx.ellipse(top.x, top.y, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fillStyle = hex(palette.base);
+  const rim = ctx.createLinearGradient(0, top.y - ry, 0, top.y + ry);
+  rim.addColorStop(0, hex(shadeHex(palette.base, 0.22)));
+  rim.addColorStop(0.55, hex(palette.base));
+  rim.addColorStop(1, hex(shadeHex(palette.base, -0.26)));
+  ctx.fillStyle = rim;
   ctx.fill();
+
+  // Layer B: the inserts, as true angular sectors clipped to the rim ring.
+  ctx.save();
   ctx.beginPath();
-  ctx.ellipse(top.x, top.y, rx * 0.86, ry * 0.86, 0, 0, Math.PI * 2);
+  ctx.ellipse(top.x, top.y, rx * 0.98, ry * 0.98, 0, 0, Math.PI * 2);
+  ctx.ellipse(top.x, top.y, rx * 0.72, ry * 0.72, 0, 0, Math.PI * 2);
+  ctx.clip("evenodd");
+  ctx.fillStyle = hex(palette.accent);
+  const step = (Math.PI * 2) / STRIPE_COUNT;
+  const insetHalfWidth = step * 0.22;
+  for (let index = 0; index < STRIPE_COUNT; index += 1) {
+    const centreAngle = index * step;
+    ctx.beginPath();
+    ctx.moveTo(top.x, top.y);
+    ctx.ellipse(
+      top.x, top.y, rx, ry, 0,
+      centreAngle - insetHalfWidth, centreAngle + insetHalfWidth,
+    );
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // A thin lit arc along the rim's far edge finishes the bevel.
+  ctx.beginPath();
+  ctx.ellipse(top.x, top.y, rx * 0.985, ry * 0.985, 0, Math.PI, Math.PI * 2);
+  ctx.strokeStyle = `rgba(255, 255, 255, ${rx > 12 ? 0.28 : 0.18})`;
+  ctx.lineWidth = Math.max(0.5, rx * 0.035);
+  ctx.stroke();
+
+  // The groove scored between the inserts and the inlay.
+  ctx.beginPath();
+  ctx.ellipse(top.x, top.y, rx * 0.7, ry * 0.7, 0, 0, Math.PI * 2);
   ctx.strokeStyle = "rgba(10, 8, 4, 0.5)";
   ctx.lineWidth = Math.max(0.5, rx * 0.04);
   ctx.stroke();
+
+  // Layer C: the inlay core.
   ctx.beginPath();
-  ctx.ellipse(top.x, top.y, rx * 0.44, ry * 0.44, 0, 0, Math.PI * 2);
+  ctx.ellipse(top.x, top.y, rx * 0.54, ry * 0.54, 0, 0, Math.PI * 2);
   ctx.fillStyle = hex(palette.core);
   ctx.fill();
+
+  // The stamped depression: clip to the core, then stroke a ring just
+  // outside the clip with a blurred, downward-offset shadow — only the
+  // shadow lands inside, pooling along the top inner edge exactly as a
+  // pressed inlay shades under an overhead lamp.
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(top.x, top.y, rx * 0.54, ry * 0.54, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.shadowColor = "rgba(8, 6, 3, 0.55)";
+  ctx.shadowBlur = rx * 0.22;
+  ctx.shadowOffsetY = rx * 0.08;
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = rx * 0.14;
+  ctx.beginPath();
+  ctx.ellipse(top.x, top.y, rx * 0.62, ry * 0.62, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // The denomination, in foreshortened serif print, only at sizes where
+  // type is type rather than a smudge.
+  if (rx >= NUMERAL_MIN_RADIUS) {
+    const label = String(chip.denomination);
+    ctx.save();
+    ctx.translate(top.x, top.y);
+    // Print lies on the face, so it foreshortens with it.
+    ctx.scale(1, TILT_SIN);
+    ctx.font = `700 ${(rx * (label.length > 2 ? 0.4 : 0.54)).toFixed(1)}px Georgia, "Times New Roman", serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(31, 24, 12, 0.8)";
+    ctx.fillText(label, 0, rx * 0.04);
+    ctx.restore();
+  }
 }
 
 /** Kept exported so a future asset audit can see every colour in one place. */

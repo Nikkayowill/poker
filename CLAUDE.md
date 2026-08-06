@@ -73,13 +73,17 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   returning 200 (it did not exist before), `sw.js` reporting
   `stackchips-shell-v6`, and the signed-out HTML carrying both
   `HIGH ROLLER ARCADE` and `#983fe0`. Not assumed from the merge alone.
-- **`app/styles/14-admin.css` is deliberately NOT part of that release.** The
-  admin console's borderless pass was written in the same working tree by a
-  concurrent session and the user scoped it out of this deploy, so it is
-  still uncommitted local work — the *shipped* admin console keeps its old
-  bordered `--line`/`--surface` styling and does not read `--brand-*` at all.
-  Anyone picking that up should commit it as its own slice rather than
-  assume the doc above already covers it.
+- The admin console's borderless pass (`app/styles/14-admin.css`, commit
+  `55de96a`) **is** on `main`, via PR #17. It was scoped *out* of PR #16
+  deliberately and shipped anyway one merge later, which is worth
+  understanding rather than tidying away: it was authored in this same
+  working tree by a **concurrent Claude session**, committed at 01:10:55
+  between #16's merge and #17's push, and #17 — a docs-only change — carried
+  it because pushing a branch pushes every commit on it, not just the one
+  you wrote. The lesson generalises past this repo: when more than one agent
+  shares a checkout, `git log origin/main..HEAD` before opening a PR is the
+  check that catches it; a clean `git status` says nothing about what is
+  already committed on your branch.
 - The supplied logo had **no alpha channel** — a solid black plate behind the
   art, which the user believed was transparent. `public/brand/stackchips-logo
   .png` is the fixed copy, made by flood-filling that plate from the four

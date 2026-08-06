@@ -65,6 +65,59 @@ export function seatPlacement(slot: number, count: number, radiusZ: number = FEL
 }
 
 /**
+ * How far in from the rail an ordinary seat pushes its chips, as a fraction
+ * of the felt's own radius.
+ */
+const BET_INSET = 0.74;
+
+/**
+ * The same, for slot 0 — the chair the local player is sitting in.
+ *
+ * Shallower, and it has to be, because slot 0 is the one seat whose figure is
+ * drawn *over the cloth*. Every `.seat-figure` is a square box centred on its
+ * point of the DOM ellipse (`aspect-ratio: 1`, centred by `.seat-ring`'s
+ * negative margins) and the artwork is anchored to the box's base, so a
+ * figure occupies the space *above* its seat. For the five opponents "above"
+ * points away from the table and their chips sit on open felt below them. For
+ * the near seat "above" points at the middle of the table, straight across
+ * the bet spot — so at the ordinary inset the local player's own avatar is
+ * painted on top of their own bet, and the canvas can never win that fight:
+ * `.table-scene` is `z-index: 0` and `.seat-figure` is `z-index: 4` and up.
+ *
+ * The symptom was that the local player is the only one at the table who
+ * cannot see their chips go out. The chips were flying and landing correctly
+ * the whole time; they were landing behind the player's own chest.
+ *
+ * The value is the middle of a genuinely narrow corridor, and it was measured
+ * rather than reasoned. The near seat's chips have two things to stay clear
+ * of: its own figure below, and the board (`.community-cards`, `top: 51%`)
+ * above. At 1440x900 the figure's box starts at y=549 and the board's cards
+ * end at y=527, so the whole corridor is about 20px of cloth, which in inset
+ * units is [0.315, 0.388]. This sits in the centre of it: the bet lands at
+ * y=541, clearing the figure's crown by 8px and the bottom of the board by
+ * 14px. The ordinary inset put it at y=613 — 64px inside the player's own
+ * avatar, at about chest height.
+ *
+ * 0.30 is the obvious round number here and it is *just* outside that window:
+ * it lands the chip's centre at y=531, and a chip's painted face is about
+ * 13px tall in each direction at this scale, so its top edge crosses the
+ * board's bottom card by ~9px. Hence 0.35 rather than 0.3.
+ *
+ * Known limit, and it is the same one `POT_DEPTH_FRACTION` documents: on a
+ * landscape phone the corridor does not exist. `--table-aspect` is 3-3.6
+ * there, so the felt is only ~150px deep, and the board's box already ends
+ * 35px *below* where the near figure's box begins — the two overlap each
+ * other before any chip is placed. No inset can be both below the board and
+ * above the figure. This value still lifts the bet from 39px inside the
+ * figure to about 7px, which is most of the defect, and the rest is a
+ * plate-depth problem rather than a bet-spot one.
+ */
+const NEAR_SEAT_BET_INSET = 0.35;
+
+/** Slot 0 is the near edge — see `NEAR_ANGLE_DEG`. */
+const NEAR_SLOT = 0;
+
+/**
  * Where a seat's chips leave from when it bets.
  *
  * Not the seat itself: chips are pushed forward onto the felt, so they start
@@ -73,10 +126,14 @@ export function seatPlacement(slot: number, count: number, radiusZ: number = FEL
  * that offset proportional on a table whose ellipse is far wider than it is
  * deep — a fixed inset would look right at the sides and wrong front and
  * back.
+ *
+ * Slot 0 gets its own, shallower inset. That asymmetry is not a fudge: it is
+ * the one seat with a figure standing between it and the pot. See
+ * `NEAR_SEAT_BET_INSET`.
  */
 export function seatBetOrigin(slot: number, count: number, radiusZ: number = FELT.radiusZ): Vec3 {
   const theta = seatAngle(slot, count);
-  const inset = 0.74;
+  const inset = slot === NEAR_SLOT ? NEAR_SEAT_BET_INSET : BET_INSET;
   return {
     x: FELT.radiusX * inset * Math.cos(theta),
     y: FELT.y,

@@ -12,6 +12,11 @@ import {
   CONNECTIONS_GROUP_SIZE,
   type ConnectionsSnapshot,
 } from "@/lib/arcade/puzzles/connections";
+import {
+  alignSelectionInline,
+  selectionKey,
+  shuffleBoardOrder,
+} from "@/lib/arcade/puzzles/board-order";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
@@ -32,6 +37,13 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * deal time -- so a round trip would spend a request to rearrange something
  * the server does not care about, and would cost the player their selection
  * for the length of it.
+ *
+ * The *first* press for a given selection seats those tiles together on the
+ * top row (alignSelectionInline) instead of scattering them; pressing again
+ * without changing the picks scrambles the whole board as before. Lining a
+ * candidate group up is how you look at four words together before spending a
+ * mistake on them, so it earns the first press; making it every press would
+ * take the plain shuffle away. Changing the selection re-arms it.
  */
 
 interface ConnectionsResponse {
@@ -56,6 +68,8 @@ export function ConnectionsBoard() {
   const [selection, setSelection] = useState<string[]>([]);
   /** Local display order. Empty until a board arrives; reshuffled only by the button. */
   const [order, setOrder] = useState<string[]>([]);
+  /** The selection whose tiles the button has already lined up, so the next press scrambles instead. */
+  const [alignedKey, setAlignedKey] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -214,16 +228,16 @@ export function ConnectionsBoard() {
   };
 
   const shuffle = () => {
-    setOrder(() => {
-      const next = [...displayed];
-      for (let index = next.length - 1; index > 0; index -= 1) {
-        // Math.random is fine here and nowhere else in this app's game code:
-        // tile order carries no information and decides nothing.
-        const swap = Math.floor(Math.random() * (index + 1));
-        [next[index], next[swap]] = [next[swap], next[index]];
-      }
-      return next;
-    });
+    // Math.random is fine here and nowhere else in this app's game code: tile
+    // order carries no information and decides nothing.
+    const random = (max: number) => Math.floor(Math.random() * max);
+    const key = selectionKey(picked);
+    const aligning = picked.length > 0 && key !== alignedKey;
+    setOrder(aligning ? alignSelectionInline(displayed, picked, random) : shuffleBoardOrder(displayed, random));
+    // Armed per selection, not per round: press again on the same picks and
+    // the board scrambles as it always did, but change a tile and the next
+    // press lines that set up instead.
+    setAlignedKey(picked.length > 0 ? key : null);
   };
 
   const shareText = round ? connectionsShareText(round, { link: shareLink() }) : null;

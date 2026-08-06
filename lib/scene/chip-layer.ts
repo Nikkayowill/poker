@@ -46,7 +46,13 @@ import { potPosition, ringPoint, seatAngle, seatBetOrigin } from "./seat-ring";
 
 /** The token: a 39mm chip against a 2.1m table, near enough exactly right. */
 export const CHIP_RADIUS = 0.4;
-export const CHIP_THICKNESS = 0.08;
+/**
+ * A real 39mm chip is 3.3mm thick — thickness = radius × 0.17, which at
+ * CHIP_RADIUS 0.4 is this. The stack pitch and the painted edge height are
+ * both exactly this value, which is what keeps a resting stack literally
+ * flush: chip i's top face is chip i+1's bottom face, no daylight.
+ */
+export const CHIP_THICKNESS = 0.068;
 
 /** How far apart the pile's denomination columns stand. */
 const COLUMN_SPACING = 0.98;
@@ -69,6 +75,13 @@ export interface SceneChip {
   denomination: number;
   /** The chip's centre, in world units. */
   position: Vec3;
+  /**
+   * True while the chip is genuinely in flight. The painter keys the
+   * decoupled ground shadow off this, not off height alone: a chip resting
+   * mid-stack is well above the felt too, and giving it a hovering shadow
+   * pool is exactly what makes a settled pile read as floating chips.
+   */
+  airborne?: boolean;
 }
 
 interface MovingChip {
@@ -187,6 +200,7 @@ export class ChipLayer {
         const chip: SceneChip = {
           denomination: stack.denomination,
           position: { x: rest.x, y: rest.y + PILE_DROP, z: rest.z },
+          airborne: true,
         };
         this.pile.set(key, chip);
         this.moving.push({
@@ -248,6 +262,7 @@ export class ChipLayer {
           const chip: SceneChip = {
             denomination: stack.denomination,
             position: { x: rest.x, y: rest.y + BET_DROP, z: rest.z },
+            airborne: true,
           };
           this.bets.set(key, chip);
           this.moving.push({
@@ -298,6 +313,7 @@ export class ChipLayer {
         y: FELT.y + CHIP_THICKNESS / 2,
         z: pot.z + jitter.z * 4,
       };
+      chip.airborne = true;
       this.moving.push({
         chip,
         base: { ...chip.position },
@@ -338,7 +354,7 @@ export class ChipLayer {
    * How the chips travel is the selected style:
    *
    * "neat_slide" — the whole bet as one rigid pillar, stacked a thickness
-   * apart (which the projection renders as the classic ~3.5px screen rise
+   * apart (which the projection renders as the classic ~3px screen rise
    * per chip at the desktop fit), no scatter, no stagger, no arc: every
    * chip glides on the same clocked cubic ease-out, off the line fast and
    * into a heavy stop, exactly aligned the whole way.
@@ -369,7 +385,7 @@ export class ChipLayer {
         // stack that arrives is the stack that left.
         const target: Vec3 = { x: spot.x, y: restY + index * CHIP_THICKNESS, z: spot.z };
         this.moving.push({
-          chip: { denomination, position: { ...start } },
+          chip: { denomination, position: { ...start }, airborne: true },
           base: { ...start },
           target,
           originalDistance: distance(start, target),
@@ -385,7 +401,7 @@ export class ChipLayer {
           z: spot.z + scatter.z,
         };
         this.moving.push({
-          chip: { denomination, position: { ...start } },
+          chip: { denomination, position: { ...start }, airborne: true },
           base: { ...start },
           target,
           originalDistance: distance(start, target),
@@ -430,7 +446,7 @@ export class ChipLayer {
           z: pot.z + jitter.z * 2,
         };
         this.moving.push({
-          chip: { denomination, position: { ...start } },
+          chip: { denomination, position: { ...start }, airborne: true },
           base: { ...start },
           target,
           originalDistance: distance(start, target),
@@ -499,7 +515,13 @@ export class ChipLayer {
         moved = true;
       }
 
-      if (arrived) this.moving.splice(index, 1);
+      if (arrived) {
+        // A kept chip (pile or standing bet) is now resting: it must stop
+        // casting the flying shadow the moment it parks, or a settled stack
+        // reads as chips hovering over their own shadow pools.
+        entry.chip.airborne = false;
+        this.moving.splice(index, 1);
+      }
     }
     return moved;
   }

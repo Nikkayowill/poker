@@ -331,11 +331,20 @@ export function funnelSprayDenominations(amount: number, bigBlind: number): numb
  * or it twitches every time anybody bets. Seeded from the chip's own identity
  * rather than a counter so it survives a pile being rebuilt in a different
  * order.
+ *
+ * The two axes are deliberately unequal. An x offset only shifts a chip
+ * sideways; a z offset moves it *up or down the screen* by z·TILT_SIN,
+ * directly against the stack's own pitch of CHIP_THICKNESS·TILT_COS. At the
+ * old ±0.09 the depth scatter was ~90% of a pitch, so two neighbours in one
+ * column could sit almost two pitches apart on screen — chips visibly
+ * detached from the chip they rest on. The z step is sized so a column's
+ * whole depth range stays well under one pitch (a test pins the invariant);
+ * x keeps a larger wobble, which is where a real stack's raggedness lives.
  */
 export function chipSettleJitter(denomination: number, index: number): { x: number; z: number } {
   const seed = denomination * 7 + index * 13;
   return {
-    x: ((seed % 5) - 2) * 0.045,
-    z: (((seed * 3) % 5) - 2) * 0.045,
+    x: ((seed % 5) - 2) * 0.03,
+    z: (((seed * 3) % 5) - 2) * 0.012,
   };
 }

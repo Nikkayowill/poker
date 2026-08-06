@@ -170,6 +170,20 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   shrinks and softens with arc height. Verified: 727 unit tests, the
   chip-flights + table-scene e2e specs (including loop-sleeps), and a live
   headless run screenshotting both styles and the menu toggle round-trip.
+- **Stacked chips no longer read as floating.** The stack pitch itself was
+  always flush (rest `y = FELT.y + T/2 + i·T`, faces painted at `y ± T/2`) —
+  the floating look had two other causes, both fixed. (1) `paintChip`'s
+  airborne ground shadow gated on height alone (`> CHIP_THICKNESS`), which
+  every resting chip above a column's bottom one trips, so a settled pile
+  painted hovering shadow pools over its own lower chips; `SceneChip` now
+  carries an `airborne` flag (set on every flight push, cleared on arrival,
+  re-armed by `sweepBets`) and the painter keys the shadow off it. (2)
+  `chipSettleJitter`'s z step was ±0.09 world ≈ 90% of a screen pitch, so
+  column neighbours could sit almost two pitches apart; the axes are now
+  unequal (x ±0.06, z ±0.024) and a test pins the invariant that a column's
+  whole depth range × TILT_SIN stays under one pitch × TILT_COS.
+  `CHIP_THICKNESS` also snapped 0.08 → 0.068 (real 39mm×3.3mm proportions,
+  thickness = radius × 0.17), so stacks read denser at the smaller radius.
 - Standing street bets: a seat's committed-this-street chips now *rest in
   front of the bettor* (`ChipLayer.syncBets`, keyed `slot:denom:index`,
   columns spread along the seat's ellipse tangent so side-seat bets stay on

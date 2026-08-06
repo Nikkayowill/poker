@@ -27,7 +27,8 @@ import {
   sprayDenominations,
   stepChip,
 } from "./chip-physics";
-import type { Vec3 } from "./scene-config";
+import { TILT_COS, TILT_SIN, type Vec3 } from "./scene-config";
+import { CHIP_THICKNESS } from "./chip-layer";
 
 const at = (x: number, y: number, z: number): Vec3 => ({ x, y, z });
 
@@ -260,9 +261,27 @@ describe("settle jitter", () => {
     const offsets = Array.from({ length: 6 }, (_, i) => chipSettleJitter(5, i));
     expect(new Set(offsets.map((o) => `${o.x},${o.z}`)).size).toBeGreaterThan(1);
     for (const offset of offsets) {
-      expect(Math.abs(offset.x)).toBeLessThanOrEqual(0.1);
-      expect(Math.abs(offset.z)).toBeLessThanOrEqual(0.1);
+      expect(Math.abs(offset.x)).toBeLessThanOrEqual(0.07);
+      expect(Math.abs(offset.z)).toBeLessThanOrEqual(0.03);
     }
+  });
+
+  it("can never open a visible gap between two stacked chips", () => {
+    // Chips in one column rest exactly a thickness apart, which the
+    // projection renders as a screen rise of CHIP_THICKNESS·TILT_COS. Each
+    // chip's own z jitter shifts it on screen by z·TILT_SIN against that
+    // pitch, so the column's whole depth range must stay under one pitch or
+    // neighbours visibly detach — the floating-chip bug this pins shut.
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const denomination of POT_CHIP_DENOMINATIONS_BB) {
+      for (let index = 0; index < 24; index += 1) {
+        const { z } = chipSettleJitter(denomination, index);
+        minZ = Math.min(minZ, z);
+        maxZ = Math.max(maxZ, z);
+      }
+    }
+    expect((maxZ - minZ) * TILT_SIN).toBeLessThan(CHIP_THICKNESS * TILT_COS);
   });
 });
 

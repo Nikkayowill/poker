@@ -118,6 +118,41 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   just having its border deleted; deleting one without replacing it makes the
   state invisible. Focus is `--brand-focus` everywhere, because removing
   borders makes a visible focus ring non-negotiable rather than optional.
+- **The chrome sits in a matte-obsidian "room" now (2026-08-06 pass).** The
+  base is neutral `#0a0a0b` (html/body and `--brand-ink` — no longer the
+  violet `#0a0710`), textured by `--grain` (an SVG-turbulence data URI with
+  its 0.05 opacity baked into the SVG so it can live in a background-image
+  list) under two huge tokenised glows, `--glow-purple`/`--glow-gold`
+  (01-tokens.css). The landing sections are card-less: separation is
+  `--section-gap` (clamp 104–150px; 88px on phones — 12-responsive.css no
+  longer collapses it), a `.landing-eyebrow` micro-label (10px, .25em
+  tracking — same tracking as `.lobby-kicker` now) over a 400-weight serif
+  display line, and open grids with wide gaps. Games/features/CTA/offer lost
+  their fills; the CTA is a centred typographic close at every width. The
+  sign-in card was deliberately left alone (user: "the login page looks
+  decent"). Remaining chrome hairlines went: panel heading (darker band
+  instead), modal header/footers, buyin/panel footnotes, arcade/friends/
+  activity row dividers (spacing instead), leaderboard rows (zebra wash —
+  a fill, not a rule). Landing CTA buttons, socials and the install strip
+  are 2px-radius sharp; footer links hover a draw-in underline. Hub tiles
+  and the lobby header were neutralised from green-black to obsidian; the
+  Join Table tile alone stays green via its felt artwork/tint.
+- **The mobile horizontal-pan leak is fixed, and its cause is worth
+  remembering:** `.landing-game-grid`'s `minmax(420px, 1fr)` was a floor the
+  track could not go under, so at 390px the grid outgrew the page and the
+  whole landing panned sideways (`overflow-y: auto` computes the x-axis to
+  auto too). Grid minimums in the chrome are `minmax(min(Npx, 100%), 1fr)`
+  now, and `.lobby`/`.account-entry-page` carry `overflow-x: hidden`
+  backstops. Verified by forcing `scrollLeft = 60` headlessly at 390px on
+  both scrollers — it snaps to 0.
+- The lobby install nudge (`components/install-prompt.tsx`) is a one-line
+  `.install-strip` (13-status.css) fixed to the viewport's bottom edge —
+  icon, one sentence ("Add StackChips to your Home Screen." + Install App
+  on Chromium; "Tap Share then Add to Home Screen." on iOS), dismiss ×. It
+  no longer reuses the `.save-progress-notice` shell; the cooldown/platform
+  logic (useInstallOffer, 14-day dismissal) is unchanged. The landing's
+  `install-cta` destination panel keeps its full steps but floats card-less
+  on the page like every other section.
 - The signed-out page is a real landing page now
   (`components/auth/landing-sections.tsx`): a PWA install panel first, then
   "The floor" — a game grid rendered **from `ARCADE_GAMES`** so it can never

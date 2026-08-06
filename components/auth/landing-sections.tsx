@@ -198,6 +198,7 @@ export function LandingSections({
 
       <section className="landing-games" aria-labelledby="landing-games-title">
         <div className="landing-section-head">
+          <span className="landing-eyebrow">Live now</span>
           <h2 id="landing-games-title">The floor</h2>
           <p>{live.length + 1} games live now, {soon.length} more dealing in.</p>
         </div>
@@ -244,6 +245,7 @@ export function LandingSections({
 
       <section className="landing-features" aria-labelledby="landing-features-title">
         <div className="landing-section-head">
+          <span className="landing-eyebrow">The house rules</span>
           <h2 id="landing-features-title">Why this table</h2>
           <p>Everything below is true of the build, not of the pitch.</p>
         </div>
@@ -265,6 +267,7 @@ export function LandingSections({
 
       <section className="landing-cta" aria-labelledby="landing-cta-title">
         <div>
+          <span className="landing-eyebrow">No account needed</span>
           <h2 id="landing-cta-title">Take a seat tonight</h2>
           <p>Six-max, real stakes in Gold, and a table that is already dealing.</p>
         </div>

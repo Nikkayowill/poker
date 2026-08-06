@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Share2 } from "lucide-react";
+import { Download, Share2, X } from "lucide-react";
 import { useInstallOffer } from "@/components/pwa/use-install-offer";
 
 const DISMISS_STORAGE_KEY = "river.installPromptDismissedAt";
@@ -56,25 +56,26 @@ export function InstallPrompt() {
   // are met -- there's no earlier moment to jump the gun from.
   if (!ios && !canPrompt) return null;
 
+  // One line, pinned to the viewport's bottom edge: an icon, a sentence, and
+  // (where the browser can actually install) one action. The paragraph-and-
+  // two-buttons card this replaced said the same thing in five times the
+  // pixels.
   return (
-    <div className="save-progress-notice pwa-install-notice" role="status" aria-label="Install StackChips">
-      <div className="save-progress-icon" aria-hidden="true">
-        {ios ? <Share2 size={18} /> : <Download size={18} />}
-      </div>
-      <div className="save-progress-copy">
-        <strong>Play like an app</strong>
-        <span>
-          {ios
-            ? "Tap Share, then “Add to Home Screen” for instant, full-screen access."
-            : "Install StackChips for instant, full-screen access from your home screen."}
-        </span>
-      </div>
-      <div className="save-progress-actions">
-        {ios
-          ? <button type="button" className="save-progress-primary" onClick={dismiss}>Got it</button>
-          : <button type="button" className="save-progress-primary" onClick={() => void install()}>Install</button>}
-        <button type="button" className="save-progress-later" onClick={dismiss}>Maybe later</button>
-      </div>
+    <div className="install-strip" role="status" aria-label="Install StackChips">
+      <span className="install-strip-icon" aria-hidden="true">
+        {ios ? <Share2 size={14} /> : <Download size={14} />}
+      </span>
+      <span className="install-strip-copy">
+        {ios ? "Tap Share then Add to Home Screen." : "Add StackChips to your Home Screen."}
+      </span>
+      {!ios && (
+        <button type="button" className="install-strip-action" onClick={() => void install()}>
+          Install App
+        </button>
+      )}
+      <button type="button" className="install-strip-dismiss" aria-label="Dismiss" onClick={dismiss}>
+        <X size={14} aria-hidden="true" />
+      </button>
     </div>
   );
 }

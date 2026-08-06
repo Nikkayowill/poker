@@ -46,12 +46,28 @@
      right, in the order the logo sweeps them. */
   --brand-sweep: linear-gradient(100deg, var(--brand-purple) 0%, var(--brand-gold) 52%, var(--brand-red) 100%);
 
-  /* Page and surface bases for the reskinned chrome. Warmer and more violet
-     than --surface's green-black, which is what makes gold read as gold on
-     them instead of as olive. */
-  --brand-ink: #0a0710;
+  /* Page and surface bases for the reskinned chrome. Matte obsidian -- a
+     neutral near-black, not a hue. The violet and gold in the room come from
+     the ambient glows layered over this base (see .account-entry-page and
+     .lobby-hub::before in 04-lobby.css), never from tinting the base itself:
+     a tinted base plus tinted glows is how a page drifts muddy. */
+  --brand-ink: #0a0a0b;
   --brand-surface: rgba(255, 255, 255, .045);
   --brand-surface-2: rgba(255, 255, 255, .07);
+
+  /* A tiling monochrome noise field, baked into a data URI so it costs no
+     request. Layered at the top of a background stack it breaks the flat
+     "plastic" read of a solid fill; its opacity lives inside the SVG (the
+     rect's 0.05) so it can sit in a background-image list, which has no
+     opacity of its own. Chrome only -- the felt has its own hand-tuned
+     lighting and must not inherit this. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+
+  /* The two ambient room lights, stated once so every chrome screen agrees
+     on what the room looks like. Huge radii, low alpha, soft falloff: these
+     are out-of-focus light bleeding into the dark, not gradient shapes. */
+  --glow-purple: radial-gradient(1600px 900px at 8% -12%, rgba(152, 63, 224, .17), transparent 68%);
+  --glow-gold: radial-gradient(1700px 1000px at 88% 112%, rgba(219, 156, 11, .10), transparent 70%);
 
   /* Focus. Borders are gone from the chrome (see 04-lobby.css's header), so
      a visible focus state has to come from somewhere that is not a border --
@@ -151,7 +167,7 @@
 
 * { box-sizing: border-box; }
 
-html, body { margin: 0; min-height: 100%; background: #09110f; color: var(--ink); }
+html, body { margin: 0; min-height: 100%; background: #0a0a0b; color: var(--ink); }
 
 html {
   /* A rapid Fold/Call/Raise tap sequence shouldn't be read as a double-tap
@@ -162,7 +178,7 @@ html {
 
 body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #0a100e;
+  background: #0a0a0b;
   -webkit-tap-highlight-color: transparent;
   /* Fixed-width digits everywhere -- pot/stack/timer numerals update
      constantly during chip animations and shouldn't jitter or reflow. */

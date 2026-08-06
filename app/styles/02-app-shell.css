@@ -24,7 +24,7 @@
    surface above another surface does. The in-game header keeps its own
    treatment in 05-game-header.css and was out of scope here. */
 .lobby-header {
-  background: rgba(10, 7, 16, .82);
+  background: rgba(10, 10, 11, .82);
   backdrop-filter: blur(18px) saturate(120%);
   -webkit-backdrop-filter: blur(18px) saturate(120%);
   box-shadow: 0 12px 30px rgba(0, 0, 0, .34);

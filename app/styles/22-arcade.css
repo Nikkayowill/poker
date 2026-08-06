@@ -21,9 +21,9 @@
   /* The art scrim in .hub-tile fades left-to-right for a bottom-left label.
      This panel fills its whole box with text, so it takes an even wash. */
   background-image:
-    linear-gradient(90deg, rgba(9,15,13,.94) 0%, rgba(9,15,13,.9) 100%),
+    linear-gradient(90deg, rgba(10,10,11,.94) 0%, rgba(10,10,11,.9) 100%),
     linear-gradient(var(--tile-tint), var(--tile-tint)),
-    linear-gradient(160deg, #17241f, #0e1613);
+    linear-gradient(160deg, #17151c, #0e0d10);
 }
 .hub-tile-arcade:hover { transform: none; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
 
@@ -65,11 +65,11 @@
   align-items: center;
   gap: 10px;
   /* 10px rather than .friend-row's 12px: this list carries ten rows in a
-     grid cell, not a full-height drawer. */
+     grid cell, not a full-height drawer. The rows separate by spacing and
+     their own type hierarchy now -- the hairline divider is gone with the
+     rest of the chrome's rules. */
   padding: 10px 0;
-  border-bottom: 1px solid rgba(255,255,255,.05);
 }
-.arcade-row:last-child { border-bottom: 0; }
 .arcade-row-blocked { opacity: .72; }
 
 /* min-width:0 so a long name ellipsizes instead of shoving the stake and the

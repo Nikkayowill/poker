@@ -1,0 +1,375 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import clsx from "clsx";
+import { Delete, CornerDownLeft } from "lucide-react";
+import { ProfileAvatar } from "@/components/profile/profile-avatar";
+import { ShareResultButton } from "@/components/arcade/share-result-button";
+import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
+import { puzzleShareTitle, wordleShareText } from "@/lib/arcade/puzzles/share";
+import {
+  WORDLE_MAX_GUESSES,
+  WORDLE_WORD_LENGTH,
+  type WordleSnapshot,
+  type WordleTile,
+} from "@/lib/arcade/puzzles/wordle";
+import type { PlayerProfile } from "@/lib/profile/types";
+
+/**
+ * Daily Wordle.
+ *
+ * The rules live in lib/arcade/puzzles/wordle.ts and the answer lives on the
+ * server. This file holds one snapshot and replaces it wholesale with whatever
+ * the API returns, because every guess is a request and the response is the
+ * new truth -- the same contract blackjack-table.tsx and hi-lo-table.tsx use.
+ *
+ * The client cannot score a guess and does not try: `snapshot.answer` is null
+ * until the board is over, so the tiles come back coloured from the server or
+ * not at all. That is the whole reason this is not a static page.
+ *
+ * ## The on-screen keyboard is not decoration
+ *
+ * A phone will not raise its keyboard for a page with no focused input, and
+ * making the board a real <input> means the OS keyboard covering the grid,
+ * autocorrect rewriting guesses and a caret to fight with. So letters are
+ * buttons, and a physical keyboard is handled separately with a window
+ * listener. Both paths funnel into the same three actions.
+ */
+
+const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+
+interface WordleResponse {
+  round: WordleSnapshot | null;
+  profile: PlayerProfile;
+  day: string;
+  puzzleNumber: number;
+  msUntilNextPuzzle: number;
+  error?: string;
+  reason?: string;
+}
+
+/** How long a transient message ("Not in the word list") stays up. */
+const NOTICE_MS = 1800;
+
+export function WordleBoard() {
+  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  const [round, setRound] = useState<WordleSnapshot | null>(null);
+  const [meta, setMeta] = useState<{ day: string; puzzleNumber: number; nextPuzzleAt: number } | null>(null);
+  const [draft, setDraft] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  /** Set on the row that was just rejected, so it can shake without a state machine. */
+  const [shake, setShake] = useState(false);
+  const noticeTimer = useRef<number | null>(null);
+
+  const flash = useCallback((message: string) => {
+    setNotice(message);
+    setShake(true);
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => {
+      setNotice(null);
+      setShake(false);
+    }, NOTICE_MS);
+  }, []);
+
+  useEffect(() => () => {
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+  }, []);
+
+  const send = useCallback(
+    async (url: string, body?: unknown) => {
+      setBusy(true);
+      try {
+        const response = await fetch(url, {
+          method: body === undefined ? "GET" : "POST",
+          cache: "no-store",
+          ...(body === undefined
+            ? {}
+            : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+        });
+        const data = (await response.json()) as Partial<WordleResponse>;
+        if (data.profile) setProfile(data.profile);
+        if (data.day) {
+          setMeta({
+            day: data.day,
+            puzzleNumber: data.puzzleNumber ?? 0,
+            // Absolute instant, resolved here rather than in the
+            // countdown: this is the moment the server's remaining-ms was
+            // accurate, and reading the clock during render is impure.
+            nextPuzzleAt: Date.now() + (data.msUntilNextPuzzle ?? 0),
+          });
+        }
+
+        if (!response.ok) {
+          // A rejection carries the true board when there is one, so a client
+          // that fell behind resyncs from the error rather than staying stuck.
+          if (data.round !== undefined) setRound(data.round);
+          // A rolled-over board is the one case where the whole page is stale.
+          if (data.reason === "rolled-over") {
+            setRound(null);
+            setDraft("");
+          }
+          flash(data.error ?? "That did not go through.");
+          return false;
+        }
+
+        setRound(data.round ?? null);
+        return true;
+      } catch {
+        flash("Could not reach the puzzle. Check your connection.");
+        return false;
+      } finally {
+        setBusy(false);
+        setLoaded(true);
+      }
+    },
+    [flash],
+  );
+
+  // Read first, then open a board if there is none. The GET is deliberately
+  // read-only server-side -- visiting a page must not consume the day's
+  // attempt -- so opening costs one extra request on the first visit of a day.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const response = await fetch("/api/arcade/wordle", { cache: "no-store" });
+      const data = (await response.json().catch(() => ({}))) as Partial<WordleResponse>;
+      if (cancelled) return;
+      if (data.profile) setProfile(data.profile);
+      if (data.day) {
+        setMeta({
+          day: data.day,
+          puzzleNumber: data.puzzleNumber ?? 0,
+          nextPuzzleAt: Date.now() + (data.msUntilNextPuzzle ?? 0),
+        });
+      }
+      if (data.round) {
+        setRound(data.round);
+        setLoaded(true);
+        return;
+      }
+      await send("/api/arcade/wordle", {});
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [send]);
+
+  const finished = Boolean(round && round.status !== "active");
+  const canType = Boolean(round) && !finished && !busy;
+
+  const submit = useCallback(() => {
+    if (!round || !canType) return;
+    if (draft.length !== WORDLE_WORD_LENGTH) {
+      flash(`A guess is ${WORDLE_WORD_LENGTH} letters.`);
+      return;
+    }
+    const guess = draft;
+    void (async () => {
+      const ok = await send("/api/arcade/wordle/actions", {
+        day: round.day,
+        version: round.version,
+        guess,
+      });
+      // The draft is cleared only on an accepted guess: a word the dictionary
+      // refused should still be sitting there to edit, not retyped from scratch.
+      if (ok) setDraft("");
+    })();
+  }, [canType, draft, flash, round, send]);
+
+  const type = useCallback(
+    (letter: string) => {
+      if (!canType) return;
+      setDraft((current) => (current.length >= WORDLE_WORD_LENGTH ? current : current + letter));
+    },
+    [canType],
+  );
+
+  const backspace = useCallback(() => {
+    if (!canType) return;
+    setDraft((current) => current.slice(0, -1));
+  }, [canType]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === "Enter") {
+        submit();
+        return;
+      }
+      if (event.key === "Backspace") {
+        backspace();
+        return;
+      }
+      if (/^[a-zA-Z]$/.test(event.key)) type(event.key.toLowerCase());
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [backspace, submit, type]);
+
+  /**
+   * The six rows: guesses already scored, then the row being typed, then
+   * empties. Built here rather than in the markup so the row index -- which
+   * decides the reveal animation and the shake -- is unambiguous.
+   */
+  const rows = useMemo(() => {
+    const played = (round?.guesses ?? []).map((guess, index) => ({
+      letters: guess.split(""),
+      tiles: round?.results[index] ?? [],
+      state: "played" as const,
+    }));
+    const drafting =
+      round && !finished
+        ? [{
+          letters: draft.padEnd(WORDLE_WORD_LENGTH, " ").split("").map((c) => c.trim()),
+          tiles: [] as WordleTile[],
+          state: "drafting" as const,
+        }]
+        : [];
+    const blanks = Array.from(
+      { length: Math.max(0, WORDLE_MAX_GUESSES - played.length - drafting.length) },
+      () => ({ letters: Array(WORDLE_WORD_LENGTH).fill(""), tiles: [] as WordleTile[], state: "empty" as const }),
+    );
+    return [...played, ...drafting, ...blanks];
+  }, [draft, finished, round]);
+
+  const shareText = round ? wordleShareText(round, { link: shareLink() }) : null;
+
+  return (
+    <main className="bj-shell puzzle-shell">
+      <header className="bj-header">
+        <div className="bj-header-copy">
+          <Link className="bj-back" href="/">← Back to the lobby</Link>
+          <h1>Daily Wordle</h1>
+          <p>
+            {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Six guesses · One word a day for everyone
+          </p>
+        </div>
+        {profile && (
+          <div className="puzzle-player">
+            <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />
+            <span className="bj-hand-who">
+              <span className="bj-hand-label">{profile.displayName}</span>
+              <span className="bj-hand-caption">
+                {round ? `${round.guesses.length}/${round.maxGuesses} guesses` : "—"}
+              </span>
+            </span>
+          </div>
+        )}
+      </header>
+
+      {/* Always mounted so a message is announced as a change rather than as
+          new content, and so the grid never shifts when one appears. */}
+      <p className={clsx("puzzle-notice", notice && "puzzle-notice-on")} role="status" aria-live="polite">
+        {notice}
+      </p>
+
+      <section className="wordle-grid" aria-label="Guesses" aria-busy={busy}>
+        {rows.map((row, rowIndex) => (
+          <div
+            key={rowIndex}
+            className={clsx(
+              "wordle-row",
+              row.state === "drafting" && shake && "wordle-row-shake",
+            )}
+          >
+            {Array.from({ length: WORDLE_WORD_LENGTH }, (_, column) => (
+              <span
+                key={column}
+                className={clsx(
+                  "wordle-tile",
+                  row.tiles[column] && `wordle-tile-${row.tiles[column]}`,
+                  row.letters[column] && row.state === "drafting" && "wordle-tile-filled",
+                )}
+                style={row.state === "played" ? { animationDelay: `${column * 90}ms` } : undefined}
+              >
+                {row.letters[column] ?? ""}
+              </span>
+            ))}
+          </div>
+        ))}
+      </section>
+
+      {finished && round && (
+        <section className="puzzle-summary">
+          <p className="puzzle-verdict">
+            {round.status === "won"
+              ? `Solved in ${round.guesses.length}.`
+              : "Out of guesses."}
+            {round.answer && round.status === "lost" && (
+              <em> The word was <strong>{round.answer.toUpperCase()}</strong>.</em>
+            )}
+          </p>
+          {/* The grid, exactly as it will be posted. Showing it is what makes
+              the button read as "send this" rather than "send something". */}
+          <pre className="puzzle-share-preview" aria-label="Your result">{shareText}</pre>
+          {shareText && (
+            <ShareResultButton text={shareText} title={puzzleShareTitle("wordle", round.puzzleNumber)} />
+          )}
+          {meta && <NextPuzzleCountdown deadline={meta.nextPuzzleAt} />}
+        </section>
+      )}
+
+      {!finished && (
+        <section className="wordle-keyboard" aria-label="Keyboard">
+          {KEY_ROWS.map((row, index) => (
+            <div key={row} className="wordle-keyrow">
+              {index === 2 && (
+                <button
+                  type="button"
+                  className="wordle-key wordle-key-wide"
+                  onClick={submit}
+                  disabled={!canType}
+                  aria-label="Submit guess"
+                >
+                  <CornerDownLeft size={15} aria-hidden="true" />
+                </button>
+              )}
+              {row.split("").map((letter) => (
+                <button
+                  key={letter}
+                  type="button"
+                  className={clsx(
+                    "wordle-key",
+                    round?.keyboard[letter] && `wordle-key-${round.keyboard[letter]}`,
+                  )}
+                  onClick={() => type(letter)}
+                  disabled={!canType}
+                >
+                  {letter}
+                </button>
+              ))}
+              {index === 2 && (
+                <button
+                  type="button"
+                  className="wordle-key wordle-key-wide"
+                  onClick={backspace}
+                  disabled={!canType}
+                  aria-label="Delete letter"
+                >
+                  <Delete size={15} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {!loaded && <p className="puzzle-loading">Loading today’s puzzle…</p>}
+    </main>
+  );
+}
+
+/**
+ * The link appended to a shared result.
+ *
+ * Read off the running origin rather than hardcoded, so a share from a Preview
+ * deployment points at that deployment instead of sending a reviewer to
+ * production.
+ */
+function shareLink(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  return `${window.location.origin}/games/wordle`;
+}

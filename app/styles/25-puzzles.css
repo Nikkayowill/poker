@@ -1,0 +1,346 @@
+/* Daily Wordle and Connections.
+ *
+ * Both pages reuse the Blackjack shell (.bj-shell, .bj-header, .bj-back,
+ * .bj-hand-who) the same way Hi-Lo does, so this file holds only what a puzzle
+ * genuinely adds: the two boards, the keyboard, and the share summary. It
+ * cascades after 23/24 because it overrides pieces of that shell.
+ *
+ * The palette is the app's own green felt and brass -- these are not recoloured
+ * to match the games they are modelled on. The one place the source palette is
+ * honoured is the four Connections difficulty colours, which are load-bearing:
+ * they have to match the emoji in the shared grid, or a player's board and
+ * their own posted result disagree.
+ */
+
+.puzzle-shell {
+  align-items: center;
+}
+.puzzle-shell > * {
+  width: 100%;
+  max-width: 520px;
+}
+.puzzle-shell > .bj-header {
+  max-width: 640px;
+}
+
+.puzzle-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.puzzle-loading {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ---- Transient message ----
+ *
+ * Always in the layout, faded rather than unmounted: a message that appears
+ * and disappears from the flow shifts the board under the player's hand
+ * mid-guess.
+ */
+.puzzle-notice {
+  min-height: 30px;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: var(--radius-md, 7px);
+  background: rgba(0, 0, 0, 0.34);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.puzzle-notice-on { opacity: 1; }
+
+/* ---- Wordle grid ---- */
+
+.wordle-grid {
+  display: grid;
+  gap: 6px;
+  justify-content: center;
+}
+.wordle-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.wordle-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Square at any width, without a fixed pixel size that would overflow a
+     narrow phone or look lost on a desktop. */
+  aspect-ratio: 1;
+  width: min(58px, 17vw);
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-sm, 5px);
+  background: transparent;
+  color: var(--ink);
+  font: 700 clamp(19px, 5vw, 27px) Georgia, serif;
+  text-transform: uppercase;
+  line-height: 1;
+}
+/* A typed-but-unsubmitted letter: outlined, never coloured. Colour is a
+   verdict, and only the server issues one. */
+.wordle-tile-filled { border-color: rgba(255, 255, 255, 0.42); }
+
+.wordle-tile-correct,
+.wordle-tile-present,
+.wordle-tile-absent {
+  border-color: transparent;
+  color: #fff;
+  /* Flips in as the row resolves, staggered per tile by an inline delay. */
+  animation: wordle-reveal 320ms ease both;
+}
+.wordle-tile-correct { background: #2f7d4f; }
+.wordle-tile-present { background: #b8952f; }
+.wordle-tile-absent { background: #39443f; }
+
+@keyframes wordle-reveal {
+  0% { transform: rotateX(-90deg); }
+  100% { transform: rotateX(0); }
+}
+
+.wordle-row-shake { animation: wordle-shake 380ms ease; }
+@keyframes wordle-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* Honour a reduced-motion preference: the reveal and the shake are both
+   decoration, and the colour carries the whole message without them. */
+@media (prefers-reduced-motion: reduce) {
+  .wordle-tile-correct,
+  .wordle-tile-present,
+  .wordle-tile-absent,
+  .wordle-row-shake,
+  .cx-tiles-shake {
+    animation: none;
+  }
+}
+
+/* ---- Wordle keyboard ---- */
+
+.wordle-keyboard {
+  display: grid;
+  gap: 6px;
+  margin-top: auto;
+}
+.wordle-keyrow {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+.wordle-key {
+  flex: 1 1 0;
+  min-width: 0;
+  /* Comfortably past the 44px touch target on a phone, where this is the only
+     way to enter a guess. */
+  min-height: 48px;
+  padding: 0 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 5px);
+  background: linear-gradient(170deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.05) 42%, rgba(0, 0, 0, 0.16));
+  color: var(--ink);
+  font: 600 14px system-ui, sans-serif;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.wordle-key:disabled { opacity: 0.5; cursor: default; }
+.wordle-key-wide { flex: 1.5 1 0; }
+.wordle-key-correct { background: #2f7d4f; border-color: transparent; }
+.wordle-key-present { background: #b8952f; border-color: transparent; }
+.wordle-key-absent { background: #232b28; color: var(--muted); border-color: transparent; }
+
+/* ---- Connections board ---- */
+
+.cx-board {
+  display: grid;
+  gap: 8px;
+}
+.cx-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.cx-tiles-shake { animation: wordle-shake 380ms ease; }
+
+.cx-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 62px;
+  padding: 4px 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md, 7px);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink);
+  /* Clamped hard at the low end: the longest authored tile is ten characters
+     and has to fit four across on a 390px phone. A test caps the data at that
+     length so this never has to shrink further. */
+  font: 700 clamp(9px, 2.7vw, 13px) system-ui, sans-serif;
+  text-align: center;
+  line-height: 1.15;
+  word-break: break-word;
+  cursor: pointer;
+}
+.cx-tile-on {
+  background: var(--felt);
+  border-color: var(--gold);
+  color: #fff;
+}
+.cx-tile:disabled { cursor: default; }
+
+.cx-group {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md, 7px);
+  color: #17211c;
+  text-align: center;
+}
+.cx-group strong { font: 700 13px system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.04em; }
+.cx-group span { font-size: 12.5px; }
+/* A group the player never found, shown on a loss. Dimmed so a solved board
+   and a revealed one do not read the same at a glance. */
+.cx-group-missed { opacity: 0.72; }
+
+/* The four difficulty colours. These MUST stay in step with
+   CONNECTIONS_BLOCKS in lib/arcade/puzzles/share.ts -- the board and the
+   emoji grid a player posts are the same claim, and if yellow here is green
+   there, their own share text contradicts what they just saw. */
+.cx-level-0 { background: #d8b84a; }
+.cx-level-1 { background: #7fae5a; }
+.cx-level-2 { background: #7fa7d4; }
+.cx-level-3 { background: #a98cc4; }
+
+.cx-mistakes {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.cx-pips { display: inline-flex; gap: 5px; }
+.cx-pip {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-round, 50%);
+  background: var(--ink);
+}
+.cx-pip-spent { background: rgba(255, 255, 255, 0.16); }
+
+.cx-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.cx-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill, 999px);
+  background: transparent;
+  color: var(--ink);
+  font: 600 13px system-ui, sans-serif;
+  cursor: pointer;
+}
+.cx-action:disabled { opacity: 0.45; cursor: default; }
+.cx-action-submit {
+  border-color: var(--gold);
+  background: linear-gradient(170deg, var(--gold-light), var(--gold) 45%, #a8842f);
+  color: #241c05;
+}
+
+/* ---- Shared summary and share button ---- */
+
+.puzzle-summary {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl, 12px);
+  background: var(--surface-2);
+  text-align: center;
+}
+.puzzle-verdict { margin: 0; font: 600 15px Georgia, serif; }
+.puzzle-verdict em { color: var(--muted); font-style: normal; }
+
+/* The result exactly as it will be posted. A preview is what makes the button
+   read as "send this" rather than "send something". */
+.puzzle-share-preview {
+  margin: 0;
+  /* The emoji are the content; a monospace stack keeps the rows aligned even
+     where a client substitutes its own glyphs. */
+  font: 15px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+  /* A long grid must scroll inside itself rather than widening the page. */
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.puzzle-share { display: grid; gap: 4px; justify-items: center; width: 100%; }
+.puzzle-share-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 320px;
+  min-height: 46px;
+  padding: 0 22px;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-pill, 999px);
+  background: linear-gradient(170deg, var(--gold-light), var(--gold) 45%, #a8842f);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  color: #241c05;
+  font: 700 14px system-ui, sans-serif;
+  cursor: pointer;
+}
+.puzzle-share-button:hover { filter: brightness(1.06); }
+
+/* Reserved height, same reasoning as .puzzle-notice: a confirmation appearing
+   must not push the countdown down the page. */
+.puzzle-toast {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 20px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.puzzle-toast-on { opacity: 1; }
+
+.puzzle-countdown {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.puzzle-countdown strong { color: var(--ink); }
+
+/* ---- Narrow phones ---- */
+
+@media (max-width: 420px) {
+  .cx-tile { min-height: 58px; }
+  .wordle-key { min-height: 44px; font-size: 13px; }
+  .puzzle-share-preview { font-size: 14px; }
+}

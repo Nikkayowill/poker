@@ -82,11 +82,14 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "daily-wordle",
     name: "Daily Wordle",
-    blurb: "Five letters, six guesses",
+    // Accurate to the mechanic: one word a day, shared by everyone, which is
+    // what makes the emoji grid worth posting. A blurb promising something the
+    // board does not do is a promise broken on the click -- see Hi-Lo's.
+    blurb: "Five letters, six guesses, one a day",
     kind: "puzzle",
     entryCost: 0,
-    status: "coming-soon",
-    href: null,
+    status: "live",
+    href: "/games/wordle",
   },
   {
     id: "connections",
@@ -94,8 +97,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "Find the four hidden groups",
     kind: "puzzle",
     entryCost: 0,
-    status: "coming-soon",
-    href: null,
+    status: "live",
+    href: "/games/connections",
   },
   {
     id: "hi-lo",

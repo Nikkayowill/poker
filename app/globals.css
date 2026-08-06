@@ -33,6 +33,9 @@
 /* After 23: Hi-Lo reuses the Blackjack shell and only adds to it, so it must
    cascade later. */
 @import "./styles/24-hi-lo.css";
+/* After 23/24: the puzzle pages reuse the Blackjack shell and override parts
+   of it, so they must cascade later. */
+@import "./styles/25-puzzles.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

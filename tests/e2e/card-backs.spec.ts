@@ -12,8 +12,18 @@ test("every seat deals from its own deck", async ({ browser }) => {
   test.setTimeout(180_000);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   try {
-    const response = await context.request.post("/api/games/quick-play", {
-      data: { name: "Deck QA", tier: "1k", buyIn: 1000 },
+    /**
+     * A private table, never a matchmade one — see the same note in
+     * dealing.spec.ts. `/api/games/quick-play` is a shared pool, so a later
+     * test in the run is matched onto an earlier test's table, seated
+     * mid-hand (correctly sat out by `claimSeat`) and left waiting on a seat
+     * whose human has already closed their browser. A table of this test's
+     * own puts this player in seat 0 of hand 1. Nothing here is about
+     * matchmaking; it is about what a card back is drawn as.
+     */
+    await context.request.post("/api/profile");
+    const response = await context.request.post("/api/games", {
+      data: { name: "Deck QA", isPrivate: true, tier: "1k", buyIn: 1000 },
     });
     expect(response.ok()).toBe(true);
     const payload = await response.json();
@@ -21,17 +31,7 @@ test("every seat deals from its own deck", async ({ browser }) => {
     await page.goto(`/?table=${payload.game.id}`);
     await page.getByRole("button", { name: "Play as guest" }).click();
     await expect(page.locator(".poker-table-wrap")).toBeVisible();
-    /**
-     * A hand this player is dealt into, not merely a rendered table.
-     *
-     * Sitting down while a hand is running deliberately sits the new occupant
-     * out of it -- `claimSeat` clears their hole cards for the rest of that
-     * hand so nobody inherits a bot's cards mid-hand -- and quick-play
-     * usually has the bots dealt in before the browser has claimed a seat.
-     * Waiting on `.seat-cards` being visible therefore raced the engine, and
-     * failed on the runs that landed mid-hand with a correctly empty box.
-     * See the same wait in dealing.spec.ts.
-     */
+    // A hand this player is dealt into, not merely a rendered table.
     await expect(page.locator(".own-cards .dealt-card-shell")).toHaveCount(2, { timeout: 90_000 });
     await expect(page.locator(".seat-cards").first()).toBeVisible();
 
@@ -91,8 +91,21 @@ test("every seat deals from its own deck", async ({ browser }) => {
   }
 });
 
+/**
+ * The budget here is deliberately generous, and it is a *wait* rather than a
+ * tolerance -- nothing this test asserts is weakened by it.
+ *
+ * Driving to a flop means outlasting whatever the six bots do first, and the
+ * suite runs serially against one long-lived dev server that never drops the
+ * tables earlier specs created. By the time this runs, that process is
+ * ticking dozens of them, and a loop that reaches a flop in 16s on an idle
+ * server has been measured taking longer than 90s at the end of a full run --
+ * failing on the clock while asserting nothing. Standalone runtime is
+ * unchanged; this only stops the last specs in a run being punished for
+ * being last.
+ */
 test("the board flips on a real deck, not a blank card", async ({ browser }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(300_000);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   try {
     // Own the session before creating, and use a private table: quick-play
@@ -118,7 +131,7 @@ test("the board flips on a real deck, not a blank card", async ({ browser }) => 
       const check = page.getByRole("button", { name: /^(Check|Call)/ });
       if (await check.isEnabled({ timeout: 1_000 }).catch(() => false)) await check.click();
       await expect(page.locator(".community-card-flipper").first()).toBeVisible({ timeout: 3_000 });
-    }).toPass({ timeout: 90_000 });
+    }).toPass({ timeout: 240_000 });
 
     // Your hole cards are face up and your back is shown to everyone but you,
     // so the half-second of the board's flip is the only time you ever see

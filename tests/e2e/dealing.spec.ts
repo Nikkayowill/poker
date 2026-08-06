@@ -8,10 +8,30 @@ import { expect, test, type Browser } from "@playwright/test";
  * variables at all.
  */
 
+/**
+ * A table of this test's own, never a matchmade one.
+ *
+ * This used to call `/api/games/quick-play`, and that is a shared pool: the
+ * second test in a run is matched into the table the first one just seeded.
+ * It is then seated *mid-hand*, which `claimSeat` deliberately sits out for
+ * the rest of that hand — so `.own-cards` is correctly empty and the test
+ * has to wait out the hand. That wait does not reliably finish, because the
+ * seat on turn belongs to the previous test's player, whose context has been
+ * closed: nothing is left to answer their clock except the backup advancers
+ * in `lib/game/turn-clock.ts`, one stagger apart, and the current test is
+ * sat out behind them. Observed directly — two tests, one game id, the feed
+ * frozen on the same line for 25s with `ownShells: 0`.
+ *
+ * A private table is not matchmade, so this player is seat 0 of a brand new
+ * table and is dealt into hand 1. Nothing here was ever about matchmaking;
+ * these assertions are about deal geometry. Same setup the specs that do not
+ * flake already use (`table-scene.spec.ts`, `chip-flights.spec.ts`).
+ */
 async function seatAtTable(browser: Browser, viewport: { width: number; height: number }) {
   const context = await browser.newContext({ viewport });
-  const response = await context.request.post("/api/games/quick-play", {
-    data: { name: "Deal QA", tier: "1k", buyIn: 1000 },
+  await context.request.post("/api/profile");
+  const response = await context.request.post("/api/games", {
+    data: { name: "Deal QA", isPrivate: true, tier: "1k", buyIn: 1000 },
   });
   expect(response.ok()).toBe(true);
   const payload = await response.json();

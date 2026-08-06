@@ -192,9 +192,12 @@ export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: 
   const ry = rx * TILT_SIN;
   const { position } = chip;
 
-  // The decoupled ground shadow, only once the chip is genuinely airborne.
+  // The decoupled ground shadow, only for a chip genuinely in flight. The
+  // gate is the layer's own airborne flag, not height alone: a chip resting
+  // mid-stack is also "high", and painting a hovering shadow pool under a
+  // settled pile is exactly what made stacks read as floating chips.
   const height = Math.max(0, position.y - FELT.y);
-  if (height > CHIP_THICKNESS) {
+  if (chip.airborne && height > CHIP_THICKNESS) {
     const ground = project(view, { x: position.x, y: FELT.y, z: position.z });
     // 0..1 over the tallest arc in the system; drives both the shrink and
     // the softening, so a chip at its apex casts a small, diffuse pool and

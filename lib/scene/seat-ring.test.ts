@@ -71,6 +71,36 @@ describe("seat ring", () => {
     }
   });
 
+  /**
+   * The near seat is the only chair with a figure standing between it and the
+   * pot: `.seat-figure` is a square box centred on the DOM ellipse with its
+   * artwork anchored to the base, so it occupies the space *above* its seat —
+   * which for slot 0 alone means out over the cloth. At the ordinary inset
+   * the local player's own avatar was painted on top of their own bet (z-index
+   * 4+ over the canvas's 0), so they were the one player at the table who
+   * could not see their chips go out.
+   */
+  it("pulls the near seat's bet clear of the figure standing over it", () => {
+    const near = seatBetOrigin(0, 6);
+    const opponent = seatBetOrigin(3, 6);
+    // Both on the centre line, so the comparison is purely one of depth.
+    expect(near.x).toBeCloseTo(0, 9);
+    expect(opponent.x).toBeCloseTo(0, 9);
+    // Meaningfully further in than an opponent pushes theirs. Without this
+    // the two are mirror images and the near one sits inside its own avatar.
+    expect(near.z).toBeLessThan(Math.abs(opponent.z));
+    // Still the viewer's side of the middle: a bet is between its player and
+    // the pot, never past the board.
+    expect(near.z).toBeGreaterThan(0);
+    expect(near.z).toBeLessThan(FELT.radiusZ * (1 - POT_DEPTH_FRACTION));
+    // And every other seat is left exactly where it was — the asymmetry is
+    // slot 0's alone, because the occlusion is slot 0's alone.
+    for (let slot = 1; slot < 6; slot += 1) {
+      const theta = seatAngle(slot, 6);
+      expect(seatBetOrigin(slot, 6).z).toBeCloseTo(FELT.radiusZ * 0.74 * Math.sin(theta), 9);
+    }
+  });
+
   it("rests the pot on the felt, behind the board rather than under it", () => {
     const pot = potPosition();
     expect(pot.x).toBe(0);

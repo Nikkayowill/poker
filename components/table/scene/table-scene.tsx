@@ -8,7 +8,7 @@ import {
   fitView, project, projectedFeltDepth, projectedFeltWidth, type SceneView,
 } from "@/lib/scene/projection";
 import { FELT, MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
-import { ringPoint } from "@/lib/scene/seat-ring";
+import { ringPoint, seatBetOrigin } from "@/lib/scene/seat-ring";
 import {
   afterFrame,
   clampDelta,
@@ -101,6 +101,16 @@ declare global {
       pileSize: () => number;
       /** Where the scene thinks a ring slot is, in viewport CSS pixels. */
       seat: (slot: number) => { x: number; y: number };
+      /**
+       * Where that slot's chips rest when it bets, in viewport CSS pixels.
+       *
+       * Exposed alongside `seat` because the two have to be checked against
+       * each other: slot 0's figure is drawn out over the cloth, so its bet
+       * spot is the one that can end up behind its own avatar, and that is a
+       * disagreement between the canvas and the DOM that nothing in either
+       * system can notice on its own.
+       */
+      betSpot: (slot: number) => { x: number; y: number };
       /** CSS pixels per world unit — the whole fit, under orthography. */
       roomScale: () => number;
       /**
@@ -346,6 +356,11 @@ export function TableScene({
           const engine = engineRef.current;
           if (!engine) return { x: 0, y: 0 };
           return toViewport(project(engine.view, ringPoint(slot, engine.seatCount, 1, FELT.y, engine.view.radiusZ)));
+        },
+        betSpot: (slot: number) => {
+          const engine = engineRef.current;
+          if (!engine) return { x: 0, y: 0 };
+          return toViewport(project(engine.view, seatBetOrigin(slot, engine.seatCount, engine.view.radiusZ)));
         },
         roomScale: () => engineRef.current?.view.scale ?? 0,
         roomFelt: () => {

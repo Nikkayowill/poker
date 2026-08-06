@@ -7,6 +7,10 @@ test("admin uses an HttpOnly session and bulk deletes a filtered profile group",
     for (const name of ["Bulk E2E One", "Bulk E2E Two"]) {
       const context = await browser.newContext();
       seedContexts.push(context);
+      // Own a session first: the rate limiter keys on the session token and
+      // only falls back to the source IP, so cookieless callers all share one
+      // bucket in local dev. See tests/e2e/visual-layering.spec.ts.
+      await context.request.post("/api/profile");
       const response = await context.request.post("/api/games/quick-play", {
         data: { name, tier: "1k", buyIn: 1000 },
       });

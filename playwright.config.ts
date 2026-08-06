@@ -10,6 +10,23 @@ export default defineConfig({
   // suite deletes profiles. See tests/e2e/global-setup.ts.
   globalSetup: "./tests/e2e/global-setup.ts",
   fullyParallel: false,
+  /**
+   * One worker, and it has to be stated: `fullyParallel: false` only serialises
+   * tests *within* a file. Files still run concurrently, one per worker, and
+   * the default worker count is half the machine's cores — six here. So the
+   * suite was running six spec files at once against a single shared dev
+   * server holding all game and profile state in memory, which is exactly the
+   * state this config's own comment above says it deletes: `admin.spec.ts`
+   * bulk-deletes profiles while other specs are mid-hand, and `quick-play`
+   * matches two specs onto one table.
+   *
+   * The symptom was a rotating cast of failures — five on one run, seven on
+   * the next, barely overlapping, most of them dying in under 300ms because
+   * their fixture had been deleted rather than because anything they assert
+   * was wrong. Serialising costs a few minutes and buys a suite whose result
+   * means something.
+   */
+  workers: 1,
   timeout: 120_000,
   expect: { timeout: 10_000 },
   reporter: "list",

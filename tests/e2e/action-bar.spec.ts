@@ -14,6 +14,10 @@ import { expect, test, type Page } from "@playwright/test";
 async function openTable(page: Page, request: Page["request"]) {
   // Private, so table matchmaking cannot hand this spec a table another spec
   // left behind -- see tests/e2e/visual-layering.spec.ts for the same reason.
+  // Own a session first: the rate limiter keys on the session token and
+  // only falls back to the source IP, so cookieless callers all share one
+  // bucket in local dev. See tests/e2e/visual-layering.spec.ts.
+  await request.post("/api/profile");
   const response = await request.post("/api/games", {
     data: { name: "Action QA", isPrivate: true, tier: "1k", buyIn: 1000 },
   });

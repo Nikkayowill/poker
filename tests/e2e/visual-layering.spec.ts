@@ -44,6 +44,15 @@ async function openIsolatedTable(browser: Browser, viewport: ViewportCase) {
   // depend on file order. findOpenPublicGame filters on is_private, so a
   // private table can never be handed to another test -- every viewport
   // below now gets its own fresh six-max table with this context at seat 0.
+  // Own a session before creating anything. `callerKey` in
+  // lib/server/rate-limit.ts keys the limiter on the session token and only
+  // falls back to the source IP -- and local dev has no proxy headers, so
+  // every *cookieless* caller in the suite shares one `ip:unknown` bucket.
+  // POST /api/games allows 10 per five minutes, and a full run creates far
+  // more than that, so whichever spec ran last got a 429 rather than a table.
+  // Minting the profile first makes this context its own caller, which is
+  // what it actually is.
+  await context.request.post("/api/profile");
   const response = await context.request.post("/api/games", {
     data: { name: "Visual QA", isPrivate: true, tier: "1k", buyIn: 1000 },
   });

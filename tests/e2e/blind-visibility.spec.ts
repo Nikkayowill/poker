@@ -9,6 +9,10 @@ for (const viewport of [
       viewport: { width: viewport.width, height: viewport.height },
     });
     try {
+      // Own a session first: the rate limiter keys on the session token and
+      // only falls back to the source IP, so cookieless callers all share one
+      // bucket in local dev. See tests/e2e/visual-layering.spec.ts.
+      await context.request.post("/api/profile");
       const response = await context.request.post("/api/games/quick-play", {
         data: { name: "Blind QA", tier: "1k", buyIn: 1000 },
       });

@@ -95,6 +95,10 @@ test("six isolated players keep private cards, action order, layout, pot, and re
       }));
     }
 
+    // Own a session first: the rate limiter keys on the session token and
+    // only falls back to the source IP, so cookieless callers all share one
+    // bucket in local dev. See tests/e2e/visual-layering.spec.ts.
+    await contexts[0].request.post("/api/profile");
     const hostResponse = await contexts[0].request.post("/api/games", {
       data: { name: "Host", isPrivate: true },
     });

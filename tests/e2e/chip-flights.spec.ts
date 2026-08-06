@@ -181,22 +181,35 @@ test("the pot lands on the winner it was paid to", async ({ browser }) => {
      * properties of the table rather than slack. An absolute tolerance fails
      * because the seat marker sits at rail height while the chips rest on the
      * cloth, leaving a standing offset that varies around the ring.
-     * "Nearest seat" fails because the felt's centre -- where every funnel
-     * chip starts -- projects within a few pixels of the far seat under this
-     * camera, so that seat would win on every hand it did not play. And a
-     * fixed ratio against the best gain fails because the winner and its
-     * neighbour sit sixty degrees apart, so the payout passes one on its way
-     * to the other: observed between 128% and 89% of the neighbour, all on
-     * correct payouts. The ordering is what holds -- a pot paid to the wrong
-     * side of the felt puts its winner fourth or worse.
+     * "Nearest seat" fails because the pot projects close to the far seat
+     * under this camera, so that seat would win on every hand it did not
+     * play. And a fixed ratio against the best gain fails because the winner
+     * and its neighbour sit sixty degrees apart, so the payout passes one on
+     * its way to the other: observed between 128% and 89% of the neighbour,
+     * all on correct payouts. The ordering is what holds -- a pot paid to the
+     * wrong side of the felt puts its winner fourth or worse.
+     *
+     * The gain is the *fraction* of its starting distance a seat closed, not
+     * the pixels it closed, and that distinction is load-bearing. The pot no
+     * longer sits at the middle of the felt -- `POT_DEPTH_FRACTION` rests it
+     * behind the board, away from the viewer, so the board is not buried
+     * under it -- which means the seats do not start equidistant from the
+     * chips any more. A near seat begins several hundred pixels away and a
+     * far seat begins close, so counting pixels rewards whoever had the most
+     * ground available rather than whoever was actually paid: observed
+     * directly, a correct payout to slot 2 ranked behind slots 4 and 5 purely
+     * because they had further to close. A fraction is scale-free -- the
+     * winner closes essentially all of its distance wherever it sits, and a
+     * seat the chips merely flew past does not.
      *
      * The cut is `funnelSlots.length + 1` rather than a literal two because a
      * split pot is ordinary here: an uncontested fold-around is not the only
      * way this hand ends, and a payout to three winners legitimately closes
-     * ground on three seats. Measured on correct payouts, a non-winning seat
-     * scores a gain of zero unless it sits next to one that won.
+     * ground on three seats.
      */
-    const gained = (slot: number) => started[slot] - closest[slot];
+    const gained = (slot: number) => (started[slot] > 0
+      ? (started[slot] - closest[slot]) / started[slot]
+      : 0);
     expect(gained(winnerSlot)).toBeGreaterThan(0);
     const ranked = closest
       .map((_, slot) => ({ slot, gain: gained(slot) }))

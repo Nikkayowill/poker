@@ -64,6 +64,30 @@ describe("the pile", () => {
   });
 });
 
+describe("the airborne flag", () => {
+  it("is set while a chip flies and cleared the moment it parks", () => {
+    const { chips } = layer();
+    chips.syncPile(1310, BB, false);
+    // Dropping in: every pile chip is in flight and says so.
+    expect(chips.drawList().every((chip) => chip.airborne)).toBe(true);
+    settle(chips);
+    // Settled: the painter must see a resting pile — a chip resting
+    // mid-stack is above the felt too, and keeping the flag would paint a
+    // hovering shadow pool under every chip but the bottom one, which is
+    // exactly the floating-stack bug.
+    expect(chips.drawList().some((chip) => chip.airborne)).toBe(false);
+  });
+
+  it("re-arms when a settled standing bet sweeps into the pot", () => {
+    const { chips } = layer();
+    chips.syncBets([{ slot: 1, amount: 70 }], 6, BB);
+    settle(chips);
+    expect(chips.drawList().some((chip) => chip.airborne)).toBe(false);
+    chips.sweepBets();
+    expect(chips.drawList().every((chip) => chip.airborne)).toBe(true);
+  });
+});
+
 describe("sprays", () => {
   it("flies a bet as the amount's own breakdown", () => {
     const { chips } = layer();
@@ -325,7 +349,7 @@ describe("motion lifecycle", () => {
     // the felt, instead of sliding there.
     chips.update(REFERENCE_FRAME_MS, true);
     const [chip] = chips.drawList();
-    expect(chip.position.y).toBeCloseTo(FELT.y + 0.04, 6);
+    expect(chip.position.y).toBeCloseTo(FELT.y + CHIP_THICKNESS / 2, 6);
   });
 
   it("keeps every chip on a real denomination", () => {

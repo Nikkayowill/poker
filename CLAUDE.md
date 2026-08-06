@@ -60,12 +60,26 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   out the in-game HUD and tables. So `--brand-purple` `#983fe0`,
   `--brand-red` `#dc1413` and `--brand-gold` `#db9c0b` live in
   `01-tokens.css` and dress the sign-in page, landing page, lobby hub, menus,
-  modals, store, collection, leaderboard and admin; `--felt`/`--gold` and
+  modals, store, collection and leaderboard; `--felt`/`--gold` and
   every sheet from `05-game-header.css` through `09-action-bar.css` plus
   `16`/`17`/`99` are untouched. The three brand hex values were **sampled
   from the logo PNG with ImageMagick**, not picked by eye, so the mark and
   the chrome cannot drift. Reaching for a `--brand-*` token inside a table
   sheet is a mistake, not a shortcut.
+- **This is live on `www.stackchips.app` as of PR #16 (merge `fadd507`)** —
+  verified against the Production deployment's own `success` status via
+  `gh api repos/Nikkayowill/poker/deployments`, and against the live site
+  serving what only this release contains: `/brand/stackchips-logo.png`
+  returning 200 (it did not exist before), `sw.js` reporting
+  `stackchips-shell-v6`, and the signed-out HTML carrying both
+  `HIGH ROLLER ARCADE` and `#983fe0`. Not assumed from the merge alone.
+- **`app/styles/14-admin.css` is deliberately NOT part of that release.** The
+  admin console's borderless pass was written in the same working tree by a
+  concurrent session and the user scoped it out of this deploy, so it is
+  still uncommitted local work — the *shipped* admin console keeps its old
+  bordered `--line`/`--surface` styling and does not read `--brand-*` at all.
+  Anyone picking that up should commit it as its own slice rather than
+  assume the doc above already covers it.
 - The supplied logo had **no alpha channel** — a solid black plate behind the
   art, which the user believed was transparent. `public/brand/stackchips-logo
   .png` is the fixed copy, made by flood-filling that plate from the four

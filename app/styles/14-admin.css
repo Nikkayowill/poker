@@ -11,9 +11,10 @@
   gap: 10px;
   width: min(320px, 100%);
   padding: 28px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
+  background: var(--brand-surface);
+  border: 0;
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.5);
 }
 
 .admin-brand {
@@ -23,9 +24,9 @@
   place-items: center;
   margin-bottom: 4px;
   transform: rotate(45deg);
-  border: 1px solid #f4df96;
-  border-radius: 6px;
-  background: var(--gold);
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(152deg, var(--brand-gold-light), var(--brand-gold));
   color: #0a130f;
 }
 
@@ -37,12 +38,15 @@
 .admin-unlock label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 
 .admin-unlock input {
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 0;
+  outline: 0;
+  background: var(--brand-surface-2);
   color: var(--ink);
 }
+
+.admin-unlock input:focus { box-shadow: 0 0 0 2px rgba(152,63,224,.6); }
 
 .admin-security-note {
   color: #7f9188;
@@ -86,20 +90,21 @@
 
 .admin-back {
   padding: 8px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
+  border-radius: 11px;
+  border: 0;
+  background: rgba(255,255,255,.06);
   color: var(--muted);
   text-decoration: none;
   font-size: 13px;
 }
 
-.admin-back:hover { color: var(--ink); border-color: var(--gold); }
+.admin-back:hover { color: var(--ink); background: rgba(255,255,255,.12); }
 
 .admin-refresh {
   padding: 8px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
+  border-radius: 11px;
+  border: 0;
+  background: var(--brand-surface-2);
   color: var(--ink);
   cursor: pointer;
 }
@@ -108,14 +113,14 @@
 
 .admin-lock {
   padding: 8px 14px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 157, 103, 0.35);
-  background: rgba(255, 157, 103, 0.08);
+  border-radius: 11px;
+  border: 0;
+  background: rgba(255, 157, 103, 0.16);
   color: #ffcfa8;
   cursor: pointer;
 }
 
-.admin-lock:hover { border-color: rgba(255, 157, 103, 0.65); background: rgba(255, 157, 103, 0.14); }
+.admin-lock:hover { background: rgba(255, 157, 103, 0.26); }
 
 .admin-error {
   color: #ff9e9e;
@@ -147,9 +152,9 @@
   flex-direction: column;
   gap: 4px;
   padding: 14px 18px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  background: var(--brand-surface);
+  border: 0;
+  border-radius: 14px;
   min-width: 120px;
 }
 
@@ -159,10 +164,11 @@
 .admin-search {
   display: block;
   width: min(320px, 100%);
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 0;
+  outline: 0;
+  background: var(--brand-surface-2);
   color: var(--ink);
 }
 
@@ -174,26 +180,29 @@
 
 .admin-account-filter {
   display: flex;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
+  gap: 4px;
+  padding: 4px;
+  border: 0;
+  border-radius: 13px;
+  background: rgba(255,255,255,.05);
 }
 
 .admin-account-filter button {
   padding: 8px 12px;
-  border: none;
-  border-right: 1px solid var(--line);
-  background: var(--surface-2);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
   font-size: 12px;
 }
 
-.admin-account-filter button:last-child { border-right: none; }
-
+/* Which filter is on used to be a slightly lighter cell in a bordered strip.
+   With the strip gone that read as nothing at all, so the active tab is
+   filled -- same treatment as the leaderboard's scope tabs. */
 .admin-account-filter button.admin-filter-active {
-  background: var(--surface);
-  color: var(--ink);
+  background: linear-gradient(140deg, var(--brand-purple), var(--brand-purple-deep));
+  color: #fff;
   font-weight: 600;
 }
 
@@ -207,14 +216,14 @@
 }
 
 .admin-account-registered {
-  background: rgba(120, 210, 150, 0.12);
-  border: 1px solid rgba(120, 210, 150, 0.35);
+  background: rgba(120, 210, 150, 0.2);
+  border: 0;
   color: #7dd6a0;
 }
 
 .admin-account-guest {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.08);
+  border: 0;
   color: var(--muted);
 }
 
@@ -224,10 +233,10 @@
   align-items: center;
   gap: 12px;
   margin-bottom: 10px;
-  padding: 9px 11px 9px 14px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--surface);
+  padding: 10px 12px 10px 14px;
+  border: 0;
+  border-radius: 13px;
+  background: var(--brand-surface);
 }
 
 .admin-bulk-bar > strong {
@@ -250,9 +259,9 @@
 
 .admin-bulk-bar button {
   padding: 7px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface-2);
+  border: 0;
+  border-radius: 10px;
+  background: var(--brand-surface-2);
   color: var(--ink);
   font-size: 11px;
   cursor: pointer;
@@ -261,8 +270,7 @@
 .admin-bulk-bar button:disabled { opacity: .45; cursor: default; }
 .admin-bulk-bar .admin-clear-selection { color: var(--muted); }
 .admin-bulk-bar .admin-bulk-delete {
-  border-color: rgba(255,107,107,.5);
-  background: rgba(255,107,107,.14);
+  background: rgba(255,107,107,.22);
   color: #ffb3b3;
   font-weight: 700;
 }
@@ -278,14 +286,14 @@
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid transparent;
+  border-radius: 9px;
+  border: 0;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
 }
 
-.admin-id-copy:hover { border-color: var(--line); background: var(--surface-2); }
+.admin-id-copy:hover { background: var(--brand-surface-2); }
 .admin-id-copy code { font-size: 12px; }
 .admin-id-copy span { font-size: 11px; color: var(--gold-light); }
 
@@ -298,9 +306,10 @@
 .admin-adjust input {
   width: 72px;
   padding: 5px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
+  border-radius: 9px;
+  border: 0;
+  outline: 0;
+  background: var(--brand-surface-2);
   color: var(--ink);
   font-size: 12px;
 }
@@ -308,8 +317,8 @@
 .admin-adjust button {
   width: 26px;
   height: 26px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
+  border-radius: 9px;
+  border: 0;
   background: var(--surface-2);
   color: var(--ink);
   cursor: pointer;
@@ -322,9 +331,9 @@
 .admin-table-wrap {
   max-height: min(64vh, 720px);
   overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(17, 26, 23, 0.7);
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .04);
 }
 
 .admin-table {
@@ -377,9 +386,9 @@
 
 .admin-toggle {
   padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
+  border-radius: 9px;
+  border: 0;
+  background: var(--brand-surface-2);
   color: var(--ink);
   cursor: pointer;
   font-size: 12px;
@@ -389,9 +398,9 @@
 
 .admin-ban {
   padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 107, 107, 0.4);
-  background: rgba(255, 107, 107, 0.08);
+  border-radius: 9px;
+  border: 0;
+  background: rgba(255, 107, 107, 0.16);
   color: #ff9e9e;
   cursor: pointer;
   font-size: 12px;
@@ -402,9 +411,9 @@
 
 .admin-delete {
   padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 107, 107, 0.6);
-  background: rgba(255, 107, 107, 0.16);
+  border-radius: 9px;
+  border: 0;
+  background: rgba(255, 107, 107, 0.28);
   color: #ffb3b3;
   cursor: pointer;
   font-size: 12px;
@@ -418,8 +427,8 @@
   margin-left: 6px;
   padding: 2px 6px;
   border-radius: 5px;
-  background: rgba(255, 190, 90, 0.12);
-  border: 1px solid rgba(255, 190, 90, 0.35);
+  background: rgba(255, 190, 90, 0.2);
+  border: 0;
   color: #ffbe5a;
   font-size: 10px;
   text-transform: uppercase;

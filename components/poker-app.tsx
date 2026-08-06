@@ -31,6 +31,7 @@ import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
 import { Coins, Layers, LogOut, Music2, Settings2, Trophy, UserPlus } from "lucide-react";
 import { Lobby } from "@/components/lobby/lobby";
+import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { ProfileModal } from "@/components/profile/profile-modal";
 import { Menu, type MenuItem } from "@/components/nav/menu";
 import { AuthButton } from "@/components/profile/auth-button";
@@ -962,9 +963,14 @@ export function PokerApp() {
     <div className="app-root">
       {!game && (
         <header className="lobby-header">
+          {/* The simplified mark, not the full badge: at the ~50px this row
+              allows, the badge's own banner type is illegible (checked on a
+              real render), and the wordmark beside it already spells the
+              name. The in-game header in poker-table.tsx keeps its old "S"
+              diamond -- the table was out of scope for the chrome reskin. */}
           <div className="wordmark">
-            <span className="mark">S</span>
-            <span>StackChips<small>NO LIMIT HOLD’EM</small></span>
+            <span className="wordmark-mark"><StackChipsMark size={44} /></span>
+            <span>StackChips<small>HIGH ROLLER ARCADE</small></span>
           </div>
           {/* The hub tiles already carry Collection, Buy Gold and the
               leaderboard, so repeating them here was three chances to tap the

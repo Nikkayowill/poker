@@ -12,10 +12,33 @@
      affecting devices that report no inset (env() resolves to 0). */
   padding-left: max(clamp(24px, 5vw, 76px), env(safe-area-inset-left));
   padding-right: max(clamp(24px, 5vw, 76px), env(safe-area-inset-right));
-  border-bottom: 1px solid var(--line);
   background: #0b1210;
   position: relative;
   z-index: 20;
+}
+
+/* The lobby header no longer draws a hairline under itself. A hard rule
+   across the full width of the viewport was the single most template-looking
+   element on the page; the header now separates from the content by being
+   darker than it and by casting a short shadow, which is what a real
+   surface above another surface does. The in-game header keeps its own
+   treatment in 05-game-header.css and was out of scope here. */
+.lobby-header {
+  background: rgba(10, 7, 16, .82);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .34);
+}
+
+.game-header { border-bottom: 1px solid var(--line); }
+
+/* The simplified mark, glowing in brand purple. See the note in poker-app.tsx
+   on why this is not the full badge. */
+.wordmark-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  filter: drop-shadow(0 6px 16px rgba(152, 63, 224, .42));
 }
 
 .wordmark {
@@ -78,19 +101,21 @@
   align-items: center;
   gap: 9px;
   padding: 6px 9px 6px 6px;
-  color: #8f9d95;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: transparent;
+  color: #9c93b1;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255,255,255,.05);
   cursor: pointer;
   text-align: left;
+  transition: background var(--duration-base) ease, color var(--duration-base) ease;
 }
 
 .profile-trigger:hover {
-  color: #e2e8e3;
-  border-color: rgba(217,184,93,.24);
-  background: rgba(217,184,93,.035);
+  color: #ece7f7;
+  background: rgba(255,255,255,.1);
 }
+
+.profile-trigger:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
 
 .profile-trigger > span:nth-child(2) {
   flex: 1;
@@ -123,7 +148,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: rgba(217,184,93,.05);
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(219,156,11,.13);
 }

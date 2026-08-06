@@ -15,17 +15,21 @@ import {
 /**
  * The fourth hub panel: what is coming after Hold'em.
  *
- * It is a .hub-tile like every other panel in the grid -- same border,
- * radius, padding and hover -- with a scrolling list inside it, rather than a
- * new kind of card. .arcade-* in 22-arcade.css holds only the list.
+ * It is a .hub-tile like every other panel in the grid -- same radius,
+ * padding and hover -- with a scrolling list inside it, rather than a new
+ * kind of card. .arcade-* in 22-arcade.css holds only the list.
  *
- * Every row is wallet-aware today even though nothing is playable yet: the
- * stake renders through .gold-balance, the same coin+amount layout the navbar
- * badge uses, so wiring a live game up later is a status flip in
- * lib/arcade/games.ts and an onSelect, not a re-layout.
+ * Every row is wallet-aware: the stake renders through .gold-balance, the
+ * same coin+amount layout the navbar badge uses, so taking a game live is a
+ * status flip in lib/arcade/games.ts and nothing here.
  */
 export function ArcadePanel({ profile }: { profile: PlayerProfile | null }) {
   const wallet = toArcadeWallet(profile);
+  // Counted, not written down. The header used to read "10 games in the
+  // works", which was true when none of them were and quietly became a lie
+  // the day Blackjack shipped -- a hub blurb must not misdescribe what is
+  // behind it (see the note on Hi-Lo's blurb in lib/arcade/games.ts).
+  const liveCount = ARCADE_GAMES.filter((game) => game.status === "live").length;
 
   return (
     <section className="hub-tile hub-tile-arcade" aria-labelledby="arcade-heading">
@@ -33,7 +37,7 @@ export function ArcadePanel({ profile }: { profile: PlayerProfile | null }) {
         <Gamepad2 size={16} aria-hidden="true" />
         <div className="arcade-head-copy">
           <strong id="arcade-heading">Arcade &amp; Puzzles</strong>
-          <small>10 games in the works</small>
+          <small>{liveCount} playable now, more dealing in</small>
         </div>
       </div>
 

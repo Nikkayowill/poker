@@ -12,9 +12,9 @@
 }
 
 .cash-out-notice {
-  color: var(--gold-light);
-  border: 1px solid rgba(217, 184, 93, 0.35);
-  background: rgba(217, 184, 93, 0.1);
+  color: var(--brand-gold-light);
+  border: 0;
+  background: rgba(219, 156, 11, 0.16);
 }
 
 .cash-out-notice svg { flex-shrink: 0; color: var(--gold); }
@@ -38,8 +38,8 @@
 .broke-notice {
   flex-wrap: wrap;
   color: #ffcfa8;
-  border: 1px solid rgba(255, 157, 103, 0.35);
-  background: rgba(255, 157, 103, 0.09);
+  border: 0;
+  background: rgba(255, 157, 103, 0.14);
 }
 
 .broke-notice span { flex: 1; min-width: 200px; }
@@ -54,13 +54,14 @@
   gap: 13px;
   text-align: left;
   margin-bottom: 24px;
-  padding: 15px;
-  border: 1px solid rgba(217, 184, 93, .2);
-  border-radius: 13px;
+  padding: 16px;
+  border: 0;
+  border-radius: 18px;
   background:
-    radial-gradient(circle at 0 0, rgba(217,184,93,.1), transparent 38%),
-    linear-gradient(130deg, rgba(23,35,30,.98), rgba(13,22,18,.98));
-  box-shadow: 0 16px 45px rgba(0,0,0,.18);
+    radial-gradient(circle at 0 0, rgba(152,63,224,.24), transparent 48%),
+    radial-gradient(circle at 100% 100%, rgba(219,156,11,.16), transparent 52%),
+    linear-gradient(130deg, rgba(26,20,38,.98), rgba(14,10,20,.98));
+  box-shadow: 0 18px 46px rgba(0,0,0,.34);
 }
 
 .save-progress-icon {
@@ -68,10 +69,10 @@
   height: 38px;
   display: grid;
   place-items: center;
-  color: #e5ca76;
-  border: 1px solid rgba(217,184,93,.25);
-  border-radius: 10px;
-  background: rgba(217,184,93,.08);
+  color: #1a1020;
+  border: 0;
+  border-radius: 12px;
+  background: var(--brand-sweep);
 }
 
 .save-progress-copy { min-width: 0; }
@@ -114,12 +115,12 @@
 }
 
 .save-progress-primary {
-  color: #15170f;
-  border: 1px solid #dec36c;
-  background: #d9b85d;
+  color: #1c1305;
+  border: 0;
+  background: linear-gradient(152deg, var(--brand-gold-light), var(--brand-gold));
 }
 
-.save-progress-primary:hover { background: #e6cd7d; }
+.save-progress-primary:hover { filter: brightness(1.07); }
 
 .save-progress-later {
   color: #78877f;
@@ -144,20 +145,23 @@
 
 .auth-button {
   padding: 8px 14px;
-  border-radius: 9px;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
+  border-radius: 11px;
+  border: 0;
+  background: var(--brand-surface-2);
   color: var(--ink);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  transition: background var(--duration-base) ease, filter var(--duration-base) ease;
 }
 
-.auth-button:hover { border-color: var(--gold); }
+.auth-button:hover { background: rgba(255,255,255,.12); }
 .game-header-actions .auth-button { padding: 7px 10px; font-size: 10px; }
-.auth-button-save { border-color: rgba(217, 184, 93, 0.45); color: var(--gold-light); }
-.auth-button-save:hover { background: rgba(217, 184, 93, 0.12); }
+/* "Save progress" is the one call to action in this row, so it is filled
+   rather than tinted -- the border that used to distinguish it is gone. */
+.auth-button-save { color: #1c1305; background: linear-gradient(152deg, var(--brand-gold-light), var(--brand-gold)); }
+.auth-button-save:hover { filter: brightness(1.07); background: linear-gradient(152deg, var(--brand-gold-light), var(--brand-gold)); }
 
 .admin-shell {
   min-height: 100vh;

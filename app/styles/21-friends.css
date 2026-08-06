@@ -73,17 +73,19 @@
   height: 30px;
   display: grid;
   place-items: center;
-  color: #8e9f97;
-  border: 1px solid var(--line);
+  color: #9c93b1;
+  border: 0;
   border-radius: 50%;
-  background: rgba(255,255,255,.025);
+  background: rgba(255,255,255,.06);
   cursor: pointer;
-  transition: color .15s ease, border-color .15s ease;
+  transition: color .15s ease, background .15s ease;
 }
 .friend-actions button:disabled { opacity: .45; cursor: default; }
-.friend-accept:not(:disabled):hover { color: #6fd3a2; border-color: rgba(111,211,162,.4); }
+/* Accept/decline used to be told apart by a tinted border on hover. The tint
+   moved to the fill, so the two still read as opposite actions. */
+.friend-accept:not(:disabled):hover { color: #6fd3a2; background: rgba(111,211,162,.18); }
 .friend-decline:not(:disabled):hover,
-.friend-remove:not(:disabled):hover { color: #e08d8d; border-color: rgba(224,141,141,.4); }
+.friend-remove:not(:disabled):hover { color: #e08d8d; background: rgba(224,141,141,.18); }
 
 .friends-loading,
 .friends-error { margin: 18px 0; color: #5c6b63; font-size: 11px; text-align: center; }

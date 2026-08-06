@@ -14,6 +14,33 @@
   padding: 34px 0 calc(40px + env(safe-area-inset-bottom));
 }
 
+/* The signed-in hub gets the same brand light as the signed-out page.
+   Without this, signing in walked a player from a purple/gold room into a
+   flat green-black one, which reads as two different products rather than
+   two screens of one. The tiles themselves keep their own artwork.
+
+   Painted on .lobby-hub rather than .lobby so it cannot reach the table
+   screen, and left off .app-root for the same reason -- the felt was out of
+   scope for this pass. */
+.lobby-hub::before {
+  content: "";
+  /* Fixed and full-viewport, not a background on .lobby-hub itself: that
+     element is the 920px content column, so painting the gradient on it drew
+     two hard vertical seams down the page where the wash stopped. Fixed also
+     means the light stays put while the tiles scroll under it, matching
+     .account-entry-page. z-index -1 keeps it behind the tiles and their
+     artwork; nothing here has a transform, so `fixed` really is the
+     viewport. */
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(1000px 560px at 12% -6%, rgba(152, 63, 224, .2), transparent 62%),
+    radial-gradient(840px 500px at 92% 2%, rgba(220, 20, 19, .12), transparent 60%),
+    var(--brand-ink);
+}
+
 .lobby-kicker {
   color: #8b9a92;
   font-size: 10px;
@@ -39,18 +66,21 @@
   justify-content: center;
   gap: 8px;
   padding: 0 16px;
-  color: #b9c3bd;
-  border: 1px solid rgba(255,255,255,.13);
-  border-radius: 5px;
-  background: transparent;
+  color: #c4bcd6;
+  /* Borderless, like the rest of the chrome: the fill is what makes it a
+     control now. See the header on the entry block below. */
+  border: 0;
+  border-radius: 9px;
+  background: rgba(255,255,255,.07);
   font-size: 11px;
   font-weight: 650;
   cursor: pointer;
+  transition: background var(--duration-base) ease, color var(--duration-base) ease;
 }
 
 .secondary-action:hover {
-  color: #edf1ed;
-  border-color: rgba(255,255,255,.24);
+  color: #f2eefa;
+  background: rgba(255,255,255,.12);
 }
 
 
@@ -99,6 +129,34 @@ button:disabled { cursor: wait; opacity: .62; }
 
 
 
+/* ===========================================================================
+   Signed-out entry: the sign-in surface and the landing page under it.
+   See components/auth/account-entry-card.tsx and landing-sections.tsx.
+
+   Two things changed together here and neither works without the other.
+
+   1. BORDERLESS. Every surface in this block used to be a 1px hairline box --
+      the card, each feature, the CTA, the offer pill, the social buttons, the
+      inputs. Nine near-identical rgba(255,255,255,.09) rectangles stacked
+      down one page is the single loudest "generic template" tell there is.
+      Separation now comes from three things that are not borders: a lifted
+      background fill, a real shadow, and space. A hairline appears in exactly
+      one place below -- the faded "or" rule inside .entry-divider -- because
+      that is a divider between two things rather than an outline around one.
+
+      The consequence to keep in mind when editing: a surface that reads as a
+      surface *only* because of its border will vanish once you delete the
+      border. Every fill below was raised to carry that weight on its own.
+
+   2. BRAND. Purple, red and gold, from --brand-* in 01-tokens.css, sampled
+      off the logo itself. Scope is the chrome only: the felt is still green,
+      because the table was explicitly out of scope for this pass. Nothing in
+      this block should be reached for from 05-09/16/17/99.
+
+   Do not rename .account-entry-page, and do not rename the "Play as guest"
+   button: ten e2e specs open the app through exactly those two.
+   =========================================================================== */
+
 /* One stable account surface is kept on screen while Supabase restores a
    session. Only its controls and copy update, so a remembered cookie cannot
    flash the promotional lobby before replacing it with another layout. */
@@ -107,6 +165,7 @@ button:disabled { cursor: wait; opacity: .62; }
    screen must never scroll the document), which would otherwise clip
    everything below the fold instead of letting the page scroll. */
 .account-entry-page {
+  position: relative;
   width: 100%;
   height: calc(100vh - 82px);
   height: calc(100svh - 82px);
@@ -116,107 +175,90 @@ button:disabled { cursor: wait; opacity: .62; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 42px 16px calc(24px + env(safe-area-inset-bottom));
+  padding: 34px 16px calc(24px + env(safe-area-inset-bottom));
+  /* The badge's three colours, thrown wide and soft. Fixed to the scroll
+     container rather than the content, so the light stays put behind a page
+     that moves -- a gradient that scrolls with the copy reads as a printed
+     backdrop instead of as a room. */
+  background:
+    radial-gradient(1080px 620px at 10% -8%, rgba(152, 63, 224, .26), transparent 60%),
+    radial-gradient(900px 540px at 94% 2%, rgba(220, 20, 19, .17), transparent 58%),
+    radial-gradient(1200px 720px at 50% 106%, rgba(219, 156, 11, .12), transparent 62%),
+    var(--brand-ink);
+  background-attachment: local, local, local, local;
 }
 
 .account-entry-card {
-  width: 100%;
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  padding: clamp(32px, 5vw, 52px);
-  border: 1px solid rgba(229, 203, 121, .2);
-  border-radius: 22px;
+  padding: clamp(26px, 4.6vw, 40px);
+  border-radius: 28px;
+  /* Glass, not a bordered panel. The white wash is what makes the edge
+     legible against the aurora behind it now that no line does. */
   background:
-    linear-gradient(145deg, rgba(30, 46, 39, .96), rgba(11, 19, 16, .98) 68%),
-    #101b17;
-  box-shadow:
-    0 40px 110px rgba(0, 0, 0, .46),
-    inset 0 1px rgba(255, 255, 255, .035);
+    linear-gradient(180deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .022) 62%),
+    rgba(13, 9, 20, .74);
+  backdrop-filter: blur(22px) saturate(125%);
+  -webkit-backdrop-filter: blur(22px) saturate(125%);
+  box-shadow: 0 34px 90px rgba(0, 0, 0, .58);
 }
 
-.account-entry-card::before {
-  content: "";
+/* The brand sweep, bloomed behind the card's own header rather than drawn on
+   its edge -- an edge treatment is a border by another name. */
+.entry-aurora {
   position: absolute;
-  inset: 0;
-  z-index: -2;
-  opacity: .38;
-  background:
-    radial-gradient(circle at 88% 4%, rgba(217, 184, 93, .22), transparent 31%),
-    repeating-linear-gradient(125deg, transparent 0 42px, rgba(255,255,255,.018) 43px 44px);
-}
-
-.account-entry-card::after {
-  content: "";
-  position: absolute;
-  inset: 10px;
+  inset: -30% -25% auto -25%;
   z-index: -1;
-  border: 1px solid rgba(255, 255, 255, .035);
-  border-radius: 15px;
+  height: 300px;
+  background: var(--brand-sweep);
+  filter: blur(72px);
+  opacity: .42;
   pointer-events: none;
 }
 
-.account-entry-glow {
-  position: absolute;
-  right: -90px;
-  bottom: -120px;
-  z-index: -1;
-  width: 280px;
-  height: 280px;
-  border-radius: 50%;
-  background: rgba(18, 93, 64, .24);
-  filter: blur(20px);
-  pointer-events: none;
-}
+.entry-head { text-align: center; }
 
-.account-entry-mark {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  margin: 0 auto 30px;
-  color: #15170f;
-  border: 1px solid #f4df96;
-  border-radius: 13px;
-  background: linear-gradient(145deg, #f0d57d, #b58d35);
-  box-shadow: 0 13px 36px rgba(217, 184, 93, .18);
-  font: 700 25px/1 Georgia, "Times New Roman", serif;
-  transform: rotate(45deg);
-}
-
-.account-entry-mark span { transform: rotate(-45deg); }
-
-.account-entry-eyebrow {
+.entry-logo {
   display: block;
-  margin-bottom: 12px;
-  color: #c8b269;
-  font-size: 9px;
-  font-weight: 750;
-  letter-spacing: .16em;
-  text-align: center;
-  text-transform: uppercase;
+  width: clamp(124px, 34vw, 158px);
+  height: auto;
+  margin: 0 auto -4px;
+  /* Purple under the mark, gold over it: the drop shadow is doing the job the
+     removed border used to, lifting the art off the glass. */
+  filter:
+    drop-shadow(0 14px 34px rgba(152, 63, 224, .42))
+    drop-shadow(0 2px 10px rgba(219, 156, 11, .28));
 }
 
 .account-entry-card h1 {
   margin: 0;
-  color: #f5f1e5;
-  font: 500 clamp(38px, 5vw, 48px)/1.06 Georgia, "Times New Roman", serif;
-  letter-spacing: -.025em;
+  color: #f7f4ff;
+  font: 700 clamp(29px, 5.2vw, 40px)/1.06 Georgia, "Times New Roman", serif;
+  letter-spacing: -.03em;
   text-align: center;
 }
 
-.account-entry-card > p:not(.account-entry-footnote, .account-entry-error) {
-  margin: 15px 0 0;
-  color: #91a198;
-  font-size: 14px;
-  line-height: 1.65;
-  text-align: center;
+/* Guarded: without background-clip support, `color: transparent` would leave
+   the headline invisible rather than merely unstyled. */
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .account-entry-card h1 {
+    color: transparent;
+    background: linear-gradient(178deg, #ffffff 22%, var(--brand-gold-light) 130%);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
 }
 
-.account-entry-card > p strong {
-  color: #e5d9ad;
-  font-weight: 700;
+.account-entry-card > .entry-head > p:not(.account-entry-status) {
+  margin: 14px auto 0;
+  max-width: 40ch;
+  color: #a79dbe;
+  font-size: 13.5px;
+  line-height: 1.6;
 }
+
+.account-entry-card p strong { color: var(--brand-gold-light); font-weight: 700; }
 
 .account-entry-status {
   display: flex;
@@ -224,137 +266,235 @@ button:disabled { cursor: wait; opacity: .62; }
   justify-content: center;
   gap: 8px;
   min-height: 46px;
+  margin: 14px 0 0;
+  color: #a79dbe;
+  font-size: 13px;
 }
 
+.account-entry-actions {
+  display: grid;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+/* A two-way segmented control. Which of the two things the form is about to
+   do is the most consequential fact on this screen, so it gets a control that
+   shows its state rather than a text link that describes it. */
+.entry-segment {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, .05);
+}
+
+.entry-segment button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: #a094ba;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--duration-slow) ease, color var(--duration-slow) ease;
+}
+
+.entry-segment button.is-active {
+  color: #fff;
+  background: linear-gradient(150deg, var(--brand-purple), var(--brand-purple-deep));
+  box-shadow: 0 8px 22px rgba(152, 63, 224, .34);
+}
+
+.entry-segment button:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+
+.account-email-form { display: grid; gap: 14px; }
+
+/* No longer a bordered group box wrapping both inputs -- each field is its
+   own filled surface with its own label. */
+.account-email-fields { display: grid; gap: 11px; }
+
+.entry-field { display: grid; gap: 6px; text-align: left; }
+
+.entry-field > span {
+  color: #8b80a6;
+  font-size: 9.5px;
+  font-weight: 750;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+
+.entry-field input {
+  width: 100%;
+  min-height: 50px;
+  padding: 0 15px;
+  color: #f5f2fc;
+  border: 0;
+  border-radius: 14px;
+  outline: 0;
+  background: rgba(255, 255, 255, .055);
+  /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
+  font-size: 16px;
+  transition: background var(--duration-slow) ease, box-shadow var(--duration-slow) ease;
+}
+
+/* A focus ring, not a border: it exists only while focused, and it is the
+   accessibility floor that removing borders makes non-negotiable. */
+.entry-field input:focus {
+  background: rgba(255, 255, 255, .09);
+  box-shadow: 0 0 0 2px rgba(152, 63, 224, .6);
+}
+
+.entry-field input::placeholder { color: #625877; }
+.entry-field input:disabled { opacity: .55; }
+
+/* The remember toggle is a switch now. The old version was a checkbox inside
+   a bordered strip, which was two boxes to say one boolean. */
 .account-remember {
   display: flex;
   align-items: center;
-  gap: 11px;
-  margin: 27px 0 22px;
-  padding: 15px 16px;
-  border: 1px solid rgba(255,255,255,.075);
-  border-radius: 9px;
-  background: rgba(255,255,255,.022);
-  cursor: pointer;
-}
-
-.account-remember input {
-  width: 17px;
-  height: 17px;
+  gap: 12px;
   margin: 0;
-  accent-color: #d7b75c;
+  cursor: pointer;
+  text-align: left;
 }
 
-.account-remember span { display: grid; gap: 3px; }
-.account-remember strong { color: #d8dfda; font-size: 11px; font-weight: 650; }
-.account-remember small { color: #6f7f76; font-size: 9px; }
+/* Visually hidden, still focusable and still the thing a screen reader
+   announces -- the drawn switch below is decorative. */
+.account-remember input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
-.account-entry-actions { display: grid; gap: 9px; }
+.entry-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, .13);
+  transition: background var(--duration-slow) ease;
+}
+
+.entry-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-round);
+  background: #ece7f7;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .45);
+  transition: transform var(--duration-slow) var(--ease-decelerate);
+}
+
+.account-remember input:checked ~ .entry-switch {
+  background: linear-gradient(110deg, var(--brand-purple), var(--brand-red));
+}
+.account-remember input:checked ~ .entry-switch::after { transform: translateX(18px); }
+.account-remember input:focus-visible ~ .entry-switch { box-shadow: var(--brand-focus); }
+.account-remember input:disabled ~ .entry-switch { opacity: .5; }
+
+.entry-remember-copy { display: grid; gap: 2px; }
+.entry-remember-copy strong { color: #ddd6ec; font-size: 12px; font-weight: 650; }
+.entry-remember-copy small { color: #7b7194; font-size: 10px; }
+
+.entry-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #6d6389;
+  font-size: 9.5px;
+  font-weight: 750;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+/* The one rule in this block, and it is a divider between two options rather
+   than an outline around one. Faded at both ends so it never reads as the
+   edge of a box. */
+.entry-divider::before,
+.entry-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .16), transparent);
+}
 
 .account-primary-action,
+.account-oauth-action,
 .account-guest-action {
-  min-height: 50px;
+  min-height: 52px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  border-radius: 9px;
-  font-size: 12px;
+  gap: 10px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 15px;
+  font-size: 13px;
   font-weight: 750;
   cursor: pointer;
-  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+  transition:
+    background var(--duration-base) ease,
+    transform var(--duration-base) ease,
+    filter var(--duration-base) ease;
 }
 
 .account-primary-action {
-  color: #12150f;
-  border: 1px solid #ead17c;
-  background: linear-gradient(160deg, #f3e2a0 0%, #e6ca70 42%, #c49f46 100%);
-  box-shadow: inset 0 1px rgba(255,255,255,.3), 0 12px 35px rgba(206, 170, 71, .13);
+  color: #1c1305;
+  /* The inset highlight is a bevel on a filled control, not an outline -- it
+     is light on the top face, and it stops at the top face. */
+  background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
+  box-shadow:
+    0 16px 38px rgba(219, 156, 11, .3),
+    inset 0 1px rgba(255, 255, 255, .45);
 }
 
-.account-primary-action:hover:not(:disabled) {
-  background: linear-gradient(160deg, #f8ecb3 0%, #f0d987 42%, #d0ad53 100%);
-  transform: translateY(-1px);
+.account-primary-action:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+
+.account-oauth-action {
+  color: #efeaf9;
+  background: rgba(255, 255, 255, .07);
 }
+.account-oauth-action:hover:not(:disabled) { background: rgba(255, 255, 255, .11); }
 
 .account-guest-action {
-  color: #c4cec8;
-  border: 1px solid rgba(255,255,255,.11);
-  background: rgba(255,255,255,.025);
+  color: #b3a9c9;
+  background: transparent;
 }
+.account-guest-action:hover:not(:disabled) { color: #f0ecfa; background: rgba(255, 255, 255, .06); }
 
-.account-guest-action:hover:not(:disabled) {
-  color: #f0f3ef;
-  border-color: rgba(255,255,255,.21);
-  background: rgba(255,255,255,.05);
-}
+.account-primary-action:focus-visible,
+.account-oauth-action:focus-visible,
+.account-guest-action:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
 
 .account-entry-footnote {
-  margin: 17px auto 0;
+  margin: 20px auto 0;
   max-width: 340px;
-  color: #607068;
-  font-size: 9px;
-  line-height: 1.55;
+  color: #6b6285;
+  font-size: 9.5px;
+  line-height: 1.6;
   text-align: center;
 }
 
 .account-entry-error {
-  margin: 14px 0 0;
-  color: #ffac9d;
-  font-size: 11px;
+  margin: 12px 0 0;
+  color: #ff9d92;
+  font-size: 11.5px;
   line-height: 1.45;
   text-align: center;
 }
 
 .account-entry-spinner { animation: account-entry-spin 800ms linear infinite; }
-
-.account-email-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 4px;
-  color: #8a988f;
-  border: 0;
-  background: transparent;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: color 150ms ease;
-}
-
-.account-email-toggle:hover:not(:disabled) { color: #d9b85d; }
-
-.account-email-form {
-  display: grid;
-  gap: 9px;
-  padding-top: 2px;
-}
-
-.account-email-fields {
-  display: grid;
-  gap: 8px;
-  padding: 3px;
-  border: 1px solid rgba(255,255,255,.11);
-  border-radius: 9px;
-  background: rgba(255,255,255,.025);
-}
-
-.account-email-fields input {
-  min-height: 44px;
-  padding: 0 13px;
-  /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
-  font-size: 16px;
-  color: #f4f5ed;
-  border: 0;
-  border-radius: 7px;
-  outline: 0;
-  background: transparent;
-}
-
-.account-email-fields input:focus { background: rgba(255,255,255,.035); }
-.account-email-fields input::placeholder { color: #526159; }
-.account-email-fields input + input { border-top: 1px solid rgba(255,255,255,.08); border-radius: 0 0 7px 7px; }
 
 @keyframes account-entry-spin {
   to { transform: rotate(360deg); }
@@ -365,14 +505,16 @@ button:disabled { cursor: wait; opacity: .62; }
    See components/auth/landing-sections.tsx.
    --------------------------------------------------------------------------- */
 
-/* The sign-in block keeps its original card width; the sections under it are
+/* The sign-in block keeps its own card width; the sections under it are
    allowed to run wider, so the page reads as a page rather than one long
    column of card. */
 .account-entry-page > .account-entry-card {
-  width: min(100%, 520px);
+  width: min(100%, 500px);
   flex: 0 0 auto;
 }
 
+.install-cta,
+.landing-games,
 .landing-features,
 .landing-cta,
 .landing-footer,
@@ -381,52 +523,311 @@ button:disabled { cursor: wait; opacity: .62; }
   flex: 0 0 auto;
 }
 
-.landing-features { margin-top: 72px; }
-.landing-features h2 {
-  margin: 0 0 22px;
+.landing-section-head { margin-bottom: 22px; }
+.landing-section-head h2 {
+  margin: 0;
   color: var(--ink);
   font: 600 clamp(24px, 3.2vw, 34px)/1.1 Georgia, serif;
+  letter-spacing: -.02em;
+}
+.landing-section-head p {
+  margin: 7px 0 0;
+  color: #8d84a3;
+  font-size: 13px;
+}
+
+/* --- The install panel ---------------------------------------------------
+   Deliberately the first thing under the sign-in card. On a phone -- the one
+   device class that can actually install this -- it is then the first full
+   screen a visitor scrolls to rather than something buried under the
+   marketing. See components/pwa/install-cta.tsx for why it always renders
+   its platform's real path instead of waiting for a browser event. */
+.install-cta {
+  display: grid;
+  gap: 22px;
+  margin-top: 54px;
+  padding: clamp(22px, 4vw, 34px);
+  border-radius: 24px;
+  background:
+    radial-gradient(560px 260px at 0% 0%, rgba(152, 63, 224, .22), transparent 66%),
+    radial-gradient(520px 300px at 100% 100%, rgba(219, 156, 11, .15), transparent 64%),
+    rgba(255, 255, 255, .045);
+}
+
+.install-cta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(152, 63, 224, .22);
+  color: #dcc4f7;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.install-cta h2 {
+  margin: 14px 0 0;
+  color: var(--ink);
+  font: 600 clamp(22px, 3vw, 30px)/1.12 Georgia, serif;
+  letter-spacing: -.02em;
+}
+
+.install-cta-copy > p {
+  margin: 10px 0 0;
+  max-width: 52ch;
+  color: #948aab;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.install-cta-perks {
+  display: grid;
+  gap: 9px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.install-cta-perks li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #b6adc9;
+  font-size: 12.5px;
+}
+.install-cta-perks svg { flex-shrink: 0; color: var(--brand-gold-light); }
+
+.install-cta-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 50px;
+  margin-top: 20px;
+  padding: 0 24px;
+  color: #fff;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--brand-purple) 0%, var(--brand-purple-deep) 55%, var(--brand-red-deep) 100%);
+  box-shadow: 0 16px 36px rgba(152, 63, 224, .3);
+  font-size: 13.5px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: filter var(--duration-base) ease, transform var(--duration-base) ease;
+}
+.install-cta-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.install-cta-button:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+
+.install-cta-note {
+  display: flex;
+  /* flex-start, not center: on a phone this label wraps to two lines and a
+     centred icon then floats between them. */
+  align-items: flex-start;
+  gap: 8px;
+  margin: 20px 0 0;
+  color: #cbbfe2;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.install-cta-note svg { flex-shrink: 0; margin-top: 2px; color: var(--brand-gold-light); }
+
+.install-cta-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  align-content: center;
+}
+.install-cta-steps li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .05);
+  color: #d6cfe6;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.install-cta-step-number {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-round);
+  background: var(--brand-sweep);
+  color: #17101f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* --- The floor: what you can actually play ------------------------------- */
+
+.landing-games { margin-top: 64px; }
+
+/* 420px, not 240px. There are four live games, so a three-column track
+   leaves an orphan on the second row -- and at four columns the tiles were
+   measurably too tight: "Daily Wordle" wrapped its own name and every blurb
+   ran to three lines. Two columns takes four items evenly and gives each row
+   the width its stake pill needs. */
+.landing-game-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 12px;
+}
+
+.landing-game {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: linear-gradient(150deg, rgba(255, 255, 255, .065), rgba(255, 255, 255, .028));
+  transition: background var(--duration-slow) ease, transform var(--duration-slow) ease;
+}
+.landing-game:hover { background: linear-gradient(150deg, rgba(255, 255, 255, .1), rgba(255, 255, 255, .04)); transform: translateY(-2px); }
+
+/* Hold'em is the house game, not one of ten equals. */
+.landing-game-headline {
+  grid-column: 1 / -1;
+  padding: 20px 22px;
+  background:
+    radial-gradient(420px 200px at 0% 50%, rgba(220, 20, 19, .2), transparent 70%),
+    linear-gradient(120deg, rgba(152, 63, 224, .22), rgba(219, 156, 11, .12));
+}
+.landing-game-headline:hover {
+  background:
+    radial-gradient(420px 200px at 0% 50%, rgba(220, 20, 19, .26), transparent 70%),
+    linear-gradient(120deg, rgba(152, 63, 224, .28), rgba(219, 156, 11, .16));
+}
+.landing-game-headline h3 { font-size: 19px; }
+
+.landing-game-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .07);
+  color: var(--brand-gold-light);
+}
+.landing-game-headline .landing-game-icon {
+  width: 46px;
+  height: 46px;
+  background: var(--brand-sweep);
+  color: #1a1020;
+}
+
+/* min-width:0 so a long name ellipsizes instead of shoving the stake off the
+   edge -- a flex item's default min-width is auto. */
+.landing-game-body { flex: 1; min-width: 0; }
+.landing-game-body h3 {
+  margin: 0;
+  color: #f1ecfb;
+  font: 600 15px Georgia, serif;
   letter-spacing: -.01em;
 }
+.landing-game-body p {
+  margin: 4px 0 0;
+  color: #8d84a3;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.landing-game-stake {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  padding: 6px 11px;
+  border-radius: var(--radius-pill);
+  background: rgba(219, 156, 11, .14);
+  color: var(--brand-gold-light);
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.landing-game-stake.is-free {
+  background: rgba(152, 63, 224, .2);
+  color: #d5bcf5;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.landing-soon {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.landing-soon li {
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, .05);
+  color: #7d7495;
+  font-size: 11px;
+  font-weight: 600;
+}
+/* Says what the row is without a per-item badge repeated ten times. */
+.landing-soon::before {
+  content: "Dealing in soon";
+  align-self: center;
+  margin-right: 4px;
+  color: #635a7c;
+  font-size: 9.5px;
+  font-weight: 750;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+/* --- Features ------------------------------------------------------------ */
+
+.landing-features { margin-top: 68px; }
 
 .landing-feature-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+  gap: 14px;
 }
 
 .landing-feature {
   padding: 20px 20px 22px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(23,34,30,.72), rgba(15,23,20,.72));
-  transition: border-color .18s ease, transform .18s ease;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .022));
+  transition: background var(--duration-slow) ease, transform var(--duration-slow) ease;
 }
 .landing-feature:hover {
-  border-color: rgba(217,184,93,.28);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .095), rgba(255, 255, 255, .035));
   transform: translateY(-2px);
 }
 .landing-feature-icon {
   display: inline-grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  margin-bottom: 12px;
-  color: var(--gold-light);
-  border: 1px solid rgba(217,184,93,.24);
-  border-radius: 9px;
-  background: rgba(217,184,93,.07);
+  width: 36px;
+  height: 36px;
+  margin-bottom: 13px;
+  color: var(--brand-gold-light);
+  border-radius: 11px;
+  background: rgba(219, 156, 11, .13);
 }
 .landing-feature h3 {
   margin: 0 0 7px;
-  color: #eef3ee;
+  color: #f1ecfb;
   font-size: 15px;
   font-weight: 700;
   line-height: 1.3;
 }
 .landing-feature p {
   margin: 0;
-  color: var(--muted);
+  color: #8d84a3;
   font-size: 13px;
   line-height: 1.55;
 }
@@ -436,14 +837,13 @@ button:disabled { cursor: wait; opacity: .62; }
   align-items: center;
   justify-content: center;
   gap: 9px;
-  margin: 40px auto 0;
-  padding: 11px 18px;
+  margin: 42px auto 0;
+  padding: 12px 20px;
   width: auto;
   max-width: 100%;
-  color: #f2e3ac;
-  border: 1px solid rgba(217,184,93,.26);
-  border-radius: 999px;
-  background: rgba(217,184,93,.07);
+  color: #f7e6b6;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(120deg, rgba(152, 63, 224, .22), rgba(219, 156, 11, .16));
   font-size: 13px;
   font-weight: 650;
   text-align: center;
@@ -457,55 +857,55 @@ button:disabled { cursor: wait; opacity: .62; }
   justify-content: space-between;
   gap: 18px;
   margin-top: 56px;
-  padding: 28px clamp(20px, 4vw, 38px);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: linear-gradient(135deg, rgba(26,40,34,.9), rgba(14,22,19,.9));
+  padding: 30px clamp(20px, 4vw, 38px);
+  border-radius: 22px;
+  background:
+    radial-gradient(600px 280px at 100% 0%, rgba(220, 20, 19, .2), transparent 66%),
+    linear-gradient(125deg, rgba(152, 63, 224, .26), rgba(13, 9, 20, .6));
 }
 .landing-cta h2 {
   margin: 0 0 6px;
   color: var(--ink);
   font: 600 clamp(21px, 2.6vw, 28px)/1.15 Georgia, serif;
 }
-.landing-cta p { margin: 0; color: var(--muted); font-size: 13px; }
+.landing-cta p { margin: 0; color: #a79dbe; font-size: 13px; }
 .landing-cta-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .landing-cta-actions > * { flex: 1; }
 
 .landing-cta-primary,
 .landing-cta-secondary {
-  min-height: 46px;
+  min-height: 48px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 0 20px;
-  border-radius: 10px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 14px;
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
   text-decoration: none;
-  transition: filter .15s ease, border-color .15s ease;
+  transition: filter var(--duration-base) ease, background var(--duration-base) ease;
 }
 .landing-cta-primary {
-  color: #17170f;
-  border: 1px solid rgba(217,184,93,.5);
-  background: linear-gradient(160deg, #f3e2a0 0%, var(--gold-light) 42%, var(--gold) 100%);
-  box-shadow: inset 0 1px rgba(255,255,255,.25);
+  color: #1c1305;
+  background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
+  box-shadow: 0 16px 38px rgba(219, 156, 11, .26), inset 0 1px rgba(255, 255, 255, .42);
 }
 .landing-cta-primary:hover:not(:disabled) { filter: brightness(1.07); }
 .landing-cta-primary:disabled { opacity: .5; cursor: not-allowed; }
 .landing-cta-secondary {
-  color: #e6ebe7;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,.04);
+  color: #ece7f7;
+  background: rgba(255, 255, 255, .08);
 }
-.landing-cta-secondary:hover { border-color: rgba(217,184,93,.3); color: var(--gold-light); }
+.landing-cta-secondary:hover { background: rgba(255, 255, 255, .13); }
 
 .landing-cta-primary:focus-visible,
 .landing-cta-secondary:focus-visible,
 .landing-footer a:focus-visible {
-  outline: 2px solid var(--gold-light);
-  outline-offset: 2px;
+  outline: 0;
+  box-shadow: var(--brand-focus);
 }
 
 .landing-footer {
@@ -514,32 +914,36 @@ button:disabled { cursor: wait; opacity: .62; }
   gap: 28px 20px;
   margin-top: 64px;
   padding: 34px 0 8px;
-  border-top: 1px solid var(--line);
 }
-.landing-footer-name {
+
+.landing-footer-logo {
   display: block;
-  margin-bottom: 6px;
-  color: var(--ink);
-  font: 600 18px Georgia, serif;
+  width: 104px;
+  height: auto;
+  /* Flush left, not pulled out with a negative margin -- the source PNG's own
+     transparent padding already supplies the optical inset, and the negative
+     margin clipped the badge against the footer's edge. */
+  margin: 0 0 10px;
+  opacity: .95;
 }
-.landing-footer-brand p { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+.landing-footer-brand p { margin: 0 0 14px; color: #8d84a3; font-size: 12px; line-height: 1.5; }
 
 .landing-socials { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .landing-socials a {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  transition: color .15s ease, border-color .15s ease;
+  width: 34px;
+  height: 34px;
+  color: #8d84a3;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .05);
+  transition: color var(--duration-base) ease, background var(--duration-base) ease;
 }
-.landing-socials a:hover { color: var(--gold-light); border-color: rgba(217,184,93,.3); }
+.landing-socials a:hover { color: var(--brand-gold-light); background: rgba(255, 255, 255, .1); }
 
 .landing-footer-column h3 {
   margin: 0 0 10px;
-  color: #b9c4bd;
+  color: #b0a6c6;
   font-size: 11px;
   font-weight: 750;
   letter-spacing: .1em;
@@ -547,34 +951,42 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 .landing-footer-column ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .landing-footer-column a {
-  color: var(--muted);
+  color: #8d84a3;
   font-size: 13px;
   text-decoration: none;
-  transition: color .15s ease;
+  transition: color var(--duration-base) ease;
 }
-.landing-footer-column a:hover { color: var(--gold-light); }
+.landing-footer-column a:hover { color: var(--brand-gold-light); }
 
 .landing-footer-legal {
   grid-column: 1 / -1;
   margin: 6px 0 0;
   padding-top: 18px;
-  border-top: 1px solid var(--line);
-  color: #6f7d76;
+  color: #6b6285;
   font-size: 11px;
   line-height: 1.5;
 }
 
-/* The wide footer and the side-by-side CTA are the expansion. */
+/* The wide footer, the two-column install panel and the side-by-side CTA are
+   the expansion. */
 @media (min-width: 721px) {
   .landing-footer { grid-template-columns: minmax(200px, 1.4fr) repeat(3, minmax(120px, 1fr)); }
   .landing-cta { flex-direction: row; align-items: center; }
   .landing-cta-actions > * { flex: 0 1 auto; }
+  .install-cta { grid-template-columns: 1.25fr 1fr; align-items: center; gap: 34px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .landing-feature { transition: none; }
-  .landing-feature:hover { transform: none; }
+  .landing-feature,
+  .landing-game,
+  .install-cta-button,
+  .entry-switch,
+  .entry-switch::after { transition: none; }
+  .landing-feature:hover,
+  .landing-game:hover,
+  .install-cta-button:hover { transform: none; }
 }
+
 
 /* ---------------------------------------------------------------------------
    Signed-in hub tiles. See components/lobby/lobby.tsx.
@@ -601,16 +1013,19 @@ button:disabled { cursor: wait; opacity: .62; }
   width: 100%;
   height: 46px;
   padding: 0 14px;
-  color: #f4f5ed;
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: 11px;
+  color: #f4f2fa;
+  border: 0;
+  border-radius: 13px;
   outline: 0;
-  background: #111b17;
+  background: rgba(255,255,255,.055);
   /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
   font-size: 16px;
+  transition: background var(--duration-base) ease, box-shadow var(--duration-base) ease;
 }
-.hub-name input:focus { border-color: rgba(217,184,93,.55); }
-.hub-name input::placeholder { color: #526159; }
+/* A ring rather than a border colour change: there is no border left to
+   change, and focus still has to be visible. */
+.hub-name input:focus { background: rgba(255,255,255,.09); box-shadow: 0 0 0 2px rgba(152,63,224,.6); }
+.hub-name input::placeholder { color: #625877; }
 
 .hub-grid {
   display: grid;
@@ -634,8 +1049,8 @@ button:disabled { cursor: wait; opacity: .62; }
   padding: 16px;
   text-align: left;
   text-decoration: none;
-  border: 1px solid var(--line);
-  border-radius: 16px;
+  border: 0;
+  border-radius: 18px;
   /* background-image, not the `background` shorthand: a bare colour is only
      legal as the final layer of a layer list, so putting --tile-tint in the
      middle made the whole declaration invalid and every tile rendered flat.
@@ -653,10 +1068,17 @@ button:disabled { cursor: wait; opacity: .62; }
   background-position: center, center, center, center;
   background-repeat: no-repeat;
   cursor: pointer;
-  transition: border-color .16s ease, transform .16s ease;
+  /* The tile used to announce hover by brightening a gold border. With the
+     border gone, the shadow does it -- and a lifted shadow reads as "this
+     is pressable" more directly than an outline ever did. */
+  box-shadow: 0 2px 10px rgba(0,0,0,.3);
+  transition: box-shadow .16s ease, transform .16s ease;
 }
-.hub-tile:hover { border-color: rgba(217,184,93,.34); transform: translateY(-2px); }
-.hub-tile:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.hub-tile:hover {
+  box-shadow: 0 14px 34px rgba(0,0,0,.45);
+  transform: translateY(-2px);
+}
+.hub-tile:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
 .hub-tile:disabled { opacity: .55; cursor: wait; transform: none; }
 
 .hub-tile-wide { grid-column: 1 / -1; min-height: 132px; }
@@ -696,7 +1118,7 @@ button:disabled { cursor: wait; opacity: .62; }
   min-height: 0;
   cursor: default;
 }
-.hub-tile-code:hover { transform: none; border-color: var(--line); }
+.hub-tile-code:hover { transform: none; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
 .hub-tile-code > label {
   color: #718078;
   font-size: 10px;
@@ -709,25 +1131,26 @@ button:disabled { cursor: wait; opacity: .62; }
   min-width: 0;
   height: 44px;
   padding: 0 13px;
-  color: #e9eee9;
-  border: 1px solid rgba(255,255,255,.11);
-  border-radius: 10px;
+  color: #ece9f5;
+  border: 0;
+  border-radius: 12px;
   outline: none;
-  background: rgba(0,0,0,.25);
+  background: rgba(0,0,0,.32);
   font-size: 16px;
   letter-spacing: .18em;
+  transition: background var(--duration-base) ease, box-shadow var(--duration-base) ease;
 }
-.hub-code-row input:focus { border-color: rgba(217,184,93,.48); }
+.hub-code-row input:focus { background: rgba(0,0,0,.42); box-shadow: 0 0 0 2px rgba(152,63,224,.6); }
 .hub-code-row button {
-  color: #d8c985;
-  border: 1px solid rgba(217,184,93,.25);
-  border-radius: 10px;
-  background: transparent;
+  color: #1c1305;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(152deg, var(--brand-gold-light), var(--brand-gold));
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 750;
   cursor: pointer;
 }
-.hub-code-row button:disabled { color: #59645e; border-color: rgba(255,255,255,.08); cursor: not-allowed; }
+.hub-code-row button:disabled { color: #6e6584; background: rgba(255,255,255,.07); cursor: not-allowed; }
 
 /* Two columns and taller tiles are the expansion, not the default. */
 @media (min-width: 561px) {

@@ -21,6 +21,43 @@
   --felt: #164f3a;
   --felt-dark: #0e392a;
 
+  /* ------------------------------------------------------------------------
+     Brand -- purple, red and gold.
+
+     Sampled from the actual logo file (public/brand/stackchips-logo.png) with
+     ImageMagick rather than picked by eye, so the chrome and the mark cannot
+     drift apart: --brand-purple/-red/-gold are literally three of the twelve
+     colours a quantised histogram of that PNG returns.
+
+     Scope matters. These dress the *chrome* -- the landing page, the sign-in
+     surface, the lobby, the menus. The felt stays green and the table's chips
+     stay on CHIP_PALETTE: the game itself was not part of this reskin, and
+     --felt / --gold above are what it reads. Reaching for a --brand-* token
+     inside 05-09, 16, 17 or 99 is therefore a mistake, not a shortcut.
+     ---------------------------------------------------------------------- */
+  --brand-purple: #983fe0;
+  --brand-purple-deep: #6d2b9e;
+  --brand-red: #dc1413;
+  --brand-red-deep: #7f0d16;
+  --brand-gold: #db9c0b;
+  --brand-gold-light: #f6c94a;
+
+  /* The badge's arc, as a reusable fill. Purple -> gold -> red, left to
+     right, in the order the logo sweeps them. */
+  --brand-sweep: linear-gradient(100deg, var(--brand-purple) 0%, var(--brand-gold) 52%, var(--brand-red) 100%);
+
+  /* Page and surface bases for the reskinned chrome. Warmer and more violet
+     than --surface's green-black, which is what makes gold read as gold on
+     them instead of as olive. */
+  --brand-ink: #0a0710;
+  --brand-surface: rgba(255, 255, 255, .045);
+  --brand-surface-2: rgba(255, 255, 255, .07);
+
+  /* Focus. Borders are gone from the chrome (see 04-lobby.css's header), so
+     a visible focus state has to come from somewhere that is not a border --
+     every chrome control uses this ring. */
+  --brand-focus: 0 0 0 2px var(--brand-ink), 0 0 0 4px var(--brand-gold-light);
+
   /* Spacing.
      The one scale that is a proposal rather than a description. Gaps and
      padding currently use nearly every integer from 3 to 14 -- 8px (19 uses),

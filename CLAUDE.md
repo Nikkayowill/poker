@@ -50,12 +50,89 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   (still silent — see its own bullet below for what "done" means there). A
   silver/platinum "Prestige" reskin of the app chrome was built and pushed to
   a Preview deployment for review, then explicitly reverted at the user's
-  request before it reached `main` — the palette stays green-felt/gold-brass,
-  full stop, per `feedback_stackchips_visual_identity` in project memory.
-  Don't resurrect that work without a fresh explicit instruction. Active
-  slice is now the Canvas 2D renderer swap (see the renderer bullet below);
-  the "away" bot-departure visual landed just before it. M16's remaining
-  invite work is still parked, not abandoned — see the M16 note below.
+  request before it reached `main`. Don't resurrect that work. Note the
+  palette rule has since been *split* rather than repealed — see the brand
+  bullet immediately below. M16's remaining invite work is still parked, not
+  abandoned — see the M16 note below.
+- **The chrome is purple/red/gold now; the table is still green felt.** The
+  user supplied their real logo — a "STACKCHIPS / HIGH ROLLER ARCADE" badge —
+  and asked for a modern, borderless frontend around it, explicitly scoping
+  out the in-game HUD and tables. So `--brand-purple` `#983fe0`,
+  `--brand-red` `#dc1413` and `--brand-gold` `#db9c0b` live in
+  `01-tokens.css` and dress the sign-in page, landing page, lobby hub, menus,
+  modals, store, collection, leaderboard and admin; `--felt`/`--gold` and
+  every sheet from `05-game-header.css` through `09-action-bar.css` plus
+  `16`/`17`/`99` are untouched. The three brand hex values were **sampled
+  from the logo PNG with ImageMagick**, not picked by eye, so the mark and
+  the chrome cannot drift. Reaching for a `--brand-*` token inside a table
+  sheet is a mistake, not a shortcut.
+- The supplied logo had **no alpha channel** — a solid black plate behind the
+  art, which the user believed was transparent. `public/brand/stackchips-logo
+  .png` is the fixed copy, made by flood-filling that plate from the four
+  corners (`magick … -fill none -floodfill +0+0 black`, once per corner), not
+  by keying out black globally: the banner's *interior* is genuinely black,
+  so a global key punches holes straight through the wordmark. Regenerate it
+  that way or not at all. `public/icons/icon-{192,512,512-maskable}.png` are
+  rasterized from that file (maskable pads to a ~80% safe zone on `#0a0710`),
+  and `public/sw.js` bumped to `stackchips-shell-v6` to force the new icons
+  past an existing cache.
+- Three sizes of the mark, and which one to use is a legibility decision, not
+  a preference: `StackChipsLogo` (`components/brand/stackchips-logo.tsx`) is
+  the full badge and belongs anywhere ≥96px — the sign-in card, the landing
+  footer. `StackChipsMark` (`stackchips-mark.tsx`, same art as the rewritten
+  `app/icon.svg`) is the arc + one card + one spade, for the ~44px header
+  row, where the badge's own banner type measurably collapses into a smudge.
+  The in-game header (`poker-table.tsx`) keeps its old `.mark` "S" diamond —
+  it sits over the felt, which was out of scope. Same lesson as
+  `components/arcade/dealer-avatar.tsx`: judge a mark at its rendered size.
+- **Borderless is the chrome's rule now, and it has a consequence.** Every
+  1px hairline box outside the table is gone; separation comes from a raised
+  fill, a real shadow and space. Two categories were kept deliberately and
+  are not oversights: *dividers between items* (the `or` rule in
+  `.entry-divider`, `.arcade-row`/`.activity-item` row rules, panel
+  header/footer rules) and *rings that are part of an avatar or swatch*
+  (`.avatar-stage`, `.camera-button`, `.accent-row button`). The consequence
+  to remember: several states used to be carried **by a border colour** —
+  `.tier-card.selected`, `.cosmetic-card.is-equipped`,
+  `.leaderboard-scope-active`, `.admin-filter-active`, the rarity tags,
+  friend accept/decline hovers. Each of those was given a replacement signal
+  (a filled brand wash, a ring via `box-shadow`, a tinted fill) rather than
+  just having its border deleted; deleting one without replacing it makes the
+  state invisible. Focus is `--brand-focus` everywhere, because removing
+  borders makes a visible focus ring non-negotiable rather than optional.
+- The signed-out page is a real landing page now
+  (`components/auth/landing-sections.tsx`): a PWA install panel first, then
+  "The floor" — a game grid rendered **from `ARCADE_GAMES`** so it can never
+  advertise a game whose route does not exist — then nine feature cards, the
+  offer, the CTA and the footer. Hold'em is stated separately as
+  `HEADLINE_GAME` rather than smuggled into that catalogue, because it has no
+  single `entryCost` (buy-ins come off the `TIER_CONFIG` ladder) and no one
+  `href`; putting it in the list would force it to lie about both. Icons are
+  a `GAME_ICONS` lookup in the component, not a field on the catalogue —
+  `lib/arcade/games.ts` is pure data reachable by `npm test` and must not
+  drag lucide into the server-side wallet predicates.
+- PWA install has **two surfaces with deliberately different rules**, sharing
+  detection through `components/pwa/use-install-offer.ts` and pure,
+  unit-tested platform logic in `lib/pwa/platform.ts` (14 cases). The lobby
+  hub's `install-prompt.tsx` is a *nudge*: dismissible, 14-day cooldown, and
+  silent on Android/desktop until Chromium actually fires
+  `beforeinstallprompt`. The landing page's `pwa/install-cta.tsx` is a
+  *destination*: it always renders the platform's real path, including the
+  three manual taps, because waiting for that event would leave the page
+  saying nothing about the app on the device class most likely to install it.
+  `installPlatform` takes `maxTouchPoints` as a parameter specifically so an
+  iPadOS 13+ device — which reports a desktop Safari UA string — is not told
+  the desktop story; a test pins that a real Mac with the identical UA still
+  reads as `other`.
+- `MENU_MUSIC_TRACK` is **still null**, and `lib/audio/music-manifest.ts` now
+  records the licensing research rather than just the convention: Pixabay is
+  the source every existing file in `public/sounds/` came from (the
+  `freesound_community-`/`oxidvideos-` prefixes are its uploader handles) and
+  is the right place to look; Kevin MacLeod/incompetech is **CC BY**, not
+  free-of-attribution, despite being universally mislabelled as such; and
+  FreePD, which was the best CC0 answer, shut down in 2025. Dropping a vetted
+  file at `public/sounds/menu-theme.mp3` and flipping that one constant is
+  still the entire remaining step.
 - The table renderer is a **Canvas 2D room** now — the three.js/WebGL room
   that briefly replaced the CSS chip system was itself replaced at the
   user's explicit request (they preferred the Canvas 2.5D look prototyped in

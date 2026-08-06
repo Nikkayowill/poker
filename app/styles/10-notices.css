@@ -52,9 +52,9 @@
      history list otherwise -- unlike the header/action-bar chrome, nothing
      else in this shell was already absorbing that inset. Zero on any
      display without one. */
-  padding-top: env(safe-area-inset-top);
-  padding-right: env(safe-area-inset-right);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-top: var(--safe-top);
+  padding-right: var(--safe-right);
+  padding-bottom: var(--safe-bottom);
 }
 
 @keyframes history-in { from { transform: translateX(100%); } }

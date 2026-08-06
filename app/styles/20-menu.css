@@ -91,7 +91,7 @@
 @media (max-width: 600px) {
   .app-menu-panel {
     min-width: min(260px, calc(100vw - 24px));
-    right: max(0px, calc(0px - env(safe-area-inset-right)));
+    right: max(0px, calc(0px - var(--safe-right)));
   }
   .app-menu-item { padding: var(--space-6, 12px); font-size: 14px; }
 }

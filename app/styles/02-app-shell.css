@@ -10,8 +10,8 @@
   padding: 0 clamp(24px, 5vw, 76px);
   /* Keep the header clear of a landscape notch/camera cutout without
      affecting devices that report no inset (env() resolves to 0). */
-  padding-left: max(clamp(24px, 5vw, 76px), env(safe-area-inset-left));
-  padding-right: max(clamp(24px, 5vw, 76px), env(safe-area-inset-right));
+  padding-left: max(clamp(24px, 5vw, 76px), var(--safe-left));
+  padding-right: max(clamp(24px, 5vw, 76px), var(--safe-right));
   background: #0b1210;
   position: relative;
   z-index: 20;
@@ -39,10 +39,16 @@
      sizing, padding-top alone would have taken the 47-59px out of the 82px
      the row is actually made of and crushed the contents instead of moving
      them down. */
-  height: calc(var(--lobby-header-h) + env(safe-area-inset-top));
-  padding-top: env(safe-area-inset-top);
+  height: calc(var(--lobby-header-h) + var(--safe-top));
+  padding-top: var(--safe-top);
 }
 
+/* The in-game header's height is NOT set here, even though the shared rule
+   above declares one: 05-game-header.css re-declares it and wins on load
+   order. Putting the safe-area fix here first looked correct and did nothing
+   -- the contents moved down by the inset while the box stayed 68px, so the
+   whole HUD spilled onto the table instead of clearing the notch. It lives in
+   05 with the rest of that row. */
 .game-header { border-bottom: 1px solid var(--line); }
 
 /* The two full-page routes besides the lobby stand in the same room.

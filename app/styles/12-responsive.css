@@ -4,13 +4,13 @@
   /* The header's own height, and with it .lobby's and .account-entry-page's,
      all move together now -- they read it from here rather than each carrying
      a literal 68px. The header's height/padding-top rule in 02-app-shell.css
-     still adds env(safe-area-inset-top) on top of this. */
+     still adds var(--safe-top) on top of this. */
   :root { --lobby-header-h: 68px; }
   .lobby-header {
     padding: 0 18px;
-    padding-top: env(safe-area-inset-top);
-    padding-left: max(18px, env(safe-area-inset-left));
-    padding-right: max(18px, env(safe-area-inset-right));
+    padding-top: var(--safe-top);
+    padding-left: max(18px, var(--safe-left));
+    padding-right: max(18px, var(--safe-right));
   }
   /* The tagline goes at this width, same as the landscape rule further down
      already does. "HIGH ROLLER ARCADE" is three characters longer than the
@@ -21,8 +21,60 @@
   .lobby-header .wordmark > span:last-child { white-space: nowrap; }
   .lobby {
     width: calc(100% - 24px);
-    padding: 24px 0 calc(32px + env(safe-area-inset-bottom));
+    /* 18px of gutter above the home indicator instead of 32. The inset is
+       already the OS's own clearance; adding a desktop-sized margin on top of
+       it left a visibly empty band under the last tile at the end of the
+       scroll -- space a phone does not have to spare. */
+    padding: 24px 0 calc(18px + var(--safe-bottom));
   }
+
+  /* Two columns on a phone, not one.
+   *
+   * Every small tile ran the full width with its label on the bottom-left and
+   * its artwork bottom-right, which on a 390px screen is a 116px-tall band
+   * that is mostly empty in the middle -- five of them stacked, so the hub
+   * was a long scroll of near-empty cards. Two up is both denser and the
+   * shape a phone actually expects; it is also the same layout the desktop
+   * already uses, just narrower.
+   *
+   * The spans are what keep every cell filled, exactly as at 1024px:
+   *
+   *   [        Texas Hold'em         ]
+   *   [ private  ][      gold        ]
+   *   [        arcade x2             ]
+   *   [ collect' ][   leaderboard    ]
+   *   [        friends x2            ]
+   *   [        room code x2          ]
+   *
+   * Placement is DOM order (see components/lobby/lobby.tsx), so moving a
+   * panel in the source moves it here too. */
+  .hub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .hub-tile-arcade,
+  .hub-tile-friends,
+  .hub-tile-code { grid-column: 1 / -1; }
+  .hub-tile { min-height: 116px; padding: 12px; }
+  .hub-tile-wide { min-height: 128px; }
+  .hub-tile-body strong { font-size: 15.5px; }
+  .hub-tile-body small { font-size: 11px; line-height: 1.35; }
+
+  /* Art in the top corner, label along the bottom -- they no longer share a
+     line. On the full-width tile the two sat side by side with 330px between
+     them; at half that the chips landed straight across "Open a room, share
+     the code". The desktop scrim cannot rescue this: it fades left-to-right,
+     which is exactly the axis that stopped being available. */
+  .hub-tile-private,
+  .hub-tile-gold,
+  .hub-tile-collection,
+  .hub-tile-leaderboard {
+    background-position: center, center, right 10px top 10px, center;
+  }
+  .hub-tile-private { background-size: auto, auto, 52px, auto; }
+  .hub-tile-gold { background-size: auto, auto, 58px, auto; }
+  /* The avatar crop is a face, so it is anchored by its top rather than
+     inset like the chip renders -- a face cropped at the chin reads as a
+     mistake in a way a chip cut off at the edge does not. */
+  .hub-tile-collection { background-size: auto, auto, 56px, auto; background-position: center, center, right 8px top 4px, center; }
+  .hub-tile-leaderboard { background-size: auto, auto, 50px, auto; }
   /* The hero's table is a 2:1 object on a 390px-wide tile, so at the desktop
      78% it reached back under "POKER · NO-LIMIT HOLD'EM". Smaller, and bled
      further off the right edge: the label owns the left two thirds. */
@@ -35,7 +87,7 @@
      read --lobby-header-h, which the block above redefines once. */
   .account-entry-page {
     width: 100%;
-    padding: 24px 14px calc(32px + env(safe-area-inset-bottom));
+    padding: 24px 14px calc(32px + var(--safe-bottom));
   }
   .account-entry-card { padding: 26px 20px; border-radius: 22px; }
   .account-entry-card h1 { font-size: 32px; }
@@ -43,11 +95,27 @@
      distance is the page's structure now that the card containers are gone,
      so the phone gets a scaled beat rather than a collapsed one. */
   .account-entry-page { --section-gap: 88px; }
+
+  /* The hub's head, tightened. On the landing page the huge display line is
+     the whole point; on the hub it is a signpost above the thing you came to
+     tap, and at clamp(38px…) plus a 46px name field it ate 162px of an
+     844px screen before the first tile. The pairing is intact, one size
+     down. */
+  .hub-head { margin-bottom: 22px; }
+  .hub-head .lobby-kicker { margin-bottom: 10px; }
+  .hub-head h1 { font-size: 32px; margin-bottom: 16px; }
+  .hub-name > span { margin-bottom: 5px; font-size: 10px; }
+  .hub-name input { height: 42px; }
+  /* Height via the token, so 05-game-header.css can keep adding the top inset
+     to it. Setting `height` here directly is what used to leave the in-game
+     HUD -- pot, blinds, Leave -- drawn underneath a standalone iPhone's
+     status bar while the lobby header beside it cleared fine. */
+  :root { --game-header-h: 56px; }
   .game-header {
-    height: 56px;
     padding: 0 12px;
-    padding-left: max(12px, env(safe-area-inset-left));
-    padding-right: max(12px, env(safe-area-inset-right));
+    padding-top: var(--safe-top);
+    padding-left: max(12px, var(--safe-left));
+    padding-right: max(12px, var(--safe-right));
   }
   .game-header .wordmark > span:last-child { display: none; }
   .leave-button, .game-header-actions .auth-button { padding: 7px; font-size: 9px; }
@@ -71,8 +139,8 @@
   .timeout-toast { bottom: 250px; }
   .table-area {
     padding: 4px 4px 0;
-    padding-left: max(4px, env(safe-area-inset-left));
-    padding-right: max(4px, env(safe-area-inset-right));
+    padding-left: max(4px, var(--safe-left));
+    padding-right: max(4px, var(--safe-right));
   }
   /* The band is 38px and the seat below it grows by about 12px when the turn
      clock mounts its ring. Trimming the padding here buys back the margin
@@ -108,7 +176,9 @@
     overflow: hidden;
   }
   .table-feed li:nth-child(n + 3) { display: none; }
-  .game-shell { --chrome-height: 56px; --action-bar-height: 68px; --foreground-allowance: 100px; }
+  /* --chrome-height is derived from --game-header-h above (05-game-header
+     .css), so only the two the table cannot infer are stated here. */
+  .game-shell { --action-bar-height: 68px; --foreground-allowance: 100px; }
   .poker-table-wrap {
     width: min(calc(100% - 6px), var(--table-height-cap));
     /* A portrait phone gets the tall plate, so the box turns tall with it.
@@ -195,7 +265,7 @@
   .seat-stack { font-size: 9px; }
   .seat-stack strong { font-size: 10px; }
   .table-bet { --bet-reach: 52px; }
-      .action-layer { padding: 0 4px calc(6px + env(safe-area-inset-bottom)); padding-left: max(4px, env(safe-area-inset-left)); padding-right: max(4px, env(safe-area-inset-right)); }
+      .action-layer { padding: 0 4px calc(6px + var(--safe-bottom)); padding-left: max(4px, var(--safe-left)); padding-right: max(4px, var(--safe-right)); }
   .profile-trigger:not(.profile-trigger-compact) {
     min-width: 0;
     padding: 4px 7px 4px 4px;
@@ -209,7 +279,7 @@
   }
   .profile-modal-header { padding: 21px 19px 17px; }
   .profile-modal-header h2 { font-size: 24px; }
-  .profile-modal form { padding: 18px 19px calc(22px + env(safe-area-inset-bottom)); }
+  .profile-modal form { padding: 18px 19px calc(22px + var(--safe-bottom)); }
   .profile-preview { padding: 14px; }
 
   /* Hand history becomes a bottom sheet rather than a side drawer. */
@@ -226,8 +296,8 @@
        width edge to edge, and bottom gets a floor because this is the form
        that actually sits over a home-indicator gesture bar. */
     padding-top: 0;
-    padding-left: env(safe-area-inset-left);
-    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    padding-left: var(--safe-left);
+    padding-bottom: max(16px, var(--safe-bottom));
   }
   @keyframes history-in { from { transform: translateY(100%); } }
 }
@@ -239,16 +309,12 @@
   /* Keeps .lobby/.account-entry-page in step with the shorter header -- they
      were subtracting the desktop 82px here, which is 40px of page hanging off
      the bottom of a sideways phone. */
-  :root { --lobby-header-h: 42px; }
-  .game-header, .lobby-header {
-    height: 42px;
-    padding-top: env(safe-area-inset-top);
-  }
-  /* Restated after the shared rule above so the lobby header still grows by
-     the inset instead of eating into its own 42px. A phone in landscape
-     usually reports 0 here (the insets go to the sides), so this is a
-     correctness backstop rather than a visible change. */
-  .lobby-header { height: calc(42px + env(safe-area-inset-top)); }
+  :root { --lobby-header-h: 42px; --game-header-h: 42px; }
+  /* Both headers derive their height from those tokens plus the top inset
+     (02-app-shell.css), so there is nothing to restate here. A phone in
+     landscape usually reports 0 at the top and its real inset on the sides,
+     which the padding-left/right maxima below and in .table-area absorb. */
+  .game-header, .lobby-header { padding-top: var(--safe-top); }
   /* Same fix as the narrow-portrait breakpoint: a wide phone in landscape is
      still not wide enough for the wordmark and every header action at once,
      and without this the Gold badge sits on top of the wordmark instead of
@@ -268,7 +334,7 @@
     padding-top: 2px;
     padding-bottom: 0;
   }
-  .game-shell { --chrome-height: 42px; --action-bar-height: 56px; --foreground-allowance: 48px; }
+  .game-shell { --action-bar-height: 56px; --foreground-allowance: 48px; }
   .poker-table-wrap { --table-aspect: 3; }
   /* Measured at 844x390 there are 18px between the top of .table-area and the
      highest seat, so the band itself is only good for one short pill. The
@@ -280,11 +346,17 @@
      the 3:1 oval, where nothing else is drawn. The band keeps its stakes
      pill and its own height, untouched. */
   .table-hud { gap: 10px; padding: 2px 8px 0; }
-  .table-hud .blind-structure { padding: 2px 7px; font-size: 9px; }
+  /* Pushed to the right edge, because the feed below leaves the flex flow
+     here (position: absolute, top-left corner) and the blinds are then the
+     band's only remaining child -- so space-between put them at the start,
+     directly underneath the overlay. Two readouts printed over each other,
+     measured on a 844x390 render. margin-left:auto restores the two-ends
+     layout the band has at every other width. */
+  .table-hud .blind-structure { padding: 2px 7px; font-size: 9px; margin-left: auto; }
   .table-feed {
     position: absolute;
     top: 2px;
-    left: max(6px, env(safe-area-inset-left));
+    left: max(6px, var(--safe-left));
     font-size: 11px;
     max-width: 40vw;
     padding: 3px 7px;
@@ -296,18 +368,16 @@
   .game-header .pot-display > span { font-size: 8px; letter-spacing: .1em; }
   .game-header .pot-display strong { margin-top: 0; font-size: 17px; }
   .card-large { width: clamp(32px, 7.5vw, 42px); }
-  .action-layer { padding-bottom: env(safe-area-inset-bottom); }
+  .action-layer { padding-bottom: var(--safe-bottom); }
   .history-drawer { width: min(300px, 82%); }
 }
 
 /* Older/smaller handsets (e.g. iPhone SE 1st-gen landscape, 568x320) need a
    second, more aggressive tier on top of the one above. */
 @media (max-height: 340px) and (orientation: landscape) {
-  :root { --lobby-header-h: 34px; }
-  .game-header, .lobby-header { height: 34px; }
-  .lobby-header { height: calc(34px + env(safe-area-inset-top)); }
+  :root { --lobby-header-h: 34px; --game-header-h: 34px; }
   .table-area { padding-top: 0; }
-  .game-shell { --chrome-height: 34px; --action-bar-height: 48px; --foreground-allowance: 34px; }
+  .game-shell { --action-bar-height: 48px; --foreground-allowance: 34px; }
   .poker-table-wrap { --table-aspect: 3.6; }
   .card-large { width: clamp(26px, 6.5vw, 34px); }
 }

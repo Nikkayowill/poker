@@ -82,6 +82,27 @@
     var(--glow-gold),
     var(--brand-ink);
 
+  /* The four safe-area insets, once, as tokens.
+   *
+   * Every rule that used to call env(safe-area-inset-*) directly now reads
+   * these, and the reason is testing, not tidiness. env() is supplied by the
+   * browser and cannot be set: on a desktop or in a headless run it is
+   * always 0, so *nothing* about the notched layout could be checked before a
+   * build reached a real iPhone. A custom property can be overridden, so
+   * tests/e2e/safe-area.spec.ts sets these to an iPhone 14's real numbers
+   * (59px top, 34px bottom) and asserts the chrome against them.
+   *
+   * The env() fallbacks keep the production values exactly as they were --
+   * this indirection changes no rendered pixel on any device.
+   *
+   * Set them and the whole app relayouts, which is also the point: an inset
+   * that only one stylesheet knows about is how the game screen ended up
+   * drawing its header underneath the status bar while the lobby did not. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
   /* The lobby chrome's height, stated once because three other rules have to
      agree with it: .lobby-header is this tall, and .lobby and
      .account-entry-page are each `100svh` minus it. They used to be three
@@ -93,6 +114,12 @@
      ladder and its own inset handling in 05-game-header.css, and was out of
      scope for this. */
   --lobby-header-h: 82px;
+
+  /* The table screen's header, same idea, declared in 05-game-header.css.
+     Kept separate from the lobby's because the two step down at different
+     breakpoints and to different numbers -- 82/68 for the lobby, 68/56/42/34
+     here. */
+  --game-header-h: 68px;
 
   /* Focus. Borders are gone from the chrome (see 04-lobby.css's header), so
      a visible focus state has to come from somewhere that is not a border --

@@ -1,6 +1,32 @@
 /* The bar above the felt while a hand is running. */
 
-.game-header { height: 68px; padding: 0 28px; }
+/* The row's own height plus whatever the device keeps at the top.
+ *
+ * Installed on iOS the web view starts at y=0, so this row -- the pot, the
+ * blinds, Leave table, the avatar -- was drawn underneath the clock and the
+ * battery. It grows by the inset rather than padding into itself: with
+ * border-box sizing, padding-top alone leaves a 68px box whose contents now
+ * end 59px lower, and the overflow lands on the felt. That is precisely the
+ * failure mode this replaced, measured on the harness in
+ * tests/e2e/safe-area.spec.ts.
+ *
+ * --game-header-h is the number; 12-responsive.css redefines it per
+ * breakpoint (56/42/34) and never touches `height` here again. .game-shell
+ * derives --chrome-height from the same expression, so the table's height
+ * budget cannot disagree with the header above it. */
+.game-header {
+  height: calc(var(--game-header-h) + var(--safe-top));
+  padding: 0 28px;
+  padding-top: var(--safe-top);
+  /* The side insets have to be restated here. 02-app-shell.css sets them on
+     both headers with the same max() idiom, but this file loads later and its
+     `padding: 0 28px` shorthand resets left and right -- so the shared rule
+     was dead for this element, and a phone held sideways drew the wordmark
+     and the Leave button under the notch strip. Caught by the landscape case
+     in tests/e2e/safe-area.spec.ts, which is the only thing that could. */
+  padding-left: max(28px, var(--safe-left));
+  padding-right: max(28px, var(--safe-right));
+}
 
 /* The pot reads in the middle of this bar during a hand, so the bar becomes
    three columns with equal sides -- which puts that middle on the viewport's
@@ -35,23 +61,6 @@
 .game-header .mark::after { font-size: 17px; }
 .game-header .wordmark { font-size: 16px; }
 
-.room-code-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  color: #cdb967;
-  border: 0;
-  background: transparent;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.room-code-chip > span { color: #65736b; font-weight: 500; }
-
 .leave-button {
   border: 1px solid var(--line);
   color: #86948c;
@@ -70,7 +79,12 @@
   /* Both the table and the controls need these, and they sit in sibling
      subtrees, so the shell is the nearest common ancestor that can carry
      them. Each breakpoint restates the pair; everything else derives. */
-  --chrome-height: 68px;
+  /* Derived, not restated. This was a literal 68px next to a header that was
+     also literally 68px, and each breakpoint had to remember to change both;
+     the inset made that worse, because the header's real height stopped being
+     a number a stylesheet could write down. One expression, one place to be
+     wrong. */
+  --chrome-height: calc(var(--game-header-h) + var(--safe-top));
   --action-bar-height: 76px;
   /* Room below the felt for the seat that hangs off it -- your portrait,
      your cards, your plate. Without a term for this the table grows until
@@ -146,7 +160,7 @@
 
 .connection-overlay {
   position: fixed;
-  top: max(92px, calc(env(safe-area-inset-top) + 68px));
+  top: max(92px, calc(var(--safe-top) + 68px));
   left: 50%;
   z-index: 50;
   width: min(420px, calc(100% - 28px));

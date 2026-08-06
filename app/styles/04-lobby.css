@@ -9,8 +9,8 @@
   /* Header height and top inset both, or the page runs exactly that far past
      the bottom of the screen. --lobby-header-h is the one place the number
      lives (01-tokens.css); env() is what .lobby-header adds to itself. */
-  height: calc(100vh - var(--lobby-header-h) - env(safe-area-inset-top));
-  height: calc(100svh - var(--lobby-header-h) - env(safe-area-inset-top));
+  height: calc(100vh - var(--lobby-header-h) - var(--safe-top));
+  height: calc(100svh - var(--lobby-header-h) - var(--safe-top));
   overflow-y: auto;
   /* The y-axis being auto computes the x-axis to auto too, so any child
      wider than the column turned the whole lobby into a horizontal pan on
@@ -19,7 +19,7 @@
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   margin: 0 auto;
-  padding: 34px 0 calc(40px + env(safe-area-inset-bottom));
+  padding: 34px 0 calc(40px + var(--safe-bottom));
 }
 
 /* The signed-in hub gets the same brand light as the signed-out page.
@@ -178,8 +178,8 @@ button:disabled { cursor: wait; opacity: .62; }
   position: relative;
   width: 100%;
   /* Same arithmetic as .lobby above, for the same reason. */
-  height: calc(100vh - var(--lobby-header-h) - env(safe-area-inset-top));
-  height: calc(100svh - var(--lobby-header-h) - env(safe-area-inset-top));
+  height: calc(100vh - var(--lobby-header-h) - var(--safe-top));
+  height: calc(100svh - var(--lobby-header-h) - var(--safe-top));
   overflow-y: auto;
   /* Same guard as .lobby: this is the container that panned sideways on a
      phone whenever a landing section ran wider than the viewport. The wide
@@ -191,7 +191,7 @@ button:disabled { cursor: wait; opacity: .62; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 34px 16px calc(24px + env(safe-area-inset-bottom));
+  padding: 34px 16px calc(24px + var(--safe-bottom));
   /* The room's light: grain over two huge out-of-focus glows over matte
      obsidian. The red is a trace, not a third light -- three competing hues
      is what made the old wash read as a gradient rather than a room. */

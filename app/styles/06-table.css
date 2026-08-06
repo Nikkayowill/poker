@@ -6,8 +6,8 @@
   min-width: 0;
   position: relative;
   padding: clamp(4px, 1vh, 12px) clamp(10px, 3vw, 28px) 0;
-  padding-left: max(clamp(10px, 3vw, 28px), env(safe-area-inset-left));
-  padding-right: max(clamp(10px, 3vw, 28px), env(safe-area-inset-right));
+  padding-left: max(clamp(10px, 3vw, 28px), var(--safe-left));
+  padding-right: max(clamp(10px, 3vw, 28px), var(--safe-right));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -20,9 +20,9 @@
 .action-layer {
   flex: 0 0 auto;
   position: relative;
-  padding: 0 clamp(10px, 3vw, 28px) calc(clamp(8px, 1.6vh, 20px) + env(safe-area-inset-bottom));
-  padding-left: max(clamp(10px, 3vw, 28px), env(safe-area-inset-left));
-  padding-right: max(clamp(10px, 3vw, 28px), env(safe-area-inset-right));
+  padding: 0 clamp(10px, 3vw, 28px) calc(clamp(8px, 1.6vh, 20px) + var(--safe-bottom));
+  padding-left: max(clamp(10px, 3vw, 28px), var(--safe-left));
+  padding-right: max(clamp(10px, 3vw, 28px), var(--safe-right));
 }
 
 .poker-table-wrap {
@@ -39,7 +39,17 @@
      until the action bar had a fixed height. Chrome above, controls below,
      plus the padding between them -- each breakpoint restates the two
      heights that actually apply there and the arithmetic follows. */
-  --table-reserve: calc(var(--chrome-height) + var(--action-bar-height) + var(--foreground-allowance) + 16px);
+  /* The insets are part of the reserve, and leaving them out is what clipped
+     the HUD on an installed phone. 100dvh in a standalone iOS app is the
+     *whole* screen, status bar and home indicator included, so the header
+     grows by --safe-top and the action layer's padding by --safe-bottom --
+     but the table went on being sized as though neither had happened and
+     pushed the controls off the bottom edge. On anything reporting no insets
+     both terms are 0px and the arithmetic is unchanged. */
+  --table-reserve: calc(
+    var(--chrome-height) + var(--action-bar-height) + var(--foreground-allowance) + 16px
+    + var(--safe-top) + var(--safe-bottom)
+  );
   /* Defect D1: every override below used to replace the whole min() and drop
      this term, so the table was sized from width alone and could be any
      height at all -- which is how a nameplate ended up underneath the

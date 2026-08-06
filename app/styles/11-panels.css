@@ -1,19 +1,21 @@
 /* Drawers, modals and the buy-in sheet. */
 
+/* Zero-border chrome: the heading separates from the list by sitting on a
+   slightly darker band, not by drawing a rule under itself. */
 .panel-heading {
   height: 72px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 21px;
-  border-bottom: 1px solid var(--line);
+  background: rgba(0, 0, 0, .22);
   color: #64736b;
 }
 .panel-heading span { display: block; margin-bottom: 4px; font-size: 8px; font-weight: 750; letter-spacing: .17em; }
 .panel-heading strong { color: #dfe5df; font: 500 14px Georgia, serif; }
 
 .activity-list { flex: 1; overflow: auto; padding: 12px 19px; }
-.activity-item { display: flex; gap: 10px; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+.activity-item { display: flex; gap: 10px; padding: 13px 0; }
 .activity-icon { width: 18px; color: #58665f; font-size: 13px; text-align: center; }
 .activity-win .activity-icon { color: var(--gold); }
 .activity-deal .activity-icon { color: #4f9275; }
@@ -24,7 +26,6 @@
   margin: 0 19px 16px;
   padding-top: 13px;
   color: #536159;
-  border-top: 1px solid rgba(255,255,255,.06);
   font-size: 8px;
   letter-spacing: .06em;
   text-transform: uppercase;
@@ -67,7 +68,6 @@
   align-items: flex-start;
   justify-content: space-between;
   padding: 25px 27px 20px;
-  border-bottom: 1px solid var(--line);
 }
 
 .profile-modal-header > div > span {
@@ -283,9 +283,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  margin-top: 24px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
+  margin-top: 30px;
+  padding-top: 0;
 }
 
 .profile-modal-footer > span {
@@ -345,7 +344,7 @@
 }
 .buyin-gold-row strong { color: #d9e0dc; font-weight: 700; }
 
-.buyin-footer { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.buyin-footer { margin-top: 26px; }
 .buyin-footer .primary-action { width: 100%; }
 .buyin-purchase {
   display: grid;

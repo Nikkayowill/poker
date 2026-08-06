@@ -9,6 +9,11 @@
   height: calc(100vh - 82px);
   height: calc(100svh - 82px);
   overflow-y: auto;
+  /* The y-axis being auto computes the x-axis to auto too, so any child
+     wider than the column turned the whole lobby into a horizontal pan on
+     a phone swipe. Clip it: nothing in the lobby is meant to scroll
+     sideways. */
+  overflow-x: hidden;
   overscroll-behavior-y: contain;
   margin: 0 auto;
   padding: 34px 0 calc(40px + env(safe-area-inset-bottom));
@@ -36,8 +41,10 @@
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(1000px 560px at 12% -6%, rgba(152, 63, 224, .2), transparent 62%),
-    radial-gradient(840px 500px at 92% 2%, rgba(220, 20, 19, .12), transparent 60%),
+    var(--grain),
+    var(--glow-purple),
+    radial-gradient(1100px 640px at 96% -4%, rgba(220, 20, 19, .06), transparent 62%),
+    var(--glow-gold),
     var(--brand-ink);
 }
 
@@ -45,7 +52,9 @@
   color: #8b9a92;
   font-size: 10px;
   font-weight: 650;
-  letter-spacing: .18em;
+  /* Hyper-extended, matching .landing-eyebrow: the micro-label's tracking is
+     one system across the chrome. */
+  letter-spacing: .25em;
   text-transform: uppercase;
 }
 
@@ -170,22 +179,27 @@ button:disabled { cursor: wait; opacity: .62; }
   height: calc(100vh - 82px);
   height: calc(100svh - 82px);
   overflow-y: auto;
+  /* Same guard as .lobby: this is the container that panned sideways on a
+     phone whenever a landing section ran wider than the viewport. The wide
+     children are fixed at their source below (the min() grid tracks); this
+     is the backstop that keeps the next wide child from reopening the leak. */
+  overflow-x: hidden;
   overscroll-behavior-y: contain;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 34px 16px calc(24px + env(safe-area-inset-bottom));
-  /* The badge's three colours, thrown wide and soft. Fixed to the scroll
-     container rather than the content, so the light stays put behind a page
-     that moves -- a gradient that scrolls with the copy reads as a printed
-     backdrop instead of as a room. */
+  /* The room's light: grain over two huge out-of-focus glows over matte
+     obsidian. The red is a trace, not a third light -- three competing hues
+     is what made the old wash read as a gradient rather than a room. */
   background:
-    radial-gradient(1080px 620px at 10% -8%, rgba(152, 63, 224, .26), transparent 60%),
-    radial-gradient(900px 540px at 94% 2%, rgba(220, 20, 19, .17), transparent 58%),
-    radial-gradient(1200px 720px at 50% 106%, rgba(219, 156, 11, .12), transparent 62%),
+    var(--grain),
+    var(--glow-purple),
+    radial-gradient(1000px 600px at 94% 0%, rgba(220, 20, 19, .07), transparent 58%),
+    var(--glow-gold),
     var(--brand-ink);
-  background-attachment: local, local, local, local;
+  background-attachment: local, local, local, local, local;
 }
 
 .account-entry-card {
@@ -234,7 +248,7 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-entry-card h1 {
   margin: 0;
   color: #f7f4ff;
-  font: 700 clamp(29px, 5.2vw, 40px)/1.06 Georgia, "Times New Roman", serif;
+  font: 700 clamp(32px, 5.4vw, 46px)/1.04 Georgia, "Times New Roman", serif;
   letter-spacing: -.03em;
   text-align: center;
 }
@@ -254,7 +268,7 @@ button:disabled { cursor: wait; opacity: .62; }
   margin: 14px auto 0;
   max-width: 40ch;
   color: #a79dbe;
-  font-size: 13.5px;
+  font-size: 17px;
   line-height: 1.6;
 }
 
@@ -268,7 +282,7 @@ button:disabled { cursor: wait; opacity: .62; }
   min-height: 46px;
   margin: 14px 0 0;
   color: #a79dbe;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .account-entry-actions {
@@ -295,7 +309,7 @@ button:disabled { cursor: wait; opacity: .62; }
   border-radius: 11px;
   background: transparent;
   color: #a094ba;
-  font-size: 12.5px;
+  font-size: 15px;
   font-weight: 700;
   cursor: pointer;
   transition: background var(--duration-slow) ease, color var(--duration-slow) ease;
@@ -319,7 +333,7 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .entry-field > span {
   color: #8b80a6;
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: 750;
   letter-spacing: .15em;
   text-transform: uppercase;
@@ -346,7 +360,7 @@ button:disabled { cursor: wait; opacity: .62; }
   box-shadow: 0 0 0 2px rgba(152, 63, 224, .6);
 }
 
-.entry-field input::placeholder { color: #625877; }
+.entry-field input::placeholder { color: #948aab; }
 .entry-field input:disabled { opacity: .55; }
 
 /* The remember toggle is a switch now. The old version was a checkbox inside
@@ -404,15 +418,15 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-remember input:disabled ~ .entry-switch { opacity: .5; }
 
 .entry-remember-copy { display: grid; gap: 2px; }
-.entry-remember-copy strong { color: #ddd6ec; font-size: 12px; font-weight: 650; }
-.entry-remember-copy small { color: #7b7194; font-size: 10px; }
+.entry-remember-copy strong { color: #ddd6ec; font-size: 13px; font-weight: 650; }
+.entry-remember-copy small { color: #948aab; font-size: 11px; }
 
 .entry-divider {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: #6d6389;
-  font-size: 9.5px;
+  color: #948aab;
+  font-size: 11px;
   font-weight: 750;
   letter-spacing: .18em;
   text-transform: uppercase;
@@ -440,7 +454,7 @@ button:disabled { cursor: wait; opacity: .62; }
   padding: 0 18px;
   border: 0;
   border-radius: 15px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 750;
   cursor: pointer;
   transition:
@@ -480,8 +494,8 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-entry-footnote {
   margin: 20px auto 0;
   max-width: 340px;
-  color: #6b6285;
-  font-size: 9.5px;
+  color: #948aab;
+  font-size: 11px;
   line-height: 1.6;
   text-align: center;
 }
@@ -489,7 +503,7 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-entry-error {
   margin: 12px 0 0;
   color: #ff9d92;
-  font-size: 11.5px;
+  font-size: 13px;
   line-height: 1.45;
   text-align: center;
 }
@@ -521,19 +535,45 @@ button:disabled { cursor: wait; opacity: .62; }
 .landing-offer {
   width: min(100%, 1080px);
   flex: 0 0 auto;
+  /* One beat for the whole page. Deliberately vast: with the card containers
+     gone (see below), this empty vertical distance is what separates one
+     section from the next -- the space is the structure now, so it has to be
+     unmistakably deliberate rather than merely generous. */
+  margin-top: var(--section-gap);
 }
 
-.landing-section-head { margin-bottom: 22px; }
+.account-entry-page { --section-gap: clamp(104px, 13vw, 150px); }
+
+/* The offer line is the one deliberate exception: it is a footnote to the
+   feature grid above it, not a section of its own, so it sits closer. */
+.landing-offer { margin-top: calc(var(--section-gap) * .4); }
+
+/* The section head carries the whole hierarchy now that no box does: a
+   microscopic tracked-out label states the category, then a massive light
+   serif line states the thing itself. The contrast between those two sizes
+   is the design -- narrowing it turns the page back into a template. */
+.landing-section-head { margin-bottom: clamp(34px, 4.5vw, 52px); }
+.landing-eyebrow {
+  display: block;
+  margin-bottom: 16px;
+  color: #8d84a3;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+}
 .landing-section-head h2 {
   margin: 0;
   color: var(--ink);
-  font: 600 clamp(24px, 3.2vw, 34px)/1.1 Georgia, serif;
-  letter-spacing: -.02em;
+  font: 400 clamp(38px, 6vw, 64px)/1.04 Georgia, "Times New Roman", serif;
+  letter-spacing: -.03em;
 }
 .landing-section-head p {
-  margin: 7px 0 0;
+  margin: 14px 0 0;
+  max-width: 54ch;
   color: #8d84a3;
-  font-size: 13px;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 /* --- The install panel ---------------------------------------------------
@@ -542,44 +582,39 @@ button:disabled { cursor: wait; opacity: .62; }
    screen a visitor scrolls to rather than something buried under the
    marketing. See components/pwa/install-cta.tsx for why it always renders
    its platform's real path instead of waiting for a browser event. */
+/* No panel around it any more: the install offer floats on the room like
+   every other section, and the local purple bloom behind its copy is what
+   marks its territory -- light instead of a box. */
 .install-cta {
   display: grid;
   gap: 22px;
-  margin-top: 54px;
-  padding: clamp(22px, 4vw, 34px);
-  border-radius: 24px;
-  background:
-    radial-gradient(560px 260px at 0% 0%, rgba(152, 63, 224, .22), transparent 66%),
-    radial-gradient(520px 300px at 100% 100%, rgba(219, 156, 11, .15), transparent 64%),
-    rgba(255, 255, 255, .045);
+  padding: 0;
+  background: radial-gradient(720px 360px at 12% 20%, rgba(152, 63, 224, .1), transparent 68%);
 }
 
 .install-cta-badge {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 12px;
-  border-radius: var(--radius-pill);
-  background: rgba(152, 63, 224, .22);
-  color: #dcc4f7;
+  gap: 8px;
+  color: #b79ede;
   font-size: 10px;
-  font-weight: 750;
-  letter-spacing: .12em;
+  font-weight: 650;
+  letter-spacing: .25em;
   text-transform: uppercase;
 }
 
 .install-cta h2 {
-  margin: 14px 0 0;
+  margin: 16px 0 0;
   color: var(--ink);
-  font: 600 clamp(22px, 3vw, 30px)/1.12 Georgia, serif;
-  letter-spacing: -.02em;
+  font: 400 clamp(30px, 4.4vw, 44px)/1.08 Georgia, "Times New Roman", serif;
+  letter-spacing: -.03em;
 }
 
 .install-cta-copy > p {
   margin: 10px 0 0;
   max-width: 52ch;
   color: #948aab;
-  font-size: 13.5px;
+  font-size: 17px;
   line-height: 1.6;
 }
 
@@ -595,7 +630,7 @@ button:disabled { cursor: wait; opacity: .62; }
   align-items: center;
   gap: 10px;
   color: #b6adc9;
-  font-size: 12.5px;
+  font-size: 15px;
 }
 .install-cta-perks svg { flex-shrink: 0; color: var(--brand-gold-light); }
 
@@ -612,7 +647,7 @@ button:disabled { cursor: wait; opacity: .62; }
   border-radius: 14px;
   background: linear-gradient(135deg, var(--brand-purple) 0%, var(--brand-purple-deep) 55%, var(--brand-red-deep) 100%);
   box-shadow: 0 16px 36px rgba(152, 63, 224, .3);
-  font-size: 13.5px;
+  font-size: 17px;
   font-weight: 750;
   cursor: pointer;
   transition: filter var(--duration-base) ease, transform var(--duration-base) ease;
@@ -628,7 +663,7 @@ button:disabled { cursor: wait; opacity: .62; }
   gap: 8px;
   margin: 20px 0 0;
   color: #cbbfe2;
-  font-size: 12.5px;
+  font-size: 15px;
   font-weight: 600;
 }
 .install-cta-note svg { flex-shrink: 0; margin-top: 2px; color: var(--brand-gold-light); }
@@ -644,14 +679,20 @@ button:disabled { cursor: wait; opacity: .62; }
 .install-cta-steps li {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 13px 15px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, .05);
+  gap: 14px;
+  /* Open rows, not filled pills: the numbered disc anchors each step and the
+     gap between rows does the separating. */
+  padding: 6px 0;
   color: #d6cfe6;
-  font-size: 12.5px;
+  font-size: 15px;
   line-height: 1.4;
 }
+/* Dark ink on the full brand sweep measured 3.65:1 against the sweep's purple
+   and red ends -- under the 4.5 floor, and invisible to the page-level audit
+   because a gradient lives in background-image where a naive contrast walk
+   never looks. White on the purple->red half of the sweep is 8.44:1 at its
+   worst stop and keeps the brand; gold is dropped from this one element
+   because gold is exactly the stop that forced the dark ink. */
 .install-cta-step-number {
   display: grid;
   place-items: center;
@@ -659,52 +700,46 @@ button:disabled { cursor: wait; opacity: .62; }
   width: 24px;
   height: 24px;
   border-radius: var(--radius-round);
-  background: var(--brand-sweep);
-  color: #17101f;
-  font-size: 11px;
+  background: linear-gradient(135deg, var(--brand-purple-deep), var(--brand-red-deep));
+  color: #fff;
+  font-size: 13px;
   font-weight: 800;
 }
 
 /* --- The floor: what you can actually play ------------------------------- */
 
-.landing-games { margin-top: 64px; }
 
-/* 420px, not 240px. There are four live games, so a three-column track
-   leaves an orphan on the second row -- and at four columns the tiles were
-   measurably too tight: "Daily Wordle" wrapped its own name and every blurb
-   ran to three lines. Two columns takes four items evenly and gives each row
-   the width its stake pill needs. */
+
+/* min(420px, 100%), not a bare 420px: a bare pixel minimum is a floor the
+   track cannot go under, so at 390px the grid itself ran wider than the
+   page and dragged the whole landing into a horizontal pan -- this was the
+   mobile leak. min() lets the track collapse to the viewport instead.
+   Two columns on desktop for the same reasons as before: four live games,
+   no orphan row, names never wrap. */
 .landing-game-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+  gap: 6px 56px;
 }
 
+/* Open rows, not cards. Each game is a line of type on the room's floor:
+   the serif name carries it, the stake sits flush right, and the hover is a
+   crossfade of the name toward gold rather than a lifting box. */
 .landing-game {
   display: flex;
   align-items: center;
-  gap: 13px;
-  padding: 16px 18px;
-  border-radius: 16px;
-  background: linear-gradient(150deg, rgba(255, 255, 255, .065), rgba(255, 255, 255, .028));
-  transition: background var(--duration-slow) ease, transform var(--duration-slow) ease;
+  gap: 15px;
+  padding: 18px 0;
+  transition: opacity var(--duration-slow) ease;
 }
-.landing-game:hover { background: linear-gradient(150deg, rgba(255, 255, 255, .1), rgba(255, 255, 255, .04)); transform: translateY(-2px); }
 
-/* Hold'em is the house game, not one of ten equals. */
+/* Hold'em is the house game, not one of ten equals -- so it is simply set
+   much larger, the way a headliner is billed larger on a marquee. */
 .landing-game-headline {
   grid-column: 1 / -1;
-  padding: 20px 22px;
-  background:
-    radial-gradient(420px 200px at 0% 50%, rgba(220, 20, 19, .2), transparent 70%),
-    linear-gradient(120deg, rgba(152, 63, 224, .22), rgba(219, 156, 11, .12));
+  padding: 4px 0 26px;
 }
-.landing-game-headline:hover {
-  background:
-    radial-gradient(420px 200px at 0% 50%, rgba(220, 20, 19, .26), transparent 70%),
-    linear-gradient(120deg, rgba(152, 63, 224, .28), rgba(219, 156, 11, .16));
-}
-.landing-game-headline h3 { font-size: 19px; }
+.landing-game-headline h3 { font-size: clamp(24px, 3vw, 32px); }
 
 .landing-game-icon {
   display: grid;
@@ -712,15 +747,14 @@ button:disabled { cursor: wait; opacity: .62; }
   flex: 0 0 auto;
   width: 40px;
   height: 40px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, .07);
   color: var(--brand-gold-light);
+  opacity: .85;
 }
 .landing-game-headline .landing-game-icon {
   width: 46px;
   height: 46px;
-  background: var(--brand-sweep);
-  color: #1a1020;
+  color: var(--brand-gold-light);
+  opacity: 1;
 }
 
 /* min-width:0 so a long name ellipsizes instead of shoving the stake off the
@@ -729,146 +763,140 @@ button:disabled { cursor: wait; opacity: .62; }
 .landing-game-body h3 {
   margin: 0;
   color: #f1ecfb;
-  font: 600 15px Georgia, serif;
+  font: 400 19px Georgia, serif;
   letter-spacing: -.01em;
+  transition: color var(--duration-slow) ease;
 }
+.landing-game:hover .landing-game-body h3 { color: var(--brand-gold-light); }
 .landing-game-body p {
-  margin: 4px 0 0;
+  margin: 5px 0 0;
   color: #8d84a3;
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
+/* The stake is a stated fact, not a badge: gold figures flush right, no
+   pill behind them. */
 .landing-game-stake {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   flex: 0 0 auto;
-  padding: 6px 11px;
-  border-radius: var(--radius-pill);
-  background: rgba(219, 156, 11, .14);
   color: var(--brand-gold-light);
-  font-size: 11px;
-  font-weight: 750;
+  font-size: 13px;
+  font-weight: 650;
   white-space: nowrap;
 }
 .landing-game-stake.is-free {
-  background: rgba(152, 63, 224, .2);
-  color: #d5bcf5;
+  color: #b79ede;
   font-size: 10px;
-  letter-spacing: .08em;
+  font-weight: 650;
+  letter-spacing: .25em;
   text-transform: uppercase;
 }
 
 .landing-soon {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 16px 0 0;
+  gap: 8px 24px;
+  margin: 40px 0 0;
   padding: 0;
   list-style: none;
 }
 .landing-soon li {
-  padding: 6px 12px;
-  border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, .05);
-  color: #7d7495;
-  font-size: 11px;
-  font-weight: 600;
+  color: #6b6380;
+  font-size: 13px;
+  font-weight: 500;
 }
 /* Says what the row is without a per-item badge repeated ten times. */
 .landing-soon::before {
   content: "Dealing in soon";
   align-self: center;
-  margin-right: 4px;
-  color: #635a7c;
-  font-size: 9.5px;
-  font-weight: 750;
-  letter-spacing: .14em;
+  flex-basis: 100%;
+  color: #8d84a3;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .25em;
   text-transform: uppercase;
 }
 
 /* --- Features ------------------------------------------------------------ */
 
-.landing-features { margin-top: 68px; }
 
+
+/* min() for the same leak reason as the game grid: a bare 268px floor
+   overflows a 320px viewport. Wide gaps because the whitespace between
+   entries is what separates them now -- there is no card edge left to. */
 .landing-feature-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(min(268px, 100%), 1fr));
+  gap: clamp(36px, 4.5vw, 56px) 48px;
 }
 
 .landing-feature {
-  padding: 20px 20px 22px;
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .022));
-  transition: background var(--duration-slow) ease, transform var(--duration-slow) ease;
-}
-.landing-feature:hover {
-  background: linear-gradient(180deg, rgba(255, 255, 255, .095), rgba(255, 255, 255, .035));
-  transform: translateY(-2px);
+  padding: 0;
 }
 .landing-feature-icon {
   display: inline-grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  margin-bottom: 13px;
+  width: 20px;
+  height: 20px;
+  margin-bottom: 14px;
   color: var(--brand-gold-light);
-  border-radius: 11px;
-  background: rgba(219, 156, 11, .13);
+  opacity: .9;
 }
 .landing-feature h3 {
-  margin: 0 0 7px;
+  margin: 0 0 9px;
   color: #f1ecfb;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.3;
+  font: 400 19px/1.3 Georgia, serif;
+  letter-spacing: -.01em;
 }
 .landing-feature p {
   margin: 0;
   color: #8d84a3;
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.65;
 }
 
+/* One quiet tracked-out line, centred in open space -- a house note, not a
+   promo pill. */
 .landing-offer {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 9px;
-  margin: 42px auto 0;
-  padding: 12px 20px;
+  margin-right: auto;
+  margin-left: auto;
   width: auto;
   max-width: 100%;
-  color: #f7e6b6;
-  border-radius: var(--radius-pill);
-  background: linear-gradient(120deg, rgba(152, 63, 224, .22), rgba(219, 156, 11, .16));
-  font-size: 13px;
-  font-weight: 650;
+  padding: 0;
+  color: #d8bc76;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
   text-align: center;
 }
 
+/* The closing move is pure typography: a display line in open dark, then
+   the two actions. No box -- the section gap above and below is its room. */
 .landing-cta {
   display: flex;
   flex-wrap: wrap;
   flex-direction: column;
-  align-items: stretch;
-  justify-content: space-between;
-  gap: 18px;
-  margin-top: 56px;
-  padding: 30px clamp(20px, 4vw, 38px);
-  border-radius: 22px;
-  background:
-    radial-gradient(600px 280px at 100% 0%, rgba(220, 20, 19, .2), transparent 66%),
-    linear-gradient(125deg, rgba(152, 63, 224, .26), rgba(13, 9, 20, .6));
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  padding: 0;
+  text-align: center;
 }
 .landing-cta h2 {
-  margin: 0 0 6px;
+  margin: 0 0 10px;
   color: var(--ink);
-  font: 600 clamp(21px, 2.6vw, 28px)/1.15 Georgia, serif;
+  font: 400 clamp(34px, 5vw, 56px)/1.06 Georgia, "Times New Roman", serif;
+  letter-spacing: -.03em;
 }
-.landing-cta p { margin: 0; color: #a79dbe; font-size: 13px; }
+.landing-cta p { margin: 0; color: #a79dbe; font-size: 15px; }
 .landing-cta-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .landing-cta-actions > * { flex: 1; }
 
@@ -879,10 +907,12 @@ button:disabled { cursor: wait; opacity: .62; }
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 0 22px;
+  padding: 0 26px;
   border: 0;
-  border-radius: 14px;
-  font-size: 14px;
+  /* Sharp. A 2px ease is machining tolerance, not a rounded corner -- the
+     soft-radius pill is the generic-button silhouette this pass retires. */
+  border-radius: 2px;
+  font-size: 15px;
   font-weight: 700;
   cursor: pointer;
   text-decoration: none;
@@ -912,7 +942,6 @@ button:disabled { cursor: wait; opacity: .62; }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 28px 20px;
-  margin-top: 64px;
   padding: 34px 0 8px;
 }
 
@@ -926,7 +955,7 @@ button:disabled { cursor: wait; opacity: .62; }
   margin: 0 0 10px;
   opacity: .95;
 }
-.landing-footer-brand p { margin: 0 0 14px; color: #8d84a3; font-size: 12px; line-height: 1.5; }
+.landing-footer-brand p { margin: 0 0 14px; color: #8d84a3; font-size: 13px; line-height: 1.5; }
 
 .landing-socials { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .landing-socials a {
@@ -935,35 +964,39 @@ button:disabled { cursor: wait; opacity: .62; }
   width: 34px;
   height: 34px;
   color: #8d84a3;
-  border-radius: 11px;
-  background: rgba(255, 255, 255, .05);
-  transition: color var(--duration-base) ease, background var(--duration-base) ease;
+  border-radius: 2px;
+  background: transparent;
+  transition: color var(--duration-base) ease;
 }
-.landing-socials a:hover { color: var(--brand-gold-light); background: rgba(255, 255, 255, .1); }
+.landing-socials a:hover { color: var(--brand-gold-light); }
 
 .landing-footer-column h3 {
   margin: 0 0 10px;
   color: #b0a6c6;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 750;
   letter-spacing: .1em;
   text-transform: uppercase;
 }
 .landing-footer-column ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+/* Footer links announce hover with a hairline underline drawing in from the
+   left on a decelerating curve -- the one place a 1px line is welcome,
+   because it exists only while the pointer asks for it. */
 .landing-footer-column a {
   color: #8d84a3;
-  font-size: 13px;
+  font-size: 15px;
   text-decoration: none;
-  transition: color var(--duration-base) ease;
+  background: linear-gradient(currentColor, currentColor) no-repeat 0 100% / 0 1px;
+  transition: color var(--duration-base) ease, background-size var(--duration-slow) var(--ease-decelerate);
 }
-.landing-footer-column a:hover { color: var(--brand-gold-light); }
+.landing-footer-column a:hover { color: var(--brand-gold-light); background-size: 100% 1px; }
 
 .landing-footer-legal {
   grid-column: 1 / -1;
   margin: 6px 0 0;
   padding-top: 18px;
-  color: #6b6285;
-  font-size: 11px;
+  color: #948aab;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -971,19 +1004,19 @@ button:disabled { cursor: wait; opacity: .62; }
    the expansion. */
 @media (min-width: 721px) {
   .landing-footer { grid-template-columns: minmax(200px, 1.4fr) repeat(3, minmax(120px, 1fr)); }
-  .landing-cta { flex-direction: row; align-items: center; }
+  /* The CTA stays a centred column at every width now -- it is a typographic
+     closing line, not a split banner. Only the buttons stop stretching. */
   .landing-cta-actions > * { flex: 0 1 auto; }
-  .install-cta { grid-template-columns: 1.25fr 1fr; align-items: center; gap: 34px; }
+  .install-cta { grid-template-columns: 1.25fr 1fr; align-items: center; gap: 56px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .landing-feature,
   .landing-game,
+  .landing-game-body h3,
+  .landing-footer-column a,
   .install-cta-button,
   .entry-switch,
   .entry-switch::after { transition: none; }
-  .landing-feature:hover,
-  .landing-game:hover,
   .install-cta-button:hover { transform: none; }
 }
 
@@ -992,10 +1025,10 @@ button:disabled { cursor: wait; opacity: .62; }
    Signed-in hub tiles. See components/lobby/lobby.tsx.
    --------------------------------------------------------------------------- */
 
-.hub-head { margin-bottom: 22px; }
+.hub-head { margin-bottom: 30px; }
 .hub-head h1 {
-  margin: 10px 0 18px;
-  font: 500 clamp(30px, 5vw, 46px)/1 Georgia, "Times New Roman", serif;
+  margin: 12px 0 20px;
+  font: 400 clamp(34px, 5.4vw, 52px)/1 Georgia, "Times New Roman", serif;
   letter-spacing: -.03em;
 }
 
@@ -1055,15 +1088,19 @@ button:disabled { cursor: wait; opacity: .62; }
      legal as the final layer of a layer list, so putting --tile-tint in the
      middle made the whole declaration invalid and every tile rendered flat.
      The tint is a two-stop gradient instead, which is a valid image layer. */
-  background-color: #0e1613;
+  /* Neutral obsidian, not the green-black of the felt era: on the matte
+     room these tiles float in, a green base read as mud. The Join Table
+     tile still goes green -- through its own felt artwork and tint, which
+     is the one place green belongs in the lobby. */
+  background-color: #0e0d10;
   /* The scrim runs left-to-right, not top-to-bottom. The label sits bottom
      left and the art bottom right, so a vertical fade dimmed precisely the
      thing it was supposed to be showing off. */
   background-image:
-    linear-gradient(90deg, rgba(9,15,13,.94) 0%, rgba(9,15,13,.74) 46%, rgba(9,15,13,.10) 100%),
+    linear-gradient(90deg, rgba(10,10,11,.94) 0%, rgba(10,10,11,.74) 46%, rgba(10,10,11,.10) 100%),
     linear-gradient(var(--tile-tint), var(--tile-tint)),
     var(--tile-art),
-    linear-gradient(160deg, #17241f, #0e1613);
+    linear-gradient(160deg, #17151c, #0e0d10);
   background-size: auto, auto, cover, auto;
   background-position: center, center, center, center;
   background-repeat: no-repeat;

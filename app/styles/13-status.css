@@ -143,6 +143,74 @@
   .save-progress-actions button { min-height: 32px; }
 }
 
+/* The install nudge, as a single line pinned to the viewport's bottom edge.
+   No card, no border: a blurred obsidian strip whose shadow separates it
+   from the lobby scrolling underneath. components/install-prompt.tsx. */
+.install-strip {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px max(16px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: rgba(10, 10, 11, .84);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  box-shadow: 0 -14px 40px rgba(0, 0, 0, .45);
+}
+
+.install-strip-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--brand-gold-light);
+}
+
+.install-strip-copy {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: #cfc7de;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.install-strip-action {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  color: #1c1305;
+  border: 0;
+  border-radius: 2px;
+  background: linear-gradient(152deg, var(--brand-gold-light), var(--brand-gold));
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter var(--duration-base) ease;
+}
+.install-strip-action:hover { filter: brightness(1.07); }
+.install-strip-action:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+
+.install-strip-dismiss {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  color: #78877f;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  cursor: pointer;
+  transition: color var(--duration-base) ease;
+}
+.install-strip-dismiss:hover { color: #ece7f7; }
+.install-strip-dismiss:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+
 .auth-button {
   padding: 8px 14px;
   border-radius: 11px;

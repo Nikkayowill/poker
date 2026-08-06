@@ -30,11 +30,10 @@
   }
   .account-entry-card { padding: 26px 20px; border-radius: 22px; }
   .account-entry-card h1 { font-size: 32px; }
-  /* The install panel is the first thing under the sign-in card, and a phone
-     is the device that can actually act on it -- so it gets the tighter
-     phone padding rather than inheriting the desktop block's. */
-  .install-cta { margin-top: 38px; padding: 20px; }
-  .landing-games, .landing-features { margin-top: 46px; }
+  /* The landing's section gap stays dramatic on a phone -- the open vertical
+     distance is the page's structure now that the card containers are gone,
+     so the phone gets a scaled beat rather than a collapsed one. */
+  .account-entry-page { --section-gap: 88px; }
   .game-header {
     height: 56px;
     padding: 0 12px;

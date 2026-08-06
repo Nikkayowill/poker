@@ -73,13 +73,17 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   returning 200 (it did not exist before), `sw.js` reporting
   `stackchips-shell-v6`, and the signed-out HTML carrying both
   `HIGH ROLLER ARCADE` and `#983fe0`. Not assumed from the merge alone.
-- **`app/styles/14-admin.css` is deliberately NOT part of that release.** The
-  admin console's borderless pass was written in the same working tree by a
-  concurrent session and the user scoped it out of this deploy, so it is
-  still uncommitted local work — the *shipped* admin console keeps its old
-  bordered `--line`/`--surface` styling and does not read `--brand-*` at all.
-  Anyone picking that up should commit it as its own slice rather than
-  assume the doc above already covers it.
+- The admin console's borderless pass (`app/styles/14-admin.css`, commit
+  `55de96a`) **is** on `main`, via PR #17. It was scoped *out* of PR #16
+  deliberately and shipped anyway one merge later, which is worth
+  understanding rather than tidying away: it was authored in this same
+  working tree by a **concurrent Claude session**, committed at 01:10:55
+  between #16's merge and #17's push, and #17 — a docs-only change — carried
+  it because pushing a branch pushes every commit on it, not just the one
+  you wrote. The lesson generalises past this repo: when more than one agent
+  shares a checkout, `git log origin/main..HEAD` before opening a PR is the
+  check that catches it; a clean `git status` says nothing about what is
+  already committed on your branch.
 - The supplied logo had **no alpha channel** — a solid black plate behind the
   art, which the user believed was transparent. `public/brand/stackchips-logo
   .png` is the fixed copy, made by flood-filling that plate from the four
@@ -114,6 +118,41 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   just having its border deleted; deleting one without replacing it makes the
   state invisible. Focus is `--brand-focus` everywhere, because removing
   borders makes a visible focus ring non-negotiable rather than optional.
+- **The chrome sits in a matte-obsidian "room" now (2026-08-06 pass).** The
+  base is neutral `#0a0a0b` (html/body and `--brand-ink` — no longer the
+  violet `#0a0710`), textured by `--grain` (an SVG-turbulence data URI with
+  its 0.05 opacity baked into the SVG so it can live in a background-image
+  list) under two huge tokenised glows, `--glow-purple`/`--glow-gold`
+  (01-tokens.css). The landing sections are card-less: separation is
+  `--section-gap` (clamp 104–150px; 88px on phones — 12-responsive.css no
+  longer collapses it), a `.landing-eyebrow` micro-label (10px, .25em
+  tracking — same tracking as `.lobby-kicker` now) over a 400-weight serif
+  display line, and open grids with wide gaps. Games/features/CTA/offer lost
+  their fills; the CTA is a centred typographic close at every width. The
+  sign-in card was deliberately left alone (user: "the login page looks
+  decent"). Remaining chrome hairlines went: panel heading (darker band
+  instead), modal header/footers, buyin/panel footnotes, arcade/friends/
+  activity row dividers (spacing instead), leaderboard rows (zebra wash —
+  a fill, not a rule). Landing CTA buttons, socials and the install strip
+  are 2px-radius sharp; footer links hover a draw-in underline. Hub tiles
+  and the lobby header were neutralised from green-black to obsidian; the
+  Join Table tile alone stays green via its felt artwork/tint.
+- **The mobile horizontal-pan leak is fixed, and its cause is worth
+  remembering:** `.landing-game-grid`'s `minmax(420px, 1fr)` was a floor the
+  track could not go under, so at 390px the grid outgrew the page and the
+  whole landing panned sideways (`overflow-y: auto` computes the x-axis to
+  auto too). Grid minimums in the chrome are `minmax(min(Npx, 100%), 1fr)`
+  now, and `.lobby`/`.account-entry-page` carry `overflow-x: hidden`
+  backstops. Verified by forcing `scrollLeft = 60` headlessly at 390px on
+  both scrollers — it snaps to 0.
+- The lobby install nudge (`components/install-prompt.tsx`) is a one-line
+  `.install-strip` (13-status.css) fixed to the viewport's bottom edge —
+  icon, one sentence ("Add StackChips to your Home Screen." + Install App
+  on Chromium; "Tap Share then Add to Home Screen." on iOS), dismiss ×. It
+  no longer reuses the `.save-progress-notice` shell; the cooldown/platform
+  logic (useInstallOffer, 14-day dismissal) is unchanged. The landing's
+  `install-cta` destination panel keeps its full steps but floats card-less
+  on the page like every other section.
 - The signed-out page is a real landing page now
   (`components/auth/landing-sections.tsx`): a PWA install panel first, then
   "The floor" — a game grid rendered **from `ARCADE_GAMES`** so it can never

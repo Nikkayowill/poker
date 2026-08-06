@@ -42,9 +42,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  /* Matches .activity-item's row cadence for the same reason as .friends-list's padding above. */
-  padding: 12px 0;
-  border-bottom: 1px solid rgba(255,255,255,.05);
+  /* Matches .activity-item's row cadence for the same reason as .friends-list's padding above.
+     No divider: spacing and the row's own hierarchy do the separating. */
+  padding: 13px 0;
 }
 .friend-row-muted { opacity: .68; }
 

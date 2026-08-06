@@ -19,6 +19,7 @@ import {
   tableChannelName,
 } from "@/lib/game/table-channel";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { dailyGoldState } from "@/lib/profile/daily-gold";
 import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
 import {
   BET_STYLE_STORAGE_KEY,
@@ -29,7 +30,7 @@ import {
 } from "@/lib/scene/bet-style";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
-import { Coins, Layers, LogOut, Music2, Settings2, Trophy, UserPlus } from "lucide-react";
+import { Coins, Gift, Layers, LogOut, Music2, Settings2, Trophy, UserPlus } from "lucide-react";
 import { Lobby } from "@/components/lobby/lobby";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { ProfileModal } from "@/components/profile/profile-modal";
@@ -75,6 +76,8 @@ export function PokerApp() {
   const [soundEnabled, setSoundEnabledState] = useState(true);
   const [musicEnabled, setMusicEnabledState] = useState(true);
   const [betStyle, setBetStyleState] = useState<BetAnimationStyle>(DEFAULT_BET_STYLE);
+  const [claimingGold, setClaimingGold] = useState(false);
+  const [goldFlash, setGoldFlash] = useState(false);
   // Set only by hostPrivate, cleared on dismiss: the share sheet is a
   // one-shot moment right after creating a room, not table state.
   const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null);
@@ -150,6 +153,35 @@ export function PokerApp() {
       return next;
     });
   }, []);
+
+  /**
+   * The daily claim, moved off the navbar.
+   *
+   * It lives here rather than inside GoldBadge because the badge is now a
+   * readout: the action belongs to the player menu, which is already the one
+   * place in this app where "things you can do to your account" are listed,
+   * and the credited profile has to land in this component's state either way.
+   */
+  const claimDailyGold = useCallback(async () => {
+    if (claimingGold) return;
+    setClaimingGold(true);
+    try {
+      const response = await fetch("/api/profile/gold/claim", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not claim your daily Gold.");
+      setProfile(data.profile);
+      // The one piece of feedback that survived the button: the balance
+      // flashes, so a claim made from a menu that has already closed is still
+      // visibly a claim.
+      setGoldFlash(true);
+      window.setTimeout(() => setGoldFlash(false), 900);
+    } catch {
+      // Best-effort, exactly as the old button was: the menu entry simply
+      // stays offered so it can be tried again.
+    } finally {
+      setClaimingGold(false);
+    }
+  }, [claimingGold]);
 
   useEffect(() => {
     // The only screen boundary that actually exists in this app: `game` is
@@ -932,7 +964,26 @@ export function PokerApp() {
     }
   };
 
+  // Recomputed each render rather than stored: nothing else can change it, and
+  // a claim that lands flips lastDailyClaimAt on the profile this reads.
+  const dailyGold = dailyGoldState(profile, new Date());
+
   const lobbyMenuItems: MenuItem[] = [
+    // First, and only for an account that can actually take it. A guest's
+    // path to the reward is "Save progress" at the bottom of this same menu,
+    // so offering them a dead row here would be the navbar's old "Save to
+    // claim" button moved rather than removed.
+    ...(dailyGold === "ready" || dailyGold === "claimed"
+      ? [{
+        kind: "action" as const,
+        label: dailyGold === "ready"
+          ? (claimingGold ? "Claiming…" : "Claim daily Gold")
+          : "Daily Gold claimed",
+        onSelect: () => void claimDailyGold(),
+        disabled: dailyGold === "claimed" || claimingGold,
+        icon: <Gift size={15} />,
+      }, { kind: "separator" as const }]
+      : []),
     { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
     { kind: "link", label: "Buy Gold", href: gameId ? `/store?table=${gameId}` : "/store", icon: <Coins size={15} /> },
     { kind: "link", label: "Leaderboard", href: "/leaderboard", icon: <Trophy size={15} /> },
@@ -977,7 +1028,9 @@ export function PokerApp() {
               same thing. Gold stays visible because it is the number a player
               checks before choosing stakes. */}
           <div className="header-actions">
-            {entryComplete && profile && <GoldBadge profile={profile} onClaimed={setProfile} />}
+            {entryComplete && profile && (
+              <GoldBadge profile={profile} claimable={dailyGold === "ready"} justClaimed={goldFlash} />
+            )}
             {entryComplete
               ? (
                 <Menu

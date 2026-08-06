@@ -69,6 +69,31 @@
   --glow-purple: radial-gradient(1600px 900px at 8% -12%, rgba(152, 63, 224, .17), transparent 68%);
   --glow-gold: radial-gradient(1700px 1000px at 88% 112%, rgba(219, 156, 11, .10), transparent 70%);
 
+  /* The whole room in one value, because four screens now have to agree on
+     it -- the landing page, the signed-in hub, the collection and the
+     leaderboard. A custom property can hold a full multi-layer background, so
+     "the room" is a thing a new page opts into rather than five lines it
+     copies and then slowly disagrees with. The red is a trace, not a third
+     light: three competing hues is how a dark page goes muddy. */
+  --brand-room:
+    var(--grain),
+    var(--glow-purple),
+    radial-gradient(1100px 640px at 96% -4%, rgba(220, 20, 19, .06), transparent 62%),
+    var(--glow-gold),
+    var(--brand-ink);
+
+  /* The lobby chrome's height, stated once because three other rules have to
+     agree with it: .lobby-header is this tall, and .lobby and
+     .account-entry-page are each `100svh` minus it. They used to be three
+     literals, so the phone breakpoint had to remember to restate all three
+     (12-responsive.css said so in a comment) and the safe-area fix below
+     would have had to be applied three times.
+
+     Not used by .game-header: the table screen's chrome has its own height
+     ladder and its own inset handling in 05-game-header.css, and was out of
+     scope for this. */
+  --lobby-header-h: 82px;
+
   /* Focus. Borders are gone from the chrome (see 04-lobby.css's header), so
      a visible focus state has to come from somewhere that is not a border --
      every chrome control uses this ring. */
@@ -166,6 +191,27 @@
 }
 
 * { box-sizing: border-box; }
+
+/* No painted scrollbars anywhere.
+ *
+ * Three drawers and lists already did this one at a time (.friends-list,
+ * .arcade-list, .history-drawer), each with the same comment: a platform
+ * scrollbar cuts a bright seam down dark chrome, and on Windows/Firefox --
+ * or anywhere "always show scrollbars" is on -- it is a permanent light
+ * gutter beside a matte-obsidian room. Stating it once here is what makes
+ * the app feel native rather than a document in a browser.
+ *
+ * Scrolling itself is untouched: display:none removes the scrollbar's
+ * *rendering*, not the overflow behaviour, so wheel, trackpad, touch drag,
+ * keyboard paging and programmatic scrollTo all work exactly as before.
+ * That is also why this cannot be `overflow: hidden` anywhere.
+ *
+ * Both properties are needed and neither is redundant: Firefox and IE take
+ * the standard `scrollbar-width` / `-ms-overflow-style`, and every WebKit and
+ * Chromium browser takes the pseudo-element. `*` rather than a list of
+ * containers, because a new scrollable panel must not have to remember. */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { display: none; }
 
 html, body { margin: 0; min-height: 100%; background: #0a0a0b; color: var(--ink); }
 

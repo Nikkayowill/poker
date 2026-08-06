@@ -28,13 +28,16 @@
 }
 .friends-list::-webkit-scrollbar { display: none; }
 
-.friends-section { margin-bottom: 18px; }
+.friends-section { margin-bottom: 22px; }
+/* 10px/.25em is the chrome's one micro-label size (.landing-eyebrow,
+   .lobby-kicker, .hub-tile-kicker). At 8px this was below the floor the rest
+   of the app was raised to and read as a smudge rather than a label. */
 .friends-section h3 {
-  margin: 12px 0 6px;
-  color: #64736b;
-  font-size: 8px;
-  font-weight: 750;
-  letter-spacing: .17em;
+  margin: 14px 0 8px;
+  color: #8d84a3;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .25em;
   text-transform: uppercase;
 }
 
@@ -61,11 +64,11 @@
   display: block;
   overflow: hidden;
   color: #dfe5df;
-  font: 500 12px Georgia, serif;
+  font: 500 13.5px Georgia, serif;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.friend-identity small { color: #5c6b63; font-size: 9px; }
+.friend-identity small { color: #8d84a3; font-size: 10.5px; }
 
 .friend-actions { display: flex; flex: 0 0 auto; gap: 6px; }
 .friend-actions button {

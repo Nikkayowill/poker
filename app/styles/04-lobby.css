@@ -6,8 +6,11 @@
    home screen wants on a phone, and the same shape widened on a desktop. */
 .lobby {
   width: min(920px, calc(100% - 32px));
-  height: calc(100vh - 82px);
-  height: calc(100svh - 82px);
+  /* Header height and top inset both, or the page runs exactly that far past
+     the bottom of the screen. --lobby-header-h is the one place the number
+     lives (01-tokens.css); env() is what .lobby-header adds to itself. */
+  height: calc(100vh - var(--lobby-header-h) - env(safe-area-inset-top));
+  height: calc(100svh - var(--lobby-header-h) - env(safe-area-inset-top));
   overflow-y: auto;
   /* The y-axis being auto computes the x-axis to auto too, so any child
      wider than the column turned the whole lobby into a horizontal pan on
@@ -40,12 +43,10 @@
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background:
-    var(--grain),
-    var(--glow-purple),
-    radial-gradient(1100px 640px at 96% -4%, rgba(220, 20, 19, .06), transparent 62%),
-    var(--glow-gold),
-    var(--brand-ink);
+  /* The stack itself is --brand-room in 01-tokens.css: the collection and
+     leaderboard shells light themselves the same way (02-app-shell.css), and
+     three copies of five gradient layers is three things to drift. */
+  background: var(--brand-room);
 }
 
 .lobby-kicker {
@@ -176,8 +177,9 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-entry-page {
   position: relative;
   width: 100%;
-  height: calc(100vh - 82px);
-  height: calc(100svh - 82px);
+  /* Same arithmetic as .lobby above, for the same reason. */
+  height: calc(100vh - var(--lobby-header-h) - env(safe-area-inset-top));
+  height: calc(100svh - var(--lobby-header-h) - env(safe-area-inset-top));
   overflow-y: auto;
   /* Same guard as .lobby: this is the container that panned sideways on a
      phone whenever a landing section ran wider than the viewport. The wide
@@ -1025,10 +1027,15 @@ button:disabled { cursor: wait; opacity: .62; }
    Signed-in hub tiles. See components/lobby/lobby.tsx.
    --------------------------------------------------------------------------- */
 
-.hub-head { margin-bottom: 30px; }
+/* The hub's head is the landing page's section head, wearing the same two
+   sizes: .lobby-kicker already matched .landing-eyebrow's tracking, so what
+   was left was the colour, the beat under it, and the display line's scale.
+   Signing in is now a change of content, not of typeface. */
+.hub-head { margin-bottom: clamp(30px, 4vw, 44px); }
+.hub-head .lobby-kicker { margin-bottom: 16px; color: #8d84a3; }
 .hub-head h1 {
-  margin: 12px 0 20px;
-  font: 400 clamp(34px, 5.4vw, 52px)/1 Georgia, "Times New Roman", serif;
+  margin: 0 0 24px;
+  font: 400 clamp(38px, 6vw, 64px)/1.04 Georgia, "Times New Roman", serif;
   letter-spacing: -.03em;
 }
 
@@ -1126,18 +1133,49 @@ button:disabled { cursor: wait; opacity: .62; }
   font: 600 17px Georgia, serif;
   letter-spacing: -.01em;
 }
-.hub-tile-wide .hub-tile-body strong { font-size: 22px; }
+/* The hero's category line, in the chrome's one micro-label voice
+   (.landing-eyebrow / .lobby-kicker): 10px, .25em, uppercase. It is what
+   makes "Texas Hold'em" legible as a *game* in a hub that now also lists
+   Blackjack, Hi-Lo and two daily puzzles. */
+.hub-tile-kicker {
+  margin-bottom: 5px;
+  color: #a99ec2;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+}
+.hub-tile-wide .hub-tile-body strong { font-size: clamp(24px, 3.4vw, 30px); }
 .hub-tile-body small { color: #9fb0a7; font-size: 11.5px; line-height: 1.4; }
 .hub-tile-go { flex-shrink: 0; color: var(--gold-light); }
 
 /* Real artwork per tile, from public/. */
-/* The play tile shows the felt itself, zoomed past the rail so the arcs of
-   the plate's ends don't read as stray lines across the tile. */
+/* The hero is the one tile whose art changed shape, not just its tint.
+ *
+ * It used to blow the felt up to 190% and use it as the tile's *background*,
+ * which on the old green-black lobby was fine and on the matte-obsidian room
+ * is the one card that still looks like the old design: a big green slab in a
+ * purple and gold page. Tinting that green purple was worse -- green under a
+ * violet wash goes teal, so the tile read as a flat blue-grey plate with no
+ * subject at all (checked on a render, which is the only way to catch it).
+ *
+ * So the plate is now an *object* on the tile instead of the tile's surface:
+ * the same table art, sized and bled off the right edge exactly the way
+ * .hub-tile-private bleeds its chip cluster. The card is obsidian like every
+ * other card in the hub, the green is a table sitting on it, and what the
+ * tile shows is unmistakably poker -- which is the whole reason to keep the
+ * artwork rather than swap it for an icon. */
 .hub-tile-play {
   --tile-art: url("/pokertable/table-desktop.png");
-  --tile-tint: rgba(22,79,58,.30);
-  background-size: auto, auto, 190% auto, auto;
-  background-position: center, center, center 58%, center;
+  /* A trace of the room's own violet, not a colour wash over the art -- see
+     above for what happened at .24. */
+  --tile-tint: rgba(152,63,224,.07);
+  /* Sized by *height*, not width: the plate is 2:1, so anything wide enough
+     to read got taller than the tile and was clipped top and bottom into a
+     green rounded rectangle -- a table with its ends cut off is not a table.
+     78% leaves the oval whole with air above and below it. */
+  background-size: auto, auto, auto 78%, auto;
+  background-position: center, center, right 16px center, center;
 }
 .hub-tile-private { --tile-art: url("/chips/cluster-three.webp"); background-size: auto, auto, 96px, auto; background-position: center, center, right 14px bottom 12px, center; }
 .hub-tile-gold { --tile-art: url("/chips/stack-three.webp"); background-size: auto, auto, 108px, auto; background-position: center, center, right 12px bottom 10px, center; }

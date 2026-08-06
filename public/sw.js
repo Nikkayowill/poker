@@ -22,11 +22,17 @@
 // "High Roller Arcade" logo at the same URLs. Stale-while-revalidate would
 // get there eventually, but a home-screen icon is precisely the asset a
 // player never re-fetches, so the cache name changes to force it.
-const CACHE_NAME = "stackchips-shell-v6";
+// v7: /favicon.ico is new, app/icon.svg was repaired (a double hyphen inside
+// an XML comment made it unparseable, so strict parsers refused to draw it at
+// all), and the manifest's theme/background colours moved to matte obsidian.
+// Same reasoning as v6: the cached copies are exactly the assets a returning
+// player never re-fetches on their own.
+const CACHE_NAME = "stackchips-shell-v7";
 const SHELL = [
   "/",
   "/manifest.webmanifest",
   "/icon.svg",
+  "/favicon.ico",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/icon-512-maskable.png",

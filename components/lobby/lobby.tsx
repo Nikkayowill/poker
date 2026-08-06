@@ -128,7 +128,7 @@ export function Lobby({
       <main className="lobby lobby-hub">
         <section className="hub">
           <div className="hub-head">
-            <div className="lobby-kicker">StackChips · 6-max</div>
+            <div className="lobby-kicker">The floor</div>
             <h1>Preparing your seat…</h1>
             {error && <p className="form-error"><X size={14} /> {error}</p>}
           </div>
@@ -193,8 +193,13 @@ export function Lobby({
           </div>
         )}
         <InstallPrompt />
+        {/* The same pairing the landing page's sections use: a micro-label at
+            10px/.25em tracking over a large light serif line. The hub used to
+            state itself in a 34-52px serif under a "StackChips · 6-max"
+            kicker, which was close but not the same type, so signing in
+            stepped down a size and changed the label's voice. */}
         <div className="hub-head">
-          <div className="lobby-kicker">StackChips · 6-max</div>
+          <div className="lobby-kicker">The floor</div>
           <h1>Pick your game.</h1>
           <label className="hub-name" htmlFor="player-name">
             <span>Player name</span>
@@ -214,6 +219,12 @@ export function Lobby({
             renders and the chip/avatar art from public/ -- rather than a flat
             card with an icon dropped in it. */}
         <div className="hub-grid">
+          {/* Named for the game, not for the verb.
+              "Join table" was unambiguous when a table was the only thing in
+              this app; next to Blackjack, Hi-Lo, Wordle and Connections it is
+              the one tile that never says what it deals. The title is
+              therefore constant and the status moved into the sub-line, so
+              the hero cannot stop naming the game while it is busy. */}
           <button
             type="button"
             className="hub-tile hub-tile-wide hub-tile-play"
@@ -221,8 +232,15 @@ export function Lobby({
             onClick={() => setBuyInMode("join")}
           >
             <span className="hub-tile-body">
-              <strong>{!sessionReady ? "Preparing your seat…" : loading ? "Joining table…" : "Join table"}</strong>
-              <small>Quick seat at six-max, stakes of your choosing</small>
+              <span className="hub-tile-kicker">Poker · No-limit Hold&rsquo;em</span>
+              <strong>Texas Hold&rsquo;em</strong>
+              <small>
+                {!sessionReady
+                  ? "Preparing your seat…"
+                  : loading
+                    ? "Joining table…"
+                    : "Six-max cash tables · Take the next open seat"}
+              </small>
             </span>
             <ArrowRight className="hub-tile-go" size={18} aria-hidden="true" />
           </button>

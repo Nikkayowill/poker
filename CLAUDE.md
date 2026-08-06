@@ -44,6 +44,55 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 ## Active milestone
 
 - Track: `ui-redesign-foundation`
+- **A repo-quality pass ran on 2026-08-06 and deleted a dead subsystem.** Four
+  things worth carrying forward:
+  - `lib/server/table-manager/` (13 files) and `lib/server/cash-game-session-
+    store.ts` + its test are **gone** — 2,563 lines that nothing imported. The
+    persistent Node worker they were written for never had an entry point, and
+    `assertPersistentTableRuntime()` threw under `process.env.VERCEL` anyway.
+    The live cash-out path was always `creditGold` in
+    `app/api/games/[id]/actions/route.ts`. Recover with
+    `git checkout c372499 -- lib/server/table-manager lib/server/cash-game-session-store.ts` if a worker is ever built for real. The `cash_game_sessions` table, its RPCs and
+    its migration **stay in the database** — migrations here are append-only,
+    and dropping a ledger table to tidy a code deletion is not a trade worth
+    making. `lib/game/table-channel.ts` is now the sole surviving definition of
+    that broadcast envelope, and its header says so.
+  - Also deleted: `components/table/pot-pile.tsx` (this file already claimed it
+    was gone), `components/table/room-code-chip.tsx` with its `.room-code-chip`
+    rules in `05-game-header.css`, and `lib/ai/models.ts`. `.playwright-mcp/`
+    is untracked and ignored. Note `lib/game/pot-chips.ts` is **alive** —
+    `lib/scene/` reads it; only the CSS-era component died.
+  - `STAKES_TIERS` in `lib/game/tiers.ts` is now a `readonly` tuple and
+    `StakesTier` is derived from it, so the ladder has one definition instead
+    of three. Four routes had hand-written `z.enum(["1k", …, "500k"])`; they
+    take `z.enum(STAKES_TIERS)` now. That drift was a live hazard, not a
+    tidiness point: a ninth tier would have been offered by the lobby, priced
+    by `TIER_CONFIG`, and then rejected by every route that takes a wager.
+    `lib/game/tiers.test.ts` pins the derivation.
+  - The e2e suite is **41/41 green**. `tests/e2e/multiplayer.spec.ts` had been
+    failing since `b8cfabf`, which renamed the hub tile to "Texas Hold'em"
+    without updating the selector that looked for "Join table". That commit's
+    message cites unit tests, eslint and `next build` — the three gates that
+    cannot see a Playwright selector. Run `npm run test:e2e` before claiming a
+    UI-copy change is done; the CSS/e2e gap is exactly what
+    `vitest.config.ts`'s comment warns about for stylesheets.
+- **Two shared modules replaced copy-paste, both with tests the originals could
+  not have had.** `lib/server/arcade-request.ts` holds `ArcadeRequestError`
+  (generic over snapshot *and* over each game's `reason` vocabulary) plus
+  `toArcadeErrorResponse`; blackjack/hi-lo/wordle/connections keep one-line
+  subclasses so `instanceof` still narrows per game, which both the services
+  and their tests rely on. The four copies had already drifted — two had
+  dropped `reason` entirely. `lib/profile/stored-preference.ts` +
+  `components/use-stored-preference.ts` replace three near-identical
+  localStorage blocks in `poker-app.tsx` (22→10 `useState`, 18→15 `useEffect`).
+  The pure half is in `lib/` deliberately: `vitest.config.ts` collects only
+  `lib/` and `app/`, and the legacy-key migration living in a component meant
+  the one piece of logic with a real incident behind it — the StackChips rename
+  silently un-muting everyone who had muted the app — was unreachable by
+  `npm test`. It has seven cases now. The hook's `apply(value, cause)` carries
+  `"restore" | "change"` because enabling sound plays a confirming click and
+  restoring it must not: that distinction was implicit in the old code and is
+  the kind of thing an extraction loses silently.
 - Mobile PWA launch prep is done and live on production (installable shell,
   safe-area fixes, the Adsterra CSP fix) — see the deploy note further down
   for the exact commit/PR this shipped in. Menu music is done as an *engine*

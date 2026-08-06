@@ -57,7 +57,11 @@ test("a first-time mobile player can join from the lobby and always see their st
     await page.goto("/");
     await continueAsGuest(page);
 
-    const joinButton = page.getByRole("button", { name: /^Join table/i });
+    // The hub tile is named for its game, not for the verb -- it read
+    // "Join table" until b8cfabf, when it became one of five game tiles and
+    // was the only one that never said what it dealt. The dialog's confirm
+    // button below is still the verb, which is why these two differ.
+    const joinButton = page.getByRole("button", { name: /Texas Hold/i });
     await expect(joinButton).toBeEnabled();
     await page.getByLabel("Player name").fill("Mobile Player");
     await joinButton.click();

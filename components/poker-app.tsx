@@ -20,6 +20,8 @@ import {
 } from "@/lib/game/table-channel";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { dailyGoldState } from "@/lib/profile/daily-gold";
+import { parseEnabledFlag } from "@/lib/profile/stored-preference";
+import { useStoredPreference } from "@/components/use-stored-preference";
 import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
 import {
   BET_STYLE_STORAGE_KEY,
@@ -73,9 +75,29 @@ export function PokerApp() {
   const [rememberSession, setRememberSession] = useState(true);
   const [signInPending, setSignInPending] = useState(false);
   const [savePromptDismissed, setSavePromptDismissed] = useState(false);
-  const [soundEnabled, setSoundEnabledState] = useState(true);
-  const [musicEnabled, setMusicEnabledState] = useState(true);
-  const [betStyle, setBetStyleState] = useState<BetAnimationStyle>(DEFAULT_BET_STYLE);
+  const [soundEnabled, setSoundEnabledState] = useStoredPreference<boolean>({
+    key: SOUND_STORAGE_KEY,
+    legacyKey: LEGACY_SOUND_STORAGE_KEY,
+    fallback: true,
+    parse: parseEnabledFlag,
+    apply: (enabled, cause) => {
+      setSoundEnabled(enabled);
+      // Only ever as confirmation of a deliberate unmute, and only after the
+      // line above has actually unmuted the channel it plays through.
+      if (enabled && cause === "change") playSound("ui");
+    },
+  });
+  const [musicEnabled, setMusicEnabledState] = useStoredPreference<boolean>({
+    key: MUSIC_STORAGE_KEY,
+    fallback: true,
+    parse: parseEnabledFlag,
+    apply: setMenuMusicEnabled,
+  });
+  const [betStyle, setBetStyleState] = useStoredPreference<BetAnimationStyle>({
+    key: BET_STYLE_STORAGE_KEY,
+    fallback: DEFAULT_BET_STYLE,
+    parse: normalizeBetStyle,
+  });
   const [claimingGold, setClaimingGold] = useState(false);
   const [goldFlash, setGoldFlash] = useState(false);
   // Set only by hostPrivate, cleared on dismiss: the share sheet is a
@@ -88,71 +110,21 @@ export function PokerApp() {
   const accountLinkPromiseRef = useRef<Promise<boolean> | null>(null);
 
   useEffect(() => {
-    // New key first; fall back to the pre-rename one exactly once, then carry
-    // the value across and drop the old key so this only ever happens on the
-    // first load after the rename. Someone with neither key keeps the
-    // "enabled by default" behaviour untouched.
-    let stored = window.localStorage.getItem(SOUND_STORAGE_KEY);
-    if (stored === null) {
-      const legacy = window.localStorage.getItem(LEGACY_SOUND_STORAGE_KEY);
-      if (legacy !== null) {
-        stored = legacy;
-        window.localStorage.setItem(SOUND_STORAGE_KEY, legacy);
-        window.localStorage.removeItem(LEGACY_SOUND_STORAGE_KEY);
-      }
-    }
-    const enabled = stored !== "false";
-    setSoundEnabled(enabled);
-    const timer = window.setTimeout(() => setSoundEnabledState(enabled), 0);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    const stored = window.localStorage.getItem(MUSIC_STORAGE_KEY);
-    const enabled = stored !== "false";
-    setMenuMusicEnabled(enabled);
-    const timer = window.setTimeout(() => setMusicEnabledState(enabled), 0);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
     const timer = window.setTimeout(() => setRememberSession(readRememberAuthSession()), 0);
     return () => window.clearTimeout(timer);
   }, []);
 
   const toggleSound = useCallback(() => {
-    setSoundEnabledState((current) => {
-      const next = !current;
-      setSoundEnabled(next);
-      window.localStorage.setItem(SOUND_STORAGE_KEY, String(next));
-      if (next) playSound("ui");
-      return next;
-    });
-  }, []);
+    setSoundEnabledState((current) => !current);
+  }, [setSoundEnabledState]);
 
   const toggleMenuMusic = useCallback(() => {
-    setMusicEnabledState((current) => {
-      const next = !current;
-      window.localStorage.setItem(MUSIC_STORAGE_KEY, String(next));
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    // Same deferred-set idiom as the sound and music preferences above:
-    // hydration renders the default, the stored choice lands a tick later.
-    const stored = normalizeBetStyle(window.localStorage.getItem(BET_STYLE_STORAGE_KEY));
-    const timer = window.setTimeout(() => setBetStyleState(stored), 0);
-    return () => window.clearTimeout(timer);
-  }, []);
+    setMusicEnabledState((current) => !current);
+  }, [setMusicEnabledState]);
 
   const cycleBetStyle = useCallback(() => {
-    setBetStyleState((current) => {
-      const next = nextBetStyle(current);
-      window.localStorage.setItem(BET_STYLE_STORAGE_KEY, next);
-      return next;
-    });
-  }, []);
+    setBetStyleState(nextBetStyle);
+  }, [setBetStyleState]);
 
   /**
    * The daily claim, moved off the navbar.

@@ -20,6 +20,7 @@ import {
   getActiveArcadeRound,
   type StoredArcadeRound,
 } from "./arcade-round-store";
+import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { creditGold, ensureProfile, spendGold } from "./profile-store";
 
 /**
@@ -53,17 +54,8 @@ export interface HiLoView {
   profile: PlayerProfile;
 }
 
-export class HiLoRequestError extends Error {
-  readonly status: number;
-  /** Sent with the error so a client that fell out of sync re-renders from truth instead of guessing. */
-  readonly round?: HiLoSnapshot;
-
-  constructor(message: string, status: number, round?: HiLoSnapshot) {
-    super(message);
-    this.name = "HiLoRequestError";
-    this.status = status;
-    this.round = round;
-  }
+export class HiLoRequestError extends ArcadeRequestError<HiLoSnapshot> {
+  readonly name = "HiLoRequestError";
 }
 
 type StoredHiLo = StoredArcadeRound<HiLoRound>;
@@ -183,13 +175,13 @@ export async function playHiLoCall(
   if (!current) throw new HiLoRequestError("You do not have a Hi-Lo round in progress.", 404);
 
   if (current.id !== input.roundId || current.version !== input.version) {
-    throw new HiLoRequestError("That round moved on. Here is where it actually stands.", 409, snapshot(current));
+    throw new HiLoRequestError("That round moved on. Here is where it actually stands.", 409, { round: snapshot(current) });
   }
   if (!legalHiLoCalls(current.round)[input.call]) {
     // Either the round is over, or the call cannot be won by any card -- the
     // engine returns the round unchanged for both, so catching it here is
     // what keeps a no-op from looking like a played round.
-    throw new HiLoRequestError(`You cannot call ${input.call} on this card.`, 409, snapshot(current));
+    throw new HiLoRequestError(`You cannot call ${input.call} on this card.`, 409, { round: snapshot(current) });
   }
 
   const next = callHiLo(current.round, input.call);
@@ -200,7 +192,7 @@ export async function playHiLoCall(
     throw new HiLoRequestError(
       "That round moved on. Here is where it actually stands.",
       409,
-      live ? snapshot(live) : undefined,
+      { round: live ? snapshot(live) : undefined },
     );
   }
 
@@ -208,22 +200,7 @@ export async function playHiLoCall(
   return view(stored, profile);
 }
 
-/**
- * Maps a thrown error to the response both Hi-Lo routes send. Lives here
- * rather than beside the handlers because every other file under app/api is a
- * route.ts, and lib/server/api-auth.ts already established that a lib/server
- * module may hand back a NextResponse.
- */
+/** Maps a thrown error to the response both Hi-Lo routes send. */
 export function toHiLoErrorResponse(error: unknown): NextResponse {
-  if (error instanceof HiLoRequestError) {
-    return NextResponse.json(
-      { error: error.message, ...(error.round ? { round: error.round } : {}) },
-      { status: error.status },
-    );
-  }
-  // "Not enough Gold." comes back from spendGold's own guard, which is the
-  // authority -- any balance check before it is only ever a stale read.
-  const message = error instanceof Error ? error.message : "That round could not be played.";
-  const status = message === "Not enough Gold." ? 400 : 500;
-  return NextResponse.json({ error: message }, { status });
+  return toArcadeErrorResponse(error, "That round could not be played.");
 }

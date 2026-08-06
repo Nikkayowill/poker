@@ -19,6 +19,7 @@ import {
   getPuzzleRound,
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
+import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { ensureProfile } from "./profile-store";
 
 /**
@@ -58,28 +59,15 @@ export interface WordleView {
   msUntilNextPuzzle: number;
 }
 
-export class WordleRequestError extends Error {
-  readonly status: number;
-  /**
-   * Distinguishes the rejections that are ordinary play from the ones that are
-   * faults. `unknown-word` is a player typing a non-word: expected, costs
-   * nothing, and the board should shrug rather than show an error banner.
-   */
-  readonly reason?: "unknown-word" | "rolled-over" | "stale";
-  /** Sent with the error so a client that fell out of sync re-renders from truth instead of guessing. */
-  readonly round?: WordleSnapshot;
-
-  constructor(
-    message: string,
-    status: number,
-    options: { reason?: "unknown-word" | "rolled-over" | "stale"; round?: WordleSnapshot } = {},
-  ) {
-    super(message);
-    this.name = "WordleRequestError";
-    this.status = status;
-    this.reason = options.reason;
-    this.round = options.round;
-  }
+/**
+ * `unknown-word` is a player typing a non-word: expected, costs nothing, and
+ * the board should shrug rather than show an error banner.
+ */
+export class WordleRequestError extends ArcadeRequestError<
+  WordleSnapshot,
+  "unknown-word" | "rolled-over" | "stale"
+> {
+  readonly name = "WordleRequestError";
 }
 
 type StoredWordle = StoredPuzzleRound<WordleRound>;
@@ -244,16 +232,5 @@ export async function playWordleGuess(
  * module may hand back a NextResponse.
  */
 export function toWordleErrorResponse(error: unknown): NextResponse {
-  if (error instanceof WordleRequestError) {
-    return NextResponse.json(
-      {
-        error: error.message,
-        ...(error.reason ? { reason: error.reason } : {}),
-        ...(error.round ? { round: error.round } : {}),
-      },
-      { status: error.status },
-    );
-  }
-  const message = error instanceof Error ? error.message : "That puzzle could not be played.";
-  return NextResponse.json({ error: message }, { status: 500 });
+  return toArcadeErrorResponse(error, "That puzzle could not be played.");
 }

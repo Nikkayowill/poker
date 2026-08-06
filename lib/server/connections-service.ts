@@ -19,6 +19,7 @@ import {
   getPuzzleRound,
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
+import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { ensureProfile } from "./profile-store";
 
 /**
@@ -55,23 +56,12 @@ export interface ConnectionsView {
   msUntilNextPuzzle: number;
 }
 
-export class ConnectionsRequestError extends Error {
-  readonly status: number;
-  /** `repeat` is ordinary play -- a selection already tried, refused without charging a mistake. */
-  readonly reason?: "repeat" | "rolled-over" | "stale";
-  readonly round?: ConnectionsSnapshot;
-
-  constructor(
-    message: string,
-    status: number,
-    options: { reason?: "repeat" | "rolled-over" | "stale"; round?: ConnectionsSnapshot } = {},
-  ) {
-    super(message);
-    this.name = "ConnectionsRequestError";
-    this.status = status;
-    this.reason = options.reason;
-    this.round = options.round;
-  }
+/** `repeat` is ordinary play -- a selection already tried, refused without charging a mistake. */
+export class ConnectionsRequestError extends ArcadeRequestError<
+  ConnectionsSnapshot,
+  "repeat" | "rolled-over" | "stale"
+> {
+  readonly name = "ConnectionsRequestError";
 }
 
 type StoredConnections = StoredPuzzleRound<ConnectionsRound>;
@@ -222,16 +212,5 @@ export async function playConnectionsGuess(
 
 /** Maps a thrown error to the response both Connections routes send. Same placement rationale as Wordle's. */
 export function toConnectionsErrorResponse(error: unknown): NextResponse {
-  if (error instanceof ConnectionsRequestError) {
-    return NextResponse.json(
-      {
-        error: error.message,
-        ...(error.reason ? { reason: error.reason } : {}),
-        ...(error.round ? { round: error.round } : {}),
-      },
-      { status: error.status },
-    );
-  }
-  const message = error instanceof Error ? error.message : "That puzzle could not be played.";
-  return NextResponse.json({ error: message }, { status: 500 });
+  return toArcadeErrorResponse(error, "That puzzle could not be played.");
 }

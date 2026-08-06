@@ -1,0 +1,136 @@
+/*
+ * Layout for the 3D stage and its HTML overlay. A CSS module on purpose:
+ * the numbered global cascade in app/styles is untouched by this branch,
+ * and deleting components/game3d removes every rule here with it.
+ */
+
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 480px;
+  background: #0a0a0b;
+  overflow: hidden;
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #8d84a3;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+/* The overlay plane: HTML stays crisp above the canvas. Only interactive
+ * children re-enable pointer events, so the felt stays inspectable. */
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.hudTop {
+  position: absolute;
+  top: 14px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  color: #f5f2ea;
+  font-variant-numeric: tabular-nums;
+}
+
+.potReadout {
+  background: rgba(10, 10, 11, 0.72);
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+}
+
+.potReadout span {
+  color: #db9c0b;
+  margin-left: 6px;
+}
+
+.message {
+  position: absolute;
+  top: 60px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #b7aec9;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.actionBar {
+  position: absolute;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.actionButton {
+  min-width: 118px;
+  padding: 14px 22px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #fff;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 6px 20px rgba(0, 0, 0, 0.55);
+  transition: transform 120ms ease, filter 120ms ease;
+}
+
+.actionButton:hover:enabled {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+
+.actionButton:active:enabled {
+  transform: translateY(1px);
+}
+
+.actionButton:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.actionButton:focus-visible {
+  outline: 2px solid #b28ef0;
+  outline-offset: 2px;
+}
+
+.fold {
+  background: linear-gradient(168deg, #e5403e 0%, #c31312 55%, #9c100f 100%);
+}
+
+.call {
+  background: linear-gradient(168deg, #35a56d 0%, #23784e 55%, #1b5f3d 100%);
+}
+
+.raise {
+  background: linear-gradient(168deg, #f0bc45 0%, #db9c0b 55%, #b57f06 100%);
+  color: #241a02;
+}
+
+.subLabel {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.85;
+  margin-top: 2px;
+}

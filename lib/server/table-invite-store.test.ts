@@ -8,7 +8,9 @@ import {
   __resetTableInvitesMemory,
   createTableInvite,
   expireStaleTableInvites,
+  findPendingTableInvite,
   getPendingTableInvites,
+  respondToTableInvite,
   TABLE_INVITE_TTL_MS,
 } from "./table-invite-store";
 
@@ -182,5 +184,109 @@ describe("invite expiry", () => {
 
     expect(await expireStaleTableInvites()).toBe(0);
     expect(await getPendingTableInvites(guest)).toHaveLength(1);
+  });
+});
+
+/** Sends one invite and hands back the pieces every settle test needs. */
+async function sentInvite() {
+  const [host, guest] = [await newPlayer("Host"), await newPlayer("Guest")];
+  const table = await newPrivateTable();
+  const sent = await createTableInvite(host, guest, table.id);
+  if (sent.status !== "sent") throw new Error(`expected sent, got ${sent.status}`);
+  return { host, guest, table, inviteId: sent.inviteId };
+}
+
+describe("settling a table invite", () => {
+  it("hands the room code to the accepting caller and nobody else", async () => {
+    const { guest, table, inviteId } = await sentInvite();
+
+    const accepted = await respondToTableInvite(guest, inviteId, "accept");
+    // The one place the code is allowed to surface: a server-side return value
+    // the accept route redeems into a seat. It is still absent from the wire
+    // payload, which the read-path test above pins.
+    expect(accepted).toEqual({ status: "accepted", gameId: table.id, roomCode: table.roomCode });
+    expect(await getPendingTableInvites(guest)).toEqual([]);
+  });
+
+  it("accepts exactly once, so a double tap cannot buy in twice", async () => {
+    const { guest, inviteId } = await sentInvite();
+
+    expect((await respondToTableInvite(guest, inviteId, "accept")).status).toBe("accepted");
+    // The status predicate on the write is the whole guarantee: the second
+    // call updates zero rows rather than returning a second redeemable code.
+    expect(await respondToTableInvite(guest, inviteId, "accept")).toEqual({ status: "not_found" });
+  });
+
+  it("declines without leaking the code, and clears the invite", async () => {
+    const { guest, inviteId } = await sentInvite();
+
+    expect(await respondToTableInvite(guest, inviteId, "decline")).toEqual({ status: "declined" });
+    expect(await getPendingTableInvites(guest)).toEqual([]);
+    // Declining is terminal, not a deferral -- accepting afterwards must fail.
+    expect(await respondToTableInvite(guest, inviteId, "accept")).toEqual({ status: "not_found" });
+  });
+
+  it("refuses anyone the invite was not addressed to, including the inviter", async () => {
+    const { host, inviteId } = await sentInvite();
+    const stranger = await newPlayer("Stranger");
+
+    expect(await respondToTableInvite(host, inviteId, "accept")).toEqual({ status: "not_found" });
+    expect(await respondToTableInvite(stranger, inviteId, "accept")).toEqual({ status: "not_found" });
+    expect(await respondToTableInvite(stranger, randomUUID(), "accept")).toEqual({ status: "not_found" });
+  });
+
+  it("cannot be accepted after the window closes, with no sweep in between", async () => {
+    const { guest, inviteId } = await sentInvite();
+
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + TABLE_INVITE_TTL_MS + 1_000);
+
+    // Still marked `pending` in the row: expiry has to be a predicate on the
+    // write, exactly as it is on the read.
+    expect(await respondToTableInvite(guest, inviteId, "accept")).toEqual({ status: "not_found" });
+  });
+
+  it("will not redeem an invite from someone the invitee has since blocked", async () => {
+    const { host, guest, inviteId } = await sentInvite();
+    await blockProfile(guest, host);
+
+    expect(await respondToTableInvite(guest, inviteId, "accept")).toEqual({ status: "not_found" });
+    // Refused without being consumed: lifting the block leaves the live invite
+    // still redeemable, rather than making the inviter send a fresh one.
+    expect(await respondToTableInvite(guest, inviteId, "decline")).toEqual({ status: "declined" });
+  });
+});
+
+describe("peeking at an invite before redeeming it", () => {
+  it("resolves the table an open invite points at, without the code", async () => {
+    const { guest, table, inviteId } = await sentInvite();
+
+    const peeked = await findPendingTableInvite(guest, inviteId);
+    expect(peeked?.gameId).toBe(table.id);
+    expect(JSON.stringify(peeked)).not.toContain(table.roomCode);
+  });
+
+  it("does not settle the invite it peeked at", async () => {
+    const { guest, inviteId } = await sentInvite();
+
+    await findPendingTableInvite(guest, inviteId);
+    // The point of the peek: the accept route can report "that table filled
+    // up" and still leave the player something to redeem.
+    expect(await getPendingTableInvites(guest)).toHaveLength(1);
+    expect((await respondToTableInvite(guest, inviteId, "accept")).status).toBe("accepted");
+  });
+
+  it("is blind to a settled invite, a lapsed one, and somebody else's", async () => {
+    const { host, guest, inviteId } = await sentInvite();
+    expect(await findPendingTableInvite(host, inviteId)).toBeNull();
+
+    const lapsing = await sentInvite();
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + TABLE_INVITE_TTL_MS + 1_000);
+    expect(await findPendingTableInvite(lapsing.guest, lapsing.inviteId)).toBeNull();
+    vi.useRealTimers();
+
+    await respondToTableInvite(guest, inviteId, "decline");
+    expect(await findPendingTableInvite(guest, inviteId)).toBeNull();
   });
 });

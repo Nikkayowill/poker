@@ -44,6 +44,23 @@ export function tableInviteExpiry(from: Date = new Date()): string {
   return new Date(from.getTime() + TABLE_INVITE_TTL_MS).toISOString();
 }
 
+export type RespondInviteAction = "accept" | "decline";
+
+/**
+ * The outcome of settling an invite.
+ *
+ * `accepted` is the only branch carrying the room code, and it goes to the
+ * route rather than to the client: the route redeems it into a seat and
+ * serialises the snapshot, never the code. Everything the caller may not act
+ * on -- a lapsed invite, someone else's, one already settled -- collapses into
+ * `not_found`, the same way respondToFriendRequest refuses to distinguish
+ * "does not exist" from "not yours".
+ */
+export type RespondInviteResult =
+  | { status: "accepted"; gameId: string; roomCode: string }
+  | { status: "declined" }
+  | { status: "not_found" };
+
 export type CreateInviteResult =
   | { status: "sent"; inviteId: string; expiresAt: string }
   | { status: "already_pending" }
@@ -373,4 +390,134 @@ export async function createTableInvite(
     throw new Error(`Could not send that invite: ${error.message}`);
   }
   return { status: "sent", inviteId: String(data.id), expiresAt };
+}
+
+/**
+ * The table a live invite points at, without settling it.
+ *
+ * Exists so the accept route can tell a player "that table filled up" or "you
+ * need more Gold" *before* it consumes their one-shot invite -- see the
+ * ordering note on that route. Returns the game id only: `room_code` is not
+ * selected here for the same reason getPendingTableInvites does not select it,
+ * and a caller that wants to redeem the invite has respondToTableInvite.
+ *
+ * This is a peek, never a guard. Whatever it reports is re-decided under the
+ * status predicate in respondToTableInvite, which is the only thing standing
+ * between two tabs and two buy-ins.
+ */
+export async function findPendingTableInvite(
+  profileId: string,
+  inviteId: string,
+): Promise<{ gameId: string; expiresAt: string } | null> {
+  const me = profileId.toLowerCase();
+  const nowIso = new Date().toISOString();
+
+  const supabase = adminClient();
+  if (!supabase) {
+    const invite = memoryInvites.get(inviteId);
+    if (
+      !invite
+      || invite.status !== "pending"
+      || invite.inviteeId !== me
+      || invite.expiresAt <= nowIso
+    ) {
+      return null;
+    }
+    return { gameId: invite.gameId, expiresAt: invite.expiresAt };
+  }
+
+  const { data, error } = await supabase
+    .from("table_invites")
+    .select("game_id, expires_at")
+    .eq("id", inviteId)
+    .eq("invitee_id", me)
+    .eq("status", "pending")
+    .gt("expires_at", nowIso)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read that invite: ${error.message}`);
+  if (!data) return null;
+  return { gameId: String(data.game_id), expiresAt: String(data.expires_at) };
+}
+
+/**
+ * Settles an invite the caller was sent.
+ *
+ * The status predicate on the write is what makes accepting exactly-once, and
+ * that matters more here than it does for friend requests: the route redeems
+ * an accepted invite into a *seat*, which costs a buy-in. A double-tapped
+ * Accept, a retried request or two tabs must update one row between them, so
+ * the compare-and-set and the read of `room_code` are one statement rather
+ * than a check followed by a select. Same shape as blackjack_rounds' version
+ * guard, and the same rule applies: a lost race must not pay out -- here,
+ * must not seat twice.
+ *
+ * Expiry is a predicate on the row, not a consequence of the sweep, exactly as
+ * in getPendingTableInvites -- accepting one second after the window closes has
+ * to fail even when nothing has marked the row `expired` yet.
+ */
+export async function respondToTableInvite(
+  profileId: string,
+  inviteId: string,
+  action: RespondInviteAction,
+): Promise<RespondInviteResult> {
+  const me = profileId.toLowerCase();
+  const now = new Date();
+  const stamp = now.toISOString();
+  const settled = action === "accept" ? "accepted" : "declined";
+
+  const supabase = adminClient();
+  if (!supabase) {
+    const invite = memoryInvites.get(inviteId);
+    if (
+      !invite
+      || invite.status !== "pending"
+      || invite.inviteeId !== me
+      || invite.expiresAt <= stamp
+    ) {
+      return { status: "not_found" };
+    }
+    // Checked before the row is consumed: blocking someone after they invited
+    // you has to stop the invite working, and burning it on the way to saying
+    // so would leave the inviter unable to re-send once the block lifts.
+    if (action === "accept" && (await isBlockedEitherWay(me, invite.inviterId))) {
+      return { status: "not_found" };
+    }
+
+    invite.status = settled;
+    invite.respondedAt = stamp;
+    return action === "accept"
+      ? { status: "accepted", gameId: invite.gameId, roomCode: invite.roomCode }
+      : { status: "declined" };
+  }
+
+  if (action === "accept") {
+    // One read before the write, for the block only. Everything else the
+    // caller could lie about is decided by the predicates on the update.
+    const { data: owner, error: ownerError } = await supabase
+      .from("table_invites")
+      .select("inviter_id")
+      .eq("id", inviteId)
+      .eq("invitee_id", me)
+      .eq("status", "pending")
+      .maybeSingle();
+    if (ownerError) throw new Error(`Could not read that invite: ${ownerError.message}`);
+    if (!owner) return { status: "not_found" };
+    if (await isBlockedEitherWay(me, String(owner.inviter_id))) return { status: "not_found" };
+  }
+
+  const { data, error } = await supabase
+    .from("table_invites")
+    .update({ status: settled, responded_at: stamp })
+    .eq("id", inviteId)
+    .eq("invitee_id", me)
+    .eq("status", "pending")
+    .gt("expires_at", stamp)
+    .select("game_id, room_code");
+  if (error) throw new Error(`Could not update that invite: ${error.message}`);
+
+  const row = (data ?? [])[0];
+  if (!row) return { status: "not_found" };
+  return action === "accept"
+    ? { status: "accepted", gameId: String(row.game_id), roomCode: String(row.room_code) }
+    : { status: "declined" };
 }

@@ -22,6 +22,7 @@ import {
 } from "./arcade-round-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { creditGold, ensureProfile, spendGold } from "./profile-store";
+import { awardWager } from "./progression-store";
 
 /**
  * Everything between a Hi-Lo request and the wallet.
@@ -152,6 +153,13 @@ export async function dealHiLo(
     }
     throw error;
   }
+
+  // The wager is real from here: createArcadeRound succeeded, so this cannot
+  // credit XP for a round that was rolled back and refunded above. Awaited so a
+  // milestone payout lands in the balance this response carries; awardWager
+  // swallows its own failures, so progression cannot fail a dealt round.
+  const award = await awardWager(profile.id, token, stake);
+  if (award?.profile) profile = award.profile;
 
   return { ...view(stored, profile), resumed: false };
 }

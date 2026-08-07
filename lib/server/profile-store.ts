@@ -53,7 +53,15 @@ function initials(displayName: string) {
  */
 const STARTING_GOLD = 2000;
 const SIGNUP_GOLD_TARGET = 10000;
-const DAILY_GOLD_GRANT = 1000;
+/**
+ * The base daily grant, before any streak multiplier.
+ *
+ * Exported because the streak lives outside this module -- claimDailyGold takes
+ * the already-multiplied amount, and lib/progression/streak.ts' dailyGrantFor
+ * needs the base to multiply. Keeping the number here means the base is still
+ * defined once, beside the profile it credits.
+ */
+export const DAILY_GOLD_GRANT = 1000;
 
 /**
  * The broke-player recovery grant. Deliberately small -- exactly one seat at
@@ -371,11 +379,21 @@ export async function creditGold(token: string, amount: number): Promise<PlayerP
 }
 
 /**
- * Credits the flat daily amount once per UTC calendar day. Throws if
- * already claimed today rather than silently no-op-ing, so the client can
- * tell the difference between "claimed" and "nothing happened."
+ * Credits the daily amount once per UTC calendar day. Throws if already
+ * claimed today rather than silently no-op-ing, so the client can tell the
+ * difference between "claimed" and "nothing happened."
+ *
+ * `amount` is a parameter rather than the constant because the streak
+ * multiplier (lib/progression/streak.ts) is applied by the caller, which is the
+ * only place that knows how many consecutive days this is. The once-per-day
+ * rule is still decided here and inside claim_daily_gold, so a caller that
+ * passes a larger amount cannot claim twice with it.
  */
-export async function claimDailyGold(token: string): Promise<PlayerProfile> {
+export async function claimDailyGold(
+  token: string,
+  amount: number = DAILY_GOLD_GRANT,
+): Promise<PlayerProfile> {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid daily grant.");
   const supabase = adminClient();
   const now = new Date();
   if (!supabase) {
@@ -391,7 +409,7 @@ export async function claimDailyGold(token: string): Promise<PlayerProfile> {
     }
     const next: StoredProfile = {
       ...current,
-      goldBalance: current.goldBalance + DAILY_GOLD_GRANT,
+      goldBalance: current.goldBalance + amount,
       lastDailyClaimAt: now.toISOString(),
       updatedAt: now.toISOString(),
     };
@@ -410,7 +428,7 @@ export async function claimDailyGold(token: string): Promise<PlayerProfile> {
   if (!gate.user_id) throw new Error("Save your progress to claim daily Gold.");
 
   const { data, error } = await supabase
-    .rpc("claim_daily_gold", { p_token: token, p_amount: DAILY_GOLD_GRANT })
+    .rpc("claim_daily_gold", { p_token: token, p_amount: amount })
     .single();
   if (error) throw new Error(`Could not claim Gold: ${error.message}`);
   const result = data as { gold_balance: number; claimed: boolean } | null;

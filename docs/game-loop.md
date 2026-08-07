@@ -134,15 +134,23 @@ here for three separate reasons, any one of which is fatal.
 **A manual "Deal next hand" button.** This is what the table used to have, and
 it was removed rather than kept alongside the timer: two ways to start a hand
 means a button that is usually a no-op by the time it is pressed, and clutter
-in the one strip that has to stay legible. The one place it survives is the
-busted player's "Close seat", which is a different decision wearing the same
-action. The cost is that a table which *cannot* deal again has no button to
-offer, so ActionBar reads `nextHandAt` and offers "Return to lobby" instead of
-an empty control row.
+in the one strip that has to stay legible. Nothing forces a deal by hand any
+more — the busted player's "Close seat", which was the same action wearing a
+different decision, is gone too; a busted seat now offers only Rebuy, and the
+header's persistent "Leave table" is the exit. The cost is that a table which
+*cannot* deal again has no button to offer, so ActionBar reads `nextHandAt`
+and offers "Return to lobby" instead of an empty control row.
 
-**A persistent Node worker.** The code for one exists in
-`lib/server/table-manager/`, and `assertPersistentTableRuntime()` throws
-whenever `process.env.VERCEL` is set, so none of it runs in production today.
+**A persistent Node worker.** Code for one used to exist under
+`lib/server/table-manager/`, together with a `cash_game_sessions` ledger in
+`lib/server/cash-game-session-store.ts`. Neither was ever reachable: the entry
+point had no caller, and `assertPersistentTableRuntime()` threw whenever
+`process.env.VERCEL` was set, so none of it could run in production. It was
+deleted as dead weight — recover it with
+`git checkout c372499 -- lib/server/table-manager lib/server/cash-game-session-store.ts`
+if a worker is ever built for real. The `cash_game_sessions` table and its RPCs remain in the
+database, since migrations here are append-only.
+
 Keeping the loop in the browsers is what lets guest play stay first-class: a
 seated guest already holds the session cookie the route requires, with no
 account, no JWT and no extra infrastructure.

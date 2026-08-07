@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createGame, toSnapshot } from "@/lib/game/engine";
-import { CHEAPEST_TIER, clampBuyIn, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
+import { CHEAPEST_TIER, clampBuyIn, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { createStoredGame, persistenceMode } from "@/lib/server/game-store";
 import { creditGold, ensureProfile, isBanned, recordSeenIp, spendGold, updateProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit, getClientIp } from "@/lib/server/rate-limit";
@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 const bodySchema = z.object({
   name: z.string().trim().min(1).max(18).optional(),
   isPrivate: z.boolean().optional(),
-  tier: z.enum(["1k", "5k", "10k", "25k", "50k", "100k", "250k", "500k"]).optional(),
+  tier: z.enum(STAKES_TIERS).optional(),
   buyIn: z.number().int().positive().optional(),
 });
 

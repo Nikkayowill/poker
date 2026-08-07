@@ -21,7 +21,9 @@ import {
   getActiveBlackjackRound,
   type StoredBlackjackRound,
 } from "./blackjack-store";
+import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { creditGold, ensureProfile, spendGold } from "./profile-store";
+import { awardWager } from "./progression-store";
 
 /**
  * Everything that happens between a Blackjack request and the wallet.
@@ -53,41 +55,15 @@ export interface BlackjackView {
   profile: PlayerProfile;
 }
 
-export class BlackjackRequestError extends Error {
-  readonly status: number;
-  /** Sent alongside the error so a client that fell out of sync can re-render from truth instead of guessing. */
-  readonly round?: BlackjackSnapshot;
-
-  constructor(message: string, status: number, round?: BlackjackSnapshot) {
-    super(message);
-    this.name = "BlackjackRequestError";
-    this.status = status;
-    this.round = round;
-  }
+export class BlackjackRequestError extends ArcadeRequestError<BlackjackSnapshot> {
+  readonly name = "BlackjackRequestError";
 }
 
 export type BlackjackAction = "hit" | "stand" | "double";
 
-/**
- * Maps a thrown error to the response both Blackjack routes send.
- *
- * Lives here rather than beside the handlers because every other file under
- * app/api is a route.ts and adding the first exception for eight shared lines
- * is not worth it; lib/server/api-auth.ts already establishes that a
- * lib/server module may hand back a NextResponse.
- */
+/** Maps a thrown error to the response both Blackjack routes send. */
 export function toBlackjackErrorResponse(error: unknown): NextResponse {
-  if (error instanceof BlackjackRequestError) {
-    return NextResponse.json(
-      { error: error.message, ...(error.round ? { round: error.round } : {}) },
-      { status: error.status },
-    );
-  }
-  // "Not enough Gold." comes back from spendGold's own guard, which is the
-  // authority -- any balance check before it is only ever a stale read.
-  const message = error instanceof Error ? error.message : "That hand could not be played.";
-  const status = message === "Not enough Gold." ? 400 : 500;
-  return NextResponse.json({ error: message }, { status });
+  return toArcadeErrorResponse(error, "That hand could not be played.");
 }
 
 function view(stored: StoredBlackjackRound | null, profile: PlayerProfile): BlackjackView {
@@ -185,6 +161,14 @@ export async function dealBlackjackRound(
   // this credit, the way the version bump guards the others.
   if (stored.status === "settled") profile = await payOut(token, stored, profile);
 
+  // Progression is keyed to the wager, and the wager is real from here on: the
+  // insert above succeeded, so this cannot credit XP for a hand that was rolled
+  // back. Awaited rather than fired and forgotten so a milestone payout is in
+  // the balance this response carries; awardWager swallows its own failures, so
+  // a progression outage cannot fail a dealt hand.
+  const award = await awardWager(profile.id, token, stake);
+  if (award?.profile) profile = award.profile;
+
   return { ...view(stored, profile), resumed: false };
 }
 
@@ -210,7 +194,7 @@ export async function actOnBlackjackRound(
     throw new BlackjackRequestError(
       "That round moved on. Here is where it actually stands.",
       409,
-      toBlackjackSnapshot(current.round, { id: current.id, version: current.version }),
+      { round: toBlackjackSnapshot(current.round, { id: current.id, version: current.version }) },
     );
   }
 
@@ -219,7 +203,7 @@ export async function actOnBlackjackRound(
     throw new BlackjackRequestError(
       `You cannot ${input.action} on this hand.`,
       409,
-      toBlackjackSnapshot(current.round, { id: current.id, version: current.version }),
+      { round: toBlackjackSnapshot(current.round, { id: current.id, version: current.version }) },
     );
   }
 
@@ -232,7 +216,7 @@ export async function actOnBlackjackRound(
       throw new BlackjackRequestError(
         "Not enough Gold to double this hand.",
         400,
-        toBlackjackSnapshot(current.round, { id: current.id, version: current.version }),
+        { round: toBlackjackSnapshot(current.round, { id: current.id, version: current.version }) },
       );
     }
     profile = await spendGold(token, current.baseStake);
@@ -252,11 +236,20 @@ export async function actOnBlackjackRound(
     throw new BlackjackRequestError(
       "That round moved on. Here is where it actually stands.",
       409,
-      live ? toBlackjackSnapshot(live.round, { id: live.id, version: live.version }) : undefined,
+      { round: live ? toBlackjackSnapshot(live.round, { id: live.id, version: live.version }) : undefined },
     );
   }
 
   if (stored.status === "settled") profile = await payOut(token, stored, profile);
+
+  // A double is a second wager on the same hand, so it earns XP like one. Only
+  // after advanceBlackjackRound confirmed the write: the lost-race branch above
+  // already refunded the charge, and XP for a wager that was refunded would be
+  // the same bug in a different currency.
+  if (doubleCharge > 0) {
+    const award = await awardWager(profile.id, token, doubleCharge);
+    if (award?.profile) profile = award.profile;
+  }
 
   return view(stored, profile);
 }

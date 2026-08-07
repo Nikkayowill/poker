@@ -1,21 +1,26 @@
+# Build output and caches
 .next
 node_modules
-.repo-git
-.env
-.env.local
-.env.local.*
 coverage
-test-results
-playwright-report
-npm-debug.log*
 tsconfig.tsbuildinfo
 .vercel
+.repo-git
+npm-debug.log*
+
+# Secrets. The catch-all is what actually protects us -- the specific entries
+# above it were the ones written before it existed. `.env.example` is the one
+# file here that must stay tracked, so it is negated explicitly rather than
+# relying on the fact that git keeps already-tracked files: without this line,
+# removing and re-adding it would silently drop it from the repo.
 .env*
+!.env.example
 
-# Sentry Config File
-.env.sentry-build-plugin
-
-# Playwright writes these on every run and the cards dealt are random, so the
-# bytes differ each time. They are regenerable build output, not layout specs --
-# tracking them meant `git status` was never clean after a test run.
+# Test output. Playwright rewrites these on every run and the cards dealt are
+# random, so the bytes differ each time -- they are regenerable output, not
+# layout specs. Tracking them meant `git status` was never clean after a run.
+test-results
+playwright-report
 artifacts/screenshots/
+
+# Scratch output from the Playwright MCP server (console dumps, page snapshots).
+.playwright-mcp/

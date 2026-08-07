@@ -1,0 +1,148 @@
+/* Coin Flip.
+ *
+ * The shell is .bj-* from 23-blackjack.css and 28-arcade-hud.css. Two things
+ * here: a coin with two faces that actually turns over, and the streak ladder
+ * that makes riding a decision you can see the shape of.
+ */
+
+/* ---- The coin ----
+ *
+ * A real two-sided disc rather than an icon that cross-fades, because the
+ * whole tension of this game is a thing tumbling in the air. Built with
+ * preserve-3d: the two faces are the same box back to back, so the coin has an
+ * actual reverse and cannot show both at once.
+ */
+
+.cf-coin-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 116px;
+  perspective: 700px;
+}
+
+.cf-coin {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  transform-style: preserve-3d;
+  /* The resting pose is heads; .cf-coin-tails turns it over. The transition
+     covers the settle, and the spin below is what covers the flight. */
+  transition: transform .42s cubic-bezier(.2,.8,.3,1.1);
+}
+.cf-coin-heads { transform: rotateY(0deg); }
+.cf-coin-tails { transform: rotateY(180deg); }
+
+.cf-coin-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  backface-visibility: hidden;
+  /* The rim highlight and the shadowed underside are what stop it reading as
+     a flat circle -- the same bevel argument paintChip makes for the chips. */
+  background: radial-gradient(70% 70% at 34% 28%, #f6e6b4 0%, #dcbb63 46%, #a8832f 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,.45),
+    inset 0 -3px 6px rgba(0,0,0,.3),
+    0 10px 22px rgba(0,0,0,.45);
+  color: #4a3708;
+}
+.cf-coin-face em {
+  font-size: 8.5px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+/* The reverse, pre-turned so it faces outward once the coin is flipped. */
+.cf-coin-face-tails { transform: rotateY(180deg); }
+
+/* In flight. The tumble is deliberately not a whole number of half-turns per
+   second -- a coin that appears to stop and start is a coin nobody believes.
+   It runs while `revealed` is false and is replaced by the settle transition
+   the moment the class comes off. */
+.cf-coin-flipping .cf-coin {
+  transition: none;
+  animation: cf-tumble .34s linear infinite;
+}
+@keyframes cf-tumble {
+  from { transform: rotateY(0deg) translateY(0); }
+  50% { transform: rotateY(180deg) translateY(-16px); }
+  to { transform: rotateY(360deg) translateY(0); }
+}
+
+/* ---- The streak ladder ----
+ *
+ * Six rungs, and the point of drawing them is that the cap is visible before
+ * it is hit: a run that banks itself must never be a surprise.
+ */
+
+.cf-ladder {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cf-rung {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.05);
+  color: #5b6a62;
+  font-size: 11px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  transition: background .2s ease, color .2s ease, box-shadow .2s ease;
+}
+.cf-rung-on {
+  color: #17170f;
+  background: linear-gradient(168deg, #f0dca4, #dcbb63 60%, #c3a049);
+  box-shadow: 0 0 12px rgba(217,184,93,.35);
+}
+/* The rung one more win would reach. Outlined rather than filled -- it is an
+   offer, not a fact. */
+.cf-rung-next {
+  color: var(--gold-light);
+  box-shadow: 0 0 0 2px rgba(217,184,93,.5);
+  animation: cf-rung-beckon 1.4s ease-in-out infinite;
+}
+@keyframes cf-rung-beckon {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(217,184,93,.5); }
+  50% { box-shadow: 0 0 0 2px rgba(217,184,93,.85), 0 0 14px rgba(217,184,93,.4); }
+}
+
+.cf-bank-amount { color: rgba(23,23,15,.72); }
+
+.cf-dealer-head,
+.cf-player-head { justify-content: center; }
+
+/* ---- Phone ----
+ *
+ * Three actions (heads / tails / bank) in the docked bar is the tightest row
+ * in the arcade, so the coin gives up height for them. */
+@media (max-width: 640px) {
+  .cf-coin-stage { min-height: 92px; perspective: 520px; }
+  .cf-coin { width: 76px; height: 76px; }
+  .cf-rung { width: 23px; height: 23px; font-size: 10px; }
+  .cf-ladder { gap: 5px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The coin still turns to the right face -- only the tumble and the beckon
+     go, which are the two things that are motion for its own sake. */
+  .cf-coin-flipping .cf-coin { animation: none; }
+  .cf-coin { transition: none; }
+  .cf-rung-next { animation: none; }
+}

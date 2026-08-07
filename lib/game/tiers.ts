@@ -1,4 +1,19 @@
-export type StakesTier = "1k" | "5k" | "10k" | "25k" | "50k" | "100k" | "250k" | "500k";
+/**
+ * The stakes ladder, low to high, and the single source of truth for it.
+ *
+ * Everything else here is derived: `StakesTier` is this tuple's member type,
+ * and `TIER_CONFIG` is a `Record` over it, so adding a rung fails to compile
+ * until it has a config. Request validation derives from it too --
+ * `z.enum(STAKES_TIERS)` in the routes rather than a hand-written list, which
+ * is why the tuple is `as const`. Four routes used to restate these eight
+ * strings inline; a ninth tier would have been silently rejected by all of
+ * them while the lobby happily offered it.
+ *
+ * Order is meaningful: the UI renders the ladder in this order.
+ */
+export const STAKES_TIERS = ["1k", "5k", "10k", "25k", "50k", "100k", "250k", "500k"] as const;
+
+export type StakesTier = (typeof STAKES_TIERS)[number];
 
 export interface TierConfig {
   label: string;
@@ -24,8 +39,6 @@ export const TIER_CONFIG: Record<StakesTier, TierConfig> = {
   "250k": { label: "250,000", smallBlind: 1250, bigBlind: 2500, minBuyIn: 250000, maxBuyIn: 250000 },
   "500k": { label: "500,000", smallBlind: 2500, bigBlind: 5000, minBuyIn: 500000, maxBuyIn: 500000 },
 };
-
-export const STAKES_TIERS = Object.keys(TIER_CONFIG) as StakesTier[];
 
 /** The cheapest seat in the house -- the eligibility bar for the backstop grant and the default tier for a fresh session. */
 export const CHEAPEST_TIER: StakesTier = "1k";

@@ -1,20 +1,17 @@
 /**
  * The wire contract for the table broadcast channel.
  *
- * Two different things publish to `table:<gameId>`, and until now they did not
- * agree on a shape:
+ * One thing publishes to `table:<gameId>`: the Postgres trigger
+ * `broadcast_game_signal()`, which fires on every write to `game_signals`.
  *
- *  - the Postgres trigger `broadcast_game_signal()`, which fires on every write
- *    to `game_signals`. This is the only publisher that runs in production --
- *    `assertPersistentTableRuntime()` throws when `process.env.VERCEL` is set,
- *    so the TypeScript stream below cannot own a table on Vercel at all.
- *  - `SupabaseRoomStream`, used by the persistent Node worker, which sent the
- *    whole `TableRoomEvent` with the version nested under `state`.
- *
- * The browser coped by reading `body.version ?? body.state.version`, which
- * worked but meant no single definition of the message existed anywhere. This
- * module is that definition, and it is deliberately shared rather than
- * server-only: the consumer is the browser.
+ * It had company once. A persistent Node worker published the same channel
+ * through its own `SupabaseRoomStream`, nesting the version under `state`
+ * instead of alongside it, so the browser coped by reading
+ * `body.version ?? body.state.version` and no single definition of the message
+ * existed anywhere. That worker was never wired to an entry point and its code
+ * was deleted; this module is the definition that outlived it, and it is
+ * deliberately shared rather than server-only, because the consumer is the
+ * browser.
  *
  * WHY THE PAYLOAD STAYS THIS SMALL
  *

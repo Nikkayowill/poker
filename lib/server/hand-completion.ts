@@ -1,6 +1,8 @@
 import "server-only";
 import { checkAvatarUnlocks } from "./avatar-unlocks";
 import { archiveCompletedHand } from "./hand-archive-store";
+import { ensureProfile } from "./profile-store";
+import { awardWager } from "./progression-store";
 import { recordHandStats } from "./stats-store";
 import type { GameState } from "@/lib/game/types";
 
@@ -57,6 +59,29 @@ export async function onHandCompleted(state: GameState): Promise<void> {
     } catch (error) {
       failures.push(error);
     }
+  }
+
+  // Rank XP, a third sibling. Chips committed this hand are the wager, at
+  // parity with Gold: chips are bought with Gold at the buy-in and redeemed for
+  // it on cash-out, so a hand where a player put 400 chips in the middle is the
+  // same volume as a 400 Gold arcade round and must earn the same XP. Anything
+  // else would make one surface the efficient place to grind a rank.
+  //
+  // Once per hand, because onHandCompleted is: its callers invoke it only for
+  // the transition into `complete`, and only when their game write actually
+  // won. Unlike recordHandStats this has no per-(game, hand) key of its own, so
+  // that contract is what keeps a hand from being counted twice.
+  try {
+    await Promise.all(state.seats.map(async (seat) => {
+      // Same gate recordHandStats uses: real players only, and only seats
+      // actually dealt into this hand.
+      if (!seat.isHuman || !seat.ownerToken || seat.holeCards.length === 0) return;
+      if (seat.committed <= 0) return;
+      const profile = await ensureProfile(seat.ownerToken);
+      await awardWager(profile.id, seat.ownerToken, seat.committed);
+    }));
+  } catch (error) {
+    failures.push(error);
   }
 
   if (failures.length === 1) throw failures[0];

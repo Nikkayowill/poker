@@ -5,6 +5,7 @@ import {
   readBlackjackRound,
   toBlackjackErrorResponse,
 } from "@/lib/server/blackjack-service";
+import { STAKES_TIERS } from "@/lib/game/tiers";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
@@ -12,7 +13,7 @@ import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server
 export const runtime = "nodejs";
 
 const dealSchema = z.object({
-  tier: z.enum(["1k", "5k", "10k", "25k", "50k", "100k", "250k", "500k"]),
+  tier: z.enum(STAKES_TIERS),
 });
 
 /**

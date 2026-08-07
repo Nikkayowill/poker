@@ -1067,6 +1067,109 @@ button:disabled { cursor: wait; opacity: .62; }
 .hub-name input:focus { background: rgba(255,255,255,.09); box-shadow: 0 0 0 2px rgba(152,63,224,.6); }
 .hub-name input::placeholder { color: #625877; }
 
+/* Rank strip.
+ *
+ * A band between the hub head and the grid, never a grid cell: .hub-grid's
+ * spans are arithmetic (see the four-column rules below) and a fifth small tile
+ * reopens the empty cell the arcade panel exists to close.
+ *
+ * Borderless like the rest of the chrome -- a raised fill and space, no
+ * hairline. The one ring here is on the level badge, which is the "part of an
+ * avatar or swatch" exception the borderless pass kept.
+ */
+.rank-strip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: clamp(18px, 2.5vw, 26px);
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.045);
+}
+
+.rank-badge {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, #f0bc3a, var(--brand-gold) 58%, #a86f04);
+  box-shadow: 0 0 0 2px rgba(219,156,11,.22);
+  color: #1a1208;
+  font: 650 16px Georgia, serif;
+  font-variant-numeric: tabular-nums;
+}
+
+/* min-width:0 so a long rank title ellipsizes instead of shoving the streak
+   pill off the edge -- a flex item's default min-width is auto. */
+.rank-body { flex: 1; min-width: 0; }
+
+.rank-line { display: flex; align-items: baseline; gap: 8px; }
+.rank-line strong {
+  overflow: hidden;
+  color: #e6e2ef;
+  font: 500 15px Georgia, serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The chrome's one micro-label size, as used by .lobby-kicker and
+   .hub-tile-kicker. */
+.rank-level {
+  flex: 0 0 auto;
+  color: #8d84a3;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+}
+
+.rank-track {
+  height: 5px;
+  margin: 8px 0 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,.07);
+  overflow: hidden;
+}
+.rank-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--brand-purple), var(--brand-gold));
+  transition: width var(--duration-base) ease;
+}
+
+.rank-next {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #8d84a3;
+  font-size: 10.5px;
+}
+.rank-next svg { flex: 0 0 auto; }
+
+.rank-streak {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 7px 12px;
+  border-radius: 20px;
+  /* Red, not gold: it is the one element here that decays if ignored, and the
+     brand's red is the app's existing "act on this" colour. */
+  background: rgba(220,20,19,.16);
+  color: #f0a3a1;
+}
+.rank-streak svg { align-self: center; color: var(--brand-red); }
+.rank-streak strong { font: 650 15px Georgia, serif; font-variant-numeric: tabular-nums; }
+.rank-streak small { font-size: 10px; letter-spacing: .04em; }
+
+@media (max-width: 560px) {
+  /* The bar and the label carry the same information the title does; at phone
+     width the badge, title and streak are what fit. */
+  .rank-strip { gap: 10px; padding: 12px 14px; }
+  .rank-next { display: none; }
+}
+
 .hub-grid {
   display: grid;
   grid-template-columns: 1fr;

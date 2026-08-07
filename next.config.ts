@@ -6,26 +6,43 @@ import type { NextConfig } from "next";
 // Next.js dev mode (Fast Refresh, React's dev-mode error overlay) relies on
 // eval(); that never ships in a production bundle, so it's only relaxed here.
 const isDev = process.env.NODE_ENV !== "production";
-// app/layout.tsx loads an Adsterra ad unit (the atOptions inline script plus
-// its effectivecpmnetwork.com loader). Adsterra serves that unit's creative
-// from other subdomains of the same registrable domain rather than a fixed
-// host, and a 'format: iframe' unit renders its creative inside an iframe --
-// so this needs the wildcard on both script-src (the loader) and a new
-// frame-src (the ad iframe itself), not just the one exact host from
-// app/layout.tsx. Everything else in the CSP is unchanged and still governs
-// the rest of the app; this widens the allow-list for exactly one ad vendor.
-const adsterraOrigin = "https://*.effectivecpmnetwork.com";
+// The Adsterra ad unit (components/ads/adsterra-slot.tsx, mounted by the
+// rewarded-ad modal). Adsterra serves creative from sibling subdomains of the
+// loader's host rather than a fixed host, so each entry is wildcarded on the
+// subdomain -- and it moves publishers between *registrable domains* without
+// notice, which is why there are now three. A loader on a domain this list
+// does not name simply never executes: no error, no console entry the app can
+// act on, just an empty box. lib/ads/adsterra.ts holds the same list in
+// testable code and a unit test asserts the two agree, because next.config.ts
+// cannot import from the app's module graph.
+//
+// Scope note, since this is a real widening of a previously deliberate stance:
+// connect-src now names these three domains because the rewarded unit beacons
+// its own impression, which is the vendor's own telemetry for creative the CSP
+// already lets us load. It does NOT name spendsdetachment.com -- the unrelated
+// domain the banner was seen reaching in an earlier pass, which stays blocked
+// for exactly the reason recorded then.
+const adsterraOrigins = [
+  "https://*.effectivecpmnetwork.com",
+  "https://*.profitabledisplaynetwork.com",
+  "https://*.effectivecreativeformat.com",
+].join(" ");
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' ${adsterraOrigin}${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' ${adsterraOrigins}${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://*.supabase.co",
+  `img-src 'self' data: blob: https://*.supabase.co ${adsterraOrigins}`,
   "font-src 'self' data:",
   // Sentry's session-replay integration compresses events in a Worker
   // constructed from a blob: URL; without this it silently fails to record.
   "worker-src 'self' blob:",
-  `connect-src 'self' https://*.supabase.co wss://*.supabase.co${isDev ? " ws:" : ""}`,
-  `frame-src ${adsterraOrigin}`,
+  `connect-src 'self' https://*.supabase.co wss://*.supabase.co ${adsterraOrigins}${isDev ? " ws:" : ""}`,
+  // 'self' first, and it is not optional: the ad unit renders in a srcdoc
+  // iframe, which has no URL of its own and is matched against the parent
+  // document's own origin. Without it the whole slot is blocked before the
+  // vendor's hosts are ever consulted -- and the previous value, which listed
+  // only the ad origin, was blocking every same-origin frame in the app.
+  `frame-src 'self' ${adsterraOrigins}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

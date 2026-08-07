@@ -36,6 +36,23 @@
 /* After 23/24: the puzzle pages reuse the Blackjack shell and override parts
    of it, so they must cascade later. */
 @import "./styles/25-puzzles.css";
+/* After 11: the rewarded-ad offer rides .profile-overlay/.profile-modal and
+   only adds to them, so it must cascade later. */
+@import "./styles/26-rewarded-ad.css";
+/* After 23: the dealers' 3D stage sits inside .bj-felt and leans on that
+   file's box, so it must cascade later. */
+@import "./styles/27-dealer-stage.css";
+/* After 23: the shared arcade cabinet narrows .bj-felt and .bj-verdict-chip
+   from the Blackjack shell, and every machine sheet below narrows this one. */
+@import "./styles/28-arcade-hud.css";
+@import "./styles/29-video-poker.css";
+@import "./styles/30-roulette.css";
+@import "./styles/31-coin-flip.css";
+@import "./styles/32-baccarat.css";
+@import "./styles/33-sudoku.css";
+/* After 33: Memory reuses .sk-start and .sk-done from the Sudoku sheet rather
+   than restating them, so it must cascade later. */
+@import "./styles/34-memory.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

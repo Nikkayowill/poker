@@ -1,0 +1,183 @@
+/* The arcade cabinet -- shared by every machine after Blackjack.
+ *
+ * 23-blackjack.css is still the shell: .bj-shell, .bj-header, .bj-meter,
+ * .bj-felt, .bj-controls, .bj-stakes, .bj-action and the .bj-hand-head avatar
+ * row all come from there, and the markup that emits them is now
+ * components/arcade/arcade-hud.tsx rather than eight hand-written copies.
+ * This file adds only what a *machine* has and a card table does not: a
+ * payout that lands rather than appears, a marquee of recent results, and a
+ * cabinet edge with some light on it.
+ *
+ * Palette note: this is table furniture, so it is on --felt/--gold like every
+ * other sheet from 05 through 09. The --brand-purple/red/gold tokens dress the
+ * chrome (menus, lobby, store) and reaching for one in here would be the
+ * mistake CLAUDE.md calls out, not a shortcut.
+ *
+ * Loads after 23 so it can narrow those classes; each machine's own sheet
+ * loads after this one.
+ */
+
+/* ---- The cabinet ----
+ *
+ * A thin lit edge and a pool of light behind the felt. This is the whole
+ * difference between "a form with cards on it" and "a machine", and it costs
+ * two gradients: the rest of the casino feeling comes from things that move.
+ */
+
+.bj-felt {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+/* The house glow. Behind everything (z-index below the felt's own children)
+   and pointer-transparent, so it cannot eat a tap on a card. */
+.bj-felt::before {
+  content: "";
+  position: absolute;
+  inset: -30% -10% auto;
+  height: 70%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(50% 60% at 50% 0%, rgba(217,184,93,.13), transparent 70%);
+}
+
+/* ---- Meters ---- */
+
+/* The credit meter rolls, so its box must not resize as the digits change.
+   .bj-shell already sets tabular-nums; this reserves the width so a roll from
+   999 to 1,000 does not shove the two meters beside it sideways. */
+.hud-meter-gold .gold-balance strong { min-width: 5ch; text-align: right; }
+
+/* ---- Verdicts ----
+ *
+ * Four tiers, and they are deliberately not four intensities of the same
+ * animation: a push has to read as "nothing happened to your Gold", which is
+ * a different statement from a small win, not a quieter one.
+ */
+
+.bj-verdict-chip { animation: hud-verdict-in .26s cubic-bezier(.2,.9,.3,1.4) both; }
+@keyframes hud-verdict-in {
+  from { opacity: 0; transform: translateY(6px) scale(.92); }
+  to { opacity: 1; transform: none; }
+}
+
+.hud-verdict-push {
+  color: #cfd8d2;
+  border-color: rgba(255,255,255,.18);
+}
+
+.hud-verdict-big-win {
+  border-color: rgba(217,184,93,.5);
+  background: linear-gradient(168deg, rgba(217,184,93,.2), rgba(0,0,0,.4));
+  box-shadow: 0 0 18px rgba(217,184,93,.22);
+}
+
+/* The full treatment, and it is reserved: celebrationTier only reaches
+   `jackpot` at 20x the stake, so this fires on a royal flush or a straight-up
+   number, not on an even-money win. A banner that shouts at everything is a
+   banner nobody reads. */
+.hud-verdict-jackpot {
+  color: #ffe9ad;
+  border-color: rgba(240,220,164,.75);
+  background: linear-gradient(168deg, rgba(240,220,164,.3), rgba(217,184,93,.12) 55%, rgba(0,0,0,.45));
+  box-shadow: 0 0 26px rgba(240,220,164,.4), inset 0 1px 0 rgba(255,255,255,.25);
+  animation:
+    hud-verdict-in .26s cubic-bezier(.2,.9,.3,1.4) both,
+    hud-jackpot-pulse 1.15s ease-in-out .26s 3;
+}
+@keyframes hud-jackpot-pulse {
+  0%, 100% { box-shadow: 0 0 26px rgba(240,220,164,.4), inset 0 1px 0 rgba(255,255,255,.25); }
+  50% { box-shadow: 0 0 44px rgba(240,220,164,.72), inset 0 1px 0 rgba(255,255,255,.4); }
+}
+
+/* ---- The marquee of recent results ----
+ *
+ * Newest first, scrolling sideways rather than wrapping: this sits between the
+ * felt and the controls, and a row that grew to two lines would push the
+ * action buttons down mid-session.
+ */
+
+.hud-history {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 26px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hud-history::-webkit-scrollbar { display: none; }
+
+.hud-history-empty {
+  color: #5b6a62;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.hud-history-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.05);
+  color: #9fb0a7;
+  font-size: 10.5px;
+  font-weight: 750;
+  /* Newest arrives from the left, where it is being inserted. */
+  animation: hud-history-in .2s ease-out both;
+}
+@keyframes hud-history-in {
+  from { opacity: 0; transform: translateX(-8px) scale(.85); }
+  to { opacity: 1; transform: none; }
+}
+.hud-history-win { color: #7fdcaa; background: rgba(111,214,164,.14); }
+.hud-history-loss { color: #e79898; background: rgba(224,139,139,.13); }
+.hud-history-push { color: #d8cfa8; background: rgba(217,184,93,.12); }
+
+/* ---- Bet buttons that carry a price ----
+ *
+ * Generalised out of .hl-call in 24-hi-lo.css, which had exactly this shape:
+ * the call on one line and what it pays on the next. Roulette, Baccarat and
+ * Coin Flip all need it, and a price a player has to look elsewhere for is a
+ * price they will not look for.
+ */
+
+.hud-bet {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  line-height: 1.25;
+}
+.hud-bet-name { display: inline-flex; gap: 5px; align-items: center; }
+.hud-bet-odds {
+  color: var(--gold-light);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.hud-bet-on {
+  border-color: rgba(217,184,93,.55);
+  background: linear-gradient(168deg, rgba(217,184,93,.24), rgba(26,38,33,.9));
+}
+.hud-bet:disabled .hud-bet-odds { color: #64736b; }
+
+/* ---- Phone ---- */
+
+@media (max-width: 640px) {
+  .hud-history { min-height: 24px; }
+  .hud-history-chip { height: 20px; min-width: 24px; font-size: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bj-verdict-chip,
+  .hud-verdict-jackpot,
+  .hud-history-chip { animation: none; }
+}

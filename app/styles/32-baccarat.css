@@ -1,0 +1,160 @@
+/* Baccarat.
+ *
+ * The shell is .bj-* from 23-blackjack.css and 28-arcade-hud.css. Three things
+ * here: two hands facing each other rather than stacked, a three-button
+ * layout, and the bead plate -- which is the one piece of furniture a baccarat
+ * player will look for before they look at the cards.
+ */
+
+/* ---- The two hands ----
+ *
+ * Side by side, because punto banco is a contest between two boxes and
+ * stacking them the way Blackjack stacks dealer-over-player would say the
+ * wrong thing about who is playing whom.
+ */
+
+.bc-hands {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(10px, 3vw, 26px);
+  align-items: start;
+}
+
+.bc-hand {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 10px;
+  border-radius: 12px;
+  background: rgba(0,0,0,.22);
+  /* The ring is drawn on every hand at zero alpha so that lighting one up
+     costs an alpha change rather than a box-shadow appearing -- which would
+     shift nothing, but only because the shadow is inset. Stated once here. */
+  box-shadow: inset 0 0 0 1.5px transparent;
+  transition: box-shadow .2s ease, background .2s ease;
+}
+
+/* The side the player backed, marked before the cards land. */
+.bc-hand-backed { box-shadow: inset 0 0 0 1.5px rgba(217,184,93,.45); }
+
+/* The side that won the coup. Deliberately a different signal from "backed" --
+   they are frequently not the same box, and a player must be able to see at a
+   glance that the one they picked is not the one that won. */
+.bc-hand-won {
+  background: rgba(111,214,164,.1);
+  box-shadow: inset 0 0 0 1.5px rgba(127,220,170,.6), 0 0 22px rgba(111,214,164,.18);
+}
+.bc-hand-backed.bc-hand-won {
+  box-shadow: inset 0 0 0 2px var(--gold-light), 0 0 26px rgba(217,184,93,.3);
+}
+
+.bc-hand-head { display: flex; gap: 8px; align-items: center; }
+
+.bc-cards { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; }
+/* Dealt, not appeared -- the same stagger the Blackjack hand uses, and past
+   the third card it shares the last delay, which is every card baccarat has. */
+.bc-cards .playing-card { animation: bj-deal .22s ease-out both; }
+.bc-cards .playing-card:nth-child(2) { animation-delay: .07s; }
+.bc-cards .playing-card:nth-child(3) { animation-delay: .16s; }
+
+.bc-dealer-head,
+.bc-player-head { justify-content: center; }
+
+/* ---- The bead plate ----
+ *
+ * Six rows, filling down then across, exactly as it is drawn on a real board.
+ * `grid-auto-flow: column` is what produces that: without it the beads would
+ * read left-to-right and the shape a baccarat player is looking for would be
+ * transposed.
+ */
+
+.bc-road {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(6, auto);
+  gap: 3px;
+  justify-content: center;
+  min-height: 26px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.bc-road::-webkit-scrollbar { display: none; }
+
+.bc-bead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  color: #f4efe2;
+  font-size: 9px;
+  font-weight: 800;
+  animation: hud-history-in .2s ease-out both;
+}
+/* The road's colours are the game's own, and they are the same everywhere it
+   is played: banker red, player blue, tie green. Not the win/loss palette --
+   a bead says which side won the coup, not whether this player was on it. */
+.bc-bead-banker { background: #a3232b; }
+.bc-bead-player { background: #2f5f9e; }
+.bc-bead-tie { background: #1c6b47; }
+
+/* ---- The layout ---- */
+
+.bc-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.bc-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  min-height: 52px;
+  padding: 8px 6px;
+  color: #cfd8d2;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(255,255,255,.045);
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+.bc-side strong { font: 600 14px Georgia, serif; }
+.bc-side em {
+  color: var(--gold-light);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+.bc-side:hover:not(:disabled) { background: rgba(255,255,255,.075); }
+.bc-side:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.bc-side:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Selection is a tinted fill in the side's own road colour plus a ring, so the
+   three buttons stay distinguishable from each other while one is chosen. */
+.bc-side-on { box-shadow: inset 0 0 0 2px var(--gold-light); }
+.bc-side-player.bc-side-on { background: rgba(47,95,158,.32); }
+.bc-side-banker.bc-side-on { background: rgba(163,35,43,.3); }
+.bc-side-tie.bc-side-on { background: rgba(28,107,71,.32); }
+
+/* ---- Phone ----
+ *
+ * The two hands stay side by side -- that opposition is the game -- and give
+ * up card size instead, the same trade the Blackjack felt makes.
+ */
+@media (max-width: 640px) {
+  .bc-hand { padding: 9px 6px; gap: 6px; }
+  .bc-cards .playing-card { width: clamp(38px, 12vw, 48px); }
+  .bc-bead { width: 15px; height: 15px; font-size: 8px; }
+  .bc-side { min-height: 46px; }
+  .bc-side strong { font-size: 13px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bc-cards .playing-card,
+  .bc-bead { animation: none; }
+}

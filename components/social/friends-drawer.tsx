@@ -1,9 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, UserMinus, UserPlus, X } from "lucide-react";
+import { Check, Send, Spade, UserMinus, UserPlus, X } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
-import type { FriendSummary, FriendsOverview, PendingRequest } from "@/lib/social/types";
+import type { GameSnapshot } from "@/lib/game/types";
+import type { PlayerProfile } from "@/lib/profile/types";
+import type {
+  FriendSummary,
+  FriendsOverview,
+  PendingRequest,
+  PendingTableInvite,
+} from "@/lib/social/types";
 
 /**
  * The empty overview, used before the first fetch lands and after a failure.
@@ -25,7 +32,26 @@ const EMPTY: FriendsOverview = { friends: [], incoming: [], outgoing: [] };
 const SIGNED_OUT_STATUS = 401;
 const GUEST_STATUS = 403;
 
+/**
+ * How often the open drawer re-reads its invites.
+ *
+ * An invite is live for five minutes (TABLE_INVITE_TTL_MS) and points at a
+ * table running right now, so a list that only loaded when the drawer opened
+ * would offer seats that are already gone and miss the one that just arrived.
+ * /api/invites/pending allows 120/minute precisely so a client can poll; four
+ * a minute leaves that untouched even with several tabs open.
+ */
+const INVITE_POLL_MS = 15_000;
+
 type Gate = "none" | "signed-out" | "guest";
+
+/** The invite's remaining life, in the coarsest unit that is still honest. */
+function expiresIn(expiresAt: string, now: number): string {
+  const remaining = new Date(expiresAt).getTime() - now;
+  if (remaining <= 0) return "Expired";
+  const minutes = Math.floor(remaining / 60_000);
+  return minutes >= 1 ? `${minutes}m left` : `${Math.max(1, Math.ceil(remaining / 1000))}s left`;
+}
 
 /**
  * Reuses the table/profile avatar rather than drawing another circle.
@@ -40,8 +66,41 @@ function Avatar({ person }: { person: FriendSummary | PendingRequest }) {
   return <ProfileAvatar profile={{ ...person, avatarCosmetic: "" }} />;
 }
 
-export function FriendsDrawer({ onClose }: { onClose: () => void }) {
+export interface FriendsDrawerProps {
+  onClose: () => void;
+  /**
+   * The private table the player is sitting at, when the drawer was opened
+   * from one. Its presence is what turns each friend row into an invite: a
+   * table invite carries a room code server-side, so there is nothing to
+   * invite anyone *to* from the lobby.
+   */
+  inviteGameId?: string | null;
+  /**
+   * Where an accepted invite lands.
+   *
+   * Accepting is a join -- the route redeems the room code into a seat and
+   * returns the snapshot -- so the drawer has a live table on its hands and no
+   * business rendering one. Optional because the drawer is also opened from
+   * places that have nowhere to put a table; where it is absent, Join is not
+   * offered rather than being offered and doing nothing.
+   */
+  onJoinedTable?: (payload: { game: GameSnapshot; profile: PlayerProfile }) => void;
+}
+
+export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsDrawerProps) {
   const [overview, setOverview] = useState<FriendsOverview>(EMPTY);
+  const [invites, setInvites] = useState<PendingTableInvite[]>([]);
+  /**
+   * Friends already invited to this table in this session.
+   *
+   * The server is the authority -- a second invite comes back
+   * `already_pending` from the partial unique index -- but the *sender* has no
+   * feed of their own outgoing invites to read, so without this the button
+   * they just pressed would look untouched.
+   */
+  const [invited, setInvited] = useState<ReadonlySet<string>>(new Set());
+  /** Ticks the countdowns. Kept beside the list rather than inside each row so one timer serves all of them. */
+  const [now, setNow] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [gate, setGate] = useState<Gate>("none");
@@ -104,17 +163,53 @@ export function FriendsDrawer({ onClose }: { onClose: () => void }) {
     }
   }, []);
 
+  /**
+   * Reads the invite list, and never reports its own failure.
+   *
+   * Separate from `load` on purpose: this one polls, and a transient failure on
+   * a background poll must not replace the friends list the player is reading
+   * with an error banner. The gate is `load`'s to decide -- both routes make
+   * the same 401/403 split, so a signed-out visitor is already being told.
+   */
+  const loadInvites = useCallback(async () => {
+    try {
+      const response = await fetch("/api/invites/pending", { cache: "no-store" });
+      if (!response.ok) {
+        // A gate is not an error, but it does mean there is nothing to show.
+        if (response.status === SIGNED_OUT_STATUS || response.status === GUEST_STATUS) {
+          if (mounted.current) setInvites([]);
+        }
+        return;
+      }
+      const data = (await response.json()) as { invites: PendingTableInvite[] };
+      if (mounted.current) setInvites(data.invites ?? []);
+    } catch {
+      // Left as-is: the previous list is closer to the truth than an empty one,
+      // and every row carries its own expiry, which the countdown enforces.
+    }
+  }, []);
+
   useEffect(() => {
     mounted.current = true;
     // Deferred through a timer rather than called straight from the effect
     // body, matching the profile load in components/poker-app.tsx: a fetch
     // kicked off synchronously here sets state during the same commit.
-    const timer = window.setTimeout(() => { void load(); }, 0);
+    const timer = window.setTimeout(() => {
+      void load();
+      void loadInvites();
+    }, 0);
+    // One interval drives both the refetch and the countdown: a row that has
+    // just lapsed should stop being offered, not merely read "Expired".
+    const poll = window.setInterval(() => {
+      setNow(Date.now());
+      void loadInvites();
+    }, INVITE_POLL_MS);
     return () => {
       mounted.current = false;
       window.clearTimeout(timer);
+      window.clearInterval(poll);
     };
-  }, [load]);
+  }, [load, loadInvites]);
 
   useEffect(() => {
     // Whatever opened the drawer -- the lobby's Friends tile in practice.
@@ -212,6 +307,93 @@ export function FriendsDrawer({ onClose }: { onClose: () => void }) {
     "Could not update that request.",
   );
 
+  /**
+   * Offers a friend the seat next to you.
+   *
+   * `already_pending` is treated as success, because to the player it is one:
+   * they asked for this person to be invited and this person is invited. The
+   * distinction only exists because the partial unique index refuses the
+   * second row.
+   */
+  const invite = useCallback(async (profileId: string) => {
+    if (!inviteGameId) return;
+    const key = `invite:${profileId}`;
+    setBusy((current) => new Set(current).add(key));
+    try {
+      const response = await fetch("/api/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId, gameId: inviteGameId }),
+      });
+      if (!mounted.current) return;
+      const data = (await response.json().catch(() => null)) as { status?: string; error?: string } | null;
+      if (!response.ok) {
+        setError(data?.error ?? "Could not send that invite.");
+        return;
+      }
+      if (data?.status === "sent" || data?.status === "already_pending") {
+        setInvited((current) => new Set(current).add(profileId));
+        setError(null);
+        return;
+      }
+      // `blocked` reaches here, and stays undifferentiated for the reason the
+      // route gives: naming the direction of a block undoes it.
+      setError("That player can't be invited right now.");
+    } catch {
+      if (mounted.current) setError("Could not send that invite.");
+    } finally {
+      if (!mounted.current) return;
+      setBusy((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    }
+  }, [inviteGameId]);
+
+  /**
+   * Answers an invite. Accepting seats the player, so the snapshot goes up.
+   *
+   * The row is dropped locally before the refetch rather than after: accepting
+   * unmounts this drawer (the app swaps the lobby for a table), and declining
+   * should not leave a dead row on screen for a poll interval.
+   */
+  const answerInvite = useCallback(async (inviteId: string, action: "accept" | "decline") => {
+    setBusy((current) => new Set(current).add(inviteId));
+    try {
+      const response = await fetch(`/api/invites/${encodeURIComponent(inviteId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = (await response.json().catch(() => null)) as
+        | { status?: string; error?: string; game?: GameSnapshot; profile?: PlayerProfile }
+        | null;
+      if (!mounted.current) return;
+      if (!response.ok) {
+        setError(data?.error ?? "Could not answer that invite.");
+        setInvites((current) => current.filter((row) => row.id !== inviteId));
+        return;
+      }
+      setError(null);
+      setInvites((current) => current.filter((row) => row.id !== inviteId));
+      if (action === "accept" && data?.game && data.profile) {
+        onJoinedTable?.({ game: data.game, profile: data.profile });
+      }
+    } catch {
+      if (mounted.current) setError("Could not answer that invite.");
+    } finally {
+      if (!mounted.current) return;
+      setBusy((current) => {
+        const next = new Set(current);
+        next.delete(inviteId);
+        return next;
+      });
+    }
+  }, [onJoinedTable]);
+
+  /** Only the invites still worth offering; the poll is 15s and a row can lapse inside one. */
+  const liveInvites = invites.filter((row) => new Date(row.expiresAt).getTime() > now);
   const total = overview.friends.length + overview.incoming.length + overview.outgoing.length;
 
   return (
@@ -261,11 +443,11 @@ export function FriendsDrawer({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {gate === "none" && loading && total === 0 && (
+          {gate === "none" && loading && total === 0 && liveInvites.length === 0 && (
             <p className="friends-loading" role="status">Loading your friends…</p>
           )}
 
-          {gate === "none" && !loading && total === 0 && !error && (
+          {gate === "none" && !loading && total === 0 && liveInvites.length === 0 && !error && (
             <div className="friends-empty">
               <UserPlus size={20} aria-hidden="true" />
               <strong>No friends yet</strong>
@@ -274,6 +456,50 @@ export function FriendsDrawer({ onClose }: { onClose: () => void }) {
                   seat menu that sends a request is the next slice. */}
               <p>Add people you meet at the table, and they&rsquo;ll show up here.</p>
             </div>
+          )}
+
+          {liveInvites.length > 0 && (
+            <section className="friends-section friends-invites" aria-label="Table invites">
+              <h3>Invites · {liveInvites.length}</h3>
+              {liveInvites.map((row) => (
+                <div className="friend-row friend-row-invite" key={row.id}>
+                  <Avatar person={row} />
+                  <div className="friend-identity">
+                    <strong>{row.displayName}</strong>
+                    <small>
+                      {row.smallBlind.toLocaleString()}/{row.bigBlind.toLocaleString()}
+                      {" · "}
+                      <span className="invite-countdown">{expiresIn(row.expiresAt, now)}</span>
+                    </small>
+                  </div>
+                  <div className="friend-actions">
+                    {/* Join is offered only where there is somewhere to land.
+                        Accepting redeems the invite -- it is spent whether or
+                        not this drawer can render the table it just joined. */}
+                    {onJoinedTable && (
+                      <button
+                        type="button"
+                        className="friend-accept invite-join"
+                        disabled={busy.has(row.id)}
+                        onClick={() => void answerInvite(row.id, "accept")}
+                      >
+                        <Spade size={13} aria-hidden="true" />
+                        Join
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="friend-decline"
+                      disabled={busy.has(row.id)}
+                      onClick={() => void answerInvite(row.id, "decline")}
+                      aria-label={`Decline ${row.displayName}'s invite`}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </section>
           )}
 
           {overview.incoming.length > 0 && (
@@ -327,6 +553,19 @@ export function FriendsDrawer({ onClose }: { onClose: () => void }) {
                     </small>
                   </div>
                   <div className="friend-actions">
+                    {inviteGameId && (
+                      <button
+                        type="button"
+                        className="friend-invite"
+                        disabled={busy.has(`invite:${person.profileId}`) || invited.has(person.profileId)}
+                        onClick={() => void invite(person.profileId)}
+                        aria-label={`Invite ${person.displayName} to your table`}
+                      >
+                        {invited.has(person.profileId)
+                          ? <><Check size={13} aria-hidden="true" />Invited</>
+                          : <><Send size={13} aria-hidden="true" />Invite</>}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="friend-remove"

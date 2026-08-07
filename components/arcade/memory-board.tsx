@@ -156,7 +156,7 @@ export function MemoryBoard() {
         </p>
       )}
 
-      <section className="bj-felt mm-felt" aria-live="polite" aria-busy={busy}>
+      <section className="bj-felt hud-felt-plain mm-felt" aria-live="polite" aria-busy={busy}>
         {!round ? (
           <div className="sk-start">
             <p>Today&apos;s board is face down and waiting.</p>

@@ -207,7 +207,7 @@ export function SudokuBoard() {
         ))}
       </div>
 
-      <section className="bj-felt sk-felt" aria-live="polite" aria-busy={busy}>
+      <section className="bj-felt hud-felt-plain sk-felt" aria-live="polite" aria-busy={busy}>
         {!round ? (
           <div className="sk-start">
             <p>Today&apos;s {difficulty} grid is waiting.</p>

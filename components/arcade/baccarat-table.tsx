@@ -66,7 +66,11 @@ export function BaccaratTable() {
   });
   const { profile, round, loaded, busy } = machine;
 
-  const [tier, setTier] = useState<StakesTier>("5k");
+  // The bottom rung, like every other machine. This opened on "5k" while a
+  // new profile carries 2,000 Gold, so the first thing a player saw on this
+  // page was a dead "Not enough Gold" button with nothing on screen saying
+  // the cheaper stake beside it would have worked.
+  const [tier, setTier] = useState<StakesTier>("1k");
   const [bet, setBet] = useState<BaccaratSide>("banker");
 
   const wallet = toArcadeWallet(profile);
@@ -112,7 +116,7 @@ export function BaccaratTable() {
 
       <ArcadeError message={machine.error} />
 
-      <section className="bj-felt bc-felt" aria-live="polite" aria-busy={busy}>
+      <section className="bj-felt hud-felt-plain bc-felt" aria-live="polite" aria-busy={busy}>
         <ArcadeSeat
           className="bc-dealer-head"
           avatar={<DealerAvatar />}

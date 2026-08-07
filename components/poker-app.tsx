@@ -177,6 +177,16 @@ export function PokerApp() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "Could not load your profile.");
     setProfile(data.profile);
+    // A profile came back, so this browser already holds a session cookie --
+    // it has been through the entry gate before. `entryComplete` is plain
+    // component state, so every arrival at `/` starts it false, and the
+    // arcade lives on its own routes (`/games/*`): tapping "Back to the
+    // lobby" remounts this component and used to drop a signed-in player
+    // back on the sign-in card. The cookie is the durable record of having
+    // entered, and it is already scoped to the remember-me choice (a guest
+    // session cookie dies with the browser), so reading it here restores the
+    // gate exactly as far as the player asked it to persist.
+    if (data.profile) setEntryComplete(true);
   }, []);
 
   const ingest = useCallback((data: { game: GameSnapshot; persistence: string; profile?: PlayerProfile }) => {

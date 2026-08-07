@@ -980,6 +980,55 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   there is one place to get it right instead of three. Both tables match;
   keep them matching. That tally now lives once, in
   `components/arcade/use-casino-machine.ts` — see the bullet below.
+- **`.bj-felt` is the BLACKJACK ROOM, not a generic panel, and seven machines
+  had inherited it by accident.** It is a two-row grid whose first row is Loki
+  and Finn's airspace and whose row boundary *is* the rail; Blackjack wraps its
+  cards in `.bj-play` and lands them in row two, which is correct there and
+  only there. Every other game wrote `.bj-felt` and dropped its children
+  straight in. One mistake, three defects that did not look related: a
+  130–260px dead band above the wheel/reels/cards on six pages (row one, with
+  no dealers in it); video poker's pay table and its five cards sharing an edge
+  *to the pixel*, because auto-placed rows have no gap — the glass's rounded
+  bottom corners were cut off by the card row; and, on a 390×844 phone, row
+  one's `minmax(clamp(132px, 22vh, 260px), .85fr)` resolving to ~240px against
+  Sudoku's `aspect-ratio: 1` 340px grid, which overflowed its own track and
+  painted **over** the keypad and the player's row — the digits showed through
+  the cells. `.hud-felt-plain` (28-arcade-hud.css) is the fix: a plain centred
+  column at `flex: 1 0 auto` so a table still fills a short page and a board
+  takes the room it needs instead of being clipped into its neighbour.
+  **Its `overflow: hidden` is inherited from `.bj-felt` and must stay** — it
+  clips no content now, but it is what contains `.bj-felt::before`, the house
+  glow, which is inset `-10%` on both sides; relaxing it to `visible` put
+  134px of pseudo-element past the right edge of a 1440px page and panned the
+  whole arcade sideways, on seven machines at once. Blackjack is deliberately
+  *not* given the class and renders identically.
+- **Sudoku's box frame was open in four places on every board, and the shape of
+  that bug is worth knowing.** `box-shadow` does not add across declarations,
+  and the heavy 3×3 rules were enumerated one rule per combination — so
+  wherever two of the four `.sk-cell-box-*` classes met with no combined rule
+  and equal specificity, the later one in the source simply won and a side was
+  silently dropped. Both such cells exist: a last-column cell that also opens a
+  band (rows 0/3/6 of column 8) lost its top rule, so the grid's top edge and
+  both band separators stopped one column short, and a bottom-row cell that
+  also opens a band (columns 0/3/6 of row 8) lost its left rule the same way.
+  It is four custom properties now — one slot per side, all four always listed
+  — which cannot have that bug at any combination. Judge it on a crop, not on
+  the rules: at 1:1 the missing segments read as an artefact of the screenshot.
+- Baccarat opened on a `"5k"` stake while a new profile carries 2,000 Gold, so
+  the first thing a player saw was a dead "Not enough Gold" button with nothing
+  saying the cheaper rung beside it would have worked. It is `"1k"` like every
+  other machine. Same family as the catalogue-price lies above: **check a new
+  default against the wallet a new player actually has.**
+- **`entryComplete` in `poker-app.tsx` is now restored from the session
+  cookie, and the arcade is why.** It is plain component state that starts
+  `false` on every mount, and the arcade lives on its own routes
+  (`/games/*`) — so "← Back to the lobby" remounts `PokerApp` and used to drop
+  a player who had already entered back onto the sign-in card. `loadProfile`
+  sets it true when a profile comes back: the cookie is the durable record of
+  having been through the gate, and it is already scoped to the remember-me
+  choice, so a guest session cookie still dies with the browser and a fresh
+  visitor still meets the gate. `signOut` is unaffected — it clears the cookie
+  before it reloads, so the profile comes back null.
 - **The arcade is all ten games now.** Video Poker, Roulette, Coin Flip,
   Baccarat, Daily Sudoku and Memory Match landed together; every
   `coming-soon` row in `lib/arcade/games.ts` is live with a real engine, a

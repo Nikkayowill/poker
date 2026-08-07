@@ -716,20 +716,145 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   and reading the rendered result, not by assuming defaults prove the path:
   the face-down card's base fill went `#1d4636` (house) → `#5a1f22` (oxblood)
   and the avatar resolved to `/avatars/avatar-grinder-face.webp`.
-- The house dealer is **Vera** (`lib/arcade/dealer.ts` — name plus
-  `dealerLine(phase, outcome)`, in `lib/` because `vitest.config.ts` collects
-  only `lib/` and `app/`). The drawing is
-  `components/arcade/dealer-avatar.tsx`, inline SVG on the
-  `components/card-back-art.tsx` precedent rather than a shipped asset. It is
-  deliberately **not** a `ProfileAvatar` wearing some avatar cosmetic id: that
-  catalog is player property — bought, or earned via
+- **The house dealers are Loki and Finn, two dogs, and the room is a stack of
+  flat 2D layers — the three.js stage that briefly rendered them is gone.**
+  They replaced Vera, a single human croupier, at the user's request. The
+  feature is deliberately silly and deliberately built like a serious one.
+  Five things to know:
+  - **The coats are Loki apricot `#d99b5c` and Finn black `#332e30`**, from the
+    owner's own reference sheet. An earlier pass had Loki as a blue-merle with
+    blue eyes and Finn as a tall golden — both wrong, and wrong in a way no
+    test can catch, because a coat colour is only checkable against the animal.
+    Do not retune these by eye against a render; check them against a
+    photograph. Finn's `base` is deliberately not `#000`: a true black coat has
+    no silhouette against an almost-black page, so what reads as "black dog" is
+    a very dark warm grey with the curls picked out lighter.
+  - **`lib/arcade/dealer.ts` is the single authority on who they are** — names,
+    breeds, coats, uniform, and `TIP_LINE`. It absorbed the deleted
+    `dealer-rig.ts`, so there is **one** `DEALER_DOGS` and not two. That
+    matters more than it sounds: for a while both existed with *different*
+    palettes, and the pair that actually rendered read the wrong one. Two
+    drawings of the same two dogs disagreeing about their colour is the exact
+    drift a shared constant exists to prevent.
+  - **`three` is not a dependency.** It was added for the WebGL stage and
+    removed with it; `package.json` is back to where it was. The Canvas 2D
+    poker room was never touched and must stay that way — do not read any of
+    this as permission to bring WebGL back to the felt.
+  - **`lib/arcade/dealer-scene.ts` is the layer contract**, in `lib/` so
+    `npm test` reaches it. Back to front: `room` (the casino, the only layer
+    allowed to be soft), `table` (felt, printed layout, shoe, discard tray),
+    `dealers` (the pair, paws over the back rail), then live DOM `play` on top.
+    Separate layers rather than one baked render, because a flattened image
+    cannot swap an expression or let a card pass in front of the rail. Four
+    expressions per dog — `idle`/`dealing`/`cheer`/`sympathy` — and the mapping
+    from phase+outcome must stay **total**: a hole in it is two dogs frozen
+    mid-grin through a losing hand.
+  - **Every art path is nullable and null is not an error.** `SCENE_ART` and
+    the dog art map are empty today; the component paints a CSS placeholder for
+    any layer with no file, so the page is complete before a single PNG exists.
+    Same "no verified asset yet" convention as `MENU_MUSIC_TRACK`. Note the
+    felt's printed text is a **rule claim** and must match the engine — a
+    reference image reading "INSURANCE PAYS 2 TO 1" / "DEALER MUST HIT SOFT 17"
+    would contradict `lib/arcade/blackjack.ts`, which has no insurance and
+    stands on soft 17.
+  - **`.bj-felt` is a two-row grid and is the single authority on where the
+    table's rail is** — row one the dealers' airspace, row two the playing
+    surface, the boundary between them the rail. Deliberately *not* a shared
+    percentage restated in `23-blackjack.css` and `27-dealer-stage.css`: that
+    two-places-one-number shape is what mis-aimed the old speech-bubble tails
+    and what declared the in-game header's height twice. `.bj-surface` carries
+    a negative top margin so the rail's lip passes **behind** the dogs' paws;
+    z-order is room 0, surface 1, dealers 2, play 3. `.bj-play`'s top padding
+    is *clearance* for `.bj-felt-print`, not taste — at the first value the
+    dealer's name and total printed straight across "DEALER STANDS ON SOFT
+    17", and the two live in different stylesheets, so a spec pins that they
+    do not overlap at 1440 and 390.
+  - **The page drew Loki and Finn TWICE, and that was most of what made the
+    stage read as a television.** The 3D panel had them, and a 34px
+    `<DealerAvatar />` beside the dealer's hand had them again forty pixels
+    below in a different art style, both labelled "Loki & Finn". The hand row
+    is text-only now.
+  - **`tests/e2e/dealer-stage.spec.ts` was rewritten for the layer stack and
+    all 6 specs pass.** *(An earlier note here said it was stale and failing;
+    that was true of the WebGL-era file and is no longer.)* It asserts one
+    room (every layer inside `.bj-felt`), the rail overlap's **sign** in both
+    directions, `.bj-dealer-pair` at exactly 1 with
+    `.bj-hand-head .dealer-avatar` at 0, that the cloth's print agrees with
+    the page header and offers no verb the engine lacks, that the cards clear
+    that print at both widths with no horizontal pan, and the whole tip money
+    path. One trap it already hit: a first cut played a fourth hand to check
+    the tip cooldown and hung the suite for six minutes — after three 1,000
+    stakes and a tip, a losing session drops under the minimum and the Deal
+    button becomes "Not enough Gold", so the test waited on a POST a disabled
+    button was never going to send. Cadence is unit-tested over a 200-hand
+    session instead; the browser only checks the money.
+- The flat SVG pair (`components/arcade/dealer-avatar.tsx`) reads its colours
+  from `DEALER_DOGS` so it and the scene's dealer layer cannot drift. **Its one
+  caller is now the scene's placeholder**, enlarged — the 34px call beside the
+  dealer's hand was deliberately removed as the duplicate described above. It
+  is still built to survive 34px, and two things about the redraw are worth
+  keeping: **ears low, visor high.** The first cut put both dogs' ears as round
+  lobes level with the eyes, which is a *bear* — an ear that starts above the
+  eye and hangs past the muzzle is what says "dog" — and left the translucent
+  visor panel crossing the pupils, the same mistake the 3D pair made twice.
+  Since ear style no longer separates the two (both are drop-eared doodles),
+  **colour is the only thing telling them apart**, so `dealer.test.ts` asserts
+  the base coats differ by >80 in mean channel brightness and that Finn's is
+  off true black; a black dog on this disc needs that plus a cream rim light or
+  it is a hole in the picture.
+  It is deliberately **not** a `ProfileAvatar` wearing some avatar cosmetic id:
+  that catalog is player property — bought, or earned via
   `lib/server/avatar-unlocks.ts` — so dressing the house in one would imply
-  the dealer is a player and quietly devalue an item somebody ground for.
-- That dealer avatar must stay framed as a **face crop**, not a figure. The
-  first version drew a whole croupier inside the disc; at the 34px it actually
-  renders, the head was ~11px and the visor a green bar across it, reading as
-  a smudge beside the photographic `avatarFace()` crops it sits next to. Judge
-  any change to it against a real 34px render, not the 64-unit viewBox.
+  the dealer is a player and quietly devalue an item somebody ground for. It
+  must stay framed as a **face crop**, not figures: the first version of the
+  old dealer drew a whole croupier inside the disc and at 34px the head was
+  ~11px and the visor a green bar across it. Judge any change against a real
+  34px render, not the 64-unit viewBox — a nudge in this pass was needed
+  purely because Finn's eyes vanished under his own visor at that size.
+- **Never call `renderer.forceContextLoss()` in a React cleanup**, and the
+  reason generalises to any WebGL-in-React work in this repo. *(Historical: the
+  stage this happened on has since been replaced by the 2D layers above, and
+  `three` is uninstalled. The lesson is kept because the archived
+  `archive/webgl-room` branch and any future WebGL work would hit it again.)*
+  It was added as
+  "obvious" hygiene — hand the GPU context back instead of waiting for the
+  canvas to be collected — and it broke the stage everywhere. The canvas is a
+  React-owned element that outlives the effect, StrictMode runs every effect
+  twice in dev (mount → clean up → mount, same canvas), and a force-lost
+  context can never be re-acquired, so the second mount got a dead canvas and
+  the stage sat in its fallback forever. `renderer.dispose()` alone is correct.
+  The cost was not the bug, it was the **misdiagnosis**: the symptom is
+  identical to "this machine has no WebGL", and it was blamed first on
+  GPU-process exhaustion from the canvas-heavy poker specs that sort ahead of
+  `dealer-stage.spec.ts`, then on a missing SwiftShader flag — two rounds of
+  test-harness surgery for a one-line component bug. The only real evidence
+  was a single `THREE.WebGLRenderer: Context Lost.` console line. When a
+  graphics fallback engages everywhere at once, read the browser console
+  before touching the harness.
+- **`TIP_LINE` is a real button now.** It used to be flavour with an explicit
+  note saying it must never become one, because a control that takes Gold and
+  does nothing is a defect dressed as a joke. `lib/arcade/tipping.ts` is the
+  mechanic that earned it: `TIP_AMOUNTS` 25/100/500,
+  `POST /api/arcade/tip` (rate-limited 6/min, `isBanned`-gated) and
+  `lib/server/tip-service.ts`. Three things about it:
+  - It is **the arcade's only pure sink** — one side, not two. The Gold leaves
+    and does not come back, so most of the three ordering rules do not apply
+    and the service says so rather than leaving the next reader wondering
+    whether they were forgotten. The debit is still first; there is no
+    settlement, so no version guard. The hazard for a sink is the mirror image
+    of a payout's: *charging* twice, handled by the rate limit and a button
+    that disables in flight.
+  - **A tip earns XP at the ordinary rate and that is not an exploit.** XP is
+    Gold-wagered/10 everywhere; a player grinding it by playing gives up the
+    ~3% edge, one grinding it by tipping gives up 100%. Tipping is therefore
+    the strictly worst way to buy a level that exists — the same parity
+    argument `hand-completion.ts` makes about chips and Gold. `awardWager` runs
+    last and is non-fatal, so a progression outage cannot tell a player their
+    completed tip failed.
+  - **The offer has a cadence** (`shouldOfferTip`): quiet until 3 hands have
+    been dealt, then quiet again for 12 after the player pays or waves it away.
+    An ask on screen from the first frame is one nobody reads and everybody
+    resents. It is pure and unit-tested rather than a boolean in the component.
 - `dealerLine` returns constants, and a test caps them at 28 characters. Same
   reasoning as the removed per-seat status pills: variable-length prose on the
   felt is what clipped before. `.bj-hand-caption` also pins one line with an
@@ -783,7 +908,96 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   reachable from a click handler, and every path that yields a settled round
   (an action, a resume, a 409 carrying true state) goes through `round`, so
   there is one place to get it right instead of three. Both tables match;
-  keep them matching.
+  keep them matching. That tally now lives once, in
+  `components/arcade/use-casino-machine.ts` — see the bullet below.
+- **The arcade is all ten games now.** Video Poker, Roulette, Coin Flip,
+  Baccarat, Daily Sudoku and Memory Match landed together; every
+  `coming-soon` row in `lib/arcade/games.ts` is live with a real engine, a
+  service, two routes and a page. **No migration was needed**: `arcade_rounds`
+  and `daily_puzzle_rounds` both take a free-text `game` column, which is
+  exactly the extension point their headers promised, so the whole slice ships
+  without the schema/deploy ordering hazard that cost players Gold in the
+  `credit_gold` incident. Five things worth carrying forward:
+  - **The three money-ordering rules are implemented once now, not restated
+    six times.** `lib/server/casino-round-service.ts` holds debit → deal →
+    act → credit for the four new wager games; a game supplies only `deal`,
+    `payout`, `snapshot` and an optional `validate`, and gets the ordering
+    for free. At two games restating the rules in a header comment was right;
+    at six it becomes six chances to get the same thing wrong, which is the
+    argument `arcade-request.ts` already won here. **Blackjack and Hi-Lo were
+    deliberately left on their own copies** — they are live and move real
+    Gold, and restacking them under a module whose first four callers are all
+    unshipped would pile one unproven thing on another. Building it exposed a
+    real hole: `deal()` ran *after* the debit but *outside* the refund `try`,
+    so an engine throwing its own precondition would have taken the stake and
+    returned nothing. `deal` is inside the try now, and `validate` runs before
+    the wallet is touched at all.
+  - **Each game's house edge is a test, not a comment.** Roulette asserts that
+    every bet on the layout returns exactly 36/37 — a bet that came out cheaper
+    is a hole in the book, one dearer is a second rake hiding behind the zero.
+    Baccarat's third-card tableau is transcribed cell for cell from an
+    independent table and its edges land on the textbook 1.06 / 1.24 / 4.84%.
+    A mispriced casino game is not a visible bug: it plays, it pays, and it is
+    quietly wrong, so these are the guards that matter most in those files.
+  - **Two catalogue prices were lies and one blurb was.** `video-poker` sat at
+    500 and `coin-flip` at 250 — neither is a stake `TIER_CONFIG` can select,
+    so the hub quoted a price no button in the game could charge. That is the
+    third time (Hi-Lo's was the first): price a new row off the ladder or
+    leave it 0. Coin Flip's "double or nothing" was worse than wrong, it was
+    unofferable — a fair coin paying exactly 2x has a house edge of *precisely
+    zero*, which is a hole in the economy rather than a generous game. It is a
+    bank-or-ride streak game now: the coin stays honestly 50/50 and the margin
+    is in the price (1.97x), capped at six wins so the pot cannot compound
+    without bound at the 500k tier.
+  - **The reveal waits for the animation, and it is derived, not held.**
+    Roulette's response necessarily carries the winning number, so showing it
+    and *then* spinning a wheel toward it would make the animation a
+    re-enactment. `revealed` is computed from "which round's wheel has
+    finished" rather than stored by an effect — which is both what
+    `react-hooks/set-state-in-effect` wants and what keeps a resume honest: a
+    refresh mid-spin replays the wheel, a refresh afterwards does not. Coin
+    Flip uses the same shape with a flip *count*. Six lint errors of this
+    class were fixed properly rather than suppressed; the credit meter now
+    writes digits straight to the DOM (the `use-fuse.ts` pattern) instead of
+    pushing sixty renders a second through React.
+  - **The lobby's mute reached the arcade for the first time.**
+    `SOUND_STORAGE_KEY` was a private const inside `poker-app.tsx`, which is
+    not mounted on a `/games/*` route, and `setSoundEnabled` defaults to
+    `true` — so any machine that made a noise would have been loud for a
+    player who had muted the app, on a screen with no control to fix it. The
+    keys are `lib/audio/sound-preference.ts` now and
+    `components/arcade/use-arcade-sound.ts` applies them before anything can
+    play.
+- Sudoku is the one arcade engine with real algorithmic weight, and two things
+  about it are worth knowing. It **generates from the day** rather than from a
+  puzzle bank — a solved grid is built by permuting a known-valid pattern
+  (which cannot fail or backtrack) and clues are carved only while
+  `hasUniqueSolution` still holds. The four difficulties are salted
+  separately, so solving the easy grid hands nobody the expert one, and they
+  are four `game` values (`sudoku-easy`…) so the store's unconditional unique
+  index gives one attempt *per difficulty* per day. `countSolutions` needed a
+  pre-check that the *givens* do not already clash: the search only inspects
+  empty cells, so a contradictory grid sent it enumerating a space that cannot
+  exist — it hung the test suite for two minutes before that line existed.
+  Boards are cached per (day, difficulty) in module memory, which is safe
+  precisely because generation is deterministic.
+- **Memory Match deliberately breaks the shared-daily rule, and that is the
+  point.** Every other daily gives everyone the same board because that is
+  what makes a shared score mean anything. Memory is the one where a shared
+  layout *ends* the game — one screenshot in a group chat and nobody has a
+  puzzle — so the board is shuffled per attempt and what is compared is time
+  and turn count over the same eight ranks. Its redaction is the strictest in
+  the arcade: `board[i]` is `null` for a face-down tile, not a card flagged
+  hidden, and a test asserts that turning one card over does not reveal where
+  its partner is.
+- Sudoku's answer never leaves the server either, which forces a request per
+  digit: a wrong one is refused and *counted*. That does let a determined
+  player find any single cell by trying digits, and it is a deliberate trade —
+  the alternative (no feedback until the grid is full) makes an honest mistake
+  a silent twenty-minute waste. Brute force shows up as "46 mistakes" in the
+  share text, which is what keeps the claim honest. There is no emoji matrix
+  for Sudoku on purpose: a block grid would show which cells were givens,
+  which is the shape of the puzzle.
 - **Daily Wordle and Connections are live** — the arcade's first `kind:
   "puzzle"` entries (free, no stake), shipped end to end in PR #14 (merge
   `e357225`) and verified against the Production deployment's own status
@@ -808,7 +1022,9 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   reads (🟩🟨⬛; Connections 🟨🟩🟦🟪 by difficulty). Pure string building —
   no DOM, no `navigator` — so it all runs under `npm test`; the share sheet
   itself is `components/arcade/share-result-button.tsx`.
-- The six remaining `lib/arcade/games.ts` entries are still
+- *(Superseded — all ten are live now; see the bullet above. Kept because the
+  rules it states still govern adding an eleventh.)* The six remaining
+  `lib/arcade/games.ts` entries are still
   `status: "coming-soon"` with `href: null` — catalogue rows, no engines, no
   routes, no client. There is nothing there to server-validate, and the poker
   table has been server-authoritative from the start. A hub blurb must not
@@ -839,13 +1055,96 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   the navbar badge's own coin+amount layout. Casino entries are priced on the
   `TIER_CONFIG` ladder (250–5,000); `kind: "puzzle"` is free and is a field
   rather than something inferred from a zero cost.
-- Active slice (parked): M16 — friends and table invites. The friends half is landed
-  end to end: `lib/server/friends-store.ts`, `/api/friends/*`, and the drawer
-  plus lobby tile in `components/social/friends-drawer.tsx`. The table invite
-  half now has its read path: `lib/server/table-invite-store.ts` and
-  `GET /api/invites/pending`. Still missing: the POST route that sends one
-  (and with it the "inviter must be seated here" check), accept/decline, and
-  any UI.
+- **M16's invite half is now complete except for one wire.** `POST /api/invites`
+  sends one; `POST /api/invites/[id]` accepts or declines;
+  `respondToTableInvite` and `findPendingTableInvite` are the store's write and
+  peek. The drawer lists live invites with a countdown, polls every 15s, and
+  grows an Invite button per friend row when opened from a private table —
+  which is what the new "Invite a friend" entry in `poker-table.tsx`'s menu
+  does (gated on `isPrivate && isSeated && isRegistered`, because the route
+  enforces exactly that and a menu entry that always 403s is worse than none).
+  **Accepting is a join, not an acknowledgement**: the route redeems the room
+  code into a seat server-side and returns the snapshot, so no client ever
+  holds the code. Two things to know before finishing it:
+  - **The one missing wire is `onJoinedTable` in `poker-app.tsx`.** The drawer
+    takes that optional callback and only renders Join where it is supplied;
+    `lobby.tsx` cannot supply it because the handler has to `setGame`. There is
+    no resume-on-load path (`game` starts null and nothing fetches an active
+    table on mount), so a reload cannot substitute. It is a one-line prop pass
+    — it was left undone only because `poker-app.tsx` had uncommitted work from
+    a concurrent session at the time.
+  - **There is still no way to *start* a friend request in-app**, so invites
+    only work between people who are somehow already friends. `Seat.profileId`
+    exists for exactly this and the seat menu that would use it is still the
+    next slice. Judge any felt-side control against the status-pill history —
+    `table-feed.spec.ts` asserts no seat renders one.
+  - Accept ordering, which is the part worth not breaking: pre-flight the
+    fixable failures (table gone, full, cannot afford) *before* consuming the
+    invite, then consume via the status-guarded write, then debit and seat with
+    a refund on failure. Burning a one-shot invite to say "you need more Gold"
+    makes a fixable case unrecoverable; consuming after seating lets two tabs
+    buy in twice.
+- **M17 (chip cosmetics) is deliberately not started** — the user parked it
+  until the 3D simulation is finished. Do not pick it up without them saying so.
+- **M18 is in: player rank, XP and a daily streak.** `lib/progression/rank.ts`
+  is the whole curve, pure and closed-form (XP = Gold wagered / 10; level N
+  costs `XP_STEP·(N-1)N/2`, inverted by a square root that is then re-checked
+  against integer arithmetic, because a float that drifts shows level 9 to
+  someone holding exactly the XP for 10). `lib/progression/streak.ts` is the
+  daily multiplier, keyed on `YYYY-MM-DD` UTC day strings rather than
+  millisecond arithmetic. `lib/server/progression-store.ts` +
+  `20260806200000_player_progression.sql` persist it; `GET /api/progression`
+  reads it; `components/profile/rank-strip.tsx` draws it in the lobby. Points
+  that are load-bearing rather than decorative:
+  - **The migration is written but NOT applied anywhere.** A live dev server
+    against the real project returns `Could not find the table
+    'public.player_progression' in the schema cache`. This is exactly the
+    `credit_gold` incident the checklist above exists to prevent: apply it and
+    confirm `supabase migration list --linked` before any of this code merges.
+    The one reassurance is that the failure is contained — a blackjack deal
+    against that same server still succeeded, because `awardWager` swallows its
+    own errors by contract.
+  - **The rewards are small in Gold and large in standing, on purpose.** Gold
+    is sold for real money, so a level reward is a faucet. Only every fifth
+    level pays, and a test asserts the whole ladder to level 100 pays back
+    under 1% of the turnover it takes to climb it — inside the arcade's ~3%
+    edge, with room for the daily grant on top. The streak multiplier is capped
+    at 7 days / ×2.5 for the same reason. Do not raise either without redoing
+    that arithmetic.
+  - **There is no `level` column, and there must not be.** `levelForXp` derives
+    it; storing it too would be a second definition of the ladder *and*
+    unwritable without a race (the level a write lands on is unknown until
+    after the write). `award_progression_xp` returns the xp on both sides
+    instead, which is all `rewardsBetween` needs — and returning both is what
+    makes "did this cross a level" answerable exactly once.
+  - Ordering: the XP write happens before its reward is paid, and the payout
+    goes through `creditGold` (the guarded RPC), never `adjustGold`, which is
+    still a plain read-then-write. Both rules are restated at the top of the
+    store because breaking either is a silent money bug.
+  - Hooks live in `blackjack-service.ts` (deal, and again on a double),
+    `hi-lo-service.ts` (deal) and `hand-completion.ts` (poker, `seat.committed`
+    as the wager — chips and Gold are at parity across the buy-in/cash-out
+    boundary, so one surface must not become the efficient place to grind).
+    **The roulette/video-poker/coin-flip services a concurrent session was
+    building were left unhooked** — adding progression is one `awardWager` line
+    per settle path. The poker hook has no per-hand idempotency key of its own
+    and relies on `onHandCompleted`'s "once per completion, only when the write
+    won" contract.
+  - The claim route records the streak *before* attempting the credit. Safe
+    only because `streakAfterClaim` is idempotent for the day; reversed, a
+    process dying between the two pays the multiplier without recording the day
+    that earned it.
+  - `.rank-strip` sits between the hub head and `.hub-grid`, never inside it —
+    the grid's spans are arithmetic and a fifth small tile reopens the hole the
+    arcade panel was added to close. It renders nothing until its fetch lands,
+    so it cannot push the tiles down and then pull them back.
+- **M19 (lobby expansion) was not touched**: a concurrent session owns that
+  surface. Everything in `components/arcade/`, `lib/arcade/{roulette,
+  video-poker,coin-flip,hud,dealer-rig,dealer}*`, `lib/server/{casino-round,
+  roulette,video-poker}-service.ts`, `app/styles/27–30`, `app/globals.css` and
+  `components/poker-app.tsx` was deliberately left alone. That constraint is
+  why progression styles went into `04-lobby.css` and `21-friends.css` rather
+  than a new numbered sheet — a new sheet needs a `globals.css` import.
 - Invite freshness is a predicate on each row's `expires_at`, never a
   consequence of the sweep. `getPendingTableInvites` filters
   `expires_at > now()`, so a lapsed invite disappears the second it lapses

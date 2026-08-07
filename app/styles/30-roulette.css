@@ -1,0 +1,186 @@
+/* Roulette.
+ *
+ * The shell is .bj-* from 23-blackjack.css and 28-arcade-hud.css. What is here
+ * is the two things only this game has: a wheel that needs to stay square at
+ * every width, and a real betting layout -- three columns of twelve with the
+ * zero across the top, which is the one part of a roulette table a player
+ * already knows how to read and must not be redesigned into a list.
+ */
+
+/* ---- The stage: wheel beside the bet ---- */
+
+.rl-stage {
+  display: flex;
+  gap: clamp(14px, 4vw, 32px);
+  align-items: center;
+  justify-content: center;
+}
+
+/* Square, always. The canvas paints into its own client box, so a width
+   without a matching height would letterbox the wheel into an ellipse. */
+.rl-wheel {
+  flex: 0 0 auto;
+  width: clamp(168px, 34vw, 260px);
+  aspect-ratio: 1;
+  /* The rim is a lit metal ring; the drop shadow is what lifts it off the
+     felt rather than printing it on. */
+  filter: drop-shadow(0 8px 20px rgba(0,0,0,.5));
+}
+
+.rl-stage-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rl-stage-label {
+  color: #7f9084;
+  font-size: 8.5px;
+  font-weight: 750;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.rl-stage-bet { color: #f2f6f1; font: 600 19px Georgia, serif; }
+.rl-stage-odds { color: var(--gold-light); font-size: 11px; font-weight: 700; }
+
+.rl-dealer-head,
+.rl-player-head { justify-content: center; }
+
+/* ---- The layout ----
+ *
+ * Three columns of twelve, read left to right in rows of three, with the zero
+ * spanning the top. That is how the felt is printed in every house on earth,
+ * and a player who knows roulette should not have to learn this one.
+ */
+
+.rl-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rl-numbers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+}
+
+.rl-number {
+  min-height: 30px;
+  padding: 0 4px;
+  color: #f4efe2;
+  border: 0;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: box-shadow .14s ease, transform .1s ease;
+}
+/* The pocket colours are the wheel's, not the HUD's -- a red 32 on the layout
+   has to be the same red the canvas paints, or the two read as two games.
+   These four values are duplicated from PALETTE in roulette-wheel.tsx by
+   necessity (a canvas cannot read a CSS variable it was never given); keep
+   them in step. */
+.rl-number-red { background: #a3232b; }
+.rl-number-black { background: #17191c; }
+.rl-number-green { background: #1c6b47; }
+.rl-number-zero { grid-column: 1 / -1; }
+
+.rl-number:hover:not(:disabled) { transform: translateY(-1px); }
+.rl-number-on {
+  /* A ring rather than a border swap: every number is a filled tile already,
+     and changing its fill to show selection would fight the colour that is
+     carrying the game's actual information. */
+  box-shadow: 0 0 0 2px var(--gold-light), 0 0 12px rgba(217,184,93,.4);
+  transform: translateY(-1px);
+}
+.rl-number:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.rl-number:disabled { opacity: .55; cursor: not-allowed; }
+
+.rl-outside {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.rl-outside-bet {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: center;
+  min-height: 38px;
+  padding: 5px 4px;
+  color: #9fb0a7;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255,255,255,.04);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .14s ease, color .14s ease, box-shadow .14s ease;
+}
+.rl-outside-bet em {
+  color: var(--gold-light);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 750;
+  letter-spacing: .04em;
+}
+.rl-outside-bet:hover:not(:disabled) { background: rgba(255,255,255,.07); }
+.rl-outside-on {
+  color: #17170f;
+  background: linear-gradient(168deg, #f0dca4, #dcbb63 60%, #c3a049);
+}
+.rl-outside-on em { color: rgba(23,23,15,.7); }
+.rl-outside-bet:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.rl-outside-bet:disabled { opacity: .55; cursor: not-allowed; }
+
+/* ---- Desktop: the layout turns ----
+ *
+ * A real roulette felt is wide, not tall: twelve columns of three with the
+ * zero standing on its end down the left-hand side. Stacked the other way it
+ * is 430px tall and pushes the wheel -- the thing worth looking at -- off the
+ * screen entirely. `grid-auto-flow: column` over three explicit rows is what
+ * turns it, and the zero is placed by hand because it spans all three.
+ *
+ * One honest departure: the rows run 1,4,7… along the top, where a felt in a
+ * real house prints them along the bottom. Reversing it needs either explicit
+ * placement for all 36 tiles or a scaleY flip undone per cell, and neither is
+ * worth its weight -- the column bets are their own labelled buttons, so
+ * nothing here depends on which row is which.
+ */
+@media (min-width: 900px) {
+  .rl-numbers {
+    grid-template-columns: auto repeat(12, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    grid-auto-flow: column;
+  }
+  .rl-number { min-height: 34px; }
+  .rl-number-zero {
+    /* Overrides the phone rule's full-width span. */
+    grid-column: 1;
+    grid-row: 1 / -1;
+    padding: 0 10px;
+  }
+}
+
+/* ---- Phone ----
+ *
+ * The layout is the one thing that must NOT collapse: three columns of twelve
+ * is the shape a player recognises, so it keeps its grid and the tiles shrink
+ * instead. The stage stacks, because a 260px wheel beside text does not fit
+ * 390px and the wheel is the thing worth keeping big.
+ */
+@media (max-width: 640px) {
+  .rl-stage { flex-direction: column; gap: 10px; }
+  .rl-stage-copy { align-items: center; text-align: center; }
+  .rl-wheel { width: min(58vw, 210px); }
+
+  .rl-number { min-height: 26px; font-size: 11px; }
+  .rl-outside-bet { min-height: 34px; font-size: 10px; }
+  .rl-outside-bet em { font-size: 8.5px; }
+
+  /* The layout scrolls with the page rather than living in the docked bar --
+     37 numbers plus twelve outside bets is far too tall to dock. */
+  .rl-layout { padding-bottom: 4px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rl-number:hover:not(:disabled),
+  .rl-number-on { transform: none; }
+}

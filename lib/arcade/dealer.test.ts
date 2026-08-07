@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BlackjackOutcome } from "./blackjack";
-import { DEALER_NAME, dealerLine } from "./dealer";
+import { DEALER_DOGS, DEALER_NAME, TIP_LINE, dealerLine } from "./dealer";
 
 describe("dealerLine", () => {
   it("has something to say before a round exists", () => {
@@ -37,7 +37,66 @@ describe("dealerLine", () => {
     expect(dealerLine("settled", "player-bust")).not.toBe(dealerLine("settled", "dealer-win"));
   });
 
-  it("names the dealer in the same register as the bot pool", () => {
-    expect(DEALER_NAME).toMatch(/^[A-Z][a-z]+$/);
+  it("names both dogs, in the same register as the bot pool", () => {
+    // Two single first names joined -- the same shape as the poker table's
+    // pool ("Jax", "Maya", "Theo"), not a product name.
+    expect(DEALER_NAME).toMatch(/^[A-Z][a-z]+ & [A-Z][a-z]+$/);
+    for (const dog of DEALER_DOGS) expect(DEALER_NAME).toContain(dog.name);
+  });
+
+  it("asks for a tip in a line short enough to sit in a bubble", () => {
+    expect(TIP_LINE).toBe("Tip the dealer!");
+    expect(TIP_LINE.length).toBeLessThanOrEqual(24);
+  });
+});
+
+/*
+ * These moved here from lib/arcade/dealer-rig.test.ts when the three.js stage
+ * was deleted. They are the assertions that were about WHO these two are
+ * rather than about how a mesh was assembled, and they outlive the renderer:
+ * the flat 34px crop and the 2D scene both draw from the same cast.
+ */
+describe("the cast", () => {
+  const [loki, finn] = DEALER_DOGS;
+
+  it("is two different dogs, not one dog twice", () => {
+    expect(loki.id).not.toBe(finn.id);
+    expect(loki.name).not.toBe(finn.name);
+  });
+
+  it("tells them apart by coat, which is the whole read at 34px", () => {
+    // The pair used to be distinguished by ear style -- one flop, one prick.
+    // They are both drop-eared doodles now, so colour is the ONLY thing
+    // carrying the difference, and it has to carry it hard. An apricot dog and
+    // a black dog are about as far apart as two coats get; anything closer
+    // than this and the crop beside the hand is one dog drawn twice.
+    expect(loki.coat.base).not.toBe(finn.coat.base);
+    const brightness = (hex: string) =>
+      [1, 3, 5].reduce((sum, at) => sum + parseInt(hex.slice(at, at + 2), 16), 0) / 3;
+    expect(brightness(loki.coat.base) - brightness(finn.coat.base)).toBeGreaterThan(80);
+  });
+
+  it("keeps the black dog off true black, so it has a silhouette at all", () => {
+    // Finn is a black dog on an almost-black page. A #000 coat is a hole in
+    // the picture, not a dog.
+    const darkest = Math.min(...[1, 3, 5].map((at) => parseInt(finn.coat.base.slice(at, at + 2), 16)));
+    expect(darkest).toBeGreaterThan(16);
+  });
+
+  it("gives the shaggier dog more coat", () => {
+    expect(loki.fluff).toBeGreaterThan(finn.fluff);
+  });
+
+  it("dresses them both in the same house uniform", () => {
+    expect(finn.uniform).toEqual(loki.uniform);
+  });
+
+  it("names a breed and a colour for each, so the joke has an explanation", () => {
+    for (const dog of DEALER_DOGS) {
+      expect(dog.breed.length, dog.name).toBeGreaterThan(8);
+      // One line under a name in .dealer-stage-name -- two dogs' breeds
+      // wrapping would push the caption up over their own paws.
+      expect(dog.breed.length, dog.name).toBeLessThanOrEqual(40);
+    }
   });
 });

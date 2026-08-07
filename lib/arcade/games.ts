@@ -6,11 +6,18 @@
  * lib/game/seat-presence.ts does: vitest.config.ts's `include` only covers
  * lib/ and app/, so nothing under components/ is reachable by `npm test`.
  *
- * Blackjack 21 is live (lib/arcade/blackjack.ts, /games/blackjack). The other
- * nine are `status: "coming-soon"` with a null href -- the same convention
- * MENU_MUSIC_TRACK and the unverified SFX entries already use here: the shape
- * is finished and going live is two fields, rather than a stub that has to be
- * redesigned when the game behind it actually lands.
+ * All ten are live now. The `coming-soon` / null-href convention that carried
+ * the last six is still the one to use for an eleventh: the shape is finished
+ * and going live is two fields, rather than a stub that has to be redesigned
+ * when the game behind it actually lands. A test pins live-iff-href, because a
+ * live entry with a null href renders an unclickable Play and a coming-soon
+ * entry with an href is a 404 waiting to be linked.
+ *
+ * Two `entryCost`s were corrected when their games landed -- video poker's 500
+ * and coin flip's 250. Neither was a stake the tier ladder can select, so the
+ * hub was quoting a price no button in the game could charge. A placeholder
+ * cost is a claim about the economy, and it has now been wrong three times
+ * (Hi-Lo's was the first): price a new row off TIER_CONFIG or leave it at 0.
  */
 
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -120,9 +127,12 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     name: "Video Poker",
     blurb: "Jacks or better, single hand",
     kind: "casino",
-    entryCost: 500,
-    status: "coming-soon",
-    href: null,
+    // 1,000, not the 500 this sat at while it was a placeholder: the round
+    // charges TIER_CONFIG's cheapest tier, and the hub must not quote a price
+    // no stake button can actually select. Same correction Hi-Lo needed.
+    entryCost: 1000,
+    status: "live",
+    href: "/games/video-poker",
   },
   {
     id: "roulette-wheel",
@@ -130,8 +140,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "European single zero",
     kind: "casino",
     entryCost: 1000,
-    status: "coming-soon",
-    href: null,
+    status: "live",
+    href: "/games/roulette",
   },
   {
     id: "daily-sudoku",
@@ -139,8 +149,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "One grid a day, four difficulties",
     kind: "puzzle",
     entryCost: 0,
-    status: "coming-soon",
-    href: null,
+    status: "live",
+    href: "/games/sudoku",
   },
   {
     id: "memory-match",
@@ -148,8 +158,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "Pair the card backs against the clock",
     kind: "puzzle",
     entryCost: 0,
-    status: "coming-soon",
-    href: null,
+    status: "live",
+    href: "/games/memory",
   },
   {
     id: "baccarat",
@@ -157,17 +167,23 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "Punto banco, player or bank",
     kind: "casino",
     entryCost: 5000,
-    status: "coming-soon",
-    href: null,
+    status: "live",
+    href: "/games/baccarat",
   },
   {
     id: "coin-flip",
     name: "Coin Flip",
-    blurb: "Double or nothing, one call",
+    // Not "double or nothing": a fair coin paying exactly double has a house
+    // edge of precisely zero, which is a hole in the economy rather than a
+    // generous game. Wins pay 1.97x and the run compounds until you bank it --
+    // see lib/arcade/coin-flip.ts. A blurb promising a mechanic the table does
+    // not have is a promise broken on the click, the same way Hi-Lo's was.
+    blurb: "Call it, then bank or let it ride",
     kind: "casino",
-    entryCost: 250,
-    status: "coming-soon",
-    href: null,
+    // 1,000, not 250: the ladder's cheapest rung is what a round costs.
+    entryCost: 1000,
+    status: "live",
+    href: "/games/coin-flip",
   },
 ];
 

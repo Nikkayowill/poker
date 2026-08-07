@@ -101,22 +101,62 @@
 
 /* ---- Felt ---- */
 
+/* The room, and the single authority on where the table's rail is.
+ *
+ * This used to be a flex column that stacked a 560px WebGL panel of two dogs
+ * on top of two hands of cards -- a picture of a room inside a room, which is
+ * what made the dealers look like something on a television rather than
+ * somebody across a table. It is one continuous space now: the casino, the
+ * cloth and the pair are layers behind the cards (app/styles/27-dealer-stage
+ * .css), and the game is played inside the same picture they are in.
+ *
+ * TWO ROWS. Row one is the dealers' airspace; row two is the playing surface.
+ * THE BOUNDARY BETWEEN THEM IS THE RAIL, and expressing it as a grid line is
+ * deliberate: the alternative is a shared percentage restated in this file and
+ * in the layer sheet, which is precisely the two-places-one-number drift that
+ * has already cost this project a mis-aimed speech bubble and a header whose
+ * height was declared twice.
+ *
+ * The `0.85fr` is a ratio, not a size, so the pair keep their share of a short
+ * landscape phone and a tall desktop alike; `minmax` floors it so they never
+ * collapse to a sliver, and `auto` on row two means the cards always take
+ * exactly the room they need and the dogs get the rest. */
 .bj-felt {
+  position: relative;
   flex: 1;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(clamp(132px, 22vh, 260px), .85fr) auto;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  /* A new stacking context, so the layers' z-indexes are scoped to the room
+     and cannot interleave with the page's fixed action bar. */
+  isolation: isolate;
+  /* Only ever seen through a layer that failed to load. Every visible surface
+     is painted by 27-dealer-stage.css. */
+  background: #06100c;
+}
+
+/* The live game: cards, totals, the verdict. Nearest the player, so above
+   every painted layer. */
+.bj-play {
+  grid-area: 2 / 1;
+  position: relative;
+  z-index: 3;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   justify-content: center;
-  min-height: 0;
-  padding: clamp(18px, 4vw, 34px) clamp(14px, 3vw, 30px);
-  border: 1px solid rgba(255,255,255,.07);
-  border-radius: 18px;
-  /* The felt's own lighting, kept as a single soft radial rather than the
-     multi-stop treatment in 05-game-header.css -- that one is hand-tuned
-     against banding on real devices and is not worth copying blind. */
-  background:
-    radial-gradient(120% 80% at 50% 0%, rgba(30,96,71,.55) 0%, rgba(14,57,42,.5) 46%, rgba(9,20,16,.6) 100%),
-    linear-gradient(180deg, #12241d, #0c1512);
+  min-width: 0;
+  /* That top padding is CLEARANCE, not taste. `.bj-felt-print` is painted by
+     the surface layer 44px below the rail, and this row starts at the same
+     line -- so at the old 46px the dealer's name and total printed straight
+     across "DEALER STANDS ON SOFT 17". The cards have to start below the
+     cloth's own lettering, exactly as they would on a real table. Keep this
+     and .bj-felt-print's `top` in step; there is a spec pinning that they do
+     not overlap. */
+  padding: clamp(58px, 6vw, 82px) clamp(14px, 3vw, 30px) clamp(18px, 3vw, 30px);
 }
 
 .bj-hand { display: flex; flex-direction: column; gap: 8px; align-items: center; }
@@ -128,10 +168,15 @@
 /* Name over patter, so the head stays two lines tall whether or not there is
    a caption -- the felt must not jump as the dealer's line changes length. */
 .bj-hand-who { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+/* Everything in .bj-play now sits on lit green cloth rather than on the old
+   near-black panel, so the muted greys it used to use went illegible. The
+   type is lifted and given a real drop shadow instead of a plate behind it --
+   a box here would put the framed panel back that this whole pass removed. */
 .bj-hand-caption {
-  color: #64736b;
+  color: #cbdccf;
   font-size: 10.5px;
   font-style: italic;
+  text-shadow: 0 1px 4px rgba(0,0,0,.85);
   /* One line, always. The dealer's lines are constants (lib/arcade/dealer.ts)
      so this cannot actually trigger today -- it is here so a longer line
      added later clips instead of reflowing the felt. */
@@ -153,11 +198,12 @@
 .dealer-avatar svg { display: block; width: 100%; height: 100%; }
 
 .bj-hand-label {
-  color: #7f9084;
+  color: #e2ece4;
   font-size: 9px;
   font-weight: 750;
   letter-spacing: .16em;
   text-transform: uppercase;
+  text-shadow: 0 1px 4px rgba(0,0,0,.85);
 }
 .bj-hand-total {
   min-width: 30px;
@@ -189,7 +235,8 @@
 
 .bj-verdict { display: flex; justify-content: center; min-height: 34px; align-items: center; }
 .bj-verdict-idle {
-  color: #64736b;
+  color: #cbdccf;
+  text-shadow: 0 1px 4px rgba(0,0,0,.85);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: .18em;
@@ -292,7 +339,13 @@
   .bj-meter { min-width: 0; flex: 1; padding: 6px 10px; }
   .bj-header-meters { width: 100%; gap: 6px; }
 
-  .bj-felt { gap: 10px; padding: 16px 10px; border-radius: 14px; }
+  /* The pair keep a smaller share of a phone: two hands, a verdict and the
+     docked action bar all have to fit one viewport, and the dogs are the only
+     thing here that can afford to be smaller. */
+  .bj-felt { grid-template-rows: minmax(clamp(96px, 17vh, 150px), .6fr) auto; border-radius: 14px; }
+  /* Same clearance argument as the desktop rule, against the phone's smaller
+     print offset (27-dealer-stage.css moves .bj-felt-print to top: 30px). */
+  .bj-play { gap: 9px; padding: 46px 10px 14px; }
   /* Cards drop to the community size on a phone; two .card-large hands plus
      the verdict do not fit a 640px-tall viewport otherwise. */
   .bj-cards .playing-card.card-large { width: clamp(52px, 17vw, 68px); }

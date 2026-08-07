@@ -6,8 +6,10 @@ import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { PlayingCard } from "@/components/table/playing-card";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
-import { DealerAvatar } from "@/components/arcade/dealer-avatar";
-import { DEALER_NAME, dealerLine } from "@/lib/arcade/dealer";
+import { DealerStage } from "@/components/arcade/dealer-stage";
+import { DEALER_NAME, TIP_LINE, dealerLine } from "@/lib/arcade/dealer";
+import { dealerExpression } from "@/lib/arcade/dealer-scene";
+import { TIP_AMOUNTS, shouldOfferTip, type TipAmount } from "@/lib/arcade/tipping";
 import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { Card } from "@/lib/game/types";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -35,6 +37,23 @@ import {
  * decision; `snapshot.legal` is computed from the same engine call the route
  * re-runs before it moves anything.
  */
+
+/*
+ * DealerStage is a plain import now.
+ *
+ * It used to be behind next/dynamic with `ssr: false`, because it was a
+ * three.js scene and three is ~350KB of JavaScript that a lobby, a landing
+ * page and eight other arcade boards had no use for. It is four positioned 2D
+ * layers today -- no renderer, no GPU context, nothing for the server to
+ * choke on -- so the split bought nothing except a frame of empty felt on
+ * every page load. three.js left the dependency tree with the old scene; this
+ * route was its only importer.
+ */
+
+interface TipResponse {
+  profile: PlayerProfile;
+  thanks: string;
+}
 
 interface BlackjackResponse {
   round: BlackjackSnapshot | null;
@@ -99,6 +118,19 @@ export function BlackjackTable() {
   const [error, setError] = useState<string | null>(null);
   const [sessionNet, setSessionNet] = useState(0);
   const [handsPlayed, setHandsPlayed] = useState(0);
+  /**
+   * The tip jar's cadence, which is client state on purpose.
+   *
+   * How often the pair ask is presentation and costs nothing if a refresh
+   * forgets it; how much Gold actually left the wallet is not, and lives
+   * server-side in lib/server/tip-service.ts. `resolvedAtHand` carries no
+   * record of WHICH way an offer was resolved, because asking a payer back
+   * sooner than a refuser is how a tip jar turns into a dark pattern -- see
+   * lib/arcade/tipping.ts.
+   */
+  const [tipResolvedAtHand, setTipResolvedAtHand] = useState<number | null>(null);
+  const [tipThanks, setTipThanks] = useState<string | null>(null);
+  const [tipping, setTipping] = useState(false);
   /**
    * Which round ids have already been added to the session tally. Scoring on
    * "the snapshot says settled" alone would double-count every time a settled
@@ -189,6 +221,64 @@ export function BlackjackTable() {
     });
   };
 
+  /**
+   * Tipping the pair. A pure sink -- the Gold leaves and nothing comes back
+   * but XP and a thank-you, which is exactly what a tip is.
+   *
+   * `setTipResolvedAtHand` runs in `finally`, so a failed tip still starts the
+   * cooldown: the alternative is a bubble that re-offers immediately after an
+   * error and nags hardest at the player it just failed.
+   */
+  const tip = async (amount: TipAmount) => {
+    if (tipping) return;
+    setTipping(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/arcade/tip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+      const data = (await response.json()) as Partial<TipResponse> & { error?: string };
+      if (data.profile) setProfile(data.profile);
+      if (!response.ok) {
+        setError(data.error ?? "That tip did not go through.");
+        return;
+      }
+      setTipThanks(data.thanks ?? null);
+    } catch {
+      setError("Could not reach the table. Check your connection.");
+    } finally {
+      setTipping(false);
+      setTipResolvedAtHand(handsPlayed);
+    }
+  };
+
+  // The thanks is a beat, not a state: it clears itself so the bubble does not
+  // sit on the felt for the rest of the session.
+  useEffect(() => {
+    if (!tipThanks) return;
+    const timer = window.setTimeout(() => setTipThanks(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [tipThanks]);
+
+  const offeringTip = shouldOfferTip({
+    handsPlayed,
+    resolvedAtHand: tipResolvedAtHand,
+    roundLive: live,
+  });
+
+  /**
+   * Which face the pair are wearing.
+   *
+   * A tip overrides the round's own expression, and outranking it is the
+   * point: being thanked is the one moment the dogs are reacting to the
+   * PLAYER rather than to the cards.
+   */
+  const expression = tipThanks
+    ? "cheer"
+    : dealerExpression(round?.phase ?? null, round?.outcome ?? null);
+
   const dealerCards = round?.dealerHand ?? [];
   const dealerTotal = round ? handTotal(dealerCards) : null;
   const playerTotal = round ? handTotal(round.playerHand) : null;
@@ -232,10 +322,76 @@ export function BlackjackTable() {
       {error && <p className="bj-error" role="alert">{error}</p>}
 
       <section className="bj-felt" aria-live="polite" aria-busy={busy}>
+        {/*
+         * The room: casino, cloth and the pair, as layers behind the cards.
+         *
+         * Not a panel dropped into the top of the felt -- these are grid
+         * children of this section, and the boundary between its two rows is
+         * the table's rail. See app/styles/23-blackjack.css.
+         */}
+        <DealerStage
+          expression={expression}
+          bubble={
+            tipThanks
+              ? (
+                <div className="bj-bubble">
+                  <span className="bj-bubble-line">{tipThanks}</span>
+                </div>
+              )
+              : offeringTip
+                ? (
+                  <div className="bj-bubble">
+                    <span className="bj-bubble-line">{TIP_LINE}</span>
+                    <span className="bj-tip-amounts">
+                      {TIP_AMOUNTS.map((amount) => (
+                        <button
+                          key={amount}
+                          type="button"
+                          className="bj-tip-amount"
+                          // The wallet gate is a courtesy that produces a
+                          // better disabled state; spendGold on the server is
+                          // the authority, and a stale balance here cannot let
+                          // an unaffordable tip through.
+                          disabled={
+                            tipping
+                            || (!wallet.unlimitedGold && wallet.goldBalance < amount)
+                          }
+                          onClick={() => void tip(amount)}
+                        >
+                          {amount}
+                        </button>
+                      ))}
+                    </span>
+                    <button
+                      type="button"
+                      className="bj-tip-dismiss"
+                      aria-label="Not now"
+                      // Waving them away resolves the offer exactly as paying
+                      // does, and buys exactly the same quiet.
+                      onClick={() => setTipResolvedAtHand(handsPlayed)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )
+                : null
+          }
+        />
+
+        <div className="bj-play">
+        {/*
+         * No avatar on this hand.
+         *
+         * It used to carry a 34px <DealerAvatar />, which meant the page drew
+         * Loki and Finn TWICE -- once in the stage above, once again forty
+         * pixels below in a different art style, both labelled "Loki & Finn".
+         * That duplication was most of what made the stage read as a
+         * television rather than a table. The pair are in the room now; this
+         * row is just their hand.
+         */}
         <Hand
           label={DEALER_NAME}
           caption={dealerLine(round?.phase ?? null, round?.outcome ?? null)}
-          avatar={<DealerAvatar />}
           cards={dealerCards}
           total={dealerTotal ? `${dealerTotal.total}${dealerTotal.soft ? " soft" : ""}` : ""}
           hideTotal={!round}
@@ -283,6 +439,7 @@ export function BlackjackTable() {
           total={playerTotal ? `${playerTotal.total}${playerTotal.soft ? " soft" : ""}` : ""}
           hideTotal={!round}
         />
+        </div>
       </section>
 
       <section className="bj-controls">

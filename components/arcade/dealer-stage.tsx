@@ -36,9 +36,19 @@ import { DealerAvatar } from "@/components/arcade/dealer-avatar";
  * number in CSS and a matching one in JS is exactly the drift that put the
  * old speech-bubble tails half a bubble-width beside the bubble.
  *
- * DEPTH, back to front: room, surface, dealers, play. The dealers sit ABOVE
- * the surface because their paws drape over the rail, and the live cards sit
+ * DEPTH, back to front: room, dealers, surface, play. The dealers sit BELOW
+ * the surface, so the cloth crosses them at the rail, and the live cards sit
  * above everything because they are nearest the player.
+ *
+ * That order is a correction, and the reason is worth keeping. The dealers used
+ * to sit ABOVE the surface so their paws draped over the rail -- which was fine
+ * while they were a flat CSS crop and wrong the moment real art landed. Two
+ * full-colour cut-outs painted on top of a table read as exactly that: nothing
+ * in the room ever passes in front of them, and an object no other object
+ * occludes has no depth, whatever else you do to it. The layers are ordered for
+ * occlusion now, and 27-dealer-stage.css does the rest -- the lower body fades
+ * out through the band above the rail so the pair dissolve into the room's dark
+ * air instead of stopping at an edge.
  *
  * NO WEBGL, no canvas, no renderer, no GPU context, no `next/dynamic`, no
  * cleanup, no fallback path -- and no three.js, which left the dependency tree
@@ -86,8 +96,9 @@ export function DealerStage({
       </div>
 
       {/* ---- The table. Its top edge is the rail, so it is placed in the
-              grid's second row and reaches a little above the boundary to put
-              the rail's lip behind the dogs' paws. ---- */}
+              grid's second row and reaches a little above the boundary so the
+              rail's lip crosses the dogs' chests -- it is the nearer layer, and
+              that overlap is a real occlusion rather than a seam. ---- */}
       <div className="bj-surface" data-art={tableArt ? "photo" : "painted"}>
         {tableArt && (
           /* See the note on .bj-room-art above. */

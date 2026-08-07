@@ -18,9 +18,14 @@ import { DEALER_DOGS, type DogId } from "./dealer";
  * The stack, back to front:
  *
  *   room     the casino behind the table -- lamps, pillars, bokeh
+ *   dealers  Loki and Finn, stood behind the table
  *   table    the felt, its layout print, the shoe and the discard tray
- *   dealers  Loki and Finn, whose paws drape over the table's back rail
  *   play     live DOM: cards, totals, the verdict, the controls
+ *
+ * The dealers are BEHIND the table, not in front of it. They used to be in
+ * front so their paws could drape over the rail, which was fine while they were
+ * a flat CSS crop and wrong the moment photographic art landed -- see the note
+ * in app/styles/27-dealer-stage.css for why occlusion is what sells the depth.
  *
  * SEPARATE LAYERS, NOT ONE FLATTENED IMAGE, and that is the whole design.
  * A single baked render cannot swap an expression, cannot let a card pass in
@@ -127,12 +132,41 @@ export const SCENE_ART: SceneArt = {
 };
 
 /**
+ * The one drawing each dog definitely has: their card-holding portrait.
+ *
+ * Cut from the owner's reference sheet, which drew the pair as busts in shirt,
+ * waistcoat and bow tie over a solid black plate -- so these were flood-filled
+ * from the corners rather than keyed on black globally. That distinction is not
+ * a detail: Finn is a black dog in a black waistcoat and a black bow tie, and a
+ * global key punches straight through all three. The safe fuzz was measured
+ * rather than guessed -- above ~3% the fill starts eating his tie and eyes --
+ * and the cut was checked for interior holes and against a LIGHT background,
+ * where a black fringe would show. Recut them that way or not at all.
+ *
+ * WHY A PORTRAIT AND NOT FOUR FACES. Only this one pose was drawn, and the
+ * choice was between shipping the real art now with one expression or holding
+ * all of it back until eight files exist. This is the former, and dogArt()
+ * below falls back here for any expression without its own file.
+ *
+ * THE CONSEQUENCE, stated plainly so nobody reads it as a bug: the dogs do not
+ * change face yet. dealerExpression() is still computed, still total over every
+ * phase and outcome, and still reaches the DOM as `data-expression` -- but with
+ * only a portrait behind it the pair hold this one look through a win and a
+ * bust alike. Dropping `loki-cheer.webp` beside these and adding its entry to
+ * DOG_ART is the whole step, per expression, with nothing else to change.
+ */
+const DOG_PORTRAIT: Record<DogId, string> = {
+  loki: `${SCENE_ART_DIR}/loki.webp`,
+  finn: `${SCENE_ART_DIR}/finn.webp`,
+};
+
+/**
  * Every dog-and-expression file that exists, keyed `<dog>-<expression>`.
  *
- * Empty today. Adding art is adding entries here -- and it is deliberately
- * PARTIAL rather than a full record, so the pair can be drawn one expression
- * at a time instead of needing all eight files before any of them can ship.
- * dogArtReady() below is what decides when the set is complete enough to use.
+ * Empty today -- the pair are drawn from DOG_PORTRAIT above. Adding art is
+ * adding entries here, and it is deliberately PARTIAL rather than a full
+ * record, so the pair can be drawn one expression at a time instead of needing
+ * all eight files before any of them can ship.
  */
 const DOG_ART: Partial<Record<`${DogId}-${DealerExpression}`, string>> = {};
 
@@ -141,10 +175,11 @@ const DOG_ART: Partial<Record<`${DogId}-${DealerExpression}`, string>> = {};
  *
  * Two files per expression per dog, kept apart rather than drawn as a pair, so
  * one of them can react while the other holds -- and so the taller dog can be
- * moved a few pixels without re-rendering both. Null until the art lands.
+ * moved a few pixels without re-rendering both. Falls back to the dog's
+ * portrait, so this is null only for a dog with no art at all.
  */
 export function dogArt(dog: DogId, expression: DealerExpression): string | null {
-  return DOG_ART[`${dog}-${expression}`] ?? null;
+  return DOG_ART[`${dog}-${expression}`] ?? DOG_PORTRAIT[dog] ?? null;
 }
 
 /**

@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BLACKJACK_PAYOUT,
@@ -106,15 +108,44 @@ describe("the art manifest", () => {
     expect(feltPrint().length).toBeGreaterThan(0);
   });
 
-  it("uses null rather than a broken path while the art is unshipped", () => {
+  it("uses null rather than a broken path for the layers still unshipped", () => {
     // The MENU_MUSIC_TRACK convention: a null is "not sourced yet" and renders
     // a placeholder, where a string pointing at a file that does not exist is
-    // a 404 in the middle of the felt.
+    // a 404 in the middle of the felt. The room and the table are still null;
+    // the dogs are not, which is what the next two tests are about.
     expect(SCENE_ART.room).toBeNull();
     expect(SCENE_ART.table).toBeNull();
+  });
+
+  it("draws both dogs at every expression", () => {
+    // The opposite of the assertion this test replaced, which pinned that every
+    // dogArt() was null while the art was outstanding. It is kept rather than
+    // deleted because the thing worth guarding was never "there is no art" --
+    // it is that the manifest and dogArtReady() agree, and a hole here is the
+    // flat placeholder crop silently coming back in place of the real pair.
     for (const dog of DEALER_DOGS) {
       for (const expression of DEALER_EXPRESSIONS) {
-        expect(dogArt(dog.id, expression), `${dog.id}/${expression}`).toBeNull();
+        expect(dogArt(dog.id, expression), `${dog.id}/${expression}`).not.toBeNull();
+      }
+    }
+    expect(dogArtReady()).toBe(true);
+  });
+
+  it("points every art path at a file that is actually on disk", () => {
+    /*
+     * The one assertion that can tell a manifest entry from a 404, and the
+     * reason it is worth reaching for the filesystem in a unit test: nothing
+     * else in this repo can. A typo'd path type-checks, renders, and shows two
+     * broken images in the middle of the felt -- and dogArtReady() would be
+     * true, so not even the placeholder would come back to cover it.
+     */
+    for (const dog of DEALER_DOGS) {
+      for (const expression of DEALER_EXPRESSIONS) {
+        const src = dogArt(dog.id, expression);
+        expect(src, `${dog.id}/${expression}`).not.toBeNull();
+        // Paths are web-absolute (`/dealer/...`) and served from public/.
+        const file = join(process.cwd(), "public", src as string);
+        expect(existsSync(file), `${src} is missing from public/`).toBe(true);
       }
     }
   });

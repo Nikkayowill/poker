@@ -721,6 +721,45 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   They replaced Vera, a single human croupier, at the user's request. The
   feature is deliberately silly and deliberately built like a serious one.
   Five things to know:
+  - **The pair are real art now, and they stand BEHIND the cloth.**
+    `public/dealer/{loki,finn}.webp` are the card-holding portraits cut from the
+    owner's reference sheet (a 4×2 grid of eight poses; only this one is cut —
+    the other six are still on the sheet). Three things about it:
+    - **Cut by corner flood-fill, never a global black key.** The sheet is drawn
+      on a solid black plate and Finn is a black dog in a black waistcoat and a
+      black bow tie, so a global key punches through all three — the same trap
+      `public/brand/stackchips-logo.png` hit. The safe fuzz was *measured*, not
+      guessed: above ~3% the fill starts eating his tie and eyes (his opaque
+      fraction collapses 0.52 → 0.20 by 20%). Both cuts were checked for
+      interior holes and composited over a *light* background, where a black
+      fringe would show. Recut them that way or not at all.
+    - **They are behind `.bj-surface`, not in front of it.** The layer order was
+      inverted so the paws could drape over the rail, which was right for a flat
+      CSS crop and wrong for photographic art: nothing in the room ever passed
+      in front of them, and an object no other object occludes has no depth. The
+      cloth crosses them at the rail now, they are ~35% smaller, and
+      `.bj-dealer` carries a `mask-image` that dissolves the lower body through
+      the band *above* the rail — tune those stops against how deep the pair are
+      sunk, or the fade happens where nobody can see it. `brightness` below ~.85
+      turns Finn into a silhouette with two eyes, which is the trap his coat
+      colour exists to avoid.
+    - **`.bj-dealer`'s size caps were circular and silently broken.** Its
+      `max-width`/`max-height` are percentages of `.bj-dealer-pair`, which was
+      shrink-to-fit on both axes — so each cap was a fraction of a box that cap
+      determined. It settled at 362×280 with the images pinned by `max-width:
+      30%` of the 362 they produced, and asking for a *smaller* percentage made
+      them smaller twice over. The pair fills the row on both axes now. Any
+      percentage cap in this file wants a definite parent.
+    - The four expressions are still declared and `dealerExpression()` is still
+      total, but with one portrait per dog the pair **hold one face** through a
+      win and a bust alike. `DOG_PORTRAIT` is the fallback; dropping
+      `loki-cheer.webp` in and adding its `DOG_ART` entry is the whole step.
+    - **Known drift, not fixed:** `dealer.ts` dresses them in a green croupier
+      visor and a *gold* bow tie. The art has neither — no visor, black tie. The
+      flat SVG (`dealer-avatar.tsx`) reads those constants and renders live in
+      **five other arcade games**, so Blackjack now shows black-tie photo dogs
+      while video poker, roulette, coin flip, baccarat and hi-lo show
+      green-visored gold-tie ones. Fixing it means redrawing the SVG.
   - **The coats are Loki apricot `#d99b5c` and Finn black `#332e30`**, from the
     owner's own reference sheet. An earlier pass had Loki as a blue-merle with
     blue eyes and Finn as a tall golden — both wrong, and wrong in a way no

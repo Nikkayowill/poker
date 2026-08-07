@@ -11,9 +11,18 @@
  * DEPTH, back to front:
  *
  *   0  .bj-room       the casino behind the table, full bleed
- *   1  .bj-surface    the cloth, its printed layout, the rail
- *   2  .bj-dealers    Loki and Finn, whose paws drape over that rail
+ *   1  .bj-dealers    Loki and Finn, stood behind that cloth
+ *   2  .bj-surface    the cloth, its printed layout, the rail
  *   3  .bj-play       live cards and totals (23-blackjack.css)
+ *
+ * THE DEALERS USED TO SIT ABOVE THE CLOTH so their paws draped over the rail,
+ * and that was wrong once real art landed. Two full-colour cut-outs painted on
+ * top of the table read exactly as what they are -- two pictures of dogs pasted
+ * over a picture of a table -- because nothing in the room ever passes in front
+ * of them, and an object no other object occludes has no depth. Occlusion is
+ * the strongest depth cue available to a flat stack, and it costs one z-index.
+ * The cloth crosses them at the rail now, which is where a real croupier's
+ * table crosses a real croupier.
  *
  * EVERY LAYER HAS A PAINTED FALLBACK. `data-art="photo"` means a real asset
  * landed and the CSS gets out of its way; `data-art="painted"` means the path
@@ -63,12 +72,12 @@
 .bj-surface {
   grid-area: 2 / 1;
   position: relative;
-  z-index: 1;
+  z-index: 2;
   overflow: hidden;
-  /* Reaches above the row boundary so the rail's lip passes BEHIND the dogs'
-     paws rather than butting against them. The dealers layer sits at z-index
-     2, so this overlap is what joins the two halves of the picture into one
-     table instead of two stacked bands. */
+  /* Reaches above the row boundary so the rail's lip crosses the dogs' chests
+     rather than butting against them. The dealers layer sits BELOW this one, so
+     that overlap is a real occlusion -- it is what joins the two halves of the
+     picture into one table instead of two stacked bands. */
   margin-top: -26px;
 }
 
@@ -145,7 +154,7 @@
 .bj-dealers {
   grid-area: 1 / 1;
   position: relative;
-  z-index: 2;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   /* Sat ON the rail: the row's bottom edge is the boundary, so aligning to it
@@ -161,19 +170,66 @@
   align-items: flex-end;
   justify-content: center;
   gap: clamp(4px, 1.5vw, 22px);
-  /* Down over the rail, so the paws break the line of it. */
-  margin-bottom: -14px;
+  /* FILLS THE ROW ON BOTH AXES, and that is the point.
+   *
+   * `.bj-dealer` caps itself with a max-width AND a max-height in per cent, and
+   * this box used to be shrink-to-fit on both -- so each cap was a percentage
+   * of a box whose size that same cap determined. Browsers do resolve that, but
+   * not to anything you can predict or tune: the pair settled at 362x280 with
+   * the images pinned to 108px by `max-width: 30%` of the 362 they themselves
+   * produced, and asking for a SMALLER percentage made them smaller twice over.
+   * Both caps now measure the row, so max-height is the real control and
+   * max-width is the wide-window safety net it was meant to be.
+   *
+   * The parent's `justify-content: flex-end` still puts this box's bottom edge
+   * on the rail, and `justify-content: center` here still centres the dogs. */
+  width: 100%;
+  height: 100%;
+  /* DOWN INTO the cloth, not over it. The cloth is the nearer layer now, so
+     this is how much of each dog the table swallows -- chest-deep, the way
+     anyone stood at a table is cut off by it. The old -14px was the same
+     gesture pointed the other way, when the pair were painted on top. */
+  margin-bottom: -44px;
 }
 
 .bj-dealer {
   display: block;
   width: auto;
-  max-width: 44%;
+  max-width: 30%;
   /* Bounded by the row, which is what keeps the pair inside their airspace at
-     every viewport instead of growing into the card area. */
-  max-height: 100%;
+     every viewport instead of growing into the card area. Well under 100%:
+     these are meant to read as two dealers stood some distance back across the
+     table, and a bust rendered near its own native height fills the airspace
+     and reads as a poster of a dog hung behind the felt. */
+  max-height: 84%;
   object-fit: contain;
   object-position: 50% 100%;
+  /*
+   * The lower body dissolves instead of ending.
+   *
+   * A cut-out has one tell above all others: a hard edge all the way round,
+   * including where it meets the thing it is supposedly behind. The rail hides
+   * the very bottom, but the few inches above the rail were still a full-
+   * contrast torso stopping dead, so the pair read as stickers half-tucked
+   * under the table. Fading them out through that band lets the room's dark air
+   * take them, which is what distance actually looks like.
+   *
+   * The stops are tuned so the fade is spent in the VISIBLE band above the
+   * rail, not behind it -- push the pair deeper into the cloth and these want
+   * moving up with it, or the dissolve happens where nobody can see it.
+   */
+  -webkit-mask-image: linear-gradient(to bottom,
+    #000 0 40%, rgba(0,0,0,.82) 56%, rgba(0,0,0,.45) 68%, rgba(0,0,0,.15) 78%, transparent 88%);
+  mask-image: linear-gradient(to bottom,
+    #000 0 40%, rgba(0,0,0,.82) 56%, rgba(0,0,0,.45) 68%, rgba(0,0,0,.15) 78%, transparent 88%);
+  /* Atmospheric perspective: air between here and there eats contrast and
+     colour. Cheap, and it does more to seat them in the room than any amount
+     of repositioning -- at full saturation they out-punch the cards, which are
+     the thing the player is actually meant to look at.
+     Not darker than this, though: a first pass at .78 brightness took Finn --
+     a black dog on an almost-black wall -- down to a silhouette with two eyes,
+     which is the same trap his coat colour is picked to avoid in dealer.ts. */
+  filter: saturate(.86) brightness(.88) contrast(.95);
 }
 /* The taller dog stands a little further back, which is the cheapest way to
    give two cut-outs a depth relationship. */
@@ -321,7 +377,9 @@
 
   .bj-felt-print { top: 30px; gap: 2px; }
 
-  .bj-dealer-pair { gap: 2px; margin-bottom: -10px; }
+  /* Sunk proportionally, not by the desktop's pixel count: the pair are half
+     the height here, so -44px would bury them to the ears. */
+  .bj-dealer-pair { gap: 2px; margin-bottom: -22px; }
   .bj-dealer-placeholder .dealer-avatar { width: clamp(88px, 17vh, 140px); }
 
   .bj-dealer-names { top: 8px; left: 10px; gap: 3px; }

@@ -90,6 +90,42 @@
 .friend-decline:not(:disabled):hover,
 .friend-remove:not(:disabled):hover { color: #e08d8d; background: rgba(224,141,141,.18); }
 
+/* Table invites.
+ *
+ * Same .friend-row skeleton as everything else in this drawer -- an invite is
+ * a person plus one decision, which is what that row already is. What it adds
+ * is a label-bearing button, so the two below opt out of the 30px circle above
+ * rather than a second row type being invented for them. */
+.friend-invite,
+.invite-join {
+  width: auto;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 11px;
+  border-radius: 15px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+.friend-invite:not(:disabled):hover { color: #c9a2f0; background: rgba(152,63,224,.2); }
+/* Join is the drawer's one affirmative, table-bound action, so it carries the
+   brand's gold rather than the neutral fill every other control here uses.
+   Filled, not outlined: the chrome is borderless, and a state carried by a
+   border is exactly what that pass had to replace everywhere else. */
+.invite-join {
+  color: #1a1208;
+  background: linear-gradient(168deg, #f0bc3a, var(--brand-gold) 46%, #b57d06);
+}
+.invite-join:not(:disabled):hover { color: #1a1208; background: linear-gradient(168deg, #f7cb5c, #e8a913 46%, #c98a0a); }
+
+/* An invite is live for five minutes, so the countdown is the row's most
+   perishable fact and the only part of the sub-line worth lifting out of the
+   muted grey. */
+.invite-countdown { color: var(--brand-gold); font-variant-numeric: tabular-nums; }
+
 .friends-loading,
 .friends-error { margin: 18px 0; color: #5c6b63; font-size: 11px; text-align: center; }
 .friends-error { color: #e08d8d; }

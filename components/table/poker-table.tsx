@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
-  Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, Volume2, VolumeX, X,
+  Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import type { BetAnimationStyle } from "@/lib/scene/bet-style";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/game/table-geometry";
 import { Menu, type MenuItem } from "@/components/nav/menu";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
+import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { ActionBar } from "./action-bar";
 import { MuckDrift } from "./table-effects";
 import { HandHistoryDrawer } from "./hand-history-drawer";
@@ -129,6 +130,7 @@ export function PokerTable({
   onSignOut: () => void;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [friendsOpen, setFriendsOpen] = useState(false);
   // Owned here rather than in ActionBar because ActionBar is keyed on
   // game.version: a bump would otherwise unmount an open checkout and buy a
   // second Stripe session when it came back.
@@ -530,6 +532,19 @@ export function PokerTable({
         onSelect: () => void copyRoomCode(),
         icon: <Copy size={15} />,
       });
+      // Invites are private-table-only because table_invites.room_code is not
+      // null and a public table has no code -- a schema fact, not a policy.
+      // Seated, because the route enforces exactly that and an entry that
+      // always 403s is worse than no entry. Registered, because an invite is
+      // addressed to a profile id and a guest's dies with their cookie.
+      if (game.isSeated && profile?.isRegistered) {
+        items.push({
+          kind: "action",
+          label: "Invite a friend",
+          onSelect: () => setFriendsOpen(true),
+          icon: <UserPlus size={15} />,
+        });
+      }
     }
     items.push(
       { kind: "separator" },
@@ -847,6 +862,13 @@ export function PokerTable({
 
       {historyOpen && (
         <HandHistoryDrawer log={game.log} handNumber={game.handNumber} onClose={closeHistory} />
+      )}
+
+      {/* No onJoinedTable: this player is already at a table, so the drawer
+          offers no Join. Opened from here it is the *sending* surface -- each
+          friend row gains an Invite for this room. */}
+      {friendsOpen && (
+        <FriendsDrawer inviteGameId={game.id} onClose={() => setFriendsOpen(false)} />
       )}
     </main>
   );

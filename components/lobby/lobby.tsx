@@ -9,6 +9,7 @@ import { accountsEnabled } from "@/lib/auth/client";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
 import { LandingSections } from "@/components/auth/landing-sections";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
+import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
 import { ArcadePanel } from "./arcade-panel";
 import { BuyInModal } from "./buy-in-modal";
@@ -214,6 +215,12 @@ export function Lobby({
           </label>
           {error && <p className="form-error"><X size={14} /> {error}</p>}
         </div>
+
+        {/* Above the grid, never in it: .hub-grid's spans are arithmetic and a
+            fifth small tile reopens the empty cell the arcade panel was added
+            to close. RankStrip renders nothing until it has data, so it cannot
+            push the tiles down and then pull them back either. */}
+        <RankStrip />
 
         {/* Tiles carry the real artwork -- the same table plate the game
             renders and the chip/avatar art from public/ -- rather than a flat

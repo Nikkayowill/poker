@@ -23,6 +23,8 @@
  */
 
 import type { ConnectionsLevel, ConnectionsSnapshot } from "./connections";
+import type { MemorySnapshot } from "./memory";
+import { formatDuration, type SudokuSnapshot } from "./sudoku";
 import type { WordleSnapshot, WordleTile } from "./wordle";
 
 /** Wordle's three states. Green correct, yellow present, dark block absent. */
@@ -112,9 +114,60 @@ export function connectionsShareText(snapshot: ConnectionsSnapshot, options?: Sh
   );
 }
 
+/**
+ * The full postable result, or null while the grid is still being filled.
+ *
+ * There is no emoji matrix here and there deliberately is not one: a Sudoku
+ * grid drawn in blocks would show which cells were givens, which is the shape
+ * of the puzzle and a genuine head start for anyone who has not played. What
+ * is shareable is the *claim* -- difficulty, time, mistakes -- and the mistake
+ * count is what keeps that claim honest, since the server reveals a cell to
+ * anyone willing to guess at it (see the note at the top of sudoku.ts).
+ */
+export function sudokuShareText(snapshot: SudokuSnapshot, options?: ShareOptions): string | null {
+  if (snapshot.status !== "solved" || snapshot.elapsedMs === null) return null;
+  const difficulty = snapshot.difficulty[0].toUpperCase() + snapshot.difficulty.slice(1);
+  return withLink(
+    [
+      `StackChips Sudoku #${snapshot.puzzleNumber} · ${difficulty}`,
+      `${formatDuration(snapshot.elapsedMs)} · ${snapshot.mistakes} ${snapshot.mistakes === 1 ? "mistake" : "mistakes"}`,
+    ],
+    options,
+  );
+}
+
+/**
+ * The full postable result, or null while the board is still live.
+ *
+ * The grid IS shareable here, because a memory board's layout is dealt fresh
+ * per player -- it is not a shared secret, so showing which pairs were found
+ * in which order gives nobody anything. What is compared is the score.
+ */
+export function memoryShareText(snapshot: MemorySnapshot, options?: ShareOptions): string | null {
+  if (snapshot.status === "playing" || snapshot.elapsedMs === null) return null;
+  return withLink(
+    [
+      `StackChips Memory #${snapshot.puzzleNumber}`,
+      `${formatDuration(snapshot.elapsedMs)} · ${snapshot.turns} ${snapshot.turns === 1 ? "turn" : "turns"}`,
+      "",
+      // `matched` holds tile indices, two per pair -- halved so eight pairs is
+      // eight blocks rather than sixteen.
+      MEMORY_BLOCK.repeat(snapshot.matched.length / 2) +
+        MEMORY_MISS_BLOCK.repeat(Math.max(0, snapshot.pairs - snapshot.matched.length / 2)),
+    ],
+    options,
+  );
+}
+
+/** One block per pair found, and a dark one per pair left on the board. */
+export const MEMORY_BLOCK = "\u{1F7E9}"; // 🟩
+export const MEMORY_MISS_BLOCK = "\u2B1B"; // ⬛
+
 /** What the native share sheet shows as the subject. Short: some clients truncate hard. */
-export function puzzleShareTitle(game: "wordle" | "connections", puzzleNumber: number): string {
-  return game === "wordle"
-    ? `StackChips Wordle #${puzzleNumber}`
-    : `StackChips Connections #${puzzleNumber}`;
+export function puzzleShareTitle(
+  game: "wordle" | "connections" | "sudoku" | "memory",
+  puzzleNumber: number,
+): string {
+  const name = game === "wordle" ? "Wordle" : game === "connections" ? "Connections" : game === "sudoku" ? "Sudoku" : "Memory";
+  return `StackChips ${name} #${puzzleNumber}`;
 }

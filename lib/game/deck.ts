@@ -30,10 +30,27 @@ export type RandomInt = (maxExclusive: number) => number;
 
 /** A fresh, shuffled 52-card deck. Cards are copies, so a caller can never mutate the template. */
 export function makeDeck(randomInt: RandomInt): Card[] {
-  const deck = DECK_TEMPLATE.map((card) => ({ ...card }));
-  for (let index = deck.length - 1; index > 0; index -= 1) {
-    const swapWith = randomInt(index + 1);
-    [deck[index], deck[swapWith]] = [deck[swapWith], deck[index]];
+  return makeShoe(1, randomInt);
+}
+
+/**
+ * A shuffled shoe of `decks` packs, as baccarat is dealt from.
+ *
+ * One Fisher-Yates over the whole shoe, not `decks` shuffled packs stacked --
+ * those are different distributions, and the stacked one cannot put two copies
+ * of the same card near each other, which is precisely what a multi-deck shoe
+ * is for. `makeDeck` is this with `decks = 1`, so there is one shuffle in the
+ * codebase rather than two that must stay in step.
+ */
+export function makeShoe(decks: number, randomInt: RandomInt): Card[] {
+  if (!Number.isInteger(decks) || decks < 1) throw new Error("A shoe needs at least one deck.");
+  const shoe: Card[] = [];
+  for (let pack = 0; pack < decks; pack += 1) {
+    for (const card of DECK_TEMPLATE) shoe.push({ ...card });
   }
-  return deck;
+  for (let index = shoe.length - 1; index > 0; index -= 1) {
+    const swapWith = randomInt(index + 1);
+    [shoe[index], shoe[swapWith]] = [shoe[swapWith], shoe[index]];
+  }
+  return shoe;
 }

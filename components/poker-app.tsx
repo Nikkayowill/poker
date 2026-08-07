@@ -44,20 +44,12 @@ import { RoomCreatedModal } from "@/components/table/room-created-modal";
 import { RewardedAdModal } from "@/components/rewards/rewarded-ad-modal";
 import { useGameAchievements } from "@/components/rewards/use-game-achievements";
 import { PokerTable, type ConnectionState } from "@/components/table/poker-table";
+import {
+  LEGACY_SOUND_STORAGE_KEY,
+  MUSIC_STORAGE_KEY,
+  SOUND_STORAGE_KEY,
+} from "@/lib/audio/sound-preference";
 
-const SOUND_STORAGE_KEY = "stackchips:sound-enabled";
-/**
- * The pre-rename key, still read once so the rename is not a silent reset.
- *
- * `river-room:sound-enabled` is where every existing player's preference
- * lives. The StackChips rename (f7a7cbb) moved the key without migrating it,
- * and because the default is "enabled unless the value is exactly false",
- * anyone who had muted the app got sound turned back on and no way to tell
- * why. Same class of legacy id as the `river_*` cookies -- kept for
- * compatibility, not for style.
- */
-const LEGACY_SOUND_STORAGE_KEY = "river-room:sound-enabled";
-const MUSIC_STORAGE_KEY = "stackchips:menu-music-enabled";
 const MAX_REFRESH_RETRIES = 4;
 const REFRESH_RETRY_BASE_MS = 250;
 const REFRESH_RETRY_MAX_MS = 2_000;

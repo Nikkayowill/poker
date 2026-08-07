@@ -1,0 +1,159 @@
+/* Daily Sudoku.
+ *
+ * The shell is .bj-* from 23-blackjack.css. What is here is the grid, which is
+ * the one piece of this app where getting the *lines* right is most of getting
+ * it right: a sudoku with uniform borders is unreadable, because the three-by-
+ * three boxes are how a solver actually parses the board.
+ */
+
+.sk-difficulties { display: flex; gap: 7px; flex-wrap: wrap; }
+
+.sk-start {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  padding: 20px 0;
+}
+.sk-start p { margin: 0; color: #9fb0a7; font-size: 12.5px; }
+.sk-start .bj-action { min-width: 190px; }
+
+/* ---- The grid ----
+ *
+ * Square, centred, and capped so it never outgrows a desktop viewport. The
+ * cell size follows from the container rather than being set per cell, so
+ * there is one number to change.
+ */
+
+.sk-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  width: min(100%, 420px);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  background: rgba(4,9,8,.6);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.sk-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--gold-light);
+  /* The thin interior grid. Box edges are added per side below, so every cell
+     carries a hairline and only some carry the heavy rule. */
+  border: 0;
+  box-shadow: inset -1px -1px 0 rgba(255,255,255,.07);
+  background: rgba(255,255,255,.015);
+  font-size: clamp(13px, 3.4vw, 19px);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+
+/* A given is the puzzle; an entry is the player's. Different weight and colour
+   so a solver can always tell which digits they can still change -- without
+   that, an error is impossible to unpick. */
+.sk-cell-given {
+  color: #e7ece6;
+  font-weight: 750;
+  background: rgba(255,255,255,.05);
+  cursor: default;
+}
+
+/* The heavy box rules. Drawn as insets on the first cell of each band so the
+   nine boxes read as nine boxes -- this is the single most important visual
+   rule on the page. */
+.sk-cell-box-left { box-shadow: inset -1px -1px 0 rgba(255,255,255,.07), inset 2px 0 0 rgba(217,184,93,.4); }
+.sk-cell-box-top { box-shadow: inset -1px -1px 0 rgba(255,255,255,.07), inset 0 2px 0 rgba(217,184,93,.4); }
+.sk-cell-box-left.sk-cell-box-top {
+  box-shadow:
+    inset -1px -1px 0 rgba(255,255,255,.07),
+    inset 2px 0 0 rgba(217,184,93,.4),
+    inset 0 2px 0 rgba(217,184,93,.4);
+}
+.sk-cell-box-right { box-shadow: inset -1px -1px 0 rgba(255,255,255,.07), inset -2px 0 0 rgba(217,184,93,.4); }
+.sk-cell-box-bottom { box-shadow: inset -1px -1px 0 rgba(255,255,255,.07), inset 0 -2px 0 rgba(217,184,93,.4); }
+.sk-cell-box-right.sk-cell-box-bottom {
+  box-shadow:
+    inset -2px 0 0 rgba(217,184,93,.4),
+    inset 0 -2px 0 rgba(217,184,93,.4);
+}
+
+/* Selection, and the three things it highlights. The peers (same row, column
+   or box) are what a player is actually scanning when they pick a cell, and
+   the twins (same digit anywhere) are how you spot where a number can still
+   go -- both are standard in every good sudoku app and both are why a
+   selection here is more than a cursor. */
+.sk-cell-peer { background: rgba(217,184,93,.06); }
+.sk-cell-twin { background: rgba(217,184,93,.16); }
+.sk-cell-selected {
+  background: rgba(217,184,93,.3);
+  color: #fff6dd;
+}
+.sk-cell:focus-visible { outline: 2px solid var(--gold-light); outline-offset: -2px; }
+
+/* A refused digit. One shake, then gone -- long enough to notice, short enough
+   not to be in the way of the next attempt. */
+.sk-cell-wrong {
+  background: rgba(220,110,95,.4);
+  animation: sk-wrong .38s ease-out;
+}
+@keyframes sk-wrong {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+/* ---- The keypad ---- */
+
+.sk-pad {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  width: min(100%, 420px);
+  margin: 0 auto;
+}
+.sk-key {
+  min-height: 42px;
+  color: var(--gold-light);
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255,255,255,.05);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background .14s ease, transform .08s ease;
+}
+.sk-key:hover:not(:disabled) { background: rgba(217,184,93,.18); }
+.sk-key:active:not(:disabled) { transform: translateY(1px); }
+.sk-key:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.sk-key:disabled { opacity: .35; cursor: not-allowed; }
+.sk-key-erase { color: #9fb0a7; display: flex; align-items: center; justify-content: center; }
+
+/* ---- Finished ---- */
+
+.sk-done {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+.sk-done strong { color: var(--gold-light); font: 600 15px Georgia, serif; }
+
+.sk-player-head { justify-content: center; }
+
+@media (max-width: 640px) {
+  .sk-grid { width: min(100%, 340px); }
+  .sk-pad { width: min(100%, 340px); }
+  .sk-key { min-height: 38px; font-size: 15px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-cell-wrong { animation: none; }
+  .sk-key:active:not(:disabled) { transform: none; }
+}

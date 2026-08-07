@@ -154,7 +154,7 @@ export function RouletteTable() {
 
       <ArcadeError message={machine.error} />
 
-      <section className="bj-felt rl-felt" aria-live="polite" aria-busy={busy}>
+      <section className="bj-felt hud-felt-plain rl-felt" aria-live="polite" aria-busy={busy}>
         <ArcadeSeat
           className="rl-dealer-head"
           avatar={<DealerAvatar />}

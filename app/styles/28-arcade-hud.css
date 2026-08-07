@@ -42,6 +42,53 @@
   background: radial-gradient(50% 60% at 50% 0%, rgba(217,184,93,.13), transparent 70%);
 }
 
+/* ---- A felt with no room in it ----
+ *
+ * `.bj-felt` is the BLACKJACK ROOM: a two-row grid whose first row is Loki and
+ * Finn's airspace and whose boundary with the second row IS the rail (see the
+ * long note in 23-blackjack.css). Blackjack wraps its cards in `.bj-play` and
+ * lands them in row two, which is correct there and only there.
+ *
+ * Every other machine wrote `.bj-felt` and then dropped three, four or five
+ * children straight into it, and inherited that grid by accident. Three real
+ * defects came out of the one mistake, and they did not look related:
+ *
+ *   - Row one is the dealers' airspace, and there are no dealers on these
+ *     pages -- so a 130-260px empty band sat above the wheel, the reels and
+ *     the cards on six machines.
+ *   - Auto-placed rows have no gap (the room does not want one; the cloth is
+ *     continuous), so video poker's pay table and its five cards shared an
+ *     edge to the pixel: 460px of glass with its rounded bottom corners cut
+ *     off by the card row sitting flush against it.
+ *   - Row one is `minmax(clamp(132px, 22vh, 260px), .85fr)` -- a RATIO of a
+ *     felt that is itself `flex: 1` of the leftover page. On a 390x844 phone
+ *     that resolves to ~240px, and Sudoku's grid is `aspect-ratio: 1` at
+ *     340px, so it overflowed its own track and painted OVER the keypad and
+ *     the player's row. The digits showed through the cells.
+ *
+ * So: a plain centred column, and `flex: 1 0 auto` rather than the room's
+ * `flex: 1`. A table still fills the page when the content is short, and a
+ * board that needs more room than the page has left takes it instead of being
+ * clipped into its neighbour.
+ *
+ * `overflow: hidden` is INHERITED FROM `.bj-felt` AND MUST STAY. It clips
+ * nothing now -- the box is at least as tall as its content -- but it is also
+ * what contains `.bj-felt::before`, the house glow, which is inset `-10%` on
+ * both sides deliberately. Relaxing it to `visible` here put 134px of
+ * pseudo-element past the right edge of a 1440px page and the whole arcade
+ * panned sideways, on seven machines at once.
+ */
+.hud-felt-plain {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, 1.6vw, 16px);
+  justify-content: center;
+  min-height: 0;
+  /* Grow into the leftover page, never shrink below the content. */
+  flex: 1 0 auto;
+  padding: clamp(20px, 3.2vw, 34px) clamp(14px, 3vw, 30px);
+}
+
 /* ---- Meters ---- */
 
 /* The credit meter rolls, so its box must not resize as the digits change.
@@ -102,6 +149,14 @@
   display: flex;
   gap: 6px;
   align-items: center;
+  /* Centred, like the verdict above it and the player's row below it. The
+     strip is a full-width band, so at flex-start its empty state ("No spins
+     yet") printed hard against the felt's left edge with the whole rest of
+     the column centred around it. `safe` so a marquee long enough to scroll
+     still starts at the beginning rather than losing its oldest chips off the
+     unreachable left; browsers without it keep the plain `center` above. */
+  justify-content: center;
+  justify-content: safe center;
   min-height: 26px;
   overflow-x: auto;
   scrollbar-width: none;

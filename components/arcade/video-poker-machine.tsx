@@ -110,7 +110,7 @@ export function VideoPokerMachine() {
 
       <ArcadeError message={machine.error} />
 
-      <section className="bj-felt vp-felt" aria-live="polite" aria-busy={busy}>
+      <section className="bj-felt hud-felt-plain vp-felt" aria-live="polite" aria-busy={busy}>
         <ArcadeSeat
           className="vp-dealer-head"
           avatar={<DealerAvatar />}

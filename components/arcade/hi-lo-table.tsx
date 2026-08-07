@@ -165,7 +165,7 @@ export function HiLoTable() {
 
       {error && <p className="bj-error" role="alert">{error}</p>}
 
-      <section className="bj-felt" aria-live="polite" aria-busy={busy}>
+      <section className="bj-felt hud-felt-plain" aria-live="polite" aria-busy={busy}>
         <div className="bj-hand-head hl-dealer-head">
           <DealerAvatar />
           <span className="bj-hand-who">

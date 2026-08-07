@@ -143,7 +143,7 @@ export function CoinFlipTable() {
 
       <ArcadeError message={machine.error} />
 
-      <section className="bj-felt cf-felt" aria-live="polite" aria-busy={busy}>
+      <section className="bj-felt hud-felt-plain cf-felt" aria-live="polite" aria-busy={busy}>
         <ArcadeSeat
           className="cf-dealer-head"
           avatar={<DealerAvatar />}

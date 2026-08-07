@@ -42,10 +42,30 @@
   justify-content: center;
   padding: 0;
   color: var(--gold-light);
-  /* The thin interior grid. Box edges are added per side below, so every cell
-     carries a hairline and only some carry the heavy rule. */
+  /* The thin interior grid, plus one slot per side for the heavy box rule.
+     Composed from custom properties rather than from a rule per combination:
+     `box-shadow` does not add across declarations, so the enumerated version
+     silently DROPPED a side wherever two of the four classes met and neither
+     rule was more specific -- the later one simply won. Both such cells
+     exist. A cell in the last column that also opens a band (row 0, 3 and 6
+     of column 8) lost its heavy top rule, so the grid's top edge and both
+     band separators stopped one column short; a bottom-row cell that also
+     opens a band (columns 0, 3 and 6 of row 8) lost its heavy left rule, so
+     the outer left edge and both vertical separators stopped one row short.
+     The frame was open at four places on every board. Four variables cannot
+     have that bug: each side is set independently and all four are always
+     listed. */
   border: 0;
-  box-shadow: inset -1px -1px 0 rgba(255,255,255,.07);
+  --sk-rule-top: 0 0 rgba(0,0,0,0);
+  --sk-rule-right: 0 0 rgba(0,0,0,0);
+  --sk-rule-bottom: 0 0 rgba(0,0,0,0);
+  --sk-rule-left: 0 0 rgba(0,0,0,0);
+  box-shadow:
+    inset -1px -1px 0 rgba(255,255,255,.07),
+    var(--sk-rule-top),
+    var(--sk-rule-right),
+    var(--sk-rule-bottom),
+    var(--sk-rule-left);
   background: rgba(255,255,255,.015);
   font-size: clamp(13px, 3.4vw, 19px);
   font-weight: 650;
@@ -66,22 +86,11 @@
 
 /* The heavy box rules. Drawn as insets on the first cell of each band so the
    nine boxes read as nine boxes -- this is the single most important visual
-   rule on the page. */
-.sk-cell-box-left { box-shadow: inset -1px -1px 0 rgba(255,255,255,.07), inset 2px 0 0 rgba(217,184,93,.4); }
-.sk-cell-box-top { box-shadow: inset -1px -1px 0 rgba(255,255,255,.07), inset 0 2px 0 rgba(217,184,93,.4); }
-.sk-cell-box-left.sk-cell-box-top {
-  box-shadow:
-    inset -1px -1px 0 rgba(255,255,255,.07),
-    inset 2px 0 0 rgba(217,184,93,.4),
-    inset 0 2px 0 rgba(217,184,93,.4);
-}
-.sk-cell-box-right { box-shadow: inset -1px -1px 0 rgba(255,255,255,.07), inset -2px 0 0 rgba(217,184,93,.4); }
-.sk-cell-box-bottom { box-shadow: inset -1px -1px 0 rgba(255,255,255,.07), inset 0 -2px 0 rgba(217,184,93,.4); }
-.sk-cell-box-right.sk-cell-box-bottom {
-  box-shadow:
-    inset -2px 0 0 rgba(217,184,93,.4),
-    inset 0 -2px 0 rgba(217,184,93,.4);
-}
+   rule on the page. Each class fills one slot, so any combination composes. */
+.sk-cell-box-left { --sk-rule-left: inset 2px 0 0 rgba(217,184,93,.4); }
+.sk-cell-box-top { --sk-rule-top: inset 0 2px 0 rgba(217,184,93,.4); }
+.sk-cell-box-right { --sk-rule-right: inset -2px 0 0 rgba(217,184,93,.4); }
+.sk-cell-box-bottom { --sk-rule-bottom: inset 0 -2px 0 rgba(217,184,93,.4); }
 
 /* Selection, and the three things it highlights. The peers (same row, column
    or box) are what a player is actually scanning when they pick a cell, and

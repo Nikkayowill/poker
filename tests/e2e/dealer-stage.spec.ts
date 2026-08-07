@@ -104,7 +104,7 @@ test("Loki and Finn appear exactly once on the page", async ({ page }) => {
   // draw them too. The hand row names them; it must not picture them.
   await expect(page.locator(".bj-hand-head .dealer-avatar")).toHaveCount(0);
   await expect(page.locator(".bj-hand-label").first()).toHaveText("Loki & Finn");
-  // Named somewhere, so two dogs in visors have an explanation attached.
+  // Named somewhere, so two dogs in bow ties have an explanation attached.
   await expect(page.locator(".bj-dealer-names")).toContainText("Loki");
   await expect(page.locator(".bj-dealer-names")).toContainText("Finn");
 });

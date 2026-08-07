@@ -91,6 +91,28 @@ describe("the cast", () => {
     expect(finn.uniform).toEqual(loki.uniform);
   });
 
+  it("keeps the bow tie legible by putting a much lighter collar behind it", () => {
+    // The tie is near-black -- sampled from the portraits in public/dealer/,
+    // where it sits on an ivory shirt -- and DealerAvatar draws it on a dark
+    // green disc. The collar is therefore the only thing making the one piece
+    // of uniform in that drawing visible at all, which is exactly the kind of
+    // dependency a later "simplification" deletes without noticing.
+    //
+    // It also guards the direction of the fix that created it: the uniform used
+    // to be a green visor and a GOLD tie, neither of which is in the art. Gold
+    // on green needed no help; black on green does.
+    const brightness = (hex: string) =>
+      [1, 3, 5].reduce((sum, at) => sum + parseInt(hex.slice(at, at + 2), 16), 0) / 3;
+
+    for (const dog of DEALER_DOGS) {
+      expect(brightness(dog.uniform.tie), `${dog.name} tie is not dark`).toBeLessThan(40);
+      expect(
+        brightness(dog.uniform.shirt) - brightness(dog.uniform.tie),
+        `${dog.name} tie/collar contrast`,
+      ).toBeGreaterThan(120);
+    }
+  });
+
   it("names a breed and a colour for each, so the joke has an explanation", () => {
     for (const dog of DEALER_DOGS) {
       expect(dog.breed.length, dog.name).toBeGreaterThan(8);

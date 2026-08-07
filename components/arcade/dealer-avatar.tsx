@@ -25,9 +25,17 @@ import { DEALER_DOGS } from "@/lib/arcade/dealer";
  * cost to learn. Every player avatar beside it is avatarFace(), a head filling
  * the disc, and the first version of that dealer drew a whole croupier inside
  * the circle: at the size it actually renders, the head was eleven pixels and
- * the visor a green bar across it. Two heads fill this frame edge to edge, and
- * every dog carries five marks at most. Judge any change here against a real
- * 34px render, never against the 64-unit viewBox.
+ * the hat a bar across it. Two heads fill this frame edge to edge, and every
+ * dog carries five marks at most. Judge any change here against a real 34px
+ * render, never against the 64-unit viewBox.
+ *
+ * THE UNIFORM IS A SHIRT COLLAR AND A BLACK BOW TIE, and it used to be a green
+ * croupier's visor and a gold one. Neither visor nor gold exists in the real
+ * portraits (public/dealer/), and the mismatch survived a long time precisely
+ * because this drawing is Blackjack's PLACEHOLDER -- it stops rendering there
+ * the moment real art lands, so the drift was invisible on the one page anyone
+ * was looking at while being live on the five other arcade games that still
+ * draw it. If this file and the photographs disagree again, that is the bug.
  *
  * BOTH DOGS ARE DROP-EARED NOW. They used to be told apart by ear style -- one
  * flop, one prick -- which stopped being true when the pair were corrected
@@ -87,18 +95,30 @@ export function DealerAvatar({ className }: { className?: string }) {
           <ellipse cx="45" cy="27.6" rx="11.6" ry="11.2" fill={FINN.coat.base} />
           <ellipse cx="41.4" cy="23.6" rx="8.4" ry="7" fill={FINN.coat.cream} fillOpacity=".14" />
 
-          {/* The fringe of curls over the forehead, which the visor sits on. */}
-          <ellipse cx="45" cy="18.4" rx="9.4" ry="4.6" fill={FINN.coat.saddle} />
-          <ellipse cx="45" cy="17.4" rx="9" ry="3.4" fill={FINN.coat.cream} fillOpacity=".13" />
-
-          {/* Visor, ON THE FOREHEAD and clear of the eyes.
+          {/* Curls over the crown, picked out in LIGHT rather than in shadow.
            *
-           * The eyes below sit at cy 29; the panel stops at 25. An earlier cut
-           * had the translucent panel crossing the pupils, which tints the one
-           * feature carrying the whole expression -- the same mistake the 3D
-           * pair made twice, once with a peak wider than the dog. */}
-          <path d="M33.6 19.4c3.2-2.4 7.2-3.7 11.4-3.7s8.2 1.3 11.4 3.7l.4 2.4c-3.6-1.9-7.6-2.8-11.8-2.8s-8.2.9-11.8 2.8Z" fill={FINN.uniform.visorBrim} />
-          <path d="M34.2 21.8c3.4-1.6 7.1-2.4 10.8-2.4s7.4.8 10.8 2.4c-.5 1.9-1.5 2.9-2.9 2.9-5.5-1.5-10.3-1.5-15.8 0-1.4 0-2.4-1-2.9-2.9Z" fill={FINN.uniform.visorPanel} fillOpacity=".55" />
+           * THIS IS WHERE THE VISOR USED TO SIT, and removing it exposed a
+           * drawing that only worked underneath one. The crown was a dark
+           * saddle ellipse with a cream sliver above it, which top-to-bottom
+           * is: light band, dark band, lighter skull -- a hat, a hatband, and a
+           * brim, the dark ellipse's lower arc reading as the brim's edge.
+           * With a visor over it that was hair; without one it is a BOWLER HAT
+           * on a dog.
+           *
+           * Shadow cannot fix it, which is the part worth remembering. Finn's
+           * coat is a very dark warm grey chosen to sit just off black, so
+           * there is no darker value left to shade WITH -- any dark mass laid
+           * on that skull stops being shading and becomes an object. Light is
+           * the only axis he has, and it is the same trick the ear rim above
+           * already uses for the same reason. Lobes follow the skull's curve so
+           * there is no horizontal edge anywhere for an eye to read as a brim.
+           *
+           * Loki's equivalent below is a dark fringe and is fine: apricot has
+           * somewhere darker to go, so his reads as curl. Do not "make these
+           * consistent" -- the asymmetry is the whole point. */}
+          <ellipse cx="40" cy="21.4" rx="4" ry="3.6" fill={FINN.coat.cream} fillOpacity=".12" transform="rotate(-18 40 21.4)" />
+          <ellipse cx="45" cy="20.4" rx="4.8" ry="3.6" fill={FINN.coat.cream} fillOpacity=".15" />
+          <ellipse cx="50" cy="21.4" rx="4" ry="3.6" fill={FINN.coat.cream} fillOpacity=".12" transform="rotate(18 50 21.4)" />
 
           {/* Eyes. A lighter iris than the coat plus a hard white glint -- on a
               black dog the glint is doing most of the work. */}
@@ -132,15 +152,22 @@ export function DealerAvatar({ className }: { className?: string }) {
           {/* Skull. */}
           <ellipse cx="21" cy="33.4" rx="13" ry="12.6" fill={LOKI.coat.base} />
 
-          {/* Fringe of curls over the forehead. */}
-          <ellipse cx="21" cy="23.4" rx="11" ry="5.4" fill={LOKI.coat.saddle} fillOpacity=".62" />
-          <ellipse cx="14.4" cy="24.4" rx="4.6" ry="3.8" fill={LOKI.coat.saddle} fillOpacity=".45" />
-          <ellipse cx="27.6" cy="24.4" rx="4.6" ry="3.8" fill={LOKI.coat.saddle} fillOpacity=".45" />
-
-          {/* Visor, on the forehead. Eyes at cy 34 are well clear of the
-              panel, which stops at 29. */}
-          <path d="M8.4 24.6c3.6-2.7 8.1-4.2 13-4.2s9.4 1.5 13 4.2l.5 2.7c-4-2.1-8.5-3.1-13.5-3.1s-9.5 1-13.5 3.1Z" fill={LOKI.uniform.visorBrim} />
-          <path d="M9 27.3c3.8-1.9 8-2.8 12.4-2.8s8.6.9 12.4 2.8c-.5 2.1-1.7 3.3-3.2 3.3-6.2-1.7-12-1.7-18.2 0-1.5 0-2.7-1.2-3.2-3.3Z" fill={LOKI.uniform.visorPanel} fillOpacity=".55" />
+          {/* Fringe of curls over the forehead.
+           *
+           * KEPT INSIDE THE SKULL'S OUTLINE, which it was not before: it sat at
+           * cy 23.4 with ry 5.4, so its top reached y 18 against a skull that
+           * starts at 20.8, and it was 11 wide where the skull is 10.2. That
+           * put a darker arc OUTSIDE the head silhouette -- a shape sitting on
+           * top of a dog rather than growing out of it, which is a beret. It
+           * went unnoticed for the same reason Finn's did: a visor was drawn
+           * over exactly that band, so the protrusion was never visible.
+           *
+           * Unlike Finn's above, this one stays a SHADOW. Apricot has somewhere
+           * darker to go, so a dark fringe on Loki reads as curl the moment it
+           * is inside his outline; the fix here is geometry, not value. */}
+          <ellipse cx="21" cy="25.6" rx="9.8" ry="4.6" fill={LOKI.coat.saddle} fillOpacity=".55" />
+          <ellipse cx="15.4" cy="26.4" rx="3.9" ry="3.2" fill={LOKI.coat.saddle} fillOpacity=".4" />
+          <ellipse cx="26.6" cy="26.4" rx="3.9" ry="3.2" fill={LOKI.coat.saddle} fillOpacity=".4" />
 
           {/* Eyes. */}
           <ellipse cx="15.2" cy="34.4" rx="2.5" ry="2.8" fill={LOKI.coat.eye} />
@@ -158,10 +185,33 @@ export function DealerAvatar({ className }: { className?: string }) {
           {/* Tongue, because one of them always has it out. */}
           <path d="M18.5 47.4h5v3.2c0 1.4-1.1 2.3-2.5 2.3s-2.5-.9-2.5-2.3Z" fill={LOKI.coat.tongue} />
 
-          {/* One gold bow tie, clipped by the disc. Enough uniform to read as
-              staff without drawing a body neither dog has room for. */}
-          <path d="M15.2 60.8l4.6-2.6v5.2Zm11.6 0-4.6-2.6v5.2Z" fill={LOKI.uniform.tie} />
-          <circle cx="21" cy="60.8" r="1.5" fill={LOKI.uniform.tie} />
+          {/* One collar and one black bow tie, clipped by the disc. Enough
+           *  uniform to read as staff without drawing a body neither dog has
+           *  room for.
+           *
+           *  THE COLLAR IS LOAD-BEARING, not trim. The tie used to be gold and
+           *  could sit straight on the felt disc and still be seen; the real
+           *  uniform's tie is #14100c against a #123527 disc, which is a black
+           *  shape on a dark green one -- invisible at 34px and not much better
+           *  at 200. The art solves it with an ivory shirt behind the tie, so
+           *  this does too, which is also why `shirt` is a field on DogUniform
+           *  rather than a colour hard-coded here.
+           *
+           *  TWO NUMBERS HERE ARE THE DISC, not taste. It sits at cy 58 rather
+           *  than the old 60.8 because the circle narrows fast down there: at
+           *  y 60.8 it spans x 18-46, so a bow under Loki's chin lost its whole
+           *  left wing, while at 58 it spans 13.4-50.7 and the bow survives.
+           *  And it is centred on x 22 rather than Loki's own 21 because HE is
+           *  off-centre in a disc centred on 32 -- a shape centred on him gets
+           *  clipped hard on the left and not at all on the right, which reads
+           *  as a collar worn crooked rather than one that is merely cropped.
+           *  A one-unit nudge is invisible under the chin and squares it up.
+           *
+           *  Clipping is fine and intended; losing half the only uniform in the
+           *  picture, or wearing it askew, is not. */}
+          <path d="M14.4 64v-4c0-3 2.2-5.2 5.2-5.7l2.4-.4 2.4.4c3 .5 5.2 2.7 5.2 5.7V64Z" fill={LOKI.uniform.shirt} />
+          <path d="M17.4 58l4.2-2.2v4.4Zm9.2 0-4.2-2.2v4.4Z" fill={LOKI.uniform.tie} />
+          <circle cx="22" cy="58" r="1.3" fill={LOKI.uniform.tie} />
         </g>
       </svg>
     </span>

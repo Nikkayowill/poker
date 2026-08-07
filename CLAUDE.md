@@ -754,12 +754,33 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
       total, but with one portrait per dog the pair **hold one face** through a
       win and a bust alike. `DOG_PORTRAIT` is the fallback; dropping
       `loki-cheer.webp` in and adding its `DOG_ART` entry is the whole step.
-    - **Known drift, not fixed:** `dealer.ts` dresses them in a green croupier
-      visor and a *gold* bow tie. The art has neither — no visor, black tie. The
-      flat SVG (`dealer-avatar.tsx`) reads those constants and renders live in
-      **five other arcade games**, so Blackjack now shows black-tie photo dogs
-      while video poker, roulette, coin flip, baccarat and hi-lo show
-      green-visored gold-tie ones. Fixing it means redrawing the SVG.
+    - **The uniform drift is fixed, and removing the visor broke two other
+      things on the way out.** `DogUniform` was a green croupier's visor and a
+      *gold* bow tie; the art has neither, and since `dealer-avatar.tsx` renders
+      live in **five other arcade games** (video poker, roulette, coin flip,
+      baccarat, hi-lo) the wrong uniform was on screen everywhere except the one
+      page anyone was looking at — Blackjack, where this SVG is only the
+      *placeholder* and stops rendering the moment real art lands. That is the
+      general hazard: a placeholder's bugs are invisible exactly where the real
+      thing works. It is `shirt`/`waistcoat`/`tie` now (`#d6bda3`/`#1b1611`/
+      `#14100c`), **sampled from the portraits with ImageMagick**, not chosen.
+      Three things the redraw settled:
+      - **The tie needs the collar.** Gold on the dark green disc needed no
+        help; near-black does. The ivory collar behind it is load-bearing, not
+        trim — `dealer.test.ts` pins the brightness gap so a later
+        "simplification" cannot quietly delete it.
+      - **Both fringes were only ever legible under a visor.** Each dog's crown
+        band protruded *above* its own skull, so with the visor gone it read as
+        headwear sitting on a dog — a bowler on Finn, a beret on Loki. Loki's
+        was fixed by geometry (bring it inside the outline; apricot has
+        somewhere darker to go, so a dark fringe still reads as curl). **Finn's
+        could not be**: his coat is deliberately just off black, so there is no
+        darker value left to shade with, and any dark mass on that skull stops
+        being shading and becomes an object. His curls are picked out in
+        *light* now, the same trick his ear rim already used. Do not "make the
+        two consistent" — the asymmetry is the point.
+      - Judge it at 34px. That is the size it actually renders in all five
+        games, and the hats were invisible there while being obvious at 400.
   - **The coats are Loki apricot `#d99b5c` and Finn black `#332e30`**, from the
     owner's own reference sheet. An earlier pass had Loki as a blue-merle with
     blue eyes and Finn as a tall golden — both wrong, and wrong in a way no
@@ -827,6 +848,16 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
     button becomes "Not enough Gold", so the test waited on a POST a disabled
     button was never going to send. Cadence is unit-tested over a 200-hand
     session instead; the browser only checks the money.
+    **That trap is not fully closed — the tip spec is intermittently flaky for
+    the same reason.** Observed 2026-08-07: the file failed once at 6.3 minutes
+    on that test, then passed 6/6 twice and passed alone in 7.2s, with no code
+    between the runs. The money check still plays real hands, and blackjack
+    outcomes are random, so a losing run can drop the balance under the minimum
+    stake and leave the spec waiting on a disabled Deal button until it times
+    out. A 6-minute run of this file is that failure, not a slow machine. The
+    real fix is to stake the test's own Gold rather than trust a session to
+    stay solvent; do not "fix" it by raising the timeout, which just makes the
+    hang longer.
 - The flat SVG pair (`components/arcade/dealer-avatar.tsx`) reads its colours
   from `DEALER_DOGS` so it and the scene's dealer layer cannot drift. **Its one
   caller is now the scene's placeholder**, enlarged — the 34px call beside the

@@ -158,7 +158,7 @@ export function DealerStage({
             /*
              * The placeholder, and it is the real drawing rather than a grey
              * box: the same flat crop that sits beside the dealer's hand,
-             * enlarged. Two dogs in visors is the correct picture at any
+             * enlarged. Two dogs in bow ties is the correct picture at any
              * fidelity, so the page reads as finished-but-plain while the art
              * is outstanding rather than reading as broken.
              */
@@ -169,7 +169,7 @@ export function DealerStage({
 
         {bubble}
 
-        {/* Named, so two unexplained dogs in visors have an explanation
+        {/* Named, so two unexplained dogs in bow ties have an explanation
             attached rather than being a non-sequitur on a gambling table. */}
         <p className="bj-dealer-names">
           {DEALER_DOGS.map((dog) => (

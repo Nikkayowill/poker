@@ -3,7 +3,7 @@ import type { BlackjackOutcome, BlackjackPhase } from "./blackjack";
 /**
  * The house dealers.
  *
- * Loki and Finn, two dogs in croupier visors and gold bow ties, who deal
+ * Loki and Finn, two dogs in dress shirts and black bow ties, who deal
  * Blackjack together. This file is everything about them that can be wrong in
  * WORDS or in COLOUR: their names, their breeds, their coats, the house
  * uniform, and what they say. The drawings are
@@ -48,14 +48,34 @@ export interface DogCoat {
   tongue: string;
 }
 
-/** The house uniform. Green and gold, because that is the felt these two deal on. */
+/**
+ * The house uniform: an ivory dress shirt, a black waistcoat and a black bow
+ * tie. Sampled from the portraits in `public/dealer/`, not chosen, for the same
+ * reason the brand palette was pulled off the logo PNG with ImageMagick -- a
+ * hex typed by eye beside a photograph drifts from it, and this file exists to
+ * stop the flat crop and the real art disagreeing.
+ *
+ * IT USED TO BE A GREEN CROUPIER'S VISOR AND A GOLD BOW TIE, and that was
+ * wrong: no such visor exists in the art and the tie is black. It went
+ * unnoticed because the only drawing reading these values was the placeholder,
+ * which stops rendering the moment real art lands -- so the drift was invisible
+ * on Blackjack and live on every other arcade game, all five of which still
+ * draw the flat crop. Two drawings of the same two dogs disagreeing about what
+ * they are wearing is the exact failure this file is here to prevent.
+ */
 export interface DogUniform {
-  /** The solid brim of the croupier's visor. */
-  visorBrim: string;
-  /** The translucent green panel, in the same pair of greens the human
-   *  croupier these two replaced wore. */
-  visorPanel: string;
-  /** Bow tie. */
+  /**
+   * The dress shirt, and the collar the bow tie sits on.
+   *
+   * NOT DECORATION. The tie is near-black and the avatar's disc is dark green,
+   * so without the shirt behind it the one piece of uniform in that drawing is
+   * invisible at any size. The art solves it the same way, which is why this is
+   * a field rather than a shape hard-coded in the component.
+   */
+  shirt: string;
+  /** The waistcoat over that shirt. */
+  waistcoat: string;
+  /** Bow tie. Black, and it needs `shirt` behind it to read at all. */
   tie: string;
 }
 
@@ -99,9 +119,9 @@ const LOKI: DealerDog = {
     tongue: "#e0868f",
   },
   uniform: {
-    visorBrim: "#0c5c3f",
-    visorPanel: "#19a771",
-    tie: "#d9b85d",
+    shirt: "#d6bda3",
+    waistcoat: "#1b1611",
+    tie: "#14100c",
   },
   fluff: 0.85,
 };
@@ -127,9 +147,9 @@ const FINN: DealerDog = {
     tongue: "#e0868f",
   },
   uniform: {
-    visorBrim: "#0c5c3f",
-    visorPanel: "#19a771",
-    tie: "#d9b85d",
+    shirt: "#d6bda3",
+    waistcoat: "#1b1611",
+    tie: "#14100c",
   },
   fluff: 0.62,
 };

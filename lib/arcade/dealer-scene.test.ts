@@ -109,7 +109,7 @@ describe("the art manifest", () => {
   });
 
   it("uses null rather than a broken path for the layers still unshipped", () => {
-    // The MENU_MUSIC_TRACK convention: a null is "not sourced yet" and renders
+    // The music-manifest convention: a null is "not sourced yet" and renders
     // a placeholder, where a string pointing at a file that does not exist is
     // a 404 in the middle of the felt. The room and the table are still null;
     // the dogs are not, which is what the next two tests are about.

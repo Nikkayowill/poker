@@ -62,19 +62,30 @@ describe("playSound", () => {
     expect(built[0].currentTime).toBe(0);
   });
 
-  it("gives two effects that share a recording their own element and gain", async () => {
+  it("gives two effects that share a recording their own element", async () => {
+    const { playSound } = await loadPlayer();
+    playSound("deal");
+    playSound("card");
+
+    expect(SOUND_FILES.deal).toBe(SOUND_FILES.card);
+    // Two elements for one file. Keyed by file -- which is what this module
+    // did -- this is length 1, and the two effects then share a single volume
+    // that belongs to whichever was played most recently. They agree on gain
+    // today; the keying is what keeps that a choice rather than a constraint.
+    expect(built).toHaveLength(2);
+    expect(built[0].volume).toBeCloseTo(soundGain("deal"), 10);
+    expect(built[1].volume).toBeCloseTo(soundGain("card"), 10);
+  });
+
+  it("plays the all-in from its own recording, not the raise at a hotter gain", async () => {
     const { playSound } = await loadPlayer();
     playSound("raise");
     playSound("all-in");
 
-    expect(SOUND_FILES["all-in"]).toBe(SOUND_FILES.raise);
-    // Two elements for one file. Keyed by file -- which is what this module
-    // did -- this is length 1, and the assertion below then reads a single
-    // volume that belongs to whichever effect was played most recently.
     expect(built).toHaveLength(2);
-    expect(built[0].volume).toBeCloseTo(soundGain("raise"), 10);
-    expect(built[1].volume).toBeCloseTo(soundGain("all-in"), 10);
-    expect(built[0].volume).not.toBeCloseTo(built[1].volume, 3);
+    expect(built[0].src).toBe(SOUND_FILES.raise);
+    expect(built[1].src).toBe(SOUND_FILES["all-in"]);
+    expect(built[0].src).not.toBe(built[1].src);
   });
 
   it("reuses one element per effect rather than building them mid-hand", async () => {
@@ -89,9 +100,18 @@ describe("playSound", () => {
   it("builds nothing for an effect with no asset", async () => {
     const { playSound } = await loadPlayer();
     playSound("lose");
+    expect(built).toHaveLength(0);
+  });
+
+  it("builds the clock cues, which used to be silent", async () => {
+    const { playSound } = await loadPlayer();
     playSound("timeout");
     playSound("time-card");
-    expect(built).toHaveLength(0);
+    // One element each even though they share a recording, per the keying
+    // above -- and both audible, which they were not before TimeBank landed.
+    expect(built).toHaveLength(2);
+    expect(built[0].src).toBe(SOUND_FILES.timeout);
+    expect(built[1].src).toBe(SOUND_FILES["time-card"]);
   });
 
   it("goes silent when sound is off, and comes back without rebuilding", async () => {

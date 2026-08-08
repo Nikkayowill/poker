@@ -72,28 +72,50 @@ describe("the mix", () => {
   });
 
   it("gives the turn cue room to interrupt", () => {
-    // It shares the tap's recording, so this is entirely a question of gain,
-    // and it is the reason the two do not read as the same event.
-    expect(soundGain("your-turn")).toBeGreaterThan(soundGain("ui") * 2);
+    // It has its own recording now, so comparing gains would compare two
+    // different sources and mean nothing -- this is a question of the level
+    // each one lands on. It has to clear the housekeeping it used to borrow
+    // from by a wide margin, and clear the cues that fire alongside it.
+    expect(playbackDb("your-turn")).toBeGreaterThan(playbackDb("ui") + 6);
     expect(playbackDb("your-turn")).toBeGreaterThan(playbackDb("deal"));
     expect(playbackDb("your-turn")).toBeGreaterThan(playbackDb("check"));
   });
 
-  it("separates effects that share one recording", () => {
-    // raise and all-in are the same file at different levels. If these ever
-    // resolve to one number, the sounds are interchangeable again and the
-    // per-effect player in sound-effects.ts is pointless.
-    expect(SOUND_FILES["all-in"]).toBe(SOUND_FILES.raise);
-    expect(soundGain("all-in")).not.toBe(soundGain("raise"));
-    expect(SOUND_FILES["your-turn"]).toBe(SOUND_FILES.ui);
-    expect(soundGain("your-turn")).not.toBe(soundGain("ui"));
+  it("gives the borrowed cues their own recording", () => {
+    // Both of these used to be another effect's file at a different gain,
+    // which made them the same sound played twice as loud rather than a
+    // different event. If either collapses back onto its old source, the
+    // per-effect player in sound-effects.ts is doing nothing again.
+    expect(SOUND_FILES["your-turn"]).not.toBe(SOUND_FILES.ui);
+    expect(SOUND_FILES["all-in"]).not.toBe(SOUND_FILES.raise);
+    // The all-in still has to read as the bigger bet of the two.
+    expect(playbackDb("all-in")).toBeGreaterThan(playbackDb("raise"));
+  });
+
+  it("plays one recording for both clock cues", () => {
+    // Deliberately shared: to the player, a timeout and a spent time card are
+    // the same subject. Equal targets here are the intent, not an oversight.
+    expect(SOUND_FILES.timeout).toBe(SOUND_FILES["time-card"]);
+    expect(soundGain("timeout")).toBe(soundGain("time-card"));
+    // The clock is worth hearing -- it sits in among the betting cues rather
+    // than down with housekeeping -- but it never outranks the cue whose whole
+    // job is to interrupt, or the hand ending.
+    expect(playbackDb("timeout")).toBeGreaterThan(playbackDb("ui"));
+    expect(playbackDb("timeout")).toBeLessThan(playbackDb("your-turn"));
+    expect(playbackDb("timeout")).toBeLessThan(playbackDb("win"));
   });
 
   it("stays silent where there is no asset", () => {
-    for (const effect of ["lose", "timeout", "time-card"] as SoundEffect[]) {
-      expect({ effect, file: SOUND_FILES[effect], gain: soundGain(effect) })
-        .toEqual({ effect, file: null, gain: 0 });
-    }
+    // `lose` is the last of these. It is silent because most hands at a
+    // six-handed table are losses and a cue on each one would be relentless,
+    // not because an asset is missing -- see table-sounds.ts, which cheers
+    // every win instead.
+    expect({ file: SOUND_FILES.lose, gain: soundGain("lose") })
+      .toEqual({ file: null, gain: 0 });
     expect(AUDIBLE_EFFECTS).not.toContain("lose");
+    for (const effect of ["timeout", "time-card"] as SoundEffect[]) {
+      expect({ effect, audible: AUDIBLE_EFFECTS.includes(effect) })
+        .toEqual({ effect, audible: true });
+    }
   });
 });

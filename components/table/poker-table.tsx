@@ -4,10 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
-  Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
+  Box, Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import type { BetAnimationStyle } from "@/lib/scene/bet-style";
+import {
+  resolveTableRenderer,
+  tableRendererLabel,
+  type TableRenderer,
+} from "@/lib/scene/table-renderer";
+import { useWebglSupport } from "./use-webgl-support";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   radiiForTable,
@@ -76,6 +82,19 @@ const TableScene = dynamic(
   { ssr: false },
 );
 
+/**
+ * The WebGL room, split out the same way and for the same reasons — more so.
+ * `three` plus the R3F/drei surface is by a distance the largest thing this
+ * app can ship, and a player who never chooses this renderer must never
+ * download it. Kept as a second dynamic import rather than a branch inside
+ * one module so that stays true: a static import here would put three.js in
+ * the table chunk for everybody.
+ */
+const TableScene3D = dynamic(
+  () => import("./scene3d/table-scene-3d").then((module) => module.TableScene3D),
+  { ssr: false },
+);
+
 export const SEAT_WIDTH_RATIO = 0.26;
 export const SEAT_HEIGHT_RATIO = 0.30;
 
@@ -110,6 +129,8 @@ export function PokerTable({
   onToggleSound,
   betStyle,
   onCycleBetStyle,
+  tableRenderer,
+  onCycleTableRenderer,
   onSignIn,
   onSignOut,
 }: {
@@ -126,11 +147,18 @@ export function PokerTable({
   onToggleSound: () => void;
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
+  tableRenderer: TableRenderer;
+  onCycleTableRenderer: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
+  // False on the server and on the first client paint, so a player who prefers
+  // the 3D room sees the classic table for one frame rather than a canvas that
+  // might not work. See use-webgl-support.ts for why this is not an effect.
+  const webglAvailable = useWebglSupport();
+  const activeRenderer = resolveTableRenderer(tableRenderer, webglAvailable);
   // Owned here rather than in ActionBar because ActionBar is keyed on
   // game.version: a bump would otherwise unmount an open checkout and buy a
   // second Stripe session when it came back.
@@ -518,6 +546,21 @@ export function PokerTable({
         onSelect: onCycleBetStyle,
         icon: <Sparkles size={15} />,
       },
+      // Hidden entirely where WebGL is unavailable rather than shown
+      // disabled: an option that cannot do anything on this device is worse
+      // than no option, and the same menu offers nothing to explain it. The
+      // preference itself is untouched, so a player who chose the 3D room on
+      // one device still gets it on another that can render it.
+      ...(webglAvailable
+        ? [
+            {
+              kind: "action" as const,
+              label: tableRendererLabel(activeRenderer),
+              onSelect: onCycleTableRenderer,
+              icon: <Box size={15} />,
+            },
+          ]
+        : []),
       {
         kind: "action",
         label: "Hand history",
@@ -572,7 +615,8 @@ export function PokerTable({
     }
     return items;
   }, [
-    soundEnabled, onToggleSound, betStyle, onCycleBetStyle, game.isPrivate, game.roomCode,
+    soundEnabled, onToggleSound, betStyle, onCycleBetStyle,
+    activeRenderer, onCycleTableRenderer, webglAvailable, game.isPrivate, game.roomCode,
     game.id, game.isSeated, roomCodeCopied, copyRoomCode, profile, onCustomize, onSignIn,
     onSignOut, onLeaveSeat,
   ]);
@@ -626,24 +670,34 @@ export function PokerTable({
             // Only once the room is genuinely there to replace them: this
             // class stops the DOM felt and rail painting.
             sceneReady && "scene-lit",
+            // The 3D room seats its own figures in its own chairs, so the DOM
+            // cut-outs would be a second set of players at the same table --
+            // the mistake the Blackjack stage made with Loki and Finn. Gated
+            // on sceneReady too: if the room never arrives, the cut-outs are
+            // the only players there are.
+            sceneReady && activeRenderer === "webgl_3d" && "scene-room-3d",
           )}
         >
           {/* The room, underneath everything. First child so it is first in
               paint order as well as lowest in z-index -- the HUD over it is
               ordinary DOM and needed no z-index changes to land on top. */}
-          <TableScene
-            seats={orderedSeats}
-            pot={game.pot}
-            bigBlind={game.bigBlind}
-            streetBets={sceneStreetBets}
-            street={game.street}
-            paying={showFunnel}
-            winners={sceneWinners}
-            handNumber={game.handNumber}
-            betFlights={betFlights}
-            betStyle={betStyle}
-            onReady={setSceneReady}
-          />
+          {activeRenderer === "webgl_3d" ? (
+            <TableScene3D game={game} onReady={setSceneReady} />
+          ) : (
+            <TableScene
+              seats={orderedSeats}
+              pot={game.pot}
+              bigBlind={game.bigBlind}
+              streetBets={sceneStreetBets}
+              street={game.street}
+              paying={showFunnel}
+              winners={sceneWinners}
+              handNumber={game.handNumber}
+              betFlights={betFlights}
+              betStyle={betStyle}
+              onReady={setSceneReady}
+            />
+          )}
           {/* The pot and the stakes, in the black space around the table
               rather than on the cloth. On the felt they had to be small
               enough not to fight the board, and at 1440x900 the blinds line

@@ -6,6 +6,7 @@ import {
   getStoredGame,
   persistenceMode,
 } from "@/lib/server/game-store";
+import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
@@ -23,6 +24,9 @@ export async function POST(
     const ownerToken = request.cookies.get("river_session")?.value;
     if (!ownerToken) {
       return NextResponse.json({ error: "Your table session expired." }, { status: 401 });
+    }
+    if (await isBanned(ownerToken)) {
+      return NextResponse.json({ error: "Your account has been suspended." }, { status: 403 });
     }
 
     const paramsParsed = paramsSchema.safeParse(await context.params);

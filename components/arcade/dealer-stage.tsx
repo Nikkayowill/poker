@@ -58,7 +58,7 @@ import { DealerAvatar } from "@/components/arcade/dealer-avatar";
  *
  * EVERY LAYER IS OPTIONAL. lib/arcade/dealer-scene.ts holds each asset path as
  * `string | null`, and null means "not sourced yet" rather than "broken" --
- * the MENU_MUSIC_TRACK convention. Any layer without a file is painted in CSS
+ * the music-manifest.ts convention. Any layer without a file is painted in CSS
  * instead, so the page is complete and correct before a single PNG exists and
  * each asset can land independently.
  */

@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * MENU_MUSIC_TRACK is null until a real file is dropped in (see
- * music-manifest.ts) -- these tests prove the silent-by-design path first,
- * then mock the manifest to prove the actual player logic once a track
- * exists, the same split sound-effects.test.ts uses against the real
- * (non-null) SFX manifest.
+ * The shipped playlist is real (see music-manifest.ts), but these tests mock
+ * it anyway: they are about the player's behaviour, and pinning them to the
+ * seven files that happen to be there today would make adding an eighth a
+ * test failure. The empty-playlist path is proved first, since that is the
+ * silent-by-design contract the rest of the app relies on.
  */
 
 interface FakeAudio {
@@ -16,6 +16,8 @@ interface FakeAudio {
   paused: boolean;
   play: ReturnType<typeof vi.fn>;
   pause: ReturnType<typeof vi.fn>;
+  addEventListener: (type: string, handler: EventListener) => void;
+  handlers: Record<string, EventListener[]>;
 }
 
 let built: FakeAudio[] = [];
@@ -30,6 +32,7 @@ function stubEnvironment() {
     volume = 0;
     preload = "";
     paused = true;
+    handlers: Record<string, EventListener[]> = {};
     play = vi.fn(() => {
       this.paused = false;
       return Promise.resolve();
@@ -37,6 +40,9 @@ function stubEnvironment() {
     pause = vi.fn(() => {
       this.paused = true;
     });
+    addEventListener = (type: string, handler: EventListener) => {
+      (this.handlers[type] ??= []).push(handler);
+    };
     constructor(src: string) {
       this.src = src;
       built.push(this);
@@ -57,6 +63,20 @@ function fireGesture() {
   for (const handler of listeners.pointerdown ?? []) handler(new Event("pointerdown"));
 }
 
+/** The element reaching the end of a track, which is what advances the cycle. */
+function fireEnded() {
+  const audio = built[0];
+  audio.paused = true;
+  for (const handler of audio.handlers.ended ?? []) handler(new Event("ended"));
+}
+
+const PLAYLIST = [
+  "/sounds/one.mp3",
+  "/sounds/two.mp3",
+  "/sounds/three.mp3",
+  "/sounds/four.mp3",
+];
+
 beforeEach(() => {
   vi.resetModules();
   vi.useFakeTimers();
@@ -68,30 +88,121 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("with no track configured (the shipped default)", () => {
+describe("with no tracks configured", () => {
   it("builds nothing and plays nothing", async () => {
+    vi.doMock("./music-manifest", () => ({
+      MENU_MUSIC_TRACKS: [],
+      MENU_MUSIC_GAIN: 0.4,
+    }));
     const { startMenuMusic } = await import("./menu-music");
     startMenuMusic();
     expect(built).toHaveLength(0);
   });
 });
 
-describe("once a track is configured", () => {
+describe("with a single track", () => {
   async function loadPlayer() {
     vi.doMock("./music-manifest", () => ({
-      MENU_MUSIC_TRACK: "/sounds/menu-theme.mp3",
+      MENU_MUSIC_TRACKS: ["/sounds/menu-theme.mp3"],
       MENU_MUSIC_GAIN: 0.4,
     }));
     return import("./menu-music");
   }
 
-  it("loops the one track it was given and starts it playing", async () => {
+  it("loops it in the element rather than advancing a cycle of one", async () => {
     const { startMenuMusic } = await loadPlayer();
     startMenuMusic();
     expect(built).toHaveLength(1);
     expect(built[0].src).toBe("/sounds/menu-theme.mp3");
     expect(built[0].loop).toBe(true);
     expect(built[0].play).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("with a playlist", () => {
+  async function loadPlayer() {
+    vi.doMock("./music-manifest", () => ({
+      MENU_MUSIC_TRACKS: PLAYLIST,
+      MENU_MUSIC_GAIN: 0.4,
+    }));
+    return import("./menu-music");
+  }
+
+  it("does not loop the element, so `ended` can fire", async () => {
+    const { startMenuMusic } = await loadPlayer();
+    startMenuMusic();
+    expect(built).toHaveLength(1);
+    expect(built[0].loop).toBe(false);
+    expect(PLAYLIST).toContain(built[0].src);
+  });
+
+  it("advances to another track on `ended`, reusing the one element", async () => {
+    const { startMenuMusic } = await loadPlayer();
+    startMenuMusic();
+    await vi.advanceTimersByTimeAsync(1000);
+    const first = built[0].src;
+
+    fireEnded();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // One element for the whole playlist: a second would have to earn its own
+    // autoplay permission.
+    expect(built).toHaveLength(1);
+    expect(built[0].src).not.toBe(first);
+    expect(built[0].play).toHaveBeenCalledTimes(2);
+  });
+
+  it("plays every track once before repeating any of them", async () => {
+    const { startMenuMusic } = await loadPlayer();
+    startMenuMusic();
+    const played = [built[0].src];
+    for (let i = 1; i < PLAYLIST.length; i += 1) {
+      fireEnded();
+      await vi.advanceTimersByTimeAsync(0);
+      played.push(built[0].src);
+    }
+    expect([...played].sort()).toEqual([...PLAYLIST].sort());
+  });
+
+  it("does not play the same track twice across a cycle boundary", async () => {
+    const { startMenuMusic } = await loadPlayer();
+    startMenuMusic();
+    // Exhaust the cycle, so the next `ended` reshuffles.
+    for (let i = 1; i < PLAYLIST.length; i += 1) {
+      fireEnded();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    const last = built[0].src;
+    fireEnded();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(built[0].src).not.toBe(last);
+  });
+
+  it("fades each new track up rather than cutting it in at full gain", async () => {
+    const { startMenuMusic } = await loadPlayer();
+    startMenuMusic();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(built[0].volume).toBeCloseTo(0.4, 5);
+
+    fireEnded();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(built[0].volume).toBeGreaterThan(0);
+    expect(built[0].volume).toBeLessThan(0.4);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(built[0].volume).toBeCloseTo(0.4, 5);
+  });
+
+  it("stops advancing once it has been disabled", async () => {
+    const { startMenuMusic, setMenuMusicEnabled } = await loadPlayer();
+    startMenuMusic();
+    await vi.advanceTimersByTimeAsync(1000);
+    setMenuMusicEnabled(false);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const callsBefore = built[0].play.mock.calls.length;
+    fireEnded();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(built[0].play).toHaveBeenCalledTimes(callsBefore);
   });
 
   it("fades up to the configured gain rather than jumping straight there", async () => {
@@ -146,11 +257,15 @@ describe("once a track is configured", () => {
       volume = 0;
       preload = "";
       paused = true;
+      handlers: Record<string, EventListener[]> = {};
       pause = vi.fn(() => {
         this.paused = true;
       });
+      addEventListener = (type: string, handler: EventListener) => {
+        (this.handlers[type] ??= []).push(handler);
+      };
       play = vi.fn(() => {
-        if (built.length === 1) return Promise.reject(new Error("blocked"));
+        if (this.play.mock.calls.length === 1) return Promise.reject(new Error("blocked"));
         this.paused = false;
         return Promise.resolve();
       });
@@ -168,5 +283,34 @@ describe("once a track is configured", () => {
 
     fireGesture();
     expect(built[0].play).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("shuffleIndices", () => {
+  it("is a permutation: every index exactly once", async () => {
+    vi.doMock("./music-manifest", () => ({
+      MENU_MUSIC_TRACKS: PLAYLIST,
+      MENU_MUSIC_GAIN: 0.4,
+    }));
+    const { shuffleIndices } = await import("./menu-music");
+    for (let count = 1; count <= 12; count += 1) {
+      const order = shuffleIndices(count);
+      expect([...order].sort((a, b) => a - b)).toEqual(
+        Array.from({ length: count }, (_, i) => i),
+      );
+    }
+  });
+
+  it("is driven entirely by the randomness it is given", async () => {
+    vi.doMock("./music-manifest", () => ({
+      MENU_MUSIC_TRACKS: PLAYLIST,
+      MENU_MUSIC_GAIN: 0.4,
+    }));
+    const { shuffleIndices } = await import("./menu-music");
+    // Always drawing 0 swaps each position with the first, which is a fixed,
+    // checkable arrangement -- proof the sequence, not Math.random, decides.
+    expect(shuffleIndices(4, () => 0)).toEqual([1, 2, 3, 0]);
+    // Drawing just under 1 always picks the top index, leaving order intact.
+    expect(shuffleIndices(4, () => 0.999)).toEqual([0, 1, 2, 3]);
   });
 });

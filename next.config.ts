@@ -29,14 +29,29 @@ const adsterraOrigins = [
 ].join(" ");
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' ${adsterraOrigins}${isDev ? " 'unsafe-eval'" : ""}`,
+  // 'wasm-unsafe-eval' is for the 3D table room's Meshopt decoder, which
+  // instantiates a WebAssembly module. Every .glb under public/models and
+  // public/props is meshopt-encoded by scripts/compress-3d-assets.sh -- that
+  // is what takes the character roster from 48 MB to 3.5 MB -- so without
+  // this the table does not render at all.
+  //
+  // It is narrower than it looks, and narrower than the 'unsafe-eval' this
+  // list already carries in dev: it permits compiling WebAssembly and
+  // nothing else. It does NOT re-enable eval() or new Function() on strings,
+  // which is the injection vector 'unsafe-eval' opens. Draco is deliberately
+  // still not used, because drei fetches that decoder from a gstatic CDN and
+  // no third-party origin should be a hard dependency of drawing the table.
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' ${adsterraOrigins}${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: https://*.supabase.co ${adsterraOrigins}`,
   "font-src 'self' data:",
   // Sentry's session-replay integration compresses events in a Worker
   // constructed from a blob: URL; without this it silently fails to record.
   "worker-src 'self' blob:",
-  `connect-src 'self' https://*.supabase.co wss://*.supabase.co ${adsterraOrigins}${isDev ? " ws:" : ""}`,
+  // blob: is for the 3D table room's GLTFLoader: a .glb's embedded textures are
+  // decoded to blob: URLs and fetched, which connect-src governs. img-src
+  // already allows blob: above, but that directive does not cover fetch().
+  `connect-src 'self' blob: https://*.supabase.co wss://*.supabase.co ${adsterraOrigins}${isDev ? " ws:" : ""}`,
   // 'self' first, and it is not optional: the ad unit renders in a srcdoc
   // iframe, which has no URL of its own and is matched against the parent
   // document's own origin. Without it the whole slot is blocked before the

@@ -194,6 +194,31 @@ export async function ensureProfile(token: string, preferredName?: string): Prom
   return publicProfile(fromRow(data));
 }
 
+/**
+ * Reads the profile behind a session without creating one.
+ *
+ * This is intentionally separate from ensureProfile: a cookie is client
+ * supplied, so security-sensitive routes must not turn an unknown token into
+ * a new server-side identity while trying to authenticate it.
+ */
+export async function findProfileBySessionToken(token: string): Promise<PlayerProfile | null> {
+  if (!token) return null;
+
+  const supabase = adminClient();
+  if (!supabase) {
+    const profile = memoryProfiles.get(token);
+    return profile ? publicProfile(profile) : null;
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("session_token", token)
+    .maybeSingle();
+  if (error) throw new Error(`Could not validate profile session: ${error.message}`);
+  return data ? publicProfile(fromRow(data)) : null;
+}
+
 export async function updateProfile(token: string, update: ProfileUpdate): Promise<PlayerProfile> {
   const validPreset = avatarPresets.some((preset) => preset.id === update.avatarPreset);
   const validAccent = profileAccents.includes(update.accent as (typeof profileAccents)[number]);

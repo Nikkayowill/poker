@@ -50,9 +50,10 @@ export async function POST(request: NextRequest) {
     void recordSeenIp(token, getClientIp(request)).catch(() => {});
 
     const config = TIER_CONFIG[loaded.tier];
+    const alreadySeated = loaded.seats.some((seat) => seat.ownerToken === token);
     // As in quick-play, every seat claim is a real buy-in: chips are
     // redeemable for Gold on cash-out, so a free seat would be a faucet.
-    if (!profile.unlimitedGold && profile.goldBalance < config.minBuyIn) {
+    if (!alreadySeated && !profile.unlimitedGold && profile.goldBalance < config.minBuyIn) {
       return withRequestSessionCookie(request,
         NextResponse.json(
           { error: `You need at least ${config.minBuyIn.toLocaleString()} Gold to join this table.` },
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
     // Defaults to 1000 (matching the lobby's current "1K buy-in" label)
     // until the buy-in picker UI lands and sends a real chosen amount.
     const buyIn = clampBuyIn(loaded.tier, parsed.data.buyIn ?? 1000);
-    profile = await spendGold(token, buyIn);
+    if (!alreadySeated) profile = await spendGold(token, buyIn);
 
     let state;
     let seatIndex;
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
         await persistSeatClaim(state, state.seats[seatIndex].id);
       }
     } catch (claimError) {
-      profile = await creditGold(token, buyIn).catch(() => profile);
+      if (!alreadySeated) profile = await creditGold(token, buyIn).catch(() => profile);
       throw claimError;
     }
 

@@ -95,8 +95,8 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   the kind of thing an extraction loses silently.
 - Mobile PWA launch prep is done and live on production (installable shell,
   safe-area fixes, the Adsterra CSP fix) — see the deploy note further down
-  for the exact commit/PR this shipped in. Menu music is done as an *engine*
-  (still silent — see its own bullet below for what "done" means there). A
+  for the exact commit/PR this shipped in. Menu music is done and audible now
+  — engine *and* a real seven-track playlist; see its own bullet below. A
   silver/platinum "Prestige" reskin of the app chrome was built and pushed to
   a Preview deployment for review, then explicitly reverted at the user's
   request before it reached `main`. Don't resurrect that work. Note the
@@ -325,15 +325,114 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   iPadOS 13+ device — which reports a desktop Safari UA string — is not told
   the desktop story; a test pins that a real Mac with the identical UA still
   reads as `other`.
-- `MENU_MUSIC_TRACK` is **still null**, and `lib/audio/music-manifest.ts` now
-  records the licensing research rather than just the convention: Pixabay is
-  the source every existing file in `public/sounds/` came from (the
-  `freesound_community-`/`oxidvideos-` prefixes are its uploader handles) and
-  is the right place to look; Kevin MacLeod/incompetech is **CC BY**, not
-  free-of-attribution, despite being universally mislabelled as such; and
-  FreePD, which was the best CC0 answer, shut down in 2025. Dropping a vetted
-  file at `public/sounds/menu-theme.mp3` and flipping that one constant is
-  still the entire remaining step.
+- **Menu music plays now, and the sourcing question is closed** — the owner
+  supplied seven of their own tracks, so `MENU_MUSIC_TRACK` is gone and
+  `MENU_MUSIC_TRACKS` (a seven-entry playlist) replaced it. The licensing
+  research it used to hold is condensed in that file's header and still
+  applies to anything added later: Pixabay is where every stock file in
+  `public/sounds/` came from and allows commercial use with no attribution;
+  Kevin MacLeod/incompetech is **CC BY** despite being universally mislabelled
+  free-of-attribution; FreePD, the best CC0 answer, shut down in 2025. Five
+  things about the wiring worth not relearning:
+  - **The assets landed months before the wiring did, and nothing noticed.**
+    The tracks were committed and `MENU_MUSIC_TRACK` was still `null`, so the
+    app shipped 40MB of music it could not play and no gate could see it —
+    a manifest pointing at nothing is type-correct. If an asset is added,
+    grep that some code names it before calling it done.
+  - **One `<audio>` element for the whole playlist, `src` swapped on
+    `ended`.** Autoplay permission is granted to an *element* that has already
+    played, so a fresh element per track would have to earn it again and track
+    two would be blocked on desktop Chrome. `loop` is true only for a
+    single-track playlist: a looping element never fires `ended`, which would
+    make track one the only one anybody ever heard.
+  - `shuffleIndices` takes its randomness as an argument so a cycle can be
+    proven to cover every track exactly once, and a reshuffle that would open
+    on the track that just ended swaps it down one. Presentation is allowed to
+    be random here — unlike `lib/scene` — but not untestable.
+  - **The tracks were re-encoded 256k → 128k with an EBU R128 pass, 40MB →
+    20MB, and size was the smaller half of the reason.** Unnormalised they
+    spanned 6.9dB, so shuffle stepped up and down in volume every few minutes;
+    they span 3.0dB now. Masters are in gitignored `assets-src/audio-master/`.
+    `MENU_MUSIC_GAIN` 0.35 against -18 LUFS puts the bed near -27, under every
+    betting cue. `/sounds/` is **runtime**-cached by `sw.js`, not precached, so
+    this never hits PWA install.
+- **Three SFX stopped borrowing another effect's recording.** `your-turn` and
+  `all-in` were each another file at a different gain — the same sound twice
+  as loud rather than a different event — and `ui` shared the tap too. All
+  three have their own recording now, and `TimeBank.mp3` gives `timeout` and
+  `time-card` a file where they were silent by omission rather than by design
+  (both are genuinely fired: a clock expiry and the time-bank control). Levels
+  measured with `volumedetect` per that file's own rule. Two supplied files
+  were deliberately **not** wired, and the reasons generalise: `win`'s
+  alternatives run 10.2s and 3.9s against `NEXT_HAND_DELAY_MS` of 2,800, so
+  either is still playing while the next hand deals — the stock 2.5s cheer is
+  correctly sized and stays; and `Cards_Dealt.mp3` measures **-47.4dB**, 14dB
+  under the `deal` target, which a gain that can only attenuate cannot reach.
+  Six tests changed rather than being deleted — they pinned the borrowing as
+  an invariant, so they are now what would catch it coming back. Note six of
+  the supplied "new" SFX are **byte-identical renames** of existing stock
+  files; checksum before assuming a new filename is new audio.
+- **`feat/3d-table` is a second renderer, default-off, and the two share one
+  e2e seam.** The branch reinstates `three`/`@react-three/fiber`/`drei` (so
+  CLAUDE.md's "three.js is uninstalled" below is true of `main` and not of
+  this branch) and puts an R3F room behind `DEFAULT_TABLE_RENDERER =
+  "canvas_2d"` in `lib/scene/table-renderer.ts`, switchable from the table
+  menu and hidden entirely where `useWebglSupport()` is false. Four things
+  about the seam, which is the part built to make the room testable at all:
+  - **`window.__stackchipsScene`'s shape is now `lib/scene/seam-contract.ts`,
+    one exported interface, not a `declare global` in each renderer.** Both
+    rooms answer the same ten methods in the same units, because the specs
+    that check where a payout lands are about the *table*, not about how it
+    is drawn. Two structurally-identical declarations would merge silently
+    until they drifted, and the failure then is a spec asserting something
+    different depending on a preference flag; a renderer that stops matching
+    now fails to compile.
+  - **Two of the ten stopped being derivable and are measured instead.**
+    `roomScale` and `roomFelt` were coined under orthography, where a world
+    unit is the same number of pixels everywhere and `projection.ts` solved
+    the fit in closed form. A perspective camera has no such number, and the
+    felt is not an ellipse on screen once projected — its near edge is wider
+    than its far. So `roomScale` reads the scale *across the felt's centre*
+    and the contract says it means nothing elsewhere; `roomFelt` samples the
+    rim, projects every sample and reports the bounding box. Verified live at
+    1440×900: 199 px/unit, felt 864×398 against 4.3 world units of width
+    (856 px predicted — the excess is the near edge, which is the point), and
+    seats landing perfectly symmetric about x=720.
+  - **`awake()` is pending work, never recent paint, and that was learned the
+    expensive way.** The first cut inferred it from how recently a frame had
+    drawn — a 50 ms window, three frames at 60 Hz. Driven headlessly the room
+    renders about **two frames a second** (a shadow-mapped scene under
+    SwiftShader is ~450 ms a frame), so a room with eight chips visibly in
+    the air reported itself asleep across 1,141 consecutive samples. Frame
+    recency cannot separate "nothing left to draw" from "still drawing,
+    slowly", and a window wide enough for software rendering is far too wide
+    to prove a loop settled. It reads `animating` from the registry now,
+    published from the very flag that keeps the demand loop alive, which is
+    also what the 2D room's `isAwake(scheduler)` has always meant.
+    `framesRendered()` stays the independent evidence the loop really stopped.
+  - **`near-seat-bet.spec.ts` and two of `chip-flights.spec.ts` fail on this
+    branch already — do not read them as seam regressions.** All five time out
+    at 120s rather than failing an assertion, and the page snapshot shows the
+    table reached and seated with the pot at 15 (blinds only): the hand never
+    progresses, so `.community-card-shell` never exists and the locator
+    waiting for it hangs. **Confirmed by running the same spec in a detached
+    worktree at HEAD** — identical failure with none of the seam work and none
+    of a concurrent session's in-flight route changes present. That worktree
+    trick is the safe way to get a baseline when the tree is shared: `git
+    stash` would have yanked the other session's uncommitted work out from
+    under them, which is the same hazard as `commit -a` here. Note Next
+    rejects a `node_modules` symlink pointing outside the project root, so
+    hard-link it (`cp -al`, ~2s) rather than symlinking.
+  - **`lib/game3d/scene-registry.ts` exists because the chips are invisible to
+    React.** `chip-instanced-layer.tsx` writes InstancedMesh matrices straight
+    from a per-frame pass — deliberately, since pushing sixty matrix updates a
+    second through the reconciler is what that file exists to avoid — so
+    nothing a seam component could read holds a chip's position. The writer
+    publishes world-space poses there and the seam projects them; keeping
+    projection out of the registry is what lets it stay three-free and so
+    reachable by `npm test`. `POT_PILE_KEY` is exported for the same class of
+    reason: `pileSize()` counts that pile by name, and two copies of the
+    string `"pile-pot"` agreeing only by luck would have it report zero.
 - The table renderer is a **Canvas 2D room** now — the three.js/WebGL room
   that briefly replaced the CSS chip system was itself replaced at the
   user's explicit request (they preferred the Canvas 2.5D look prototyped in
@@ -520,16 +619,13 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   `padding-top` is explicitly zeroed since that form no longer touches the
   top edge). Verified against actual computed styles via a headless
   Playwright check, not just by reading the CSS.
-- Menu music is now plug-and-play but still silent: `lib/audio/music-
-  manifest.ts` + `lib/audio/menu-music.ts` mirror the existing SFX
-  architecture (`lib/audio/manifest.ts` + `sound-effects.ts`) exactly —
-  cached looping `<audio>`, fade in/out, autoplay-blocked retry on the next
-  gesture — but `MENU_MUSIC_TRACK` is `null` by design, the same "no
-  verified asset yet" convention `lose`/`timeout`/`time-card` already use in
-  the SFX manifest. No royalty-free track was sourced or embedded — that
-  needs a real licensed file, which isn't something to fabricate or fetch
-  blind. Dropping one at the documented path and flipping that one constant
-  is the entire remaining step. Wired into `poker-app.tsx` exactly like the
+- Menu music: `lib/audio/music-manifest.ts` + `lib/audio/menu-music.ts` mirror
+  the existing SFX architecture (`lib/audio/manifest.ts` + `sound-effects.ts`)
+  — cached `<audio>`, fade in/out, autoplay-blocked retry on the next gesture
+  — and now carry a real seven-track playlist; see the menu-music bullet
+  further up for the playlist/encoding decisions. An empty
+  `MENU_MUSIC_TRACKS` is still the silent-by-design path, the same convention
+  `lose` uses in the SFX manifest. Wired into `poker-app.tsx` exactly like the
   existing `soundEnabled`/`toggleSound`/`SOUND_STORAGE_KEY` block (new
   `musicEnabled`/`toggleMenuMusic`/`MUSIC_STORAGE_KEY`, a "Menu music: On/Off"
   entry in `lobbyMenuItems`), started/stopped on the one screen boundary
@@ -812,7 +908,7 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   - **Every art path is nullable and null is not an error.** `SCENE_ART` and
     the dog art map are empty today; the component paints a CSS placeholder for
     any layer with no file, so the page is complete before a single PNG exists.
-    Same "no verified asset yet" convention as `MENU_MUSIC_TRACK`. Note the
+    Same "no verified asset yet" convention `music-manifest.ts` uses. Note the
     felt's printed text is a **rule claim** and must match the engine — a
     reference image reading "INSURANCE PAYS 2 TO 1" / "DEALER MUST HIT SOFT 17"
     would contradict `lib/arcade/blackjack.ts`, which has no insurance and
@@ -1163,7 +1259,7 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   anything under `components/` is unreachable by `npm test` (same reason
   `lib/game/seat-presence.ts` exists). Blackjack is `status: "live"` with an
   `href`; the other nine are `"coming-soon"` with a null href, the same "shape
-  is finished, the switch is two fields" convention `MENU_MUSIC_TRACK` uses. A
+  is finished, the switch is two fields" convention `music-manifest.ts` uses. A
   test asserts live-iff-href, since a live entry with a null href renders an
   unclickable Play and a coming-soon entry with an href is a 404 waiting to be
   linked. Rows are already wallet-aware:

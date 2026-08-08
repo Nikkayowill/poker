@@ -35,7 +35,7 @@ import { DEALER_DOGS, type DogId } from "./dealer";
  *
  * WHY THE PATHS ARE NULLABLE. Every `src` below may be null, and null is not
  * an error state -- it is "no verified asset yet", the same convention
- * MENU_MUSIC_TRACK uses in lib/audio/music-manifest.ts and `status:
+ * lib/audio/music-manifest.ts uses for an empty playlist and `status:
  * "coming-soon"` uses in lib/arcade/games.ts. The component paints a CSS
  * placeholder for any layer that has no file, so the page is complete and
  * correct before a single PNG exists and each asset can land on its own.

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { spinRouletteWheel } from "@/lib/server/roulette-service";
 import { toCasinoErrorResponse } from "@/lib/server/casino-round-service";
+import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
@@ -36,6 +37,13 @@ export async function POST(request: NextRequest) {
       return withRequestSessionCookie(
         request,
         NextResponse.json({ error: "There is no bet on the layout to spin." }, { status: 400 }),
+        token,
+      );
+    }
+    if (await isBanned(token)) {
+      return withRequestSessionCookie(
+        request,
+        NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),
         token,
       );
     }

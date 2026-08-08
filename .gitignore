@@ -24,3 +24,25 @@ artifacts/screenshots/
 
 # Scratch output from the Playwright MCP server (console dumps, page snapshots).
 .playwright-mcp/
+
+# Bundled 3D-room artifact (scripts/build-game3d-artifact.mjs)
+dist-artifact/
+
+# Intermediate masks from scripts/build-avatar-sprites.sh
+scripts/.avatar-masks/
+
+# One-off diagnostic scripts (Firefox checks, screenshot shims)
+scripts/tmp/
+
+# Uncompressed 3D source assets (~50MB). scripts/compress-3d-assets.sh reads
+# these and writes the ~3.8MB derivatives in public/models and public/props,
+# which ARE tracked because they are what ships.
+#
+# Untracked deliberately, and it is a real trade: a fresh clone cannot re-run
+# the pipeline without fetching the sources from somewhere. The alternative was
+# putting 50MB of binaries in every clone of this repo forever, to support a
+# script that is run when an artist delivers a new model and at no other time.
+# The sources currently live on the local feature/3d-poker-simulation branch
+# and in ../PokerGame-model-sources; neither is a durable home, and picking one
+# (object storage, LFS, or simply pushing that branch) is still an open call.
+assets-src/

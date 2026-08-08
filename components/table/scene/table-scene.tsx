@@ -9,6 +9,10 @@ import {
 } from "@/lib/scene/projection";
 import { FELT, MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
 import { ringPoint, seatBetOrigin } from "@/lib/scene/seat-ring";
+// Type-only, but it is what installs the `Window.__stackchipsScene`
+// augmentation for this file. The shape is shared with the R3F room -- see
+// that module's header for why it is one declaration and not two.
+import type { StackchipsSceneSeam } from "@/lib/scene/seam-contract";
 import {
   afterFrame,
   clampDelta,
@@ -92,42 +96,8 @@ export interface TableSceneProps {
   onReady?: (ready: boolean) => void;
 }
 
-/** The e2e seam. See `ChipLayer.debugChipPositions`. */
-declare global {
-  interface Window {
-    __stackchipsScene?: {
-      /** Chips in flight, projected into viewport CSS pixels. */
-      chips: () => Array<{ x: number; y: number }>;
-      pileSize: () => number;
-      /** Where the scene thinks a ring slot is, in viewport CSS pixels. */
-      seat: (slot: number) => { x: number; y: number };
-      /**
-       * Where that slot's chips rest when it bets, in viewport CSS pixels.
-       *
-       * Exposed alongside `seat` because the two have to be checked against
-       * each other: slot 0's figure is drawn out over the cloth, so its bet
-       * spot is the one that can end up behind its own avatar, and that is a
-       * disagreement between the canvas and the DOM that nothing in either
-       * system can notice on its own.
-       */
-      betSpot: (slot: number) => { x: number; y: number };
-      /** CSS pixels per world unit — the whole fit, under orthography. */
-      roomScale: () => number;
-      /**
-       * The painted felt's on-screen size, in CSS pixels. Both axes, because
-       * the table's plan shape is solved per fit: `roomScale` alone cannot
-       * tell a wide desktop oval from a tall portrait one.
-       */
-      roomFelt: () => { width: number; height: number };
-      /** Where world-origin's screen Y landed, canvas-local. */
-      roomLift: () => number;
-      /** Ring slots the last payout was aimed at. */
-      lastFunnel: () => number[];
-      awake: () => boolean;
-      framesRendered: () => number;
-    };
-  }
-}
+/* The e2e seam's shape is `StackchipsSceneSeam`, imported above. See
+ * `ChipLayer.debugChipPositions` for what backs `chips()` here. */
 
 export function TableScene({
   seats,
@@ -344,7 +314,7 @@ export function TableScene({
         const rect = canvas.getBoundingClientRect();
         return { x: rect.left + point.x, y: rect.top + point.y };
       };
-      window.__stackchipsScene = {
+      const seam: StackchipsSceneSeam = {
         chips: () => {
           const engine = engineRef.current;
           if (!engine) return [];
@@ -376,6 +346,7 @@ export function TableScene({
         awake: () => isAwake(engineRef.current?.scheduler ?? SLEEPING),
         framesRendered: () => engineRef.current?.frames ?? 0,
       };
+      window.__stackchipsScene = seam;
     }
 
     return () => {

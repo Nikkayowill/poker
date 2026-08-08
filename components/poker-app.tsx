@@ -30,6 +30,13 @@ import {
   normalizeBetStyle,
   type BetAnimationStyle,
 } from "@/lib/scene/bet-style";
+import {
+  DEFAULT_TABLE_RENDERER,
+  TABLE_RENDERER_STORAGE_KEY,
+  nextTableRenderer,
+  normalizeTableRenderer,
+  type TableRenderer,
+} from "@/lib/scene/table-renderer";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
 import { Coins, Gift, Layers, LogOut, Music2, Settings2, Trophy, UserPlus } from "lucide-react";
@@ -92,6 +99,14 @@ export function PokerApp() {
     fallback: DEFAULT_BET_STYLE,
     parse: normalizeBetStyle,
   });
+  // Same shape as betStyle above, and deliberately with no `apply`: the
+  // consumer is a prop on <PokerTable>, not a module singleton, so there is
+  // nothing to push the value into outside React.
+  const [tableRenderer, setTableRendererState] = useStoredPreference<TableRenderer>({
+    key: TABLE_RENDERER_STORAGE_KEY,
+    fallback: DEFAULT_TABLE_RENDERER,
+    parse: normalizeTableRenderer,
+  });
   const [claimingGold, setClaimingGold] = useState(false);
   const [goldFlash, setGoldFlash] = useState(false);
   // Set only by hostPrivate, cleared on dismiss: the share sheet is a
@@ -119,6 +134,10 @@ export function PokerApp() {
   const cycleBetStyle = useCallback(() => {
     setBetStyleState(nextBetStyle);
   }, [setBetStyleState]);
+
+  const cycleTableRenderer = useCallback(() => {
+    setTableRendererState(nextTableRenderer);
+  }, [setTableRendererState]);
 
   /**
    * The daily claim, moved off the navbar.
@@ -1048,6 +1067,8 @@ export function PokerApp() {
             onToggleSound={toggleSound}
             betStyle={betStyle}
             onCycleBetStyle={cycleBetStyle}
+            tableRenderer={tableRenderer}
+            onCycleTableRenderer={cycleTableRenderer}
             onSignIn={() => void signIn()}
             onSignOut={() => void signOut()}
           />

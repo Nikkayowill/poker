@@ -4,6 +4,7 @@ import {
   actOnBlackjackRound,
   toBlackjackErrorResponse,
 } from "@/lib/server/blackjack-service";
+import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
@@ -37,6 +38,13 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       return withRequestSessionCookie(request,
         NextResponse.json({ error: "That is not a move this table takes." }, { status: 400 }),
+        token,
+      );
+    }
+    if (await isBanned(token)) {
+      return withRequestSessionCookie(
+        request,
+        NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),
         token,
       );
     }

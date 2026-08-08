@@ -24,7 +24,7 @@ export type SoundEffect =
   | "your-turn";
 
 export const SOUND_FILES: Record<SoundEffect, string | null> = {
-  ui: "/sounds/freesound_community-screen-tap-38717.mp3",
+  ui: "/sounds/Menu_clicks.mp3",
   deal: "/sounds/freesound_community-flipcard-91468.mp3",
   card: "/sounds/freesound_community-flipcard-91468.mp3",
   // The flop reveals three cards at once -- the richer flip sound marks it
@@ -35,16 +35,24 @@ export const SOUND_FILES: Record<SoundEffect, string | null> = {
   check: "/sounds/freesound_community-knocking-wood-61988.mp3",
   call: "/sounds/oxidvideos-placing-poker-chips-522515.mp3",
   raise: "/sounds/oxidvideos-placing-poker-chips-522521.mp3",
-  "all-in": "/sounds/oxidvideos-placing-poker-chips-522521.mp3",
+  // No longer the raise recording at a hotter gain: an all-in is the one bet
+  // that ends someone's hand, and it now has its own take to say so.
+  "all-in": "/sounds/All_In.mp3",
+  // Deliberately still the stock crowd cheer. The two supplied alternatives
+  // run 10.2s and 3.9s against a NEXT_HAND_DELAY_MS of 2,800 -- either one is
+  // still playing while the next hand deals. This file is 2.5s, which is the
+  // only reason the win reads as a reaction to the hand that just ended.
   win: "/sounds/freesound_community-crowd-cheer-ii-6263.mp3",
   // The one sound that has to reach someone who is not looking at the screen.
-  // Borrowed from the UI tap because there is no dedicated asset yet; it runs
-  // much hotter than the tap does (see EFFECT_TARGET_DB) so the two do not
-  // read as the same event. Swapping in a real cue is a one-line change here.
-  "your-turn": "/sounds/freesound_community-screen-tap-38717.mp3",
+  // It borrowed the UI tap for want of a dedicated asset; it has a real cue
+  // now, so the two no longer differ only by gain.
+  "your-turn": "/sounds/Your_Turn.mp3",
   lose: null,
-  timeout: null,
-  "time-card": null,
+  // Both clock cues, and deliberately the same recording: they are the same
+  // event to the player -- their time is the thing in question -- and the
+  // targets below are equal for that reason rather than by omission.
+  timeout: "/sounds/TimeBank.mp3",
+  "time-card": "/sounds/TimeBank.mp3",
 };
 
 /**
@@ -52,15 +60,23 @@ export const SOUND_FILES: Record<SoundEffect, string | null> = {
  * `ffmpeg -i <file> -af volumedetect -f null /dev/null`.
  *
  * These are not preferences, they are measurements, and they are the reason
- * this table exists. The nine assets come from four different libraries and
- * span 15.3 dB of mean level -- the crowd cheer at -16.3 against the epic
- * card flip at -31.6 -- while every one of them was played at volume 1.0. The
- * mix was therefore whatever each library happened to normalise to, which is
- * why the room roared and the flop was a whisper.
+ * this table exists. The twelve assets come from four stock libraries plus the
+ * owner's own set, and span 15.3 dB of mean level -- the crowd cheer at -16.3
+ * against the epic card flip at -31.6 -- while every one of them was played at
+ * volume 1.0. The mix was therefore whatever each source happened to normalise
+ * to, which is why the room roared and the flop was a whisper.
  *
  * Re-measure the line if you replace a file. Nothing else needs to change.
+ *
+ * The screen-tap entry is kept although nothing points at it any more: it is
+ * still on disk, and a measurement already taken is cheaper to keep than to
+ * redo if some effect is pointed back at it.
  */
 const FILE_LEVEL_DB: Record<string, number> = {
+  "/sounds/All_In.mp3": -21.9,
+  "/sounds/Menu_clicks.mp3": -24.5,
+  "/sounds/TimeBank.mp3": -20.4,
+  "/sounds/Your_Turn.mp3": -20.8,
   "/sounds/bigsoundbank-poker-chips-4-0945.mp3": -21.4,
   "/sounds/freesound_community-crowd-cheer-ii-6263.mp3": -16.3,
   "/sounds/freesound_community-flipcard-91468.mp3": -28.2,
@@ -114,6 +130,8 @@ const EFFECT_TARGET_DB: Record<SoundEffect, number> = {
   // Silent by design -- no file, so the target is unused. Kept in the record
   // so adding an asset is one line and the compiler names the other.
   lose: -30,
+  // The clock. Both sit under the betting cues: running out of time is
+  // information, not a moment, and it arrives while the table is already busy.
   timeout: -30,
   "time-card": -30,
 };

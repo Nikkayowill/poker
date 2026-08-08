@@ -131,14 +131,11 @@ function Bankroll({
   tier: ChipPropTier;
   detail: PropDetail;
 }) {
-  // (url, useDraco, useMeshopt) — both decoders off, the same CSP constraint
-  // glb-avatar.tsx documents at length: Draco is fetched from a gstatic CDN
-  // this app's script-src has no entry for, and Meshopt instantiates a
-  // WebAssembly module that script-src blocks without 'wasm-unsafe-eval'.
-  // None of these props is compressed with either, so both are pure cost —
-  // and leaving them at drei's defaults throws the WASM violation at module
-  // evaluation, before any component gets to render.
-  const { scene } = useGLTF(CHIP_PROPS[tier].url, false, false);
+  // (url, useDraco, useMeshopt) — Meshopt on, Draco off, matching every other
+  // .glb in this tree; glb-avatar.tsx carries the full reasoning for why the
+  // two decoders are not treated alike. 'wasm-unsafe-eval' is in script-src
+  // for the Meshopt decoder, which every compressed prop now needs.
+  const { scene } = useGLTF(CHIP_PROPS[tier].url, false, true);
 
   /*
    * A STABLE, EMPTY CONTAINER is what <primitive> mounts — the built pile is
@@ -237,7 +234,9 @@ export function SeatBankrolls({
 // change tier mid-session, so without this a player who wins a pot would see
 // their stack vanish for a beat while the next .glb arrives.
 if (typeof window !== "undefined") {
+  // Flags must match the hook's exactly — the preload path builds its own
+  // loader. See glb-avatar.tsx.
   for (const spec of Object.values(CHIP_PROPS)) {
-    useGLTF.preload(spec.url, false, false);
+    useGLTF.preload(spec.url, false, true);
   }
 }

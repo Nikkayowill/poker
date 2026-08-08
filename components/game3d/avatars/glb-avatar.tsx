@@ -87,17 +87,19 @@ export interface GlbAvatarProps {
 
 function GlbAvatarModel({ character }: GlbAvatarProps) {
   const groupRef = useRef<THREE.Group>(null);
-  // (url, useDraco, useMeshopt) — BOTH decoders are off deliberately. drei
-  // defaults them on: Draco is fetched from a gstatic CDN (which this app's
-  // CSP has no script-src entry for, and which the repo has no other runtime
-  // third-party dependency on) and Meshopt instantiates a WebAssembly module,
-  // which `script-src` blocks without 'wasm-unsafe-eval'. Neither roster
-  // model is compressed with either — `extensionsUsed` on all six is
-  // ["KHR_materials_specular"] alone — so both were pure cost, and the
-  // WASM violation is what left the whole Canvas suspended forever in dev.
-  // Re-enabling Meshopt is the natural companion to ever compressing these
-  // files; it needs the CSP entry added in the same change.
-  const { scene, animations } = useGLTF(character.url, false, false);
+  // (url, useDraco, useMeshopt). Meshopt is ON and Draco stays OFF, and the
+  // asymmetry is the point. scripts/compress-3d-assets.sh now meshopt-encodes
+  // every roster model, so the decoder is required rather than pure cost —
+  // and it instantiates a WebAssembly module, which `script-src` blocks
+  // without 'wasm-unsafe-eval'. That entry went into next.config.ts in the
+  // same change, exactly as this comment used to ask.
+  //
+  // Draco is still off, and not for want of compression: drei fetches its
+  // decoder from a gstatic CDN, which would make a third-party origin a hard
+  // dependency of the table rendering at all. Meshopt's decoder ships inside
+  // the bundle. If a future asset needs Draco, self-host the decoder rather
+  // than widening script-src to a CDN.
+  const { scene, animations } = useGLTF(character.url, false, true);
 
   // Clone with skeleton so the same URL can seat more than one slot without
   // the mixer of one seat re-posing every other seat's shared scene graph.
@@ -234,14 +236,18 @@ export function GlbAvatar(props: GlbAvatarProps) {
   );
 }
 
-// Warm the cache for the whole roster up front — six seats draw from four
-// files, so without this the first two repeats would pop in a beat behind
-// the rest instead of arriving with them.
+// Warm the cache for the whole roster up front. A six-max table seats six
+// players and the roster is exactly six models, so every one of these is
+// wanted on any table that fills — there is nothing to defer. Loading them
+// together is what stops late arrivals popping in a beat behind the rest.
+//
+// This was the wrong call while the roster weighed 48 MB, and the fix was
+// the assets rather than the strategy: compressed, all six come to ~3.5 MB.
+// If the roster ever grows past the seat count, this should become per-seat.
 if (typeof window !== "undefined") {
-  // Same (useDraco, useMeshopt) = (false, false) as the hook above. The
-  // preload path builds its own loader, so leaving these at drei's defaults
-  // threw the Meshopt WASM CSP violation at module-evaluation time — before
-  // any component had a chance to render — even once the hook itself was
-  // fixed.
-  for (const c of CHARACTERS_3D) useGLTF.preload(c.url, false, false);
+  // The preload path builds its own loader, so the decoder flags must match
+  // the hook above exactly — (useDraco, useMeshopt) = (false, true). Leaving
+  // them at drei's defaults pulls in Draco from a CDN the CSP does not name,
+  // at module-evaluation time, before any component can render.
+  for (const c of CHARACTERS_3D) useGLTF.preload(c.url, false, true);
 }

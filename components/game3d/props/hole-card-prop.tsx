@@ -75,9 +75,10 @@ export function HoleCardProp({
 }
 
 function HoleCardPropModel({ spot, showPad }: { spot: Vec3; showPad: boolean }) {
-  // (url, useDraco, useMeshopt) both off — same CSP reason as every other
-  // .glb in this tree; see instanced-prop.ts and glb-avatar.tsx.
-  const { scene } = useGLTF(HOLE_CARD_PROP_URL, false, false);
+  // (url, useDraco, useMeshopt) — Meshopt on, Draco off, matching every other
+  // .glb in this tree now that scripts/compress-3d-assets.sh encodes them all.
+  // See glb-avatar.tsx for why the two decoders are not treated alike.
+  const { scene } = useGLTF(HOLE_CARD_PROP_URL, false, true);
 
   /*
    * The pair is built INSIDE the effect that disposes it, and <primitive>
@@ -119,5 +120,7 @@ function HoleCardPropModel({ spot, showPad }: { spot: Vec3; showPad: boolean }) 
 }
 
 if (typeof window !== "undefined") {
-  useGLTF.preload(HOLE_CARD_PROP_URL, false, false);
+  // Flags must match the hook's exactly — the preload path builds its own
+  // loader. See glb-avatar.tsx.
+  useGLTF.preload(HOLE_CARD_PROP_URL, false, true);
 }

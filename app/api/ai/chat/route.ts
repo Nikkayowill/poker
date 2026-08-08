@@ -1,7 +1,9 @@
 import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { findProfileBySessionToken } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -13,14 +15,15 @@ export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, "ai:chat", 10, 60 * 1000);
   if (limited) return limited;
 
-  // Ties usage to an existing player session rather than leaving this open
-  // to anyone who finds the route -- this proxies to a paid, rate-limited
-  // third-party API on the app's own key, the same reason every other
-  // player-facing route requires this cookie.
-  const token = request.cookies.get("river_session")?.value;
-  if (!token) return NextResponse.json({ error: "Your profile session expired." }, { status: 401 });
-
   try {
+    // The cookie is a bearer identifier, not proof of identity. Do not call
+    // ensureProfile here: doing so would register an attacker-controlled
+    // cookie while trying to authenticate it.
+    const token = readSessionToken(request);
+    if (!token || !(await findProfileBySessionToken(token))) {
+      return NextResponse.json({ error: "Your profile session expired." }, { status: 401 });
+    }
+
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       return NextResponse.json(

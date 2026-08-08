@@ -23,9 +23,11 @@ function sweep(now: number) {
 }
 
 /**
- * Fixed-window limiter keyed by caller. Good enough to blunt scripted abuse
- * against a single server instance; it is not a substitute for an edge-level
- * limiter in a multi-instance deployment.
+ * Fixed-window limiter keyed by source IP. Cookies are bearer identifiers
+ * supplied by the caller, so they must never be the only input to a limiter:
+ * an attacker could otherwise mint a fresh cookie value for every request.
+ * This is still process-local and should be paired with an edge limiter in a
+ * multi-instance deployment.
  */
 export function checkRateLimit(
   key: string,
@@ -52,10 +54,12 @@ export function getClientIp(request: NextRequest): string {
   return forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
 }
 
-/** Identifies a caller for rate-limiting: the session token when present, else the source IP. */
+/**
+ * Identifies a caller for rate-limiting without trusting a client-controlled
+ * session cookie. Authenticated routes can still validate that cookie for
+ * access, but the limiter remains effective when the cookie is fabricated.
+ */
 export function callerKey(request: NextRequest): string {
-  const token = request.cookies.get("river_session")?.value;
-  if (token) return `token:${token}`;
   return `ip:${getClientIp(request)}`;
 }
 

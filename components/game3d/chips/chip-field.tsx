@@ -39,7 +39,13 @@ import {
   type Vec3,
 } from "@/lib/game3d/seat-layout";
 import { useFrame } from "@react-three/fiber";
-import { ChipInstancedLayer, type ChipFlightInput, type RestingChipPile } from "./chip-instanced-layer";
+import {
+  ChipInstancedLayer,
+  POT_PILE_KEY,
+  type ChipFlightInput,
+  type RestingChipPile,
+} from "./chip-instanced-layer";
+import { publishFunnel } from "@/lib/game3d/scene-registry";
 import { FakeShadows } from "../scene/fake-shadows";
 
 type FlightKind = "bet" | "sweep" | "award";
@@ -139,6 +145,7 @@ export function ChipField({
     }
 
     if (model.hasWinners && !prev.hasWinners) {
+      const funnelled: number[] = [];
       for (const seat of model.seats) {
         if (seat.isWinner && seat.winAmount > 0) {
           launched.push({
@@ -150,8 +157,14 @@ export function ChipField({
             to: betSpotPosition(seat.slot),
             slot: null,
           });
+          funnelled.push(seat.slot);
         }
       }
+      // Recorded for the e2e seam. `slot` above stays null on purpose -- it
+      // drives the resting-pile bookkeeping, and an award is outbound from
+      // the pot rather than inbound to a seat's bet -- so the slots a payout
+      // was aimed at exist nowhere else once these flights land.
+      publishFunnel(funnelled);
     }
 
     if (launched.length > 0) {
@@ -187,7 +200,7 @@ export function ChipField({
       });
     }
   }
-  piles.push({ key: "pile-pot", amount: potAmount, position: POT_POSITION, seed: 101 });
+  piles.push({ key: POT_PILE_KEY, amount: potAmount, position: POT_POSITION, seed: 101 });
 
   const flightInputs: ChipFlightInput[] = flights.map((flight) => ({
     key: flight.key,

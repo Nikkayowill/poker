@@ -36,6 +36,11 @@ import {
   type ChipPose,
 } from "@/lib/game3d/chip-instance-model";
 import type { Vec3 } from "@/lib/game3d/seat-layout";
+import {
+  publishAnimating,
+  publishFlightChips,
+  publishPotPileChips,
+} from "@/lib/game3d/scene-registry";
 import { chipGeometry, chipMaterials } from "./chip-stack";
 import { useDemandFrame } from "../scene/demand-loop";
 
@@ -56,6 +61,15 @@ const MAX_INSTANCES_PER_DENOMINATION = 128;
  * shared instance is safe — the same "one shared X, never per-chip
  * allocation" contract chipGeometry and chipMaterials already keep. */
 const dummy = new THREE.Object3D();
+
+/**
+ * The centre pile's key. Exported so `chip-field.tsx` names it and the
+ * `write()` pass below recognises it from one definition rather than two
+ * copies of the string "pile-pot" that only agree by luck -- the seam's
+ * `pileSize()` counts this pile specifically, and a rename on one side alone
+ * would make it silently report zero.
+ */
+export const POT_PILE_KEY = "pile-pot";
 
 export interface RestingChipPile {
   key: string;
@@ -117,12 +131,17 @@ export function ChipInstancedLayer({ piles, flights, onFlightDone }: ChipInstanc
 
   const write = (nowMs: number) => {
     const byDenom = new Map<number, ChipPose[]>();
+    // Gathered for the e2e seam, which cannot see any of this: these poses
+    // go straight into InstancedMesh matrices and never touch React state.
+    // See lib/game3d/scene-registry.ts.
+    let potPileChips = 0;
+    const airborne: Vec3[] = [];
 
     for (const pile of piles) {
       if (pile.amount <= 0) continue;
-      for (const pose of restingPileChipPoses(pile.amount, pile.position, pile.seed, pile.key)) {
-        pushPose(byDenom, pose);
-      }
+      const poses = restingPileChipPoses(pile.amount, pile.position, pile.seed, pile.key);
+      if (pile.key === POT_PILE_KEY) potPileChips = poses.length;
+      for (const pose of poses) pushPose(byDenom, pose);
     }
 
     for (const flight of flights) {
@@ -134,11 +153,20 @@ export function ChipInstancedLayer({ piles, flights, onFlightDone }: ChipInstanc
       const elapsed = nowMs - launchedAt;
       const { poses, done } = flightChipPoses(flight.chips, flight.from, flight.to, elapsed, flight.key);
       for (const pose of poses) pushPose(byDenom, pose);
+      // A settled flight's chips are at their destination and this pile is
+      // about to own them, so they stop counting as in flight the same frame
+      // they arrive -- matching what the 2D room's `moving` set does.
+      if (!done) {
+        for (const pose of poses) airborne.push({ x: pose.x, y: pose.y, z: pose.z });
+      }
       if (done) {
         launchedAtRef.current.delete(flight.key);
         onFlightDoneRef.current(flight.key);
       }
     }
+
+    publishFlightChips(airborne);
+    publishPotPileChips(potPileChips);
 
     for (const denom of CHIP_DENOMINATIONS) {
       const mesh = meshesRef.current.get(denom.value);
@@ -187,10 +215,21 @@ export function ChipInstancedLayer({ piles, flights, onFlightDone }: ChipInstanc
     write(clock.elapsedTime * 1000);
   }, [piles]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const animating = flights.length > 0;
+
   useDemandFrame(
     (state) => write(state.clock.elapsedTime * 1000),
-    flights.length > 0,
+    animating,
   );
+
+  // The seam's `awake()`. Published from the very flag that decides whether
+  // the demand loop is kept alive above, so the two cannot disagree -- an
+  // effect rather than a render-body call because this is an external store,
+  // and keyed on the boolean so it also fires on the falling edge, when
+  // `write()` may never run again to report the room has settled.
+  useEffect(() => {
+    publishAnimating(animating);
+  }, [animating]);
 
   return (
     <>

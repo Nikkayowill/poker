@@ -44,6 +44,7 @@ import { HoleCards } from "./cards-3d";
 import { HoleCardsInstanced } from "./cards-instanced";
 import { Table3D } from "./table-3d";
 import { Chair } from "./chair";
+import { SceneSeam } from "./scene-seam";
 
 
 /**
@@ -219,6 +220,10 @@ function SceneContents({ model }: { model: SceneModel }) {
   return (
     <>
       <CameraRig />
+      {/* Publishes window.__stackchipsScene. Inside the Canvas because that
+          is the only place the live camera is reachable, and mounted first
+          so a spec polling for the seam is not racing the room's assets. */}
+      <SceneSeam />
       <Lights />
       <Table3D />
       {/* No house dealer figure: the seats are photographic renders now, and

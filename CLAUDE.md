@@ -372,6 +372,67 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   an invariant, so they are now what would catch it coming back. Note six of
   the supplied "new" SFX are **byte-identical renames** of existing stock
   files; checksum before assuming a new filename is new audio.
+- **`feat/3d-table` is a second renderer, default-off, and the two share one
+  e2e seam.** The branch reinstates `three`/`@react-three/fiber`/`drei` (so
+  CLAUDE.md's "three.js is uninstalled" below is true of `main` and not of
+  this branch) and puts an R3F room behind `DEFAULT_TABLE_RENDERER =
+  "canvas_2d"` in `lib/scene/table-renderer.ts`, switchable from the table
+  menu and hidden entirely where `useWebglSupport()` is false. Four things
+  about the seam, which is the part built to make the room testable at all:
+  - **`window.__stackchipsScene`'s shape is now `lib/scene/seam-contract.ts`,
+    one exported interface, not a `declare global` in each renderer.** Both
+    rooms answer the same ten methods in the same units, because the specs
+    that check where a payout lands are about the *table*, not about how it
+    is drawn. Two structurally-identical declarations would merge silently
+    until they drifted, and the failure then is a spec asserting something
+    different depending on a preference flag; a renderer that stops matching
+    now fails to compile.
+  - **Two of the ten stopped being derivable and are measured instead.**
+    `roomScale` and `roomFelt` were coined under orthography, where a world
+    unit is the same number of pixels everywhere and `projection.ts` solved
+    the fit in closed form. A perspective camera has no such number, and the
+    felt is not an ellipse on screen once projected — its near edge is wider
+    than its far. So `roomScale` reads the scale *across the felt's centre*
+    and the contract says it means nothing elsewhere; `roomFelt` samples the
+    rim, projects every sample and reports the bounding box. Verified live at
+    1440×900: 199 px/unit, felt 864×398 against 4.3 world units of width
+    (856 px predicted — the excess is the near edge, which is the point), and
+    seats landing perfectly symmetric about x=720.
+  - **`awake()` is pending work, never recent paint, and that was learned the
+    expensive way.** The first cut inferred it from how recently a frame had
+    drawn — a 50 ms window, three frames at 60 Hz. Driven headlessly the room
+    renders about **two frames a second** (a shadow-mapped scene under
+    SwiftShader is ~450 ms a frame), so a room with eight chips visibly in
+    the air reported itself asleep across 1,141 consecutive samples. Frame
+    recency cannot separate "nothing left to draw" from "still drawing,
+    slowly", and a window wide enough for software rendering is far too wide
+    to prove a loop settled. It reads `animating` from the registry now,
+    published from the very flag that keeps the demand loop alive, which is
+    also what the 2D room's `isAwake(scheduler)` has always meant.
+    `framesRendered()` stays the independent evidence the loop really stopped.
+  - **`near-seat-bet.spec.ts` and two of `chip-flights.spec.ts` fail on this
+    branch already — do not read them as seam regressions.** All five time out
+    at 120s rather than failing an assertion, and the page snapshot shows the
+    table reached and seated with the pot at 15 (blinds only): the hand never
+    progresses, so `.community-card-shell` never exists and the locator
+    waiting for it hangs. **Confirmed by running the same spec in a detached
+    worktree at HEAD** — identical failure with none of the seam work and none
+    of a concurrent session's in-flight route changes present. That worktree
+    trick is the safe way to get a baseline when the tree is shared: `git
+    stash` would have yanked the other session's uncommitted work out from
+    under them, which is the same hazard as `commit -a` here. Note Next
+    rejects a `node_modules` symlink pointing outside the project root, so
+    hard-link it (`cp -al`, ~2s) rather than symlinking.
+  - **`lib/game3d/scene-registry.ts` exists because the chips are invisible to
+    React.** `chip-instanced-layer.tsx` writes InstancedMesh matrices straight
+    from a per-frame pass — deliberately, since pushing sixty matrix updates a
+    second through the reconciler is what that file exists to avoid — so
+    nothing a seam component could read holds a chip's position. The writer
+    publishes world-space poses there and the seam projects them; keeping
+    projection out of the registry is what lets it stay three-free and so
+    reachable by `npm test`. `POT_PILE_KEY` is exported for the same class of
+    reason: `pileSize()` counts that pile by name, and two copies of the
+    string `"pile-pot"` agreeing only by luck would have it report zero.
 - The table renderer is a **Canvas 2D room** now — the three.js/WebGL room
   that briefly replaced the CSS chip system was itself replaced at the
   user's explicit request (they preferred the Canvas 2.5D look prototyped in

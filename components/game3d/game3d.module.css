@@ -1,0 +1,533 @@
+/*
+ * Layout for the 3D stage and its HTML overlay. A CSS module on purpose:
+ * the numbered global cascade in app/styles is untouched by this branch,
+ * and deleting components/game3d removes every rule here with it.
+ */
+
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  /* Capped by the viewport, and that cap is load-bearing. A bare 480px floor
+     is taller than a phone held sideways (844x390), so the stage overflowed
+     its own screen: the canvas measured 480 tall, the action bar sat 90px
+     below the fold, and the camera solved its framing for an aspect the
+     device never had. Measured, not theorised — the bar was simply gone. */
+  min-height: min(480px, 100dvh);
+  background: #0a0a0b;
+  overflow: hidden;
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #8d84a3;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+/* The overlay plane: HTML stays crisp above the canvas. Only interactive
+ * children re-enable pointer events, so the felt stays inspectable. */
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.hudTop {
+  position: absolute;
+  top: 14px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  color: #f5f2ea;
+  font-variant-numeric: tabular-nums;
+}
+
+.potReadout {
+  background: rgba(10, 10, 11, 0.72);
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+}
+
+.potReadout span {
+  color: #db9c0b;
+  margin-left: 6px;
+}
+
+.message {
+  position: absolute;
+  top: 60px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #b7aec9;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.actionBar {
+  position: absolute;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.actionButton {
+  min-width: 118px;
+  padding: 14px 22px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #fff;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 6px 20px rgba(0, 0, 0, 0.55);
+  transition: transform 120ms ease, filter 120ms ease;
+}
+
+.actionButton:hover:enabled {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+
+.actionButton:active:enabled {
+  transform: translateY(1px);
+}
+
+.actionButton:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.actionButton:focus-visible {
+  outline: 2px solid #b28ef0;
+  outline-offset: 2px;
+}
+
+.fold {
+  background: linear-gradient(168deg, #e5403e 0%, #c31312 55%, #9c100f 100%);
+}
+
+.call {
+  background: linear-gradient(168deg, #35a56d 0%, #23784e 55%, #1b5f3d 100%);
+}
+
+.raise {
+  background: linear-gradient(168deg, #f0bc45 0%, #db9c0b 55%, #b57f06 100%);
+  color: #241a02;
+}
+
+.subLabel {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Orientation.
+ *
+ * The table is played sideways — a 2.13m oval is a landscape object and the
+ * camera frames it that way (lib/game3d/camera-framing.ts). Both orientations
+ * still have to work, and they fail in different directions, so they get
+ * different rules rather than one set of numbers that is a compromise in both:
+ *
+ * - Held upright, the screen is narrow and tall. The table takes the middle;
+ *   the controls get the room underneath, at full width, thumb height.
+ * - Held sideways on a phone, height is the scarce axis — 390px of it — so
+ *   the same controls have to lose padding rather than sit over the felt.
+ * ------------------------------------------------------------------------ */
+
+/* Upright: full-width controls in the space below the table. */
+@media (orientation: portrait) and (max-width: 620px) {
+  .actionBar {
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    transform: none;
+    gap: 8px;
+  }
+
+  .actionButton {
+    /* Equal thirds. min-width would fight the flex basis and leave the
+       widest label deciding the layout. */
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 16px 8px;
+    font-size: 15px;
+  }
+
+  .hudTop {
+    top: max(12px, env(safe-area-inset-top));
+  }
+}
+
+/* Sideways on a phone: keep the controls off the cloth by shrinking them. */
+@media (orientation: landscape) and (max-height: 480px) {
+  .actionBar {
+    bottom: max(10px, env(safe-area-inset-bottom));
+    gap: 10px;
+  }
+
+  .actionButton {
+    min-width: 96px;
+    padding: 9px 16px;
+    font-size: 14px;
+  }
+
+  .hudTop {
+    top: 8px;
+  }
+
+  .potReadout {
+    padding: 5px 14px;
+    font-size: 13px;
+  }
+
+  .message {
+    top: 40px;
+    font-size: 12px;
+  }
+}
+
+/* The safe-area insets a notch actually eats, on the axis that matters in
+   each orientation. Landscape is where a notch sits *beside* the controls,
+   which is the case an inset on the bottom alone never covers. */
+@media (orientation: landscape) {
+  .actionBar {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Nameplates: crisp DOM labels floating over each figure's head, positioned
+ * by the same projection the camera is solved with.
+ * ------------------------------------------------------------------------ */
+
+.plateLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.plate {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 10px;
+  background: rgba(8, 7, 12, 0.72);
+  border-radius: 3px;
+  color: #f5f2ea;
+  text-align: center;
+  white-space: nowrap;
+  transition: left 400ms ease, top 400ms ease, opacity 400ms ease;
+}
+
+.plateName {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.plateStack {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #b7aec9;
+  font-variant-numeric: tabular-nums;
+}
+
+.plateBelow {
+  transform: translate(-50%, 14px);
+}
+
+.plateFolded {
+  opacity: 0.45;
+}
+
+.plateCurrent {
+  box-shadow: 0 0 0 1px rgba(219, 156, 11, 0.85);
+}
+
+.plateWinner {
+  box-shadow: 0 0 0 1px #db9c0b;
+}
+
+.plateWinner .plateStack {
+  color: #db9c0b;
+}
+
+.plateDealer {
+  background: rgba(8, 7, 12, 0.5);
+}
+
+.plateDealer .plateName {
+  font-weight: 500;
+  color: #cfc7de;
+}
+
+/* ---------------------------------------------------------------------------
+ * The artifact's own chrome: a letterboxed device stage and two control
+ * trays. This is page furniture *around* the simulated viewport, so it stays
+ * unscaled while the stage scales — which is exactly how a device preview
+ * should behave.
+ * ------------------------------------------------------------------------ */
+
+.frameViewport {
+  /* Absolute, not fixed: the artifact shell gives #root the full viewport,
+     and absolute survives environments where fixed misresolves. */
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #050409;
+  overflow: hidden;
+}
+
+.stageFramed {
+  flex: none;
+  box-shadow:
+    0 0 0 1px rgba(152, 63, 224, 0.30),
+    0 40px 90px rgba(0, 0, 0, 0.65);
+}
+
+.controlDock {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  right: max(14px, env(safe-area-inset-right));
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 14px;
+  max-width: min(46vw, 340px);
+}
+
+.tray {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.trayLabel {
+  color: #8d84a3;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+}
+
+.trayRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.trayButton {
+  border: 0;
+  border-radius: 2px;
+  padding: 6px 10px;
+  background: rgba(22, 18, 29, 0.88);
+  color: #cfc7de;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.trayButton:hover {
+  background: #241d31;
+  color: #f5f2ea;
+}
+
+.trayButtonActive {
+  background: #983fe0;
+  color: #fff;
+}
+
+.trayButtonActive:hover {
+  background: #a855ec;
+}
+
+.trayButton:focus-visible {
+  outline: 2px solid #b28ef0;
+  outline-offset: 1px;
+}
+
+.trayCaption {
+  color: #6d6582;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* On a phone the dock shares the top edge with the pot pill; go compact and
+   let rows wrap under the label rather than crossing the centre line. */
+@media (max-width: 700px) {
+  .controlDock {
+    gap: 10px;
+    max-width: 58vw;
+  }
+
+  .trayButton {
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+
+  .trayCaption {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------------
+ * Crisp DOM card faces — the shared markup hud/card-face.tsx renders for
+ * both the community board (hud/board-cards.tsx) and the local player's
+ * own pair (hud/own-hole-cards.tsx). Sized entirely from --card-w, which
+ * each caller sets on its own ancestor, so every dimension below is a
+ * ratio of one number and the two callers can never drift from each
+ * other's proportions, only their own scale.
+ * ------------------------------------------------------------------------ */
+
+.boardLayer {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: calc(var(--card-w) * 0.1);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.cardFace {
+  position: relative;
+  width: var(--card-w);
+  aspect-ratio: 5 / 7;
+  border-radius: calc(var(--card-w) * 0.1);
+  background: linear-gradient(180deg, #fdfcf8 0%, #f6f2e8 70%, #ece5d5 100%);
+  /* A real drop shadow is what seats the card ON the felt rather than
+     pasted over the page. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 calc(var(--card-w) * 0.06) calc(var(--card-w) * 0.16) rgba(0, 0, 0, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.45);
+  color: #10151d;
+  animation: cardFaceIn 260ms ease-out backwards;
+}
+
+.cardFaceRed {
+  color: #c22219;
+}
+
+.cardIndex {
+  position: absolute;
+  top: calc(var(--card-w) * 0.07);
+  left: calc(var(--card-w) * 0.09);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--card-w) * 0.015);
+  line-height: 1;
+}
+
+.cardRank {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  font-size: calc(var(--card-w) * 0.38);
+  letter-spacing: -0.02em;
+}
+
+.cardIndexSuit {
+  display: block;
+  width: calc(var(--card-w) * 0.24);
+  height: calc(var(--card-w) * 0.24);
+}
+
+.cardIndexSuit svg,
+.cardPip svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.cardPip {
+  position: absolute;
+  right: calc(var(--card-w) * 0.09);
+  bottom: calc(var(--card-w) * 0.09);
+  width: calc(var(--card-w) * 0.46);
+  height: calc(var(--card-w) * 0.46);
+}
+
+@keyframes cardFaceIn {
+  from {
+    opacity: 0;
+    transform: translateY(8%) scale(0.9);
+  }
+}
+
+/* ------------------------------------------------------------------------
+ * The local player's own pair (hud/own-hole-cards.tsx) — fixed above the
+ * action bar, not projected onto the felt. It is a HUD element like the
+ * pot readout, deliberately not another 3D-anchored overlay like the
+ * board: the player's own hand reads as something held, not a prop lying
+ * on the cloth. --card-w is set here, independent of the board's own; the
+ * bottom offset clears the action bar's tallest (portrait) form, tuned
+ * per breakpoint below alongside that same button row.
+ * ------------------------------------------------------------------------ */
+
+.ownHandLayer {
+  --card-w: 78px;
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(18px, env(safe-area-inset-bottom)) + 92px);
+  transform: translateX(-50%);
+  display: flex;
+  gap: calc(var(--card-w) * 0.16);
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* A held pair fans slightly rather than lying dead flat — the same "lift
+   the corner and look" gesture the 3D room's own tilted pair made, without
+   needing perspective to sell it. */
+.ownHandCard:first-child {
+  transform: rotate(-7deg) translateY(3px);
+}
+
+.ownHandCard:last-child {
+  transform: rotate(7deg) translateY(3px);
+}
+
+@media (orientation: portrait) and (max-width: 620px) {
+  .ownHandLayer {
+    --card-w: 64px;
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 108px);
+  }
+}
+
+@media (orientation: landscape) and (max-height: 480px) {
+  .ownHandLayer {
+    --card-w: 50px;
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 62px);
+  }
+}

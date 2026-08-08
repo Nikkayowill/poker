@@ -36,7 +36,10 @@ const csp = [
   // Sentry's session-replay integration compresses events in a Worker
   // constructed from a blob: URL; without this it silently fails to record.
   "worker-src 'self' blob:",
-  `connect-src 'self' https://*.supabase.co wss://*.supabase.co ${adsterraOrigins}${isDev ? " ws:" : ""}`,
+  // blob: is for the 3D table room's GLTFLoader: a .glb's embedded textures are
+  // decoded to blob: URLs and fetched, which connect-src governs. img-src
+  // already allows blob: above, but that directive does not cover fetch().
+  `connect-src 'self' blob: https://*.supabase.co wss://*.supabase.co ${adsterraOrigins}${isDev ? " ws:" : ""}`,
   // 'self' first, and it is not optional: the ad unit renders in a srcdoc
   // iframe, which has no URL of its own and is matched against the parent
   // document's own origin. Without it the whole slot is blocked before the

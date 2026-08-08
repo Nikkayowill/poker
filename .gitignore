@@ -24,3 +24,12 @@ artifacts/screenshots/
 
 # Scratch output from the Playwright MCP server (console dumps, page snapshots).
 .playwright-mcp/
+
+# Bundled 3D-room artifact (scripts/build-game3d-artifact.mjs)
+dist-artifact/
+
+# Intermediate masks from scripts/build-avatar-sprites.sh
+scripts/.avatar-masks/
+
+# One-off diagnostic scripts (Firefox checks, screenshot shims)
+scripts/tmp/

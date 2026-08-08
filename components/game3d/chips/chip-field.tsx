@@ -12,34 +12,35 @@
  * - a hand boundary (new handNumber / new game) clears instantly — sweeping
  *   there would wipe the incoming blinds of the next hand.
  *
- * Resting amounts are always derived as "model amount minus what is still in
- * the air toward that pile", so the felt never double-counts a flying chip
- * and always sums to the pot the HUD states.
- *
- * Flight motion is sampled closed-form from lib/game3d/chip-trajectory each
- * frame — positions are written straight onto the meshes, so a flight never
- * causes a React re-render mid-air; state changes only on launch and landing.
+ * This file owns exactly that choreography state machine — which piles and
+ * flights exist, and when — same as it always has. It no longer renders
+ * any chip itself: chip-instanced-layer.tsx is the one place every chip's
+ * transform gets written into GPU buffers (see that file's header for why
+ * a single writer is required once chips are instanced). What changed here
+ * is only the last step, turning `flights`/resting amounts into the plain
+ * `piles`/`flights` arrays that layer consumes — the flight-launch diff
+ * logic below, and its "compare against the frame clock" trigger, are
+ * unchanged, including why it deliberately runs in `useFrame` rather than
+ * an effect (see the comment on the diff below). It also mounts
+ * scene/fake-shadows.tsx's chip-pile shadows here, alongside the chip
+ * layer, because `piles` is already computed in this component and a
+ * shadow decal's position IS a pile's position — lifting that back up to
+ * poker-scene.tsx just to hand it to a sibling would be the same number
+ * duplicated in two places for no reason.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
-import type * as THREE from "three";
-import { useFrame } from "@react-three/fiber";
+import { useCallback, useRef, useState } from "react";
 import type { SceneModel } from "@/lib/game3d/scene-model";
-import {
-  chipBreakdown,
-  type ChipDenomination,
-} from "@/lib/game3d/denominations";
-import {
-  landingOffset,
-  sampleChipFlight,
-} from "@/lib/game3d/chip-trajectory";
+import { chipBreakdown, type ChipDenomination } from "@/lib/game3d/denominations";
 import {
   POT_POSITION,
   betSpotPosition,
   seatPosition,
   type Vec3,
 } from "@/lib/game3d/seat-layout";
-import { CHIP_THICKNESS, ChipStack, chipGeometry, chipMaterials } from "./chip-stack";
+import { useFrame } from "@react-three/fiber";
+import { ChipInstancedLayer, type ChipFlightInput, type RestingChipPile } from "./chip-instanced-layer";
+import { FakeShadows } from "../scene/fake-shadows";
 
 type FlightKind = "bet" | "sweep" | "award";
 
@@ -62,69 +63,6 @@ function raisedLaunchPoint(slot: number): Vec3 {
   return { x: seat.x * 0.82, y: 1.05, z: seat.z * 0.82 };
 }
 
-function FlightGroup({
-  flight,
-  onDone,
-}: {
-  flight: Flight;
-  onDone: (key: string) => void;
-}) {
-  const groupRef = useRef<THREE.Group>(null);
-  const doneRef = useRef(false);
-  /** Filled from the scene clock on this flight's first frame. */
-  const startedAtRef = useRef<number | null>(null);
-  const targets = useMemo(
-    () =>
-      flight.chips.map((_, i) => {
-        const off = landingOffset(i);
-        return {
-          x: flight.to.x + off.dx,
-          y: flight.to.y,
-          z: flight.to.z + off.dz,
-        };
-      }),
-    [flight]
-  );
-
-  useFrame(({ clock }) => {
-    const group = groupRef.current;
-    if (!group || doneRef.current) return;
-    const nowMs = clock.elapsedTime * 1000;
-    if (startedAtRef.current === null) startedAtRef.current = nowMs;
-    const elapsed = nowMs - startedAtRef.current;
-
-    let allDone = true;
-    group.children.forEach((child, i) => {
-      const sample = sampleChipFlight(flight.from, targets[i], elapsed, i);
-      child.position.set(
-        sample.position.x,
-        sample.position.y + CHIP_THICKNESS / 2 + (i % 3) * CHIP_THICKNESS,
-        sample.position.z
-      );
-      if (!sample.done) allDone = false;
-    });
-
-    if (allDone) {
-      doneRef.current = true;
-      onDone(flight.key);
-    }
-  });
-
-  return (
-    <group ref={groupRef}>
-      {flight.chips.map((denom, i) => (
-        <mesh
-          key={i}
-          geometry={chipGeometry}
-          material={chipMaterials(denom)}
-          position={[flight.from.x, flight.from.y, flight.from.z]}
-          castShadow
-        />
-      ))}
-    </group>
-  );
-}
-
 export function ChipField({
   model,
   onSeatToss,
@@ -144,6 +82,11 @@ export function ChipField({
   // external system chip choreography synchronizes with, and launching from
   // here keeps setState out of the render/effect cycle. Each frame checks
   // whether a new model arrived; the launch work happens once per snapshot.
+  // Unchanged under the room's demand-mode frameloop (poker-scene.tsx):
+  // `model` changing is an ordinary React prop update, which R3F's own
+  // reconciler already invalidates for one frame on its own — see
+  // scene/demand-loop.ts's header — so this plain `useFrame` still gets a
+  // tick the moment a new snapshot lands, with no `useDemandFrame` needed.
   useFrame(() => {
     if (prevRef.current === model) return;
     const prev = prevRef.current;
@@ -216,7 +159,7 @@ export function ChipField({
     }
   });
 
-  // Resting piles render whatever is not currently airborne toward them.
+  // Resting piles are whatever is not currently airborne toward them.
   const inboundBet = new Map<number, number>();
   let inboundPot = 0;
   let outboundPot = 0;
@@ -232,23 +175,31 @@ export function ChipField({
 
   const potAmount = Math.max(0, model.potResting - inboundPot - outboundPot);
 
+  const piles: RestingChipPile[] = [];
+  for (const seat of model.seats) {
+    const resting = seat.streetBet - (inboundBet.get(seat.slot) ?? 0);
+    if (resting > 0) {
+      piles.push({
+        key: `pile-seat-${seat.slot}`,
+        amount: resting,
+        position: betSpotPosition(seat.slot),
+        seed: seat.slot * 7,
+      });
+    }
+  }
+  piles.push({ key: "pile-pot", amount: potAmount, position: POT_POSITION, seed: 101 });
+
+  const flightInputs: ChipFlightInput[] = flights.map((flight) => ({
+    key: flight.key,
+    chips: flight.chips,
+    from: flight.from,
+    to: flight.to,
+  }));
+
   return (
-    <group>
-      {model.seats.map((seat) => {
-        const resting = seat.streetBet - (inboundBet.get(seat.slot) ?? 0);
-        return resting > 0 ? (
-          <ChipStack
-            key={seat.slot}
-            amount={resting}
-            position={betSpotPosition(seat.slot)}
-            seed={seat.slot * 7}
-          />
-        ) : null;
-      })}
-      <ChipStack amount={potAmount} position={POT_POSITION} seed={101} />
-      {flights.map((flight) => (
-        <FlightGroup key={flight.key} flight={flight} onDone={removeFlight} />
-      ))}
-    </group>
+    <>
+      <ChipInstancedLayer piles={piles} flights={flightInputs} onFlightDone={removeFlight} />
+      <FakeShadows piles={piles} seats={model.seats} />
+    </>
   );
 }

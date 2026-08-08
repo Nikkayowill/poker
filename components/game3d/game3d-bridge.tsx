@@ -12,10 +12,12 @@
  * is required, and removing it restores the DOM table untouched.
  */
 
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import type { GameSnapshot } from "@/lib/game/types";
 import { deriveSceneModel } from "@/lib/game3d/scene-model";
+import { BoardCards } from "./hud/board-cards";
+import { OwnHoleCards } from "./hud/own-hole-cards";
 import styles from "./game3d.module.css";
 
 const PokerScene = dynamic(
@@ -29,16 +31,45 @@ const PokerScene = dynamic(
 export interface Game3DBridgeProps {
   game: GameSnapshot;
   /** Optional per-slot .glb avatar URLs (slot 0 is the local player). */
-  avatarUrls?: Record<number, string>;
+
   /** HTML overlay content (action bar, readouts) layered above the canvas. */
   children?: ReactNode;
 }
 
-export function Game3DBridge({ game, avatarUrls, children }: Game3DBridgeProps) {
+/**
+ * The board is projected from the stage's own box, not the window — the
+ * stage can be letterboxed or transform-scaled by a caller (the artifact
+ * demo does exactly that), and reading window size there would size the
+ * cards for a box the stage doesn't actually have.
+ */
+function useStageSize() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const box = entry.contentRect;
+      setSize({ width: box.width, height: box.height });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, size] as const;
+}
+
+export function Game3DBridge({ game, children }: Game3DBridgeProps) {
   const model = useMemo(() => deriveSceneModel(game), [game]);
+  const [stageRef, stageSize] = useStageSize();
   return (
-    <div className={styles.stage}>
-      <PokerScene model={model} avatarUrls={avatarUrls} />
+    <div ref={stageRef} className={styles.stage}>
+      <PokerScene model={model} />
+      <BoardCards
+        cards={model.community}
+        width={stageSize.width}
+        height={stageSize.height}
+      />
+      <OwnHoleCards seats={model.seats} />
       {children}
     </div>
   );

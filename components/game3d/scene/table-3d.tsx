@@ -18,10 +18,14 @@ const SKIRT_HEIGHT = 0.16;
 export function Table3D() {
   return (
     <group>
-      {/* Floor — one big disc; everything's shadows land here and on the felt. */}
+      {/* Floor — one big disc; everything's shadows land here and on the
+          felt. Darker than it was: with the camera raised, far more floor
+          sits in front of the table, and that foreground is where the
+          near players' faded lower halves have to disappear. A floor the
+          light can lift to grey turns their falloff into a visible cut. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <circleGeometry args={[9, 48]} />
-        <meshStandardMaterial color="#131016" roughness={1} metalness={0} />
+        <meshStandardMaterial color="#0a080d" roughness={1} metalness={0} />
       </mesh>
 
       {/* Padded rail: a raised leather ring riding the felt's edge. A torus,

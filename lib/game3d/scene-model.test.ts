@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { deriveSceneModel } from "./scene-model";
-import { makeGameSnapshot, makeSixSeats } from "./snapshot-fixture";
+import {
+  deriveSceneModel,
+  seatHasFeltCards,
+  seatHoleCardsHidden,
+} from "./scene-model";
+import { card, makeGameSnapshot, makeSixSeats } from "./snapshot-fixture";
 
 describe("deriveSceneModel", () => {
   it("rotates the requesting player's seat into slot 0", () => {
@@ -105,5 +109,104 @@ describe("deriveSceneModel", () => {
       true,
       false,
     ]);
+  });
+
+  it("carries the table's stakes tier through, for the bankroll props' baseline", () => {
+    const snapshot = makeGameSnapshot({ tier: "500k" });
+    expect(deriveSceneModel(snapshot).tier).toBe("500k");
+  });
+});
+
+describe("seatHoleCardsHidden", () => {
+  function seatModel(overrides: Partial<ReturnType<typeof deriveSceneModel>["seats"][number]>) {
+    const snapshot = makeGameSnapshot({
+      seats: makeSixSeats((position) =>
+        position === 1 ? { holeCards: [null, null] } : {}
+      ),
+    });
+    const model = deriveSceneModel(snapshot);
+    return { ...model.seats[1], ...overrides };
+  }
+
+  it("is true for an in-hand seat with both cards redacted", () => {
+    expect(seatHoleCardsHidden(seatModel({}))).toBe(true);
+  });
+
+  it("is false once either card is revealed (a showdown)", () => {
+    expect(
+      seatHoleCardsHidden(seatModel({ holeCards: [card("A", "spades"), null] })),
+    ).toBe(false);
+  });
+
+  it("is false for a seat not in the hand at all", () => {
+    expect(seatHoleCardsHidden(seatModel({ inHand: false }))).toBe(false);
+  });
+
+  it("is false for a seat with no cards dealt yet", () => {
+    expect(seatHoleCardsHidden(seatModel({ holeCards: [] }))).toBe(false);
+  });
+});
+
+describe("seatHasFeltCards", () => {
+  function seatModel(overrides: Partial<ReturnType<typeof deriveSceneModel>["seats"][number]>) {
+    const snapshot = makeGameSnapshot({
+      seats: makeSixSeats((position) =>
+        position === 1 ? { holeCards: [null, null] } : {}
+      ),
+    });
+    const model = deriveSceneModel(snapshot);
+    return { ...model.seats[1], ...overrides };
+  }
+
+  it("is true for an in-hand opponent holding a pair", () => {
+    expect(seatHasFeltCards(seatModel({ isMine: false }))).toBe(true);
+  });
+
+  /*
+   * The regression this predicate exists for. The local player's hand is DOM,
+   * drawn upright in front of the rail, so nothing of it lies on the cloth —
+   * but scene/fake-shadows.tsx used to loop over every in-hand seat and ground
+   * one anyway, painting a soft dark decal on bare felt in the middle of that
+   * player's own view.
+   */
+  it("is false for the local player, whose pair is DOM and off the felt", () => {
+    expect(seatHasFeltCards(seatModel({ isMine: true }))).toBe(false);
+  });
+
+  it("is false for a seat not in the hand, and for one not yet dealt", () => {
+    expect(seatHasFeltCards(seatModel({ isMine: false, inHand: false }))).toBe(false);
+    expect(seatHasFeltCards(seatModel({ isMine: false, holeCards: [] }))).toBe(false);
+  });
+
+  /*
+   * Face-down and face-up are BOTH on the felt — the modelled prop draws one
+   * and the atlas the other. A shadow is owed either way, so this must not
+   * accidentally become "hidden cards only".
+   */
+  it("is true whether the pair is still face down or revealed", () => {
+    expect(seatHasFeltCards(seatModel({ isMine: false }))).toBe(true);
+    expect(
+      seatHasFeltCards(
+        seatModel({ isMine: false, holeCards: [card("A", "spades"), card("K", "spades")] }),
+      ),
+    ).toBe(true);
+  });
+
+  it("never claims a seat neither renderer would draw", () => {
+    // The two renderers partition exactly the seats this returns true for:
+    // the prop takes the hidden ones, the atlas every other. Nothing on the
+    // felt may fall outside that union, or something is drawn unshaded — or
+    // shaded and undrawn, which is the bug above.
+    const snapshot = makeGameSnapshot({
+      seats: makeSixSeats((position) =>
+        position % 2 === 0 ? { holeCards: [null, null] } : {}
+      ),
+    });
+    for (const seat of deriveSceneModel(snapshot).seats) {
+      if (!seatHasFeltCards(seat)) continue;
+      const drawnByProp = seatHoleCardsHidden(seat);
+      const drawnByAtlas = !seatHoleCardsHidden(seat);
+      expect(drawnByProp !== drawnByAtlas).toBe(true);
+    }
   });
 });

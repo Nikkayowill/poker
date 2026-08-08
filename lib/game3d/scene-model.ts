@@ -7,6 +7,7 @@
  */
 
 import type { Card, GameSnapshot, PublicSeat, Street } from "../game/types";
+import type { StakesTier } from "../game/tiers";
 import { SEAT_COUNT_3D } from "./seat-layout";
 
 /**
@@ -22,6 +23,8 @@ export interface SeatModel {
   id: string;
   name: string;
   accent: string;
+  /** Equipped avatar cosmetic id — the illustrated character at this seat. */
+  avatarCosmetic: string;
   stack: number;
   streetBet: number;
   status: PublicSeat["status"];
@@ -42,6 +45,9 @@ export interface SceneModel {
   handNumber: number;
   street: Street;
   status: GameSnapshot["status"];
+  /** This table's stakes rung — fixes every seat's buy-in, and the
+   * bankroll props' baseline pile size (see lib/game3d/chip-props.ts). */
+  tier: StakesTier;
   seats: SeatModel[];
   community: Card[];
   pot: number;
@@ -54,6 +60,45 @@ export interface SceneModel {
   /** Slot of the seat currently acting, for head tracking; null between turns. */
   activeSlot: number | null;
   hasWinners: boolean;
+}
+
+/**
+ * True when a seat is holding live cards nobody has seen yet — both
+ * entries redacted to null. This is the one predicate the modelled
+ * face-down prop (components/game3d/props/hole-card-prop.tsx) and the
+ * atlas card renderer (scene/cards-instanced.tsx) both key off, so which
+ * of the two owns a given seat can never drift out of step: the prop
+ * draws exactly the seats this returns true for (never the local
+ * player's own, which is DOM — see hud/own-hole-cards.tsx), and the atlas
+ * draws every other in-hand seat, i.e. a revealed showdown hand.
+ */
+export function seatHoleCardsHidden(seat: SeatModel): boolean {
+  return (
+    seat.inHand &&
+    seat.holeCards.length > 0 &&
+    seat.holeCards.every((card) => card === null)
+  );
+}
+
+/**
+ * Does this seat have a pair lying ON THE CLOTH?
+ *
+ * The local player's does not: their hand is DOM, drawn large and upright in
+ * front of the rail (hud/own-hole-cards.tsx), and nothing of it touches the
+ * felt. Every other in-hand seat's does — face-down as the modelled prop, or
+ * face-up through the atlas once a showdown reveals it.
+ *
+ * This exists because THREE files had to agree on that and only two of them
+ * did. The two renderers each excluded the local seat in their own way, while
+ * scene/fake-shadows.tsx looped over every in-hand seat and grounded one — so
+ * slot 0 got a soft dark decal painted on the felt under cards that were never
+ * there, sitting in the middle of the player's own view. `seatHoleCardsHidden`
+ * above answers "which of the two renderers owns this seat"; this answers the
+ * prior question of whether the felt has anything to draw or shade at all, so
+ * a fourth consumer cannot reintroduce the same disagreement.
+ */
+export function seatHasFeltCards(seat: SeatModel): boolean {
+  return !seat.isMine && seat.inHand && seat.holeCards.length > 0;
 }
 
 function moodFor(seat: PublicSeat, isWinner: boolean, isCurrent: boolean): AvatarMood {
@@ -85,6 +130,7 @@ export function deriveSceneModel(game: GameSnapshot): SceneModel {
       id: seat.id,
       name: seat.name,
       accent: seat.accent,
+      avatarCosmetic: seat.avatarCosmetic,
       stack: seat.stack,
       streetBet: seat.streetBet,
       status: seat.status,
@@ -106,6 +152,7 @@ export function deriveSceneModel(game: GameSnapshot): SceneModel {
     handNumber: game.handNumber,
     street: game.street,
     status: game.status,
+    tier: game.tier,
     seats: seatModels,
     community: game.community,
     pot: game.pot,

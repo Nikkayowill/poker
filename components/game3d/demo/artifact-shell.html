@@ -1,0 +1,104 @@
+<title>StackChips — 3D table room (feature/3d-poker-simulation)</title>
+
+<style>
+/* The page around the canvas. The room itself is WebGL; everything here is
+   the chrome it sits in, so the brand palette applies (--brand-* never
+   reaches the felt — that rule holds in three.js exactly as it does in CSS). */
+html, body { height: 100%; margin: 0; background: #0a0a0b; overflow: hidden; }
+/* The app positions everything absolutely inside this root rather than
+   position:fixed — same rendering in a real browser (the root fills the
+   viewport), and it keeps the page verifiable headlessly, where fixed
+   elements were observed resolving against a stale containing block. */
+#root { position: relative; height: 100%; }
+body {
+  color: #f5f2ea;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The header the standalone entry renders over the canvas.
+   Cornered, not centred: the HUD owns the top of the screen — the pot pill at
+   14px and the table message at 60px, both centred — so a centred title here
+   prints straight through the pot. */
+.sim-brand {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: max(18px, env(safe-area-inset-left));
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  width: min(300px, calc(100% - 36px));
+  pointer-events: none;
+}
+.sim-eyebrow {
+  color: #cbb7e8;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+}
+.sim-note {
+  color: #8d84a3;
+  font-size: 12px;
+  line-height: 1.45;
+  text-wrap: balance;
+}
+
+/* A phone has no corner to spare beside a centred pot pill, and the sentence
+   is context rather than instruction — it stands down first. */
+@media (max-height: 560px) {
+  .sim-note { display: none; }
+  .sim-eyebrow { font-size: 9px; }
+}
+
+/* Narrower than this, the title runs straight into the pot readout — there
+   is one row of space at the top and the game's own HUD owns it. */
+@media (max-width: 620px) {
+  .sim-brand { display: none; }
+}
+
+/* A WebGL context is not guaranteed. Say so in words rather than leaving a
+   black rectangle, which is indistinguishable from a scene that failed to
+   light. */
+#webgl-missing {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: none;
+  place-items: center;
+  padding: 32px;
+  background: #0a0a0b;
+  text-align: center;
+}
+#webgl-missing p { max-width: 46ch; color: #8d84a3; font-size: 14px; line-height: 1.6; }
+#webgl-missing strong { display: block; margin-bottom: 8px; color: #f5f2ea; font-size: 16px; }
+</style>
+
+<!-- The scene's own CSS module, as built. -->
+<style>/*MODULE_CSS*/</style>
+
+<div id="root"></div>
+
+<div id="webgl-missing" role="status">
+  <p>
+    <strong>This room needs WebGL.</strong>
+    The 3D table renders through your GPU, and this browser did not give the
+    page a WebGL context. Enable hardware acceleration, or open the page in
+    another browser, and the table will start dealing.
+  </p>
+</div>
+
+<script>
+// Checked before the bundle mounts: three.js failing to get a context throws
+// inside React, which lands as a blank canvas and a console error nobody sees.
+(function () {
+  var probe = document.createElement("canvas");
+  var gl = probe.getContext("webgl2") || probe.getContext("webgl");
+  if (!gl) document.getElementById("webgl-missing").style.display = "grid";
+})();
+</script>
+
+<script>/*BUNDLE_JS*/</script>

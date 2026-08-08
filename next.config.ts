@@ -24,7 +24,11 @@ const csp = [
   // Sentry's session-replay integration compresses events in a Worker
   // constructed from a blob: URL; without this it silently fails to record.
   "worker-src 'self' blob:",
-  `connect-src 'self' https://*.supabase.co wss://*.supabase.co${isDev ? " ws:" : ""}`,
+  // blob: is for the game3d room's GLTFLoader: a .glb's embedded textures
+  // are decoded to blob: URLs and fetched, which connect-src governs (img-src
+  // already allowed blob: above, but that doesn't cover fetch()). Scoped to
+  // this experimental branch's CSP file, not the production one.
+  `connect-src 'self' blob: https://*.supabase.co wss://*.supabase.co${isDev ? " ws:" : ""}`,
   `frame-src ${adsterraOrigin}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",

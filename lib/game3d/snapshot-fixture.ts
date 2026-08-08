@@ -21,6 +21,20 @@ export const FIXTURE_NAMES = [
 
 const ACCENTS = ["#db9c0b", "#983fe0", "#dc1413", "#2f9a63", "#5b82c0", "#c96f1d"];
 
+/**
+ * Real catalogue art ids (public/avatars/<id>.webp), one per seat, so the
+ * demo renders six distinct illustrated characters. Exported for the
+ * artifact bundle, which inlines exactly these files as data URIs.
+ */
+export const FIXTURE_AVATARS = [
+  "avatar-grinder",
+  "avatar-nightowl",
+  "avatar-maniac",
+  "avatar-highroller",
+  "avatar-shark",
+  "avatar-closer",
+] as const;
+
 export function makePublicSeat(overrides: Partial<PublicSeat> = {}): PublicSeat {
   const position = overrides.position ?? 0;
   return {
@@ -30,7 +44,7 @@ export function makePublicSeat(overrides: Partial<PublicSeat> = {}): PublicSeat 
     accent: ACCENTS[position % ACCENTS.length],
     avatarUrl: null,
     avatarPreset: "classic",
-    avatarCosmetic: "classic",
+    avatarCosmetic: FIXTURE_AVATARS[position % FIXTURE_AVATARS.length],
     cardBackCosmetic: "default",
     position,
     isHuman: position === 0,

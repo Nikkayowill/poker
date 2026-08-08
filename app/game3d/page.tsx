@@ -47,9 +47,13 @@ export default function Game3DDemoPage() {
     setIndex(index + 1);
   };
 
-  if (!step) return null; // one frame while the next hand is dealt
+  // While the effect above swaps in the next hand, keep showing the last
+  // step — returning null for that frame would unmount the Canvas and
+  // rebuild the WebGL context once per hand.
+  const shown = step ?? queue[queue.length - 1];
+  if (!shown) return null;
 
-  const { snapshot } = step;
+  const { snapshot } = shown;
   return (
     <main style={{ position: "fixed", inset: 0 }}>
       <Game3DBridge game={snapshot}>

@@ -1,92 +1,67 @@
 "use client";
 
 /**
- * Resting chip piles. One shared CylinderGeometry and one material triple
- * per denomination for the whole scene — a pile is only ever new transforms,
- * never new GPU resources.
+ * The chip asset factory: one shared geometry and one shared material
+ * triple per denomination for the whole scene. This used to also be the
+ * chip renderer (a `ChipStack` component drawing one JSX `<mesh>` per
+ * chip) — that renderer is gone; chip-instanced-layer.tsx is the sole
+ * consumer now, feeding `chipGeometry`/`chipMaterials` into one
+ * InstancedMesh per denomination instead of one Mesh per chip. The asset
+ * factory itself didn't need to change shape for that: "a pile is only
+ * ever new transforms, never new GPU resources" was already exactly the
+ * contract instancing wants, just enforced one mesh at a time before.
  */
 
-import { useMemo } from "react";
 import * as THREE from "three";
-import {
-  chipBreakdown,
-  type ChipDenomination,
-} from "@/lib/game3d/denominations";
-import { landingOffset } from "@/lib/game3d/chip-trajectory";
-import type { Vec3 } from "@/lib/game3d/seat-layout";
+import type { ChipDenomination } from "@/lib/game3d/denominations";
+import { CHIP } from "@/lib/game3d/dimensions";
+import { chipEdgeTexture, chipFaceTexture } from "./chip-textures";
 
-/** Real 39mm x 3.3mm proportions: thickness ≈ radius * 0.17. Oversized
- * against a real table on purpose — at this camera distance a true-scale
- * chip is a two-pixel dot (measured; same judge-at-rendered-size lesson as
- * the dealer avatar). */
-export const CHIP_RADIUS = 0.095;
-export const CHIP_THICKNESS = CHIP_RADIUS * 0.17;
+/**
+ * A real 39 x 3.3 mm chip, at the scale the felt establishes — see
+ * lib/game3d/dimensions.ts.
+ *
+ * These were 0.095 and hand-tuned, with a note saying a true-scale chip
+ * would be a two-pixel dot at this camera distance. That was true of the
+ * camera it was written against: a 32-degree rig sitting far enough back to
+ * see a table it could not frame. The camera is solved per viewport now
+ * (lib/game3d/camera-framing.ts) and sits both higher and closer, and at
+ * real scale a chip lands around twenty pixels across — small, as a chip
+ * should be, and now carrying enough surface to read as clay rather than
+ * needing size to stand in for detail.
+ */
+export const CHIP_RADIUS = CHIP.radius;
+export const CHIP_THICKNESS = CHIP.thickness;
 
+/**
+ * Segment count is up from 24 because the disc is now small on screen: a
+ * silhouette this size shows faceting immediately, and 40 short segments on
+ * one shared geometry costs nothing.
+ */
 export const chipGeometry = new THREE.CylinderGeometry(
   CHIP_RADIUS,
   CHIP_RADIUS,
   CHIP_THICKNESS,
-  24
+  40,
 );
 
 /** Cylinder material order is [side, top, bottom]. */
-const materialCache = new Map<string, THREE.Material[]>();
+const materialCache = new Map<number, THREE.Material[]>();
 
 export function chipMaterials(denom: ChipDenomination): THREE.Material[] {
-  const cached = materialCache.get(denom.color);
+  const cached = materialCache.get(denom.value);
   if (cached) return cached;
   const side = new THREE.MeshStandardMaterial({
-    color: denom.color,
-    roughness: 0.45,
+    map: chipEdgeTexture(denom),
+    roughness: 0.52,
+    metalness: 0.02,
   });
   const face = new THREE.MeshStandardMaterial({
-    color: denom.face,
-    roughness: 0.38,
+    map: chipFaceTexture(denom),
+    roughness: 0.42,
+    metalness: 0.02,
   });
   const materials = [side, face, face];
-  materialCache.set(denom.color, materials);
+  materialCache.set(denom.value, materials);
   return materials;
-}
-
-/**
- * Settle jitter for the nth chip of a resting column. Deliberately smaller
- * than a landing scatter and unequal by axis (depth squashed against width)
- * so a column reads as one pile — the same unequal-axes lesson the 2D
- * room's chipSettleJitter carries.
- */
-function settleJitter(index: number, seed: number): { dx: number; dz: number } {
-  const wave = landingOffset(index + seed);
-  return { dx: wave.dx * 0.35, dz: wave.dz * 0.2 };
-}
-
-export function ChipStack({
-  amount,
-  position,
-  seed = 0,
-}: {
-  amount: number;
-  position: Vec3;
-  /** Distinguishes piles so two equal amounts don't jitter identically. */
-  seed?: number;
-}) {
-  const chips = useMemo(() => chipBreakdown(amount), [amount]);
-  if (chips.length === 0) return null;
-  return (
-    <group position={[position.x, position.y, position.z]}>
-      {chips.map((denom, i) => {
-        const { dx, dz } = settleJitter(i, seed);
-        return (
-          <mesh
-            key={i}
-            geometry={chipGeometry}
-            material={chipMaterials(denom)}
-            position={[dx, CHIP_THICKNESS / 2 + i * CHIP_THICKNESS, dz]}
-            rotation={[0, ((i + seed) * 0.73) % Math.PI, 0]}
-            castShadow
-            receiveShadow
-          />
-        );
-      })}
-    </group>
-  );
 }

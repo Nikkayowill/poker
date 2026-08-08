@@ -32,6 +32,27 @@
   height: 100%;
 }
 
+/* pointer-events again, on the descendants, and this is not belt-and-braces.
+   The rule on .table-scene above is INHERITED, so it only holds while nothing
+   inside sets its own value -- and react-three-fiber's <Canvas> writes
+   `pointer-events: auto` onto both its wrapper div and the canvas element,
+   which beats an inherited `none` outright. The 2D room never tripped this
+   because it appends a bare canvas that inherits cleanly.
+
+   The symptom is the one the rule above exists to prevent, and it is quiet:
+   the room swallows taps aimed at the HUD, and a canvas that eats a click
+   looks exactly like a button that did not fire. Caught by hit-testing
+   .table-feed with elementFromPoint, which returned CANVAS under the 3D room
+   and the DOM table under the 2D one -- nothing about the screenshot differed.
+
+   Universal rather than targeted at R3F's two elements: nothing inside the
+   room may ever take input, whichever renderer built it, and naming the
+   current library's internals here would go stale the first time it changed
+   them. */
+.table-scene * {
+  pointer-events: none;
+}
+
 /* The felt the room now draws for itself.
    .poker-rail and .poker-felt keep their geometry -- they are what the seat
    ring, the pot anchor and every measured trajectory are positioned against,
@@ -63,4 +84,41 @@
 
 .scene-lit .poker-table-wrap::after {
   opacity: 0;
+}
+
+/* The 3D room seats real figures in real chairs.
+   -------------------------------------------------------------------------
+   When it is the renderer, the DOM cut-outs must go, or every seat holds two
+   players: a flat illustrated head in front and a modelled person behind it,
+   at different scales and never quite aligned. That is the same defect the
+   Blackjack stage shipped when it drew Loki and Finn once in the scene and
+   again as a 34px avatar beside the hand, and it reads as a mistake
+   immediately even to someone who could not say what is wrong.
+
+   Only the ARTWORK goes. Everything else in a seat is information the room
+   does not render and must not lose -- the nameplate, the stack, the blind
+   and dealer markers, the winner badge, the turn-clock fuse ring, the folded
+   dimming, and the seat's own cards. They keep their geometry from
+   lib/game/table-geometry.ts and stay exactly where they were.
+
+   visibility rather than display, deliberately. `display: none` would take
+   .seat-figure out of layout, and .seat-plate is positioned in the flow
+   underneath it -- removing the box moves every nameplate at the table. The
+   figure keeps its size and stops being seen, which is the same trick
+   .scene-lit plays on the felt above and for the same reason. */
+.scene-room-3d .seat-figure {
+  visibility: hidden;
+}
+
+/* The fuse ring is drawn ON the figure's box (08-seat.css), so hiding the
+   figure would take the turn clock with it -- the one piece of that box that
+   is state rather than decoration. Handed back explicitly. */
+.scene-room-3d .seat-figure-active {
+  visibility: visible;
+}
+
+.scene-room-3d .seat-figure-active .seat-figure-art,
+.scene-room-3d .seat-figure-active .seat-figure-photo,
+.scene-room-3d .seat-figure-active .seat-figure-fallback {
+  visibility: hidden;
 }

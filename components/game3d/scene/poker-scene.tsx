@@ -10,7 +10,7 @@
  * `ssr: false` import — three.js must never enter a server bundle.
  */
 
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { Canvas, useThree } from "@react-three/fiber";
 import { PerspectiveCamera } from "@react-three/drei";
@@ -195,9 +195,19 @@ function DealerButton({ slot }: { slot: number }) {
 
 export interface PokerSceneProps {
   model: SceneModel;
+  /**
+   * Fires true once the GL context exists, and false if it is ever lost.
+   *
+   * This is the same one-signal handshake the Canvas-2D room reports through,
+   * and it is what `.scene-lit` keys off: until it goes true the DOM felt and
+   * rail keep painting, so a room that never arrives degrades to the table
+   * that was already there rather than to a hole. A lost context — the common
+   * low-end-mobile failure — reports false and hands the felt straight back.
+   */
+  onReady?: (ready: boolean) => void;
 }
 
-function SceneContents({ model }: PokerSceneProps) {
+function SceneContents({ model }: { model: SceneModel }) {
   // Slot -> timestamp of that seat's latest chip launch. A mutable shared
   // clock rather than state: the chip layer samples it per-frame, and a
   // toss must not re-render the tree.
@@ -260,11 +270,46 @@ function SceneContents({ model }: PokerSceneProps) {
   );
 }
 
-export function PokerScene(props: PokerSceneProps) {
+export function PokerScene({ model, onReady }: PokerSceneProps) {
+  // Held in a ref so the Canvas's own props never change identity because a
+  // parent re-rendered with a fresh callback -- remounting a Canvas rebuilds
+  // the GL context, which is the one thing this component must not do
+  // casually (see CLAUDE.md on forceContextLoss).
+  const onReadyRef = useRef(onReady);
+  // Kept fresh in an effect, not assigned during render. useRef's initial
+  // value already holds the first callback, so `onCreated` firing before this
+  // effect runs still reports to the right place.
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
+
+  const handleCreated = useCallback((state: { gl: THREE.WebGLRenderer }) => {
+    const canvas = state.gl.domElement;
+    // Report false BEFORE the browser would otherwise leave a frozen image on
+    // screen. preventDefault is what allows a restore to be attempted at all;
+    // without it the context is gone for good.
+    const lost = (event: Event) => {
+      event.preventDefault();
+      onReadyRef.current?.(false);
+    };
+    const restored = () => onReadyRef.current?.(true);
+    canvas.addEventListener("webglcontextlost", lost);
+    canvas.addEventListener("webglcontextrestored", restored);
+    onReadyRef.current?.(true);
+  }, []);
+
+  useEffect(() => {
+    // Unmounting un-lights the felt, so a route change or a StrictMode
+    // double-mount hands the DOM table back rather than leaving it hidden
+    // behind a canvas that no longer exists.
+    return () => onReadyRef.current?.(false);
+  }, []);
+
   return (
     <Canvas
       shadows
       dpr={[1, 2]}
+      onCreated={handleCreated}
       // On-demand rendering: this room only actually changes when a chip
       // is in flight, a card just dealt, or the camera framing recomputes
       // on resize — not every 16ms. See scene/demand-loop.ts's header for
@@ -279,7 +324,7 @@ export function PokerScene(props: PokerSceneProps) {
     >
       {/* Must match the fog colour, or the fade draws a horizon line. */}
       <color attach="background" args={[STUDIO_BACKDROP]} />
-      <SceneContents {...props} />
+      <SceneContents model={model} />
     </Canvas>
   );
 }

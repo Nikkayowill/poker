@@ -21,6 +21,7 @@ import {
   seatZ,
 } from "@/lib/game/table-geometry";
 import { Menu, type MenuItem } from "@/components/nav/menu";
+import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { ActionBar } from "./action-bar";
@@ -630,7 +631,7 @@ export function PokerTable({
           tidiness would be the wrong trade. */}
       <header className="game-header">
         <button className="wordmark" onClick={onLeave} aria-label="Leave table">
-          <span className="mark">S</span>
+          <span className="wordmark-mark"><StackChipsMark size={32} /></span>
           <span>StackChips<small>NO LIMIT HOLD’EM</small></span>
         </button>
         {/* The pot, in the one strip of the screen no seat can ever reach.

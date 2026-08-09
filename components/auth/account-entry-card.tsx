@@ -111,10 +111,13 @@ export function AccountEntryCard({
             avatar, and collection are ready.
           </p>
         ) : (
+          // One sentence. The second half used to explain the two buttons
+          // directly underneath it -- "sign in to keep it on every device, or
+          // walk in as a guest" -- which is a paragraph describing the
+          // controls a player can already see and read in less time.
           <p>
             Poker, blackjack, Hi-Lo and the daily puzzles — one wallet across
-            the whole arcade. Sign in to keep it on every device, or walk in as
-            a guest and secure it later.
+            the whole arcade.
           </p>
         )}
       </header>

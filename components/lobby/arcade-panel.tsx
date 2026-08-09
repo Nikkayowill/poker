@@ -1,35 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import { Coins, Gamepad2 } from "lucide-react";
-import clsx from "clsx";
+import { Gamepad2 } from "lucide-react";
 import type { PlayerProfile } from "@/lib/profile/types";
-import {
-  ARCADE_GAMES,
-  arcadeActionLabel,
-  arcadeBlockedReason,
-  arcadeEntryLabel,
-  toArcadeWallet,
-} from "@/lib/arcade/games";
+import { ARCADE_GAMES, arcadeFloorSummary, toArcadeWallet } from "@/lib/arcade/games";
 
 /**
- * The fourth hub panel: what is coming after Hold'em.
+ * The hub's arcade tile: what is behind /games, in one row.
  *
- * It is a .hub-tile like every other panel in the grid -- same radius,
- * padding and hover -- with a scrolling list inside it, rather than a new
- * kind of card. .arcade-* in 22-arcade.css holds only the list.
+ * It used to be the whole catalogue -- ten scrolling rows of name, stake and
+ * Play, inside a 2x2 grid cell with a deliberately half-cut fifth row as the
+ * only hint that it scrolled. That was the right shape when the arcade was
+ * four rows and a promise; at ten live games it is a list competing with the
+ * hub's own tiles for the same job, in a box a third their size, with the last
+ * six games reachable only by scrolling inside a card on a page that also
+ * scrolls. The catalogue has its own route now (app/(lobby)/games/page.tsx),
+ * and this is a door to it.
  *
- * Every row is wallet-aware: the stake renders through .gold-balance, the
- * same coin+amount layout the navbar badge uses, so taking a game live is a
- * status flip in lib/arcade/games.ts and nothing here.
+ * The wallet predicates moved with the list. Nothing here is gated, because
+ * nothing here is a purchase -- "See all" always works, and affordability is
+ * decided per row on the floor itself, which is also the only place it can be
+ * shown honestly.
  */
 export function ArcadePanel({ profile }: { profile: PlayerProfile | null }) {
-  const wallet = toArcadeWallet(profile);
   // Counted, not written down. The header used to read "10 games in the
   // works", which was true when none of them were and quietly became a lie
   // the day Blackjack shipped -- a hub blurb must not misdescribe what is
   // behind it (see the note on Hi-Lo's blurb in lib/arcade/games.ts).
-  const liveCount = ARCADE_GAMES.filter((game) => game.status === "live").length;
+  const summary = arcadeFloorSummary(ARCADE_GAMES);
+  const wallet = toArcadeWallet(profile);
 
   return (
     <section className="hub-tile hub-tile-arcade" aria-labelledby="arcade-heading">
@@ -37,57 +36,26 @@ export function ArcadePanel({ profile }: { profile: PlayerProfile | null }) {
         <Gamepad2 size={16} aria-hidden="true" />
         <div className="arcade-head-copy">
           <strong id="arcade-heading">Arcade &amp; Puzzles</strong>
-          <small>{liveCount} playable now, more dealing in</small>
+          <small>
+            {summary.free} free every day · {summary.staked} staked in Gold
+          </small>
         </div>
       </div>
 
-      <ul className="arcade-list">
-        {ARCADE_GAMES.map((entry) => {
-          const blocked = arcadeBlockedReason(entry, wallet);
-          return (
-            <li key={entry.id} className={clsx("arcade-row", blocked && "arcade-row-blocked")}>
-              <span className="arcade-identity">
-                <strong>{entry.name}</strong>
-                <small>{entry.blurb}</small>
-              </span>
-              <span className="arcade-stake">
-                {entry.entryCost > 0
-                  ? (
-                    <span className="gold-balance">
-                      <Coins size={12} aria-hidden="true" />
-                      <strong>{arcadeEntryLabel(entry)}</strong>
-                    </span>
-                  )
-                  : <span className="arcade-free">{arcadeEntryLabel(entry)}</span>}
-              </span>
-              {/* A playable row is a link, not a button with an onClick --
-                  it navigates, so it should middle-click and open in a new
-                  tab like every other route in the hub. The disabled states
-                  stay buttons: there is nowhere to go. */}
-              {blocked === null && entry.href
-                ? (
-                  <Link className="arcade-play" href={entry.href}>
-                    {arcadeActionLabel(entry, wallet)}
-                  </Link>
-                )
-                : (
-                  <button
-                    type="button"
-                    className="arcade-play"
-                    disabled
-                    title={
-                      blocked === "coming-soon"
-                        ? `${entry.name} is not open yet`
-                        : `Needs ${arcadeEntryLabel(entry)} Gold to play`
-                    }
-                  >
-                    {arcadeActionLabel(entry, wallet)}
-                  </button>
-                )}
-            </li>
-          );
-        })}
-      </ul>
+      {/* Names, not a count. "10 games" tells a player nothing they can want;
+          four titles tell them whether the door is worth opening. Truncated by
+          CSS rather than sliced here, so the list stays honest at any width. */}
+      <p className="arcade-preview">{summary.previewNames.join(" · ")}</p>
+
+      <Link className="arcade-see-all" href="/games">
+        See all
+        {/* The balance the floor's stakes will be checked against, stated on
+            the way in. A player who cannot afford a 1,000 Gold round should
+            find that out before they pick a machine, not after. */}
+        <span className="arcade-see-all-wallet">
+          {wallet.unlimitedGold ? "Unlimited" : wallet.goldBalance.toLocaleString()} Gold
+        </span>
+      </Link>
     </section>
   );
 }

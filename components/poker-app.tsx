@@ -41,6 +41,7 @@ import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
 import { Coins, Gift, Layers, LogOut, Music2, Settings2, Trophy, UserPlus } from "lucide-react";
 import { Lobby } from "@/components/lobby/lobby";
+import { retireFirstRunStrip } from "@/components/lobby/first-run-strip";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { ProfileModal } from "@/components/profile/profile-modal";
 import { Menu, type MenuItem } from "@/components/nav/menu";
@@ -190,6 +191,23 @@ export function PokerApp() {
   useEffect(() => {
     gameVersionRef.current = game?.version ?? 0;
   }, [game?.version]);
+
+  // Reaching a table retires the first-run strip, and this is written here
+  // rather than inside the strip because the strip is not mounted at the
+  // moment it happens -- Lobby is replaced by PokerTable, so FirstRunStrip is
+  // gone. A player who ignored the guidance entirely and just tapped the hero
+  // tile has answered its question better than finishing three steps would;
+  // see the note on isFirstRunRetired in lib/lobby/first-run.ts.
+  //
+  // No React state here on purpose. Writing the flag is a side effect on an
+  // external system (localStorage), which is exactly what an effect is for;
+  // mirroring it into state as well would be the cascading-render shape
+  // react-hooks/set-state-in-effect exists to stop, and it would buy nothing
+  // -- the same swap that unmounts the strip is what makes it re-read the flag
+  // when the player comes back to the lobby.
+  useEffect(() => {
+    if (game) retireFirstRunStrip();
+  }, [game]);
 
   const loadProfile = useCallback(async () => {
     const response = await fetch("/api/profile", { cache: "no-store" });

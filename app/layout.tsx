@@ -19,7 +19,7 @@ export const viewport: Viewport = {
   // Kept in step with app/manifest.ts and the html/body base: this is the
   // colour the browser paints its own chrome with, so a stale value shows up
   // as a differently-coloured band above the page.
-  themeColor: "#0a0a0b",
+  themeColor: "#0f1218",
 };
 
 /*

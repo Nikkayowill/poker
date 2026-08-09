@@ -1,134 +1,307 @@
-/* Arcade & Puzzles panel.
+/* Arcade & Puzzles: the hub tile, and the floor it opens.
  *
- * The shell -- .hub-tile -- is reused from 04-lobby.css rather than
+ * The tile's shell -- .hub-tile -- is reused from 04-lobby.css rather than
  * re-declared, the same way .friends-drawer reuses .history-drawer in
- * 21-friends.css. The border, radius, 16px padding, background layers and
- * hover all come from there; this file only overrides what a list panel
- * cannot inherit (it stacks top-down instead of bottom-aligning a label, and
- * it is not a tap target) and then styles the rows.
+ * 21-friends.css. The radius, padding, background layers and hover all come
+ * from there; this file only overrides what a summary panel cannot inherit (it
+ * stacks top-down and is not itself a tap target) and then styles the floor.
  *
  * Loads after 04, so .hub-tile-arcade can safely narrow .hub-tile.
+ *
+ * The ten-row scrolling list this file used to hold is gone -- see
+ * components/lobby/arcade-panel.tsx for why. .arcade-list / .arcade-row /
+ * .arcade-stake / .arcade-play went with it; the floor's rows below are
+ * .floor-* because they are a different control at a different size, and
+ * keeping the old names for new shapes is how a stylesheet stops describing
+ * what is on screen.
  */
 
 .hub-tile-arcade {
-  --tile-tint: rgba(217,184,93,.06);
+  --tile-tint: rgba(152,63,224,.06);
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  gap: 10px;
-  /* The whole panel is not clickable -- the per-row buttons are. */
+  gap: 8px;
+  /* The panel is not clickable -- the See all link inside it is. */
   cursor: default;
-  /* The art scrim in .hub-tile fades left-to-right for a bottom-left label.
-     This panel fills its whole box with text, so it takes an even wash. */
+  /* The art scrim in .hub-tile fades top-left to bottom-right for a corner
+     ornament. This panel fills its whole box with text, so it takes an even
+     wash. */
   background-image:
-    linear-gradient(90deg, rgba(10,10,11,.94) 0%, rgba(10,10,11,.9) 100%),
+    linear-gradient(90deg, rgba(18,22,31,.95) 0%, rgba(18,22,31,.9) 100%),
     linear-gradient(var(--tile-tint), var(--tile-tint)),
-    linear-gradient(160deg, #17151c, #0e0d10);
+    linear-gradient(160deg, #222937, #171b25);
 }
 .hub-tile-arcade:hover { transform: none; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
 
 .arcade-head { display: flex; flex: 0 0 auto; align-items: center; gap: 9px; }
-.arcade-head svg { flex-shrink: 0; color: var(--gold-light); }
+.arcade-head svg { flex-shrink: 0; color: var(--brand-purple); }
 .arcade-head-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .arcade-head-copy strong {
-  color: #f2f6f1;
+  color: #eef2f8;
   font: 600 17px Georgia, serif;
   letter-spacing: -.01em;
 }
-.arcade-head-copy small { color: #9fb0a7; font-size: 11.5px; line-height: 1.4; }
+.arcade-head-copy small { color: #93a1bb; font-size: 11.5px; line-height: 1.4; }
 
-.arcade-list {
-  flex: 1;
-  /* A flex item's min-height is auto, which refuses to shrink below its
-     content -- ten ~51px rows -- so the panel grew to 509px and dragged
-     every tile sharing its grid rows up with it. min-height:0 lets the cap
-     below actually bite and the list scroll instead.
-     230px is deliberately not a whole number of rows: it cuts the fifth one
-     in half, which is the only affordance saying "there is more here" now
-     that the scrollbar is hidden. */
-  min-height: 0;
-  max-height: 230px;
+/* One line of titles, clipped rather than wrapped: this is a taste of what is
+   behind the door, and a three-line paragraph of game names in a hub tile is
+   the list this panel just stopped being. */
+.arcade-preview {
+  overflow: hidden;
   margin: 0;
-  padding: 0;
-  overflow-y: auto;
-  list-style: none;
-  /* Scrollable, not scrollbar-drawn -- same reasoning as .friends-list in
-     21-friends.css: a platform scrollbar cuts a bright seam down felt-dark
-     chrome. */
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  color: #6f7b92;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.arcade-list::-webkit-scrollbar { display: none; }
 
-.arcade-row {
+/* Pushed to the bottom of the tile by the auto margin, so the panel's control
+   lines up with the other tiles' labels regardless of how tall the grid row
+   ends up. */
+.arcade-see-all {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  /* 10px rather than .friend-row's 12px: this list carries ten rows in a
-     grid cell, not a full-height drawer. The rows separate by spacing and
-     their own type hierarchy now -- the hairline divider is gone with the
-     rest of the chrome's rules. */
-  padding: 10px 0;
+  margin-top: auto;
+  min-height: 38px;
+  padding: 0 12px;
+  color: #e9dcfb;
+  text-decoration: none;
+  border-radius: var(--radius-control);
+  /* The accent as a line and the light off it -- see the token block in
+     01-tokens.css. Not a filled purple button: this tile sits beside the gold
+     Buy Gold tile and the Hold'em hero, and a third saturated control in that
+     row makes all three quieter. */
+  box-shadow: var(--accent-edge);
+  font-size: 13px;
+  font-weight: 700;
+  transition: box-shadow var(--duration-base) ease, color var(--duration-base) ease;
 }
-.arcade-row-blocked { opacity: .72; }
+.arcade-see-all:hover { color: #fff; box-shadow: var(--accent-edge), var(--accent-glow); }
+.arcade-see-all:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+.arcade-see-all-wallet {
+  flex: 0 0 auto;
+  color: #93a1bb;
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===========================================================================
+   The floor -- /games. See components/arcade/arcade-floor.tsx.
+   =========================================================================== */
+
+.floor-shell {
+  position: relative;
+  width: min(920px, calc(100% - 32px));
+  min-height: 100svh;
+  margin: 0 auto;
+  padding: calc(16px + var(--safe-top)) 0 calc(48px + var(--safe-bottom));
+}
+
+/* The room, on this route too. Fixed and full-viewport rather than a
+   background on the shell, so the light stays put while the sections scroll
+   under it -- identical to .lobby-hub::before and the collection/leaderboard
+   shells, all reading the one --brand-room stack from 01-tokens.css. */
+.floor-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--brand-room);
+}
+
+.floor-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  margin-bottom: clamp(22px, 4vw, 34px);
+}
+
+.floor-back {
+  color: #93a1bb;
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: color var(--duration-base) ease;
+}
+.floor-back:hover { color: #eef2f8; }
+.floor-back:focus-visible { outline: 0; border-radius: var(--radius-control); box-shadow: var(--brand-focus); }
+
+.floor-wallet {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-radius: var(--radius-control);
+  background: rgba(219,156,11,.12);
+  color: var(--brand-gold-light);
+}
+
+/* The same pairing every other chrome head uses: a 10px/.25em micro-label over
+   a large light serif line. Signing in, opening the hub and walking into the
+   arcade are a change of content, not of typeface. */
+.floor-head { margin-bottom: clamp(26px, 4vw, 40px); }
+.floor-head .lobby-kicker { margin-bottom: 14px; }
+.floor-head h1 {
+  margin: 0;
+  color: #eef2f8;
+  font: 400 clamp(34px, 5.4vw, 56px)/1.05 Georgia, "Times New Roman", serif;
+  letter-spacing: -.03em;
+}
+.floor-head p {
+  margin: 14px 0 0;
+  max-width: 46ch;
+  color: #93a1bb;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.floor-section { margin-bottom: clamp(28px, 4vw, 44px); }
+
+/* A section head with the rule under it, and the rule fades at both ends --
+   see --rule in 01-tokens.css. It separates two groups of games; it is not the
+   top edge of a box, and a line running wall to wall reads as exactly that. */
+.floor-section-head {
+  position: relative;
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  color: var(--brand-gold-light);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+}
+.floor-section-head::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 1px;
+  background: var(--rule);
+}
+
+/* min(), not a bare minmax floor: a 220px minimum is a track the grid cannot
+   go under, which is exactly how .landing-game-grid turned a 390px phone into
+   a horizontal pan. See the note in CLAUDE.md -- overflow-y:auto computes the
+   x-axis to auto too, so one over-wide track pans the whole page. */
+.floor-free-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  gap: 12px;
+}
+
+.floor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 15px 16px 14px;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface);
+  transition: box-shadow var(--duration-base) ease;
+}
+.floor-card:hover { box-shadow: var(--accent-edge), var(--accent-glow); }
+.floor-card strong { color: #eef2f8; font: 600 17px Georgia, serif; letter-spacing: -.01em; }
+.floor-card small { color: #93a1bb; font-size: 11.5px; line-height: 1.4; }
+/* margin-top:auto, not a fixed 14px. Grid items stretch, so the cards in a row
+   are already the same height -- but a one-line blurb and a two-line blurb put
+   their buttons at different heights inside them, which is the row reading as
+   ragged for a reason a player cannot see. Pushed to the bottom, the buttons
+   line up and the extra space falls where it belongs, under the text. */
+.floor-card .floor-play { margin-top: auto; }
+/* The 14px minimum gap under the blurb, since `margin-top: auto` above
+   collapses to nothing on the tallest card in the row -- the one that sets the
+   height. 10px here plus the card's own 4px gap. */
+.floor-card small { margin-bottom: 10px; }
+
+.floor-staked-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+
+.floor-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border-radius: var(--radius-card);
+  transition: background var(--duration-base) ease;
+}
+/* A zebra wash rather than row rules: a fill, not a line. Nine hairlines down
+   a list is nine boxes' worth of edge, which is what the borderless pass
+   removed everywhere else in the chrome. */
+.floor-row:nth-child(odd) { background: rgba(164,186,224,.035); }
+.floor-row:hover { background: var(--brand-surface); }
+.floor-row-blocked { opacity: .6; }
 
 /* min-width:0 so a long name ellipsizes instead of shoving the stake and the
    button off the edge -- a flex item's default min-width is auto. */
-.arcade-identity { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
-.arcade-identity strong {
+.floor-row-identity { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.floor-row-identity strong {
   overflow: hidden;
-  color: #dfe5df;
-  font: 500 12.5px Georgia, serif;
+  color: #eef2f8;
+  font: 500 15px Georgia, serif;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.arcade-identity small {
+.floor-row-identity small {
   overflow: hidden;
-  color: #5c6b63;
-  font-size: 9.5px;
+  color: #7f8ba4;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* .gold-balance (03-profile.css) draws the coin and the amount; this only
-   reserves the column so ten stakes of different widths stay in line. */
-.arcade-stake { flex: 0 0 auto; color: #d8c985; }
-.arcade-stake .gold-balance strong { font-size: 11px; }
-.arcade-free {
-  color: #7f9084;
-  font-size: 9px;
+.floor-row-stake {
+  flex: 0 0 auto;
+  color: var(--brand-gold-light);
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Both a <button> (blocked) and a next/link <a> (playable) wear this, so it
    states the box explicitly rather than relying on button defaults. */
-.arcade-play {
+.floor-play {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  min-width: 54px;
-  padding: 6px 10px;
-  color: var(--brand-gold-light);
+  min-width: 62px;
+  min-height: 34px;
+  padding: 0 14px;
+  color: #e9dcfb;
   text-decoration: none;
   border: 0;
-  border-radius: 10px;
-  background: rgba(219,156,11,.16);
-  font-size: 10.5px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  box-shadow: var(--accent-edge);
+  font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
-  transition: background .16s ease, color .16s ease;
+  transition: box-shadow var(--duration-base) ease, color var(--duration-base) ease;
 }
-.arcade-play:hover:not(:disabled) { color: #ffe6a8; background: rgba(219,156,11,.28); }
-.arcade-play:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
-.arcade-play:disabled {
-  color: #6e6584;
-  background: rgba(255,255,255,.05);
+.floor-play:hover:not(:disabled) { color: #fff; box-shadow: var(--accent-edge), var(--accent-glow); }
+.floor-play:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+.floor-play:disabled {
+  color: #6f7b92;
+  box-shadow: inset 0 0 0 1px rgba(164,186,224,.12);
   cursor: not-allowed;
 }
 
+@media (max-width: 560px) {
+  .floor-row { padding: 12px; }
+  .floor-card { padding: 13px 13px 12px; }
+  .floor-card strong { font-size: 15.5px; }
+  .floor-card small { font-size: 11px; }
+  /* The blurb stays. It is the only thing on the row that says what the game
+     *is*, and a first-time player scanning six machine names they have never
+     seen is the reader this page was split in two for. */
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .arcade-play { transition: none; }
+  .arcade-see-all,
+  .floor-back,
+  .floor-card,
+  .floor-row,
+  .floor-play { transition: none; }
 }

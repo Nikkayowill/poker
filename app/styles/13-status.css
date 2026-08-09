@@ -69,10 +69,16 @@
   height: 38px;
   display: grid;
   place-items: center;
-  color: #1a1020;
+  color: #f0e2ff;
   border: 0;
-  border-radius: 12px;
-  background: var(--brand-sweep);
+  border-radius: var(--radius-control);
+  /* Was --brand-sweep. That token is the mark's now and has exactly one
+     consumer (.entry-aurora) -- a three-hue purple-gold-red arc on a
+     save-progress icon was the logo's own gradient being spent on a notice,
+     which is how a brand colour stops reading as identity. A flat brand purple
+     wash and the accent's edge say "important" without borrowing the mark. */
+  background: rgba(152,63,224,.18);
+  box-shadow: var(--accent-edge);
 }
 
 .save-progress-copy { min-width: 0; }

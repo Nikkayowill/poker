@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Check, Cloud, Coins, ShieldCheck, Users, X } from "lucide-react";
+import { Check, Cloud, Coins, ShieldCheck, Users, X } from "lucide-react";
 import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { accountsEnabled } from "@/lib/auth/client";
@@ -11,6 +11,7 @@ import { LandingSections } from "@/components/auth/landing-sections";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
+import { FirstRunStrip } from "./first-run-strip";
 import { ArcadePanel } from "./arcade-panel";
 import { BuyInModal } from "./buy-in-modal";
 
@@ -199,27 +200,25 @@ export function Lobby({
             state itself in a 34-52px serif under a "StackChips · 6-max"
             kicker, which was close but not the same type, so signing in
             stepped down a size and changed the label's voice. */}
+        {/* Two lines and nothing else. The player-name field used to sit right
+            here, which made an empty text input the first thing on a screen
+            whose whole job is "pick your game" -- and it was the third control
+            in the app that set the same name. It lives in the buy-in modal
+            now, beside the decision it belongs to; the profile modal's
+            "Display name" is still where it is changed for good. */}
         <div className="hub-head">
           <div className="lobby-kicker">The floor</div>
           <h1>Pick your game.</h1>
-          <label className="hub-name" htmlFor="player-name">
-            <span>Player name</span>
-            <input
-              id="player-name"
-              value={name}
-              maxLength={18}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Enter your name"
-              autoComplete="nickname"
-            />
-          </label>
           {error && <p className="form-error"><X size={14} /> {error}</p>}
         </div>
 
         {/* Above the grid, never in it: .hub-grid's spans are arithmetic and a
             fifth small tile reopens the empty cell the arcade panel was added
-            to close. RankStrip renders nothing until it has data, so it cannot
-            push the tiles down and then pull them back either. */}
+            to close. Both render nothing until they have something to say --
+            the first-run strip once it retires, the rank strip until its fetch
+            lands -- so neither can push the tiles down and then pull them back
+            either. */}
+        <FirstRunStrip onTakeSeat={() => setBuyInMode("join")} />
         <RankStrip />
 
         {/* Tiles carry the real artwork -- the same table plate the game
@@ -249,7 +248,10 @@ export function Lobby({
                     : "Six-max cash tables · Take the next open seat"}
               </small>
             </span>
-            <ArrowRight className="hub-tile-go" size={18} aria-hidden="true" />
+            {/* No arrow. The hero's felt plate already occupies the right of
+                the tile, and a gold chevron floated over it was one more thing
+                in a corner that is doing work -- the whole tile is the target,
+                which is what the artwork says. */}
           </button>
 
           <button
@@ -338,6 +340,8 @@ export function Lobby({
           confirmLabel={buyInMode === "host" ? "Host table" : "Join table"}
           pending={loading}
           onClose={() => setBuyInMode(null)}
+          playerName={name}
+          onPlayerNameChange={setName}
           onConfirm={(tier, buyIn) => {
             if (buyInMode === "host") onHostPrivate(name.trim() || "You", tier, buyIn);
             else onQuickPlay(name.trim() || "You", tier, buyIn);

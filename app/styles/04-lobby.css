@@ -50,7 +50,7 @@
 }
 
 .lobby-kicker {
-  color: #8b9a92;
+  color: #7f8ba4;
   font-size: 10px;
   font-weight: 650;
   /* Hyper-extended, matching .landing-eyebrow: the micro-label's tracking is
@@ -76,12 +76,12 @@
   justify-content: center;
   gap: 8px;
   padding: 0 16px;
-  color: #c4bcd6;
+  color: #b7c2d4;
   /* Borderless, like the rest of the chrome: the fill is what makes it a
      control now. See the header on the entry block below. */
   border: 0;
-  border-radius: 9px;
-  background: rgba(255,255,255,.07);
+  border-radius: var(--radius-control);
+  background: var(--brand-surface-2);
   font-size: 11px;
   font-weight: 650;
   cursor: pointer;
@@ -89,8 +89,8 @@
 }
 
 .secondary-action:hover {
-  color: #f2eefa;
-  background: rgba(255,255,255,.12);
+  color: #eef2f8;
+  background: rgba(164,186,224,.13);
 }
 
 
@@ -102,7 +102,7 @@
 
 .name-row button, .primary-action {
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   color: #11130e;
   /* A flat fill read as unfinished next to every other gold control in the
      app, which all carry some kind of sheen (see .account-primary-action,
@@ -192,16 +192,18 @@ button:disabled { cursor: wait; opacity: .62; }
   flex-direction: column;
   align-items: center;
   padding: 34px 16px calc(24px + var(--safe-bottom));
-  /* The room's light: grain over two huge out-of-focus glows over matte
-     obsidian. The red is a trace, not a third light -- three competing hues
-     is what made the old wash read as a gradient rather than a room. */
+  /* The room's light: grain over two huge out-of-focus glows over the
+     blue-grey ground. The red is a trace, not a third light -- three
+     competing hues is what made the old wash read as a gradient rather than
+     a room. */
   background:
     var(--grain),
     var(--glow-purple),
-    radial-gradient(1000px 600px at 94% 0%, rgba(220, 20, 19, .07), transparent 58%),
+    radial-gradient(1000px 600px at 94% 0%, rgba(220, 20, 19, .055), transparent 58%),
     var(--glow-gold),
+    radial-gradient(1400px 1100px at 50% 40%, rgba(126, 158, 214, .09), transparent 72%),
     var(--brand-ink);
-  background-attachment: local, local, local, local, local;
+  background-attachment: local, local, local, local, local, local;
 }
 
 .account-entry-card {
@@ -209,27 +211,36 @@ button:disabled { cursor: wait; opacity: .62; }
   isolation: isolate;
   overflow: hidden;
   padding: clamp(26px, 4.6vw, 40px);
-  border-radius: 28px;
-  /* Glass, not a bordered panel. The white wash is what makes the edge
-     legible against the aurora behind it now that no line does. */
+  border-radius: var(--radius-card);
+  /* Glass, not a bordered panel. The wash is what makes the edge legible
+     against the aurora behind it now that no line does -- and it is tinted
+     blue-grey rather than neutral white, so the card reads as a lit piece of
+     this room instead of a white sheet laid over any room. */
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .022) 62%),
-    rgba(13, 9, 20, .74);
+    linear-gradient(180deg, rgba(164, 186, 224, .085), rgba(164, 186, 224, .025) 62%),
+    rgba(18, 22, 31, .8);
   backdrop-filter: blur(22px) saturate(125%);
   -webkit-backdrop-filter: blur(22px) saturate(125%);
   box-shadow: 0 34px 90px rgba(0, 0, 0, .58);
 }
 
 /* The brand sweep, bloomed behind the card's own header rather than drawn on
-   its edge -- an edge treatment is a border by another name. */
+   its edge -- an edge treatment is a border by another name.
+ *
+ * THIS IS THE ONLY CONSUMER OF --brand-sweep IN THE APP, and it is the reason
+ * the token still exists: the sweep is the mark's, so the one place it may
+ * appear is the light coming off the mark. Pulled in from the old -25% side
+ * bleed so it reads as a halo around the logo rather than a wash across the
+ * whole card -- at the old width it was tinting the segmented control and the
+ * headline too, which is exactly how a brand colour stops meaning anything. */
 .entry-aurora {
   position: absolute;
-  inset: -30% -25% auto -25%;
+  inset: -24% -4% auto -4%;
   z-index: -1;
-  height: 300px;
+  height: 250px;
   background: var(--brand-sweep);
-  filter: blur(72px);
-  opacity: .42;
+  filter: blur(76px);
+  opacity: .36;
   pointer-events: none;
 }
 
@@ -269,7 +280,7 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-entry-card > .entry-head > p:not(.account-entry-status) {
   margin: 14px auto 0;
   max-width: 40ch;
-  color: #a79dbe;
+  color: #93a1bb;
   font-size: 17px;
   line-height: 1.6;
 }
@@ -301,26 +312,34 @@ button:disabled { cursor: wait; opacity: .62; }
   grid-template-columns: 1fr 1fr;
   gap: 4px;
   padding: 4px;
-  border-radius: 15px;
-  background: rgba(255, 255, 255, .05);
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
 }
 
 .entry-segment button {
   min-height: 40px;
   border: 0;
-  border-radius: 11px;
+  /* 5px, not the container's 8: a rounded box nested inside another with the
+     same radius reads as two boxes fighting. Inner radius = outer minus the
+     padding between them is the concentric rule, and 8 - 4 is 4-5. */
+  border-radius: 5px;
   background: transparent;
-  color: #a094ba;
+  color: #93a1bb;
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
   transition: background var(--duration-slow) ease, color var(--duration-slow) ease;
 }
 
+/* The one saturated fill left on this screen, and it is spent deliberately:
+   which of the two things the form is about to do is the single most
+   consequential fact here, so it gets the fill and the primary button's gold
+   is the only other loud thing on the card. Every other selected/active state
+   in the chrome takes --accent-edge instead. */
 .entry-segment button.is-active {
   color: #fff;
   background: linear-gradient(150deg, var(--brand-purple), var(--brand-purple-deep));
-  box-shadow: 0 8px 22px rgba(152, 63, 224, .34);
+  box-shadow: var(--accent-glow);
 }
 
 .entry-segment button:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
@@ -334,7 +353,7 @@ button:disabled { cursor: wait; opacity: .62; }
 .entry-field { display: grid; gap: 6px; text-align: left; }
 
 .entry-field > span {
-  color: #8b80a6;
+  color: #7f8ba4;
   font-size: 11px;
   font-weight: 750;
   letter-spacing: .15em;
@@ -345,24 +364,26 @@ button:disabled { cursor: wait; opacity: .62; }
   width: 100%;
   min-height: 50px;
   padding: 0 15px;
-  color: #f5f2fc;
+  color: #eef2f8;
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--radius-control);
   outline: 0;
-  background: rgba(255, 255, 255, .055);
+  background: var(--brand-surface);
   /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
   font-size: 16px;
   transition: background var(--duration-slow) ease, box-shadow var(--duration-slow) ease;
 }
 
 /* A focus ring, not a border: it exists only while focused, and it is the
-   accessibility floor that removing borders makes non-negotiable. */
+   accessibility floor that removing borders makes non-negotiable. The accent
+   is the line plus the light it throws, which is the same treatment every
+   other focused and selected surface in the chrome now takes. */
 .entry-field input:focus {
-  background: rgba(255, 255, 255, .09);
-  box-shadow: 0 0 0 2px rgba(152, 63, 224, .6);
+  background: var(--brand-surface-2);
+  box-shadow: 0 0 0 1px var(--accent-line), var(--accent-glow);
 }
 
-.entry-field input::placeholder { color: #948aab; }
+.entry-field input::placeholder { color: #6f7b92; }
 .entry-field input:disabled { opacity: .55; }
 
 /* The remember toggle is a switch now. The old version was a checkbox inside
@@ -420,14 +441,14 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-remember input:disabled ~ .entry-switch { opacity: .5; }
 
 .entry-remember-copy { display: grid; gap: 2px; }
-.entry-remember-copy strong { color: #ddd6ec; font-size: 13px; font-weight: 650; }
-.entry-remember-copy small { color: #948aab; font-size: 11px; }
+.entry-remember-copy strong { color: #d6dde9; font-size: 13px; font-weight: 650; }
+.entry-remember-copy small { color: #7f8ba4; font-size: 11px; }
 
 .entry-divider {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: #948aab;
+  color: #7f8ba4;
   font-size: 11px;
   font-weight: 750;
   letter-spacing: .18em;
@@ -435,14 +456,16 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 
 /* The one rule in this block, and it is a divider between two options rather
-   than an outline around one. Faded at both ends so it never reads as the
-   edge of a box. */
+   than an outline around one. This is where the chrome's fading hairline was
+   first written by hand; it is --rule in 01-tokens.css now, and every other
+   rule in the chrome reads the same token so none of them can drift back into
+   an edge-to-edge line that reads as the top of a box. */
 .entry-divider::before,
 .entry-divider::after {
   content: "";
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .16), transparent);
+  background: var(--rule);
 }
 
 .account-primary-action,
@@ -455,7 +478,7 @@ button:disabled { cursor: wait; opacity: .62; }
   gap: 10px;
   padding: 0 18px;
   border: 0;
-  border-radius: 15px;
+  border-radius: var(--radius-control);
   font-size: 15px;
   font-weight: 750;
   cursor: pointer;
@@ -478,16 +501,16 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-primary-action:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
 
 .account-oauth-action {
-  color: #efeaf9;
-  background: rgba(255, 255, 255, .07);
+  color: #e9eef6;
+  background: var(--brand-surface-2);
 }
-.account-oauth-action:hover:not(:disabled) { background: rgba(255, 255, 255, .11); }
+.account-oauth-action:hover:not(:disabled) { background: rgba(164, 186, 224, .13); }
 
 .account-guest-action {
-  color: #b3a9c9;
+  color: #9fadc5;
   background: transparent;
 }
-.account-guest-action:hover:not(:disabled) { color: #f0ecfa; background: rgba(255, 255, 255, .06); }
+.account-guest-action:hover:not(:disabled) { color: #edf1f7; background: var(--brand-surface); }
 
 .account-primary-action:focus-visible,
 .account-oauth-action:focus-visible,
@@ -496,7 +519,7 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-entry-footnote {
   margin: 20px auto 0;
   max-width: 340px;
-  color: #948aab;
+  color: #7f8ba4;
   font-size: 11px;
   line-height: 1.6;
   text-align: center;
@@ -1031,41 +1054,132 @@ button:disabled { cursor: wait; opacity: .62; }
    sizes: .lobby-kicker already matched .landing-eyebrow's tracking, so what
    was left was the colour, the beat under it, and the display line's scale.
    Signing in is now a change of content, not of typeface. */
-.hub-head { margin-bottom: clamp(30px, 4vw, 44px); }
-.hub-head .lobby-kicker { margin-bottom: 16px; color: #8d84a3; }
+/* The head is now only a label and a line. The player-name field used to sit
+   directly under the headline -- a 46px empty input as the first thing on the
+   hub, answering a question nobody had asked, on the one screen whose job is
+   "pick your game". It moved into the buy-in modal (.buyin-name in
+   11-panels.css), which is where the name is actually consumed and where a
+   player is already deciding how they sit down; the profile modal's "Display
+   name" was always the durable place to change it. */
+.hub-head { margin-bottom: clamp(24px, 3.2vw, 34px); }
+.hub-head .lobby-kicker { margin-bottom: 14px; color: #7f8ba4; }
 .hub-head h1 {
-  margin: 0 0 24px;
+  margin: 0;
   font: 400 clamp(38px, 6vw, 64px)/1.04 Georgia, "Times New Roman", serif;
   letter-spacing: -.03em;
 }
+.hub-head .form-error { margin-top: 16px; }
 
-.hub-name { display: block; max-width: 380px; }
-.hub-name > span {
-  display: block;
-  margin-bottom: 7px;
-  color: #a9b6af;
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: .1em;
-  text-transform: uppercase;
+/* The first-run strip. See components/lobby/first-run-strip.tsx.
+ *
+ * Sits above the rank strip and above the grid, for the same reason the rank
+ * strip does: .hub-grid's spans are arithmetic and anything dropped into it
+ * reopens the empty cell the arcade panel exists to close. It renders nothing
+ * once retired, so it costs a returning player no layout at all -- not even a
+ * collapsed one.
+ *
+ * This is the surface the accent rule was written for. It is the only thing on
+ * the hub that is *temporarily* important, so it takes a line and the light
+ * that line throws rather than a fill: a violet-filled card at the top of the
+ * page would outweigh the Texas Hold'em hero, which is the one thing the hub
+ * exists to point at. The left edge is a 2px accent bar rather than a full
+ * ring -- a ring around a card is a border, and this chrome does not have
+ * those.
+ */
+.first-run {
+  position: relative;
+  margin-bottom: clamp(14px, 2vw, 20px);
+  padding: 16px 18px 14px;
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(100deg, rgba(152,63,224,.10), rgba(152,63,224,0) 58%),
+    var(--brand-surface);
+  box-shadow: var(--accent-glow);
 }
-.hub-name input {
-  width: 100%;
-  height: 46px;
-  padding: 0 14px;
-  color: #f4f2fa;
+
+/* The numbered strip's one accent line. Inset via a pseudo-element rather than
+   border-left so it can stop short of the rounded corners instead of bending
+   around them, and so it adds no width to the box. */
+.first-run::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--brand-purple), rgba(152,63,224,.25));
+}
+
+.first-run-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.first-run-head .lobby-kicker { color: #b58ce8; }
+.first-run-count {
+  flex: 0 0 auto;
+  color: #7f8ba4;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.first-run-body {
+  margin: 0;
+  max-width: 46ch;
+  color: #dfe5ee;
+  font: 400 clamp(15px, 2.2vw, 17px)/1.45 Georgia, "Times New Roman", serif;
+}
+
+.first-run-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+/* Line and glow, no fill -- see the block header above. */
+.first-run-go,
+.first-run-next {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 15px;
   border: 0;
-  border-radius: 13px;
-  outline: 0;
-  background: rgba(255,255,255,.055);
-  /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
-  font-size: 16px;
-  transition: background var(--duration-base) ease, box-shadow var(--duration-base) ease;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: box-shadow var(--duration-base) ease, color var(--duration-base) ease;
 }
-/* A ring rather than a border colour change: there is no border left to
-   change, and focus still has to be visible. */
-.hub-name input:focus { background: rgba(255,255,255,.09); box-shadow: 0 0 0 2px rgba(152,63,224,.6); }
-.hub-name input::placeholder { color: #625877; }
+.first-run-go {
+  color: #e9dcfb;
+  box-shadow: var(--accent-edge);
+}
+.first-run-go:hover { color: #fff; box-shadow: var(--accent-edge), var(--accent-glow); }
+.first-run-next { color: #93a1bb; }
+.first-run-next:hover { color: #dfe5ee; }
+.first-run-go:focus-visible,
+.first-run-next:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+
+/* One dash per step, filled up to the current one. Deliberately dashes rather
+   than a continuous bar: the strip has three discrete stops, and a bar would
+   imply a percentage through something continuous. */
+.first-run-ticks { display: flex; gap: 6px; margin-top: 14px; }
+.first-run-tick {
+  flex: 1;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(164,186,224,.14);
+  transition: background var(--duration-slow) ease;
+}
+.first-run-tick.is-done { background: var(--brand-purple); }
+
+@media (prefers-reduced-motion: reduce) {
+  .first-run-go,
+  .first-run-next,
+  .first-run-tick { transition: none; }
+}
 
 /* Rank strip.
  *
@@ -1083,8 +1197,8 @@ button:disabled { cursor: wait; opacity: .62; }
   gap: 14px;
   margin-bottom: clamp(18px, 2.5vw, 26px);
   padding: 14px 18px;
-  border-radius: 14px;
-  background: rgba(255,255,255,.045);
+  border-radius: var(--radius-card);
+  background: var(--brand-surface);
 }
 
 .rank-badge {
@@ -1093,7 +1207,7 @@ button:disabled { cursor: wait; opacity: .62; }
   height: 42px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: radial-gradient(circle at 34% 28%, #f0bc3a, var(--brand-gold) 58%, #a86f04);
   box-shadow: 0 0 0 2px rgba(219,156,11,.22);
   color: #1a1208;
@@ -1108,7 +1222,7 @@ button:disabled { cursor: wait; opacity: .62; }
 .rank-line { display: flex; align-items: baseline; gap: 8px; }
 .rank-line strong {
   overflow: hidden;
-  color: #e6e2ef;
+  color: #e2e8f2;
   font: 500 15px Georgia, serif;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1117,7 +1231,7 @@ button:disabled { cursor: wait; opacity: .62; }
    .hub-tile-kicker. */
 .rank-level {
   flex: 0 0 auto;
-  color: #8d84a3;
+  color: #7f8ba4;
   font-size: 10px;
   font-weight: 650;
   letter-spacing: .25em;
@@ -1128,7 +1242,7 @@ button:disabled { cursor: wait; opacity: .62; }
   height: 5px;
   margin: 8px 0 6px;
   border-radius: 3px;
-  background: rgba(255,255,255,.07);
+  background: rgba(164,186,224,.09);
   overflow: hidden;
 }
 .rank-fill {
@@ -1142,7 +1256,7 @@ button:disabled { cursor: wait; opacity: .62; }
   display: flex;
   align-items: center;
   gap: 4px;
-  color: #8d84a3;
+  color: #7f8ba4;
   font-size: 10.5px;
 }
 .rank-next svg { flex: 0 0 auto; }
@@ -1153,7 +1267,7 @@ button:disabled { cursor: wait; opacity: .62; }
   align-items: baseline;
   gap: 5px;
   padding: 7px 12px;
-  border-radius: 20px;
+  border-radius: var(--radius-control);
   /* Red, not gold: it is the one element here that decays if ignored, and the
      brand's red is the app's existing "act on this" colour. */
   background: rgba(220,20,19,.16);
@@ -1181,36 +1295,47 @@ button:disabled { cursor: wait; opacity: .62; }
    gradient is what keeps the label readable over it. */
 .hub-tile {
   --tile-art: none;
-  --tile-tint: rgba(217,184,93,.10);
+  --tile-tint: rgba(217,184,93,.08);
   position: relative;
-  min-height: 104px;
+  min-height: 118px;
   display: flex;
-  align-items: flex-end;
+  /* The label leads and the art follows underneath it.
+   *
+   * This used to bottom-align both, which put a 96px chip cluster and a
+   * two-line label side by side on the same baseline -- so on a narrow tile
+   * the art was shoved up into the empty top half and the tile read as an
+   * icon with a caption stuck to its bottom edge. Reading order on a card is
+   * name first; the art is what the name sits on, not what competes with it
+   * for the same row. The art's own bottom-right anchoring (below, per tile)
+   * did not have to change at all -- only which end the text starts from. */
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   overflow: hidden;
-  padding: 16px;
+  padding: 15px 16px;
   text-align: left;
   text-decoration: none;
   border: 0;
-  border-radius: 18px;
+  border-radius: var(--radius-card);
   /* background-image, not the `background` shorthand: a bare colour is only
      legal as the final layer of a layer list, so putting --tile-tint in the
      middle made the whole declaration invalid and every tile rendered flat.
      The tint is a two-stop gradient instead, which is a valid image layer. */
-  /* Neutral obsidian, not the green-black of the felt era: on the matte
-     room these tiles float in, a green base read as mud. The Join Table
-     tile still goes green -- through its own felt artwork and tint, which
-     is the one place green belongs in the lobby. */
-  background-color: #0e0d10;
-  /* The scrim runs left-to-right, not top-to-bottom. The label sits bottom
-     left and the art bottom right, so a vertical fade dimmed precisely the
-     thing it was supposed to be showing off. */
+  /* A lift of the room's own blue-grey, not the neutral obsidian of the last
+     pass and not the green-black of the felt era: a tile should read as a
+     lighter piece of this room. The Join Table tile still goes green --
+     through its own felt artwork and tint, which is the one place green
+     belongs in the lobby. */
+  background-color: var(--brand-ink-lift);
+  /* The scrim now runs top-left to bottom-right, following the layout above:
+     the label is top-left and the art bottom-right, so the diagonal darkens
+     exactly the corner the text sits in and clears the corner the art sits
+     in. A purely horizontal fade dimmed the whole top-right, which is empty. */
   background-image:
-    linear-gradient(90deg, rgba(10,10,11,.94) 0%, rgba(10,10,11,.74) 46%, rgba(10,10,11,.10) 100%),
+    linear-gradient(148deg, rgba(18,22,31,.95) 0%, rgba(18,22,31,.76) 44%, rgba(18,22,31,.06) 100%),
     linear-gradient(var(--tile-tint), var(--tile-tint)),
     var(--tile-art),
-    linear-gradient(160deg, #17151c, #0e0d10);
+    linear-gradient(160deg, #222937, #171b25);
   background-size: auto, auto, cover, auto;
   background-position: center, center, center, center;
   background-repeat: no-repeat;
@@ -1221,18 +1346,25 @@ button:disabled { cursor: wait; opacity: .62; }
   box-shadow: 0 2px 10px rgba(0,0,0,.3);
   transition: box-shadow .16s ease, transform .16s ease;
 }
+/* Hover is where the accent's line and glow arrive -- an inset hairline plus
+   the light it throws, rather than the tile filling with colour. The inset
+   ring adds no layout box, so nothing shifts by a pixel on hover. */
 .hub-tile:hover {
-  box-shadow: 0 14px 34px rgba(0,0,0,.45);
+  box-shadow: 0 14px 34px rgba(0,0,0,.45), var(--accent-edge), var(--accent-glow);
   transform: translateY(-2px);
 }
 .hub-tile:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
 .hub-tile:disabled { opacity: .55; cursor: wait; transform: none; }
 
-.hub-tile-wide { grid-column: 1 / -1; min-height: 132px; }
+/* The hero keeps the bottom-anchored label the other tiles gave up. Its art
+   is a wide plate bled off the right edge, not a corner ornament, so there is
+   no bottom-right corner for the text to vacate -- and a 30px display line
+   pinned to the top of a 148px tile leaves a band of nothing under it. */
+.hub-tile-wide { grid-column: 1 / -1; min-height: 138px; align-items: flex-end; }
 
 .hub-tile-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .hub-tile-body strong {
-  color: #f2f6f1;
+  color: #eef2f8;
   font: 600 17px Georgia, serif;
   letter-spacing: -.01em;
 }
@@ -1242,14 +1374,14 @@ button:disabled { cursor: wait; opacity: .62; }
    Blackjack, Hi-Lo and two daily puzzles. */
 .hub-tile-kicker {
   margin-bottom: 5px;
-  color: #a99ec2;
+  color: #9d93b8;
   font-size: 10px;
   font-weight: 650;
   letter-spacing: .25em;
   text-transform: uppercase;
 }
 .hub-tile-wide .hub-tile-body strong { font-size: clamp(24px, 3.4vw, 30px); }
-.hub-tile-body small { color: #9fb0a7; font-size: 11.5px; line-height: 1.4; }
+.hub-tile-body small { color: #93a1bb; font-size: 11.5px; line-height: 1.4; }
 .hub-tile-go { flex-shrink: 0; color: var(--gold-light); }
 
 /* Real artwork per tile, from public/. */
@@ -1280,10 +1412,16 @@ button:disabled { cursor: wait; opacity: .62; }
   background-size: auto, auto, auto 78%, auto;
   background-position: center, center, right 16px center, center;
 }
-.hub-tile-private { --tile-art: url("/chips/cluster-three.webp"); background-size: auto, auto, 96px, auto; background-position: center, center, right 14px bottom 12px, center; }
-.hub-tile-gold { --tile-art: url("/chips/stack-three.webp"); background-size: auto, auto, 108px, auto; background-position: center, center, right 12px bottom 10px, center; }
-.hub-tile-collection { --tile-art: url("/avatars/avatar-shark-face.webp"); background-size: auto, auto, 104px, auto; background-position: center, center, right 10px bottom -6px, center; }
-.hub-tile-leaderboard { --tile-art: url("/chips/chip-royal-spade.webp"); background-size: auto, auto, 92px, auto; background-position: center, center, right 16px bottom 12px, center; }
+/* Sized so the art clears the label above it rather than being scrimmed out
+   from under it. The tile is 146px at >=561px and the label costs about 50 of
+   them, so anything over ~86px of art reaches back up into the sub-line -- and
+   the scrim cannot rescue it, because it fades toward exactly the corner the
+   art is in. Checked on a render at 1440: "Open a room, share the code" was
+   running straight through the chip cluster at the old 96px. */
+.hub-tile-private { --tile-art: url("/chips/cluster-three.webp"); background-size: auto, auto, 82px, auto; background-position: center, center, right 14px bottom 12px, center; }
+.hub-tile-gold { --tile-art: url("/chips/stack-three.webp"); background-size: auto, auto, 92px, auto; background-position: center, center, right 12px bottom 10px, center; }
+.hub-tile-collection { --tile-art: url("/avatars/avatar-shark-face.webp"); background-size: auto, auto, 90px, auto; background-position: center, center, right 10px bottom -6px, center; }
+.hub-tile-leaderboard { --tile-art: url("/chips/chip-royal-spade.webp"); background-size: auto, auto, 78px, auto; background-position: center, center, right 16px bottom 12px, center; }
 
 /* The room-code tile is a form, so it stacks rather than bottom-aligning. */
 .hub-tile-code {
@@ -1298,7 +1436,7 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 .hub-tile-code:hover { transform: none; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
 .hub-tile-code > label {
-  color: #718078;
+  color: #7f8ba4;
   font-size: 10px;
   font-weight: 650;
   letter-spacing: .1em;
@@ -1311,30 +1449,32 @@ button:disabled { cursor: wait; opacity: .62; }
   padding: 0 13px;
   color: #ece9f5;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   outline: none;
-  background: rgba(0,0,0,.32);
+  background: rgba(0,0,0,.3);
   font-size: 16px;
   letter-spacing: .18em;
   transition: background var(--duration-base) ease, box-shadow var(--duration-base) ease;
 }
-.hub-code-row input:focus { background: rgba(0,0,0,.42); box-shadow: 0 0 0 2px rgba(152,63,224,.6); }
+.hub-code-row input:focus { background: rgba(0,0,0,.42); box-shadow: 0 0 0 1px var(--accent-line), var(--accent-glow); }
 .hub-code-row button {
   color: #1c1305;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: linear-gradient(152deg, var(--brand-gold-light), var(--brand-gold));
   font-size: 12px;
   font-weight: 750;
   cursor: pointer;
 }
-.hub-code-row button:disabled { color: #6e6584; background: rgba(255,255,255,.07); cursor: not-allowed; }
+.hub-code-row button:disabled { color: #6f7b92; background: var(--brand-surface); cursor: not-allowed; }
 
-/* Two columns and taller tiles are the expansion, not the default. */
+/* Two columns and taller tiles are the expansion, not the default. The height
+   is what buys the label a row of its own above the corner art -- see the
+   sizing note on the art above; the two numbers have to move together. */
 @media (min-width: 561px) {
   .hub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .hub-tile { min-height: 116px; }
-  .hub-tile-wide { min-height: 148px; }
+  .hub-tile { min-height: 146px; }
+  .hub-tile-wide { min-height: 158px; }
 }
 
 /* Four columns on a desktop viewport.
@@ -1348,28 +1488,26 @@ button:disabled { cursor: wait; opacity: .62; }
  * So the spans are explicit and every cell is claimed:
  *
  *   [           play, spans 4           ]
- *   [private ][  gold  ][    arcade     ]
- *   [collect'][ldrboard][  (c3-4, r2-3) ]
- *   [    friends x2    ][   code x2     ]
+ *   [private ][  gold  ][   arcade x2   ]
+ *   [collect'][ldrboard][  friends x2   ]
+ *   [             code x4               ]
  *
- * Arcade takes a 2x2 block deliberately. It is the one panel holding a list
- * rather than a label, so it needs both the width (ten rows of name + stake
- * + button do not fit a quarter-width column without truncating the names)
- * and the height, and a row span is what gives it height without inventing a
- * min-height the tiles beside it would then have to match.
+ * Arcade lost its second *row* when it stopped holding a ten-row list and
+ * became a summary tile with a "See all" into /games. Note what had to move
+ * with it: dropping `grid-row: span 2` frees the cell friends now sits in,
+ * which frees the two cells the code form needed to go back to full width.
+ * All three had to change together -- pulling the row span alone leaves five
+ * one-cell tiles over four columns and reopens the hole the arcade panel was
+ * added to close in the first place. Count the cells before editing this
+ * block; it is arithmetic, not taste.
  *
  * Placement is by DOM order, so components/lobby/lobby.tsx renders the panel
  * between Buy Gold and Collection; moving it in the source moves it here.
  */
 @media (min-width: 1024px) {
   .hub-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .hub-tile-arcade { grid-column: span 2; grid-row: span 2; }
+  .hub-tile-arcade { grid-column: span 2; }
   .hub-tile-friends { grid-column: span 2; }
-  /* Narrowed from the base `1 / -1`: at four columns the form is the last
-     half of a row, not a band of its own, and full width would strand the
-     two cells beside friends. .hub-tile-wide keeps `1 / -1` -- the hero is
-     still the full width of whatever the column count is. */
-  .hub-tile-code { grid-column: span 2; }
 }
 
 @media (prefers-reduced-motion: reduce) {

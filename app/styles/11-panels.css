@@ -299,29 +299,65 @@
 .buyin-body { padding: 22px 27px 27px; }
 .buyin-description { margin: 0 0 18px; color: #9ca9a2; font-size: 12px; line-height: 1.5; }
 
+/* The player-name field, moved off the hub head (see the note in
+   components/lobby/lobby.tsx). Same 11px/.1em micro-label and 46px filled
+   input it wore there -- this is a relocation, not a redesign, so a player who
+   knows where it used to be recognises it here. */
+.buyin-name { display: block; margin-bottom: 18px; }
+.buyin-name > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #7f8ba4;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.buyin-name input {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px;
+  color: #eef2f8;
+  border: 0;
+  border-radius: var(--radius-control);
+  outline: 0;
+  background: var(--brand-surface);
+  /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
+  font-size: 16px;
+  transition: background var(--duration-base) ease, box-shadow var(--duration-base) ease;
+}
+.buyin-name input:focus {
+  background: var(--brand-surface-2);
+  box-shadow: 0 0 0 1px var(--accent-line), var(--accent-glow);
+}
+.buyin-name input::placeholder { color: #6f7b92; }
+
 .tier-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
 .tier-card {
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 12px 10px;
-  color: #c8c0d8;
+  color: #b7c2d4;
   border: 0;
-  border-radius: 14px;
-  background: rgba(255,255,255,.05);
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
   cursor: pointer;
   text-align: left;
   transition: background var(--duration-base) ease, box-shadow var(--duration-base) ease;
 }
-.tier-card strong { font: 600 13px Georgia, serif; color: #edf1eb; }
-.tier-card span { font-size: 10px; color: #8f9d95; }
-.tier-card small { margin-top: 2px; font-size: 9px; color: #74827b; }
-/* Selection used to be a gold border. With borders gone it needs a signal
-   that is at least as loud, or the sheet stops telling you which tier you
-   picked -- so it is a filled brand wash plus a ring, not a tint alone. */
+.tier-card strong { font: 600 13px Georgia, serif; color: #e2e8f2; }
+.tier-card span { font-size: 10px; color: #8593aa; }
+.tier-card small { margin-top: 2px; font-size: 9px; color: #6f7b92; }
+/* Selection used to be a gold border; the borderless pass replaced it with a
+   filled purple-and-gold wash, which was loud enough and then some -- three
+   selected-looking cards' worth of colour on a sheet whose only job is
+   "which one". It is the chrome's accent now: a line, the light off it, and a
+   lift of the same fill everything else here uses. The gold *type* is what
+   confirms the choice, which is where a player is already looking. */
 .tier-card.selected {
-  background: linear-gradient(140deg, rgba(152,63,224,.3), rgba(219,156,11,.2));
-  box-shadow: 0 0 0 2px rgba(246,201,74,.55), 0 10px 24px rgba(152,63,224,.24);
+  background: var(--brand-surface-2);
+  box-shadow: var(--accent-edge), var(--accent-glow);
 }
 .tier-card.selected strong { color: var(--gold-light); }
 .tier-card.unaffordable { opacity: .45; cursor: not-allowed; }

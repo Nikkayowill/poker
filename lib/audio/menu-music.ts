@@ -1,4 +1,8 @@
-import { MENU_MUSIC_GAIN, MENU_MUSIC_TRACKS } from "./music-manifest";
+import {
+  MENU_MUSIC_GAIN,
+  MENU_MUSIC_METADATA,
+  MENU_MUSIC_TRACKS,
+} from "./music-manifest";
 
 let enabled = true;
 let player: HTMLAudioElement | null = null;
@@ -70,6 +74,42 @@ function ensurePlayer(): HTMLAudioElement | null {
   return audio;
 }
 
+/**
+ * Names the stream in the OS media controls, and points their transport at this
+ * module rather than at the bare element.
+ *
+ * Without this the phone prints "Untitled" (see MENU_MUSIC_METADATA). Without
+ * the handlers, the OS pause button would pause the element behind this
+ * module's back, and the next lobby render's idempotent startMenuMusic() would
+ * override the player -- so pause is routed through stopMenuMusic, which is the
+ * one path that also fades.
+ *
+ * Every branch is feature-detected: MediaSession is absent on desktop Safari
+ * and in every test environment, and its absence is not an error -- it just
+ * means nothing outside the page was going to show a label anyway.
+ */
+function publishMediaSession(state: "playing" | "paused") {
+  if (typeof navigator === "undefined") return;
+  const session = navigator.mediaSession;
+  if (!session) return;
+  if (typeof MediaMetadata === "function" && !session.metadata) {
+    session.metadata = new MediaMetadata({ ...MENU_MUSIC_METADATA, artwork: [...MENU_MUSIC_METADATA.artwork] });
+  }
+  session.playbackState = state;
+  try {
+    session.setActionHandler("play", () => startMenuMusic());
+    session.setActionHandler("pause", () => stopMenuMusic());
+    session.setActionHandler("stop", () => stopMenuMusic());
+    // A bed has no chapters; leaving these unset is what tells the OS to draw
+    // no skip buttons rather than dead ones.
+    session.setActionHandler("previoustrack", null);
+    session.setActionHandler("nexttrack", null);
+  } catch {
+    // Older engines throw on an action they do not implement rather than
+    // ignoring it, and a missing skip button is not worth failing playback for.
+  }
+}
+
 function clearFade() {
   if (fadeHandle === null) return;
   window.clearInterval(fadeHandle);
@@ -103,7 +143,10 @@ function playNextTrack() {
   audio.src = src;
   audio.volume = 0;
   audio.play()
-    .then(() => fadeTo(MENU_MUSIC_GAIN))
+    .then(() => {
+      publishMediaSession("playing");
+      fadeTo(MENU_MUSIC_GAIN);
+    })
     .catch(() => {
       pendingStart = true;
     });
@@ -133,7 +176,10 @@ export function startMenuMusic() {
   if (!audio.paused) return;
   pendingStart = false;
   audio.play()
-    .then(() => fadeTo(MENU_MUSIC_GAIN))
+    .then(() => {
+      publishMediaSession("playing");
+      fadeTo(MENU_MUSIC_GAIN);
+    })
     .catch(() => {
       // Blocked before any gesture reached this tab; retryOnGesture picks
       // this back up the moment one does.
@@ -145,5 +191,8 @@ export function stopMenuMusic() {
   pendingStart = false;
   const audio = player;
   if (!audio || audio.paused) return;
-  fadeTo(0, () => audio.pause());
+  fadeTo(0, () => {
+    audio.pause();
+    publishMediaSession("paused");
+  });
 }

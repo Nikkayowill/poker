@@ -184,8 +184,8 @@
 }
 
 /* min(), not a bare minmax floor: a 220px minimum is a track the grid cannot
-   go under, which is exactly how .landing-game-grid turned a 390px phone into
-   a horizontal pan. See the note in CLAUDE.md -- overflow-y:auto computes the
+   go under, which is exactly how the old landing page's game grid turned a
+   390px phone into a horizontal pan. See the note in CLAUDE.md -- overflow-y:auto computes the
    x-axis to auto too, so one over-wide track pans the whole page. */
 .floor-free-grid {
   display: grid;

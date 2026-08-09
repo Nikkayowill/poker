@@ -40,6 +40,24 @@ describe("stylesheets", () => {
     expect({ sheet, open, close }).toEqual({ sheet, open: close, close });
   });
 
+  // The same failure as the orphaned brace, one layer up.
+  //
+  // An edit to 04-lobby.css once appended a paragraph *past* the end of a
+  // comment that was already closed, leaving an orphaned close delimiter
+  // behind. Braces stayed balanced, so the check below saw nothing; tsc and
+  // eslint do not read CSS; the prose read fine. What caught it was PostCSS
+  // refusing the whole sheet at dev time -- which means every rule after it
+  // was dead, and a production build has no console to notice in.
+  //
+  // Once every properly-paired comment is stripped, any surviving delimiter
+  // is an orphan by definition. (Line comments here, not a block: this
+  // paragraph is about comment delimiters and cannot contain one.)
+  it.each(sheets)("%s has no orphaned comment delimiter", (sheet) => {
+    const css = stripNonStructural(readFileSync(join(STYLES_DIR, sheet), "utf8"));
+    expect({ sheet, open: css.includes("/*"), close: css.includes("*/") })
+      .toEqual({ sheet, open: false, close: false });
+  });
+
   it.each(sheets)("%s never closes more blocks than it opened", (sheet) => {
     // Catches an orphan `}` in the middle of a file, which a plain count can
     // miss when a matching stray `{` appears later.

@@ -7,7 +7,6 @@ import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { accountsEnabled } from "@/lib/auth/client";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
-import { LandingSections } from "@/components/auth/landing-sections";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
@@ -109,10 +108,6 @@ export function Lobby({
           onContinueAccount={onContinueAccount}
           onContinueAsGuest={onContinueAsGuest}
           onSignOut={onSignOut}
-        />
-        <LandingSections
-          primaryDisabled={!(authReady && sessionReady) || signInPending}
-          onPrimary={onContinueAsGuest}
         />
       </main>
     );

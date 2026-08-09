@@ -29,8 +29,8 @@
 .friends-list::-webkit-scrollbar { display: none; }
 
 .friends-section { margin-bottom: 22px; }
-/* 10px/.25em is the chrome's one micro-label size (.landing-eyebrow,
-   .lobby-kicker, .hub-tile-kicker). At 8px this was below the floor the rest
+/* 10px/.25em is the chrome's one micro-label size (.lobby-kicker,
+   .hub-tile-kicker). At 8px this was below the floor the rest
    of the app was raised to and read as a smudge rather than a label. */
 .friends-section h3 {
   margin: 14px 0 8px;

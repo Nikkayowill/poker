@@ -53,6 +53,7 @@
 /* After 33: Memory reuses .sk-start and .sk-done from the Sudoku sheet rather
    than restating them, so it must cascade later. */
 @import "./styles/34-memory.css";
+@import "./styles/35-legal.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

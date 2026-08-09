@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Coins, ShieldCheck } from "lucide-react";
 import type { PlayerProfile } from "@/lib/profile/types";
-import type { LegalDocument, LegalDocumentSlug } from "@/lib/legal/documents";
+import { legalDocumentPath, type LegalDocument, type LegalDocumentSlug } from "@/lib/legal/documents";
 
 interface GoldTier {
   key: string;
@@ -165,7 +165,12 @@ export function GoldStore({ gameId }: { gameId?: string }) {
           <h2><ShieldCheck size={16} /> Before you buy</h2>
           {pendingDocuments.map((doc) => (
             <div className="gold-store-legal-doc" key={doc.slug}>
-              <h3>{doc.title}</h3>
+              <h3>
+                {doc.title}
+                <Link className="gold-store-legal-link" href={legalDocumentPath(doc.slug)}>
+                  Read full text
+                </Link>
+              </h3>
               {doc.body.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
               <label className="gold-store-legal-checkbox">
                 <input

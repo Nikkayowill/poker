@@ -71,6 +71,17 @@
 
 .gold-store-legal-doc { margin-bottom: 16px; }
 .gold-store-legal-doc h3 { margin: 0 0 6px; font-size: 13px; color: var(--gold-light); }
+.gold-store-legal-link,
+.rebuy-checkout-legal-link {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.gold-store-legal-link:hover,
+.rebuy-checkout-legal-link:hover { color: var(--ink); }
 .gold-store-legal-doc p { margin: 0 0 8px; color: var(--muted); font-size: 12.5px; line-height: 1.55; }
 
 .gold-store-legal-checkbox {

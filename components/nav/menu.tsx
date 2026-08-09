@@ -179,6 +179,16 @@ export function Menu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
+        onPointerDown={(event) => {
+          // Some mobile browsers do not consistently synthesize a click for
+          // a button inside a horizontally scrolling header. Handle the
+          // touch gesture directly, and suppress the follow-up click so one
+          // tap cannot open and immediately close the menu.
+          if (event.pointerType !== "touch") return;
+          event.preventDefault();
+          if (open) close();
+          else setOpen(true);
+        }}
         onClick={() => (open ? close() : setOpen(true))}
         onKeyDown={onTriggerKeyDown}
       >

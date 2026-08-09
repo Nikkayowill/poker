@@ -3,6 +3,7 @@
 .app-root { min-height: 100vh; min-height: 100svh; overflow: hidden; }
 
 .lobby-header, .game-header {
+  --menu-header-height: var(--lobby-header-h);
   height: 82px;
   display: flex;
   align-items: center;

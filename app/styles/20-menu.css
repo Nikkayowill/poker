@@ -90,6 +90,13 @@
    one hanging off a small avatar. */
 @media (max-width: 600px) {
   .app-menu-panel {
+    /* The mobile header actions are an intentional horizontal scroller. An
+       absolutely positioned panel inside that scroller is clipped by its
+       overflow, making the avatar appear not to respond even though the
+       menu state changed. Fixed positioning lets the menu escape that
+       clipping while retaining the same header-relative placement. */
+    position: fixed;
+    top: calc(var(--safe-top) + var(--menu-header-height, var(--lobby-header-h, 68px)) + var(--space-4, 8px));
     min-width: min(260px, calc(100vw - 24px));
     right: max(0px, calc(0px - var(--safe-right)));
   }

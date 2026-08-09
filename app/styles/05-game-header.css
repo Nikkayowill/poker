@@ -15,6 +15,7 @@
  * derives --chrome-height from the same expression, so the table's height
  * budget cannot disagree with the header above it. */
 .game-header {
+  --menu-header-height: var(--game-header-h);
   height: calc(var(--game-header-h) + var(--safe-top));
   padding: 0 28px;
   padding-top: var(--safe-top);

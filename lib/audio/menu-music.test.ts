@@ -286,6 +286,114 @@ describe("with a playlist", () => {
   });
 });
 
+describe("the OS media controls", () => {
+  interface FakeSession {
+    metadata: unknown;
+    playbackState: string;
+    setActionHandler: ReturnType<typeof vi.fn>;
+    handlers: Record<string, (() => void) | null>;
+  }
+
+  function stubMediaSession(): FakeSession {
+    const session: FakeSession = {
+      metadata: null,
+      playbackState: "none",
+      handlers: {},
+      setActionHandler: vi.fn((action: string, handler: (() => void) | null) => {
+        session.handlers[action] = handler;
+      }),
+    };
+    vi.stubGlobal("navigator", { mediaSession: session });
+    vi.stubGlobal(
+      "MediaMetadata",
+      class {
+        constructor(init: Record<string, unknown>) {
+          Object.assign(this, init);
+        }
+      },
+    );
+    return session;
+  }
+
+  async function loadPlayer() {
+    vi.doMock("./music-manifest", () => ({
+      MENU_MUSIC_TRACKS: PLAYLIST,
+      MENU_MUSIC_GAIN: 0.4,
+      MENU_MUSIC_METADATA: {
+        title: "StackChips",
+        artist: "High Roller Arcade",
+        album: "StackChips",
+        artwork: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
+      },
+    }));
+    return import("./menu-music");
+  }
+
+  // The whole point of this block: with no metadata published, a phone labels
+  // the stream "Untitled" in its notification shade, which shipped to players.
+  it("names the stream, so the phone has something to print", async () => {
+    const session = stubMediaSession();
+    const { startMenuMusic } = await loadPlayer();
+    startMenuMusic();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(session.metadata).toMatchObject({
+      title: "StackChips",
+      artist: "High Roller Arcade",
+    });
+    expect(session.playbackState).toBe("playing");
+  });
+
+  it("keeps that label across a track change, and reports paused on stop", async () => {
+    const session = stubMediaSession();
+    const { startMenuMusic, stopMenuMusic } = await loadPlayer();
+    startMenuMusic();
+    await vi.advanceTimersByTimeAsync(1000);
+    fireEnded();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(session.metadata).toMatchObject({ title: "StackChips" });
+
+    stopMenuMusic();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(session.playbackState).toBe("paused");
+  });
+
+  // The OS pause button must reach this module, not the bare element: pausing
+  // behind its back leaves it believing it is still playing, so the next
+  // idempotent start() would decline to resume.
+  it("routes the OS pause button through the module's own fade-and-stop", async () => {
+    const session = stubMediaSession();
+    const { startMenuMusic } = await loadPlayer();
+    startMenuMusic();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    session.handlers.pause?.();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(built[0].pause).toHaveBeenCalledTimes(1);
+
+    session.handlers.play?.();
+    expect(built[0].play).toHaveBeenCalledTimes(2);
+  });
+
+  it("draws no skip buttons for a bed with no chapters", async () => {
+    const session = stubMediaSession();
+    const { startMenuMusic } = await loadPlayer();
+    startMenuMusic();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(session.handlers.nexttrack).toBeNull();
+    expect(session.handlers.previoustrack).toBeNull();
+  });
+
+  it("plays normally where MediaSession does not exist", async () => {
+    vi.stubGlobal("navigator", {});
+    const { startMenuMusic } = await loadPlayer();
+    startMenuMusic();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(built[0].play).toHaveBeenCalledTimes(1);
+    expect(built[0].volume).toBeCloseTo(0.4, 5);
+  });
+});
+
 describe("shuffleIndices", () => {
   it("is a permutation: every index exactly once", async () => {
     vi.doMock("./music-manifest", () => ({

@@ -114,7 +114,93 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   `16`/`17`/`99` are untouched. The three brand hex values were **sampled
   from the logo PNG with ImageMagick**, not picked by eye, so the mark and
   the chrome cannot drift. Reaching for a `--brand-*` token inside a table
-  sheet is a mistake, not a shortcut.
+  sheet is a mistake, not a shortcut. **Superseded in part on 2026-08-08 —
+  see the "reskin of the same floor" bullet below.** The three brand hex
+  values and the chrome/table scope split are unchanged; where the purple
+  goes is not.
+- **The chrome is a reskin of the same floor now (2026-08-08): blue-grey
+  ground, accent as a line and a glow, rules that fade, 8px radii, and the
+  brand sweep reserved for the mark.** The information architecture is
+  untouched — same header, one scrolling hub of tiles, Collection and the
+  arcade behind their own routes. What changed is the surface, plus two
+  structural moves the mock forced. Seven things worth not relearning:
+  - **The ground is `--brand-ink` `#12161f`, and it was matched against the
+    supplied mock with ImageMagick rather than picked by eye** — the mock's
+    page ground samples rgb(18,19,26)–(22,20,33) and the built page renders
+    rgb(18,22,31). Same discipline as the logo sampling above, and it settled
+    a real disagreement: two intermediate values *looked* "still near-black"
+    against the screenshot at a different scale and measured correct. Sample
+    the reference; do not eyeball a dark palette.
+  - **`--brand-sweep` now has exactly one legal consumer**, `.entry-aurora`,
+    which blooms it behind the sign-in logo. It is the mark's gradient, so
+    the only place it may appear is light coming off the mark. The last other
+    caller was `.save-progress-icon` in `13-status.css`, which wore the whole
+    purple→gold→red arc on a notice icon. A token comment states the rule.
+  - **The accent is `--accent-edge` (an *inset* 1px ring) plus
+    `--accent-glow`, never a fill.** Inset so it adds no layout box — hover
+    and selection shift nothing by a pixel. One saturated fill is still spent
+    per surface, on the single primary action (the sign-in segment, the gold
+    CTAs); `.tier-card.selected` gave up its purple/gold wash for the edge,
+    which is what lets the gold *type* do the confirming.
+  - **`--rule` is the fading hairline, stated once.** Every rule left in the
+    chrome is a divider between things, never an outline around one — a line
+    running edge to edge quietly re-reads as the top of a box. `.entry-divider`
+    had this hand-written; it and the new floor section heads share the token.
+  - **The arcade is a route, `/games`.** The hub tile was ten scrolling rows
+    in a 2×2 grid cell with a deliberately half-cut fifth row as the only hint
+    it scrolled; it is a summary with a **See all** now, and
+    `components/arcade/arcade-floor.tsx` is the catalogue — free dailies as
+    cards, staked rounds as dense priced rows. **Dropping the tile's
+    `grid-row: span 2` is arithmetic, not styling**: it frees the cell friends
+    moved into, which frees the two cells the code form needed to go back to
+    `1 / -1`. All three had to change together or the hole the arcade panel
+    was added to close reopens. Verified by measuring every tile's rect at
+    1440 — four full rows, no leftover cell.
+  - **Tile labels moved to the top and the art stayed at the bottom corner,
+    and `12-responsive.css` had to flip in the same commit.** The phone rule
+    put art top-right to avoid a label that was then bottom-left; once the
+    base flipped, top-right art landed straight across a top-left label. Two
+    rules, one decision — if either moves, both move. Desktop art also shrank
+    (96→82px etc.) because a 146px tile minus a ~50px label leaves ~86px, and
+    the scrim cannot rescue art under text when it fades *toward* the art's
+    own corner. Both caught on a render, not by reading the CSS.
+  - **The player-name field left the hub head** for the buy-in modal
+    (`.buyin-name`, `11-panels.css`) — an empty text input was the first thing
+    on a screen whose job is "pick your game", and it was the third control
+    setting the same name (the profile modal's "Display name" is the durable
+    one). Same `id`/label, so `getByLabel("Player name")` still resolves;
+    `tests/e2e/multiplayer.spec.ts` had to fill it *after* opening the dialog.
+- **The hub has one numbered first-run strip, and it retires itself.**
+  `lib/lobby/first-run.ts` is the whole rule set (steps, retirement, the
+  counter) in `lib/` so `npm test` reaches it — 12 cases;
+  `components/lobby/first-run-strip.tsx` is markup. Four points:
+  - **Retirement is one stored flag, not a flag plus a prop.** Two things
+    write `stackchips:first-run-done`: finishing the strip, and *reaching a
+    table* — the second from an effect in `poker-app.tsx`, because the strip
+    is unmounted by then (Lobby is replaced by PokerTable). A first cut also
+    mirrored it into React state and tripped `react-hooks/set-state-in-effect`
+    for good reason: the state bought nothing, since the same swap that
+    unmounts the strip is what makes it re-read the flag.
+  - **Absent/unrecognised means "not yet retired"** — deliberately the
+    opposite default from the sound and music preferences, whose convention is
+    "on unless exactly `false`". Failing open here hides onboarding from the
+    one player who needs it, and nothing on screen would ever explain that.
+  - **`useSyncExternalStore`, not `useStoredPreference`.** That hook defers
+    the restored value by a tick so hydration is not disturbed, which is right
+    for a mute and wrong here: every returning player would watch the strip
+    appear and vanish on every load of the hub.
+  - Every step's primary action goes somewhere real, and the free-puzzle count
+    in its copy is **counted off `ARCADE_GAMES`**, not written down — same rule
+    that catalogue states about prices and blurbs, which has been broken there
+    three times. A test pins that the count reaches the sentence.
+- Noted while verifying, not caused by this work: `multiplayer.spec.ts`'s
+  six-player test and two `safe-area.spec.ts` table tests **fail identically
+  at HEAD** in a detached worktree with none of the reskin present. The mobile
+  quick-play test in the same file passes on both. Use the worktree trick
+  (`git worktree add --detach`, `cp -al node_modules`) rather than `git stash`
+  for a baseline here — the tree is shared with concurrent sessions. Note
+  `/tmp` is a different filesystem, so the worktree has to live somewhere on
+  the project's own device for the hard-link to work.
 - **This is live on `www.stackchips.app` as of PR #16 (merge `fadd507`)** —
   verified against the Production deployment's own `success` status via
   `gh api repos/Nikkayowill/poker/deployments`, and against the live site
@@ -349,6 +435,27 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
     proven to cover every track exactly once, and a reshuffle that would open
     on the track that just ended swaps it down one. Presentation is allowed to
     be random here — unlike `lib/scene` — but not untestable.
+  - **Playing audio publishes a Media Session, and not setting one shipped the
+    word "Untitled" to players.** A phone browser puts any playing `<audio>`
+    into the OS media controls — Chrome's shade on Android, Control Center and
+    the lock screen on iOS — and that surface cannot be suppressed. It prints
+    `navigator.mediaSession.metadata`, falling back to the file's ID3 tags,
+    falling back to the literal string `Untitled`; the loudnorm re-encode
+    strips tags by design and nothing set a session, so both fallbacks were
+    empty and the app labelled itself `Untitled` on every phone that played a
+    note. `MENU_MUSIC_METADATA` (music-manifest.ts) is one identity for the
+    whole playlist — the beds are genuinely untitled, so per-track names would
+    be invented — with the PWA icons as artwork so the control matches the
+    home-screen icon. The OS pause button is routed to `stopMenuMusic`, not
+    left on the bare element: pausing behind the module's back leaves it
+    believing it is still playing, and the next lobby render's idempotent
+    `startMenuMusic()` then declines to resume. Every branch is
+    feature-detected (absent on desktop Safari and in tests) and
+    `setActionHandler` is wrapped, since older engines throw on an action they
+    do not implement. **This is invisible to `npm test`, `lint` and `build`
+    alike unless something asserts it** — five cases in `menu-music.test.ts`
+    do now, and it was also confirmed live against a real Chrome reading
+    `navigator.mediaSession.metadata` back.
   - **The tracks were re-encoded 256k → 128k with an EBU R128 pass, 40MB →
     20MB, and size was the smaller half of the reason.** Unnormalised they
     spanned 6.9dB, so shuffle stepped up and down in volume every few minutes;

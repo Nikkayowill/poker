@@ -43,17 +43,69 @@
   --brand-gold-light: #f6c94a;
 
   /* The badge's arc, as a reusable fill. Purple -> gold -> red, left to
-     right, in the order the logo sweeps them. */
+     right, in the order the logo sweeps them.
+
+     RESERVED FOR THE MARK. This is the loudest thing in the palette, and the
+     moment a second element wears it the logo stops being the one place the
+     brand resolves -- three hues sweeping across a notice icon read as
+     decoration, not as identity. Exactly one rule may consume it:
+     .entry-aurora in 04-lobby.css, which blooms it *behind the logo* on the
+     sign-in card. Everything else that used to reach for it (the
+     save-progress icon in 13-status.css was the last) takes --accent-glow or
+     a flat brand colour instead. */
   --brand-sweep: linear-gradient(100deg, var(--brand-purple) 0%, var(--brand-gold) 52%, var(--brand-red) 100%);
 
-  /* Page and surface bases for the reskinned chrome. Matte obsidian -- a
-     neutral near-black, not a hue. The violet and gold in the room come from
-     the ambient glows layered over this base (see .account-entry-page and
-     .lobby-hub::before in 04-lobby.css), never from tinting the base itself:
-     a tinted base plus tinted glows is how a page drifts muddy. */
-  --brand-ink: #0a0a0b;
-  --brand-surface: rgba(255, 255, 255, .045);
-  --brand-surface-2: rgba(255, 255, 255, .07);
+  /* Page and surface bases for the reskinned chrome.
+   *
+   * BLUE-GREY, not the matte obsidian this used to be. The neutral near-black
+   * was doing its job -- it kept the two ambient glows honest -- but it left
+   * every unlit surface reading as a shade of nothing, so the tiles separated
+   * from the page only by luminance. A cool ground gives the room a
+   * temperature of its own: the surfaces below are lifts of the *same* hue
+   * rather than white washes, so a tile is a lighter piece of the room instead
+   * of a translucent sheet laid over it.
+   *
+   * The rule the obsidian era established still holds and matters more now:
+   * the violet and gold come from the ambient glows layered over this base,
+   * never from re-tinting the base per surface. A blue ground plus a violet
+   * glow is a room; a blue ground plus per-surface violet fills is mud. */
+  --brand-ink: #12161f;
+  --brand-ink-lift: #1a1f2b;
+  --brand-ink-lift-2: #222937;
+  --brand-surface: rgba(164, 186, 224, .055);
+  --brand-surface-2: rgba(164, 186, 224, .085);
+
+  /* ------------------------------------------------------------------------
+     Accent: a line and a glow, never a fill.
+
+     The chrome's previous pass expressed "this one is selected / primary /
+     live" by flooding the element with purple. At one such element per screen
+     that reads as emphasis; at six it reads as a theme, and the eye stops
+     being able to find the *one* thing that is actually actionable. So the
+     accent is now a 1px edge plus the light that edge throws, and a saturated
+     fill is spent at most once per surface -- on the single primary action.
+
+     --accent-line is a border-colour and --accent-edge a box-shadow ring, so a
+     surface can take the accent without a border (the chrome is still
+     borderless by default) and without shifting layout by a pixel.
+     ---------------------------------------------------------------------- */
+  --accent-line: rgba(152, 63, 224, .55);
+  --accent-edge: inset 0 0 0 1px rgba(152, 63, 224, .45);
+  --accent-glow: 0 0 24px -4px rgba(152, 63, 224, .55);
+  --accent-glow-gold: 0 0 24px -4px rgba(219, 156, 11, .5);
+
+  /* A hairline that fades out at both ends.
+   *
+   * Every rule left in the chrome is a divider *between* things, never the
+   * outline of one -- that distinction is what the borderless pass turned on,
+   * and a rule that runs edge to edge quietly re-reads as the top of a box.
+   * Fading both ends makes it unmistakably a separator. Stated once because
+   * it was being hand-written per file: .entry-divider had it, and four other
+   * sheets each drew a flat 1px line that wanted to be this.
+   *
+   * Used as a background on a 1px element, or as border-image. */
+  --rule: linear-gradient(90deg, transparent, rgba(164, 186, 224, .17) 18%, rgba(164, 186, 224, .17) 82%, transparent);
+  --rule-vertical: linear-gradient(180deg, transparent, rgba(164, 186, 224, .17) 18%, rgba(164, 186, 224, .17) 82%, transparent);
 
   /* A tiling monochrome noise field, baked into a data URI so it costs no
      request. Layered at the top of a background stack it breaks the flat
@@ -65,9 +117,14 @@
 
   /* The two ambient room lights, stated once so every chrome screen agrees
      on what the room looks like. Huge radii, low alpha, soft falloff: these
-     are out-of-focus light bleeding into the dark, not gradient shapes. */
-  --glow-purple: radial-gradient(1600px 900px at 8% -12%, rgba(152, 63, 224, .17), transparent 68%);
-  --glow-gold: radial-gradient(1700px 1000px at 88% 112%, rgba(219, 156, 11, .10), transparent 70%);
+     are out-of-focus light bleeding into the dark, not gradient shapes.
+
+     Both were pulled back when the ground went blue-grey. Over obsidian a glow
+   had to carry the whole hue of the room; over a ground that already has a
+   temperature it only has to tint it, and the old alphas turned the top-left
+   corner frankly violet. */
+  --glow-purple: radial-gradient(1600px 900px at 8% -12%, rgba(152, 63, 224, .13), transparent 68%);
+  --glow-gold: radial-gradient(1700px 1000px at 88% 112%, rgba(219, 156, 11, .07), transparent 70%);
 
   /* The whole room in one value, because four screens now have to agree on
      it -- the landing page, the signed-in hub, the collection and the
@@ -78,8 +135,12 @@
   --brand-room:
     var(--grain),
     var(--glow-purple),
-    radial-gradient(1100px 640px at 96% -4%, rgba(220, 20, 19, .06), transparent 62%),
+    radial-gradient(1100px 640px at 96% -4%, rgba(220, 20, 19, .05), transparent 62%),
     var(--glow-gold),
+    /* The cool lift the blue-grey ground is built on: a wide, very low-alpha
+       wash that keeps the middle of a tall page from flattening back to the
+       flat base between the two corner glows. */
+    radial-gradient(1400px 1100px at 50% 40%, rgba(126, 158, 214, .09), transparent 72%),
     var(--brand-ink);
 
   /* The four safe-area insets, once, as tokens.
@@ -156,6 +217,24 @@
   --radius-2xl: 14px;
   --radius-pill: 999px;
   --radius-round: 50%;
+
+  /* The chrome's two working radii, and they are deliberately the same number.
+   *
+   * The reskin tightened everything outside the table to 8px. The rungs above
+   * still describe what the *table* sheets use and are not going anywhere, but
+   * a lobby that mixes 28px on the sign-in card, 18px on a tile, 15px on a
+   * button and 10px on a pill has four opinions about how soft it is, and the
+   * softest of them is what makes a dark UI read as a template. One value for
+   * a surface and one for a control means the only thing separating a card
+   * from a button is its size.
+   *
+   * Kept as two names rather than one because they *are* two decisions -- if a
+   * later pass wants pill-shaped controls on square cards, it changes one line
+   * here instead of grepping. Anything genuinely round (an avatar, a chip, a
+   * level badge) still takes --radius-round; a stadium still takes
+   * --radius-pill. Neither is a size. */
+  --radius-card: 8px;
+  --radius-control: 8px;
 
   /* Motion. Durations are the ones already in the sheets, so adoption is a
      rename. Note that these describe *interface* motion -- a hover, a press,
@@ -240,7 +319,11 @@
 * { scrollbar-width: none; -ms-overflow-style: none; }
 *::-webkit-scrollbar { display: none; }
 
-html, body { margin: 0; min-height: 100%; background: #0a0a0b; color: var(--ink); }
+/* The literal is the blue-grey ground, matching --brand-ink. Deliberately not
+   `var(--brand-ink)`: this is the paint behind every screen including the
+   table, and a custom property that failed to resolve would leave the document
+   transparent -- which on a PWA is the OS's own background showing through. */
+html, body { margin: 0; min-height: 100%; background: #12161f; color: var(--ink); }
 
 html {
   /* A rapid Fold/Call/Raise tap sequence shouldn't be read as a double-tap
@@ -251,7 +334,7 @@ html {
 
 body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #0a0a0b;
+  background: #12161f;
   -webkit-tap-highlight-color: transparent;
   /* Fixed-width digits everywhere -- pot/stack/timer numerals update
      constantly during chip animations and shouldn't jitter or reflow. */

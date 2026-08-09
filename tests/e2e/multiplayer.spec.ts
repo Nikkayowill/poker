@@ -63,9 +63,13 @@ test("a first-time mobile player can join from the lobby and always see their st
     // button below is still the verb, which is why these two differ.
     const joinButton = page.getByRole("button", { name: /Texas Hold/i });
     await expect(joinButton).toBeEnabled();
-    await page.getByLabel("Player name").fill("Mobile Player");
     await joinButton.click();
-    await page.getByRole("dialog").getByRole("button", { name: /^Join table$/i }).click();
+    // The name field is inside the buy-in dialog now, not on the hub head --
+    // it moved to sit beside the decision that consumes it. Same label, same
+    // id; only the order of these two lines had to change.
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Player name").fill("Mobile Player");
+    await dialog.getByRole("button", { name: /^Join table$/i }).click();
 
     await expect(page.locator(".poker-table-wrap")).toBeVisible();
     const mine = page.locator(".player-seat:has(.you-chip)");

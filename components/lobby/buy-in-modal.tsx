@@ -19,6 +19,8 @@ export function BuyInModal({
   lockedTier,
   confirmLabel,
   pending,
+  playerName,
+  onPlayerNameChange,
   onClose,
   onConfirm,
   onBuyGold,
@@ -30,6 +32,13 @@ export function BuyInModal({
   lockedTier?: StakesTier;
   confirmLabel: string;
   pending: boolean;
+  /**
+   * The name to sit down under. Optional because the rebuy caller opens this
+   * with a locked tier at a table the player is already named at -- asking
+   * them to re-confirm who they are mid-hand would be absurd.
+   */
+  playerName?: string;
+  onPlayerNameChange?: (name: string) => void;
   onClose: () => void;
   onConfirm: (tier: StakesTier, buyIn: number) => void;
   onBuyGold?: () => void;
@@ -64,6 +73,25 @@ export function BuyInModal({
         </header>
         <div className="buyin-body">
           <p className="buyin-description">{description}</p>
+
+          {/* Moved here from the hub head, where it was an empty text input
+              sitting above the game tiles asking a question nobody had. It is
+              the same control with the same accessible name -- taking a seat
+              is when the name is actually used, and this is the one dialog
+              that leads to one. */}
+          {onPlayerNameChange && (
+            <label className="buyin-name" htmlFor="player-name">
+              <span>Player name</span>
+              <input
+                id="player-name"
+                value={playerName ?? ""}
+                maxLength={18}
+                onChange={(event) => onPlayerNameChange(event.target.value)}
+                placeholder="Enter your name"
+                autoComplete="nickname"
+              />
+            </label>
+          )}
 
           {!lockedTier && (
             <div className="tier-grid">

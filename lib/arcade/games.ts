@@ -226,6 +226,55 @@ export function arcadeBlockedReason(
   return null;
 }
 
+/**
+ * The floor, split the way the page presents it: free dailies first, then the
+ * rounds that cost Gold.
+ *
+ * The split is on `kind`, not on `entryCost > 0`, and that distinction is the
+ * whole reason `kind` is a field rather than something inferred -- a puzzle is
+ * free because it is a puzzle, and a casino game priced at 0 by mistake would
+ * otherwise silently promote itself into the free section. Coming-soon entries
+ * are dropped here rather than rendered greyed out: the arcade has no such
+ * entries today, and a section whose header promises "free every day" should
+ * not contain something that is not.
+ */
+export function splitArcadeFloor(games: readonly ArcadeGame[] = ARCADE_GAMES): {
+  free: ArcadeGame[];
+  staked: ArcadeGame[];
+} {
+  const live = games.filter((game) => game.status === "live");
+  return {
+    free: live.filter((game) => game.kind === "puzzle"),
+    staked: live.filter((game) => game.kind === "casino"),
+  };
+}
+
+/** How many titles the hub tile names before it stops. Four fits one line at phone width. */
+const FLOOR_PREVIEW_COUNT = 4;
+
+/**
+ * What the hub tile says about the floor without listing it.
+ *
+ * Counted from the catalogue every time rather than stored, for the reason the
+ * file header gives about prices: a number about the arcade that is written
+ * down somewhere else is a number that will eventually be wrong, and the hub
+ * is the surface where being wrong is most visible.
+ */
+export function arcadeFloorSummary(games: readonly ArcadeGame[] = ARCADE_GAMES): {
+  free: number;
+  staked: number;
+  previewNames: string[];
+} {
+  const { free, staked } = splitArcadeFloor(games);
+  return {
+    free: free.length,
+    staked: staked.length,
+    // Free first, matching the order the floor puts them in, so the tile and
+    // the page it opens do not disagree about what the arcade leads with.
+    previewNames: [...free, ...staked].slice(0, FLOOR_PREVIEW_COUNT).map((game) => game.name),
+  };
+}
+
 export function arcadeActionLabel(game: ArcadeGame, wallet: ArcadeWallet): string {
   switch (arcadeBlockedReason(game, wallet)) {
     case "coming-soon":

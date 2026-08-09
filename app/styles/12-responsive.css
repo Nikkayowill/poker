@@ -57,23 +57,27 @@
   .hub-tile-body strong { font-size: 15.5px; }
   .hub-tile-body small { font-size: 11px; line-height: 1.35; }
 
-  /* Art in the top corner, label along the bottom -- they no longer share a
+  /* Art in the BOTTOM corner, label along the top -- they must not share a
      line. On the full-width tile the two sat side by side with 330px between
      them; at half that the chips landed straight across "Open a room, share
-     the code". The desktop scrim cannot rescue this: it fades left-to-right,
-     which is exactly the axis that stopped being available. */
+     the code", and the fix here was to put the art in the corner the text was
+     not in. When the base rule flipped the label from the bottom to the top,
+     this had to flip with it in the same commit -- art top-right against a
+     label that now also starts at the top reproduced the exact collision,
+     which is what a render caught. The scrim runs top-left to bottom-right
+     and agrees with this; if either moves, both move. */
   .hub-tile-private,
   .hub-tile-gold,
   .hub-tile-collection,
   .hub-tile-leaderboard {
-    background-position: center, center, right 10px top 10px, center;
+    background-position: center, center, right 10px bottom 8px, center;
   }
   .hub-tile-private { background-size: auto, auto, 52px, auto; }
   .hub-tile-gold { background-size: auto, auto, 58px, auto; }
-  /* The avatar crop is a face, so it is anchored by its top rather than
-     inset like the chip renders -- a face cropped at the chin reads as a
-     mistake in a way a chip cut off at the edge does not. */
-  .hub-tile-collection { background-size: auto, auto, 56px, auto; background-position: center, center, right 8px top 4px, center; }
+  /* The avatar crop is a face, so it is anchored so the chin clears the edge
+     rather than being inset like the chip renders -- a face cropped at the
+     chin reads as a mistake in a way a chip cut off at the edge does not. */
+  .hub-tile-collection { background-size: auto, auto, 56px, auto; background-position: center, center, right 8px bottom -4px, center; }
   .hub-tile-leaderboard { background-size: auto, auto, 50px, auto; }
   /* The hero's table is a 2:1 object on a 390px-wide tile, so at the desktop
      78% it reached back under "POKER · NO-LIMIT HOLD'EM". Smaller, and bled
@@ -89,7 +93,7 @@
     width: 100%;
     padding: 24px 14px calc(32px + var(--safe-bottom));
   }
-  .account-entry-card { padding: 26px 20px; border-radius: 22px; }
+  .account-entry-card { padding: 26px 20px; }
   .account-entry-card h1 { font-size: 32px; }
   /* The landing's section gap stays dramatic on a phone -- the open vertical
      distance is the page's structure now that the card containers are gone,
@@ -98,14 +102,22 @@
 
   /* The hub's head, tightened. On the landing page the huge display line is
      the whole point; on the hub it is a signpost above the thing you came to
-     tap, and at clamp(38px…) plus a 46px name field it ate 162px of an
-     844px screen before the first tile. The pairing is intact, one size
+     tap, and at clamp(38px…) plus the name field that used to sit under it,
+     it ate 162px of an 844px screen before the first tile. The field has
+     since moved into the buy-in modal; the pairing is intact, one size
      down. */
-  .hub-head { margin-bottom: 22px; }
+  .hub-head { margin-bottom: 20px; }
   .hub-head .lobby-kicker { margin-bottom: 10px; }
-  .hub-head h1 { font-size: 32px; margin-bottom: 16px; }
-  .hub-name > span { margin-bottom: 5px; font-size: 10px; }
-  .hub-name input { height: 42px; }
+  .hub-head h1 { font-size: 32px; }
+
+  /* The first-run strip is the one thing above the tiles on a phone, so it
+     pays for its own height: a size down on the body copy and tighter
+     padding, but the counter and the dashes stay -- they are what make it
+     read as three steps rather than an advert. */
+  .first-run { padding: 14px 15px 12px; }
+  .first-run-body { font-size: 15px; }
+  .first-run-actions { margin-top: 12px; }
+  .floor-head p { font-size: 14px; }
   /* Height via the token, so 05-game-header.css can keep adding the top inset
      to it. Setting `height` here directly is what used to leave the in-game
      HUD -- pot, blinds, Leave -- drawn underneath a standalone iPhone's

@@ -35,6 +35,33 @@ export const MENU_MUSIC_TRACKS: readonly string[] = [
 ];
 
 /**
+ * What the operating system calls this audio.
+ *
+ * A phone browser puts every playing <audio> element into the OS media
+ * controls -- Chrome's notification shade on Android, Control Center and the
+ * lock screen on iOS -- and that surface is not optional and cannot be
+ * suppressed. What it prints is the Media Session metadata, falling back to the
+ * file's own ID3 tags, falling back to the literal string "Untitled". The
+ * loudnorm re-encode above strips tags by design and nothing here was setting a
+ * Media Session, so the shipped app was labelling itself "Untitled" on every
+ * phone that played a note.
+ *
+ * One identity for the whole playlist rather than seven: the tracks are the
+ * owner's own untitled beds, so a per-track name would be invented rather than
+ * true, and a bed announcing "Track 4 of 7" tells a player nothing. Artwork is
+ * the PWA icon set, so the OS control matches the home-screen icon.
+ */
+export const MENU_MUSIC_METADATA = {
+  title: "StackChips",
+  artist: "High Roller Arcade",
+  album: "StackChips",
+  artwork: [
+    { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+    { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+  ],
+} as const;
+
+/**
  * Target playback gain, 0..1. Menu music is a bed, not a cue -- it should sit
  * well under every effect's target in ./manifest.ts (the loudest of which,
  * `win`, lands at -24 dBFS) so table sound effects are never competing with it

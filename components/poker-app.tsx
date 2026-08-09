@@ -76,6 +76,7 @@ export function PokerApp() {
   const [authReady, setAuthReady] = useState(!accountsEnabled());
   const [rememberSession, setRememberSession] = useState(true);
   const [signInPending, setSignInPending] = useState(false);
+  const [navShowing, setNavShowing] = useState(false);
   const [savePromptDismissed, setSavePromptDismissed] = useState(false);
   const [soundEnabled, setSoundEnabledState] = useStoredPreference<boolean>({
     key: SOUND_STORAGE_KEY,
@@ -108,6 +109,25 @@ export function PokerApp() {
     fallback: DEFAULT_TABLE_RENDERER,
     parse: normalizeTableRenderer,
   });
+
+  // The lobby and signed-out form scroll inside their own viewport because
+  // the table must remain a fixed-height screen. Listen to that scroller
+  // rather than window: the header stays quiet over the room, then becomes a
+  // readable surface when the player reverses direction and scrolls upward.
+  useEffect(() => {
+    const scroller = document.querySelector<HTMLElement>('.account-entry-page, .lobby-hub');
+    if (!scroller) return;
+
+    let previousTop = scroller.scrollTop;
+    const onScroll = () => {
+      const currentTop = scroller.scrollTop;
+      setNavShowing(currentTop > 8 && currentTop < previousTop);
+      previousTop = currentTop;
+    };
+
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+  }, [entryComplete, game]);
   const [claimingGold, setClaimingGold] = useState(false);
   const [goldFlash, setGoldFlash] = useState(false);
   // Set only by hostPrivate, cleared on dismiss: the share sheet is a
@@ -1036,16 +1056,29 @@ export function PokerApp() {
 
   return (
     <div className="app-root">
+      <div className="entry-sky app-entry-sky" aria-hidden="true">
+        <span className="entry-orb" />
+        <span className="entry-orb" />
+        <span className="entry-orb" />
+        <span className="entry-orb" />
+        <span className="entry-orb" />
+      </div>
       {!game && (
-        <header className="lobby-header">
-          {/* The simplified mark, not the full badge: at the ~50px this row
-              allows, the badge's own banner type is illegible (checked on a
-              real render), and the wordmark beside it already spells the
-              name. The in-game header in poker-table.tsx keeps its old "S"
-              diamond -- the table was out of scope for the chrome reskin. */}
-          <div className="wordmark">
-            <span className="wordmark-mark"><StackChipsMark size={44} /></span>
-            <span>StackChips<small>HIGH ROLLER ARCADE</small></span>
+        <header className={`lobby-header${navShowing ? " is-scrolling-up" : ""}`}>
+          {/* The mark alone. The typeset name that used to sit beside it is
+              gone from both headers -- the mark carries the brand and the two
+              together were saying the same thing twice in a 44px row.
+              Still the simplified mark rather than the full badge: at the
+              ~50px this row allows, the badge's own banner type collapses
+              into a smudge (checked on a real render), and with the wordmark
+              removed there is no more vertical room, not less.
+              The SVG is aria-hidden, so the label lives on the wrapper --
+              otherwise the header's only content is invisible to a screen
+              reader. */}
+          <div className="wordmark wordmark-mark-only">
+            <span className="wordmark-mark" role="img" aria-label="StackChips">
+              <StackChipsMark size={50} />
+            </span>
           </div>
           {/* The hub tiles already carry Collection, Buy Gold and the
               leaderboard, so repeating them here was three chances to tap the

@@ -12,13 +12,10 @@
     padding-left: max(18px, var(--safe-left));
     padding-right: max(18px, var(--safe-right));
   }
-  /* The tagline goes at this width, same as the landscape rule further down
-     already does. "HIGH ROLLER ARCADE" is three characters longer than the
-     "NO LIMIT HOLD'EM" it replaced, which was enough to wrap it to two lines
-     at 390px and shove the Gold badge and avatar off the right edge --
-     measured on a real render, not predicted. */
-  .lobby-header .wordmark small { display: none; }
-  .lobby-header .wordmark > span:last-child { white-space: nowrap; }
+  /* Nothing to hide here any more: both headers are the mark alone, so the
+     wordmark and its tagline can no longer wrap to two lines and shove the
+     Gold badge and avatar off the right edge -- which is what these rules
+     existed to prevent, measured on a real render at 390px. */
   .lobby {
     width: calc(100% - 24px);
     /* 18px of gutter above the home indicator instead of 32. The inset is
@@ -93,12 +90,10 @@
     width: 100%;
     padding: 24px 14px calc(32px + var(--safe-bottom));
   }
-  .account-entry-card { padding: 26px 20px; }
+  /* No card padding to restate -- the form stands on the page now. The
+     headline still steps down: at clamp(32px...) over a star field it was
+     the one line wide enough to reach both edges of a 390px screen. */
   .account-entry-card h1 { font-size: 32px; }
-  /* The landing's section gap stays dramatic on a phone -- the open vertical
-     distance is the page's structure now that the card containers are gone,
-     so the phone gets a scaled beat rather than a collapsed one. */
-  .account-entry-page { --section-gap: 88px; }
 
   /* The hub's head, tightened. On the landing page the huge display line is
      the whole point; on the hub it is a signpost above the thing you came to
@@ -129,7 +124,6 @@
     padding-left: max(12px, var(--safe-left));
     padding-right: max(12px, var(--safe-right));
   }
-  .game-header .wordmark > span:last-child { display: none; }
   .leave-button, .game-header-actions .auth-button { padding: 7px; font-size: 9px; }
   /* However much still doesn't fit -- the exact count varies by auth state
      and whether a seat is claimed -- scrolls instead of clipping or
@@ -341,7 +335,6 @@
   }
   .header-actions::-webkit-scrollbar, .game-header-actions::-webkit-scrollbar { display: none; }
   .header-actions > *, .game-header-actions > * { flex-shrink: 0; }
-  .game-header .wordmark small, .lobby-header .wordmark small { display: none; }
   .table-area {
     padding-top: 2px;
     padding-bottom: 0;

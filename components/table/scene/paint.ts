@@ -12,6 +12,7 @@
  */
 
 import { CHIP_PALETTE, chipPalette, shadeHex } from "@/lib/scene/chip-physics";
+import { flightScale } from "@/lib/scene/chip-spring";
 import { CHIP_RADIUS, CHIP_THICKNESS, type SceneChip } from "@/lib/scene/chip-layer";
 import { project, type SceneView } from "@/lib/scene/projection";
 import { FELT, RAIL_SCALE, ROOM, TILT_SIN } from "@/lib/scene/scene-config";
@@ -188,7 +189,23 @@ const NUMERAL_MIN_RADIUS = 8;
  */
 export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: SceneChip): void {
   const palette = chipPalette(chip.denomination);
-  const rx = CHIP_RADIUS * view.scale;
+  /**
+   * The mid-flight swell.
+   *
+   * This projection is an orthographic tilt, so a chip a world unit above the
+   * felt draws at exactly the same size as one resting on it — a flight has
+   * no depth cue at all beyond its shadow, and that is a large part of why
+   * bets used to read as decals sliding across the cloth rather than as
+   * objects being thrown over it. Scaling with the arc's own lift is that
+   * missing cue, and it is deliberately faked only for the airborne moment:
+   * `lift` is 0 for every resting chip, so a settled pile is never resized.
+   *
+   * Note this is the *only* place the fake belongs. The R3F room has a real
+   * perspective camera doing the same job honestly, and applying both would
+   * double the effect.
+   */
+  const swell = flightScale(chip.lift ?? 0);
+  const rx = CHIP_RADIUS * view.scale * swell;
   const ry = rx * TILT_SIN;
   const { position } = chip;
 
@@ -202,15 +219,22 @@ export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: 
     // 0..1 over the tallest arc in the system; drives both the shrink and
     // the softening, so a chip at its apex casts a small, diffuse pool and
     // one about to land casts a tight, hard one.
-    const lift = Math.min(1, height / 3);
-    const spread = rx * (1.05 - lift * 0.45);
-    const alpha = 0.25 * (1 - lift * 0.55);
+    //
+    // Deliberately derived from world height rather than from `chip.lift`,
+    // which the swell above uses. They are not the same quantity: a chip
+    // dropping onto a pile it is joining is genuinely airborne but has no
+    // arc, so its `lift` is 0 while it is still a world unit up. Keying the
+    // pool off the arc would give that chip a tight, hard shadow the whole
+    // way down and lose the drop entirely.
+    const heightFraction = Math.min(1, height / 3);
+    const spread = rx * (1.05 - heightFraction * 0.45);
+    const alpha = 0.25 * (1 - heightFraction * 0.55);
     ctx.save();
     ctx.translate(ground.x, ground.y);
     ctx.scale(1, TILT_SIN);
     const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, spread);
     pool.addColorStop(0, `rgba(0, 0, 0, ${alpha})`);
-    pool.addColorStop(Math.max(0.05, 0.65 - lift * 0.45), `rgba(0, 0, 0, ${alpha * 0.85})`);
+    pool.addColorStop(Math.max(0.05, 0.65 - heightFraction * 0.45), `rgba(0, 0, 0, ${alpha * 0.85})`);
     pool.addColorStop(1, "rgba(0, 0, 0, 0)");
     ctx.fillStyle = pool;
     ctx.beginPath();

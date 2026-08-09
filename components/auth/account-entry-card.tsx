@@ -4,6 +4,7 @@ import { ArrowRight, LoaderCircle, LogOut } from "lucide-react";
 import { FormEvent, useState } from "react";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { StackChipsLogo } from "@/components/brand/stackchips-logo";
+import { InstallLine } from "@/components/pwa/install-line";
 
 // Matches Supabase's password_min_length (Authentication -> Providers ->
 // Email). NIST SP 800-63B and OWASP ASVS L1 both put the floor at 8.
@@ -28,9 +29,16 @@ function GoogleMark() {
 }
 
 /**
- * The signed-out entry surface.
+ * The signed-out entry surface -- now the *whole* signed-out page.
  *
- * Two things about the shape here are load-bearing rather than aesthetic and
+ * The marketing sections that used to run underneath this (a game grid, nine
+ * feature cards, an offer line, a CTA and a four-column footer) are gone, and
+ * so is the card this sat inside: the screen is the form, standing on the
+ * room's own light. What is left below the controls is the two things a
+ * sign-in page is expected to carry -- how to install the app, and the legal
+ * line about play money -- and nothing else.
+ *
+ * Three things about the shape here are load-bearing rather than aesthetic and
  * should survive the next redesign of it:
  *
  * 1. `.account-entry-page` (the wrapper, in lobby.tsx) and the accessible name
@@ -40,6 +48,9 @@ function GoogleMark() {
  *    session restoring must not flash a different layout before replacing it,
  *    which is why `ready` swaps the *controls* in place rather than swapping
  *    the component out.
+ * 3. `.account-entry-card` keeps its class name even though it is no longer a
+ *    card -- it is the labelled landmark, and 04-lobby.css hangs the whole
+ *    form's typography off it.
  *
  * The email form leads and Google follows, rather than the other way round:
  * a returning player's muscle memory is the field, and the previous ordering
@@ -94,8 +105,6 @@ export function AccountEntryCard({
 
   return (
     <section className="account-entry-card" aria-labelledby="account-entry-title">
-      <div className="entry-aurora" aria-hidden="true" />
-
       <header className="entry-head">
         <StackChipsLogo size={148} priority className="entry-logo" />
         <h1 id="account-entry-title">Play free. Stack chips.</h1>
@@ -111,10 +120,18 @@ export function AccountEntryCard({
             avatar, and collection are ready.
           </p>
         ) : (
-          // One sentence. The second half used to explain the two buttons
-          // directly underneath it -- "sign in to keep it on every device, or
-          // walk in as a guest" -- which is a paragraph describing the
-          // controls a player can already see and read in less time.
+          // One sentence, and it stays. The second half used to explain the
+          // two buttons directly underneath it -- "sign in to keep it on
+          // every device, or walk in as a guest" -- which is a paragraph
+          // describing controls a player can already see and read in less
+          // time. What is left is the only line on the page that says what
+          // the product is, now that the sections below it are gone.
+          //
+          // It costs ~55px, and the page has no room to spare: the form is
+          // measured against an 818px viewport at 1440x900 and scrolls the
+          // moment it passes ~760px. The type sizes around it in 04-lobby.css
+          // are set to buy this line its room -- if you enlarge them, this is
+          // what falls off the bottom.
           <p>
             Poker, blackjack, Hi-Lo and the daily puzzles — one wallet across
             the whole arcade.
@@ -259,10 +276,22 @@ export function AccountEntryCard({
       </div>
 
       {error && <p className="account-entry-error" role="alert">{error}</p>}
-      <p className="account-entry-footnote">
-        Guest progress stays in this browser. StackChips Gold has no cash value
-        and cannot be redeemed or withdrawn.
-      </p>
+
+      {/* Everything that used to live under this page is now these three
+          lines. The install offer stays because it is the one genuinely
+          useful thing a first visit can act on; the rest is the disclosure a
+          play-money product has to carry and a real address to reach a human
+          at. No invented links -- there is no terms route to point at yet. */}
+      <footer className="entry-footer">
+        <InstallLine />
+        <p className="account-entry-footnote">
+          Guest progress stays in this browser. StackChips Gold has no cash value
+          and cannot be redeemed or withdrawn.
+        </p>
+        <a className="entry-support" href="mailto:support@stackchips.app">
+          support@stackchips.app
+        </a>
+      </footer>
     </section>
   );
 }

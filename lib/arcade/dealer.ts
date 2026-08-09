@@ -137,7 +137,7 @@ const LOKI: DealerDog = {
 const FINN: DealerDog = {
   id: "finn",
   name: "Finn",
-  breed: "Shepherd doodle · tall, black",
+  breed: "Golden doodle · tall, Golden Retriever.",
   coat: {
     base: "#332e30",
     saddle: "#1c1819",

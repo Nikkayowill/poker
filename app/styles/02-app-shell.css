@@ -2,6 +2,32 @@
 
 .app-root { min-height: 100vh; min-height: 100svh; overflow: hidden; }
 
+/* Keep the room's paint continuous beneath the transparent lobby chrome. The
+   signed-out room uses the same base as its fixed ceiling so the header does
+   not reveal a horizontal change in gradient at its lower edge. */
+.app-root:has(.account-entry-page) {
+  --entry-room:
+    var(--grain),
+    radial-gradient(560px 460px at 50% 44%, rgba(6, 8, 13, .55), transparent 72%),
+    var(--glow-purple),
+    radial-gradient(1000px 600px at 94% 0%, rgba(220, 20, 19, .05), transparent 58%),
+    var(--glow-gold),
+    radial-gradient(1400px 1100px at 50% 40%, rgba(126, 158, 214, .08), transparent 72%),
+    var(--brand-ink);
+  background: var(--entry-room);
+}
+
+.app-root:has(.lobby-hub) { background: var(--brand-room); }
+
+/* The signed-out ceiling belongs to the app shell, not the scrolling form.
+   That lets the transparent navbar reveal the exact same pixels as the
+   content below it instead of ending the sky at the header boundary. */
+.app-entry-sky { display: none; }
+.app-root:has(.account-entry-page) > .app-entry-sky {
+  display: block;
+  z-index: 0;
+}
+
 .lobby-header, .game-header {
   --menu-header-height: var(--lobby-header-h);
   height: 82px;
@@ -18,17 +44,11 @@
   z-index: 20;
 }
 
-/* The lobby header no longer draws a hairline under itself. A hard rule
-   across the full width of the viewport was the single most template-looking
-   element on the page; the header now separates from the content by being
-   darker than it and by casting a short shadow, which is what a real
-   surface above another surface does. The in-game header keeps its own
-   treatment in 05-game-header.css and was out of scope here. */
+/* The lobby header paints nothing of its own. The signed-out ceiling and the
+   signed-in room both live behind it at app-shell level, so the pixels above
+   and below the header boundary are from one uninterrupted background. */
 .lobby-header {
-  background: rgba(18, 22, 31, .82);
-  backdrop-filter: blur(18px) saturate(120%);
-  -webkit-backdrop-filter: blur(18px) saturate(120%);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, .34);
+  background: transparent;
   /* Installed on iOS this app is genuinely full-screen: app/layout.tsx asks
      for `viewportFit: "cover"` and a black-translucent status bar, which means
      the web view starts at y=0 -- underneath the clock, the notch and the
@@ -42,6 +62,13 @@
      them down. */
   height: calc(var(--lobby-header-h) + var(--safe-top));
   padding-top: var(--safe-top);
+}
+
+/* Scrolling upward strengthens only the controls themselves. Painting or
+   blurring the full header box changes the centre of the purple gradient and
+   exposes its rectangular boundary, even when the lower edge is faded. */
+.lobby-header.is-scrolling-up .header-actions {
+  filter: drop-shadow(0 5px 13px rgba(4, 6, 11, .72));
 }
 
 /* The in-game header's height is NOT set here, even though the shared rule
@@ -97,14 +124,12 @@
   cursor: pointer;
 }
 
-.wordmark small {
-  display: block;
-  margin-top: 3px;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  font-size: 8px;
-  letter-spacing: .24em;
-  color: #829087;
-}
+/* Both headers are the mark alone now. The type rules above stay because the
+   class is still the header's brand slot and a caller may put a name back in
+   it; what this variant does is drop the gap that only existed to separate a
+   mark from words, so the mark is not floating in a 12px void at the left
+   edge of a row it now shares with nothing. */
+.wordmark-mark-only { gap: 0; }
 
 .mark {
   width: 38px;

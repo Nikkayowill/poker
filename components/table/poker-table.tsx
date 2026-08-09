@@ -7,7 +7,7 @@ import {
   Box, Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
-import type { BetAnimationStyle } from "@/lib/scene/bet-style";
+import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
 import {
   resolveTableRenderer,
   tableRendererLabel,
@@ -543,7 +543,7 @@ export function PokerTable({
       },
       {
         kind: "action",
-        label: betStyle === "neat_slide" ? "Chip style: Neat slide" : "Chip style: Splash",
+        label: betStyleLabel(betStyle),
         onSelect: onCycleBetStyle,
         icon: <Sparkles size={15} />,
       },
@@ -630,9 +630,11 @@ export function PokerTable({
           in a hurry, and burying it two taps deep to satisfy a rule about
           tidiness would be the wrong trade. */}
       <header className="game-header">
-        <button className="wordmark" onClick={onLeave} aria-label="Leave table">
+        {/* Mark only, matching the lobby header. The button already carries
+            its own accessible name, so the mark stays aria-hidden here rather
+            than announcing the brand a second time inside it. */}
+        <button className="wordmark wordmark-mark-only" onClick={onLeave} aria-label="Leave table">
           <span className="wordmark-mark"><StackChipsMark size={32} /></span>
-          <span>StackChips<small>NO LIMIT HOLD’EM</small></span>
         </button>
         {/* The pot, in the one strip of the screen no seat can ever reach.
             It spent its last two milestones in .table-hud, pinned to the top

@@ -13,7 +13,7 @@
  * everyone in under old language they never saw.
  */
 
-export type LegalDocumentSlug = "terms_of_service" | "gold_disclosure";
+export type LegalDocumentSlug = "terms_of_service" | "gold_disclosure" | "app_disclaimer";
 
 /**
  * Every slug that needs accepting, in prompt order. A caller with no profile
@@ -61,8 +61,27 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
       "Prices are shown in the currency charged by Stripe, our payment processor, at checkout before you pay. We never store your card details -- Stripe handles payment directly.",
     ],
   },
+  app_disclaimer: {
+    slug: "app_disclaimer",
+    version: 1,
+    title: "App Disclaimer",
+    body: [
+      "StackChips is provided for entertainment and general informational purposes. It is not financial, legal, medical, tax, investment, gaming, or other professional advice, and using StackChips does not create a professional-client relationship.",
+      "The app, its games, content, features, and availability are provided on an as-is and as-available basis, to the fullest extent permitted by law. We do not promise that StackChips will be uninterrupted, error-free, secure, current, or available at any particular time, or that defects will always be corrected.",
+      "Game results, balances, rankings, puzzles, odds, descriptions, and other information may contain errors or omissions and may change without notice. You are responsible for how you use the app and for complying with the laws and age requirements that apply where you live.",
+      "To the fullest extent permitted by law, StackChips and its operators are not responsible for indirect, incidental, special, consequential, exemplary, or punitive loss arising from your use of or inability to use the app. Nothing in this disclaimer excludes or limits a responsibility that cannot lawfully be excluded or limited.",
+      "StackChips may use third-party services, payment providers, analytics, hosting, and advertising partners. Their services, content, links, availability, and privacy practices are governed by their own terms and policies; their appearance in or connection with StackChips is not an endorsement or guarantee by StackChips.",
+    ],
+  },
 };
 
 export function currentVersion(slug: LegalDocumentSlug): number {
   return LEGAL_DOCUMENTS[slug].version;
+}
+
+/** Public route for the full, readable version of each accepted document. */
+export function legalDocumentPath(slug: LegalDocumentSlug): string {
+  if (slug === "terms_of_service") return "/legal/terms";
+  if (slug === "gold_disclosure") return "/legal/gold-disclosure";
+  return "/legal/disclaimer";
 }

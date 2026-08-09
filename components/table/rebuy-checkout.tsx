@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
-import type { LegalDocument, LegalDocumentSlug } from "@/lib/legal/documents";
+import { legalDocumentPath, type LegalDocument, type LegalDocumentSlug } from "@/lib/legal/documents";
 
 /**
  * The real-money rebuy, launched from the table instead of from the store.
@@ -190,7 +191,12 @@ export function RebuyCheckout({ gameId, onClose }: { gameId: string; onClose: ()
             <h2><ShieldCheck size={16} /> Before you buy</h2>
             {documents.map((doc) => (
               <div className="rebuy-checkout-doc" key={doc.slug}>
-                <h3>{doc.title}</h3>
+                <h3>
+                  {doc.title}
+                  <Link className="rebuy-checkout-legal-link" href={legalDocumentPath(doc.slug)}>
+                    Read full text
+                  </Link>
+                </h3>
                 {doc.body.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
                 <label className="rebuy-checkout-checkbox">
                   <input

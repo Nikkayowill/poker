@@ -128,6 +128,22 @@
 .cosmetic-art { width: 100%; height: 100%; object-fit: cover; }
 .cosmetic-art-image { object-fit: cover; }
 
+.cosmetic-art-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--ink, #edf1eb);
+  font: 600 clamp(28px, 8vw, 56px)/1 Georgia, "Times New Roman", serif;
+  letter-spacing: .08em;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(219,156,11,.22), transparent 46%),
+    linear-gradient(145deg, #263b35, #11181b);
+}
+
+.cosmetic-art-fallback span {
+  opacity: .9;
+  transform: translateX(.08em);
+}
+
 .cosmetic-art-pending {
   color: var(--ink-faint, #6d7c75);
   font-size: 10px;

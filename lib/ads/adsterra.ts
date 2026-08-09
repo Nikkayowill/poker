@@ -46,12 +46,12 @@ export const ADSTERRA_DELIVERY_DOMAINS = [
  * key and the dimensions are one setting on Adsterra's side, and a mismatch
  * serves nothing rather than serving a resized banner.
  *
- * NOTE: `adKey` is still the masked placeholder that was committed in
- * app/layout.tsx. It has to be replaced with the real unit key before this
- * serves anything; nothing else about the integration depends on it.
+ * The key is public vendor configuration, not an application secret. Keep it
+ * in the deployment environment so a masked or stale dashboard value can
+ * never be shipped as if it were a working unit.
  */
 export const REWARDED_AD_UNIT: AdsterraUnit = {
-  adKey: "9**********a28b6f",
+  adKey: process.env.NEXT_PUBLIC_ADSTERRA_KEY ?? "",
   scriptSrc: "https://pl30614360.effectivecpmnetwork.com/c7/0f/54/c70f542f472123eecce05e14a79898f8.js",
   width: 300,
   height: 250,

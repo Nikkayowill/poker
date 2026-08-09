@@ -56,4 +56,13 @@ describe("admin authentication", () => {
     expect(isAdminAuthorized(currentRequest)).toBe(true);
     expect(isAdminAuthorized(request)).toBe(false);
   });
+
+  it("never accepts the raw admin secret on ordinary admin routes", () => {
+    vi.stubEnv("ADMIN_SECRET", "admin-test-secret");
+    const request = new NextRequest("https://river.example/api/admin/profiles", {
+      headers: { "x-admin-secret": "admin-test-secret" },
+    });
+
+    expect(isAdminAuthorized(request)).toBe(false);
+  });
 });

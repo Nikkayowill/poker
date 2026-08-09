@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isCrossOriginMutation } from "@/lib/server/request-origin";
 import { readSupabasePublicKey, readSupabaseUrl } from "@/lib/supabase/public-env";
 
 /**
@@ -13,11 +14,43 @@ import { readSupabasePublicKey, readSupabaseUrl } from "@/lib/supabase/public-en
  * renders Server Components.
  */
 export async function middleware(request: NextRequest) {
-  const url = readSupabaseUrl();
-  const key = readSupabasePublicKey();
-  if (!url || !key) return NextResponse.next();
+  if (request.nextUrl.pathname.startsWith("/api/") && isCrossOriginMutation(request)) {
+    return NextResponse.json(
+      { error: "Cross-origin requests are not allowed." },
+      { status: 403, headers: { "Cache-Control": "private, no-store" } },
+    );
+  }
 
   let response = NextResponse.next({ request });
+  if (
+    request.nextUrl.pathname.startsWith("/api/")
+    || request.nextUrl.pathname === "/auth/callback"
+  ) {
+    // Snapshots contain caller-filtered hole cards and every API may receive
+    // an ambient credential. Never let a browser or shared intermediary reuse
+    // one caller's response for another.
+    response.headers.set("Cache-Control", "private, no-store");
+  }
+
+  /*
+   * Gameplay APIs authorize the HttpOnly StackChips session themselves and
+   * never inspect a Supabase access token. Calling auth.getUser() here added
+   * an external Auth request to every fold, call, clock tick and snapshot for
+   * no security benefit. Auth routes validate/refresh through their own
+   * createServerSupabase client, and the OAuth callback performs its own code
+   * exchange, so both paths are self-contained too.
+   */
+  if (
+    request.nextUrl.pathname.startsWith("/api/")
+    || request.nextUrl.pathname === "/auth/callback"
+    || request.nextUrl.pathname === "/monitoring"
+  ) {
+    return response;
+  }
+
+  const url = readSupabaseUrl();
+  const key = readSupabasePublicKey();
+  if (!url || !key) return response;
 
   const supabase = createServerClient(url, key, {
     cookies: {
@@ -42,10 +75,8 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Every request except static assets and Next's own internals -- a
-     * session refresh has nothing to do with whether the request is an API
-     * route, a page, or a Server Action, so this deliberately does not
-     * scope down to app/api.
+     * Every dynamic request reaches the cheap origin/API fast path above.
+     * Supabase refreshes only continue for rendered pages.
      */
     "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|icon.svg|icon-192.png|icon-512.png|apple-icon.png|sounds/|avatars/).*)",
   ],

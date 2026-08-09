@@ -3,6 +3,7 @@ import { saveAvatar } from "@/lib/server/profile-store";
 import { persistenceMode } from "@/lib/server/game-store";
 import { detectImage, readImageDimensions, MAX_AVATAR_DIMENSION, MAX_AVATAR_PIXELS } from "@/lib/profile/image";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,7 @@ export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, "profile:avatar", 8, 10 * 60 * 1000);
   if (limited) return limited;
   try {
-    const token = request.cookies.get("river_session")?.value;
+    const token = readSessionToken(request);
     if (!token) return NextResponse.json({ error: "Your profile session expired." }, { status: 401 });
     const form = await request.formData();
     const file = form.get("avatar");

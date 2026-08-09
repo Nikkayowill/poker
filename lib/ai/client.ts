@@ -1,3 +1,4 @@
+import "server-only";
 import OpenAI from "openai";
 
 export const ai = new OpenAI({

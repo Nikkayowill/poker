@@ -11,6 +11,7 @@ import {
   type StripeMode,
 } from "@/lib/server/stripe";
 import { fulfillStripePayment } from "@/lib/server/stripe-store";
+import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request, "stripe:verify", 20, 60 * 1000);
   if (limited) return limited;
   try {
-    const ownerToken = request.cookies.get("river_session")?.value;
+    const ownerToken = readSessionToken(request);
     if (!ownerToken) return NextResponse.json({ error: "Your table session expired." }, { status: 401 });
     const sessionId = sessionSchema.safeParse(request.nextUrl.searchParams.get("session_id"));
     if (!sessionId.success) return NextResponse.json({ error: "Invalid Stripe session." }, { status: 400 });

@@ -58,8 +58,6 @@
    buttons against the right edge whenever the content does fit. */
 .game-header .wordmark { justify-self: start; }
 .game-header .game-header-actions { justify-content: flex-end; }
-.game-header .mark { width: 32px; height: 32px; font-size: 17px; }
-.game-header .mark::after { font-size: 17px; }
 .game-header .wordmark { font-size: 16px; }
 
 .leave-button {

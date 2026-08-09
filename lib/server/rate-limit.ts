@@ -50,7 +50,11 @@ export function checkRateLimit(
 
 /** Best-effort source IP from proxy headers -- "unknown" when neither is present (e.g. local dev). */
 export function getClientIp(request: NextRequest): string {
-  const forwarded = request.headers.get("x-forwarded-for");
+  // Vercel overwrites both forwarding headers at its edge. Prefer its
+  // platform-specific header so a proxy placed in front of Vercel cannot
+  // accidentally turn an upstream caller-supplied value into the key.
+  const forwarded = request.headers.get("x-vercel-forwarded-for")
+    ?? request.headers.get("x-forwarded-for");
   return forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
 }
 
@@ -66,7 +70,13 @@ export function callerKey(request: NextRequest): string {
 export function rateLimited(retryAfterSeconds: number) {
   return NextResponse.json(
     { error: "Too many requests. Please slow down and try again shortly." },
-    { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } },
+    {
+      status: 429,
+      headers: {
+        "Cache-Control": "private, no-store",
+        "Retry-After": String(retryAfterSeconds),
+      },
+    },
   );
 }
 

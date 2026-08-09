@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("OpenRouter error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to generate response." },
+      { error: "Failed to generate response." },
       { status: 500 },
     );
   }

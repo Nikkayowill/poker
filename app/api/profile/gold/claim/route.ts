@@ -4,6 +4,7 @@ import { claimDailyGold, DAILY_GOLD_GRANT, ensureProfile } from "@/lib/server/pr
 import { persistenceMode } from "@/lib/server/game-store";
 import { getProgression, recordDailyClaim } from "@/lib/server/progression-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -11,7 +12,7 @@ export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, "profile:gold:claim", 10, 60 * 1000);
   if (limited) return limited;
   try {
-    const token = request.cookies.get("river_session")?.value;
+    const token = readSessionToken(request);
     if (!token) return NextResponse.json({ error: "Your profile session expired." }, { status: 401 });
 
     // Resolved before the streak is touched. claimDailyGold refuses a guest

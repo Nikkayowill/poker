@@ -3,6 +3,7 @@ import { z } from "zod";
 import { toSnapshot } from "@/lib/game/engine";
 import { getStoredGame, persistenceMode } from "@/lib/server/game-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ export async function GET(
     // this route, so writing here would turn every signal into another signal.
     const game = await getStoredGame(id);
     if (!game) return NextResponse.json({ error: "Table not found." }, { status: 404 });
-    const ownerToken = request.cookies.get("river_session")?.value ?? "";
+    const ownerToken = readSessionToken(request) ?? "";
     if (
       game.isPrivate
       && !game.seats.some((seat) => seat.ownerToken === ownerToken)

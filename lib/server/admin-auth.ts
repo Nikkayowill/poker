@@ -49,16 +49,16 @@ export function verifyAdminSessionToken(token: string, now = Date.now()): boolea
 }
 
 /**
- * Shared gate for every /api/admin/* route. Comparing SHA-256 digests
- * (always 32 bytes) rather than the raw strings keeps timingSafeEqual valid
- * regardless of either string's length. Browser requests use an HttpOnly
- * signed session; the raw header remains only as a server/API compatibility
- * path and is no longer stored or replayed by the dashboard.
+ * Shared gate for every /api/admin/* route.
+ *
+ * The raw ADMIN_SECRET is accepted exactly once by /api/admin/session, which
+ * exchanges it for a short-lived signed HttpOnly cookie. Normal admin routes
+ * accept only that cookie, so a proxy/debug log containing an arbitrary
+ * request header can never become a reusable master credential.
  */
 export function isAdminAuthorized(request: NextRequest): boolean {
   const session = request.cookies.get(ADMIN_SESSION_COOKIE)?.value ?? "";
-  if (verifyAdminSessionToken(session)) return true;
-  return isAdminSecretValid(request.headers.get("x-admin-secret") ?? "");
+  return verifyAdminSessionToken(session);
 }
 
 /**

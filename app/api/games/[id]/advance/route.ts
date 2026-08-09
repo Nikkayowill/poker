@@ -8,6 +8,7 @@ import {
 } from "@/lib/server/game-store";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ export async function POST(
   if (limited) return limited;
 
   try {
-    const ownerToken = request.cookies.get("river_session")?.value;
+    const ownerToken = readSessionToken(request);
     if (!ownerToken) {
       return NextResponse.json({ error: "Your table session expired." }, { status: 401 });
     }

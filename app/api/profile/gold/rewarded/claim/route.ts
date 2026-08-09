@@ -3,6 +3,7 @@ import { persistenceMode } from "@/lib/server/game-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { toArcadeErrorResponse } from "@/lib/server/arcade-request";
 import { claimRewardedAd } from "@/lib/server/rewarded-ad-service";
+import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, "profile:gold:rewarded:claim", 12, 60 * 1000);
   if (limited) return limited;
   try {
-    const token = request.cookies.get("river_session")?.value;
+    const token = readSessionToken(request);
     if (!token) return NextResponse.json({ error: "Your profile session expired." }, { status: 401 });
 
     const body = await request.json().catch(() => null);

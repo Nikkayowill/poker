@@ -9,6 +9,7 @@ import {
 } from "@/lib/server/stripe";
 import { pendingAcceptances } from "@/lib/server/legal-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
   if (limited) return limited;
 
   try {
-    const ownerToken = request.cookies.get("river_session")?.value;
+    const ownerToken = readSessionToken(request);
     if (!ownerToken) return NextResponse.json({ error: "Your table session expired." }, { status: 401 });
     const parsed = bodySchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "A valid Gold pack is required." }, { status: 400 });

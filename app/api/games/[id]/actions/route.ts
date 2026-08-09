@@ -6,6 +6,7 @@ import { loadGameWithTimeouts, logTurn, persistenceMode, updateStoredGame } from
 import { creditGold, isBanned, spendGold } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { onHandCompleted } from "@/lib/server/hand-completion";
+import { readSessionToken } from "@/lib/server/session";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 export const runtime = "nodejs";
@@ -42,7 +43,7 @@ export async function POST(
   const limited = enforceRateLimit(request, "games:action", 40, 10 * 1000);
   if (limited) return limited;
   try {
-    const ownerToken = request.cookies.get("river_session")?.value;
+    const ownerToken = readSessionToken(request);
     if (!ownerToken) return NextResponse.json({ error: "Your table session expired." }, { status: 401 });
     if (await isBanned(ownerToken)) {
       return NextResponse.json({ error: "Your account has been suspended." }, { status: 403 });

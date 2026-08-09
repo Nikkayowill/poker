@@ -808,9 +808,27 @@ button:disabled { cursor: wait; opacity: .62; }
 .entry-support:hover { color: var(--brand-gold-light); }
 .entry-support:focus-visible { outline: 0; box-shadow: var(--brand-focus); border-radius: var(--radius-xs); }
 
+.entry-legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.entry-legal-links a {
+  color: #7f8ba4;
+  font-size: 10px;
+  text-decoration: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
+}
+
+.entry-legal-links a:hover { color: var(--brand-gold-light); }
+.entry-legal-links a:focus-visible { outline: 0; box-shadow: var(--brand-focus); border-radius: var(--radius-xs); }
+
 @media (prefers-reduced-motion: reduce) {
   .entry-install-action,
   .entry-support,
+  .entry-legal-links a,
   .entry-switch,
   .entry-switch::after { transition: none; }
 }

@@ -61,8 +61,8 @@ function CosmeticArt({ item }: { item: Cosmetic }) {
   }
 
   return (
-    <div className="cosmetic-art cosmetic-art-pending" aria-hidden="true">
-      <span>Artwork<br />coming soon</span>
+    <div className="cosmetic-art cosmetic-art-fallback" aria-hidden="true">
+      <span>{item.name.slice(0, 2).toUpperCase()}</span>
     </div>
   );
 }

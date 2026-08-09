@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { adminClient } from "@/lib/server/supabase-admin";
 import { readSupabaseRuntimeConfig } from "@/lib/server/runtime-config";
+import { enforceRateLimit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +10,10 @@ const noStoreHeaders = {
   "Cache-Control": "no-store, max-age=0",
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request, "health:read", 60, 60 * 1000);
+  if (limited) return limited;
+
   try {
     const config = readSupabaseRuntimeConfig();
     if (!config) {

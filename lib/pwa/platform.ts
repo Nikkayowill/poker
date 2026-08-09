@@ -70,3 +70,18 @@ export function manualInstallSteps(platform: InstallPlatform): readonly string[]
 export function installHeadline(platform: InstallPlatform): string {
   return platform === "other" ? "Take the arcade with you" : "Install the app";
 }
+
+/**
+ * The same route as manualInstallSteps, compressed to one line.
+ *
+ * The sign-in page is a form and nothing else now, so the install offer there
+ * is a footnote rather than a section: an ordered list of three steps was the
+ * right shape on a landing page a visitor had scrolled to, and is clutter
+ * under a login form. Same facts, one sentence, and it stays here beside the
+ * long form so the two can never describe different taps.
+ */
+export function installShortStep(platform: InstallPlatform): string {
+  if (platform === "ios") return "Share → Add to Home Screen";
+  if (platform === "android") return "Browser menu → Add to Home screen";
+  return "Open it on your phone, then add it to your home screen";
+}

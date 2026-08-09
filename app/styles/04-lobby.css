@@ -53,8 +53,8 @@
   color: #7f8ba4;
   font-size: 10px;
   font-weight: 650;
-  /* Hyper-extended, matching .landing-eyebrow: the micro-label's tracking is
-     one system across the chrome. */
+  /* Hyper-extended: this is the chrome's one micro-label voice, and every
+     other kicker in the app matches it rather than the reverse. */
   letter-spacing: .25em;
   text-transform: uppercase;
 }
@@ -140,8 +140,12 @@ button:disabled { cursor: wait; opacity: .62; }
 
 
 /* ===========================================================================
-   Signed-out entry: the sign-in surface and the landing page under it.
-   See components/auth/account-entry-card.tsx and landing-sections.tsx.
+   Signed-out entry: the sign-in form, standing on the room's own light.
+   See components/auth/account-entry-card.tsx.
+
+   The landing page that used to run under it -- games, features, offer, CTA,
+   site footer -- is gone, and so is the card the form sat in. What that
+   block's two rules below still govern is the form itself.
 
    Two things changed together here and neither works without the other.
 
@@ -170,21 +174,24 @@ button:disabled { cursor: wait; opacity: .62; }
 /* One stable account surface is kept on screen while Supabase restores a
    session. Only its controls and copy update, so a remembered cookie cannot
    flash the promotional lobby before replacing it with another layout. */
-/* The signed-out page is now a full landing page rather than a lone card, so
-   it owns its own scroll. It has to: .app-root is overflow:hidden (the game
-   screen must never scroll the document), which would otherwise clip
-   everything below the fold instead of letting the page scroll. */
+/* It still owns its own scroll, and it still has to: .app-root is
+   overflow:hidden (the game screen must never scroll the document), which
+   would otherwise clip a short viewport's form instead of letting it scroll.
+   The page is the form and nothing else now -- see the note in
+   components/auth/account-entry-card.tsx on what came off it. */
 .account-entry-page {
   position: relative;
+  z-index: 1;
+  /* The ceiling is a sibling at app-shell level now, beneath both this page
+     and the navbar. Keep the form in its own layer above that shared paint. */
+  isolation: isolate;
   width: 100%;
   /* Same arithmetic as .lobby above, for the same reason. */
   height: calc(100vh - var(--lobby-header-h) - var(--safe-top));
   height: calc(100svh - var(--lobby-header-h) - var(--safe-top));
   overflow-y: auto;
-  /* Same guard as .lobby: this is the container that panned sideways on a
-     phone whenever a landing section ran wider than the viewport. The wide
-     children are fixed at their source below (the min() grid tracks); this
-     is the backstop that keeps the next wide child from reopening the leak. */
+  /* Same guard as .lobby: the backstop that keeps the next wide child from
+     panning the page sideways on a phone. */
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   margin: 0 auto;
@@ -192,65 +199,212 @@ button:disabled { cursor: wait; opacity: .62; }
   flex-direction: column;
   align-items: center;
   padding: 34px 16px calc(24px + var(--safe-bottom));
-  /* The room's light: grain over two huge out-of-focus glows over the
-     blue-grey ground. The red is a trace, not a third light -- three
-     competing hues is what made the old wash read as a gradient rather than
-     a room. */
-  background:
-    var(--grain),
-    var(--glow-purple),
-    radial-gradient(1000px 600px at 94% 0%, rgba(220, 20, 19, .055), transparent 58%),
-    var(--glow-gold),
-    radial-gradient(1400px 1100px at 50% 40%, rgba(126, 158, 214, .09), transparent 72%),
-    var(--brand-ink);
-  background-attachment: local, local, local, local, local, local;
+  /* Transparent so the shell-level ceiling remains one continuous surface. */
+  background: transparent;
+
+  /* The form's own surfaces, overridden for this page only.
+     Every filled control here reads --brand-surface, which is a 5.5% white
+     wash tuned to sit on an opaque card. With the card gone that wash is a
+     ghost with stars showing through the middle of a password field, so the
+     two tokens are redefined locally: same roles, same call sites, an ink
+     base under them so a field reads as a field. Scoped to this rule, so
+     nothing else in the chrome moves. */
+  --brand-surface: rgba(14, 18, 26, .74);
+  --brand-surface-2: rgba(22, 28, 39, .86);
 }
 
+/* ---------------------------------------------------------------------------
+   The ceiling.
+
+   Lying on the floor of a casino looking up: two chandeliers thrown far out
+   of focus, house spots as a star field, and a few bokeh orbs drifting across
+   in front of them. Fixed to the viewport and z-index -1, so it stays put
+   while the form scrolls over it.
+
+   Three rules this is built to, all of which are easy to lose in a "make the
+   background nicer" edit:
+
+   1. SUBTLE. The brightest star is .85 white at one pixel and the brightest
+      orb is .10 alpha. This sits behind a login form; anything that competes
+      with the field labels has failed at its job regardless of how it looks
+      on its own. Subtle is not the same as absent, though: the first pass of
+      this was tuned in the file and rendered as flat black, so every value
+      here was set against a real 1440x900 screenshot.
+   2. DETERMINISTIC. Every position is a written number and every star field
+      is a tiled gradient. No canvas, no JS, no Math.random() -- the same
+      contract lib/scene holds presentation to, for the same reason: a sky
+      nobody can screenshot twice is a sky nobody can review.
+   3. CHEAP. Softness comes from gradient falloff, never filter: blur(). A
+      blurred element forces an intermediate layer per paint, and there are
+      five orbs; radial-gradient costs nothing and looks the same at this
+      opacity.
+   --------------------------------------------------------------------------- */
+.entry-sky {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Chandelier purple at the left, gold at the right, a trace of red high up,
+     and a pool of shade over the middle where the form stands -- a room is
+     darkest directly under the person looking up, and that shade is what
+     keeps the star field from running through the type.
+
+     That shade is deliberately narrow and mild: at the first pass's 900x620
+     and .82 it swallowed the entire star field on a 1440 render and the sky
+     read as flat black. It is sized to the form's column, not to the page. */
+  background: var(--entry-room, var(--brand-room));
+}
+
+/* Two star fields rather than one, because depth is the whole illusion: the
+   far field is dense, dim and small-tiled, the near field is sparse, brighter
+   and tiled twice as wide, and they breathe on different periods so the sky
+   never pulses as a single sheet. Percentage stops inside a tiled background
+   resolve against the tile, so the same handful of gradients repeats without
+   ever landing on a visible grid. */
+.entry-sky::before,
+.entry-sky::after {
+  content: "";
+  position: absolute;
+  /* Overscanned: the drift below moves these, and a tile stopping at the
+     viewport edge would show as a hard line coming in. */
+  inset: -8%;
+  background-repeat: repeat;
+}
+
+/* Sizes are in px on a radial-gradient whose stop then fades to transparent,
+   so the drawn dot is smaller than the number: a "1px" star was under half a
+   device pixel of visible ink and rendered as nothing at all on the first
+   pass. These are the values that actually show up on a 1440 render -- check
+   any change to them on one, not in the file. */
+.entry-sky::before {
+  background-image:
+    radial-gradient(2px 2px at 8% 14%, rgba(255, 255, 255, .80), transparent 64%),
+    radial-gradient(2px 2px at 23% 62%, rgba(255, 255, 255, .60), transparent 64%),
+    radial-gradient(2px 2px at 37% 27%, rgba(246, 201, 74, .66), transparent 64%),
+    radial-gradient(2px 2px at 46% 81%, rgba(255, 255, 255, .48), transparent 64%),
+    radial-gradient(2px 2px at 58% 9%, rgba(255, 255, 255, .70), transparent 64%),
+    radial-gradient(2px 2px at 67% 53%, rgba(184, 156, 232, .62), transparent 64%),
+    radial-gradient(2px 2px at 78% 34%, rgba(255, 255, 255, .54), transparent 64%),
+    radial-gradient(2px 2px at 86% 72%, rgba(255, 255, 255, .64), transparent 64%),
+    radial-gradient(2px 2px at 94% 19%, rgba(246, 201, 74, .50), transparent 64%),
+    radial-gradient(2px 2px at 15% 91%, rgba(255, 255, 255, .44), transparent 64%);
+  background-size: 300px 230px;
+  opacity: .55;
+  animation: entry-twinkle 13s ease-in-out infinite alternate;
+}
+
+.entry-sky::after {
+  background-image:
+    radial-gradient(3px 3px at 18% 31%, rgba(255, 255, 255, .95), transparent 60%),
+    radial-gradient(3px 3px at 55% 68%, rgba(246, 201, 74, .85), transparent 60%),
+    radial-gradient(2.6px 2.6px at 82% 16%, rgba(255, 255, 255, .85), transparent 60%),
+    radial-gradient(2.6px 2.6px at 33% 88%, rgba(200, 172, 245, .78), transparent 60%),
+    radial-gradient(3px 3px at 71% 44%, rgba(255, 255, 255, .74), transparent 60%);
+  background-size: 620px 470px;
+  opacity: .8;
+  animation: entry-twinkle 9s ease-in-out infinite alternate-reverse;
+}
+
+/* Bokeh. Big, soft, almost not there -- the light between you and the
+   ceiling, not another light source. Each orb is one radial-gradient with a
+   long falloff, so it has no edge to catch the eye. */
+.entry-orb {
+  position: absolute;
+  border-radius: var(--radius-round);
+  opacity: 0;
+  animation: entry-drift linear infinite;
+  will-change: transform;
+}
+
+/* Five hand-placed orbs. Sizes and periods are deliberately coprime-ish so
+   the group never resynchronises into a visible pulse; the two gold ones sit
+   under the gold chandelier at the right and the purple ones under the
+   purple at the left, because a bokeh orb is out-of-focus light from a lamp
+   that is actually there. */
+.entry-orb:nth-child(1) {
+  left: 6%; top: 62%; width: 260px; height: 260px;
+  background: radial-gradient(circle, rgba(152, 63, 224, .20), transparent 70%);
+  animation-duration: 74s;
+}
+.entry-orb:nth-child(2) {
+  left: 22%; top: 12%; width: 180px; height: 180px;
+  background: radial-gradient(circle, rgba(200, 172, 245, .14), transparent 70%);
+  animation-duration: 61s;
+  animation-delay: -22s;
+}
+.entry-orb:nth-child(3) {
+  left: 63%; top: 74%; width: 320px; height: 320px;
+  background: radial-gradient(circle, rgba(219, 156, 11, .17), transparent 70%);
+  animation-duration: 88s;
+  animation-delay: -46s;
+}
+.entry-orb:nth-child(4) {
+  left: 84%; top: 24%; width: 210px; height: 210px;
+  background: radial-gradient(circle, rgba(246, 201, 74, .13), transparent 70%);
+  animation-duration: 67s;
+  animation-delay: -12s;
+}
+.entry-orb:nth-child(5) {
+  left: 44%; top: 40%; width: 150px; height: 150px;
+  background: radial-gradient(circle, rgba(126, 158, 214, .15), transparent 70%);
+  animation-duration: 53s;
+  animation-delay: -33s;
+}
+
+/* One loop for every orb: rise, wander sideways, fade in and out again. It
+   starts and ends at the same transform *and* at zero opacity, so the restart
+   is invisible and no orb ever pops. */
+@keyframes entry-drift {
+  0%   { opacity: 0; transform: translate3d(0, 0, 0) scale(1); }
+  18%  { opacity: 1; }
+  50%  { transform: translate3d(46px, -78px, 0) scale(1.14); }
+  82%  { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(-24px, -156px, 0) scale(1); }
+}
+
+@keyframes entry-twinkle {
+  from { opacity: .34; }
+  to   { opacity: .82; }
+}
+
+/* The sky is decoration and nothing else, so it is the first thing to stop
+   moving. The star fields hold a mid opacity rather than their animated
+   extremes; the orbs would otherwise sit at the keyframe's 0% opacity and
+   vanish, so they are pinned visible instead. */
+@media (prefers-reduced-motion: reduce) {
+  .entry-sky::before { animation: none; opacity: .5; }
+  .entry-sky::after { animation: none; opacity: .62; }
+  .entry-orb { animation: none; opacity: 1; }
+}
+
+/* No card. The form stands on the room's light, so everything that made this
+   a pane of glass -- the fill, the blur, the drop shadow, the radius -- is
+   gone, and the legibility those bought is bought by the pool of shade in
+   .entry-sky and the text shadows below instead.
+   The class name stays: it is the labelled landmark, the e2e suite's column
+   width hangs off it, and the whole form's typography is scoped to it. */
 .account-entry-card {
   position: relative;
   isolation: isolate;
-  overflow: hidden;
-  padding: clamp(26px, 4.6vw, 40px);
-  border-radius: var(--radius-card);
-  /* Glass, not a bordered panel. The wash is what makes the edge legible
-     against the aurora behind it now that no line does -- and it is tinted
-     blue-grey rather than neutral white, so the card reads as a lit piece of
-     this room instead of a white sheet laid over any room. */
-  background:
-    linear-gradient(180deg, rgba(164, 186, 224, .085), rgba(164, 186, 224, .025) 62%),
-    rgba(18, 22, 31, .8);
-  backdrop-filter: blur(22px) saturate(125%);
-  -webkit-backdrop-filter: blur(22px) saturate(125%);
-  box-shadow: 0 34px 90px rgba(0, 0, 0, .58);
-}
-
-/* The brand sweep, bloomed behind the card's own header rather than drawn on
-   its edge -- an edge treatment is a border by another name.
- *
- * THIS IS THE ONLY CONSUMER OF --brand-sweep IN THE APP, and it is the reason
- * the token still exists: the sweep is the mark's, so the one place it may
- * appear is the light coming off the mark. Pulled in from the old -25% side
- * bleed so it reads as a halo around the logo rather than a wash across the
- * whole card -- at the old width it was tinting the segmented control and the
- * headline too, which is exactly how a brand colour stops meaning anything. */
-.entry-aurora {
-  position: absolute;
-  inset: -24% -4% auto -4%;
-  z-index: -1;
-  height: 250px;
-  background: var(--brand-sweep);
-  filter: blur(76px);
-  opacity: .36;
-  pointer-events: none;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  /* Deliberately no backdrop-filter: there is no pane to see through, and it
+     would blur the star field into a grey smear exactly where the shade
+     already handles the contrast. */
 }
 
 .entry-head { text-align: center; }
 
 .entry-logo {
   display: block;
-  width: clamp(124px, 34vw, 158px);
+  width: clamp(94px, 25vw, 112px);
   height: auto;
-  margin: 0 auto -4px;
+  /* The badge art carries its own bottom padding, so a negative margin here
+     is closing that gap rather than crowding the headline. */
+  margin: 0 auto -6px;
   /* Purple under the mark, gold over it: the drop shadow is doing the job the
      removed border used to, lifting the art off the glass. */
   filter:
@@ -258,31 +412,46 @@ button:disabled { cursor: wait; opacity: .62; }
     drop-shadow(0 2px 10px rgba(219, 156, 11, .28));
 }
 
+/* Lifted off the sky rather than off a card. The near shadow is the edge that
+   keeps a serif's thin strokes off a star, the far one is the shade the
+   headline casts on the ceiling behind it -- together they do the job the
+   glass pane used to do, and they are why this text stays readable if an orb
+   drifts behind it. The same pairing repeats on every line of type below.
+   Note this survives the background-clip below: a text-shadow paints under
+   the glyph, and the clipped fill is opaque, so only the halo shows. */
 .account-entry-card h1 {
   margin: 0;
   color: #f7f4ff;
-  font: 700 clamp(32px, 5.4vw, 46px)/1.04 Georgia, "Times New Roman", serif;
+  font: 700 clamp(26px, 3.9vw, 34px)/1.06 Georgia, "Times New Roman", serif;
   letter-spacing: -.03em;
   text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .7), 0 6px 34px rgba(4, 6, 11, .95);
 }
 
 /* Guarded: without background-clip support, `color: transparent` would leave
    the headline invisible rather than merely unstyled. */
 @supports (-webkit-background-clip: text) or (background-clip: text) {
   .account-entry-card h1 {
-    color: transparent;
-    background: linear-gradient(178deg, #ffffff 22%, var(--brand-gold-light) 130%);
-    -webkit-background-clip: text;
-    background-clip: text;
+    color: #fff;
+    background: none;
+    -webkit-background-clip: initial;
+    background-clip: initial;
   }
 }
 
 .account-entry-card > .entry-head > p:not(.account-entry-status) {
-  margin: 14px auto 0;
-  max-width: 40ch;
-  color: #93a1bb;
-  font-size: 17px;
-  line-height: 1.6;
+  margin: 6px auto 0;
+  max-width: 36ch;
+  /* Two steps brighter than it was on the card. Body copy over a star field
+     needs the contrast the pane used to supply. */
+  color: #b3bed2;
+  /* 15px, down from 17: this line is kept deliberately (it is the only copy
+     on the page that says what the product is), and the height for it came
+     out of its own size and the logo/headline above it rather than out of
+     the line itself. See the note on it in account-entry-card.tsx. */
+  font-size: 15px;
+  line-height: 1.55;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .7), 0 4px 22px rgba(4, 6, 11, .9);
 }
 
 .account-entry-card p strong { color: var(--brand-gold-light); font-weight: 700; }
@@ -298,10 +467,15 @@ button:disabled { cursor: wait; opacity: .62; }
   font-size: 15px;
 }
 
+/* Every gap on this page is one notch tighter than it was inside the card.
+   That is not taste: at the old values the form measured 904px against an
+   818px page at 1440x900 and a sign-in screen scrolled on a laptop. Sizes
+   here were cut against that measurement -- if something is added back to
+   this form, re-measure rather than restoring these numbers. */
 .account-entry-actions {
   display: grid;
-  gap: 12px;
-  margin-top: 26px;
+  gap: 9px;
+  margin-top: 13px;
 }
 
 /* A two-way segmented control. Which of the two things the form is about to
@@ -312,17 +486,21 @@ button:disabled { cursor: wait; opacity: .62; }
   grid-template-columns: 1fr 1fr;
   gap: 4px;
   padding: 4px;
-  border-radius: var(--radius-control);
+  /* Every *button* on this page is one radius, --radius-control, and that is
+     the rule now: the sign-in segment, the submit, Google and guest all match.
+     Which means the track around the segment cannot also be that number --
+     concentric radii want outer = inner + the padding between them, and two
+     boxes sharing a radius across 4px of gap read as two boxes fighting. So
+     the container grows by its own padding rather than the buttons shrinking
+     below the shared value. */
+  border-radius: calc(var(--radius-control) + 4px);
   background: var(--brand-surface);
 }
 
 .entry-segment button {
-  min-height: 40px;
+  min-height: 38px;
   border: 0;
-  /* 5px, not the container's 8: a rounded box nested inside another with the
-     same radius reads as two boxes fighting. Inner radius = outer minus the
-     padding between them is the concentric rule, and 8 - 4 is 4-5. */
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: #93a1bb;
   font-size: 15px;
@@ -344,25 +522,26 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .entry-segment button:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
 
-.account-email-form { display: grid; gap: 14px; }
+.account-email-form { display: grid; gap: 12px; }
 
 /* No longer a bordered group box wrapping both inputs -- each field is its
    own filled surface with its own label. */
-.account-email-fields { display: grid; gap: 11px; }
+.account-email-fields { display: grid; gap: 9px; }
 
-.entry-field { display: grid; gap: 6px; text-align: left; }
+.entry-field { display: grid; gap: 4px; text-align: left; }
 
 .entry-field > span {
-  color: #7f8ba4;
+  color: #96a3ba;
   font-size: 11px;
   font-weight: 750;
   letter-spacing: .15em;
   text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
 }
 
 .entry-field input {
   width: 100%;
-  min-height: 50px;
+  min-height: 46px;
   padding: 0 15px;
   color: #eef2f8;
   border: 0;
@@ -440,15 +619,15 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-remember input:focus-visible ~ .entry-switch { box-shadow: var(--brand-focus); }
 .account-remember input:disabled ~ .entry-switch { opacity: .5; }
 
-.entry-remember-copy { display: grid; gap: 2px; }
-.entry-remember-copy strong { color: #d6dde9; font-size: 13px; font-weight: 650; }
-.entry-remember-copy small { color: #7f8ba4; font-size: 11px; }
+.entry-remember-copy { display: grid; gap: 2px; text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
+.entry-remember-copy strong { color: #dde3ec; font-size: 13px; font-weight: 650; }
+.entry-remember-copy small { color: #93a1bb; font-size: 11px; }
 
 .entry-divider {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: #7f8ba4;
+  color: #93a1bb;
   font-size: 11px;
   font-weight: 750;
   letter-spacing: .18em;
@@ -471,7 +650,7 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-primary-action,
 .account-oauth-action,
 .account-guest-action {
-  min-height: 52px;
+  min-height: 48px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -516,13 +695,16 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-oauth-action:focus-visible,
 .account-guest-action:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
 
+/* The play-money disclosure. No top margin of its own -- it is a row of
+   .entry-footer's grid now, and the gap there owns the spacing. */
 .account-entry-footnote {
-  margin: 20px auto 0;
+  margin: 0 auto;
   max-width: 340px;
   color: #7f8ba4;
   font-size: 11px;
   line-height: 1.6;
   text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
 }
 
 .account-entry-error {
@@ -540,520 +722,108 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 
 /* ---------------------------------------------------------------------------
-   Signed-out landing page: everything below the sign-in block.
-   See components/auth/landing-sections.tsx.
+   The footer under the form.
+
+   This block replaces ~500 lines: a two-column PWA panel, a ten-game grid,
+   nine feature cards, an offer line, a closing CTA and a four-column site
+   footer, all of which used to run below the sign-in block. The signed-out
+   screen is the form now, so what is left here is the two things a sign-in
+   page is expected to carry -- how to install the app, and the play-money
+   disclosure -- plus one real address. Deleted rather than hidden: the
+   components went with them (components/auth/landing-sections.tsx and
+   components/pwa/install-cta.tsx), so leaving their styles behind would be
+   500 lines nothing could ever match.
    --------------------------------------------------------------------------- */
 
-/* The sign-in block keeps its own card width; the sections under it are
-   allowed to run wider, so the page reads as a page rather than one long
-   column of card. */
+/* The form's column. One measure for the whole page now that there is nothing
+   beside it that wants to run wider. */
 .account-entry-page > .account-entry-card {
-  width: min(100%, 500px);
+  width: min(100%, 460px);
+  /* Centres the form in the viewport when it fits and simply lets it scroll
+     when it does not -- `justify-content: center` on the scroller would clip
+     the top of the form off on a short landscape phone instead. */
+  margin: auto 0;
   flex: 0 0 auto;
 }
 
-.install-cta,
-.landing-games,
-.landing-features,
-.landing-cta,
-.landing-footer,
-.landing-offer {
-  width: min(100%, 1080px);
-  flex: 0 0 auto;
-  /* One beat for the whole page. Deliberately vast: with the card containers
-     gone (see below), this empty vertical distance is what separates one
-     section from the next -- the space is the structure now, so it has to be
-     unmistakably deliberate rather than merely generous. */
-  margin-top: var(--section-gap);
-}
-
-.account-entry-page { --section-gap: clamp(104px, 13vw, 150px); }
-
-/* The offer line is the one deliberate exception: it is a footnote to the
-   feature grid above it, not a section of its own, so it sits closer. */
-.landing-offer { margin-top: calc(var(--section-gap) * .4); }
-
-/* The section head carries the whole hierarchy now that no box does: a
-   microscopic tracked-out label states the category, then a massive light
-   serif line states the thing itself. The contrast between those two sizes
-   is the design -- narrowing it turns the page back into a template. */
-.landing-section-head { margin-bottom: clamp(34px, 4.5vw, 52px); }
-.landing-eyebrow {
-  display: block;
-  margin-bottom: 16px;
-  color: #8d84a3;
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: .25em;
-  text-transform: uppercase;
-}
-.landing-section-head h2 {
-  margin: 0;
-  color: var(--ink);
-  font: 400 clamp(38px, 6vw, 64px)/1.04 Georgia, "Times New Roman", serif;
-  letter-spacing: -.03em;
-}
-.landing-section-head p {
-  margin: 14px 0 0;
-  max-width: 54ch;
-  color: #8d84a3;
-  font-size: 15px;
-  line-height: 1.6;
-}
-
-/* --- The install panel ---------------------------------------------------
-   Deliberately the first thing under the sign-in card. On a phone -- the one
-   device class that can actually install this -- it is then the first full
-   screen a visitor scrolls to rather than something buried under the
-   marketing. See components/pwa/install-cta.tsx for why it always renders
-   its platform's real path instead of waiting for a browser event. */
-/* No panel around it any more: the install offer floats on the room like
-   every other section, and the local purple bloom behind its copy is what
-   marks its territory -- light instead of a box. */
-.install-cta {
+.entry-footer {
   display: grid;
-  gap: 22px;
-  padding: 0;
-  background: radial-gradient(720px 360px at 12% 20%, rgba(152, 63, 224, .1), transparent 68%);
-}
-
-.install-cta-badge {
-  display: inline-flex;
-  align-items: center;
+  justify-items: center;
   gap: 8px;
-  color: #b79ede;
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: .25em;
-  text-transform: uppercase;
+  margin-top: 15px;
+  padding-top: 12px;
+  /* The chrome's one legal line shape: a divider between the controls and the
+     small print, never an outline around either. --rule fades at both ends,
+     which is what stops it re-reading as the top edge of a box. */
+  border-top: 0;
+  background: var(--rule) top / 100% 1px no-repeat;
 }
 
-.install-cta h2 {
-  margin: 16px 0 0;
-  color: var(--ink);
-  font: 400 clamp(30px, 4.4vw, 44px)/1.08 Georgia, "Times New Roman", serif;
-  letter-spacing: -.03em;
-}
-
-.install-cta-copy > p {
-  margin: 10px 0 0;
-  max-width: 52ch;
-  color: #948aab;
-  font-size: 17px;
-  line-height: 1.6;
-}
-
-.install-cta-perks {
-  display: grid;
-  gap: 9px;
-  margin: 18px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.install-cta-perks li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #b6adc9;
-  font-size: 15px;
-}
-.install-cta-perks svg { flex-shrink: 0; color: var(--brand-gold-light); }
-
-.install-cta-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 50px;
-  margin-top: 20px;
-  padding: 0 24px;
-  color: #fff;
-  border: 0;
-  border-radius: 14px;
-  background: linear-gradient(135deg, var(--brand-purple) 0%, var(--brand-purple-deep) 55%, var(--brand-red-deep) 100%);
-  box-shadow: 0 16px 36px rgba(152, 63, 224, .3);
-  font-size: 17px;
-  font-weight: 750;
-  cursor: pointer;
-  transition: filter var(--duration-base) ease, transform var(--duration-base) ease;
-}
-.install-cta-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
-.install-cta-button:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
-
-.install-cta-note {
-  display: flex;
-  /* flex-start, not center: on a phone this label wraps to two lines and a
-     centred icon then floats between them. */
-  align-items: flex-start;
-  gap: 8px;
-  margin: 20px 0 0;
-  color: #cbbfe2;
-  font-size: 15px;
-  font-weight: 600;
-}
-.install-cta-note svg { flex-shrink: 0; margin-top: 2px; color: var(--brand-gold-light); }
-
-.install-cta-steps {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  align-content: center;
-}
-.install-cta-steps li {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  /* Open rows, not filled pills: the numbered disc anchors each step and the
-     gap between rows does the separating. */
-  padding: 6px 0;
-  color: #d6cfe6;
-  font-size: 15px;
-  line-height: 1.4;
-}
-/* Dark ink on the full brand sweep measured 3.65:1 against the sweep's purple
-   and red ends -- under the 4.5 floor, and invisible to the page-level audit
-   because a gradient lives in background-image where a naive contrast walk
-   never looks. White on the purple->red half of the sweep is 8.44:1 at its
-   worst stop and keeps the brand; gold is dropped from this one element
-   because gold is exactly the stop that forced the dark ink. */
-.install-cta-step-number {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-round);
-  background: linear-gradient(135deg, var(--brand-purple-deep), var(--brand-red-deep));
-  color: #fff;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-/* --- The floor: what you can actually play ------------------------------- */
-
-
-
-/* min(420px, 100%), not a bare 420px: a bare pixel minimum is a floor the
-   track cannot go under, so at 390px the grid itself ran wider than the
-   page and dragged the whole landing into a horizontal pan -- this was the
-   mobile leak. min() lets the track collapse to the viewport instead.
-   Two columns on desktop for the same reasons as before: four live games,
-   no orphan row, names never wrap. */
-.landing-game-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
-  gap: 6px 56px;
-}
-
-/* Open rows, not cards. Each game is a line of type on the room's floor:
-   the serif name carries it, the stake sits flush right, and the hover is a
-   crossfade of the name toward gold rather than a lifting box. */
-.landing-game {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  padding: 18px 0;
-  transition: opacity var(--duration-slow) ease;
-}
-
-/* Hold'em is the house game, not one of ten equals -- so it is simply set
-   much larger, the way a headliner is billed larger on a marquee. */
-.landing-game-headline {
-  grid-column: 1 / -1;
-  padding: 4px 0 26px;
-}
-.landing-game-headline h3 { font-size: clamp(24px, 3vw, 32px); }
-
-.landing-game-icon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
-  color: var(--brand-gold-light);
-  opacity: .85;
-}
-.landing-game-headline .landing-game-icon {
-  width: 46px;
-  height: 46px;
-  color: var(--brand-gold-light);
-  opacity: 1;
-}
-
-/* min-width:0 so a long name ellipsizes instead of shoving the stake off the
-   edge -- a flex item's default min-width is auto. */
-.landing-game-body { flex: 1; min-width: 0; }
-.landing-game-body h3 {
-  margin: 0;
-  color: #f1ecfb;
-  font: 400 19px Georgia, serif;
-  letter-spacing: -.01em;
-  transition: color var(--duration-slow) ease;
-}
-.landing-game:hover .landing-game-body h3 { color: var(--brand-gold-light); }
-.landing-game-body p {
-  margin: 5px 0 0;
-  color: #8d84a3;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-/* The stake is a stated fact, not a badge: gold figures flush right, no
-   pill behind them. */
-.landing-game-stake {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  color: var(--brand-gold-light);
-  font-size: 13px;
-  font-weight: 650;
-  white-space: nowrap;
-}
-.landing-game-stake.is-free {
-  color: #b79ede;
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: .25em;
-  text-transform: uppercase;
-}
-
-.landing-soon {
+.entry-install {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 24px;
-  margin: 40px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.landing-soon li {
-  color: #6b6380;
-  font-size: 13px;
-  font-weight: 500;
-}
-/* Says what the row is without a per-item badge repeated ten times. */
-.landing-soon::before {
-  content: "Dealing in soon";
-  align-self: center;
-  flex-basis: 100%;
-  color: #8d84a3;
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: .25em;
-  text-transform: uppercase;
-}
-
-/* --- Features ------------------------------------------------------------ */
-
-
-
-/* min() for the same leak reason as the game grid: a bare 268px floor
-   overflows a 320px viewport. Wide gaps because the whitespace between
-   entries is what separates them now -- there is no card edge left to. */
-.landing-feature-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(268px, 100%), 1fr));
-  gap: clamp(36px, 4.5vw, 56px) 48px;
-}
-
-.landing-feature {
-  padding: 0;
-}
-.landing-feature-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  margin-bottom: 14px;
-  color: var(--brand-gold-light);
-  opacity: .9;
-}
-.landing-feature h3 {
-  margin: 0 0 9px;
-  color: #f1ecfb;
-  font: 400 19px/1.3 Georgia, serif;
-  letter-spacing: -.01em;
-}
-.landing-feature p {
-  margin: 0;
-  color: #8d84a3;
-  font-size: 14px;
-  line-height: 1.65;
-}
-
-/* One quiet tracked-out line, centred in open space -- a house note, not a
-   promo pill. */
-.landing-offer {
-  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  margin-right: auto;
-  margin-left: auto;
-  width: auto;
-  max-width: 100%;
-  padding: 0;
-  color: #d8bc76;
+  gap: 8px;
+  margin: 0;
+  color: #93a1bb;
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: .12em;
-  text-transform: uppercase;
+  line-height: 1.5;
   text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
 }
 
-/* The closing move is pure typography: a display line in open dark, then
-   the two actions. No box -- the section gap above and below is its room. */
-.landing-cta {
-  display: flex;
-  flex-wrap: wrap;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 26px;
-  padding: 0;
-  text-align: center;
-}
-.landing-cta h2 {
-  margin: 0 0 10px;
-  color: var(--ink);
-  font: 400 clamp(34px, 5vw, 56px)/1.06 Georgia, "Times New Roman", serif;
-  letter-spacing: -.03em;
-}
-.landing-cta p { margin: 0; color: #a79dbe; font-size: 15px; }
-.landing-cta-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.landing-cta-actions > * { flex: 1; }
+.entry-install svg { flex-shrink: 0; color: var(--brand-gold-light); }
 
-.landing-cta-primary,
-.landing-cta-secondary {
-  min-height: 48px;
+/* The one control down here, so it is the quietest thing that is still
+   unmistakably a button -- and it takes --radius-control like every other
+   button on this page. */
+.entry-install-action {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 26px;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px;
   border: 0;
-  /* Sharp. A 2px ease is machining tolerance, not a rounded corner -- the
-     soft-radius pill is the generic-button silhouette this pass retires. */
-  border-radius: 2px;
-  font-size: 15px;
+  border-radius: var(--radius-control);
+  color: #edf1f7;
+  background: var(--brand-surface-2);
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+  transition: background var(--duration-base) ease;
+}
+
+.entry-install-action:hover { background: rgba(164, 186, 224, .16); }
+.entry-install-action:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+
+.entry-support {
+  color: #7f8ba4;
+  font-size: 11px;
   text-decoration: none;
-  transition: filter var(--duration-base) ease, background var(--duration-base) ease;
-}
-.landing-cta-primary {
-  color: #1c1305;
-  background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
-  box-shadow: 0 16px 38px rgba(219, 156, 11, .26), inset 0 1px rgba(255, 255, 255, .42);
-}
-.landing-cta-primary:hover:not(:disabled) { filter: brightness(1.07); }
-.landing-cta-primary:disabled { opacity: .5; cursor: not-allowed; }
-.landing-cta-secondary {
-  color: #ece7f7;
-  background: rgba(255, 255, 255, .08);
-}
-.landing-cta-secondary:hover { background: rgba(255, 255, 255, .13); }
-
-.landing-cta-primary:focus-visible,
-.landing-cta-secondary:focus-visible,
-.landing-footer a:focus-visible {
-  outline: 0;
-  box-shadow: var(--brand-focus);
-}
-
-.landing-footer {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 28px 20px;
-  padding: 34px 0 8px;
-}
-
-.landing-footer-logo {
-  display: block;
-  width: 104px;
-  height: auto;
-  /* Flush left, not pulled out with a negative margin -- the source PNG's own
-     transparent padding already supplies the optical inset, and the negative
-     margin clipped the badge against the footer's edge. */
-  margin: 0 0 10px;
-  opacity: .95;
-}
-.landing-footer-brand p { margin: 0 0 14px; color: #8d84a3; font-size: 13px; line-height: 1.5; }
-
-.landing-socials { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; }
-.landing-socials a {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  color: #8d84a3;
-  border-radius: 2px;
-  background: transparent;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
   transition: color var(--duration-base) ease;
 }
-.landing-socials a:hover { color: var(--brand-gold-light); }
 
-.landing-footer-column h3 {
-  margin: 0 0 10px;
-  color: #b0a6c6;
-  font-size: 13px;
-  font-weight: 750;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
-.landing-footer-column ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-/* Footer links announce hover with a hairline underline drawing in from the
-   left on a decelerating curve -- the one place a 1px line is welcome,
-   because it exists only while the pointer asks for it. */
-.landing-footer-column a {
-  color: #8d84a3;
-  font-size: 15px;
-  text-decoration: none;
-  background: linear-gradient(currentColor, currentColor) no-repeat 0 100% / 0 1px;
-  transition: color var(--duration-base) ease, background-size var(--duration-slow) var(--ease-decelerate);
-}
-.landing-footer-column a:hover { color: var(--brand-gold-light); background-size: 100% 1px; }
-
-.landing-footer-legal {
-  grid-column: 1 / -1;
-  margin: 6px 0 0;
-  padding-top: 18px;
-  color: #948aab;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-/* The wide footer, the two-column install panel and the side-by-side CTA are
-   the expansion. */
-@media (min-width: 721px) {
-  .landing-footer { grid-template-columns: minmax(200px, 1.4fr) repeat(3, minmax(120px, 1fr)); }
-  /* The CTA stays a centred column at every width now -- it is a typographic
-     closing line, not a split banner. Only the buttons stop stretching. */
-  .landing-cta-actions > * { flex: 0 1 auto; }
-  .install-cta { grid-template-columns: 1.25fr 1fr; align-items: center; gap: 56px; }
-}
+.entry-support:hover { color: var(--brand-gold-light); }
+.entry-support:focus-visible { outline: 0; box-shadow: var(--brand-focus); border-radius: var(--radius-xs); }
 
 @media (prefers-reduced-motion: reduce) {
-  .landing-game,
-  .landing-game-body h3,
-  .landing-footer-column a,
-  .install-cta-button,
+  .entry-install-action,
+  .entry-support,
   .entry-switch,
   .entry-switch::after { transition: none; }
-  .install-cta-button:hover { transform: none; }
 }
-
 
 /* ---------------------------------------------------------------------------
    Signed-in hub tiles. See components/lobby/lobby.tsx.
    --------------------------------------------------------------------------- */
 
-/* The hub's head is the landing page's section head, wearing the same two
-   sizes: .lobby-kicker already matched .landing-eyebrow's tracking, so what
-   was left was the colour, the beat under it, and the display line's scale.
-   Signing in is now a change of content, not of typeface. */
+/* The hub's head wears the chrome's two display sizes -- .lobby-kicker over
+   a light serif line -- so signing in is a change of content, not of
+   typeface. (It was written against the signed-out landing page's section
+   head, which has since been deleted; .lobby-kicker is the surviving
+   definition of that pairing.) */
 /* The head is now only a label and a line. The player-name field used to sit
    directly under the headline -- a 46px empty input as the first thing on the
    hub, answering a question nobody had asked, on the one screen whose job is
@@ -1369,7 +1139,7 @@ button:disabled { cursor: wait; opacity: .62; }
   letter-spacing: -.01em;
 }
 /* The hero's category line, in the chrome's one micro-label voice
-   (.landing-eyebrow / .lobby-kicker): 10px, .25em, uppercase. It is what
+   (.lobby-kicker): 10px, .25em, uppercase. It is what
    makes "Texas Hold'em" legible as a *game* in a hub that now also lists
    Blackjack, Hi-Lo and two daily puzzles. */
 .hub-tile-kicker {

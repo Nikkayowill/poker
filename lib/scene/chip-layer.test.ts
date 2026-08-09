@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { CHIP_THICKNESS, ChipLayer } from "./chip-layer";
+import { CHIP_RADIUS, CHIP_THICKNESS, ChipLayer } from "./chip-layer";
 import { flightDurationMs, FUNNEL_CHIP_COUNT, REFERENCE_FRAME_MS } from "./chip-physics";
-import { NEAT_SLIDE_DURATION_MS, SPLASH_SCATTER_RADIUS } from "./bet-style";
-import { seatBetOrigin } from "./seat-ring";
+import { BET_STYLES, NEAT_SLIDE_DURATION_MS, SPLASH_SCATTER_RADIUS } from "./bet-style";
+import { seatBetOrigin, seatTrayOrigin } from "./seat-ring";
 import { FELT } from "./scene-config";
 
 /**
@@ -263,12 +263,20 @@ describe("selectable bet styles", () => {
     chips.setBetStyle("splash_chunk");
     chips.spawnBet(2, 6, 70, BB);
     const spot = seatBetOrigin(2, 6);
-    // Far enough in that every chip is a whisker from its landing, not so
-    // far that any has arrived and been removed.
-    for (let i = 0; i < 60; i += 1) chips.update(REFERENCE_FRAME_MS, false);
-    const flying = chips.debugChipPositions();
-    expect(flying.length).toBe(3);
-    for (const position of flying) {
+    // Sampled at the last frame all three are still in the air, rather than
+    // at a fixed frame count. A fixed count was pinned to how long the
+    // friction slide happened to take to converge; the spring arrives sooner,
+    // so the old sample point read an empty list and asserted nothing about
+    // where anything landed.
+    let lastFull: Array<{ x: number; y: number; z: number }> = [];
+    for (let i = 0; i < 240; i += 1) {
+      chips.update(REFERENCE_FRAME_MS, false);
+      const inAir = chips.debugChipPositions();
+      if (inAir.length === 3) lastFull = inAir;
+      if (inAir.length === 0) break;
+    }
+    expect(lastFull.length).toBe(3);
+    for (const position of lastFull) {
       const planDistance = Math.hypot(position.x - spot.x, position.z - spot.z);
       expect(planDistance).toBeLessThanOrEqual(SPLASH_SCATTER_RADIUS + 0.2);
     }
@@ -291,15 +299,82 @@ describe("selectable bet styles", () => {
     expect(run()).toEqual(run());
   });
 
-  it("the default style is splash — continuity with the spray it replaces", () => {
+  it("the default style is the stacked toss — a bet you can count", () => {
     const { chips: styled } = layer();
-    styled.setBetStyle("splash_chunk");
+    styled.setBetStyle("stacked_toss");
     const { chips: unstyled } = layer();
     styled.spawnBet(3, 6, 100, BB);
     unstyled.spawnBet(3, 6, 100, BB);
     styled.update(REFERENCE_FRAME_MS, false);
     unstyled.update(REFERENCE_FRAME_MS, false);
     expect(unstyled.debugChipPositions()).toEqual(styled.debugChipPositions());
+  });
+
+  it("the stacked toss builds a real column, one chip on top of the last", () => {
+    // The whole reason it displaced splash as the default: a scattered
+    // cluster shows that a player has bet, and a stack shows how much.
+    //
+    // Asserted on the targets, not on mid-flight positions. A spray's chips
+    // are removed as they arrive, so there is no frame on which the finished
+    // column exists to be measured — see `debugFlightTargets`.
+    const { chips } = layer();
+    chips.setBetStyle("stacked_toss");
+    chips.spawnBet(2, 6, 1310, BB);
+    const targets = chips.debugFlightTargets();
+    expect(targets.length).toBeGreaterThan(1);
+
+    const heights = targets.map((p) => p.y).sort((a, b) => a - b);
+    for (let i = 1; i < heights.length; i += 1) {
+      // Flush: chip i's top face is chip i+1's bottom face, no daylight and
+      // no overlap. This is what a column is, as opposed to a heap.
+      expect(heights[i] - heights[i - 1]).toBeCloseTo(CHIP_THICKNESS, 6);
+    }
+  });
+
+  it("the stacked toss leans, so the column is not a machined tube", () => {
+    const { chips } = layer();
+    chips.setBetStyle("stacked_toss");
+    chips.spawnBet(2, 6, 1310, BB);
+    const targets = chips.debugFlightTargets();
+    expect(targets.length).toBeGreaterThan(2);
+
+    // No two chips land on exactly the same spot...
+    expect(new Set(targets.map((p) => `${p.x.toFixed(6)},${p.z.toFixed(6)}`)).size)
+      .toBe(targets.length);
+    // ...and none leans so far that the column stops reading as one stack.
+    const spot = seatBetOrigin(2, 6);
+    for (const target of targets) {
+      expect(Math.hypot(target.x - spot.x, target.z - spot.z)).toBeLessThan(CHIP_RADIUS);
+    }
+  });
+
+  it("the splash scatters where the stacked toss stacks", () => {
+    // The two styles must actually differ in the way their names claim, or
+    // the menu entry is decoration.
+    const heightsFor = (style: "stacked_toss" | "splash_chunk") => {
+      const { chips } = layer();
+      chips.setBetStyle(style);
+      chips.spawnBet(2, 6, 1310, BB);
+      return new Set(chips.debugFlightTargets().map((p) => p.y.toFixed(6)));
+    };
+    expect(heightsFor("stacked_toss").size).toBeGreaterThan(1);
+    // Every splashed chip lands flat on the cloth; the spread is horizontal.
+    expect(heightsFor("splash_chunk").size).toBe(1);
+  });
+
+  it("every style leaves from the tray on the rail, never from mid-table", () => {
+    // The bug this pins: the launch point used to be 1.166 felt radii out —
+    // past RAIL_SCALE (1.14) — so chips flew in from the carpet behind the
+    // player, over the top of the table's own edge.
+    for (const style of BET_STYLES) {
+      const { chips } = layer();
+      chips.setBetStyle(style);
+      chips.spawnBet(2, 6, 70, BB);
+      const tray = seatTrayOrigin(2, 6);
+      for (const position of chips.debugChipPositions()) {
+        expect(Math.hypot(position.x - tray.x, position.z - tray.z)).toBeLessThan(0.01);
+      }
+    }
   });
 
   it("restyling never rewrites a flight already in the air", () => {

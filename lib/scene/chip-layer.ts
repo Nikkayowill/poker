@@ -22,27 +22,37 @@
 
 import {
   BET_CHIP_COUNT,
-  BET_CHIP_STAGGER_MS,
   betSprayDenominations,
+  CHIP_ARC_PEAK,
   chipSettleJitter,
   decorativeDenomination,
-  distance,
   FUNNEL_CHIP_COUNT,
-  FUNNEL_CHIP_STAGGER_MS,
   funnelSprayDenominations,
-  stepChip,
   stepGlideChip,
 } from "./chip-physics";
+import {
+  CHIP_AIRTIME_MS,
+  CHIP_STAGGER_MS,
+  sampleArc,
+  SPRING_BET,
+  SPRING_DROP,
+  SPRING_SWEEP,
+  springAt,
+  stepSpring,
+  type SpringConfig,
+  type SpringState,
+} from "./chip-spring";
 import {
   DEFAULT_BET_STYLE,
   NEAT_SLIDE_DURATION_MS,
   SPLASH_ARC_PEAK,
   splashScatterOffset,
+  stackLeanOffset,
   type BetAnimationStyle,
 } from "./bet-style";
 import { MAX_CHIPS_PER_COLUMN, potChipStacks } from "@/lib/game/pot-chips";
 import { FELT, type Vec3 } from "./scene-config";
-import { potPosition, ringPoint, seatAngle, seatBetOrigin } from "./seat-ring";
+import { potPosition, ringPoint, seatAngle, seatBetOrigin, seatTrayOrigin } from "./seat-ring";
 
 /** The token: a 39mm chip against a 2.1m table, near enough exactly right. */
 export const CHIP_RADIUS = 0.4;
@@ -68,7 +78,28 @@ const PILE_DROP = 1.1;
 const BET_COLUMN_SPACING = 0.88;
 const BET_DROP = 0.7;
 
-/** Per-chip stagger when a street's standing bets sweep into the pot. */
+/**
+ * Per-chip stagger on the short drop a newly added pile or standing-bet chip
+ * makes onto its resting place.
+ *
+ * It was an unnamed `18` written out at both call sites, which is how two
+ * copies of one number start disagreeing. Shorter than a bet's stagger
+ * because the travel is a fraction of a unit and the whole event is the
+ * contact, not the journey.
+ */
+const DROP_STAGGER_MS = 18;
+
+/**
+ * Per-chip stagger when a street's standing bets sweep into the pot.
+ *
+ * Deliberately tighter than `CHIP_STAGGER_MS`, and the reason is arithmetic
+ * rather than taste. A bet spray is capped at ten chips; a sweep can carry
+ * every standing chip at the table — six seats' worth of columns, routinely
+ * twenty-plus. At the bet's 30ms that is over a second of dealer before the
+ * next card, on every street. The sweep is one continuous gesture rather
+ * than a countable sequence anyway, so the eye is not resolving individual
+ * chips here the way it is on a bet.
+ */
 const SWEEP_STAGGER_MS = 14;
 
 export interface SceneChip {
@@ -82,33 +113,61 @@ export interface SceneChip {
    * pool is exactly what makes a settled pile read as floating chips.
    */
   airborne?: boolean;
+  /**
+   * How far off the cloth the chip is, 0 on the felt and 1 at the apex of
+   * its arc.
+   *
+   * The painter turns this into a size, and it exists because this room has
+   * no camera to do it honestly. The projection is an orthographic tilt, so a
+   * chip a world unit above the felt draws at exactly the same size as one
+   * resting on it — a flight has no depth cue at all beyond its shadow, which
+   * is a large part of why bets read as sliding decals rather than as objects
+   * being thrown. See `flightScale` in chip-spring.ts.
+   */
+  lift?: number;
 }
 
 interface MovingChip {
   chip: SceneChip;
   /**
-   * The slide's own state, kept separate from the drawn position on
-   * purpose. The friction slide converges geometrically *on the base*; the
-   * arc is presentation layered over it each frame. Feeding the arced
-   * position back into `stepChip` — which the WebGL predecessor did — makes
-   * the arc residue re-amplify near the target and the chip hovers forever
-   * instead of arriving, which held the render loop awake for good.
+   * The spring's own state — position and velocity — kept separate from the
+   * chip's drawn position on purpose.
+   *
+   * The spring owns where the chip is *on the cloth*; the arc owns how far
+   * off the cloth it is, and the drawn position is the two composed each
+   * frame. Feeding the arced position back into the integrator — which the
+   * WebGL predecessor did, and which the friction slide this replaced was
+   * fixed for once already — makes the arc residue re-amplify near the target
+   * so the chip hovers forever instead of arriving, holding the render loop
+   * awake for good.
+   *
+   * Carrying velocity is also what makes a flight interruptible: `sweepBets`
+   * retargets a chip that is still dropping into its standing bet, and it
+   * curves through rather than stopping dead and starting again.
    */
-  base: Vec3;
+  spring: SpringState;
   target: Vec3;
-  originalDistance: number;
   /** Counts down before the chip starts moving, which is what staggers a spray. */
   delayMs: number;
   /** Pile chips stay when they land; spray chips are removed. */
   keepOnArrival: boolean;
+  /** Which spring preset drives it — see chip-spring.ts for why there are three. */
+  config: SpringConfig;
+  /**
+   * The arc, on its own clock. Absent means the chip stays on the cloth: a
+   * neat slide, and the short vertical drop a chip makes onto a pile it is
+   * joining (which is already a vertical move — arcing it would send it up
+   * before it came down).
+   */
+  arc?: { peak: number; elapsedMs: number; durationMs: number };
   /**
    * Present on a neat-slide chip: a clocked cubic-ease-out glide instead of
-   * the friction slide. The pillar's chips all share one duration, which is
-   * what keeps them a rigid body in flight — see `stepGlideChip`.
+   * the spring. The pillar's chips all share one duration, which is what
+   * keeps them a rigid body in flight — a spring per chip would let them
+   * shear apart near the target, which is the one thing this style exists to
+   * avoid. See `stepGlideChip`.
    */
   glide?: { from: Vec3; durationMs: number; elapsedMs: number };
-  /** A splash chip's taller parabola; absent means the default slide arc. */
-  arcPeak?: number;
 }
 
 export class ChipLayer {
@@ -205,11 +264,15 @@ export class ChipLayer {
         this.pile.set(key, chip);
         this.moving.push({
           chip,
-          base: { ...chip.position },
+          spring: springAt(chip.position),
           target: rest,
-          originalDistance: PILE_DROP,
-          delayMs: index * 18,
+          delayMs: index * DROP_STAGGER_MS,
           keepOnArrival: true,
+          // Stiff and nearly critical: the travel is about a chip's own
+          // thickness, so the event is the contact. No arc — this is already
+          // a vertical move, and arcing it would lift the chip before
+          // dropping it.
+          config: SPRING_DROP,
         });
         this.onChanged();
       }
@@ -267,11 +330,11 @@ export class ChipLayer {
           this.bets.set(key, chip);
           this.moving.push({
             chip,
-            base: { ...chip.position },
+            spring: springAt(chip.position),
             target: rest,
-            originalDistance: BET_DROP,
-            delayMs: index * 18,
+            delayMs: index * DROP_STAGGER_MS,
             keepOnArrival: true,
+            config: SPRING_DROP,
           });
           this.onChanged();
         }
@@ -303,9 +366,13 @@ export class ChipLayer {
     let order = 0;
     const pot = potPosition(this.radiusZ);
     for (const chip of this.bets.values()) {
-      // A chip still dropping in sweeps from wherever it is; drop its
-      // settle flight so it is not animated twice.
+      // A chip still dropping in sweeps from wherever it is; drop its settle
+      // flight so it is not animated twice — but carry its velocity across.
+      // That is the interruptible half of the spring earning its keep: a chip
+      // caught mid-drop curves on into the middle rather than stopping dead
+      // and starting a second, visibly separate journey.
       const pending = this.moving.findIndex((entry) => entry.chip === chip);
+      const carried = pending >= 0 ? this.moving[pending].spring.velocity : null;
       if (pending >= 0) this.moving.splice(pending, 1);
       const jitter = chipSettleJitter(chip.denomination, order);
       const target: Vec3 = {
@@ -316,11 +383,14 @@ export class ChipLayer {
       chip.airborne = true;
       this.moving.push({
         chip,
-        base: { ...chip.position },
+        spring: { position: { ...chip.position }, velocity: carried ?? { x: 0, y: 0, z: 0 } },
         target,
-        originalDistance: distance(chip.position, target),
         delayMs: order * SWEEP_STAGGER_MS,
         keepOnArrival: false,
+        // The only preset that must not overshoot. Past the pot is off the
+        // back of the felt, and this is the longest journey on the table.
+        config: SPRING_SWEEP,
+        arc: { peak: CHIP_ARC_PEAK, elapsedMs: 0, durationMs: CHIP_AIRTIME_MS },
       });
       order += 1;
     }
@@ -367,49 +437,78 @@ export class ChipLayer {
    * index, so the same bet lands the same cluster every time.
    */
   spawnBet(slot: number, seatCount: number, amount: number, bigBlind: number): void {
-    const origin = ringPoint(slot, seatCount, 0.98, FELT.y, this.radiusZ);
+    // The tray on the rail in front of the player, not the seat and never the
+    // middle of their badge. See `seatTrayOrigin` — the point this replaced
+    // was outside the painted rail entirely, so every bet in this room has
+    // been flying in from the carpet.
+    const origin = seatTrayOrigin(slot, seatCount, this.radiusZ);
     const spot = seatBetOrigin(slot, seatCount, this.radiusZ);
     const denominations = betSprayDenominations(amount, bigBlind);
     const spray = denominations.length > 0
       ? denominations
       : Array.from({ length: BET_CHIP_COUNT }, (_, index) => decorativeDenomination(index));
+    const restY = FELT.y + CHIP_THICKNESS / 2;
     spray.forEach((denomination, index) => {
-      const restY = FELT.y + CHIP_THICKNESS / 2;
-      const start: Vec3 = {
-        x: origin.x,
-        y: restY + index * CHIP_THICKNESS,
-        z: origin.z,
-      };
+      // Every chip leaves from the tray's own surface. It used to leave from
+      // `restY + index * CHIP_THICKNESS` — a pre-built tower standing on the
+      // rail before the bet was made, which is the one thing a stack being
+      // *assembled* must not start as.
+      const start: Vec3 = { x: origin.x, y: restY, z: origin.z };
+
       if (this.betStyle === "neat_slide") {
         // The pillar keeps each chip at its own height on both ends, so the
-        // stack that arrives is the stack that left.
+        // stack that arrives is the stack that left. This is the one style
+        // that still pre-builds its tower, deliberately: it is a cut stack
+        // being pushed, not chips being tossed.
+        const from: Vec3 = { x: origin.x, y: restY + index * CHIP_THICKNESS, z: origin.z };
         const target: Vec3 = { x: spot.x, y: restY + index * CHIP_THICKNESS, z: spot.z };
         this.moving.push({
-          chip: { denomination, position: { ...start }, airborne: true },
-          base: { ...start },
+          chip: { denomination, position: { ...from }, airborne: true },
+          spring: springAt(from),
           target,
-          originalDistance: distance(start, target),
           delayMs: 0,
           keepOnArrival: false,
-          glide: { from: { ...start }, durationMs: NEAT_SLIDE_DURATION_MS, elapsedMs: 0 },
+          config: SPRING_BET,
+          glide: { from: { ...from }, durationMs: NEAT_SLIDE_DURATION_MS, elapsedMs: 0 },
         });
-      } else {
+        return;
+      }
+
+      if (this.betStyle === "splash_chunk") {
         const scatter = splashScatterOffset(index);
-        const target: Vec3 = {
-          x: spot.x + scatter.x,
-          y: restY,
-          z: spot.z + scatter.z,
-        };
         this.moving.push({
           chip: { denomination, position: { ...start }, airborne: true },
-          base: { ...start },
-          target,
-          originalDistance: distance(start, target),
-          delayMs: index * BET_CHIP_STAGGER_MS,
+          spring: springAt(start),
+          target: { x: spot.x + scatter.x, y: restY, z: spot.z + scatter.z },
+          delayMs: index * CHIP_STAGGER_MS,
           keepOnArrival: false,
-          arcPeak: SPLASH_ARC_PEAK,
+          config: SPRING_BET,
+          arc: { peak: SPLASH_ARC_PEAK, elapsedMs: 0, durationMs: CHIP_AIRTIME_MS },
         });
+        return;
       }
+
+      // "stacked_toss", the default. Each chip lands on top of the last, so
+      // the pile builds one disc at a time in the order they left — which is
+      // what makes a bet countable at a glance. The lean keeps it from
+      // reading as a machined tube; see `stackLeanOffset`.
+      const lean = stackLeanOffset(index);
+      this.moving.push({
+        chip: { denomination, position: { ...start }, airborne: true },
+        spring: springAt(start),
+        target: {
+          x: spot.x + lean.x,
+          y: restY + index * CHIP_THICKNESS,
+          z: spot.z + lean.z,
+        },
+        delayMs: index * CHIP_STAGGER_MS,
+        keepOnArrival: false,
+        config: SPRING_BET,
+        // A shallower toss than the splash: this chip has to come down on a
+        // specific disc, and a tall parabola makes the last leg vertical,
+        // which hides the landing behind the chip's own face.
+        arc: { peak: CHIP_ARC_PEAK, elapsedMs: 0, durationMs: CHIP_AIRTIME_MS },
+      });
     });
     this.onChanged();
   }
@@ -447,11 +546,14 @@ export class ChipLayer {
         };
         this.moving.push({
           chip: { denomination, position: { ...start }, airborne: true },
-          base: { ...start },
+          spring: springAt(start),
           target,
-          originalDistance: distance(start, target),
-          delayMs: index * FUNNEL_CHIP_STAGGER_MS,
+          delayMs: index * CHIP_STAGGER_MS,
           keepOnArrival: false,
+          // Must not overshoot: past a winner's spot is inside their own
+          // figure, and this is the second-longest journey on the table.
+          config: SPRING_SWEEP,
+          arc: { peak: CHIP_ARC_PEAK, elapsedMs: 0, durationMs: CHIP_AIRTIME_MS },
         });
       });
     }
@@ -490,9 +592,15 @@ export class ChipLayer {
 
       let arrived: boolean;
       if (reducedMotion) {
-        entry.base = { ...entry.target };
+        entry.spring = springAt(entry.target);
         entry.chip.position = { ...entry.target };
+        entry.chip.lift = 0;
         arrived = true;
+        // The snap *is* a change on screen. Leaving `moved` alone here was a
+        // real hole: a reduced-motion chip whose delay had already expired
+        // could be repositioned on a frame that then reported nothing moved,
+        // and the scheduler was entitled to sleep before presenting it.
+        moved = true;
       } else if (entry.glide) {
         // The clocked glide: elapsed time in, eased position out. No arc —
         // a neat slide stays on the cloth — and it parks exactly on target
@@ -501,17 +609,41 @@ export class ChipLayer {
         const step = stepGlideChip(
           entry.glide.from, entry.target, entry.glide.elapsedMs, entry.glide.durationMs,
         );
-        entry.base = { ...step.position };
+        entry.spring = springAt(step.position);
         entry.chip.position = step.position;
+        entry.chip.lift = 0;
         arrived = step.arrived;
         moved = true;
       } else {
-        const step = stepChip(
-          entry.base, entry.target, entry.originalDistance, deltaMs, undefined, entry.arcPeak,
-        );
-        entry.base = step.base;
-        entry.chip.position = step.position;
-        arrived = step.arrived;
+        // The spring owns the cloth-plane position; the arc owns the height
+        // above it, on its own clock. Composed here and nowhere else — the
+        // integrator must never be fed its own arced output, or the residue
+        // re-amplifies near the target and the chip hovers forever.
+        const step = stepSpring(entry.spring, entry.target, deltaMs, entry.config);
+        entry.spring = { position: step.position, velocity: step.velocity };
+
+        let lift = 0;
+        let landed = true;
+        if (entry.arc) {
+          entry.arc.elapsedMs += deltaMs;
+          const sample = sampleArc(entry.arc.elapsedMs, entry.arc.peak, 0, entry.arc.durationMs);
+          lift = sample.lift;
+          landed = sample.landed;
+          entry.chip.position = {
+            x: step.position.x,
+            y: step.position.y + sample.height,
+            z: step.position.z,
+          };
+        } else {
+          entry.chip.position = { ...step.position };
+        }
+        entry.chip.lift = lift;
+        // Both, and that is the point. The spring can settle while the chip
+        // is still in the air (a short bet at a tall arc peak), and the arc
+        // can land while the spring is still sliding the last hundredth of a
+        // unit. Removing the flight on either alone drops a chip mid-air or
+        // parks one that is still visibly moving.
+        arrived = step.arrived && landed;
         moved = true;
       }
 
@@ -520,6 +652,7 @@ export class ChipLayer {
         // casting the flying shadow the moment it parks, or a settled stack
         // reads as chips hovering over their own shadow pools.
         entry.chip.airborne = false;
+        entry.chip.lift = 0;
         this.moving.splice(index, 1);
       }
     }
@@ -549,6 +682,22 @@ export class ChipLayer {
    */
   debugChipPositions(): Vec3[] {
     return this.moving.map((entry) => ({ ...entry.chip.position }));
+  }
+
+  /**
+   * Where every chip currently in flight is *going*.
+   *
+   * A sibling of `debugChipPositions`, and it exists because the two answer
+   * genuinely different questions. A bet spray's chips are transient — they
+   * are removed the frame they arrive, and the pile that rests at the bet
+   * spot afterwards is `syncBets`' own, keyed, separate set of chips. So the
+   * shape a spray *assembles* is only ever visible as its targets: sampling
+   * positions mid-flight shows chips at scattered points on their own arcs,
+   * which is exactly what a column under construction looks like and tells
+   * you nothing about whether it is a column.
+   */
+  debugFlightTargets(): Vec3[] {
+    return this.moving.map((entry) => ({ ...entry.target }));
   }
 
   /** Chips currently resting in the pot pile, for the same test seam. */

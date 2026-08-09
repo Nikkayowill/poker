@@ -2,13 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   BET_STYLE_STORAGE_KEY,
   BET_STYLES,
+  betStyleLabel,
   DEFAULT_BET_STYLE,
   NEAT_SLIDE_DURATION_MS,
   nextBetStyle,
   normalizeBetStyle,
   SPLASH_SCATTER_RADIUS,
   splashScatterOffset,
+  stackLeanOffset,
+  type BetAnimationStyle,
 } from "./bet-style";
+import { CHIP_RADIUS } from "./chip-layer";
 import { TILT_SIN } from "./scene-config";
 
 describe("the style preference", () => {
@@ -79,5 +83,53 @@ describe("the splash scatter wave", () => {
     }
     expect(maxAbsZ / maxAbsX).toBeGreaterThan(0.9);
     expect(maxAbsZ / maxAbsX).toBeLessThan(1.1);
+  });
+});
+
+describe("the stacked toss", () => {
+  it("is the default, because a stack can be counted and a scatter cannot", () => {
+    expect(DEFAULT_BET_STYLE).toBe("stacked_toss");
+  });
+
+  it("cycles through every style and back", () => {
+    const seen = new Set<BetAnimationStyle>();
+    let style = DEFAULT_BET_STYLE;
+    for (let i = 0; i < BET_STYLES.length; i += 1) {
+      seen.add(style);
+      style = nextBetStyle(style);
+    }
+    expect(seen.size).toBe(BET_STYLES.length);
+    expect(style).toBe(DEFAULT_BET_STYLE);
+  });
+
+  it("names every style, so a new one cannot ship unlabelled", () => {
+    // A ternary at the call site is what this replaced, and a ternary reads a
+    // third value as the second one's label.
+    const labels = BET_STYLES.map(betStyleLabel);
+    expect(new Set(labels).size).toBe(BET_STYLES.length);
+    for (const label of labels) expect(label.startsWith("Chip style: ")).toBe(true);
+  });
+
+  it("leans the column without letting it stop reading as one stack", () => {
+    let previous = 0;
+    for (let index = 0; index < 12; index += 1) {
+      const { x, z } = stackLeanOffset(index);
+      const reach = Math.hypot(x, z);
+      // Opens up as the column gets tall, the way a hand-built stack drifts.
+      expect(reach).toBeGreaterThanOrEqual(previous - 1e-9);
+      previous = reach;
+      // Never past a chip's own radius, or it is a slump rather than a stack.
+      expect(reach).toBeLessThan(CHIP_RADIUS);
+    }
+  });
+
+  it("sits the first chip dead true, so the column has a foot", () => {
+    expect(stackLeanOffset(0)).toEqual({ x: 0, z: 0 });
+  });
+
+  it("is deterministic: the same bet builds the same column twice", () => {
+    for (let index = 0; index < 8; index += 1) {
+      expect(stackLeanOffset(index)).toEqual(stackLeanOffset(index));
+    }
   });
 });

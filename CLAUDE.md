@@ -170,6 +170,74 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
     setting the same name (the profile modal's "Display name" is the durable
     one). Same `id`/label, so `getByLabel("Player name")` still resolves;
     `tests/e2e/multiplayer.spec.ts` had to fill it *after* opening the dialog.
+- **The signed-out page is the login form and nothing else now (2026-08-09),
+  standing on a casino ceiling, and both headers are the mark alone.** The
+  landing page under the form is *deleted*, not hidden:
+  `components/auth/landing-sections.tsx` (game grid, nine feature cards, offer
+  line, CTA, four-column footer) and `components/pwa/install-cta.tsx` are gone
+  with their ~500 lines of CSS. Seven things worth not relearning:
+  - **A `z-index: -1` child is invisible under a parent that paints an opaque
+    background and is not a stacking context.** `.entry-sky` was complete and
+    correct and rendered as flat black, because `.account-entry-page` is
+    `position: relative` with `z-index: auto` — so the negative layer escaped
+    to the *root* stacking context and painted behind that page's own
+    `--brand-ink`. `isolation: isolate` on the page is the fix and is
+    load-bearing. `.lobby-hub::before` gets away without it only because
+    `.lobby` has no background of its own. Found on a render; nothing else
+    could have found it.
+  - **The sky is CSS only and deterministic**: two tiled star fields on
+    `.entry-sky::before/::after` and five hand-placed `.entry-orb` spans on
+    long keyframes. No canvas, no timer, no `Math.random()` — same contract
+    `lib/scene` holds presentation to, and for the same reason. Softness is
+    gradient falloff, never `filter: blur()`: five blurred elements is five
+    intermediate layers per paint.
+  - **A "1px" star is invisible; the first pass was tuned in the file and
+    rendered as nothing.** A `radial-gradient(1px 1px …)` that then fades to
+    transparent draws well under a device pixel of ink. 2–3px is what shows.
+    The centre shade had the same problem in reverse — at 900×620/.82 it
+    swallowed the whole field. Both were set against a real 1440×900
+    screenshot; set any change to them the same way.
+  - **The form had to lose ~155px to stop scrolling on a laptop, and the
+    tagline is not where that came from.** It measured 904px against an 818px
+    page at 1440×900 — a sign-in screen that scrolls on a desktop. A first cut
+    deleted the signed-out tagline to buy the room; the user put it straight
+    back ("keep the tagline, I just meant to get rid of all the text
+    underneath"), which is the scope line worth keeping: *the sections below
+    the form* were the clutter, the one sentence saying what the product is
+    never was. The height came out of the logo, the headline, the tagline's
+    own size and every gap instead — 750px now against 760px of usable page.
+    That is ~9px of slack, so re-measure on a render rather than trusting
+    these numbers if anything is added back.
+  - **With the card gone, `--brand-surface` (a 5.5% white wash tuned to sit on
+    an opaque card) is a ghost with stars through the middle of a password
+    field.** Both surface tokens are redefined *locally* on
+    `.account-entry-page` — same roles, same call sites, an ink base under
+    them — so every filled control on the page fixes itself and nothing else
+    in the chrome moves.
+  - **Every button on that page is one radius (`--radius-control`), which
+    means the segmented control's track cannot also be it.** Concentric radii
+    want outer = inner + the padding between them, so the track grew to
+    `calc(--radius-control + 4px)` rather than the buttons shrinking below the
+    shared value.
+  - **`stylesheets.test.ts` has a new case: no orphaned comment delimiter.**
+    An edit here appended a paragraph past the end of an already-closed CSS
+    comment; braces stayed balanced, tsc and eslint do not read CSS, and
+    PostCSS rejected the *entire sheet* — every rule after it dead, with no
+    console on a production build. The dev server caught it; nothing in CI
+    would have. Note the test's own explanation has to use line comments,
+    since it cannot contain a block-comment delimiter.
+  - Nav: the "StackChips / HIGH ROLLER ARCADE" span is gone from
+    `poker-app.tsx` *and* `poker-table.tsx` (`.wordmark-mark-only`, gap 0).
+    Still `StackChipsMark`, not the full badge — removing the words gave the
+    row no more vertical space, so the ≥96px rule is unchanged. The lobby's
+    mark carries `role="img"` + `aria-label`, because the SVG is `aria-hidden`
+    and the header would otherwise have no accessible name; the table's stays
+    hidden since its button already has one. Four now-dead rules in
+    `12-responsive.css` that hid the tagline at narrow widths went with it.
+  - What stayed below the form, deliberately: the PWA step (one line —
+    `installShortStep` in `lib/pwa/platform.ts`, beside the long form so the
+    two cannot describe different taps), the play-money disclosure, and a real
+    support address. No invented links; there is still no terms route.
 - **The hub has one numbered first-run strip, and it retires itself.**
   `lib/lobby/first-run.ts` is the whole rule set (steps, retirement, the
   counter) in `lib/` so `npm test` reaches it — 12 cases;

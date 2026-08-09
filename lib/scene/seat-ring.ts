@@ -67,8 +67,44 @@ export function seatPlacement(slot: number, count: number, radiusZ: number = FEL
 /**
  * How far in from the rail an ordinary seat pushes its chips, as a fraction
  * of the felt's own radius.
+ *
+ * Exported now. It was module-private, and `seat-ring.test.ts` consequently
+ * hard-coded the literal `0.74` to check `seatBetOrigin` against -- a test
+ * that would keep passing if the constant changed and the function stopped
+ * agreeing with it, which is the one thing it was written to catch.
  */
-const BET_INSET = 0.74;
+export const BET_INSET = 0.74;
+
+/**
+ * Where a seat's chips physically live before they are bet: the tray on the
+ * rail in front of the player.
+ *
+ * A fraction of the felt's radius, like every other inset here, so it stays
+ * proportional on a plate whose ellipse is far wider than it is deep.
+ *
+ * TWO THINGS THIS FIXES, and the second was a real defect rather than a
+ * refinement.
+ *
+ * It is not the seat. Chips used to leave from `ringPoint(slot, count, 0.98)`
+ * -- 0.98 of the *seat* ring, which is itself `SEAT_RING.radiusScale` (1.19)
+ * of the felt, so the launch point was at 1.166 felt radii. `RAIL_SCALE` is
+ * 1.14. Every bet in the 2D room has therefore been starting from a point
+ * *outside the painted rail entirely*, on the carpet behind the player, and
+ * flying in over the top of the table's own edge. Nothing failed, because
+ * nothing measures where a flight begins -- `chip-flights.spec.ts` asserts
+ * where they land. At 1.04 the chips start on the rail's inner lip, which is
+ * where a tray actually sits and where a dealer's hand actually reaches.
+ *
+ * And it is not the badge's centre. Anchoring an animation to the middle of a
+ * player's avatar is what made bets read as being fired out of a person's
+ * chest; the point of a tray is that it is a separate object, in front of
+ * them, at table height. Once the seats are anchored against the outer bezel
+ * (see `.seat-ring` in 08-seat.css) this inset is also where the lower edge
+ * of the nameplate lands, so the chips leave from directly under the badge --
+ * which is what the request asked for, arrived at as geometry rather than as
+ * a measured pixel offset that one breakpoint would immediately invalidate.
+ */
+export const SEAT_TRAY_INSET = 1.04;
 
 /**
  * The same, for slot 0 — the chair the local player is sitting in.
@@ -112,10 +148,31 @@ const BET_INSET = 0.74;
  * figure to about 7px, which is most of the defect, and the rest is a
  * plate-depth problem rather than a bet-spot one.
  */
-const NEAR_SEAT_BET_INSET = 0.35;
+export const NEAR_SEAT_BET_INSET = 0.35;
 
 /** Slot 0 is the near edge — see `NEAR_ANGLE_DEG`. */
 const NEAR_SLOT = 0;
+
+/**
+ * Where a seat's chips rest before it bets, and the point every flight leaves
+ * from.
+ *
+ * Every seat gets the same inset, the near one included — unlike
+ * `seatBetOrigin`, which has to make an exception for slot 0. The asymmetry
+ * there exists because the *destination* has to stay clear of the local
+ * player's own figure; a tray behind that figure is not a problem, it is
+ * where a tray belongs. A chip appearing from behind the player who is
+ * betting it reads correctly, and it is the direction of travel — outward to
+ * inward — that says whose bet it is.
+ */
+export function seatTrayOrigin(slot: number, count: number, radiusZ: number = FELT.radiusZ): Vec3 {
+  const theta = seatAngle(slot, count);
+  return {
+    x: FELT.radiusX * SEAT_TRAY_INSET * Math.cos(theta),
+    y: FELT.y,
+    z: radiusZ * SEAT_TRAY_INSET * Math.sin(theta),
+  };
+}
 
 /**
  * Where a seat's chips leave from when it bets.

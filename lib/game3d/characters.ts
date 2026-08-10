@@ -3,10 +3,11 @@
  * replacing the six-angle sprite turnaround at seats that carry one.
  *
  * Pure data, no three.js import, so `npm test` reaches it. Each model is a
- * Mixamo-rigged export (Khronos glTF Blender I/O) carrying one baked clip
- * named "Armature|mixamo.com|Layer0" — `avatar-state`'s fuzzy clip matching
- * falls through to "first clip" for these on purpose, since none of the
- * fourteen ships multiple named states yet.
+ * Mixamo-rigged export (Khronos glTF Blender I/O) carrying seven named seated
+ * clips: Poker_Idle, Poker_Thinking, Poker_Fold, Poker_Check, Poker_Bet,
+ * Poker_Raise and Poker_Celebrate. The original seated source motion becomes
+ * Poker_Idle; scripts/build-poker-character-assets.sh authors the gestures
+ * against that pose and rebuilds all fourteen web assets deterministically.
  *
  * TWO THINGS MEASURED OFF THESE FILES that the loader depends on, so that
  * a fifteenth model can be checked against them rather than discovered:

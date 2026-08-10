@@ -55,6 +55,52 @@
   box-shadow: 0 15px 35px rgba(0,0,0,.22), 0 0 32px rgba(217,184,93,.045);
 }
 
+/* The 3D room's control console: detached, glassy and lower-profile so it
+   reads as camera chrome rather than another green panel from the classic
+   table. It shares only the action intents and accessibility contract. */
+.action-bar-3d {
+  width: min(840px, 100%);
+  height: calc(var(--action-bar-height, 76px) - 6px);
+  margin-top: 7px;
+  padding: 7px 9px;
+  border-color: rgba(187, 145, 239, 0.22);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 50% -80%, rgba(154, 84, 218, 0.2), transparent 58%),
+    linear-gradient(180deg, rgba(18, 15, 25, 0.96), rgba(7, 7, 11, 0.98));
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.08),
+    0 18px 48px rgba(0, 0, 0, 0.48),
+    0 0 42px rgba(111, 58, 164, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.action-bar-3d.action-bar-your-turn {
+  border-color: rgba(242, 208, 104, 0.52);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.1),
+    0 18px 48px rgba(0, 0, 0, 0.5),
+    0 0 48px rgba(217, 184, 93, 0.18);
+}
+
+.action-bar-3d .action-slot-tools {
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.action-bar-3d .action-slot-controls button {
+  border-radius: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.055em;
+}
+
+.action-bar-3d .turn-progress-track {
+  left: 16px;
+  right: 16px;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 999px;
+}
+
 /* ---------------------------------------------------------------------------
    One shape, every state.
 

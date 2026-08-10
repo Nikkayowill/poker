@@ -5,8 +5,8 @@ import { expect, test } from "@playwright/test";
  *
  * Everything here is invisible in a screenshot until it is badly wrong,
  * which is why it is a test rather than a look. A canvas that swallows a
- * tap looks exactly like a button that did not fire; a canvas that never
- * sleeps looks exactly like one that does, until the phone is warm.
+ * tap looks exactly like a button that did not fire; a skeletal mixer that
+ * receives one frame looks alive for an instant and then freezes.
  */
 
 const TABLE = { name: "Scene QA", isPrivate: true, tier: "1k", buyIn: 1000 };
@@ -19,7 +19,10 @@ async function seatAtTable(context: import("@playwright/test").BrowserContext) {
 
   const page = await context.newPage();
   await page.goto(`/?table=${gameId}`);
-  await page.getByRole("button", { name: "Play as guest" }).click();
+  // POST /api/profile establishes the guest session on this context. The
+  // table route consumes it automatically; waiting on the account-gate
+  // button races that redirect and can leave Playwright clicking a disabled,
+  // already-obsolete node while the table is visibly running underneath.
   await expect(page.locator(".poker-table-wrap")).toBeVisible();
   // Code-split, so it arrives a beat after the table does.
   await page.waitForFunction(() => Boolean(window.__stackchipsScene), null, { timeout: 30_000 });
@@ -39,6 +42,9 @@ test("the DOM HUD sits on top of the canvas and the canvas takes no input", asyn
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   try {
     const { page } = await seatAtTable(context);
+    const liveHand = page.locator('[class*="ownHandLayerLive"]');
+    await expect(liveHand).toBeVisible();
+    await expect(page.locator('[class*="ownHandStrength"]')).toBeVisible();
 
     const report = await page.evaluate(() => {
       const host = document.querySelector(".table-scene");
@@ -54,8 +60,19 @@ test("the DOM HUD sits on top of the canvas and the canvas takes no input", asyn
         canvasPresent: Boolean(document.querySelector(".table-scene canvas")),
         pointerEvents: style?.pointerEvents ?? null,
         ariaHidden: host?.getAttribute("aria-hidden"),
+        navPotDisplay: getComputedStyle(document.querySelector(".game-header .pot-display")!).display,
+        headerPositions: (() => {
+          const header = document.querySelector(".game-header")!.getBoundingClientRect();
+          const leave = document.querySelector(".game-header .leave-button")!.getBoundingClientRect();
+          const profile = document.querySelector(".game-header [aria-label=\"Open player menu\"]")!.getBoundingClientRect();
+          return {
+            leftGap: leave.left - header.left,
+            rightGap: header.right - profile.right,
+          };
+        })(),
+        livePotVisible: Array.from(document.querySelectorAll('[class*="livePot"]'))
+          .some((pot) => getComputedStyle(pot).visibility !== "hidden"),
         hits: [
-          ".pot-display",
           ".table-feed",
           ".action-slot-controls",
           ".seat-plate",
@@ -69,18 +86,65 @@ test("the DOM HUD sits on top of the canvas and the canvas takes no input", asyn
     expect(report.pointerEvents).toBe("none");
     // And it contributes nothing to the accessibility tree.
     expect(report.ariaHidden).toBe("true");
+    // The 3D room owns the pot readout; the Classic header copy must not
+    // produce two competing totals.
+    expect(report.navPotDisplay).toBe("none");
+    expect(report.livePotVisible).toBe(true);
+    expect(report.headerPositions.leftGap).toBeGreaterThanOrEqual(0);
+    expect(report.headerPositions.rightGap).toBeGreaterThanOrEqual(0);
     for (const hit of report.hits) {
       expect(hit).toEqual({ selector: hit.selector, found: true, canvasOnTop: false });
     }
+
+    const handPlacement = await page.evaluate(() => {
+      const hand = document.querySelector('[class*="ownHandLayerLive"]')!.getBoundingClientRect();
+      const action = document.querySelector(".action-bar-3d")!.getBoundingClientRect();
+      const localSeat = window.__stackchipsScene!.seat(0);
+      return {
+        sideOffset: hand.x + hand.width / 2 - localSeat.x,
+        actionGap: action.y - (hand.y + hand.height),
+      };
+    });
+    expect(handPlacement.sideOffset).toBeGreaterThan(40);
+    expect(handPlacement.actionGap).toBeGreaterThan(0);
+    expect(handPlacement.actionGap).toBeLessThan(48);
+  } finally {
+    await context.close();
+  }
+});
+
+test("switching Classic back to 3D restores the complete 3D HUD", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  try {
+    const { page } = await seatAtTable(context);
+    const playerMenu = page.getByRole("button", { name: "Open player menu" });
+
+    await playerMenu.click();
+    await page.getByRole("menuitem", { name: "Table: 3D room" }).click();
+    await expect(page.locator(".game-header")).not.toHaveClass(/game-header-3d/);
+    await expect(page.locator(".game-header .pot-display")).toBeVisible();
+    await expect(page.locator('[class*="ownHandLayerLive"]')).toHaveCount(0);
+
+    await playerMenu.click();
+    await page.getByRole("menuitem", { name: "Table: Classic" }).click();
+    await expect(page.locator(".game-header")).toHaveClass(/game-header-3d/);
+    await expect(page.locator(".game-header .pot-display")).toBeHidden();
+    await expect(page.locator('[class*="livePot"]')).toBeVisible();
+    await expect(page.locator('[class*="ownHandLayerLive"]')).toBeVisible();
+    await expect.poll(
+      () => page.evaluate(() => window.__stackchipsScene?.framesRendered() ?? 0),
+      { timeout: 8_000 },
+    ).toBeGreaterThan(0);
   } finally {
     await context.close();
   }
 });
 
 /**
- * The felt and rail stop painting themselves only when the room is
- * genuinely there to replace them — and the DOM figures stay primary,
- * because the canvas paints furniture and chips, never people.
+ * The felt, rail and classic DOM seats stop painting themselves only when
+ * the room is genuinely there to replace them. The 3D room owns its figures
+ * and projected nameplates as one camera-aligned system.
  *
  * The failure this guards is asymmetric and easy to ship: get it wrong in
  * one direction and a device without a working canvas shows an unpainted
@@ -104,8 +168,8 @@ test("the DOM felt yields to the room, and only once the room exists", async ({ 
         // The boxes themselves must survive: they are the coordinate system
         // the seat ring and the pot anchor are positioned against.
         feltBox: felt ? felt.getBoundingClientRect().width > 0 : false,
-        // People are the DOM's job. The old sprite layer is gone; a hidden
-        // figure now would mean nobody is drawing this player at all.
+        livePlateVisible: Array.from(document.querySelectorAll('[class*="plateName"]'))
+          .some((plate) => getComputedStyle(plate).visibility !== "hidden"),
         figureVisible: figure ? getComputedStyle(figure).visibility !== "hidden" : false,
       };
     });
@@ -113,7 +177,8 @@ test("the DOM felt yields to the room, and only once the room exists", async ({ 
     expect(painted.feltBackground).toBe("none");
     expect(painted.railBackground).toBe("none");
     expect(painted.feltBox).toBe(true);
-    expect(painted.figureVisible).toBe(true);
+    expect(painted.figureVisible).toBe(false);
+    expect(painted.livePlateVisible).toBe(true);
   } finally {
     await context.close();
   }
@@ -124,11 +189,10 @@ test("the DOM felt yields to the room, and only once the room exists", async ({ 
  * viewport left it.
  *
  * `.poker-rail` carries the per-breakpoint insets the table artwork was cut
- * to, and the DOM seat ring in `lib/game/table-geometry.ts` was hand-tuned
- * against that same box, so the painted rail filling it is exactly what puts
- * the players back on the edge of the felt. The fit is closed-form, so both
- * radii are assertable directly against the measured element — it either ran
- * against the real plate or it did not.
+ * to. The perspective room deliberately leaves some of that box around the
+ * physical rail because the seated Blender bodies are wider than the felt;
+ * making the felt fill the box would crop the side players. We still pin a
+ * useful lower bound so a bad camera fit cannot shrink the room to a diorama.
  *
  * Checked on two very different plates, because the shape is the whole
  * point: `--table-aspect` is 1.84 on a desktop and 0.62 on a portrait phone,
@@ -136,8 +200,8 @@ test("the DOM felt yields to the room, and only once the room exists", async ({ 
  * on both.
  */
 for (const viewport of [
-  { width: 1440, height: 900, label: "desktop", wider: true },
-  { width: 390, height: 844, label: "portrait phone", wider: false },
+  { width: 1440, height: 900, label: "desktop" },
+  { width: 390, height: 844, label: "portrait phone" },
 ]) {
   test(`the room fits the ${viewport.label} table plate`, async ({ browser }) => {
     test.setTimeout(90_000);
@@ -156,22 +220,21 @@ for (const viewport of [
       expect(fit.rail.width).toBeGreaterThan(0);
       expect(fit.rail.height).toBeGreaterThan(0);
 
-      // RAIL_SCALE (1.14) outside the felt is the painted rail, and that is
-      // what fills the measured box. One part in fifty of slack covers a
-      // resize landing between the measure and the assert.
-      for (const [painted, box] of [
-        [fit.felt.width * 1.14, fit.rail.width],
-        [fit.felt.height * 1.14, fit.rail.height],
-      ]) {
-        expect(painted).toBeGreaterThan(box * 0.98);
-        expect(painted).toBeLessThan(box * 1.02);
-      }
+      // RAIL_SCALE (1.14) converts the measured felt to its physical rail.
+      // One axis must dominate the plate. Landscape binds on height once the
+      // bodies are included; portrait binds on width and deliberately leaves
+      // the lower vertical space to the local hand and action controls.
+      const fill = [
+        (fit.felt.width * 1.14) / fit.rail.width,
+        (fit.felt.height * 1.14) / fit.rail.height,
+      ];
+      expect(Math.max(...fill)).toBeGreaterThan(0.68);
+      expect(Math.max(...fill)).toBeLessThan(1.02);
 
-      // The regression itself: a tall plate must get a tall table. Asserted
-      // as an orientation rather than a ratio so it survives a retuned
-      // --table-aspect, and fails loudly if the fit ever goes back to
-      // deriving depth from a constant.
-      expect(fit.felt.width > fit.felt.height).toBe(viewport.wider);
+      // Unlike the flat renderer, physical 3D geometry must not stretch into
+      // a tall ellipse just because the phone is upright. The camera changes;
+      // the poker table keeps its real-world wide proportions.
+      expect(fit.felt.width).toBeGreaterThan(fit.felt.height);
     } finally {
       await context.close();
     }
@@ -179,34 +242,25 @@ for (const viewport of [
 }
 
 /**
- * An idle table stops drawing. The whole scheduler exists for this: between
- * one player acting and the next there is nothing moving on the felt, and a
- * loop that repainted a static room sixty times a second through those gaps
- * would cost a phone its battery for no frames anyone could tell apart.
+ * Rigged characters keep receiving frames even when no chip is in flight.
+ * Idle breathing and thinking are skeletal animations; demand mode rendered
+ * their first pose and then froze every avatar until an unrelated scene
+ * mutation happened.
  */
-test("the render loop sleeps once the felt is still", async ({ browser }) => {
+test("the character room keeps rendering between chip flights", async ({ browser }) => {
   test.setTimeout(90_000);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   try {
     const { page } = await seatAtTable(context);
-    // Wait out any dealing/settling motion, then watch the frame counter.
-    const wentQuiet = await page.waitForFunction(() => {
-      const scene = window.__stackchipsScene;
-      return scene ? !scene.awake() : false;
-    }, null, { timeout: 60_000 }).catch(() => null);
-    expect(wentQuiet).not.toBeNull();
+    await page.waitForTimeout(800);
     const before = await page.evaluate(() => window.__stackchipsScene!.framesRendered());
-    await page.waitForTimeout(1_200);
-    const after = await page.evaluate(() => ({
-      frames: window.__stackchipsScene!.framesRendered(),
-      awake: window.__stackchipsScene!.awake(),
-    }));
-    // Asleep means asleep: zero frames across the window, not merely few —
-    // unless something genuinely started moving again, in which case being
-    // awake is the correct answer and the next quiet window will sleep.
-    if (!after.awake) {
-      expect(after.frames).toBe(before);
-    }
+    // CI uses software WebGL and can render complex skinned models at only a
+    // few frames per second. Poll for continued progress; frame-rate belongs
+    // to profiling, while this contract is specifically "does not freeze".
+    await expect.poll(
+      () => page.evaluate(() => window.__stackchipsScene!.framesRendered()),
+      { timeout: 5_000 },
+    ).toBeGreaterThan(before + 2);
   } finally {
     await context.close();
   }

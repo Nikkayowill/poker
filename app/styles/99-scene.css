@@ -106,19 +106,11 @@
    underneath it -- removing the box moves every nameplate at the table. The
    figure keeps its size and stops being seen, which is the same trick
    .scene-lit plays on the felt above and for the same reason. */
-.scene-room-3d .seat-figure {
-  visibility: hidden;
-}
-
-/* The fuse ring is drawn ON the figure's box (08-seat.css), so hiding the
-   figure would take the turn clock with it -- the one piece of that box that
-   is state rather than decoration. Handed back explicitly. */
-.scene-room-3d .seat-figure-active {
-  visibility: visible;
-}
-
-.scene-room-3d .seat-figure-active .seat-figure-art,
-.scene-room-3d .seat-figure-active .seat-figure-photo,
-.scene-room-3d .seat-figure-active .seat-figure-fallback {
+.scene-room-3d .player-seat,
+.scene-room-3d .community-cards,
+.scene-room-3d .street-label,
+.scene-room-3d .dealer-puck,
+.scene-room-3d .muck-drift,
+.scene-room-3d .table-hud {
   visibility: hidden;
 }

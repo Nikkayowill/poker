@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACTION_HOLD_MS,
   HEAD_PITCH_LIMIT,
   HEAD_YAW_LIMIT,
-  TOSS_HOLD_MS,
+  baseAnimationState,
   clampHeadPitch,
   clampHeadYaw,
   clipForState,
   resolveAnimationState,
+  transientAnimationState,
 } from "./avatar-state";
 
 describe("clipForState", () => {
@@ -15,7 +17,7 @@ describe("clipForState", () => {
   it("matches each state to its clip by intent, not exact name", () => {
     expect(clipForState(READY_PLAYER_ME_LIKE, "idle")).toBe("Idle_Breathing");
     expect(clipForState(READY_PLAYER_ME_LIKE, "thinking")).toBe("Nervous_Look");
-    expect(clipForState(READY_PLAYER_ME_LIKE, "toss")).toBe("Chip_Throw");
+    expect(clipForState(READY_PLAYER_ME_LIKE, "bet")).toBe("Chip_Throw");
     expect(clipForState(READY_PLAYER_ME_LIKE, "celebrate")).toBe("Victory_Dance");
   });
 
@@ -24,7 +26,7 @@ describe("clipForState", () => {
   });
 
   it("falls back to the first clip when nothing matches at all", () => {
-    expect(clipForState(["Mixamo_Layer_0"], "toss")).toBe("Mixamo_Layer_0");
+    expect(clipForState(["Mixamo_Layer_0"], "bet")).toBe("Mixamo_Layer_0");
   });
 
   it("returns null for a clipless model, which animates procedurally", () => {
@@ -33,13 +35,13 @@ describe("clipForState", () => {
 });
 
 describe("resolveAnimationState", () => {
-  it("lets a fresh toss transient override idle and thinking", () => {
-    expect(resolveAnimationState("idle", 1000, 1400)).toBe("toss");
-    expect(resolveAnimationState("thinking", 1000, 1400)).toBe("toss");
+  it("lets a fresh action transient override idle and thinking", () => {
+    expect(resolveAnimationState("idle", 1000, 1400)).toBe("bet");
+    expect(resolveAnimationState("thinking", 1000, 1400)).toBe("bet");
   });
 
   it("expires the toss after its hold window", () => {
-    expect(resolveAnimationState("idle", 1000, 1000 + TOSS_HOLD_MS)).toBe("idle");
+    expect(resolveAnimationState("idle", 1000, 1000 + ACTION_HOLD_MS)).toBe("idle");
   });
 
   it("celebration always wins, even mid-toss", () => {
@@ -48,6 +50,39 @@ describe("resolveAnimationState", () => {
 
   it("passes the mood through with no toss on record", () => {
     expect(resolveAnimationState("thinking", null, 5000)).toBe("thinking");
+  });
+});
+
+describe("poker action states", () => {
+  it("matches every authored StackChips clip by intent", () => {
+    const clips = [
+      "Poker_Idle",
+      "Poker_Thinking",
+      "Poker_Fold",
+      "Poker_Check",
+      "Poker_Bet",
+      "Poker_Raise",
+      "Poker_Celebrate",
+    ];
+    for (const state of ["idle", "thinking", "fold", "check", "bet", "raise", "celebrate"] as const) {
+      expect(clipForState(clips, state)).toBe(`Poker_${state[0].toUpperCase()}${state.slice(1)}`);
+    }
+  });
+
+  it("holds folded and out seats in their fold pose unless they won", () => {
+    expect(baseAnimationState("idle", "folded")).toBe("fold");
+    expect(baseAnimationState("idle", "out")).toBe("fold");
+    expect(baseAnimationState("celebrate", "folded")).toBe("celebrate");
+  });
+
+  it("maps server action labels to reusable clips", () => {
+    expect(transientAnimationState("Check")).toBe("check");
+    expect(transientAnimationState("Timed out · Check")).toBe("check");
+    expect(transientAnimationState("Call · 20")).toBe("bet");
+    expect(transientAnimationState("Bet · 40")).toBe("bet");
+    expect(transientAnimationState("Raise to · 120")).toBe("raise");
+    expect(transientAnimationState("All-in · 500")).toBe("raise");
+    expect(transientAnimationState("Small blind · 5")).toBeNull();
   });
 });
 

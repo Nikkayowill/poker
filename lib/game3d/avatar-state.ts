@@ -5,10 +5,15 @@
  * device.
  */
 
-import type { AvatarMood } from "./scene-model";
+import type { AvatarMood, SeatModel } from "./scene-model";
 
 /** Transient states layered over the sustained moods by the scene. */
-export type AvatarAnimationState = AvatarMood | "toss";
+export type AvatarAnimationState =
+  | AvatarMood
+  | "fold"
+  | "check"
+  | "bet"
+  | "raise";
 
 /**
  * External GLBs (Ready Player Me, Mixamo re-exports…) name their clips
@@ -17,7 +22,10 @@ export type AvatarAnimationState = AvatarMood | "toss";
 const CLIP_PATTERNS: Record<AvatarAnimationState, RegExp> = {
   idle: /idle|breath|stand/i,
   thinking: /think|anxious|worri|nervous|ponder/i,
-  toss: /toss|throw|bet|chip|interact/i,
+  fold: /fold|muck/i,
+  check: /check|tap/i,
+  bet: /toss|throw|bet|call|chip|interact/i,
+  raise: /raise|all.?in/i,
   celebrate: /celebrat|win|dance|clap|cheer|victory/i,
 };
 
@@ -40,8 +48,8 @@ export function clipForState(
 /** Cross-fade time between animation states, in seconds. */
 export const CLIP_FADE_S = 0.35;
 
-/** How long a toss transient holds before the mood resumes, in ms. */
-export const TOSS_HOLD_MS = 900;
+/** How long a poker-action transient holds before the mood resumes, in ms. */
+export const ACTION_HOLD_MS = 2_400;
 
 /** A head only turns so far before the body would follow. */
 export const HEAD_YAW_LIMIT = 0.65;
@@ -56,16 +64,35 @@ export function clampHeadPitch(pitch: number): number {
 }
 
 /**
- * Resolve the state an avatar should be in: a live toss transient beats the
+ * Resolve the state an avatar should be in: a live action transient beats the
  * sustained mood, except celebration, which always wins — a winner mid-toss
  * should celebrate, not finish miming a bet.
  */
 export function resolveAnimationState(
   mood: AvatarMood,
-  tossStartedAt: number | null,
+  actionStartedAt: number | null,
   nowMs: number
 ): AvatarAnimationState {
   if (mood === "celebrate") return "celebrate";
-  if (tossStartedAt !== null && nowMs - tossStartedAt < TOSS_HOLD_MS) return "toss";
+  if (actionStartedAt !== null && nowMs - actionStartedAt < ACTION_HOLD_MS) return "bet";
   return mood;
+}
+
+/** Folded/out seats hold the fold clip's final frame; winners always celebrate. */
+export function baseAnimationState(
+  mood: AvatarMood,
+  status: SeatModel["status"],
+): AvatarAnimationState {
+  if (mood === "celebrate") return "celebrate";
+  if (status === "folded" || status === "out") return "fold";
+  return mood;
+}
+
+/** Map the server-authored action label to one of the reusable GLB gestures. */
+export function transientAnimationState(lastAction: string | null): AvatarAnimationState | null {
+  if (!lastAction) return null;
+  if (/check/i.test(lastAction)) return "check";
+  if (/raise|all.?in/i.test(lastAction)) return "raise";
+  if (/bet|call/i.test(lastAction)) return "bet";
+  return null;
 }

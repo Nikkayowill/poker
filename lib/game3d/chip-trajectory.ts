@@ -106,10 +106,60 @@ export interface PushStyle {
   tiltRad: number;
 }
 
+/**
+ * The wall-clock ceiling every push must finish inside.
+ *
+ * Well under `NEXT_HAND_DELAY_MS` (2,800): a payout still travelling when
+ * the next hand deals is money the winner never visibly received, and chips
+ * arriving onto a felt that has already been cleared. The margin is
+ * deliberate — chip-instance-model.test.ts holds the whole system to 2,000,
+ * and this sits under that so the guarantee has somewhere to breathe.
+ */
+export const PUSH_BUDGET_MS = 1800;
+
+/**
+ * The stagger a group of `count` chips actually launches on.
+ *
+ * The style's `staggerMs` is the cadence the push WANTS; this is the one it
+ * gets. For small groups they are the same number and the domino read is
+ * exactly as authored. For a big one the gap compresses just enough that
+ * the whole group lands inside `PUSH_BUDGET_MS`.
+ *
+ * WHY THIS EXISTS. The budget used to hold only because `MAX_CHIPS_PER_PILE`
+ * was 14 — 13 gaps at 88 ms is 1.1 s, which fits with room to spare, so
+ * nothing had to think about it. Raising the cap to 60 for side-by-side
+ * columns turned that into 5.2 s: past the next deal, and past it silently,
+ * since a stagger is not the kind of thing that errors. Deriving the gap
+ * from the budget makes the guarantee structural — the assertion in
+ * chip-instance-model.test.ts now holds for ANY cap, not for the one it was
+ * written under.
+ */
+export function pushStaggerMs(count: number, style: PushStyle): number {
+  if (count <= 1) return style.staggerMs;
+  const room = PUSH_BUDGET_MS - style.travelMs - style.settleMs;
+  return Math.min(style.staggerMs, Math.max(0, room) / (count - 1));
+}
+
+/**
+ * The style a group of `count` chips is actually flown on: the authored one
+ * with its cadence resolved against the budget.
+ *
+ * Resolved ONCE per group and handed to `sampleChipPush`, rather than having
+ * that function take a count of its own. It is called per chip per frame,
+ * and a stagger that each call re-derived would be the same arithmetic a few
+ * thousand times a second — but more importantly, the group's cadence is a
+ * property of the group, and computing it inside a per-chip sampler is how
+ * two chips of one push end up on different clocks.
+ */
+export function effectivePushStyle(count: number, style: PushStyle): PushStyle {
+  const staggerMs = pushStaggerMs(count, style);
+  return staggerMs === style.staggerMs ? style : { ...style, staggerMs };
+}
+
 /** Total wall time for a push of `count` staggered chips. */
 export function pushDurationMs(count: number, style: PushStyle): number {
   if (count <= 0) return 0;
-  return style.travelMs + style.settleMs + (count - 1) * style.staggerMs;
+  return style.travelMs + style.settleMs + (count - 1) * pushStaggerMs(count, style);
 }
 
 export interface ChipPushSample {

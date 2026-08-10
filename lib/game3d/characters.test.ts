@@ -9,7 +9,19 @@ import {
   characterForSlot,
 } from "./characters";
 
-function readGlbJson(url: string): Record<string, any> {
+/**
+ * The slice of a glTF document this file actually reads.
+ *
+ * Stated rather than `Record<string, any>`: the callbacks below already
+ * annotate their own parameters, so the `any` bought nothing and cost the
+ * repo a lint error on every run of `npm run lint`.
+ */
+interface GlbJson {
+  skins?: { joints?: number[] }[];
+  animations?: { channels?: { target?: { node?: number } }[] }[];
+}
+
+function readGlbJson(url: string): GlbJson {
   const bytes = readFileSync(resolve(process.cwd(), "public", url.slice(1)));
   expect(bytes.toString("ascii", 0, 4)).toBe("glTF");
   expect(bytes.readUInt32LE(4)).toBe(2);

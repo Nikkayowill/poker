@@ -1526,6 +1526,57 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
     is finally applied, via `setColorAt`: under this multiply blend the
     output is `dst * (1 - a(1 - colour))`, so a grey instance colour scales
     a decal's darkness at no extra draw call.
+- **The 3D room's camera fit is exact now, and the table has its real plan
+  shape.** Five things worth not relearning:
+  - **`frameCamera` is a search, not a formula.** The closed form solved each
+    axis separately and took the larger, summing two upper bounds that never
+    co-occur — so landscape distance came out CONSTANT at 6.21 for every
+    aspect >= 1.5, leaving 36% of an ultrawide frame dead. It bisects distance
+    and Newton-steps the aim over the real projected point set now: 40 + 6
+    fixed iterations, ~250 scalar projections, once per resize, no allocation
+    (`boundsAt` is scalar-only and deliberately does NOT route through
+    `projectToNdc`). Every aspect now fills to exactly `1/SAFETY`.
+  - **The probe set was measuring width at the wrong height.** It checked
+    half-width at `FELT_TOP_Y` only, but a body stands 1.5 units up and is
+    therefore NEARER a downward-looking camera, where the same x projects
+    wider — and its `landscapeness >= 1` gate was a step over a continuous
+    blend. At 1180x820 the outer seats projected to |x| = 1.04, clipped, with
+    the fit reporting success. `aimDrop` (metres) became `contentBias` (NDC)
+    for the same class of reason.
+  - **The felt was 1.63:1; a real six-max oval is 2:1.** `FELT_RADIUS_Z` is
+    derived from `TABLE_WIDTH_M` now, not typed, and `dimensions.ts`
+    re-exports `TABLE_LENGTH_M` from seat-layout so there is one 2.13. This
+    was not only accuracy: the fit is bound by DEPTH at every landscape
+    aspect, so a rounder table pushes its own camera back and cannot use the
+    width it freed. Felt went 41% -> 50% of an ultrawide frame and 44% -> 55%
+    on a landscape phone.
+  - **Re-proportioning broke four tests, and each was a real defect.** The
+    bankroll props are physical objects at a fixed real size, so an 18%
+    shallower plate put the deep tier's corner at 1.02 of the felt ellipse
+    (inset 0.84 -> 0.82, angle offset 0.36 -> 0.50, both re-solved by scan,
+    and `HOLE_CARD_INSET` 0.82 -> 0.78 because bankroll must sit strictly
+    outside cards). And the near/far seats moved 1.78 -> 1.55, deep into the
+    cone where a smoothstep is flattest, so folding stopped reading as
+    walking into the dark: the truss dropped 3.2 m -> 2.6 m to steepen the
+    gradient, with `intensity` re-exposed 230 -> 156 by `(5.60/4.39)^1.6` so
+    the change touched shape and not brightness. `SPOT_POOL_RADIUS` is
+    derived from `FOLD_SLIDE` now, which is what its comment always claimed.
+  - **There is no backdrop and cannot be one.** Every frustum ray hits the
+    floor — the top-left corner still descends ~28 degrees — so a skybox or
+    wall would be drawn entirely off screen. `lib/game3d/floor-environment.ts`
+    owns the background instead: `FLOOR_RADIUS` solved from the camera (the
+    literal 9 was already 0.6 units narrower than the frame at 2560x1080,
+    hidden only because fog happened to be opaque out there), a vertex-colour
+    carpet whose rim colour IS `STUDIO_BACKDROP` so a lit floor meets a fogged
+    void with no horizon line and no fog-exempt materials. One draw call, 432
+    triangles. Vertex colours go through `THREE.Color(..., SRGBColorSpace)` —
+    written raw they render far darker than the literal reads, which on a
+    near-black palette is "gone". `horizonInFrame()` is the assertion the
+    whole premise rests on.
+  - **The room runs `frameloop="always"` and must.** drei's `useAnimations`
+    ticks the .glb mixers through `useFrame`, so demand mode freezes every
+    seated character. `awake()` reporting false while `framesRendered()`
+    climbs is correct — `awake()` is the CHIP scheduler. Do not "fix" it.
 - **M18 is in: player rank, XP and a daily streak.** `lib/progression/rank.ts`
   is the whole curve, pure and closed-form (XP = Gold wagered / 10; level N
   costs `XP_STEP·(N-1)N/2`, inverted by a square root that is then re-checked

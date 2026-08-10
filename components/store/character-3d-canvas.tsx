@@ -27,7 +27,15 @@ export function Character3DCanvas({ character }: { character: Character3D }) {
       <PreviewCamera />
       <ambientLight intensity={1.35} color="#d8d1e8" />
       <directionalLight position={[1.5, 2.5, 2]} intensity={2.2} color="#ffe8c4" />
-      <GlbAvatar slot={0} character={character} />
+      <GlbAvatar
+        slot={0}
+        character={character}
+        mood="idle"
+        status="active"
+        isCurrent={false}
+        lastAction={null}
+        actionKey="store-preview"
+      />
     </Canvas>
   );
 }

@@ -60,6 +60,26 @@
 .game-header .game-header-actions { justify-content: flex-end; }
 .game-header .wordmark { font-size: 16px; }
 
+/* The 3D room owns its pot readout inside the camera HUD. Keep the header
+   value for Classic, where it is the only pot readout, and remove only the
+   duplicate while WebGL is genuinely ready. */
+.game-header.game-header-3d .pot-display {
+  display: none;
+}
+
+/* Once the 3D room moves the pot into its camera HUD, the header has no
+   middle item left to balance. Keep the brand/Leave control anchored left and
+   the profile controls anchored right instead of letting the empty middle
+   column make the useful controls appear centred. */
+.game-header.game-header-3d {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.game-header.game-header-3d .game-header-actions {
+  grid-column: 3;
+  justify-self: end;
+}
+
 .leave-button {
   border: 1px solid var(--line);
   color: #86948c;

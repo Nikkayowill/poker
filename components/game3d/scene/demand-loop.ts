@@ -1,20 +1,20 @@
 "use client";
 
 /**
- * On-demand rendering. The Canvas mounts with frameloop="demand"
- * (poker-scene.tsx), so react-three-fiber only renders a frame when
- * something calls `invalidate()` — it does not run a bare requestAnimation-
- * Frame loop the way `frameloop="always"` (the default) does. Two things
- * follow from that, both verified against the installed
- * @react-three/fiber source rather than assumed:
+ * Activity-scoped imperative animation. The live character room now uses
+ * frameloop="always" because skeletal idle/thinking clips must keep advancing
+ * even when no game-state mutation occurs. Chip and card systems still use
+ * this helper so their more expensive callbacks run only while a flight is
+ * active. Keeping the invalidate calls also makes these layers safe if they
+ * are reused inside an on-demand Canvas later.
  *
- * 1. An ordinary React-driven change already wakes it for free. Every
+ * In an on-demand Canvas, an ordinary React-driven change wakes it for free. Every
  *    commit that goes through R3F's own reconciler — a prop changing on a
  *    JSX element, a child mounting or unmounting — calls
  *    `invalidateInstance()` internally, which schedules exactly one frame.
  *    So the HUD, the camera framing, a seat's cosmetic swapping: none of
  *    that needs anything from this file.
- * 2. Imperative per-frame work does NOT wake it, and never will on its own.
+ * Imperative per-frame work does not wake demand mode on its own.
  *    Writing an InstancedMesh's buffer in a useFrame callback, or
  *    stepping a chip along `sampleChipFlight`, mutates three.js objects
  *    directly — it never touches the reconciler, so demand mode has no way

@@ -14,17 +14,21 @@
  *   - and report through a single `onReady(boolean)`, which is what applies
  *     `.scene-lit` and stops the DOM felt painting.
  *
- * Nothing else at the table branches on which room is underneath. The
- * nameplates, the board, the local player's hole cards, the action bar, the
- * feed, the turn-clock fuse, every cosmetic card back and every sound are
- * DOM above the canvas and were not touched to make this work.
+ * Once WebGL reports ready, this room also mounts the camera-projected 3D
+ * nameplates, board, local hand and turn HUD. The action controls keep the
+ * same server-authoritative intent wiring but receive their own 3D skin. The
+ * classic DOM seats and board remain mounted as measurable fallback geometry
+ * and stop painting only while this room is healthy.
  *
  * WHY THIS TAKES A SNAPSHOT WHERE THE 2D ROOM TAKES ELEVEN PROPS. The 2D room
  * is fed pre-chewed deltas — `betFlights`, `paying`, `sceneStreetBets` — that
  * `poker-table.tsx` computes for it. The 3D room does its own diffing inside
  * `chip-field.tsx` (bets, sweeps, awards, hand boundaries all fall out of
- * successive SceneModels), so handing it the same deltas would mean two
- * disagreeing sources for one animation. It takes the snapshot and derives.
+ * successive SceneModels), so ordinary live play takes the snapshot and
+ * derives. The one exception is `betFlights`: an event already in progress
+ * while the player switches renderers has no previous 3D snapshot to diff.
+ * It is handed across only to hydrate that first frame, then the room resumes
+ * deriving every later flight itself.
  *
  * `deriveSceneModel` rotates the local player into slot 0 itself, so passing
  * the raw snapshot rather than `orderedSeats` is correct and not an accident:
@@ -32,13 +36,15 @@
  * zero. Its tests pin both directions.
  */
 
-import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { GameSnapshot } from "@/lib/game/types";
 import { deriveSceneModel } from "@/lib/game3d/scene-model";
 import { PokerScene } from "@/components/game3d/scene/poker-scene";
+import { LiveTableHud } from "@/components/game3d/hud/live-table-hud";
 
 export interface TableScene3DProps {
   game: GameSnapshot;
+  betFlights: Array<{ id: string; slot: number; amount: number }>;
   onReady: (ready: boolean) => void;
 }
 
@@ -72,9 +78,15 @@ class SceneBoundary extends Component<
   }
 }
 
-export function TableScene3D({ game, onReady }: TableScene3DProps) {
+export function TableScene3D({ game, betFlights, onReady }: TableScene3DProps) {
   const model = useMemo(() => deriveSceneModel(game), [game]);
   const [failed, setFailed] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  const reportReady = useCallback((nextReady: boolean) => {
+    setReady(nextReady);
+    onReady(nextReady);
+  }, [onReady]);
 
   useEffect(() => {
     // Unmounting hands the felt back, matching the 2D room's cleanup exactly.
@@ -85,15 +97,22 @@ export function TableScene3D({ game, onReady }: TableScene3DProps) {
   if (failed) return null;
 
   return (
-    <div className="table-scene" aria-hidden="true">
-      <SceneBoundary
-        onFailed={() => {
-          setFailed(true);
-          onReady(false);
-        }}
-      >
-        <PokerScene model={model} onReady={onReady} />
-      </SceneBoundary>
-    </div>
+    <>
+      <div className="table-scene" aria-hidden="true">
+        <SceneBoundary
+          onFailed={() => {
+            setFailed(true);
+            reportReady(false);
+          }}
+        >
+          <PokerScene
+            model={model}
+            resumeBetFlights={betFlights}
+            onReady={reportReady}
+          />
+        </SceneBoundary>
+      </div>
+      {ready ? <LiveTableHud game={game} model={model} /> : null}
+    </>
   );
 }

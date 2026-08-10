@@ -51,12 +51,19 @@
  * judged on a render before any state-dressing goes on top of it.
  */
 
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useAnimations, useGLTF } from "@react-three/drei";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { STARTER_CHARACTERS_3D, type Character3D } from "@/lib/game3d/characters";
-import { clipForState } from "@/lib/game3d/avatar-state";
+import {
+  CLIP_FADE_S,
+  baseAnimationState,
+  clipForState,
+  transientAnimationState,
+  type AvatarAnimationState,
+} from "@/lib/game3d/avatar-state";
+import type { AvatarMood, SeatModel } from "@/lib/game3d/scene-model";
 import { HUMAN_STANDING_UNITS } from "@/lib/game3d/dimensions";
 import { CHAIR_SEAT_Y } from "../scene/chair";
 
@@ -83,9 +90,22 @@ const CLOTH_METALNESS_CEILING = 0.15;
 export interface GlbAvatarProps {
   slot: number;
   character: Character3D;
+  mood: AvatarMood;
+  status: SeatModel["status"];
+  isCurrent: boolean;
+  lastAction: string | null;
+  /** Changes once per server-authored seat action, even when its label repeats. */
+  actionKey: string;
 }
 
-function GlbAvatarModel({ character }: GlbAvatarProps) {
+function GlbAvatarModel({
+  character,
+  mood,
+  status,
+  isCurrent,
+  lastAction,
+  actionKey,
+}: GlbAvatarProps) {
   const groupRef = useRef<THREE.Group>(null);
   // (url, useDraco, useMeshopt). Meshopt is ON and Draco stays OFF, and the
   // asymmetry is the point. scripts/compress-3d-assets.sh now meshopt-encodes
@@ -118,7 +138,11 @@ function GlbAvatarModel({ character }: GlbAvatarProps) {
       // assigning keeps a genuinely glossy surface (hair, a leather jacket)
       // ahead of a matte one — the relative ordering the artist authored
       // survives, only the top of the range is pulled back.
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      // Materials have to be per-seat too: folded/current dressing below is
+      // stateful and two players may use the same character URL.
+      const sourceMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const materials = sourceMaterials.map((material) => material.clone());
+      mesh.material = Array.isArray(mesh.material) ? materials : materials[0];
       for (const material of materials) {
         const standard = material as THREE.MeshStandardMaterial;
         if (!standard?.isMaterial) continue;
@@ -127,6 +151,9 @@ function GlbAvatarModel({ character }: GlbAvatarProps) {
         }
         if (typeof standard.metalness === "number") {
           standard.metalness = Math.min(standard.metalness, CLOTH_METALNESS_CEILING);
+        }
+        if ("color" in standard && standard.color) {
+          standard.userData.stackchipsBaseColor = standard.color.clone();
         }
       }
     });
@@ -203,15 +230,86 @@ function GlbAvatarModel({ character }: GlbAvatarProps) {
   }, [model, animations]);
 
   const { actions, names } = useAnimations(animations, groupRef);
+  const activeActionRef = useRef<THREE.AnimationAction | null>(null);
+  const firstActionKeyRef = useRef(actionKey);
+  const baseState = baseAnimationState(mood, status);
+  const transientState = transientAnimationState(lastAction);
 
+  // State belongs on the actual figure in a 3D room, not only on a detached
+  // nameplate. Folded players recede into the light; the actor and winner get
+  // a restrained warm lift without recolouring skin or clothing outright.
   useEffect(() => {
-    const clipName = clipForState(names, "idle");
-    if (!clipName) return;
-    const action = actions[clipName]?.reset().fadeIn(0.3).play();
-    return () => {
-      action?.fadeOut(0.2);
-    };
+    const folded = status === "folded" || status === "out";
+    model.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const material of materials) {
+        const standard = material as THREE.MeshStandardMaterial;
+        const base = standard.userData.stackchipsBaseColor as THREE.Color | undefined;
+        if (base && standard.color) {
+          standard.color.copy(base);
+          if (folded) standard.color.multiplyScalar(0.34);
+          else if (isCurrent) standard.color.lerp(new THREE.Color("#fff1c7"), 0.08);
+        }
+        if (standard.emissive) {
+          standard.emissive.set(isCurrent && !folded ? "#2b1c06" : "#000000");
+          standard.emissiveIntensity = isCurrent && !folded ? 0.32 : 0;
+        }
+        standard.needsUpdate = true;
+      }
+    });
+  }, [isCurrent, model, status]);
+
+  /* AnimationAction is three.js's imperative playback handle. Mutating its
+     enabled/loop/clamp fields is the public API; it is not React-owned data. */
+  /* eslint-disable react-hooks/immutability */
+  const playState = useCallback((state: AvatarAnimationState, once: boolean) => {
+    const clipName = clipForState(names, state);
+    if (!clipName) return null;
+    const next = actions[clipName];
+    if (!next) return null;
+
+    const current = activeActionRef.current;
+    if (current && current !== next) current.fadeOut(CLIP_FADE_S);
+    next.reset();
+    next.enabled = true;
+    next.setEffectiveWeight(1);
+    next.setEffectiveTimeScale(1);
+    next.clampWhenFinished = once;
+    next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
+    next.fadeIn(CLIP_FADE_S).play();
+    activeActionRef.current = next;
+    return next;
   }, [actions, names]);
+
+  // Idle/thinking loop. Fold and celebration are deliberate one-shots: a
+  // winner does not repeat the same gesture like a mechanical toy, and a
+  // folded player holds the leaned-back end pose until the next hand.
+  useEffect(() => {
+    playState(baseState, baseState === "fold" || baseState === "celebrate");
+  }, [baseState, playState]);
+
+  // Action labels persist in snapshots, so the full actionKey is the edge.
+  // Suppressing the first key prevents a freshly mounted table replaying a
+  // stale call/check from before the viewer arrived.
+  useEffect(() => {
+    if (firstActionKeyRef.current === actionKey) return;
+    firstActionKeyRef.current = actionKey;
+    if (!transientState || baseState === "fold" || baseState === "celebrate") return;
+
+    const played = playState(transientState, true);
+    if (!played) return;
+    const delayMs = Math.max(0, (played.getClip().duration - CLIP_FADE_S) * 1000);
+    const timeout = window.setTimeout(() => playState(baseState, false), delayMs);
+    return () => window.clearTimeout(timeout);
+  }, [actionKey, baseState, playState, transientState]);
+
+  useEffect(() => () => {
+    activeActionRef.current?.stop();
+    activeActionRef.current = null;
+  }, []);
+  /* eslint-enable react-hooks/immutability */
 
   // Position so the (scaled) hip lands exactly HIP_SIT_RISE above the
   // chair's seat pan. hipOffset is already in world-scaled units

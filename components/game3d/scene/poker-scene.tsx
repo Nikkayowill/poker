@@ -31,20 +31,18 @@ import {
   FELT_TOP_Y,
   betSpotPosition,
   faceCentreRotationY,
-  seatAngle,
   seatPosition,
 } from "@/lib/game3d/seat-layout";
-import { SpriteAvatar } from "../avatars/sprite-avatar";
 import { GlbAvatar } from "../avatars/glb-avatar";
 import { characterById, characterForSlot } from "@/lib/game3d/characters";
 import { ChipField } from "../chips/chip-field";
 import { SeatBankrolls } from "../props/seat-bankrolls";
 import { HoleCardProp } from "../props/hole-card-prop";
-import { HoleCards } from "./cards-3d";
 import { HoleCardsInstanced } from "./cards-instanced";
 import { Table3D } from "./table-3d";
 import { Chair } from "./chair";
 import { SceneSeam } from "./scene-seam";
+import { FoldCardFlights } from "./fold-card-flights";
 
 
 /**
@@ -141,7 +139,13 @@ function Lights() {
   );
 }
 
-function SeatUnit({ seat }: { seat: SeatModel }) {
+function SeatUnit({
+  seat,
+  actionKey,
+}: {
+  seat: SeatModel;
+  actionKey: string;
+}) {
   const position = seatPosition(seat.slot);
   const rotationY = faceCentreRotationY(position);
   return (
@@ -154,23 +158,27 @@ function SeatUnit({ seat }: { seat: SeatModel }) {
           rail" failure mode doesn't apply to real, depth-tested geometry
           the way it did to the sprite era's flat quads). */}
       <Chair />
-      {/* First-pass evaluation of the real .glb roster (see
-          components/game3d/avatars/glb-avatar.tsx) in place of the sprite
-          turnaround, while this stays judged before any production wiring.
-          SpriteAvatar is left mounted commented-out below for a quick
-          A/B by uncommenting rather than reconstructing the call. */}
+      {/* The seated .glb roster and its embedded Blender action clips. */}
       <GlbAvatar
         slot={seat.slot}
         character={characterById(seat.avatar3dCosmetic ?? "") ?? characterForSlot(seat.slot)}
+        mood={seat.mood}
+        status={seat.status}
+        isCurrent={seat.isCurrent}
+        lastAction={seat.lastAction}
+        actionKey={actionKey}
       />
-      {/* <SpriteAvatar
-        slot={seat.slot}
-        seatAngle={seatAngle(seat.slot)}
-        acting={seat.isCurrent}
-        folded={folded}
-        betting={seat.streetBet > 0}
-        winner={seat.isWinner}
-      /> */}
+      {seat.isCurrent || seat.isWinner ? (
+        <mesh position={[0, 0.018, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.48, 0.72, 48]} />
+          <meshBasicMaterial
+            color={seat.isWinner ? "#d8a92f" : "#f0c75e"}
+            transparent
+            opacity={seat.isWinner ? 0.34 : 0.24}
+            depthWrite={false}
+          />
+        </mesh>
+      ) : null}
     </group>
   );
 }
@@ -199,6 +207,8 @@ function DealerButton({ slot }: { slot: number }) {
 
 export interface PokerSceneProps {
   model: SceneModel;
+  /** Bet events still airborne when this scene is mounted after a renderer switch. */
+  resumeBetFlights?: Array<{ id: string; slot: number; amount: number }>;
   /**
    * Fires true once the GL context exists, and false if it is ever lost.
    *
@@ -211,12 +221,13 @@ export interface PokerSceneProps {
   onReady?: (ready: boolean) => void;
 }
 
-function SceneContents({ model }: { model: SceneModel }) {
-  // Slot -> timestamp of that seat's latest chip launch. A mutable shared
-  // clock rather than state: the chip layer samples it per-frame, and a
-  // toss must not re-render the tree.
-  const tossClock = useRef<Map<number, number>>(new Map());
-
+function SceneContents({
+  model,
+  resumeBetFlights = [],
+}: {
+  model: SceneModel;
+  resumeBetFlights?: Array<{ id: string; slot: number; amount: number }>;
+}) {
   const dealerSlot =
     model.seats.find((seat) => seat.isDealer)?.slot ?? null;
 
@@ -232,20 +243,17 @@ function SceneContents({ model }: { model: SceneModel }) {
       {/* No house dealer figure: the seats are photographic renders now, and
           nothing in that style exists for the house yet. */}
       {model.seats.map((seat) => (
-        <SeatUnit key={seat.id} seat={seat} />
+        <SeatUnit
+          key={seat.id}
+          seat={seat}
+          actionKey={`${model.handNumber}:${model.street}:${seat.status}:${seat.streetBet}:${seat.lastAction ?? ""}`}
+        />
       ))}
       {/* One InstancedMesh for every live hole card (cards-instanced.tsx),
-          not one <HoleCards> per seat — see that file's header for how a
+          not one mesh pair per seat — see that file's header for how a
           single atlas material shows N different card faces in one draw
-          call. HoleCards/CardPlate (cards-3d.tsx) are left imported and
-          commented rather than deleted, matching this file's own
-          SpriteAvatar precedent above: an easy A/B if the atlas UV/mipmap
-          bleed math (documented as unverified on a real GPU in
-          card-atlas-texture.ts's header) doesn't hold up on a render. */}
+          call. */}
       <HoleCardsInstanced seats={model.seats} />
-      {/* {model.seats.map((seat) => (
-        <HoleCards key={seat.id} seat={seat} />
-      ))} */}
       {/* An opponent's still-unrevealed pair is the modelled face-down
           prop, not the atlas texture above — see cards-instanced.tsx's own
           header for the split and lib/game3d/scene-model.ts's
@@ -256,6 +264,7 @@ function SceneContents({ model }: { model: SceneModel }) {
           <HoleCardProp key={`hole-card-prop-${seat.id}`} seat={seat} />
         ) : null
       )}
+      <FoldCardFlights model={model} />
       {/* The board itself is no longer painted here — see
           hud/board-cards.tsx. A texture lying flat on the felt two metres
           from camera cannot be made to read at a lazy glance on a phone;
@@ -264,10 +273,7 @@ function SceneContents({ model }: { model: SceneModel }) {
           legibility reason and are already life-size-plus for a single
           local player, not five cards shared across every viewport. */}
       {dealerSlot !== null ? <DealerButton slot={dealerSlot} /> : null}
-      <ChipField
-        model={model}
-        onSeatToss={(slot) => tossClock.current.set(slot, performance.now())}
-      />
+      <ChipField model={model} resumeBetFlights={resumeBetFlights} />
       {/* Each player's own chips at the rail — the modelled props, sized by
           each seat's live stack. Deliberately mounted alongside ChipField
           rather than inside it: bets and the pot are engine quantities that
@@ -278,7 +284,7 @@ function SceneContents({ model }: { model: SceneModel }) {
   );
 }
 
-export function PokerScene({ model, onReady }: PokerSceneProps) {
+export function PokerScene({ model, resumeBetFlights = [], onReady }: PokerSceneProps) {
   // Held in a ref so the Canvas's own props never change identity because a
   // parent re-rendered with a fresh callback -- remounting a Canvas rebuilds
   // the GL context, which is the one thing this component must not do
@@ -318,21 +324,18 @@ export function PokerScene({ model, onReady }: PokerSceneProps) {
       shadows
       dpr={[1, 2]}
       onCreated={handleCreated}
-      // On-demand rendering: this room only actually changes when a chip
-      // is in flight, a card just dealt, or the camera framing recomputes
-      // on resize — not every 16ms. See scene/demand-loop.ts's header for
-      // exactly what does and doesn't wake a "demand" loop back up; the
-      // chip and card layers are the two pieces of this scene built to
-      // that contract (chip-instanced-layer.tsx self-sustains invalidate()
-      // only while a flight is airborne).
-      frameloop="demand"
+      // Rigged characters breathe, think and complete one-shot gestures even
+      // while no chips are moving. Demand mode rendered only the first frame
+      // of those mixers and left avatars visibly frozen until another scene
+      // mutation happened, so the character room owns a continuous loop.
+      frameloop="always"
       gl={{ antialias: true, powerPreference: "high-performance" }}
       camera={{ fov: 42, near: 0.1, far: 40 }}
       style={{ position: "absolute", inset: 0 }}
     >
       {/* Must match the fog colour, or the fade draws a horizon line. */}
       <color attach="background" args={[STUDIO_BACKDROP]} />
-      <SceneContents model={model} />
+      <SceneContents model={model} resumeBetFlights={resumeBetFlights} />
     </Canvas>
   );
 }

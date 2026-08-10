@@ -416,7 +416,19 @@ export function PokerTable({
    * app/styles/99-scene.css. Assuming success would leave a device without
    * a working canvas looking at an unpainted table.
    */
-  const [sceneReady, setSceneReady] = useState(false);
+  // Readiness belongs to one specific room mount, not just to a renderer
+  // name. During 3D -> Classic -> 3D, the first 3D room's passive cleanup can
+  // report false after the second 3D room has already reported true. A name
+  // tag cannot distinguish them; this token can. Old callbacks retain their
+  // old token and therefore cannot un-light the room that replaced them.
+  const sceneToken = useMemo(() => ({ renderer: activeRenderer }), [activeRenderer]);
+  const [readySceneToken, setReadySceneToken] = useState<typeof sceneToken | null>(null);
+  const sceneReady = readySceneToken === sceneToken;
+  const reportSceneReady = useCallback((ready: boolean) => {
+    setReadySceneToken((current) => (
+      ready ? sceneToken : current === sceneToken ? null : current
+    ));
+  }, [sceneToken]);
 
   // Ring slots, not engine seat positions. The scene rings its table from the
   // local player's chair exactly as the DOM does, so a bet has to be handed
@@ -629,7 +641,10 @@ export function PokerTable({
           rather than a menu entry: it is the one control a player may want
           in a hurry, and burying it two taps deep to satisfy a rule about
           tidiness would be the wrong trade. */}
-      <header className="game-header">
+      <header className={clsx(
+        "game-header",
+        sceneReady && activeRenderer === "webgl_3d" && "game-header-3d",
+      )}>
         {/* Mark only, matching the lobby header. The button already carries
             its own accessible name, so the mark stays aria-hidden here rather
             than announcing the brand a second time inside it. */}
@@ -685,7 +700,11 @@ export function PokerTable({
               paint order as well as lowest in z-index -- the HUD over it is
               ordinary DOM and needed no z-index changes to land on top. */}
           {activeRenderer === "webgl_3d" ? (
-            <TableScene3D game={game} onReady={setSceneReady} />
+            <TableScene3D
+              game={game}
+              betFlights={betFlights}
+              onReady={reportSceneReady}
+            />
           ) : (
             <TableScene
               seats={orderedSeats}
@@ -698,7 +717,7 @@ export function PokerTable({
               handNumber={game.handNumber}
               betFlights={betFlights}
               betStyle={betStyle}
-              onReady={setSceneReady}
+              onReady={reportSceneReady}
             />
           )}
           {/* The pot and the stakes, in the black space around the table
@@ -893,6 +912,7 @@ export function PokerTable({
 
             profile={profile}
             onOpenCheckout={() => setShowCheckout(true)}
+            variant={sceneReady && activeRenderer === "webgl_3d" ? "3d" : "classic"}
           />
         </div>
       </section>

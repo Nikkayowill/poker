@@ -13,11 +13,33 @@ import {
   UNITS_PER_METRE_Y,
   mm,
 } from "./dimensions";
-import { FELT_RADIUS_X, FELT_RADIUS_Z, FELT_TOP_Y } from "./seat-layout";
+import {
+  FELT_RADIUS_X,
+  FELT_RADIUS_Z,
+  FELT_TOP_Y,
+  TABLE_WIDTH_M,
+  TABLE_LENGTH_M as LAYOUT_TABLE_LENGTH_M,
+} from "./seat-layout";
 
 describe("the room's ruler", () => {
   it("resolves the felt to a real table's length", () => {
     expect((2 * FELT_RADIUS_X) / UNITS_PER_METRE).toBeCloseTo(TABLE_LENGTH_M, 6);
+  });
+
+  it("resolves the felt to a real table's WIDTH on the other axis too", () => {
+    // The ruler was anchored to the felt's length alone, and the depth was a
+    // literal 1.32 that nothing checked — a 1.63:1 oval claiming to be a
+    // six-max table, which is very close to 2:1. Both axes are measured
+    // here, so the room can no longer be the right size in one direction and
+    // the wrong shape overall.
+    expect((2 * FELT_RADIUS_Z) / UNITS_PER_METRE).toBeCloseTo(TABLE_WIDTH_M, 6);
+  });
+
+  it("has exactly one statement of the table's length", () => {
+    // dimensions.ts re-exports seat-layout's constant rather than declaring a
+    // second 2.13, because the depth derivation needs it and this file cannot
+    // export to seat-layout without a cycle.
+    expect(TABLE_LENGTH_M).toBe(LAYOUT_TABLE_LENGTH_M);
   });
 
   it("converts millimetres through that one scale", () => {

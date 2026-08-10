@@ -710,3 +710,46 @@
     bottom: calc(max(10px, env(safe-area-inset-bottom)) + 62px);
   }
 }
+
+/* --------------------------------------------------------------------------
+ * Bet and pot amounts: the number beside the clay.
+ *
+ * Deliberately lighter than a nameplate — no panel, no border, just type on
+ * a soft shadow. A plate here would put six more filled boxes on the cloth
+ * and the felt is where the chips are supposed to be read; these have to
+ * name a pile without becoming the thing you look at instead of it.
+ * ------------------------------------------------------------------------ */
+
+.betAmountLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.betAmount {
+  position: absolute;
+  /* Anchored by its bottom centre, so the number sits directly on top of the
+     pile its projected point belongs to. */
+  transform: translate(-50%, -100%);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(6, 7, 12, 0.62);
+  color: #f7efdc;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  /* The felt is bright where the spot lands and near-black at the rail, so a
+     flat colour is legible over one and vanishes over the other. The shadow
+     is what carries it over both. */
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+  transition: left 260ms ease, top 260ms ease;
+}
+
+.betAmountPot {
+  font-size: 14px;
+  color: #ffdf9b;
+  background: rgba(6, 7, 12, 0.72);
+}

@@ -22,6 +22,7 @@ import {
 } from "@/lib/game3d/scene-model";
 import { frameCamera } from "@/lib/game3d/camera-framing";
 import { DEALER_BUTTON } from "@/lib/game3d/dimensions";
+import { STUDIO_RIM } from "@/lib/game3d/floor-environment";
 import {
   STUDIO_BACKDROP,
   STUDIO_SPOT,
@@ -135,6 +136,23 @@ function Lights() {
           (position → origin), so this travels toward −Z — which is toward
           the far seat's own front, not just the near seats'. */}
       <directionalLight position={[0, 4.6, 5.2]} intensity={0.85} color="#e8d9c4" />
+      {/* Cool rim from behind and to the side, so the rail and the seated
+          shoulders have an edge. The spot is directly overhead and the kick
+          above is head-on, and a silhouette lit from both of those is
+          flattest exactly where its outline is — which is why the table read
+          as a shape cut out of the dark rather than an object standing in
+          it. Deliberately the only light in the rig that comes from -Z.
+
+          castShadow is spread from the constant rather than defaulted: it is
+          the difference between one shadow pass per frame and two over every
+          character, chair and chip, and a second map at this intensity would
+          cost that and show nothing. See lib/game3d/floor-environment.ts. */}
+      <directionalLight
+        position={[STUDIO_RIM.position.x, STUDIO_RIM.position.y, STUDIO_RIM.position.z]}
+        intensity={STUDIO_RIM.intensity}
+        color={STUDIO_RIM.color}
+        castShadow={STUDIO_RIM.castShadow}
+      />
     </>
   );
 }

@@ -27,10 +27,18 @@
  * Pure arithmetic with no three.js import, so `npm test` reaches it.
  */
 
-import { FELT_RADIUS_X, FELT_TOP_Y } from "./seat-layout";
+import { FELT_RADIUS_X, FELT_TOP_Y, TABLE_LENGTH_M } from "./seat-layout";
 
-/** Playing surface of a six-max oval table, long axis, in metres. */
-export const TABLE_LENGTH_M = 2.13;
+/**
+ * Playing surface of a six-max oval table, long axis, in metres.
+ *
+ * Re-exported rather than restated: the felt's DEPTH is derived from the
+ * same table's short axis, and that derivation has to live in seat-layout
+ * (this file imports FELT_RADIUS_X from there, so the metre constants
+ * cannot come the other way without a cycle). One 2.13 in the codebase,
+ * and the test below checks the felt really measures it on both axes.
+ */
+export { TABLE_LENGTH_M };
 
 /** The scale factor everything else in this file is built from. */
 export const UNITS_PER_METRE = (2 * FELT_RADIUS_X) / TABLE_LENGTH_M;

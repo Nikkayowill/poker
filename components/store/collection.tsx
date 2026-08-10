@@ -238,7 +238,11 @@ export function Collection() {
               <button type="button" className="cosmetic-action" onClick={() => setPreviewing(null)}>
                 Close
               </button>
-              {owned.includes(previewing.id) && equipped?.[previewing.slot] !== previewing.id && (
+              {owned.includes(previewing.id) && equipped?.[
+                previewing.slot === "avatar"
+                  ? previewing.renderMode === "3d" ? "avatar3d" : "avatar2d"
+                  : previewing.slot
+              ] !== previewing.id && (
                 <button
                   type="button"
                   className="cosmetic-action cosmetic-buy"

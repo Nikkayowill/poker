@@ -36,7 +36,7 @@ import {
 } from "@/lib/game3d/seat-layout";
 import { SpriteAvatar } from "../avatars/sprite-avatar";
 import { GlbAvatar } from "../avatars/glb-avatar";
-import { characterForSlot } from "@/lib/game3d/characters";
+import { characterById, characterForSlot } from "@/lib/game3d/characters";
 import { ChipField } from "../chips/chip-field";
 import { SeatBankrolls } from "../props/seat-bankrolls";
 import { HoleCardProp } from "../props/hole-card-prop";
@@ -159,7 +159,10 @@ function SeatUnit({ seat }: { seat: SeatModel }) {
           turnaround, while this stays judged before any production wiring.
           SpriteAvatar is left mounted commented-out below for a quick
           A/B by uncommenting rather than reconstructing the call. */}
-      <GlbAvatar slot={seat.slot} character={characterForSlot(seat.slot)} />
+      <GlbAvatar
+        slot={seat.slot}
+        character={characterById(seat.avatarCosmetic) ?? characterForSlot(seat.slot)}
+      />
       {/* <SpriteAvatar
         slot={seat.slot}
         seatAngle={seatAngle(seat.slot)}

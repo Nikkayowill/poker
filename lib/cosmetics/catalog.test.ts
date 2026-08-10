@@ -5,6 +5,8 @@ import {
   avatarCosmetics,
   avatarFace,
   avatarFigure,
+  character3DCosmetics,
+  characterThumbnail,
   cosmetics,
   DEFAULT_AVATAR_COSMETIC,
   DEFAULT_CARD_BACK,
@@ -25,10 +27,17 @@ describe("cosmetic catalog", () => {
     // without running the prepare script -- or with a source file named a
     // little differently -- lists in the store and then renders as a monogram
     // for everyone who buys it. This is the only place that catches that.
-    const missing = avatarCosmetics.flatMap((item) => [
+    const missing = avatarCosmetics.filter((item) => item.renderMode !== "3d").flatMap((item) => [
       ...(onDisk(avatarFigure(item.id)) ? [] : [`${item.id}: figure`]),
       ...(onDisk(avatarFace(item.id)) ? [] : [`${item.id}: face`]),
     ]);
+    expect(missing).toEqual([]);
+  });
+
+  it("ships a captured thumbnail for every 3D character", () => {
+    const missing = character3DCosmetics
+      .filter((item) => !onDisk(characterThumbnail(item.id)))
+      .map((item) => item.id);
     expect(missing).toEqual([]);
   });
 
@@ -43,7 +52,7 @@ describe("cosmetic catalog", () => {
     // relied upon. Avatars are the starter tier, not just one -- an NBA 2K
     // MyTeam-style pick of five rather than a single forced default.
     const free = cosmetics.filter((item) => item.price === 0);
-    const freeAvatars = free.filter((item) => item.slot === "avatar");
+    const freeAvatars = free.filter((item) => item.slot === "avatar" && item.renderMode !== "3d");
     const freeCardBacks = free.filter((item) => item.slot === "cardBack");
     expect(freeAvatars.map((item) => item.id)).toContain(DEFAULT_AVATAR_COSMETIC);
     expect(freeAvatars).toHaveLength(5);
@@ -79,6 +88,7 @@ describe("cosmetic catalog", () => {
       // Card backs are drawn from `art`; avatars are supplied images keyed by
       // id. An entry with both, or neither, renders as nothing at all.
       expect(Boolean(item.art)).toBe(item.slot === "cardBack");
+      if (item.renderMode === "3d") expect(item.slot).toBe("avatar");
     }
   });
 });

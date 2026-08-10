@@ -81,4 +81,26 @@ describe("cosmetic ownership (memory mode)", () => {
     // The store only offers what you own, but the endpoint cannot assume that.
     await expect(equipCosmetic(token, owner, "back-ivory")).rejects.toThrow("don't own");
   });
+
+  it("does not let a new profile equip a locked 3D character", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+
+    expect(await listOwnedCosmetics(profile.id)).not.toContain("marcus");
+    expect(await listOwnedCosmetics(profile.id)).not.toContain("claira");
+    await expect(equipCosmetic(token, profile, "marcus")).rejects.toThrow("don't own");
+    await expect(equipCosmetic(token, profile, "claira")).rejects.toThrow("don't own");
+  });
+
+  it("sells and equips a premium 3D character at its server catalog price", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await adjustGold(profile.id, 1_000_000);
+    const funded = await ensureProfile(token);
+    const purchase = await purchaseCosmetic(token, funded, "derek");
+
+    expect(purchase.profile.goldBalance).toBe(2000);
+    expect(purchase.owned).toContain("derek");
+    expect((await equipCosmetic(token, purchase.profile, "derek")).avatar3d).toBe("derek");
+  });
 });

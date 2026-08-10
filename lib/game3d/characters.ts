@@ -31,12 +31,10 @@
  *    character reachable by the same cycling that seats bots for free would
  *    make the premium tier worthless the moment a table filled.
  *  - "premium": customer-supplied characters the owner intends to sell.
- *    Not wired to any purchase, ownership or equip path yet — there is no
- *    3D-room analogue of lib/cosmetics/catalog.ts today, and inventing one
- *    (pricing, a store surface, a Supabase ownership table) is a separate
- *    decision from getting the assets into the roster at all. `tier` is the
- *    seam a future store slots into; until then a premium entry sits in the
- *    roster unused by anything.
+ *    `lib/cosmetics/catalog.ts` gives four of them lifetime hand-win unlocks
+ *    and sells the other four for Gold. Ownership and equip are enforced by
+ *    the existing server cosmetics store; `tier` keeps every one of them out
+ *    of the automatic free seat cycle regardless of acquisition method.
  *
  * The two renamed customer-pack files are the one thing here that isn't a
  * mechanical port: the source files were "JackieChan_Rigged.fbx" and
@@ -92,7 +90,7 @@ export function characterById(id: string): Character3D | null {
  * Deterministic roster assignment for seats with no cosmetic equipped yet —
  * cycles the starter tier only. Premium characters are real entries in
  * CHARACTERS_3D (loadable by id, listable via PREMIUM_CHARACTERS_3D) but are
- * never hit by this cycle, which is what keeps them worth selling.
+ * never hit by this cycle, which preserves their purchase/unlock rules.
  */
 export function characterForSlot(slot: number): Character3D {
   return STARTER_CHARACTERS_3D[slot % STARTER_CHARACTERS_3D.length];

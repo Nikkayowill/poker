@@ -356,20 +356,78 @@ const illustratedAvatarCosmetics: Cosmetic[] = [
 ];
 
 /**
- * Rigged characters share the avatar ownership/equip slot with illustrated
- * characters, but remain a separate Collection state so the two art systems
- * do not get mixed into one grid. They are free while the 3D selection is
- * being introduced; ownership still flows through the same server path.
+ * Acquisition rules for the eight customer-pack characters. Keeping this
+ * beside the cosmetic catalog makes the price and unlock threshold part of
+ * the same server-owned record used by purchase/equip; the browser never gets
+ * to decide whether one of these characters is free.
+ *
+ * The original six remain the starter roster. Four of the new characters are
+ * lifetime hand-win rewards and four are deliberately expensive Gold items.
+ * No customer-pack character may fall through to the starter `price: 0`
+ * default below.
  */
-export const character3DCosmetics: Cosmetic[] = CHARACTERS_3D.map((character) => ({
-  id: character.id,
-  slot: "avatar",
-  name: character.name,
-  description: "A fully rigged table character, ready for motion in the 3D room.",
-  rarity: character.tier === "premium" ? "premium" : "standard",
-  price: 0,
-  renderMode: "3d",
-}));
+const premiumCharacter3DOffers: Record<string, Pick<Cosmetic, "description" | "price" | "unlock">> = {
+  claira: {
+    description: "A fully rigged table character. Earned by winning 10 hands.",
+    price: null,
+    unlock: { handsWon: 10 },
+  },
+  donni: {
+    description: "A fully rigged table character. Earned by winning 50 hands.",
+    price: null,
+    unlock: { handsWon: 50 },
+  },
+  jimmy: {
+    description: "A fully rigged table character. Earned by winning 150 hands.",
+    price: null,
+    unlock: { handsWon: 150 },
+  },
+  kenji: {
+    description: "A fully rigged table character. Earned by winning 500 hands.",
+    price: null,
+    unlock: { handsWon: 500 },
+  },
+  derek: {
+    description: "A premium fully rigged character for the 3D room.",
+    price: 1_000_000,
+  },
+  oscar: {
+    description: "A premium fully rigged character for the 3D room.",
+    price: 2_000_000,
+  },
+  victor: {
+    description: "A premium fully rigged character for the 3D room.",
+    price: 4_000_000,
+  },
+  marcus: {
+    description: "A premium fully rigged character for the 3D room.",
+    price: 6_000_000,
+  },
+};
+
+/**
+ * Rigged characters share ownership infrastructure with illustrated avatars,
+ * but keep an independent equipment slot and Collection grid. Starter entries
+ * are implicitly owned; every premium roster entry must have an offer above.
+ */
+export const character3DCosmetics: Cosmetic[] = CHARACTERS_3D.map((character) => {
+  const offer = premiumCharacter3DOffers[character.id];
+  if (character.tier === "premium" && !offer) {
+    throw new Error(`Premium 3D character ${character.id} has no acquisition rule.`);
+  }
+  return {
+    id: character.id,
+    slot: "avatar",
+    name: character.name,
+    description: offer?.description ?? "A starter character for the 3D room.",
+    rarity: character.tier === "premium" ? "premium" : "standard",
+    // `null` is meaningful: earned-only. Nullish coalescing would turn it
+    // back into zero and silently grant every progress reward to everyone.
+    price: offer ? offer.price : 0,
+    ...(offer?.unlock ? { unlock: offer.unlock } : {}),
+    renderMode: "3d",
+  };
+});
 
 export const avatarCosmetics: Cosmetic[] = [
   ...illustratedAvatarCosmetics,

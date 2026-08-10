@@ -74,6 +74,30 @@ describe("cosmetic catalog", () => {
     expect(freeCardBacks.map((item) => item.id)).toEqual([DEFAULT_CARD_BACK]);
   });
 
+  it("locks every customer-pack 3D character behind a win reward or premium price", () => {
+    const starter3D = character3DCosmetics.filter((item) => item.price === 0);
+    const earned3D = character3DCosmetics.filter((item) => item.unlock);
+    const paid3D = character3DCosmetics.filter((item) => typeof item.price === "number" && item.price > 0);
+
+    expect(starter3D.map((item) => item.id)).toEqual([
+      "gloria", "michael", "pablo", "james", "daniel", "dora",
+    ]);
+    expect(earned3D.map((item) => item.id)).toEqual(["claira", "donni", "jimmy", "kenji"]);
+    expect(earned3D.map((item) => item.unlock)).toEqual([
+      { handsWon: 10 },
+      { handsWon: 50 },
+      { handsWon: 150 },
+      { handsWon: 500 },
+    ]);
+    expect(earned3D.every((item) => item.price === null)).toBe(true);
+    expect(paid3D.map((item) => [item.id, item.price])).toEqual([
+      ["marcus", 6_000_000],
+      ["oscar", 2_000_000],
+      ["derek", 1_000_000],
+      ["victor", 4_000_000],
+    ]);
+  });
+
   it("never prices a signature item", () => {
     // Status has to be unbuyable to mean anything -- the rule the whole
     // cosmetic economy leans on.

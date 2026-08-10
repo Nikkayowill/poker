@@ -55,7 +55,7 @@ import { Suspense, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useAnimations, useGLTF } from "@react-three/drei";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
-import { CHARACTERS_3D, type Character3D } from "@/lib/game3d/characters";
+import { STARTER_CHARACTERS_3D, type Character3D } from "@/lib/game3d/characters";
 import { clipForState } from "@/lib/game3d/avatar-state";
 import { HUMAN_STANDING_UNITS } from "@/lib/game3d/dimensions";
 import { CHAIR_SEAT_Y } from "../scene/chair";
@@ -236,18 +236,27 @@ export function GlbAvatar(props: GlbAvatarProps) {
   );
 }
 
-// Warm the cache for the whole roster up front. A six-max table seats six
-// players and the roster is exactly six models, so every one of these is
-// wanted on any table that fills — there is nothing to defer. Loading them
-// together is what stops late arrivals popping in a beat behind the rest.
+// Warm the cache for the STARTER roster up front, not the whole roster. A
+// six-max table seats six players and the starter tier is exactly six
+// models, so every one of those is wanted on any table that fills — there
+// is nothing to defer. Loading them together is what stops late arrivals
+// popping in a beat behind the rest.
 //
 // This was the wrong call while the roster weighed 48 MB, and the fix was
-// the assets rather than the strategy: compressed, all six come to ~3.5 MB.
-// If the roster ever grows past the seat count, this should become per-seat.
+// the assets rather than the strategy: compressed, six models come to
+// ~3.5 MB. The roster DID grow past the seat count — eight premium
+// characters landed alongside the original six — and this is that "should
+// become per-seat" turn arriving: premium characters have no purchase or
+// equip path yet, so nothing today can assign one to a seat, and preloading
+// all fourteen would put every visitor through ~17 MB of GLBs to render a
+// six-seat table that can only ever show the free six. Preload the tier
+// that `characterForSlot` can actually hand out; a future equip flow should
+// preload a player's own purchased characters alongside this list, not fold
+// them into it.
 if (typeof window !== "undefined") {
   // The preload path builds its own loader, so the decoder flags must match
   // the hook above exactly — (useDraco, useMeshopt) = (false, true). Leaving
   // them at drei's defaults pulls in Draco from a CDN the CSP does not name,
   // at module-evaluation time, before any component can render.
-  for (const c of CHARACTERS_3D) useGLTF.preload(c.url, false, true);
+  for (const c of STARTER_CHARACTERS_3D) useGLTF.preload(c.url, false, true);
 }

@@ -11,8 +11,10 @@ import {
   type CosmeticSlot,
   type EquippedCosmetics,
 } from "@/lib/cosmetics/catalog";
+import { characterById } from "@/lib/game3d/characters";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { CardBackArt } from "@/components/card-back-art";
+import { Character3DPreview } from "./character-3d-preview";
 
 interface UnlockStats {
   handsWon: number;
@@ -38,10 +40,20 @@ const SLOTS: { slot: CosmeticSlot; title: string; blurb: string }[] = [
  * A missing image file falls back rather than showing a broken icon, so
  * catalog entries can ship before their artwork.
  */
-function CosmeticArt({ item }: { item: Cosmetic }) {
+function CosmeticArt({ item, show3D = false }: { item: Cosmetic; show3D?: boolean }) {
   const [failed, setFailed] = useState(false);
 
   if (item.art) return <CardBackArt art={item.art} className="cosmetic-art" />;
+
+  if (item.renderMode === "3d") {
+    const character = characterById(item.id);
+    if (show3D && character) return <Character3DPreview character={character} />;
+    return (
+      <div className="cosmetic-art cosmetic-3d-swatch" aria-hidden="true">
+        <span>3D</span>
+      </div>
+    );
+  }
 
   if (item.slot === "avatar" && !failed) {
     // The whole figure here, not the head crop the seat plate uses. This is
@@ -78,6 +90,7 @@ export function Collection() {
   const [notice, setNotice] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<Cosmetic | null>(null);
   const [previewing, setPreviewing] = useState<Cosmetic | null>(null);
+  const [avatarView, setAvatarView] = useState<"2d" | "3d">("2d");
 
   const load = useCallback(async () => {
     try {
@@ -199,7 +212,7 @@ export function Collection() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="preview-art-frame">
-              <CosmeticArt item={previewing} />
+              <CosmeticArt item={previewing} show3D />
             </div>
             <h2 id="preview-title">{previewing.name}</h2>
             <p>{previewing.description}</p>
@@ -251,12 +264,37 @@ export function Collection() {
       )}
 
       {SLOTS.map(({ slot, title, blurb }) => {
-        const items = catalog.filter((item) => item.slot === slot);
+        const items = catalog.filter((item) =>
+          item.slot === slot &&
+          (slot !== "avatar" || (item.renderMode ?? "2d") === avatarView),
+        );
         if (items.length === 0) return null;
         return (
           <section key={slot} className="collection-section">
             <h2>{title}</h2>
             <p className="collection-blurb">{blurb}</p>
+            {slot === "avatar" && (
+              <div className="collection-view-switch" role="tablist" aria-label="Character style">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={avatarView === "2d"}
+                  className={avatarView === "2d" ? "is-active" : ""}
+                  onClick={() => setAvatarView("2d")}
+                >
+                  2D characters
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={avatarView === "3d"}
+                  className={avatarView === "3d" ? "is-active" : ""}
+                  onClick={() => setAvatarView("3d")}
+                >
+                  3D characters
+                </button>
+              </div>
+            )}
             <div className="cosmetic-grid">
               {items.map((item) => {
                 const isOwned = owned.includes(item.id);

@@ -7,6 +7,7 @@ import {
   firstRunProgressLabel,
   isFirstRunRetired,
   nextFirstRunStep,
+  shouldShowFirstRun,
 } from "./first-run";
 
 describe("first-run steps", () => {
@@ -59,6 +60,17 @@ describe("isFirstRunRetired", () => {
     expect(isFirstRunRetired("")).toBe(false);
     expect(isFirstRunRetired("true")).toBe(false);
     expect(isFirstRunRetired("1")).toBe(false);
+  });
+});
+
+describe("shouldShowFirstRun", () => {
+  it("does not show onboarding to a registered account", () => {
+    expect(shouldShowFirstRun(null, true)).toBe(false);
+  });
+
+  it("keeps the guest onboarding until its browser flag is retired", () => {
+    expect(shouldShowFirstRun(null, false)).toBe(true);
+    expect(shouldShowFirstRun(FIRST_RUN_DONE, false)).toBe(false);
   });
 });
 

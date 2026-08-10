@@ -49,6 +49,14 @@ export function mm(millimetres: number): number {
 export const CHIP = {
   radius: mm(39 / 2),
   thickness: mm(3.3),
+  /**
+   * The rounded lip where a chip's face meets its edge. Real and small —
+   * a moulded chip is not a machined cylinder, and this ~0.7 mm break is
+   * where the whole rim highlight comes from when the studio spot crosses
+   * a pile. Kept well under the thickness so the silhouette is unchanged:
+   * a chip that reads as bevelled has caught a light, not lost a size.
+   */
+  bevel: mm(0.7),
 } as const;
 
 /**

@@ -125,7 +125,7 @@ export function Lobby({
       <main className="lobby lobby-hub">
         <section className="hub">
           <div className="hub-head">
-            <div className="lobby-kicker">The floor</div>
+            <div className="lobby-kicker">Your seat</div>
             <h1>Preparing your seat…</h1>
             {error && <p className="form-error"><X size={14} /> {error}</p>}
           </div>
@@ -202,8 +202,8 @@ export function Lobby({
             now, beside the decision it belongs to; the profile modal's
             "Display name" is still where it is changed for good. */}
         <div className="hub-head">
-          <div className="lobby-kicker">The floor</div>
-          <h1>Pick your game.</h1>
+          <div className="lobby-kicker">{profile.displayName}</div>
+          <h1>Pick your game</h1>
           {error && <p className="form-error"><X size={14} /> {error}</p>}
         </div>
 
@@ -213,7 +213,7 @@ export function Lobby({
             the first-run strip once it retires, the rank strip until its fetch
             lands -- so neither can push the tiles down and then pull them back
             either. */}
-        <FirstRunStrip onTakeSeat={() => setBuyInMode("join")} />
+        <FirstRunStrip profile={profile} onTakeSeat={() => setBuyInMode("join")} />
         <RankStrip />
 
         {/* Tiles carry the real artwork -- the same table plate the game

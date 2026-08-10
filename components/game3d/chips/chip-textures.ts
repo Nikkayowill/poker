@@ -33,8 +33,23 @@ const EDGE_H = 64;
  */
 const INSERT_COUNT = 8;
 
+/**
+ * The chip's anatomy, as radii fractions. Stated once because four painters
+ * now draw the same disc — colour, roughness, height and the edge strip —
+ * and a groove scored at 0.68 on the albedo but 0.7 on the height map is a
+ * seam of light that follows nothing.
+ */
+const INLAY_R = 0.54;
+const GROOVE_R = 0.68;
+const INSERT_INNER_R = 0.7;
+const INSERT_OUTER_R = 0.98;
+
 const faceCache = new Map<number, THREE.CanvasTexture>();
 const edgeCache = new Map<number, THREE.CanvasTexture>();
+const faceRoughCache = new Map<number, THREE.CanvasTexture>();
+const edgeRoughCache = new Map<number, THREE.CanvasTexture>();
+const faceBumpCache = new Map<number, THREE.CanvasTexture>();
+const edgeBumpCache = new Map<number, THREE.CanvasTexture>();
 
 function context(width: number, height: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const canvas = document.createElement("canvas");
@@ -91,8 +106,8 @@ export function chipFaceTexture(denom: ChipDenomination): THREE.CanvasTexture {
   // sit flush with the rim exactly as moulded ones do.
   ctx.save();
   ctx.beginPath();
-  ctx.arc(centre, centre, radius * 0.98, 0, Math.PI * 2);
-  ctx.arc(centre, centre, radius * 0.7, 0, Math.PI * 2);
+  ctx.arc(centre, centre, radius * INSERT_OUTER_R, 0, Math.PI * 2);
+  ctx.arc(centre, centre, radius * INSERT_INNER_R, 0, Math.PI * 2);
   ctx.clip("evenodd");
   ctx.fillStyle = denom.spot;
   const step = (Math.PI * 2) / INSERT_COUNT;
@@ -110,18 +125,18 @@ export function chipFaceTexture(denom: ChipDenomination): THREE.CanvasTexture {
   ctx.strokeStyle = "rgba(0, 0, 0, 0.32)";
   ctx.lineWidth = radius * 0.035;
   ctx.beginPath();
-  ctx.arc(centre, centre, radius * 0.68, 0, Math.PI * 2);
+  ctx.arc(centre, centre, radius * GROOVE_R, 0, Math.PI * 2);
   ctx.stroke();
 
   // The pressed inlay: a flat disc with a soft inner shadow along its top
   // edge, which is what tells the eye it is set *into* the clay.
   ctx.fillStyle = denom.inlay;
   ctx.beginPath();
-  ctx.arc(centre, centre, radius * 0.54, 0, Math.PI * 2);
+  ctx.arc(centre, centre, radius * INLAY_R, 0, Math.PI * 2);
   ctx.fill();
   ctx.save();
   ctx.beginPath();
-  ctx.arc(centre, centre, radius * 0.54, 0, Math.PI * 2);
+  ctx.arc(centre, centre, radius * INLAY_R, 0, Math.PI * 2);
   ctx.clip();
   ctx.shadowColor = "rgba(20, 14, 6, 0.5)";
   ctx.shadowBlur = radius * 0.12;
@@ -181,6 +196,157 @@ export function chipEdgeTexture(denom: ChipDenomination): THREE.CanvasTexture {
   const texture = finalise(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   edgeCache.set(denom.value, texture);
+  return texture;
+}
+
+/**
+ * A non-colour map. Roughness, metalness and height are DATA, not pictures:
+ * three samples them raw, so tagging them sRGB (which `finalise` does, and
+ * must, for the albedo) puts every value through a transfer function and a
+ * 0.55 roughness arrives as roughly 0.26. The distinction is invisible in a
+ * screenshot and wrong in every lighting response.
+ */
+function finaliseData(canvas: HTMLCanvasElement): THREE.CanvasTexture {
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.anisotropy = 4;
+  texture.colorSpace = THREE.NoColorSpace;
+  return texture;
+}
+
+/** Greyscale for a 0–1 material value, in the channel three reads
+ * (roughness is green, metalness blue — a flat grey satisfies both). */
+function level(value: number): string {
+  const byte = Math.round(Math.min(1, Math.max(0, value)) * 255);
+  return `rgb(${byte}, ${byte}, ${byte})`;
+}
+
+/**
+ * How each region of a chip actually finishes. Clay is matte, the printed
+ * inlay is a lacquered label and catches a highlight the body never does,
+ * and the moulded inserts sit between the two. This variation is the whole
+ * reason a chip reads as a manufactured object under a moving spot rather
+ * than a uniformly dull disc — a single scalar roughness cannot show it.
+ */
+const CLAY_ROUGHNESS = 0.58;
+const INSERT_ROUGHNESS = 0.5;
+const INLAY_ROUGHNESS = 0.33;
+
+export function chipFaceRoughnessTexture(denom: ChipDenomination): THREE.CanvasTexture {
+  const cached = faceRoughCache.get(denom.value);
+  if (cached) return cached;
+
+  const [canvas, ctx] = context(FACE_SIZE, FACE_SIZE);
+  const centre = FACE_SIZE / 2;
+  const radius = FACE_SIZE / 2;
+
+  ctx.fillStyle = level(CLAY_ROUGHNESS);
+  ctx.fillRect(0, 0, FACE_SIZE, FACE_SIZE);
+
+  ctx.fillStyle = level(INSERT_ROUGHNESS);
+  ctx.beginPath();
+  ctx.arc(centre, centre, radius * INSERT_OUTER_R, 0, Math.PI * 2);
+  ctx.arc(centre, centre, radius * INSERT_INNER_R, 0, Math.PI * 2);
+  ctx.fill("evenodd");
+
+  ctx.fillStyle = level(INLAY_ROUGHNESS);
+  ctx.beginPath();
+  ctx.arc(centre, centre, radius * INLAY_R, 0, Math.PI * 2);
+  ctx.fill();
+
+  const texture = finaliseData(canvas);
+  faceRoughCache.set(denom.value, texture);
+  return texture;
+}
+
+export function chipEdgeRoughnessTexture(denom: ChipDenomination): THREE.CanvasTexture {
+  const cached = edgeRoughCache.get(denom.value);
+  if (cached) return cached;
+
+  const [canvas, ctx] = context(EDGE_W, EDGE_H);
+  ctx.fillStyle = level(CLAY_ROUGHNESS);
+  ctx.fillRect(0, 0, EDGE_W, EDGE_H);
+
+  const bandWidth = EDGE_W / INSERT_COUNT;
+  ctx.fillStyle = level(INSERT_ROUGHNESS);
+  for (let i = 0; i < INSERT_COUNT; i += 1) {
+    ctx.fillRect(i * bandWidth + bandWidth * 0.3, EDGE_H * 0.16, bandWidth * 0.4, EDGE_H * 0.68);
+  }
+
+  const texture = finaliseData(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  edgeRoughCache.set(denom.value, texture);
+  return texture;
+}
+
+/**
+ * Height, mid-grey being the clay's own surface. The inlay is *pressed
+ * into* the chip and the groove around it is scored, so both go below;
+ * moulded inserts stand a hair proud. The albedo already paints a shadow
+ * suggesting all three — this is what makes the suggestion respond when the
+ * studio spot moves, instead of staying lit from wherever the canvas was
+ * drawn as if lit from.
+ */
+export function chipFaceBumpTexture(denom: ChipDenomination): THREE.CanvasTexture {
+  const cached = faceBumpCache.get(denom.value);
+  if (cached) return cached;
+
+  const [canvas, ctx] = context(FACE_SIZE, FACE_SIZE);
+  const centre = FACE_SIZE / 2;
+  const radius = FACE_SIZE / 2;
+
+  ctx.fillStyle = level(0.55);
+  ctx.fillRect(0, 0, FACE_SIZE, FACE_SIZE);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(centre, centre, radius * INSERT_OUTER_R, 0, Math.PI * 2);
+  ctx.arc(centre, centre, radius * INSERT_INNER_R, 0, Math.PI * 2);
+  ctx.clip("evenodd");
+  ctx.fillStyle = level(0.62);
+  const step = (Math.PI * 2) / INSERT_COUNT;
+  for (let i = 0; i < INSERT_COUNT; i += 1) {
+    const angle = i * step;
+    ctx.beginPath();
+    ctx.moveTo(centre, centre);
+    ctx.arc(centre, centre, radius, angle - step * 0.22, angle + step * 0.22);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.strokeStyle = level(0.3);
+  ctx.lineWidth = radius * 0.035;
+  ctx.beginPath();
+  ctx.arc(centre, centre, radius * GROOVE_R, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = level(0.44);
+  ctx.beginPath();
+  ctx.arc(centre, centre, radius * INLAY_R, 0, Math.PI * 2);
+  ctx.fill();
+
+  const texture = finaliseData(canvas);
+  faceBumpCache.set(denom.value, texture);
+  return texture;
+}
+
+export function chipEdgeBumpTexture(denom: ChipDenomination): THREE.CanvasTexture {
+  const cached = edgeBumpCache.get(denom.value);
+  if (cached) return cached;
+
+  const [canvas, ctx] = context(EDGE_W, EDGE_H);
+  ctx.fillStyle = level(0.55);
+  ctx.fillRect(0, 0, EDGE_W, EDGE_H);
+
+  const bandWidth = EDGE_W / INSERT_COUNT;
+  ctx.fillStyle = level(0.63);
+  for (let i = 0; i < INSERT_COUNT; i += 1) {
+    ctx.fillRect(i * bandWidth + bandWidth * 0.3, EDGE_H * 0.16, bandWidth * 0.4, EDGE_H * 0.68);
+  }
+
+  const texture = finaliseData(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  edgeBumpCache.set(denom.value, texture);
   return texture;
 }
 

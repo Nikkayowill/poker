@@ -1,5 +1,7 @@
 import { chipBreakdown, type ChipDenomination } from "./denominations";
-import { betSpotPosition, seatPosition, type Vec3 } from "./seat-layout";
+import { pushStyleFor } from "./chip-push";
+import type { PushStyle } from "./chip-trajectory";
+import { handLaunchPosition, type Vec3 } from "./seat-layout";
 
 export interface RendererBetFlightHandoff {
   id: string;
@@ -12,22 +14,27 @@ export interface ResumedBetFlight {
   kind: "bet";
   amount: number;
   chips: ChipDenomination[];
-  from: Vec3;
-  to: Vec3;
+  style: PushStyle;
+  /** Where the chips left from. The slots they are landing in are resolved
+   * per render against whatever is already resting at the bet spot, exactly
+   * as an ordinary bet's are — see chip-field.tsx. */
+  hand: Vec3;
   slot: number;
 }
 
 /** Rebuild an airborne bet when WebGL mounts without a previous snapshot. */
 export function resumedBetFlight(flight: RendererBetFlightHandoff): ResumedBetFlight {
-  const seat = seatPosition(flight.slot);
   return {
     key: `resume-${flight.id}`,
     kind: "bet",
     amount: flight.amount,
     chips: chipBreakdown(flight.amount),
-    // The same hand-height launch used by ordinary 3D bets.
-    from: { x: seat.x * 0.82, y: 1.05, z: seat.z * 0.82 },
-    to: betSpotPosition(flight.slot),
+    // The handoff carries no action label — the snapshot that named it is
+    // exactly what this bridge exists because the room did not receive — so
+    // a resumed bet takes the neutral middle style rather than guessing a
+    // raise's harder cadence.
+    style: pushStyleFor("bet"),
+    hand: handLaunchPosition(flight.slot),
     slot: flight.slot,
   };
 }

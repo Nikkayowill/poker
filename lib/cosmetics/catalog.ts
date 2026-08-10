@@ -361,16 +361,16 @@ const illustratedAvatarCosmetics: Cosmetic[] = [
  * the same server-owned record used by purchase/equip; the browser never gets
  * to decide whether one of these characters is free.
  *
- * The original six remain the starter roster. Four of the new characters are
- * lifetime hand-win rewards and four are deliberately expensive Gold items.
+ * The original six remain the starter roster. Three of the new characters are
+ * lifetime hand-win rewards and five are deliberately expensive Gold items.
  * No customer-pack character may fall through to the starter `price: 0`
  * default below.
  */
 const premiumCharacter3DOffers: Record<string, Pick<Cosmetic, "description" | "price" | "unlock">> = {
   claira: {
-    description: "A fully rigged table character. Earned by winning 10 hands.",
-    price: null,
-    unlock: { handsWon: 10 },
+    description:
+      "gf of owner. She is an AET and soon to be civil engineer, relatively new to poker but dont underestimate her",
+    price: 7_000_000,
   },
   donni: {
     description: "A fully rigged table character. Earned by winning 50 hands.",

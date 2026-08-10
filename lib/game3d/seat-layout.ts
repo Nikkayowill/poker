@@ -83,6 +83,24 @@ export function betSpotPosition(slot: number): Vec3 {
 }
 
 /**
+ * Chips leave a bettor's hands, not their chair: just inside their place at
+ * the rail, at hand height above the floor.
+ *
+ * Stated here rather than in whichever component happens to launch a push,
+ * because two of them do — the ordinary bet diff and the mid-flight
+ * handoff a renderer switch rebuilds — and a launch point that differs
+ * between them makes the same bet leave from two places depending on
+ * whether the player changed renderer while it was in the air.
+ */
+export const HAND_HEIGHT_Y = 1.05;
+const HAND_INSET = 0.82;
+
+export function handLaunchPosition(slot: number): Vec3 {
+  const seat = seatPosition(slot);
+  return { x: seat.x * HAND_INSET, y: HAND_HEIGHT_Y, z: seat.z * HAND_INSET };
+}
+
+/**
  * Where a slot's hole cards lie, on the felt just inside the rail.
  *
  * Slot 0 gets its own, deeper inset: the local player's avatar stands

@@ -33,6 +33,15 @@ import { CHIP } from "./dimensions";
  * the felt's own top face, small enough to be invisible as a gap. */
 export const SHADOW_DECAL_LIFT = 0.001;
 
+/**
+ * The darkest any decal in this room may be at its centre. It is the
+ * renderer's ceiling as well as a bound on the poses below: the shared
+ * decal texture is painted to exactly this peak and each instance is then
+ * scaled DOWN to its own `opacity` (see fake-shadows.tsx), so an
+ * `opacity` above this could not be shown and would silently clamp.
+ */
+export const SHADOW_MAX_OPACITY = 0.34;
+
 export interface CircularShadowPose {
   x: number;
   z: number;
@@ -44,12 +53,21 @@ export interface CircularShadowPose {
 // resting on it, capped at MAX_CHIPS_PER_PILE's own ceiling (14) — a
 // pile's shadow should never suggest more chips are there than the felt
 // actually draws.
+//
+// THE FOOTPRINT USED TO BE NEARLY TWICE THE PILE. At 1.7 chip radii before
+// a single chip is counted, and growing 4.5% per chip, a full pile threw a
+// pool 2.3 radii across — a chip standing in its own crater, and six of
+// them plus the pot smudging the middle of the felt. A resting chip's
+// contact shadow is barely wider than the chip: it is one disc lying on
+// cloth under a broad overhead source, not an object held above a floor.
+// The numbers below keep the pool inside 1.5 radii at the cap, which is
+// what "grounded" looks like without dirtying the cloth around it.
 const CHIP_SHADOW_MAX_CHIPS = 14;
-const CHIP_SHADOW_BASE_RADIUS_FACTOR = 1.7;
-const CHIP_SHADOW_GROWTH_PER_CHIP = 0.045;
-const CHIP_SHADOW_BASE_OPACITY = 0.26;
-const CHIP_SHADOW_OPACITY_PER_CHIP = 0.016;
-const CHIP_SHADOW_MAX_OPACITY = 0.5;
+const CHIP_SHADOW_BASE_RADIUS_FACTOR = 1.2;
+const CHIP_SHADOW_GROWTH_PER_CHIP = 0.02;
+const CHIP_SHADOW_BASE_OPACITY = 0.12;
+const CHIP_SHADOW_OPACITY_PER_CHIP = 0.008;
+const CHIP_SHADOW_MAX_OPACITY = 0.24;
 
 /**
  * The ground shadow for one resting chip pile. `null` for an empty pile —

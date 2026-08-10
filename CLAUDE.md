@@ -1483,6 +1483,49 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   `listOwnedCosmetics` and `equipCosmetic` enforce them server-side. Never set
   every generated 3D cosmetic back to `price: 0`: free catalog entries are
   implicit ownership and would let a new player equip the entire roster.
+- **3D chips are a dealer's push now, not a spray, and one function decides
+  where every chip is.** `pileSlot` (`lib/game3d/chip-instance-model.ts`)
+  answers "where does the nth chip of this pile sit"; a resting pile reads
+  it, and so does a flight's landing target, so a chip's destination IS its
+  resting place rather than an approximation that snaps on arrival. Five
+  things worth not relearning:
+  - **The old `landingOffset` scatter was two bugs wearing one function.**
+    It aimed a whole group at a *point* and strewed them around it by a
+    golden-angle wave of radius `CHIP.radius * 0.92 * sqrt(index)` — so a
+    bet had no stack to land in and piled up by `index % 3`, reading as
+    chips inside one another. The same wave doubled as resting-pile
+    "jitter", where the sqrt growth meant the pot (seed 101) offset its
+    discs by ~3.5 chip radii: a strewn heap, not a stack. Jitter is bounded
+    at `PILE_JITTER_FRACTION` (6% of a radius, constant) now, and the
+    scatter is gone entirely. Heights come from `chipStackY`, stated once.
+  - **`buildPushLegs` resolves explicit per-chip legs, and it runs in
+    chip-field's RENDER body, not at launch.** A chip's slot depends on how
+    many chips already rest at the destination — bookkeeping that component
+    already does once per render to decide the piles. Computed at launch
+    instead, a second bet arriving at the same spot aims at slots the first
+    one took. Sources are peeled top-first, because that is where a hand or
+    a dealer takes chips from; the payout is now a sweep off the top of the
+    pot into the winner's stack, from distinct pot slots.
+  - **Cadence comes off `seat.lastAction`, which is the only thing in the
+    snapshot that separates a call from a raise** — the `streetBet` delta
+    says a bet happened, not how. `lib/game3d/chip-push.ts` maps the
+    engine's labels to a style; staggers are pinned inside 70–90 ms by a
+    test, and `pushKindFromAction` strips a trailing amount as well as
+    splitting on `·` so the scripted demo's "raise 30" classifies too.
+  - **Reduced motion lands the identical coordinates, not similar ones.**
+    That is a property of explicit destinations, and a test asserts the two
+    pose arrays are equal rather than close.
+  - The chip is lathed from a real profile with a `CHIP.bevel` break
+    (chip-stack.tsx) — a cylinder's sharp 90° cap gives the rim one shading
+    value under this single hard spot and reads as a counter — plus
+    roughness and bump maps (`NoColorSpace`; tagging data sRGB turns 0.55
+    roughness into 0.26). Still one shared geometry, three material groups,
+    one InstancedMesh per denomination. Pile shadows lost most of their
+    footprint and darkness, and `pileShadowPose`'s per-pile `opacity` —
+    computed since the file was written and thrown away by the renderer —
+    is finally applied, via `setColorAt`: under this multiply blend the
+    output is `dst * (1 - a(1 - colour))`, so a grey instance colour scales
+    a decal's darkness at no extra draw call.
 - **M18 is in: player rank, XP and a daily streak.** `lib/progression/rank.ts`
   is the whole curve, pure and closed-form (XP = Gold wagered / 10; level N
   costs `XP_STEP·(N-1)N/2`, inverted by a square root that is then re-checked

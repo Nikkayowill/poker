@@ -31,10 +31,12 @@ import { useThree } from "@react-three/fiber";
 import type { ChipDenomination } from "@/lib/game3d/denominations";
 import { CHIP_DENOMINATIONS } from "@/lib/game3d/denominations";
 import {
-  flightChipPoses,
+  pushChipPoses,
   restingPileChipPoses,
   type ChipPose,
+  type ChipPushLeg,
 } from "@/lib/game3d/chip-instance-model";
+import type { PushStyle } from "@/lib/game3d/chip-trajectory";
 import type { Vec3 } from "@/lib/game3d/seat-layout";
 import {
   publishAnimating,
@@ -81,8 +83,11 @@ export interface RestingChipPile {
 export interface ChipFlightInput {
   key: string;
   chips: ChipDenomination[];
-  from: Vec3;
-  to: Vec3;
+  /** Per-chip source and destination, index-aligned with `chips`. Explicit
+   * rather than a single `to` point with scatter around it — see
+   * chip-instance-model.ts's header for what that scatter cost. */
+  legs: ChipPushLeg[];
+  style: PushStyle;
 }
 
 export interface ChipInstancedLayerProps {
@@ -129,6 +134,23 @@ export function ChipInstancedLayer({ piles, flights, onFlightDone }: ChipInstanc
     onFlightDoneRef.current = onFlightDone;
   }, [onFlightDone]);
 
+  // A ref, not state: `write()` reads it inside a frame callback, and a
+  // preference that changes mid-session must not re-render the whole chip
+  // layer to take effect. Read once at mount and kept current by the media
+  // query — the same shape components/table/scene/table-scene.tsx uses for
+  // the 2D room, so both renderers honour the OS setting identically.
+  const reducedMotionRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    reducedMotionRef.current = query.matches;
+    const onChange = () => {
+      reducedMotionRef.current = query.matches;
+    };
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+
   const write = (nowMs: number) => {
     const byDenom = new Map<number, ChipPose[]>();
     // Gathered for the e2e seam, which cannot see any of this: these poses
@@ -151,7 +173,14 @@ export function ChipInstancedLayer({ piles, flights, onFlightDone }: ChipInstanc
         launchedAtRef.current.set(flight.key, launchedAt);
       }
       const elapsed = nowMs - launchedAt;
-      const { poses, done } = flightChipPoses(flight.chips, flight.from, flight.to, elapsed, flight.key);
+      const { poses, done } = pushChipPoses(
+        flight.chips,
+        flight.legs,
+        flight.style,
+        elapsed,
+        flight.key,
+        reducedMotionRef.current,
+      );
       for (const pose of poses) pushPose(byDenom, pose);
       // A settled flight's chips are at their destination and this pile is
       // about to own them, so they stop counting as in flight the same frame
@@ -176,7 +205,9 @@ export function ChipInstancedLayer({ piles, flights, onFlightDone }: ChipInstanc
       for (let i = 0; i < count; i += 1) {
         const pose = poses[i];
         dummy.position.set(pose.x, pose.y, pose.z);
-        dummy.rotation.set(0, pose.rotationY, 0);
+        // Tilt is the landing rock and is exactly 0 for anything at rest, so
+        // a settled pile is still a column of flat discs.
+        dummy.rotation.set(pose.tiltX, pose.rotationY, pose.tiltZ);
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
       }

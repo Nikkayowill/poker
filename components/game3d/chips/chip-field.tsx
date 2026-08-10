@@ -2,31 +2,36 @@
 
 /**
  * Every chip on the felt: standing street bets in front of each bettor, the
- * centre pot, and the flights between them.
+ * centre pot, and the pushes between them.
  *
  * The choreography mirrors the 2D room's contract exactly:
- * - a bet flies from the bettor's rail to their own bet spot and rests there;
+ * - a bet is pushed from the bettor's hands to their own bet spot and rests there;
  * - when the street turns, standing bets sweep from their spots into the pot
  *   (transferred into flight from where they rested, never respawned);
- * - winners' chips funnel from the pot toward the winner;
+ * - a winner is paid by a dealer sweep off the top of the pot;
  * - a hand boundary (new handNumber / new game) clears instantly — sweeping
  *   there would wipe the incoming blinds of the next hand.
  *
  * This file owns exactly that choreography state machine — which piles and
- * flights exist, and when — same as it always has. It no longer renders
- * any chip itself: chip-instanced-layer.tsx is the one place every chip's
- * transform gets written into GPU buffers (see that file's header for why
- * a single writer is required once chips are instanced). What changed here
- * is only the last step, turning `flights`/resting amounts into the plain
- * `piles`/`flights` arrays that layer consumes — the flight-launch diff
- * logic below, and its "compare against the frame clock" trigger, are
- * unchanged, including why it deliberately runs in `useFrame` rather than
- * an effect (see the comment on the diff below). It also mounts
- * scene/fake-shadows.tsx's chip-pile shadows here, alongside the chip
- * layer, because `piles` is already computed in this component and a
- * shadow decal's position IS a pile's position — lifting that back up to
- * poker-scene.tsx just to hand it to a sibling would be the same number
- * duplicated in two places for no reason.
+ * pushes exist, and when. It renders no chip itself: chip-instanced-layer.tsx
+ * is the one place every chip's transform gets written into GPU buffers (see
+ * that file's header for why a single writer is required once chips are
+ * instanced).
+ *
+ * WHY A PUSH'S LEGS ARE BUILT IN THE RENDER BODY AND NOT AT LAUNCH. A chip
+ * lands in a numbered slot of the pile it is joining, so its destination
+ * depends on how many chips are already resting there — and that is
+ * bookkeeping this component already does, once per render, to decide what
+ * the resting piles are. Resolving legs in the same pass is what keeps a
+ * landing and the pile it lands on derived from ONE count: computed at
+ * launch instead, a second bet arriving at the same spot would aim its
+ * chips at slots the first bet had already taken, and they would land
+ * inside each other. The inputs are stable while a push is airborne, so the
+ * legs are stable too.
+ *
+ * It also mounts scene/fake-shadows.tsx's chip-pile shadows here, alongside
+ * the chip layer, because `piles` is already computed in this component and
+ * a shadow decal's position IS a pile's position.
  */
 
 import { useCallback, useRef, useState } from "react";
@@ -35,9 +40,17 @@ import { chipBreakdown, type ChipDenomination } from "@/lib/game3d/denominations
 import {
   POT_POSITION,
   betSpotPosition,
-  seatPosition,
+  handLaunchPosition,
   type Vec3,
 } from "@/lib/game3d/seat-layout";
+import {
+  POT_PILE_SEED,
+  buildPushLegs,
+  pileChipCount,
+  seatPileSeed,
+} from "@/lib/game3d/chip-instance-model";
+import { pushKindFromAction, pushStyleFor } from "@/lib/game3d/chip-push";
+import type { PushStyle } from "@/lib/game3d/chip-trajectory";
 import { useFrame } from "@react-three/fiber";
 import {
   ChipInstancedLayer,
@@ -59,19 +72,20 @@ interface Flight {
   kind: FlightKind;
   amount: number;
   chips: ChipDenomination[];
-  from: Vec3;
-  to: Vec3;
-  /** Slot whose bet spot this flight feeds (bet) or drains (sweep). */
+  style: PushStyle;
+  /** Slot whose bet spot this push feeds (bet) or drains (sweep). Null for
+   * an award, which is outbound from the pot — see `awardSlot`. */
   slot: number | null;
+  /** Seat a payout is being pushed to. Deliberately separate from `slot`:
+   * `slot` drives the resting-bet bookkeeping below, and a payout is not a
+   * street bet. */
+  awardSlot: number | null;
+  /** Fixed launch point for a bet. Null when the chips depart from a pile
+   * whose live top is resolved per render (a sweep, an award). */
+  hand: Vec3 | null;
 }
 
 let flightSerial = 0;
-
-function raisedLaunchPoint(slot: number): Vec3 {
-  // Chips leave from the bettor's hands: just inside their seat, hand height.
-  const seat = seatPosition(slot);
-  return { x: seat.x * 0.82, y: 1.05, z: seat.z * 0.82 };
-}
 
 export function ChipField({
   model,
@@ -112,7 +126,8 @@ export function ChipField({
         .filter((flight) => !resumedRef.current.has(flight.id))
         .map((flight) => {
           resumedRef.current.add(flight.id);
-          return resumedBetFlight(flight);
+          const bet = resumedBetFlight(flight);
+          return { ...bet, awardSlot: null } satisfies Flight;
         });
       if (resumed.length > 0) setFlights(resumed);
       return;
@@ -136,9 +151,10 @@ export function ChipField({
             kind: "sweep",
             amount: seat.streetBet,
             chips: chipBreakdown(seat.streetBet),
-            from: betSpotPosition(seat.slot),
-            to: POT_POSITION,
+            style: pushStyleFor("sweep"),
             slot: seat.slot,
+            awardSlot: null,
+            hand: null,
           });
         }
       }
@@ -155,9 +171,12 @@ export function ChipField({
           kind: "bet",
           amount: delta,
           chips: chipBreakdown(delta),
-          from: raisedLaunchPoint(seat.slot),
-          to: betSpotPosition(seat.slot),
+          // The label is the only thing in the snapshot that separates a
+          // call from a raise — the delta says a bet happened, not how.
+          style: pushStyleFor(pushKindFromAction(seat.lastAction)),
           slot: seat.slot,
+          awardSlot: null,
+          hand: handLaunchPosition(seat.slot),
         });
       }
     }
@@ -171,17 +190,16 @@ export function ChipField({
             kind: "award",
             amount: seat.winAmount,
             chips: chipBreakdown(seat.winAmount),
-            from: POT_POSITION,
-            to: betSpotPosition(seat.slot),
+            style: pushStyleFor("award"),
             slot: null,
+            awardSlot: seat.slot,
+            hand: null,
           });
           funnelled.push(seat.slot);
         }
       }
-      // Recorded for the e2e seam. `slot` above stays null on purpose -- it
-      // drives the resting-pile bookkeeping, and an award is outbound from
-      // the pot rather than inbound to a seat's bet -- so the slots a payout
-      // was aimed at exist nowhere else once these flights land.
+      // Recorded for the e2e seam. The slots a payout was aimed at exist
+      // nowhere else once these pushes land.
       publishFunnel(funnelled);
     }
 
@@ -207,25 +225,85 @@ export function ChipField({
   const potAmount = Math.max(0, model.potResting - inboundPot - outboundPot);
 
   const piles: RestingChipPile[] = [];
+  const restingChips = new Map<number, number>();
   for (const seat of model.seats) {
     const resting = seat.streetBet - (inboundBet.get(seat.slot) ?? 0);
+    const chipCount = resting > 0 ? pileChipCount(resting) : 0;
+    restingChips.set(seat.slot, chipCount);
     if (resting > 0) {
       piles.push({
         key: `pile-seat-${seat.slot}`,
         amount: resting,
         position: betSpotPosition(seat.slot),
-        seed: seat.slot * 7,
+        seed: seatPileSeed(seat.slot),
       });
     }
   }
-  piles.push({ key: POT_PILE_KEY, amount: potAmount, position: POT_POSITION, seed: 101 });
+  piles.push({
+    key: POT_PILE_KEY,
+    amount: potAmount,
+    position: POT_POSITION,
+    seed: POT_PILE_SEED,
+  });
 
-  const flightInputs: ChipFlightInput[] = flights.map((flight) => ({
-    key: flight.key,
-    chips: flight.chips,
-    from: flight.from,
-    to: flight.to,
-  }));
+  // Slot bookkeeping, in flight order so it is stable frame to frame: each
+  // push's chips take the next free slots of the pile they are joining, and
+  // a push leaving a pile takes the slots directly above what still rests
+  // there — which is where those chips were sitting the frame before they
+  // left.
+  // A plain loop rather than `flights.map`: the running counters below are
+  // reassigned as it goes, and a callback that closes over them reads to the
+  // compiler as work that could outlive the render.
+  const seatNext = new Map(restingChips);
+  const flightInputs: ChipFlightInput[] = [];
+  let potNext = pileChipCount(potAmount);
+
+  for (const flight of flights) {
+    const count = flight.chips.length;
+    let legs;
+
+    if (flight.kind === "bet" && flight.slot !== null && flight.hand) {
+      const start = seatNext.get(flight.slot) ?? 0;
+      seatNext.set(flight.slot, start + count);
+      legs = buildPushLegs(
+        count,
+        // A held stack: the chips come off the top, one at a time.
+        { position: flight.hand, seed: seatPileSeed(flight.slot), startIndex: 0, topFirst: true },
+        { position: betSpotPosition(flight.slot), seed: seatPileSeed(flight.slot), startIndex: start },
+      );
+    } else if (flight.kind === "sweep" && flight.slot !== null) {
+      const start = potNext;
+      potNext += count;
+      legs = buildPushLegs(
+        count,
+        // Straight off the spot they were resting on — the whole standing
+        // bet leaves, so it starts at that pile's own bottom slot.
+        {
+          position: betSpotPosition(flight.slot),
+          seed: seatPileSeed(flight.slot),
+          startIndex: 0,
+          topFirst: true,
+        },
+        { position: POT_POSITION, seed: POT_PILE_SEED, startIndex: start },
+      );
+    } else {
+      // An award. Chips come off the TOP of the pot, in distinct slots that
+      // are exactly where they were sitting — the dealer scraping a pile,
+      // not a payout spraying out of a point.
+      const slot = flight.awardSlot ?? 0;
+      const start = potNext;
+      potNext += count;
+      const landing = seatNext.get(slot) ?? 0;
+      seatNext.set(slot, landing + count);
+      legs = buildPushLegs(
+        count,
+        { position: POT_POSITION, seed: POT_PILE_SEED, startIndex: start, topFirst: true },
+        { position: betSpotPosition(slot), seed: seatPileSeed(slot), startIndex: landing },
+      );
+    }
+
+    flightInputs.push({ key: flight.key, chips: flight.chips, legs, style: flight.style });
+  }
 
   return (
     <>

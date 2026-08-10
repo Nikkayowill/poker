@@ -35,14 +35,25 @@
  * to full opacity (alpha 1) at the disc's centre, which — by the arithmetic
  * above — multiplies the felt straight to pure black directly under a
  * pile: a hard, dark stain rather than the soft occlusion a real overhead
- * spot would cast. `SHADOW_PEAK_ALPHA` caps it at 0.5 (half-darken at the
- * absolute centre, nothing at the rim), which is what a soft shadow
- * actually looks like under this light. The shape of the falloff — the
- * same three-stop radial, just rescaled — is untouched.
+ * spot would cast. `SHADOW_MAX_OPACITY` caps it well short of that, which
+ * is what a soft shadow actually looks like under this light. The shape of
+ * the falloff — the same three-stop radial, just rescaled — is untouched.
+ *
+ * EVERY DECAL USED TO BE THE DARKEST DECAL. `pileShadowPose` has always
+ * returned an `opacity` that grows with the pile it is grounding, and this
+ * file has always thrown it away — one texture, one alpha, so a single
+ * chip and a fourteen-chip tower cast the identical stain, at the ceiling
+ * value, and so did every card group. Per-instance darkness is real here
+ * and falls straight out of the blend arithmetic above: with the source
+ * RGB premultiplied, the output is `dst * (1 - a(1 - colour))`, so an
+ * instance colour of pure white is *no shadow at all* and black is the
+ * full `a`. Grey therefore scales a decal's darkness continuously, and
+ * `setColorAt` carries it per instance at no extra draw call. A decal
+ * wanting opacity `o` gets grey `1 - o / SHADOW_MAX_OPACITY`.
  */
 
 /** Alpha at the decal's centre; see the header above for why this is not 1. */
-const SHADOW_PEAK_ALPHA = 0.5;
+const SHADOW_PEAK_ALPHA = SHADOW_MAX_OPACITY;
 /** Alpha at the gradient's middle stop, scaled from SHADOW_PEAK_ALPHA to
  * keep the same relative falloff shape the original 1 → 0.55 → 0 curve had. */
 const SHADOW_MID_ALPHA = SHADOW_PEAK_ALPHA * 0.55;
@@ -51,7 +62,12 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { seatHasFeltCards, type SeatModel } from "@/lib/game3d/scene-model";
 import { chipBreakdown } from "@/lib/game3d/denominations";
-import { holeCardGroupShadowPose, pileShadowPose } from "@/lib/game3d/shadow-decal";
+import {
+  SHADOW_MAX_OPACITY,
+  holeCardGroupShadowPose,
+  pileShadowPose,
+  type CircularShadowPose,
+} from "@/lib/game3d/shadow-decal";
 import { CARD } from "@/lib/game3d/dimensions";
 import { FELT_TOP_Y, holeCardPosition } from "@/lib/game3d/seat-layout";
 import type { RestingChipPile } from "../chips/chip-instanced-layer";
@@ -125,14 +141,23 @@ export function FakeShadows({ piles, seats }: FakeShadowsProps) {
     const mesh = meshRef.current;
     if (!mesh) return;
     const dummy = new THREE.Object3D();
+    const tint = new THREE.Color();
     let i = 0;
 
-    const place = (pose: { x: number; z: number; radius: number } | null) => {
+    const place = (pose: CircularShadowPose | null) => {
       if (!pose || i >= MAX_SHADOW_INSTANCES) return;
       dummy.position.set(pose.x, FELT_TOP_Y, pose.z);
       dummy.scale.set(pose.radius, 1, pose.radius);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
+      // See the header: white is transparent under this blend, black is the
+      // texture's full alpha, so grey scales the decal's darkness. Three
+      // numbers, not a hex string, so the value is taken as linear working
+      // colour and never runs through an sRGB decode on its way to the
+      // shader.
+      const grey = 1 - Math.min(pose.opacity, SHADOW_MAX_OPACITY) / SHADOW_MAX_OPACITY;
+      tint.setRGB(grey, grey, grey);
+      mesh.setColorAt(i, tint);
       i += 1;
     };
 
@@ -160,6 +185,10 @@ export function FakeShadows({ piles, seats }: FakeShadowsProps) {
 
     mesh.count = i;
     mesh.instanceMatrix.needsUpdate = true;
+    // Allocated lazily by the first `setColorAt`, so it can only be flagged
+    // after the loop — and it must be, or a pile that grew this commit keeps
+    // last commit's darkness.
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }, [piles, seats]);
 
   return (

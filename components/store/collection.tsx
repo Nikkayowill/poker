@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Coins } from "lucide-react";
 import {
   avatarFigure,
+  characterThumbnail,
   rarityLabels,
   type Cosmetic,
   type CosmeticSlot,
@@ -49,9 +50,13 @@ function CosmeticArt({ item, show3D = false }: { item: Cosmetic; show3D?: boolea
     const character = characterById(item.id);
     if (show3D && character) return <Character3DPreview character={character} />;
     return (
-      <div className="cosmetic-art cosmetic-3d-swatch" aria-hidden="true">
-        <span>3D</span>
-      </div>
+      <Image
+        src={characterThumbnail(item.id)}
+        alt=""
+        fill
+        sizes="(max-width: 640px) 40vw, 160px"
+        className="cosmetic-art-image"
+      />
     );
   }
 

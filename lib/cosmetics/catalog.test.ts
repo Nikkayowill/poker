@@ -5,6 +5,8 @@ import {
   avatarCosmetics,
   avatarFace,
   avatarFigure,
+  character3DCosmetics,
+  characterThumbnail,
   cosmetics,
   DEFAULT_AVATAR_COSMETIC,
   DEFAULT_CARD_BACK,
@@ -29,6 +31,13 @@ describe("cosmetic catalog", () => {
       ...(onDisk(avatarFigure(item.id)) ? [] : [`${item.id}: figure`]),
       ...(onDisk(avatarFace(item.id)) ? [] : [`${item.id}: face`]),
     ]);
+    expect(missing).toEqual([]);
+  });
+
+  it("ships a captured thumbnail for every 3D character", () => {
+    const missing = character3DCosmetics
+      .filter((item) => !onDisk(characterThumbnail(item.id)))
+      .map((item) => item.id);
     expect(missing).toEqual([]);
   });
 

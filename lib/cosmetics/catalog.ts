@@ -82,6 +82,11 @@ export function avatarFace(id: string): string {
   return `/avatars/${id}-face.webp`;
 }
 
+/** Browser-captured thumbnail of a rigged character for the Collection grid. */
+export function characterThumbnail(id: string): string {
+  return `/avatars3d/collection/${id}.png`;
+}
+
 /**
  * Signature items are deliberately unpriced. Nothing about the most
  * impressive thing at the table should be purchasable -- that rule is what

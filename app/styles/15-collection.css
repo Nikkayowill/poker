@@ -166,16 +166,6 @@
   transform: translateX(.08em);
 }
 
-.cosmetic-3d-swatch {
-  display: grid;
-  place-items: center;
-  background:
-    radial-gradient(circle at 50% 42%, rgba(158,197,232,.3), transparent 42%),
-    linear-gradient(145deg, #26334a, #11151e);
-  color: #dcecff;
-  font: 600 clamp(30px, 8vw, 58px)/1 Georgia, "Times New Roman", serif;
-  letter-spacing: .08em;
-}
 .cosmetic-3d-loading {
   display: grid;
   place-items: center;
@@ -186,7 +176,6 @@
   letter-spacing: .06em;
   text-transform: uppercase;
 }
-.preview-dialog .preview-art-frame:has(.cosmetic-3d-swatch),
 .preview-dialog .preview-art-frame:has(.cosmetic-3d-loading) {
   min-height: 310px;
 }

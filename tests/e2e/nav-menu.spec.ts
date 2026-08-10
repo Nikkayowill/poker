@@ -14,6 +14,7 @@ async function openLobby(page: Page) {
   await page.getByRole("button", { name: "Play as guest" }).click();
   // The hub only mounts once a profile exists, and the menu lives beside it.
   await expect(page.locator(".hub-grid")).toBeVisible();
+  await expect(page.locator(".hub-head h1")).toContainText("Pick your game,");
 }
 
 const trigger = (page: Page) => page.getByRole("button", { name: "Open player menu" });

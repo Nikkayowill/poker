@@ -82,20 +82,25 @@ describe("cosmetic catalog", () => {
     expect(starter3D.map((item) => item.id)).toEqual([
       "gloria", "michael", "pablo", "james", "daniel", "dora",
     ]);
-    expect(earned3D.map((item) => item.id)).toEqual(["claira", "donni", "jimmy", "kenji"]);
+    expect(earned3D.map((item) => item.id)).toEqual(["donni", "jimmy", "kenji"]);
     expect(earned3D.map((item) => item.unlock)).toEqual([
-      { handsWon: 10 },
       { handsWon: 50 },
       { handsWon: 150 },
       { handsWon: 500 },
     ]);
     expect(earned3D.every((item) => item.price === null)).toBe(true);
     expect(paid3D.map((item) => [item.id, item.price])).toEqual([
+      ["claira", 7_000_000],
       ["marcus", 6_000_000],
       ["oscar", 2_000_000],
       ["derek", 1_000_000],
       ["victor", 4_000_000],
     ]);
+    const claira = character3DCosmetics.find((item) => item.id === "claira");
+    expect(claira?.description).toBe(
+      "gf of owner. She is an AET and soon to be civil engineer, relatively new to poker but dont underestimate her",
+    );
+    expect(claira?.price).toBeGreaterThan(Math.max(...paid3D.filter((item) => item.id !== "claira").map((item) => item.price as number)));
   });
 
   it("never prices a signature item", () => {

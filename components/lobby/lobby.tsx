@@ -203,7 +203,9 @@ export function Lobby({
             "Display name" is still where it is changed for good. */}
         <div className="hub-head">
           <div className="lobby-kicker">The floor</div>
-          <h1>Pick your game.</h1>
+          <h1>
+            Pick your game, <span className="hub-head-name">{profile.displayName}</span>
+          </h1>
           {error && <p className="form-error"><X size={14} /> {error}</p>}
         </div>
 

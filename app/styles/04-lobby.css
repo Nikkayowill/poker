@@ -856,6 +856,7 @@ button:disabled { cursor: wait; opacity: .62; }
   font: 400 clamp(38px, 6vw, 64px)/1.04 Georgia, "Times New Roman", serif;
   letter-spacing: -.03em;
 }
+.hub-head-name { color: var(--gold-light); }
 .hub-head .form-error { margin-top: 16px; }
 
 /* The first-run strip. See components/lobby/first-run-strip.tsx.

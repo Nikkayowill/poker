@@ -46,6 +46,10 @@ import {
   type RestingChipPile,
 } from "./chip-instanced-layer";
 import { publishFunnel } from "@/lib/game3d/scene-registry";
+import {
+  resumedBetFlight,
+  type RendererBetFlightHandoff,
+} from "@/lib/game3d/renderer-flight-handoff";
 import { FakeShadows } from "../scene/fake-shadows";
 
 type FlightKind = "bet" | "sweep" | "award";
@@ -71,14 +75,20 @@ function raisedLaunchPoint(slot: number): Vec3 {
 
 export function ChipField({
   model,
-  onSeatToss,
+  resumeBetFlights = [],
 }: {
   model: SceneModel;
-  /** Called with a slot the instant that seat launches chips, for the toss pose. */
-  onSeatToss: (slot: number) => void;
+  /** Parent-owned events used only when a renderer switch remounts this room mid-flight. */
+  resumeBetFlights?: RendererBetFlightHandoff[];
 }) {
   const [flights, setFlights] = useState<Flight[]>([]);
   const prevRef = useRef<SceneModel | null>(null);
+  const resumedRef = useRef(new Set<string>());
+  // Capture the mount-time handoff. Character GLBs may suspend the first
+  // frame long enough for the parent's short event queue to clear; reading
+  // the latest prop there would lose exactly the switch-in-progress flight
+  // this bridge exists to preserve.
+  const mountFlightsRef = useRef(resumeBetFlights);
 
   const removeFlight = useCallback((key: string) => {
     setFlights((current) => current.filter((f) => f.key !== key));
@@ -97,7 +107,16 @@ export function ChipField({
     if (prevRef.current === model) return;
     const prev = prevRef.current;
     prevRef.current = model;
-    if (!prev) return;
+    if (!prev) {
+      const resumed = mountFlightsRef.current
+        .filter((flight) => !resumedRef.current.has(flight.id))
+        .map((flight) => {
+          resumedRef.current.add(flight.id);
+          return resumedBetFlight(flight);
+        });
+      if (resumed.length > 0) setFlights(resumed);
+      return;
+    }
 
     // Hand boundary: clear instantly, never sweep. A trailing sweep here
     // would wipe the next hand's just-posted blinds.
@@ -140,7 +159,6 @@ export function ChipField({
           to: betSpotPosition(seat.slot),
           slot: seat.slot,
         });
-        onSeatToss(seat.slot);
       }
     }
 

@@ -235,8 +235,10 @@
   align-items: center;
   gap: 1px;
   padding: 4px 10px;
-  background: rgba(8, 7, 12, 0.72);
-  border-radius: 3px;
+  min-width: 94px;
+  background: linear-gradient(180deg, rgba(12, 10, 18, 0.9), rgba(5, 5, 8, 0.76));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
   color: #f5f2ea;
   text-align: center;
   white-space: nowrap;
@@ -261,11 +263,17 @@
 }
 
 .plateFolded {
-  opacity: 0.45;
+  opacity: 0.36;
+  filter: saturate(0.2);
 }
 
 .plateCurrent {
-  box-shadow: 0 0 0 1px rgba(219, 156, 11, 0.85);
+  opacity: 1;
+  border-color: rgba(246, 210, 106, 0.88);
+  box-shadow:
+    0 0 0 1px rgba(219, 156, 11, 0.28),
+    0 0 28px rgba(219, 156, 11, 0.48);
+  animation: livePlatePulse 1.3s ease-in-out infinite;
 }
 
 .plateWinner {
@@ -283,6 +291,136 @@
 .plateDealer .plateName {
   font-weight: 500;
   color: #cfc7de;
+}
+
+@keyframes livePlatePulse {
+  50% {
+    border-color: rgba(255, 231, 150, 1);
+    box-shadow:
+      0 0 0 1px rgba(219, 156, 11, 0.5),
+      0 0 38px rgba(219, 156, 11, 0.66);
+  }
+}
+
+/* ------------------------------------------------------------------------
+ * Live table HUD. Unlike the classic table's ring of DOM seats, this layer
+ * belongs to the camera: projected labels identify the actual 3D figures,
+ * the centre banner names the actor, and the board/hand are the only large
+ * screen-space cards retained for legibility.
+ * ------------------------------------------------------------------------ */
+
+.liveHud {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.liveHudTop {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 4;
+  width: min(560px, calc(100% - 32px));
+  min-height: 44px;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(12, 10, 18, 0.88), rgba(5, 5, 8, 0.68));
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(12px);
+  color: #f6f1e6;
+  font-variant-numeric: tabular-nums;
+}
+
+.liveStreet,
+.liveBlinds {
+  color: #aaa2b9;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.liveBlinds { text-align: right; }
+
+.livePot {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.livePot small {
+  color: #9e95ac;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.livePot strong {
+  color: #f4d778;
+  font-size: 17px;
+  letter-spacing: 0.02em;
+}
+
+.liveTurn {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(76vw, 580px);
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(4, 4, 7, 0.64);
+  color: #e5deec;
+  box-shadow: 0 7px 22px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+
+.liveTurn i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #e0af3c;
+  box-shadow: 0 0 14px rgba(224, 175, 60, 0.9);
+  animation: liveTurnPulse 1s ease-in-out infinite;
+}
+
+.liveTurn span {
+  color: #f7e6a8;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.liveTurn small {
+  overflow: hidden;
+  color: #aaa2b9;
+  font-size: 10px;
+  text-overflow: ellipsis;
+}
+
+.liveTurnMine {
+  background: rgba(73, 47, 9, 0.76);
+  box-shadow: 0 0 32px rgba(224, 175, 60, 0.28);
+}
+
+@keyframes liveTurnPulse {
+  50% { opacity: 0.45; transform: scale(0.76); }
 }
 
 /* ---------------------------------------------------------------------------
@@ -486,13 +624,11 @@
 }
 
 /* ------------------------------------------------------------------------
- * The local player's own pair (hud/own-hole-cards.tsx) — fixed above the
- * action bar, not projected onto the felt. It is a HUD element like the
- * pot readout, deliberately not another 3D-anchored overlay like the
- * board: the player's own hand reads as something held, not a prop lying
- * on the cloth. --card-w is set here, independent of the board's own; the
- * bottom offset clears the action bar's tallest (portrait) form, tuned
- * per breakpoint below alongside that same button row.
+ * The local player's own pair (hud/own-hole-cards.tsx) — fixed beside the
+ * near avatar and directly above the action bar, not projected onto the
+ * felt. It is a HUD element like the pot readout, deliberately not another
+ * 3D-anchored overlay like the board: the player's own hand reads as
+ * something held. --card-w is independent of the board's own.
  * ------------------------------------------------------------------------ */
 
 .ownHandLayer {
@@ -505,6 +641,49 @@
   gap: calc(var(--card-w) * 0.16);
   z-index: 2;
   pointer-events: none;
+}
+
+.ownHandLayerLive {
+  --card-w: 56px;
+  left: calc(50% + clamp(76px, 9vw, 126px));
+  bottom: 8px;
+  padding: 7px 12px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px 18px 6px 6px;
+  background: linear-gradient(180deg, rgba(16, 13, 22, 0.58), rgba(5, 5, 8, 0.82));
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.ownHandStrength {
+  position: absolute;
+  top: -26px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 180px;
+  overflow: hidden;
+  padding: 4px 8px;
+  border: 1px solid rgba(101, 214, 162, 0.34);
+  border-radius: 999px;
+  background: rgba(12, 35, 27, 0.88);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+  color: #d9f1e4;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+@media (max-height: 620px) {
+  .liveHudTop { top: 6px; min-height: 38px; }
+  .liveTurn { top: 50px; }
+  .ownHandLayerLive {
+    --card-w: 44px;
+    left: calc(50% + clamp(62px, 9vw, 96px));
+    bottom: 3px;
+  }
 }
 
 /* A held pair fans slightly rather than lying dead flat — the same "lift

@@ -29,6 +29,8 @@ export interface SeatModel {
   avatar3dCosmetic?: string;
   stack: number;
   streetBet: number;
+  /** Server-authored action label, used to trigger one-shot avatar gestures. */
+  lastAction: string | null;
   status: PublicSeat["status"];
   isMine: boolean;
   isCurrent: boolean;
@@ -37,6 +39,8 @@ export interface SeatModel {
   winAmount: number;
   /** Redacted hole cards: null entries render as card backs. */
   holeCards: Array<Card | null>;
+  /** Server-redacted made-hand label; populated for the requesting player. */
+  handLabel: string | null;
   /** True when this seat still holds live cards this hand. */
   inHand: boolean;
   mood: AvatarMood;
@@ -136,6 +140,7 @@ export function deriveSceneModel(game: GameSnapshot): SceneModel {
       avatar3dCosmetic: seat.avatar3dCosmetic,
       stack: seat.stack,
       streetBet: seat.streetBet,
+      lastAction: seat.lastAction,
       status: seat.status,
       isMine: seat.isMine,
       isCurrent: seat.isCurrent,
@@ -143,6 +148,7 @@ export function deriveSceneModel(game: GameSnapshot): SceneModel {
       isWinner,
       winAmount,
       holeCards: seat.holeCards,
+      handLabel: seat.handLabel,
       inHand: seat.status === "active" || seat.status === "all-in",
       mood: moodFor(seat, isWinner, seat.isCurrent),
     };

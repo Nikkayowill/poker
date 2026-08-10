@@ -12,12 +12,9 @@
  * That is what makes this a preference rather than a fork: nothing downstream
  * branches on it.
  *
- * WHY THE DEFAULT IS 2D, FOR NOW. Not because it is better — the 3D room is
- * the direction. It is that the 2D room is what every player is currently
- * looking at and what the whole Playwright suite asserts against, so shipping
- * the renderer and choosing it are two decisions, and making them one commit
- * means the first real device either of us learns about is a player's. Flip
- * this constant to make 3D the default; nothing else has to change.
+ * The 3D room is now the default so real hands exercise the rigged character
+ * animations. Browsers that cannot create a WebGL context still fall back to
+ * the classic renderer through resolveTableRenderer below.
  *
  * In `lib/` rather than beside either renderer because `vitest.config.ts`
  * collects only `lib/` and `app/` — the same reason `bet-style.ts`, whose
@@ -28,8 +25,8 @@ export type TableRenderer = "canvas_2d" | "webgl_3d";
 
 export const TABLE_RENDERERS: readonly TableRenderer[] = ["canvas_2d", "webgl_3d"];
 
-/** See the header: continuity, not preference. */
-export const DEFAULT_TABLE_RENDERER: TableRenderer = "canvas_2d";
+/** See the header: use the animated room whenever the browser supports it. */
+export const DEFAULT_TABLE_RENDERER: TableRenderer = "webgl_3d";
 
 /** Same `stackchips:` namespace as the sound, music and bet-style preferences. */
 export const TABLE_RENDERER_STORAGE_KEY = "stackchips:table-renderer";

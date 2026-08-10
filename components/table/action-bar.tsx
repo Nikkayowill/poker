@@ -65,6 +65,7 @@ export function ActionBar({
   onLeave,
   profile,
   onOpenCheckout,
+  variant = "classic",
 }: {
   game: GameSnapshot;
   pending: boolean;
@@ -82,6 +83,8 @@ export function ActionBar({
    * the modal mid-purchase and buy a second session on the way back.
    */
   onOpenCheckout: () => void;
+  /** The 3D room keeps the same server intents but presents its own control console. */
+  variant?: "classic" | "3d";
 }) {
   const legal = game.legalActions;
   const mySeat = game.seats.find((seat) => seat.isMine);
@@ -126,7 +129,7 @@ export function ActionBar({
     const canRebuyWithGold = Boolean(profile?.unlimitedGold)
       || (profile?.goldBalance ?? 0) >= TIER_CONFIG[game.tier].minBuyIn;
     return (
-      <div className="action-bar">
+      <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>
         <div className="action-slot-status">
           <span className="action-kicker">
             {!game.isSeated
@@ -205,7 +208,7 @@ export function ActionBar({
   // `game.status === "complete"` branch above already returns first.
   if (game.isSeated && mySeat?.status === "out") {
     return (
-      <div className="action-bar">
+      <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>
         <div className="action-slot-status">
           <span className="action-kicker">Sat out</span>
           <strong>You’re in for the next hand -- sit tight while this one finishes.</strong>
@@ -218,7 +221,11 @@ export function ActionBar({
   const passiveIsCall = Boolean(legal?.canCall);
 
   return (
-    <div className={clsx("action-bar", myTurn && "action-bar-your-turn")}>
+    <div className={clsx(
+      "action-bar",
+      variant === "3d" && "action-bar-3d",
+      myTurn && "action-bar-your-turn",
+    )}>
       {/* Only your own turn burns the bar. Passing nulls otherwise leaves the
           fuse properties unset, which is what makes the track sit empty
           rather than animating somebody else's clock under your controls. */}

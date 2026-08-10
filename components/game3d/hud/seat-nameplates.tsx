@@ -92,8 +92,12 @@ export function SeatNameplates({ model, aspect }: { model: SceneModel; aspect: n
         sub: seat.isWinner
           ? `+${seat.winAmount.toLocaleString()}`
           : folded
-            ? "Folded"
-            : seat.stack.toLocaleString(),
+            ? "FOLDED"
+            : seat.isCurrent
+              ? `TO ACT · ${seat.stack.toLocaleString()}`
+              : seat.lastAction
+                ? `${seat.lastAction} · ${seat.stack.toLocaleString()}`
+                : seat.stack.toLocaleString(),
         className: classNames.join(" "),
       });
     }

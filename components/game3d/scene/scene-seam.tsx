@@ -67,16 +67,10 @@ export function SceneSeam() {
   const framesRef = useRef(0);
 
   /*
-   * Counting frames from `useFrame` is exact under `frameloop="demand"`:
-   * the callback runs on rendered frames and only on rendered frames.
-   * Subscribing does not itself wake the loop -- `useFrame` never calls
-   * `invalidate()` -- so this observes the loop without altering the thing
-   * it is measuring, which is the whole requirement for a loop-sleeps test.
-   *
-   * This is the *independent* half of the sleep evidence: `awake()` reports
-   * what the room believes it still has to draw, and this reports what it
-   * actually drew. A bug that leaves the loop spinning with nothing to show
-   * moves this counter while `awake()` says false.
+   * The live room renders continuously so skeletal mixers can breathe and
+   * gesture between game-state mutations. This counter lets the browser test
+   * prove that frames continue even when the chip scheduler's `awake()` flag
+   * is false. `useFrame` only observes the loop; it does not create one.
    */
   useFrame(() => {
     framesRef.current += 1;

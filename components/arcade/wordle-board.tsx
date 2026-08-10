@@ -249,7 +249,7 @@ export function WordleBoard() {
         </div>
         {profile && (
           <div className="puzzle-player">
-            <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />
+            <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
             <span className="bj-hand-who">
               <span className="bj-hand-label">{profile.displayName}</span>
               <span className="bj-hand-caption">

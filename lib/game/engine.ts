@@ -672,7 +672,8 @@ export function createGame(
       accent: appearance?.accent ?? "#e7c66a",
       avatarUrl: appearance?.avatarUrl ?? null,
       avatarPreset: appearance?.avatarPreset ?? "ace",
-      avatarCosmetic: appearance?.equipped?.avatar ?? DEFAULT_AVATAR_COSMETIC,
+      avatarCosmetic: appearance?.equipped?.avatar2d ?? DEFAULT_AVATAR_COSMETIC,
+      avatar3dCosmetic: appearance?.equipped?.avatar3d,
       cardBackCosmetic: appearance?.equipped?.cardBack ?? DEFAULT_CARD_BACK,
       position: 0,
       isHuman: true,
@@ -816,7 +817,8 @@ export function claimSeat(
   seat.accent = profile.accent;
   seat.avatarUrl = profile.avatarUrl;
   seat.avatarPreset = profile.avatarPreset;
-  seat.avatarCosmetic = profile.equipped.avatar;
+  seat.avatarCosmetic = profile.equipped.avatar2d;
+  seat.avatar3dCosmetic = profile.equipped.avatar3d;
   seat.cardBackCosmetic = profile.equipped.cardBack;
   seat.timeCardsRemaining = STARTING_TIME_CARDS;
   // A claimed seat owns exactly the buy-in the player paid for, including chips

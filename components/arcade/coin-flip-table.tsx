@@ -221,7 +221,7 @@ export function CoinFlipTable() {
         {profile && (
           <ArcadeSeat
             className="cf-player-head"
-            avatar={<ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />}
+            avatar={<ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />}
             name={profile.displayName}
             caption={round && live ? `Riding ${round.pot.toLocaleString()}` : undefined}
           />

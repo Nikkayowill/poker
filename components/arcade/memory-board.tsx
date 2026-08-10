@@ -214,7 +214,7 @@ export function MemoryBoard() {
 
         {state?.profile && (
           <div className="bj-hand-head mm-player-head">
-            <ProfileAvatar profile={{ ...state.profile, avatarCosmetic: state.profile.equipped.avatar }} />
+            <ProfileAvatar profile={{ ...state.profile, avatarCosmetic: state.profile.equipped.avatar2d }} />
             <span className="bj-hand-who">
               <span className="bj-hand-label">{state.profile.displayName}</span>
               <span className="bj-hand-caption">

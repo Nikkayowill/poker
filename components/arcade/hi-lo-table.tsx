@@ -212,7 +212,7 @@ export function HiLoTable() {
 
         {profile && (
           <div className="bj-hand-head hl-player-head">
-            <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />
+            <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
             <span className="bj-hand-who">
               <span className="bj-hand-label">{profile.displayName}</span>
               {round && <span className="bj-hand-caption">Staked {round.stake.toLocaleString()}</span>}

@@ -179,7 +179,7 @@ export function BaccaratTable() {
         {profile && (
           <ArcadeSeat
             className="bc-player-head"
-            avatar={<ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />}
+            avatar={<ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />}
             name={profile.displayName}
             caption={round ? `${sideLabel(round.bet)} · ${round.stake.toLocaleString()}` : undefined}
           />

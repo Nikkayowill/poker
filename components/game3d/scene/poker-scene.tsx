@@ -161,7 +161,7 @@ function SeatUnit({ seat }: { seat: SeatModel }) {
           A/B by uncommenting rather than reconstructing the call. */}
       <GlbAvatar
         slot={seat.slot}
-        character={characterById(seat.avatarCosmetic) ?? characterForSlot(seat.slot)}
+        character={characterById(seat.avatar3dCosmetic ?? "") ?? characterForSlot(seat.slot)}
       />
       {/* <SpriteAvatar
         slot={seat.slot}

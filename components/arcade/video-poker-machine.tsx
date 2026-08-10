@@ -184,7 +184,7 @@ export function VideoPokerMachine() {
         {profile && (
           <ArcadeSeat
             className="vp-player-head"
-            avatar={<ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />}
+            avatar={<ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />}
             name={profile.displayName}
             caption={round ? `Staked ${round.stake.toLocaleString()}` : undefined}
           />

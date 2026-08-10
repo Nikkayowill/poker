@@ -203,7 +203,7 @@ export function RouletteTable() {
         {profile && (
           <ArcadeSeat
             className="rl-player-head"
-            avatar={<ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />}
+            avatar={<ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />}
             name={profile.displayName}
             caption={round ? `${betLabel(round.bet)} · ${round.stake.toLocaleString()}` : undefined}
           />

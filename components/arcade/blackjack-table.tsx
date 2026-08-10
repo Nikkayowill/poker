@@ -432,7 +432,7 @@ export function BlackjackTable() {
           caption={round?.doubled ? "Doubled" : undefined}
           avatar={
             profile
-              ? <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />
+              ? <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
               : undefined
           }
           cards={round?.playerHand ?? []}

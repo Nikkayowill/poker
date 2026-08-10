@@ -11,6 +11,8 @@ import {
   DEFAULT_AVATAR_COSMETIC,
   DEFAULT_CARD_BACK,
   cosmeticById,
+  defaultEquipped,
+  normalizeEquipped,
 } from "./catalog";
 
 const publicDir = path.join(process.cwd(), "public");
@@ -44,6 +46,19 @@ describe("cosmetic catalog", () => {
   it("keeps the defaults pointing at real entries", () => {
     expect(cosmeticById(DEFAULT_AVATAR_COSMETIC)?.slot).toBe("avatar");
     expect(cosmeticById(DEFAULT_CARD_BACK)?.slot).toBe("cardBack");
+  });
+
+  it("keeps independent 2D and 3D equipment slots", () => {
+    expect(defaultEquipped.avatar2d).toBe("avatar-regular");
+    expect(character3DCosmetics.map((item) => item.id)).toContain(defaultEquipped.avatar3d);
+    expect(normalizeEquipped({ avatar: "marcus" })).toMatchObject({
+      avatar2d: "avatar-regular",
+      avatar3d: "marcus",
+    });
+    expect(normalizeEquipped({ avatar2d: "avatar-shark", avatar3d: "victor" })).toMatchObject({
+      avatar2d: "avatar-shark",
+      avatar3d: "victor",
+    });
   });
 
   it("gives away the starter roster and exactly one card back", () => {

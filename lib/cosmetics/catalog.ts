@@ -433,15 +433,19 @@ export function isPurchasable(item: Cosmetic): boolean {
   return typeof item.price === "number" && item.price > 0;
 }
 
-/** A player's equipped choices, one per slot. */
+/** A player's equipped choices, with independent 2D and 3D avatar slots. */
 export interface EquippedCosmetics {
   cardBack: string;
-  avatar: string;
+  avatar2d: string;
+  avatar3d: string;
 }
+
+export const DEFAULT_3D_AVATAR = CHARACTERS_3D[0]?.id ?? "gloria";
 
 export const defaultEquipped: EquippedCosmetics = {
   cardBack: DEFAULT_CARD_BACK,
-  avatar: DEFAULT_AVATAR_COSMETIC,
+  avatar2d: DEFAULT_AVATAR_COSMETIC,
+  avatar3d: DEFAULT_3D_AVATAR,
 };
 
 /**
@@ -449,13 +453,19 @@ export const defaultEquipped: EquippedCosmetics = {
  * refuses to equip anything that isn't a real item in the right slot.
  */
 export function normalizeEquipped(raw: unknown): EquippedCosmetics {
-  const input = (raw ?? {}) as Partial<Record<keyof EquippedCosmetics, unknown>>;
-  const pick = (value: unknown, slot: CosmeticSlot, fallback: string) => {
+  const input = (raw ?? {}) as Record<string, unknown>;
+  const pick = (value: unknown, renderMode: "2d" | "3d", fallback: string) => {
     const item = typeof value === "string" ? cosmeticById(value) : null;
-    return item && item.slot === slot ? item.id : fallback;
+    return item && item.slot === "avatar" && (item.renderMode ?? "2d") === renderMode
+      ? item.id
+      : fallback;
   };
+  const legacyAvatar = input.avatar;
   return {
-    cardBack: pick(input.cardBack, "cardBack", DEFAULT_CARD_BACK),
-    avatar: pick(input.avatar, "avatar", DEFAULT_AVATAR_COSMETIC),
+    cardBack: cosmeticById(String(input.cardBack ?? ""))?.slot === "cardBack"
+      ? String(input.cardBack)
+      : DEFAULT_CARD_BACK,
+    avatar2d: pick(input.avatar2d ?? (typeof legacyAvatar === "string" && (cosmeticById(legacyAvatar)?.renderMode ?? "2d") === "2d" ? legacyAvatar : undefined), "2d", DEFAULT_AVATAR_COSMETIC),
+    avatar3d: pick(input.avatar3d ?? (typeof legacyAvatar === "string" && cosmeticById(legacyAvatar)?.renderMode === "3d" ? legacyAvatar : undefined), "3d", DEFAULT_3D_AVATAR),
   };
 }

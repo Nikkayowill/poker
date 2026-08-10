@@ -10,6 +10,8 @@
  * of whether anyone wants to spend Gold at all.
  */
 
+import { CHARACTERS_3D } from "@/lib/game3d/characters";
+
 export type Rarity = "standard" | "premium" | "rare" | "signature";
 
 export const rarityLabels: Record<Rarity, string> = {
@@ -44,6 +46,8 @@ export interface Cosmetic {
    * rule as the signature tier below just gated on a lower bar.
    */
   unlock?: { handsWon: number } | { chipsWon: number };
+  /** Avatar renderer used by the Collection and the 3D room. */
+  renderMode?: "2d" | "3d";
 }
 
 /**
@@ -176,7 +180,7 @@ const cardBackCosmetics: Cosmetic[] = [
  *  - signature (3): unchanged -- earned via a specific one-off achievement,
  *    never for sale, no relation to the hands/chips-won unlock ladder.
  */
-export const avatarCosmetics: Cosmetic[] = [
+const illustratedAvatarCosmetics: Cosmetic[] = [
   {
     id: "avatar-regular",
     slot: "avatar",
@@ -344,6 +348,27 @@ export const avatarCosmetics: Cosmetic[] = [
     rarity: "signature",
     price: null,
   },
+];
+
+/**
+ * Rigged characters share the avatar ownership/equip slot with illustrated
+ * characters, but remain a separate Collection state so the two art systems
+ * do not get mixed into one grid. They are free while the 3D selection is
+ * being introduced; ownership still flows through the same server path.
+ */
+export const character3DCosmetics: Cosmetic[] = CHARACTERS_3D.map((character) => ({
+  id: character.id,
+  slot: "avatar",
+  name: character.name,
+  description: "A fully rigged table character, ready for motion in the 3D room.",
+  rarity: character.tier === "premium" ? "premium" : "standard",
+  price: 0,
+  renderMode: "3d",
+}));
+
+export const avatarCosmetics: Cosmetic[] = [
+  ...illustratedAvatarCosmetics,
+  ...character3DCosmetics,
 ];
 
 /** What a brand-new profile has, and falls back to if anything goes missing. */

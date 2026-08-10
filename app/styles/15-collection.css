@@ -77,6 +77,28 @@
 }
 .collection-blurb { margin: 0 0 22px; color: #8d84a3; font-size: 13px; }
 
+.collection-view-switch {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 0 22px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.06);
+}
+.collection-view-switch button {
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.collection-view-switch button.is-active {
+  background: rgba(246,201,74,.16);
+  color: var(--brand-gold-light);
+}
+
 .cosmetic-grid {
   display: grid;
   /* min(Npx, 100%) rather than a bare 168px floor: a fixed minimum is a width
@@ -142,6 +164,36 @@
 .cosmetic-art-fallback span {
   opacity: .9;
   transform: translateX(.08em);
+}
+
+.cosmetic-3d-swatch {
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(158,197,232,.3), transparent 42%),
+    linear-gradient(145deg, #26334a, #11151e);
+  color: #dcecff;
+  font: 600 clamp(30px, 8vw, 58px)/1 Georgia, "Times New Roman", serif;
+  letter-spacing: .08em;
+}
+.cosmetic-3d-loading {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.preview-dialog .preview-art-frame:has(.cosmetic-3d-swatch),
+.preview-dialog .preview-art-frame:has(.cosmetic-3d-loading) {
+  min-height: 310px;
+}
+.preview-dialog .preview-art-frame canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .cosmetic-art-pending {

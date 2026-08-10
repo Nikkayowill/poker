@@ -1093,7 +1093,12 @@ export function PokerApp() {
                 <Menu
                   label="Open player menu"
                   trigger={profile
-          ? <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
+          ? (
+            <span className="app-menu-profile-trigger">
+              <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
+              <strong className="app-menu-player-name">{profile.displayName}</strong>
+            </span>
+          )
                     : <span className="app-menu-fallback"><Settings2 size={16} /></span>}
                   items={lobbyMenuItems}
                 />

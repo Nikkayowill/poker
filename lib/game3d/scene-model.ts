@@ -25,6 +25,8 @@ export interface SeatModel {
   accent: string;
   /** Equipped avatar cosmetic id — the illustrated character at this seat. */
   avatarCosmetic: string;
+  /** Equipped rigged character id for the 3D room. */
+  avatar3dCosmetic?: string;
   stack: number;
   streetBet: number;
   status: PublicSeat["status"];
@@ -131,6 +133,7 @@ export function deriveSceneModel(game: GameSnapshot): SceneModel {
       name: seat.name,
       accent: seat.accent,
       avatarCosmetic: seat.avatarCosmetic,
+      avatar3dCosmetic: seat.avatar3dCosmetic,
       stack: seat.stack,
       streetBet: seat.streetBet,
       status: seat.status,

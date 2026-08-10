@@ -24,6 +24,8 @@ export interface Seat {
   avatarPreset: string;
   /** Equipped avatar cosmetic id, so opponents render the character they bought. */
   avatarCosmetic: string;
+  /** Equipped rigged character id for the 3D room; optional for legacy tables. */
+  avatar3dCosmetic?: string;
   /**
    * Equipped card back id, drawn on this seat's hidden cards.
    *

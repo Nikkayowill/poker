@@ -657,7 +657,7 @@ export function PokerTable({
             label="Open player menu"
             trigger={
               profile
-                ? <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />
+                ? <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
                 : <span className="app-menu-fallback"><Settings2 size={16} /></span>
             }
             items={menuItems}

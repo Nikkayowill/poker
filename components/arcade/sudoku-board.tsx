@@ -304,7 +304,7 @@ export function SudokuBoard() {
         {state?.profile && (
           <div className="bj-hand-head sk-player-head">
             <ProfileAvatar
-              profile={{ ...state.profile, avatarCosmetic: state.profile.equipped.avatar }}
+              profile={{ ...state.profile, avatarCosmetic: state.profile.equipped.avatar2d }}
             />
             <span className="bj-hand-who">
               <span className="bj-hand-label">{state.profile.displayName}</span>

@@ -303,7 +303,10 @@ export function Collection() {
             <div className="cosmetic-grid">
               {items.map((item) => {
                 const isOwned = owned.includes(item.id);
-                const isEquipped = equipped?.[slot] === item.id;
+                const equipmentKey = item.slot === "avatar"
+                  ? item.renderMode === "3d" ? "avatar3d" : "avatar2d"
+                  : item.slot;
+                const isEquipped = equipped?.[equipmentKey] === item.id;
                 const forSale = typeof item.price === "number" && item.price > 0;
                 const affordable = unlimited || balance >= (item.price ?? 0);
                 const busy = pendingId === item.id;

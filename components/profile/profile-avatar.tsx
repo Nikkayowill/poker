@@ -75,7 +75,7 @@ export function ProfileTrigger({
 }) {
   return (
     <button className={clsx("profile-trigger", compact && "profile-trigger-compact")} onClick={onClick}>
-      <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar }} />
+      <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
       {!compact && (
         <span>
           <strong>{profile.displayName}</strong>

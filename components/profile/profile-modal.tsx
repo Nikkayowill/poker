@@ -43,7 +43,7 @@ export function ProfileModal({
     avatarUrl: usingUpload ? previewUrl : null,
     avatarPreset,
     accent,
-    avatarCosmetic: profile.equipped.avatar,
+    avatarCosmetic: profile.equipped.avatar2d,
   };
 
   const save = async (event: FormEvent) => {

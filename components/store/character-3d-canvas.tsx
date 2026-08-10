@@ -1,8 +1,8 @@
 "use client";
 
+import { useLayoutEffect } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { PerspectiveCamera } from "@react-three/drei";
-import { useLayoutEffect } from "react";
 import type { Character3D } from "@/lib/game3d/characters";
 import { GlbAvatar } from "@/components/game3d/avatars/glb-avatar";
 

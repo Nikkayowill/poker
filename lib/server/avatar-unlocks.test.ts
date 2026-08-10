@@ -24,6 +24,29 @@ function wonHand(token: string, amountWon: number) {
 }
 
 describe("checkAvatarUnlocks", () => {
+  it("awards the first earned 3D character on the tenth lifetime hand win", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const gameId = randomUUID();
+
+    for (let handNumber = 1; handNumber <= 9; handNumber++) {
+      const state = wonHand(token, 1000);
+      state.id = gameId;
+      state.handNumber = handNumber;
+      await checkAvatarUnlocks(await recordHandStats(state));
+    }
+    expect(await listOwnedCosmetics(profile.id)).not.toContain("claira");
+
+    const tenth = wonHand(token, 1000);
+    tenth.id = gameId;
+    tenth.handNumber = 10;
+    await checkAvatarUnlocks(await recordHandStats(tenth));
+
+    const owned = await listOwnedCosmetics(profile.id);
+    expect(owned).toContain("claira");
+    expect(owned).not.toContain("donni");
+  });
+
   it("awards a chips-won avatar the moment a single hand crosses its threshold", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);

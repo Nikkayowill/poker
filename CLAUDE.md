@@ -1476,6 +1476,13 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
     buy in twice.
 - **M17 (chip cosmetics) is deliberately not started** — the user parked it
   until the 3D simulation is finished. Do not pick it up without them saying so.
+- **3D character ownership is live.** The original six GLBs are the free
+  starter roster. Of the eight customer-pack characters, Claira/Donni/Jimmy/
+  Kenji unlock at 10/50/150/500 lifetime hands won; Derek/Oscar/Victor/Marcus
+  cost 1m/2m/4m/6m Gold. These rules live in `lib/cosmetics/catalog.ts`, so
+  `listOwnedCosmetics` and `equipCosmetic` enforce them server-side. Never set
+  every generated 3D cosmetic back to `price: 0`: free catalog entries are
+  implicit ownership and would let a new player equip the entire roster.
 - **M18 is in: player rank, XP and a daily streak.** `lib/progression/rank.ts`
   is the whole curve, pure and closed-form (XP = Gold wagered / 10; level N
   costs `XP_STEP·(N-1)N/2`, inverted by a square root that is then re-checked

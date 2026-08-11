@@ -24,27 +24,35 @@ function wonHand(token: string, amountWon: number) {
 }
 
 describe("checkAvatarUnlocks", () => {
-  it("awards the first earned 3D character on the tenth lifetime hand win", async () => {
+  it("awards the first earned 3D character on the fiftieth lifetime hand win", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
     const gameId = randomUUID();
 
-    for (let handNumber = 1; handNumber <= 9; handNumber++) {
+    for (let handNumber = 1; handNumber <= 49; handNumber++) {
       const state = wonHand(token, 1000);
       state.id = gameId;
       state.handNumber = handNumber;
       await checkAvatarUnlocks(await recordHandStats(state));
     }
-    expect(await listOwnedCosmetics(profile.id)).not.toContain("claira");
+    expect(await listOwnedCosmetics(profile.id)).not.toContain("donni");
 
-    const tenth = wonHand(token, 1000);
-    tenth.id = gameId;
-    tenth.handNumber = 10;
-    await checkAvatarUnlocks(await recordHandStats(tenth));
+    const fiftieth = wonHand(token, 1000);
+    fiftieth.id = gameId;
+    fiftieth.handNumber = 50;
+    await checkAvatarUnlocks(await recordHandStats(fiftieth));
 
     const owned = await listOwnedCosmetics(profile.id);
-    expect(owned).toContain("claira");
-    expect(owned).not.toContain("donni");
+    expect(owned).toContain("donni");
+    // Crossing donni's bar must not award jimmy's 150.
+    expect(owned).not.toContain("jimmy");
+    // claira is a 7,000,000 Gold item with no `unlock` field, so no number
+    // of hand wins may ever grant her. This is the load-bearing half of
+    // this test now: the loop above walks straight past the 10-hand bar
+    // she used to carry, so a regression that re-derived an unlock for a
+    // priced character -- or let one fall through to a free default --
+    // would hand out the catalog's most expensive character for nothing.
+    expect(owned).not.toContain("claira");
   });
 
   it("awards a chips-won avatar the moment a single hand crosses its threshold", async () => {

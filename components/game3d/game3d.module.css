@@ -227,6 +227,17 @@
   pointer-events: none;
 }
 
+/*
+ * No panel here on purpose, same reasoning .betAmount below states for the
+ * felt: a filled box behind every seat's name is six more panels drawn over
+ * the room, and the room is the thing this renderer exists to show. Legibility
+ * comes from a hard black outline on the glyphs themselves instead of a
+ * background — `-webkit-text-stroke` plus `paint-order` so the stroke draws
+ * behind the fill and doesn't thin it, which is what an unordered stroke does
+ * at this font size. State (current turn / winner / dealer) used to be a
+ * border colour and a box-shadow ring; without a box those are carried by
+ * the text's own colour and glow instead.
+ */
 .plate {
   position: absolute;
   transform: translate(-50%, -100%);
@@ -234,15 +245,17 @@
   flex-direction: column;
   align-items: center;
   gap: 1px;
-  padding: 4px 10px;
-  min-width: 94px;
-  background: linear-gradient(180deg, rgba(12, 10, 18, 0.9), rgba(5, 5, 8, 0.76));
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
   color: #f5f2ea;
   text-align: center;
   white-space: nowrap;
   transition: left 400ms ease, top 400ms ease, opacity 400ms ease;
+}
+
+.plateName,
+.plateStack {
+  -webkit-text-stroke: 1px rgba(0, 0, 0, 0.88);
+  paint-order: stroke fill;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.6);
 }
 
 .plateName {
@@ -253,8 +266,8 @@
 
 .plateStack {
   font-size: 10.5px;
-  font-weight: 600;
-  color: #b7aec9;
+  font-weight: 700;
+  color: #f4d778;
   font-variant-numeric: tabular-nums;
 }
 
@@ -269,23 +282,26 @@
 
 .plateCurrent {
   opacity: 1;
-  border-color: rgba(246, 210, 106, 0.88);
-  box-shadow:
-    0 0 0 1px rgba(219, 156, 11, 0.28),
-    0 0 28px rgba(219, 156, 11, 0.48);
-  animation: livePlatePulse 1.3s ease-in-out infinite;
 }
 
-.plateWinner {
-  box-shadow: 0 0 0 1px #db9c0b;
+/* The pulse animates text-shadow, so it has to sit on the elements that
+   actually carry glyphs. On .plateCurrent itself it painted nothing: that
+   div holds only the two spans below and has no text node of its own, and
+   text-shadow could not inherit into them either, since .plateName and
+   .plateStack set their own explicit value above. Both halves have to be
+   true for the shadow to reach a character. */
+.plateCurrent .plateName,
+.plateCurrent .plateStack {
+  animation: livePlateGlow 1.3s ease-in-out infinite;
 }
 
+.plateCurrent .plateName {
+  color: #ffe796;
+}
+
+.plateWinner .plateName,
 .plateWinner .plateStack {
   color: #db9c0b;
-}
-
-.plateDealer {
-  background: rgba(8, 7, 12, 0.5);
 }
 
 .plateDealer .plateName {
@@ -293,12 +309,12 @@
   color: #cfc7de;
 }
 
-@keyframes livePlatePulse {
+@keyframes livePlateGlow {
   50% {
-    border-color: rgba(255, 231, 150, 1);
-    box-shadow:
-      0 0 0 1px rgba(219, 156, 11, 0.5),
-      0 0 38px rgba(219, 156, 11, 0.66);
+    text-shadow:
+      0 0 3px rgba(255, 231, 150, 0.95),
+      0 0 12px rgba(219, 156, 11, 0.85),
+      0 2px 5px rgba(0, 0, 0, 0.6);
   }
 }
 

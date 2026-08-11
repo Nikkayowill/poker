@@ -9,7 +9,16 @@ import {
   characterForSlot,
 } from "./characters";
 
-function readGlbJson(url: string): Record<string, any> {
+/** Only the parts of a glTF asset these tests actually assert on. A loose
+ *  map cannot express them: the properties read below are arrays that get
+ *  flatMapped, and an index signature yields `any` (which the lint rule
+ *  rejects) or `unknown` (which has no .flatMap). */
+type GlbJson = {
+  skins?: { joints?: number[] }[];
+  animations?: { channels?: { target?: { node?: number } }[] }[];
+};
+
+function readGlbJson(url: string): GlbJson {
   const bytes = readFileSync(resolve(process.cwd(), "public", url.slice(1)));
   expect(bytes.toString("ascii", 0, 4)).toBe("glTF");
   expect(bytes.readUInt32LE(4)).toBe(2);

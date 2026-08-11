@@ -49,6 +49,7 @@ import { AuthButton } from "@/components/profile/auth-button";
 import { GoldBadge } from "@/components/profile/gold-badge";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RoomCreatedModal } from "@/components/table/room-created-modal";
+import { useWebglSupport } from "@/components/table/use-webgl-support";
 import { RewardedAdModal } from "@/components/rewards/rewarded-ad-modal";
 import { useGameAchievements } from "@/components/rewards/use-game-achievements";
 import { PokerTable, type ConnectionState } from "@/components/table/poker-table";
@@ -104,11 +105,20 @@ export function PokerApp() {
   // Same shape as betStyle above, and deliberately with no `apply`: the
   // consumer is a prop on <PokerTable>, not a module singleton, so there is
   // nothing to push the value into outside React.
-  const [tableRenderer, setTableRendererState] = useStoredPreference<TableRenderer>({
-    key: TABLE_RENDERER_STORAGE_KEY,
-    fallback: DEFAULT_TABLE_RENDERER,
-    parse: normalizeTableRenderer,
-  });
+  // The third member is the anti-flicker signal, and this is the one
+  // preference in the app that needs it: it decides which of two renderers to
+  // MOUNT, so acting on the fallback for a tick means building and discarding
+  // a whole room. See the note on `settled` in use-stored-preference.ts.
+  const [tableRenderer, setTableRendererState, tableRendererSettled] =
+    useStoredPreference<TableRenderer>({
+      key: TABLE_RENDERER_STORAGE_KEY,
+      fallback: DEFAULT_TABLE_RENDERER,
+      parse: normalizeTableRenderer,
+    });
+  // Same probe poker-table.tsx uses to decide what the menu can offer;
+  // asked here too now that the buy-in modal offers the same choice before
+  // any table exists to mount it into.
+  const webglAvailable = useWebglSupport();
 
   // The lobby and signed-out form scroll inside their own viewport because
   // the table must remain a fixed-height screen. Listen to that scroller
@@ -1124,6 +1134,7 @@ export function PokerApp() {
             betStyle={betStyle}
             onCycleBetStyle={cycleBetStyle}
             tableRenderer={tableRenderer}
+            tableRendererSettled={tableRendererSettled}
             onCycleTableRenderer={cycleTableRenderer}
             onSignIn={() => void signIn()}
             onSignOut={() => void signOut()}
@@ -1157,6 +1168,9 @@ export function PokerApp() {
             onContinueAccount={() => void continueWithAccount()}
             onContinueAsGuest={continueAsGuest}
             onSignOut={() => void signOut()}
+            tableRenderer={tableRenderer}
+            webglAvailable={webglAvailable}
+            onTableRendererChange={setTableRendererState}
           />
         )}
       {createdRoomCode && (

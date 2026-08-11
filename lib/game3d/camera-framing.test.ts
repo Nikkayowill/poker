@@ -5,7 +5,7 @@ import {
   horizontalFov,
   projectToNdc,
 } from "./camera-framing";
-import { FELT_TOP_Y, holeCardPosition } from "./seat-layout";
+import { FELT_TOP_Y, SEAT_COUNT_3D, holeCardPosition, seatPosition } from "./seat-layout";
 
 /** Real viewports, not round numbers: the shapes this actually ships to. */
 const ASPECTS = {
@@ -95,6 +95,69 @@ describe("frameCamera", () => {
     const landscape = frameCamera(844 / 390);
     const centre = projectToNdc({ x: 0, y: FELT_TOP_Y, z: 0 }, landscape, 844 / 390);
     expect(Math.abs(centre.y)).toBeLessThan(0.1);
+  });
+
+  it("fills the frame EXACTLY, at every shape, not approximately", () => {
+    // The closed-form fit this replaces summed two upper bounds that never
+    // co-occur, so it cleared by a margin that varied with the aspect —
+    // measured, 36% of the width was dead at 2560x1080. An exact solve puts
+    // the worst-required point on the safety margin and nowhere else, so
+    // this asserts the fill is tight at every shape rather than merely
+    // adequate at one.
+    for (const [name, aspect] of Object.entries(ASPECTS)) {
+      const framing = frameCamera(aspect);
+      const worst = Math.max(
+        ...framingProbePoints(aspect).map((point) => {
+          const ndc = projectToNdc(point, framing, aspect);
+          return Math.max(Math.abs(ndc.x), Math.abs(ndc.y));
+        })
+      );
+      expect(worst, name).toBeCloseTo(1 / 1.12, 3);
+    }
+  });
+
+  it("keeps seated bodies on screen BETWEEN the two profiles, not just at them", () => {
+    // The regression this exists for: at 1180x820 the old probe set skipped
+    // the players entirely (its gate was `landscapeness >= 1`, and that
+    // aspect blends at 0.91), and the outer seats projected to |x| = 1.04 —
+    // clipped, by a fit that reported success. Every aspect in the blend
+    // band is checked here, against the bodies at the height they are
+    // actually occupied rather than at felt level.
+    for (let aspect = 0.8; aspect <= 2.6; aspect += 0.05) {
+      const framing = frameCamera(aspect);
+      for (let slot = 0; slot < SEAT_COUNT_3D; slot += 1) {
+        const seat = seatPosition(slot);
+        const ndc = projectToNdc({ x: seat.x, y: 1.5, z: seat.z }, framing, aspect);
+        expect(Math.abs(ndc.x), `aspect ${aspect.toFixed(2)} slot ${slot}`)
+          .toBeLessThanOrEqual(1);
+        expect(Math.abs(ndc.y), `aspect ${aspect.toFixed(2)} slot ${slot}`)
+          .toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it("balances the leftover height in landscape instead of stacking it on top", () => {
+    // The old rig aimed at nothing sideways, which left ~30% of the frame
+    // empty above the far player's head and 9% below the near ones. Slack
+    // split evenly is what lets the fit pull the camera in.
+    for (const aspect of [2560 / 1080, 16 / 9, 844 / 390]) {
+      const framing = frameCamera(aspect);
+      const ys = framingProbePoints(aspect).map(
+        (point) => projectToNdc(point, framing, aspect).y
+      );
+      const centre = (Math.min(...ys) + Math.max(...ys)) / 2;
+      expect(Math.abs(centre), `aspect ${aspect.toFixed(2)}`).toBeLessThan(0.02);
+    }
+  });
+
+  it("is deterministic — the same viewport always solves to the same camera", () => {
+    // The fit is a search, so this is worth stating: it is a fixed number of
+    // iterations over a fixed point set with no clock and no randomness, and
+    // a resize that lands back on a previous size must land back on exactly
+    // the previous framing rather than somewhere near it.
+    for (const aspect of Object.values(ASPECTS)) {
+      expect(frameCamera(aspect)).toEqual(frameCamera(aspect));
+    }
   });
 
   it("survives a degenerate aspect instead of returning NaN", () => {

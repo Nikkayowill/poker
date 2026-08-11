@@ -38,6 +38,7 @@
 
 import { Component, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { GameSnapshot } from "@/lib/game/types";
+import type { PlayerProfile } from "@/lib/profile/types";
 import { deriveSceneModel } from "@/lib/game3d/scene-model";
 import { PokerScene } from "@/components/game3d/scene/poker-scene";
 import { LiveTableHud } from "@/components/game3d/hud/live-table-hud";
@@ -46,6 +47,9 @@ export interface TableScene3DProps {
   game: GameSnapshot;
   betFlights: Array<{ id: string; slot: number; amount: number }>;
   onReady: (ready: boolean) => void;
+  /** Only for the desktop corner HUD's avatar/portrait -- the rest of the
+   * room reads everything else it needs straight off `game`. */
+  profile: PlayerProfile | null;
 }
 
 /**
@@ -78,7 +82,7 @@ class SceneBoundary extends Component<
   }
 }
 
-export function TableScene3D({ game, betFlights, onReady }: TableScene3DProps) {
+export function TableScene3D({ game, betFlights, onReady, profile }: TableScene3DProps) {
   const model = useMemo(() => deriveSceneModel(game), [game]);
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);
@@ -112,7 +116,7 @@ export function TableScene3D({ game, betFlights, onReady }: TableScene3DProps) {
           />
         </SceneBoundary>
       </div>
-      {ready ? <LiveTableHud game={game} model={model} /> : null}
+      {ready ? <LiveTableHud game={game} model={model} profile={profile} /> : null}
     </>
   );
 }

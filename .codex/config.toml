@@ -2,3 +2,10 @@
 url = "https://mcp.supabase.com/mcp?project_ref=gykxzlqwkraiflbfxtps&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching"
 auth = "oauth"
 default_tools_approval_mode = "writes"
+
+[mcp_servers.blender]
+command = "/home/nikkayowilliams/.local/bin/uvx"
+args = ["--python", "3.11", "blender-mcp"]
+
+[mcp_servers.blender.env]
+UV_PYTHON_PREFERENCE = "only-managed"

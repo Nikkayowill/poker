@@ -135,6 +135,15 @@ export function isFirstRunRetired(stored: string | null): boolean {
 }
 
 /**
+ * Registered accounts have already completed the account-entry journey, so
+ * they do not need the guest-only orientation strip. Guests still use the
+ * browser flag so the strip can retire after they finish it or reach a table.
+ */
+export function shouldShowFirstRun(stored: string | null, isRegistered: boolean): boolean {
+  return !isRegistered && !isFirstRunRetired(stored);
+}
+
+/**
  * The next step index, or null once the strip is finished.
  *
  * Clamped rather than trusting the caller: the index is held in component

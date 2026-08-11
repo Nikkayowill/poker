@@ -11,8 +11,8 @@
  *
  * What carries over from that predecessor is every decision that was about
  * poker rather than about a renderer: the pot is broken into denominations
- * by `potChipStacks` in big blinds (so a pile means the same thing at every
- * tier), columns are capped at MAX_CHIPS_PER_COLUMN, the settle jitter is
+ * in big blinds (so a pile means the same thing at every tier), columns use
+ * the same 16-high fill order as PlayPokerGO's 2D ChipPool, and the motion is
  * seeded from a chip's own identity rather than `Math.random()`, sprays fly
  * the *amount* as chips (`betSprayDenominations`/`funnelSprayDenominations`)
  * with the decorative cycle only as a malformed-input fallback, and the
@@ -28,54 +28,110 @@ import {
   decorativeDenomination,
   FUNNEL_CHIP_COUNT,
   funnelSprayDenominations,
-  stepGlideChip,
 } from "./chip-physics";
 import {
   CHIP_AIRTIME_MS,
   CHIP_STAGGER_MS,
-  sampleArc,
-  SPRING_BET,
-  SPRING_DROP,
-  SPRING_SWEEP,
-  springAt,
-  stepSpring,
-  type SpringConfig,
-  type SpringState,
 } from "./chip-spring";
 import {
   DEFAULT_BET_STYLE,
   NEAT_SLIDE_DURATION_MS,
   SPLASH_ARC_PEAK,
   splashScatterOffset,
-  stackLeanOffset,
   type BetAnimationStyle,
 } from "./bet-style";
-import { MAX_CHIPS_PER_COLUMN, potChipStacks } from "@/lib/game/pot-chips";
+import { POT_CHIP_DENOMINATIONS_BB } from "@/lib/game/pot-chips";
 import { FELT, type Vec3 } from "./scene-config";
 import { potPosition, ringPoint, seatAngle, seatBetOrigin, seatTrayOrigin } from "./seat-ring";
 
-/** The token: a 39mm chip against a 2.1m table, near enough exactly right. */
-export const CHIP_RADIUS = 0.4;
+/** Compact 2D token size; the 3D room owns its own physical chip scale. */
+export const CHIP_RADIUS = 0.14;
 /**
- * A real 39mm chip is 3.3mm thick — thickness = radius × 0.17, which at
- * CHIP_RADIUS 0.4 is this. The stack pitch and the painted edge height are
- * both exactly this value, which is what keeps a resting stack literally
- * flush: chip i's top face is chip i+1's bottom face, no daylight.
+ * The stack pitch and the painted edge height are both exactly this value,
+ * which is what keeps a resting stack literally flush: chip i's top face is
+ * chip i+1's bottom face, no daylight.
  */
-export const CHIP_THICKNESS = 0.068;
+// Slightly exaggerated for the tilted 2D canvas: the physical ratio is too
+// thin at phone/desktop CSS-pixel sizes and makes flush chips look intersected.
+export const CHIP_THICKNESS = 0.050;
 
-/** How far apart the pile's denomination columns stand. */
-const COLUMN_SPACING = 0.98;
+/**
+ * PlayPokerGO's public 2D ChipPool fills 16 chips upward before opening the
+ * next column. Its sprites advance 35px horizontally and 3px vertically;
+ * these are the same proportions in this room's world units (one painted
+ * chip diameter across, one CHIP_THICKNESS up).
+ */
+export const CHIPS_PER_2D_COLUMN = 16;
+export const POT_2D_COLUMNS = 5;
+const COLUMN_SPACING = CHIP_RADIUS * 2 * 1.35;
+
+export function get2DChipPosition(chipIndex: number): Readonly<{ x: number; y: number }> {
+  const safeIndex = Math.max(0, Math.floor(chipIndex));
+  const row = safeIndex % CHIPS_PER_2D_COLUMN;
+  return {
+    x: Math.floor(safeIndex / CHIPS_PER_2D_COLUMN) * COLUMN_SPACING,
+    y: row === 0 ? 0 : -row * CHIP_THICKNESS,
+  };
+}
+
+interface HeapChip {
+  denomination: number;
+  /** Stable within its denomination as the amount grows. */
+  denominationIndex: number;
+  position: Readonly<{ x: number; y: number }>;
+}
+
+/**
+ * Greedy, high-to-low chip fill used by PlayPokerGO's `getChipHeap`, adapted
+ * to this game's blind-relative denominations. The visual cap consumes the
+ * undisplayed remainder rather than changing the represented amount.
+ */
+export function get2DChipHeap(
+  amount: number,
+  bigBlind: number,
+  maxColumns = POT_2D_COLUMNS,
+): HeapChip[] {
+  if (!Number.isFinite(amount) || !Number.isFinite(bigBlind) || amount <= 0 || bigBlind <= 0) return [];
+  const capacity = Math.max(0, Math.floor(maxColumns)) * CHIPS_PER_2D_COLUMN;
+  if (capacity === 0) return [];
+
+  let remaining = amount / bigBlind;
+  const heap: HeapChip[] = [];
+  for (const denomination of POT_CHIP_DENOMINATIONS_BB) {
+    const wanted = Math.floor(remaining / denomination);
+    if (wanted <= 0) continue;
+    const shown = Math.min(wanted, capacity - heap.length);
+    for (let denominationIndex = 0; denominationIndex < shown; denominationIndex += 1) {
+      heap.push({
+        denomination,
+        denominationIndex,
+        position: get2DChipPosition(heap.length),
+      });
+    }
+    remaining -= wanted * denomination;
+    if (heap.length >= capacity) break;
+  }
+
+  // A positive amount below one blind still needs one visible chip.
+  if (heap.length === 0) {
+    heap.push({ denomination: 1, denominationIndex: 0, position: get2DChipPosition(0) });
+  }
+  return heap;
+}
+
+/** Fixed clocks prevent a 2D chip from converging forever. */
+const CHIP_DROP_DURATION_MS = 180;
+const CHIP_BET_DURATION_MS = 900;
+const CHIP_SWEEP_DURATION_MS = 650;
 
 /** How high a newly added pile chip drops in from. */
 const PILE_DROP = 1.1;
 
 /**
- * A standing bet's columns stand a little tighter than the pot's, and drop
- * in from lower: a bet is a hand's-width of chips pushed out by one player,
- * not the table's whole middle.
+ * A standing bet drops in from lower than the central pot: it is a
+ * hand's-width of chips pushed out by one player, not the table's whole
+ * middle.
  */
-const BET_COLUMN_SPACING = 0.88;
 const BET_DROP = 0.7;
 
 /**
@@ -129,30 +185,13 @@ export interface SceneChip {
 
 interface MovingChip {
   chip: SceneChip;
-  /**
-   * The spring's own state — position and velocity — kept separate from the
-   * chip's drawn position on purpose.
-   *
-   * The spring owns where the chip is *on the cloth*; the arc owns how far
-   * off the cloth it is, and the drawn position is the two composed each
-   * frame. Feeding the arced position back into the integrator — which the
-   * WebGL predecessor did, and which the friction slide this replaced was
-   * fixed for once already — makes the arc residue re-amplify near the target
-   * so the chip hovers forever instead of arriving, holding the render loop
-   * awake for good.
-   *
-   * Carrying velocity is also what makes a flight interruptible: `sweepBets`
-   * retargets a chip that is still dropping into its standing bet, and it
-   * curves through rather than stopping dead and starting again.
-   */
-  spring: SpringState;
+  /** Clocked motion; fields are mutated in the render tick. */
+  motion: { from: Vec3; elapsedMs: number; durationMs: number };
   target: Vec3;
   /** Counts down before the chip starts moving, which is what staggers a spray. */
   delayMs: number;
   /** Pile chips stay when they land; spray chips are removed. */
   keepOnArrival: boolean;
-  /** Which spring preset drives it — see chip-spring.ts for why there are three. */
-  config: SpringConfig;
   /**
    * The arc, on its own clock. Absent means the chip stays on the cloth: a
    * neat slide, and the short vertical drop a chip makes onto a pile it is
@@ -160,14 +199,6 @@ interface MovingChip {
    * before it came down).
    */
   arc?: { peak: number; elapsedMs: number; durationMs: number };
-  /**
-   * Present on a neat-slide chip: a clocked cubic-ease-out glide instead of
-   * the spring. The pillar's chips all share one duration, which is what
-   * keeps them a rigid body in flight — a spring per chip would let them
-   * shear apart near the target, which is the one thing this style exists to
-   * avoid. See `stepGlideChip`.
-   */
-  glide?: { from: Vec3; durationMs: number; elapsedMs: number };
 }
 
 export class ChipLayer {
@@ -237,45 +268,52 @@ export class ChipLayer {
     }
     // While the funnel is running the pot has already been paid out; leaving
     // the pile under it would show the same chips twice.
-    const stacks = paying ? [] : potChipStacks(pot, bigBlind);
+    const heap = paying ? [] : get2DChipHeap(pot, bigBlind);
     const wanted = new Set<string>();
 
-    const spread = (stacks.length - 1) / 2;
+    const columnCount = Math.ceil(heap.length / CHIPS_PER_2D_COLUMN);
+    const spread = (columnCount - 1) / 2;
     // Named for the spot, not the amount -- `pot` is already this method's
     // first parameter, and the pile is no longer at the felt's own centre.
     const centre = potPosition(this.radiusZ);
-    stacks.forEach((stack, column) => {
-      for (let index = 0; index < stack.count; index += 1) {
-        const key = `${stack.denomination}:${index}`;
-        wanted.add(key);
-        if (this.pile.has(key)) continue;
-
-        const jitter = chipSettleJitter(stack.denomination, index);
-        const rest: Vec3 = {
-          x: centre.x + (column - spread) * COLUMN_SPACING + jitter.x,
-          y: FELT.y + CHIP_THICKNESS / 2 + index * CHIP_THICKNESS,
-          z: centre.z + jitter.z,
-        };
-        const chip: SceneChip = {
-          denomination: stack.denomination,
-          position: { x: rest.x, y: rest.y + PILE_DROP, z: rest.z },
-          airborne: true,
-        };
-        this.pile.set(key, chip);
-        this.moving.push({
-          chip,
-          spring: springAt(chip.position),
-          target: rest,
-          delayMs: index * DROP_STAGGER_MS,
-          keepOnArrival: true,
-          // Stiff and nearly critical: the travel is about a chip's own
-          // thickness, so the event is the contact. No arc — this is already
-          // a vertical move, and arcing it would lift the chip before
-          // dropping it.
-          config: SPRING_DROP,
-        });
-        this.onChanged();
+    heap.forEach(({ denomination, denominationIndex, position: layout }, index) => {
+      const key = `${denomination}:${denominationIndex}`;
+      wanted.add(key);
+      const rest: Vec3 = {
+        x: centre.x + layout.x - spread * COLUMN_SPACING,
+        y: FELT.y + CHIP_THICKNESS / 2 - layout.y,
+        z: centre.z,
+      };
+      const existing = this.pile.get(key);
+      if (existing) {
+        // PlayPokerGO recentres the whole pool when a sixteenth chip opens a
+        // new column. Keep keyed chips, but give every existing chip its new
+        // centred slot so the visual result is identical.
+        const moving = this.moving.find((entry) => entry.chip === existing);
+        if (moving) {
+          moving.target = rest;
+        } else {
+          existing.position = { ...rest };
+        }
+        return;
       }
+
+      const chip: SceneChip = {
+        denomination,
+        position: { x: rest.x, y: rest.y + PILE_DROP, z: rest.z },
+        airborne: true,
+      };
+      this.pile.set(key, chip);
+      this.moving.push({
+        chip,
+        motion: { from: { ...chip.position }, elapsedMs: 0, durationMs: CHIP_DROP_DURATION_MS },
+        target: rest,
+        delayMs: (index % CHIPS_PER_2D_COLUMN) * DROP_STAGGER_MS,
+        keepOnArrival: true,
+        // The travel is about a chip's own thickness, so the event is the
+        // contact. No arc — this is already a vertical move.
+      });
+      this.onChanged();
     });
 
     for (const [key, chip] of this.pile) {
@@ -296,48 +334,45 @@ export class ChipLayer {
    * yet part of. The centre pile's amount is the pot *minus* these, so the
    * felt's chips always sum to the pot the HUD states.
    *
-   * Columns spread along the ellipse's tangent at the seat, not along the
-   * screen's X: a side seat's bet would otherwise stack its columns into
-   * the rail.
+   * If the wager layout ever grows beyond one column, columns spread along
+   * the ellipse's tangent at the seat, not screen X; a side seat's bet would
+   * otherwise grow into the rail.
    */
   syncBets(bets: Array<{ slot: number; amount: number }>, seatCount: number, bigBlind: number): void {
     const wanted = new Set<string>();
     for (const { slot, amount } of bets) {
-      const stacks = potChipStacks(amount, bigBlind);
-      if (stacks.length === 0) continue;
+      // A wager is a single cut stack in PlayPokerGO; only the central pot
+      // spreads beyond one 16-chip column.
+      const heap = get2DChipHeap(amount, bigBlind, 1);
+      if (heap.length === 0) continue;
       const origin = seatBetOrigin(slot, seatCount, this.radiusZ);
       const theta = seatAngle(slot, seatCount);
       // Plan-space tangent of the ellipse at this seat, unit length.
       const tangent = { x: -Math.sin(theta), z: Math.cos(theta) };
-      const spread = (stacks.length - 1) / 2;
-      stacks.forEach((stack, column) => {
-        for (let index = 0; index < stack.count; index += 1) {
-          const key = `${slot}:${stack.denomination}:${index}`;
-          wanted.add(key);
-          if (this.bets.has(key)) continue;
-          const jitter = chipSettleJitter(stack.denomination, index);
-          const along = (column - spread) * BET_COLUMN_SPACING;
-          const rest: Vec3 = {
-            x: origin.x + tangent.x * along + jitter.x,
-            y: FELT.y + CHIP_THICKNESS / 2 + index * CHIP_THICKNESS,
-            z: origin.z + tangent.z * along + jitter.z,
-          };
-          const chip: SceneChip = {
-            denomination: stack.denomination,
-            position: { x: rest.x, y: rest.y + BET_DROP, z: rest.z },
-            airborne: true,
-          };
-          this.bets.set(key, chip);
-          this.moving.push({
-            chip,
-            spring: springAt(chip.position),
-            target: rest,
-            delayMs: index * DROP_STAGGER_MS,
-            keepOnArrival: true,
-            config: SPRING_DROP,
-          });
-          this.onChanged();
-        }
+      heap.forEach(({ denomination, denominationIndex, position: layout }, index) => {
+        const key = `${slot}:${denomination}:${denominationIndex}`;
+        wanted.add(key);
+        if (this.bets.has(key)) return;
+        const along = layout.x;
+        const rest: Vec3 = {
+          x: origin.x + tangent.x * along,
+          y: FELT.y + CHIP_THICKNESS / 2 - layout.y,
+          z: origin.z + tangent.z * along,
+        };
+        const chip: SceneChip = {
+          denomination,
+          position: { x: rest.x, y: rest.y + BET_DROP, z: rest.z },
+          airborne: true,
+        };
+        this.bets.set(key, chip);
+        this.moving.push({
+          chip,
+          motion: { from: { ...chip.position }, elapsedMs: 0, durationMs: CHIP_DROP_DURATION_MS },
+          target: rest,
+          delayMs: index * DROP_STAGGER_MS,
+          keepOnArrival: true,
+        });
+        this.onChanged();
       });
     }
 
@@ -372,7 +407,6 @@ export class ChipLayer {
       // caught mid-drop curves on into the middle rather than stopping dead
       // and starting a second, visibly separate journey.
       const pending = this.moving.findIndex((entry) => entry.chip === chip);
-      const carried = pending >= 0 ? this.moving[pending].spring.velocity : null;
       if (pending >= 0) this.moving.splice(pending, 1);
       const jitter = chipSettleJitter(chip.denomination, order);
       const target: Vec3 = {
@@ -383,13 +417,12 @@ export class ChipLayer {
       chip.airborne = true;
       this.moving.push({
         chip,
-        spring: { position: { ...chip.position }, velocity: carried ?? { x: 0, y: 0, z: 0 } },
+        motion: { from: { ...chip.position }, elapsedMs: 0, durationMs: CHIP_SWEEP_DURATION_MS },
         target,
         delayMs: order * SWEEP_STAGGER_MS,
         keepOnArrival: false,
         // The only preset that must not overshoot. Past the pot is off the
         // back of the felt, and this is the longest journey on the table.
-        config: SPRING_SWEEP,
         arc: { peak: CHIP_ARC_PEAK, elapsedMs: 0, durationMs: CHIP_AIRTIME_MS },
       });
       order += 1;
@@ -464,12 +497,10 @@ export class ChipLayer {
         const target: Vec3 = { x: spot.x, y: restY + index * CHIP_THICKNESS, z: spot.z };
         this.moving.push({
           chip: { denomination, position: { ...from }, airborne: true },
-          spring: springAt(from),
+          motion: { from: { ...from }, elapsedMs: 0, durationMs: NEAT_SLIDE_DURATION_MS },
           target,
           delayMs: 0,
           keepOnArrival: false,
-          config: SPRING_BET,
-          glide: { from: { ...from }, durationMs: NEAT_SLIDE_DURATION_MS, elapsedMs: 0 },
         });
         return;
       }
@@ -478,45 +509,47 @@ export class ChipLayer {
         const scatter = splashScatterOffset(index);
         this.moving.push({
           chip: { denomination, position: { ...start }, airborne: true },
-          spring: springAt(start),
+          motion: { from: { ...start }, elapsedMs: 0, durationMs: CHIP_BET_DURATION_MS },
           target: { x: spot.x + scatter.x, y: restY, z: spot.z + scatter.z },
           delayMs: index * CHIP_STAGGER_MS,
           keepOnArrival: false,
-          config: SPRING_BET,
           arc: { peak: SPLASH_ARC_PEAK, elapsedMs: 0, durationMs: CHIP_AIRTIME_MS },
         });
         return;
       }
 
-      // "stacked_toss", the default. Each chip lands on top of the last, so
-      // the pile builds one disc at a time in the order they left — which is
-      // what makes a bet countable at a glance. The lean keeps it from
-      // reading as a machined tube; see `stackLeanOffset`.
-      const lean = stackLeanOffset(index);
+      // "stacked_toss", the default. Build the stack at the tray and move it
+      // as one compact 2D object. The stack is already legible on the first
+      // painted frame; it does not grow under the community cards one chip at
+      // a time.
+      const layout = get2DChipPosition(index);
+      const from: Vec3 = {
+        x: origin.x,
+        y: restY - layout.y,
+        z: origin.z,
+      };
       this.moving.push({
-        chip: { denomination, position: { ...start }, airborne: true },
-        spring: springAt(start),
+        chip: { denomination, position: { ...from }, airborne: true },
+        motion: { from: { ...from }, elapsedMs: 0, durationMs: CHIP_BET_DURATION_MS },
         target: {
-          x: spot.x + lean.x,
-          y: restY + index * CHIP_THICKNESS,
-          z: spot.z + lean.z,
+          x: spot.x,
+          y: restY - layout.y,
+          z: spot.z,
         },
-        delayMs: index * CHIP_STAGGER_MS,
+        // This is a prebuilt stack, not a chip-by-chip spray. Keep every
+        // layer alive on the same clock so the column never loses its top
+        // chips before the group reaches the pot.
+        delayMs: 0,
         keepOnArrival: false,
-        config: SPRING_BET,
-        // A shallower toss than the splash: this chip has to come down on a
-        // specific disc, and a tall parabola makes the last leg vertical,
-        // which hides the landing behind the chip's own face.
-        arc: { peak: CHIP_ARC_PEAK, elapsedMs: 0, durationMs: CHIP_AIRTIME_MS },
       });
     });
     this.onChanged();
   }
 
   /**
-   * The pot going home: each winner's actual payout as chips, 34ms apart,
-   * landing on the winner's own edge of the felt rather than on the seat
-   * itself — chips are pushed to a player, not thrown at them.
+   * The pot going home: each winner's actual payout travels as one intact
+   * stack, landing on the winner's own edge of the felt rather than on the
+   * seat itself — chips are pushed to a player, not thrown at them.
    *
    * The landing spot is 0.92 of the seat ring, just inside the rail, which
    * is where a dealer actually pushes a pot. (Landing at a fraction of the
@@ -532,28 +565,28 @@ export class ChipLayer {
         ? denominations
         : Array.from({ length: FUNNEL_CHIP_COUNT }, (_, index) => decorativeDenomination(index));
       spray.forEach((denomination, index) => {
-        const jitter = chipSettleJitter(denomination, index);
+        // PlayPokerGO moves one ChipPool container from the pot to the
+        // winner, so every layer keeps the same stack-relative position and
+        // clock. Modelling the container through equal per-chip vectors gives
+        // the canvas the identical result without introducing a scene node.
+        const layout = get2DChipPosition(index);
         const landing = ringPoint(slot, seatCount, 0.92, FELT.y, this.radiusZ);
         const target: Vec3 = {
-          x: landing.x + jitter.x * 6 + ((index % 5) - 2) * 0.16,
-          y: FELT.y + CHIP_THICKNESS / 2,
-          z: landing.z + jitter.z * 6,
+          x: landing.x + layout.x,
+          y: FELT.y + CHIP_THICKNESS / 2 - layout.y,
+          z: landing.z,
         };
         const start: Vec3 = {
-          x: pot.x + jitter.x * 2,
-          y: FELT.y + CHIP_THICKNESS / 2 + (index % MAX_CHIPS_PER_COLUMN) * CHIP_THICKNESS,
-          z: pot.z + jitter.z * 2,
+          x: pot.x + layout.x,
+          y: FELT.y + CHIP_THICKNESS / 2 - layout.y,
+          z: pot.z,
         };
         this.moving.push({
           chip: { denomination, position: { ...start }, airborne: true },
-          spring: springAt(start),
+          motion: { from: { ...start }, elapsedMs: 0, durationMs: CHIP_SWEEP_DURATION_MS },
           target,
-          delayMs: index * CHIP_STAGGER_MS,
+          delayMs: 0,
           keepOnArrival: false,
-          // Must not overshoot: past a winner's spot is inside their own
-          // figure, and this is the second-longest journey on the table.
-          config: SPRING_SWEEP,
-          arc: { peak: CHIP_ARC_PEAK, elapsedMs: 0, durationMs: CHIP_AIRTIME_MS },
         });
       });
     }
@@ -590,60 +623,47 @@ export class ChipLayer {
         if (entry.delayMs > 0) continue;
       }
 
-      let arrived: boolean;
-      if (reducedMotion) {
-        entry.spring = springAt(entry.target);
-        entry.chip.position = { ...entry.target };
-        entry.chip.lift = 0;
-        arrived = true;
-        // The snap *is* a change on screen. Leaving `moved` alone here was a
-        // real hole: a reduced-motion chip whose delay had already expired
-        // could be repositioned on a frame that then reported nothing moved,
-        // and the scheduler was entitled to sleep before presenting it.
-        moved = true;
-      } else if (entry.glide) {
-        // The clocked glide: elapsed time in, eased position out. No arc —
-        // a neat slide stays on the cloth — and it parks exactly on target
-        // at the duration, so the loop always gets to sleep.
-        entry.glide.elapsedMs += deltaMs;
-        const step = stepGlideChip(
-          entry.glide.from, entry.target, entry.glide.elapsedMs, entry.glide.durationMs,
-        );
-        entry.spring = springAt(step.position);
-        entry.chip.position = step.position;
-        entry.chip.lift = 0;
-        arrived = step.arrived;
+      let arrived = reducedMotion;
+      const motion = entry.motion;
+      if (!reducedMotion) {
+        motion.elapsedMs += Math.max(0, Number.isFinite(deltaMs) ? deltaMs : 0);
+        const t = motion.durationMs > 0
+          ? Math.min(1, motion.elapsedMs / motion.durationMs)
+          : 1;
+        if (t >= 1) {
+          // Terminal snap is intentional: no residual sub-pixel frame may
+          // keep the demand loop awake.
+          entry.chip.position.x = entry.target.x;
+          entry.chip.position.y = entry.target.y;
+          entry.chip.position.z = entry.target.z;
+          arrived = true;
+        } else {
+          // Egret Tween's default (the reference 2D client) is linear. Every
+          // chip in a pool shares this same t, so the stack cannot shear.
+          const eased = t;
+          entry.chip.position.x = motion.from.x + (entry.target.x - motion.from.x) * eased;
+          entry.chip.position.y = motion.from.y + (entry.target.y - motion.from.y) * eased;
+          entry.chip.position.z = motion.from.z + (entry.target.z - motion.from.z) * eased;
+          arrived = false;
+        }
+        if (entry.arc) {
+          entry.arc.elapsedMs += Math.max(0, deltaMs);
+          const arcT = Math.min(1, entry.arc.durationMs > 0
+            ? entry.arc.elapsedMs / entry.arc.durationMs : 1);
+          const landed = arcT >= 1;
+          const lift = landed ? 0 : Math.sin(arcT * Math.PI);
+          entry.chip.lift = lift;
+          entry.chip.position.y += landed ? 0 : lift * entry.arc.peak;
+          arrived = arrived && landed;
+        } else {
+          entry.chip.lift = 0;
+        }
         moved = true;
       } else {
-        // The spring owns the cloth-plane position; the arc owns the height
-        // above it, on its own clock. Composed here and nowhere else — the
-        // integrator must never be fed its own arced output, or the residue
-        // re-amplifies near the target and the chip hovers forever.
-        const step = stepSpring(entry.spring, entry.target, deltaMs, entry.config);
-        entry.spring = { position: step.position, velocity: step.velocity };
-
-        let lift = 0;
-        let landed = true;
-        if (entry.arc) {
-          entry.arc.elapsedMs += deltaMs;
-          const sample = sampleArc(entry.arc.elapsedMs, entry.arc.peak, 0, entry.arc.durationMs);
-          lift = sample.lift;
-          landed = sample.landed;
-          entry.chip.position = {
-            x: step.position.x,
-            y: step.position.y + sample.height,
-            z: step.position.z,
-          };
-        } else {
-          entry.chip.position = { ...step.position };
-        }
-        entry.chip.lift = lift;
-        // Both, and that is the point. The spring can settle while the chip
-        // is still in the air (a short bet at a tall arc peak), and the arc
-        // can land while the spring is still sliding the last hundredth of a
-        // unit. Removing the flight on either alone drops a chip mid-air or
-        // parks one that is still visibly moving.
-        arrived = step.arrived && landed;
+        entry.chip.position.x = entry.target.x;
+        entry.chip.position.y = entry.target.y;
+        entry.chip.position.z = entry.target.z;
+        entry.chip.lift = 0;
         moved = true;
       }
 
@@ -657,6 +677,11 @@ export class ChipLayer {
       }
     }
     return moved;
+  }
+
+  /** True after the terminal snap has removed the last moving chip. */
+  isIdle(): boolean {
+    return this.moving.length === 0;
   }
 
   /**

@@ -19,59 +19,75 @@
   --seat-z: 9;
 }
 
-/* Beside the figure, not over it.
-   Opponent cards sit across the lower torso at 75% of the seat's width, which
-   is fine for two backs. Yours are several times the area and face up, so in
-   that position they would bury the player they belong to. Offset to the side
-   and lifted to the chest they read as a hand held at the rail -- and the
-   black space beside the near edge of the table is empty, which is what makes
-   the room for them. */
-/* Anchored to the seat's right edge, not offset by a fraction of its width.
-   The fraction version overlapped the figure on a phone and nowhere else,
-   which took a measurement to see: your cards carry a 58px minimum so a pair
-   of them is wider than a 79px seat, and no multiple of the seat's own width
-   can clear a box that is bigger than the seat. left:100% is the edge itself,
-   so the two cannot overlap at any table size. */
-/* Dropped from .54 of the seat's width to .66, and the pair sized from .78 of
-   the seat down to .63.
-   left:100% keeps the hand off your own figure, but it puts it at chest
-   height beside you -- which on a phone is exactly where the nameplate of the
-   seat to your right is. Once the seats grew that was 8.3px of overlap at
-   390, 4.5px at 375 and 24.1px at 320, with your cards drawn over the top
-   (z-index 12), so a neighbour's chip stack was simply hidden behind them.
+/* The near chair owns the foreground band below the felt. Keep the entire
+   local group together so the avatar does not sit on the green while its POV
+   cards and nameplate remain behind it. */
+.seat-mine.seat-ring {
+  margin-top: calc(
+    (var(--seat-width) + var(--plate-h)) / -2
+    + var(--seat-out-y, 1) * var(--seat-outset, 12px)
+    + 22px
+  );
+}
 
-   It cannot be solved by dropping the hand alone, which is the trap here:
-   there is a ceiling (their nameplate) and a floor (your own stack readout,
-   which multiplayer.spec.ts has always required your cards to stay above),
-   and the seats getting bigger pushed both of them inward at once. Measured,
-   the window between them is 112px on a phone and the hand was 109px tall.
-   So the hand stops scaling with the seat -- .63 keeps it at the size it was
-   before the avatars grew -- and .66 centres it in what is left: 18px of
-   clearance above, 6px below. */
+/* Desktop has a deep enough near-field band to give the local POV a little
+   more breathing room. The canvas bet spot remains on the felt, while the
+   figure and its cards move down with the player's point of view. Keep the
+   phone/tablet geometry untouched: their shorter plate needs the existing
+   near-seat corridor. */
+@media (min-width: 901px) {
+  .seat-mine.seat-ring {
+    margin-top: calc(
+      (var(--seat-width) + var(--plate-h)) / -2
+      + var(--seat-out-y, 1) * var(--seat-outset, 14px)
+      + 28px
+    );
+  }
+}
+
+/* Beside the figure, not over it -- and small, the way a hand actually is.
+   This used to run the opposite way on both counts: cards up to 104px wide,
+   floated above the seat on a negative offset so they cleared the figure by
+   leaving the top of it entirely. That read as a placard hovering over your
+   own head rather than cards held at the rail, and it dwarfed the avatar they
+   belonged to.
+
+   left: 100% is the seat's own right edge -- the same anchor tried and
+   abandoned once before (see the git history on this file for the 8-390px
+   overlap it caused with the neighbouring seat's nameplate), but that
+   measurement was taken against a pair up to 104px wide. At the size below,
+   a resting pair is under half that footprint, so the same anchor now clears
+   a neighbour with room to spare rather than by luck. top is pinned to
+   roughly the avatar's own vertical centre (half of .seat-figure's .72
+   fraction) so the pair reads as held beside the chest, not the crown. */
 .seat-mine .seat-cards {
   left: 100%;
-  top: calc(var(--seat-width) * .66);
-  margin-left: 4px;
+  top: calc(var(--seat-width) * .36);
+  margin-left: 5px;
   transform: translateY(-50%);
   z-index: 12;
-  filter: drop-shadow(0 14px 20px rgba(0,0,0,.5));
+  filter: drop-shadow(0 10px 16px rgba(0,0,0,.5));
 }
 
-/* The floor is 44px, not 58px.
-   58 was set when a phone seat was 79px wide; at 320 the seat is 56px, so the
-   floor stopped being a minimum and became the actual size -- a pair of cards
-   wider and taller than the player holding them, which is most of why the
-   overlap above was three times worse there than anywhere else. Below the
-   floor the proportion governs, which is the behaviour every other size
-   already had. */
+/* Keep the local character in the near-edge band, below the hand it is
+   holding. The shift affects only the avatar, not the seat's measured anchor. */
+.seat-mine .seat-figure { translate: 0 8px; }
+
+/* Larger than an opponent's backs -- these are the cards you actually decide
+   from -- but only a little: .30 of the seat's width against an opponent's
+   .20 (08-seat.css), capped at 50px rather than the 104px this used to allow.
+   That old ceiling was the single biggest source of "too big" on this seat;
+   nothing else on the table approached it. */
 .seat-mine .own-cards .playing-card {
-  width: clamp(38px, calc(var(--seat-width) * .63), 104px);
-  border-radius: 8px;
+  width: clamp(32px, calc(var(--seat-width) * .30), 50px);
+  border-radius: 6px;
 }
 
-/* Enough overlap that the pair reads as one hand, not enough to hide a rank. */
+/* Enough overlap that the pair reads as one hand, not enough to hide a rank.
+   Scaled down from -.24 alongside the card width above -- the old fraction
+   sized against a 104px card would swallow one card whole at this size. */
 .seat-mine .own-cards .dealt-card-shell + .dealt-card-shell {
-  margin-left: calc(var(--seat-width) * -.24);
+  margin-left: calc(var(--seat-width) * -.12);
 }
 
 .seat-mine .own-cards .dealt-card-shell:first-child .playing-card {
@@ -82,18 +98,22 @@
   transform: rotate(6deg);
 }
 
-/* The made-hand label belongs to the cards, so it sits under them rather than
-   under the name. Absolutely positioned for the same reason they are: nothing
-   about your seat may change the height of a seat box, or the ring stops
-   being a ring. */
-.seat-mine .hand-strength {
-  position: absolute;
-  left: 100%;
-  top: calc(var(--seat-width) * 1.15);
-  z-index: 12;
-  margin: 0 0 0 4px;
-  white-space: nowrap;
+/* Your own posted bet needs a reach several times 08-seat.css's, not a bigger
+   fudge on top of it. NEAR_SEAT_BET_INSET (lib/scene/seat-ring.ts) is 0.35
+   against the ordinary seat's 0.74 -- pulled deep into the corridor between
+   your own figure and the board rather than out toward the rail -- so the
+   pile it targets sits far closer to the pot than to your seat. Measured
+   against window.__stackchipsScene.betSpot(0) the same way: 205px lands this
+   number within a couple of pixels of that pile. */
+.seat-mine .table-bet {
+  --bet-reach: 205px;
 }
+
+/* The made-hand label used to be pulled out of flow to sit under the cards,
+   back when they floated above the seat on their own absolute offset. Now
+   that they sit beside the figure instead, there is nothing left above the
+   nameplate for it to collide with -- it renders in the ordinary flow, under
+   the avatar, exactly like every other in-seat element. */
 
 /* The status pill that used to sit in the empty space on your left is gone
    with the element itself; see 08-seat.css and player-seat.tsx.

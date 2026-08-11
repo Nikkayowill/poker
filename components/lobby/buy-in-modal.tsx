@@ -4,6 +4,7 @@ import { useState } from "react";
 import clsx from "clsx";
 import { X } from "lucide-react";
 import { CHEAPEST_TIER, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
+import type { TableRenderer } from "@/lib/scene/table-renderer";
 
 /**
  * Picks a stakes tier (unless locked, e.g. rebuying at an already-seated
@@ -21,6 +22,9 @@ export function BuyInModal({
   pending,
   playerName,
   onPlayerNameChange,
+  tableRenderer,
+  webglAvailable,
+  onTableRendererChange,
   onClose,
   onConfirm,
   onBuyGold,
@@ -39,6 +43,19 @@ export function BuyInModal({
    */
   playerName?: string;
   onPlayerNameChange?: (name: string) => void;
+  /**
+   * The table-view choice, surfaced here rather than left to the in-game
+   * menu. All three are optional and only rendered together, for the same
+   * reason `playerName` is optional above: the rebuy caller opens this at an
+   * already-mounted table, where the renderer is no longer a decision --
+   * changing it mid-hand is exactly the mount/discard flicker
+   * `tableRendererSettled` in poker-table.tsx exists to prevent. Deciding it
+   * HERE, before that room is ever created, is what removes the flicker for
+   * the normal join path instead of just hiding it behind a loading hold.
+   */
+  tableRenderer?: TableRenderer;
+  webglAvailable?: boolean;
+  onTableRendererChange?: (renderer: TableRenderer) => void;
   onClose: () => void;
   onConfirm: (tier: StakesTier, buyIn: number) => void;
   onBuyGold?: () => void;
@@ -147,6 +164,37 @@ export function BuyInModal({
               </div>
             )}
           </div>
+
+          {/* Choosing the room here, before it exists, is what actually fixes
+              the mount-then-swap flicker -- picking it after the table has
+              already rendered (the old in-game menu toggle, still there for
+              mid-session changes) is what glitched. Same `.entry-segment`
+              control the sign-in page uses for its two-way choice. */}
+          {tableRenderer && onTableRendererChange && (
+            <div className="buyin-renderer">
+              <span>Table view</span>
+              <div className="entry-segment" role="group" aria-label="Table view">
+                <button
+                  type="button"
+                  className={tableRenderer === "webgl_3d" ? "is-active" : undefined}
+                  aria-pressed={tableRenderer === "webgl_3d"}
+                  disabled={!webglAvailable}
+                  onClick={() => onTableRendererChange("webgl_3d")}
+                >
+                  3D room
+                </button>
+                <button
+                  type="button"
+                  className={tableRenderer === "canvas_2d" ? "is-active" : undefined}
+                  aria-pressed={tableRenderer === "canvas_2d"}
+                  onClick={() => onTableRendererChange("canvas_2d")}
+                >
+                  Classic
+                </button>
+              </div>
+              {!webglAvailable && <small>3D room needs a browser with WebGL.</small>}
+            </div>
+          )}
 
           <footer className="buyin-footer">
             {lockedTier && onBuyGold && !unlimitedGold && (

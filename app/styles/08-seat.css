@@ -34,21 +34,24 @@
 
 .seat-plate { z-index: calc(var(--seat-z, 4) + 2); }
 
-/* The figure. Contained rather than cropped, anchored to its own base, so the
-   artwork's own rail line lands at the bottom of the box whatever the source
-   aspect ratio -- one of these is 2:3 where the rest are square. */
+/* The classic HUD uses a contained face marker, not the full character cutout
+   used by the room renderer. Capping it keeps the avatar from taking the same
+   vertical lane as the cards and nameplate on a phone. */
 .seat-figure {
   position: relative;
-  width: 100%;
+  width: clamp(40px, 72%, 78px);
   aspect-ratio: 1;
   display: grid;
   place-items: center;
+  margin-inline: auto;
 }
 
 .seat-figure-art {
-  object-fit: contain;
-  object-position: bottom center;
-  filter: drop-shadow(0 12px 18px rgba(0,0,0,.55));
+  object-fit: cover;
+  object-position: center;
+  border: 2px solid color-mix(in srgb, var(--seat-accent), transparent 28%);
+  border-radius: 50%;
+  filter: drop-shadow(0 5px 9px rgba(0,0,0,.5));
 }
 
 /* The pool of shadow a player casts on the felt. Cut-outs with nothing beneath
@@ -75,10 +78,10 @@
 .seat-figure-fallback {
   display: grid;
   place-items: center;
-  width: 46%;
+  width: 76%;
   aspect-ratio: 1;
   align-self: end;
-  margin-bottom: 6%;
+  margin-bottom: 0;
   border: 1px solid color-mix(in srgb, var(--seat-accent), transparent 60%);
   border-radius: 50%;
   background: #16211c;
@@ -89,10 +92,10 @@
 
 /* An uploaded photo is not a cut-out and cannot stand up as a body. */
 .seat-figure-photo {
-  width: 58%;
+  width: 76%;
   aspect-ratio: 1;
   align-self: end;
-  margin-bottom: 8%;
+  margin-bottom: 0;
   border: 2px solid color-mix(in srgb, var(--seat-accent), transparent 55%);
   border-radius: 50%;
   background: center/cover no-repeat;
@@ -189,8 +192,9 @@
      drops the whole seat by half a plate, which pushed the far player's
      nameplate down onto the board and the pot. */
   --plate-h: 38px;
-  margin-left: calc(var(--seat-width) / -2);
-  margin-top: calc((var(--seat-width) + var(--plate-h)) / -2);
+  --seat-outset: clamp(8px, calc(var(--seat-width) * .14), 14px);
+  margin-left: calc(var(--seat-width) / -2 + var(--seat-out-x, 0) * var(--seat-outset));
+  margin-top: calc((var(--seat-width) + var(--plate-h)) / -2 + var(--seat-out-y, 0) * var(--seat-outset));
 }
 
 /* Deal animations still need a direction to fly in from, derived from which
@@ -198,7 +202,7 @@
 .seat-ring { --deal-x: 0px; --deal-y: 120px; }
 
 .seat-current .seat-figure {
-  translate: 0 -8px;
+  translate: 0 0;
   scale: 1;
 }
 
@@ -544,32 +548,32 @@
    reach the board, and the board is the one region that has to stay clear.
    Anchored to the figure's own height rather than the seat's, since the seat
    grows by whatever the plate needs. */
-/* Above the name, not through it.
-   The cards used to sit at 94% of the seat's width, which put their lower
-   half across the nameplate -- invisible only because the plate was an opaque
-   panel drawn over them. Take the panel away and the collision is simply
-   there. 75% lands them across the lower torso, which is where a player
-   holds cards, with their bottom edge just clear of where the name starts.
-   Both ends are constrained, and tightly. The floor is the face: 48% is what
-   tests/e2e/visual-layering.spec.ts enforces, but the artwork's chin sits
-   lower than that, so 61% is where a card stops reading as a mask. The
-   ceiling is the name, which now starts at the bottom of the figure instead
-   of tucking up under it. Two backs at 26% of the seat's width fit between
-   those exactly; they were 34%, which did not, and the difference was hidden
-   for as long as the nameplate was an opaque panel drawn over the top. */
+/* A small fanned pair tucked against the avatar, not a placard across the
+   chest. They used to sit at 80% of the seat's width -- low enough to read as
+   a sign held below the player rather than cards in their hands -- so this is
+   pulled up to 66%, still comfortably clear of the 48%-of-avatar-height floor
+   tests/e2e/visual-layering.spec.ts enforces (a player must never be masked
+   by their own back), and nudged toward the outer side of the seat along
+   --seat-out-x/-y -- the same outward vector .table-bet's neighbour, the bet
+   chip, rides inward -- so the pair reads as beside the icon rather than
+   dead-centre under it. */
 .seat-cards {
   position: absolute;
   left: 50%;
-  top: calc(var(--seat-width) * .80);
+  top: calc(var(--seat-width) * .66);
+  --card-side-reach: 9px;
   display: flex;
-  transform: translate(-50%, -50%);
+  transform:
+    translate(-50%, -50%)
+    translate(calc(var(--seat-out-x, 0) * var(--card-side-reach)), 0);
 }
 
 /* An opponent's cards are sized from their seat, so they stay in proportion to
    the player holding them at every table size without a breakpoint of their
-   own. */
+   own. Shrunk from .26 to .20: a small fanned pair beside the avatar, not a
+   pair the size of the face itself. */
 .seat-cards:not(.own-cards) .playing-card {
-  width: calc(var(--seat-width) * .26 * var(--seat-depth, 1));
+  width: calc(var(--seat-width) * .20 * var(--seat-depth, 1));
   border-radius: 3px;
 }
 
@@ -580,7 +584,7 @@
   animation: deal-to-seat .5s cubic-bezier(.18,.82,.22,1.08) both;
 }
 
-.dealt-card-shell + .dealt-card-shell { margin-left: -12px; }
+.dealt-card-shell + .dealt-card-shell { margin-left: -9px; }
 .own-cards .dealt-card-shell + .dealt-card-shell { margin-left: -16px; }
 .dealt-card-shell:first-child .playing-card { transform: rotate(-5deg); }
 .dealt-card-shell:last-child .playing-card { transform: rotate(5deg); }
@@ -618,8 +622,22 @@
    geometry hands down. Measured from the figure rather than the seat box: the
    box now grows by whatever the nameplate needs, and anchoring to its edge
    walked the chip further out every time the plate got taller. */
+/* 76px used to leave this number stranded almost 80px from the chip pile the
+   canvas actually paints (lib/scene/seat-ring.ts's BET_INSET, 0.74 of the
+   felt's own radius) -- two independently-tuned systems, a DOM percentage
+   ellipse and a world-unit one, that only happen to agree in direction. 155px
+   was measured against window.__stackchipsScene.betSpot() rather than
+   guessed: it lands this label within a pixel of the pile on the x axis for
+   every side seat, which is the axis a misalignment reads on first. The two
+   ellipses are not the same shape, so a single flat reach cannot zero the y
+   axis too at every seat angle -- what is left is a residual of 17-70px there,
+   down from the ~80px total gap this replaced. The near seat (yours) needs a
+   reach several times larger again, because NEAR_SEAT_BET_INSET pulls that
+   one pile in toward the centre rather than out toward the rail; see its own
+   override in 16-first-person.css rather than inflating this one for
+   everybody. */
 .table-bet {
-  --bet-reach: 76px;
+  --bet-reach: 155px;
   position: absolute;
   left: 50%;
   top: calc(var(--seat-width) * .72);

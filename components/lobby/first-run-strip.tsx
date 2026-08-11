@@ -8,9 +8,10 @@ import {
   FIRST_RUN_STEPS,
   FIRST_RUN_STORAGE_KEY,
   firstRunProgressLabel,
-  isFirstRunRetired,
   nextFirstRunStep,
+  shouldShowFirstRun,
 } from "@/lib/lobby/first-run";
+import type { PlayerProfile } from "@/lib/profile/types";
 import {
   browserPreferenceStorage,
   readStoredPreference,
@@ -58,8 +59,10 @@ function readRetirementFlag(): string | null {
 export function FirstRunStrip({
   /** Opens the buy-in modal -- the same handler the Texas Hold'em tile drives. */
   onTakeSeat,
+  profile,
 }: {
   onTakeSeat: () => void;
+  profile: PlayerProfile;
 }) {
   const stored = useSyncExternalStore(noSubscribe, readRetirementFlag, serverSnapshot);
   /** Retired during this render pass, before the storage read would notice. */
@@ -78,7 +81,7 @@ export function FirstRunStrip({
   };
 
   if (retiredNow) return null;
-  if (isFirstRunRetired(stored)) return null;
+  if (!shouldShowFirstRun(stored, profile.isRegistered)) return null;
 
   const step = FIRST_RUN_STEPS[Math.min(index, FIRST_RUN_STEPS.length - 1)];
   if (!step) return null;

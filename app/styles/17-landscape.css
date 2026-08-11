@@ -13,28 +13,112 @@
    only the local seat, and it loads last so the seat wins. Nothing here shares
    a selector with anything there.
 
-   This file used to rescale a whole second layout for the local player. Now
-   that they sit on the ring like everyone else there is only one thing left
-   that landscape genuinely needs: a 3:1 table is barely a hundred pixels tall,
-   so the hand held beside the near seat has to come in close and shrink or it
-   runs off the bottom of the screen. */
+   This file used to rescale a whole second layout for the local player, and
+   later carried a shrink for the hand this seat holds -- back when the cards
+   floated above the seat and a 3:1 table's hundred vertical pixels could run
+   them off the top of the screen. Now that the base rule in 16-first-person.css
+   sits the pair beside the figure and caps them at 50px, that vertical
+   pressure is gone: the side placement costs width, which a landscape phone
+   has plenty of, not height. Only the made-hand label still needs a squeeze
+   here, since it renders in normal flow beneath a seat this file has already
+   compressed. */
 
 @media (max-height: 500px) and (orientation: landscape) {
-  .seat-mine .seat-cards { top: calc(var(--seat-width) * .42); }
-
-  .seat-mine .own-cards .playing-card { width: clamp(34px, calc(var(--seat-width) * .62), 52px); }
-  .seat-mine .own-cards .dealt-card-shell + .dealt-card-shell {
-    margin-left: calc(var(--seat-width) * -.2);
-  }
-
   .seat-mine .hand-strength {
-    top: calc(var(--seat-width) * .96);
     padding: 2px 5px;
     font-size: 6px;
   }
+
+  /* CLIPPING THE POV SEAT.
+
+     Your chair leaves the ellipse here and is pinned to the bottom edge of
+     the stage, deliberately hanging past it. Every other seat stays on the
+     ring; this is the one that can afford to lose its lower half, because
+     the bottom of a `.seat-figure` is the player's chest and the things that
+     have to stay legible -- the face, the nameplate, the two cards beside it
+     -- are all in its upper half.
+
+     What that buys is vertical room. On a 390px stage the near chair sat at
+     y = 79% of the plate and still reserved a full seat box below the felt
+     for its overhang; releasing it is most of what lets the table fill the
+     letterbox rather than floating in it.
+
+     `!important` is load-bearing and is not laziness. poker-table.tsx writes
+     `left` and `top` onto every seat as an inline style from the ring
+     geometry (`ringGeometry`), and an inline declaration beats any selector
+     specificity a stylesheet can reach for. The alternative is a landscape
+     branch inside the component, which would mean the component asking a
+     media query what the layout is -- exactly the split this file exists to
+     avoid. Only the two ring properties are forced; everything else about
+     the seat still cascades normally.
+
+     Scaled from the same origin it is translated by, because `transform` is
+     one property: writing `scale(1.15)` alone here would drop the
+     `translateX(-50%)` that centres it and hang the seat off the right of
+     the stage. The pair are always written together. */
+  .seat-mine.seat-ring {
+    position: absolute;
+    left: 50% !important;
+    top: auto !important;
+    bottom: -12px;
+    z-index: 20;
+    /* BOTH margins, not just the vertical one, and the horizontal is the
+       one that bites. `.seat-ring` (08-seat.css) centres a seat on its
+       ellipse point with `margin-left: calc(var(--seat-width) / -2 + ...)`,
+       because a seat is positioned by its top-left corner. `translateX(-50%)`
+       above does that same job, so leaving the margin in place applies the
+       correction twice and the seat lands half a box left of centre --
+       measured at 844x390, centre x = 370 against the plate's own 422. The
+       vertical margin is over half a seat box and would drag the figure back
+       up off the edge it was just pinned to. */
+    margin: 0;
+    transform: translateX(-50%) scale(1.15);
+    /* Grow upward from the anchored edge. The default 50% origin scales the
+       box about its middle, which pushes the bottom edge a further 7.5% of
+       the seat height off-stage and takes the nameplate down with it. */
+    transform-origin: 50% 100%;
+  }
+
+  /* Your own bet label, re-solved for a seat that is no longer on the ring.
+
+     16-first-person.css sets `--bet-reach: 205px`, and that number was
+     measured against `betSpot(0)` with the near chair sitting at its ellipse
+     point. Anchoring the seat to the stage edge moves the origin the reach
+     is measured FROM, so the old value now overshoots the pile by about
+     150px -- the label is drawn up on the board while the chips sit by the
+     player.
+
+     RE-SOLVED THROUGH `--bet-reach`, NOT BY REPLACING THE POSITIONING. The
+     first attempt here set `position`/`bottom`/`transform` directly and was
+     wrong in a way worth recording: `.table-bet` (08-seat.css) carries the
+     whole reach in ONE `transform` -- `translate(-50%, -50%)` for centring
+     and a second `translate` for the vector -- so writing a `transform` of
+     one's own silently discards both. The label landed 30px under its pile
+     with its own centring gone. Setting the variable leaves the mechanism
+     alone and changes only the number it was always parameterised by.
+
+     Measured against `window.__stackchipsScene.betSpot(0)` on a real render,
+     the same way 16-first-person.css says it solved 205px: with the reach
+     zeroed the label sat 59px below the pile at 844x390 and 54px at
+     812x375, and the seat's 1.15 scale divides those, giving 51.3 and 47.0.
+     49px splits them and lands within 2.6px on both. The x axis needs
+     nothing -- both are centred on the plate, and the measured gap was 0. */
+  .seat-mine .table-bet {
+    --bet-reach: 49px;
+  }
+}
+
+/* Letterboxed handsets. Same condition as the compact action-bar tier in
+   12-responsive.css -- a phone narrower than the 844:390 stage loses real
+   height to the bars, so the near seat's anchor (a fixed offset from the
+   stage's bottom edge) and its chip pile (a fraction of the felt's depth)
+   pull apart. One reach cannot serve both: at 667x375 the measured
+   correction is 29.6px against the 51.3 the full-width stages want, and
+   holding 49px there would leave the label 21px above its own chips. */
+@media (max-height: 500px) and (orientation: landscape) and (max-aspect-ratio: 2/1) {
+  .seat-mine .table-bet { --bet-reach: 30px; }
 }
 
 @media (max-height: 340px) and (orientation: landscape) {
-  .seat-mine .own-cards .playing-card { width: clamp(28px, calc(var(--seat-width) * .56), 42px); }
   .seat-mine .hand-strength { font-size: 5px; }
 }

@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { Check, Cloud, Coins, ShieldCheck, Users, X } from "lucide-react";
 import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
+import type { TableRenderer } from "@/lib/scene/table-renderer";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { accountsEnabled } from "@/lib/auth/client";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
@@ -40,6 +41,9 @@ export function Lobby({
   onContinueAccount,
   onContinueAsGuest,
   onSignOut,
+  tableRenderer,
+  webglAvailable,
+  onTableRendererChange,
 }: {
   profile: PlayerProfile | null;
   onQuickPlay: (name: string, tier: StakesTier, buyIn: number) => void;
@@ -66,6 +70,11 @@ export function Lobby({
   onContinueAccount: () => void;
   onContinueAsGuest: () => void;
   onSignOut: () => void;
+  /** The table-view choice, surfaced in the buy-in modal -- see BuyInModal's
+   * own header for why it belongs there and not only in the in-game menu. */
+  tableRenderer: TableRenderer;
+  webglAvailable: boolean;
+  onTableRendererChange: (renderer: TableRenderer) => void;
 }) {
   const [name, setName] = useState(profile?.displayName ?? "");
   const [joinCode, setJoinCode] = useState("");
@@ -125,7 +134,7 @@ export function Lobby({
       <main className="lobby lobby-hub">
         <section className="hub">
           <div className="hub-head">
-            <div className="lobby-kicker">The floor</div>
+            <div className="lobby-kicker">Your seat</div>
             <h1>Preparing your seat…</h1>
             {error && <p className="form-error"><X size={14} /> {error}</p>}
           </div>
@@ -202,10 +211,8 @@ export function Lobby({
             now, beside the decision it belongs to; the profile modal's
             "Display name" is still where it is changed for good. */}
         <div className="hub-head">
-          <div className="lobby-kicker">The floor</div>
-          <h1>
-            Pick your game, <span className="hub-head-name">{profile.displayName}</span>
-          </h1>
+          <div className="lobby-kicker">{profile.displayName}</div>
+          <h1>Pick your game</h1>
           {error && <p className="form-error"><X size={14} /> {error}</p>}
         </div>
 
@@ -215,7 +222,7 @@ export function Lobby({
             the first-run strip once it retires, the rank strip until its fetch
             lands -- so neither can push the tiles down and then pull them back
             either. */}
-        <FirstRunStrip onTakeSeat={() => setBuyInMode("join")} />
+        <FirstRunStrip profile={profile} onTakeSeat={() => setBuyInMode("join")} />
         <RankStrip />
 
         {/* Tiles carry the real artwork -- the same table plate the game
@@ -339,6 +346,9 @@ export function Lobby({
           onClose={() => setBuyInMode(null)}
           playerName={name}
           onPlayerNameChange={setName}
+          tableRenderer={tableRenderer}
+          webglAvailable={webglAvailable}
+          onTableRendererChange={onTableRendererChange}
           onConfirm={(tier, buyIn) => {
             if (buyInMode === "host") onHostPrivate(name.trim() || "You", tier, buyIn);
             else onQuickPlay(name.trim() || "You", tier, buyIn);

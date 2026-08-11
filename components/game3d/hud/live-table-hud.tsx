@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameSnapshot } from "@/lib/game/types";
 import type { SceneModel } from "@/lib/game3d/scene-model";
+import { BetAmounts } from "./bet-amounts";
 import { BoardCards } from "./board-cards";
 import { OwnHoleCards } from "./own-hole-cards";
 import { SeatNameplates } from "./seat-nameplates";
@@ -55,6 +56,7 @@ export function LiveTableHud({ game, model }: { game: GameSnapshot; model: Scene
       {size.width > 0 && size.height > 0 ? (
         <>
           <SeatNameplates model={model} aspect={size.width / size.height} />
+          <BetAmounts model={model} aspect={size.width / size.height} />
           <BoardCards cards={model.community} width={size.width} height={size.height} />
         </>
       ) : null}

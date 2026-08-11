@@ -26,8 +26,15 @@ const ASPECTS = [
   { name: "820x1180", aspect: 820 / 1180, landscape: false },
 ] as const;
 
-/** Radius of the floor disc in table-3d.tsx — the last thing fog must eat. */
-const FLOOR_RADIUS = 9;
+/*
+ * Radius of the floor disc — the last thing fog must eat.
+ *
+ * Imported rather than restated. It used to be a literal 9 here AND a
+ * literal 9 in table-3d.tsx, which is the two-places-one-number shape this
+ * codebase keeps getting bitten by: the frame's own floor footprint had
+ * grown past both of them (9.6 at 2560x1080) and neither copy knew.
+ */
+import { FLOOR_RADIUS } from "./floor-environment";
 
 function distance(a: Vec3, b: Vec3): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);

@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import type { GameSnapshot } from "@/lib/game/types";
 import { deriveSceneModel } from "@/lib/game3d/scene-model";
+import { BetAmounts } from "./hud/bet-amounts";
 import { BoardCards } from "./hud/board-cards";
 import { OwnHoleCards } from "./hud/own-hole-cards";
 import styles from "./game3d.module.css";
@@ -69,6 +70,14 @@ export function Game3DBridge({ game, children }: Game3DBridgeProps) {
         width={stageSize.width}
         height={stageSize.height}
       />
+      {/* The number beside each pile. Mounted here as well as in
+          hud/live-table-hud.tsx (the live table's overlay) because this
+          bridge is its own overlay and shares none of that one — the chips
+          are a size cue in both rooms, so both need the readout. Gated on a
+          measured stage: the projection divides by the aspect. */}
+      {stageSize.width > 0 && stageSize.height > 0 ? (
+        <BetAmounts model={model} aspect={stageSize.width / stageSize.height} />
+      ) : null}
       <OwnHoleCards seats={model.seats} />
       {children}
     </div>

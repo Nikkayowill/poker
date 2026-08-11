@@ -52,7 +52,7 @@ export const ADSTERRA_DELIVERY_DOMAINS = [
  */
 export const REWARDED_AD_UNIT: AdsterraUnit = {
   adKey: process.env.NEXT_PUBLIC_ADSTERRA_KEY ?? "",
-  scriptSrc: "https://pl30614360.effectivecpmnetwork.com/c7/0f/54/c70f542f472123eecce05e14a79898f8.js",
+  scriptSrc: "https://pl30614359.effectivecpmnetwork.com/96/16/3d/96163d9727b63c11aa6cf9211da28b6f.js",
   width: 300,
   height: 250,
 };

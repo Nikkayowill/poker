@@ -342,9 +342,11 @@ export function funnelSprayDenominations(amount: number, bigBlind: number): numb
  * x keeps a larger wobble, which is where a real stack's raggedness lives.
  */
 export function chipSettleJitter(denomination: number, index: number): { x: number; z: number } {
-  const seed = denomination * 7 + index * 13;
+  const angle = (index + denomination * 7) * 2.39996;
+  const radius = 0.14 * 0.06;
   return {
-    x: ((seed % 5) - 2) * 0.03,
-    z: (((seed * 3) % 5) - 2) * 0.012,
+    // Same 6% slot jitter and golden-angle phase as the 3D pileSlot model.
+    x: Math.sin(angle) * radius,
+    z: Math.cos(angle) * radius * 0.6,
   };
 }

@@ -29,9 +29,18 @@ const RADIUS_X = 46;
    opposite seat was anchored at y=6%; subtracting half its layout height put
    the top of the avatar outside the scene. A 34% radius leaves a real 16%
    safe area above the far seat while preserving the wide table silhouette.
-   Now 36: .poker-rail's inset gives the ring a band outside the felt to sit
-   in, so the arc can push back out without the far seat leaving the box. */
-const RADIUS_Y = 36;
+   Now 38: .poker-rail's inset gives the ring a band outside the felt to sit
+   in, so the arc follows the rail while its shifted centre keeps the far seat
+   inside the box. */
+const RADIUS_Y = 38;
+
+/**
+ * The desktop rail is not vertically centred in the wrapper: its CSS inset
+ * is 15% at the top and 8% at the bottom.  The old ring was centred at 50%,
+ * so every seat was orbiting a point 3.5% above the table it was meant to
+ * surround.  This is the rail's actual centre: (15 + (100 - 8)) / 2.
+ */
+const DESKTOP_CENTER_Y = 53.5;
 
 /**
  * Narrow viewports cannot afford the full horizontal radius: a seat is a
@@ -66,11 +75,18 @@ const PORTRAIT_RADIUS_Y = 44;
  * plate or a tall one depending on how much room the header and action bar
  * took, and only the box itself knows which happened.
  */
-export function radiiForTable(table: { width: number; height: number }): { rx: number; ry: number } {
-  if (isPortrait(table)) return { rx: PORTRAIT_RADIUS_X, ry: PORTRAIT_RADIUS_Y };
+export interface SeatEllipse {
+  rx: number;
+  ry: number;
+  /** Percentage down the table wrapper; portrait rails remain centred. */
+  cy?: number;
+}
+
+export function radiiForTable(table: { width: number; height: number }): SeatEllipse {
+  if (isPortrait(table)) return { rx: PORTRAIT_RADIUS_X, ry: PORTRAIT_RADIUS_Y, cy: 50 };
   return isNarrow(table.width)
-    ? { rx: NARROW_RADIUS_X, ry: RADIUS_Y }
-    : { rx: RADIUS_X, ry: RADIUS_Y };
+    ? { rx: NARROW_RADIUS_X, ry: RADIUS_Y, cy: DESKTOP_CENTER_Y }
+    : { rx: RADIUS_X, ry: RADIUS_Y, cy: DESKTOP_CENTER_Y };
 }
 
 /** True once the table is taller than it is wide, i.e. showing the tall plate. */
@@ -142,13 +158,14 @@ export const RAIL_Z = 1;
 export function seatGeometry(
   slot: number,
   count: number,
-  radii: { rx: number; ry: number } = { rx: RADIUS_X, ry: RADIUS_Y },
+  radii: SeatEllipse = { rx: RADIUS_X, ry: RADIUS_Y, cy: DESKTOP_CENTER_Y },
 ): SeatGeometry {
   const theta = ((NEAR_ANGLE_DEG + (slot * 360) / count) * Math.PI) / 180;
+  const centerY = radii.cy ?? 50;
 
   // Circle -> ellipse under camera tilt.
   const x = 50 + radii.rx * Math.cos(theta);
-  const y = 50 + radii.ry * Math.sin(theta);
+  const y = centerY + radii.ry * Math.sin(theta);
 
   // sin(theta) is +1 at the near edge and -1 at the far rail.
   const depth = (Math.sin(theta) + 1) / 2;
@@ -157,7 +174,7 @@ export function seatGeometry(
   // table skews the direction slightly -- harmless at the short distances a
   // bet chip travels, and not worth threading the pixel size in to correct.
   const inwardX = 50 - x;
-  const inwardY = 50 - y;
+  const inwardY = centerY - y;
   const dominant = Math.max(Math.abs(inwardX), Math.abs(inwardY)) || 1;
 
   return {

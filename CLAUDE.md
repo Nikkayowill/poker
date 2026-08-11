@@ -1577,6 +1577,41 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
     ticks the .glb mixers through `useFrame`, so demand mode freezes every
     seated character. `awake()` reporting false while `framesRendered()`
     climbs is correct — `awake()` is the CHIP scheduler. Do not "fix" it.
+- **The classic 2D table's hole cards and bet labels are compact and
+  seat-anchored now (2026-08-10), 2D only — the 3D room above was explicitly
+  out of scope.** Ground truth for the whole pass was
+  `window.__stackchipsScene.betSpot(slot)`, read live and diffed against the
+  DOM, not derived on paper: the two ellipses (the DOM's percentage one in
+  `lib/game/table-geometry.ts`, the canvas's world-unit one in
+  `lib/scene/seat-ring.ts`) are different shapes and cannot be reconciled by
+  one flat constant, so every number below was measured, not guessed.
+  - **Your own hole cards dropped from a 104px ceiling to a 50px one**
+    (`16-first-person.css`), and moved from floating above your own head to
+    sitting beside your figure (`left: 100%` on `.seat-mine .seat-cards`,
+    vertically centred on the avatar) — the 104px cap, not the position, was
+    the actual complaint. Opponent backs shrank .26 → .20 of the seat and
+    pulled up from the chest (`top: 80%`) to `66%`, nudged along the
+    outward `--seat-out-x/-y` vector `poker-table.tsx` now publishes per seat
+    (see below) so they read as tucked beside the avatar rather than centred
+    below it — kept below the 48%-of-face-height floor
+    `visual-layering.spec.ts` enforces the whole time, since that line exists
+    specifically so a card back never masks a player's own face.
+  - **The bet-amount label and the chip pile it should sit beside were ~80px
+    apart at every seat**, because `.table-bet`'s reach was a flat pixel
+    offset (76px) along the DOM ellipse's inward vector while the canvas
+    pile lives at `BET_INSET` (0.74 of the felt's own radius) in a
+    differently-proportioned world ellipse — two independently tuned systems
+    that only agreed on direction. 155px closes the x-axis to under a pixel
+    at every side seat; the y-axis has an irreducible 17-70px residual
+    depending on seat angle, which is the two ellipses' shape mismatch, not
+    an untuned number. The local player's own bet needed a *separate*
+    205px override (`.seat-mine .table-bet`) rather than a bigger shared
+    constant: `NEAR_SEAT_BET_INSET` (0.35) pulls that one pile in toward the
+    centre instead of out toward the rail, so it was never the same target.
+  - **`--seat-out-x`/`--seat-out-y`** (`poker-table.tsx`, the negation of the
+    existing `--seat-dx`/`--seat-dy` toward-pot vector) is what both the
+    card nudge above and any future compact-marker work should read for
+    "away from the pot" — it did not exist before this pass.
 - **M18 is in: player rank, XP and a daily streak.** `lib/progression/rank.ts`
   is the whole curve, pure and closed-form (XP = Gold wagered / 10; level N
   costs `XP_STEP·(N-1)N/2`, inverted by a square root that is then re-checked

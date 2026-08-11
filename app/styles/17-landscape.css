@@ -13,28 +13,23 @@
    only the local seat, and it loads last so the seat wins. Nothing here shares
    a selector with anything there.
 
-   This file used to rescale a whole second layout for the local player. Now
-   that they sit on the ring like everyone else there is only one thing left
-   that landscape genuinely needs: a 3:1 table is barely a hundred pixels tall,
-   so the hand held beside the near seat has to come in close and shrink or it
-   runs off the bottom of the screen. */
+   This file used to rescale a whole second layout for the local player, and
+   later carried a shrink for the hand this seat holds -- back when the cards
+   floated above the seat and a 3:1 table's hundred vertical pixels could run
+   them off the top of the screen. Now that the base rule in 16-first-person.css
+   sits the pair beside the figure and caps them at 50px, that vertical
+   pressure is gone: the side placement costs width, which a landscape phone
+   has plenty of, not height. Only the made-hand label still needs a squeeze
+   here, since it renders in normal flow beneath a seat this file has already
+   compressed. */
 
 @media (max-height: 500px) and (orientation: landscape) {
-  .seat-mine .seat-cards { top: calc(var(--seat-width) * .42); }
-
-  .seat-mine .own-cards .playing-card { width: clamp(34px, calc(var(--seat-width) * .62), 52px); }
-  .seat-mine .own-cards .dealt-card-shell + .dealt-card-shell {
-    margin-left: calc(var(--seat-width) * -.2);
-  }
-
   .seat-mine .hand-strength {
-    top: calc(var(--seat-width) * .96);
     padding: 2px 5px;
     font-size: 6px;
   }
 }
 
 @media (max-height: 340px) and (orientation: landscape) {
-  .seat-mine .own-cards .playing-card { width: clamp(28px, calc(var(--seat-width) * .56), 42px); }
   .seat-mine .hand-strength { font-size: 5px; }
 }

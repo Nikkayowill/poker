@@ -68,6 +68,127 @@ const PORTRAIT_RADIUS_X = 37;
 const PORTRAIT_RADIUS_Y = 44;
 
 /**
+ * The landscape-phone ring: seats pushed out to the glass rather than packed
+ * around a squeezed oval.
+ *
+ * A sideways phone is the one plate where the default ring reads as cramped —
+ * `--table-aspect` is 3 there, so the felt is a long shallow band and the
+ * seats were orbiting well inside the rail with dead margin either side of
+ * them. These radii put the outermost pair of seats on the box's own left and
+ * right edges, which is what the layout brief asked for.
+ *
+ * THE NUMBERS ARE SOLVED, NOT PICKED, and they are solved against the ring
+ * this file already draws rather than written as per-seat offsets.
+ *
+ * On a six-seat ring nothing sits at cos(theta) = ±1: with slot 0 at the near
+ * edge the outermost chairs are slots 1 and 2 to the left and 4 and 5 to the
+ * right, all four at |cos| = 0.866.
+ *
+ * THE 4% IS THE SEAT BOX'S EDGE, NOT THE ELLIPSE POINT, and getting that
+ * wrong is a whole seat off the screen rather than a near miss. `left: 4%`
+ * in CSS positions an element's left edge, but this ellipse yields the point
+ * a seat is *centred* on, and `.seat-ring` (08-seat.css) then pulls the box
+ * back by half its own width plus an outward `--seat-outset`. Solving
+ * `50 - 0.866 * rx = 4` therefore puts the box's edge at minus half a seat:
+ * measured at 844x390, the left flank landed at x = -8.8 with its nameplate
+ * cut off by the viewport. The correction is that overhang, in percent of
+ * the plate:
+ *
+ *     0.866 * rx = 46 - 100 * (seatWidth / 2 + outset) / plateWidth
+ *                = 46 - 100 * (52 + 14) / 793          (at 844x390)
+ *                = 37.7        ->   rx = 43.5
+ *
+ * It generalises across handsets because `seatWidthFor` (poker-table.tsx)
+ * derives the seat box from the plate's own width, so that ratio is near
+ * constant; it is still checked on a render at three widths rather than
+ * trusted.
+ *
+ * Per-seat `left: 4%` declarations would have reached the same two points
+ * and silently detached the other four seats from the ellipse the canvas
+ * ring is derived from — see the note on `.poker-rail` below.
+ *
+ * KEEPING THE CANVAS IN STEP COSTS NOTHING HERE, BY DESIGN. The chip room
+ * measures `.poker-rail`'s real box (`fitView` in table-scene.tsx) and solves
+ * its own plan shape from it, so bet spots follow the rail automatically. What
+ * that buys is also what it demands: the landscape rail inset in
+ * 12-responsive.css and `LANDSCAPE_CENTER_Y` are one decision written twice
+ * and must move together — the rail is inset 14% top and 4% bottom there so
+ * its centre is this ellipse's `cy`, and a ring centred anywhere else would
+ * orbit a point the felt is not at.
+ *
+ * The flank seats sit *on the cloth* here rather than at the rail's edge, and
+ * that is the plate's doing rather than a slip. A landscape seat box is a
+ * fifth of the plate's width, so a ring wide enough to put its centres on the
+ * rail is the one measured above that hangs them off the screen. The desktop
+ * relationship RADIUS_X documents — a figure meeting the rail from outside —
+ * needs margin either side of the ring that this stage does not have.
+ *
+ * A flank is a PAIR of seats, not one, so `LANDSCAPE_CENTER_Y` is the line
+ * they straddle (45% ± ry/2) rather than the top of either. There is no ry
+ * that puts two seats at the same height without collapsing the ellipse into
+ * a horizontal line and stacking the near and far chairs on the board.
+ */
+const LANDSCAPE_RADIUS_X = 43.5;
+/**
+ * The vertical pair, solved together against the two things that bound them.
+ *
+ * A landscape seat box is 104px tall in a plate only ~346px deep, and
+ * `.seat-ring` lifts each box by `(seatWidth + plateHeight) / 2` — about 85px
+ * for the far chair — so the ring cannot simply be centred and given a
+ * generous radius. Two constraints, in plate percent, with H the plate's
+ * height in px:
+ *
+ *   the far seat must clear the 42px header:   cy - ry      >= 24.6
+ *   the flank pair must clear the action bar:  cy + ry / 2  <= 72.2
+ *
+ * Together those cap ry at 31.7, and 28 takes it with margin rather than
+ * sitting on the boundary. cy is then anywhere in [52.6, 58.2]; 55 is the
+ * middle of that window.
+ *
+ * THE FIRST CUT WAS ry = 34, cy = 45, AND IT PUT THE FAR PLAYER'S HEAD UNDER
+ * THE HEADER — box top at y = -3, measured, with the crown cut off by the
+ * viewport. It satisfied neither constraint above because neither had been
+ * written down; both came out of reading a render. The near chair is absent
+ * from this arithmetic on purpose: 17-landscape.css takes slot 0 off the
+ * ellipse entirely and anchors it to the stage's bottom edge, so cy is free
+ * to move down without dragging the local player off the screen with it.
+ */
+const LANDSCAPE_RADIUS_Y = 28;
+/* Also the landscape rail's own centre -- inset 14% at the top and 4% at the
+   bottom gives (14 + 96) / 2 = 55. The two are one decision; a ring centred
+   anywhere but the felt's centre orbits a point the table is not at. The
+   asymmetry is the far seat's headroom: it hangs ~85px above its own ellipse
+   point, so the space it needs is all at the top. */
+const LANDSCAPE_CENTER_Y = 55;
+/**
+ * The viewport this ring switches on — the same condition, to the pixel, as
+ * the `@media (max-height: 500px) and (orientation: landscape)` block in
+ * 12-responsive.css that widens the rail to meet it.
+ *
+ * KEYED ON THE VIEWPORT, WHICH IS AN EXCEPTION TO THIS FILE'S OWN RULE, and
+ * the exception was forced by a render rather than chosen. `radiiForTable`
+ * otherwise measures the table's box on the principle that only the plate
+ * knows what shape it ended up, and the first cut of this ring followed that:
+ * it read the landscape plate off an aspect ratio, since `--table-aspect` is
+ * 3 there against 1.84 on a desktop.
+ *
+ * That is true of the plate the CSS *asks* for and not of the box that
+ * results. The landscape rules above make the wrap fill its area, which
+ * overrides `aspect-ratio` outright — both dimensions are then definite — so
+ * the measured box is whatever the letterbox left over. At 844x390 that is
+ * 793x346, an aspect of 2.29; on a 667x375 handset it is 627x333, or 1.88,
+ * which is within 0.04 of the desktop oval. There is no threshold that
+ * separates them. The ring silently kept its desktop radii and the seats
+ * stayed bunched — measured, not reasoned: the leftmost pair sat at x = 8.4%
+ * of the wrap where this ellipse puts them at 4%.
+ *
+ * Matching the media query exactly is also the stronger guarantee. The rail
+ * inset and these radii are one decision; keyed on the same condition they
+ * cannot switch on different viewports and leave the seats off the rail.
+ */
+const LANDSCAPE_MAX_HEIGHT_PX = 500;
+
+/**
  * Radii for the table's actual measured box, not the viewport.
  *
  * Keyed off the table rather than the window because the table is capped by
@@ -82,7 +203,24 @@ export interface SeatEllipse {
   cy?: number;
 }
 
-export function radiiForTable(table: { width: number; height: number }): SeatEllipse {
+export function radiiForTable(
+  table: { width: number; height: number },
+  /**
+   * The window, when the caller has one. Optional so every existing caller
+   * and test keeps working unchanged, and so a server render — which has no
+   * window — simply gets the plate-derived answer it always got.
+   */
+  viewport?: { width: number; height: number },
+): SeatEllipse {
+  /* Before the portrait and narrow checks, not after. A landscape phone is
+     short *and* narrow enough to trip `isNarrow`, and NARROW_RADIUS_X (38)
+     pulls the ring inward -- the exact opposite of what this plate needs.
+     Ordering these the other way round fails silently: the seats stay
+     bunched and nothing reports that the landscape ellipse was computed and
+     then discarded. */
+  if (viewport && isLandscapeBand(viewport)) {
+    return { rx: LANDSCAPE_RADIUS_X, ry: LANDSCAPE_RADIUS_Y, cy: LANDSCAPE_CENTER_Y };
+  }
   if (isPortrait(table)) return { rx: PORTRAIT_RADIUS_X, ry: PORTRAIT_RADIUS_Y, cy: 50 };
   return isNarrow(table.width)
     ? { rx: NARROW_RADIUS_X, ry: RADIUS_Y, cy: DESKTOP_CENTER_Y }
@@ -92,6 +230,20 @@ export function radiiForTable(table: { width: number; height: number }): SeatEll
 /** True once the table is taller than it is wide, i.e. showing the tall plate. */
 export function isPortrait(table: { width: number; height: number }): boolean {
   return table.height > 0 && table.width / table.height < 1;
+}
+
+/**
+ * True on a phone held sideways: short, and wider than it is tall.
+ *
+ * Takes the *viewport*, not the table — see `LANDSCAPE_MAX_HEIGHT_PX`. The
+ * two clauses are the two halves of the media query it mirrors, and both are
+ * needed: height alone would catch a short desktop window, and orientation
+ * alone would catch every desktop there is.
+ */
+export function isLandscapeBand(viewport: { width: number; height: number }): boolean {
+  return viewport.height > 0
+    && viewport.height <= LANDSCAPE_MAX_HEIGHT_PX
+    && viewport.width > viewport.height;
 }
 
 export function isNarrow(viewportWidth: number): boolean {

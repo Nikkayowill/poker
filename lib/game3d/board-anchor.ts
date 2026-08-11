@@ -43,8 +43,20 @@ export const CARD_ASPECT = 7 / 5;
  */
 export const HUD_RESERVE_PX = 88;
 
-/** Air under the board so it never quite touches the far player's head. */
-export const CROWN_CLEARANCE_PX = 12;
+/**
+ * Air under the board so it never quite touches the far player's head.
+ *
+ * Was 12. The fourth table pull-in (seat-layout.ts, FELT_RADIUS_X 1.45 ->
+ * 1.2) draws the camera closer, and the far crown rises up-screen faster
+ * than the board itself shrinks with it — at 820x1180 (TABLET_UPRIGHT in
+ * board-anchor.test.ts) the two closed to less than the card's own height,
+ * so any fixed clearance at 12 was already spent before the card was
+ * centred. 8 is the largest value bisected against that same viewport that
+ * still leaves the card clear (a little over a pixel to spare); this is the
+ * one knob available that doesn't touch HUD_RESERVE_PX, which is real pixel
+ * geometry borrowed from the HUD's own layout, not a tunable margin.
+ */
+export const CROWN_CLEARANCE_PX = 8;
 
 /**
  * Card width solved from the stage box, not the camera: wide enough to read

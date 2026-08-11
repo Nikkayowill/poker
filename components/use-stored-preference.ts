@@ -47,14 +47,38 @@ export function useStoredPreference<T>(options: {
   parse: (raw: string | null) => T;
   serialize?: (value: T) => string;
   apply?: (value: T, cause: PreferenceChangeCause) => void;
-}): [T, (update: T | ((current: T) => T)) => void] {
+}): [T, (update: T | ((current: T) => T)) => void, boolean] {
   const { key, legacyKey, fallback, parse, serialize, apply } = options;
   const [value, setValue] = useState<T>(fallback);
+  /**
+   * Has the stored value landed in React state yet?
+   *
+   * A third tuple member rather than a new options field, so the three
+   * existing call sites that destructure `[value, set]` are untouched --
+   * array destructuring ignores a trailing element.
+   *
+   * It exists because THE DEFERRED SET ABOVE IS OBSERVABLE. Between the first
+   * commit and the tick that restores the stored value, `value` is the
+   * fallback, and a caller cannot tell "the player chose the default" from
+   * "the choice has not arrived". For a mute that gap is invisible -- the
+   * module was already muted synchronously, and nothing renders differently.
+   * For a preference that decides which of two renderers to MOUNT it is a
+   * whole subtree built, painted and thrown away: a player who picked the
+   * classic table gets the 3D room for a frame first, because
+   * DEFAULT_TABLE_RENDERER is `webgl_3d`.
+   *
+   * True on the server and in the same first commit is exactly wrong, so it
+   * starts false; a consumer that does not care simply never reads it.
+   */
+  const [settled, setSettled] = useState(false);
 
   useEffect(() => {
     const stored = readStoredPreference(browserPreferenceStorage(), { key, legacyKey, parse });
     apply?.(stored, "restore");
-    const timer = window.setTimeout(() => setValue(stored), 0);
+    const timer = window.setTimeout(() => {
+      setValue(stored);
+      setSettled(true);
+    }, 0);
     return () => window.clearTimeout(timer);
     // Mount-only by design: this reads the persisted value once, and re-running
     // it would clobber a choice the player has since made in this session.
@@ -80,5 +104,5 @@ export function useStoredPreference<T>(options: {
     [key],
   );
 
-  return [value, update];
+  return [value, update, settled];
 }

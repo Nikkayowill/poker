@@ -53,6 +53,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { useFrame } from "@react-three/fiber";
 import { useAnimations, useGLTF } from "@react-three/drei";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { STARTER_CHARACTERS_3D, type Character3D } from "@/lib/game3d/characters";
@@ -65,6 +66,8 @@ import {
 } from "@/lib/game3d/avatar-state";
 import type { AvatarMood, SeatModel } from "@/lib/game3d/scene-model";
 import { HUMAN_STANDING_UNITS } from "@/lib/game3d/dimensions";
+import { FELT_TOP_Y } from "@/lib/game3d/seat-layout";
+import { clampWristToFelt, dampingFactor, IK_DAMPING, solveTwoBoneIk } from "@/lib/game3d/arm-ik";
 import { CHAIR_SEAT_Y } from "../scene/chair";
 
 /**
@@ -86,6 +89,89 @@ const HIP_SIT_RISE = 0.03;
 /** See the clamp in the clone below for why these exist and why they clamp. */
 const CLOTH_ROUGHNESS_FLOOR = 0.55;
 const CLOTH_METALNESS_CEILING = 0.15;
+
+interface ArmChain {
+  shoulder: THREE.Bone;
+  elbow: THREE.Bone;
+  wrist: THREE.Bone;
+}
+
+/** Scratch objects for the per-frame felt-clamp IK — allocated once per
+ * mounted avatar, never inside the frame loop. */
+interface IkScratch {
+  shoulder: THREE.Vector3;
+  elbow: THREE.Vector3;
+  wrist: THREE.Vector3;
+  solvedElbow: THREE.Vector3;
+  solvedWrist: THREE.Vector3;
+  parentQuat: THREE.Quaternion;
+  parentQuatInv: THREE.Quaternion;
+  deltaWorld: THREE.Quaternion;
+  targetLocal: THREE.Quaternion;
+  currentDir: THREE.Vector3;
+  desiredDir: THREE.Vector3;
+}
+
+function createIkScratch(): IkScratch {
+  return {
+    shoulder: new THREE.Vector3(),
+    elbow: new THREE.Vector3(),
+    wrist: new THREE.Vector3(),
+    solvedElbow: new THREE.Vector3(),
+    solvedWrist: new THREE.Vector3(),
+    parentQuat: new THREE.Quaternion(),
+    parentQuatInv: new THREE.Quaternion(),
+    deltaWorld: new THREE.Quaternion(),
+    targetLocal: new THREE.Quaternion(),
+    currentDir: new THREE.Vector3(),
+    desiredDir: new THREE.Vector3(),
+  };
+}
+
+/**
+ * Rotate `bone` so its child swings from `currentChildWorld` to
+ * `desiredChildWorld` (both world-space points, sharing the pivot
+ * `pivotWorld`), blended in by `amount` rather than snapped — this is what
+ * keeps a felt-clamp correction reading as the arm settling, not popping.
+ *
+ * Works as a RELATIVE world-space rotation rather than an absolute "look
+ * at" so it never needs to know the rig's bind-pose bone axis convention
+ * (which varies per exporter): the delta from current to desired direction
+ * is computed in world space, then converted into the bone's own parent
+ * space and applied on top of whatever local rotation the animation clip
+ * already set this frame.
+ */
+function aimBoneAt(
+  bone: THREE.Bone,
+  pivotWorld: THREE.Vector3,
+  currentChildWorld: THREE.Vector3,
+  desiredChildWorld: THREE.Vector3,
+  amount: number,
+  scratch: IkScratch
+): void {
+  if (!bone.parent || amount <= 0) return;
+
+  scratch.currentDir.copy(currentChildWorld).sub(pivotWorld);
+  scratch.desiredDir.copy(desiredChildWorld).sub(pivotWorld);
+  if (scratch.currentDir.lengthSq() < 1e-8 || scratch.desiredDir.lengthSq() < 1e-8) return;
+  scratch.currentDir.normalize();
+  scratch.desiredDir.normalize();
+  scratch.deltaWorld.setFromUnitVectors(scratch.currentDir, scratch.desiredDir);
+
+  bone.parent.getWorldQuaternion(scratch.parentQuat);
+  scratch.parentQuatInv.copy(scratch.parentQuat).invert();
+
+  // newLocal = parentInv * deltaWorld * parentWorld * oldLocal — apply the
+  // world-space delta, then re-express the result in the bone's own parent
+  // space, on top of (not replacing) the clip's current local rotation.
+  scratch.targetLocal
+    .copy(scratch.parentQuatInv)
+    .multiply(scratch.deltaWorld)
+    .multiply(scratch.parentQuat)
+    .multiply(bone.quaternion);
+
+  bone.quaternion.slerp(scratch.targetLocal, amount);
+}
 
 export interface GlbAvatarProps {
   slot: number;
@@ -159,6 +245,37 @@ function GlbAvatarModel({
     });
     return cloned;
   }, [scene]);
+
+  // Found once per model, not re-traversed in the frame loop. Mixamo's
+  // per-download name prefix ("mixamorig:", "mixamorig8", "mixamorig9Hips"
+  // without the colon) is handled the same way the hip lookup below
+  // handles it — suffix match, case-insensitive. "leftarm$" deliberately
+  // does not also match "LeftForeArm": the two suffixes ("leftarm" vs.
+  // "forearm") differ in their last 7/8 characters, so no explicit
+  // exclusion is needed — see arm-ik.test.ts's bone-name-adjacent cases if
+  // this ever needs re-verifying against a new roster's naming.
+  const armChains = useMemo<{ left: ArmChain | null; right: ArmChain | null }>(() => {
+    const findBone = (suffix: RegExp): THREE.Bone | null => {
+      let found: THREE.Bone | null = null;
+      model.traverse((obj) => {
+        if (found || !(obj as THREE.Bone).isBone) return;
+        if (suffix.test(obj.name)) found = obj as THREE.Bone;
+      });
+      return found;
+    };
+    const chainFor = (side: "left" | "right"): ArmChain | null => {
+      const shoulder = findBone(new RegExp(`${side}arm$`, "i"));
+      const elbow = findBone(new RegExp(`${side}forearm$`, "i"));
+      const wrist = findBone(new RegExp(`${side}hand$`, "i"));
+      return shoulder && elbow && wrist ? { shoulder, elbow, wrist } : null;
+    };
+    return { left: chainFor("left"), right: chainFor("right") };
+  }, [model]);
+  // Scratch objects, not per-model state — a plain useMemo(() => ..., [])
+  // rather than a ref, since this only ever needs to be built once per
+  // mount and a ref read during render is exactly what react-hooks/refs
+  // flags.
+  const ikScratch = useMemo(() => createIkScratch(), []);
 
   // Measured off the SKELETON's world positions, not Box3.setFromObject:
   // for a SkinnedMesh, three's default bounds come from the raw (unskinned)
@@ -234,6 +351,59 @@ function GlbAvatarModel({
   const firstActionKeyRef = useRef(actionKey);
   const baseState = baseAnimationState(mood, status);
   const transientState = transientAnimationState(lastAction);
+
+  // Felt-clamp IK. Registered AFTER useAnimations' own useFrame (the mixer
+  // update above), which is what guarantees this runs later in the same
+  // frame — react-three-fiber calls same-priority useFrame subscribers in
+  // registration order, so this corrects the pose the clip just set rather
+  // than one it's about to overwrite. Deliberately not given an explicit
+  // priority: any non-zero priority hands rendering itself to that
+  // callback, which this has no business taking over. See arm-ik.ts's
+  // header for why this is closed-form (a known flat plane) rather than a
+  // physics contact query.
+  useFrame((_, delta) => {
+    const amount = dampingFactor(IK_DAMPING, delta);
+
+    for (const chain of [armChains.left, armChains.right]) {
+      if (!chain) continue;
+
+      // mixer.update() above only touched local transforms; matrixWorld is
+      // not recomputed until the renderer's own traversal, which happens
+      // after every useFrame this frame — so refresh just this chain's
+      // ancestors, not the whole scene, before reading world positions.
+      chain.wrist.updateWorldMatrix(true, false);
+      chain.elbow.updateWorldMatrix(true, false);
+      chain.shoulder.updateWorldMatrix(true, false);
+      ikScratch.shoulder.setFromMatrixPosition(chain.shoulder.matrixWorld);
+      ikScratch.elbow.setFromMatrixPosition(chain.elbow.matrixWorld);
+      ikScratch.wrist.setFromMatrixPosition(chain.wrist.matrixWorld);
+
+      const correction = clampWristToFelt(
+        { x: ikScratch.wrist.x, y: ikScratch.wrist.y, z: ikScratch.wrist.z },
+        FELT_TOP_Y
+      );
+      if (!correction) continue; // common case: the clip already clears the felt
+
+      const solved = solveTwoBoneIk(
+        { x: ikScratch.shoulder.x, y: ikScratch.shoulder.y, z: ikScratch.shoulder.z },
+        { x: ikScratch.elbow.x, y: ikScratch.elbow.y, z: ikScratch.elbow.z },
+        { x: ikScratch.wrist.x, y: ikScratch.wrist.y, z: ikScratch.wrist.z },
+        correction
+      );
+      ikScratch.solvedElbow.set(solved.elbow.x, solved.elbow.y, solved.elbow.z);
+      ikScratch.solvedWrist.set(solved.wrist.x, solved.wrist.y, solved.wrist.z);
+
+      // Both joints are solved from the same per-frame snapshot rather than
+      // re-reading the elbow's position after rotating the shoulder above —
+      // an intentional approximation. The positional error that introduces
+      // is second-order in how far the shoulder just rotated, which stays
+      // tiny at this damping rate (a lift of a few centimetres, blended in
+      // over several frames, never a first-frame snap), and it self-heals
+      // every subsequent frame since positions are re-measured fresh.
+      aimBoneAt(chain.shoulder, ikScratch.shoulder, ikScratch.elbow, ikScratch.solvedElbow, amount, ikScratch);
+      aimBoneAt(chain.elbow, ikScratch.elbow, ikScratch.wrist, ikScratch.solvedWrist, amount, ikScratch);
+    }
+  });
 
   // State belongs on the actual figure in a 3D room, not only on a detached
   // nameplate. Folded players recede into the light; the actor and winner get

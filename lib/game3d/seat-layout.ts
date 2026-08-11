@@ -37,7 +37,38 @@ export const FELT_TOP_Y = 0.86;
 export const TABLE_LENGTH_M = 2.13;
 export const TABLE_WIDTH_M = 1.07;
 
-export const FELT_RADIUS_X = 2.15;
+/**
+ * The felt's half-length, in world units — the ruler `dimensions.ts`'s
+ * `UNITS_PER_METRE` is built from (`= 2 * FELT_RADIUS_X / TABLE_LENGTH_M`).
+ * Avatar height does NOT come off this ruler — a seated character's size is
+ * set by `UNITS_PER_METRE_Y`, a separate constant keyed off `FELT_TOP_Y`
+ * and `TABLE_HEIGHT_M` (see dimensions.ts) — so this value is purely "how
+ * many world units the real 2.13 m table spans," independent of how big a
+ * seated player looks.
+ *
+ * Was 2.15, then 1.8, then 1.45. At 2.15 the table read oversized next to
+ * the people sitting at it — real casino tables put six players
+ * elbow-to-elbow, not spread around a wide oval with daylight between every
+ * chair. Since avatars, chips and cards on the felt all scale with THIS
+ * number (chips and cards through `UNITS_PER_METRE`, so shrinking it here
+ * does not throw off the "chip is 1/50th of the table" proportion
+ * dimensions.ts anchors), pulling it in is a global "the table was drawn to
+ * too generous a ruler" correction, not a change to the real 2.13 m table
+ * it represents.
+ *
+ * The fourth pull-in, to 1.2, is what a freed bottom edge is FOR. Avatar
+ * height does not ride this ruler (see the comment above), so shrinking the
+ * felt/ring pulls the camera closer without shrinking the fixed-height
+ * people already in frame — and until this round the near seat had nowhere
+ * to go: the desktop console sat in-flow below .table-area, so "closer"
+ * stopped at the top of a reserved strip well short of the true viewport
+ * edge. 06-table.css now floats the desktop 3D console into the bottom-right
+ * corner instead, out of the flex column, which is what makes a fourth
+ * pull-in worth doing at all — .table-area now runs to the room's real
+ * bottom edge, and the corner placement means the near seat's own back can
+ * approach it without ever sharing a footprint with the controls.
+ */
+export const FELT_RADIUS_X = 1.2;
 
 /**
  * Depth is DERIVED from the table's real plan proportions, not typed.
@@ -68,8 +99,24 @@ export const FELT_RADIUS_Z = FELT_RADIUS_X * (TABLE_WIDTH_M / TABLE_LENGTH_M);
  * supposed to sit outside of. Stated once, a player is the same distance
  * back from the cloth wherever they are sitting, and a change to the
  * table's shape moves the chairs with it.
+ *
+ * Was 0.47, then 0.36, then 0.29, then 0.24 — each pull-in kept the same
+ * ratio to FELT_RADIUS_X's own move, on the theory that this is purely "how
+ * close a real player sits." That theory was wrong at 0.24: rendered on the
+ * real GPU, every seat's reach-for-a-card hand pose was landing BELOW the
+ * felt plane, arm and fingers visibly cutting through the cloth rather than
+ * resting on it (worst at the side seats, e.g. Priya's cigar hand). The
+ * cause is the asymmetry this file documents everywhere else — the .glb
+ * avatars are baked animation clips at a FIXED real-world reach, scaled by
+ * UNITS_PER_METRE_Y, which never moved. SEAT_SETBACK had been shrinking the
+ * one distance a fixed-size body actually needs to clear the rail by, while
+ * the ratio-preservation logic treated it as if it scaled with the felt like
+ * a chip or a card does. Reset to 0.34 — between the round-3 and round-2
+ * values — restores that clearance without giving back all of round 3's
+ * pull-in. If FELT_RADIUS_X moves again, do NOT scale this by the same
+ * ratio; re-render and re-measure against the avatars' actual reach instead.
  */
-export const SEAT_SETBACK = 0.47;
+export const SEAT_SETBACK = 0.34;
 
 /** Avatars stand on this larger ellipse, just outside the rail. */
 export const SEAT_RING_RADIUS_X = FELT_RADIUS_X + SEAT_SETBACK;

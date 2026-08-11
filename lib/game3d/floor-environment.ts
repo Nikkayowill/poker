@@ -153,12 +153,20 @@ export const FLOOR_SEGMENTS = 48;
  * no fog-exempt materials, which is how the backdrop-plate approach would
  * have had to fake the same thing.
  *
+ * The near-table stops lean warm brown rather than the cool purple-black
+ * they used to (this is data, not a new system — retuning it is a one-line
+ * edit): the rail and skirt (table-3d.tsx, `#2b1f15`/`#241a12`) are already
+ * a dark mahogany wood, and a cool carpet under warm wood read as two rooms
+ * meeting at the rail. A carpet in the same family reads as a lounge floor
+ * the table actually stands on. Still well under the felt's own luminance
+ * (see the test below) and still exactly `STUDIO_BACKDROP` at the rim.
+ *
  * `stop` is a fraction of FLOOR_RADIUS.
  */
 export const CARPET_STOPS: readonly { stop: number; color: string }[] = [
-  { stop: 0, color: "#191119" },
-  { stop: 0.2, color: "#150f18" },
-  { stop: 0.45, color: "#0c0a13" },
+  { stop: 0, color: "#241a12" },
+  { stop: 0.2, color: "#1c130e" },
+  { stop: 0.45, color: "#100b0a" },
   { stop: 1, color: STUDIO_BACKDROP },
 ];
 
@@ -212,6 +220,12 @@ export function carpetColorAt(radius: number): Rgb {
  * behind and to one side, low enough to be a suggestion of the room rather
  * than a second key.
  *
+ * Colour is brass/gold rather than the cool blue-grey it started as —
+ * a low-intensity warm kick along the rail's far edge reads as a glint off
+ * the wood and its trim, the same "warm accent light" idea a real VIP room
+ * would use, without adding a light, a texture or a mesh. Retuning this hex
+ * is the whole lever; nothing else in the rig depends on which colour it is.
+ *
  * `castShadow: false` is stated as DATA rather than left to the JSX default
  * on purpose. A three.js light that casts adds a whole depth pass over
  * every shadow-casting object in the scene — six rigged characters, six
@@ -222,7 +236,7 @@ export function carpetColorAt(radius: number): Rgb {
 export const STUDIO_RIM = {
   position: { x: -3.4, y: 2.9, z: -4.2 },
   intensity: 0.42,
-  color: "#6f7fae",
+  color: "#c99456",
   castShadow: false,
 } as const;
 

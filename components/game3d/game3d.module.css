@@ -769,3 +769,141 @@
   color: #ffdf9b;
   background: rgba(6, 7, 12, 0.72);
 }
+
+/* ---------------------------------------------------------------------------
+ * The local player's own corner HUD — desktop only, bottom-left.
+ *
+ * Mirrors 06-table.css's `.action-bar-3d` floating corner treatment: same
+ * `min-width: 901px` breakpoint (enforced in JS too — see use-min-width.ts,
+ * since seat-nameplates.tsx has to drop this seat's plate at the source, not
+ * just hide it), same glassy purple-lit console material, opposite corner.
+ * Below that width the local seat keeps its ordinary projected nameplate,
+ * same as every other seat.
+ * ------------------------------------------------------------------------ */
+
+.playerHud {
+  display: none;
+}
+
+@media (min-width: 901px) {
+  .playerHud {
+    display: flex;
+    position: absolute;
+    left: max(24px, env(safe-area-inset-left));
+    bottom: max(24px, env(safe-area-inset-bottom));
+    z-index: 6;
+    align-items: center;
+    gap: 12px;
+    max-width: min(320px, 34vw);
+    padding: 8px 18px 8px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(187, 145, 239, 0.22);
+    background:
+      radial-gradient(circle at 0% 120%, rgba(154, 84, 218, 0.22), transparent 60%),
+      linear-gradient(180deg, rgba(18, 15, 25, 0.94), rgba(7, 7, 11, 0.97));
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.08),
+      0 18px 48px rgba(0, 0, 0, 0.48),
+      0 0 42px rgba(111, 58, 164, 0.08);
+    backdrop-filter: blur(18px);
+    pointer-events: none;
+  }
+}
+
+.playerHudPortrait {
+  position: relative;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+}
+
+/* Overrides 03-profile.css's 34px default via a descendant selector rather
+   than a wider class list, so it wins on specificity regardless of which
+   stylesheet — this CSS module or the global cascade — loads second. */
+.playerHudPortrait :global(.profile-avatar) {
+  width: 48px;
+  height: 48px;
+  border: 2px solid rgba(242, 208, 104, 0.75);
+  box-shadow: 0 0 0 3px rgba(7, 7, 11, 0.85), 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+.playerHudPortraitFallback {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid rgba(242, 208, 104, 0.75);
+  background: #1b1526;
+  color: #f5f2ea;
+  font: 700 18px Georgia, "Times New Roman", serif;
+}
+
+/* The level badge — a classic RPG-HUD touch, overlapping the portrait's
+   bottom-right corner rather than sitting in the text column, since the
+   level is a property of the player pictured, not another line of copy. */
+.playerHudLevel {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 2px solid rgba(7, 7, 11, 0.9);
+  background: linear-gradient(168deg, #f0bc45 0%, #db9c0b 55%, #b57f06 100%);
+  color: #241a02;
+  font-size: 10px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.playerHudBody {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.playerHudName {
+  max-width: 180px;
+  overflow: hidden;
+  color: #f5f2ea;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playerHudXpTrack {
+  width: 150px;
+  max-width: 40vw;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.playerHudXpFill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #db9c0b, #f0bc45);
+  transition: width 400ms ease;
+}
+
+.playerHudCash {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #d9c98a;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.playerHudCash svg {
+  color: #f0bc45;
+  flex: 0 0 auto;
+}

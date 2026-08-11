@@ -343,7 +343,98 @@
     padding-bottom: 0;
   }
   .game-shell { --action-bar-height: 56px; --foreground-allowance: 48px; }
-  .poker-table-wrap { --table-aspect: 3; }
+
+  /* ---------------------------------------------------------------------
+     ASPECT-LOCKED LETTERBOX.
+
+     The shell stops being a viewport-shaped box that every child reacts to
+     and becomes a fixed 844:390 stage -- an iPhone 14 held sideways --
+     centred in whatever the viewport actually is, with the leftover black.
+     A percentage inside a box whose *shape* cannot change resolves to the
+     same relative point on every handset, which is what stops the seats and
+     the HUD drifting between one phone and the next.
+
+     IT IS THE RATIO THAT IS PINNED, NOT THE PIXEL COUNT, and that is a
+     deliberate departure from the brief this implements. `width: 844px` with
+     `max-width: 100vw` does not scale down: `max-width` clamps the box while
+     its contents keep their own sizes, so on anything narrower than 844 the
+     `overflow: hidden` below crops the right-hand seats off instead of
+     shrinking them. Most landscape handsets are narrower than 844 (SE 667,
+     12 mini 812), so that is the common case, not the edge. Locking the
+     ratio and letting both axes shrink together keeps the whole stage on
+     screen at every size and preserves the property the fixed box was for.
+
+     The other way to do this is a fixed 844x390 box under a JS-computed
+     `transform: scale()`, which is what a game engine does. Rejected on two
+     counts: CSS cannot express the scale factor on its own (`calc()` will
+     not divide a length by a length, so there is no pure-CSS
+     `min(100vw/844px, 100dvh/390px)`), and scaling the whole subtree resamples
+     every glyph at a fractional factor. Text on this stage is 8-11px; that is
+     where blur shows first.
+
+     `position: fixed` rather than `absolute` so the stage is measured against
+     the viewport and not against whatever ancestor happens to be positioned.
+     The safe-area tokens still apply inside it -- the stage is centred, so on
+     a notched handset the letterbox bars absorb the insets rather than
+     fighting them. */
+  .game-shell {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    /* 844 / 390 and its reciprocal. Written as decimals because calc() takes
+       a number here, not a ratio literal. */
+    width: min(100vw, calc(100dvh * 2.1641));
+    height: min(100dvh, calc(100vw * 0.46209));
+    max-width: 100vw;
+    max-height: 100dvh;
+    transform: translate(-50%, -50%);
+    overflow: hidden;
+  }
+
+  /* FULL-BLEED BACKDROP.
+
+     The rail is the table's outer edge and, crucially, the box the canvas
+     room measures to solve its own plan shape (`fitView` in
+     table-scene.tsx). Widening it here is therefore what carries the felt,
+     the pot and every bet spot outward with the seats -- the chip room needs
+     no landscape branch of its own and cannot fall out of step with this
+     one.
+
+     Top 14% / bottom 4% centres the rail on 55%, which is
+     `LANDSCAPE_CENTER_Y` in lib/game/table-geometry.ts -- the pair are one
+     decision and the comment there says so from the other side. The
+     asymmetry is the far seat's headroom: `.seat-ring` lifts a seat box
+     ~85px above its own point on the ellipse, so the room it needs is all
+     above the cloth. The near seat needs none, because 17-landscape.css
+     takes it off the ring and clips it against the stage's bottom edge.
+
+     `object-fit: cover` has no meaning on any of this and is not used. The
+     brief asks for it on the felt, but `.poker-felt` is a `<div>` painted
+     with CSS gradients and the artwork here is `.poker-rail`'s
+     `background-image` -- `object-fit` only applies to replaced elements
+     (img/video/canvas). The equivalent for a background is
+     `background-size: cover`, and it is deliberately NOT used either: the
+     rail art is a 2:1 plate and `cover` on a 3:1 band would crop its ends
+     off, which is the "vertical egg" failure in the other direction. The
+     existing `100% 100%` fills the box, and the box is now the right shape
+     because the ring and the rail were re-solved together. */
+  .poker-rail { inset: 14% 4% 4%; }
+
+  /* The wrap fills the stage rather than being capped by leftover height.
+     `--table-height-cap` exists to stop the table overflowing a viewport it
+     cannot measure; inside a stage of known, fixed shape there is nothing
+     left to guess, and leaving the cap in place left the band floating in
+     the middle of the letterbox with margin the seats had been pushed out
+     into. Naming the cap rather than replacing the whole min() is the rule
+     this file's Defect D1 note sets out -- kept, because the aspect below
+     still needs its width term. */
+  .poker-table-wrap {
+    --table-aspect: 3;
+    --table-height-cap: 100%;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+  }
   /* Measured at 844x390 there are 18px between the top of .table-area and the
      highest seat, so the band itself is only good for one short pill. The
      feed used to be dropped entirely here; with the seat pills gone that
@@ -376,8 +467,101 @@
   .game-header .pot-display > span { font-size: 8px; letter-spacing: .1em; }
   .game-header .pot-display strong { margin-top: 0; font-size: 17px; }
   .card-large { width: clamp(32px, 7.5vw, 42px); }
-  .action-layer { padding-bottom: var(--safe-bottom); }
+
+  /* FLOATING HUD CONTROLS.
+
+     The action bar stops being a row in the shell's flex column and floats
+     over the felt in the bottom-right corner. On a 390px-tall stage a
+     56px reserved strip plus its margin was a seventh of the screen spent on
+     a band that is empty except when it is your turn; the table gets it back.
+
+     Taking .action-layer out of flow is what actually frees the height --
+     .table-area is `flex: 1`, so it expands into the row the controls
+     vacated. The reserve tokens have to go with it or the table would be
+     sized for a strip that is no longer in the column: --action-bar-height
+     is the term --table-reserve subtracts for exactly this band (06-table.css),
+     and --foreground-allowance reserved room below the felt for the near
+     seat, which is now clipped against the stage edge instead (17-landscape.css).
+
+     Right-hand corner, not centred: the near seat is centred and its cards
+     are the one thing on this stage that must never be covered. The bar is
+     `width: min(950px, 100%)` at every other breakpoint, so it is pinned to
+     `auto` here to stop it spanning the whole stage and re-covering the seat
+     it was moved off. `max-width` keeps it clear of the left flank seats.
+
+     The left inset is deliberately absent -- `right` + `width: auto` lets
+     the bar size to its own buttons, which is what makes it read as floating
+     chrome rather than a bar with a transparent left half. */
+  .game-shell { --action-bar-height: 0px; --foreground-allowance: 0px; }
+  .action-layer {
+    position: absolute;
+    z-index: 25;
+    bottom: calc(12px + var(--safe-bottom));
+    right: max(16px, var(--safe-right));
+    padding: 0;
+    /* The layer is only a positioning shell now, so it must not swallow taps
+       aimed at the felt in the corner it happens to cover. The bar itself
+       takes them back below. */
+    pointer-events: none;
+  }
+  .action-layer .action-bar {
+    width: auto;
+    max-width: min(560px, 68vw);
+    margin: 0;
+    /* Sized by its content now that it fills no reserved strip. `align-items`
+       comes off the base rule's `stretch`, which would otherwise let the
+       tools column -- empty on most turns -- set the bar's height. */
+    height: auto;
+    align-items: center;
+    pointer-events: auto;
+  }
+
   .history-drawer { width: min(300px, 82%); }
+}
+
+/* Landscape handsets whose own aspect is narrower than the 844:390 stage, so
+   the letterbox takes real height off the top and bottom.
+
+   The tier exists because THE MEDIA QUERIES ABOVE MEASURE THE VIEWPORT AND
+   THE LAYOUT NOW LIVES ON THE STAGE, and on these phones the two are no
+   longer the same number. An iPhone SE reports 667x375, comfortably outside
+   the 340px tier, but 375 is taller than 667 / 2.1641 -- so the stage is
+   308px and every fixed-pixel piece of chrome is spending 22% more of it
+   than the breakpoint that sized it assumed.
+
+   2/1 rather than the stage's exact 2.1641 ratio: 812x375 comes out at
+   2.1653, which letterboxes by half a pixel and does not want any of this.
+   The threshold sits in the gap between "letterboxes measurably" and
+   "letterboxes at all". */
+@media (max-height: 500px) and (orientation: landscape) and (max-aspect-ratio: 2/1) {
+  .action-layer .action-bar { padding: 4px 8px; gap: 7px; }
+  .action-layer .action-slot-controls { gap: 6px; }
+  .action-layer .action-slot-controls button {
+    padding: 0 9px;
+    font-size: 11px;
+    border-radius: 9px;
+  }
+
+  /* KNOWN RESIDUAL, and it is a device limit rather than an untuned number.
+     At 667x375 the stage is 308px tall and must hold a 42px header, a ring
+     of six seats whose boxes are ~100px each, and a floating control bar.
+     The bar's top-left corner still crosses the lower-right seat's box by
+     3.8px after the compaction above, measured -- down from 22.6px, but not
+     to zero.
+
+     It cannot go to zero by moving anything. The bar cannot clear that seat
+     horizontally: the seat spans x 562-644 and the bar's right edge is
+     pinned 16px off a 667px stage, so any bar wider than 7px overlaps its
+     column. It cannot clear it vertically either: raising the ring is
+     bounded the other way by the header, which the far seat already clears
+     by only 3.8px on this device. Six seats, a header and a floating bar do
+     not simultaneously fit a 308px stage.
+
+     Recorded the way POT_DEPTH_FRACTION and NEAR_SEAT_BET_INSET record
+     their own landscape limits: the trade was measured and chosen, so the
+     next person reads a decision rather than rediscovering a bug. Larger
+     landscape phones -- 844x390 and 812x375, the two this was solved
+     against -- have no overlap at all. */
 }
 
 /* Older/smaller handsets (e.g. iPhone SE 1st-gen landscape, 568x320) need a

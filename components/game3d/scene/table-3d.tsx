@@ -19,15 +19,82 @@ import {
   FELT_RADIUS_Z,
   FELT_TOP_Y,
 } from "@/lib/game3d/seat-layout";
+import { offsetStadium } from "@/lib/game3d/table-shape";
 import {
   FLOOR_RADIUS,
   FLOOR_RINGS,
   FLOOR_SEGMENTS,
   carpetColorAt,
 } from "@/lib/game3d/floor-environment";
+import {
+  buildStadiumRingShape,
+  buildStadiumShape,
+  extrudeFlat,
+  flatShapeGeometry,
+} from "./table-geometry";
 
-const FELT_THICKNESS = 0.05;
-const SKIRT_HEIGHT = 0.16;
+/**
+ * Felt/rail/skirt sizes below were all tuned against the old, larger
+ * FELT_RADIUS_X. Pulling the table in (see seat-layout.ts) without also
+ * thinning these left the rail and cloth reading proportionally heavier
+ * than before — a smaller table with the same absolute cushion width is a
+ * *thicker*-looking one, not just a smaller one. Every constant in this
+ * file was rescaled down with the felt, so the table's proportions (rail
+ * width vs. felt size, felt vs. cushion thickness) are unchanged from the
+ * previous pass; only the whole assembly got smaller.
+ *
+ * Rescaled a fourth time by 1.2/1.45 = 0.827586 alongside FELT_RADIUS_X
+ * going 1.45 → 1.2 (seat-layout.ts). These are absolute world units, not
+ * derived from FELT_RADIUS_X, so they have to move by hand every round or
+ * the table reads proportionally thicker as it shrinks.
+ */
+const FELT_THICKNESS = 0.0199;
+const SKIRT_HEIGHT = 0.0869;
+
+/** Felt half-extents, the shared "where does the cloth end" boundary every
+ * other stadium below is built as an offset of. */
+const FELT_EXTENT = { halfLength: FELT_RADIUS_X, halfWidth: FELT_RADIUS_Z };
+
+/**
+ * The padded rail's plan geometry: a stadium *ring*, not a stretched torus.
+ *
+ * A torus non-uniformly scaled to reach an oval plan also scales its own
+ * tube cross-section, so the old rail read visibly fatter along the long
+ * sides than at the ends — the padding was a side effect of the scale
+ * trick, not a chosen width. `RAIL_WIDTH` is one true width, offset
+ * uniformly around the whole stadium via `offsetStadium`, so the cushion
+ * reads the same thickness everywhere, straight sides and rounded ends
+ * alike. `RAIL_OVERLAP` pulls the ring's inner edge in past the felt
+ * boundary by the same amount the old torus's tube did, so the cushion
+ * still visually laps the cloth's stapled edge instead of butting against
+ * it with a seam.
+ */
+const RAIL_WIDTH = 0.0869;
+const RAIL_OVERLAP = 0.0232;
+const RAIL_OUTER = offsetStadium(FELT_EXTENT.halfLength, FELT_EXTENT.halfWidth, RAIL_WIDTH);
+const RAIL_INNER = offsetStadium(FELT_EXTENT.halfLength, FELT_EXTENT.halfWidth, -RAIL_OVERLAP);
+const RAIL_DEPTH = 0.0331;
+const RAIL_BEVEL_THICKNESS = 0.0132;
+const RAIL_BEVEL_SIZE = 0.012;
+
+/** Skirt: the body below the cloth, sized to sit just under the rail's
+ * outer lip rather than flush with the felt's own edge. */
+const SKIRT_EXTENT = offsetStadium(FELT_EXTENT.halfLength, FELT_EXTENT.halfWidth, RAIL_WIDTH * 0.82);
+
+/** Betting line: an inset stadium ring, stroked thin. Matches the old
+ * ring's proportions (inner radius 98.5% of outer) rather than a fixed
+ * world-unit stroke width, so it scales the same way with the felt. */
+const BETTING_LINE_INSET = 0.72;
+const BETTING_LINE_OUTER = offsetStadium(
+  FELT_EXTENT.halfLength * BETTING_LINE_INSET,
+  FELT_EXTENT.halfWidth * BETTING_LINE_INSET,
+  0,
+);
+const BETTING_LINE_INNER = offsetStadium(
+  BETTING_LINE_OUTER.halfLength * 0.985,
+  BETTING_LINE_OUTER.halfWidth * 0.985,
+  0,
+);
 
 /**
  * The floor, as a ring-subdivided disc carrying its gradient in vertex
@@ -114,7 +181,85 @@ function CarpetFloor() {
   );
 }
 
+/**
+ * The table's three stadium layers (rail, skirt, felt) plus the printed
+ * betting line, built once and disposed on unmount — same lifecycle as
+ * CarpetFloor's hand-built geometry above.
+ *
+ * Each geometry is built at the origin by `extrudeFlat`/`flatShapeGeometry`
+ * and then translated to its final height by aligning a bounding-box edge
+ * to a named target Y, rather than by hand-computing where an
+ * ExtrudeGeometry's bevel puts its front/back faces. That's what CLAUDE.md's
+ * "measured, not guessed" rule looks like for a mesh instead of a render:
+ * the alternative is a magic vertical offset that silently stops matching
+ * the geometry the moment RAIL_DEPTH or a bevel constant changes.
+ */
+function useTableGeometry() {
+  return useMemo(() => {
+    const alignTop = (geometry: THREE.BufferGeometry, targetTopY: number) => {
+      geometry.computeBoundingBox();
+      const top = geometry.boundingBox?.max.y ?? 0;
+      geometry.translate(0, targetTopY - top, 0);
+      return geometry;
+    };
+
+    // Rail: a padded stadium ring, pillowed by an ExtrudeGeometry bevel
+    // rather than a torus's round tube — a bevel this size reads as a
+    // stitched cushion top without a lathed profile.
+    const rail = alignTop(
+      extrudeFlat(buildStadiumRingShape(RAIL_OUTER, RAIL_INNER), {
+        depth: RAIL_DEPTH,
+        bevelEnabled: true,
+        bevelThickness: RAIL_BEVEL_THICKNESS,
+        bevelSize: RAIL_BEVEL_SIZE,
+        bevelSegments: 4,
+        curveSegments: 24,
+      }),
+      FELT_TOP_Y + 0.0265,
+    );
+
+    // Skirt: the straight-walled body below the cloth, no bevel.
+    const skirt = alignTop(
+      extrudeFlat(buildStadiumShape(SKIRT_EXTENT), {
+        depth: SKIRT_HEIGHT,
+        bevelEnabled: false,
+        curveSegments: 24,
+      }),
+      FELT_TOP_Y - 0.0397,
+    );
+
+    // Felt: a thin flat stadium slab, top surface exactly at FELT_TOP_Y —
+    // chips, cards and the pot all rest against that same constant.
+    const felt = alignTop(
+      extrudeFlat(buildStadiumShape(FELT_EXTENT), {
+        depth: FELT_THICKNESS,
+        bevelEnabled: false,
+        curveSegments: 24,
+      }),
+      FELT_TOP_Y,
+    );
+
+    // Betting line: a flat inset ring, no thickness of its own.
+    const bettingLine = flatShapeGeometry(buildStadiumRingShape(BETTING_LINE_OUTER, BETTING_LINE_INNER));
+    bettingLine.translate(0, FELT_TOP_Y + 0.001, 0);
+
+    return { rail, skirt, felt, bettingLine };
+  }, []);
+}
+
 export function Table3D() {
+  const { rail, skirt, felt, bettingLine } = useTableGeometry();
+
+  useEffect(
+    () => () => {
+      rail.dispose();
+      skirt.dispose();
+      felt.dispose();
+      bettingLine.dispose();
+    },
+    [rail, skirt, felt, bettingLine],
+  );
+
   return (
     <group>
       {/* Floor — everything's shadows land here and on the felt, and at this
@@ -125,52 +270,30 @@ export function Table3D() {
           at 2560x1080. */}
       <CarpetFloor />
 
-      {/* Padded rail: a raised leather ring riding the felt's edge. A torus,
-          not a solid plate — a plate whose top sits above the felt hides the
-          entire cloth (measured on a real render, not hypothetical). */}
-      <mesh
-        position={[0, FELT_TOP_Y + 0.005, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        scale={[FELT_RADIUS_X, FELT_RADIUS_Z, 1]}
-        castShadow
-        receiveShadow
-      >
-        <torusGeometry args={[1, 0.075, 14, 64]} />
+      {/* Padded rail: a raised stadium ring riding the felt's edge — a true
+          uniform-width cushion now, not a torus stretched thinner along its
+          own tube by the non-uniform scale an ellipse used to need. */}
+      <mesh geometry={rail} castShadow receiveShadow>
         <meshStandardMaterial color="#2b1f15" roughness={0.5} metalness={0.05} />
       </mesh>
 
       {/* Table skirt: the body below the cloth, seen from the side. */}
-      <mesh
-        position={[0, FELT_TOP_Y - 0.02 - SKIRT_HEIGHT / 2, 0]}
-        scale={[FELT_RADIUS_X * 1.05, 1, FELT_RADIUS_Z * 1.05]}
-        castShadow
-        receiveShadow
-      >
-        <cylinderGeometry args={[1, 1.03, SKIRT_HEIGHT, 56]} />
+      <mesh geometry={skirt} castShadow receiveShadow>
         <meshStandardMaterial color="#241a12" roughness={0.55} metalness={0.05} />
       </mesh>
 
       {/* The felt itself. The table stays green — chrome rules don't reach the cloth. */}
-      <mesh
-        position={[0, FELT_TOP_Y - FELT_THICKNESS / 2, 0]}
-        scale={[FELT_RADIUS_X, 1, FELT_RADIUS_Z]}
-        receiveShadow
-      >
-        <cylinderGeometry args={[1, 1, FELT_THICKNESS, 56]} />
+      <mesh geometry={felt} receiveShadow>
         <meshStandardMaterial color="#1c5c40" roughness={0.92} metalness={0} />
       </mesh>
 
-      {/* Inner betting-line ring, painted as a thin darker ellipse. */}
-      <mesh
-        position={[0, FELT_TOP_Y + 0.001, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        scale={[FELT_RADIUS_X * 0.72, FELT_RADIUS_Z * 0.72, 1]}
-      >
-        <ringGeometry args={[0.985, 1, 64]} />
+      {/* Inner betting-line ring, painted as a thin darker stadium. */}
+      <mesh geometry={bettingLine}>
         <meshBasicMaterial color="#14452f" />
       </mesh>
 
-      {/* Pedestal and base. */}
+      {/* Pedestal and base — left circular: centred under the table, they
+          read the same under a stadium felt as they did under an ellipse. */}
       <mesh position={[0, (FELT_TOP_Y - SKIRT_HEIGHT) / 2, 0]} castShadow>
         <cylinderGeometry args={[0.55, 0.75, FELT_TOP_Y - SKIRT_HEIGHT, 24]} />
         <meshStandardMaterial color="#1b1420" roughness={0.7} />

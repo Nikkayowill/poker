@@ -156,6 +156,20 @@ test("the DOM felt yields to the room, and only once the room exists", async ({ 
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   try {
     const { page } = await seatAtTable(context);
+    // The nameplates are the last thing in the room to exist, and nothing
+    // above waits for them. `SeatNameplates` is gated on a measured stage
+    // (`size.width > 0`, live-table-hud.tsx), and that size arrives from a
+    // ResizeObserver callback -- so it lands an indeterminate number of
+    // frames after the room reports ready. Evaluating straight after
+    // `seatAtTable` therefore raced: `livePlateVisible` reads `.some()` over
+    // an empty NodeList and returns false, which looks exactly like the
+    // room having hidden the plates rather than not having drawn them yet.
+    //
+    // The race was always here; it only became visible when the table began
+    // mounting a tick later (the renderer render gate in poker-table.tsx).
+    // Waiting is the fix rather than a retry, because what this test asserts
+    // is which layer paints, not how quickly.
+    await page.locator('[class*="plateName"]').first().waitFor({ state: "attached" });
     const painted = await page.evaluate(() => {
       const area = document.querySelector(".table-area");
       const felt = document.querySelector(".poker-felt");

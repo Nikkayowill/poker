@@ -131,6 +131,7 @@ export function PokerTable({
   betStyle,
   onCycleBetStyle,
   tableRenderer,
+  tableRendererSettled,
   onCycleTableRenderer,
   onSignIn,
   onSignOut,
@@ -149,6 +150,8 @@ export function PokerTable({
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
   tableRenderer: TableRenderer;
+  /** Has the stored renderer choice arrived? See the render gate below. */
+  tableRendererSettled: boolean;
   onCycleTableRenderer: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
@@ -179,20 +182,36 @@ export function PokerTable({
   // the ring they are placed by the same ellipse as everyone else, and the
   // only thing still measured here is the table's own box.
   const actionLayerRef = useRef<HTMLDivElement | null>(null);
+  // The window, alongside the table's own box. The plate is still what sizes
+  // the seats; this answers the one question the plate stopped being able to
+  // answer once the landscape rules made the wrap fill its area, which is
+  // whether this IS the landscape plate -- see LANDSCAPE_MAX_HEIGHT_PX in
+  // lib/game/table-geometry.ts. Null until mounted so the server render and
+  // the first commit agree, both falling back to the plate-derived ellipse.
+  const [viewport, setViewport] = useState<{ width: number; height: number } | null>(null);
   useEffect(() => {
     const wrap = tableWrapRef.current;
     if (!wrap) return;
     const measure = () => {
       const rect = wrap.getBoundingClientRect();
       setTableSize({ width: rect.width, height: rect.height });
+      // Measured on the same triggers as the box, for the reason the two
+      // seat vectors are: two listeners could disagree about the layout
+      // after a resize, and the ring reads both in one expression.
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(wrap);
     window.addEventListener("resize", measure);
+    // A phone rotating between the landscape and portrait plates is exactly
+    // the transition this ring switches on, and Safari fires this without
+    // always firing `resize`.
+    window.addEventListener("orientationchange", measure);
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
     };
   }, []);
 
@@ -303,7 +322,11 @@ export function PokerTable({
   // rather than projecting a competing one back onto it.
   const ringGeometry = useMemo(
     () => orderedSeats.map((_, index) => {
-      const geometry = seatGeometry(index, orderedSeats.length, radiiForTable(tableSize));
+      const geometry = seatGeometry(
+        index,
+        orderedSeats.length,
+        radiiForTable(tableSize, viewport ?? undefined),
+      );
       return {
         left: `${geometry.x}%`,
         top: `${geometry.y}%`,
@@ -327,10 +350,12 @@ export function PokerTable({
         "--seat-out-y": (-geometry.towardPot.y).toFixed(3),
       } as React.CSSProperties;
     }),
-    // Depends on the measured box rather than the window: the same viewport
-    // can hold a wide plate or a tall one depending on how much room the
-    // header and action bar left behind, and only the box knows which.
-    [orderedSeats, tableSize],
+    // The measured box decides the plate's shape -- the same viewport can
+    // hold a wide plate or a tall one depending on how much room the header
+    // and action bar left behind, and only the box knows which. The window is
+    // here for the one thing the box cannot report, which is whether this is
+    // the landscape band at all; see radiiForTable.
+    [orderedSeats, tableSize, viewport],
   );
 
   const seatOrderKey = orderedSeats.map((seat) => seat.id).join(",");
@@ -637,6 +662,35 @@ export function PokerTable({
     game.id, game.isSeated, roomCodeCopied, copyRoomCode, profile, onCustomize, onSignIn,
     onSignOut, onLeaveSeat,
   ]);
+
+  /* ENGINE RENDER GATE.
+
+     Nothing paints until the renderer choice is genuinely known. The stored
+     preference arrives a tick after the first commit (the deferred set in
+     use-stored-preference.ts), and DEFAULT_TABLE_RENDERER is `webgl_3d` --
+     so without this a player who chose the classic table watched the 3D room
+     mount, acquire a GL context, paint, and get torn down again on the very
+     next commit. A blank hold is cheaper than a discarded room and reads as
+     a load rather than as a glitch.
+
+     BELOW THE HOOKS, NOT AT THE TOP OF THE COMPONENT, and that is not a
+     stylistic choice. Returning before the ~30 hooks above would give this
+     component two different hook sequences depending on a boolean that flips
+     on the second commit, which is precisely the case React's rules of hooks
+     forbid; it would throw on the transition rather than fix a flicker. The
+     hooks all run, find their refs null, and no layout node is created --
+     which is what was actually asked for.
+
+     100dvh, not 100vh: on mobile browsers `vh` is the tallest the viewport
+     ever gets, chrome included, so a 100vh hold is visibly taller than the
+     table that replaces it and the whole page shifts on the swap. The rest
+     of this codebase uses dvh for the same reason. The colour is the room's
+     own base tone from 01-tokens.css, so the hold is indistinguishable from
+     the shell that follows it rather than a black flash between two greys. */
+  if (!tableRendererSettled) {
+    return <div style={{ width: "100vw", height: "100dvh", backgroundColor: "#0b0c0d" }} />;
+  }
+
   return (
     <main className="game-shell">
       {/* Gameplay only. The spec puts three things in the table HUD -- logo,
@@ -708,6 +762,7 @@ export function PokerTable({
               game={game}
               betFlights={betFlights}
               onReady={reportSceneReady}
+              profile={profile}
             />
           ) : (
             <TableScene

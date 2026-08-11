@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { Check, Cloud, Coins, ShieldCheck, Users, X } from "lucide-react";
 import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
+import type { TableRenderer } from "@/lib/scene/table-renderer";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { accountsEnabled } from "@/lib/auth/client";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
@@ -40,6 +41,9 @@ export function Lobby({
   onContinueAccount,
   onContinueAsGuest,
   onSignOut,
+  tableRenderer,
+  webglAvailable,
+  onTableRendererChange,
 }: {
   profile: PlayerProfile | null;
   onQuickPlay: (name: string, tier: StakesTier, buyIn: number) => void;
@@ -66,6 +70,11 @@ export function Lobby({
   onContinueAccount: () => void;
   onContinueAsGuest: () => void;
   onSignOut: () => void;
+  /** The table-view choice, surfaced in the buy-in modal -- see BuyInModal's
+   * own header for why it belongs there and not only in the in-game menu. */
+  tableRenderer: TableRenderer;
+  webglAvailable: boolean;
+  onTableRendererChange: (renderer: TableRenderer) => void;
 }) {
   const [name, setName] = useState(profile?.displayName ?? "");
   const [joinCode, setJoinCode] = useState("");
@@ -337,6 +346,9 @@ export function Lobby({
           onClose={() => setBuyInMode(null)}
           playerName={name}
           onPlayerNameChange={setName}
+          tableRenderer={tableRenderer}
+          webglAvailable={webglAvailable}
+          onTableRendererChange={onTableRendererChange}
           onConfirm={(tier, buyIn) => {
             if (buyInMode === "host") onHostPrivate(name.trim() || "You", tier, buyIn);
             else onQuickPlay(name.trim() || "You", tier, buyIn);

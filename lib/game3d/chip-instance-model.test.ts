@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHIPS_PER_COLUMN,
   POT_PILE_SEED,
   buildPushLegs,
   pileChipCount,
@@ -86,11 +87,19 @@ describe("restingPileChipPoses", () => {
   it("keeps a full felt free of same-height overlaps across every pile at once", () => {
     // Six seats' standing bets plus the pot, all at the display cap. If any
     // two piles were close enough for their jitter to make chips at equal
-    // heights intersect, this is where it shows.
+    // heights intersect, this is where it shows — and since the cap is now
+    // three side-by-side COLUMNS rather than one tower, "close enough" is a
+    // real question about neighbouring piles rather than a formality.
+    //
+    // The amount has to be big enough to actually reach the cap: the pile
+    // count grows as a square root of the amount now, so the old 9,999 draws
+    // 29 chips, not 60, and this would have quietly stopped testing a full
+    // felt at all.
+    const CAPPED = 10_000_000;
     const poses = [
-      ...restingPileChipPoses(9999, POT_POSITION, POT_PILE_SEED, "pot"),
+      ...restingPileChipPoses(CAPPED, POT_POSITION, POT_PILE_SEED, "pot"),
       ...[0, 1, 2, 3, 4, 5].flatMap((slot) =>
-        restingPileChipPoses(9999, betSpotPosition(slot), seatPileSeed(slot), `seat-${slot}`),
+        restingPileChipPoses(CAPPED, betSpotPosition(slot), seatPileSeed(slot), `seat-${slot}`),
       ),
     ];
     expect(poses.length).toBe(7 * MAX_CHIPS_PER_PILE);
@@ -148,8 +157,15 @@ describe("buildPushLegs", () => {
 
   it("a landing IS the resting slot it will become — the same coordinates, not near them", () => {
     // The whole reason a chip does not snap on arrival.
-    const legs = buildPushLegs(4, origin, destination);
-    const resting = restingPileChipPoses(4, TARGET, 9, "after");
+    //
+    // The count is taken from the resting pile rather than written as a
+    // literal beside an amount that is expected to produce it: how many
+    // chips an amount draws is `pileChipTarget`'s business and has changed
+    // once already, and a mismatch here would silently compare four legs
+    // against a one-chip pile and read as an unrelated crash.
+    const resting = restingPileChipPoses(150, TARGET, 9, "after");
+    expect(resting.length).toBeGreaterThan(1);
+    const legs = buildPushLegs(resting.length, origin, destination);
     legs.forEach((leg, i) => {
       expect(leg.target.x).toBe(resting[i].x);
       expect(leg.target.y).toBe(resting[i].y);
@@ -273,5 +289,49 @@ describe("action-driven cadence", () => {
     expect(raise.staggerMs).toBeGreaterThan(call.staggerMs);
     expect(raise.tiltRad).toBeGreaterThan(call.tiltRad);
     expect(raise.travelMs).toBeLessThan(call.travelMs);
+  });
+});
+
+describe("pileSlot columns", () => {
+  it("breaks a pile into stacks instead of building a tower", () => {
+    // The complaint this answers: a big pot should read as more chips, laid
+    // out the way a dealer lays them out, not as one impossible column.
+    const poses = restingPileChipPoses(200_000, POT_POSITION, POT_PILE_SEED, "pot");
+    const heights = poses.map((p) => p.y - POT_POSITION.y);
+    const tallest = Math.max(...heights) / (CHIP.radius * 2);
+    // A 20-stack is 1.7 diameters tall. Nothing may exceed that, at any
+    // amount, because that is the point at which a stack becomes a tower.
+    expect(tallest).toBeLessThan(1.8);
+    expect(poses.length).toBeGreaterThan(CHIPS_PER_COLUMN);
+  });
+
+  it("keeps a chip's slot fixed as the pile grows around it", () => {
+    // The invariant that forced the alternating fan. If a column's offset
+    // depended on how many columns the pile currently had, then the chip
+    // that opens a new column would re-place every chip already resting and
+    // they would visibly teleport sideways mid-hand.
+    const small = restingPileChipPoses(2_000, POT_POSITION, POT_PILE_SEED, "pot");
+    const large = restingPileChipPoses(200_000, POT_POSITION, POT_PILE_SEED, "pot");
+    expect(large.length).toBeGreaterThan(small.length);
+    small.forEach((pose, i) => {
+      expect(large[i].x, `chip ${i} x`).toBeCloseTo(pose.x, 10);
+      expect(large[i].y, `chip ${i} y`).toBeCloseTo(pose.y, 10);
+      expect(large[i].z, `chip ${i} z`).toBeCloseTo(pose.z, 10);
+    });
+  });
+
+  it("spreads along the rail, not toward the player", () => {
+    // Columns follow the tangent so a side seat's bet stays on the cloth. A
+    // radial spread would walk the outer column over the rail — the same
+    // failure chip-props.ts documents for the bankroll offset.
+    const spot = betSpotPosition(2);
+    const poses = restingPileChipPoses(200_000, spot, seatPileSeed(2), "seat-2");
+    const radial = Math.hypot(spot.x, spot.z);
+    for (const pose of poses) {
+      // Projection of the chip's offset onto the outward radial: a pure
+      // tangential spread leaves this at essentially zero.
+      const along = (pose.x * spot.x + pose.z * spot.z) / radial - radial;
+      expect(Math.abs(along), "radial drift").toBeLessThan(CHIP.radius);
+    }
   });
 });

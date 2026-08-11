@@ -279,7 +279,13 @@ export function TableScene({
       for (const chip of chips) paintChip(engine.ctx, engine.view, chip);
       engine.frames += 1;
 
-      engine.scheduler = afterFrame(engine.scheduler, now, moved);
+      // A timed chip reports its terminal snap on this frame. Once the last
+      // chip is removed there is no reason to pay even the scheduler linger:
+      // park the state machine immediately instead of requesting a tail of
+      // sub-pixel frames.
+      engine.scheduler = engine.chips.isIdle()
+        ? SLEEPING
+        : afterFrame(engine.scheduler, now, moved);
       // Re-arm only while awake. This is the whole battery saving: an idle
       // table stops requesting frames entirely rather than repainting an
       // unchanged scene sixty times a second.

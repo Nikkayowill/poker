@@ -1526,6 +1526,92 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
     is finally applied, via `setColorAt`: under this multiply blend the
     output is `dst * (1 - a(1 - colour))`, so a grey instance colour scales
     a decal's darkness at no extra draw call.
+- **The 3D room's camera fit is exact now, and the table has its real plan
+  shape.** Five things worth not relearning:
+  - **`frameCamera` is a search, not a formula.** The closed form solved each
+    axis separately and took the larger, summing two upper bounds that never
+    co-occur — so landscape distance came out CONSTANT at 6.21 for every
+    aspect >= 1.5, leaving 36% of an ultrawide frame dead. It bisects distance
+    and Newton-steps the aim over the real projected point set now: 40 + 6
+    fixed iterations, ~250 scalar projections, once per resize, no allocation
+    (`boundsAt` is scalar-only and deliberately does NOT route through
+    `projectToNdc`). Every aspect now fills to exactly `1/SAFETY`.
+  - **The probe set was measuring width at the wrong height.** It checked
+    half-width at `FELT_TOP_Y` only, but a body stands 1.5 units up and is
+    therefore NEARER a downward-looking camera, where the same x projects
+    wider — and its `landscapeness >= 1` gate was a step over a continuous
+    blend. At 1180x820 the outer seats projected to |x| = 1.04, clipped, with
+    the fit reporting success. `aimDrop` (metres) became `contentBias` (NDC)
+    for the same class of reason.
+  - **The felt was 1.63:1; a real six-max oval is 2:1.** `FELT_RADIUS_Z` is
+    derived from `TABLE_WIDTH_M` now, not typed, and `dimensions.ts`
+    re-exports `TABLE_LENGTH_M` from seat-layout so there is one 2.13. This
+    was not only accuracy: the fit is bound by DEPTH at every landscape
+    aspect, so a rounder table pushes its own camera back and cannot use the
+    width it freed. Felt went 41% -> 50% of an ultrawide frame and 44% -> 55%
+    on a landscape phone.
+  - **Re-proportioning broke four tests, and each was a real defect.** The
+    bankroll props are physical objects at a fixed real size, so an 18%
+    shallower plate put the deep tier's corner at 1.02 of the felt ellipse
+    (inset 0.84 -> 0.82, angle offset 0.36 -> 0.50, both re-solved by scan,
+    and `HOLE_CARD_INSET` 0.82 -> 0.78 because bankroll must sit strictly
+    outside cards). And the near/far seats moved 1.78 -> 1.55, deep into the
+    cone where a smoothstep is flattest, so folding stopped reading as
+    walking into the dark: the truss dropped 3.2 m -> 2.6 m to steepen the
+    gradient, with `intensity` re-exposed 230 -> 156 by `(5.60/4.39)^1.6` so
+    the change touched shape and not brightness. `SPOT_POOL_RADIUS` is
+    derived from `FOLD_SLIDE` now, which is what its comment always claimed.
+  - **There is no backdrop and cannot be one.** Every frustum ray hits the
+    floor — the top-left corner still descends ~28 degrees — so a skybox or
+    wall would be drawn entirely off screen. `lib/game3d/floor-environment.ts`
+    owns the background instead: `FLOOR_RADIUS` solved from the camera (the
+    literal 9 was already 0.6 units narrower than the frame at 2560x1080,
+    hidden only because fog happened to be opaque out there), a vertex-colour
+    carpet whose rim colour IS `STUDIO_BACKDROP` so a lit floor meets a fogged
+    void with no horizon line and no fog-exempt materials. One draw call, 432
+    triangles. Vertex colours go through `THREE.Color(..., SRGBColorSpace)` —
+    written raw they render far darker than the literal reads, which on a
+    near-black palette is "gone". `horizonInFrame()` is the assertion the
+    whole premise rests on.
+  - **The room runs `frameloop="always"` and must.** drei's `useAnimations`
+    ticks the .glb mixers through `useFrame`, so demand mode freezes every
+    seated character. `awake()` reporting false while `framesRendered()`
+    climbs is correct — `awake()` is the CHIP scheduler. Do not "fix" it.
+- **The classic 2D table's hole cards and bet labels are compact and
+  seat-anchored now (2026-08-10), 2D only — the 3D room above was explicitly
+  out of scope.** Ground truth for the whole pass was
+  `window.__stackchipsScene.betSpot(slot)`, read live and diffed against the
+  DOM, not derived on paper: the two ellipses (the DOM's percentage one in
+  `lib/game/table-geometry.ts`, the canvas's world-unit one in
+  `lib/scene/seat-ring.ts`) are different shapes and cannot be reconciled by
+  one flat constant, so every number below was measured, not guessed.
+  - **Your own hole cards dropped from a 104px ceiling to a 50px one**
+    (`16-first-person.css`), and moved from floating above your own head to
+    sitting beside your figure (`left: 100%` on `.seat-mine .seat-cards`,
+    vertically centred on the avatar) — the 104px cap, not the position, was
+    the actual complaint. Opponent backs shrank .26 → .20 of the seat and
+    pulled up from the chest (`top: 80%`) to `66%`, nudged along the
+    outward `--seat-out-x/-y` vector `poker-table.tsx` now publishes per seat
+    (see below) so they read as tucked beside the avatar rather than centred
+    below it — kept below the 48%-of-face-height floor
+    `visual-layering.spec.ts` enforces the whole time, since that line exists
+    specifically so a card back never masks a player's own face.
+  - **The bet-amount label and the chip pile it should sit beside were ~80px
+    apart at every seat**, because `.table-bet`'s reach was a flat pixel
+    offset (76px) along the DOM ellipse's inward vector while the canvas
+    pile lives at `BET_INSET` (0.74 of the felt's own radius) in a
+    differently-proportioned world ellipse — two independently tuned systems
+    that only agreed on direction. 155px closes the x-axis to under a pixel
+    at every side seat; the y-axis has an irreducible 17-70px residual
+    depending on seat angle, which is the two ellipses' shape mismatch, not
+    an untuned number. The local player's own bet needed a *separate*
+    205px override (`.seat-mine .table-bet`) rather than a bigger shared
+    constant: `NEAR_SEAT_BET_INSET` (0.35) pulls that one pile in toward the
+    centre instead of out toward the rail, so it was never the same target.
+  - **`--seat-out-x`/`--seat-out-y`** (`poker-table.tsx`, the negation of the
+    existing `--seat-dx`/`--seat-dy` toward-pot vector) is what both the
+    card nudge above and any future compact-marker work should read for
+    "away from the pot" — it did not exist before this pass.
 - **M18 is in: player rank, XP and a daily streak.** `lib/progression/rank.ts`
   is the whole curve, pure and closed-form (XP = Gold wagered / 10; level N
   costs `XP_STEP·(N-1)N/2`, inverted by a square root that is then re-checked

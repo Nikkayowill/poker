@@ -118,17 +118,69 @@ export function studioFogForAspect(aspect: number): StudioFog {
 /* The spotlight                                                       */
 /* ------------------------------------------------------------------ */
 
-/** A studio truss hangs about 3.2 m over the floor — stated in metres and
- * converted through the room's one ruler, like every physical dimension. */
-const SPOT_HEIGHT_M = 3.2;
+/**
+ * How far a folded figure slides away from the table, along its seat's
+ * outward radial.
+ *
+ * Declared up here, ahead of the light, because the lit pool below is
+ * DERIVED from it — the pool's whole specification is "the outermost folded
+ * player sits at the rim", and that sentence cannot be evaluated before the
+ * fold exists.
+ *
+ * Deep enough to walk down the spotlight's penumbra and into the fog band;
+ * shallow enough that a folded *side* seat still projects inside the
+ * landscape frame — at 0.8 the slot-1 head lands at NDC x ~ 1.06 (clipped);
+ * at 0.55 it is ~0.97. The layout test measures this against the solved
+ * camera at every target aspect, so a deeper slide cannot silently push a
+ * player off screen again — and note the camera sits CLOSER than it did
+ * since the fit was made exact, so this ceiling is tighter now, not looser.
+ */
+export const FOLD_SLIDE = 0.55;
+
+/**
+ * Height of the studio truss over the floor, in metres, converted through
+ * the room's one ruler like every physical dimension.
+ *
+ * Lowered from 3.2 m when the felt took its true 2.13 x 1.07 proportions,
+ * and the reason is geometric rather than aesthetic. On the rounder plate
+ * the six seats sat at plan radii 1.78 and 2.44; on the real one they sit
+ * at 1.55 and 2.40, so the near and far players moved a quarter of a unit
+ * IN while the side players did not move. That puts the two of them deep
+ * inside the cone, where a smoothstep is at its flattest — and a fold is an
+ * absolute slide, so from there it no longer bought a visible drop in
+ * light. Folding stopped reading as walking into the dark for exactly the
+ * two seats the camera looks straight at.
+ *
+ * A lower truss subtends the same pool over a shorter drop, which steepens
+ * the gradient across the whole table and restores it. 2.6 m over the floor
+ * is ~1.85 m over the cloth: a pendant over a card table, which is what
+ * this is.
+ */
+const SPOT_HEIGHT_M = 2.6;
 
 /**
  * Radius of the lit pool on the felt plane. Sized so the outermost *folded*
- * player (seat ring plus FOLD_SLIDE) sits at the very rim of the cone —
- * everyone at the table is inside the light, and folding is a walk down the
- * penumbra gradient into the dark.
+ * player sits at the very rim of the cone — everyone at the table is inside
+ * the light, and folding is a walk down the penumbra gradient into the dark.
+ *
+ * That was always this constant's stated job; it is now actually computed
+ * that way rather than being a 3.3 that happened to satisfy it on the plate
+ * it was typed against. The margin is what keeps the outermost folded seat
+ * just inside the rim rather than exactly on it, where the falloff is zero
+ * and a figure disappears rather than dims.
  */
-const SPOT_POOL_RADIUS = 3.3;
+const SPOT_POOL_MARGIN = 1.08;
+
+function maxFoldedPlanRadius(): number {
+  let widest = 0;
+  for (let slot = 0; slot < SEAT_COUNT_3D; slot += 1) {
+    const seat = seatPosition(slot);
+    widest = Math.max(widest, Math.hypot(seat.x, seat.z) + FOLD_SLIDE);
+  }
+  return widest;
+}
+
+const SPOT_POOL_RADIUS = maxFoldedPlanRadius() * SPOT_POOL_MARGIN;
 
 const SPOT_Y = SPOT_HEIGHT_M * UNITS_PER_METRE;
 const SPOT_DROP = SPOT_Y - FELT_TOP_Y;
@@ -139,7 +191,14 @@ export const STUDIO_SPOT = {
   angle: Math.atan(SPOT_POOL_RADIUS / SPOT_DROP),
   /** The televised soft edge: light falls off across most of the cone. */
   penumbra: 0.85,
-  intensity: 230,
+  /*
+   * Re-exposed for the lower truss, not re-tuned by eye. Intensity falls as
+   * distance^decay, so shortening the throw from 5.60 to 4.39 units brightens
+   * the felt by (5.60/4.39)^1.6 = 1.48x — a blown-out cloth, from a change
+   * that was about the shape of the gradient and was never meant to touch
+   * exposure at all. 230 / 1.48 holds the table at the level it was judged at.
+   */
+  intensity: 156,
   decay: 1.6,
   color: "#ffeed8",
 } as const;
@@ -161,17 +220,6 @@ export function spotFalloffAt(planRadius: number): number {
 /* ------------------------------------------------------------------ */
 /* Fold / bet posing                                                   */
 /* ------------------------------------------------------------------ */
-
-/**
- * How far a folded figure slides away from the table, along its seat's
- * outward radial. Deep enough to walk down the spotlight's penumbra and
- * into the fog band; shallow enough that a folded *side* seat still
- * projects inside the landscape frame — at 0.8 the slot-1 head lands at
- * NDC x ≈ 1.06 (clipped); at 0.55 it is ≈ 0.97. The layout test measures
- * this against the solved camera at every target aspect, so a deeper
- * slide cannot silently push a player off screen again.
- */
-export const FOLD_SLIDE = 0.55;
 
 /** Backward tilt (radians about local X) for a folded figure. */
 export const FOLD_TILT = -0.16;

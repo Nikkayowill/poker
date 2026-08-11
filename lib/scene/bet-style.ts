@@ -2,12 +2,10 @@
  * The three ways a bet's chips can travel, and the pure maths behind the two
  * that need any.
  *
- * "stacked_toss" is the house gesture and the default: chips leave the
- * player's tray one at a time on a 30ms waterfall, each on its own arc, and
- * each lands on top of the last to build a real stack in front of the
- * bettor. It is what a dealer's eye actually follows — discrete chips, in
- * order, accumulating — and it is the only style that produces a countable
- * pile at the bet spot.
+ * "stacked_toss" is the house gesture and the default: a prebuilt 2D chip
+ * pool travels intact from the player's tray to the betting line, matching
+ * PlayPokerGO's container motion and 16-high stack layout. Every chip shares
+ * one clock, so the column remains countable throughout the animation.
  *
  * "neat_slide" pushes the whole bet as one rigid pillar — the tight,
  * casino-regular gesture of a player cutting out a stack and sliding it
@@ -123,7 +121,7 @@ export function stackLeanOffset(
  * the parent keeps a flight event queued, so a slide is always finished
  * before its event is recycled.
  */
-export const NEAT_SLIDE_DURATION_MS = 520;
+export const NEAT_SLIDE_DURATION_MS = 820;
 
 /**
  * The splash's parabola, in world units. Taller than the ordinary slide arc

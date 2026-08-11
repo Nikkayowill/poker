@@ -25,8 +25,10 @@
  */
 
 import { chipBreakdown, type ChipDenomination } from "./denominations";
+import { CHIP } from "./dimensions";
 import {
   chipStackY,
+  effectivePushStyle,
   pileChipJitter,
   pileChipRotationY,
   sampleChipPush,
@@ -56,17 +58,82 @@ export interface PileSlot extends Vec3 {
 }
 
 /**
+ * How many chips a single column holds before the next one starts beside it.
+ *
+ * 20 is what a dealer counts into a stack, and it is also about where a
+ * column stops looking like a stack: 20 discs is 66 mm against a 39 mm
+ * diameter, so 1.7 times as tall as it is wide. Past that a single column
+ * is a tower, which is the thing a real table never has.
+ */
+export const CHIPS_PER_COLUMN = 20;
+
+/**
+ * Gap between column centres, as a fraction of a chip's diameter. Just over
+ * 1 so neighbouring columns stand clear of each other rather than merging
+ * into one blur at a distance.
+ */
+const COLUMN_PITCH = 1.18;
+
+/**
+ * The direction a pile's columns march in, given where the pile sits.
+ *
+ * The tangent to the ellipse through that point — so a bet in front of a
+ * seat spreads ALONG the rail rather than toward or away from the player,
+ * which is both what a real bet looks like and what keeps a side seat's
+ * chips on the cloth instead of walking them over the rail. Derived from the
+ * position rather than passed in, so every existing caller of `pileSlot`
+ * gets the right axis without knowing there is one.
+ *
+ * The pot sits near the centre line, where the radial is along -Z, so its
+ * columns run across the table in a row — again what a dealer does.
+ */
+function columnAxis(position: Vec3): { x: number; z: number } {
+  const length = Math.hypot(position.x, position.z);
+  // A pile exactly at the centre has no tangent; the table's long axis is
+  // the only sensible answer and is also the one with room for columns.
+  if (length < 1e-6) return { x: 1, z: 0 };
+  return { x: -position.z / length, z: position.x / length };
+}
+
+/**
  * THE definition of where a chip lives. Height is exact
  * (chipStackY — flush discs, no gaps and no interpenetration); the lateral
  * offset is the bounded pile jitter, and the spin keeps eight moulded
  * inserts from lining up into a seam down the column.
+ *
+ * COLUMNS, NOT A TOWER. Chips past `CHIPS_PER_COLUMN` start a new column
+ * beside the last rather than continuing up, the way a dealer breaks a pot
+ * into stacks.
+ *
+ * The columns fan out ALTERNATELY — 0, +1, -1, +2, -2 — and that is a
+ * correctness requirement, not a look. A slot is a pure function of its
+ * index and nothing else: if the offset depended on how many columns the
+ * pile currently has, then adding the chip that opens a new column would
+ * silently re-place every chip already resting, and they would teleport
+ * sideways mid-hand. Alternating keeps the pile visually centred on its own
+ * position as it grows while leaving every existing chip exactly where it
+ * was.
+ *
+ * Because this is also what a flight aims at, a chip pushed into a pile
+ * that is already two columns deep flies to the correct slot of the correct
+ * column — the landing IS the resting place, which is the property this
+ * whole module is built around.
  */
 export function pileSlot(position: Vec3, seed: number, index: number): PileSlot {
   const { dx, dz } = pileChipJitter(index, seed);
+  const column = Math.floor(index / CHIPS_PER_COLUMN);
+  const row = index % CHIPS_PER_COLUMN;
+
+  // 0, +1, -1, +2, -2, ... — see the header on why this depends on `column`
+  // alone and never on the pile's size.
+  const step = Math.ceil(column / 2) * (column % 2 === 1 ? 1 : -1);
+  const offset = step * CHIP.radius * 2 * COLUMN_PITCH;
+  const axis = columnAxis(position);
+
   return {
-    x: position.x + dx,
-    y: chipStackY(position.y, index),
-    z: position.z + dz,
+    x: position.x + axis.x * offset + dx,
+    y: chipStackY(position.y, row),
+    z: position.z + axis.z * offset + dz,
     rotationY: pileChipRotationY(index, seed),
   };
 }
@@ -203,11 +270,17 @@ export function pushChipPoses(
   const count = Math.min(chips.length, legs.length);
   if (count === 0) return { poses: [], done: true };
 
+  // The group's cadence, resolved against the wall-clock budget once for the
+  // whole push — see effectivePushStyle. For an ordinary bet this IS the
+  // authored style; only a group big enough to overrun the next deal is
+  // compressed.
+  const flownStyle = effectivePushStyle(count, style);
+
   let done = true;
   const poses: ChipPose[] = [];
   for (let i = 0; i < count; i += 1) {
     const leg = legs[i];
-    const sample = sampleChipPush(leg.source, leg.target, elapsedMs, i, style, reducedMotion);
+    const sample = sampleChipPush(leg.source, leg.target, elapsedMs, i, flownStyle, reducedMotion);
     if (!sample.done) done = false;
     poses.push({
       key: `${keyPrefix}-${i}`,

@@ -36,8 +36,10 @@
 import {
   FELT_RADIUS_X,
   FELT_TOP_Y,
+  SEAT_COUNT_3D,
   SEAT_RING_RADIUS_X,
   SEAT_RING_RADIUS_Z,
+  seatPosition,
   type Vec3,
 } from "./seat-layout";
 
@@ -59,13 +61,13 @@ const PORTRAIT_ASPECT = 0.8;
  * above the felt plane, fovY is the lens, and `targetZ` nudges what the
  * frame is built around.
  *
- * `aimDrop` is how far *below* the felt the camera looks, which lifts the
- * table up the frame. Upright, a 2:1 table across a 9:19.5 screen fills the
- * width and leaves the height half empty; centred, that empty height is
- * split evenly above and below, and the lower half is exactly where the
- * controls and a thumb are. Aiming low gives that space to the HUD instead
- * of splitting it between two margins nobody uses. Landscape needs none of
- * this — there, height is the scarce axis.
+ * `contentBias` is where the fitted content's centre sits up the frame, in
+ * NDC. Upright, a 2:1 table across a 9:19.5 screen fills the width and
+ * leaves the height half empty; centred, that empty height is split evenly
+ * above and below, and the lower half is exactly where the controls and a
+ * thumb are. Biasing high gives that space to the HUD instead of splitting
+ * it between two margins nobody uses. Landscape sits at 0 — there, height is
+ * the scarce axis and every pixel of slack is worth reclaiming.
  */
 /*
  * Elevations raised twice from the original 46/57 (2026-08-07, product
@@ -85,12 +87,24 @@ const PORTRAIT_ASPECT = 0.8;
  * full reversion: judge any further move on a render, weighing face
  * visibility against the shadow-band/card-legibility case above.
  */
-const LANDSCAPE = { elevationDeg: 48, fovY: 40, targetZ: 0.02, aimDrop: 0 };
-// aimDrop rises with the elevation: a steeper camera converts less of the
-// drop into screen-space lift, and the upright profile's contract (the
-// felt centre rides high; the bottom of the screen belongs to the
-// controls) is test-pinned.
-const PORTRAIT = { elevationDeg: 66, fovY: 66, targetZ: -0.06, aimDrop: 2.35 };
+/*
+ * `contentBias` replaces the old world-space `aimDrop`, and the change is
+ * not cosmetic. A drop in metres converts to a different amount of
+ * screen-space lift at every elevation and distance, so it had to be
+ * re-tuned by hand whenever either moved — and in landscape, where nothing
+ * was aimed at all, the frame ended up with 30% of its height empty above
+ * the far player and 9% below the near ones. Stating the bias in the units
+ * the requirement is actually about (screen) makes "centred" mean centred at
+ * every aspect.
+ *
+ * Landscape is 0: balance the slack, which is what recovers that 30%.
+ * Upright keeps the table high — the bottom of an upright screen belongs to
+ * the action bar and a thumb — and 0.2 is calibrated to reproduce the
+ * hand-tuned placement the old `aimDrop: 2.35` produced, so the orientation
+ * that was judged on renders is not silently re-framed by this change.
+ */
+const LANDSCAPE = { elevationDeg: 48, fovY: 40, targetZ: 0.02, contentBias: 0 };
+const PORTRAIT = { elevationDeg: 66, fovY: 66, targetZ: -0.06, contentBias: 0.2 };
 
 /**
  * What must be inside the frame, as half-extents around the table's centre.
@@ -116,6 +130,8 @@ const FRAME = {
   uprightHalfWidth: FELT_RADIUS_X * 1.48,
   /** The seat ring plus a body's half-width, shoulders and elbows included. */
   playersHalfWidth: SEAT_RING_RADIUS_X + 0.55,
+  /** Half a seated figure, shoulder to centreline. */
+  bodyHalfWidth: 0.55,
   /** Far enough back for the opposite chair, far enough forward for yours. */
   halfDepth: SEAT_RING_RADIUS_Z + 0.35,
   /** Top of a seated player's head above the floor. */
@@ -143,6 +159,23 @@ export const FAR_CROWN: Vec3 = {
 /** A hair of air, so nothing sits exactly on the frustum edge. */
 const SAFETY = 1.04;
 
+/**
+ * Iteration counts for the fit. Both are fixed, so the solve is O(1) and
+ * deterministic — it runs once per resize (never in the frame loop), and the
+ * same viewport always produces bit-identical numbers.
+ *
+ * The distance search is a bisection on a monotone function: pushing the
+ * camera back can only shrink the projected extent, so there is exactly one
+ * crossing. 40 halvings of a [0.5, 60] bracket resolves it to ~5e-11 units.
+ *
+ * The aim search is a Newton step with an exact derivative (rotating the
+ * view axis down by d radians lifts a point by d/tan(halfFovY) in NDC to
+ * first order), so it converges in two or three passes; six is slack.
+ */
+const DISTANCE_ITERATIONS = 40;
+const AIM_ITERATIONS = 6;
+const DISTANCE_BRACKET = { min: 0.5, max: 60 };
+
 const DEG = Math.PI / 180;
 
 function mix(a: number, b: number, t: number): number {
@@ -168,11 +201,89 @@ export function horizontalFov(fovYDeg: number, aspect: number): number {
 }
 
 /**
+ * NDC bounds of the required points, for a camera standing `distance` back
+ * along the elevation ray and looking down at `pitch`.
+ *
+ * Written as scalar arithmetic rather than through `projectToNdc` on purpose:
+ * the solver below calls this a few hundred times per resize, and the vector
+ * form would allocate five short-lived objects per point per call. Nothing
+ * here allocates anything.
+ *
+ * The basis collapses because the rig never leaves the x = 0 plane. With
+ * `forward = (0, -sin p, -cos p)`, `cross(forward, worldUp)` is `(cos p, 0, 0)`
+ * normalised — exactly `(1, 0, 0)` — so `right` is the world X axis and `up`
+ * is `(0, -f.z, f.y)`. `cameraBasis` derives the same thing generally; this is
+ * that result specialised, and `projectToNdc` is what the tests measure with,
+ * so the two are checked against each other rather than trusted.
+ */
+interface NdcBounds {
+  /** Largest |x| or |y| over every point; Infinity if any fell behind. */
+  extent: number;
+  minY: number;
+  maxY: number;
+}
+
+function boundsAt(
+  points: readonly Vec3[],
+  pivotY: number,
+  pivotZ: number,
+  elevation: number,
+  distance: number,
+  pitch: number,
+  tanHalfFovX: number,
+  tanHalfFovY: number,
+): NdcBounds {
+  const cameraY = pivotY + distance * Math.sin(elevation);
+  const cameraZ = pivotZ + distance * Math.cos(elevation);
+  const forwardY = -Math.sin(pitch);
+  const forwardZ = -Math.cos(pitch);
+
+  let extent = 0;
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  for (let i = 0; i < points.length; i += 1) {
+    const point = points[i];
+    const dy = point.y - cameraY;
+    const dz = point.z - cameraZ;
+    const depth = dy * forwardY + dz * forwardZ;
+    if (depth <= 0) return { extent: Infinity, minY: -Infinity, maxY: Infinity };
+
+    const ndcX = point.x / (depth * tanHalfFovX);
+    // up = (0, -forwardZ, forwardY)
+    const ndcY = (dy * -forwardZ + dz * forwardY) / (depth * tanHalfFovY);
+
+    const reach = Math.max(Math.abs(ndcX), Math.abs(ndcY));
+    if (reach > extent) extent = reach;
+    if (ndcY < minY) minY = ndcY;
+    if (ndcY > maxY) maxY = ndcY;
+  }
+
+  return { extent, minY, maxY };
+}
+
+/**
  * Solve the camera for a viewport aspect (width / height).
  *
- * The distance satisfies both axes at once: the table's half-length across
- * the horizontal cone, and its foreshortened depth plus the far players'
- * headroom up the vertical one.
+ * WHY THIS IS A SEARCH AND NOT A FORMULA. The version this replaces solved
+ * each axis in closed form and took the larger: half the table's length
+ * across the horizontal cone, its foreshortened depth plus half the far
+ * players' headroom up the vertical one. Both terms are upper bounds on
+ * things that do not actually co-occur — the deepest point of the felt and
+ * the tallest head are not the same point, and neither is at the distance
+ * the other was solved for — so the answer was always conservative, and
+ * conservative by an amount that changed with the aspect. Measured, it left
+ * 30% of the frame empty above the far player and 9% below the near ones at
+ * every landscape aspect, and it still managed to CLIP the outer seats at
+ * 1180x820, where the profile blend leaves the width requirement short of
+ * the full player ring. A search over the real projected points has neither
+ * failure: it is exact by construction at every shape, including the ones
+ * nobody thought to check.
+ *
+ * The cost of exactness is ~250 scalar point-projections, once, inside the
+ * `resize` path. That is well under a tenth of a millisecond and it never
+ * runs again — no matrix work, no allocation and no solver of any kind
+ * happens in the frame loop.
  */
 export function frameCamera(aspect: number): CameraFraming {
   const safeAspect = Number.isFinite(aspect) && aspect > 0.05 ? aspect : 1;
@@ -180,35 +291,70 @@ export function frameCamera(aspect: number): CameraFraming {
   const elevationDeg = mix(PORTRAIT.elevationDeg, LANDSCAPE.elevationDeg, t);
   const fovY = mix(PORTRAIT.fovY, LANDSCAPE.fovY, t);
   const targetZ = mix(PORTRAIT.targetZ, LANDSCAPE.targetZ, t);
-  const aimDrop = mix(PORTRAIT.aimDrop, LANDSCAPE.aimDrop, t);
+  const contentBias = mix(PORTRAIT.contentBias, LANDSCAPE.contentBias, t);
 
   const elevation = elevationDeg * DEG;
   const halfFovY = (fovY * DEG) / 2;
-  const halfFovX = horizontalFov(fovY, safeAspect) / 2;
+  const tanHalfFovY = Math.tan(halfFovY);
+  const tanHalfFovX = Math.tan(horizontalFov(fovY, safeAspect) / 2);
+  const pivotY = FELT_TOP_Y;
 
-  // Up the screen the table shows its depth foreshortened by the elevation,
-  // while anything standing at the far rail rises by its height's cosine.
-  const projectedHalfHeight =
-    FRAME.halfDepth * Math.sin(elevation) + (FRAME.headroom * Math.cos(elevation)) / 2;
+  const points = framingProbePoints(safeAspect);
+  /** The extent the fit aims for: full frame, less the safety margin. */
+  const targetExtent = 1 / SAFETY;
 
-  // Sideways, the people are inside the frame; upright, only the table is.
-  const requiredHalfWidth = mix(FRAME.uprightHalfWidth, FRAME.playersHalfWidth, t);
-  const distanceForWidth = requiredHalfWidth / Math.tan(halfFovX);
-  const distanceForHeight = projectedHalfHeight / Math.tan(halfFovY);
-  const distance = Math.max(distanceForWidth, distanceForHeight) * SAFETY;
+  // Aim starts level with the pivot, then alternates with the distance
+  // search: each pass fits, measures where the content landed, and rotates
+  // the aim to put it where `contentBias` asks. Both converge monotonically,
+  // so the order within a pass does not matter, only that both run.
+  let pitch = elevation;
+  let distance = DISTANCE_BRACKET.max;
 
-  // The camera is placed around the felt, then aimed below it: the pivot
-  // sets the distance and elevation, the target sets what the frame is
-  // centred on. Folding the drop into both would move the camera as well as
-  // its aim, which changes the fit the distance was just solved for.
-  const pivot: Vec3 = { x: 0, y: FELT_TOP_Y, z: targetZ };
+  for (let pass = 0; pass < AIM_ITERATIONS; pass += 1) {
+    // Bisect for the nearest distance whose extent still fits. `extent` only
+    // ever falls as the camera retreats, so `low` stays too-close and `high`
+    // stays comfortable, and the answer is the boundary between them.
+    let low = DISTANCE_BRACKET.min;
+    let high = DISTANCE_BRACKET.max;
+    for (let i = 0; i < DISTANCE_ITERATIONS; i += 1) {
+      const mid = (low + high) / 2;
+      const fits =
+        boundsAt(points, pivotY, targetZ, elevation, mid, pitch, tanHalfFovX, tanHalfFovY)
+          .extent <= targetExtent;
+      if (fits) high = mid;
+      else low = mid;
+    }
+    distance = high;
+
+    const bounds = boundsAt(
+      points, pivotY, targetZ, elevation, distance, pitch, tanHalfFovX, tanHalfFovY,
+    );
+    if (!Number.isFinite(bounds.minY) || !Number.isFinite(bounds.maxY)) break;
+
+    // Rotating the view axis down by `d` radians lifts every point by about
+    // `d / tan(halfFovY)` in NDC, so this is one Newton step, not a nudge.
+    const centre = (bounds.minY + bounds.maxY) / 2;
+    const correction = (contentBias - centre) * tanHalfFovY;
+    if (Math.abs(correction) < 1e-6) break;
+    pitch += correction;
+  }
+
+  const position: Vec3 = {
+    x: 0,
+    y: pivotY + distance * Math.sin(elevation),
+    z: targetZ + distance * Math.cos(elevation),
+  };
+  // The target is reported one unit down the solved look axis. `cameraBasis`
+  // and every consumer derive the direction from (target - position), so
+  // handing back a point ON that axis is what keeps the aim the solver
+  // measured and the aim the room renders the same aim.
   return {
-    position: {
+    position,
+    target: {
       x: 0,
-      y: pivot.y + distance * Math.sin(elevation),
-      z: pivot.z + distance * Math.cos(elevation),
+      y: position.y - Math.sin(pitch),
+      z: position.z - Math.cos(pitch),
     },
-    target: { x: 0, y: pivot.y - aimDrop, z: pivot.z },
     fovY,
     elevationDeg,
   };
@@ -271,6 +417,7 @@ export function projectToNdc(
  * happens to implement it.
  */
 export function framingProbePoints(aspect: number): Vec3[] {
+  const t = landscapeness(aspect);
   const points: Vec3[] = [
     { x: -FRAME.uprightHalfWidth, y: FELT_TOP_Y, z: 0 },
     { x: FRAME.uprightHalfWidth, y: FELT_TOP_Y, z: 0 },
@@ -278,12 +425,35 @@ export function framingProbePoints(aspect: number): Vec3[] {
     { x: 0, y: FELT_TOP_Y, z: -FRAME.halfDepth },
     FAR_CROWN,
   ];
-  if (landscapeness(aspect) >= 1) {
-    // The two seats at the ends of the ring, shoulders included.
-    points.push(
-      { x: -FRAME.playersHalfWidth, y: FELT_TOP_Y, z: 0 },
-      { x: FRAME.playersHalfWidth, y: FELT_TOP_Y, z: 0 },
-    );
+
+  /*
+   * The seats, at the height they are actually occupied.
+   *
+   * This used to be two points on the felt plane at the ring's widest x,
+   * added only once the aspect was FULLY landscape. Both halves of that were
+   * wrong, and the second hid the first.
+   *
+   * Wrong height: a projected x is `x / (depth · tan(halfFovX))`, and depth
+   * is not constant over a seat — a head 1.5 units up at the near half of
+   * the ring is closer to a camera looking down than the cloth beside it is,
+   * so it lands FURTHER out. Probing the ring's width at felt height
+   * understates the width of every person standing on it.
+   *
+   * Wrong gate: `>= 1` is a step, and the blend band it sits on top of is
+   * continuous. At 1180x820 — landscapeness 0.91, an ordinary tablet — the
+   * seats were not probed at all, and measured against a render the outer
+   * two projected to |x| = 1.04: clipped, by a fit that reported success.
+   *
+   * The ramp is the documented contract made continuous: landscape
+   * guarantees shoulders and elbows, upright guarantees the bodies and lets
+   * the outermost sleeve edges kiss the frame.
+   */
+  const bodyHalfWidth = mix(0, FRAME.bodyHalfWidth, t);
+  for (let slot = 0; slot < SEAT_COUNT_3D; slot += 1) {
+    const seat = seatPosition(slot);
+    for (const dx of [-bodyHalfWidth, bodyHalfWidth]) {
+      points.push({ x: seat.x + dx, y: FRAME.headroom, z: seat.z });
+    }
   }
   return points;
 }

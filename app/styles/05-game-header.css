@@ -141,6 +141,13 @@
     linear-gradient(180deg, #0e1715 0%, #080e0c 50%, #030504 100%);
 }
 
+/* The desktop local seat has a larger readable name/card treatment. Reserve
+   that lower band before sizing the table so the nameplate cannot end up
+   underneath the action controls. */
+@media (min-width: 901px) {
+  .game-shell { --foreground-allowance: 160px; }
+}
+
 /* Keep the room behind the table completely smooth. The previous repeating
    panel gradient produced vertical lines on real devices and did not add
    useful depth. tests/e2e/blind-visibility.spec.ts asserts this stays off, so

@@ -4,7 +4,7 @@ import { memo, useState } from "react";
 import clsx from "clsx";
 import Image from "next/image";
 import type { PublicSeat } from "@/lib/game/types";
-import { avatarFigure } from "@/lib/cosmetics/catalog";
+import { avatarFace } from "@/lib/cosmetics/catalog";
 import { dealDelayMs } from "@/lib/game/deal-choreography";
 import { isBotAway } from "@/lib/game/seat-presence";
 import { isWinningCard } from "@/lib/game/winning-cards";
@@ -13,17 +13,13 @@ import { PlayingCard } from "./playing-card";
 import { SeatTimer } from "./seat-timer";
 
 /**
- * A player at the table, drawn as the whole cut-out figure rather than a disc.
- *
- * This is what the artwork is for: half-body, hands on a rail. A circular crop
- * throws away the posture and the hands and leaves a headshot that could
- * belong to any product. Sitting the figure at the seat, with the table's own
- * rail crossing it at the elbows, is the entire difference between a board
- * game with portraits on it and a room with people in it.
+ * A compact player marker for the classic 2D HUD. The room renderer owns the
+ * full character figures; the 2D table needs a contained face crop so the
+ * avatar does not consume the cards' and nameplate's working space.
  */
 export function SeatFigure({ seat, active }: { seat: PublicSeat; active: boolean }) {
   const [, forceRerender] = useState(0);
-  const declared = seat.avatarCosmetic ? avatarFigure(seat.avatarCosmetic) : null;
+  const declared = seat.avatarCosmetic ? avatarFace(seat.avatarCosmetic) : null;
   const artwork = declared && !missingArtwork.has(declared) ? declared : null;
 
   return (

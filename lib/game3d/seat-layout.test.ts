@@ -1,18 +1,52 @@
 import { describe, expect, it } from "vitest";
 import {
   BET_SPOT_INSET,
+  BOARD_POSITION,
   FELT_RADIUS_X,
   FELT_RADIUS_Z,
   FELT_TOP_Y,
   FLOOR_Y,
+  POT_POSITION,
   SEAT_COUNT_3D,
   SEAT_RING_RADIUS_X,
   SEAT_RING_RADIUS_Z,
+  SEAT_SETBACK,
+  TABLE_LENGTH_M,
+  TABLE_WIDTH_M,
   betSpotPosition,
   faceCentreRotationY,
   holeCardPosition,
   seatPosition,
 } from "./seat-layout";
+
+describe("the table's plan shape", () => {
+  it("is a real six-max oval, not a rounder one", () => {
+    // 2.15 x 1.32 was 1.63:1. A real table is 2.13 m x 1.07 m, essentially
+    // 2:1 — and the difference is not only accuracy: the camera fit is bound
+    // by DEPTH at every landscape aspect, so a rounder table pushes its own
+    // camera back and then cannot use the width it freed.
+    expect(FELT_RADIUS_X / FELT_RADIUS_Z).toBeCloseTo(TABLE_LENGTH_M / TABLE_WIDTH_M, 10);
+  });
+
+  it("seats everyone the same distance back from the cloth", () => {
+    // The ring used to be two independent radii whose margins over the felt
+    // were 0.47 and 0.46 — equal by coincidence, and un-linked from the felt
+    // they sit outside of, so a change to the table's shape left the chairs
+    // where they were.
+    expect(SEAT_RING_RADIUS_X - FELT_RADIUS_X).toBeCloseTo(SEAT_SETBACK, 10);
+    expect(SEAT_RING_RADIUS_Z - FELT_RADIUS_Z).toBeCloseTo(SEAT_SETBACK, 10);
+  });
+
+  it("keeps the pot behind the board, both scaling with the plate", () => {
+    // Stated as fractions of the felt's depth rather than as the literals
+    // -0.52 and 0.08, which were measured against the old 1.32 plate: on a
+    // shallower felt those absolute distances mean something different, and
+    // the pot drifts proportionally further back until it is off the cloth.
+    expect(POT_POSITION.z).toBeLessThan(BOARD_POSITION.z);
+    expect(Math.abs(POT_POSITION.z)).toBeLessThan(FELT_RADIUS_Z);
+    expect(Math.abs(BOARD_POSITION.z)).toBeLessThan(FELT_RADIUS_Z);
+  });
+});
 
 describe("seat layout", () => {
   it("places slot 0 nearest the camera, on the +Z axis", () => {

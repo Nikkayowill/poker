@@ -321,6 +321,10 @@ export function PokerTable({
         // rule rather than stranded in here.
         "--seat-dx": geometry.towardPot.x.toFixed(3),
         "--seat-dy": geometry.towardPot.y.toFixed(3),
+        // Compact 2D markers sit just outside the rail, not at the centre of
+        // the old full-figure seat box.
+        "--seat-out-x": (-geometry.towardPot.x).toFixed(3),
+        "--seat-out-y": (-geometry.towardPot.y).toFixed(3),
       } as React.CSSProperties;
     }),
     // Depends on the measured box rather than the window: the same viewport

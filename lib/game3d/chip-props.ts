@@ -206,11 +206,19 @@ export function nearSeatTier(tier: ChipPropTier | null): ChipPropTier | null {
 
 /**
  * How far out the bankroll sits, as a fraction of the felt radii — outside
- * the hole cards (0.82), toward the rail, which is where a player's chips
+ * the hole cards (0.78), toward the rail, which is where a player's chips
  * physically are. The order from the rail inward is bankroll, cards, bet,
  * board, and it matches a real table read from any chair.
+ *
+ * Re-solved from 0.84 when the felt took its true 2.13 x 1.07 proportions.
+ * The props are real chips at a real size, so a plate that lost 18% of its
+ * depth did not lose any of THEM: the deep tier's far corner measured 1.02
+ * of the felt ellipse — chips over the rail, the same failure the angle
+ * offset below was originally introduced to fix, arriving by a different
+ * route. 0.82 is the outermost inset at which no tier's corner leaves the
+ * cloth (worst load 0.981).
  */
-const BANKROLL_INSET = 0.84;
+const BANKROLL_INSET = 0.82;
 
 /**
  * Slot 0 gets its own, deeper inset for the same reason every other
@@ -227,7 +235,7 @@ const NEAR_SEAT_BANKROLL_INSET = 0.74;
  * reason this constant is in radians.
  *
  * A straight sideways offset was the first cut and it walked two piles off
- * the cloth. The felt is 2.15 x 1.32, so it is nothing like circular: at the
+ * the cloth. The felt is 2.15 x 1.08, so it is nothing like circular: at the
  * diagonal seats (slots 2 and 5) a tangent that is correct at the seat's own
  * angle points outward relative to the ellipse, and the deepest pile's far
  * corner measured 1.07 of the felt's own radius — chips floating over the
@@ -235,12 +243,19 @@ const NEAR_SEAT_BANKROLL_INSET = 0.74;
  * CONCENTRIC with the felt, which cannot leave it for any offset at all;
  * only the pile's own footprint can, and that is what the inset covers.
  *
- * 0.36 rad is 20.6 degrees — about a third of the way to the next chair,
- * which is where a player's chips sit relative to their cards. Solved, not
- * picked: it is the smallest offset at which no tier overlaps its own hole
- * cards, its own bet spot, or a neighbour's pile, at any of the six seats.
+ * 0.50 rad is 28.6 degrees — about half the way to the next chair, which is
+ * where a player's chips sit relative to their cards. Solved, not picked:
+ * it is the smallest offset at which no tier overlaps its own hole cards,
+ * its own bet spot, or a neighbour's pile, at any of the six seats.
+ *
+ * Re-solved from 0.36 when the felt took its true proportions. A rotation
+ * around the ring converts to less ARC at the sides of a narrower ellipse,
+ * so the offset that cleared a seat's own bet spot on a 1.32-deep plate no
+ * longer did on a 1.08-deep one — slots 1 and 4 landed their piles on the
+ * spot their own chips fly to. The scan that picked this walked inset
+ * 0.78-0.86 against offset 0.44-0.68 over all six seats and all four tiers.
  */
-const BANKROLL_ANGLE_OFFSET = 0.36;
+const BANKROLL_ANGLE_OFFSET = 0.5;
 
 function bankrollInset(slot: number): number {
   return slot === 0 ? NEAR_SEAT_BANKROLL_INSET : BANKROLL_INSET;

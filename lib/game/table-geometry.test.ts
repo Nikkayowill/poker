@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RAIL_Z, seatGeometry, seatZ } from "./table-geometry";
+import { radiiForTable, RAIL_Z, seatGeometry, seatZ } from "./table-geometry";
 
 const SEATS = 6;
 
@@ -14,6 +14,26 @@ describe("table geometry", () => {
     expect(near.y).toBeGreaterThan(far.y);
     expect(near.depth).toBeCloseTo(1, 5);
     expect(far.depth).toBeCloseTo(0, 5);
+  });
+
+  it("centres the desktop ring on the desktop rail instead of the wrapper", () => {
+    const ellipse = radiiForTable({ width: 1180, height: 641 });
+    const near = seatGeometry(0, SEATS, ellipse);
+    const far = seatGeometry(3, SEATS, ellipse);
+
+    // .poker-rail is inset 15% from the top and 8% from the bottom, so its
+    // centre is 53.5%. Both extrema consequently move down while staying
+    // symmetric around the table players are visibly sitting at.
+    expect((near.y + far.y) / 2).toBeCloseTo(53.5, 5);
+    expect(near.y).toBeCloseTo(91.5, 5);
+    expect(far.y).toBeCloseTo(15.5, 5);
+  });
+
+  it("keeps the portrait ring centred on its symmetric mobile rail", () => {
+    const ellipse = radiiForTable({ width: 390, height: 629 });
+    const near = seatGeometry(0, SEATS, ellipse);
+    const far = seatGeometry(3, SEATS, ellipse);
+    expect((near.y + far.y) / 2).toBeCloseTo(50, 5);
   });
 
   it("mirrors left and right slots about the centre line", () => {
@@ -111,13 +131,14 @@ describe("eight-max geometry", () => {
   });
 
   it("still points every seat at the pot", () => {
+    const centreY = 53.5;
     for (let slot = 0; slot < EIGHT; slot += 1) {
       const { x, y, towardPot } = seatGeometry(slot, EIGHT);
       // Same box-norm contract the six-max case has: the dominant component
       // is exactly 1, and the vector points back at the middle.
       expect(Math.max(Math.abs(towardPot.x), Math.abs(towardPot.y))).toBeCloseTo(1, 5);
       if (Math.abs(50 - x) > 0.001) expect(Math.sign(towardPot.x)).toBe(Math.sign(50 - x));
-      if (Math.abs(50 - y) > 0.001) expect(Math.sign(towardPot.y)).toBe(Math.sign(50 - y));
+      if (Math.abs(centreY - y) > 0.001) expect(Math.sign(towardPot.y)).toBe(Math.sign(centreY - y));
     }
   });
 });

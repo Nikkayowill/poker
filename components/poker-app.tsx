@@ -39,7 +39,7 @@ import {
 } from "@/lib/scene/table-renderer";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
-import { Coins, Gift, Layers, LogOut, Music2, Settings2, Trophy, UserPlus } from "lucide-react";
+import { Coins, Gift, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
 import { Lobby } from "@/components/lobby/lobby";
 import { retireFirstRunStrip } from "@/components/lobby/first-run-strip";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
@@ -52,6 +52,8 @@ import { RoomCreatedModal } from "@/components/table/room-created-modal";
 import { useWebglSupport } from "@/components/table/use-webgl-support";
 import { RewardedAdModal } from "@/components/rewards/rewarded-ad-modal";
 import { useGameAchievements } from "@/components/rewards/use-game-achievements";
+import { REWARDED_AD_ELIGIBLE_BELOW } from "@/lib/rewards/config";
+import type { RewardTrigger } from "@/lib/rewards/triggers";
 import { PokerTable, type ConnectionState } from "@/components/table/poker-table";
 import {
   LEGACY_SOUND_STORAGE_KEY,
@@ -62,6 +64,19 @@ import {
 const MAX_REFRESH_RETRIES = 4;
 const REFRESH_RETRY_BASE_MS = 250;
 const REFRESH_RETRY_MAX_MS = 2_000;
+
+/**
+ * The trigger shown when the player opens "Free Gold" from the menu directly,
+ * rather than one of useGameAchievements' in-game moments finding them.
+ * `kind: "low-gold"` is the honest label for it -- it is the same offer, just
+ * requested instead of noticed -- and the modal never reads `kind` for
+ * anything but that bookkeeping, which this manual path deliberately bypasses.
+ */
+const FREE_GOLD_TRIGGER: RewardTrigger = {
+  kind: "low-gold",
+  headline: "Free Gold",
+  detail: `You need ${REWARDED_AD_ELIGIBLE_BELOW.toLocaleString("en-US")} Gold to sit down at the cheapest table.`,
+};
 
 export function PokerApp() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
@@ -140,6 +155,17 @@ export function PokerApp() {
   }, [entryComplete, game]);
   const [claimingGold, setClaimingGold] = useState(false);
   const [goldFlash, setGoldFlash] = useState(false);
+  // The lobby menu's own "Free Gold" entry, opened without waiting for an
+  // achievement to trigger it. Separate from useGameAchievements' `offer` --
+  // that state is edge-triggered and one-shot per kind for the session, which
+  // is right for an unsolicited nudge and wrong for a row the player can
+  // click again the next time they're short.
+  const [freeGoldOpen, setFreeGoldOpen] = useState(false);
+  // Learned from the server, not assumed: null means "hasn't been told
+  // otherwise yet", so the row stays offered until a real 429 says the day's
+  // cap is spent. Prevents the row reappearing after a claim if the balance
+  // happens to still read under the threshold on a stale render.
+  const [freeGoldRemainingToday, setFreeGoldRemainingToday] = useState<number | null>(null);
   // Set only by hostPrivate, cleared on dismiss: the share sheet is a
   // one-shot moment right after creating a room, not table state.
   const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null);
@@ -1012,31 +1038,81 @@ export function PokerApp() {
   const dailyGold = dailyGoldState(profile, new Date());
 
   /**
+   * Whether the "Get Free Gold" row belongs in the menu right now.
+   *
+   * Registered-only and never-unlimited for the same reason claimDailyGold's
+   * row is: the server's eligibleProfile rejects both, and a row that always
+   * 403s or 409s is worse than no row. Balance is read live off `profile`, so
+   * a claim that credits the wallet past the threshold makes this row
+   * disappear on that same render with no extra plumbing; the daily cap
+   * cannot be read that way (the profile does not carry claims-today), so
+   * `freeGoldRemainingToday` -- learned from the server the first time it
+   * says so -- covers the one case balance alone can't.
+   */
+  const freeGoldEligible = profile !== null
+    && profile.isRegistered
+    && !profile.unlimitedGold
+    && profile.goldBalance < REWARDED_AD_ELIGIBLE_BELOW
+    && (freeGoldRemainingToday === null || freeGoldRemainingToday > 0);
+
+  /**
    * When to offer a rewarded ad.
    *
    * Everything this component knows about the feature is these two lines and
    * the modal at the bottom. The rules live in lib/rewards/triggers.ts, the
    * money in lib/server/rewarded-ad-service.ts, and the pages that have no
    * snapshot to diff reach it through lib/rewards/events.ts -- so adding a new
-   * trigger never touches this file.
+   * trigger never touches this file. The lobby's own "Free Gold" row is a
+   * second, deliberately separate way into the same modal -- see
+   * FREE_GOLD_TRIGGER and freeGoldOpen above.
    */
   const { offer: rewardOffer, dismiss: dismissRewardOffer } = useGameAchievements(game, profile);
+  const activeRewardTrigger = rewardOffer ?? (freeGoldOpen ? FREE_GOLD_TRIGGER : null);
+  // Closes whichever is actually open. Clearing both rather than branching on
+  // which one is active means a stray freeGoldOpen left over from before an
+  // achievement offer arrived can never reopen the modal right after this
+  // dismissal -- only one of the two is ever true in practice, but nothing
+  // here depends on that staying true.
+  const closeRewardModal = () => {
+    if (rewardOffer) dismissRewardOffer();
+    setFreeGoldOpen(false);
+  };
 
   const lobbyMenuItems: MenuItem[] = [
-    // First, and only for an account that can actually take it. A guest's
-    // path to the reward is "Save progress" at the bottom of this same menu,
-    // so offering them a dead row here would be the navbar's old "Save to
-    // claim" button moved rather than removed.
-    ...(dailyGold === "ready" || dailyGold === "claimed"
-      ? [{
-        kind: "action" as const,
-        label: dailyGold === "ready"
-          ? (claimingGold ? "Claiming…" : "Claim daily Gold")
-          : "Daily Gold claimed",
-        onSelect: () => void claimDailyGold(),
-        disabled: dailyGold === "claimed" || claimingGold,
-        icon: <Gift size={15} />,
-      }, { kind: "separator" as const }]
+    // First, and only for an account that can actually take either. A
+    // guest's path to both is "Sign in" at the bottom of this same menu, so
+    // offering a dead row here would be the navbar's old "Save to claim"
+    // button moved rather than removed.
+    ...(dailyGold === "ready" || dailyGold === "claimed" || freeGoldEligible
+      ? [
+        // Above the daily claim, on purpose: it is the row a player under a
+        // buy-in actually needs first, and it is the one that can be used
+        // more than once. Under the cheapest buy-in only -- see
+        // freeGoldEligible. Opens the same RewardedAdModal an in-game moment
+        // would, just requested instead of noticed, and it can be reopened
+        // as many times as the daily cap allows rather than once per
+        // session.
+        ...(freeGoldEligible
+          ? [{
+            kind: "action" as const,
+            label: "Get Free Gold",
+            onSelect: () => setFreeGoldOpen(true),
+            icon: <Video size={15} />,
+          }]
+          : []),
+        ...(dailyGold === "ready" || dailyGold === "claimed"
+          ? [{
+            kind: "action" as const,
+            label: dailyGold === "ready"
+              ? (claimingGold ? "Claiming…" : "Claim daily Gold")
+              : "Daily Gold claimed",
+            onSelect: () => void claimDailyGold(),
+            disabled: dailyGold === "claimed" || claimingGold,
+            icon: <Gift size={15} />,
+          }]
+          : []),
+        { kind: "separator" as const },
+      ]
       : []),
     { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
     { kind: "link", label: "Buy Gold", href: gameId ? `/store?table=${gameId}` : "/store", icon: <Coins size={15} /> },
@@ -1052,7 +1128,9 @@ export function PokerApp() {
     ...(profile ? [{ kind: "action" as const, label: "Edit profile", onSelect: () => setProfileOpen(true), icon: <Settings2 size={15} /> }] : []),
     profile?.isRegistered
       ? { kind: "action", label: "Sign out", onSelect: () => void signOut(), icon: <LogOut size={15} /> }
-      : { kind: "action", label: "Save progress", onSelect: () => void signIn(), icon: <UserPlus size={15} /> },
+      // "Sign in", not "Save progress": it is the same signIn() the header's
+      // own AuthButton calls for a guest, and the two must say the same thing.
+      : { kind: "action", label: "Sign in", onSelect: () => void signIn(), icon: <LogIn size={15} /> },
   ];
 
   /** Leaving the table while still seated cashes out first, so chips are never stranded. */
@@ -1187,13 +1265,17 @@ export function PokerApp() {
           the app, not for one still deciding whether to sign in. The credited
           profile lands in state the same way a buy-in's does, so the navbar
           balance updates without a re-fetch. */}
-      {rewardOffer && entryComplete && (
+      {activeRewardTrigger && entryComplete && (
         <RewardedAdModal
-          trigger={rewardOffer}
-          onClose={dismissRewardOffer}
-          onCredited={setProfile}
+          trigger={activeRewardTrigger}
+          onClose={closeRewardModal}
+          onCredited={(credited, remainingToday) => {
+            setProfile(credited);
+            setFreeGoldRemainingToday(remainingToday);
+          }}
+          onDailyLimitReached={() => setFreeGoldRemainingToday(0)}
           onSaveProgress={() => {
-            dismissRewardOffer();
+            closeRewardModal();
             void signIn();
           }}
         />

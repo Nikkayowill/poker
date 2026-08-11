@@ -116,7 +116,7 @@ export function advanceRewardWatch(
 
   // Unlimited Gold is a gift flag, not a balance: spendGold never deducts from
   // such a profile, so crediting it means nothing and offering to would be a
-  // 30-second ad in exchange for a number that was never going to move.
+  // wait through an ad in exchange for a number that was never going to move.
   if (unlimitedGold) return { state, trigger: null };
 
   const belowBuyIn = goldBalance !== null && goldBalance < cheapestBuyIn;

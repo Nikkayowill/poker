@@ -47,16 +47,31 @@ interface GrantResponse {
   remainingToday: number;
 }
 
+/** "4:32" once the wait is a minute or more, "45 seconds" below that -- same convention as the puzzle countdowns. */
+function formatCountdown(seconds: number): string {
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 export interface RewardedAdModalProps {
   trigger: RewardTrigger;
   onClose: () => void;
-  /** Handed the credited profile so the navbar balance updates without a re-fetch. */
-  onCredited: (profile: PlayerProfile) => void;
+  /**
+   * Handed the credited profile so the navbar balance updates without a
+   * re-fetch, plus how many claims the server says are left today -- a caller
+   * offering this outside an achievement (the lobby menu's "Free Gold" row)
+   * uses that to stop offering it once the daily cap is actually reached,
+   * rather than only once the balance climbs back over the threshold.
+   */
+  onCredited: (profile: PlayerProfile, remainingToday: number) => void;
   /** A guest cannot take this offer; the modal points them at the account flow instead. */
   onSaveProgress?: () => void;
+  /** The server says today's cap is already spent. Same reason as onCredited's remainingToday. */
+  onDailyLimitReached?: () => void;
 }
 
-export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress }: RewardedAdModalProps) {
+export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress, onDailyLimitReached }: RewardedAdModalProps) {
   const [phase, setPhase] = useState<Phase>("offer");
   const [grant, setGrant] = useState<GrantResponse | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(REWARDED_AD_DURATION_SECONDS);
@@ -103,6 +118,7 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress }
       const data = await response.json();
       if (!response.ok) {
         if (data.reason === "guest") setNeedsAccount(true);
+        if (data.reason === "daily-limit") onDailyLimitReached?.();
         throw new Error(data.error ?? "Could not start that ad.");
       }
       const issued = data.grant as GrantResponse;
@@ -115,7 +131,7 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not start that ad.");
     }
-  }, []);
+  }, [onDailyLimitReached]);
 
   const claim = useCallback(async () => {
     if (!grant) return;
@@ -128,11 +144,14 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress }
         body: JSON.stringify({ grantId: grant.grantId }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not claim that reward.");
+      if (!response.ok) {
+        if (data.reason === "daily-limit") onDailyLimitReached?.();
+        throw new Error(data.error ?? "Could not claim that reward.");
+      }
       claimedRef.current = true;
       grantRef.current = null;
       setAwarded(data.awarded ?? grant.rewardGold);
-      onCredited(data.profile);
+      onCredited(data.profile, data.remainingToday ?? 0);
       setPhase("done");
     } catch (caught) {
       // Back to `watching` rather than to `offer`: the grant is still valid and
@@ -140,7 +159,7 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress }
       setPhase("watching");
       setError(caught instanceof Error ? caught.message : "Could not claim that reward.");
     }
-  }, [grant, onCredited]);
+  }, [grant, onCredited, onDailyLimitReached]);
 
   // The countdown. A setInterval, not a per-frame timer: nothing here animates,
   // and one tick a second is exactly the resolution the readout has.
@@ -222,7 +241,7 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress }
               <p className="rewarded-ad-countdown" aria-live="polite">
                 {ready
                   ? `Ready — claim your ${REWARDED_AD_GOLD.toLocaleString("en-US")} Gold.`
-                  : `${secondsLeft} second${secondsLeft === 1 ? "" : "s"} to go…`}
+                  : `${formatCountdown(secondsLeft)} to go…`}
               </p>
               {error && <p className="rewarded-ad-error" role="alert">{error}</p>}
               {/* `ready` already implies phase === "watching", so an in-flight

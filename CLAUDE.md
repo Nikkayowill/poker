@@ -44,6 +44,37 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 ## Active milestone
 
 - Track: `ui-redesign-foundation`
+- **The rewarded-ad faucet changed shape on 2026-08-11: 5-minute wait (was
+  30s), a direct "Free Gold" entry point, and the live Adsterra unit.**
+  `REWARDED_AD_GOLD` was already 500; only `REWARDED_AD_DURATION_MS` moved
+  (30_000 → 300_000, `lib/rewards/config.ts`), and `REWARDED_AD_GRANT_TTL_MS`
+  went 10min → 20min with it so a distracted player still has a real margin
+  to hit Claim after a 5-minute wait rather than the wait eating the whole
+  window. `REWARDED_AD_UNIT.scriptSrc` (`lib/ads/adsterra.ts`) now points at
+  `pl30614359` — the account's current zone — replacing `pl30614360`; no CSP
+  change was needed since both are `effectivecpmnetwork.com` and that origin
+  was already wildcarded. Previously this offer only ever appeared when
+  `advanceRewardWatch` noticed a game event (a busted hand, a big pot); there
+  was no way to ask for it. The lobby player menu now has a "Free Gold" row,
+  shown under the same threshold that trigger already used
+  (`REWARDED_AD_ELIGIBLE_BELOW` = `TIER_CONFIG[CHEAPEST_TIER].minBuyIn`,
+  currently 1,000) — registered accounts only, same as daily Gold, since a
+  faucet aimed at guests is a faucet aimed at whoever clears cookies fastest.
+  It opens the same `RewardedAdModal` rather than a second implementation,
+  through a `freeGoldOpen` flag in `poker-app.tsx` kept deliberately separate
+  from `useGameAchievements`' one-offer-per-kind-per-session bookkeeping — a
+  menu row the player clicked on purpose must reopen every time they're
+  still eligible, not once and then never again. It re-hides itself: balance
+  crossing back over the threshold falls out of recomputing eligibility from
+  live `profile` state each render (no extra plumbing), and the daily cap
+  (`REWARDED_AD_DAILY_LIMIT`, unrelated and unchanged) is tracked via a new
+  `remainingToday` value threaded back out of `RewardedAdModal`'s
+  `onCredited`/`onDailyLimitReached`, since the profile itself carries no
+  claims-today count for the client to read. Also fixed in the same pass,
+  reported alongside the rest: the guest player-menu row read "Save
+  progress" while calling the exact `signIn()` the header's own `AuthButton`
+  labels "Sign in" for the same guest — same action, two names. It is
+  "Sign in" now, in both places.
 - **A repo-quality pass ran on 2026-08-06 and deleted a dead subsystem.** Four
   things worth carrying forward:
   - `lib/server/table-manager/` (13 files) and `lib/server/cash-game-session-

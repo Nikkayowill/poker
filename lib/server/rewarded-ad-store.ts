@@ -75,8 +75,8 @@ function fromRow(row: GrantRow): RewardedAdGrant {
  *
  * `issuedAt` is passed in rather than defaulted to the database's now() on
  * purpose: the elapsed-time check is a comparison against Node's clock, and
- * mixing two clocks in one inequality is how a 30-second rule quietly becomes
- * a 29-second one on a server whose Postgres is a moment ahead.
+ * mixing two clocks in one inequality is how a REWARDED_AD_DURATION_MS rule
+ * quietly becomes a shorter one on a server whose Postgres is a moment ahead.
  *
  * The one-at-a-time rule is enforced by the partial unique index, caught from
  * the 23505, rather than by a read-then-insert -- two concurrent starts both

@@ -258,10 +258,13 @@
      them (08-seat.css); scaling that rule for every seat would enlarge six
      face-down backs through the whole hand. This lifts the one pair the
      result is about, once the hand is over and there is nothing left to
-     collide with. Transform rather than width so it grows about its own
-     centre without moving the seat's layout. */
+     collide with. The standalone `scale` property, not `transform: scale()`
+     -- 08-seat.css's base rule already carries a translate for the outward
+     side-nudge, and a transform declared here would replace that entirely
+     rather than compose with it. `scale` composes with `transform`
+     independently, which is exactly what growing the pair in place needs. */
   .seat-winner .seat-cards:not(.own-cards) {
-    transform: translate(-50%, -50%) scale(1.5);
+    scale: 1.5;
     transform-origin: center;
   }
   .seat-name-row strong { font-size: 9px; }
@@ -270,7 +273,7 @@
   .blind-label span { display: none; }
   .seat-stack { font-size: 9px; }
   .seat-stack strong { font-size: 10px; }
-  .table-bet { --bet-reach: 52px; }
+  .table-bet { --bet-reach: 106px; }
       .action-layer { padding: 0 4px calc(6px + var(--safe-bottom)); padding-left: max(4px, var(--safe-left)); padding-right: max(4px, var(--safe-right)); }
   .profile-trigger:not(.profile-trigger-compact) {
     min-width: 0;

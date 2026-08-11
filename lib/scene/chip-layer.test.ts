@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CHIP_RADIUS, CHIP_THICKNESS, ChipLayer } from "./chip-layer";
+import {
+  CHIPS_PER_2D_COLUMN,
+  CHIP_THICKNESS,
+  ChipLayer,
+  get2DChipHeap,
+  get2DChipPosition,
+} from "./chip-layer";
 import { flightDurationMs, FUNNEL_CHIP_COUNT, REFERENCE_FRAME_MS } from "./chip-physics";
 import { BET_STYLES, NEAT_SLIDE_DURATION_MS, SPLASH_SCATTER_RADIUS } from "./bet-style";
 import { seatBetOrigin, seatTrayOrigin } from "./seat-ring";
@@ -28,6 +34,30 @@ function settle(chips: ChipLayer, frames = 3000): void {
 }
 
 describe("the pile", () => {
+  it("uses PlayPokerGO's 16-high, then-next-column stack formula", () => {
+    const lastFirstColumn = get2DChipPosition(CHIPS_PER_2D_COLUMN - 1);
+    const firstSecondColumn = get2DChipPosition(CHIPS_PER_2D_COLUMN);
+
+    expect(lastFirstColumn.x).toBe(0);
+    expect(lastFirstColumn.y).toBeCloseTo(-15 * CHIP_THICKNESS, 9);
+    expect(firstSecondColumn.x).toBeGreaterThan(0);
+    expect(firstSecondColumn.y).toBe(0);
+  });
+
+  it("fills one mixed-denomination column before opening another", () => {
+    // 131 BB is 100 + 25 + 5 + 1 in the greedy breakdown. PlayPokerGO does
+    // not create a separate column for each colour; all four rise in one.
+    const heap = get2DChipHeap(1310, BB);
+    expect(heap.map((chip) => chip.denomination)).toEqual([100, 25, 5, 1]);
+    expect(new Set(heap.map((chip) => chip.position.x))).toEqual(new Set([0]));
+  });
+
+  it("caps the central pool at five 16-chip columns", () => {
+    const heap = get2DChipHeap(999_999_999, 1);
+    expect(heap).toHaveLength(5 * CHIPS_PER_2D_COLUMN);
+    expect(new Set(heap.map((chip) => chip.position.x)).size).toBe(5);
+  });
+
   it("builds the pot's exact breakdown and reuses settled chips", () => {
     const { chips } = layer();
     chips.syncPile(1310, BB, false);   // 131 BB -> 100 + 25 + 5 + 1
@@ -331,21 +361,15 @@ describe("selectable bet styles", () => {
     }
   });
 
-  it("the stacked toss leans, so the column is not a machined tube", () => {
+  it("the stacked toss keeps the PlayPokerGO pool perfectly aligned", () => {
     const { chips } = layer();
     chips.setBetStyle("stacked_toss");
     chips.spawnBet(2, 6, 1310, BB);
     const targets = chips.debugFlightTargets();
     expect(targets.length).toBeGreaterThan(2);
 
-    // No two chips land on exactly the same spot...
-    expect(new Set(targets.map((p) => `${p.x.toFixed(6)},${p.z.toFixed(6)}`)).size)
-      .toBe(targets.length);
-    // ...and none leans so far that the column stops reading as one stack.
-    const spot = seatBetOrigin(2, 6);
-    for (const target of targets) {
-      expect(Math.hypot(target.x - spot.x, target.z - spot.z)).toBeLessThan(CHIP_RADIUS);
-    }
+    expect(new Set(targets.map((p) => p.x.toFixed(6))).size).toBe(1);
+    expect(new Set(targets.map((p) => p.z.toFixed(6))).size).toBe(1);
   });
 
   it("the splash scatters where the stacked toss stacks", () => {

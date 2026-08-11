@@ -188,6 +188,9 @@ const NUMERAL_MIN_RADIUS = 8;
  * phones this scene is DPI-upscaled for.
  */
 export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: SceneChip): void {
+  /* Standard layered 2D poker-chip painter. The cylinder edge, stack bands,
+     bevel, inserts and inlay are all painted in screen space from the same
+     authoritative SceneChip position. */
   const palette = chipPalette(chip.denomination);
   /**
    * The mid-flight swell.
@@ -204,8 +207,13 @@ export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: 
    * perspective camera doing the same job honestly, and applying both would
    * double the effect.
    */
+  // Keep the compact 2D token compact while moving; the stack itself is the
+  // readable object, not a swelling billboard over the board.
   const swell = flightScale(chip.lift ?? 0);
-  const rx = CHIP_RADIUS * view.scale * swell;
+  // The physical chip radius is deliberately enlarged in the 2D painter.
+  // At the table's phone-sized projection, the true scale collapses the
+  // cylinder edge and makes a whole stack read as colored specks.
+  const rx = CHIP_RADIUS * view.scale * swell * 1.35;
   const ry = rx * TILT_SIN;
   const { position } = chip;
 
@@ -259,6 +267,16 @@ export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: 
   ctx.fillStyle = edgeShade;
   ctx.fill();
 
+  // The 2D room needs an intentional illustrated stack cue. At this scale a
+  // physically exact chip edge is sub-pixel and the faces visually merge, so
+  // give every chip a restrained dark lower rim and a warm contact highlight.
+  // These are still part of the same chip, not extra chips or geometry.
+  ctx.strokeStyle = "rgba(20, 12, 8, 0.78)";
+  ctx.lineWidth = Math.max(0.9, rx * 0.075);
+  ctx.beginPath();
+  ctx.ellipse(bottom.x, bottom.y, rx * 0.96, ry * 0.96, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
   // Edge stripes at the wedge cadence — the tell that a cylinder is a chip.
   const edgeHeight = bottom.y - top.y;
   if (edgeHeight > 1) {
@@ -278,6 +296,11 @@ export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: 
   rim.addColorStop(1, hex(shadeHex(palette.base, -0.26)));
   ctx.fillStyle = rim;
   ctx.fill();
+  ctx.strokeStyle = "rgba(255, 239, 177, 0.58)";
+  ctx.lineWidth = Math.max(0.7, rx * 0.045);
+  ctx.beginPath();
+  ctx.ellipse(top.x, top.y, rx * 0.91, ry * 0.91, 0, 0, Math.PI * 2);
+  ctx.stroke();
 
   // Layer B: the inserts, as true angular sectors clipped to the rim ring.
   ctx.save();

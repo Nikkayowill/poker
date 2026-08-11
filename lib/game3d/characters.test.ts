@@ -9,14 +9,17 @@ import {
   characterForSlot,
 } from "./characters";
 
-/** Only the parts of a glTF asset these tests actually assert on. A loose
- *  map cannot express them: the properties read below are arrays that get
- *  flatMapped, and an index signature yields `any` (which the lint rule
- *  rejects) or `unknown` (which has no .flatMap). */
-type GlbJson = {
+/**
+ * The slice of a glTF document this file actually reads.
+ *
+ * Stated rather than `Record<string, any>`: the callbacks below already
+ * annotate their own parameters, so the `any` bought nothing and cost the
+ * repo a lint error on every run of `npm run lint`.
+ */
+interface GlbJson {
   skins?: { joints?: number[] }[];
   animations?: { channels?: { target?: { node?: number } }[] }[];
-};
+}
 
 function readGlbJson(url: string): GlbJson {
   const bytes = readFileSync(resolve(process.cwd(), "public", url.slice(1)));

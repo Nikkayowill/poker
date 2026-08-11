@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { radiiForTable, RAIL_Z, seatGeometry, seatZ } from "./table-geometry";
+import {
+  isLandscapeBand,
+  radiiForTable,
+  RAIL_Z,
+  seatGeometry,
+  seatZ,
+} from "./table-geometry";
 
 const SEATS = 6;
+
+/** The two landscape handsets the ring was solved and rendered against. */
+const IPHONE_14_LANDSCAPE = { width: 844, height: 390 };
+/** The plate those stages actually measure, inside the letterbox. */
+const LANDSCAPE_PLATE = { width: 793, height: 346 };
 
 describe("table geometry", () => {
   it("places the near slot at the bottom and the opposite slot at the far rail", () => {
@@ -34,6 +45,88 @@ describe("table geometry", () => {
     const near = seatGeometry(0, SEATS, ellipse);
     const far = seatGeometry(3, SEATS, ellipse);
     expect((near.y + far.y) / 2).toBeCloseTo(50, 5);
+  });
+
+  /**
+   * The landscape band.
+   *
+   * These pin the two things a render cannot: that the ring is keyed on the
+   * viewport rather than the plate, and that its radii still satisfy the
+   * clearances they were solved from. Both had a real defect behind them --
+   * the first cut keyed on the plate's aspect and never fired at all, and
+   * the second put the far player's head under the header.
+   */
+  describe("landscape band", () => {
+    it("switches on the viewport, not the plate", () => {
+      // The plate is the SAME box in both calls. Only the window differs, and
+      // that is the whole point: once the landscape rules make the wrap fill
+      // its area, the plate's own aspect (793x346 = 2.29) is no longer far
+      // enough from the desktop oval's 1.84 to tell them apart. Keyed on the
+      // plate this ellipse silently never applied.
+      const landscape = radiiForTable(LANDSCAPE_PLATE, IPHONE_14_LANDSCAPE);
+      const desktop = radiiForTable(LANDSCAPE_PLATE, { width: 1440, height: 900 });
+      expect(landscape).not.toEqual(desktop);
+      // Flatter and centred lower -- the two vertical constraints it was
+      // solved from. Deliberately NOT "rx is larger": the landscape radius is
+      // the smaller of the two (43.5 against 46) because it is solved for the
+      // seat BOX's edge landing at 4% rather than for its centre, and the
+      // plate it sits on is already nearly the full width of the stage.
+      expect(landscape.ry).toBeLessThan(desktop.ry);
+      expect(landscape.cy).toBeGreaterThan(desktop.cy!);
+    });
+
+    it("is a short landscape window and nothing else", () => {
+      expect(isLandscapeBand(IPHONE_14_LANDSCAPE)).toBe(true);
+      expect(isLandscapeBand({ width: 667, height: 375 })).toBe(true);
+      // A tall phone held upright: short enough on neither count.
+      expect(isLandscapeBand({ width: 390, height: 844 })).toBe(false);
+      // A desktop, which is landscape-shaped but nowhere near short enough.
+      expect(isLandscapeBand({ width: 1440, height: 900 })).toBe(false);
+      // A short *desktop* window -- wide, but the height clause alone would
+      // wrongly claim this one, so both clauses have to be present.
+      expect(isLandscapeBand({ width: 1440, height: 480 })).toBe(true);
+      expect(isLandscapeBand({ width: 400, height: 480 })).toBe(false);
+      // Never divide by a zero box on the first measured frame.
+      expect(isLandscapeBand({ width: 0, height: 0 })).toBe(false);
+    });
+
+    it("falls back to the plate-derived ellipse when there is no window", () => {
+      // A server render has no window. It must not crash and must not get the
+      // landscape ring by accident.
+      expect(radiiForTable(LANDSCAPE_PLATE)).toEqual(radiiForTable(LANDSCAPE_PLATE, undefined));
+      expect(radiiForTable(LANDSCAPE_PLATE).rx).toBe(46);
+    });
+
+    it("beats the narrow-plate ellipse rather than losing to it", () => {
+      // A landscape phone is short AND narrow enough to trip isNarrow, whose
+      // radius pulls the ring *inward* -- the opposite of what this plate
+      // wants. Ordering the checks the other way round fails silently.
+      const ellipse = radiiForTable({ width: 600, height: 260 }, { width: 667, height: 375 });
+      expect(ellipse.rx).toBeGreaterThan(38);
+    });
+
+    it("keeps the far seat clear of the header and the flanks clear of the bar", () => {
+      const ellipse = radiiForTable(LANDSCAPE_PLATE, IPHONE_14_LANDSCAPE);
+      const far = seatGeometry(3, SEATS, ellipse);
+      const flank = seatGeometry(1, SEATS, ellipse);
+
+      // The two constraints LANDSCAPE_RADIUS_Y was solved from, in the plate
+      // percent they were solved in. `.seat-ring` lifts a seat box well above
+      // its own ellipse point, so the far chair needs this much clearance or
+      // its crown is drawn under the 42px header -- measured at -3px before.
+      expect(far.y).toBeGreaterThanOrEqual(24.6);
+      expect(flank.y).toBeLessThanOrEqual(72.2);
+    });
+
+    it("centres the ring on the landscape rail", () => {
+      const ellipse = radiiForTable(LANDSCAPE_PLATE, IPHONE_14_LANDSCAPE);
+      const near = seatGeometry(0, SEATS, ellipse);
+      const far = seatGeometry(3, SEATS, ellipse);
+      // .poker-rail is inset 14% top and 4% bottom in the landscape block of
+      // 12-responsive.css, so its centre is 55%. The two are one decision;
+      // this is the half of it a test can hold.
+      expect((near.y + far.y) / 2).toBeCloseTo(55, 5);
+    });
   });
 
   it("mirrors left and right slots about the centre line", () => {

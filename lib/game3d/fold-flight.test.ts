@@ -14,7 +14,14 @@ describe("foldFlightPose", () => {
     expect(start.done).toBe(false);
 
     const end = foldFlightPose(2, FOLD_FLIGHT_DURATION_S);
-    expect(end.position).toEqual(MUCK_POSITION);
+    // Not toEqual: at raw = 1, foldFlightPose adds Math.sin(Math.PI) * CARD.height
+    // * 0.1 to y — mathematically zero, but Math.sin(Math.PI) is ~1.22e-16 in
+    // IEEE754, not exactly 0. That residual (and x's own start + (end - start)
+    // * 1, which isn't guaranteed bit-exact either) is real floating-point
+    // noise, not a claim that the flight lands anywhere but the muck.
+    expect(end.position.x).toBeCloseTo(MUCK_POSITION.x, 12);
+    expect(end.position.y).toBeCloseTo(MUCK_POSITION.y, 12);
+    expect(end.position.z).toBeCloseTo(MUCK_POSITION.z, 12);
     expect(end.done).toBe(true);
   });
 

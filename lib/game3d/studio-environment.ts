@@ -266,7 +266,31 @@ export function foldedSeatPosition(slot: number): Vec3 {
  * angle past seat 2, pushed just off the ring.
  */
 const DEALER_ANGLE = ((2.5 / SEAT_COUNT_3D) * Math.PI) * 2;
-const DEALER_STAND_MARGIN = 0.25;
+
+/**
+ * Was 0.25, then 0.18, then 0.1, tuned against progressively larger
+ * SEAT_RING_RADIUS values. Each further pull-in of the table
+ * (seat-layout.ts) shrinks the ring the six seats sit on, and DEALER_ANGLE
+ * puts the dealer at the exact angular midpoint between seats 2 and 3 — a
+ * fixed 60 degrees apart regardless of ring size — so a smaller ring leaves
+ * less ARC between neighbouring seats for any margin to buy clearance from.
+ *
+ * The fourth pull-in (FELT_RADIUS_X 1.45 → 1.2) hit the wall this comment
+ * predicted: DEALER_ANGLE was tried away from the symmetric midpoint, on the
+ * theory that separating from seat 2 specifically (the tighter of the two,
+ * on this ellipse — see below) would help. It does not. A search over every
+ * angle between the two seats and every margin from -0.05 to 0.3 found NO
+ * combination that both clears seat 2 by more than 0.7 and keeps the
+ * dealer's head on screen at 844x390 — moving the angle toward seat 3 barely
+ * moves seat 2's distance (the margin push is roughly radial, not tangential
+ * to seat 2's own arc) while it costs seat 3 its slack much faster than it
+ * buys any. The symmetric midpoint (DEALER_ANGLE unchanged) remains the best
+ * available point; margin is the only real lever left, and 0.084 is the
+ * exact boundary where the head leaves the 844x390 frame. 0.08 sits just
+ * inside it. See the test's own comment for the clearance threshold this
+ * now sets, which is lower than the 0.7 it was once tuned to.
+ */
+const DEALER_STAND_MARGIN = 0.08;
 
 export const DEALER_STAND: Vec3 = {
   x: Math.sin(DEALER_ANGLE) * (SEAT_RING_RADIUS_X + DEALER_STAND_MARGIN),

@@ -380,6 +380,20 @@
 }
 .buyin-gold-row strong { color: #d9e0dc; font-weight: 700; }
 
+/* Same micro-label as .buyin-name above; the control itself is the sign-in
+   page's .entry-segment (04-lobby.css), reused rather than restated. */
+.buyin-renderer { margin-top: 18px; }
+.buyin-renderer > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #7f8ba4;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.buyin-renderer small { display: block; margin-top: 6px; color: #8f9d95; font-size: 11px; }
+
 .buyin-footer { margin-top: 26px; }
 .buyin-footer .primary-action { width: 100%; }
 .buyin-purchase {

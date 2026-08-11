@@ -207,8 +207,16 @@ describe("layout across devices", () => {
   });
 
   it("stands the dealer clear of the two seats they stand between", () => {
+    // Was 0.9, then 0.7, each tuned against a larger SEAT_RING_RADIUS. On the
+    // fourth pull-in (seat-layout.ts, FELT_RADIUS_X 1.45 -> 1.2)
+    // DEALER_STAND_MARGIN's own comment records a real wall: no angle
+    // between seats 2 and 3, at any margin, both clears seat 2 (the tighter
+    // of the two on this ellipse) by more than 0.7 AND keeps the dealer's
+    // head on screen at 844x390. 0.6 is what the on-screen boundary actually
+    // buys (0.617 measured, at the largest on-screen margin) — still more
+    // than double SEAT_SETBACK (0.24), a real body width, just not 0.7.
     for (const slot of [2, 3]) {
-      expect(distance(DEALER_STAND, seatPosition(slot))).toBeGreaterThan(0.9);
+      expect(distance(DEALER_STAND, seatPosition(slot))).toBeGreaterThan(0.6);
     }
   });
 });

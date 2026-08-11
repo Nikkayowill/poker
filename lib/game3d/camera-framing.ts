@@ -156,8 +156,17 @@ export const FAR_CROWN: Vec3 = {
   z: -SEAT_RING_RADIUS_Z,
 };
 
-/** A hair of air, so nothing sits exactly on the frustum edge. */
-const SAFETY = 1.04;
+/**
+ * How much headroom the fit leaves beyond a bare edge-to-edge fit — 1.0
+ * would put the required content exactly on the frustum boundary. Was 1.04
+ * (a hair of air). User feedback on a render: the room read as too tight,
+ * the fitted content filling almost the entire frame with people cropped
+ * close on every side. 1.12 backs the camera off an extra ~8% so the room
+ * reads as a room instead of a close-up, while the fit is still exact by
+ * construction at every aspect — nothing here changes which points must be
+ * on screen, only how much margin surrounds them once they are.
+ */
+const SAFETY = 1.12;
 
 /**
  * Iteration counts for the fit. Both are fixed, so the solve is O(1) and

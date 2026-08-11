@@ -46,3 +46,6 @@ scripts/tmp/
 # and in ../PokerGame-model-sources; neither is a durable home, and picking one
 # (object storage, LFS, or simply pushing that branch) is still an open call.
 assets-src/
+.tmp*.mjs
+.tmp3d/
+scripts/__pycache__/

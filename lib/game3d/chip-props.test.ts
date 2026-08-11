@@ -16,7 +16,7 @@ import {
   tierForSeat,
   type ChipPropTier,
 } from "./chip-props";
-import { CARD, CHIP, UNITS_PER_METRE } from "./dimensions";
+import { CARD, CHIP, UNITS_PER_METRE, mm } from "./dimensions";
 import { STAKES_TIERS, TIER_CONFIG } from "../game/tiers";
 import {
   FELT_RADIUS_X,
@@ -48,9 +48,18 @@ function holeCardFootprint(slot: number) {
   );
 }
 
-/** A generous square over a seat's standing bet, which the pile must clear. */
+/**
+ * A generous square over a seat's standing bet, which the pile must clear.
+ *
+ * Sized through `mm()`, not a bare world-unit literal: an 80mm-radius
+ * clearance is "generous" relative to a 39mm chip regardless of how big the
+ * felt itself is drawn, where a fixed 0.16 world units was generous only at
+ * the table's old, larger ruler and started overlapping the bankroll once
+ * FELT_RADIUS_X came in (seat-layout.ts) shrank UNITS_PER_METRE under it.
+ */
 function betSpotFootprint(slot: number) {
-  return feltFootprint(betSpotPosition(slot), seatAngle(slot), 0.16, 0.16);
+  const half = mm(80);
+  return feltFootprint(betSpotPosition(slot), seatAngle(slot), half, half);
 }
 
 /** Ellipse membership for the felt's top surface. */

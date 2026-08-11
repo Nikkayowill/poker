@@ -25,6 +25,45 @@
   padding-right: max(clamp(10px, 3vw, 28px), var(--safe-right));
 }
 
+/* Desktop's 3D room: the console leaves the felt's own flex row and floats
+   over the bottom-right corner instead -- the same trick
+   12-responsive.css already plays for a landscape phone (see its "FLOATING
+   HUD CONTROLS" comment), applied here for the first time at desktop width.
+   Taking .action-layer out of the flex column is what actually frees the
+   height: .table-area is flex:1, so it grows into the row the bar vacated,
+   which is what lets the near seat's own back come down toward the room's
+   true bottom edge instead of stopping at the top of a reserved strip.
+   Corner, not centre: the near seat is centred and its own back is the one
+   thing a further table-scale pass must be free to bring toward the bottom
+   edge without a centred bar sitting in the way.
+
+   Scoped to .scene-room-3d -- the classic table's own desktop
+   --foreground-allowance bump (05-game-header.css) is a deliberate
+   legibility call for its near seat's larger nameplate and stays untouched
+   by this. */
+@media (min-width: 901px) {
+  .game-content:has(.scene-room-3d) .action-layer {
+    position: absolute;
+    z-index: 25;
+    right: max(24px, var(--safe-right));
+    bottom: max(24px, var(--safe-bottom));
+    padding: 0;
+    /* A positioning shell only now, so it must not swallow a tap aimed at
+       the felt in the corner it happens to cover. The bar itself takes
+       taps back below, same as the mobile floating variant. */
+    pointer-events: none;
+  }
+  .game-content:has(.scene-room-3d) .action-layer .action-bar {
+    width: auto;
+    max-width: min(700px, 42vw);
+    margin: 0;
+    /* Sized by its own content now that it fills no reserved strip. */
+    height: auto;
+    align-items: center;
+    pointer-events: auto;
+  }
+}
+
 .poker-table-wrap {
   /* Capped by both max table width AND an estimate of the vertical room the
      header and action layer leave behind, so the table shrinks to fit a

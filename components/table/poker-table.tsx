@@ -23,6 +23,7 @@ import {
 } from "@/lib/game/table-geometry";
 import { Menu, type MenuItem } from "@/components/nav/menu";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
+import { tapSound } from "@/lib/audio/ui-sounds";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { ActionBar } from "./action-bar";
@@ -30,6 +31,7 @@ import { MuckDrift } from "./table-effects";
 import { HandHistoryDrawer } from "./hand-history-drawer";
 import { RebuyCheckout } from "./rebuy-checkout";
 import { PlayerSeat } from "./player-seat";
+import { TableLoadingSplash } from "./scene3d/table-loading-splash";
 import { PlayingCard } from "./playing-card";
 import { isWinningCard, winningCardKeys } from "@/lib/game/winning-cards";
 import { MAX_MISSED_TURNS } from "@/lib/game/engine";
@@ -726,7 +728,7 @@ export function PokerTable({
         {/* Mark only, matching the lobby header. The button already carries
             its own accessible name, so the mark stays aria-hidden here rather
             than announcing the brand a second time inside it. */}
-        <button className="wordmark wordmark-mark-only" onClick={onLeave} aria-label="Leave table">
+        <button className="wordmark wordmark-mark-only" onClick={() => { tapSound(); onLeave(); }} aria-label="Leave table">
           <span className="wordmark-mark"><StackChipsMark size={32} /></span>
         </button>
         {/* The pot, in the one strip of the screen no seat can ever reach.
@@ -745,7 +747,7 @@ export function PokerTable({
           <strong><span className="chip-stack-icon" />{game.pot.toLocaleString()}</strong>
         </div>
         <div className="game-header-actions">
-          <button className="leave-button" onClick={onLeave}>Leave table</button>
+          <button className="leave-button" onClick={() => { tapSound(); onLeave(); }}>Leave table</button>
           <Menu
             label="Open player menu"
             trigger={
@@ -800,6 +802,7 @@ export function PokerTable({
               onReady={reportSceneReady}
             />
           )}
+          <TableLoadingSplash active={activeRenderer === "webgl_3d" && !sceneReady} />
           {/* The pot and the stakes, in the black space around the table
               rather than on the cloth. On the felt they had to be small
               enough not to fight the board, and at 1440x900 the blinds line

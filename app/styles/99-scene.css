@@ -114,3 +114,62 @@
 .scene-room-3d .table-hud {
   visibility: hidden;
 }
+
+/* The 3D room's "entering the room" splash -- see table-loading-splash.tsx
+   for why this exists. Full-viewport rather than scoped to .table-area:
+   nothing behind it (header, action bar) is meaningfully usable before the
+   room is seated anyway, so covering the whole screen reads as one
+   deliberate transition instead of a patch over part of it.
+
+   z-index above every other in-game layer (--z-modal tops out at 100) --
+   this is a rare, transitional, full-screen state, and nothing underneath
+   should be reachable while it's up, which pointer-events below also
+   enforces. */
+.table-loading-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  background: var(--brand-room);
+  opacity: 1;
+  transition: opacity 350ms ease;
+}
+
+.table-loading-splash-hiding {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Reuses account-entry-spin (04-lobby.css) rather than a second spinner
+   language -- same rotate keyframe, this component's own sizing. */
+.table-loading-splash-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(219, 156, 11, .22);
+  border-top-color: var(--brand-gold-light);
+  animation: account-entry-spin 800ms linear infinite;
+  /* Not --brand-sweep -- that token's one legal consumer is .entry-aurora. */
+  box-shadow: var(--accent-glow-gold);
+}
+
+.table-loading-splash-flavor {
+  margin: 0;
+  color: #93a1bb;
+  font-size: 13px;
+  letter-spacing: .02em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-loading-splash {
+    transition: none;
+  }
+  .table-loading-splash-spinner {
+    animation: none;
+    border-top-color: rgba(219, 156, 11, .22);
+  }
+}

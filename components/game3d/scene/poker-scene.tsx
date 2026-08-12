@@ -47,6 +47,18 @@ import { Chair } from "./chair";
 import { SceneSeam } from "./scene-seam";
 import { FoldCardFlights } from "./fold-card-flights";
 import { RoomSurround } from "./room-surround";
+import { allSeatsLoaded } from "@/lib/game3d/avatar-load-gate";
+
+/**
+ * How long the room waits for every seated character's .glb before giving up
+ * and presenting itself anyway. Without this, one stuck or slow fetch would
+ * hold the *entire* room hidden behind the loading splash forever, which is
+ * strictly worse than the old behaviour of an individual seat popping in
+ * late. Ten seconds is generous for a ~3.5MB starter roster on an ordinary
+ * connection and short enough that a genuinely stuck load doesn't strand a
+ * player.
+ */
+const AVATAR_LOAD_TIMEOUT_MS = 10_000;
 
 
 /**
@@ -173,9 +185,11 @@ function Lights({ theme }: { theme: RoomTheme }) {
 function SeatUnit({
   seat,
   actionKey,
+  onAvatarLoaded,
 }: {
   seat: SeatModel;
   actionKey: string;
+  onAvatarLoaded?: (slot: number) => void;
 }) {
   const position = seatPosition(seat.slot);
   const rotationY = faceCentreRotationY(position);
@@ -199,6 +213,7 @@ function SeatUnit({
         inHand={seat.inHand}
         lastAction={seat.lastAction}
         actionKey={actionKey}
+        onLoaded={onAvatarLoaded}
       />
       {seat.isCurrent || seat.isWinner ? (
         <mesh position={[0, 0.018, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -262,10 +277,12 @@ function SceneContents({
   model,
   resumeBetFlights = [],
   theme,
+  onAvatarLoaded,
 }: {
   model: SceneModel;
   resumeBetFlights?: Array<{ id: string; slot: number; amount: number }>;
   theme: RoomTheme;
+  onAvatarLoaded?: (slot: number) => void;
 }) {
   const dealerSlot =
     model.seats.find((seat) => seat.isDealer)?.slot ?? null;
@@ -290,6 +307,7 @@ function SceneContents({
           key={seat.id}
           seat={seat}
           actionKey={`${model.handNumber}:${model.street}:${seat.status}:${seat.streetBet}:${seat.lastAction ?? ""}`}
+          onAvatarLoaded={onAvatarLoaded}
         />
       ))}
       {/* One InstancedMesh for every live hole card (cards-instanced.tsx),
@@ -346,6 +364,47 @@ export function PokerScene({
     onReadyRef.current = onReady;
   }, [onReady]);
 
+  // `sceneReady` used to mean "the GL context exists," which is essentially
+  // immediate and says nothing about whether anyone is actually seated yet.
+  // It now means "the context exists AND every currently-modelled seat's
+  // .glb has mounted" -- see lib/game3d/avatar-load-gate.ts for the pure
+  // predicate. `readyLatchedRef` makes this a one-shot gate for the initial
+  // load: once true, a later seat/avatar swap (a reseat, a bot rotating in)
+  // never revokes it, so only the first entry into the room pays for the
+  // full wait.
+  const glCreatedRef = useRef(false);
+  const loadedSlotsRef = useRef<Set<number>>(new Set());
+  const readyLatchedRef = useRef(false);
+  const expectedSlotsRef = useRef<number[]>([]);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearLoadTimeout = useCallback(() => {
+    if (timeoutRef.current === null) return;
+    clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
+  }, []);
+
+  const maybeReportReady = useCallback(() => {
+    if (readyLatchedRef.current || !glCreatedRef.current) return;
+    if (!allSeatsLoaded(expectedSlotsRef.current, loadedSlotsRef.current)) return;
+    readyLatchedRef.current = true;
+    clearLoadTimeout();
+    onReadyRef.current?.(true);
+  }, [clearLoadTimeout]);
+
+  // Keeps the expected-seat set current as the game snapshot changes, and
+  // re-checks the gate every time -- harmless once latched, since
+  // maybeReportReady no-ops immediately in that case.
+  useEffect(() => {
+    expectedSlotsRef.current = model.seats.map((seat) => seat.slot);
+    maybeReportReady();
+  }, [model.seats, maybeReportReady]);
+
+  const handleAvatarLoaded = useCallback((slot: number) => {
+    loadedSlotsRef.current.add(slot);
+    maybeReportReady();
+  }, [maybeReportReady]);
+
   const handleCreated = useCallback((state: { gl: THREE.WebGLRenderer }) => {
     const canvas = state.gl.domElement;
     // Report false BEFORE the browser would otherwise leave a frozen image on
@@ -353,13 +412,33 @@ export function PokerScene({
     // without it the context is gone for good.
     const lost = (event: Event) => {
       event.preventDefault();
+      glCreatedRef.current = false;
+      readyLatchedRef.current = false;
       onReadyRef.current?.(false);
     };
-    const restored = () => onReadyRef.current?.(true);
+    const restored = () => {
+      // A restored context re-runs the same gate a first mount does -- the
+      // avatars' three.js objects survive a context loss, but their GPU
+      // resources do not, so treating this as anything less than a fresh
+      // "not ready" would risk showing a room whose textures never re-upload.
+      glCreatedRef.current = true;
+      maybeReportReady();
+    };
     canvas.addEventListener("webglcontextlost", lost);
     canvas.addEventListener("webglcontextrestored", restored);
-    onReadyRef.current?.(true);
-  }, []);
+    glCreatedRef.current = true;
+    maybeReportReady();
+  }, [maybeReportReady]);
+
+  // The timeout safety net: mount-scoped, independent of the gate above, so
+  // a single stuck fetch cannot hold the room hidden indefinitely.
+  useEffect(() => {
+    timeoutRef.current = setTimeout(() => {
+      readyLatchedRef.current = true;
+      onReadyRef.current?.(true);
+    }, AVATAR_LOAD_TIMEOUT_MS);
+    return clearLoadTimeout;
+  }, [clearLoadTimeout]);
 
   useEffect(() => {
     // Unmounting un-lights the felt, so a route change or a StrictMode
@@ -385,7 +464,12 @@ export function PokerScene({
       {/* Must match the fog colour, or the fade draws a horizon line — both
           read the active theme's `backdrop`. */}
       <color attach="background" args={[theme.backdrop]} />
-      <SceneContents model={model} resumeBetFlights={resumeBetFlights} theme={theme} />
+      <SceneContents
+        model={model}
+        resumeBetFlights={resumeBetFlights}
+        theme={theme}
+        onAvatarLoaded={handleAvatarLoaded}
+      />
     </Canvas>
   );
 }

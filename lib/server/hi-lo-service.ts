@@ -11,6 +11,7 @@ import {
   type HiLoRound,
   type HiLoSnapshot,
 } from "@/lib/arcade/hi-lo";
+import { isRetiredArcadeGame, RETIRED_GAME_MESSAGE } from "@/lib/arcade/retired";
 import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
@@ -116,6 +117,13 @@ export async function dealHiLo(
 
   const existing = await getActiveArcadeRound<HiLoRound>(profile.id, HI_LO_GAME);
   if (existing) return { ...view(existing, profile), resumed: true };
+
+  // Retired 2026-08-12. After the resume above, deliberately: a player holding
+  // a live round has already paid for it and settles it out normally through
+  // playHiLoCall, which is not blocked. See lib/arcade/retired.ts.
+  if (isRetiredArcadeGame(HI_LO_GAME)) {
+    throw new HiLoRequestError(RETIRED_GAME_MESSAGE, 410);
+  }
 
   const stake = TIER_CONFIG[tier].minBuyIn;
   if (!profile.unlimitedGold && profile.goldBalance < stake) {

@@ -6,6 +6,7 @@ import {
   arcadeBlockedReason,
   arcadeEntryLabel,
   canAffordArcadeGame,
+  splitArcadeFloor,
   toArcadeWallet,
   type ArcadeGame,
 } from "./games";
@@ -22,7 +23,7 @@ const game = (over: Partial<ArcadeGame> = {}): ArcadeGame => ({
 });
 
 describe("arcade catalogue", () => {
-  it("lists the ten expansion games in display order", () => {
+  it("lists every catalogued game in display order", () => {
     expect(ARCADE_GAMES.map((entry) => entry.name)).toEqual([
       "Blackjack 21",
       "Daily Wordle",
@@ -34,7 +35,38 @@ describe("arcade catalogue", () => {
       "Memory Match",
       "Baccarat",
       "Coin Flip",
+      "Chess",
+      "Checkers",
+      "Trivia Showdown",
+      "Word Race",
     ]);
+  });
+
+  it("keeps every retired game off the floor and unlinked", () => {
+    // The catalog half of the 2026-08-12 retirement. The half that actually
+    // matters -- that the deal routes refuse -- is pinned in retired.test.ts;
+    // this is what stops one of them being quietly relinked.
+    const retired = ARCADE_GAMES.filter((entry) => entry.status === "retired");
+    expect(retired.map((entry) => entry.id)).toEqual([
+      "hi-lo",
+      "video-poker",
+      "roulette-wheel",
+      "baccarat",
+      "coin-flip",
+    ]);
+    for (const entry of retired) expect(entry.href).toBeNull();
+
+    const floor = splitArcadeFloor();
+    const onFloor = [...floor.free, ...floor.duels, ...floor.staked].map((entry) => entry.id);
+    for (const entry of retired) expect(onFloor).not.toContain(entry.id);
+  });
+
+  it("stakes every duel and never lists one as free", () => {
+    for (const entry of ARCADE_GAMES) {
+      if (entry.kind !== "duel") continue;
+      expect(entry.entryCost).toBeGreaterThan(0);
+    }
+    expect(splitArcadeFloor().free.every((entry) => entry.kind === "puzzle")).toBe(true);
   });
 
   it("keeps ids unique", () => {
@@ -44,7 +76,8 @@ describe("arcade catalogue", () => {
 
   it("routes every live game and only live games", () => {
     // A live entry with a null href renders an unclickable "Play"; a
-    // coming-soon entry with an href is a 404 waiting to be linked.
+    // coming-soon or retired entry with an href is a link to a page nobody
+    // should be sent to.
     for (const entry of ARCADE_GAMES) {
       if (entry.status === "live") expect(entry.href).toBeTruthy();
       else expect(entry.href).toBeNull();
@@ -101,13 +134,23 @@ describe("labels", () => {
     expect(arcadeEntryLabel(game({ entryCost: 5000 }))).toBe("5,000");
   });
 
-  it("reports coming-soon ahead of affordability", () => {
+  it("reports unavailability ahead of affordability", () => {
+    // Telling a player they cannot afford a game nobody can play is the wrong
+    // sentence, so both unavailable states outrank the wallet check.
     const broke = { goldBalance: 0, unlimitedGold: false };
     expect(arcadeBlockedReason(game({ status: "coming-soon" }), broke)).toBe("coming-soon");
+    expect(arcadeBlockedReason(game({ status: "retired" }), broke)).toBe("retired");
     expect(arcadeBlockedReason(game({ status: "live" }), broke)).toBe("insufficient-gold");
     expect(arcadeBlockedReason(game({ status: "live" }), { goldBalance: 999, unlimitedGold: false }))
       .toBeNull();
     expect(arcadeActionLabel(game({ status: "coming-soon" }), broke)).toBe("Soon");
+    expect(arcadeActionLabel(game({ status: "retired" }), broke)).toBe("Retired");
     expect(arcadeActionLabel(game({ status: "live" }), broke)).toBe("Low Gold");
+  });
+
+  it("says Challenge on a duel, since the click opens a lobby rather than dealing", () => {
+    const rich = { goldBalance: 999_999, unlimitedGold: false };
+    expect(arcadeActionLabel(game({ status: "live", kind: "duel" }), rich)).toBe("Challenge");
+    expect(arcadeActionLabel(game({ status: "live", kind: "casino" }), rich)).toBe("Play");
   });
 });

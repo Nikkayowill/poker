@@ -54,6 +54,15 @@
    than restating them, so it must cascade later. */
 @import "./styles/34-memory.css";
 @import "./styles/35-legal.css";
+/* 36-40: the head-to-head duels. 36 is the shared shell -- the lobby, the
+   match frame, the result card -- and every per-game sheet below narrows it,
+   so they must cascade later. Same relationship 28-arcade-hud.css has with the
+   machine sheets above it. */
+@import "./styles/36-duels.css";
+@import "./styles/37-chess.css";
+@import "./styles/38-checkers.css";
+@import "./styles/39-trivia.css";
+@import "./styles/40-word-race.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

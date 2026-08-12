@@ -3,7 +3,12 @@ import { ArcadeFloor } from "@/components/arcade/arcade-floor";
 
 export const metadata: Metadata = {
   title: "Arcade & Puzzles · StackChips",
-  description: "Ten games beside the tables — four free every day, the rest staked in Gold.",
+  // No count. This said "Ten games" and was already wrong twice over by the
+  // time anyone read it -- the 2026-08-12 retirement removed five and the
+  // duels added four. The page itself counts the catalogue every render
+  // (arcadeFloorSummary); a number written down here cannot follow it, which
+  // is the exact failure lib/arcade/games.ts's header records three times.
+  description: "Puzzles, head-to-head duels and card games beside the tables.",
 };
 
 /**

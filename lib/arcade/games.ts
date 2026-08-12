@@ -1,23 +1,39 @@
 /**
- * The arcade catalogue -- the ten mini-games queued behind Hold'em.
+ * The arcade catalogue -- everything beside Hold'em.
  *
  * Pure data plus the wallet predicates the panel renders from, and it lives
  * in lib/ rather than next to the component for the same reason
  * lib/game/seat-presence.ts does: vitest.config.ts's `include` only covers
  * lib/ and app/, so nothing under components/ is reachable by `npm test`.
  *
- * All ten are live now. The `coming-soon` / null-href convention that carried
- * the last six is still the one to use for an eleventh: the shape is finished
- * and going live is two fields, rather than a stub that has to be redesigned
- * when the game behind it actually lands. A test pins live-iff-href, because a
- * live entry with a null href renders an unclickable Play and a coming-soon
- * entry with an href is a 404 waiting to be linked.
+ * ## Three kinds, and the 2026-08-12 turn
  *
- * Two `entryCost`s were corrected when their games landed -- video poker's 500
- * and coin flip's 250. Neither was a stake the tier ladder can select, so the
- * hub was quoting a price no button in the game could charge. A placeholder
- * cost is a claim about the economy, and it has now been wrong three times
- * (Hi-Lo's was the first): price a new row off TIER_CONFIG or leave it at 0.
+ * The floor was ten house games and free dailies. On 2026-08-12 the owner cut
+ * every game whose only mechanic was a wager against fixed odds -- "the legit
+ * brain dead gambling games are dead" -- and asked for social, skill-based
+ * games to stake Gold on instead. So five rows are `retired` (their code and
+ * their arcade_rounds history are untouched; lib/arcade/retired.ts is what
+ * actually stops a new round) and four `duel` rows replace them.
+ *
+ * A duel is the first thing here that is NOT played against the house: both
+ * players ante, the winner takes the pot, and there is no rake. That is why
+ * `kind` gained a third value rather than duels being priced as casino rows --
+ * it decides what the button says (a duel opens a lobby, it does not deal) and
+ * which section of the floor a row lands in.
+ *
+ * ## Rules that have each been broken at least once
+ *
+ * - A live entry needs an href and a non-live one must not have one. A test
+ *   pins it: a live row with a null href renders an unclickable Play, and a
+ *   coming-soon row with an href is a 404 waiting to be linked.
+ * - `entryCost` must be a stake TIER_CONFIG can actually select. Video poker
+ *   sat at 500 and coin flip at 250, so the hub quoted prices no button in
+ *   either game could charge -- the third and fourth times this went wrong
+ *   (Hi-Lo's placeholder was the first). Price a new row off the ladder or
+ *   leave it at 0. For a duel it is a floor, not a price: the challenger picks
+ *   the tier, so the floor renders it as "from N".
+ * - A blurb must not promise a mechanic the game lacks. Hi-Lo's said "ride the
+ *   streak" when there was no streak.
  */
 
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -32,16 +48,33 @@ export type ArcadeGameId =
   | "daily-sudoku"
   | "memory-match"
   | "baccarat"
-  | "coin-flip";
+  | "coin-flip"
+  | "chess-duel"
+  | "checkers-duel"
+  | "trivia-showdown"
+  | "word-race";
 
 /**
- * `casino` stakes Gold on an outcome; `puzzle` is a once-a-day free round.
- * The split is what decides whether a row is wallet-gated at all, so it is a
- * field rather than something inferred from entryCost being zero.
+ * `casino` stakes Gold against the house on a chance outcome; `puzzle` is a
+ * once-a-day free round; `duel` stakes Gold against another PLAYER in a
+ * skill/social match, winner takes the pot -- see lib/pvp/. The split is what
+ * decides whether a row is wallet-gated at all and how its "Play" button
+ * behaves (deal immediately vs. open a challenge lobby), so it is a field
+ * rather than something inferred from entryCost being zero.
  */
-export type ArcadeGameKind = "casino" | "puzzle";
+export type ArcadeGameKind = "casino" | "puzzle" | "duel";
 
-export type ArcadeGameStatus = "coming-soon" | "live";
+/**
+ * `retired` is 2026-08-12's cut of every pure-chance-against-the-house game
+ * (the owner's call: "the legit brain dead gambling games are dead"). Code,
+ * routes and the arcade_rounds history are all left in place -- only the
+ * catalog listing and new rounds are blocked, at casino-round-service.ts's
+ * and hi-lo-service.ts's single guard. Deliberately a distinct status from
+ * `coming-soon`: one is "not built yet", the other is "was built, moved real
+ * Gold, and a human decided to stop offering it" -- collapsing them would
+ * lose that distinction the moment anyone next reads this file.
+ */
+export type ArcadeGameStatus = "coming-soon" | "live" | "retired";
 
 export interface ArcadeGame {
   id: ArcadeGameId;
@@ -110,29 +143,23 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "hi-lo",
     name: "Hi-Lo",
-    // Not "ride the streak": there is no streak. One card, one call, settled
-    // -- and a hub blurb promising a mechanic the table does not have is a
-    // promise broken on the click.
     blurb: "Call the next card, higher or lower",
     kind: "casino",
-    // 1,000, not the 500 this sat at while it was a placeholder: the round
-    // charges TIER_CONFIG's cheapest tier, and the hub must not quote a price
-    // no stake button can actually select.
     entryCost: 1000,
-    status: "live",
-    href: "/games/hi-lo",
+    // Retired 2026-08-12 with the rest of the pure-chance games. Route and
+    // service code are untouched (arcade_rounds keeps the history); dealHiLo
+    // rejects a new round with "This game has been retired."
+    status: "retired",
+    href: null,
   },
   {
     id: "video-poker",
     name: "Video Poker",
     blurb: "Jacks or better, single hand",
     kind: "casino",
-    // 1,000, not the 500 this sat at while it was a placeholder: the round
-    // charges TIER_CONFIG's cheapest tier, and the hub must not quote a price
-    // no stake button can actually select. Same correction Hi-Lo needed.
     entryCost: 1000,
-    status: "live",
-    href: "/games/video-poker",
+    status: "retired",
+    href: null,
   },
   {
     id: "roulette-wheel",
@@ -140,8 +167,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "European single zero",
     kind: "casino",
     entryCost: 1000,
-    status: "live",
-    href: "/games/roulette",
+    status: "retired",
+    href: null,
   },
   {
     id: "daily-sudoku",
@@ -167,23 +194,57 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "Punto banco, player or bank",
     kind: "casino",
     entryCost: 5000,
-    status: "live",
-    href: "/games/baccarat",
+    status: "retired",
+    href: null,
   },
   {
     id: "coin-flip",
     name: "Coin Flip",
-    // Not "double or nothing": a fair coin paying exactly double has a house
-    // edge of precisely zero, which is a hole in the economy rather than a
-    // generous game. Wins pay 1.97x and the run compounds until you bank it --
-    // see lib/arcade/coin-flip.ts. A blurb promising a mechanic the table does
-    // not have is a promise broken on the click, the same way Hi-Lo's was.
     blurb: "Call it, then bank or let it ride",
     kind: "casino",
-    // 1,000, not 250: the ladder's cheapest rung is what a round costs.
+    entryCost: 1000,
+    status: "retired",
+    href: null,
+  },
+  // ---- Duels: skill/social games staked against another PLAYER, not the
+  // house. Winner takes the pot both players anted -- see lib/pvp/. Priced at
+  // the cheapest tier as a "starting at": the challenger actually picks the
+  // stake tier when they send the challenge, same as a table buy-in.
+  {
+    id: "chess-duel",
+    name: "Chess",
+    blurb: "1v1, winner takes the pot",
+    kind: "duel",
     entryCost: 1000,
     status: "live",
-    href: "/games/coin-flip",
+    href: "/games/chess",
+  },
+  {
+    id: "checkers-duel",
+    name: "Checkers",
+    blurb: "1v1, winner takes the pot",
+    kind: "duel",
+    entryCost: 1000,
+    status: "live",
+    href: "/games/checkers",
+  },
+  {
+    id: "trivia-showdown",
+    name: "Trivia Showdown",
+    blurb: "Multiple choice, fastest correct answer wins",
+    kind: "duel",
+    entryCost: 1000,
+    status: "live",
+    href: "/games/trivia",
+  },
+  {
+    id: "word-race",
+    name: "Word Race",
+    blurb: "Unscramble it before they do",
+    kind: "duel",
+    entryCost: 1000,
+    status: "live",
+    href: "/games/word-race",
   },
 ];
 
@@ -220,31 +281,38 @@ export function arcadeEntryLabel(game: ArcadeGame): string {
 export function arcadeBlockedReason(
   game: ArcadeGame,
   wallet: ArcadeWallet,
-): "coming-soon" | "insufficient-gold" | null {
+): "coming-soon" | "retired" | "insufficient-gold" | null {
+  // Retired outranks coming-soon, and both outrank affordability: telling a
+  // player they cannot afford a game nobody can play is the wrong sentence.
+  if (game.status === "retired") return "retired";
   if (game.status !== "live") return "coming-soon";
   if (!canAffordArcadeGame(game, wallet)) return "insufficient-gold";
   return null;
 }
 
 /**
- * The floor, split the way the page presents it: free dailies first, then the
- * rounds that cost Gold.
+ * The floor, split the way the page presents it: free dailies, then head-to-
+ * head duels, then what is left of the house games.
  *
  * The split is on `kind`, not on `entryCost > 0`, and that distinction is the
  * whole reason `kind` is a field rather than something inferred -- a puzzle is
  * free because it is a puzzle, and a casino game priced at 0 by mistake would
- * otherwise silently promote itself into the free section. Coming-soon entries
- * are dropped here rather than rendered greyed out: the arcade has no such
- * entries today, and a section whose header promises "free every day" should
- * not contain something that is not.
+ * otherwise silently promote itself into the free section.
+ *
+ * Retired and coming-soon entries are both dropped: `live` is the filter, so a
+ * game that stops being offered leaves the floor by changing one field, and a
+ * section whose header promises "free every day" cannot contain something that
+ * is not offered at all.
  */
 export function splitArcadeFloor(games: readonly ArcadeGame[] = ARCADE_GAMES): {
   free: ArcadeGame[];
+  duels: ArcadeGame[];
   staked: ArcadeGame[];
 } {
   const live = games.filter((game) => game.status === "live");
   return {
     free: live.filter((game) => game.kind === "puzzle"),
+    duels: live.filter((game) => game.kind === "duel"),
     staked: live.filter((game) => game.kind === "casino"),
   };
 }
@@ -265,13 +333,18 @@ export function arcadeFloorSummary(games: readonly ArcadeGame[] = ARCADE_GAMES):
   staked: number;
   previewNames: string[];
 } {
-  const { free, staked } = splitArcadeFloor(games);
+  const { free, duels, staked } = splitArcadeFloor(games);
   return {
     free: free.length,
-    staked: staked.length,
+    // Duels are staked Gold too -- the tile's second number is "how many cost
+    // something", and splitting it further would need a third line of copy on
+    // a tile that has room for two.
+    staked: duels.length + staked.length,
     // Free first, matching the order the floor puts them in, so the tile and
     // the page it opens do not disagree about what the arcade leads with.
-    previewNames: [...free, ...staked].slice(0, FLOOR_PREVIEW_COUNT).map((game) => game.name),
+    previewNames: [...free, ...duels, ...staked]
+      .slice(0, FLOOR_PREVIEW_COUNT)
+      .map((game) => game.name),
   };
 }
 
@@ -279,9 +352,13 @@ export function arcadeActionLabel(game: ArcadeGame, wallet: ArcadeWallet): strin
   switch (arcadeBlockedReason(game, wallet)) {
     case "coming-soon":
       return "Soon";
+    case "retired":
+      return "Retired";
     case "insufficient-gold":
       return "Low Gold";
     default:
-      return "Play";
+      // A duel is not dealt on the click -- it opens a challenge lobby, and
+      // the button should say so rather than implying a round starts.
+      return game.kind === "duel" ? "Challenge" : "Play";
   }
 }

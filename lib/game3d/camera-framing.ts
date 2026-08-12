@@ -159,14 +159,17 @@ export const FAR_CROWN: Vec3 = {
 /**
  * How much headroom the fit leaves beyond a bare edge-to-edge fit — 1.0
  * would put the required content exactly on the frustum boundary. Was 1.04
- * (a hair of air). User feedback on a render: the room read as too tight,
- * the fitted content filling almost the entire frame with people cropped
- * close on every side. 1.12 backs the camera off an extra ~8% so the room
- * reads as a room instead of a close-up, while the fit is still exact by
- * construction at every aspect — nothing here changes which points must be
- * on screen, only how much margin surrounds them once they are.
+ * (a hair of air), then 1.12: user feedback on that render said the room
+ * still read as too tight, the felt and seat ring nearly filling the frame
+ * with almost no lit floor visible around them — "zoom out" and "I can't
+ * see the background" were the same complaint, since the floor's own carpet
+ * gradient (floor-environment.ts) only reads as a room once enough of it is
+ * actually inside the frustum to see. 1.32 backs the camera off further
+ * still, while the fit stays exact by construction at every aspect —
+ * nothing here changes which points must be on screen, only how much margin
+ * surrounds them once they are.
  */
-const SAFETY = 1.12;
+const SAFETY = 1.32;
 
 /**
  * Iteration counts for the fit. Both are fixed, so the solve is O(1) and

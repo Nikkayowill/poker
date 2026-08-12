@@ -33,6 +33,8 @@ export function Character3DCanvas({ character }: { character: Character3D }) {
         mood="idle"
         status="active"
         isCurrent={false}
+        inHand={false}
+        atTable={false}
         lastAction={null}
         actionKey="store-preview"
       />

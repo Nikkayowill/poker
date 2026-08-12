@@ -1,18 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { frameCamera } from "./camera-framing";
-import { STUDIO_BACKDROP, studioFog } from "./studio-environment";
+import { studioFog } from "./studio-environment";
+import { ROOM_THEMES, roomThemeById } from "./room-theme";
 import {
-  CARPET_STOPS,
   FLOOR_RADIUS,
   FLOOR_RINGS,
   FLOOR_SEGMENTS,
-  STUDIO_RIM,
+  RIM_RIG,
   carpetColorAt,
   floorFootprintRadius,
   frustumFloorHit,
   hexToRgb,
   horizonInFrame,
 } from "./floor-environment";
+
+const DEFAULT_THEME = roomThemeById("after_dark");
 
 /** The whole shipped range, walked rather than sampled at four devices. */
 function everyAspect(): number[] {
@@ -47,7 +49,10 @@ describe("the room is the floor", () => {
     // studio's contract is that the void is total. Measured, not reasoned.
     for (const aspect of [2560 / 1080, 16 / 9, 1440 / 900, 390 / 844, 820 / 1180]) {
       const framing = frameCamera(aspect);
-      const fog = studioFog(framing);
+      // The fog band is pure geometry -- see studio-environment.ts's
+      // studioFog -- so which theme is passed here doesn't matter to this
+      // assertion; the default stands in for all of them.
+      const fog = studioFog(framing, DEFAULT_THEME);
       for (let i = 0; i <= 16; i += 1) {
         const angle = Math.PI / 2 + (i / 16) * Math.PI;
         const rim = {
@@ -79,30 +84,34 @@ describe("the room is the floor", () => {
 });
 
 describe("the carpet", () => {
-  it("reaches EXACTLY the colour the fog fades to at its rim", () => {
+  // Every check below runs for every shipped theme (see room-theme.ts):
+  // this geometry/gradient module has to hold its invariants for whichever
+  // palette is active, not just the one that used to be the only one.
+  it.each(ROOM_THEMES)("$id reaches EXACTLY the colour the fog fades to at its rim", (theme) => {
     // The one equality that lets a lit floor sit inside a fogged void with
     // no horizon line. If these drift apart the seam appears as a faint
     // ring at the edge of the light, which is very hard to attribute to a
-    // colour stop once it is on screen.
-    expect(carpetColorAt(FLOOR_RADIUS)).toEqual(hexToRgb(STUDIO_BACKDROP));
-    expect(carpetColorAt(FLOOR_RADIUS * 5)).toEqual(hexToRgb(STUDIO_BACKDROP));
+    // colour stop once it is on screen. (Also pinned directly on the theme
+    // data itself in room-theme.test.ts, without going through the ramp.)
+    expect(carpetColorAt(FLOOR_RADIUS, theme)).toEqual(hexToRgb(theme.backdrop));
+    expect(carpetColorAt(FLOOR_RADIUS * 5, theme)).toEqual(hexToRgb(theme.backdrop));
   });
 
-  it("falls monotonically outward, so the light has one direction", () => {
+  it.each(ROOM_THEMES)("$id falls monotonically outward, so the light has one direction", (theme) => {
     let previous = Infinity;
     for (let r = 0; r <= FLOOR_RADIUS; r += 0.1) {
-      const { r: red, g, b } = carpetColorAt(r);
+      const { r: red, g, b } = carpetColorAt(r, theme);
       const luminance = red + g + b;
       expect(luminance).toBeLessThanOrEqual(previous + 1e-9);
       previous = luminance;
     }
   });
 
-  it("is a carpet and not a light — nothing here competes with the felt", () => {
+  it.each(ROOM_THEMES)("$id is a carpet and not a light — nothing here competes with the felt", (theme) => {
     // Every stop stays well under the lit felt (#1c5c40). A floor that
     // reads brighter than the cloth inverts the whole studio premise.
     const feltLuminance = hexToRgb("#1c5c40").r + hexToRgb("#1c5c40").g + hexToRgb("#1c5c40").b;
-    for (const stop of CARPET_STOPS) {
+    for (const stop of theme.carpetStops) {
       const { r, g, b } = hexToRgb(stop.color);
       expect(r + g + b).toBeLessThan(feltLuminance);
     }
@@ -124,23 +133,22 @@ describe("the carpet", () => {
   });
 });
 
-describe("the rim light", () => {
+describe("the rim light rig", () => {
+  // Position and castShadow are the fixed rig every theme shares (RIM_RIG);
+  // each theme's own colour/intensity are pinned in room-theme.test.ts
+  // instead, against the data they actually vary.
   it("never casts, so it cannot add a shadow pass", () => {
     // Stated as data precisely so this can be asserted. A second casting
     // light doubles the per-frame depth prepass over every character, chair
     // and chip in the scene to produce a shadow this intensity could not
     // make visible.
-    expect(STUDIO_RIM.castShadow).toBe(false);
-  });
-
-  it("is a rim and not a second key", () => {
-    expect(STUDIO_RIM.intensity).toBeLessThan(0.55);
+    expect(RIM_RIG.castShadow).toBe(false);
   });
 
   it("comes from behind the table, opposite the camera-side kick", () => {
     // The existing warm directional sits at +Z (camera side). An edge needs
     // the other one, or both lights flatten the same silhouette.
-    expect(STUDIO_RIM.position.z).toBeLessThan(0);
+    expect(RIM_RIG.position.z).toBeLessThan(0);
     expect(frameCamera(16 / 9).position.z).toBeGreaterThan(0);
   });
 });

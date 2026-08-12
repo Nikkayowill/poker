@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
-  Box, Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
+  Box, Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Palette, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
@@ -13,6 +13,7 @@ import {
   tableRendererLabel,
   type TableRenderer,
 } from "@/lib/scene/table-renderer";
+import { roomThemeLabel, type RoomThemeId } from "@/lib/game3d/room-theme";
 import { useWebglSupport } from "./use-webgl-support";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
@@ -133,6 +134,8 @@ export function PokerTable({
   tableRenderer,
   tableRendererSettled,
   onCycleTableRenderer,
+  roomThemeId,
+  onCycleRoomTheme,
   onSignIn,
   onSignOut,
 }: {
@@ -153,6 +156,8 @@ export function PokerTable({
   /** Has the stored renderer choice arrived? See the render gate below. */
   tableRendererSettled: boolean;
   onCycleTableRenderer: () => void;
+  roomThemeId: RoomThemeId;
+  onCycleRoomTheme: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
 }) {
@@ -603,6 +608,20 @@ export function PokerTable({
             },
           ]
         : []),
+      // Same gating as the renderer entry above, plus a second condition: a
+      // room theme is a 3D-room concept (there is no floor/fog in the 2D
+      // canvas), so it's meaningless -- not merely unavailable -- unless the
+      // 3D room is what's actually mounted right now.
+      ...(webglAvailable && activeRenderer === "webgl_3d"
+        ? [
+            {
+              kind: "action" as const,
+              label: roomThemeLabel(roomThemeId),
+              onSelect: onCycleRoomTheme,
+              icon: <Palette size={15} />,
+            },
+          ]
+        : []),
       {
         kind: "action",
         label: "Hand history",
@@ -658,7 +677,8 @@ export function PokerTable({
     return items;
   }, [
     soundEnabled, onToggleSound, betStyle, onCycleBetStyle,
-    activeRenderer, onCycleTableRenderer, webglAvailable, game.isPrivate, game.roomCode,
+    activeRenderer, onCycleTableRenderer, webglAvailable, roomThemeId, onCycleRoomTheme,
+    game.isPrivate, game.roomCode,
     game.id, game.isSeated, roomCodeCopied, copyRoomCode, profile, onCustomize, onSignIn,
     onSignOut, onLeaveSeat,
   ]);
@@ -763,6 +783,7 @@ export function PokerTable({
               betFlights={betFlights}
               onReady={reportSceneReady}
               profile={profile}
+              roomThemeId={roomThemeId}
             />
           ) : (
             <TableScene

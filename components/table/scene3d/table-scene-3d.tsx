@@ -42,6 +42,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import { deriveSceneModel } from "@/lib/game3d/scene-model";
 import { PokerScene } from "@/components/game3d/scene/poker-scene";
 import { LiveTableHud } from "@/components/game3d/hud/live-table-hud";
+import { DEFAULT_ROOM_THEME_ID, type RoomThemeId } from "@/lib/game3d/room-theme";
 
 export interface TableScene3DProps {
   game: GameSnapshot;
@@ -50,6 +51,10 @@ export interface TableScene3DProps {
   /** Only for the desktop corner HUD's avatar/portrait -- the rest of the
    * room reads everything else it needs straight off `game`. */
   profile: PlayerProfile | null;
+  /** Which room look to paint — see lib/game3d/room-theme.ts. Optional for
+   * the same reason PokerSceneProps's own field is: a caller that hasn't
+   * threaded the preference through yet still gets a real theme. */
+  roomThemeId?: RoomThemeId;
 }
 
 /**
@@ -82,7 +87,13 @@ class SceneBoundary extends Component<
   }
 }
 
-export function TableScene3D({ game, betFlights, onReady, profile }: TableScene3DProps) {
+export function TableScene3D({
+  game,
+  betFlights,
+  onReady,
+  profile,
+  roomThemeId = DEFAULT_ROOM_THEME_ID,
+}: TableScene3DProps) {
   const model = useMemo(() => deriveSceneModel(game), [game]);
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);
@@ -112,6 +123,7 @@ export function TableScene3D({ game, betFlights, onReady, profile }: TableScene3
           <PokerScene
             model={model}
             resumeBetFlights={betFlights}
+            roomThemeId={roomThemeId}
             onReady={reportReady}
           />
         </SceneBoundary>

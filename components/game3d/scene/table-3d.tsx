@@ -3,13 +3,18 @@
 /**
  * The physical table: an elliptical felt plate on a padded rail over a
  * pedestal, plus the floor that catches everyone's shadows and is also, at
- * this camera, the entire background environment (see
- * lib/game3d/floor-environment.ts for why there is no wall behind it).
+ * this camera, most of the background environment (see
+ * lib/game3d/floor-environment.ts for why a full wall behind it is still not
+ * possible, and lib/game3d/room-theme.ts for the swappable palette that
+ * environment paints from — the felt/rail/skirt below are untouched by it,
+ * on purpose). A real modelled brass railing stands further out, around the
+ * seats — see scene/room-surround.tsx, mounted alongside this component in
+ * poker-scene.tsx rather than inside it.
  *
  * Static geometry only — no per-frame work happens here. The carpet's
- * geometry is built once per mount and disposed on unmount; nothing in this
- * file allocates, mutates or invalidates after the first frame, which is
- * what keeps the environment out of the frame budget entirely.
+ * geometry is built once per mount, rebuilt only when the active theme
+ * changes (its colours are baked into the geometry's vertex buffer, not
+ * read at material time), and disposed on unmount.
  */
 
 import { useEffect, useMemo } from "react";
@@ -18,6 +23,7 @@ import {
   FELT_RADIUS_X,
   FELT_RADIUS_Z,
   FELT_TOP_Y,
+  RAIL_LIP_HEIGHT,
 } from "@/lib/game3d/seat-layout";
 import { offsetStadium } from "@/lib/game3d/table-shape";
 import {
@@ -26,6 +32,7 @@ import {
   FLOOR_SEGMENTS,
   carpetColorAt,
 } from "@/lib/game3d/floor-environment";
+import type { RoomTheme } from "@/lib/game3d/room-theme";
 import {
   buildStadiumRingShape,
   buildStadiumShape,
@@ -47,8 +54,19 @@ import {
  * going 1.45 → 1.2 (seat-layout.ts). These are absolute world units, not
  * derived from FELT_RADIUS_X, so they have to move by hand every round or
  * the table reads proportionally thicker as it shrinks.
+ *
+ * Cut again, a fifth time, independent of any felt-radius move: rendered
+ * next to a real .glb figure, the rail's pillowed bevel (a big rounded
+ * cross-section under a dark, faintly glossy brown) read as a poured,
+ * melted-looking mass rather than a stitched cushion, and its raised top
+ * was exactly what forearms reaching from the seat ring toward the cloth
+ * kept clipping through (see RAIL_LIP_HEIGHT in seat-layout.ts, which the
+ * felt-clamp IK now reads instead of guessing). FELT_THICKNESS,
+ * RAIL_DEPTH and the two bevel constants below all came down ~35-45%; the
+ * rail's own alignTop offset is RAIL_LIP_HEIGHT itself now rather than a
+ * second, silently-drifting literal.
  */
-const FELT_THICKNESS = 0.0199;
+const FELT_THICKNESS = 0.013;
 const SKIRT_HEIGHT = 0.0869;
 
 /** Felt half-extents, the shared "where does the cloth end" boundary every
@@ -73,9 +91,16 @@ const RAIL_WIDTH = 0.0869;
 const RAIL_OVERLAP = 0.0232;
 const RAIL_OUTER = offsetStadium(FELT_EXTENT.halfLength, FELT_EXTENT.halfWidth, RAIL_WIDTH);
 const RAIL_INNER = offsetStadium(FELT_EXTENT.halfLength, FELT_EXTENT.halfWidth, -RAIL_OVERLAP);
-const RAIL_DEPTH = 0.0331;
-const RAIL_BEVEL_THICKNESS = 0.0132;
-const RAIL_BEVEL_SIZE = 0.012;
+/**
+ * Depth and bevel both cut for the fifth rescale (see the header above):
+ * a smaller bevel-to-depth ratio is what turns a rounded, pillowed pour
+ * into a cushion with a real flat top and a stitched edge — the shape a
+ * padded rail actually has. RAIL_DEPTH 0.0331 → 0.021, bevel 0.0132/0.012
+ * → 0.006/0.006.
+ */
+const RAIL_DEPTH = 0.021;
+const RAIL_BEVEL_THICKNESS = 0.006;
+const RAIL_BEVEL_SIZE = 0.006;
 
 /** Skirt: the body below the cloth, sized to sit just under the rail's
  * outer lip rather than flush with the felt's own edge. */
@@ -116,7 +141,12 @@ const BETTING_LINE_INNER = offsetStadium(
  * screen to suggest a colour-space bug rather than a bad colour choice.
  * `setRGB(..., SRGBColorSpace)` makes the literals mean what they read as.
  */
-function CarpetFloor() {
+function CarpetFloor({ theme }: { theme: RoomTheme }) {
+  // Depends on `theme`, not an empty array: the gradient is baked into this
+  // buffer at build time (see the colour-space note above), so switching
+  // themes without rebuilding it would leave the previous theme's carpet
+  // painted under the new fog/lights — the exact "stale buffer" bug a
+  // per-theme geometry has to avoid.
   const geometry = useMemo(() => {
     const radii = FLOOR_RINGS.map((ring) => ring * FLOOR_RADIUS);
     const positions: number[] = [];
@@ -128,7 +158,7 @@ function CarpetFloor() {
     const push = (radius: number, angle: number) => {
       positions.push(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
       normals.push(0, 1, 0);
-      const rgb = carpetColorAt(radius);
+      const rgb = carpetColorAt(radius, theme);
       scratch.setRGB(rgb.r, rgb.g, rgb.b, THREE.SRGBColorSpace);
       colors.push(scratch.r, scratch.g, scratch.b);
     };
@@ -164,7 +194,7 @@ function CarpetFloor() {
     built.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
     built.setIndex(indices);
     return built;
-  }, []);
+  }, [theme]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
@@ -215,7 +245,11 @@ function useTableGeometry() {
         bevelSegments: 4,
         curveSegments: 24,
       }),
-      FELT_TOP_Y + 0.0265,
+      // RAIL_LIP_HEIGHT (seat-layout.ts), not a second local literal — the
+      // felt-clamp IK reads the exact same number as the obstacle a
+      // forearm crossing the rail has to clear, so this offset and that
+      // clearance cannot drift apart.
+      FELT_TOP_Y + RAIL_LIP_HEIGHT,
     );
 
     // Skirt: the straight-walled body below the cloth, no bevel.
@@ -225,7 +259,7 @@ function useTableGeometry() {
         bevelEnabled: false,
         curveSegments: 24,
       }),
-      FELT_TOP_Y - 0.0397,
+      FELT_TOP_Y - 0.028,
     );
 
     // Felt: a thin flat stadium slab, top surface exactly at FELT_TOP_Y —
@@ -247,7 +281,7 @@ function useTableGeometry() {
   }, []);
 }
 
-export function Table3D() {
+export function Table3D({ theme }: { theme: RoomTheme }) {
   const { rail, skirt, felt, bettingLine } = useTableGeometry();
 
   useEffect(
@@ -268,18 +302,29 @@ export function Table3D() {
           Its radius is solved from the framing rather than written down; the
           literal 9 it replaces was already 0.6 units narrower than the frame
           at 2560x1080. */}
-      <CarpetFloor />
+      <CarpetFloor theme={theme} />
 
       {/* Padded rail: a raised stadium ring riding the felt's edge — a true
           uniform-width cushion now, not a torus stretched thinner along its
-          own tube by the non-uniform scale an ellipse used to need. */}
+          own tube by the non-uniform scale an ellipse used to need.
+          Colour and roughness were the other half of the "melted
+          chocolate" complaint, alongside the bevel shape above: a
+          saturated milk-brown at roughness 0.5 caught the overhead spot as
+          a broad, wet-looking highlight down the cushion's rounded top —
+          read against real vinyl/leather rail padding, that highlight is
+          what reads as a pour rather than a stitched surface. Desaturated
+          toward near-black with a cool (not warm-brown) cast, and roughened
+          so the spot breaks into a much smaller, tighter glint instead of
+          a sheen running the cushion's length. */}
       <mesh geometry={rail} castShadow receiveShadow>
-        <meshStandardMaterial color="#2b1f15" roughness={0.5} metalness={0.05} />
+        <meshStandardMaterial color="#241b20" roughness={0.82} metalness={0} />
       </mesh>
 
-      {/* Table skirt: the body below the cloth, seen from the side. */}
+      {/* Table skirt: the body below the cloth, seen from the side. Same
+          desaturation as the rail, kept a shade darker so the two still
+          read as one dark leather assembly rather than two materials. */}
       <mesh geometry={skirt} castShadow receiveShadow>
-        <meshStandardMaterial color="#241a12" roughness={0.55} metalness={0.05} />
+        <meshStandardMaterial color="#1a1417" roughness={0.85} metalness={0} />
       </mesh>
 
       {/* The felt itself. The table stays green — chrome rules don't reach the cloth. */}

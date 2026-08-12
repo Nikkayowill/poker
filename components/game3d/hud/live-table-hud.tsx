@@ -82,7 +82,12 @@ export function LiveTableHud({
             containerHeight={size.height}
             hideMine={showCornerHud}
           />
-          <BetAmounts model={model} aspect={size.width / size.height} />
+          <BetAmounts
+            model={model}
+            aspect={size.width / size.height}
+            width={size.width}
+            height={size.height}
+          />
           <BoardCards cards={model.community} width={size.width} height={size.height} />
         </>
       ) : null}

@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import type { GameSnapshot } from "@/lib/game/types";
 import { deriveSceneModel } from "@/lib/game3d/scene-model";
+import type { RoomThemeId } from "@/lib/game3d/room-theme";
 import { BetAmounts } from "./hud/bet-amounts";
 import { BoardCards } from "./hud/board-cards";
 import { OwnHoleCards } from "./hud/own-hole-cards";
@@ -33,6 +34,9 @@ export interface Game3DBridgeProps {
   game: GameSnapshot;
   /** Optional per-slot .glb avatar URLs (slot 0 is the local player). */
 
+  /** Which room look to render — see lib/game3d/room-theme.ts. Optional;
+   * defaults to the standing look, same as PokerScene's own field. */
+  roomThemeId?: RoomThemeId;
   /** HTML overlay content (action bar, readouts) layered above the canvas. */
   children?: ReactNode;
 }
@@ -59,12 +63,12 @@ function useStageSize() {
   return [ref, size] as const;
 }
 
-export function Game3DBridge({ game, children }: Game3DBridgeProps) {
+export function Game3DBridge({ game, roomThemeId, children }: Game3DBridgeProps) {
   const model = useMemo(() => deriveSceneModel(game), [game]);
   const [stageRef, stageSize] = useStageSize();
   return (
     <div ref={stageRef} className={styles.stage}>
-      <PokerScene model={model} />
+      <PokerScene model={model} roomThemeId={roomThemeId} />
       <BoardCards
         cards={model.community}
         width={stageSize.width}
@@ -76,7 +80,12 @@ export function Game3DBridge({ game, children }: Game3DBridgeProps) {
           are a size cue in both rooms, so both need the readout. Gated on a
           measured stage: the projection divides by the aspect. */}
       {stageSize.width > 0 && stageSize.height > 0 ? (
-        <BetAmounts model={model} aspect={stageSize.width / stageSize.height} />
+        <BetAmounts
+          model={model}
+          aspect={stageSize.width / stageSize.height}
+          width={stageSize.width}
+          height={stageSize.height}
+        />
       ) : null}
       <OwnHoleCards seats={model.seats} />
       {children}

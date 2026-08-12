@@ -37,6 +37,13 @@ import {
   normalizeTableRenderer,
   type TableRenderer,
 } from "@/lib/scene/table-renderer";
+import {
+  DEFAULT_ROOM_THEME_ID,
+  ROOM_THEME_STORAGE_KEY,
+  nextRoomThemeId,
+  normalizeRoomThemeId,
+  type RoomThemeId,
+} from "@/lib/game3d/room-theme";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
 import { Coins, Gift, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
@@ -130,6 +137,15 @@ export function PokerApp() {
       fallback: DEFAULT_TABLE_RENDERER,
       parse: normalizeTableRenderer,
     });
+  // Same shape again, and no `settled` needed this time: unlike the renderer
+  // above, a theme change never remounts anything -- it's just colour/light
+  // props flowing into the already-mounted 3D room -- so a one-tick flicker
+  // to the default before the stored value arrives is harmless.
+  const [roomThemeId, setRoomThemeIdState] = useStoredPreference<RoomThemeId>({
+    key: ROOM_THEME_STORAGE_KEY,
+    fallback: DEFAULT_ROOM_THEME_ID,
+    parse: normalizeRoomThemeId,
+  });
   // Same probe poker-table.tsx uses to decide what the menu can offer;
   // asked here too now that the buy-in modal offers the same choice before
   // any table exists to mount it into.
@@ -196,6 +212,10 @@ export function PokerApp() {
     setTableRendererState(nextTableRenderer);
   }, [setTableRendererState]);
 
+  const cycleRoomTheme = useCallback(() => {
+    setRoomThemeIdState(nextRoomThemeId);
+  }, [setRoomThemeIdState]);
+
   /**
    * The daily claim, moved off the navbar.
    *
@@ -226,14 +246,34 @@ export function PokerApp() {
   }, [claimingGold]);
 
   useEffect(() => {
-    // The only screen boundary that actually exists in this app: `game` is
-    // null for the whole entry/lobby/hub experience and non-null for the
-    // whole time you're seated at a table, hand or no hand in progress. That
-    // is also exactly "menu" vs. "in-game" as far as menu music is concerned.
+    // The screen boundary is wider than just `game`: PokerApp only owns the
+    // lobby/hub/table experience, and the arcade (`/games/*`) plus
+    // /collection, /leaderboard and /store are separate routes that unmount
+    // this whole component. Without a cleanup here, navigating to any of
+    // them left the singleton <audio> element in lib/audio/menu-music.ts
+    // playing behind a page that never asked for it -- nothing under those
+    // routes imports stopMenuMusic. The cleanup below is what actually fixes
+    // that: it fires on every unmount, which is every such navigation.
+    //
+    // Tab visibility is the other half: a hidden tab (backgrounded window,
+    // switched tab) has no in-app "leave" to hook, so it's read directly via
+    // document.hidden. sync() is the single source of truth for both game
+    // and visibility so the two conditions can't drift into two separate
+    // start/stop call sites.
     setMenuMusicEnabled(musicEnabled);
-    if (!musicEnabled) return;
-    if (game) stopMenuMusic();
-    else startMenuMusic();
+
+    const sync = () => {
+      if (!musicEnabled) return;
+      if (game || document.hidden) stopMenuMusic();
+      else startMenuMusic();
+    };
+
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      stopMenuMusic();
+    };
   }, [game, musicEnabled]);
 
   useEffect(() => {
@@ -1214,6 +1254,8 @@ export function PokerApp() {
             tableRenderer={tableRenderer}
             tableRendererSettled={tableRendererSettled}
             onCycleTableRenderer={cycleTableRenderer}
+            roomThemeId={roomThemeId}
+            onCycleRoomTheme={cycleRoomTheme}
             onSignIn={() => void signIn()}
             onSignOut={() => void signOut()}
           />

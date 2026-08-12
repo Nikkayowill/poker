@@ -101,6 +101,16 @@
   color: var(--text-primary);
 }
 
+/* Set only when this lobby was opened from the friends drawer's Challenge
+   picker -- the one moment before a challenge exists that this page has
+   anything to say about who it's for. */
+.duel-challenge-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.duel-challenge-note strong { color: var(--brand-gold); }
+
 .duel-pot-note,
 .duel-empty,
 .duel-footnote {

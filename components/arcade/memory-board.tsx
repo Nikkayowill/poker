@@ -8,6 +8,7 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   MEMORY_PAIRS,
@@ -120,7 +121,7 @@ export function MemoryBoard() {
     <main className="bj-shell mm-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <Link className="bj-back" href="/">← Back to the lobby</Link>
+          <Link className="bj-back" href="/" onClick={tapSound}>← Back to the lobby</Link>
           <h1>Memory Match</h1>
           <p>
             {state ? `#${state.puzzleNumber} · ` : ""}Eight pairs · One board a day · Resets at midnight UTC
@@ -160,7 +161,7 @@ export function MemoryBoard() {
         {!round ? (
           <div className="sk-start">
             <p>Today&apos;s board is face down and waiting.</p>
-            <button type="button" className="bj-action bj-action-deal" disabled={busy} onClick={deal}>
+            <button type="button" className="bj-action bj-action-deal" disabled={busy} onClick={() => { selectSound(); void deal(); }}>
               {busy ? "Dealing…" : "Deal the board"}
             </button>
           </div>
@@ -177,7 +178,7 @@ export function MemoryBoard() {
                     className={clsx("mm-tile", up && "mm-tile-up", matched && "mm-tile-matched")}
                     disabled={busy || up || solved}
                     aria-label={up && card ? `${card.rank} of ${card.suit}` : "Face-down card"}
-                    onClick={() => flip(index)}
+                    onClick={() => { tapSound(); flip(index); }}
                   >
                     {/* Face-down draws the player's own equipped back, which is
                         what makes this board theirs. `card` really is null

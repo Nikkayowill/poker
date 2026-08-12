@@ -11,6 +11,7 @@ import {
 } from "@/lib/rewards/config";
 import { REWARDED_AD_UNIT } from "@/lib/ads/adsterra";
 import { AdsterraSlot } from "@/components/ads/adsterra-slot";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 
 /**
  * The offer, the ad, and the claim.
@@ -197,7 +198,7 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress, 
               {phase === "done" ? "Gold added" : `${REWARDED_AD_GOLD.toLocaleString("en-US")} Gold`}
             </h2>
           </div>
-          <button ref={closeRef} className="modal-close" onClick={onClose} aria-label="Close">
+          <button ref={closeRef} className="modal-close" onClick={() => { tapSound(); onClose(); }} aria-label="Close">
             <X size={18} />
           </button>
         </header>
@@ -211,16 +212,16 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress, 
               <div className="rewarded-ad-actions">
                 {needsAccount && onSaveProgress
                   ? (
-                    <button type="button" className="primary-action" onClick={onSaveProgress}>
+                    <button type="button" className="primary-action" onClick={() => { selectSound(); onSaveProgress(); }}>
                       Save progress to unlock
                     </button>
                   )
                   : (
-                    <button type="button" className="primary-action" onClick={() => void start()}>
+                    <button type="button" className="primary-action" onClick={() => { selectSound(); void start(); }}>
                       <Coins size={15} /> Watch and claim
                     </button>
                   )}
-                <button type="button" className="secondary-action" onClick={onClose}>
+                <button type="button" className="secondary-action" onClick={() => { tapSound(); onClose(); }}>
                   Not now
                 </button>
               </div>
@@ -251,7 +252,7 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress, 
                 <button
                   type="button"
                   className="primary-action"
-                  onClick={() => void claim()}
+                  onClick={() => { selectSound(); void claim(); }}
                   disabled={!ready}
                 >
                   {phase === "claiming"
@@ -273,7 +274,7 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress, 
                 <Check size={18} /> {awarded.toLocaleString("en-US")} Gold added to your balance.
               </p>
               <div className="rewarded-ad-actions">
-                <button type="button" className="primary-action" onClick={onClose}>
+                <button type="button" className="primary-action" onClick={() => { tapSound(); onClose(); }}>
                   Back to the table
                 </button>
               </div>

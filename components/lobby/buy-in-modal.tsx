@@ -3,6 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { X } from "lucide-react";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHEAPEST_TIER, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { TableRenderer } from "@/lib/scene/table-renderer";
 
@@ -86,7 +87,7 @@ export function BuyInModal({
             <span>BUY-IN</span>
             <h2 id="buyin-title">{title}</h2>
           </div>
-          <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+          <button className="modal-close" onClick={() => { tapSound(); onClose(); }} aria-label="Close"><X size={18} /></button>
         </header>
         <div className="buyin-body">
           <p className="buyin-description">{description}</p>
@@ -121,7 +122,7 @@ export function BuyInModal({
                     key={candidate}
                     className={clsx("tier-card", tier === candidate && "selected", !affordable && "unaffordable")}
                     disabled={!affordable}
-                    onClick={() => selectTier(candidate)}
+                    onClick={() => { selectSound(); selectTier(candidate); }}
                   >
                     <strong>{candidateConfig.label}</strong>
                     <span>{candidateConfig.smallBlind} / {candidateConfig.bigBlind} blinds</span>
@@ -179,7 +180,7 @@ export function BuyInModal({
                   className={tableRenderer === "webgl_3d" ? "is-active" : undefined}
                   aria-pressed={tableRenderer === "webgl_3d"}
                   disabled={!webglAvailable}
-                  onClick={() => onTableRendererChange("webgl_3d")}
+                  onClick={() => { selectSound(); onTableRendererChange("webgl_3d"); }}
                 >
                   3D room
                 </button>
@@ -187,7 +188,7 @@ export function BuyInModal({
                   type="button"
                   className={tableRenderer === "canvas_2d" ? "is-active" : undefined}
                   aria-pressed={tableRenderer === "canvas_2d"}
-                  onClick={() => onTableRendererChange("canvas_2d")}
+                  onClick={() => { selectSound(); onTableRendererChange("canvas_2d"); }}
                 >
                   Classic
                 </button>
@@ -199,7 +200,7 @@ export function BuyInModal({
           <footer className="buyin-footer">
             {lockedTier && onBuyGold && !unlimitedGold && (
               <div className="buyin-purchase">
-                <button className="secondary-action" type="button" disabled={pending} onClick={onBuyGold}>
+                <button className="secondary-action" type="button" disabled={pending} onClick={() => { tapSound(); onBuyGold(); }}>
                   Buy 50,000 Gold for rebuy
                 </button>
                 <small>Gold has no cash value and cannot be redeemed or withdrawn.</small>
@@ -209,7 +210,10 @@ export function BuyInModal({
               className="primary-action"
               type="button"
               disabled={pending || !affordableNow}
-              onClick={() => onConfirm(tier, buyIn)}
+              // The press that asks for a seat, so it answers like every
+              // other choice. Arriving is the game-on cue's job -- firing that
+              // here would celebrate a request that can still be refused.
+              onClick={() => { selectSound(); onConfirm(tier, buyIn); }}
             >
               {pending ? "Please wait…" : confirmLabel}
             </button>

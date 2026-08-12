@@ -6,6 +6,7 @@ import { Camera, Palette, Save, Upload, X } from "lucide-react";
 import { profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 import { ProfileAvatar, type AvatarView } from "./profile-avatar";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 
 export function ProfileModal({
   profile,
@@ -48,6 +49,7 @@ export function ProfileModal({
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
+    selectSound();
     setSaving(true);
     setMessage(null);
     try {
@@ -105,7 +107,7 @@ export function ProfileModal({
             <span>PROFILE</span>
             <h2 id="profile-title">Edit player details</h2>
           </div>
-          <button className="modal-close" onClick={onClose} aria-label="Close profile editor"><X size={18} /></button>
+          <button className="modal-close" onClick={() => { tapSound(); onClose(); }} aria-label="Close profile editor"><X size={18} /></button>
         </header>
         <form onSubmit={save}>
           <div className="profile-preview">
@@ -164,7 +166,7 @@ export function ProfileModal({
                   key={color}
                   className={accent === color ? "selected" : ""}
                   style={{ "--swatch": color } as React.CSSProperties}
-                  onClick={() => setAccent(color)}
+                  onClick={() => { selectSound(); setAccent(color); }}
                   aria-label={`Use color ${color}`}
                 />
               ))}
@@ -176,7 +178,7 @@ export function ProfileModal({
               <small>Player ID</small>
               <code>{profile.id}</code>
             </span>
-            <button type="button" onClick={copyPlayerId}>
+            <button type="button" onClick={() => { selectSound(); copyPlayerId(); }}>
               {idCopied ? "Copied!" : "Copy"}
             </button>
           </div>

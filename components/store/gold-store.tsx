@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Coins, ShieldCheck } from "lucide-react";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { legalDocumentPath, type LegalDocument, type LegalDocumentSlug } from "@/lib/legal/documents";
+import { selectSound } from "@/lib/audio/ui-sounds";
 
 interface GoldTier {
   key: string;
@@ -186,7 +187,7 @@ export function GoldStore({ gameId }: { gameId?: string }) {
             type="button"
             className="primary-action"
             disabled={!allChecked}
-            onClick={() => void acceptAndContinue()}
+            onClick={() => { selectSound(); void acceptAndContinue(); }}
           >
             Continue to Gold packs
           </button>
@@ -208,7 +209,7 @@ export function GoldStore({ gameId }: { gameId?: string }) {
                 type="button"
                 className="gold-store-tier-buy"
                 disabled={pendingKey !== null}
-                onClick={() => void buy(tier.key)}
+                onClick={() => { selectSound(); void buy(tier.key); }}
               >
                 {pendingKey === tier.key ? "Redirecting…" : formatPrice(tier.unitAmount, tier.currency)}
               </button>

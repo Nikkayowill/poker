@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Share2, X } from "lucide-react";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 
 /**
  * Shown once, immediately after hosting a private table.
@@ -59,7 +60,7 @@ export function RoomCreatedModal({ code, onClose }: { code: string; onClose: () 
             <span>PRIVATE TABLE</span>
             <h2 id="room-created-title">Room created</h2>
           </div>
-          <button ref={closeRef} className="modal-close" onClick={onClose} aria-label="Close">
+          <button ref={closeRef} className="modal-close" onClick={() => { tapSound(); onClose(); }} aria-label="Close">
             <X size={18} />
           </button>
         </header>
@@ -73,26 +74,26 @@ export function RoomCreatedModal({ code, onClose }: { code: string; onClose: () 
           </strong>
 
           <div className="room-created-actions">
-            <button type="button" className="secondary-action" onClick={() => void copy(code)}>
+            <button type="button" className="secondary-action" onClick={() => { selectSound(); void copy(code); }}>
               {copied ? <><Check size={15} /> Copied</> : <><Copy size={15} /> Copy code</>}
             </button>
             {canShare && (
               <button
                 type="button"
                 className="secondary-action"
-                onClick={() => void navigator.share({
+                onClick={() => { selectSound(); void navigator.share({
                   title: "StackChips",
                   text: `Join my table with code ${code}`,
                   url: shareUrl,
                 }).catch(() => {
                   // Dismissing the share sheet rejects; that is a choice, not
                   // an error, and needs no message.
-                })}
+                }); }}
               >
                 <Share2 size={15} /> Share
               </button>
             )}
-            <button type="button" className="primary-action" onClick={onClose}>
+            <button type="button" className="primary-action" onClick={() => { tapSound(); onClose(); }}>
               Start playing
             </button>
           </div>

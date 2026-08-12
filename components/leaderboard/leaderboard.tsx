@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import clsx from "clsx";
 import Link from "next/link";
 import { Coins, Crown } from "lucide-react";
+import { selectSound } from "@/lib/audio/ui-sounds";
 
 interface LeaderboardEntry {
   profileId: string;
@@ -107,14 +108,14 @@ export function Leaderboard() {
         <button
           type="button"
           className={clsx("leaderboard-scope-button", scope === "season" && "leaderboard-scope-active")}
-          onClick={() => setScope("season")}
+          onClick={() => { selectSound(); setScope("season"); }}
         >
           This season
         </button>
         <button
           type="button"
           className={clsx("leaderboard-scope-button", scope === "lifetime" && "leaderboard-scope-active")}
-          onClick={() => setScope("lifetime")}
+          onClick={() => { selectSound(); setScope("lifetime"); }}
         >
           All time
         </button>

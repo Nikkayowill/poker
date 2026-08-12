@@ -14,6 +14,8 @@ import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { Card } from "@/lib/game/types";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { toArcadeWallet } from "@/lib/arcade/games";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import {
   canCoverStake,
   handTotal,
@@ -110,6 +112,10 @@ function Hand({
 }
 
 export function BlackjackTable() {
+  // Applies the player's stored mute on a route where PokerApp is not
+  // mounted. The flag it sets is module-global, which is what lets the JSX
+  // below call the chrome cues directly. See lib/audio/ui-sounds.ts.
+  useArcadeSound();
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [tier, setTier] = useState<StakesTier>("1k");
@@ -287,7 +293,7 @@ export function BlackjackTable() {
     <main className="bj-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <Link className="bj-back" href="/">← Back to the lobby</Link>
+          <Link className="bj-back" href="/" onClick={tapSound}>← Back to the lobby</Link>
           <h1>Blackjack 21</h1>
           <p>Dealer stands on soft 17 · Blackjack pays 3:2</p>
         </div>
@@ -356,7 +362,7 @@ export function BlackjackTable() {
                             tipping
                             || (!wallet.unlimitedGold && wallet.goldBalance < amount)
                           }
-                          onClick={() => void tip(amount)}
+                          onClick={() => { selectSound(); void tip(amount); }}
                         >
                           {amount}
                         </button>
@@ -368,7 +374,7 @@ export function BlackjackTable() {
                       aria-label="Not now"
                       // Waving them away resolves the offer exactly as paying
                       // does, and buys exactly the same quiet.
-                      onClick={() => setTipResolvedAtHand(handsPlayed)}
+                      onClick={() => { tapSound(); setTipResolvedAtHand(handsPlayed); }}
                     >
                       ×
                     </button>
@@ -454,7 +460,7 @@ export function BlackjackTable() {
                 // Locked mid-round: the wager is already committed.
                 disabled={live || busy || !loaded || !affordable}
                 title={!loaded || affordable ? undefined : "More Gold needed for this stake"}
-                onClick={() => setTier(entry)}
+                onClick={() => { selectSound(); setTier(entry); }}
               >
                 {TIER_CONFIG[entry].label}
               </button>
@@ -466,10 +472,10 @@ export function BlackjackTable() {
           {live
             ? (
               <>
-                <button type="button" className="bj-action" disabled={!actions.hit || busy} onClick={() => act("hit")}>
+                <button type="button" className="bj-action" disabled={!actions.hit || busy} onClick={() => { selectSound(); act("hit"); }}>
                   Hit
                 </button>
-                <button type="button" className="bj-action" disabled={!actions.stand || busy} onClick={() => act("stand")}>
+                <button type="button" className="bj-action" disabled={!actions.stand || busy} onClick={() => { selectSound(); act("stand"); }}>
                   Stand
                 </button>
                 <button
@@ -480,7 +486,7 @@ export function BlackjackTable() {
                   // wager is covered. The route re-checks both.
                   disabled={!actions.double || !canAffordDouble || busy}
                   title={!canAffordDouble && actions.double ? "Not enough Gold to double" : undefined}
-                  onClick={() => act("double")}
+                  onClick={() => { selectSound(); act("double"); }}
                 >
                   Double
                 </button>
@@ -491,7 +497,7 @@ export function BlackjackTable() {
                 type="button"
                 className="bj-action bj-action-deal"
                 disabled={!loaded || !cover.open || busy}
-                onClick={deal}
+                onClick={() => { selectSound(); void deal(); }}
               >
                 {!loaded
                   ? "Loading your Gold…"

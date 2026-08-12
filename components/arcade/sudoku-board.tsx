@@ -8,6 +8,7 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   SUDOKU_CELLS,
@@ -159,7 +160,7 @@ export function SudokuBoard() {
     <main className="bj-shell sk-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <Link className="bj-back" href="/">← Back to the lobby</Link>
+          <Link className="bj-back" href="/" onClick={tapSound}>← Back to the lobby</Link>
           <h1>Daily Sudoku</h1>
           <p>
             {state ? `#${state.puzzleNumber} · ` : ""}Four grids a day · One attempt each · Resets at midnight UTC
@@ -200,7 +201,7 @@ export function SudokuBoard() {
             type="button"
             className={clsx("bj-stake", entry === difficulty && "bj-stake-on")}
             disabled={busy}
-            onClick={() => chooseDifficulty(entry)}
+            onClick={() => { selectSound(); chooseDifficulty(entry); }}
           >
             {entry[0].toUpperCase() + entry.slice(1)}
           </button>
@@ -211,7 +212,7 @@ export function SudokuBoard() {
         {!round ? (
           <div className="sk-start">
             <p>Today&apos;s {difficulty} grid is waiting.</p>
-            <button type="button" className="bj-action bj-action-deal" disabled={busy} onClick={start}>
+            <button type="button" className="bj-action bj-action-deal" disabled={busy} onClick={() => { selectSound(); start(); }}>
               {busy ? "Opening…" : "Start the grid"}
             </button>
           </div>
@@ -252,7 +253,7 @@ export function SudokuBoard() {
                     )}
                     disabled={solved}
                     aria-label={`Row ${rowOf(index) + 1}, column ${columnOf(index) + 1}${value ? `, ${value}` : ", empty"}`}
-                    onClick={() => setSelected(index)}
+                    onClick={() => { tapSound(); setSelected(index); }}
                   >
                     {value || ""}
                   </button>

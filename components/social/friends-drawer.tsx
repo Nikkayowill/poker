@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Send, Spade, UserMinus, UserPlus, X } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import type { GameSnapshot } from "@/lib/game/types";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type {
@@ -416,7 +417,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsD
             <span>YOUR TABLE</span>
             <strong>Friends</strong>
           </div>
-          <button ref={closeButtonRef} className="modal-close" onClick={onClose} aria-label="Close friends">
+          <button ref={closeButtonRef} className="modal-close" onClick={() => { tapSound(); onClose(); }} aria-label="Close friends">
             <X size={16} />
           </button>
         </div>
@@ -481,7 +482,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsD
                         type="button"
                         className="friend-accept invite-join"
                         disabled={busy.has(row.id)}
-                        onClick={() => void answerInvite(row.id, "accept")}
+                        onClick={() => { selectSound(); void answerInvite(row.id, "accept"); }}
                       >
                         <Spade size={13} aria-hidden="true" />
                         Join
@@ -491,7 +492,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsD
                       type="button"
                       className="friend-decline"
                       disabled={busy.has(row.id)}
-                      onClick={() => void answerInvite(row.id, "decline")}
+                      onClick={() => { selectSound(); void answerInvite(row.id, "decline"); }}
                       aria-label={`Decline ${row.displayName}'s invite`}
                     >
                       <X size={14} />
@@ -517,7 +518,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsD
                       type="button"
                       className="friend-accept"
                       disabled={busy.has(person.id)}
-                      onClick={() => void respond(person.id, "accept")}
+                      onClick={() => { selectSound(); void respond(person.id, "accept"); }}
                       aria-label={`Accept ${person.displayName}`}
                     >
                       <Check size={14} />
@@ -526,7 +527,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsD
                       type="button"
                       className="friend-decline"
                       disabled={busy.has(person.id)}
-                      onClick={() => void respond(person.id, "decline")}
+                      onClick={() => { selectSound(); void respond(person.id, "decline"); }}
                       aria-label={`Decline ${person.displayName}`}
                     >
                       <X size={14} />
@@ -558,7 +559,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsD
                         type="button"
                         className="friend-invite"
                         disabled={busy.has(`invite:${person.profileId}`) || invited.has(person.profileId)}
-                        onClick={() => void invite(person.profileId)}
+                        onClick={() => { selectSound(); void invite(person.profileId); }}
                         aria-label={`Invite ${person.displayName} to your table`}
                       >
                         {invited.has(person.profileId)
@@ -570,7 +571,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsD
                       type="button"
                       className="friend-remove"
                       disabled={busy.has(person.profileId)}
-                      onClick={() => void unfriend(person.profileId)}
+                      onClick={() => { selectSound(); void unfriend(person.profileId); }}
                       aria-label={`Remove ${person.displayName}`}
                     >
                       <UserMinus size={14} />
@@ -596,7 +597,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsD
                       type="button"
                       className="friend-decline"
                       disabled={busy.has(person.id)}
-                      onClick={() => void respond(person.id, "cancel")}
+                      onClick={() => { selectSound(); void respond(person.id, "cancel"); }}
                       aria-label={`Cancel request to ${person.displayName}`}
                     >
                       <X size={14} />

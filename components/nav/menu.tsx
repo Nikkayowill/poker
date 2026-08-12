@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import clsx from "clsx";
 import Link from "next/link";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 
 /**
  * The one dropdown in the app.
@@ -186,10 +187,17 @@ export function Menu({
           // tap cannot open and immediately close the menu.
           if (event.pointerType !== "touch") return;
           event.preventDefault();
+          // The tap sound goes in both branches for the same reason the open
+          // logic does: this path suppresses the follow-up click, so a touch
+          // that only sounded from onClick would be a silent menu on a phone.
+          tapSound();
           if (open) close();
           else setOpen(true);
         }}
-        onClick={() => (open ? close() : setOpen(true))}
+        onClick={() => {
+          tapSound();
+          return open ? close() : setOpen(true);
+        }}
         onKeyDown={onTriggerKeyDown}
       >
         {trigger}
@@ -230,7 +238,7 @@ export function Menu({
                   key={item.label}
                   href={item.href}
                   ref={(el) => { itemRefs.current[index] = el; }}
-                  onClick={() => close(false)}
+                  onClick={() => { tapSound(); close(false); }}
                 >
                   {content}
                 </Link>
@@ -249,7 +257,14 @@ export function Menu({
                 aria-disabled={item.disabled || undefined}
                 ref={(el) => { itemRefs.current[index] = el; }}
                 onClick={() => {
+                  // Silent when refused. "Daily Gold claimed" stays focusable
+                  // and announces itself, but a confirming click on a press
+                  // that does nothing is the menu lying about having worked.
                   if (item.disabled) return;
+                  // `select`, not `tap`: every action row changes something --
+                  // a toggle flips, a modal opens, a claim is taken. The link
+                  // rows above are the ones that merely go somewhere.
+                  selectSound();
                   close(false);
                   item.onSelect();
                 }}

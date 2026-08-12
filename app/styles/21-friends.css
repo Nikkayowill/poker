@@ -111,6 +111,26 @@
 }
 
 .friend-invite:not(:disabled):hover { color: #c9a2f0; background: rgba(152,63,224,.2); }
+
+/* Challenging a friend to a duel. Same pill metrics as .friend-invite --
+   this is also a label-bearing choice rather than a single icon action --
+   but a native <select>, not a button: it is the drawer's only four-way
+   choice, and picking the game is the whole interaction. The native arrow
+   is left in place rather than suppressed with a custom one; it is the one
+   place in this row that is honestly a dropdown. */
+.friend-challenge {
+  height: 30px;
+  padding: 0 8px 0 11px;
+  border: 0;
+  border-radius: 15px;
+  color: #9c93b1;
+  background: rgba(255,255,255,.06);
+  font: 600 11px system-ui, sans-serif;
+  letter-spacing: .02em;
+  cursor: pointer;
+}
+.friend-challenge:disabled { opacity: .45; cursor: default; }
+.friend-challenge:not(:disabled):hover { color: #c9a2f0; background: rgba(152,63,224,.2); }
 /* Join is the drawer's one affirmative, table-bound action, so it carries the
    brand's gold rather than the neutral fill every other control here uses.
    Filled, not outlined: the chrome is borderless, and a state carried by a

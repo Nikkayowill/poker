@@ -638,19 +638,19 @@ export function PokerTable({
         onSelect: () => void copyRoomCode(),
         icon: <Copy size={15} />,
       });
-      // Invites are private-table-only because table_invites.room_code is not
-      // null and a public table has no code -- a schema fact, not a policy.
-      // Seated, because the route enforces exactly that and an entry that
-      // always 403s is worse than no entry. Registered, because an invite is
-      // addressed to a profile id and a guest's dies with their cookie.
-      if (game.isSeated && profile?.isRegistered) {
-        items.push({
-          kind: "action",
-          label: "Invite a friend",
-          onSelect: () => setFriendsOpen(true),
-          icon: <UserPlus size={15} />,
-        });
-      }
+    }
+    // Seated and registered, not private-table-only: the drawer's table-invite
+    // pill is still gated to a room with a code (see inviteGameId below), but
+    // adding a seated stranger as a friend or challenging one to a duel needs
+    // no room code at all. Registered, because a request is addressed to a
+    // profile id and a guest's dies with their cookie.
+    if (game.isSeated && profile?.isRegistered) {
+      items.push({
+        kind: "action",
+        label: "Friends",
+        onSelect: () => setFriendsOpen(true),
+        icon: <UserPlus size={15} />,
+      });
     }
     items.push(
       { kind: "separator" },
@@ -1026,9 +1026,14 @@ export function PokerTable({
 
       {/* No onJoinedTable: this player is already at a table, so the drawer
           offers no Join. Opened from here it is the *sending* surface -- each
-          friend row gains an Invite for this room. */}
+          friend row gains an Invite for this room, and the current seats
+          surface an "Add friend" row for whoever else is sitting here. */}
       {friendsOpen && (
-        <FriendsDrawer inviteGameId={game.id} onClose={() => setFriendsOpen(false)} />
+        <FriendsDrawer
+          inviteGameId={game.isPrivate && game.roomCode ? game.id : undefined}
+          tableSeats={game.seats}
+          onClose={() => setFriendsOpen(false)}
+        />
       )}
     </main>
   );

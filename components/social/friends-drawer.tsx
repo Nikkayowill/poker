@@ -1,17 +1,35 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Check, Send, Spade, UserMinus, UserPlus, X } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
-import type { GameSnapshot } from "@/lib/game/types";
-import type { PlayerProfile } from "@/lib/profile/types";
+import type { GameSnapshot, PublicSeat } from "@/lib/game/types";
+import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 import type {
   FriendSummary,
   FriendsOverview,
   PendingRequest,
   PendingTableInvite,
 } from "@/lib/social/types";
+
+/**
+ * The four duels, for the Challenge picker. NOT sourced from
+ * lib/pvp/registry.ts -- that index pulls in every engine, and trivia's and
+ * word-race's carry `import "server-only"` question/word banks (see
+ * lib/pvp/trivia-questions.ts). This file is a client component, and
+ * importing the registry here would ship both banks into the browser bundle
+ * the same way Word Race's once did before that file existed. Each /games/*
+ * page hardcodes its own id and title for the same reason; this is that same
+ * duplication, once, for the picker that names all four.
+ */
+const DUEL_GAMES: readonly { id: string; label: string }[] = [
+  { id: "chess", label: "Chess" },
+  { id: "checkers", label: "Checkers" },
+  { id: "trivia", label: "Trivia Showdown" },
+  { id: "word-race", label: "Word Race" },
+];
 
 /**
  * The empty overview, used before the first fetch lands and after a failure.
@@ -63,8 +81,23 @@ function expiresIn(expiresAt: string, now: number): string {
  * player's accent, which is the correct rendering for a list that never
  * fetched an equipped avatar, not a fallback for a failure.
  */
-function Avatar({ person }: { person: FriendSummary | PendingRequest }) {
+function Avatar({ person }: { person: FriendSummary | PendingRequest | TableSeatPerson }) {
   return <ProfileAvatar profile={{ ...person, avatarCosmetic: "" }} />;
+}
+
+/**
+ * A seated stranger, projected into the same shape a friend row already
+ * renders. Built from PublicSeat rather than re-declared to match it, so a
+ * field this drawer needs added to a seat later shows up here as a type
+ * error instead of a silently blank row.
+ */
+interface TableSeatPerson {
+  profileId: string;
+  displayName: string;
+  initials: string;
+  avatarUrl: string | null;
+  avatarPreset: AvatarPreset;
+  accent: string;
 }
 
 export interface FriendsDrawerProps {
@@ -86,9 +119,19 @@ export interface FriendsDrawerProps {
    * offered rather than being offered and doing nothing.
    */
   onJoinedTable?: (payload: { game: GameSnapshot; profile: PlayerProfile }) => void;
+  /**
+   * The table's current seats, when the drawer was opened from one.
+   *
+   * This is what turns a stranger at your table into an "Add friend" row --
+   * Seat.profileId exists specifically for this (see its own doc comment).
+   * Bots, open seats, and guests carry no profileId and are filtered out
+   * before this ever reaches the drawer's own dedupe against known people.
+   */
+  tableSeats?: PublicSeat[];
 }
 
-export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsDrawerProps) {
+export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats }: FriendsDrawerProps) {
+  const router = useRouter();
   const [overview, setOverview] = useState<FriendsOverview>(EMPTY);
   const [invites, setInvites] = useState<PendingTableInvite[]>([]);
   /**
@@ -353,6 +396,53 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsD
   }, [inviteGameId]);
 
   /**
+   * Asks a seated stranger to be friends.
+   *
+   * Not routed through `mutate`: that helper only ever reports one failure
+   * string, and `sendFriendRequest`'s ordinary outcomes (`already_pending`,
+   * `already_friends`) are successes from here just like `invite`'s
+   * `already_pending` is -- the request now exists, whether or not this call
+   * is the one that created it. Only `blocked` is worth a distinct message,
+   * and stays undirected for the reason the route gives: naming who blocked
+   * whom undoes the block.
+   */
+  const addFriend = useCallback(async (profileId: string) => {
+    setBusy((current) => new Set(current).add(profileId));
+    try {
+      const response = await fetch("/api/friends/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId }),
+      });
+      if (!mounted.current) return;
+      const data = (await response.json().catch(() => null)) as { status?: string; error?: string } | null;
+      if (!response.ok) {
+        setError(data?.error ?? "Could not send that friend request.");
+        return;
+      }
+      if (data?.status === "blocked") {
+        setError("That player can't be friended right now.");
+        return;
+      }
+      setError(null);
+      // The row that triggered this drops out of `atTable` once `overview`
+      // includes it as pending -- there is no local set to maintain the way
+      // `invited` maintains one for table invites, because this list is
+      // recomputed from `overview` on every render rather than patched.
+      await load();
+    } catch {
+      if (mounted.current) setError("Could not send that friend request.");
+    } finally {
+      if (!mounted.current) return;
+      setBusy((current) => {
+        const next = new Set(current);
+        next.delete(profileId);
+        return next;
+      });
+    }
+  }, [load]);
+
+  /**
    * Answers an invite. Accepting seats the player, so the snapshot goes up.
    *
    * The row is dropped locally before the refetch rather than after: accepting
@@ -396,6 +486,32 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsD
   /** Only the invites still worth offering; the poll is 15s and a row can lapse inside one. */
   const liveInvites = invites.filter((row) => new Date(row.expiresAt).getTime() > now);
   const total = overview.friends.length + overview.incoming.length + overview.outgoing.length;
+
+  /**
+   * Seated strangers worth offering an "Add friend" row.
+   *
+   * Excludes anyone already a friend or already in either request direction
+   * -- `overview` is the truth for that, not a locally-tracked set, so a
+   * friend request sent from the seat menu on a different device still
+   * removes this row here on the next `load()`. `isMine` stands in for a
+   * profile-id equality check against the viewer's own id, which this drawer
+   * is never handed; the table already worked that comparison out.
+   */
+  const known = new Set([
+    ...overview.friends.map((person) => person.profileId),
+    ...overview.incoming.map((person) => person.profileId),
+    ...overview.outgoing.map((person) => person.profileId),
+  ]);
+  const atTable: TableSeatPerson[] = (tableSeats ?? [])
+    .filter((seat) => seat.profileId && !seat.isMine && !known.has(seat.profileId))
+    .map((seat) => ({
+      profileId: seat.profileId as string,
+      displayName: seat.name,
+      initials: seat.initials,
+      avatarUrl: seat.avatarUrl,
+      avatarPreset: seat.avatarPreset as AvatarPreset,
+      accent: seat.accent,
+    }));
 
   return (
     <div
@@ -444,19 +560,44 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsD
             </div>
           )}
 
-          {gate === "none" && loading && total === 0 && liveInvites.length === 0 && (
+          {gate === "none" && loading && total === 0 && liveInvites.length === 0 && atTable.length === 0 && (
             <p className="friends-loading" role="status">Loading your friends…</p>
           )}
 
-          {gate === "none" && !loading && total === 0 && liveInvites.length === 0 && !error && (
+          {gate === "none" && !loading && total === 0 && liveInvites.length === 0
+            && atTable.length === 0 && !error && (
             <div className="friends-empty">
               <UserPlus size={20} aria-hidden="true" />
               <strong>No friends yet</strong>
-              {/* Honest about the current state of the feature rather than
-                  pointing at an "add friend" control that does not exist: the
-                  seat menu that sends a request is the next slice. */}
               <p>Add people you meet at the table, and they&rsquo;ll show up here.</p>
             </div>
+          )}
+
+          {gate === "none" && atTable.length > 0 && (
+            <section className="friends-section" aria-label="Players at this table">
+              <h3>At this table</h3>
+              {atTable.map((person) => (
+                <div className="friend-row" key={person.profileId}>
+                  <Avatar person={person} />
+                  <div className="friend-identity">
+                    <strong>{person.displayName}</strong>
+                    <small>Seated with you now</small>
+                  </div>
+                  <div className="friend-actions">
+                    <button
+                      type="button"
+                      className="friend-invite"
+                      disabled={busy.has(person.profileId)}
+                      onClick={() => { selectSound(); void addFriend(person.profileId); }}
+                      aria-label={`Add ${person.displayName} as a friend`}
+                    >
+                      <UserPlus size={13} aria-hidden="true" />
+                      Add friend
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </section>
           )}
 
           {liveInvites.length > 0 && (
@@ -567,6 +708,35 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable }: FriendsD
                           : <><Send size={13} aria-hidden="true" />Invite</>}
                       </button>
                     )}
+                    {/* A <select> rather than a fifth button plus a popover:
+                        this is the drawer's only four-way choice, and a native
+                        control answers "which game" without a second layer of
+                        open/close state or an outside-click handler to get
+                        wrong. Navigating rather than opening the challenge
+                        from here -- the stake tier and the board both belong
+                        to that game's own page, which already owns opening an
+                        untargeted one the same way. */}
+                    <select
+                      className="friend-challenge"
+                      value=""
+                      disabled={busy.has(person.profileId)}
+                      aria-label={`Challenge ${person.displayName} to a duel`}
+                      onChange={(event) => {
+                        const game = event.target.value;
+                        if (!game) return;
+                        selectSound();
+                        const params = new URLSearchParams({
+                          challenge: person.profileId,
+                          name: person.displayName,
+                        });
+                        router.push(`/games/${game}?${params.toString()}`);
+                      }}
+                    >
+                      <option value="" disabled>Challenge…</option>
+                      {DUEL_GAMES.map((duel) => (
+                        <option key={duel.id} value={duel.id}>{duel.label}</option>
+                      ))}
+                    </select>
                     <button
                       type="button"
                       className="friend-remove"

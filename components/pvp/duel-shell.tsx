@@ -114,6 +114,18 @@ export function DuelShell<TSnapshot>({
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * A specific opponent, carried in from the friends drawer's Challenge
+   * picker as `?challenge=<profileId>&name=<displayName>`.
+   *
+   * Read from `window.location.search` in an effect rather than
+   * `useSearchParams()`: that hook forces every one of the four /games/*
+   * pages into a Suspense boundary to avoid a build-time deopt warning, for a
+   * value this component only ever needs once, on the mount that already
+   * happens client-side.
+   */
+  const [challengeTarget, setChallengeTarget] = useState<string | null>(null);
+  const [challengeName, setChallengeName] = useState<string | null>(null);
 
   /**
    * Whether a poll is allowed to overwrite what is on screen.
@@ -201,6 +213,18 @@ export function DuelShell<TSnapshot>({
   );
 
   useEffect(() => {
+    // Deferred through a timer for the same reason the poll below is: setting
+    // state straight from an effect body commits synchronously within the
+    // effect that produced it, which react-hooks/set-state-in-effect flags.
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      setChallengeTarget(params.get("challenge"));
+      setChallengeName(params.get("name"));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     mounted.current = true;
     // Deferred a tick so the first paint is the empty lobby rather than a
     // suspended render, matching every arcade machine.
@@ -285,7 +309,8 @@ export function DuelShell<TSnapshot>({
           tier={tier}
           onTier={setTier}
           challenges={challenges}
-          onOpen={() => void send(`/api/pvp/${game}`, { tier })}
+          challengeName={challengeTarget ? challengeName : null}
+          onOpen={() => void send(`/api/pvp/${game}`, { tier, opponentId: challengeTarget ?? undefined })}
           onAccept={(id) => void send(`/api/pvp/challenges/${id}`, { action: "accept" })}
           onCancel={(id) => void send(`/api/pvp/challenges/${id}`, { action: "cancel" })}
         />
@@ -306,6 +331,7 @@ function DuelLobby({
   tier,
   onTier,
   challenges,
+  challengeName,
   onOpen,
   onAccept,
   onCancel,
@@ -319,6 +345,8 @@ function DuelLobby({
   tier: StakesTier;
   onTier: (tier: StakesTier) => void;
   challenges: DuelChallenge[];
+  /** The friend this lobby was opened to challenge, from the friends drawer's picker. Null for an ordinary visit. */
+  challengeName: string | null;
   onOpen: () => void;
   onAccept: (id: string) => void;
   onCancel: (id: string) => void;
@@ -338,6 +366,13 @@ function DuelLobby({
 
       <section className="duel-panel">
         <h2 className="floor-section-head">Your stake</h2>
+        {/* Set only by the friends drawer's Challenge picker, and only until
+            a challenge exists: once `mine` is real, mine.opponentId (not this
+            transient URL value) is what tells the pending note it was
+            targeted, so that note survives a refresh where this does not. */}
+        {challengeName && !mine && (
+          <p className="duel-challenge-note">Challenging <strong>{challengeName}</strong></p>
+        )}
         {/* Both players ante the same amount and the winner takes both, so
             the pot is stated as well as the stake -- "1,000" alone reads as
             the price of a round rather than as half of what is on the table. */}
@@ -363,7 +398,7 @@ function DuelLobby({
           <div className="duel-mine">
             <span>
               Your {TIER_CONFIG[mine.tier].label} challenge is open — {mine.stake.toLocaleString()} Gold
-              is held until someone takes it.
+              is held until {mine.opponentId ? "they accept" : "someone takes it"}.
             </span>
             <button type="button" className="floor-play" disabled={busy} onClick={() => onCancel(mine.id)}>
               Withdraw
@@ -378,9 +413,11 @@ function DuelLobby({
           >
             {!loaded
               ? "…"
-              : canAfford
-                ? `Open a ${TIER_CONFIG[tier].label} challenge`
-                : "Not enough Gold"}
+              : !canAfford
+                ? "Not enough Gold"
+                : challengeName
+                  ? `Challenge ${challengeName}`
+                  : `Open a ${TIER_CONFIG[tier].label} challenge`}
           </button>
         )}
       </section>

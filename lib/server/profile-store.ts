@@ -190,7 +190,35 @@ export async function ensureProfile(token: string, preferredName?: string): Prom
     })
     .select("*")
     .single();
-  if (error) throw new Error(`Could not create profile: ${error.message}`);
+  if (error) {
+    // 23505 on profiles_session_token_key: somebody else created this
+    // session's profile between the read above and this insert. The read is a
+    // check-then-insert and cannot be made safe by checking harder -- the
+    // whole window is between the two statements -- so the loser of the race
+    // reads the winner's row instead of failing. Same shape the blackjack
+    // rounds, friend requests and the challenge escrow already use: detect the
+    // duplicate from the 23505, never by looking first.
+    //
+    // This is not a theoretical race. A single cookieless GET of a duel lobby
+    // reproduces it on production: app/api/pvp/[game]/route.ts fans
+    // readDuelMatch and listDuelChallenges out through Promise.all and both
+    // call ensureProfile with the same brand-new token, so a first-time
+    // visitor to /games/chess had a coin-toss chance of a 500 that said
+    // "Could not create profile". Fixed here rather than by serialising that
+    // route, because the same collision is reachable any time two requests
+    // carrying one new cookie land together -- two tabs, a page issuing
+    // parallel fetches, a retry overlapping its original.
+    if (error.code === "23505") {
+      const { data: raced, error: racedError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("session_token", token)
+        .maybeSingle();
+      if (racedError) throw new Error(`Could not load profile: ${racedError.message}`);
+      if (raced) return publicProfile(fromRow(raced));
+    }
+    throw new Error(`Could not create profile: ${error.message}`);
+  }
   return publicProfile(fromRow(data));
 }
 

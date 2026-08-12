@@ -7,11 +7,21 @@
  * no engine import, no live game touched). Hands loop forever; the HUD's
  * Fold / Call / Raise are real choices at your turn and branch the script.
  * Deleting app/game3d + components/game3d + lib/game3d removes every trace.
+ *
+ * Also the fastest way to judge a room-theme change on a real render:
+ * `?theme=velvet_lounge` (any id from lib/game3d/room-theme.ts) overrides
+ * the theme this page renders. The live app reads the stored preference
+ * instead (see poker-app.tsx) — this query param exists only here, so a
+ * palette can be judged without playing a hand to reach a real table.
+ * `useSearchParams` needs the Suspense boundary below or the build opts the
+ * whole route out of static rendering.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Game3DBridge } from "@/components/game3d/game3d-bridge";
 import { ActionHud } from "@/components/game3d/hud/action-hud";
+import { normalizeRoomThemeId } from "@/lib/game3d/room-theme";
 import {
   openingSteps,
   type DemoAction,
@@ -19,6 +29,15 @@ import {
 } from "@/components/game3d/demo/scripted-hand";
 
 export default function Game3DDemoPage() {
+  return (
+    <Suspense fallback={null}>
+      <Game3DDemo />
+    </Suspense>
+  );
+}
+
+function Game3DDemo() {
+  const roomThemeId = normalizeRoomThemeId(useSearchParams().get("theme"));
   const [queue, setQueue] = useState<DemoStep[]>(() => openingSteps(1));
   const [index, setIndex] = useState(0);
   const handRef = useRef(1);
@@ -56,7 +75,7 @@ export default function Game3DDemoPage() {
   const { snapshot } = shown;
   return (
     <main style={{ position: "fixed", inset: 0 }}>
-      <Game3DBridge game={snapshot}>
+      <Game3DBridge game={snapshot} roomThemeId={roomThemeId}>
         <ActionHud
           pot={snapshot.pot}
           message={snapshot.message}

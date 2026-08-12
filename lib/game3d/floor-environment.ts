@@ -12,6 +12,15 @@
  * blend band). A wall, a cyclorama or a sky would be built, lit, uploaded
  * and drawn strictly off screen.
  *
+ * UPDATE (room-surround.glb): a real modelled ring WAS added later, in
+ * `components/game3d/scene/room-surround.tsx` — but it is the asset's short,
+ * close `balustrade` (radius ~3.55, top ~1.18), not its taller `walls` group
+ * (radius ~5.58, top ~3.38). The walls sit right where the claim above says
+ * they would: sampled against the real frustum, their top is visible from
+ * NO angle at ANY shipped aspect, same as a wall would be. The balustrade is
+ * close and short enough to clear that limit. This module's floor is
+ * unaffected either way — it is still the whole environment behind the rail.
+ *
  * So the environment is the ground, and the work is:
  *
  *   1. Make the floor actually cover the frame. It did not. The disc in
@@ -29,18 +38,25 @@
  *      the chairs stand on — and a radial fall from a warm near-table value
  *      to exactly the void colour at the rim reads as a carpet under a
  *      table light, while still meeting the fog invisibly because the two
- *      ends agree by construction (`carpetColorAt(FLOOR_RADIUS)` IS
- *      `STUDIO_BACKDROP`; a test pins it).
+ *      ends agree by construction (`carpetColorAt(FLOOR_RADIUS, theme)` IS
+ *      `theme.backdrop`, for every theme; a test pins it).
  *
  * All of it is vertex colour on geometry that already exists — no texture
  * fetch, no second material, no extra draw call, and nothing here is ever
  * read after the first frame. Pure arithmetic, no three.js import, so
  * `npm test` reaches it.
+ *
+ * Since the whole environment is this floor plus the lights that hit it,
+ * "customize the background" means swapping the palette below — see
+ * `room-theme.ts` for the swappable `RoomTheme` shape (void colour, carpet
+ * ramp, every light's colour) this module and `studio-environment.ts` are
+ * now solved against, and its header for why a real backdrop wall is not
+ * the answer here.
  */
 
 import { cameraBasis, frameCamera, horizontalFov, type CameraFraming } from "./camera-framing";
 import { FELT_RADIUS_X } from "./seat-layout";
-import { STUDIO_BACKDROP } from "./studio-environment";
+import type { RoomTheme } from "./room-theme";
 
 /**
  * The shapes the floor is solved against.
@@ -144,32 +160,27 @@ export const FLOOR_RINGS: readonly number[] = [0, 0.18, 0.34, 0.52, 0.74, 1];
 export const FLOOR_SEGMENTS = 48;
 
 /**
- * The carpet, as a radial ramp.
+ * The carpet, as a radial ramp — the ramp itself is `theme.carpetStops` now
+ * (see room-theme.ts); this module only walks it.
  *
  * Warm and barely-there under the table where the spot spills onto the
  * floor, cooling and darkening outward until it reaches — exactly — the
  * colour the fog fades to. That last equality is the whole trick: it is
  * what lets a lit floor sit inside a fogged void with no horizon line and
  * no fog-exempt materials, which is how the backdrop-plate approach would
- * have had to fake the same thing.
+ * have had to fake the same thing, and it is a per-theme contract now
+ * (`RoomTheme.carpetStops`'s last stop must equal `RoomTheme.backdrop`) —
+ * a test walks every theme in `ROOM_THEMES` to hold it.
  *
- * The near-table stops lean warm brown rather than the cool purple-black
- * they used to (this is data, not a new system — retuning it is a one-line
- * edit): the rail and skirt (table-3d.tsx, `#2b1f15`/`#241a12`) are already
- * a dark mahogany wood, and a cool carpet under warm wood read as two rooms
- * meeting at the rail. A carpet in the same family reads as a lounge floor
- * the table actually stands on. Still well under the felt's own luminance
- * (see the test below) and still exactly `STUDIO_BACKDROP` at the rim.
+ * `after_dark`'s stops lean warm brown rather than the cool purple-black
+ * they used to: the rail and skirt (table-3d.tsx) are a dark mahogany wood,
+ * and a cool carpet under warm wood read as two rooms meeting at the rail.
+ * A carpet in the same family reads as a lounge floor the table actually
+ * stands on. Still well under the felt's own luminance (see the test below)
+ * for every shipped theme.
  *
  * `stop` is a fraction of FLOOR_RADIUS.
  */
-export const CARPET_STOPS: readonly { stop: number; color: string }[] = [
-  { stop: 0, color: "#241a12" },
-  { stop: 0.2, color: "#1c130e" },
-  { stop: 0.45, color: "#100b0a" },
-  { stop: 1, color: STUDIO_BACKDROP },
-];
-
 export interface Rgb {
   r: number;
   g: number;
@@ -187,15 +198,16 @@ export function hexToRgb(hex: string): Rgb {
   };
 }
 
-/** The carpet colour at a plan radius in world units. */
-export function carpetColorAt(radius: number): Rgb {
+/** The carpet colour at a plan radius in world units, under a given theme's ramp. */
+export function carpetColorAt(radius: number, theme: RoomTheme): Rgb {
+  const stops = theme.carpetStops;
   const t = Math.min(1, Math.max(0, radius / FLOOR_RADIUS));
-  let lower = CARPET_STOPS[0];
-  let upper = CARPET_STOPS[CARPET_STOPS.length - 1];
-  for (let i = 0; i < CARPET_STOPS.length - 1; i += 1) {
-    if (t >= CARPET_STOPS[i].stop && t <= CARPET_STOPS[i + 1].stop) {
-      lower = CARPET_STOPS[i];
-      upper = CARPET_STOPS[i + 1];
+  let lower = stops[0];
+  let upper = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i += 1) {
+    if (t >= stops[i].stop && t <= stops[i + 1].stop) {
+      lower = stops[i];
+      upper = stops[i + 1];
       break;
     }
   }
@@ -211,7 +223,8 @@ export function carpetColorAt(radius: number): Rgb {
 }
 
 /**
- * A second, low-intensity light for edge definition.
+ * The rim light's RIG — position and whether it casts. Every theme shares
+ * this; only `RoomTheme.rim`'s colour/intensity differ.
  *
  * The rig has one shadow-casting spot and a hemisphere fill, which lights
  * the table from directly above and from nowhere in particular. Neither
@@ -220,12 +233,6 @@ export function carpetColorAt(radius: number): Rgb {
  * behind and to one side, low enough to be a suggestion of the room rather
  * than a second key.
  *
- * Colour is brass/gold rather than the cool blue-grey it started as —
- * a low-intensity warm kick along the rail's far edge reads as a glint off
- * the wood and its trim, the same "warm accent light" idea a real VIP room
- * would use, without adding a light, a texture or a mesh. Retuning this hex
- * is the whole lever; nothing else in the rig depends on which colour it is.
- *
  * `castShadow: false` is stated as DATA rather than left to the JSX default
  * on purpose. A three.js light that casts adds a whole depth pass over
  * every shadow-casting object in the scene — six rigged characters, six
@@ -233,10 +240,8 @@ export function carpetColorAt(radius: number): Rgb {
  * not make visible anyway. The flag is the difference between one shadow
  * pass per frame and two, so it is worth being unable to forget.
  */
-export const STUDIO_RIM = {
+export const RIM_RIG = {
   position: { x: -3.4, y: 2.9, z: -4.2 },
-  intensity: 0.42,
-  color: "#c99456",
   castShadow: false,
 } as const;
 

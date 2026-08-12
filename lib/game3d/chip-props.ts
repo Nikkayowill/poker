@@ -232,7 +232,7 @@ const NEAR_SEAT_BANKROLL_INSET = 0.74;
 /**
  * Offset toward the player's right, AS AN ANGLE AROUND THE SEAT RING rather
  * than a straight slide along the tangent — and the difference is the whole
- * reason this constant is in radians.
+ * reason this is stated in radians.
  *
  * A straight sideways offset was the first cut and it walked two piles off
  * the cloth. The felt is 2.15 x 1.08, so it is nothing like circular: at the
@@ -243,27 +243,56 @@ const NEAR_SEAT_BANKROLL_INSET = 0.74;
  * CONCENTRIC with the felt, which cannot leave it for any offset at all;
  * only the pile's own footprint can, and that is what the inset covers.
  *
- * 0.50 rad is 28.6 degrees — about half the way to the next chair, which is
- * where a player's chips sit relative to their cards. Solved, not picked:
- * it is the smallest offset at which no tier overlaps its own hole cards,
- * its own bet spot, or a neighbour's pile, at any of the six seats.
+ * PER TIER, NOT ONE NUMBER — and this is a real product decision, not just a
+ * tuning knob, so it is worth stating why. A single offset large enough to
+ * clear the deep tier (0.2444m across — over a tenth of the table's own
+ * length) put every seat's pile at a visible diagonal even when it was
+ * holding six chips, because the room's one collision-avoidance number was
+ * solved for its worst case. On feedback that the pile reads as sitting
+ * "beside" the player rather than in front of them, this is the actual fix:
+ * the common case (short/stack/mid) sits close to straight in front of the
+ * seat, and only a seat that is genuinely deep-stacked — a pile a third of a
+ * metre wide — keeps a real rotation, because there is nowhere else for
+ * that much clay to go on this felt.
  *
- * Re-solved from 0.36 when the felt took its true proportions. A rotation
- * around the ring converts to less ARC at the sides of a narrower ellipse,
- * so the offset that cleared a seat's own bet spot on a 1.32-deep plate no
- * longer did on a 1.08-deep one — slots 1 and 4 landed their piles on the
- * spot their own chips fly to. The scan that picked this walked inset
- * 0.78-0.86 against offset 0.44-0.68 over all six seats and all four tiers.
+ * Each value is the smallest that clears every seat: no tier overlaps its
+ * own hole cards, its own bet spot, or (via BANKROLL_INSET's own felt-edge
+ * ceiling) leaves the cloth. Solved by scanning offset in 0.01 steps against
+ * all six seats for the current BET_SPOT_INSET/HOLE_CARD_INSET, with the
+ * bet spot the binding constraint at every tier (never the cards) — chips
+ * pushed out to clear the felt's painted betting line (see BET_SPOT_INSET's
+ * own comment) sit closer to the bankroll's own radius than they used to,
+ * which is what makes this a real floor and not an arbitrary one. The
+ * table's own oval shape is why slots 2 and 5 (its narrowest, "side" points)
+ * are always the tightest fit and the ones that set each threshold.
+ *
+ * WIDTH IS NOT MONOTONIC WITH THE TIER LADDER, so neither is this: `stack`
+ * (0.1852m across) is physically wider than `mid` (0.1433m) despite holding
+ * less clay, and needs more offset than mid for exactly that reason. Ordered
+ * by tier value only; read the widths in CHIP_PROPS before assuming a
+ * pattern.
+ *
+ * Re-solved from a single 0.5 when the felt took its true proportions (that
+ * number's own history: 0.36 on the old, rounder plate, briefly 0.48 as a
+ * uniform nudge before this file went per-tier). If BET_SPOT_INSET,
+ * HOLE_CARD_INSET or BANKROLL_INSET move again, re-run the scan — this is
+ * the output of one, not a formula.
  */
-const BANKROLL_ANGLE_OFFSET = 0.5;
+const BANKROLL_ANGLE_OFFSET: Record<ChipPropTier, number> = {
+  short: 0.31,
+  mid: 0.33,
+  stack: 0.37,
+  deep: 0.45,
+};
 
 function bankrollInset(slot: number): number {
   return slot === 0 ? NEAR_SEAT_BANKROLL_INSET : BANKROLL_INSET;
 }
 
-/** The seat's own ring angle, rotated toward that player's right hand. */
-export function bankrollAngle(slot: number): number {
-  return seatAngle(slot) + BANKROLL_ANGLE_OFFSET;
+/** The seat's own ring angle, rotated toward that player's right hand — by
+ * however much clearing THIS tier's own footprint needs. */
+export function bankrollAngle(slot: number, tier: ChipPropTier): number {
+  return seatAngle(slot) + BANKROLL_ANGLE_OFFSET[tier];
 }
 
 /**
@@ -280,9 +309,10 @@ export function seatRightVector(slot: number): Vec3 {
   return { x: Math.cos(angle), y: 0, z: -Math.sin(angle) };
 }
 
-/** Where a slot's own bankroll rests on the felt. */
-export function bankrollPosition(slot: number): Vec3 {
-  const angle = bankrollAngle(slot);
+/** Where a slot's own bankroll rests on the felt — the tier decides how far
+ * BANKROLL_ANGLE_OFFSET rotates it off the seat's own straight-ahead line. */
+export function bankrollPosition(slot: number, tier: ChipPropTier): Vec3 {
+  const angle = bankrollAngle(slot, tier);
   const inset = bankrollInset(slot);
   return {
     x: Math.sin(angle) * FELT_RADIUS_X * inset,
@@ -297,8 +327,8 @@ export function bankrollPosition(slot: number): Vec3 {
  * whose forward is +Z ends up facing the centre, which puts its local X — the
  * long axis of every one of these heaps — on the tangent.
  */
-export function bankrollRotationY(slot: number): number {
-  const position = bankrollPosition(slot);
+export function bankrollRotationY(slot: number, tier: ChipPropTier): number {
+  const position = bankrollPosition(slot, tier);
   return Math.atan2(-position.x, -position.z);
 }
 
@@ -349,8 +379,8 @@ export function feltFootprint(
 export function bankrollFootprint(slot: number, tier: ChipPropTier): Vec3[] {
   const size = bankrollSizeUnits(tier);
   return feltFootprint(
-    bankrollPosition(slot),
-    bankrollAngle(slot),
+    bankrollPosition(slot, tier),
+    bankrollAngle(slot, tier),
     size.x / 2,
     size.z / 2,
   );

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { frameCamera, projectToNdc } from "./camera-framing";
 import { SEAT_COUNT_3D, seatPosition, type Vec3 } from "./seat-layout";
 import { DEALER_HEAD_Y, PLAYER_HEAD_Y } from "./studio-environment";
+import { ROOM_THEMES, roomThemeById } from "./room-theme";
 import {
   BET_SLIDE,
   DEALER_STAND,
@@ -14,6 +15,8 @@ import {
   studioFog,
   studioFogForAspect,
 } from "./studio-environment";
+
+const DEFAULT_THEME = roomThemeById("after_dark");
 
 /**
  * The four device shapes the room must lay out on: desktop, landscape
@@ -51,11 +54,15 @@ function foldedPlanRadius(slot: number): number {
 }
 
 describe("studioFog", () => {
+  // The band itself (near/far) is pure geometry, independent of which theme
+  // is active (see the header on studioFog) — these use the default theme
+  // throughout since only fog.color would differ between themes, and that
+  // is covered separately below.
   it.each(ASPECTS)(
     "keeps every head and the whole rail crisp at $name",
     ({ aspect }) => {
       const framing = frameCamera(aspect);
-      const fog = studioFog(framing);
+      const fog = studioFog(framing, DEFAULT_THEME);
       for (const point of crispProbePoints()) {
         expect(distance(framing.position, point)).toBeLessThan(fog.near);
       }
@@ -64,7 +71,7 @@ describe("studioFog", () => {
 
   it.each(ASPECTS)("swallows the visible floor rim entirely at $name", ({ aspect }) => {
     const framing = frameCamera(aspect);
-    const fog = studioFog(framing);
+    const fog = studioFog(framing, DEFAULT_THEME);
     // The rim's near half sits behind the camera; only the half the camera
     // can face matters, and its nearest points are the side extremes.
     for (let i = 0; i <= 12; i += 1) {
@@ -82,7 +89,7 @@ describe("studioFog", () => {
     "leaves a folded player faded but never gone at $name",
     ({ aspect }) => {
       const framing = frameCamera(aspect);
-      const fog = studioFog(framing);
+      const fog = studioFog(framing, DEFAULT_THEME);
       for (let slot = 0; slot < SEAT_COUNT_3D; slot += 1) {
         const folded = foldedSeatPosition(slot);
         const head: Vec3 = { x: folded.x, y: PLAYER_HEAD_Y, z: folded.z };
@@ -95,10 +102,18 @@ describe("studioFog", () => {
     // Portrait stands the camera several units further out than landscape;
     // fog typed against one of them would either smoke the portrait table
     // or leave the landscape void un-swallowed.
-    const landscape = studioFogForAspect(1440 / 900);
-    const portrait = studioFogForAspect(390 / 844);
+    const landscape = studioFogForAspect(1440 / 900, DEFAULT_THEME);
+    const portrait = studioFogForAspect(390 / 844, DEFAULT_THEME);
     expect(portrait.near).toBeGreaterThan(landscape.near + 1);
     expect(portrait.far - portrait.near).toBeCloseTo(landscape.far - landscape.near);
+  });
+
+  it.each(ROOM_THEMES)("takes its colour from the active theme ($id)", (theme) => {
+    // The one thing that DOES vary by theme: color must equal theme.backdrop,
+    // or the fade draws a horizon line against the canvas background it no
+    // longer matches (see poker-scene.tsx's <color attach="background">).
+    const fog = studioFog(frameCamera(16 / 9), theme);
+    expect(fog.color).toBe(theme.backdrop);
   });
 });
 

@@ -22,12 +22,14 @@ import {
 } from "@/lib/game3d/scene-model";
 import { frameCamera } from "@/lib/game3d/camera-framing";
 import { DEALER_BUTTON } from "@/lib/game3d/dimensions";
-import { STUDIO_RIM } from "@/lib/game3d/floor-environment";
+import { RIM_RIG } from "@/lib/game3d/floor-environment";
+import { STUDIO_SPOT, studioFog } from "@/lib/game3d/studio-environment";
 import {
-  STUDIO_BACKDROP,
-  STUDIO_SPOT,
-  studioFog,
-} from "@/lib/game3d/studio-environment";
+  DEFAULT_ROOM_THEME_ID,
+  roomThemeById,
+  type RoomTheme,
+  type RoomThemeId,
+} from "@/lib/game3d/room-theme";
 import {
   FELT_TOP_Y,
   betSpotPosition,
@@ -44,6 +46,7 @@ import { Table3D } from "./table-3d";
 import { Chair } from "./chair";
 import { SceneSeam } from "./scene-seam";
 import { FoldCardFlights } from "./fold-card-flights";
+import { RoomSurround } from "./room-surround";
 
 
 /**
@@ -56,7 +59,7 @@ import { FoldCardFlights } from "./fold-card-flights";
  * camera and update the projection matrix, which three does not do for a
  * changed `fov` on its own.
  */
-function CameraRig() {
+function CameraRig({ theme }: { theme: RoomTheme }) {
   const size = useThree((state) => state.size);
   const framing = useMemo(
     () => frameCamera(size.height > 0 ? size.width / size.height : 1),
@@ -64,7 +67,9 @@ function CameraRig() {
   );
   // The studio fog is a function of where the camera stands, which changes
   // with the viewport — so it lives with the framing, not in the light rig.
-  const fog = useMemo(() => studioFog(framing), [framing]);
+  // Its colour is the active theme's, and must match the canvas background
+  // (see the <color> in PokerScene below) or the fade draws a horizon line.
+  const fog = useMemo(() => studioFog(framing, theme), [framing, theme]);
   const cameraRef = useRef<THREE.PerspectiveCamera>(null);
   useLayoutEffect(() => {
     cameraRef.current?.lookAt(framing.target.x, framing.target.y, framing.target.z);
@@ -91,7 +96,7 @@ function CameraRig() {
   );
 }
 
-function Lights() {
+function Lights({ theme }: { theme: RoomTheme }) {
   const spotRef = useRef<THREE.SpotLight>(null);
   useLayoutEffect(() => {
     const spot = spotRef.current;
@@ -108,20 +113,26 @@ function Lights() {
           real .glb's PBR materials go genuinely black without scene light
           reaching them, which is what made every seated face read as a
           silhouette before this. Still short of relighting the studio
-          abyss outright — the falloff/fog contrast is the point. */}
-      <hemisphereLight args={["#8f8aa6", "#191219", 0.55]} />
+          abyss outright — the falloff/fog contrast is the point. Colour and
+          intensity are `theme.hemisphere` now (room-theme.ts); every other
+          light in this rig follows the same split. */}
+      <hemisphereLight
+        args={[theme.hemisphere.sky, theme.hemisphere.ground, theme.hemisphere.intensity]}
+      />
       {/* The televised table light: one soft-edged overhead pool, solved in
           lib/game3d/studio-environment.ts so who sits inside it (everyone
           seated) and who falls out of it (a folded figure slid back) is
-          unit-tested arithmetic rather than eyeballed. */}
+          unit-tested arithmetic rather than eyeballed. Position/angle/
+          penumbra are the shared rig (STUDIO_SPOT); colour/intensity/decay
+          are the active theme's mood. */}
       <spotLight
         ref={spotRef}
         position={[STUDIO_SPOT.position.x, STUDIO_SPOT.position.y, STUDIO_SPOT.position.z]}
         angle={STUDIO_SPOT.angle}
         penumbra={STUDIO_SPOT.penumbra}
-        intensity={STUDIO_SPOT.intensity}
-        decay={STUDIO_SPOT.decay}
-        color={STUDIO_SPOT.color}
+        intensity={theme.spot.intensity}
+        decay={theme.spot.decay}
+        color={theme.spot.color}
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
@@ -135,23 +146,25 @@ function Lights() {
           faceless-looking far seat in a render made obvious. Direction is
           (position → origin), so this travels toward −Z — which is toward
           the far seat's own front, not just the near seats'. */}
-      <directionalLight position={[0, 4.6, 5.2]} intensity={0.85} color="#e8d9c4" />
+      <directionalLight position={[0, 4.6, 5.2]} intensity={theme.kick.intensity} color={theme.kick.color} />
       {/* Cool rim from behind and to the side, so the rail and the seated
           shoulders have an edge. The spot is directly overhead and the kick
           above is head-on, and a silhouette lit from both of those is
           flattest exactly where its outline is — which is why the table read
           as a shape cut out of the dark rather than an object standing in
           it. Deliberately the only light in the rig that comes from -Z.
+          Position and castShadow are the fixed rig (RIM_RIG); colour/
+          intensity are the theme's.
 
           castShadow is spread from the constant rather than defaulted: it is
           the difference between one shadow pass per frame and two over every
           character, chair and chip, and a second map at this intensity would
           cost that and show nothing. See lib/game3d/floor-environment.ts. */}
       <directionalLight
-        position={[STUDIO_RIM.position.x, STUDIO_RIM.position.y, STUDIO_RIM.position.z]}
-        intensity={STUDIO_RIM.intensity}
-        color={STUDIO_RIM.color}
-        castShadow={STUDIO_RIM.castShadow}
+        position={[RIM_RIG.position.x, RIM_RIG.position.y, RIM_RIG.position.z]}
+        intensity={theme.rim.intensity}
+        color={theme.rim.color}
+        castShadow={RIM_RIG.castShadow}
       />
     </>
   );
@@ -183,6 +196,7 @@ function SeatUnit({
         mood={seat.mood}
         status={seat.status}
         isCurrent={seat.isCurrent}
+        inHand={seat.inHand}
         lastAction={seat.lastAction}
         actionKey={actionKey}
       />
@@ -227,6 +241,11 @@ export interface PokerSceneProps {
   model: SceneModel;
   /** Bet events still airborne when this scene is mounted after a renderer switch. */
   resumeBetFlights?: Array<{ id: string; slot: number; amount: number }>;
+  /** Which void/carpet/light palette to render — see lib/game3d/room-theme.ts.
+   * Optional and defaults to the standing "after dark" look, so a caller that
+   * doesn't yet care about the preference (a test, a future embed) still gets
+   * a real theme rather than an undefined one threaded into three.js props. */
+  roomThemeId?: RoomThemeId;
   /**
    * Fires true once the GL context exists, and false if it is ever lost.
    *
@@ -242,22 +261,28 @@ export interface PokerSceneProps {
 function SceneContents({
   model,
   resumeBetFlights = [],
+  theme,
 }: {
   model: SceneModel;
   resumeBetFlights?: Array<{ id: string; slot: number; amount: number }>;
+  theme: RoomTheme;
 }) {
   const dealerSlot =
     model.seats.find((seat) => seat.isDealer)?.slot ?? null;
 
   return (
     <>
-      <CameraRig />
+      <CameraRig theme={theme} />
       {/* Publishes window.__stackchipsScene. Inside the Canvas because that
           is the only place the live camera is reachable, and mounted first
           so a spec polling for the seam is not racing the room's assets. */}
       <SceneSeam />
-      <Lights />
-      <Table3D />
+      <Lights theme={theme} />
+      <Table3D theme={theme} />
+      {/* A real modelled brass railing around the play area — see
+          room-surround.tsx's own header for why only a piece of this asset
+          (the balustrade, not the taller walls) is ever actually on screen. */}
+      <RoomSurround />
       {/* No house dealer figure: the seats are photographic renders now, and
           nothing in that style exists for the house yet. */}
       {model.seats.map((seat) => (
@@ -302,7 +327,13 @@ function SceneContents({
   );
 }
 
-export function PokerScene({ model, resumeBetFlights = [], onReady }: PokerSceneProps) {
+export function PokerScene({
+  model,
+  resumeBetFlights = [],
+  roomThemeId = DEFAULT_ROOM_THEME_ID,
+  onReady,
+}: PokerSceneProps) {
+  const theme = useMemo(() => roomThemeById(roomThemeId), [roomThemeId]);
   // Held in a ref so the Canvas's own props never change identity because a
   // parent re-rendered with a fresh callback -- remounting a Canvas rebuilds
   // the GL context, which is the one thing this component must not do
@@ -351,9 +382,10 @@ export function PokerScene({ model, resumeBetFlights = [], onReady }: PokerScene
       camera={{ fov: 42, near: 0.1, far: 40 }}
       style={{ position: "absolute", inset: 0 }}
     >
-      {/* Must match the fog colour, or the fade draws a horizon line. */}
-      <color attach="background" args={[STUDIO_BACKDROP]} />
-      <SceneContents model={model} resumeBetFlights={resumeBetFlights} />
+      {/* Must match the fog colour, or the fade draws a horizon line — both
+          read the active theme's `backdrop`. */}
+      <color attach="background" args={[theme.backdrop]} />
+      <SceneContents model={model} resumeBetFlights={resumeBetFlights} theme={theme} />
     </Canvas>
   );
 }

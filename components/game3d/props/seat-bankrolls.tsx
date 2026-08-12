@@ -107,7 +107,7 @@ declare global {
   interface Window {
     __stackchipsProps?: {
       bankrolls: Record<number, BankrollStatsEntry>;
-      position: (slot: number) => { x: number; y: number; z: number };
+      position: (slot: number, tier: ChipPropTier) => { x: number; y: number; z: number };
     };
   }
 }
@@ -188,11 +188,11 @@ function Bankroll({
     };
   }, [scene, detail, container, slot, tier]);
 
-  const position = bankrollPosition(slot);
+  const position = bankrollPosition(slot, tier);
   return (
     <group
       position={[position.x, position.y + PROP_LIFT, position.z]}
-      rotation={[0, bankrollRotationY(slot), 0]}
+      rotation={[0, bankrollRotationY(slot, tier), 0]}
       scale={PROP_SCALE}
     >
       <primitive object={container} />

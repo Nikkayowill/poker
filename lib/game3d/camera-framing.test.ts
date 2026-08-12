@@ -112,7 +112,7 @@ describe("frameCamera", () => {
           return Math.max(Math.abs(ndc.x), Math.abs(ndc.y));
         })
       );
-      expect(worst, name).toBeCloseTo(1 / 1.12, 3);
+      expect(worst, name).toBeCloseTo(1 / 1.32, 3);
     }
   });
 

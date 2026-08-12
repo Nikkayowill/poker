@@ -25,6 +25,7 @@
 
 import { frameCamera, type CameraFraming } from "./camera-framing";
 import { UNITS_PER_METRE } from "./dimensions";
+import type { RoomTheme } from "./room-theme";
 import {
   FELT_RADIUS_X,
   FELT_RADIUS_Z,
@@ -48,10 +49,6 @@ import {
  */
 export const PLAYER_HEAD_Y = 1.5;
 export const DEALER_HEAD_Y = 1.62;
-
-/** The void everything fades into. Fog and canvas background must match —
- * a fog that fades to a colour the backdrop isn't draws a horizon line. */
-export const STUDIO_BACKDROP = "#060913";
 
 /** Air between the last crisp point and the start of the fade. */
 const FOG_NEAR_MARGIN = 0.3;
@@ -99,19 +96,26 @@ function distance(a: Vec3, b: Vec3): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
-/** Solve the fog band for where this framing's camera actually stands. */
-export function studioFog(framing: CameraFraming): StudioFog {
+/**
+ * Solve the fog band for where this framing's camera actually stands.
+ *
+ * The band itself (near/far) is pure geometry — it does not depend on which
+ * theme is active. Only `color` does, and it must be `theme.backdrop`: fog
+ * and canvas background must match or the fade draws a horizon line, which
+ * is the same equality `RoomTheme.carpetStops`' last stop owes `backdrop`.
+ */
+export function studioFog(framing: CameraFraming, theme: RoomTheme): StudioFog {
   const farthestCrisp = crispProbePoints().reduce(
     (max, point) => Math.max(max, distance(framing.position, point)),
     0
   );
   const near = farthestCrisp + FOG_NEAR_MARGIN;
-  return { color: STUDIO_BACKDROP, near, far: near + FOG_SPAN };
+  return { color: theme.backdrop, near, far: near + FOG_SPAN };
 }
 
 /** Convenience for the scene: fog for a viewport aspect in one call. */
-export function studioFogForAspect(aspect: number): StudioFog {
-  return studioFog(frameCamera(aspect));
+export function studioFogForAspect(aspect: number, theme: RoomTheme): StudioFog {
+  return studioFog(frameCamera(aspect), theme);
 }
 
 /* ------------------------------------------------------------------ */
@@ -185,22 +189,28 @@ const SPOT_POOL_RADIUS = maxFoldedPlanRadius() * SPOT_POOL_MARGIN;
 const SPOT_Y = SPOT_HEIGHT_M * UNITS_PER_METRE;
 const SPOT_DROP = SPOT_Y - FELT_TOP_Y;
 
+/**
+ * The spotlight's RIG — where it stands, what it aims at, and the cone
+ * shape that puts the outermost folded player right at its rim (see
+ * SPOT_POOL_RADIUS above). Every theme shares this geometry; only
+ * `RoomTheme.spot`'s colour/intensity/decay differ, in poker-scene.tsx's
+ * `<spotLight>`.
+ *
+ * Intensity/decay used to live here too, and the note on why matters for
+ * any future retune of SPOT_DROP: intensity falls as distance^decay, so
+ * shortening the throw from 5.60 to 4.39 units brightens the felt by
+ * (5.60/4.39)^1.6 = 1.48x — a blown-out cloth, from a change that was about
+ * the shape of the gradient and was never meant to touch exposure at all.
+ * `after_dark`'s 156 (room-theme.ts) is 230 / 1.48, holding the table at the
+ * level it was judged at; a further SPOT_DROP change owes every theme's
+ * intensity the same correction.
+ */
 export const STUDIO_SPOT = {
   position: { x: 0, y: SPOT_Y, z: 0.35 } as Vec3,
   target: { x: 0, y: FELT_TOP_Y, z: 0 } as Vec3,
   angle: Math.atan(SPOT_POOL_RADIUS / SPOT_DROP),
   /** The televised soft edge: light falls off across most of the cone. */
   penumbra: 0.85,
-  /*
-   * Re-exposed for the lower truss, not re-tuned by eye. Intensity falls as
-   * distance^decay, so shortening the throw from 5.60 to 4.39 units brightens
-   * the felt by (5.60/4.39)^1.6 = 1.48x — a blown-out cloth, from a change
-   * that was about the shape of the gradient and was never meant to touch
-   * exposure at all. 230 / 1.48 holds the table at the level it was judged at.
-   */
-  intensity: 156,
-  decay: 1.6,
-  color: "#ffeed8",
 } as const;
 
 /**

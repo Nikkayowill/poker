@@ -91,6 +91,36 @@ export const FELT_RADIUS_X = 1.2;
 export const FELT_RADIUS_Z = FELT_RADIUS_X * (TABLE_WIDTH_M / TABLE_LENGTH_M);
 
 /**
+ * How far above FELT_TOP_Y the padded rail's own cushion peaks. Table3D's
+ * rail geometry (components/game3d/scene/table-3d.tsx) aligns its top to
+ * exactly this offset — stated here, not there, so the felt-clamp IK
+ * (glb-avatar.tsx, via tableSurfaceY below) can use the same number. A
+ * forearm reaching in from a seat crosses the RAIL before it crosses the
+ * felt; clamping every wrist target to the felt's own, lower surface left
+ * it clipping through the rail's raised cushion on the way there, on every
+ * side seat. One number, both consumers, so a further rail retune can't
+ * silently reopen that gap.
+ */
+export const RAIL_LIP_HEIGHT = 0.016;
+
+/**
+ * The height a wrist has to clear at plan position (x, z): the felt's own
+ * top surface over the cloth itself, the rail's slightly higher one just
+ * outside it. An ellipse test against the felt's own radii, not the
+ * table's exact stadium outline — cheap, pure, and conservative in the
+ * corner where the two shapes disagree (it starts guarding the rail
+ * fractionally early rather than fractionally late). Reports the rail
+ * height for anything past the felt's edge, open floor included: no
+ * seat/chair collision is modelled, and a seated reach animation's wrist
+ * target never actually lands out there, so a third "open air" region
+ * would guard against a case that doesn't occur.
+ */
+export function tableSurfaceY(point: { x: number; z: number }): number {
+  const onFelt = (point.x / FELT_RADIUS_X) ** 2 + (point.z / FELT_RADIUS_Z) ** 2 <= 1;
+  return onFelt ? FELT_TOP_Y : FELT_TOP_Y + RAIL_LIP_HEIGHT;
+}
+
+/**
  * How far behind the rail a player sits — one number, applied to both axes.
  *
  * The seat ring used to be two independent radii (2.62 and 1.78) whose
@@ -118,16 +148,63 @@ export const FELT_RADIUS_Z = FELT_RADIUS_X * (TABLE_WIDTH_M / TABLE_LENGTH_M);
  */
 export const SEAT_SETBACK = 0.34;
 
-/** Avatars stand on this larger ellipse, just outside the rail. */
+/** Avatars stand on this larger ellipse, just outside the rail. This is the
+ * FAR seat's own radius — see FAR_SEAT_SLOT below for why it, alone, is not
+ * pushed out any further. */
 export const SEAT_RING_RADIUS_X = FELT_RADIUS_X + SEAT_SETBACK;
 export const SEAT_RING_RADIUS_Z = FELT_RADIUS_Z + SEAT_SETBACK;
+
+/**
+ * The seat directly across the felt from the camera (θ=180°, -Z — see
+ * seatAngle/seatPosition below and avatar-sprites.ts's own note that "slot 3
+ * at -Z" is the far seat everyone else's turnaround faces).
+ *
+ * It is the one seat this pass does NOT pull back further, on purpose:
+ * camera-framing.ts's FAR_CROWN is built from this exact seat's radius, and
+ * studio-environment.ts's DEALER_STAND_MARGIN comment already records that
+ * framing has no slack left around it — 0.617 units of measured clearance
+ * against a 0.6 floor at 844x390. Moving it back risks pushing its own head
+ * off screen for a table that has room everywhere else. See
+ * NEAR_SEAT_EXTRA_SETBACK just below for the seats that do move.
+ */
+export const FAR_SEAT_SLOT = 3;
+
+/**
+ * Extra room every seat OTHER than the far one gets, on top of
+ * SEAT_SETBACK — rendered and judged, not derived. Five of six seats read
+ * as sitting right on top of the rail once SEAT_SETBACK stopped scaling
+ * with the felt (see that constant's own history above): it now only
+ * states the clearance a fixed-size .glb body needs against the felt
+ * plane, not "how far back a person actually sits," so every seat the
+ * framing has room for gets a bit more air than that bare minimum.
+ *
+ * Was 0.08. User feedback on that render: still too tight, wanted the
+ * seats pulled back further. Doubled to 0.16 and re-rendered rather than
+ * nudged, since the first pass was already a guess and a second small
+ * nudge risked reading as "still not enough" again.
+ */
+export const NEAR_SEAT_EXTRA_SETBACK = 0.16;
+
+function seatSetback(slot: number): number {
+  return slot === FAR_SEAT_SLOT ? SEAT_SETBACK : SEAT_SETBACK + NEAR_SEAT_EXTRA_SETBACK;
+}
 
 /**
  * How far a seat's bet spot sits from centre, as a fraction of the felt
  * radii. Far enough out to read as "in front of the bettor", far enough in
  * to be unambiguously on the cloth.
+ *
+ * Was 0.58, which put every seat's chips well inside the painted betting
+ * line (table-3d.tsx's BETTING_LINE_INSET, 0.72 of this same felt) — on a
+ * real table the line is what a bet crosses on its way to the pot, not
+ * where it starts, so chips sitting entirely short of it read as never
+ * having left the player's own side. 0.74 clears the line with a hair of
+ * cloth to spare and stays under HOLE_CARD_INSET (0.78), which the "gives
+ * the near seat its own corridor" test in seat-layout.test.ts still checks
+ * — a bet spot outside its own seat's cards would sit behind them from the
+ * camera's own angle.
  */
-export const BET_SPOT_INSET = 0.58;
+export const BET_SPOT_INSET = 0.74;
 
 /**
  * The pot rests behind the community cards (negative Z is away from the
@@ -166,13 +243,22 @@ export function seatAngle(slot: number): number {
   return (slot / SEAT_COUNT_3D) * Math.PI * 2;
 }
 
-/** Where the avatar for a slot stands (on the floor, outside the rail). */
+/**
+ * Where the avatar for a slot stands (on the floor, outside the rail).
+ *
+ * Not one shared ellipse: every seat but the far one (FAR_SEAT_SLOT) sits
+ * NEAR_SEAT_EXTRA_SETBACK further out than SEAT_RING_RADIUS_X/Z alone would
+ * put it. Both radii still scale together per slot, so each seat still
+ * stands on a true ellipse — just a slightly larger one than its neighbour
+ * across the table.
+ */
 export function seatPosition(slot: number): Vec3 {
   const angle = seatAngle(slot);
+  const setback = seatSetback(slot);
   return {
-    x: Math.sin(angle) * SEAT_RING_RADIUS_X,
+    x: Math.sin(angle) * (FELT_RADIUS_X + setback),
     y: FLOOR_Y,
-    z: Math.cos(angle) * SEAT_RING_RADIUS_Z,
+    z: Math.cos(angle) * (FELT_RADIUS_Z + setback),
   };
 }
 
@@ -180,8 +266,20 @@ export function seatPosition(slot: number): Vec3 {
  * Slot 0's bet spot sits deeper toward the board than everyone else's: its
  * hole cards take the near corridor (see holeCardPosition), and chips on
  * the ordinary inset would land on top of them.
+ *
+ * Raised from 0.4 alongside the ordinary BET_SPOT_INSET, for the same
+ * betting-line reason — but it can't clear the line by quite as much as the
+ * other five seats' spots do: NEAR_SEAT_BANKROLL_INSET (0.74) is this seat's
+ * own hard ceiling — see that constant's comment for why it stays pulled in
+ * — which leaves only 0.02 of felt between this and the line versus the
+ * ordinary seats' 0.06. NEAR_SEAT_HOLE_CARD_INSET (which the "corridor" test
+ * still requires this stay under) moved to 0.72 alongside it — its own
+ * ceiling is no longer a rendered card's occlusion (the local player's own
+ * pair is DOM — hud/own-hole-cards.tsx — so this seat's felt position is a
+ * shadow/fold-flight anchor only; see that constant's own comment) but the
+ * ordering test itself.
  */
-export const NEAR_SEAT_BET_INSET = 0.4;
+export const NEAR_SEAT_BET_INSET = 0.7;
 
 /** Where a slot's committed street bet rests, on the felt. */
 export function betSpotPosition(slot: number): Vec3 {
@@ -215,11 +313,11 @@ export function handLaunchPosition(slot: number): Vec3 {
 /**
  * Where a slot's hole cards lie, on the felt just inside the rail.
  *
- * Slot 0 gets its own, deeper inset: the local player's avatar stands
- * between the camera and their edge of the felt, so cards at the ordinary
- * inset are hidden behind their own figure — the same near-seat occlusion
- * the 2D room's NEAR_SEAT_BET_INSET exists for. Measured on a render, not
- * assumed.
+ * Slot 0 gets its own inset, kept separate from the ordinary five seats'
+ * even now that nothing draws a card there (see NEAR_SEAT_HOLE_CARD_INSET's
+ * own comment) — it is still the near seat's own corridor floor, and a
+ * shared constant would tie this seat's fold-flight anchor to a number
+ * tuned for a card that isn't this seat's.
  */
 /*
  * Pulled in from 0.82 when the felt took its true 2.13 x 1.07 proportions,
@@ -229,15 +327,25 @@ export function handLaunchPosition(slot: number): Vec3 {
  * outermost inset at which the deepest pile keeps every corner on the cloth
  * is 0.82 — the value the cards already occupied — so the two could not
  * both stay there and still be in that order. The cards are the ones with
- * room to give: they are small, and 0.78 keeps them well outside the bet
- * spot at 0.58.
+ * room to give: they were small, and 0.78 kept them well outside the bet
+ * spot, back when that spot sat at 0.58.
  *
- * The near seat's 0.6 is untouched. It was measured on a render against the
- * local player's own figure occluding their cards, which is a fact about
- * where that figure stands, not about how deep the felt is.
+ * Nudged again to 0.78 alongside BET_SPOT_INSET's own move to 0.74 (see that
+ * constant's comment on the painted betting line) — cards need to clear the
+ * bet spot in front of them, not the line itself, so this followed rather
+ * than led.
+ *
+ * The near seat's value is no longer "untouched". It WAS measured on a
+ * render against the local player's own figure occluding their cards, which
+ * mattered when a 3D pair actually rendered there — but their own cards are
+ * DOM now (hud/own-hole-cards.tsx; see poker-scene.tsx's own comment on
+ * seatHasFeltCards), so this seat's felt position has no card to occlude
+ * any more. It still exists as the near seat's fold-flight start point and
+ * the ordering floor NEAR_SEAT_BET_INSET's comment describes, which is why
+ * it moved to 0.72 (the betting line itself) rather than staying put.
  */
 const HOLE_CARD_INSET = 0.78;
-const NEAR_SEAT_HOLE_CARD_INSET = 0.6;
+const NEAR_SEAT_HOLE_CARD_INSET = 0.72;
 
 export function holeCardPosition(slot: number): Vec3 {
   const inset = slot === 0 ? NEAR_SEAT_HOLE_CARD_INSET : HOLE_CARD_INSET;

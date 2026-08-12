@@ -37,6 +37,13 @@ import {
   normalizeTableRenderer,
   type TableRenderer,
 } from "@/lib/scene/table-renderer";
+import {
+  DEFAULT_ROOM_THEME_ID,
+  ROOM_THEME_STORAGE_KEY,
+  nextRoomThemeId,
+  normalizeRoomThemeId,
+  type RoomThemeId,
+} from "@/lib/game3d/room-theme";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
 import { Coins, Gift, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
@@ -130,6 +137,15 @@ export function PokerApp() {
       fallback: DEFAULT_TABLE_RENDERER,
       parse: normalizeTableRenderer,
     });
+  // Same shape again, and no `settled` needed this time: unlike the renderer
+  // above, a theme change never remounts anything -- it's just colour/light
+  // props flowing into the already-mounted 3D room -- so a one-tick flicker
+  // to the default before the stored value arrives is harmless.
+  const [roomThemeId, setRoomThemeIdState] = useStoredPreference<RoomThemeId>({
+    key: ROOM_THEME_STORAGE_KEY,
+    fallback: DEFAULT_ROOM_THEME_ID,
+    parse: normalizeRoomThemeId,
+  });
   // Same probe poker-table.tsx uses to decide what the menu can offer;
   // asked here too now that the buy-in modal offers the same choice before
   // any table exists to mount it into.
@@ -195,6 +211,10 @@ export function PokerApp() {
   const cycleTableRenderer = useCallback(() => {
     setTableRendererState(nextTableRenderer);
   }, [setTableRendererState]);
+
+  const cycleRoomTheme = useCallback(() => {
+    setRoomThemeIdState(nextRoomThemeId);
+  }, [setRoomThemeIdState]);
 
   /**
    * The daily claim, moved off the navbar.
@@ -1234,6 +1254,8 @@ export function PokerApp() {
             tableRenderer={tableRenderer}
             tableRendererSettled={tableRendererSettled}
             onCycleTableRenderer={cycleTableRenderer}
+            roomThemeId={roomThemeId}
+            onCycleRoomTheme={cycleRoomTheme}
             onSignIn={() => void signIn()}
             onSignOut={() => void signOut()}
           />

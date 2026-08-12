@@ -44,6 +44,39 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 ## Active milestone
 
 - Track: `ui-redesign-foundation`
+- **The 3D room has a real modelled backdrop now (2026-08-12): a brass
+  balustrade, walls, a bar and two glowing pendant lamps, from a GLB the
+  owner supplied** (`public/environments/stackchips-room-surround.glb`,
+  `components/game3d/scene/room-surround.tsx`). A second supplied file,
+  `stackchips-poker-room.glb` — a *complete* alternate scene with its own
+  table/chips/dealer tray, on a different scale than this app's table — was
+  deliberately left uninstalled; using it would double the app's own table
+  geometry. Three things worth not relearning:
+  - **`floor-environment.ts`'s "no wall is possible" claim was checked
+    against this exact asset, not re-argued from first principles**: sampling
+    both the asset's `walls` ring (radius ~5.58, top ~3.38) and its
+    `balustrade` ring (radius ~3.55, top ~1.18) against `frameCamera`'s real
+    frustum at every shipped aspect confirms the walls' top is visible from
+    **zero** angles at **any** aspect — exactly what the claim predicts — while
+    the balustrade, being closer and much shorter, genuinely reads on screen.
+    The whole asset ships anyway (5,378 triangles, cheap) rather than trimming
+    the invisible parts; only the asset's own `carpet_ring` was dropped, since
+    it sits exactly coplanar with `CarpetFloor` at y=0 (a z-fighting pair) and
+    can't recolour itself the way `carpetColorAt` does on a `RoomTheme` swap.
+  - **Not routed through `props/instanced-prop.ts`'s `buildInstancedProp`.**
+    That helper's material clamp is tuned for the chip roster's clay finish
+    (metalness ceiling 0.12) and would have dulled this asset's brass trim
+    (authored at 0.35, meant to catch the spot). There is also nothing here
+    instancing would collapse — 13 mesh nodes, none repeated — so it's a plain
+    recursive `scene.clone(true)` into the same stable-container-built-inside-
+    the-disposing-effect shape `HoleCardProp` already established, for the
+    same StrictMode double-mount reason documented there.
+  - **Verified on the real GPU, not headless** (`ANGLE (AMD, AMD Radeon 660M
+    …)` via the debug-renderer-info extension, through `/game3d`'s
+    no-server-required scripted demo route) at 1440×900, 390×844 and 2560×1080
+    — the balustrade arcs across the top of frame at every one, the two
+    pendant lamps glow (their material is emissive, independent of scene
+    light), and nothing z-fights with the carpet.
 - **The rewarded-ad faucet changed shape on 2026-08-11: 5-minute wait (was
   30s), a direct "Free Gold" entry point, and the live Adsterra unit.**
   `REWARDED_AD_GOLD` was already 500; only `REWARDED_AD_DURATION_MS` moved
@@ -1643,6 +1676,67 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
     existing `--seat-dx`/`--seat-dy` toward-pot vector) is what both the
     card nudge above and any future compact-marker work should read for
     "away from the pot" — it did not exist before this pass.
+- **The 3D roster's hands rest on the felt and are aimed at their own cards
+  now (2026-08-12), and the reason they never could be before is a
+  measurement.** The only thing touching an avatar's arms at runtime was
+  `arm-ik.ts`'s felt clamp, which is purely negative — it stops a wrist
+  sinking through the cloth and says nothing about where a wrist should be —
+  so every hand sat where the baked clip left it: mid-air, fingers closed on
+  nothing, which the owner described as "holding a flute". Six things worth
+  not relearning:
+  - **Every seat but the far one is physically OUT OF REACH of its own
+    cards.** Measured off the live bones on the real GPU: shoulder-to-card
+    runs 0.50-0.92 world units against a fully-extended arm of 0.54-0.60, so
+    five of six seats are 0.12-0.38 units short. No solver fixes that — an
+    IK solve asked for an unreachable target returns its best miss. The fix
+    is that the wrist is aimed a hand's length BACK from the cards
+    (`CARD_HAND_SETBACK`, `lib/game3d/hand-anchors.ts`), because it is the
+    FINGERTIPS that have to arrive; that alone buys back ~0.14 units and
+    drops the residual to 0.000-0.100, worst on the near seat, which is seen
+    from behind.
+  - **A torso lean was built, measured and REMOVED — do not re-add one
+    casually.** It is the obvious third lever and it fails twice: against
+    residuals that small, a lean big enough to matter reads as hunching (at
+    its 24-degree cap it put heads through the rail), and the loop is
+    unstable by construction, since leaning reduces the deficit that asked
+    for the lean, so it hunts. What is left is absorbed by
+    `reachableTarget`, which shortens the reach along the FLOOR rather than
+    down the line of sight — that distinction is what stopped hands hovering
+    at chest height, since the sight line rises away from the table as it
+    shortens.
+  - **The old IK never applied more than a quarter of its own correction, at
+    any frame rate.** It slerped each bone a `dampingFactor` fraction toward
+    the solved rotation every frame — right for a value that persists, wrong
+    here, because the mixer rewrites every bone from the clip at the start of
+    each frame, so the correction restarted from zero forever. Smooth the
+    TARGET and apply the solve at full strength (`dampPointToward`).
+  - **The uniform finger curl WAS the flute, and the fix has to be
+    absolute.** `build-poker-character-animations.py` applies the same
+    24/18/10 degrees to all five digits including the thumb; five identical
+    cylinders at the same phase is geometrically a grip round a tube. The
+    clips key all 40 finger bones, so a delta leaves that curl underneath —
+    `lib/game3d/hand-rig.ts` rebuilds each digit from its captured BIND
+    rotation instead. `shapeVariation` is the executable guard: the bake's
+    shape scores exactly 0 and a test requires more.
+  - **Flexion axes are derived from bind geometry, never named.** The bake
+    gets to say "local X" because it runs in Blender's bone space; glTF nodes
+    carry the exporter's convention instead. Each joint's curl axis comes
+    from its own child direction crossed with the palm normal, sign-checked
+    with `curlsTowardPalm` — get the cross product's order backwards and
+    every finger on every character bends the wrong way, which a render shows
+    and tsc does not. Angles are calibrated against the T-POSE they compose
+    onto, not against a straight finger: near-zero curls reproduce the T-pose
+    and gave six characters rigid spread claws, a different wrong hand rather
+    than a fixed one.
+  - **Judge these at their rendered size.** A hand is ~30 px at 1440x900;
+    two rounds were spent tuning against 400% crops that a pixel-diff then
+    showed were responding correctly all along. Same lesson
+    `dealer-avatar.tsx` records at 34 px. Scratch scaffolding: `arm-rig.ts`
+    holds the three.js side (bones, bind measurement, per-frame drive),
+    `hand-anchors.ts`/`hand-rig.ts`/`vec3-math.ts` the pure halves, 394
+    `lib/game3d` cases. The store's preview canvas passes `atTable={false}`
+    and gets `poseFingersOnly` — every anchor here is a world-space point on
+    a table that canvas does not contain.
 - **M18 is in: player rank, XP and a daily streak.** `lib/progression/rank.ts`
   is the whole curve, pure and closed-form (XP = Gold wagered / 10; level N
   costs `XP_STEP·(N-1)N/2`, inverted by a square root that is then re-checked

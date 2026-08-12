@@ -20,20 +20,14 @@
  * the solved joint positions back as bone rotations.
  */
 
-import type { Vec3 } from "./seat-layout";
+import { add, clamp, dot, len, norm as normalize, scale, sub, type Vec3 } from "./vec3-math";
 
 const EPS = 1e-4;
 
-const sub = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
-const add = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
-const scale = (a: Vec3, s: number): Vec3 => ({ x: a.x * s, y: a.y * s, z: a.z * s });
-const dot = (a: Vec3, b: Vec3): number => a.x * b.x + a.y * b.y + a.z * b.z;
-const len = (a: Vec3): number => Math.hypot(a.x, a.y, a.z);
-const norm = (a: Vec3): Vec3 => {
-  const l = len(a);
-  return l > EPS ? scale(a, 1 / l) : { x: 0, y: 0, z: 1 };
-};
-const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+/** Shared with vec3-math, but with this module's own zero-length fallback:
+ * a degenerate bone direction here means "leave the chain pointing where it
+ * already was", for which +Z is as good an answer as any and NaN is not. */
+const norm = (a: Vec3): Vec3 => normalize(a, { x: 0, y: 0, z: 1 });
 
 export interface TwoBoneSolution {
   elbow: Vec3;
@@ -140,6 +134,37 @@ export function clampWristToFelt(wrist: Vec3, feltTopY: number): Vec3 | null {
  */
 export function dampingFactor(rate: number, deltaSeconds: number): number {
   return 1 - Math.exp(-rate * deltaSeconds);
+}
+
+/**
+ * Damp a point toward a moving target, frame-rate independently.
+ *
+ * SMOOTH THE TARGET, NOT THE APPLICATION — and this is a correction, not a
+ * preference. The first version of the caller slerped each bone a
+ * `dampingFactor` fraction of the way toward its solved rotation every
+ * frame. That is the right shape for a value that persists between frames
+ * and the wrong one here, because the animation mixer rewrites every bone's
+ * local rotation from the clip at the start of each frame: the correction
+ * therefore restarted from zero every time and the pose settled at the
+ * damping fraction of what was asked for — about a quarter of it at 60fps,
+ * forever, with no frame in which the arm was ever actually corrected.
+ * Hands that never quite arrive anywhere was a visible symptom of it.
+ *
+ * Keeping the smoothing on the TARGET fixes that: the target moves gently,
+ * the solve is applied at full strength, and the arm genuinely reaches it.
+ */
+export function dampPointToward(
+  current: Vec3,
+  target: Vec3,
+  rate: number,
+  deltaSeconds: number
+): Vec3 {
+  const k = dampingFactor(rate, deltaSeconds);
+  return {
+    x: current.x + (target.x - current.x) * k,
+    y: current.y + (target.y - current.y) * k,
+    z: current.z + (target.z - current.z) * k,
+  };
 }
 
 /**

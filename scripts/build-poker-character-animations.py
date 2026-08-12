@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 import os
+import random
 import sys
 from collections.abc import Iterable
 
@@ -241,6 +242,46 @@ _SEARCH_FORE_Z = (-40, -20, 0, 20, 40)
 _REFINE_STEPS = (8.0, 4.0, 2.0, 1.0)
 
 _FINGER_CURL = (math.radians(24), math.radians(18), math.radians(10))
+
+
+#: Overlapping action / lead-follow: how many frames LATER each body region's
+#: keyframe lands relative to the pose entry that requested it. A real body's
+#: mass moves the torso first and the motion travels outward through
+#: shoulder, arm, forearm, hand, finger — never everything at once, which is
+#: what every existing action() entry did before this (key_pose keyed all 65
+#: bones at the identical frame). Matched by substring against Mixamo's own
+#: naming, case-insensitive and prefix-agnostic like bone_by_suffix, so it
+#: degrades to 0 (no cascade) on any bone this roster doesn't have.
+#: Kept small relative to Poker_Check's 5-frame beat spacing, the tightest
+#: gap any action uses — a delay approaching that would let a late-cascaded
+#: hand overtake the next pose entirely instead of trailing it.
+_CASCADE_DELAY_FRAMES: tuple[tuple[str, float], ...] = (
+    ("thumb", 2.2), ("index", 2.2), ("middle", 2.2), ("ring", 2.2), ("pinky", 2.2),
+    ("hand", 1.8),
+    ("forearm", 1.2),
+    ("shoulder", 0.8), ("arm", 0.8),
+    ("neck", 0.5), ("head", 0.5),
+    ("spine2", 0.3),
+    ("spine1", 0.15),
+)
+#: Asymmetric timing: mirrored bone chains lag each other by a hair rather
+#: than moving in lockstep, the same way a real body's two sides are never
+#: perfectly in phase. Applied as a flat addition on top of the region delay
+#: above so it generalizes to every paired bone rather than special-casing
+#: shoulders alone.
+_RIGHT_SIDE_SKEW_FRAMES = 0.3
+
+
+def _cascade_delay_frames(bone_name: str) -> float:
+    name = bone_name.lower()
+    delay = 0.0
+    for needle, frames in _CASCADE_DELAY_FRAMES:
+        if needle in name:
+            delay = frames
+            break
+    if "right" in name:
+        delay += _RIGHT_SIDE_SKEW_FRAMES
+    return delay
 
 
 #: Fallback for a rig with no toe bones. Every character on the current
@@ -627,11 +668,21 @@ def translate_local(rig: bpy.types.Object, suffix: str, xyz: tuple[float, float,
         bone.location += Vector(xyz)
 
 
-def key_pose(rig: bpy.types.Object, frame: int) -> None:
+def key_pose(rig: bpy.types.Object, frame: int, cascade: bool = False) -> None:
+    """Key every bone's current pose at `frame`.
+
+    `cascade=True` staggers each bone's actual keyframe a few frames later
+    than its neighbours per `_cascade_delay_frames` — torso first, hands and
+    fingers last — instead of the whole skeleton landing on one frame.
+    Callers skip this on an action's first and last entry so every clip
+    still starts and ends on a clean, fully-synced pose (no cascade residue
+    to carry across a loop boundary).
+    """
     for bone in rig.pose.bones:
-        bone.keyframe_insert(data_path="location", frame=frame, group=bone.name)
-        bone.keyframe_insert(data_path="rotation_quaternion", frame=frame, group=bone.name)
-        bone.keyframe_insert(data_path="scale", frame=frame, group=bone.name)
+        target = frame + (_cascade_delay_frames(bone.name) if cascade else 0.0)
+        bone.keyframe_insert(data_path="location", frame=target, group=bone.name)
+        bone.keyframe_insert(data_path="rotation_quaternion", frame=target, group=bone.name)
+        bone.keyframe_insert(data_path="scale", frame=target, group=bone.name)
 
 
 def action_fcurves(result: bpy.types.Action):
@@ -680,11 +731,15 @@ def action(
     result = bpy.data.actions.new(name)
     result.use_fake_user = True
     rig.animation_data.action = result
-    for frame, rotations in keys:
+    entries = list(keys)
+    last_index = len(entries) - 1
+    for index, (frame, rotations) in enumerate(entries):
         restore_pose(rig, base_pose)
         for suffix, angles in rotations.items():
             rotate_local(rig, suffix, _scaled(suffix, angles))
-        key_pose(rig, frame)
+        # Anchor entries (first/last) stay synced so the clip starts clean
+        # and loops back to the same simultaneous rest it began on.
+        key_pose(rig, frame, cascade=index not in (0, last_index))
     # Blender's unconstrained automatic Bezier handles can overshoot a keyed
     # shoulder/forearm rotation between poses, which reads as a wrist snap in
     # a short poker gesture. Auto-clamped keeps the ease without inventing a
@@ -695,6 +750,105 @@ def action(
             point.handle_left_type = "AUTO_CLAMPED"
             point.handle_right_type = "AUTO_CLAMPED"
     return result
+
+
+def add_hold_jitter(
+    rig: bpy.types.Object,
+    result: bpy.types.Action,
+    bones_and_amplitude: dict[str, float],
+    span: tuple[int, int],
+    seed_key: str,
+    count: int = 2,
+) -> None:
+    """Layer small, deterministic noise onto an already-built hold.
+
+    A human hold is never perfectly static, but the fix here is NOT a live
+    Blender FModifierNoise: a procedural modifier is not sampled by the glTF
+    exporter (it bakes keyframe data, not modifier graphs), so noise added
+    that way would silently vanish on export. Instead this reads each
+    bone's CURRENTLY INTERPOLATED value at a frame inside `span` (frame_set
+    forces the action to evaluate) and nudges it via rotate_local's ordinary
+    quaternion composition, then keys just that nudge — additive on top of
+    whatever arc the action already has, never a reset to base_pose the way
+    action()'s own entries work, so a breathing spine easing toward its peak
+    keeps easing rather than snapping back to neutral partway through.
+
+    The seed is derived from the character + bone + action rather than left
+    to the ambient RNG state, so a re-bake of the same source produces the
+    identical wobble instead of a new one on every export — the same
+    determinism rule lib/scene holds for the runtime scene code, restated
+    here because this file has no import path to that module.
+    """
+    rig.animation_data.action = result
+    start, end = span
+    for suffix, amplitude_deg in bones_and_amplitude.items():
+        rng = random.Random(f"{seed_key}:{result.name}:{suffix}")
+        bone = bone_by_suffix(rig, suffix)
+        if bone is None:
+            continue
+        for i in range(1, count + 1):
+            frame = round(start + (end - start) * i / (count + 1))
+            bpy.context.scene.frame_set(frame)
+            bpy.context.view_layer.update()
+            angles = tuple(math.radians(rng.uniform(-amplitude_deg, amplitude_deg)) for _ in range(3))
+            rotate_local(rig, suffix, angles)
+            bone.keyframe_insert(data_path="rotation_quaternion", frame=frame, group=bone.name)
+    for curve in action_fcurves(result):
+        for point in curve.keyframe_points:
+            if point.interpolation != "BACK":
+                point.interpolation = "BEZIER"
+                point.handle_left_type = "AUTO_CLAMPED"
+                point.handle_right_type = "AUTO_CLAMPED"
+
+
+def apply_overshoot_settle(
+    result: bpy.types.Action,
+    bone_suffixes: Iterable[str],
+    back: float = 0.7,
+) -> None:
+    """A heavy limb doesn't stop dead — it settles a hair past rest before
+    relaxing back. Blender's BACK interpolation governs the segment EASING
+    INTO a keyframe point, so this targets each named bone's LAST rotation
+    keyframe (its return to rest) and leaves every other bone/point on the
+    curve's existing AUTO_CLAMPED bezier — a finger tap or a leg should not
+    also bounce just because the arm next to it does.
+    """
+    suffixes = tuple(s.lower() for s in bone_suffixes)
+    for curve in action_fcurves(result):
+        if "rotation_quaternion" not in curve.data_path:
+            continue
+        bone_name = curve.data_path.split('"')[1].lower()
+        if not any(bone_name.endswith(s) for s in suffixes):
+            continue
+        if not curve.keyframe_points:
+            continue
+        last = max(curve.keyframe_points, key=lambda p: p.co.x)
+        last.interpolation = "BACK"
+        last.easing = "EASE_OUT"
+        last.back = back
+
+
+def apply_sharp_beats(
+    result: bpy.types.Action,
+    bone_suffixes: Iterable[str],
+    frames: Iterable[int],
+) -> None:
+    """The opposite weight class: a quick tap or glance reads as sharp, not
+    eased. Targets specific keyframe points by (bone, frame) and drops them
+    to LINEAR, which has no handles to soften the approach — everything
+    else on the curve keeps its bezier ease.
+    """
+    suffixes = tuple(s.lower() for s in bone_suffixes)
+    frame_set = set(frames)
+    for curve in action_fcurves(result):
+        if "rotation_quaternion" not in curve.data_path:
+            continue
+        bone_name = curve.data_path.split('"')[1].lower()
+        if not any(bone_name.endswith(s) for s in suffixes):
+            continue
+        for point in curve.keyframe_points:
+            if round(point.co.x) in frame_set:
+                point.interpolation = "LINEAR"
 
 
 def poker_actions(
@@ -714,56 +868,69 @@ def poker_actions(
     ]))
 
     # Right hand slides the cards toward the dealer; torso settles back.
-    actions.append(action(rig, "Poker_Fold", base_pose, [
+    fold = action(rig, "Poker_Fold", base_pose, [
         (1, {}),
         (9, {"Spine": (d(5), 0, 0), "Spine2": (d(7), 0, d(-2))}),
         (20, {"Spine": (d(7), 0, 0), "RightArm": (d(-10), 0, d(10)), "RightForeArm": (d(-10), 0, d(10)), "RightHand": (d(4), 0, d(-12))}),
         (31, {"Spine": (d(4), 0, 0), "RightArm": (d(-6), 0, d(6)), "RightForeArm": (d(-6), 0, d(6))}),
         (44, {"Spine": (d(-3), 0, 0), "Spine2": (d(-4), 0, 0), "Head": (d(-3), d(7), 0)}),
         (56, {"Spine": (d(-4), 0, 0), "Spine2": (d(-5), 0, 0)}),
-    ]))
+    ])
+    apply_overshoot_settle(fold, ("Spine", "Spine2", "RightArm", "RightForeArm"))
+    actions.append(fold)
 
     # Two small table taps. Distinct name allows a future check event to pick it.
-    actions.append(action(rig, "Poker_Check", base_pose, [
+    check = action(rig, "Poker_Check", base_pose, [
         (1, {}),
         (8, {"Spine2": (d(3), 0, 0), "RightArm": (d(-6), 0, d(6)), "RightForeArm": (d(-5), 0, d(7))}),
         (13, {"RightArm": (d(-8), 0, d(8)), "RightForeArm": (d(-8), 0, d(9)), "RightHand": (d(7), 0, 0)}),
         (18, {"RightArm": (d(-5), 0, d(6)), "RightForeArm": (d(-4), 0, d(6))}),
         (23, {"RightArm": (d(-8), 0, d(8)), "RightForeArm": (d(-8), 0, d(9)), "RightHand": (d(7), 0, 0)}),
         (34, {}),
-    ]))
+    ])
+    # The two tap-downs are the fast, light half of the weight/saccade rule —
+    # sharp LINEAR into each tap rather than an eased glide, the closest
+    # analog this rig has to a quick glance with no eye bones to drive.
+    apply_sharp_beats(check, ("RightArm", "RightForeArm", "RightHand"), (13, 23))
+    actions.append(check)
 
     # Gather chips near the rail, extend, release, and return.
-    actions.append(action(rig, "Poker_Bet", base_pose, [
+    bet = action(rig, "Poker_Bet", base_pose, [
         (1, {}),
         (8, {"Spine2": (d(3), 0, d(-2)), "RightArm": (d(-4), 0, d(4)), "RightForeArm": (d(-4), 0, d(4)), "RightHand": (d(5), 0, d(-8))}),
         (18, {"Spine": (d(5), 0, 0), "Spine2": (d(7), 0, d(-2)), "RightArm": (d(-8), 0, d(8)), "RightForeArm": (d(-8), 0, d(8)), "RightHand": (d(8), 0, d(-12))}),
         (28, {"Spine": (d(4), 0, 0), "RightArm": (d(-10), 0, d(10)), "RightForeArm": (d(-10), 0, d(10)), "RightHand": (d(-3), 0, d(5))}),
         (42, {"RightArm": (d(-5), 0, d(5)), "RightForeArm": (d(-5), 0, d(5))}),
         (52, {}),
-    ]))
+    ])
+    apply_overshoot_settle(bet, ("RightArm", "RightForeArm"))
+    actions.append(bet)
 
     # A clearer, more assertive raise: chips forward and off-hand lifts.
-    actions.append(action(rig, "Poker_Raise", base_pose, [
+    raise_ = action(rig, "Poker_Raise", base_pose, [
         (1, {}),
         (10, {"Spine2": (d(4), 0, 0), "LeftArm": (d(-8), 0, d(-8)), "LeftForeArm": (d(-22), 0, d(5))}),
         (21, {"Spine": (d(5), 0, 0), "RightArm": (d(-9), 0, d(9)), "RightForeArm": (d(-9), 0, d(9)), "LeftArm": (d(-20), d(-6), d(-18)), "LeftForeArm": (d(-38), 0, d(10))}),
         (34, {"Spine": (d(4), 0, 0), "RightArm": (d(-10), 0, d(10)), "RightForeArm": (d(-10), 0, d(10)), "LeftArm": (d(-12), 0, d(-10)), "LeftForeArm": (d(-24), 0, d(5))}),
         (50, {}),
-    ]))
+    ])
+    apply_overshoot_settle(raise_, ("Spine", "RightArm", "RightForeArm", "LeftArm", "LeftForeArm"))
+    actions.append(raise_)
 
     # Seated victory: a satisfied lean-and-nod with one short table-level hand
     # beat. Mixamo hands in this roster are open in the base pose, so lifting
     # one to chest height reads as "stop", not a fist pump; keeping it near
     # the rail lets posture and timing carry the win instead.
-    actions.append(action(rig, "Poker_Celebrate", base_pose, [
+    celebrate = action(rig, "Poker_Celebrate", base_pose, [
         (1, {}),
         (10, {"Spine": (d(-2), 0, 0), "Spine2": (d(-3), 0, d(1)), "Neck": (d(-2), d(-2), 0), "Head": (d(-3), d(-3), 0)}),
         (22, {"Spine": (d(-3), 0, 0), "Spine2": (d(-5), 0, d(2)), "Neck": (d(3), d(-4), 0), "Head": (d(5), d(-5), 0), "RightArm": (d(-5), d(1), d(5)), "RightForeArm": (d(-9), 0, d(-3))}),
         (32, {"Spine": (d(-3), 0, 0), "Spine2": (d(-4), 0, d(-1)), "Neck": (d(-2), d(2), 0), "Head": (d(-3), d(3), 0), "RightArm": (d(-8), d(2), d(8)), "RightForeArm": (d(-15), 0, d(-5)), "RightHand": (d(3), 0, 0)}),
         (42, {"Spine": (d(-2), 0, 0), "Spine2": (d(-3), 0, d(1)), "Neck": (d(2), d(-2), 0), "Head": (d(3), d(-2), 0), "RightArm": (d(-4), d(1), d(4)), "RightForeArm": (d(-8), 0, d(-3))}),
         (56, {"Spine": (d(-2), 0, 0), "Spine2": (d(-3), 0, d(1)), "Head": (d(-2), d(-2), 0)}),
-    ]))
+    ])
+    apply_overshoot_settle(celebrate, ("Spine", "Spine2", "Neck", "Head", "RightArm", "RightForeArm"), back=0.5)
+    actions.append(celebrate)
     return actions
 
 
@@ -808,11 +975,39 @@ def main() -> None:
     # back once Poker_Idle is sampled from its own keyframes.
     rig.animation_data.action = None
     bpy.data.actions.remove(source)
+    d = math.radians
+    # Left/Right shoulders rise by different amounts on the breathing peak —
+    # a real chest is not perfectly symmetric under a breath — layered on
+    # top of the existing Spine1/Spine2 lift, which is untouched.
     source = action(rig, "Poker_Idle", base_pose, [
         (1, {}),
-        (36, {"Spine1": (math.radians(1.2), 0, 0), "Spine2": (math.radians(1.5), 0, 0)}),
+        (36, {
+            "Spine1": (d(1.2), 0, 0), "Spine2": (d(1.5), 0, 0),
+            "LeftShoulder": (d(0.8), 0, 0), "RightShoulder": (d(1.2), 0, 0),
+        }),
         (72, {}),
     ])
+    # A hold is never perfectly static: small deterministic noise on the
+    # head/neck/hands so the seated idle doesn't read as a mannequin. See
+    # add_hold_jitter's own docstring for why this is baked keyframes rather
+    # than a live noise modifier. Seeded off the output filename (the
+    # character's own name) so re-baking one character never disturbs
+    # another's wobble, and re-baking the SAME character reproduces it.
+    character_seed = os.path.splitext(os.path.basename(output_path))[0]
+    add_hold_jitter(
+        rig,
+        source,
+        {"Head": 0.5, "Neck": 0.3, "LeftHand": 0.3, "RightHand": 0.3},
+        span=(1, 36),
+        seed_key=character_seed,
+    )
+    add_hold_jitter(
+        rig,
+        source,
+        {"Head": 0.5, "Neck": 0.3, "LeftHand": 0.3, "RightHand": 0.3},
+        span=(36, 72),
+        seed_key=character_seed,
+    )
 
     created = poker_actions(rig, base_pose)
     rig.animation_data.action = source

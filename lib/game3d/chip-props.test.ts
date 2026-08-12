@@ -31,20 +31,24 @@ import {
 const SLOTS = Array.from({ length: SEAT_COUNT_3D }, (_, i) => i);
 
 /**
- * The footprint a seat's fanned pair actually covers. Mirrors cards-3d.tsx:
- * HOLE_CARD_FAN is 0.52 of a card width, the near seat renders at 1.8x, and
- * the outermost point is that fan plus half a card. Treated as lying flat,
- * which is the conservative read — the near seat's pair is propped up, so its
- * real footprint is shorter than this.
+ * The footprint a seat's fanned pair actually covers, at real card size.
+ *
+ * This used to scale the near seat up 1.8x, citing scene/cards-3d.tsx's own
+ * enlarged pair — but that component is dead code (nothing in the live room
+ * imports it; see its header). The local player's own pair is DOM now
+ * (hud/own-hole-cards.tsx), so slot 0's felt position holds no rendered card
+ * at any scale — it is a fold-flight anchor and an ordering floor only (see
+ * NEAR_SEAT_HOLE_CARD_INSET's comment in seat-layout.ts). Real size is the
+ * honest, still-conservative stand-in for "something roughly card-shaped
+ * could be here."
  */
 function holeCardFootprint(slot: number) {
-  const scale = slot === 0 ? 1.8 : 1;
-  const width = CARD.width * scale;
+  const width = CARD.width;
   return feltFootprint(
     holeCardPosition(slot),
     seatAngle(slot),
     width * 1.02,
-    (CARD.height * scale) / 2,
+    CARD.height / 2,
   );
 }
 
@@ -219,7 +223,9 @@ describe("seatRightVector", () => {
 describe("bankroll placement", () => {
   it("rests on the felt surface, never in it", () => {
     for (const slot of SLOTS) {
-      expect(bankrollPosition(slot).y).toBe(FELT_TOP_Y);
+      for (const tier of CHIP_PROP_TIERS) {
+        expect(bankrollPosition(slot, tier).y).toBe(FELT_TOP_Y);
+      }
     }
   });
 
@@ -228,11 +234,13 @@ describe("bankroll placement", () => {
     // that drifts inside the cards is sitting where the player has to reach
     // over it.
     for (const slot of SLOTS) {
-      const bankroll = bankrollPosition(slot);
-      const cards = holeCardPosition(slot);
-      const bankrollRadius = Math.hypot(bankroll.x / FELT_RADIUS_X, bankroll.z / FELT_RADIUS_Z);
-      const cardRadius = Math.hypot(cards.x / FELT_RADIUS_X, cards.z / FELT_RADIUS_Z);
-      expect(bankrollRadius).toBeGreaterThan(cardRadius);
+      for (const tier of CHIP_PROP_TIERS) {
+        const bankroll = bankrollPosition(slot, tier);
+        const cards = holeCardPosition(slot);
+        const bankrollRadius = Math.hypot(bankroll.x / FELT_RADIUS_X, bankroll.z / FELT_RADIUS_Z);
+        const cardRadius = Math.hypot(cards.x / FELT_RADIUS_X, cards.z / FELT_RADIUS_Z);
+        expect(bankrollRadius).toBeGreaterThan(cardRadius);
+      }
     }
   });
 
@@ -291,29 +299,40 @@ describe("bankroll placement", () => {
     }
   });
 
-  it("sits to the player's right, not their left", () => {
+  it("sits to the player's right, not their left, at every tier", () => {
     // The offset is a rotation around the ring, so the check is that the
     // bankroll's angle leads the seat's own — and at slot 0 that has to come
     // out as +X, the local player's right on screen. A sign flip here puts
     // every stack on the wrong hand and still looks entirely plausible.
     for (const slot of SLOTS) {
-      expect(bankrollAngle(slot)).toBeGreaterThan(seatAngle(slot));
+      for (const tier of CHIP_PROP_TIERS) {
+        expect(bankrollAngle(slot, tier)).toBeGreaterThan(seatAngle(slot));
+      }
     }
-    expect(bankrollPosition(0).x).toBeGreaterThan(0);
+    expect(bankrollPosition(0, "short").x).toBeGreaterThan(0);
     expect(seatRightVector(0).x).toBeCloseTo(1, 6);
+  });
+
+  it("rotates less for the tiers that need less room", () => {
+    // BANKROLL_ANGLE_OFFSET is solved per tier, not one shared number — the
+    // common case should sit closer to straight in front of the seat than a
+    // seat holding a genuinely wide deep-stack pile does.
+    expect(bankrollAngle(1, "short")).toBeLessThan(bankrollAngle(1, "deep"));
   });
 
   it("lies its long axis along the rail, not pointing at the board", () => {
     for (const slot of SLOTS) {
-      const rotation = bankrollRotationY(slot);
-      const position = bankrollPosition(slot);
-      // A +Z-forward model turned by this rotation must end up facing the
-      // centre; its local X is then the tangent the heap spreads along.
-      const forwardX = Math.sin(rotation);
-      const forwardZ = Math.cos(rotation);
-      const toCentre = Math.hypot(position.x, position.z);
-      expect(forwardX).toBeCloseTo(-position.x / toCentre, 6);
-      expect(forwardZ).toBeCloseTo(-position.z / toCentre, 6);
+      for (const tier of CHIP_PROP_TIERS) {
+        const rotation = bankrollRotationY(slot, tier);
+        const position = bankrollPosition(slot, tier);
+        // A +Z-forward model turned by this rotation must end up facing the
+        // centre; its local X is then the tangent the heap spreads along.
+        const forwardX = Math.sin(rotation);
+        const forwardZ = Math.cos(rotation);
+        const toCentre = Math.hypot(position.x, position.z);
+        expect(forwardX).toBeCloseTo(-position.x / toCentre, 6);
+        expect(forwardZ).toBeCloseTo(-position.z / toCentre, 6);
+      }
     }
   });
 

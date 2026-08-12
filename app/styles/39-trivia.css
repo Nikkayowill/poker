@@ -1,0 +1,269 @@
+/* Trivia Showdown -- only what this game adds.
+ *
+ * The lobby, the scoreline, the result card and the resign control are all
+ * 36-duels.css, which this sheet cascades after. What is here is a question,
+ * four choices, and the clock they are answered against.
+ *
+ * Borderless like the rest of the chrome: separation is a raised fill, a
+ * shadow and space. The one ring is the inset --accent-edge on the choice the
+ * player has locked in, so selecting one shifts nothing by a pixel -- which
+ * matters more here than anywhere, because the four buttons are being tapped
+ * against a twelve-second clock and a reflow under the thumb is a misfire.
+ */
+
+.trivia {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(560px, 100%);
+}
+
+/* ----------------------------------------------------------- head + score */
+
+.trivia-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trivia-progress {
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.trivia-scores {
+  display: flex;
+  gap: 16px;
+}
+
+.trivia-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
+}
+
+.trivia-score small {
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.trivia-score strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  color: var(--brand-gold);
+}
+
+/* ---------------------------------------------------------------- clock */
+
+.trivia-clock {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 22px;
+}
+
+/* The track is a fill rather than a hairline box -- a 1px outline round a
+   progress bar is exactly the border the chrome's rule removed. */
+.trivia-clock::before {
+  content: "";
+  position: absolute;
+  inset: 9px 0 9px 0;
+  border-radius: 999px;
+  background: var(--brand-surface);
+}
+
+.trivia-clock-bar {
+  position: absolute;
+  inset: 9px 0 9px 0;
+  border-radius: 999px;
+  background: var(--brand-gold);
+  transform-origin: left center;
+  /* Both values are written by the board: how long is actually left, and how
+     much of the window that is. A mid-question mount therefore picks the
+     sweep up part way instead of promising a full one. */
+  transform: scaleX(var(--trivia-from, 1));
+  animation: trivia-drain var(--trivia-remaining, 0ms) linear forwards;
+}
+
+.trivia-clock-bar-reveal {
+  background: var(--text-muted);
+}
+
+@keyframes trivia-drain {
+  from {
+    transform: scaleX(var(--trivia-from, 1));
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.trivia-clock-digit {
+  position: absolute;
+  right: 0;
+  top: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------- question */
+
+.trivia-category {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.trivia-prompt {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+.trivia-prompt-done {
+  font-variant-numeric: tabular-nums;
+  color: var(--brand-gold);
+}
+
+/* --------------------------------------------------------------- choices */
+
+.trivia-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trivia-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  /* 56px of tappable height at every width. A four-choice race on a phone is
+     the one screen in this app where a near-miss costs the player money. */
+  min-height: 56px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  color: var(--text-primary);
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trivia-choice:hover:not(:disabled) {
+  background: var(--brand-surface-2);
+}
+
+.trivia-choice:disabled {
+  cursor: default;
+}
+
+.trivia-choice-key {
+  display: grid;
+  place-items: center;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand-surface-2);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.trivia-choice-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Inset, so locking an answer adds no layout box and the stack does not
+   shuffle under a thumb that is already moving to the next question. */
+.trivia-choice-mine {
+  box-shadow: var(--accent-edge), var(--accent-glow);
+}
+
+/* The reveal is carried by a tinted fill and not by a border colour: the
+   borderless pass records that deleting a border without replacing its signal
+   is how a state goes invisible. */
+.trivia-choice-right {
+  background: color-mix(in srgb, var(--brand-gold) 22%, var(--brand-surface));
+  color: var(--text-primary);
+}
+
+.trivia-choice-right .trivia-choice-key {
+  background: var(--brand-gold);
+  color: #0a0a0b;
+}
+
+.trivia-choice-wrong {
+  background: color-mix(in srgb, var(--brand-red) 20%, var(--brand-surface));
+}
+
+/* --brand-focus is a box-shadow, not a colour -- the house idiom is to zero
+   the outline and wear it, so the ring sits inside the button's own radius. */
+.trivia-choice:focus-visible {
+  outline: 0;
+  box-shadow: var(--brand-focus);
+}
+
+/* ---------------------------------------------------------------- status */
+
+.trivia-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.trivia-lamp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trivia-lamp i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand-surface-2);
+}
+
+.trivia-lamp-on i {
+  background: var(--brand-gold);
+  box-shadow: var(--accent-glow-gold);
+}
+
+/* ------------------------------------------------------------- narrow */
+
+@media (max-width: 480px) {
+  .trivia-prompt {
+    font-size: 17px;
+  }
+
+  .trivia-choice {
+    font-size: 14px;
+    padding: 10px 12px;
+  }
+
+  /* The two labels stop competing for one row before the names do; the
+     scores themselves are the thing that must stay readable. */
+  .trivia-status {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}

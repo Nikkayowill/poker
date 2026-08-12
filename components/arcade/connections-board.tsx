@@ -8,6 +8,8 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
 import { connectionsShareText, puzzleShareTitle } from "@/lib/arcade/puzzles/share";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import {
   CONNECTIONS_GROUP_SIZE,
   type ConnectionsSnapshot,
@@ -62,6 +64,10 @@ const NOTICE_MS = 1800;
 const LEVEL_CLASS = ["cx-level-0", "cx-level-1", "cx-level-2", "cx-level-3"];
 
 export function ConnectionsBoard() {
+  // Applies the player's stored mute on a route where PokerApp is not
+  // mounted. The flag it sets is module-global, which is what lets the JSX
+  // below call the chrome cues directly. See lib/audio/ui-sounds.ts.
+  useArcadeSound();
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [round, setRound] = useState<ConnectionsSnapshot | null>(null);
   const [meta, setMeta] = useState<{ day: string; puzzleNumber: number; nextPuzzleAt: number } | null>(null);
@@ -247,7 +253,7 @@ export function ConnectionsBoard() {
     <main className="bj-shell puzzle-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <Link className="bj-back" href="/">← Back to the lobby</Link>
+          <Link className="bj-back" href="/" onClick={tapSound}>← Back to the lobby</Link>
           <h1>Connections</h1>
           <p>
             {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Find the four groups of four
@@ -289,7 +295,7 @@ export function ConnectionsBoard() {
               key={word}
               type="button"
               className={clsx("cx-tile", picked.includes(word) && "cx-tile-on")}
-              onClick={() => toggle(word)}
+              onClick={() => { tapSound(); toggle(word); }}
               disabled={!playable}
               aria-pressed={picked.includes(word)}
             >
@@ -311,13 +317,13 @@ export function ConnectionsBoard() {
           </p>
 
           <section className="cx-controls">
-            <button type="button" className="cx-action" onClick={shuffle} disabled={!playable}>
+            <button type="button" className="cx-action" onClick={() => { selectSound(); shuffle(); }} disabled={!playable}>
               <Shuffle size={14} aria-hidden="true" /> Shuffle
             </button>
             <button
               type="button"
               className="cx-action"
-              onClick={() => setSelection([])}
+              onClick={() => { tapSound(); setSelection([]); }}
               disabled={!playable || picked.length === 0}
             >
               Deselect all
@@ -325,7 +331,7 @@ export function ConnectionsBoard() {
             <button
               type="button"
               className="cx-action cx-action-submit"
-              onClick={submit}
+              onClick={() => { selectSound(); submit(); }}
               disabled={!playable || picked.length !== CONNECTIONS_GROUP_SIZE}
             >
               Submit

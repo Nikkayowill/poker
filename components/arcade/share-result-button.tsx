@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Copy, Share2 } from "lucide-react";
 import clsx from "clsx";
+import { selectSound } from "@/lib/audio/ui-sounds";
 
 /**
  * "Share with friends" for a finished daily puzzle.
@@ -91,7 +92,7 @@ export function ShareResultButton({
 
   return (
     <div className={clsx("puzzle-share", className)}>
-      <button type="button" className="puzzle-share-button" onClick={() => void share()}>
+      <button type="button" className="puzzle-share-button" onClick={() => { selectSound(); void share(); }}>
         {outcome === "copied" || outcome === "shared"
           ? <Check size={16} aria-hidden="true" />
           : <Share2 size={16} aria-hidden="true" />}

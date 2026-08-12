@@ -1,28 +1,37 @@
-import { randomUUID } from "crypto";
+import { randomInt, randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { hiLoOdds } from "@/lib/arcade/hi-lo";
-import { __resetArcadeRoundsForTest } from "./arcade-round-store";
+import { dealHiLoRound, hiLoOdds, toHiLoSnapshot, type HiLoRound } from "@/lib/arcade/hi-lo";
 import {
-  HiLoRequestError,
-  dealHiLo,
-  playHiLoCall,
-  readHiLoRound,
-} from "./hi-lo-service";
-import { adjustGold, ensureProfile, setUnlimitedGold } from "./profile-store";
+  __resetArcadeRoundsForTest,
+  createArcadeRound,
+} from "./arcade-round-store";
+import { HI_LO_GAME, dealHiLo, playHiLoCall, readHiLoRound } from "./hi-lo-service";
+import { adjustGold, ensureProfile, setUnlimitedGold, spendGold } from "./profile-store";
 
 /**
  * The money contract, in memory mode.
  *
- * As with blackjack, these deliberately do not stack a deck: dealHiLo takes
- * its randomness from node:crypto by design, and a seam to override it is a
- * seam an attacker would want. The assertions are invariants that must hold
- * for whatever card comes out --
+ * Hi-Lo was RETIRED on 2026-08-12 with the rest of the pure-chance games (see
+ * lib/arcade/retired.ts), and this file changed shape rather than being
+ * deleted, for the same reason the service and its routes were kept: a player
+ * who had a live round when the retirement shipped has already paid for it and
+ * must still be able to settle it. That settlement path is unchanged, still
+ * moves real Gold, and is still worth pinning.
+ *
+ * So `dealHiLo` is now only exercised to prove it REFUSES, and the rounds
+ * these tests settle are opened directly through the store by `liveRound`
+ * below -- which is what dealHiLo did before the guard, minus the guard. That
+ * is fixture setup, not a production seam: nothing under app/ or lib/server
+ * can reach it, so it cannot become a way to deal a retired game.
+ *
+ * As before, no deck is stacked: the randomness comes from node:crypto by
+ * design and a seam to override it is a seam an attacker would want. The
+ * assertions are invariants that hold for whatever card comes out --
  *
  *   final balance === starting balance + netGold
  *
- * -- which is stronger than any single stacked outcome because it has to hold
- * across wins, misses and ties alike. The payout arithmetic and the house edge
- * are pinned separately, exactly, on the pure functions in
+ * -- which is stronger than any single stacked outcome. The payout arithmetic
+ * and the house edge are pinned exactly, on the pure functions, in
  * lib/arcade/hi-lo.test.ts.
  */
 
@@ -36,64 +45,75 @@ async function funded(gold?: number) {
   return token;
 }
 
+/**
+ * Opens a live round the way dealHiLo did before it was retired: debit, deal,
+ * persist. Fixture setup only -- see the file header.
+ */
+async function liveRound(token: string, stake = STAKE) {
+  const profile = await spendGold(token, stake);
+  const stored = await createArcadeRound<HiLoRound>({
+    profileId: profile.id,
+    game: HI_LO_GAME,
+    tier: "1k",
+    baseStake: stake,
+    round: dealHiLoRound(stake, randomInt),
+    settled: false,
+  });
+  return toHiLoSnapshot(stored.round, { id: stored.id, version: stored.version });
+}
+
 beforeEach(() => {
   __resetArcadeRoundsForTest();
 });
 
-describe("dealing", () => {
-  it("debits the stake and turns one card face up", async () => {
+describe("retirement", () => {
+  it("refuses to deal a new round, and charges nothing for the refusal", async () => {
     const token = await funded(2000);
-    const result = await dealHiLo(token, "1k");
-    expect(result.resumed).toBe(false);
-    expect(result.profile.goldBalance).toBe(1000);
-    expect(result.round?.baseCard).toBeTruthy();
-    // Hi-Lo never settles on the deal -- there is always a call to make.
-    expect(result.round?.phase).toBe("call");
-    expect(result.round?.drawnCard).toBeNull();
+    await expect(dealHiLo(token, "1k")).rejects.toMatchObject({ status: 410 });
+    // The guard sits before spendGold, so a retired game cannot take a stake
+    // on its way to saying it is retired.
+    expect((await ensureProfile(token)).goldBalance).toBe(2000);
   });
 
-  it("quotes the price of both calls before the player commits", async () => {
-    const { round } = await dealHiLo(await funded(2000), "1k");
-    const odds = round!.odds;
-    expect(odds.higher.winners + odds.lower.winners + odds.ties).toBe(51);
-    // At least one side is always playable; both are unless the card is a 2 or an ace.
-    expect(odds.higher.available || odds.lower.available).toBe(true);
-  });
-
-  it("never leaks the deck, which is where the deciding card is", async () => {
-    const { round } = await dealHiLo(await funded(2000), "1k");
-    expect("deck" in round!).toBe(false);
-    expect(JSON.stringify(round)).not.toContain("deck");
-  });
-
-  it("refuses a stake the wallet cannot cover, and charges nothing", async () => {
-    const token = await funded(999);
-    await expect(dealHiLo(token, "1k")).rejects.toBeInstanceOf(HiLoRequestError);
-    expect((await ensureProfile(token)).goldBalance).toBe(999);
-  });
-
-  it("resumes a live round instead of dealing a second one", async () => {
+  it("still hands back a round the player already paid for", async () => {
+    // The whole reason the routes were kept rather than deleted: refusing this
+    // would take the stake and give nothing back.
     const token = await funded(2000);
-    const first = await dealHiLo(token, "1k");
-    const again = await dealHiLo(token, "1k");
-    expect(again.resumed).toBe(true);
-    expect(again.round?.id).toBe(first.round?.id);
-    // Critically the SAME base card -- re-dealing would both double-charge and
-    // swap the card the player was about to call.
-    expect(again.round?.baseCard).toEqual(first.round?.baseCard);
-    expect(again.profile.goldBalance).toBe(1000);
-  });
-
-  it("restores the round to a page that reloads", async () => {
-    const token = await funded(2000);
-    const dealt = await dealHiLo(token, "1k");
+    const dealt = await liveRound(token);
     const restored = await readHiLoRound(token);
-    expect(restored.round?.id).toBe(dealt.round?.id);
-    expect(restored.round?.baseCard).toEqual(dealt.round?.baseCard);
+    expect(restored.round?.id).toBe(dealt.id);
+    expect(restored.round?.baseCard).toEqual(dealt.baseCard);
+  });
+
+  it("still settles a round the player already paid for", async () => {
+    const token = await funded(2000);
+    const dealt = await liveRound(token);
+    const settled = await playHiLoCall(token, {
+      roundId: dealt.id,
+      version: dealt.version,
+      call: dealt.legal.higher ? "higher" : "lower",
+    });
+    expect(settled.round?.phase).toBe("settled");
+    expect(settled.profile.goldBalance).toBe(2000 + settled.round!.netGold);
   });
 
   it("reports no round for a player who has never dealt", async () => {
     expect((await readHiLoRound(await funded())).round).toBeNull();
+  });
+});
+
+describe("redaction", () => {
+  it("never leaks the deck, which is where the deciding card is", async () => {
+    const round = await liveRound(await funded(2000));
+    expect("deck" in round).toBe(false);
+    expect(JSON.stringify(round)).not.toContain("deck");
+  });
+
+  it("quotes the price of both calls before the player commits", async () => {
+    const round = await liveRound(await funded(2000));
+    expect(round.odds.higher.winners + round.odds.lower.winners + round.odds.ties).toBe(51);
+    // At least one side is always playable; both are unless the card is a 2 or an ace.
+    expect(round.odds.higher.available || round.odds.lower.available).toBe(true);
   });
 });
 
@@ -104,12 +124,11 @@ describe("settlement", () => {
     // has to hold for every one.
     for (let n = 0; n < 30; n += 1) {
       const token = await funded(2000);
-      const dealt = await dealHiLo(token, "1k");
-      const call = dealt.round!.legal.higher ? "higher" : "lower";
+      const dealt = await liveRound(token);
       const settled = await playHiLoCall(token, {
-        roundId: dealt.round!.id,
-        version: dealt.round!.version,
-        call,
+        roundId: dealt.id,
+        version: dealt.version,
+        call: dealt.legal.higher ? "higher" : "lower",
       });
       expect(settled.round?.phase).toBe("settled");
       expect(settled.round?.drawnCard).toBeTruthy();
@@ -120,12 +139,12 @@ describe("settlement", () => {
   it("pays a win at exactly the price it quoted", async () => {
     for (let n = 0; n < 30; n += 1) {
       const token = await funded(2000);
-      const dealt = await dealHiLo(token, "1k");
-      const call = dealt.round!.legal.higher ? "higher" : "lower";
-      const quoted = dealt.round!.odds[call].multiplier;
+      const dealt = await liveRound(token);
+      const call = dealt.legal.higher ? "higher" : "lower";
+      const quoted = dealt.odds[call].multiplier;
       const settled = await playHiLoCall(token, {
-        roundId: dealt.round!.id,
-        version: dealt.round!.version,
+        roundId: dealt.id,
+        version: dealt.version,
         call,
       });
       if (settled.round?.outcome === "win") {
@@ -137,39 +156,30 @@ describe("settlement", () => {
     }
   });
 
-  it("frees the player to deal again once the round settles", async () => {
-    const token = await funded(20000);
-    const dealt = await dealHiLo(token, "1k");
-    await playHiLoCall(token, {
-      roundId: dealt.round!.id,
-      version: dealt.round!.version,
-      call: dealt.round!.legal.higher ? "higher" : "lower",
-    });
-    const next = await dealHiLo(token, "1k");
-    expect(next.resumed).toBe(false);
-    expect(next.round?.id).not.toBe(dealt.round?.id);
-  });
-
   it("stakes an unlimited-Gold player nothing and pays them nothing", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
     await setUnlimitedGold(profile.id, true);
-    const dealt = await dealHiLo(token, "500k");
-    expect(dealt.round).not.toBeNull();
+    const dealt = await liveRound(token, 500_000);
+    const settled = await playHiLoCall(token, {
+      roundId: dealt.id,
+      version: dealt.version,
+      call: dealt.legal.higher ? "higher" : "lower",
+    });
     // spendGold and creditGold are both no-ops for an unlimited profile, and
     // the arcade must not become the one place that mints from them.
-    expect(dealt.profile.goldBalance).toBe(profile.goldBalance);
+    expect(settled.profile.goldBalance).toBe(profile.goldBalance);
   });
 });
 
 describe("the version guard", () => {
   it("rejects a replayed call and does not draw a second card", async () => {
     const token = await funded(2000);
-    const dealt = await dealHiLo(token, "1k");
-    const call = dealt.round!.legal.higher ? "higher" : "lower";
+    const dealt = await liveRound(token);
+    const call = dealt.legal.higher ? "higher" : "lower";
     const settled = await playHiLoCall(token, {
-      roundId: dealt.round!.id,
-      version: dealt.round!.version,
+      roundId: dealt.id,
+      version: dealt.version,
       call,
     });
     const after = (await ensureProfile(token)).goldBalance;
@@ -177,7 +187,7 @@ describe("the version guard", () => {
     // The same request again -- a double-click, a retry, a replayed payload.
     // In Hi-Lo this would be a free re-roll of the only card that matters.
     await expect(
-      playHiLoCall(token, { roundId: dealt.round!.id, version: dealt.round!.version, call }),
+      playHiLoCall(token, { roundId: dealt.id, version: dealt.version, call }),
     ).rejects.toMatchObject({ status: 404 });
     expect((await ensureProfile(token)).goldBalance).toBe(after);
     expect(settled.profile.goldBalance).toBe(after);
@@ -185,12 +195,12 @@ describe("the version guard", () => {
 
   it("rejects a call pinned to a stale version", async () => {
     const token = await funded(2000);
-    const dealt = await dealHiLo(token, "1k");
+    const dealt = await liveRound(token);
     await expect(
       playHiLoCall(token, {
-        roundId: dealt.round!.id,
-        version: dealt.round!.version + 5,
-        call: dealt.round!.legal.higher ? "higher" : "lower",
+        roundId: dealt.id,
+        version: dealt.version + 5,
+        call: dealt.legal.higher ? "higher" : "lower",
       }),
     ).rejects.toMatchObject({ status: 409 });
     expect((await ensureProfile(token)).goldBalance).toBe(1000);
@@ -198,9 +208,9 @@ describe("the version guard", () => {
 
   it("refuses a call addressed to a round the caller does not hold", async () => {
     const token = await funded(2000);
-    const dealt = await dealHiLo(token, "1k");
+    const dealt = await liveRound(token);
     await expect(
-      playHiLoCall(token, { roundId: randomUUID(), version: dealt.round!.version, call: "higher" }),
+      playHiLoCall(token, { roundId: randomUUID(), version: dealt.version, call: "higher" }),
     ).rejects.toMatchObject({ status: 409 });
   });
 
@@ -217,18 +227,18 @@ describe("unwinnable calls", () => {
     // side. Roughly 2 in 13, so this finds one quickly.
     for (let attempt = 0; attempt < 200; attempt += 1) {
       const token = await funded(2000);
-      const dealt = await dealHiLo(token, "1k");
-      const dead = !dealt.round!.legal.higher ? "higher" : !dealt.round!.legal.lower ? "lower" : null;
+      const dealt = await liveRound(token);
+      const dead = !dealt.legal.higher ? "higher" : !dealt.legal.lower ? "lower" : null;
       if (!dead) continue;
 
-      expect(hiLoOdds(dealt.round!.baseCard)[dead].winners).toBe(0);
+      expect(hiLoOdds(dealt.baseCard)[dead].winners).toBe(0);
       await expect(
-        playHiLoCall(token, { roundId: dealt.round!.id, version: dealt.round!.version, call: dead }),
+        playHiLoCall(token, { roundId: dealt.id, version: dealt.version, call: dead }),
       ).rejects.toMatchObject({ status: 409 });
       // The stake is still just the opening debit, and the round is untouched.
       expect((await ensureProfile(token)).goldBalance).toBe(1000);
       const live = await readHiLoRound(token);
-      expect(live.round?.version).toBe(dealt.round!.version);
+      expect(live.round?.version).toBe(dealt.version);
       expect(live.round?.drawnCard).toBeNull();
       return;
     }

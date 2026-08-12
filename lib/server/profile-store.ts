@@ -799,6 +799,109 @@ export async function adjustGold(profileId: string, delta: number): Promise<Play
   return publicProfile(fromRow(data));
 }
 
+/**
+ * Debits a player identified by profile id, with the same row-lock guard as
+ * `spendGold`. Returns null when the balance will not cover it.
+ *
+ * ## Why this exists alongside spendGold
+ *
+ * Every other Gold path here keys on the session token, because the mover and
+ * the moved-to were always the same person and a cookie is a better key than
+ * an id the request supplied. Player-versus-player settlement (lib/pvp/) is
+ * the first case where they differ: a duel's pot has to reach the *winner*,
+ * and the request that ends the match came from whoever moved last -- the
+ * loser about half the time, and neither player on a timeout sweep.
+ *
+ * Deliberately NOT `adjustGold`, which also takes a profile id: that one is a
+ * plain read-then-write with no lock, documented as an admin correction tool
+ * for exactly that reason. Two clients settling the same match at once is a
+ * real race here, not a theoretical one, so this goes through the guarded RPC.
+ *
+ * Returns null rather than throwing on an insufficient balance because the
+ * caller has to distinguish "they cannot afford the ante" (an ordinary answer
+ * a challenge lobby renders) from "the database is down".
+ */
+export async function spendGoldByProfile(
+  profileId: string,
+  amount: number,
+): Promise<PlayerProfile | null> {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid Gold amount.");
+  const supabase = adminClient();
+  if (!supabase) {
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) return null;
+    const [token, current] = entry;
+    if (!current.unlimitedGold && current.goldBalance < amount) return null;
+    const next: StoredProfile = {
+      ...current,
+      goldBalance: current.unlimitedGold ? current.goldBalance : current.goldBalance - amount,
+      updatedAt: new Date().toISOString(),
+    };
+    memoryProfiles.set(token, next);
+    return publicProfile(next);
+  }
+
+  const { data, error } = await supabase
+    .rpc("spend_gold_by_profile", { p_profile_id: profileId, p_amount: amount })
+    .single();
+  if (error) throw new Error(`Could not spend Gold: ${error.message}`);
+  const result = data as { success: boolean; gold_balance: number } | null;
+  if (!result?.success) return null;
+
+  const { data: row, error: readError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", profileId)
+    .single();
+  if (readError) throw new Error(`Could not load profile: ${readError.message}`);
+  return publicProfile(fromRow(row));
+}
+
+/**
+ * Credits a player identified by profile id, with the same row-lock guard as
+ * `creditGold`. See `spendGoldByProfile` for why the id-keyed pair exists.
+ *
+ * Mirrors creditGold's unlimited-Gold handling exactly, and must keep doing
+ * so. It bites harder here than anywhere else: an unlimited profile antes
+ * nothing into a duel pot, so crediting one the pot would mint the loser's
+ * stake out of nothing on every match.
+ */
+export async function creditGoldByProfile(
+  profileId: string,
+  amount: number,
+): Promise<PlayerProfile | null> {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid Gold amount.");
+  const supabase = adminClient();
+  if (!supabase) {
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) return null;
+    const [token, current] = entry;
+    if (current.unlimitedGold) return publicProfile(current);
+    const next: StoredProfile = {
+      ...current,
+      goldBalance: current.goldBalance + amount,
+      updatedAt: new Date().toISOString(),
+    };
+    memoryProfiles.set(token, next);
+    return publicProfile(next);
+  }
+
+  const { data, error } = await supabase
+    .rpc("credit_gold_by_profile", { p_profile_id: profileId, p_amount: amount })
+    .single();
+  if (error) throw new Error(`Could not credit Gold: ${error.message}`);
+  const result = data as { success: boolean; gold_balance: number } | null;
+  if (!result?.success) return null;
+
+  const { data: row, error: readError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", profileId)
+    .single();
+  if (readError) throw new Error(`Could not load profile: ${readError.message}`);
+  return publicProfile(fromRow(row));
+}
+
 /** Flags (or unflags) a profile so spendGold never actually deducts from it -- for gifting a specific person free play. */
 export async function setUnlimitedGold(profileId: string, unlimited: boolean): Promise<void> {
   const supabase = adminClient();

@@ -1,0 +1,250 @@
+/* Chess: the board, the pieces, the two clocks.
+ *
+ * Narrows 36-duels.css and must cascade after it. Only what chess adds is
+ * here -- the lobby, the match frame, the pot line and the result card are all
+ * the shared sheet's, and .duel-board already centres this and gives it its
+ * own horizontal scroll container.
+ *
+ * Borderless, like the rest of the chrome: the board's own squares are a fill
+ * checker, so separation here is already carried by colour, and every state a
+ * square can be in (selected, a legal destination, the last move, a king in
+ * check) is a wash or an inset ring rather than a 1px outline. The two square
+ * shades are the one place a raw colour is written: no token means "the light
+ * half of a chessboard", and inventing one in 01-tokens.css for a single sheet
+ * would be a token nothing else could ever read.
+ */
+
+.chess-board-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+/* One square, sized off the viewport so eight of them plus the shell's own
+   padding fit a 390px phone without the page ever panning sideways. The cap
+   keeps a desktop board from growing into a table. */
+.chess-grid {
+  --chess-square: min(11vw, 56px);
+  --chess-light: #7d879b;
+  --chess-dark: #414b5f;
+
+  display: grid;
+  grid-template-columns: repeat(8, var(--chess-square));
+  grid-template-rows: repeat(8, var(--chess-square));
+  border-radius: 8px;
+  overflow: hidden;
+  /* A real shadow rather than a frame -- the board is a raised object on the
+     room's floor, which is how every other surface in the chrome separates. */
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, .75);
+}
+
+.chess-square {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--chess-dark);
+  cursor: pointer;
+  /* Squares are a continuous surface; a tap highlight would draw a box around
+     one of them on iOS the instant the borderless rule was applied everywhere
+     else. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chess-square-light {
+  background: var(--chess-light);
+}
+
+.chess-square:disabled {
+  cursor: default;
+}
+
+.chess-square:focus-visible {
+  outline: none;
+  box-shadow: var(--brand-focus);
+  z-index: 2;
+}
+
+/* ---------------------------------------------------------------- pieces */
+
+.chess-piece {
+  font-size: calc(var(--chess-square) * 0.78);
+  line-height: 1;
+  /* The solid glyph set is used for BOTH colours, so the outline is what
+     separates a white piece from a black one -- without it a white king on a
+     light square disappears. Four shadows rather than -webkit-text-stroke,
+     which thins the glyph from the inside at this size. */
+  user-select: none;
+  pointer-events: none;
+}
+
+.chess-piece-white {
+  color: #f6f8fc;
+  text-shadow:
+    0 1px 0 #0b0e14, 0 -1px 0 #0b0e14, 1px 0 0 #0b0e14, -1px 0 0 #0b0e14,
+    0 2px 5px rgba(0, 0, 0, .55);
+}
+
+.chess-piece-black {
+  color: #10141c;
+  text-shadow:
+    0 1px 0 rgba(246, 248, 252, .6), 0 -1px 0 rgba(246, 248, 252, .6),
+    1px 0 0 rgba(246, 248, 252, .6), -1px 0 0 rgba(246, 248, 252, .6),
+    0 2px 5px rgba(0, 0, 0, .45);
+}
+
+/* -------------------------------------------------------------- highlights */
+
+/* The move that just happened, so a player returning to the tab can see what
+   their opponent did without reading a move list. A wash, not an outline. */
+.chess-square-last::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--brand-gold) 26%, transparent);
+}
+
+/* Inset so picking a piece up shifts nothing by a pixel, which is the rule
+   36-duels.css states for the selected stake rung. */
+.chess-square-selected {
+  box-shadow: inset 0 0 0 3px var(--brand-gold);
+  z-index: 1;
+}
+
+/* A legal destination: a dot on an empty square, a ring on an occupied one, so
+   "you can move here" and "you can take this" are told apart without colour. */
+.chess-square-move::after,
+.chess-square-take::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.chess-square-move::after {
+  width: 30%;
+  height: 30%;
+  border-radius: 50%;
+  background: rgba(12, 16, 24, .42);
+}
+
+.chess-square-take::after {
+  inset: 6%;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 4px rgba(12, 16, 24, .42);
+}
+
+.chess-square-check::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, color-mix(in srgb, var(--brand-red) 72%, transparent), transparent 72%);
+}
+
+/* ---------------------------------------------------------------- clocks */
+
+.chess-clock {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: min(100%, calc(var(--chess-square, 56px) * 8));
+  padding: 6px 12px;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  color: var(--text-muted);
+}
+
+.chess-clock small {
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+}
+
+.chess-clock strong {
+  margin-left: auto;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/* Whose clock is running is carried by a fill and a glow, never by a border --
+   deleting a border without replacing its signal is how a state goes
+   invisible, which the borderless pass records happening. */
+.chess-clock-live {
+  background: var(--brand-surface-2);
+  box-shadow: var(--accent-edge), var(--accent-glow);
+  color: var(--text-secondary);
+}
+
+.chess-clock-low strong {
+  color: var(--brand-red);
+}
+
+/* ------------------------------------------------------- status and promotion */
+
+.chess-status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.chess-promotion {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--brand-surface-2);
+}
+
+.chess-promotion-pick {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  cursor: pointer;
+}
+
+.chess-promotion-pick:hover {
+  background: var(--brand-ink-lift-2);
+}
+
+.chess-promotion-pick .chess-piece {
+  font-size: 30px;
+}
+
+.chess-promotion-cancel {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  /* The shell drops to 12px of side padding on a phone, so the board may take
+     the rest: 8 x 11.6vw is 92.8vw, which clears 390px with room to spare. */
+  .chess-grid {
+    --chess-square: min(11.6vw, 56px);
+  }
+
+  .chess-clock {
+    padding: 5px 10px;
+  }
+
+  .chess-clock strong {
+    font-size: 16px;
+  }
+}

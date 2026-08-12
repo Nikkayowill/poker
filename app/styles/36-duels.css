@@ -1,0 +1,340 @@
+/* Head-to-head duels: the shared shell.
+ *
+ * The lobby, the match frame and the result card, for all four games. Every
+ * per-game sheet (37-40) narrows this one and must cascade after it -- the
+ * same relationship 28-arcade-hud.css has with the machine sheets.
+ *
+ * Reuses the arcade floor's own furniture rather than restating it: .floor-bar,
+ * .floor-back, .floor-wallet, .floor-head, .floor-section-head and .floor-play
+ * all come from 22-arcade.css, so a duel page and the page that links to it
+ * cannot drift into two products. Only what a duel genuinely adds is here.
+ *
+ * Borderless, per the chrome's rule: separation is a raised fill, a real
+ * shadow and space. The one place a ring appears is the selected stake, and it
+ * is an inset --accent-edge so selection shifts nothing by a pixel.
+ */
+
+.duel-shell {
+  /* The chrome has no text tokens -- 22-arcade.css, which owns the .floor-*
+     furniture these pages reuse, writes #eef2f8 / #93a1bb / #7f8ba4 as
+     literals in twenty places. Naming them here rather than adding a fourth
+     global palette is the same move .account-entry-page makes with
+     --brand-surface: same roles, defined locally, so the five duel sheets read
+     as a scale instead of repeating hex, and the duel pages cannot drift from
+     the arcade page that links to them.
+     Scoped to .duel-shell deliberately -- it wraps the lobby, the match frame
+     AND every game board, so 37-40 inherit these without any of them having to
+     declare a palette of its own. Do NOT promote these to :root: the table
+     sheets already have --ink/--muted for the same roles, and a second global
+     name for one colour is the drift this file exists to avoid. */
+  --text-primary: #eef2f8;
+  --text-secondary: #93a1bb;
+  --text-muted: #7f8ba4;
+
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: min(960px, 100%);
+  margin: 0 auto;
+  padding: 0 20px max(24px, var(--safe-bottom));
+  min-height: 100dvh;
+}
+
+/* ---------------------------------------------------------------- errors */
+
+.duel-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--brand-red) 18%, var(--brand-surface));
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.duel-error button {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- lobby */
+
+.duel-lobby {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.duel-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.duel-tiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.duel-tier {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+/* Inset, so selecting a rung adds no layout box and the row does not reflow
+   by a pixel as the player scans across it. */
+.duel-tier-active {
+  box-shadow: inset 0 0 0 1px var(--accent-edge), 0 0 12px var(--accent-glow);
+  color: var(--text-primary);
+}
+
+.duel-pot-note,
+.duel-empty,
+.duel-footnote {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.duel-footnote {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.duel-open {
+  align-self: flex-start;
+}
+
+.duel-mine {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--brand-surface);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.duel-mine span {
+  flex: 1 1 240px;
+}
+
+.duel-challenge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.duel-challenge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 4px;
+}
+
+/* A divider between items, never an outline around one -- a rule that ran
+   edge to edge around the row would re-read as a box. */
+.duel-challenge + .duel-challenge {
+  border-top: 1px solid var(--rule);
+}
+
+.duel-challenge-identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.duel-challenge-identity strong {
+  font-size: 14px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.duel-challenge-identity small,
+.duel-player-identity small {
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.duel-challenge-stake {
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  color: var(--brand-gold);
+}
+
+/* The avatar is a ring that is part of the figure, which is the one border
+   category the borderless pass kept. */
+.duel-avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 50%;
+  color: #0a0a0b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- match */
+
+.duel-match {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+
+.duel-scoreline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.duel-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.duel-player-identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.duel-player-identity strong {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.duel-pot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--brand-surface);
+  color: var(--brand-gold);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+
+/* The board sizes itself; this only bounds it and centres it. A per-game
+   sheet decides what goes inside. */
+.duel-board {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  /* Wide boards scroll inside their own container rather than panning the
+     page -- the same rule the chrome's grid minimums exist to enforce. */
+  overflow-x: auto;
+}
+
+.duel-controls {
+  display: flex;
+  justify-content: center;
+}
+
+.duel-resign {
+  padding: 7px 18px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.duel-resign:hover:not(:disabled) {
+  color: var(--brand-red);
+}
+
+/* ---------------------------------------------------------------- result */
+
+.duel-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 28px;
+  border-radius: 10px;
+  background: var(--brand-surface);
+  text-align: center;
+}
+
+.duel-result strong {
+  font-size: 22px;
+  color: var(--text-primary);
+}
+
+.duel-result span {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.duel-result-gold {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The outcome is carried by a tinted fill and the gold figure, not by a
+   border colour -- deleting a border without replacing its signal is how a
+   state goes invisible, which the borderless pass records happening. */
+.duel-result-won {
+  background: color-mix(in srgb, var(--brand-gold) 14%, var(--brand-surface));
+}
+
+.duel-result-won .duel-result-gold {
+  color: var(--brand-gold);
+}
+
+.duel-result-drew {
+  background: var(--brand-surface-2, var(--brand-surface));
+}
+
+.duel-result .floor-play {
+  margin-top: 8px;
+}
+
+@media (max-width: 640px) {
+  .duel-shell {
+    padding: 0 12px max(16px, var(--safe-bottom));
+    gap: 14px;
+  }
+
+  /* The pot is the one thing that must stay readable when the two names
+     compete for the row; the labels under them go instead. */
+  .duel-player-identity small {
+    display: none;
+  }
+}

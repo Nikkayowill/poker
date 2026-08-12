@@ -1,7 +1,7 @@
 "use client";
 
 import type { RealtimeChannel, Session } from "@supabase/supabase-js";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import type { StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
@@ -21,8 +21,19 @@ import {
 import type { PlayerProfile } from "@/lib/profile/types";
 import { dailyGoldState } from "@/lib/profile/daily-gold";
 import { parseEnabledFlag } from "@/lib/profile/stored-preference";
+import {
+  browserSessionStorage,
+  clearSessionContinuity,
+  markAccountLinkAnnounced,
+  serverProfileSnapshot,
+  sessionProfileSnapshot,
+  shouldAnnounceAccountLink,
+  subscribeSessionCache,
+  writeCachedProfile,
+} from "@/lib/profile/session-continuity";
 import { useStoredPreference } from "@/components/use-stored-preference";
 import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
+import { gameOnSound } from "@/lib/audio/ui-sounds";
 import {
   BET_STYLE_STORAGE_KEY,
   DEFAULT_BET_STYLE,
@@ -68,6 +79,18 @@ import {
   SOUND_STORAGE_KEY,
 } from "@/lib/audio/sound-preference";
 
+/**
+ * How long a lobby notice stays up before it retires itself.
+ *
+ * These are confirmations -- "cashed out 4,200", "signed out" -- not decisions,
+ * and a confirmation that waits to be acknowledged is a confirmation the player
+ * has to clean up after. They used to sit at the top of the hub until the ×
+ * was clicked, so a session accumulated a stack of banners about things that
+ * had already happened. Long enough to read twice, and the × is still there
+ * for anyone who wants it gone sooner.
+ */
+const NOTICE_VISIBLE_MS = 6_000;
+
 const MAX_REFRESH_RETRIES = 4;
 const REFRESH_RETRY_BASE_MS = 250;
 const REFRESH_RETRY_MAX_MS = 2_000;
@@ -87,7 +110,7 @@ const FREE_GOLD_TRIGGER: RewardTrigger = {
 
 export function PokerApp() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  const [loadedProfile, setProfile] = useState<PlayerProfile | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -95,8 +118,73 @@ export function PokerApp() {
   const [connectionState, setConnectionState] = useState<ConnectionState>("connected");
   const [cashOutNotice, setCashOutNotice] = useState<number | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
-  const [entryComplete, setEntryComplete] = useState(false);
   const [authReady, setAuthReady] = useState(!accountsEnabled());
+
+  /*
+   * WHY THE PROFILE AND THE ENTRY GATE ARE DERIVED RATHER THAN PLAIN STATE
+   *
+   * The arcade, Collection and the leaderboard are their own routes, so "Back
+   * to the lobby" unmounts this component and mounts a fresh one. Everything
+   * below used to start empty on each of those arrivals, and the player watched
+   * the app rediscover facts it already knew: the signed-out card painted for
+   * the length of one `GET /api/profile`, then the hub's own "Preparing your
+   * seat..." for the rest of it, then finally the hub. A login screen flashing
+   * at somebody an hour into a session, once per navigation.
+   *
+   * `cachedProfile` is this tab's copy of the last profile the server sent
+   * (see lib/profile/session-continuity.ts for why it is sessionStorage and
+   * never localStorage). It reaches the first render synchronously through
+   * `useSyncExternalStore`, which is the whole point -- `useStoredPreference`
+   * defers by a tick, and a value that arrives after the first paint has
+   * already let the wrong screen show. Same trade `first-run-strip.tsx` makes.
+   *
+   * It is a bridge, not an authority, and `profileLoading` is what keeps that
+   * honest: the moment the real fetch settles, `loadedProfile` is the answer
+   * even when the answer is null. That ordering is load-bearing -- read the
+   * cache after the load settles and a player whose session has expired keeps
+   * seeing their old balance and stays waved through the gate.
+   */
+  const readSessionProfile = useCallback(
+    () => sessionProfileSnapshot(browserSessionStorage()),
+    [],
+  );
+  const cachedProfile = useSyncExternalStore(
+    subscribeSessionCache,
+    readSessionProfile,
+    serverProfileSnapshot,
+  );
+  const profile = loadedProfile ?? (profileLoading ? cachedProfile : null);
+
+  /**
+   * Entry is opened by choosing an account or Continue as guest, and is
+   * *evidenced* by holding a profile at all -- the session cookie is the
+   * durable record of having been through the gate, and a profile only comes
+   * back when one exists. Deriving it rather than mirroring it into state is
+   * what stops a remount asking the question again.
+   */
+  const [entryOpened, setEntryOpened] = useState(false);
+  const entryComplete = entryOpened || profile !== null;
+
+  /** Keeps this tab's copy in step, so the next mount paints instantly. */
+  useEffect(() => {
+    if (loadedProfile) writeCachedProfile(browserSessionStorage(), loadedProfile);
+  }, [loadedProfile]);
+
+  // Both notices retire themselves; see NOTICE_VISIBLE_MS. Keyed on the value
+  // so a second cash-out restarts the clock rather than inheriting the tail of
+  // the first one's.
+  useEffect(() => {
+    if (cashOutNotice === null) return;
+    const timer = window.setTimeout(() => setCashOutNotice(null), NOTICE_VISIBLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [cashOutNotice]);
+
+  useEffect(() => {
+    if (authNotice === null) return;
+    const timer = window.setTimeout(() => setAuthNotice(null), NOTICE_VISIBLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [authNotice]);
+
   const [rememberSession, setRememberSession] = useState(true);
   const [signInPending, setSignInPending] = useState(false);
   const [navShowing, setNavShowing] = useState(false);
@@ -188,6 +276,10 @@ export function PokerApp() {
   const gameId = game?.id;
   const gameVersionRef = useRef(game?.version ?? 0);
   const previousGameRef = useRef<GameSnapshot | null>(null);
+  // Deliberately its own ref rather than reading previousGameRef, which the
+  // tableSounds effect below owns and overwrites. Sharing it would make the
+  // "game on" cue depend on which of the two effects React declared first.
+  const wasSeatedRef = useRef(false);
   const linkedAccountIdRef = useRef<string | null>(null);
   const accountLinkPromiseRef = useRef<Promise<boolean> | null>(null);
 
@@ -284,6 +376,33 @@ export function PokerApp() {
     previousGameRef.current = game;
     for (const effect of tableSounds(previous, game)) playSound(effect);
   }, [game]);
+
+  /**
+   * "Game on" -- the one cue that says you are actually at a table.
+   *
+   * Edge-triggered, and it has to be. `game` changes identity on every poll,
+   * every server tick and every action, so the level-triggered shape the menu
+   * music and first-run effects use below would fire this dozens of times a
+   * hand. Those two get away with it because stopping music and writing a
+   * localStorage flag are idempotent; playing a sound is not.
+   *
+   * It lives here rather than in the four handlers that can seat a player
+   * (quickPlay, hostPrivate, joinByCode, and the ?table= deep link) because
+   * three of those four used to call playSound("deal") and the fourth was
+   * silent -- the deep link shares `refresh` with the poll loop, so nobody
+   * ever added it. One edge covers all four, and covers the friend-invite
+   * accept path for free the day onJoinedTable is finally wired up.
+   *
+   * tableSounds is deliberately silent on entry (it returns [] when there is
+   * no previous snapshot to have changed from), so this does not collide with
+   * it -- see the note at the top of lib/audio/table-sounds.ts.
+   */
+  useEffect(() => {
+    const seated = Boolean(game);
+    const was = wasSeatedRef.current;
+    wasSeatedRef.current = seated;
+    if (seated && !was) gameOnSound();
+  }, [game]);
   useEffect(() => {
     gameVersionRef.current = game?.version ?? 0;
   }, [game?.version]);
@@ -310,16 +429,13 @@ export function PokerApp() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "Could not load your profile.");
     setProfile(data.profile);
-    // A profile came back, so this browser already holds a session cookie --
-    // it has been through the entry gate before. `entryComplete` is plain
-    // component state, so every arrival at `/` starts it false, and the
-    // arcade lives on its own routes (`/games/*`): tapping "Back to the
-    // lobby" remounts this component and used to drop a signed-in player
-    // back on the sign-in card. The cookie is the durable record of having
-    // entered, and it is already scoped to the remember-me choice (a guest
-    // session cookie dies with the browser), so reading it here restores the
-    // gate exactly as far as the player asked it to persist.
-    if (data.profile) setEntryComplete(true);
+    // A profile came back, so this browser holds a session cookie and has been
+    // through the entry gate before -- which `entryComplete` now reads off the
+    // profile directly rather than mirroring into state, so there is nothing
+    // to set here. No profile is the other half of that: the session is gone,
+    // so this tab's cached copy is stale and must not be shown to whoever
+    // arrives next.
+    if (!data.profile) clearSessionContinuity(browserSessionStorage());
   }, []);
 
   const ingest = useCallback((data: { game: GameSnapshot; persistence: string; profile?: PlayerProfile }) => {
@@ -360,8 +476,9 @@ export function PokerApp() {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "Could not join that table.");
+    // No sound here: the game-on edge above fires off `game` itself, so this
+    // path and the ?table= deep link it rewrites to now sound the same.
     ingest(data);
-    playSound("deal");
     window.history.replaceState({}, "", `/?table=${data.game.id}`);
   }, [ingest]);
 
@@ -447,7 +564,7 @@ export function PokerApp() {
    * disabled with no way to ever enable it.
    *
    * Deliberately its own effect rather than an await inside continueAsGuest.
-   * Awaiting there fixes this path too, but it puts setEntryComplete behind
+   * Awaiting there fixes this path too, but it puts setEntryOpened behind
    * a network round trip and so changes when the ?table= effect below runs
    * -- and that effect is what puts you back at a table you were already
    * sitting at. Creating the profile alongside it instead leaves that timing
@@ -668,7 +785,6 @@ export function PokerApp() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not find you a table.");
       ingest(data);
-      playSound("deal");
       window.history.pushState({}, "", `/?table=${data.game.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not find you a table.");
@@ -690,7 +806,6 @@ export function PokerApp() {
       if (!response.ok) throw new Error(data.error ?? "Could not host a table.");
       ingest(data);
       if (data.game?.roomCode) setCreatedRoomCode(data.game.roomCode);
-      playSound("deal");
       window.history.pushState({}, "", `/?table=${data.game.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not host a table.");
@@ -825,18 +940,30 @@ export function PokerApp() {
   // For Google this is a safety-net re-run of what the OAuth callback route
   // already did server-side before redirecting here; linkAuthenticatedUser
   // is idempotent, so a duplicate call just restores the same profile.
-  const linkAccount = useCallback(async () => {
+  //
+  // The *call* being idempotent is why it is safe to re-run and why it must
+  // not re-announce. `linkedAccountIdRef` below is a ref, so it empties on
+  // every mount -- and this component remounts on every return from the
+  // arcade -- which had this greeting the player again for the fourth time in
+  // a minute. Whether to speak is therefore asked of the tab (which survives
+  // those remounts) and not of the ref: a real sign-in and a switch to a
+  // different account still announce, a re-link says nothing.
+  const linkAccount = useCallback(async (accountId: string) => {
     try {
       const response = await fetch("/api/auth/link", { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not save your progress.");
       setProfile(data.profile);
       setSavePromptDismissed(false);
-      setAuthNotice(
-        data.restored
-          ? "Welcome back — your Gold, profile, and collection are ready."
-          : "Progress secured — this profile now travels with your account.",
-      );
+      const storage = browserSessionStorage();
+      if (shouldAnnounceAccountLink(storage, accountId)) {
+        markAccountLinkAnnounced(storage, accountId);
+        setAuthNotice(
+          data.restored
+            ? "Welcome back — your Gold, profile, and collection are ready."
+            : "Progress secured — this profile now travels with your account.",
+        );
+      }
       return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save your progress.");
@@ -864,7 +991,7 @@ export function PokerApp() {
         return;
       }
       linkedAccountIdRef.current = accountId;
-      const linkPromise = linkAccount();
+      const linkPromise = linkAccount(accountId);
       accountLinkPromiseRef.current = linkPromise;
       const linked = await linkPromise;
       if (accountLinkPromiseRef.current === linkPromise) accountLinkPromiseRef.current = null;
@@ -1032,7 +1159,7 @@ export function PokerApp() {
     setSignInPending(true);
     try {
       await applySessionPreference();
-      setEntryComplete(true);
+      setEntryOpened(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not open the lobby.");
     } finally {
@@ -1049,7 +1176,14 @@ export function PokerApp() {
     await fetch("/api/auth/signout", { method: "POST" }).catch(() => {});
     setGame(null);
     linkedAccountIdRef.current = null;
-    setEntryComplete(false);
+    setEntryOpened(false);
+    // Both halves, together and before the reload below. `entryComplete` is
+    // derived from holding a profile now, so leaving either the loaded copy or
+    // this tab's cached one in place would keep the departing player's name and
+    // balance on screen -- and waved through the gate -- until the refetch
+    // landed. Clearing the tab also re-arms the greeting for the next account.
+    setProfile(null);
+    clearSessionContinuity(browserSessionStorage());
     setAuthNotice("Signed out — you can keep playing as a guest on this browser.");
     await loadProfile().catch(() => {});
   };
@@ -1065,7 +1199,7 @@ export function PokerApp() {
       // than blocking it -- so the `?table=` effect below still fires on the
       // same tick it always did and resuming a table you were seated at is
       // untouched. Adding an await here is what breaks that.
-      setEntryComplete(true);
+      setEntryOpened(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not open the lobby.");
     } finally {
@@ -1261,8 +1395,16 @@ export function PokerApp() {
           />
         )
         : (
+          /* Deliberately unkeyed. It used to carry `key={profile.updatedAt}`,
+             which made every profile write -- every buy-in, every cash-out,
+             every daily claim -- tear the whole hub down and rebuild it: the
+             rank strip vanished and refetched, the grid jumped up and back as
+             it returned, open drawers closed, and a half-typed name was lost.
+             The one thing that needed the remount was the buy-in name field
+             seeding itself from `profile.displayName`, which Lobby now derives
+             instead. A key is for telling two different things apart, not for
+             pushing a new prop into stale state. */
           <Lobby
-            key={profile?.updatedAt ?? "guest"}
             profile={profile}
             onQuickPlay={quickPlay}
             onHostPrivate={hostPrivate}

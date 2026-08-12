@@ -1,5 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import { isRetiredArcadeGame, RETIRED_GAME_MESSAGE } from "@/lib/arcade/retired";
 import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
@@ -201,6 +202,15 @@ export async function openCasinoRound<TRound, TSnapshot, TInput = undefined>(
 
   const existing = await getActiveArcadeRound<TRound>(profile.id, game.id);
   if (existing) return { ...view(game, existing, profile), resumed: true };
+
+  // Retirement is enforced HERE rather than on the routes, and after the
+  // resume above rather than before it: a player holding a live round paid for
+  // it, so they get it back and settle it out normally. What is refused is
+  // opening a new one. See lib/arcade/retired.ts for why a catalog edit alone
+  // would not have closed this path.
+  if (isRetiredArcadeGame(game.id)) {
+    throw new CasinoRequestError<TSnapshot>(RETIRED_GAME_MESSAGE, 410);
+  }
 
   const stake = TIER_CONFIG[tier].minBuyIn;
   if (!profile.unlimitedGold && profile.goldBalance < stake) {

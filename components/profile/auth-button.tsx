@@ -2,6 +2,7 @@
 
 import type { PlayerProfile } from "@/lib/profile/types";
 import { accountsEnabled } from "@/lib/auth/client";
+import { selectSound } from "@/lib/audio/ui-sounds";
 
 export function AuthButton({
   profile,
@@ -15,7 +16,7 @@ export function AuthButton({
   const available = accountsEnabled();
   if (profile?.isRegistered) {
     return (
-      <button type="button" className="auth-button" onClick={onSignOut}>
+      <button type="button" className="auth-button" onClick={() => { selectSound(); onSignOut(); }}>
         Sign out
       </button>
     );
@@ -24,7 +25,7 @@ export function AuthButton({
     <button
       type="button"
       className="auth-button auth-button-save"
-      onClick={onSignIn}
+      onClick={() => { selectSound(); onSignIn(); }}
       disabled={!available}
       title={available ? "Sign in with Google to save your progress" : "Sign-in is unavailable until Supabase is configured"}
     >

@@ -64,6 +64,17 @@ import {
   transientAnimationState,
   type AvatarAnimationState,
 } from "@/lib/game3d/avatar-state";
+import {
+  activeClip,
+  initialPlayback,
+  isGesturing,
+  requestBase,
+  requestGesture,
+  settleGesture,
+  tickPlayback,
+  type ActiveClip,
+  type PlaybackState,
+} from "@/lib/game3d/avatar-playback";
 import type { AvatarMood, SeatModel } from "@/lib/game3d/scene-model";
 import { HUMAN_STANDING_UNITS } from "@/lib/game3d/dimensions";
 import { handPoseWeight } from "@/lib/game3d/hand-anchors";
@@ -112,6 +123,14 @@ export interface GlbAvatarProps {
   lastAction: string | null;
   /** Changes once per server-authored seat action, even when its label repeats. */
   actionKey: string;
+  /**
+   * Fired once this seat's model has actually mounted -- which, because this
+   * component sits inside `<GlbAvatar>`'s own `<Suspense>` boundary below,
+   * only happens after `useGLTF` has resolved. That is what makes "mounted"
+   * a true "this seat's .glb is on screen" signal rather than a guess. See
+   * lib/game3d/avatar-load-gate.ts for what the room does with it.
+   */
+  onLoaded?: (slot: number) => void;
 }
 
 function GlbAvatarModel({
@@ -124,8 +143,19 @@ function GlbAvatarModel({
   atTable = true,
   lastAction,
   actionKey,
+  onLoaded,
 }: GlbAvatarProps) {
   const groupRef = useRef<THREE.Group>(null);
+  // Reports past the Suspense boundary exactly once per mount -- a fresh
+  // mount (a new character URL suspending again) reports again, which is
+  // correct: the room should not consider a seat "loaded" on a model it no
+  // longer has on screen. Not gated on `slot`/`onLoaded` identity: this must
+  // fire on every genuine mount, and re-firing on an identity change that
+  // isn't a remount would be a lie.
+  useEffect(() => {
+    onLoaded?.(slot);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // (url, useDraco, useMeshopt). Meshopt is ON and Draco stays OFF, and the
   // asymmetry is the point. scripts/compress-3d-assets.sh now meshopt-encodes
   // every roster model, so the decoder is required rather than pure cost —
@@ -266,37 +296,133 @@ function GlbAvatarModel({
     return { scale: s, hipOffset: hipLocal * s };
   }, [model, animations]);
 
-  const { actions, names } = useAnimations(animations, groupRef);
-  const activeActionRef = useRef<THREE.AnimationAction | null>(null);
-  const firstActionKeyRef = useRef(actionKey);
-  /** Wall-clock deadline for the running one-shot gesture; see the frame
-   * callback above for why the rest pose stands down while one plays. */
-  const gestureUntilRef = useRef(0);
+  const { actions, names, mixer } = useAnimations(animations, groupRef);
   const baseState = baseAnimationState(mood, status);
   const transientState = transientAnimationState(lastAction);
 
-  // Seated rest pose. Registered AFTER useAnimations' own useFrame (the
-  // mixer update), which is what guarantees it runs later in the same frame
-  // — react-three-fiber calls same-priority useFrame subscribers in
-  // registration order, so this corrects the pose the clip just set rather
-  // than one it is about to overwrite. Deliberately not given an explicit
-  // priority: any non-zero priority hands rendering itself to that callback,
-  // which this has no business taking over.
+  /**
+   * WHAT SHOULD BE PLAYING, as one value rather than as a set of effects
+   * that have to have fired in the right order. Read
+   * lib/game3d/avatar-playback.ts's header before changing anything here: it
+   * documents the freeze this replaces (a one-shot left clamped on its final
+   * frame because the effect that would have handed the figure back cleared
+   * its own restore and then early-returned) and the three rules — epoch-
+   * addressed hand-backs, a scene-clock deadline, idempotent requests — that
+   * the machine encodes so it cannot come back.
+   *
+   * Seeded "idle" rather than from `baseState`: the frame loop re-requests
+   * the real base every frame anyway, and `useRef` has no lazy initialiser,
+   * so deriving it from a prop here would allocate on every render for a
+   * value only the first frame could ever use.
+   */
+  const playbackRef = useRef<PlaybackState>(initialPlayback("idle"));
+  /**
+   * What the mixer is ACTUALLY running, so the frame loop can tell whether
+   * it already agrees with the machine. `epoch: -1` matches no state the
+   * machine can hold, so the first frame always commits.
+   */
+  const playingRef = useRef<{ action: THREE.AnimationAction | null; epoch: number }>({
+    action: null,
+    epoch: -1,
+  });
+  /**
+   * The sustained state, mirrored for the frame loop. Re-requested every
+   * frame rather than diffed here — `requestBase` returns the identical
+   * state for the base it already holds, so a re-render for a reason
+   * unrelated to the server cannot cancel a gesture that is halfway
+   * through playing.
+   */
+  const baseStateRef = useRef(baseState);
+  /**
+   * A gesture the server has asked for, waiting for a frame to start on. The
+   * request cannot be committed where it arrives: its deadline has to be
+   * denominated in the scene clock the mixer is advanced by, and that clock
+   * is only readable inside `useFrame`.
+   */
+  const pendingGestureRef = useRef<AvatarAnimationState | null>(null);
+  const firstActionKeyRef = useRef(actionKey);
+
+  /* AnimationAction is three.js's imperative playback handle. Mutating its
+     enabled/loop/clamp fields is the public API; it is not React-owned data. */
+  /* eslint-disable react-hooks/immutability */
+  /**
+   * Drive the mixer to match one selection from the machine. The ONLY place
+   * an action is started or faded in this file — every other path decides
+   * *what* should play and leaves the *how* here.
+   */
+  const playClip = useCallback((clip: ActiveClip) => {
+    const clipName = clipForState(names, clip.state);
+    const next = clipName ? actions[clipName] : null;
+    if (!next) {
+      // A clipless model animates procedurally. Record the epoch anyway, or
+      // the frame loop retries a selection that cannot resolve, every frame,
+      // forever.
+      playingRef.current = { action: null, epoch: clip.epoch };
+      return;
+    }
+
+    const current = playingRef.current.action;
+    if (current && current !== next) current.fadeOut(CLIP_FADE_S);
+    next.reset();
+    next.enabled = true;
+    next.setEffectiveWeight(1);
+    next.setEffectiveTimeScale(1);
+    next.clampWhenFinished = clip.once;
+    next.setLoop(clip.once ? THREE.LoopOnce : THREE.LoopRepeat, clip.once ? 1 : Infinity);
+    next.fadeIn(CLIP_FADE_S).play();
+    playingRef.current = { action: next, epoch: clip.epoch };
+  }, [actions, names]);
+
+  // Playback reconcile, then the seated rest pose. Registered AFTER
+  // useAnimations' own useFrame (the mixer update), which is what guarantees
+  // it runs later in the same frame — react-three-fiber calls same-priority
+  // useFrame subscribers in registration order, so this corrects the pose the
+  // clip just set rather than one it is about to overwrite. Deliberately not
+  // given an explicit priority: any non-zero priority hands rendering itself
+  // to that callback, which this has no business taking over.
   //
-  // What it does and why it is not just the old felt clamp: see the headers
-  // of lib/game3d/hand-anchors.ts (where the hands should be, and the
-  // measured reach deficit that means the clips could never have put them
+  // What the pose half does and why it is not just the old felt clamp: see
+  // the headers of lib/game3d/hand-anchors.ts (where the hands should be, and
+  // the measured reach deficit that means the clips could never have put them
   // there) and lib/game3d/hand-rig.ts (what shape a hand should be in, and
   // why every character was gripping an invisible flute). The clamp itself
   // survives inside `poseAvatar`, applied to the TARGET rather than to a
   // wrist that has already sunk.
   //
-  // `gestureUntilRef` is read here rather than in render on purpose: it is
-  // the one piece of state a frame callback needs and a render does not, and
-  // reading a ref during render is exactly what react-hooks/refs flags.
+  // Refs are read here rather than in render on purpose: they are the state a
+  // frame callback needs and a render does not, and reading a ref during
+  // render is exactly what react-hooks/refs flags.
   useFrame((state, delta) => {
+    const nowS = state.clock.elapsedTime;
+
+    // THE RECONCILE, AND IT IS ABOVE THE `rig` GUARD DELIBERATELY. This is
+    // what makes the machine self-healing: it re-derives what should be
+    // running from scratch every frame, so a superseded request or an event
+    // that never arrives costs one frame instead of leaving the figure
+    // clamped on a gesture's last frame indefinitely. Below an early return,
+    // that recovery would be conditional on the very thing it insures
+    // against — and `rig` is null for any model whose bones don't resolve,
+    // which is exactly a model whose playback still has to work.
+    let playback = requestBase(playbackRef.current, baseStateRef.current);
+    playback = tickPlayback(playback, nowS);
+    const pending = pendingGestureRef.current;
+    if (pending) {
+      pendingGestureRef.current = null;
+      const clipName = clipForState(names, pending);
+      const duration = (clipName ? actions[clipName]?.getClip().duration : 0) ?? 0;
+      playback = requestGesture(playback, pending, duration, nowS);
+    }
+    playbackRef.current = playback;
+
+    // Epoch alone is the comparison: every committed transition takes a new
+    // one, and two selections sharing an epoch are the same selection. It is
+    // also what restarts a repeated gesture — two calls in a row resolve to
+    // the same clip, so a name comparison would silently swallow the second.
+    const desired = activeClip(playback);
+    if (desired.epoch !== playingRef.current.epoch) playClip(desired);
+
     if (!rig) return;
-    const gesturing = performance.now() < gestureUntilRef.current;
+    const gesturing = isGesturing(playback);
     if (!atTable) {
       poseFingersOnly(rig, poseScratch, gesturing ? 0 : 1);
       return;
@@ -305,18 +431,21 @@ function GlbAvatarModel({
       slot,
       hasCards: inHand,
       weight: handPoseWeight({
-        folded: baseState === "fold",
-        celebrating: baseState === "celebrate",
+        // Read off the machine, not the render closure: what the hands
+        // should do follows what is actually on the figure.
+        folded: playback.base === "fold",
+        celebrating: playback.base === "celebrate",
         gesturing,
       }),
       // A player about to act settles their hand onto their own cards; the
       // rest of the table's rests just short of them.
       snug: isCurrent ? 1 : 0,
-      timeS: state.clock.elapsedTime,
+      timeS: nowS,
       delta,
       modelScale: scale,
     });
   });
+  /* eslint-enable react-hooks/immutability */
 
   // State belongs on the actual figure in a 3D room, not only on a detached
   // nameplate. Folded players recede into the light; the actor and winner get
@@ -344,58 +473,60 @@ function GlbAvatarModel({
     });
   }, [isCurrent, model, status]);
 
-  /* AnimationAction is three.js's imperative playback handle. Mutating its
-     enabled/loop/clamp fields is the public API; it is not React-owned data. */
-  /* eslint-disable react-hooks/immutability */
-  const playState = useCallback((state: AvatarAnimationState, once: boolean) => {
-    const clipName = clipForState(names, state);
-    if (!clipName) return null;
-    const next = actions[clipName];
-    if (!next) return null;
-
-    const current = activeActionRef.current;
-    if (current && current !== next) current.fadeOut(CLIP_FADE_S);
-    next.reset();
-    next.enabled = true;
-    next.setEffectiveWeight(1);
-    next.setEffectiveTimeScale(1);
-    next.clampWhenFinished = once;
-    next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
-    next.fadeIn(CLIP_FADE_S).play();
-    activeActionRef.current = next;
-    return next;
-  }, [actions, names]);
-
-  // Idle/thinking loop. Fold and celebration are deliberate one-shots: a
-  // winner does not repeat the same gesture like a mechanical toy, and a
-  // folded player holds the leaned-back end pose until the next hand.
+  // Mirror the sustained state for the frame loop, which re-requests it
+  // every frame. Fold and celebration remain one-shots — a winner does not
+  // repeat the same gesture like a mechanical toy, and a folded player holds
+  // the leaned-back end pose until the next hand — but that is now decided
+  // by `holdsTheFigure` in one place rather than restated at each call site.
   useEffect(() => {
-    playState(baseState, baseState === "fold" || baseState === "celebrate");
-  }, [baseState, playState]);
+    baseStateRef.current = baseState;
+  }, [baseState]);
 
   // Action labels persist in snapshots, so the full actionKey is the edge.
   // Suppressing the first key prevents a freshly mounted table replaying a
   // stale call/check from before the viewer arrived.
+  //
+  // THIS EFFECT ONLY RECORDS THE REQUEST, and it has no cleanup on purpose.
+  // Its predecessor armed a `window.setTimeout` here and cancelled it on
+  // every dependency change — then re-ran, hit its own `!transientState`
+  // guard, and returned without arming a replacement. A `lastAction` going
+  // null while a gesture was still playing (a new hand starting inside
+  // Poker_Bet's 2.17s, against a 2,800ms NEXT_HAND_DELAY_MS) therefore left
+  // the one-shot to reach its end and clamp there, with `baseState`
+  // unchanged so nothing re-ran to put the figure back. `baseState` is also
+  // out of the dependency list now: the fold/celebrate refusal moved into
+  // `requestGesture`, so this effect no longer re-runs for a state it only
+  // ever consulted.
   useEffect(() => {
     if (firstActionKeyRef.current === actionKey) return;
     firstActionKeyRef.current = actionKey;
-    if (!transientState || baseState === "fold" || baseState === "celebrate") return;
+    if (!transientState) return;
+    pendingGestureRef.current = transientState;
+  }, [actionKey, transientState]);
 
-    const played = playState(transientState, true);
-    if (!played) return;
-    const delayMs = Math.max(0, (played.getClip().duration - CLIP_FADE_S) * 1000);
-    // The rest pose yields for the whole gesture plus its fade back, or the
-    // last half of a bet would be dragged toward the card spot mid-throw.
-    gestureUntilRef.current = performance.now() + delayMs + CLIP_FADE_S * 1000;
-    const timeout = window.setTimeout(() => playState(baseState, false), delayMs);
-    return () => window.clearTimeout(timeout);
-  }, [actionKey, baseState, playState, transientState]);
+  // The mixer's own account of a one-shot reaching its end — the only signal
+  // in this file that comes from a clip actually finishing rather than from a
+  // prediction of when it would. Redundant with the frame-loop watchdog by
+  // design: the watchdog fires CLIP_FADE_S earlier so it is what normally
+  // hands the figure back, and this arrives to find the epoch already moved.
+  // It earns its place on the case the watchdog cannot see — a clip whose
+  // real duration disagrees with the one the deadline was computed from.
+  //
+  // `settleGesture` is epoch-guarded, so a `finished` from a gesture that has
+  // since been replaced cannot take its replacement off the figure.
+  useEffect(() => {
+    const onFinished = (event: { action: THREE.AnimationAction }) => {
+      if (event.action !== playingRef.current.action) return;
+      playbackRef.current = settleGesture(playbackRef.current, playingRef.current.epoch);
+    };
+    mixer.addEventListener("finished", onFinished);
+    return () => mixer.removeEventListener("finished", onFinished);
+  }, [mixer]);
 
   useEffect(() => () => {
-    activeActionRef.current?.stop();
-    activeActionRef.current = null;
+    playingRef.current.action?.stop();
+    playingRef.current = { action: null, epoch: -1 };
   }, []);
-  /* eslint-enable react-hooks/immutability */
 
   // Position so the (scaled) hip lands exactly HIP_SIT_RISE above the
   // chair's seat pan. hipOffset is already in world-scaled units

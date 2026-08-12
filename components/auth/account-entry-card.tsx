@@ -5,6 +5,7 @@ import { FormEvent, useState } from "react";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { StackChipsLogo } from "@/components/brand/stackchips-logo";
 import { InstallLine } from "@/components/pwa/install-line";
+import { selectSound } from "@/lib/audio/ui-sounds";
 
 // Matches Supabase's password_min_length (Authentication -> Providers ->
 // Email). NIST SP 800-63B and OWASP ASVS L1 both put the floor at 8.
@@ -96,9 +97,12 @@ export function AccountEntryCard({
     event.preventDefault();
     setFormError(null);
     if (password.length < MIN_PASSWORD_LENGTH) {
+      // No sound on the rejected submit. The error message is the answer, and
+      // a confirming click under it would say the opposite.
       setFormError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
+    selectSound();
     if (emailMode === "sign-in") onEmailSignIn(email.trim(), password);
     else onEmailSignUp(email.trim(), password);
   };
@@ -146,7 +150,7 @@ export function AccountEntryCard({
               type="button"
               className="account-primary-action"
               disabled={busy}
-              onClick={onContinueAccount}
+              onClick={() => { selectSound(); onContinueAccount(); }}
             >
               {pending
                 ? <><LoaderCircle className="account-entry-spinner" size={17} /> Preparing your seat…</>
@@ -156,7 +160,7 @@ export function AccountEntryCard({
               type="button"
               className="account-guest-action"
               disabled={busy || !accountsAvailable}
-              onClick={onSignOut}
+              onClick={() => { selectSound(); onSignOut(); }}
             >
               <LogOut size={15} /> Not you? Sign out
             </button>
@@ -175,16 +179,19 @@ export function AccountEntryCard({
                     className={emailMode === "sign-in" ? "is-active" : undefined}
                     aria-pressed={emailMode === "sign-in"}
                     disabled={busy}
-                    onClick={() => { setEmailMode("sign-in"); setFormError(null); }}
+                    onClick={() => { selectSound(); setEmailMode("sign-in"); setFormError(null); }}
                   >
                     Sign in
                   </button>
+                  {/* Both halves of the segment sound the same: which one you
+                      picked is on screen, and giving the two sides different
+                      cues would imply one is the bigger commitment. */}
                   <button
                     type="button"
                     className={emailMode === "sign-up" ? "is-active" : undefined}
                     aria-pressed={emailMode === "sign-up"}
                     disabled={busy}
-                    onClick={() => { setEmailMode("sign-up"); setFormError(null); }}
+                    onClick={() => { selectSound(); setEmailMode("sign-up"); setFormError(null); }}
                   >
                     Create account
                   </button>
@@ -224,7 +231,7 @@ export function AccountEntryCard({
                       type="checkbox"
                       checked={remember}
                       disabled={busy}
-                      onChange={(event) => onRememberChange(event.target.checked)}
+                      onChange={(event) => { selectSound(); onRememberChange(event.target.checked); }}
                     />
                     <span className="entry-switch" aria-hidden="true" />
                     <span className="entry-remember-copy">
@@ -249,7 +256,7 @@ export function AccountEntryCard({
                   type="button"
                   className="account-oauth-action"
                   disabled={busy}
-                  onClick={onSignIn}
+                  onClick={() => { selectSound(); onSignIn(); }}
                 >
                   <GoogleMark />
                   {pending ? "Opening Google…" : "Continue with Google"}
@@ -261,7 +268,7 @@ export function AccountEntryCard({
               type="button"
               className="account-guest-action"
               disabled={busy}
-              onClick={onContinueAsGuest}
+              onClick={() => { selectSound(); onContinueAsGuest(); }}
             >
               Play as guest
             </button>

@@ -1,0 +1,364 @@
+/* Word Race -- only what this game adds.
+ *
+ * The lobby, the match frame and the result card are 36-duels.css, which this
+ * sheet cascades after; the board reuses .floor-play for its submit button so
+ * the primary action here is the same object as the primary action everywhere
+ * else on the arcade floor.
+ *
+ * Borderless, per the chrome's rule: separation is a raised fill, a real shadow
+ * and space. The one ring is the input's focus state, which is not optional --
+ * with no borders anywhere a focus outline is the only thing that says where
+ * the keyboard is pointed, and this board is nothing but a keyboard.
+ *
+ * Tokens carry a fallback (var(--text-primary, var(--ink))) on purpose: the
+ * text roles are named by the newer chrome sheets but 01-tokens.css still
+ * defines the concrete values as --ink / --muted, and a custom property with no
+ * fallback resolves to nothing rather than to something sensible.
+ *
+ * Sized for a 390px phone with the on-screen keyboard up: nothing is fixed to
+ * the viewport, the tile row wraps rather than overflowing, and the input row
+ * stays in normal flow so the browser can scroll it into view.
+ */
+
+.wr-board {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(460px, 100%);
+  /* A flex child's automatic minimum is its content, which is what lets a long
+     tile row push a page sideways instead of wrapping. */
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ head */
+
+.wr-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.wr-round {
+  font-size: 15px;
+  color: var(--text-primary, var(--ink));
+}
+
+.wr-round small,
+.wr-score small {
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-muted, var(--muted));
+}
+
+.wr-score {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wr-score strong {
+  font-size: 19px;
+  color: var(--brand-gold);
+}
+
+.wr-score em {
+  font-style: normal;
+  color: var(--text-muted, var(--muted));
+}
+
+/* ----------------------------------------------------------------- clock */
+
+.wr-clock {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.wr-seconds {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 92px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The digit is written straight into this span by the board's rAF loop, so it
+   must not inherit anything that would reflow the row as it counts down --
+   hence the tabular figures above and the fixed min-width on the group. */
+.wr-seconds > span {
+  font-size: 22px;
+  color: var(--text-primary, var(--ink));
+}
+
+.wr-seconds small {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted, var(--muted));
+}
+
+.wr-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--brand-surface);
+  overflow: hidden;
+}
+
+/* Burned down by the browser, not by React.
+   --wr-duration and --wr-delay are written once per phase by the board; the
+   delay is negative elapsed, so a player who joins part-way through a round
+   picks the bar up where it actually is. Without those properties the
+   shorthand has no duration and the bar simply sits full, which is the right
+   resting state for a phase that has no clock. */
+.wr-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand-gold);
+  transform-origin: left;
+  animation: wr-bar-burn var(--wr-duration) linear var(--wr-delay) forwards;
+}
+
+@keyframes wr-bar-burn {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+/* The reveal is a different kind of wait -- it is not running out on you. */
+.wr-bar-reveal .wr-bar-fill {
+  background: var(--accent-line);
+}
+
+/* ----------------------------------------------------------------- tiles */
+
+.wr-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wr-tile {
+  display: grid;
+  place-items: center;
+  width: clamp(30px, 9.5vw, 52px);
+  height: clamp(38px, 12vw, 62px);
+  border-radius: var(--radius-card, 8px);
+  background: var(--brand-surface-2, var(--brand-surface));
+  box-shadow: var(--elevation-1);
+  color: var(--text-primary, var(--ink));
+  font-size: clamp(17px, 5vw, 26px);
+  font-weight: 600;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.wr-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted, var(--muted));
+}
+
+.wr-hint-length {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--brand-surface);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ form */
+
+.wr-form {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+/* The label is for the screen reader; the placeholder and the tiles say the
+   same thing to everyone else, and a second line of text above the box would
+   be the first thing off screen with a keyboard up. */
+.wr-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.wr-input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--radius-control, 8px);
+  background: var(--brand-surface-2, var(--brand-surface));
+  color: var(--text-primary, var(--ink));
+  /* 16px or larger, or iOS Safari zooms the whole page on focus -- which on a
+     board this wide reads as the layout breaking the moment you start typing. */
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+}
+
+.wr-input::placeholder {
+  color: var(--text-muted, var(--muted));
+  letter-spacing: normal;
+}
+
+.wr-input:focus-visible {
+  outline: none;
+  box-shadow: var(--brand-focus);
+}
+
+.wr-input:disabled {
+  opacity: 0.55;
+}
+
+.wr-submit {
+  flex: 0 0 auto;
+}
+
+/* ---------------------------------------------------------------- reveal */
+
+.wr-reveal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--radius-card, 8px);
+  background: var(--brand-surface);
+  text-align: center;
+}
+
+.wr-reveal strong {
+  font-size: 24px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-primary, var(--ink));
+}
+
+.wr-reveal span {
+  font-size: 13px;
+  color: var(--text-muted, var(--muted));
+}
+
+/* Who took the round is carried by a tinted fill, never by a border colour --
+   deleting a border without replacing its signal is how a state goes
+   invisible, which the borderless pass records happening. */
+.wr-reveal-you {
+  background: color-mix(in srgb, var(--brand-gold) 14%, var(--brand-surface));
+}
+
+.wr-reveal-you strong {
+  color: var(--brand-gold);
+}
+
+.wr-reveal-push {
+  background: var(--brand-surface);
+}
+
+/* ---------------------------------------------------------------- status */
+
+.wr-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 46px;
+}
+
+.wr-them {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted, var(--muted));
+}
+
+.wr-them-locked {
+  color: var(--brand-gold);
+}
+
+.wr-guesses {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wr-guess {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--brand-surface);
+  color: var(--text-muted, var(--muted));
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: line-through;
+}
+
+.wr-guess-right {
+  background: color-mix(in srgb, var(--brand-gold) 20%, var(--brand-surface));
+  color: var(--brand-gold);
+  text-decoration: none;
+}
+
+/* ---------------------------------------------------------------- series */
+
+.wr-series {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wr-pip {
+  width: 26px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--brand-surface-2, var(--brand-surface));
+}
+
+.wr-pip-you { background: var(--brand-gold); }
+.wr-pip-them { background: var(--brand-red); }
+.wr-pip-push { background: var(--accent-line); }
+
+@media (max-width: 640px) {
+  .wr-board {
+    gap: 12px;
+  }
+
+  /* The label under the digit is the first thing to go: at this width the bar
+     beside it is what actually communicates the clock, and the row must not
+     wrap onto two lines with a keyboard covering half the screen. */
+  .wr-seconds {
+    min-width: 0;
+  }
+
+  .wr-seconds small {
+    display: none;
+  }
+}

@@ -10,7 +10,7 @@ import {
 import { liveStreak, streakAfterClaim, utcDayKey } from "@/lib/progression/streak";
 import type { ProgressionSnapshot } from "@/lib/progression/types";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { creditGold } from "./profile-store";
+import { creditGold, creditGoldByProfile } from "./profile-store";
 import { adminClient } from "./supabase-admin";
 
 /**
@@ -135,6 +135,14 @@ export async function getProgression(
  * keyed on the durable profile id, and the guarded credit is keyed on the
  * session token, which is what creditGold and the credit_gold RPC take.
  *
+ * It is NULLABLE for the one caller that genuinely does not have it: a duel
+ * stakes both players (lib/server/pvp-match-service.ts), and the request that
+ * opens a match carries only the acceptor's cookie -- the challenger has no
+ * session in scope. Null routes the milestone credit through
+ * creditGoldByProfile instead, which is the same row-locked RPC keyed on the
+ * id this function already has. Passing a token when you have one is still
+ * preferred: it is the identity the rest of the wallet is keyed on.
+ *
  * Never throws into its caller's request. A settled arcade round or a completed
  * poker hand must not become a failed request because the XP write failed --
  * the same contract onHandCompleted states for stats and archives. The award is
@@ -143,7 +151,7 @@ export async function getProgression(
  */
 export async function awardWager(
   profileId: string,
-  token: string,
+  token: string | null,
   goldStaked: number,
   now: Date = new Date(),
 ): Promise<WagerAward | null> {
@@ -189,7 +197,12 @@ export async function awardWager(
       // per crossing. A failure here loses the milestone Gold rather than
       // risking paying it twice on a retry -- and unlike the XP, it is visible,
       // because the level-up still shows.
-      profile = await creditGold(token, owed);
+      //
+      // Both branches are the same guarded RPC on the same row, differing only
+      // in which unique column addresses it; see the token note in the header.
+      profile = token === null
+        ? await creditGoldByProfile(profileId, owed)
+        : await creditGold(token, owed);
       goldAwarded = owed;
     }
 

@@ -8,6 +8,8 @@
  */
 export type SoundEffect =
   | "ui"
+  | "select"
+  | "game-on"
   | "deal"
   | "card"
   | "flop"
@@ -24,7 +26,33 @@ export type SoundEffect =
   | "your-turn";
 
 export const SOUND_FILES: Record<SoundEffect, string | null> = {
+  // The three chrome cues, and the whole reason they are three rather than
+  // one. Before this, every button in the app either played `ui` or nothing,
+  // so a menu row, a mode switch and sitting down at a table were the same
+  // click -- or silence. The split is by what the press DID, not by which
+  // screen it was on:
+  //   ui      -- you moved: a menu opened, a link was followed, a panel closed.
+  //   select  -- you chose: a mode, a tier, a toggle, a tab. Something changed.
+  //   game-on -- you are in: a table or a game actually took you.
+  // Keep it at three. A fourth would have to answer what a press means that
+  // these do not, and the answer so far has always been "it is one of these".
   ui: "/sounds/Menu_clicks.mp3",
+  // The old screen tap, which had sat unused since `your-turn` was given its
+  // own recording -- but cut down, and the cut is the point. That file is
+  // 1.08s holding TWO taps (a 5ms artefact at 0.10s, the real hit at 0.48s)
+  // over 0.42s of trailing silence, which is exactly what the owner's own
+  // rename of it, Check_Sound_Repeats_Twice.mp3, says on the tin. Pointed at
+  // whole it makes one button press sound like a double-click. This is the
+  // second burst alone, 0.25s, and it is drier and shorter than the menu
+  // click -- which is what makes a choice read as a choice beside it.
+  select: "/sounds/Select_Tap.mp3",
+  // Built rather than sourced: every unused file in public/sounds turned out
+  // to be a byte-identical rename of a cue the table already plays, so there
+  // was nothing on disk that could sound like arriving somewhere. This is the
+  // house chip riffle under a rising D5-A5-D6, rendered with ffmpeg from that
+  // same licensed recording -- see the note in AUDIO.md. Replacing it with a
+  // supplied take is this one line plus its measured level below.
+  "game-on": "/sounds/Game_On.mp3",
   deal: "/sounds/freesound_community-flipcard-91468.mp3",
   card: "/sounds/freesound_community-flipcard-91468.mp3",
   // The flop reveals three cards at once -- the richer flip sound marks it
@@ -68,13 +96,16 @@ export const SOUND_FILES: Record<SoundEffect, string | null> = {
  *
  * Re-measure the line if you replace a file. Nothing else needs to change.
  *
- * The screen-tap entry is kept although nothing points at it any more: it is
- * still on disk, and a measurement already taken is cheaper to keep than to
- * redo if some effect is pointed back at it.
+ * The full-length screen-tap entry is kept although nothing points at it any
+ * more -- `select` plays the trimmed cut of it instead -- on the same grounds
+ * as before: it is still on disk, and a measurement already taken is cheaper
+ * to keep than to redo if some effect is pointed back at it.
  */
 const FILE_LEVEL_DB: Record<string, number> = {
   "/sounds/All_In.mp3": -21.9,
+  "/sounds/Game_On.mp3": -25.6,
   "/sounds/Menu_clicks.mp3": -24.5,
+  "/sounds/Select_Tap.mp3": -19.9,
   "/sounds/TimeBank.mp3": -20.4,
   "/sounds/Your_Turn.mp3": -20.8,
   "/sounds/bigsoundbank-poker-chips-4-0945.mp3": -21.4,
@@ -125,8 +156,18 @@ const EFFECT_TARGET_DB: Record<SoundEffect, number> = {
   // and a seat that is given away after three misses, this is the one cue
   // whose whole job is to interrupt.
   "your-turn": -28,
+  // Sitting down. The one press in the app that is a moment rather than
+  // housekeeping, so it is mixed with the hand's own cues instead of under
+  // them -- but still below `win`, because arriving at a table is a smaller
+  // event than taking a pot at one. It also fires into silence by
+  // construction: the lobby's music has stopped and the table has not dealt.
+  "game-on": -28,
   // Housekeeping. Should never compete with the table.
   ui: -36,
+  // A choice is worth hearing slightly more than a navigation tap -- it is
+  // the confirmation that the thing you pressed took -- but it is still
+  // housekeeping and still sits under every cue the hand itself makes.
+  select: -34,
   // Silent by design -- no file, so the target is unused. Kept in the record
   // so adding an asset is one line and the compiler names the other.
   lose: -30,

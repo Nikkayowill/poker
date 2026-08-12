@@ -1,12 +1,13 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { Check, Cloud, Coins, ShieldCheck, Users, X } from "lucide-react";
 import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { TableRenderer } from "@/lib/scene/table-renderer";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { accountsEnabled } from "@/lib/auth/client";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { RankStrip } from "@/components/profile/rank-strip";
@@ -14,6 +15,30 @@ import { InstallPrompt } from "@/components/install-prompt";
 import { FirstRunStrip } from "./first-run-strip";
 import { ArcadePanel } from "./arcade-panel";
 import { BuyInModal } from "./buy-in-modal";
+
+/**
+ * `--tile-index` for the entrance stagger (see `@keyframes hub-tile-in` in
+ * 04-lobby.css) -- one shared helper so the numbers stay in DOM order
+ * without being repeated as magic literals at every tile. Not a `.map()`
+ * over a list: the tiles are individually authored JSX for their own
+ * reasons (see the comments at each one), so the index is assigned by hand
+ * in source order instead.
+ */
+function tileIndexStyle(index: number): CSSProperties {
+  return { "--tile-index": index } as CSSProperties;
+}
+
+/*
+ * The tap and select cues now live in lib/audio/ui-sounds.ts, which is where
+ * the rest of the chrome reaches for them -- this file had the only copy for
+ * a while and every other panel either inlined `playSound("ui")` or stayed
+ * silent. The reasoning that used to sit here still holds and has moved with
+ * them: Lobby is only ever mounted under poker-app.tsx, which keeps
+ * sound-effects.ts's enabled flag in sync with the player's mute, so these
+ * may call playSound directly rather than reaching for the arcade route's
+ * useArcadeSound. Tap-only, never on hover -- a chime on every pointer pass
+ * would be noisy and does nothing for touch, which is most of this traffic.
+ */
 
 export function Lobby({
   profile,
@@ -76,7 +101,20 @@ export function Lobby({
   webglAvailable: boolean;
   onTableRendererChange: (renderer: TableRenderer) => void;
 }) {
-  const [name, setName] = useState(profile?.displayName ?? "");
+  /*
+   * The buy-in modal's name field: the player's own edit if they have made one,
+   * and otherwise whatever the profile currently says.
+   *
+   * Derived rather than seeded, because seeding is what forced the remount.
+   * `useState(profile?.displayName)` only reads the prop once, so the only way
+   * to pick up a renamed or newly-arrived profile was for poker-app.tsx to key
+   * this whole component on `profile.updatedAt` -- rebuilding the entire hub
+   * on every gold change to keep one text input honest. Holding the *override*
+   * instead means the default tracks the profile for free, and a name being
+   * typed survives a profile update rather than being wiped by it.
+   */
+  const [nameOverride, setNameOverride] = useState<string | null>(null);
+  const name = nameOverride ?? profile?.displayName ?? "";
   const [joinCode, setJoinCode] = useState("");
   const [buyInMode, setBuyInMode] = useState<"join" | "host" | null>(null);
   // Local rather than lifted to poker-app.tsx: nothing outside the lobby opens
@@ -85,7 +123,11 @@ export function Lobby({
   const [friendsOpen, setFriendsOpen] = useState(false);
   const submitJoin = (event: FormEvent) => {
     event.preventDefault();
-    if (joinCode.trim().length === 6) onJoinCode(name.trim() || "You", joinCode.trim());
+    if (joinCode.trim().length !== 6) return;
+    // `select`, not `tap`: this commits a code and asks the server for a seat.
+    // The game-on cue answers if it works; nothing answers if it does not.
+    selectSound();
+    onJoinCode(name.trim() || "You", joinCode.trim());
   };
   // Below the cheapest buy-in there is no seat in the house they can take,
   // so offer the recovery grant rather than letting them hit a dead end.
@@ -122,13 +164,19 @@ export function Lobby({
     );
   }
 
-  // The hub below is keyed on the profile where it is rendered, so mounting
-  // it before one exists means React tears the whole thing down and rebuilds
-  // it the moment the profile lands -- wiping the name being typed and
-  // resetting buyInMode, which silently closes the buy-in modal mid-flow.
-  // A first-time visitor is the only case where this is null, and only for
-  // as long as one POST takes, so waiting is both cheap and the honest thing
-  // to show: there is no balance to render yet.
+  // Everything below reads a balance, a name or an avatar off the profile, so
+  // there is genuinely nothing to render until one exists.
+  //
+  // This used to be load-bearing for a second reason -- the hub was keyed on
+  // `profile.updatedAt` where it is rendered, so mounting it a moment early
+  // meant React tore the whole thing down and rebuilt it when the profile
+  // landed, closing the buy-in modal mid-flow. That key is gone (see the note
+  // at the <Lobby> call site), so this is now only what it says it is.
+  //
+  // It is also reached far less often than it used to be: poker-app.tsx carries
+  // this tab's last profile across a remount, so returning from the arcade
+  // paints the hub directly. A first-time visitor waiting on one POST is the
+  // case that still lands here, which is the honest thing to show them.
   if (!profile) {
     return (
       <main className="lobby lobby-hub">
@@ -152,7 +200,7 @@ export function Lobby({
             <span>
               Cashed out <strong>{cashOutNotice.toLocaleString()}</strong> Gold from the table.
             </span>
-            <button type="button" onClick={onDismissCashOut} aria-label="Dismiss">
+            <button type="button" onClick={() => { tapSound(); onDismissCashOut(); }} aria-label="Dismiss">
               <X size={14} />
             </button>
           </div>
@@ -161,7 +209,7 @@ export function Lobby({
           <div className="cash-out-notice" role="status">
             <Check size={15} />
             <span>{authNotice}</span>
-            <button type="button" onClick={onDismissAuthNotice} aria-label="Dismiss">
+            <button type="button" onClick={() => { tapSound(); onDismissAuthNotice(); }} aria-label="Dismiss">
               <X size={14} />
             </button>
           </div>
@@ -178,10 +226,10 @@ export function Lobby({
               <small><ShieldCheck size={12} /> Google sign-in · No password to remember</small>
             </div>
             <div className="save-progress-actions">
-              <button type="button" className="save-progress-primary" onClick={onSaveProgress}>
+              <button type="button" className="save-progress-primary" onClick={() => { selectSound(); onSaveProgress(); }}>
                 Save progress
               </button>
-              <button type="button" className="save-progress-later" onClick={onDismissSaveProgress}>
+              <button type="button" className="save-progress-later" onClick={() => { tapSound(); onDismissSaveProgress(); }}>
                 Maybe later
               </button>
             </div>
@@ -193,7 +241,7 @@ export function Lobby({
               You&rsquo;re below the {TIER_CONFIG[CHEAPEST_TIER].minBuyIn.toLocaleString()} Gold minimum for the
               cheapest seat.
             </span>
-            <button type="button" className="secondary-action" disabled={loading} onClick={onClaimBackstop}>
+            <button type="button" className="secondary-action" disabled={loading} onClick={() => { selectSound(); onClaimBackstop(); }}>
               Claim a top-up
             </button>
           </div>
@@ -238,8 +286,9 @@ export function Lobby({
           <button
             type="button"
             className="hub-tile hub-tile-wide hub-tile-play"
+            style={tileIndexStyle(0)}
             disabled={loading || !sessionReady}
-            onClick={() => setBuyInMode("join")}
+            onClick={() => { tapSound(); setBuyInMode("join"); }}
           >
             <span className="hub-tile-body">
               <span className="hub-tile-kicker">Poker · No-limit Hold&rsquo;em</span>
@@ -261,8 +310,9 @@ export function Lobby({
           <button
             type="button"
             className="hub-tile hub-tile-private"
+            style={tileIndexStyle(1)}
             disabled={loading || !sessionReady}
-            onClick={() => setBuyInMode("host")}
+            onClick={() => { tapSound(); setBuyInMode("host"); }}
           >
             <span className="hub-tile-body">
               <strong>Private table</strong>
@@ -270,7 +320,7 @@ export function Lobby({
             </span>
           </button>
 
-          <Link className="hub-tile hub-tile-gold" href="/store">
+          <Link className="hub-tile hub-tile-gold" href="/store" style={tileIndexStyle(2)} onClick={tapSound}>
             <span className="hub-tile-body">
               <strong>Buy Gold</strong>
               <small>{(profile?.goldBalance ?? 0).toLocaleString()} in your stack</small>
@@ -281,16 +331,16 @@ export function Lobby({
               by DOM order: the panel claims a 2x2 block, and any tile ahead
               of it in the source takes a cell that block needs, which pushes
               it down a row and reopens the hole it exists to close. */}
-          <ArcadePanel profile={profile} />
+          <ArcadePanel profile={profile} style={tileIndexStyle(3)} />
 
-          <Link className="hub-tile hub-tile-collection" href="/collection">
+          <Link className="hub-tile hub-tile-collection" href="/collection" style={tileIndexStyle(4)} onClick={tapSound}>
             <span className="hub-tile-body">
               <strong>Collection</strong>
               <small>Avatars and card backs</small>
             </span>
           </Link>
 
-          <Link className="hub-tile hub-tile-leaderboard" href="/leaderboard">
+          <Link className="hub-tile hub-tile-leaderboard" href="/leaderboard" style={tileIndexStyle(5)} onClick={tapSound}>
             <span className="hub-tile-body">
               <strong>Leaderboard</strong>
               <small>This season&rsquo;s standings</small>
@@ -303,7 +353,8 @@ export function Lobby({
           <button
             type="button"
             className="hub-tile hub-tile-friends"
-            onClick={() => setFriendsOpen(true)}
+            style={tileIndexStyle(6)}
+            onClick={() => { tapSound(); setFriendsOpen(true); }}
           >
             <span className="hub-tile-body">
               <strong>Friends</strong>
@@ -312,7 +363,7 @@ export function Lobby({
             <Users className="hub-tile-go" size={18} aria-hidden="true" />
           </button>
 
-          <form className="hub-tile hub-tile-code" onSubmit={submitJoin}>
+          <form className="hub-tile hub-tile-code" style={tileIndexStyle(7)} onSubmit={submitJoin}>
             <label htmlFor="join-code">Join with a room code</label>
             <div className="hub-code-row">
               <input
@@ -345,7 +396,7 @@ export function Lobby({
           pending={loading}
           onClose={() => setBuyInMode(null)}
           playerName={name}
-          onPlayerNameChange={setName}
+          onPlayerNameChange={setNameOverride}
           tableRenderer={tableRenderer}
           webglAvailable={webglAvailable}
           onTableRendererChange={onTableRendererChange}

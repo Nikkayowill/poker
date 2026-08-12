@@ -3,6 +3,7 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import clsx from "clsx";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   FIRST_RUN_DONE,
   FIRST_RUN_STEPS,
@@ -101,7 +102,7 @@ export function FirstRunStrip({
             things a player is meant to find first, and an onboarding hint that
             outshouts them has its priorities backwards. */}
         {step.action.kind === "link" ? (
-          <Link className="first-run-go" href={step.action.href} onClick={retire}>
+          <Link className="first-run-go" href={step.action.href} onClick={() => { tapSound(); retire(); }}>
             {step.actionLabel}
           </Link>
         ) : (
@@ -109,6 +110,7 @@ export function FirstRunStrip({
             type="button"
             className="first-run-go"
             onClick={() => {
+              selectSound();
               retire();
               onTakeSeat();
             }}
@@ -116,7 +118,7 @@ export function FirstRunStrip({
             {step.actionLabel}
           </button>
         )}
-        <button type="button" className="first-run-next" onClick={advance}>
+        <button type="button" className="first-run-next" onClick={() => { tapSound(); advance(); }}>
           {step.nextLabel}
         </button>
       </div>

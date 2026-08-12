@@ -8,6 +8,8 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
 import { puzzleShareTitle, wordleShareText } from "@/lib/arcade/puzzles/share";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import {
   WORDLE_MAX_GUESSES,
   WORDLE_WORD_LENGTH,
@@ -53,6 +55,10 @@ interface WordleResponse {
 const NOTICE_MS = 1800;
 
 export function WordleBoard() {
+  // Applies the player's stored mute on a route where PokerApp is not
+  // mounted. The flag it sets is module-global, which is what lets the JSX
+  // below call the chrome cues directly. See lib/audio/ui-sounds.ts.
+  useArcadeSound();
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [round, setRound] = useState<WordleSnapshot | null>(null);
   const [meta, setMeta] = useState<{ day: string; puzzleNumber: number; nextPuzzleAt: number } | null>(null);
@@ -241,7 +247,7 @@ export function WordleBoard() {
     <main className="bj-shell puzzle-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <Link className="bj-back" href="/">← Back to the lobby</Link>
+          <Link className="bj-back" href="/" onClick={tapSound}>← Back to the lobby</Link>
           <h1>Daily Wordle</h1>
           <p>
             {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Six guesses · One word a day for everyone
@@ -320,7 +326,7 @@ export function WordleBoard() {
                 <button
                   type="button"
                   className="wordle-key wordle-key-wide"
-                  onClick={submit}
+                  onClick={() => { selectSound(); submit(); }}
                   disabled={!canType}
                   aria-label="Submit guess"
                 >
@@ -335,7 +341,7 @@ export function WordleBoard() {
                     "wordle-key",
                     round?.keyboard[letter] && `wordle-key-${round.keyboard[letter]}`,
                   )}
-                  onClick={() => type(letter)}
+                  onClick={() => { tapSound(); type(letter); }}
                   disabled={!canType}
                 >
                   {letter}
@@ -345,7 +351,7 @@ export function WordleBoard() {
                 <button
                   type="button"
                   className="wordle-key wordle-key-wide"
-                  onClick={backspace}
+                  onClick={() => { tapSound(); backspace(); }}
                   disabled={!canType}
                   aria-label="Delete letter"
                 >

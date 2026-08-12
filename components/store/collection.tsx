@@ -15,6 +15,7 @@ import {
 import { characterById } from "@/lib/game3d/characters";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { CardBackArt } from "@/components/card-back-art";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { Character3DPreview } from "./character-3d-preview";
 
 interface UnlockStats {
@@ -176,7 +177,7 @@ export function Collection() {
       {notice && <p className="collection-notice">{notice}</p>}
 
       {confirming && (
-        <div className="confirm-overlay" role="presentation" onClick={() => setConfirming(null)}>
+        <div className="confirm-overlay" role="presentation" onClick={() => { tapSound(); setConfirming(null); }}>
           <div
             className="confirm-dialog"
             role="dialog"
@@ -192,13 +193,13 @@ export function Collection() {
               )}
             </p>
             <div className="confirm-actions">
-              <button type="button" className="cosmetic-action" onClick={() => setConfirming(null)}>
+              <button type="button" className="cosmetic-action" onClick={() => { tapSound(); setConfirming(null); }}>
                 Cancel
               </button>
               <button
                 type="button"
                 className="cosmetic-action cosmetic-buy"
-                onClick={() => void act(confirming, "purchase")}
+                onClick={() => { selectSound(); void act(confirming, "purchase"); }}
               >
                 Buy it
               </button>
@@ -208,7 +209,7 @@ export function Collection() {
       )}
 
       {previewing && (
-        <div className="confirm-overlay" role="presentation" onClick={() => setPreviewing(null)}>
+        <div className="confirm-overlay" role="presentation" onClick={() => { tapSound(); setPreviewing(null); }}>
           <div
             className="confirm-dialog preview-dialog"
             role="dialog"
@@ -235,7 +236,7 @@ export function Collection() {
               );
             })()}
             <div className="confirm-actions">
-              <button type="button" className="cosmetic-action" onClick={() => setPreviewing(null)}>
+              <button type="button" className="cosmetic-action" onClick={() => { tapSound(); setPreviewing(null); }}>
                 Close
               </button>
               {owned.includes(previewing.id) && equipped?.[
@@ -247,6 +248,7 @@ export function Collection() {
                   type="button"
                   className="cosmetic-action cosmetic-buy"
                   onClick={() => {
+                    selectSound();
                     setPreviewing(null);
                     void act(previewing, "equip");
                   }}
@@ -260,6 +262,7 @@ export function Collection() {
                   className="cosmetic-action cosmetic-buy"
                   disabled={!unlimited && balance < previewing.price}
                   onClick={() => {
+                    selectSound();
                     setPreviewing(null);
                     setConfirming(previewing);
                   }}
@@ -289,7 +292,7 @@ export function Collection() {
                   role="tab"
                   aria-selected={avatarView === "2d"}
                   className={avatarView === "2d" ? "is-active" : ""}
-                  onClick={() => setAvatarView("2d")}
+                  onClick={() => { selectSound(); setAvatarView("2d"); }}
                 >
                   2D characters
                 </button>
@@ -298,7 +301,7 @@ export function Collection() {
                   role="tab"
                   aria-selected={avatarView === "3d"}
                   className={avatarView === "3d" ? "is-active" : ""}
-                  onClick={() => setAvatarView("3d")}
+                  onClick={() => { selectSound(); setAvatarView("3d"); }}
                 >
                   3D characters
                 </button>
@@ -323,7 +326,7 @@ export function Collection() {
                     <button
                       type="button"
                       className="cosmetic-art-frame cosmetic-art-preview"
-                      onClick={() => setPreviewing(item)}
+                      onClick={() => { tapSound(); setPreviewing(item); }}
                       aria-label={`Preview ${item.name}`}
                     >
                       <CosmeticArt item={item} />
@@ -342,7 +345,7 @@ export function Collection() {
                           type="button"
                           className="cosmetic-action"
                           disabled={busy || isEquipped}
-                          onClick={() => void act(item, "equip")}
+                          onClick={() => { selectSound(); void act(item, "equip"); }}
                         >
                           {isEquipped ? "Equipped" : busy ? "…" : "Equip"}
                         </button>
@@ -353,7 +356,7 @@ export function Collection() {
                             type="button"
                             className="cosmetic-action cosmetic-buy"
                             disabled={busy || !affordable}
-                            onClick={() => setConfirming(item)}
+                            onClick={() => { selectSound(); setConfirming(item); }}
                             title={affordable ? undefined : "Not enough Gold"}
                           >
                             {busy ? "…" : <><Coins size={13} /> {item.price!.toLocaleString()}</>}

@@ -44,6 +44,224 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 ## Active milestone
 
 - Track: `ui-redesign-foundation`
+- **The chrome has three click sounds now (2026-08-12), split by what the
+  press meant rather than by which screen it was on.** Before this there was
+  one `ui` cue with exactly three call sites in the whole app (seven hub
+  tiles, the arcade "see all", and the unmute confirmation); every other
+  button — the entire sign-in page, both menus, every modal, every arcade
+  control — was silent. `lib/audio/ui-sounds.ts` is the vocabulary:
+  `tapSound()` you moved, `selectSound()` you chose, `gameOnSound()` you are
+  in. Six things worth not relearning:
+  - **`components/nav/menu.tsx` is the leverage point and one edit covered
+    ~22 rows** — it is the single dropdown behind both the lobby player menu
+    and the table menu. Link rows tap, action rows select, and a row with
+    `disabled` stays silent on purpose: "Daily Gold claimed" is focusable and
+    announces itself, and a confirming click on a press that does nothing is
+    the menu lying about having worked.
+  - **The game-on cue is edge-triggered off `game` going null -> truthy in
+    `poker-app.tsx`, and it has to be.** `game` changes identity on every
+    poll, tick and action, so the level-triggered shape the menu-music and
+    first-run effects use would fire it dozens of times a hand — those two get
+    away with it because stopping music and writing a localStorage flag are
+    idempotent. It carries its own `wasSeatedRef` rather than reading
+    `previousGameRef`, which the tableSounds effect owns and overwrites.
+    Three `playSound("deal")` calls (quickPlay, hostPrivate, joinByCode) were
+    **deleted** in the same pass or the cue would double-hit; the fourth entry
+    path, the `?table=` deep link, was silent because it shares `refresh` with
+    the poll loop and nobody ever added it. One edge covers all four and picks
+    up the friend-invite accept path free the day `onJoinedTable` is wired.
+    `tableSounds` is documented as silent on entry, so the two cannot collide.
+  - **Every unused file in `public/sounds/` was a byte-identical rename of a
+    cue already wired** — checksummed, not assumed, which is the check
+    CLAUDE.md's SFX bullet already warns about. The only genuinely free asset
+    was the old screen tap, so `Game_On.mp3` was **built** with ffmpeg from
+    the house chip riffle under a rising D5-A5-D6 (1.0s, -25.6 dBFS). Source
+    is the same licensed recording, so nothing new needed sourcing. Swapping
+    in a supplied take is one line in `SOUND_FILES` plus its measured level.
+  - **`select` plays a TRIMMED cut of the screen tap, and the trim is
+    load-bearing.** The original is 1.08s holding two taps — a 5ms artefact at
+    0.10s and the real hit at 0.48s — over 0.42s of trailing silence, which is
+    what the owner's own rename of it (`Check_Sound_Repeats_Twice.mp3`) says
+    on the tin. Pointed at whole, one button press sounds like a double-click.
+    `Select_Tap.mp3` is the second burst alone, 0.25s, -19.9 dBFS. Found by
+    reading the envelope with `silencedetect`, not by listening.
+  - **`useArcadeSound()` at an arcade route's root is load-bearing, not
+    decorative.** `setSoundEnabled` is a module-*global* flag defaulting to
+    ON, and PokerApp is not mounted on `/games/*` — so one call anywhere on
+    the page makes the shared helpers honest for that whole page, and deleting
+    it silently makes every button below it ignore the player's mute.
+    `arcade-floor.tsx` calls it purely for that side effect. Verified live
+    both ways: muted, the floor's Play link produced zero plays.
+  - **Retired games were deliberately skipped** (`lib/arcade/retired.ts`:
+    hi-lo, video-poker, roulette, baccarat, coin-flip), and so was the
+    untracked PvP/duels subsystem, which a concurrent session owns. Verified
+    against a real browser rather than by reading the CSS: the correct cue
+    fired on each of six surfaces and `Game_On.mp3` played **exactly once**
+    across 8 seconds of polling after sitting down.
+- **"Laggy and glitchy" was three separate remount bugs, and the common cause
+  is that the arcade, Collection and the leaderboard are their own routes
+  (2026-08-12).** Navigating to `/games/*` and back **unmounts `PokerApp`
+  entirely**, so every `useState` and every `useRef` in that tree starts over
+  and the app rediscovers facts the browser already had. Each symptom the
+  owner reported was one consequence of that, and all three were reproduced
+  against a pristine-HEAD worktree before and after, not argued from the
+  diff. Four things worth not relearning:
+  - **A login screen flashed on every return to the lobby.** `entryComplete`
+    started `false` on each mount, so the signed-out card painted for the
+    length of one `GET /api/profile` -- measured at **3 arrivals out of 3** on
+    the baseline (`HUB -> arcade -> SIGN-IN -> HUB`), and 0 of 3 after. The
+    fix is `lib/profile/session-continuity.ts`: this tab's copy of the last
+    profile, reaching the first render *synchronously* through
+    `useSyncExternalStore`, the same trade `first-run-strip.tsx` records. It
+    is **sessionStorage and must stay sessionStorage** -- a continuity hint is
+    only allowed to claim something still true, and in `localStorage` a
+    browser restart or an expired cookie would leave the app waving somebody
+    through the gate and minting a *new guest* over an account holder.
+    `profileLoading` is what keeps it a bridge and not an authority: once the
+    real fetch settles, `loadedProfile` wins **even when it is null**.
+  - **"Welcome back -- your Gold, profile, and collection are ready" fired on
+    every navigation.** `linkedAccountIdRef` is a ref, so a remount emptied it
+    and re-ran the idempotent safety-net `POST /api/auth/link`. The *call*
+    being idempotent is exactly why it must not re-announce, so whether to
+    speak is now asked of the tab (which survives remounts) and keyed on the
+    account id, so switching accounts still announces.
+  - **`key={profile.updatedAt}` on `<Lobby>` rebuilt the entire hub on every
+    profile write** -- buy-in, cash-out, daily claim, profile save. Verified:
+    saving the profile tore down the hub grid *and* the rank strip on the
+    baseline (the strip renders `null` until its fetch lands, so the grid
+    jumped up and back), and both survive now. The only thing that needed the
+    remount was the buy-in name field seeding itself from `displayName`, which
+    Lobby derives as an override instead. A key tells two things apart; it is
+    not a way to push a new prop into stale state.
+  - **The notices were sticky until dismissed.** "Cashed out 1,000 Gold" was
+    still up at 12s+ on the baseline and retires at ~6s now
+    (`NOTICE_VISIBLE_MS`). These are confirmations, not decisions.
+  - Gates: 2,147 unit tests (18 new), lint, tsc, `next build`.
+    `multiplayer.spec.ts` fails the same **2 of 3** at pristine HEAD as with
+    this work applied -- pre-existing, and note the mobile quick-play test is
+    now among them, which CLAUDE.md previously recorded as passing.
+- **The house games are out and player-versus-player duels are in
+  (2026-08-12).** The owner cut every game whose only mechanic was a wager
+  against fixed odds -- "the legit brain dead gambling games are dead" -- and
+  asked for social, skill-based games to stake Gold on instead. Hold'em,
+  Blackjack and the free dailies stay. Retired: Roulette, Video Poker, Coin
+  Flip, Baccarat, Hi-Lo. New: Chess, Checkers, Trivia Showdown and Word Race,
+  1v1, at `/games/{chess,checkers,trivia,word-race}`. Eight things worth not
+  relearning:
+  - **Retiring a game is a SERVER guard, not a catalogue edit.** Removing the
+    rows only hides the links: `POST /api/arcade/roulette` stays mounted and
+    would still debit anyone with the URL or an open tab. `lib/arcade/retired.ts`
+    holds the list and the predicate, and it is enforced on the one *deal* path
+    each service has (`openCasinoRound`, `dealHiLo`) rather than on any of the
+    eight routes -- which is what stops a ninth route being added without it.
+    Deliberately placed AFTER the resume branch and BEFORE `spendGold`: a
+    player holding a round they already paid for still settles it normally
+    (refusing would take the stake and give nothing back), and a retired game
+    cannot take a stake on its way to saying it is retired. `status: "retired"`
+    is a distinct `ArcadeGameStatus` from `coming-soon` on purpose -- one is
+    "not built", the other is "was built, moved real Gold, and a human stopped
+    it".
+  - **A duel has no house, so the safety property is CONSERVATION, not an
+    edge.** The casino games were safe at any stake because ~3% made the
+    arithmetic work; winner-take-all has no such argument. What holds instead
+    is that the two players' balances sum to the same number before and after,
+    always. `lib/server/pvp-match-service.test.ts` asserts *totals* rather than
+    one player's payout across a win, a draw, a resignation, an abandoned
+    challenge and both players resigning at once -- a bug that pays the winner
+    twice and one that fails to debit the loser look identical from one side.
+  - **Four ordering rules, implemented once in `pvp-match-service.ts`.** The
+    first three mirror `casino-round-service.ts` (stake leaves before the thing
+    it pays for exists; the pot is credited only after the version-guarded
+    write is confirmed; settlement is a credit, never a second debit). The
+    fourth has no casino equivalent: **escrow is released exactly once.** An
+    open challenge holds real Gold for a counterparty who may never arrive, and
+    every path that ends one -- cancel, expire, a failed accept -- goes through
+    a status-guarded write that returns the row at most once. Only a returned
+    row is refunded; paying out on a null return turns a double-tapped Cancel
+    into free Gold.
+  - **`spend_gold_by_profile` / `credit_gold_by_profile`
+    (`20260812120000_gold_by_profile_rpcs.sql`) exist because a pot must reach
+    somebody who is not the requester.** Every prior Gold RPC keys on
+    `session_token`, which was strictly better while the mover and the moved-to
+    were the same person. They are not here: the request that ends a match came
+    from the loser about half the time and from neither player on a timeout.
+    `adjustGold` also takes a profile id and was NOT reused -- it is a plain
+    read-then-write with no row lock, documented as an admin tool for exactly
+    that reason, so paying pots through it would reintroduce the lost-update
+    race `credit_gold` was written to close. `awardWager`'s `token` is nullable
+    now for the same reason (the challenger has no session in scope).
+  - **The engine owns turn order, and the money layer must never check it.**
+    `lib/pvp/match-contract.ts` is the whole interface: an engine gets no
+    wallet, no stake, no store, and answers exactly one question the money
+    cares about (`result()`). Chess rejects a move from the seat not to act
+    while Trivia accepts either seat at any moment, so a turn check at the
+    service would have to be wrong for one of them.
+  - **`tick()` MUST return null when nothing changed.** The shell polls every
+    2s; a tick that returns a fresh object each time bumps the version on every
+    poll and livelocks both players' optimistic concurrency guard. Every one of
+    the four engines has a test pinning it. This is the single easiest way to
+    break a duel and it fails in a way that looks like a network problem.
+  - **A redacting snapshot is worth nothing if the browser has the answer
+    table.** `trivia-questions.ts` and `word-race-words.ts` are both
+    `server-only`. Word Race's bank was NOT at first -- and its board's own
+    header warned that a component holding the answer "would put the whole game
+    one devtools breakpoint away" while 478 words shipped beside it, making the
+    cheat a one-line anagram lookup on a game settling real Gold. The two clock
+    constants a board legitimately needs live in `lib/pvp/word-race-timing.ts`
+    so nothing under `components/` ever value-imports the engine. Verified
+    against a real build, not by reading imports: probe strings from both banks
+    appear in `.next/server` and in **zero** files under `.next/static`.
+  - **The duel sheets define `--text-primary/-secondary/-muted` locally on
+    `.duel-shell`, and must not promote them to `:root`.** Those names do not
+    exist in `01-tokens.css` -- the chrome has no text tokens and
+    `22-arcade.css` writes `#eef2f8`/`#93a1bb`/`#7f8ba4` as literals in twenty
+    places. Naming them on the shell (which wraps the lobby, the match frame
+    and every board, so 37-40 inherit them) is the same move
+    `.account-entry-page` makes with `--brand-surface`. A global alias would be
+    a second name for `--ink`/`--muted`, which is the drift this repo keeps
+    recording.
+  - Known gaps, deliberate: matchmaking is an open-challenge lobby plus direct
+    challenges by profile id, and while the direct path is built and enforced
+    there is still no in-app way to *pick a friend* and challenge them -- the
+    same seat-menu/friends-drawer gap M16's invites already record. Sync is a
+    2s poll, not Realtime. The retired games' pages are still routed (unlinked)
+    so live rounds can settle.
+- **The 3D room waits for its characters now, and a gesture can no longer
+  trap an avatar on its last frame (2026-08-12).** Three things worth not
+  relearning:
+  - **`sceneReady` used to mean "the WebGL context exists", which is
+    essentially immediate**, while each seat's `.glb` kept loading behind its
+    own `<Suspense fallback={null}>` — so the room announced itself finished
+    and then had characters pop in seat by seat, which is what read as
+    "avatars falling out of the sky". It is gated on every seated character
+    actually being mounted now; `lib/game3d/avatar-load-gate.ts` is the
+    predicate, in `lib/` for the usual reason (`vitest.config.ts` collects
+    only `lib/` and `app/`, and an empty expected set reading as "loaded" is
+    exactly the mistake that must be reachable by `npm test`).
+    `components/table/scene3d/table-loading-splash.tsx` covers the wait; it
+    owns none of the decision, only the presentation of it.
+  - **A one-shot gesture handed back through `setTimeout` could never fire
+    if its own effect re-ran.** The effect listed `transientState` in its
+    deps and its cleanup cleared the timeout on *every* re-run, so
+    `lastAction` going null mid-gesture (a new hand starting inside
+    `Poker_Bet`'s 2.17s against `NEXT_HAND_DELAY_MS` 2,800) cleared the
+    restore, re-ran, early-returned on its own guard, and armed nothing —
+    and `clampWhenFinished` then held the clip on its final frame forever.
+    `lib/game3d/avatar-playback.ts` is a pure transition machine instead:
+    a deferred hand-back is addressed to a **specific** gesture by epoch, so
+    a late signal from a superseded one cannot cancel its replacement, and
+    the deadline is in **scene-clock seconds, not wall clock** — drei's
+    `useAnimations` advances the mixer from `useFrame`, and the two diverge
+    the moment rAF throttles.
+  - **The roster is meshopt-compressed now (14 models, ~18MB → 7.9MB) and
+    that is only safe because of an argument every call site already
+    passes.** The files carry `EXT_meshopt_compression` in
+    **`extensionsRequired`**, so `GLTFLoader` throws outright without a
+    decoder — and nothing in this repo calls `setMeshoptDecoder` directly.
+    What saves it is `useGLTF(url, false, true)`: drei's third argument is
+    `useMeshopt`, and it wires the decoder itself. Re-exporting a model with
+    compression, or "tidying" those two positional booleans away, breaks
+    every avatar at runtime while tsc and `next build` stay green.
 - **The 3D room has a real modelled backdrop now (2026-08-12): a brass
   balustrade, walls, a bar and two glowing pendant lamps, from a GLB the
   owner supplied** (`public/environments/stackchips-room-surround.glb`,

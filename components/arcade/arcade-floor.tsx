@@ -14,6 +14,8 @@ import {
   type ArcadeGame,
   type ArcadeWallet,
 } from "@/lib/arcade/games";
+import { gameOnSound, tapSound } from "@/lib/audio/ui-sounds";
+import { useArcadeSound } from "./use-arcade-sound";
 
 /**
  * Small counts as words, because both call sites are sentences.
@@ -57,6 +59,13 @@ function spell(count: number): string {
  * machine fetches its own.
  */
 export function ArcadeFloor() {
+  // Load-bearing, not decorative: this is what applies the player's stored
+  // mute on a route where PokerApp is not mounted. The module-level flag it
+  // sets is global, which is what lets the cards below call tapSound and
+  // gameOnSound directly instead of threading a play() callback through three
+  // components. Delete it and the whole floor goes loud for a muted player.
+  // See lib/audio/ui-sounds.ts.
+  useArcadeSound();
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [loaded, setLoaded] = useState(false);
   const mounted = useRef(true);
@@ -86,12 +95,12 @@ export function ArcadeFloor() {
   }, []);
 
   const wallet = toArcadeWallet(profile);
-  const { free, staked } = splitArcadeFloor();
+  const { free, duels, staked } = splitArcadeFloor();
 
   return (
     <main className="floor-shell">
       <header className="floor-bar">
-        <Link className="floor-back" href="/">← The floor</Link>
+        <Link className="floor-back" href="/" onClick={tapSound}>← The floor</Link>
         {/* .gold-balance is the navbar badge's own coin+amount layout
             (03-profile.css), reused rather than restated -- the number a player
             checks before picking a stake should look the same everywhere it
@@ -113,7 +122,7 @@ export function ArcadeFloor() {
             which has been broken there three times. Spelled as words because
             these are sentences: "10 more ways in." reads as a spec line and
             "Ten more ways in." reads as a person saying it. */}
-        <h1>{spell(free.length + staked.length)} more ways in.</h1>
+        <h1>{spell(free.length + duels.length + staked.length)} more ways in.</h1>
         <p>
           {spell(free.length)} are free every day. The rest stake Gold from the same
           wallet as the tables.
@@ -126,6 +135,25 @@ export function ArcadeFloor() {
           <div className="floor-free-grid">
             {free.map((game) => (
               <FreeCard key={game.id} game={game} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {duels.length > 0 && (
+        <section className="floor-section" aria-labelledby="floor-duels">
+          {/* Its own section, above the house games, because a duel is a
+              different proposition again: the Gold goes to the other PLAYER,
+              not to the house, and nobody is playing against fixed odds. That
+              is the whole reason these exist, so it gets said in the header
+              rather than left for the player to infer from a blurb. */}
+          <h2 className="floor-section-head" id="floor-duels">Head to head</h2>
+          <p className="floor-section-note">
+            Both players ante. Winner takes the pot — the house takes nothing.
+          </p>
+          <div className="floor-free-grid">
+            {duels.map((game) => (
+              <DuelCard key={game.id} game={game} wallet={wallet} />
             ))}
           </div>
         </section>
@@ -154,7 +182,34 @@ function FreeCard({ game }: { game: ArcadeGame }) {
     <article className="floor-card">
       <strong>{game.name}</strong>
       <small>{game.blurb}</small>
-      <Link className="floor-play" href={game.href ?? "/"}>Play</Link>
+      <Link className="floor-play" href={game.href ?? "/"} onClick={gameOnSound}>Play</Link>
+    </article>
+  );
+}
+
+/**
+ * A duel. Card-shaped like a daily rather than row-shaped like a house game,
+ * because the decision here is "who do I want to play", not "what does it
+ * cost" -- the stake is picked inside, on the challenge, the same way a table
+ * buy-in is. The catalogue's entryCost is therefore rendered as a floor
+ * ("from 1,000"), never as the price: quoting one number for a game that
+ * offers eight is the same class of lie as the placeholder prices
+ * lib/arcade/games.ts's header records getting wrong three times.
+ */
+function DuelCard({ game, wallet }: { game: ArcadeGame; wallet: ArcadeWallet }) {
+  const blocked = arcadeBlockedReason(game, wallet);
+  return (
+    <article className="floor-card">
+      <strong>{game.name}</strong>
+      <small>{game.blurb}</small>
+      <small className="floor-card-stake">from {arcadeEntryLabel(game)} Gold</small>
+      {blocked === null && game.href ? (
+        <Link className="floor-play" href={game.href} onClick={gameOnSound}>{arcadeActionLabel(game, wallet)}</Link>
+      ) : (
+        <button type="button" className="floor-play" disabled>
+          {arcadeActionLabel(game, wallet)}
+        </button>
+      )}
     </article>
   );
 }
@@ -178,7 +233,7 @@ function StakedRow({ game, wallet }: { game: ArcadeGame; wallet: ArcadeWallet })
           other route. The blocked states stay buttons: there is nowhere to
           go. */}
       {blocked === null && game.href ? (
-        <Link className="floor-play" href={game.href}>{arcadeActionLabel(game, wallet)}</Link>
+        <Link className="floor-play" href={game.href} onClick={gameOnSound}>{arcadeActionLabel(game, wallet)}</Link>
       ) : (
         <button
           type="button"
@@ -187,7 +242,9 @@ function StakedRow({ game, wallet }: { game: ArcadeGame; wallet: ArcadeWallet })
           title={
             blocked === "coming-soon"
               ? `${game.name} is not open yet`
-              : `Needs ${arcadeEntryLabel(game)} Gold to play`
+              : blocked === "retired"
+                ? `${game.name} is no longer offered`
+                : `Needs ${arcadeEntryLabel(game)} Gold to play`
           }
         >
           {arcadeActionLabel(game, wallet)}

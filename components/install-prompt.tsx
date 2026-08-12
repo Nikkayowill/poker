@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Download, Share2, X } from "lucide-react";
 import { useInstallOffer } from "@/components/pwa/use-install-offer";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 
 const DISMISS_STORAGE_KEY = "river.installPromptDismissedAt";
 // Not gone forever on one tap: a player might dismiss out of reflex the
@@ -69,11 +70,11 @@ export function InstallPrompt() {
         {ios ? "Tap Share then Add to Home Screen." : "Add StackChips to your Home Screen."}
       </span>
       {!ios && (
-        <button type="button" className="install-strip-action" onClick={() => void install()}>
+        <button type="button" className="install-strip-action" onClick={() => { selectSound(); void install(); }}>
           Install App
         </button>
       )}
-      <button type="button" className="install-strip-dismiss" aria-label="Dismiss" onClick={dismiss}>
+      <button type="button" className="install-strip-dismiss" aria-label="Dismiss" onClick={() => { tapSound(); dismiss(); }}>
         <X size={14} aria-hidden="true" />
       </button>
     </div>

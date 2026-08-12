@@ -105,6 +105,45 @@ describe("the mix", () => {
     expect(playbackDb("timeout")).toBeLessThan(playbackDb("win"));
   });
 
+  it("gives the three chrome cues three different recordings", () => {
+    // The whole point of the split. Before this there was one `ui` click for
+    // every button in the app, so a menu row, a mode switch and sitting down
+    // at a table were indistinguishable -- and most controls played nothing
+    // at all. Two of these collapsing back onto one file would quietly undo
+    // it: the mix would still be correct and the app would still make noise.
+    const chrome = ["ui", "select", "game-on"] as SoundEffect[];
+    const files = chrome.map((effect) => SOUND_FILES[effect]);
+    expect(new Set(files).size).toBe(chrome.length);
+    // And all three have to actually exist -- a null here is a silent button,
+    // which is the state this replaced.
+    for (const effect of chrome) {
+      expect({ effect, audible: AUDIBLE_EFFECTS.includes(effect) })
+        .toEqual({ effect, audible: true });
+    }
+  });
+
+  it("ranks the chrome cues by what the press meant", () => {
+    // Arriving somewhere is a moment; choosing is a confirmation; moving is
+    // housekeeping. Written as levels rather than gains because all three sit
+    // on different source files -- comparing gains here would compare three
+    // unrelated recordings and mean nothing.
+    expect(playbackDb("game-on")).toBeGreaterThan(playbackDb("select"));
+    expect(playbackDb("select")).toBeGreaterThan(playbackDb("ui"));
+  });
+
+  it("keeps the chrome under the hand it interrupts", () => {
+    // `select` and `ui` fire while a hand may be in progress -- the table menu
+    // is reachable mid-hand -- so both stay below the cues the hand makes for
+    // itself. `game-on` is the exception and is allowed to be a moment,
+    // because by construction it fires into silence: the lobby music has
+    // stopped and the table has not dealt yet. It still sits under the payout.
+    for (const quiet of ["ui", "select"] as SoundEffect[]) {
+      expect(playbackDb(quiet)).toBeLessThan(playbackDb("deal"));
+      expect(playbackDb(quiet)).toBeLessThan(playbackDb("call"));
+    }
+    expect(playbackDb("game-on")).toBeLessThan(playbackDb("win"));
+  });
+
   it("stays silent where there is no asset", () => {
     // `lose` is the last of these. It is silent because most hands at a
     // six-handed table are losses and a cue on each one would be relentless,

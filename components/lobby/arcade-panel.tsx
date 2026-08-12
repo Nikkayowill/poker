@@ -1,9 +1,11 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { Gamepad2 } from "lucide-react";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ARCADE_GAMES, arcadeFloorSummary, toArcadeWallet } from "@/lib/arcade/games";
+import { tapSound } from "@/lib/audio/ui-sounds";
 
 /**
  * The hub's arcade tile: what is behind /games, in one row.
@@ -22,7 +24,16 @@ import { ARCADE_GAMES, arcadeFloorSummary, toArcadeWallet } from "@/lib/arcade/g
  * decided per row on the floor itself, which is also the only place it can be
  * shown honestly.
  */
-export function ArcadePanel({ profile }: { profile: PlayerProfile | null }) {
+export function ArcadePanel({
+  profile,
+  style,
+}: {
+  profile: PlayerProfile | null;
+  /** Carries `--tile-index` from lobby.tsx -- this section shares
+   * `.hub-tile`'s entrance stagger, so it needs the same custom property
+   * every other tile sets inline. */
+  style?: CSSProperties;
+}) {
   // Counted, not written down. The header used to read "10 games in the
   // works", which was true when none of them were and quietly became a lie
   // the day Blackjack shipped -- a hub blurb must not misdescribe what is
@@ -31,7 +42,7 @@ export function ArcadePanel({ profile }: { profile: PlayerProfile | null }) {
   const wallet = toArcadeWallet(profile);
 
   return (
-    <section className="hub-tile hub-tile-arcade" aria-labelledby="arcade-heading">
+    <section className="hub-tile hub-tile-arcade" style={style} aria-labelledby="arcade-heading">
       <div className="arcade-head">
         <Gamepad2 size={16} aria-hidden="true" />
         <div className="arcade-head-copy">
@@ -47,7 +58,7 @@ export function ArcadePanel({ profile }: { profile: PlayerProfile | null }) {
           CSS rather than sliced here, so the list stays honest at any width. */}
       <p className="arcade-preview">{summary.previewNames.join(" · ")}</p>
 
-      <Link className="arcade-see-all" href="/games">
+      <Link className="arcade-see-all" href="/games" onClick={tapSound}>
         See all
         {/* The balance the floor's stakes will be checked against, stated on
             the way in. A player who cannot afford a 1,000 Gold round should

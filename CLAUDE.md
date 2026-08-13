@@ -155,11 +155,27 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   it by up to 23mm on this 2:1 table. Any anchor that must be a known distance *outside*
   the felt needs `offsetStadium` plus `stadiumRayPoint`; scaling radii is only exact on
   a real ellipse. This shipped a bet tray 29mm inside the cloth before it was caught.
-- Known and deliberately unresolved (all three are design calls, not defects): a ~140px
-  band of floor below the near rail near 16:9 — taking it up by lowering the camera was
-  tried and reverted because it wrecks every taller frame; portrait, where a 2:1 table
-  collapses to a 58px-deep sliver and which was never in the brief; and the dealer's
-  place at far centre, which is reserved and geometrically known but has no art.
+- **Landscape-only.** A 2:1 table has no portrait framing — at 390×844 the felt is ~58px
+  deep with the nameplates on the cloth — so `resolveTableRenderer` sends the preference
+  to `canvas_2d` in portrait. A quiet fallback, never a rotate-to-play gate: an overlay a
+  player cannot act through times their turn out and folds them, which is too high a
+  price for a cosmetic preference. Nothing rewrites the stored choice, so rotating brings
+  it straight back — `useLandscape` (`components/use-landscape.ts`) is a live `matchMedia`
+  subscription built like `useWebglSupport`, not a snapshot taken at mount, and
+  `racetrack-landscape.spec.ts` pins the rotation because a subscription that never fires
+  is indistinguishable from one that does until the device is turned.
+- The table menu cycles from the renderer **actually mounted**, not the stored preference.
+  They differ exactly when a preference has been resolved away (3D without WebGL, 2.5D in
+  portrait), and stepping from the stored value there produces an entry that visibly does
+  nothing — it lands on what is already on screen.
+- Offered in the buy-in preselect as a third `.entry-segment` button, disabled in portrait
+  rather than hidden (same treatment the 3D room gets without WebGL). `.entry-segment` is
+  a two-way control by construction, so the three-up grid is overridden under
+  `.buyin-renderer` rather than generalised.
+- Known and deliberately unresolved (both are design calls, not defects): a ~140px band of
+  floor below the near rail near 16:9 — taking it up by lowering the camera was tried and
+  reverted because it wrecks every taller frame; and the dealer's place at far centre,
+  which is reserved and geometrically known but has no art.
 
 ### Rewarded-ad faucet (2026-08-11)
 - Wait moved 30s→5min (`REWARDED_AD_DURATION_MS`), grant TTL 10→20min to compensate. New direct

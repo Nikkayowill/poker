@@ -5,9 +5,9 @@ import clsx from "clsx";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 
 /**
- * The full-screen "entering the room" beat for the 3D table.
+ * The full-screen "entering the room" beat, shared by both table renderers.
  *
- * Exists because PokerScene's `onReady` used to fire on WebGL-context
+ * Started as 3D-only: PokerScene's `onReady` used to fire on WebGL-context
  * creation alone -- essentially instant -- while each seated character kept
  * loading independently behind its own Suspense boundary. That let the room
  * present itself as finished and then have avatars pop in seat by seat,
@@ -16,9 +16,14 @@ import { StackChipsMark } from "@/components/brand/stackchips-mark";
  * lib/game3d/avatar-load-gate.ts); this is what covers that wait instead of
  * leaving the player looking at the flat DOM felt while it happens.
  *
- * `active` is `activeRenderer === "webgl_3d" && !sceneReady` from
- * poker-table.tsx -- this component owns none of that decision, only the
- * presentation of it.
+ * The 2D table earned the same problem once its felt/rail art stopped being
+ * canvas-painted (instant) and became a real image loaded over the network
+ * (see use-felt-art-ready.ts): the table shell/seats/HUD would already be
+ * interactive while the felt was still mid-fetch, then pop in -- the same
+ * "entering the room" gap, just for a different reason. `sceneReady` from
+ * poker-table.tsx now reflects readiness for whichever renderer is active,
+ * so `active={!sceneReady}` covers both; this component owns none of that
+ * decision, only the presentation of it.
  */
 
 const FLAVOR_LINES = [

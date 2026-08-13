@@ -60,7 +60,6 @@ test("the DOM HUD sits on top of the canvas and the canvas takes no input", asyn
         canvasPresent: Boolean(document.querySelector(".table-scene canvas")),
         pointerEvents: style?.pointerEvents ?? null,
         ariaHidden: host?.getAttribute("aria-hidden"),
-        navPotDisplay: getComputedStyle(document.querySelector(".game-header .pot-display")!).display,
         headerPositions: (() => {
           const header = document.querySelector(".game-header")!.getBoundingClientRect();
           const leave = document.querySelector(".game-header .leave-button")!.getBoundingClientRect();
@@ -86,9 +85,6 @@ test("the DOM HUD sits on top of the canvas and the canvas takes no input", asyn
     expect(report.pointerEvents).toBe("none");
     // And it contributes nothing to the accessibility tree.
     expect(report.ariaHidden).toBe("true");
-    // The 3D room owns the pot readout; the Classic header copy must not
-    // produce two competing totals.
-    expect(report.navPotDisplay).toBe("none");
     expect(report.livePotVisible).toBe(true);
     expect(report.headerPositions.leftGap).toBeGreaterThanOrEqual(0);
     expect(report.headerPositions.rightGap).toBeGreaterThanOrEqual(0);
@@ -123,13 +119,11 @@ test("switching Classic back to 3D restores the complete 3D HUD", async ({ brows
     await playerMenu.click();
     await page.getByRole("menuitem", { name: "Table: 3D room" }).click();
     await expect(page.locator(".game-header")).not.toHaveClass(/game-header-3d/);
-    await expect(page.locator(".game-header .pot-display")).toBeVisible();
     await expect(page.locator('[class*="ownHandLayerLive"]')).toHaveCount(0);
 
     await playerMenu.click();
     await page.getByRole("menuitem", { name: "Table: Classic" }).click();
     await expect(page.locator(".game-header")).toHaveClass(/game-header-3d/);
-    await expect(page.locator(".game-header .pot-display")).toBeHidden();
     await expect(page.locator('[class*="livePot"]')).toBeVisible();
     await expect(page.locator('[class*="ownHandLayerLive"]')).toBeVisible();
     await expect.poll(

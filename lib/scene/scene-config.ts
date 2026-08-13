@@ -70,30 +70,6 @@ export const SEAT_RING = {
 export const RAIL_SCALE = 1.14;
 
 /**
- * The colours the canvas paints the room in.
- *
- * Strings, not numbers, because they are handed straight to a 2D context.
- * The felt and rail hexes carry over from the WebGL room's materials, which
- * themselves carried over from the CSS felt before it — the palette has
- * survived two renderer changes now, which is the point of it.
- */
-export const ROOM = {
-  /** A deep desaturated mahogany, so the lamp has something to fall into. */
-  floor: "#140f10",
-  felt: "#0f4c33",
-  feltEdge: "#0a3624",
-  rail: "#241a17",
-  railEdge: "#3a2c1c",
-  /** The betting line scored into the cloth. */
-  line: "rgba(214, 199, 127, 0.28)",
-  /** The warm pool the overhead lamp puts on the felt. */
-  lampPool: "rgba(255, 236, 180, 0.14)",
-  /** The lattice the carpet tile is drawn in. See `carpetTile`. */
-  carpetLine: "rgba(120, 62, 48, 0.14)",
-  carpetLineFaint: "rgba(180, 140, 90, 0.07)",
-} as const;
-
-/**
  * Device pixel ratio ceiling.
  *
  * A modern phone reports 3 or 4, which would have the canvas shading nine to

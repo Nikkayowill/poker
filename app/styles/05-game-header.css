@@ -27,28 +27,44 @@
      in tests/e2e/safe-area.spec.ts, which is the only thing that could. */
   padding-left: max(28px, var(--safe-left));
   padding-right: max(28px, var(--safe-right));
+  /* Transparent, for the same reason .lobby-header is: the room this bar sits
+     on is painted by .game-shell, which is this element's own parent, so the
+     pixels above and below the header boundary come from one uninterrupted
+     background instead of a flat #0b1210 band cut across the top of the
+     backdrop photo. Both the fill and the hairline are overrides -- 02-app-
+     shell.css sets `background: #0b1210` on the shared .lobby-header/
+     .game-header rule and a `border-bottom` on .game-header specifically, and
+     this file loads later. Removing the fill without the rule leaves a line
+     ruled across the room with nothing on either side of it to separate,
+     which is exactly the "a rule is a divider between things, never an
+     outline around one" case the chrome's borderless pass settled. */
+  background: transparent;
+  border-bottom: 0;
 }
 
-/* The pot reads in the middle of this bar during a hand, so the bar becomes
-   three columns with equal sides -- which puts that middle on the viewport's
-   true centre, and therefore on the table's centre, directly above the chips
-   it is counting.
+/* Wordmark left, actions right, with the middle column absorbing whatever
+   space is left between them.
  *
- * Centring it absolutely would have been fewer lines and was wrong. The
- * wordmark is 32px on a phone and the actions are ~112px, so an absolutely
- * centred pot leaves 50px of unused room on its left while running into the
- * buttons on its right: measured at 320x568 with the widest pot this app can
- * make (six 500k stacks, all in, "3,000,000"), an 18.6px overlap, and only
- * 8.9px of clearance at 375. Laid out as siblings they cannot overlap at any
- * width for any pot -- the sides give way instead, and the header actions
- * already scroll horizontally on a phone for exactly that reason.
+ * The pot used to read in the middle of this bar, which is why this stayed
+ * three columns rather than two: `justify-content: space-between` on a plain
+ * flex row moves its far edge every time either sibling's own width changes
+ * (the actions' cluster grows when the avatar menu gains a badge, say), and
+ * the pot used to be pinned to the viewport's true centre regardless. Now
+ * that the felt is the only place the pot reads (.center-pot-amount, right
+ * over the chips it counts -- MAIN POT was a redundant second number in the
+ * chrome above a table that already shows it), nothing sits in that middle
+ * column any more, but the same three-column shape still earns its keep: it
+ * is what keeps the wordmark hard left and the actions hard right without
+ * either one's own width shifting the other.
  *
- * minmax(0, 1fr) rather than 1fr: a bare 1fr floors at the column's
- * min-content, and the wordmark's is wider than the actions', which pushed
- * the middle column 6px off centre at every width tested. */
+ * auto on the outer columns rather than minmax(0, 1fr): with the middle
+ * column gone from being a fixed-content island between two flexible sides,
+ * the outer columns only need to be exactly as wide as the wordmark and the
+ * actions cluster -- letting the true centre absorb the rest is what keeps
+ * both anchored to their own edge. */
 .game-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
 }
 /* The wordmark is the "leave table" button. Stretched to its column it would
@@ -60,24 +76,41 @@
 .game-header .game-header-actions { justify-content: flex-end; }
 .game-header .wordmark { font-size: 16px; }
 
-/* The 3D room owns its pot readout inside the camera HUD. Keep the header
-   value for Classic, where it is the only pot readout, and remove only the
-   duplicate while WebGL is genuinely ready. */
-.game-header.game-header-3d .pot-display {
-  display: none;
-}
-
-/* Once the 3D room moves the pot into its camera HUD, the header has no
-   middle item left to balance. Keep the brand/Leave control anchored left and
-   the profile controls anchored right instead of letting the empty middle
-   column make the useful controls appear centred. */
-.game-header.game-header-3d {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-}
-
-.game-header.game-header-3d .game-header-actions {
+/* Grid auto-placement fills columns left to right by source order, and the
+   actions are now the second element in the header's DOM (the pot used to
+   be the second, claiming the middle column for itself) -- without this,
+   the actions land in the empty centre column instead of the third one,
+   which reads as the avatar drifting toward the middle of the bar rather
+   than sitting at the far right where Leave table and the menu belong. */
+.game-header .game-header-actions {
   grid-column: 3;
   justify-self: end;
+}
+
+/* The base rule's transparency is correct for 3D too -- the header should
+   read as open onto whatever room it sits on, not a bar drawn across it,
+   same as Classic. What was wrong is what THAT room is: .game-shell's photo
+   backdrop just below is authored for Classic specifically (green bounce off
+   a felt that is there, a lamp pool over a table that is there), and the 3D
+   canvas that replaces both does not extend up under the header's own screen
+   band to cover for it -- so a transparent header over 3D exposed the
+   Classic-tuned lounge photo instead, which is what read as the wrong scene
+   bleeding through the nav. Fixed at the source (.game-shell's own
+   background, below) rather than by opting the header back into an opaque
+   fill, which only hid the mismatch instead of removing it. */
+
+/* .game-shell's photographed lounge backdrop is Classic-specific -- see its
+   own comment. `:has()` reaches up to the shell from the header's class
+   rather than needing a second render-mode class threaded onto `.game-shell`
+   itself (poker-table.tsx only ever put one on the header), and every
+   browser this app supports has shipped :has() for a while; it is already
+   used elsewhere in this stylesheet. The flat tone is the exact literal
+   html/body already fall back to (01-tokens.css) -- the same "paint behind
+   every screen" ground, not a new colour invented for this one case, so a
+   transparent 3D header opens onto the app's own base tone instead of a
+   backdrop authored for a different room. */
+.game-shell:has(.game-header-3d) {
+  background: #12161f;
 }
 
 .leave-button {
@@ -124,12 +157,18 @@
   position: relative;
   isolation: isolate;
   /* An after-dark room, lit only over the table.
-     Read bottom layer up: the room's base tone, then the darkness it falls
-     into past the light, then two warm sconces far off on the back wall,
-     then green bounce off the cloth, and finally the lamp pool itself
-     hanging over the table. Every layer is a smooth radial -- deliberately
-     no repeating gradients, which is what produced visible vertical banding
-     on real devices the last time this had texture. */
+     Read bottom layer up: the room's own photographed backdrop (the Canva
+     reskin's lounge art -- brass fittings, a hint of skyline, the same room
+     the felt now stands in), then the darkness it falls into past the light,
+     then two warm sconces far off on the back wall, then green bounce off
+     the cloth, and finally the lamp pool itself hanging over the table.
+     Every glow layer is a smooth radial -- deliberately no repeating
+     gradients, which is what produced visible vertical banding on real
+     devices the last time this had texture. Only the base layer changed
+     here: the flat linear-gradient that used to be the floor's whole colour
+     is the photo now, and every glow above it is untouched -- they were
+     already translucent washes meant to sit over "the room's base tone",
+     and a photograph is a base tone too. */
   background:
     radial-gradient(ellipse 40% 26% at 50% 30%, rgba(255, 214, 142, .16), transparent 66%),
     radial-gradient(ellipse 72% 46% at 50% 46%, rgba(48, 136, 100, .17), transparent 70%),
@@ -138,7 +177,10 @@
     radial-gradient(ellipse 30% 24% at 2% 8%, rgba(158, 96, 44, .13), transparent 70%),
     radial-gradient(ellipse 30% 24% at 98% 8%, rgba(158, 96, 44, .13), transparent 70%),
     radial-gradient(ellipse 82% 70% at 50% 44%, transparent 30%, rgba(0, 0, 0, .78) 100%),
-    linear-gradient(180deg, #0e1715 0%, #080e0c 50%, #030504 100%);
+    url("/pokertable/room-backdrop.webp");
+  background-repeat: no-repeat;
+  background-size: auto, auto, auto, auto, auto, auto, cover;
+  background-position: 50% 30%, 50% 46%, 50% 82%, 2% 8%, 98% 8%, 50% 44%, center;
 }
 
 /* The desktop local seat has a larger readable name/card treatment. Reserve

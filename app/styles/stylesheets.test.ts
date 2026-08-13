@@ -95,9 +95,13 @@ describe("stylesheets", () => {
      * for a duration instead of reading one. Between them the two tests still
      * cover the whole celebration; neither covers it alone, which is worth
      * knowing before deleting either.
+     *
+     * `pot-drain` used to close this list -- the animation on the header's
+     * own MAIN POT readout as it emptied. That readout is gone (the felt's
+     * .center-pot-amount is the only pot figure left, see 06-table.css), and
+     * with it the one element the animation ever played on.
      */
     const CELEBRATION = [
-      "pot-drain",
       "winning-card-lift",
       "spent-card-fade",
       "hand-result-in",

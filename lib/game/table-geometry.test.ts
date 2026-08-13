@@ -35,9 +35,14 @@ describe("table geometry", () => {
     // .poker-rail is inset 15% from the top and 8% from the bottom, so its
     // centre is 53.5%. Both extrema consequently move down while staying
     // symmetric around the table players are visibly sitting at.
+    //
+    // 53.5 +/- 32 (RADIUS_Y), not +/- 38: the far seat's own upward lift
+    // puts its avatar above the rail regardless of ry, and that band now
+    // carries the room's real backdrop art instead of a plain gradient --
+    // see table-geometry.ts's own comment on RADIUS_Y.
     expect((near.y + far.y) / 2).toBeCloseTo(53.5, 5);
-    expect(near.y).toBeCloseTo(91.5, 5);
-    expect(far.y).toBeCloseTo(15.5, 5);
+    expect(near.y).toBeCloseTo(85.5, 5);
+    expect(far.y).toBeCloseTo(21.5, 5);
   });
 
   it("keeps the portrait ring centred on its symmetric mobile rail", () => {

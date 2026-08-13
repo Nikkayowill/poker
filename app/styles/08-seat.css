@@ -46,10 +46,20 @@
   margin-inline: auto;
 }
 
+/* The gold medallion ring, sampled off the Canva reskin's own avatar frame
+   (avatar-medallion.png, ~#d79830) and landing on --gold/--gold-light --
+   already the table sheets' reserved gold, and already what --seat-accent
+   itself defaulted to. Deliberately uniform rather than per-seat like the
+   accent it replaces: a medallion is the frame a player sits behind, not a
+   personalised colour, so every seat wears the same ring regardless of whose
+   accent colour is set. --seat-accent stays exactly where it was for
+   everything else a seat still tints with it (the current-turn name, the
+   active-seat glow, the winner badge). */
 .seat-figure-art {
   object-fit: cover;
   object-position: center;
-  border: 2px solid color-mix(in srgb, var(--seat-accent), transparent 28%);
+  border: 3px solid var(--gold);
+  box-shadow: 0 0 0 1px var(--gold-light), inset 0 0 0 1px rgba(255,255,255,.3);
   border-radius: 50%;
   filter: drop-shadow(0 5px 9px rgba(0,0,0,.5));
 }
@@ -82,7 +92,8 @@
   aspect-ratio: 1;
   align-self: end;
   margin-bottom: 0;
-  border: 1px solid color-mix(in srgb, var(--seat-accent), transparent 60%);
+  border: 2px solid var(--gold);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold-light), transparent 35%);
   border-radius: 50%;
   background: #16211c;
   color: var(--seat-accent);
@@ -96,10 +107,10 @@
   aspect-ratio: 1;
   align-self: end;
   margin-bottom: 0;
-  border: 2px solid color-mix(in srgb, var(--seat-accent), transparent 55%);
+  border: 3px solid var(--gold);
+  box-shadow: 0 0 0 1px var(--gold-light), inset 0 0 0 1px rgba(255,255,255,.3), 0 8px 18px rgba(0,0,0,.5);
   border-radius: 50%;
   background: center/cover no-repeat;
-  box-shadow: 0 8px 18px rgba(0,0,0,.5);
 }
 
 /* Whose turn it is, said with light on the player rather than a box drawn
@@ -443,20 +454,29 @@
 }
 
 /* A single persistent puck (not one per seat) so it can glide between
-   seats instead of popping. Positioned via a fixed anchor point plus a
-   measured translate delta -- the same technique .pot-chip-flight uses --
-   so it works at every breakpoint without knowing the table's geometry. */
+   seats instead of popping. Anchored at the table wrap's own (0, 0) rather
+   than a guessed `left: 50%; top: 19%` -- that guess was a flat percentage
+   of .poker-table-wrap, while the point poker-table.tsx measured the delta
+   from (.pot-anchor) sits inset and re-tilted inside .poker-rail's own
+   perspective transform, a different coordinate space the percentage never
+   actually matched. The puck used to settle somewhere in the felt's middle
+   instead of by any seat for exactly that reason. With the base pinned to
+   (0, 0), --puck-dx/-dy (poker-table.tsx's measureDealer) is the *only*
+   number this position depends on -- an absolute pixel delta off the wrap's
+   real corner to a point pulled in from the dealer seat's own centre, so
+   nothing here can drift out of step with a second, unrelated percentage
+   again. */
 .dealer-puck {
   position: absolute;
-  left: 50%;
-  top: 19%;
+  left: 0;
+  top: 0;
   z-index: 8;
   width: 24px;
   height: 24px;
   display: grid;
   place-items: center;
   pointer-events: none;
-  transform: translate(-50%, -50%) translate(var(--puck-dx, 0px), var(--puck-dy, 0px));
+  transform: translate(var(--puck-dx, 0px), var(--puck-dy, 0px)) translate(-50%, -50%);
   border-radius: 50%;
   border: 1px solid rgba(120,94,20,.6);
   background: radial-gradient(circle at 32% 28%, #fbf6e3, #e9dfb8 45%, #cbb978 78%, #a68f4c);
@@ -577,6 +597,35 @@
   border-radius: 3px;
 }
 
+/* An opponent's cards ARE this small right up until a showdown reveals them
+   -- :not(.card-back) is exactly that moment, since PlayingCard only drops
+   that class when it is handed a real Card rather than null
+   (components/table/playing-card.tsx). At .20 those revealed hands are
+   legible only as "some cards flipped face up," which is the opposite of
+   what a showdown is for: the whole point is comparing what beat what.
+   .23 rather than a bigger jump toward the local player's own .30 -- verified
+   live that .28 grew the pair enough to overlap the winner's own stack
+   number (both are positioned from the same seat centre, so a wider card
+   reaches further into the plate below it without moving). This is smaller
+   but still a real, visible bump over the hidden-state .20. No breakpoint
+   needed, same reason as the rule above -- both this and .own-cards are
+   already a fraction of --seat-width, which is already tuned per
+   breakpoint. */
+.seat-cards:not(.own-cards) .playing-card:not(.card-back) {
+  width: calc(var(--seat-width) * .23 * var(--seat-depth, 1));
+  border-radius: 4px;
+}
+
+/* The extra size still reaches slightly further toward the plate than the
+   hidden state did, so a revealed pair gets a little more of the outward
+   nudge --card-side-reach already gives every seat's cards (06-table.css's
+   .seat-cards rule) -- clear of the stack number rather than sized down
+   further to avoid it. :has() rather than a class on the pair themselves:
+   nothing renders the reveal moment as a class on .seat-cards itself. */
+.seat-cards:not(.own-cards):has(.playing-card:not(.card-back)) {
+  --card-side-reach: 15px;
+}
+
 /* .5s matches DEAL_FLIGHT_MS in lib/game/deal-choreography.ts, which is what
    the schedule's total is computed from and asserted against. */
 .dealt-card-shell {
@@ -628,25 +677,74 @@
    ellipse and a world-unit one, that only happen to agree in direction. 155px
    was measured against window.__stackchipsScene.betSpot() rather than
    guessed: it lands this label within a pixel of the pile on the x axis for
-   every side seat, which is the axis a misalignment reads on first. The two
-   ellipses are not the same shape, so a single flat reach cannot zero the y
-   axis too at every seat angle -- what is left is a residual of 17-70px there,
-   down from the ~80px total gap this replaced. The near seat (yours) needs a
-   reach several times larger again, because NEAR_SEAT_BET_INSET pulls that
-   one pile in toward the centre rather than out toward the rail; see its own
-   override in 16-first-person.css rather than inflating this one for
-   everybody. */
+   every side seat, which is the axis a misalignment reads on first.
+
+   ONE REACH USED TO DRIVE BOTH AXES, AND THAT WAS THE BUG. The DOM ellipse's
+   radii (RADIUS_X 46 / RADIUS_Y 32, table-geometry.ts) and the canvas
+   ellipse's are not the same shape -- the DOM one is far more elongated --
+   so a single `--bet-reach` scaling both `--seat-dx` and `--seat-dy` could
+   only ever be right on one axis. It was tuned against the old RADIUS_Y (38)
+   and drifted further once that shrank to 32 for the far seat's headroom
+   (see table-geometry.ts): a flat trailing `translate(0, -18px)` was papering
+   over a residual that grew to 25-90px once RADIUS_Y moved, in opposite
+   directions for the near and far seats -- no single flat nudge can correct
+   two seats that need to move opposite ways.
+
+   Split into `--bet-reach-x` / `--bet-reach-y` instead, each measured
+   independently against `window.__stackchipsScene.betSpot()`. The x reach
+   (155.6px) barely moved -- it never depended on RADIUS_Y -- but the y reach
+   for an ordinary side seat is 95px, nowhere near 155px: `--seat-dy` is a
+   *unit* vector component (.402 for a side seat), and the actual vertical
+   gap to the pile is a fraction of that unit's worth, not the same fraction
+   the x axis needs. The far seats (.seat-far below) need their own y reach
+   again, smaller still (48px) -- their `--seat-dy` swings all the way to 1
+   for the seat directly opposite, and the canvas pile does not move
+   proportionally that far. The near seat (yours) needs a reach larger again,
+   because NEAR_SEAT_BET_INSET pulls that one pile in toward the centre
+   rather than out toward the rail; see its own override in
+   16-first-person.css rather than inflating this one for everybody. */
+/* A pill now, not bare text -- at 10px with nothing behind it, "$5" sat
+   directly on top of the chip glyph it was labelling and lost to it, gold
+   on the same green either one of them could be read against. The trailing
+   `translate(26px, 0)` is a flat screen-space nudge on top of the now
+   pile-accurate reach above -- clearance so the label reads beside the chip
+   stack, to its right, rather than sitting on top of it or floating above
+   it (both read as unrelated to the pile they label). Was `translate(0,
+   -14px)`, straight up -- moved onto the x axis instead, at the same
+   distance from the pile, so it composes with the reach translate before it
+   without disturbing that math. Composed translates are pure addition
+   regardless of order, so appending it here does not disturb the reach math
+   above. */
 .table-bet {
-  --bet-reach: 155px;
+  --bet-reach-x: 155.6px;
+  --bet-reach-y: 95px;
   position: absolute;
   left: 50%;
   top: calc(var(--seat-width) * .72);
+  z-index: 7;
   transform:
     translate(-50%, -50%)
-    translate(calc(var(--seat-dx, 0) * var(--bet-reach)), calc(var(--seat-dy, -1) * var(--bet-reach)));
+    translate(calc(var(--seat-dx, 0) * var(--bet-reach-x)), calc(var(--seat-dy, -1) * var(--bet-reach-y)))
+    translate(26px, 0);
+  padding: 2px 8px;
+  border: 1px solid rgba(217, 184, 93, .32);
+  border-radius: 999px;
+  background: rgba(10, 8, 5, .72);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .32);
   color: var(--gold-light);
-  font: 700 10px Georgia, serif;
+  font: 700 clamp(11px, 1vw, 13px) Georgia, serif;
   white-space: nowrap;
+}
+
+/* The far seats -- the three whose `--seat-dy` swings toward +1 rather than
+   the ordinary side seat's .402 -- need their own, smaller y reach: measured
+   the same way against `betSpot()`, 48px splits the two far shapes (the
+   straight-back seat at dy=1 wants 49.8px, the two far diagonals at dy=.402
+   want 46.3px) within about 2px of both, which is what "the two ellipses are
+   not the same shape" (above) leaves on the table once each seat's own reach
+   is otherwise exact. */
+.seat-far .table-bet {
+  --bet-reach-y: 48px;
 }
 
 /* .action-bar lives entirely in 09-action-bar.css. A second copy used to sit

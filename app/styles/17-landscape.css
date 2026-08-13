@@ -102,9 +102,17 @@
      zeroed the label sat 59px below the pile at 844x390 and 54px at
      812x375, and the seat's 1.15 scale divides those, giving 51.3 and 47.0.
      49px splits them and lands within 2.6px on both. The x axis needs
-     nothing -- both are centred on the plate, and the measured gap was 0. */
+     nothing -- both are centred on the plate, and the measured gap was 0.
+
+     `--bet-reach-y`, not `--bet-reach`: 08-seat.css split the one shared
+     variable into an x and a y reach (a single reach could not fit the DOM
+     ellipse's x and y radii, which are not proportional to the canvas
+     one's), and this override has to track that name or it silently stops
+     doing anything -- the base rule no longer reads `--bet-reach` at all.
+     This tier's own geometry (LANDSCAPE_RADIUS_Y, table-geometry.ts) did not
+     move with that change, so the number itself did not need re-measuring. */
   .seat-mine .table-bet {
-    --bet-reach: 49px;
+    --bet-reach-y: 49px;
   }
 }
 
@@ -116,7 +124,7 @@
    correction is 29.6px against the 51.3 the full-width stages want, and
    holding 49px there would leave the label 21px above its own chips. */
 @media (max-height: 500px) and (orientation: landscape) and (max-aspect-ratio: 2/1) {
-  .seat-mine .table-bet { --bet-reach: 30px; }
+  .seat-mine .table-bet { --bet-reach-y: 30px; }
 }
 
 @media (max-height: 340px) and (orientation: landscape) {

@@ -64,6 +64,85 @@
   }
 }
 
+/* Desktop's classic table gets the identical corner move, for the identical
+   reason: a centred bar was the one thing standing between the near seat's
+   own hole cards (see .seat-mine .seat-cards in 16-first-person.css, which
+   now anchors straight to the bottom of the *screen* rather than the felt)
+   and the bottom edge. With the bar off to the side, that whole band is the
+   cards' alone.
+
+   A separate rule from the 3D one above rather than folding this into it --
+   `:not(:has(.scene-room-3d))` covers the classic renderer, and every frame
+   of the 3D room before its own `.scene-room-3d` class lands, which is
+   harmless: both rules move the bar to the same corner, and the 3D block
+   above always wins once it applies since it is the more specific selector
+   in source order after this one loses its match. The bar keeps its ordinary
+   green enamel buttons here -- 09-action-bar.css's own palette, not the 3D
+   console's glass treatment -- but the corner is otherwise its own to fill
+   now (see the second block below), same as every other fixture that claimed
+   a desktop corner got its own larger, more-deliberate sizing once it moved
+   into one. Table sizing (--action-bar-height / --foreground-allowance,
+   05-game-header.css) is still deliberately left alone, same call as the 3D
+   rule above: the felt does not need to grow to make room, since the cards
+   it used to have to clear no longer live inside its coordinate space at
+   all. */
+@media (min-width: 901px) {
+  .game-content:not(:has(.scene-room-3d)) .action-layer {
+    position: absolute;
+    z-index: 25;
+    right: max(24px, var(--safe-right));
+    bottom: max(24px, var(--safe-bottom));
+    padding: 0;
+    pointer-events: none;
+  }
+  .game-content:not(:has(.scene-room-3d)) .action-layer .action-bar {
+    width: auto;
+    max-width: min(520px, 40vw);
+    margin: 0;
+    height: auto;
+    align-items: center;
+    pointer-events: auto;
+  }
+
+  /* Docked alone in a corner it now has entirely to itself, the bar used to
+     read as a mobile strip that had simply been relocated -- same 76px-tall
+     band, same tight padding, just moved. Every other fixture that claimed a
+     desktop corner (.player-hud, the 3D console) got its own larger,
+     more-deliberate treatment when it did; this one never had. Bigger
+     controls and more air between them, plus a hairline of the room's own
+     gold rather than the flat green every narrower breakpoint still uses --
+     the skin stays the same enamel buttons (09-action-bar.css), only their
+     size and the frame around them change here. */
+  .game-content:not(:has(.scene-room-3d)) .action-layer .action-bar {
+    max-width: min(580px, 43vw);
+    padding: 14px 18px;
+    gap: 14px;
+    border-radius: 18px;
+    border-color: rgba(217, 184, 93, .16);
+    box-shadow:
+      var(--elevation-4, 0 15px 35px rgba(0, 0, 0, .22)),
+      0 0 46px rgba(217, 184, 93, .05);
+  }
+  .game-content:not(:has(.scene-room-3d)) .action-layer .action-bar.action-bar-your-turn {
+    border-color: rgba(217, 184, 93, .32);
+    box-shadow:
+      0 15px 35px rgba(0, 0, 0, .22),
+      0 0 54px rgba(217, 184, 93, .1);
+  }
+  .game-content:not(:has(.scene-room-3d)) .action-layer .action-slot-controls {
+    gap: 12px;
+  }
+  .game-content:not(:has(.scene-room-3d)) .action-layer .action-slot-controls button {
+    padding: 15px 22px;
+    font-size: 14px;
+    border-radius: 14px;
+  }
+  .game-content:not(:has(.scene-room-3d)) .action-layer .time-card-button {
+    min-width: 60px;
+    padding: 6px 0;
+  }
+}
+
 .poker-table-wrap {
   /* Capped by both max table width AND an estimate of the vertical room the
      header and action layer leave behind, so the table shrinks to fit a
@@ -150,7 +229,7 @@
   position: absolute;
   inset: 15% 4% 8%;
   padding: 16px;
-  background: url("/pokertable/table-desktop.png") center / 100% 100% no-repeat;
+  background: url("/pokertable/table-desktop.webp") center / 100% 100% no-repeat;
   filter: drop-shadow(0 34px 44px rgba(0,0,0,.55));
   transform: perspective(1050px) rotateX(10deg);
   transform-origin: 50% 64%;
@@ -172,21 +251,44 @@
      that difference short of the seat it was going to. Measured at 1440x900:
      the winner's chip stack at y=777, chips vanishing at y=727. Fifty pixels
      high, in the one animation whose whole job is to connect a pot to a
-     player. Two declarations cannot drift apart if there is only one. */
-  --deck-y: 26%;
+     player. Two declarations cannot drift apart if there is only one.
+
+     33%, not 26%: table-desktop.webp used to have ~145px of dead transparent
+     margin below its own oval (the source photo was never cropped tight to
+     its rail), so every percentage on this element was measured against a
+     box a quarter-again taller than the felt actually painted in it. Cropped
+     the asset to its true outer edge instead of re-deriving a second set of
+     percentages against the old, wrong box -- the felt's real bounds inside
+     .poker-felt now measure ~12%-83%, and 33% sits inside that range, above
+     the community-card row's own centre so the deck reads as behind the
+     board rather than under it. */
+  --deck-y: 33%;
 }
 
-.poker-felt::after {
-  content: "STACKCHIPS  ·  NO LIMIT HOLD’EM";
+/* The same spot the old CSS-text watermark held (left:50%, bottom:27%), now
+   the app's real vector mark instead of typed-out letters -- crisp at any
+   zoom and impossible to misspell, unlike a font rendering a wordmark out of
+   glyphs. A real element rather than a pseudo-element specifically so it can
+   hold a component (StackChipsMark, rendered in poker-table.tsx); ::after
+   cannot contain JSX. */
+.felt-mark {
   position: absolute;
   left: 50%;
   bottom: 27%;
   transform: translateX(-50%);
-  color: rgba(228,237,229,.1);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: .14;
+  pointer-events: none;
+}
+
+.felt-mark i {
+  color: #e4ede5;
   font: 600 clamp(7px, .8vw, 10px) Georgia, serif;
   letter-spacing: .28em;
   white-space: nowrap;
-  pointer-events: none;
+  font-style: normal;
 }
 
 /* The chip-flight target, left behind on the felt when the pot readout moved
@@ -209,6 +311,60 @@
   height: 35px;
   transform: translate(-50%, -50%);
   pointer-events: none;
+}
+
+/* The pot and the board, as one column instead of two independent absolute
+   guesses. It used to be .center-pot-amount pinned to --deck-y and
+   .community-cards pinned to 48%, each with its own left/top/transform --
+   correct on paper (--deck-y is where the chip pile itself renders, see
+   potPosition()'s "behind the board" comment in lib/scene/seat-ring.ts) but
+   the amount was then shoved 30px sideways off that point so it wouldn't
+   sit on top of the pile, which read as parked *beside* the felt rather than
+   labelling it. One centred column fixes both: the label sits directly above
+   the cards it names, and the whole stack still centres on the same
+   --deck-y-ish point the pile occupies, so the number stays next to the
+   chips it counts instead of drifting toward either seat. */
+.board-stack {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transform: translate(-50%, -50%);
+}
+
+/* The centre pile's own readout, now stacked directly above the cards it
+   sits over rather than beside the chips. "Pot" + amount -- a label-then-
+   value shape, so the one word answers "which number is this" on its own,
+   with nothing else on the table left to confirm it against now that the
+   header no longer prints a second pot figure above the felt. */
+.center-pot-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid rgba(217, 184, 93, .35);
+  border-radius: 999px;
+  background: rgba(10, 8, 5, .74);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, .35);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.center-pot-amount span {
+  color: rgba(232, 238, 230, .6);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.center-pot-amount strong {
+  color: var(--gold-light);
+  font: 700 clamp(11px, 1.1vw, 14px) Georgia, serif;
 }
 
 /* The pot is no longer drawn here.
@@ -303,45 +459,6 @@
 .table-feed .table-feed-win { color: rgba(246,226,157,.95); font-weight: 600; }
 .table-feed .table-feed-deal { color: rgba(226,235,228,.6); }
 
-/* The pot lives in .game-header now, not in this band -- but its type stays
-   here with the rest of the table's readouts rather than moving to
-   05-game-header.css, because what it says belongs to the hand and not to the
-   chrome it happens to be printed on. Where it sits in that header is a
-   question about the header, and is answered there. */
-.pot-display {
-  text-align: center;
-  /* Never in the way of the header actions, which scroll horizontally on a
-     phone and would otherwise lose a swipe that started over the pot. */
-  pointer-events: none;
-}
-
-.pot-display > span {
-  display: block;
-  color: rgba(232,238,230,.5);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: .16em;
-}
-
-.pot-display strong {
-  margin-top: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: #f2dc90;
-  font: 500 clamp(22px, 2.4vw, 30px) Georgia, serif;
-  line-height: 1.05;
-  transition: transform .15s ease;
-  text-shadow: 0 2px 14px rgba(0,0,0,.6);
-}
-
-.pot-display-paid strong { animation: pot-drain .5s ease .75s both; }
-@keyframes pot-drain {
-  0% { transform: scale(1); opacity: 1; }
-  40% { transform: scale(1.12); }
-  100% { transform: scale(.85); opacity: .35; }
-}
 
 /* The stakes, on the right margin of the band. On the felt this line sat
    at 26% + 46px, which at 1440x900 put it at y=407 -- eleven pixels into the
@@ -410,10 +527,14 @@
   box-shadow: 0 -3px 0 #276da3, 0 3px 0 #31805b;
 }
 
+/* No position/left/top/transform of its own any more -- .board-stack owns the
+   one coordinate this and .center-pot-amount both sit on. This used to carry
+   `top: 48%`, measured against table-desktop.webp's old, uncropped box (see
+   --deck-y's comment on .poker-felt): the card row's bottom edge landed past
+   the felt's real bottom edge and crowded the rail, and 48% centred the row
+   on the felt's actual vertical middle in the cropped asset. .board-stack
+   restates that same 48% for the pair. */
 .community-cards {
-  position: absolute;
-  left: 50%;
-  top: 51%;
   display: flex;
   gap: clamp(6px, .9vw, 12px);
   padding: 7px 10px;
@@ -421,7 +542,21 @@
   border-radius: 14px;
   background: rgba(18, 13, 10, .18);
   box-shadow: 0 10px 24px rgba(0, 0, 0, .16);
-  transform: translate(-50%, -50%);
+}
+
+/* Desktop's felt has real width to spend and the board is what every street
+   turns on, but not so much that the five-card row dwarfs everything else
+   on the felt -- the pot label and the seats' own bet chips are both sized
+   off the same clamp scale, and a board bigger than clamp(70px, 5.6vw, 94px)
+   read as out of proportion next to them. Scoped to the community row
+   specifically rather than raising the shared `.playing-card` clamp
+   (07-cards.css), which would also inflate opponents' revealed showdown
+   hands (.seat-cards :not(.own-cards):has(...)) and the felt-mark
+   watermark's neighbours -- this only ever touches the five board cards. */
+@media (min-width: 901px) {
+  .community-cards .playing-card {
+    width: clamp(56px, 4.4vw, 76px);
+  }
 }
 
 .community-card-shell {
@@ -502,6 +637,11 @@
   letter-spacing: .04em;
 }
 
+/* "You had" reads as the losing half of the same sentence, not a second
+   headline -- dimmer throughout, including its own `b`, which the winning
+   line's `b` rule would otherwise light up to the same white as "Theo". */
+.hand-result-mine b { color: rgba(226,235,228,.72); font-weight: 700; }
+
 @keyframes hand-result-in {
   from { opacity: 0; transform: translateY(-5px); }
 }
@@ -509,6 +649,150 @@
 /* Two things cannot share column 3. The result is the news; the stakes are
    always true and can wait four seconds. */
 .table-hud:has(.hand-result) .blind-structure { display: none; }
+
+/* The local player's corner HUD -- a straight port of the 3D room's
+   <PlayerHudCorner> (components/game3d/game3d.module.css), same layout and
+   the same reasoning for being desktop-only: a phone's near-field band has
+   no spare corner for a second HUD without crowding the action bar under
+   it. See local-player-hud.tsx's own header for why this exists at all.
+
+   Colour is this table's own tokens rather than the 3D HUD's purple glass
+   (--gold/--gold-light, the same pair the seat-figure ring already wears),
+   so the two "this is you" markers -- the ring around every seat's avatar
+   and this corner card -- read as one visual language rather than two
+   different apps bolted together.
+
+   Flush to the corner rather than floating a measured distance off it, and
+   rounded only on its open (top-right) end: the previous build sat 24px in
+   on every side, an island the same size at every stack depth, which read
+   as a badge rather than a fixture. Welding it to the actual screen edge --
+   `left: 0; bottom: 0`, no border on the two edges it meets -- and giving
+   the pill more length to run before it rounds off is what makes it read as
+   mounted to the frame instead of dropped onto the felt near it. */
+.player-hud { display: none; }
+
+@media (min-width: 901px) {
+  .player-hud {
+    display: flex;
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    z-index: 6;
+    align-items: center;
+    gap: 16px;
+    max-width: min(420px, 38vw);
+    padding: 12px 34px 12px 14px;
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    border-radius: 0 999px 999px 0;
+    border: 1px solid rgba(217, 184, 93, .3);
+    border-left: none;
+    border-bottom: none;
+    background:
+      radial-gradient(circle at 0% 120%, rgba(217, 184, 93, .16), transparent 60%),
+      linear-gradient(180deg, rgba(18, 15, 10, .94), rgba(8, 7, 5, .97));
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, .08),
+      0 18px 48px rgba(0, 0, 0, .48),
+      0 0 42px rgba(217, 184, 93, .08);
+    backdrop-filter: blur(18px);
+    pointer-events: none;
+  }
+}
+
+.player-hud-portrait {
+  position: relative;
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+}
+
+/* Overrides 03-profile.css's 34px default via a descendant selector rather
+   than a wider class list, so it wins on specificity regardless of load
+   order -- same reasoning as the 3D HUD's identical override. */
+.player-hud-portrait .profile-avatar {
+  width: 64px;
+  height: 64px;
+  border: 2px solid var(--gold-light);
+  box-shadow: 0 0 0 3px rgba(8, 7, 5, .85), 0 6px 16px rgba(0, 0, 0, .5);
+}
+
+.player-hud-portrait-fallback {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid var(--gold-light);
+  background: #1b1611;
+  color: #f5f2ea;
+  font: 700 24px Georgia, "Times New Roman", serif;
+}
+
+/* Overlapping the portrait's own bottom-right corner, not another line in
+   the text column -- the level is a property of the player pictured. */
+.player-hud-level {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 2px solid rgba(8, 7, 5, .9);
+  background: linear-gradient(168deg, var(--gold-light) 0%, var(--gold) 55%, #b5860a 100%);
+  color: #241a02;
+  font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.player-hud-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.player-hud-name {
+  max-width: 240px;
+  overflow: hidden;
+  color: #f5f2ea;
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-hud-xp-track {
+  width: 190px;
+  max-width: 40vw;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .1);
+  overflow: hidden;
+}
+
+.player-hud-xp-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gold), var(--gold-light));
+  transition: width 400ms ease;
+}
+
+.player-hud-cash {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #d9c98a;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.player-hud-cash svg { color: var(--gold-light); flex: 0 0 auto; }
 
 @keyframes community-flip {
   0% {

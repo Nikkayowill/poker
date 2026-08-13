@@ -72,6 +72,16 @@ export function seatPlacement(slot: number, count: number, radiusZ: number = FEL
  * hard-coded the literal `0.74` to check `seatBetOrigin` against -- a test
  * that would keep passing if the constant changed and the function stopped
  * agreeing with it, which is the one thing it was written to catch.
+ *
+ * Tried nudging this in (toward the pot) for a "push the bets up" pass and
+ * reverted: every seat's `.table-bet` DOM label (08-seat.css's
+ * --bet-reach-x/-y, plus the near seat's own desktop override in
+ * 16-first-person.css) is a pixel offset hand-measured against
+ * `window.__stackchipsScene.betSpot()` for *this exact value* -- moving it
+ * puts each of those labels out of alignment with the canvas chip pile they
+ * are pinned beside, which is a worse defect than the one being chased.
+ * Revisit by re-measuring every dependent reach constant against the live
+ * scene at the new value, not by changing this number alone.
  */
 export const BET_INSET = 0.74;
 
@@ -150,6 +160,24 @@ export const SEAT_TRAY_INSET = 1.04;
  */
 export const NEAR_SEAT_BET_INSET = 0.35;
 
+/**
+ * The near seat's inset once its own figure is gone.
+ *
+ * Desktop (`min-width: 901px`) hides `.seat-mine .seat-figure` outright now
+ * — the avatar moved to `local-player-hud.tsx`'s corner card, see that
+ * file's own header and `16-first-person.css`'s matching media query — so
+ * the one thing `NEAR_SEAT_BET_INSET` exists to stay clear of is no longer
+ * there to protect against. Below 901px the figure is still standing in the
+ * corridor and the tight inset above still applies.
+ *
+ * Equal to `BET_INSET` on purpose, not a new tuned number: with nothing left
+ * to dodge, the near seat's reach should match the other five exactly —
+ * every pile the same distance out from the board, which is also what
+ * clears the centre of the felt for the community cards and the pot instead
+ * of leaving one seat's chips parked in close on the flop.
+ */
+export const NEAR_SEAT_BET_INSET_DESKTOP = BET_INSET;
+
 /** Slot 0 is the near edge — see `NEAR_ANGLE_DEG`. */
 const NEAR_SLOT = 0;
 
@@ -184,13 +212,18 @@ export function seatTrayOrigin(slot: number, count: number, radiusZ: number = FE
  * deep — a fixed inset would look right at the sides and wrong front and
  * back.
  *
- * Slot 0 gets its own, shallower inset. That asymmetry is not a fudge: it is
- * the one seat with a figure standing between it and the pot. See
- * `NEAR_SEAT_BET_INSET`.
+ * Slot 0 gets its own, shallower inset -- on the plates where its figure is
+ * still standing between it and the pot. See `NEAR_SEAT_BET_INSET` and
+ * `NEAR_SEAT_BET_INSET_DESKTOP` for the plate where it isn't.
  */
-export function seatBetOrigin(slot: number, count: number, radiusZ: number = FELT.radiusZ): Vec3 {
+export function seatBetOrigin(
+  slot: number,
+  count: number,
+  radiusZ: number = FELT.radiusZ,
+  nearSeatInset: number = NEAR_SEAT_BET_INSET,
+): Vec3 {
   const theta = seatAngle(slot, count);
-  const inset = slot === NEAR_SLOT ? NEAR_SEAT_BET_INSET : BET_INSET;
+  const inset = slot === NEAR_SLOT ? nearSeatInset : BET_INSET;
   return {
     x: FELT.radiusX * inset * Math.cos(theta),
     y: FELT.y,

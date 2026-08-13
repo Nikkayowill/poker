@@ -28,10 +28,15 @@ for (const viewport of [
       await expect(structure).toContainText("SB 5");
       await expect(structure).toContainText("BB 10");
 
-      // The pot and the stakes read in the black space around the table, not
-      // on the cloth. Asserted as an overlap and not an absence: the defect
-      // this replaced had both elements perfectly visible while the blinds
-      // line was drawn across the top of the community card row.
+      // The stakes read in the black space around the table, not on the
+      // cloth. Asserted as an overlap and not an absence: the defect this
+      // replaced had the blinds line drawn across the top of the community
+      // card row while every element involved was perfectly visible on its
+      // own. The pot got the identical check once (it used to live in this
+      // same header band) -- it has no on-screen presence there any more
+      // (see 06-table.css/poker-table.tsx: the felt's own .center-pot-amount
+      // is the only pot readout left), so there is nothing left here for it
+      // to clear.
       //
       // Against the seats as well as the rail, because the rail alone is the
       // weaker claim and it passed while the pot was unreadable. The ring
@@ -58,9 +63,7 @@ for (const viewport of [
         return {
           foundRail: Boolean(rail),
           seatCount: seats.length,
-          potOnRail: hits(rect(".pot-display"), rail),
           blindsOnRail: hits(rect(".blind-structure"), rail),
-          potClearOfSeats: clearOfSeats(".pot-display"),
           blindsClearOfSeats: clearOfSeats(".blind-structure"),
           feedClearOfSeats: clearOfSeats(".table-feed"),
           // The chip-flight target stays behind on the felt; if this ever
@@ -71,9 +74,7 @@ for (const viewport of [
       expect(overlap).toEqual({
         foundRail: true,
         seatCount: 6,
-        potOnRail: false,
         blindsOnRail: false,
-        potClearOfSeats: true,
         blindsClearOfSeats: true,
         feedClearOfSeats: true,
         anchorOnFelt: true,

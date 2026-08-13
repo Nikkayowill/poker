@@ -29,10 +29,19 @@ const RADIUS_X = 46;
    opposite seat was anchored at y=6%; subtracting half its layout height put
    the top of the avatar outside the scene. A 34% radius leaves a real 16%
    safe area above the far seat while preserving the wide table silhouette.
-   Now 38: .poker-rail's inset gives the ring a band outside the felt to sit
+   Was 38: .poker-rail's inset gives the ring a band outside the felt to sit
    in, so the arc follows the rail while its shifted centre keeps the far seat
-   inside the box. */
-const RADIUS_Y = 38;
+   inside the box.
+
+   32 now. The room backdrop behind the rail carries real detail now (the
+   STACKCHIPS wordmark, neon signage) where it used to be a plain dark
+   gradient -- so the far seat's own upward lift into that band, which was
+   always there and always harmless against a flat background, now reads as
+   the avatar floating over the room's signage rather than sitting at the
+   table. Only this seat moves meaningfully: sin(theta) is largest at the far
+   seat and roughly half that at the side seats, so pulling ry in mostly
+   affects the one seat this was about. */
+const RADIUS_Y = 32;
 
 /**
  * The desktop rail is not vertically centred in the wrapper: its CSS inset
@@ -65,7 +74,26 @@ const NARROW_BREAKPOINT_PX = 620;
    trap NARROW_RADIUS_X exists to avoid. ry can stay generous because a tall
    plate is where the vertical room actually is. */
 const PORTRAIT_RADIUS_X = 37;
-const PORTRAIT_RADIUS_Y = 44;
+/* Was 44, which puts the far seat's anchor at cy - ry = 6% of the wrap's own
+   height -- the seat box's own upward lift then lands its TOP just 6px below
+   .game-header's bottom edge, measured live at 390x844 (header bottom 56,
+   seat top 62). That is before any safe-area inset eats into the header on a
+   real notched phone, where it would touch or clip outright. Was 39, which
+   moved the far seat's anchor to 11%, ~30px lower, verified against a real
+   render rather than reasoned from the ellipse alone -- the two side pairs
+   (slot 2/4, slot 1/5) shift a few percent with it but both already had
+   generous clearance from the header and the action bar respectively, so
+   neither trade costs anything.
+
+   33 now, for the same reason the desktop RADIUS_Y moved: the far seat's
+   own upward lift puts its avatar above the rail whatever ry is, and that
+   band used to be a plain dark gradient. It carries the same room backdrop
+   as desktop now (.game-shell's background, shared across breakpoints), so
+   the far seat was floating over real signage instead of the empty space it
+   was tuned against. Re-verified live that header clearance still holds at
+   the smaller radius -- it only grows with a smaller ry, since the anchor
+   moves toward cy=50, further from the header either way. */
+const PORTRAIT_RADIUS_Y = 33;
 
 /**
  * The landscape-phone ring: seats pushed out to the glass rather than packed

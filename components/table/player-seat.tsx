@@ -300,7 +300,7 @@ export const PlayerSeat = memo(function PlayerSeat({
       {cards}
       {handStrength}
       {nameplate}
-      {seat.streetBet > 0 && <span className="table-bet">{seat.streetBet}</span>}
+      {seat.streetBet > 0 && <span className="table-bet">${seat.streetBet}</span>}
       {isWinner && <span className="win-amount-float">+{winAmount.toLocaleString()}</span>}
     </article>
   );

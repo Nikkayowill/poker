@@ -21,9 +21,53 @@
   /* Its own stacking context, so nothing inside the room can ever land
      between two DOM layers that were meant to be adjacent. */
   isolation: isolate;
-  /* The room is drawn against the app's own background wherever the floor
-     does not reach -- the renderer clears to transparent for exactly this. */
+  /* Chips only live here now (see paint.ts's header); the room behind them
+     is entirely the DOM's -- .game-shell's background photo, .poker-rail's
+     table art -- so the canvas clears to transparent every frame and never
+     paints its own floor at all. */
   background: transparent;
+}
+
+/* ...but z-index 0 is not low enough to be "underneath everything" any more,
+   and in the classic room it was the wrong side of the one layer that
+   matters. .poker-rail carries the real table artwork again (06-table.css),
+   and .poker-table-wrap is a LATER sibling of this canvas inside .table-area
+   with `isolation: isolate` -- so the whole table group composites as one
+   unit painted after z-index 0, and the felt art covered every chip the
+   canvas drew. Blinds, standing street bets, the pot, every flight: present,
+   animating, keeping the render loop awake, and invisible. Confirmed by
+   hiding .poker-rail on a live table and watching the two blind stacks appear
+   exactly where they belonged.
+
+   The isolation is why this is a raise rather than a lower: nothing inside
+   .poker-table-wrap can be pushed below this canvas from the outside, because
+   the group is atomic, and that isolation is load-bearing in its own right --
+   it contains .poker-table-wrap::after, the z-index -1 contact shadow.
+
+   Scoped away from the 3D room deliberately. There the canvas IS the table --
+   cloth, rail, chairs and figures -- so it has to stay beneath the DOM, and
+   99-scene.css already hides the flat seats, board and HUD that would
+   otherwise double it. Only the classic renderer has art to climb over.
+
+   Know what this actually buys, because it is not the ordering the numbers
+   suggest: .poker-table-wrap is z-index *auto*, so any positive value here
+   clears the entire group at once. The canvas is now above the seats,
+   nameplates, hole cards and the board as well as the felt -- 2 rather than 4
+   is not what keeps it under them, and nothing does. In practice the chip
+   positions already avoid those: bets sit at BET_INSET 0.74 inside the rail
+   where the figures are not, the local player's own bet was pulled to
+   NEAR_SEAT_BET_INSET 0.35 for exactly this reason, and potPosition puts the
+   pot POT_DEPTH_FRACTION away from the viewer, above the board rather than on
+   it. Verified only as far as the blinds: an all-in could not be driven to a
+   flop here because the hand does not progress on this branch (the same
+   pre-existing stall chip-flights.spec.ts and near-seat-bet.spec.ts hit), so
+   the pot funnel and a contested board are unconfirmed. If a chip is ever
+   seen over a card or a face, the fix is not a smaller number here -- it is
+   dropping .poker-table-wrap's `isolation: isolate` so the rail can sit below
+   this canvas while the seats stay above it, which also means rehoming the
+   z-index -1 contact shadow that isolation exists to contain. */
+.table-area:not(.scene-room-3d) .table-scene {
+  z-index: 2;
 }
 
 .table-scene canvas {
@@ -53,38 +97,19 @@
   pointer-events: none;
 }
 
-/* The felt the room now draws for itself.
-   .poker-rail and .poker-felt keep their geometry -- they are what the seat
-   ring, the pot anchor and every measured trajectory are positioned against,
-   and .poker-table-wrap's box is what the room is scaled to fit. What they
-   stop doing is painting: the cloth, the rail and the table's shadow are all
-   in the scene now, and leaving the CSS versions on top would put a flat
-   green ellipse over a lit one.
+/* The felt is real art again (public/pokertable/), painted by .poker-rail's
+   own CSS background -- see 06-table.css. It used to be repainted flat by
+   this canvas every frame once `.scene-lit` was applied, which is why this
+   block used to blank the CSS version out from under it: two felts stacked
+   would otherwise show as a flat green ellipse over a lit one. Now only the
+   chips are in the scene (table-scene.tsx clears to transparent and draws
+   nothing else), so there is only ever one felt, one rail and one shadow --
+   the DOM's -- and `.scene-lit` no longer needs to suppress anything here.
 
-   Deliberately not `display: none` and deliberately not a removal of the
-   elements. Both would take the boxes out of layout, and those boxes are the
-   coordinate system: tests/e2e/chip-flights.spec.ts measures .pot-anchor,
+   .poker-rail and .poker-felt still exist purely as the coordinate system
+   they always were: tests/e2e/chip-flights.spec.ts measures .pot-anchor,
    poker-table.tsx measures .poker-table-wrap to place every seat, and
-   .poker-felt's overflow is what keeps the community cards clipped to the
-   cloth. They stay exactly where they are and stop being painted. */
-.scene-lit .poker-rail {
-  background: none;
-  box-shadow: none;
-  border-color: transparent;
-}
-
-.scene-lit .poker-felt {
-  background: none;
-  box-shadow: none;
-}
-
-.scene-lit .poker-felt::after {
-  opacity: 0;
-}
-
-.scene-lit .poker-table-wrap::after {
-  opacity: 0;
-}
+   .poker-felt's overflow keeps the community cards clipped to the cloth. */
 
 /* The 3D room seats real figures in real chairs.
    -------------------------------------------------------------------------
@@ -104,14 +129,42 @@
    visibility rather than display, deliberately. `display: none` would take
    .seat-figure out of layout, and .seat-plate is positioned in the flow
    underneath it -- removing the box moves every nameplate at the table. The
-   figure keeps its size and stops being seen, which is the same trick
-   .scene-lit plays on the felt above and for the same reason. */
+   figure keeps its size and stops being seen, which is the same trick the
+   rail rule below plays on the felt, and for the same reason. */
 .scene-room-3d .player-seat,
-.scene-room-3d .community-cards,
+.scene-room-3d .board-stack,
 .scene-room-3d .street-label,
 .scene-room-3d .dealer-puck,
 .scene-room-3d .muck-drift,
 .scene-room-3d .table-hud {
+  visibility: hidden;
+}
+
+/* ...and the flat table goes with them, for exactly the same reason a seat's
+   cut-out does: the 3D room models its own rail, cloth and shadow, so leaving
+   .poker-rail's artwork painted lays a 2D board over the top of them. It is
+   the more obvious of the two defects, because the plate is one image at one
+   fixed perspective while the room's table is drawn from the live camera --
+   the two ovals cannot agree at any viewport, and the flat one wins on
+   z-index (.poker-rail is z-index 1; .table-scene is 0).
+
+   This used to be handled a layer up and is not any more, which is how it
+   came back: `.scene-lit .poker-rail` blanked the CSS felt for BOTH rooms
+   while the 2D renderer painted its own cloth. The 2D room now draws only
+   chips over the real artwork (see the note above), so that rule was
+   correctly removed -- but removing it took the 3D room's only protection
+   with it. Hence the suppression lives here, under .scene-room-3d, where it
+   is the 3D room's own business and cannot be lost to a change in the
+   classic table's painting again.
+
+   visibility, not display/background: .poker-rail is the coordinate system
+   (.pot-anchor inside it, .poker-table-wrap around it) that chip flights,
+   the muck drift and every seat measure against. The box has to keep its
+   size and position and stop being seen. `visibility` also reaches the
+   ::after contact shadow, which would otherwise print a dark ellipse across
+   the room's own floor. */
+.scene-room-3d .poker-rail,
+.scene-room-3d .poker-table-wrap::after {
   visibility: hidden;
 }
 

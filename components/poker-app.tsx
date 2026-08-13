@@ -306,8 +306,11 @@ export function PokerApp() {
     setBetStyleState(nextBetStyle);
   }, [setBetStyleState]);
 
-  const cycleTableRenderer = useCallback(() => {
-    setTableRendererState(nextTableRenderer);
+  /* Availability comes from the caller rather than from here: only the table
+     has asked the browser whether it can make a WebGL context, and the cycle
+     has to skip the 3D room where it cannot (see `nextTableRenderer`). */
+  const cycleTableRenderer = useCallback((webglAvailable: boolean) => {
+    setTableRendererState((current) => nextTableRenderer(current, webglAvailable));
   }, [setTableRendererState]);
 
   const cycleRoomTheme = useCallback(() => {

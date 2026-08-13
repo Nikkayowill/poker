@@ -173,17 +173,14 @@ export const DEALER_ANGLE_DEG = FAR_ANGLE_DEG;
 const SEAT_SPACING_DEG = 20;
 
 /**
- * THREE PLACES LEFT OF THE DEALER AND TWO RIGHT, and the lopsidedness is
- * forced rather than chosen. Five seats cannot be arranged symmetrically
+ * THREE PLACES LEFT OF THE DEALER AND TWO RIGHT at a full table, and the
+ * lopsidedness is forced rather than chosen. Five seats cannot be arranged symmetrically
  * about a centre that is itself occupied -- symmetry with an odd count
  * needs one seat AT the middle, and the middle is the dealer's. The
  * reference does exactly the same thing (count its chairs: three to the
  * dealer's left, two to the right) and nobody notices, because at this
  * angle the far arc reads as one crowd rather than two counted groups.
  */
-const LEFT_OF_DEALER = 3;
-const RIGHT_OF_DEALER = 2;
-
 /**
  * Seat slots, in the order the brief names them: slot 0 is the local
  * player's own chair -- the camera's own position, so no figure is ever
@@ -192,12 +189,44 @@ const RIGHT_OF_DEALER = 2;
  * SLOT 3 IS NOT THE SEAT OPPOSITE any more. That place belongs to the
  * dealer, for the reason DEALER_ANGLE_DEG gives. Slot 3 is the last chair
  * on the dealer's left.
+ *
+ * SOLVED FOR THE TABLE'S ACTUAL HEADCOUNT, not fixed at six, because the
+ * game seats anywhere from two to six and a fixed six-slot table leaves a
+ * short-handed hand with gaps in the middle of the crowd while the outermost
+ * chairs stay occupied -- which reads as players having stood up and walked
+ * round rather than as a smaller game.
+ *
+ * The rule generalises the six-handed layout rather than replacing it: the
+ * opponents flank the dealer at `SEAT_SPACING_DEG` intervals, the extra chair
+ * going to the dealer's left when the count is odd. At six that reproduces
+ * the measured 3/2 split exactly (210, 230, 250 | 290, 310), which is what
+ * `SEAT_ANGLES_DEG` used to spell out by hand, so the composition this
+ * module was tuned against is the six-handed case of one rule instead of a
+ * separate one.
+ *
+ * The ordering matters as much as the angles. Slots advance the same way
+ * `lib/game/table-geometry.ts`'s ring does -- monotonically increasing
+ * angle from the near chair -- so ring slot N addresses the same player in
+ * both systems. Two layouts that disagreed about which chair slot 2 meant
+ * would put a payout under someone else's nameplate, and nothing would
+ * throw.
  */
-const SEAT_ANGLES_DEG: readonly number[] = [
-  NEAR_ANGLE_DEG,
-  ...Array.from({ length: LEFT_OF_DEALER }, (_, i) => FAR_ANGLE_DEG - (LEFT_OF_DEALER - i) * SEAT_SPACING_DEG),
-  ...Array.from({ length: RIGHT_OF_DEALER }, (_, i) => FAR_ANGLE_DEG + (i + 1) * SEAT_SPACING_DEG),
-];
+export function seatAnglesDeg(count: number = SEAT_COUNT): number[] {
+  const seats = Math.max(1, Math.floor(count));
+  const opponents = seats - 1;
+  // The odd chair goes left, matching the reference's own 3/2 split -- see
+  // the LEFT_OF_DEALER note above for why five seats cannot be symmetric
+  // about an occupied centre.
+  const left = Math.ceil(opponents / 2);
+  const right = opponents - left;
+  return [
+    NEAR_ANGLE_DEG,
+    ...Array.from({ length: left }, (_, i) => FAR_ANGLE_DEG - (left - i) * SEAT_SPACING_DEG),
+    ...Array.from({ length: right }, (_, i) => FAR_ANGLE_DEG + (i + 1) * SEAT_SPACING_DEG),
+  ];
+}
+
+const SEAT_ANGLES_DEG: readonly number[] = seatAnglesDeg(SEAT_COUNT);
 
 export const SEAT_LABELS: readonly string[] = [
   "seat0 · you (camera)",
@@ -225,19 +254,20 @@ function ringPoint(angleDeg: number, radii: StadiumRadii): { x: number; z: numbe
   return { x: radii.halfLength * Math.cos(theta), z: radii.halfWidth * Math.sin(theta) };
 }
 
-export function seatAngleDeg(slot: number): number {
-  return SEAT_ANGLES_DEG[Math.min(Math.max(slot, 0), SEAT_COUNT - 1)];
+export function seatAngleDeg(slot: number, count: number = SEAT_COUNT): number {
+  const angles = count === SEAT_COUNT ? SEAT_ANGLES_DEG : seatAnglesDeg(count);
+  return angles[Math.min(Math.max(slot, 0), angles.length - 1)];
 }
 
 /** Where a player sits, at the floor -- the base of their chair. */
-export function seatAnchor(slot: number): Vec3 {
-  const { x, z } = ringPoint(seatAngleDeg(slot), SEAT_RING);
+export function seatAnchor(slot: number, count: number = SEAT_COUNT): Vec3 {
+  const { x, z } = ringPoint(seatAngleDeg(slot, count), SEAT_RING);
   return { x, y: FLOOR_Y, z };
 }
 
 /** The top of a seated player's head, for the camera fit. */
-export function seatHead(slot: number): Vec3 {
-  const seat = seatAnchor(slot);
+export function seatHead(slot: number, count: number = SEAT_COUNT): Vec3 {
+  const seat = seatAnchor(slot, count);
   return { x: seat.x, y: SEATED_HEAD_Y, z: seat.z };
 }
 
@@ -268,12 +298,12 @@ export function dealerHead(): Vec3 {
  * The gap to each neighbour, so a figure drawn at exactly this width just
  * touches. Art should sit some way inside it.
  */
-export function seatShoulderRoom(slot: number): number {
-  const here = seatAnchor(slot);
+export function seatShoulderRoom(slot: number, count: number = SEAT_COUNT): number {
+  const here = seatAnchor(slot, count);
   let closest = Infinity;
   const neighbours: Vec3[] = [dealerAnchor()];
-  for (let other = 1; other < SEAT_COUNT; other += 1) {
-    if (other !== slot) neighbours.push(seatAnchor(other));
+  for (let other = 1; other < count; other += 1) {
+    if (other !== slot) neighbours.push(seatAnchor(other, count));
   }
   for (const neighbour of neighbours) {
     closest = Math.min(closest, Math.hypot(here.x - neighbour.x, here.z - neighbour.z));
@@ -299,23 +329,130 @@ export function potAnchor(): Vec3 {
 
 /** Where a seat's bet sits once it is out on the cloth. */
 export const CHIP_INSET_FRACTION = 0.7;
-export function chipAnchor(slot: number): Vec3 {
-  const { x, z } = ringPoint(seatAngleDeg(slot), {
+export function chipAnchor(slot: number, count: number = SEAT_COUNT): Vec3 {
+  const { x, z } = ringPoint(seatAngleDeg(slot, count), {
     halfLength: FELT.halfLength * CHIP_INSET_FRACTION,
     halfWidth: FELT.halfWidth * CHIP_INSET_FRACTION,
   });
   return { x, y: FELT_TOP_Y, z };
 }
 
+/**
+ * Where a seat's chips rest before it bets: the tray on the rail in front of
+ * the player, not the player's own chest.
+ *
+ * Just outside the cloth rather than on it -- a tray sits on the rail, and
+ * the direction of travel from there inward is what says whose bet it is.
+ * The 2D room learned this the expensive way at its own scale: chips used to
+ * launch from a point outside the painted rail entirely, on the carpet
+ * behind the player, and fly in over the table's edge (see
+ * `lib/scene/seat-ring.ts`'s `SEAT_TRAY_INSET`).
+ *
+ * A TRUE OUTWARD OFFSET, NOT A SCALED RADIUS, and on this table those are
+ * not the same thing. Every "fraction of the felt" anchor above scales both
+ * radii, which is exact on an ellipse and wrong on a stadium: scaling moves
+ * the straight sides out by a fraction of the LENGTH and the end caps by a
+ * fraction of the WIDTH, and this table is 2:1, so the same multiplier is
+ * more than twice as generous at the sides as at the ends. Written as
+ * `FELT * 1.04` -- the classic room's own tray figure, from a room whose
+ * table really is an ellipse -- the outermost chairs' trays came out 29mm
+ * INSIDE the cloth, which is a bet launching from the middle of the felt
+ * rather than from the rail. `offsetStadium` moves the whole boundary out by
+ * one distance, which is what "on the rail" means.
+ */
+export const TRAY_OFFSET = RAIL_WIDTH * 0.5;
+const TRAY_RING = offsetStadium(FELT.halfLength, FELT.halfWidth, TRAY_OFFSET);
+export function seatTrayAnchor(slot: number, count: number = SEAT_COUNT): Vec3 {
+  const { x, z } = stadiumRayPoint(seatAngleDeg(slot, count), TRAY_RING);
+  return { x, y: FELT_TOP_Y, z };
+}
+
+/**
+ * Where a ray from the middle at `angleDeg` crosses a stadium's boundary.
+ *
+ * `ringPoint` does not answer this, and the difference is the second half of
+ * the bug above. It traces the ELLIPSE with the stadium's two half-extents,
+ * which touches the stadium at exactly four points -- the ends of each axis
+ * -- and lies strictly inside it everywhere else. On this 2:1 table the gap
+ * peaks around 23mm at the diagonals, so a tray built by offsetting the felt
+ * by half a rail and then read off the ellipse came out inside the cloth at
+ * precisely the chairs that flank the dealer.
+ *
+ * Closed-form rather than a search, because a stadium is only two cases. Let
+ * `s` be half the straight run and `W` the cap radius (which IS the
+ * half-width). Along the unit direction (cx, cz) the ray either leaves
+ * through a straight edge, where |z| = W fixes `t` directly, or through an
+ * end cap, where it meets a circle of radius W centred at (+/-s, 0) and `t`
+ * falls out of the quadratic. Try the edge first and take the cap when the
+ * edge solution lands beyond the straight run.
+ *
+ * The ellipse is left in place for the seats, the bet spots, the payouts and
+ * the button on purpose. Those are all points that need to be somewhere
+ * sensible ON the cloth rather than at an exact distance from its boundary,
+ * they are what the approved composition was judged with, and moving them
+ * would move every figure at the table to fix nothing.
+ */
+export function stadiumRayPoint(
+  angleDeg: number,
+  radii: StadiumRadii,
+): { x: number; z: number } {
+  const theta = (angleDeg * Math.PI) / 180;
+  const cx = Math.cos(theta);
+  const cz = Math.sin(theta);
+  const width = radii.halfWidth;
+  const straightHalf = Math.max(0, radii.halfLength - width);
+
+  if (Math.abs(cz) > 1e-9) {
+    const t = width / Math.abs(cz);
+    if (Math.abs(t * cx) <= straightHalf) return { x: t * cx, z: t * cz };
+  }
+  // Through an end cap. The discriminant cannot go negative: the centre is
+  // inside the circle, so the ray always crosses it.
+  const along = straightHalf * Math.abs(cx);
+  const t = along + Math.sqrt(Math.max(0, along * along - straightHalf * straightHalf + width * width));
+  return { x: t * cx, z: t * cz };
+}
+
+/**
+ * Where a winner's payout lands -- just inside their own bet spot, so a
+ * funnel arriving reads as chips being pushed to a player rather than as the
+ * pot moving to a second pot.
+ */
+export const PAYOUT_INSET_FRACTION = 0.82;
+export function payoutAnchor(slot: number, count: number = SEAT_COUNT): Vec3 {
+  const { x, z } = ringPoint(seatAngleDeg(slot, count), {
+    halfLength: FELT.halfLength * PAYOUT_INSET_FRACTION,
+    halfWidth: FELT.halfWidth * PAYOUT_INSET_FRACTION,
+  });
+  return { x, y: FELT_TOP_Y, z };
+}
+
 /** The button, on the cloth just inside whichever seat currently has it. */
 export const BUTTON_INSET_FRACTION = 0.88;
-export function dealerButtonAnchor(slot: number): Vec3 {
-  const { x, z } = ringPoint(seatAngleDeg(slot), {
+export function dealerButtonAnchor(slot: number, count: number = SEAT_COUNT): Vec3 {
+  const { x, z } = ringPoint(seatAngleDeg(slot, count), {
     halfLength: FELT.halfLength * BUTTON_INSET_FRACTION,
     halfWidth: FELT.halfWidth * BUTTON_INSET_FRACTION,
   });
   return { x, y: FELT_TOP_Y, z };
 }
+
+/* ---------------------------------------------------------------------- *
+ * Chips, at this table's scale
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A chip, in metres. A real casino chip is 39mm across and 3.3mm thick.
+ *
+ * True to life rather than scaled to taste, like every other dimension here,
+ * and the fudge that the 2D room needs at phone sizes stays where it already
+ * is: `paint.ts` enlarges the drawn token by a third precisely because a
+ * physically exact chip edge is sub-pixel on a small plate. Baking that
+ * enlargement into the world instead would put the chips at the wrong size
+ * relative to the felt for anything that reasons about the geometry itself.
+ */
+export const CHIP_RADIUS_M = 0.0195;
+export const CHIP_THICKNESS_M = 0.0033;
 
 /* ---------------------------------------------------------------------- *
  * Outlines
@@ -492,6 +629,16 @@ const TOP_MARGIN = 0.05;
  * camera and project very low, so the bisection kept retreating to bring
  * two points on screen that are occluded by the table anyway.
  */
+/*
+ * ALWAYS THE FULL SIX-HANDED CROWD, never the seats actually occupied, and
+ * that is a deliberate refusal of the obvious optimisation. The fit would
+ * frame a short-handed table more tightly -- but bots leave and return
+ * between hands (`BOT_VOLUNTARY_LEAVE_CHANCE`), so a count-sensitive camera
+ * would dolly in and out on its own several times a session, mid-session,
+ * for a reason the player cannot see. A camera that moves when nobody moved
+ * it reads as a bug however correct each individual framing is. The widest
+ * arrangement the table can hold is framed once and then held.
+ */
 function framingPoints(): Vec3[] {
   const points: Vec3[] = [];
   for (const point of tableOutline()) {
@@ -607,6 +754,33 @@ export function fitCamera(frame: Frame): Camera {
   const across = framingSpan(base, horizontal);
   const down = framingSpan(base, vertical);
   if (!across || !down) return base;
+
+  /*
+   * KNOWN, AND LEFT ALONE DELIBERATELY: on a frame near 16:9 this leaves a
+   * band of empty floor below the near rail.
+   *
+   * The table is 2:1. In a frame wider than that -- a phone held sideways --
+   * fitting its width fills the height too and the near rail runs off the
+   * bottom on its own, which is the composition this module describes. In a
+   * 16:9 frame the width still binds, so there is real vertical slack, and
+   * pinning the crowd to the top margin puts all of it underneath the table.
+   * Measured at 1440x832: the near rail finishes about 140px short of the
+   * bottom edge.
+   *
+   * Taking that slack up by pushing the camera down was tried and reverted.
+   * It does fix 16:9, and it wrecks everything taller: on a portrait phone
+   * the same rule drove the entire table and every player into the bottom
+   * fifth of the frame with a screen of empty floor above them, because
+   * "push down until the near rail reaches the bottom" has no upper bound
+   * that a tall frame respects. The clamp that would bound it is the
+   * composition decision itself, not arithmetic.
+   *
+   * So the band stays until somebody looks at both frames and says what
+   * should give: a tighter `SIDE_MARGIN` (let the table's tips run off the
+   * sides, which the seat spacing was tuned to avoid), a lower
+   * `CAMERA_ELEVATION_DEG`, or simply accepting floor as background on wide
+   * screens. All three are design calls rather than fixes.
+   */
   return {
     ...base,
     cx: base.cx + (frame.width / 2 - (across.minX + across.maxX) / 2),

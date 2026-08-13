@@ -28,6 +28,9 @@ import {
   project,
   seatAnchor,
   seatAngleDeg,
+  seatAnglesDeg,
+  seatShoulderRoom,
+  stadiumRayPoint,
   seatHead,
   tableOutline,
 } from "./table-anchors";
@@ -306,5 +309,114 @@ describe("debug markers", () => {
     expect(markers.filter((m) => m.id === "dealerAnchor")).toHaveLength(1);
     expect(markers.map((m) => m.id)).toContain("pot");
     expect(markers.map((m) => m.id)).toContain("communityCards");
+  });
+});
+
+describe("seating a table that is not full", () => {
+  /* The game seats two to six. A fixed six-slot arc leaves a short-handed
+     hand with holes in the middle of the crowd while the outermost chairs
+     stay occupied, which reads as players having stood up and walked round
+     rather than as a smaller game. */
+  it("keeps the measured six-handed arrangement as its own six-handed case", () => {
+    expect(seatAnglesDeg(SEAT_COUNT)).toEqual([90, 210, 230, 250, 290, 310]);
+  });
+
+  it("always seats the local player at the near edge", () => {
+    for (let count = 1; count <= SEAT_COUNT; count += 1) {
+      expect(seatAnglesDeg(count)[0]).toBe(90);
+      expect(seatAngleDeg(HERO_SLOT, count)).toBe(90);
+    }
+  });
+
+  it("gives every seat its own place, in ring order", () => {
+    for (let count = 2; count <= SEAT_COUNT; count += 1) {
+      const angles = seatAnglesDeg(count);
+      expect(angles).toHaveLength(count);
+      expect(new Set(angles).size).toBe(count);
+      // Monotonically increasing, which is what makes ring slot N mean the
+      // same chair here as in lib/game/table-geometry.ts. Two layouts that
+      // disagreed would land a payout under someone else's nameplate.
+      for (let slot = 1; slot < count; slot += 1) {
+        expect(angles[slot]).toBeGreaterThan(angles[slot - 1]);
+      }
+    }
+  });
+
+  it("never seats a player where the dealer is working", () => {
+    for (let count = 2; count <= SEAT_COUNT; count += 1) {
+      expect(seatAnglesDeg(count)).not.toContain(DEALER_ANGLE_DEG);
+    }
+  });
+
+  it("clusters every opponent on the far arc, never at the table's tips", () => {
+    for (let count = 2; count <= SEAT_COUNT; count += 1) {
+      for (let slot = 1; slot < count; slot += 1) {
+        const seat = seatAnchor(slot, count);
+        // Behind the far half of the table: negative Z is away from the camera.
+        expect(seat.z).toBeLessThan(0);
+        // Inside the table's own tips, so no head hangs over bare floor.
+        expect(Math.abs(seat.x)).toBeLessThan(TABLE_OUTER.halfLength);
+      }
+    }
+  });
+
+  it("balances the arc about the dealer, the odd chair going left", () => {
+    for (let count = 2; count <= SEAT_COUNT; count += 1) {
+      const angles = seatAnglesDeg(count).slice(1);
+      const left = angles.filter((angle) => angle < DEALER_ANGLE_DEG).length;
+      const right = angles.filter((angle) => angle > DEALER_ANGLE_DEG).length;
+      expect(left - right).toBeGreaterThanOrEqual(0);
+      expect(left - right).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("gives a short-handed table more elbow room, not less", () => {
+    expect(seatShoulderRoom(1, 3)).toBeGreaterThan(seatShoulderRoom(1, SEAT_COUNT));
+  });
+});
+
+describe("stadiumRayPoint", () => {
+  const RADII = { halfLength: 0.925, halfWidth: 0.3945 };
+
+  /* The property the tray anchor depends on, and the one `ringPoint`'s
+     inscribed ellipse silently fails at every angle but four. */
+  it("lands on the boundary at every angle, not inside it", () => {
+    for (let angle = 0; angle < 360; angle += 3) {
+      const point = stadiumRayPoint(angle, RADII);
+      expect(stadiumSignedDistance(point, RADII.halfLength, RADII.halfWidth)).toBeCloseTo(0, 9);
+    }
+  });
+
+  it("agrees with the ellipse exactly where the two shapes touch", () => {
+    expect(stadiumRayPoint(0, RADII).x).toBeCloseTo(RADII.halfLength, 9);
+    expect(stadiumRayPoint(90, RADII).z).toBeCloseTo(RADII.halfWidth, 9);
+    expect(stadiumRayPoint(180, RADII).x).toBeCloseTo(-RADII.halfLength, 9);
+    expect(stadiumRayPoint(270, RADII).z).toBeCloseTo(-RADII.halfWidth, 9);
+  });
+
+  /**
+   * The bug itself, stated directly: the ellipse `ringPoint` traces is INSIDE
+   * this stadium everywhere except the four axis points. So offsetting the
+   * felt outward and then reading the result off the ellipse can still land
+   * on the cloth -- which is exactly what it did at the chairs flanking the
+   * dealer.
+   *
+   * Note the two parameterisations are not comparable angle for angle: the
+   * ellipse's parameter is not a polar angle, so this compares each ellipse
+   * point against the stadium itself rather than against `stadiumRayPoint` at
+   * the same number.
+   */
+  it("bounds an ellipse that is otherwise strictly inside the stadium", () => {
+    let strictlyInside = 0;
+    for (let parameter = 0; parameter < 360; parameter += 3) {
+      const theta = (parameter * Math.PI) / 180;
+      const onEllipse = { x: RADII.halfLength * Math.cos(theta), z: RADII.halfWidth * Math.sin(theta) };
+      const distance = stadiumSignedDistance(onEllipse, RADII.halfLength, RADII.halfWidth);
+      expect(distance).toBeLessThanOrEqual(1e-9);
+      if (distance < -1e-9) strictlyInside += 1;
+    }
+    // Not a formality: if the two shapes agreed, the tray anchor would not
+    // have needed this function at all.
+    expect(strictlyInside).toBeGreaterThan(0);
   });
 });

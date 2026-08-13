@@ -7,6 +7,8 @@ import { ChipLayer } from "@/lib/scene/chip-layer";
 import {
   fitView, project, projectedFeltDepth, projectedFeltWidth, type SceneView,
 } from "@/lib/scene/projection";
+import { classicChipSpace, type ChipSpace } from "@/lib/scene/chip-space";
+import { orthographicProjection } from "@/lib/scene/scene-projection";
 import { FELT, MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
 import {
   NEAR_SEAT_BET_INSET,
@@ -152,6 +154,7 @@ export function TableScene({
     chips: ChipLayer;
     scheduler: SchedulerState;
     view: SceneView;
+    space: ChipSpace;
     size: { width: number; height: number };
     lastFrameMs: number;
     frames: number;
@@ -189,8 +192,16 @@ export function TableScene({
     };
 
     const desktopQuery = window.matchMedia(`(min-width: ${NEAR_SEAT_DESKTOP_MIN_WIDTH_PX}px)`);
+    /* The table the chips are on, rebuilt whenever either of the two things
+       that shape it moves: the felt's solved plan depth (a resize) and the
+       near seat's own reach, which switches at the breakpoint where the local
+       player's figure stops being drawn. Built in one place so a change to
+       either can never be applied from only one of its two call sites. */
+    const buildSpace = (): ChipSpace => classicChipSpace(
+      engineRef.current?.view.radiusZ ?? FELT.radiusZ,
+      desktopQuery.matches ? NEAR_SEAT_BET_INSET_DESKTOP : NEAR_SEAT_BET_INSET,
+    );
     const chips = new ChipLayer(markChanged);
-    chips.setNearSeatDesktop(desktopQuery.matches);
 
     engineRef.current = {
       canvas,
@@ -198,6 +209,7 @@ export function TableScene({
       chips,
       scheduler: markDirty(SLEEPING, performance.now()),
       view: { cx: 0, cy: 0, scale: 1, radiusZ: FELT.radiusZ },
+      space: classicChipSpace(),
       size: { width: 0, height: 0 },
       lastFrameMs: performance.now(),
       frames: 0,
@@ -258,9 +270,19 @@ export function TableScene({
       // The chips ring the same table the room paints, so they need the plan
       // shape this fit solved for -- otherwise a resize moves the felt and
       // leaves every future bet spot on the old ellipse.
-      engine.chips.setRadiusZ(engine.view.radiusZ);
+      applySpace();
       markChanged();
     };
+    /* Applied through one helper by all three callers -- mount, resize and
+       the near-seat breakpoint -- so the layer and the painter can never end
+       up looking at two different tables. */
+    const applySpace = () => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      engine.space = buildSpace();
+      engine.chips.setSpace(engine.space);
+    };
+    applySpace();
     fit();
 
     const observer = new ResizeObserver(fit);
@@ -281,7 +303,7 @@ export function TableScene({
       const engine = engineRef.current;
       if (!engine) return;
       engine.nearSeatDesktop = desktopQuery.matches;
-      engine.chips.setNearSeatDesktop(desktopQuery.matches);
+      applySpace();
       markChanged();
     };
     desktopQuery.addEventListener("change", onDesktopChange);
@@ -313,7 +335,8 @@ export function TableScene({
       // the lower chips first, so a stack occludes itself correctly.
       const chips = engine.chips.drawList()
         .sort((a, b) => a.position.z - b.position.z || a.position.y - b.position.y);
-      for (const chip of chips) paintChip(engine.ctx, engine.view, chip);
+      const projection = orthographicProjection(engine.view);
+      for (const chip of chips) paintChip(engine.ctx, projection, engine.space, chip);
       engine.frames += 1;
 
       // A timed chip reports its terminal snap on this frame. Once the last

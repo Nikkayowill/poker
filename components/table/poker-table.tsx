@@ -103,6 +103,20 @@ const TableScene3D = dynamic(
   { ssr: false },
 );
 
+/**
+ * The racetrack room, split out for the same reason as the other two: a
+ * player who never chooses it should not download its painter. Cheap next to
+ * the 3D room -- it is Canvas 2D and shares the chip layer already in the
+ * table chunk -- but the table's own table-anchors geometry and room painter
+ * are dead weight for everyone on the classic renderer.
+ */
+import type { RacetrackLayout } from "./scene/racetrack-scene";
+
+const RacetrackScene = dynamic(
+  () => import("./scene/racetrack-scene").then((module) => module.RacetrackScene),
+  { ssr: false },
+);
+
 export const SEAT_WIDTH_RATIO = 0.26;
 export const SEAT_HEIGHT_RATIO = 0.30;
 
@@ -117,6 +131,24 @@ export const SEAT_HEIGHT_RATIO = 0.30;
  * the same clearance at any count -- and leaves six-max, which is what ships
  * today, at exactly the size it has always been.
  */
+/**
+ * The racetrack's own seat width bounds, in CSS pixels.
+ *
+ * Its seats are sized per chair from the projected elbow room between
+ * neighbours rather than once from the table's width, so unlike
+ * `seatWidthFor` there is no plate to keep them sane -- a tight far arc on a
+ * small landscape phone can project a shoulder budget of a few dozen pixels,
+ * which is narrower than a nameplate can be and still be read.
+ *
+ * The floor is the nameplate's own minimum: `lib/game/table-geometry.ts`
+ * measured it at 86px while solving the landscape ring, and a seat narrower
+ * than its plate simply overflows. The ceiling is roughly what a desktop
+ * plate gives the classic table, so a near flank cannot balloon past the
+ * seats it sits beside.
+ */
+const RACETRACK_SEAT_MIN_PX = 86;
+const RACETRACK_SEAT_MAX_PX = 132;
+
 export function seatWidthFor(table: { width: number; height: number }, count = 6): number {
   const base = Math.min(table.width * SEAT_WIDTH_RATIO, table.height * SEAT_HEIGHT_RATIO);
   const spacingScale = count <= 6 ? 1 : Math.sin(Math.PI / count) / Math.sin(Math.PI / 6);
@@ -167,7 +199,7 @@ export function PokerTable({
   tableRenderer: TableRenderer;
   /** Has the stored renderer choice arrived? See the render gate below. */
   tableRendererSettled: boolean;
-  onCycleTableRenderer: () => void;
+  onCycleTableRenderer: (webglAvailable: boolean) => void;
   roomThemeId: RoomThemeId;
   onCycleRoomTheme: () => void;
   onSignIn: () => void;
@@ -430,6 +462,53 @@ export function PokerTable({
     [orderedSeats, tableSize, viewport],
   );
 
+  /* The racetrack room reports where its camera put everything; until it
+     does, there is nothing to position from. Null until the first fit, which
+     is also why the seat styles below fall back to the ellipse rather than to
+     zeros -- a seat at (0, 0) for one frame is a visible jump. */
+  const isRacetrack = activeRenderer === "racetrack_2d5";
+  const [racetrackLayout, setRacetrackLayout] = useState<RacetrackLayout | null>(null);
+  const onRacetrackLayout = useCallback((layout: RacetrackLayout) => {
+    setRacetrackLayout(layout);
+  }, []);
+  /* Deliberately NOT cleared when the renderer changes. A stale layout is
+     inert: every rule that reads it is scoped to `.scene-room-racetrack`, and
+     the two consumers below both gate on `isRacetrack` as well, so the only
+     thing keeping it buys is one less state write on a preference toggle. */
+
+  /**
+   * Where each seat actually goes.
+   *
+   * The ellipse for the classic and 3D rooms; the projected anchors for the
+   * racetrack. Same shape of answer either way -- a style object per seat --
+   * so nothing downstream branches on which table is underneath.
+   */
+  const seatStyles = useMemo(() => {
+    if (!isRacetrack || !racetrackLayout) return ringGeometry;
+    return orderedSeats.map((_, index) => {
+      const placed = racetrackLayout.seats[index];
+      if (!placed) return ringGeometry[index];
+      return {
+        "--seat-x": `${placed.x.toFixed(1)}px`,
+        "--seat-y": `${placed.y.toFixed(1)}px`,
+        /* Per seat here, where the classic table sets one width on the wrap
+           for all of them. It has to be: the crowd is clustered on the far
+           arc, so a near flank has visibly more elbow room than a chair beside
+           the dealer, and one width for both either overlaps the middle of the
+           arc or wastes the ends. Clamped to the same floor and ceiling the
+           classic table's own seat sizing uses, so a very tight arc still
+           leaves a legible nameplate. */
+        "--seat-width": `${Math.round(Math.min(RACETRACK_SEAT_MAX_PX, Math.max(RACETRACK_SEAT_MIN_PX, placed.shoulderPx)))}px`,
+        "--seat-near": placed.near.toFixed(3),
+        "--seat-z": seatZ(placed.near),
+        "--seat-dx": placed.toward.x.toFixed(3),
+        "--seat-dy": placed.toward.y.toFixed(3),
+        "--seat-out-x": (-placed.toward.x).toFixed(3),
+        "--seat-out-y": (-placed.toward.y).toFixed(3),
+      } as React.CSSProperties;
+    });
+  }, [isRacetrack, racetrackLayout, orderedSeats, ringGeometry]);
+
   const seatOrderKey = orderedSeats.map((seat) => seat.id).join(",");
   // Both vectors answer the same question -- where is this seat, relative to
   // the middle of the table -- so they are measured together and on exactly
@@ -543,7 +622,13 @@ export function PokerTable({
   const feltArtReady = useFeltArtReady();
   const sceneReady = activeRenderer === "webgl_3d"
     ? readySceneToken === sceneToken
-    : canvas2DMounted && feltArtReady;
+    // The racetrack paints its own table, so it waits on its canvas alone.
+    // Holding it to `feltArtReady` as well would gate it on the classic
+    // table's CSS plate downloading -- artwork it never draws, and which this
+    // renderer then immediately hides.
+    : activeRenderer === "racetrack_2d5"
+      ? canvas2DMounted
+      : canvas2DMounted && feltArtReady;
 
   // Ring slots, not engine seat positions. The scene rings its table from the
   // local player's chair exactly as the DOM does, so a bet has to be handed
@@ -683,21 +768,18 @@ export function PokerTable({
         onSelect: onCycleBetStyle,
         icon: <Sparkles size={15} />,
       },
-      // Hidden entirely where WebGL is unavailable rather than shown
-      // disabled: an option that cannot do anything on this device is worse
-      // than no option, and the same menu offers nothing to explain it. The
-      // preference itself is untouched, so a player who chose the 3D room on
-      // one device still gets it on another that can render it.
-      ...(webglAvailable
-        ? [
-            {
-              kind: "action" as const,
-              label: tableRendererLabel(activeRenderer),
-              onSelect: onCycleTableRenderer,
-              icon: <Box size={15} />,
-            },
-          ]
-        : []),
+      // Always offered now. This used to be hidden outright without WebGL,
+      // because the only alternative to the classic table was the 3D room and
+      // an option that cannot do anything on this device is worse than no
+      // option. The racetrack room needs nothing but a 2D context, so such a
+      // device now has two tables to choose between and the entry earns its
+      // place; `nextTableRenderer` is what skips the room it cannot render.
+      {
+        kind: "action" as const,
+        label: tableRendererLabel(activeRenderer),
+        onSelect: () => onCycleTableRenderer(webglAvailable),
+        icon: <Box size={15} />,
+      },
       // Same gating as the renderer entry above, plus a second condition: a
       // room theme is a 3D-room concept (there is no floor/fog in the 2D
       // canvas), so it's meaningless -- not merely unavailable -- unless the
@@ -856,12 +938,32 @@ export function PokerTable({
             // on sceneReady too: if the room never arrives, the cut-outs are
             // the only players there are.
             sceneReady && activeRenderer === "webgl_3d" && "scene-room-3d",
+            // Same contract as .scene-room-3d: the canvas is drawing the real
+            // table, so the DOM's flat plate has to stop. Unlike the 3D room
+            // this one does NOT seat its own figures, so the cut-outs stay --
+            // they are the only players at this table.
+            sceneReady && isRacetrack && "scene-room-racetrack",
           )}
         >
           {/* The room, underneath everything. First child so it is first in
               paint order as well as lowest in z-index -- the HUD over it is
               ordinary DOM and needed no z-index changes to land on top. */}
-          {activeRenderer === "webgl_3d" ? (
+          {isRacetrack ? (
+            <RacetrackScene
+              seats={orderedSeats}
+              pot={game.pot}
+              bigBlind={game.bigBlind}
+              streetBets={sceneStreetBets}
+              street={game.street}
+              paying={showFunnel}
+              winners={sceneWinners}
+              handNumber={game.handNumber}
+              betFlights={betFlights}
+              betStyle={betStyle}
+              onReady={setCanvas2DMounted}
+              onLayout={onRacetrackLayout}
+            />
+          ) : activeRenderer === "webgl_3d" ? (
             <TableScene3D
               game={game}
               betFlights={betFlights}
@@ -975,7 +1077,20 @@ export function PokerTable({
           <div
             className="poker-table-wrap"
             ref={tableWrapRef}
-            style={{ "--seat-width": `${seatWidthFor(tableSize, orderedSeats.length)}px` } as React.CSSProperties}
+            style={{
+              "--seat-width": `${seatWidthFor(tableSize, orderedSeats.length)}px`,
+              /* The board and the pot, where the racetrack's camera put them.
+                 Absent on every other table, where 06-table.css's own
+                 percentages are correct and these fall back to them. */
+              ...(isRacetrack && racetrackLayout
+                ? {
+                  "--board-x": `${racetrackLayout.board.x.toFixed(1)}px`,
+                  "--board-y": `${racetrackLayout.board.y.toFixed(1)}px`,
+                  "--pot-x": `${racetrackLayout.pot.x.toFixed(1)}px`,
+                  "--pot-y": `${racetrackLayout.pot.y.toFixed(1)}px`,
+                }
+                : {}),
+            } as React.CSSProperties}
           >
             <div className="poker-rail">
               <div className="poker-felt">
@@ -1103,8 +1218,8 @@ export function PokerTable({
                 // Slot 0 of the ellipse is the near edge, and it has always
                 // been where the local player sits -- it was simply left
                 // empty while they were drawn separately below the felt.
-                placement="seat-ring"
-                seatStyle={ringGeometry[index]}
+                placement={isRacetrack ? "seat-racetrack" : "seat-ring"}
+                seatStyle={seatStyles[index]}
                 // The ring slot, not the engine's seat position: dealing runs
                 // round the table as it looks from this chair, which puts the
                 // local player first. See lib/game/deal-choreography.ts.

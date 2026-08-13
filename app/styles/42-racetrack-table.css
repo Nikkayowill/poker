@@ -1,0 +1,145 @@
+/* The racetrack room: the DOM following a camera instead of leading it.
+   -------------------------------------------------------------------------
+   Every other table in this app is laid out by CSS and the canvas fits itself
+   to the result. This one is the other way round: `racetrack-scene.tsx`
+   solves a perspective camera for the frame, paints the table from it, and
+   reports where each anchor projected. What is left in the DOM -- nameplates,
+   stacks, hole cards, the board, the pot readout, the turn clock -- is
+   positioned from those numbers, arriving as the custom properties this file
+   consumes.
+
+   NOTHING HERE INVENTS A COORDINATE. If a rule below needs to know where
+   something is, it reads a variable the scene set. The one exception is the
+   local player's own seat, which is deliberately not on the table at all --
+   see its block at the foot of this file.
+
+   Numbered 42 so it lands after 06 (the table), 08 (seats), 12 (responsive),
+   16 (first-person) and 17 (landscape), every one of which it has to
+   override. It must stay before 99-scene.css, which is the canvas host's own
+   sheet and last by contract. */
+
+/* The stage.
+   -------------------------------------------------------------------------
+   `.poker-table-wrap` normally sizes itself from an aspect ratio and a height
+   cap, and everything inside it is a percentage of that box. The racetrack's
+   canvas fills `.table-area` instead, so the two boxes have to be made the
+   same one -- otherwise every projected pixel this file places would need the
+   offset between them applied first, at every breakpoint, on every resize.
+   Collapsing the wrap onto the canvas makes canvas-local pixels and
+   wrap-local pixels the same number, which is what lets the seat rules below
+   be a bare `left: var(--seat-x)`.
+
+   The rail and the felt come with it. They keep their boxes -- they are still
+   the coordinate system the muck drift, the dealer puck and the deal vectors
+   measure against -- and lose only their painted artwork, which the canvas is
+   now drawing properly from the live camera. */
+.scene-room-racetrack .poker-table-wrap {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  aspect-ratio: auto;
+  margin: 0;
+}
+
+.scene-room-racetrack .poker-rail,
+.scene-room-racetrack .poker-felt {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  background: none;
+  box-shadow: none;
+  border: 0;
+  border-radius: 0;
+  /* The felt clips the community cards to the cloth in the classic room. Here
+     the cloth is painted by the canvas and this box is the whole stage, so
+     clipping to it would only cut things off at the frame's edge. */
+  overflow: visible;
+  transform: none;
+  perspective: none;
+}
+
+/* Both are the classic table's own furniture: a contact shadow under a plate
+   that is no longer there, and a watermark on a cloth that is now painted. */
+.scene-room-racetrack .poker-table-wrap::after,
+.scene-room-racetrack .felt-mark {
+  display: none;
+}
+
+/* The board and the pot, on the cloth where the camera puts them.
+   -------------------------------------------------------------------------
+   Both are percentage-positioned against the felt in the classic room, which
+   cannot work here: under perspective the middle of the cloth is not the
+   middle of its screen box. The scene projects both anchors and sets these. */
+.scene-room-racetrack .board-stack {
+  left: var(--board-x, 50%);
+  top: var(--board-y, 48%);
+}
+
+.scene-room-racetrack .pot-anchor {
+  left: var(--pot-x, 50%);
+  top: var(--pot-y, 26%);
+}
+
+/* An opponent's seat.
+   -------------------------------------------------------------------------
+   `.seat-racetrack` rather than `.seat-ring`, so none of the ellipse's own
+   centring applies: that rule pulls a seat up by half its width plus a
+   nameplate to put the ellipse through the figure, which is the right
+   correction for a ring and the wrong one for a projected crown.
+
+   The anchor is the top of the player's head. A seat is a flex column with
+   the figure first, so aligning the box's top edge to the crown puts the
+   figure where the person is and hangs the plate and cards below them.
+
+   Centred with a negative margin, NOT a transform, and that is load-bearing
+   rather than stylistic: a transform makes the seat a stacking context, and
+   then nothing inside it can be ordered against the rest of the table -- a
+   nameplate could not climb above the neighbour standing in front of it
+   however high its z-index went. 08-seat.css's own `.seat-ring` block carries
+   the same warning for the same reason. */
+.scene-room-racetrack .player-seat.seat-racetrack {
+  left: var(--seat-x, 50%);
+  top: var(--seat-y, 50%);
+  margin-left: calc(var(--seat-width) / -2);
+  margin-top: 0;
+}
+
+/* The local player is not at this table.
+   -------------------------------------------------------------------------
+   The camera is sitting in slot 0's chair, so that seat's own anchor projects
+   below the bottom of the frame by construction -- it is behind the lens.
+   Positioning it from the projection would put the player's nameplate, stack
+   and hole cards off the screen.
+
+   So it comes off the projection entirely and anchors to the stage's bottom
+   edge, which is the same answer 17-landscape.css already reached for the
+   landscape band and for the same underlying reason. The near rail running
+   off the bottom behind it is deliberate: a rail that stops short reads as a
+   table across the room rather than one you are sitting at.
+
+   No figure, either. Every other renderer draws the local player as a cut-out
+   on the near rail; here they would be a face floating in front of their own
+   camera.
+
+   Lifted off the bottom edge rather than sitting on it, because the seat box
+   is not the whole seat: `.seat-mine .seat-cards` (16-first-person.css) is
+   absolutely positioned and hangs below the box by roughly a card's
+   half-height, so `bottom: 0` puts the box inside the stage and the player's
+   own hole cards through the floor -- and `.table-area` clips, so they simply
+   are not there. Expressed in the seat's own width because that is what sizes
+   the cards (`clamp(32px, --seat-width * .30, 50px)` wide, ~1.4 tall), so the
+   clearance tracks the card rather than one breakpoint's pixel count. */
+.scene-room-racetrack .player-seat.seat-mine {
+  left: 50%;
+  top: auto;
+  bottom: max(var(--safe-bottom, 0px), calc(var(--seat-width) * .24));
+  margin-left: calc(var(--seat-width) / -2);
+  margin-top: 0;
+}
+
+.scene-room-racetrack .player-seat.seat-mine .seat-figure {
+  display: none;
+}

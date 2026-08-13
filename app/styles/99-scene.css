@@ -65,8 +65,17 @@
    seen over a card or a face, the fix is not a smaller number here -- it is
    dropping .poker-table-wrap's `isolation: isolate` so the rail can sit below
    this canvas while the seats stay above it, which also means rehoming the
-   z-index -1 contact shadow that isolation exists to contain. */
-.table-area:not(.scene-room-3d) .table-scene {
+   z-index -1 contact shadow that isolation exists to contain.
+
+   The racetrack room is scoped out for the same reason as the 3D one, and
+   the symptom when it was not was total: its canvas IS the table -- floor,
+   body, rail and cloth -- so raising it above .poker-table-wrap covered every
+   seat, nameplate, hole card and the board with a painted tabletop. The
+   screenshot showed a correct, empty table and nothing else, which reads as
+   "the players failed to load" rather than as a stacking bug. Only the
+   classic renderer, which draws chips over DOM artwork, has anything to climb
+   over. */
+.table-area:not(.scene-room-3d):not(.scene-room-racetrack) .table-scene {
   z-index: 2;
 }
 

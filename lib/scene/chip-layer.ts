@@ -41,27 +41,13 @@ import {
   type BetAnimationStyle,
 } from "./bet-style";
 import { POT_CHIP_DENOMINATIONS_BB } from "@/lib/game/pot-chips";
-import { FELT, type Vec3 } from "./scene-config";
-import {
-  NEAR_SEAT_BET_INSET,
-  NEAR_SEAT_BET_INSET_DESKTOP,
-  potPosition,
-  ringPoint,
-  seatAngle,
-  seatBetOrigin,
-  seatTrayOrigin,
-} from "./seat-ring";
+import { CHIP_RADIUS, CHIP_THICKNESS, type Vec3 } from "./scene-config";
+import { seatAngle } from "./seat-ring";
+import { classicChipSpace, type ChipSpace } from "./chip-space";
 
-/** Compact 2D token size; the 3D room owns its own physical chip scale. */
-export const CHIP_RADIUS = 0.14;
-/**
- * The stack pitch and the painted edge height are both exactly this value,
- * which is what keeps a resting stack literally flush: chip i's top face is
- * chip i+1's bottom face, no daylight.
- */
-// Slightly exaggerated for the tilted 2D canvas: the physical ratio is too
-// thin at phone/desktop CSS-pixel sizes and makes flush chips look intersected.
-export const CHIP_THICKNESS = 0.050;
+/* Both moved to `scene-config.ts` -- see the note there -- and re-exported
+ * unchanged so every existing importer keeps working. */
+export { CHIP_RADIUS, CHIP_THICKNESS } from "./scene-config";
 
 /**
  * PlayPokerGO's public 2D ChipPool fills 16 chips upward before opening the
@@ -223,17 +209,16 @@ export class ChipLayer {
   private readonly bets = new Map<string, SceneChip>();
   private paying = false;
   /**
-   * The felt's plan depth for the current fit, in world units.
+   * The table these chips are on: where the pot, the bet spots, the trays and
+   * the payout landings are, and how high the cloth is.
    *
-   * Every position in here that is "somewhere around the table" rather than
-   * "somewhere on a chip" scales with it — the bet spots, the payout
-   * landings, the pot itself — because the table's plan shape follows the
-   * plate's aspect ratio (see `fitView`). Held as a field and pushed in by
-   * the renderer rather than threaded through nine call sites, and defaulted
-   * to the desktop shape so every unit test that constructs a layer without
-   * one keeps describing the same table it always did.
+   * Held as one field rather than as the loose `radiusZ` and `nearSeatInset`
+   * it replaced, and pushed in by the renderer rather than threaded through
+   * nine call sites. Defaulted to the classic room's desktop shape so every
+   * unit test that constructs a layer without one keeps describing the same
+   * table it always did.
    */
-  private radiusZ: number = FELT.radiusZ;
+  private space: ChipSpace = classicChipSpace();
   /**
    * How a bet's spray travels — the player's own preference, pushed in by
    * the renderer. Only future sprays read it: a chip already in flight
@@ -241,13 +226,6 @@ export class ChipLayer {
    * equivalent of rewriting history.
    */
   private betStyle: BetAnimationStyle = DEFAULT_BET_STYLE;
-  /**
-   * The near seat's own reach — see `NEAR_SEAT_BET_INSET_DESKTOP`. Defaults
-   * to the figure-avoiding corridor so a layer built before the renderer's
-   * first breakpoint check (or under test, with nobody driving it) still
-   * describes the plate its figure is actually standing on.
-   */
-  private nearSeatInset: number = NEAR_SEAT_BET_INSET;
 
   constructor(private readonly onChanged: () => void) {}
 
@@ -257,25 +235,20 @@ export class ChipLayer {
   }
 
   /**
-   * Switch the near seat's bet reach to match whichever plate the DOM is
-   * currently showing. `.seat-mine .seat-figure` is only hidden at
-   * `min-width: 901px` (16-first-person.css) — the same condition the
-   * renderer checks to call this.
-   */
-  setNearSeatDesktop(desktop: boolean): void {
-    this.nearSeatInset = desktop ? NEAR_SEAT_BET_INSET_DESKTOP : NEAR_SEAT_BET_INSET;
-  }
-
-  /**
    * Re-shape the table under the chips already on it.
    *
    * Only the spots future chips are given are recomputed; chips already at
    * rest keep their world positions. A resize is not a game event, and
    * re-homing a settled pile mid-hand would read as the pot twitching.
+   *
+   * The classic room calls this on two occasions -- a resize that re-solves
+   * the felt's plan depth, and the breakpoint where the local player's own
+   * figure stops being drawn and the near seat's bet reach changes with it
+   * (see `NEAR_SEAT_BET_INSET_DESKTOP`). The racetrack calls it once, at
+   * mount: its table is a fixed object and only the camera moves.
    */
-  setRadiusZ(radiusZ: number): void {
-    if (!Number.isFinite(radiusZ) || radiusZ <= 0 || radiusZ === this.radiusZ) return;
-    this.radiusZ = radiusZ;
+  setSpace(space: ChipSpace): void {
+    this.space = space;
   }
 
   /**
@@ -300,13 +273,13 @@ export class ChipLayer {
     const spread = (columnCount - 1) / 2;
     // Named for the spot, not the amount -- `pot` is already this method's
     // first parameter, and the pile is no longer at the felt's own centre.
-    const centre = potPosition(this.radiusZ);
+    const centre = this.space.pot();
     heap.forEach(({ denomination, denominationIndex, position: layout }, index) => {
       const key = `${denomination}:${denominationIndex}`;
       wanted.add(key);
       const rest: Vec3 = {
         x: centre.x + layout.x - spread * COLUMN_SPACING,
-        y: FELT.y + CHIP_THICKNESS / 2 - layout.y,
+        y: this.space.feltY + CHIP_THICKNESS / 2 - layout.y,
         z: centre.z,
       };
       const existing = this.pile.get(key);
@@ -370,7 +343,7 @@ export class ChipLayer {
       // spreads beyond one 16-chip column.
       const heap = get2DChipHeap(amount, bigBlind, 1);
       if (heap.length === 0) continue;
-      const origin = seatBetOrigin(slot, seatCount, this.radiusZ, this.nearSeatInset);
+      const origin = this.space.betSpot(slot, seatCount);
       const theta = seatAngle(slot, seatCount);
       // Plan-space tangent of the ellipse at this seat, unit length.
       const tangent = { x: -Math.sin(theta), z: Math.cos(theta) };
@@ -381,7 +354,7 @@ export class ChipLayer {
         const along = layout.x;
         const rest: Vec3 = {
           x: origin.x + tangent.x * along,
-          y: FELT.y + CHIP_THICKNESS / 2 - layout.y,
+          y: this.space.feltY + CHIP_THICKNESS / 2 - layout.y,
           z: origin.z + tangent.z * along,
         };
         const chip: SceneChip = {
@@ -424,7 +397,7 @@ export class ChipLayer {
    */
   sweepBets(): void {
     let order = 0;
-    const pot = potPosition(this.radiusZ);
+    const pot = this.space.pot();
     for (const chip of this.bets.values()) {
       // A chip still dropping in sweeps from wherever it is; drop its settle
       // flight so it is not animated twice — but carry its velocity across.
@@ -436,7 +409,7 @@ export class ChipLayer {
       const jitter = chipSettleJitter(chip.denomination, order);
       const target: Vec3 = {
         x: pot.x + jitter.x * 4,
-        y: FELT.y + CHIP_THICKNESS / 2,
+        y: this.space.feltY + CHIP_THICKNESS / 2,
         z: pot.z + jitter.z * 4,
       };
       chip.airborne = true;
@@ -499,13 +472,13 @@ export class ChipLayer {
     // middle of their badge. See `seatTrayOrigin` — the point this replaced
     // was outside the painted rail entirely, so every bet in this room has
     // been flying in from the carpet.
-    const origin = seatTrayOrigin(slot, seatCount, this.radiusZ);
-    const spot = seatBetOrigin(slot, seatCount, this.radiusZ, this.nearSeatInset);
+    const origin = this.space.tray(slot, seatCount);
+    const spot = this.space.betSpot(slot, seatCount);
     const denominations = betSprayDenominations(amount, bigBlind);
     const spray = denominations.length > 0
       ? denominations
       : Array.from({ length: BET_CHIP_COUNT }, (_, index) => decorativeDenomination(index));
-    const restY = FELT.y + CHIP_THICKNESS / 2;
+    const restY = this.space.feltY + CHIP_THICKNESS / 2;
     spray.forEach((denomination, index) => {
       // Every chip leaves from the tray's own surface. It used to leave from
       // `restY + index * CHIP_THICKNESS` — a pre-built tower standing on the
@@ -583,7 +556,7 @@ export class ChipLayer {
    * vaguely leftward rather than anyone being paid.)
    */
   spawnFunnel(winners: Array<{ slot: number; amount: number }>, seatCount: number, bigBlind: number): void {
-    const pot = potPosition(this.radiusZ);
+    const pot = this.space.pot();
     for (const { slot, amount } of winners) {
       const denominations = funnelSprayDenominations(amount, bigBlind);
       const spray = denominations.length > 0
@@ -595,15 +568,15 @@ export class ChipLayer {
         // clock. Modelling the container through equal per-chip vectors gives
         // the canvas the identical result without introducing a scene node.
         const layout = get2DChipPosition(index);
-        const landing = ringPoint(slot, seatCount, 0.92, FELT.y, this.radiusZ);
+        const landing = this.space.payout(slot, seatCount);
         const target: Vec3 = {
           x: landing.x + layout.x,
-          y: FELT.y + CHIP_THICKNESS / 2 - layout.y,
+          y: this.space.feltY + CHIP_THICKNESS / 2 - layout.y,
           z: landing.z,
         };
         const start: Vec3 = {
           x: pot.x + layout.x,
-          y: FELT.y + CHIP_THICKNESS / 2 - layout.y,
+          y: this.space.feltY + CHIP_THICKNESS / 2 - layout.y,
           z: pot.z,
         };
         this.moving.push({

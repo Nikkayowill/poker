@@ -6,11 +6,10 @@ import {
   isTestPurchaseAllowed,
   stripeClient,
   stripeTestClient,
-  verifiedRebuySession,
-  verifiedTierSession,
+  verifiedSupportSession,
   type StripeMode,
 } from "@/lib/server/stripe";
-import { fulfillStripePayment } from "@/lib/server/stripe-store";
+import { fulfillStripePayment, syncSubscriptionState } from "@/lib/server/stripe-store";
 import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
@@ -21,18 +20,17 @@ const sessionSchema = z.string().min(10).max(200);
  * The success-page recovery path: called when a player lands back on
  * ?payment=success, in case the webhook has not landed yet (or at all --
  * this is also the only fulfillment path in local/dev environments with no
- * public URL for Stripe to reach). Shares fulfillStripePayment with the
- * webhook, which is what makes a refresh here safe: the database's unique
- * session id is the idempotency key, not "did we already show a message."
+ * public URL for Stripe to reach). Shares fulfillStripePayment/
+ * syncSubscriptionState with the webhook, which is what makes a refresh here
+ * safe: for a one-time payment the database's unique session id is the
+ * idempotency key; for a subscription, syncSubscriptionState's recency guard
+ * is (a redundant sync here never regresses a status the webhook already
+ * moved past).
  *
  * Live and test sessions live in separate Stripe namespaces -- a live secret
  * key cannot retrieve a cs_test_ session or vice versa -- so Stripe's own
  * `cs_live_`/`cs_test_` id prefix is what picks the client here, the same
- * way the webhook route picks a mode from which secret verifies a body. It
- * is not a trust decision: only a genuine session Stripe issued in that mode
- * will ever resolve through the matching client, and every field that
- * matters (price, amount, kind, profile ownership) is still re-validated
- * against Stripe's own record of the session, never taken from the request.
+ * way the webhook route picks a mode from which secret verifies a body.
  */
 export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request, "stripe:verify", 20, 60 * 1000);
@@ -54,29 +52,33 @@ export async function GET(request: NextRequest) {
     }
 
     // A cheap, unexpanded peek at which kind this session is, so only one
-    // full (expanded, validated) verification runs -- not one per branch,
-    // which is what trying the tier path and falling back to rebuy on
-    // failure would cost on every legacy rebuy verification.
+    // full verification/sync runs.
     const peek = await stripe.checkout.sessions.retrieve(sessionId.data);
     let paid: boolean;
-    if (peek.metadata?.kind === "gold_purchase") {
-      const { session, tier, profileId } = await verifiedTierSession(sessionId.data, profile.id, mode);
+    let membership = null;
+    if (peek.mode === "subscription") {
+      if (typeof peek.subscription !== "string") {
+        // Not yet attached to a subscription -- treat as not paid rather
+        // than throw; the webhook (or a later refresh) will catch up.
+        paid = false;
+      } else {
+        membership = await syncSubscriptionState(stripe, peek.subscription, mode === "live", new Date());
+        paid = peek.payment_status === "paid";
+      }
+    } else {
+      const { session, tier, profileId } = await verifiedSupportSession(sessionId.data, profile.id, mode);
       paid = session.payment_status === "paid";
       if (paid) {
-        await fulfillStripePayment(session.id, profileId, tier.goldAmount, {
-          kind: "gold_purchase",
+        await fulfillStripePayment(session.id, profileId, null, {
+          kind: "support_one_time",
           tierKey: tier.key,
           livemode: mode === "live",
         });
       }
-    } else {
-      const { session, config, profileId } = await verifiedRebuySession(sessionId.data, profile.id, mode);
-      paid = session.payment_status === "paid";
-      if (paid) await fulfillStripePayment(session.id, profileId, config.goldAmount, { livemode: mode === "live" });
     }
 
-    if (!paid) return NextResponse.json({ paid: false, profile });
-    return NextResponse.json({ paid: true, profile: await ensureProfile(ownerToken) });
+    if (!paid) return NextResponse.json({ paid: false, profile, membership });
+    return NextResponse.json({ paid: true, profile: await ensureProfile(ownerToken), membership });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not verify Stripe payment.";
     return NextResponse.json({ error: message }, { status: 400 });

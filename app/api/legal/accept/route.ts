@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { LEGAL_DOCUMENT_SLUGS, type LegalDocumentSlug } from "@/lib/legal/documents";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { recordAcceptance } from "@/lib/server/legal-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -7,11 +8,16 @@ import { readOrCreateSessionToken, withSessionCookie } from "@/lib/server/sessio
 
 export const runtime = "nodejs";
 
+// Derived from LEGAL_DOCUMENT_SLUGS rather than hand-listed -- a hand-listed
+// copy here is exactly what silently rejected "privacy_policy" acceptances
+// after that slug was added to the real list but not to this one.
 const bodySchema = z.object({
-  documents: z.array(z.enum(["terms_of_service", "gold_disclosure"])).min(1),
+  documents: z
+    .array(z.enum(LEGAL_DOCUMENT_SLUGS as [LegalDocumentSlug, ...LegalDocumentSlug[]]))
+    .min(1),
 });
 
-/** Records acceptance of the current version of one or both documents. */
+/** Records acceptance of the current version of one or more documents. */
 export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, "legal:accept", 20, 60 * 1000);
   if (limited) return limited;

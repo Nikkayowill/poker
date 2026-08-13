@@ -95,6 +95,36 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   table. Not routed through `buildInstancedProp` — that helper's metalness clamp is tuned for the
   chip roster and would dull this asset's brass trim, and nothing here repeats to instance.
 
+### Voluntary support payments replace Buy-Gold (2026-08-13)
+- The Gold storefront (`components/store/gold-store.tsx`, the general tier ladder, and the legacy
+  one-click rebuy Checkout Session) is gone, replaced by `components/store/support-panel.tsx` at the
+  same `/store` route. Every support tier — one-time or monthly, three price points — grants nothing:
+  no Gold, no gameplay effect, matching `lib/legal/documents.ts`'s `support_disclosure` exactly. Don't
+  add a Gold reward or gameplay perk to a tier without updating that disclosure first; a purely
+  cosmetic, gameplay-neutral perk (a name badge) would be fine and would just need a version bump.
+- `fulfill_stripe_payment` no longer assumes every payment credits Gold — crediting is now
+  conditional on `kind`, and `support_one_time` inserts its `stripe_payments` ledger row (audit +
+  idempotency) without ever reaching the `profiles` UPDATE. `gold_amount` is nullable now.
+- Monthly support is real Stripe Billing (`mode: "subscription"` Checkout Sessions), not repeated
+  one-time charges. New `stripe_subscriptions` table mirrors Stripe's own subscription state — a
+  mutable row upserted per lifecycle event via `upsert_stripe_subscription`, recency-guarded on the
+  originating event's own `created` timestamp (never `Date.now()`) so a redelivered/out-of-order
+  webhook can never regress a newer status. This is a different idempotency shape from every other
+  money RPC in this file: `stripe_payments`/duel escrow are settle-once ledgers where "someone already
+  did this, return false/null" is the terminal answer; a subscription is a live status mirror, so a
+  guard failure still returns the current row rather than nothing.
+- Cancellation goes through the Stripe Customer Portal (`/api/stripe/portal-session`) — no custom
+  in-app cancel flow. Two Stripe SDK landmines worth knowing before touching this code again:
+  `current_period_start`/`current_period_end` live on `subscription.items.data[0]`, not the
+  `Subscription` root; `invoice.subscription` doesn't exist — it's
+  `invoice.parent?.subscription_details?.subscription`. Both are silently `undefined` if read the
+  obvious way.
+- The busted-mid-table "Buy Gold to rebuy" button (skipped straight to Stripe Checkout) is gone —
+  there is no purchase escape valve left anywhere. `action-bar.tsx`'s busted state now offers the
+  backstop top-up inline (`onClaimBackstop`, same mechanism as the lobby's own banner) when eligible,
+  falling back to "Return to lobby" (where every faucet lives) otherwise. See "Bot / economy behavior"
+  above for why no faucet number needed to change.
+
 ### Rewarded-ad faucet (2026-08-11)
 - Wait moved 30s→5min (`REWARDED_AD_DURATION_MS`), grant TTL 10→20min to compensate. New direct
   "Free Gold" row in the lobby player menu (same eligibility threshold as the existing busted-hand
@@ -182,9 +212,23 @@ and buy-in refunds paid nothing.
   varies preflop looseness (VPIP ~45%/26%/64%).
 - `creditGold`/`spendGold` go through row-locking RPCs (`credit_gold`, `spend_gold`), never a plain
   read-then-write — `adjustGold` is a deliberate exception, documented as admin-only for that reason.
-- Level rewards (every 5th level) and daily-streak multipliers (capped ×2.5 at 7 days) are a Gold
-  faucet sized to stay under ~1% of the turnover needed to earn them, against the arcade's ~3% edge
-  — don't raise either without redoing that arithmetic (see `[[project_stackchips_gold_economy]]`).
+- **There is no purchase path to Gold any more (2026-08-13).** Buy-Gold was removed; see "Voluntary
+  support" below. Level rewards (every 5th level) and daily-streak multipliers (capped ×2.5 at 7
+  days) are still deliberately small, but the *reason* changed: they used to be bounded against a
+  Stripe sale price (protect revenue, ~1% of turnover vs. the arcade's ~3% edge), and that premise is
+  gone. They're kept small now for progression pacing — a reward that felt free would stop feeling
+  like an achievement — not to protect a sale. `[[project_stackchips_gold_economy]]`'s
+  revenue-protection framing is superseded, not still binding; don't cite it as the reason for a
+  faucet number going forward.
+- The only way back into Blackjack/Hi-Lo/duels/poker after busting to 0 Gold is the faucet stack:
+  `claimBackstopGold` (`lib/profile/backstop.ts`, 1,000 Gold, open to guests, no wait on a first
+  claim — only a 12h cooldown on repeat claims), the daily grant (`DAILY_GOLD_GRANT` × streak
+  multiplier, independent UTC-day clock), and rewarded ads for registered players
+  (`REWARDED_AD_GOLD` × up to 6/day). All three are already sized off `TIER_CONFIG[CHEAPEST_TIER]
+  .minBuyIn` (1,000, the floor for every staked surface in the app), not off a Stripe price — removing
+  Buy-Gold didn't touch any of their numbers. Verified 2026-08-13 when Buy-Gold was removed: worst
+  case for anyone is bounded by the shorter of "12h since the last backstop claim" or "next UTC day,"
+  never indefinite.
 
 ### Styling contract
 - Chrome (everything except the table) is borderless: separation comes from a raised fill, real

@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { Check, FoldVertical, TimerReset } from "lucide-react";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { TIER_CONFIG } from "@/lib/game/tiers";
+import { backstopState } from "@/lib/profile/backstop";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { BuyInModal } from "@/components/lobby/buy-in-modal";
 
@@ -64,7 +65,7 @@ export function ActionBar({
   onAction,
   onLeave,
   profile,
-  onOpenCheckout,
+  onClaimBackstop,
   variant = "classic",
 }: {
   game: GameSnapshot;
@@ -73,16 +74,13 @@ export function ActionBar({
   onLeave: () => void;
   profile: PlayerProfile | null;
   /**
-   * Opens the real-money checkout, which is owned by PokerTable rather than
-   * by this component.
-   *
-   * It has to live above the `key={game.version}` on this element: a new key
-   * unmounts the whole subtree, and mounting RebuyCheckout *is* the purchase
-   * intent -- it posts for a Stripe Checkout Session immediately. Kept here,
-   * any table version bump (an opponent acting, a card landing) would close
-   * the modal mid-purchase and buy a second session on the way back.
+   * The broke-player recovery top-up (lib/profile/backstop.ts), owned by
+   * PokerApp rather than by this component -- same function the lobby's own
+   * "Claim a top-up" banner calls. There is no purchase path back into a
+   * busted seat any more; this and "Return to lobby" (below) are the two
+   * ways out.
    */
-  onOpenCheckout: () => void;
+  onClaimBackstop: () => void;
   /** The 3D room keeps the same server intents but presents its own control console. */
   variant?: "classic" | "3d";
 }) {
@@ -124,10 +122,18 @@ export function ActionBar({
     // exit is the header. Reading the deadline rather than counting stacks
     // keeps this agreeing with scheduleNextHand by construction.
     const tableIsDone = game.isSeated && !busted && !game.nextHandAt;
-    // Whether a rebuy is reachable without spending money. Unlimited Gold
-    // always is; otherwise it takes this table's minimum buy-in.
+    // Whether a rebuy is reachable right now. Unlimited Gold always is;
+    // otherwise it takes this table's minimum buy-in.
     const canRebuyWithGold = Boolean(profile?.unlimitedGold)
       || (profile?.goldBalance ?? 0) >= TIER_CONFIG[game.tier].minBuyIn;
+    // There is no purchase escape valve any more -- the backstop grant
+    // (lib/profile/backstop.ts, same mechanism the lobby's own "Claim a
+    // top-up" banner uses) is the fast path when it's eligible; otherwise
+    // the lobby (where every faucet lives: backstop, daily Gold, rewarded
+    // ads) is the only way back in.
+    const backstop = game.isSeated && busted
+      ? backstopState(profile, new Date(), TIER_CONFIG[game.tier].minBuyIn)
+      : null;
     return (
       <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>
         <div className="action-slot-status">
@@ -139,7 +145,11 @@ export function ActionBar({
           <strong>
             {!game.isSeated
               ? "You’re out of chips. Start a fresh table when you’re ready."
-              : busted ? "You’re sat out until you rebuy. Leave table, above, to give up the seat." : game.message}
+              : busted
+                ? (backstop === "ready"
+                  ? "You’re sat out until you rebuy. Claim a top-up to get right back in."
+                  : "You’re sat out until you rebuy. Leave table, above, to give up the seat.")
+                : game.message}
           </strong>
         </div>
         <div className="action-slot-controls">
@@ -152,13 +162,12 @@ export function ActionBar({
               player needs -- a second, seat-scoped exit button was redundant
               with it. Rebuy is the only slot-controls action while busted, so
               it is already the full-width gold primary-action rather than
-              sharing the row with a fold-styled sibling. Out of chips means
-              two different situations, and they want different buttons. With
-              Gold in hand the rebuy is free of any purchase, so it opens the
-              Gold modal as it always has. With none, that modal was a step to
-              nowhere -- a slider you cannot afford to move, with the real
-              purchase buried behind a secondary button inside it. That case
-              goes straight to checkout instead. */}
+              sharing the row with a fold-styled sibling. Three cases now
+              instead of two: enough Gold opens the rebuy modal as always;
+              short of it but backstop-eligible claims the same top-up the
+              lobby's own banner offers, inline, so a bust doesn't force a
+              trip back; otherwise every faucet (backstop's cooldown, daily
+              Gold, rewarded ads) lives in the lobby, so that's the exit. */}
           {game.isSeated && busted && (
             canRebuyWithGold ? (
               <button
@@ -168,14 +177,16 @@ export function ActionBar({
               >
                 Rebuy
               </button>
-            ) : (
+            ) : backstop === "ready" ? (
               <button
                 className="primary-action action-slot-wide"
                 disabled={pending}
-                onClick={onOpenCheckout}
+                onClick={onClaimBackstop}
               >
-                Buy Gold to rebuy
+                Claim a top-up
               </button>
+            ) : (
+              <button className="primary-action action-slot-wide" onClick={onLeave}>Return to lobby</button>
             )
           )}
         </div>
@@ -189,10 +200,6 @@ export function ActionBar({
             confirmLabel="Rebuy"
             pending={pending}
             onClose={() => setShowRebuyModal(false)}
-            onBuyGold={() => {
-              setShowRebuyModal(false);
-              onOpenCheckout();
-            }}
             onConfirm={(_tier, buyIn) => onAction({ type: "rebuy", amount: buyIn })}
           />
         )}

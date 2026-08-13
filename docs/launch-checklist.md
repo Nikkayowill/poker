@@ -27,6 +27,23 @@ complete. It is not intended for real-money wagering.
 - Use a paid plan or confirm the project will not pause during the invite window.
 - Review Security Advisor and Performance Advisor before each wider release.
 
+## Stripe support payments
+
+StackChips takes no in-app purchases. This is real money moving through Stripe for a support payment
+that grants nothing in-game (`lib/legal/documents.ts`'s `support_disclosure`) — configure it deliberately.
+
+- Configure `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the six live support Price env vars
+  (`STRIPE_PRICE_SUPPORT_{SUPPORTER,BACKER,PATRON}_{ONCE,MONTHLY}`) — see `.env.example`.
+- Register one live webhook endpoint at `/api/stripe/webhook` subscribed to: `checkout.session.completed`,
+  `checkout.session.async_payment_succeeded`, `customer.subscription.created`,
+  `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`,
+  `invoice.payment_failed`.
+- Enable the Stripe Customer Portal (Dashboard → Settings → Billing → Customer portal) and allow
+  cancellation. No support tier unlocks anything in-game, so there is nothing a "hold until period
+  end" configuration would be protecting — immediate cancellation is fine.
+- Confirm both support-payment migrations are on the production migration ledger (`supabase migration
+  list --linked`) before enabling the support panel — see "Deploy / migration checklist" in CLAUDE.md.
+
 ## Release verification
 
 Run:
@@ -54,6 +71,10 @@ Then verify in separate browser profiles:
    the newest server snapshot is received.
 10. Confirm the installed app shell opens offline and shows the reconnect
     state rather than allowing stale gameplay.
+11. In Stripe test mode, complete a one-time support payment and a monthly
+    signup; confirm the support panel shows the active membership and
+    "Manage membership" opens the Stripe Customer Portal. Confirm neither
+    payment changed the test profile's Gold balance.
 
 ## Current operating envelope
 

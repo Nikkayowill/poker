@@ -326,8 +326,8 @@ export function Lobby({
 
           <Link className="hub-tile hub-tile-gold" href="/store" style={tileIndexStyle(2)} onClick={tapSound}>
             <span className="hub-tile-body">
-              <strong>Buy Gold</strong>
-              <small>{(profile?.goldBalance ?? 0).toLocaleString()} in your stack</small>
+              <strong>Support StackChips</strong>
+              <small>Optional — never required to play</small>
             </span>
           </Link>
 

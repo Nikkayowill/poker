@@ -8,10 +8,10 @@ import { readSessionToken } from "@/lib/server/session";
 export const runtime = "nodejs";
 
 /**
- * Which of the two documents this player still needs to accept, plus their
- * current text -- so the storefront can render the prompt (or skip it
- * entirely for a returning player who already agreed) without a second
- * round trip to fetch the body copy.
+ * Which documents this player still needs to accept, plus their current
+ * text -- so the storefront can render the prompt (or skip it entirely for
+ * a returning player who already agreed) without a second round trip to
+ * fetch the body copy.
  */
 export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request, "legal:status", 60, 60 * 1000);

@@ -170,13 +170,23 @@ export const NEAR_SEAT_BET_INSET = 0.35;
  * there to protect against. Below 901px the figure is still standing in the
  * corridor and the tight inset above still applies.
  *
- * Equal to `BET_INSET` on purpose, not a new tuned number: with nothing left
- * to dodge, the near seat's reach should match the other five exactly —
- * every pile the same distance out from the board, which is also what
- * clears the centre of the felt for the community cards and the pot instead
- * of leaving one seat's chips parked in close on the flop.
+ * Was equal to `BET_INSET` (0.74) on the theory that with nothing left to
+ * dodge, the near seat's reach should match the other five exactly — but
+ * "the same fraction of the felt's radius" is not "the same place on
+ * screen." The near seat sits at the bottom of the perspective projection,
+ * where the same world-space step covers far more screen pixels than it
+ * does for a side or far seat; at 0.74 the chip landed jammed against the
+ * rail's inner lip (measured at 1440x900: y=658, with the rail cushion
+ * starting at y=~660), well short of the inner gold ring every other seat's
+ * pile clears by 20-35px. 0.48 is what actually lands it there — measured
+ * the same way, against `window.__stackchipsScene.betSpot(0)`, at y=609,
+ * comfortably inside the ring (~628) and just as comfortably clear of the
+ * board (`.community-cards` bottom, y=~569) and the rail below it. Revisit
+ * by re-measuring against the live scene, not by nudging this back toward
+ * `BET_INSET` on the "should match" theory again -- that theory is what
+ * produced the rail-hugging chip in the first place.
  */
-export const NEAR_SEAT_BET_INSET_DESKTOP = BET_INSET;
+export const NEAR_SEAT_BET_INSET_DESKTOP = 0.48;
 
 /** Slot 0 is the near edge — see `NEAR_ANGLE_DEG`. */
 const NEAR_SLOT = 0;

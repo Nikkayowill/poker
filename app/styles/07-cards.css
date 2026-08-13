@@ -29,6 +29,16 @@
 
 .card-large { width: clamp(68px, 7.4vw, 88px); border-radius: 8px; }
 .card-small { width: clamp(38px, 4.2vw, 52px); border-radius: 4px; }
+
+/* .card-large's clamp tops out at the same 88px ceiling as the bare
+   .playing-card community cards, so on any normal desktop viewport the
+   "dominant" own-hole-card tier read the same size as the cards it's
+   supposed to sit above -- the vw term only ever mattered on narrow
+   viewports. Widened past desktop only; mobile/short-viewport tiers in
+   12-responsive.css are untouched. */
+@media (min-width: 900px) {
+  .card-large { width: clamp(88px, 8.4vw, 116px); }
+}
 .card-red { color: #b23f3e; }
 
 /* Twin corner indices (rank + suit glyph), mirrored top-left/bottom-right

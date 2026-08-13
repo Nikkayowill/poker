@@ -299,7 +299,12 @@ export function PokerTable({
     const AVATAR_MAX_PX = 78;
     const AVATAR_WIDTH_RATIO = 0.72;
     const DEALER_PUCK_RADIUS = 12; // half of .dealer-puck's own 24px (08-seat.css)
-    const DEALER_PUCK_GAP = 8;
+    // 8px used to leave the puck sitting in the rail's own padded cushion for
+    // any seat close to the felt's edge -- worst on the seat across from the
+    // viewer, whose whole avatar already overhangs .poker-rail's inset (see
+    // the comment on .poker-rail in 06-table.css). 24px pulls it far enough
+    // inward that it clears the cushion and reads as sitting on the felt.
+    const DEALER_PUCK_GAP = 24;
     const avatarDiameter = Math.min(
       AVATAR_MAX_PX,
       Math.max(AVATAR_MIN_PX, seatRect.width * AVATAR_WIDTH_RATIO),

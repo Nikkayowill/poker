@@ -206,15 +206,22 @@
   /* The bet corridor above exists to clear your own figure, and this is the
      rule that just deleted it (`.seat-figure { display: none }`). With
      nothing left in the way, `lib/scene/seat-ring.ts`'s
-     `NEAR_SEAT_BET_INSET_DESKTOP` moves the canvas target out to
-     `BET_INSET` -- the same reach every opponent's pile already gets --
-     rather than leaving your own chips parked in close on the flop. This is
-     the DOM label following it out: measured the same way as the base rule,
-     against `window.__stackchipsScene.betSpot(0)` at 1440x900 with the table
+     `NEAR_SEAT_BET_INSET_DESKTOP` moves the canvas target out from the
+     figure-avoiding corridor -- but not all the way to `BET_INSET`, the
+     reach every opponent's pile gets, any more. That was tried first, on the
+     theory that with nothing left to dodge the near seat's reach should just
+     match the other five; measured against the live scene, it instead
+     landed the chip jammed against the rail's own inner lip, because the
+     near seat sits at the bottom of the perspective projection where the
+     same world-space step covers far more screen pixels than it does for a
+     side or far seat. `NEAR_SEAT_BET_INSET_DESKTOP` is 0.48 now -- see that
+     constant's own comment in seat-ring.ts for the measurement. This is the
+     DOM label following it: measured the same way as the base rule, against
+     `window.__stackchipsScene.betSpot(0)` at 1440x900 with the table
      renderer forced to `canvas_2d` (the default is the 3D room, which mounts
-     a differently-sized rail and would silently mis-tune this), 169.4px
-     lands it within a pixel of that pile. */
+     a differently-sized rail and would silently mis-tune this), 218px lands
+     it within a pixel of that pile. */
   .seat-mine .table-bet {
-    --bet-reach-y: 169.4px;
+    --bet-reach-y: 218px;
   }
 }

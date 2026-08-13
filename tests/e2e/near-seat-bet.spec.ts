@@ -16,10 +16,19 @@ import { expect, test } from "@playwright/test";
  *
  * Desktop (`min-width: 901px`) has since dropped that figure altogether —
  * the avatar moved to `local-player-hud.tsx`'s corner card — so there is
- * nothing left there to clear, and `NEAR_SEAT_BET_INSET_DESKTOP`
- * (`lib/scene/seat-ring.ts`) instead pushes the near seat's own reach out to
- * match every opponent's. That plate skips the figure check below and just
- * confirms the board is still clear by a wide margin.
+ * nothing left there to clear. `NEAR_SEAT_BET_INSET_DESKTOP`
+ * (`lib/scene/seat-ring.ts`) used to push the near seat's own reach out to
+ * match every opponent's exactly (`BET_INSET`), on the theory that with
+ * nothing left to dodge the reach should just be the same number -- but the
+ * near seat sits at the bottom of the perspective projection, where the same
+ * world-space fraction covers far more screen pixels than it does for a side
+ * or far seat, and at that value the chip landed jammed against the rail's
+ * own inner lip instead of out on the felt with everyone else's. Tuned back
+ * to 0.48: still comfortably clear of the board, just no longer reaching all
+ * the way to a seat that isn't there to reach past. That plate skips the
+ * figure check below and just confirms the board is still clear by a
+ * healthy margin, smaller than the old figure-avoiding corridor's headroom
+ * but well clear of zero.
  *
  * This is asserted against the *rendered* boxes rather than recomputed from
  * the constants, because that is the whole failure mode: the canvas and the
@@ -125,14 +134,12 @@ for (const viewport of VIEWPORTS) {
       );
 
       if (viewport.figureHidden) {
-        // No figure left to protect against — the near seat reaches out to
-        // BET_INSET like every opponent now (NEAR_SEAT_BET_INSET_DESKTOP),
-        // so the board should clear by a wide margin rather than the few
-        // pixels the old figure-avoiding corridor left. Regression guard: if
-        // this silently reverted to the tight corridor, that margin would
-        // collapse toward single digits or go negative (see the comment on
-        // the non-corridor branch below for the same table without the fix).
-        expect(boardClearance).toBeGreaterThan(60);
+        // No figure left to protect against, but the near seat no longer
+        // reaches all the way out to BET_INSET either — see the file header
+        // on why 0.48 (NEAR_SEAT_BET_INSET_DESKTOP) replaced that. Measured
+        // at 1440x900 post-fix: ~51px. 35 is a regression guard with real
+        // margin under that measured value, not the value itself.
+        expect(boardClearance).toBeGreaterThan(35);
       } else if (viewport.corridor) {
         // Above the figure's crown: the chips are on open felt, not behind a
         // chest. This is the assertion the whole file exists for.

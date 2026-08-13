@@ -17,7 +17,17 @@ import { SeatTimer } from "./seat-timer";
  * full character figures; the 2D table needs a contained face crop so the
  * avatar does not consume the cards' and nameplate's working space.
  */
-export function SeatFigure({ seat, active }: { seat: PublicSeat; active: boolean }) {
+export function SeatFigure({
+  seat,
+  active,
+  turnStartedAt,
+  turnDeadlineAt,
+}: {
+  seat: PublicSeat;
+  active: boolean;
+  turnStartedAt: string | null;
+  turnDeadlineAt: string | null;
+}) {
   const [, forceRerender] = useState(0);
   const declared = seat.avatarCosmetic ? avatarFace(seat.avatarCosmetic) : null;
   const artwork = declared && !missingArtwork.has(declared) ? declared : null;
@@ -58,6 +68,16 @@ export function SeatFigure({ seat, active }: { seat: PublicSeat; active: boolean
             )}
           </>
         )}
+      {/* Opponents' turn clock rings their own portrait rather than sitting as
+          a separate badge down in the nameplate -- a fuse that laps the face
+          it is timing, not a second circle competing with the stack number
+          for the same row. The local player keeps the nameplate clock (see
+          SeatNameplate below): their own figure is hidden on desktop
+          entirely (16-first-person.css), so there is no portrait here left
+          to ring. */}
+      {active && !seat.isMine && (
+        <SeatTimer startedAt={turnStartedAt} deadlineAt={turnDeadlineAt} />
+      )}
     </div>
   );
 }
@@ -179,9 +199,13 @@ function SeatNameplate({
             </span>
           )}
         {/* Only the seat on the clock carries one, so it doubles as the
-            "whose turn is it" cue and there is never more than one burning. */}
-        {seat.isCurrent && (
-          <SeatTimer startedAt={turnStartedAt} deadlineAt={turnDeadlineAt} large={seat.isMine} />
+            "whose turn is it" cue and there is never more than one burning.
+            Opponents' clocks moved onto their own portrait -- see SeatFigure
+            above -- so this is the local player's alone now: their figure is
+            hidden on desktop, so the nameplate is the only place left for it
+            to burn. */}
+        {seat.isCurrent && seat.isMine && (
+          <SeatTimer startedAt={turnStartedAt} deadlineAt={turnDeadlineAt} large />
         )}
       </div>
     </div>
@@ -241,7 +265,14 @@ export const PlayerSeat = memo(function PlayerSeat({
       winningKeys={winningKeys}
     />
   );
-  const figure = <SeatFigure seat={seat} active={seat.isCurrent} />;
+  const figure = (
+    <SeatFigure
+      seat={seat}
+      active={seat.isCurrent}
+      turnStartedAt={turnStartedAt}
+      turnDeadlineAt={turnDeadlineAt}
+    />
+  );
   const nameplate = (
     <SeatNameplate
       seat={seat}

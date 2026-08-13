@@ -262,7 +262,17 @@
 
 .winner-badge {
   position: absolute;
-  top: -31px;
+  /* Used to be a flat -31px, tuned back when .seat-cards sat low against the
+     nameplate and left the whole band above the figure free for this badge
+     alone. The cards moved up there now (see .seat-cards above) -- centred
+     above the portrait, the same place this badge wants -- so its own
+     clearance has to climb with them rather than sit at the old fixed
+     height. Tied to --seat-width by the same .27-of-width/.7-aspect ratio
+     the revealed card tier's own desktop size uses, minus the 14% of
+     --seat-width the cards' own anchor is sunk into the figure by, plus
+     headroom for the tuck rotation and the gap between the two: not a
+     second independent guess at the same card box. */
+  top: calc(-16px - var(--seat-width) * .26);
   left: 50%;
   z-index: 12;
   display: inline-flex;
@@ -418,6 +428,24 @@
 .seat-timer-large { width: 34px; height: 34px; }
 .seat-timer-large b { font-size: 13px; }
 
+/* An opponent's clock laps their own portrait instead of sitting as a second
+   circle in the nameplate's stack row -- see the render site in
+   player-seat.tsx, which mounts it inside .seat-figure rather than beside
+   the stack count now. `inset` rather than a fixed width/height: it beats
+   the sizing rules above on specificity (two ancestors + a class beats one
+   class) and scales with .seat-figure's own clamp(40px, 72%, 78px)
+   (08-seat.css, above), so the ring is always sized to the face it is
+   circling rather than tuned once for a single breakpoint. Negative, so the
+   ring sits just outside the avatar's own gold border rather than crossing
+   it. */
+.seat-figure > .seat-timer {
+  position: absolute;
+  inset: -9%;
+  width: auto;
+  height: auto;
+  z-index: 3;
+}
+
 .seat-stack-row {
   display: flex;
   align-items: center;
@@ -488,6 +516,22 @@
 .dealer-puck-visible { opacity: 1; }
 .dealer-puck-animated { transition: transform .55s cubic-bezier(.32,.72,.28,1); }
 
+/* Desktop only. Below 901px the seats sit close enough together, and the
+   figure/cards/plate stack tall enough, that the puck has nowhere clear to
+   land beside a seat without covering something that already carries
+   information -- it either rides up onto a neighbour's plate or sits over
+   the felt art with no seat anchor nearby to read it against. `visibility`
+   rather than `display: none`, matching the one other place this element is
+   already hidden this way (`.scene-room-3d .dealer-puck` in 99-scene.css):
+   poker-table.tsx's own measureDealer runs unconditionally every hand
+   regardless of viewport, and it measures the seat and the table wrap, not
+   this element, so nothing here needs it kept in layout -- this is about
+   staying consistent with the sheet's existing hide, not a measurement
+   dependency. */
+@media (max-width: 900px) {
+  .dealer-puck { visibility: hidden; }
+}
+
 .blind-label {
   width: auto;
   height: 19px;
@@ -555,37 +599,27 @@
   white-space: nowrap;
 }
 
-/* A player's cards lie on the felt in front of them, so they sit on the seat's
-   inward side -- the same vector the bet chip rides. Fixed above the seat, a
-   far player's cards end up behind their head and outside the table entirely,
-   on the wrong side of the rail from the hand they belong to. */
-/* A player's cards sit at their hands, where the artwork already puts them:
-   over the lower body, with the nameplate overlapping their bottom edge so the
-   three read as one object.
-
-   Pushing them out onto the felt was tried first and does not survive contact
-   with a real table -- far enough out to clear the figure is far enough to
-   reach the board, and the board is the one region that has to stay clear.
-   Anchored to the figure's own height rather than the seat's, since the seat
-   grows by whatever the plate needs. */
-/* A small fanned pair tucked against the avatar, not a placard across the
-   chest. They used to sit at 80% of the seat's width -- low enough to read as
-   a sign held below the player rather than cards in their hands -- so this is
-   pulled up to 66%, still comfortably clear of the 48%-of-avatar-height floor
-   tests/e2e/visual-layering.spec.ts enforces (a player must never be masked
-   by their own back), and nudged toward the outer side of the seat along
-   --seat-out-x/-y -- the same outward vector .table-bet's neighbour, the bet
-   chip, rides inward -- so the pair reads as beside the icon rather than
-   dead-centre under it. */
+/* A small fanned pair held up above the avatar, centred dead-on rather than
+   tucked to one side of it.
+   Used to sit at 66% down the seat box, nudged outward along --seat-out-x/-y
+   toward the rail -- which put the pair beside the nameplate rather than in
+   the player's hands, and off-axis from the face holding them on top of
+   that. `top: 14%` -- a little way into the figure box, not its very top
+   edge (0%) -- so the pair overlaps the crown of the avatar rather than
+   floating a full card's height above it: two seats on the same side of the
+   ring sit close enough vertically (see Sofia/Aisha on the left rail) that
+   the full-height version reached up into the seat above and read as that
+   seat's own hand. translateY(-100%) then lifts the pair's own box clear of
+   that anchor point entirely, so it still reads as held above the face, just
+   with less empty felt between the two. No outward nudge any more -- centred
+   is centred. */
 .seat-cards {
   position: absolute;
   left: 50%;
-  top: calc(var(--seat-width) * .66);
-  --card-side-reach: 9px;
+  top: 14%;
+  --card-lift-gap: 2px;
   display: flex;
-  transform:
-    translate(-50%, -50%)
-    translate(calc(var(--seat-out-x, 0) * var(--card-side-reach)), 0);
+  transform: translate(-50%, calc(-100% - var(--card-lift-gap)));
 }
 
 /* An opponent's cards are sized from their seat, so they stay in proportion to
@@ -616,14 +650,22 @@
   border-radius: 4px;
 }
 
-/* The extra size still reaches slightly further toward the plate than the
-   hidden state did, so a revealed pair gets a little more of the outward
-   nudge --card-side-reach already gives every seat's cards (06-table.css's
-   .seat-cards rule) -- clear of the stack number rather than sized down
-   further to avoid it. :has() rather than a class on the pair themselves:
-   nothing renders the reveal moment as a class on .seat-cards itself. */
-.seat-cards:not(.own-cards):has(.playing-card:not(.card-back)) {
-  --card-side-reach: 15px;
+/* Desktop only: the pair now sits in its own clear band above the portrait
+   instead of tucked beside it, so there is room to let it read as a hand of
+   cards rather than a hint of one. Bumped a little past the base tiers above
+   and given the drop shadow every other card on the felt already carries
+   (.playing-card's own box-shadow, 07-cards.css) -- at the old .20/.23 sizes
+   that shadow was too small to register at all. */
+@media (min-width: 901px) {
+  .seat-cards:not(.own-cards) {
+    filter: drop-shadow(0 6px 10px rgba(0,0,0,.4));
+  }
+  .seat-cards:not(.own-cards) .playing-card {
+    width: calc(var(--seat-width) * .24 * var(--seat-depth, 1));
+  }
+  .seat-cards:not(.own-cards) .playing-card:not(.card-back) {
+    width: calc(var(--seat-width) * .27 * var(--seat-depth, 1));
+  }
 }
 
 /* .5s matches DEAL_FLIGHT_MS in lib/game/deal-choreography.ts, which is what

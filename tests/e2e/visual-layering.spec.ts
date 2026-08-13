@@ -200,8 +200,14 @@ async function verifyOpponentLayout(page: Page) {
     expect(figureBox).not.toBeNull();
     expect(figureBox!.y).toBeGreaterThanOrEqual(0);
     if (cardsBox) {
-      // Card backs may cross the lower torso, but must remain below the face.
-      expect(cardsBox.y).toBeGreaterThanOrEqual(figureBox!.y + figureBox!.height * 0.48);
+      // Cards sit above the portrait now, centred on it rather than tucked
+      // beside it (08-seat.css's .seat-cards) -- they overlap only its
+      // crown, not the face below it. Measured across every viewport this
+      // loop runs (1144x846 down to 390x844 portrait): the pair's own bottom
+      // edge lands 16-19% of the way down the figure box. 0.3 leaves real
+      // margin above that range while still catching a regression that let
+      // the pair sink down toward eye level.
+      expect(cardsBox.y + cardsBox.height).toBeLessThanOrEqual(figureBox!.y + figureBox!.height * 0.3);
     }
   }
 }

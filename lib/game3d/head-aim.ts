@@ -25,8 +25,14 @@ import { clampHeadPitch, clampHeadYaw } from "./avatar-state";
 import { add, dot, len, norm, scale, sub, vec, type Vec3 } from "./vec3-math";
 
 /** How strongly the idle wander perturbs an otherwise-locked gaze, in radians. */
-const IDLE_YAW_AMPLITUDE_RAD = (4 * Math.PI) / 180;
-const IDLE_PITCH_AMPLITUDE_RAD = (2 * Math.PI) / 180;
+// Sized against the FARTHEST seat, not the near one: a fixed angle reads as
+// much smaller motion the farther a head is from the camera, and every seat
+// but the near one is far enough that 4deg/2deg (the first-guess values) was
+// visually indistinguishable from a locked stare. Bumped until the far seat
+// reads as alive on a real render; the near seat is still well inside a
+// natural "idle glance" range at this amplitude.
+const IDLE_YAW_AMPLITUDE_RAD = (10 * Math.PI) / 180;
+const IDLE_PITCH_AMPLITUDE_RAD = (5 * Math.PI) / 180;
 
 /**
  * A small deterministic wander so a held gaze doesn't lock perfectly still —

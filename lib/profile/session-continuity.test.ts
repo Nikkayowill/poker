@@ -51,6 +51,7 @@ const profile: PlayerProfile = {
   goldBalance: 4_200,
   unlimitedGold: false,
   lastDailyClaimAt: null,
+  lastBackstopAt: null,
   isRegistered: true,
 };
 

@@ -16,6 +16,7 @@ function profileWith(overrides: Partial<PlayerProfile>): PlayerProfile {
     goldBalance: 2000,
     unlimitedGold: false,
     lastDailyClaimAt: null,
+    lastBackstopAt: null,
     isRegistered: true,
     ...overrides,
   };

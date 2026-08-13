@@ -69,10 +69,10 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RoomCreatedModal } from "@/components/table/room-created-modal";
 import { useWebglSupport } from "@/components/table/use-webgl-support";
 import { RewardedAdModal } from "@/components/rewards/rewarded-ad-modal";
-import { useGameAchievements } from "@/components/rewards/use-game-achievements";
 import { REWARDED_AD_ELIGIBLE_BELOW } from "@/lib/rewards/config";
 import type { RewardTrigger } from "@/lib/rewards/triggers";
 import { PokerTable, type ConnectionState } from "@/components/table/poker-table";
+import { useTableReactions } from "@/lib/game/use-table-reactions";
 import {
   LEGACY_SOUND_STORAGE_KEY,
   MUSIC_STORAGE_KEY,
@@ -96,11 +96,17 @@ const REFRESH_RETRY_BASE_MS = 250;
 const REFRESH_RETRY_MAX_MS = 2_000;
 
 /**
- * The trigger shown when the player opens "Free Gold" from the menu directly,
- * rather than one of useGameAchievements' in-game moments finding them.
- * `kind: "low-gold"` is the honest label for it -- it is the same offer, just
- * requested instead of noticed -- and the modal never reads `kind` for
- * anything but that bookkeeping, which this manual path deliberately bypasses.
+ * The trigger shown when the player opens "Free Gold" from the lobby menu.
+ *
+ * This is the *only* way into RewardedAdModal now -- there used to also be an
+ * automatic popup that watched for in-game moments (first win of the session,
+ * a big pot, a win streak) and offered the same modal uninvited, mid-hand.
+ * That surprised players too often and too often mid-game, so it is gone
+ * (lib/rewards/triggers.ts's advanceRewardWatch and its call site); the
+ * "Get Free Gold" row below -- lobby-only (see the `{!game && ...}` it lives
+ * inside) and gated on `freeGoldEligible`'s below-cheapest-buy-in check -- is
+ * what remains. `kind: "low-gold"` is the honest label; the modal never reads
+ * `kind` for anything but bookkeeping this manual path doesn't use.
  */
 const FREE_GOLD_TRIGGER: RewardTrigger = {
   kind: "low-gold",
@@ -259,11 +265,8 @@ export function PokerApp() {
   }, [entryComplete, game]);
   const [claimingGold, setClaimingGold] = useState(false);
   const [goldFlash, setGoldFlash] = useState(false);
-  // The lobby menu's own "Free Gold" entry, opened without waiting for an
-  // achievement to trigger it. Separate from useGameAchievements' `offer` --
-  // that state is edge-triggered and one-shot per kind for the session, which
-  // is right for an unsolicited nudge and wrong for a row the player can
-  // click again the next time they're short.
+  // The lobby menu's own "Free Gold" entry -- the only way this modal opens.
+  // Reopenable any time the row is eligible, up to the server's daily cap.
   const [freeGoldOpen, setFreeGoldOpen] = useState(false);
   // Learned from the server, not assumed: null means "hasn't been told
   // otherwise yet", so the row stays offered until a real 429 says the day's
@@ -274,6 +277,9 @@ export function PokerApp() {
   // one-shot moment right after creating a room, not table state.
   const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null);
   const gameId = game?.id;
+  const mySeatId = game?.seats.find((seat) => seat.isMine)?.id ?? null;
+  const { reactions, sendReaction, onCooldown: reactionCooldown } =
+    useTableReactions(gameId ?? null, mySeatId);
   const gameVersionRef = useRef(game?.version ?? 0);
   const previousGameRef = useRef<GameSnapshot | null>(null);
   // Deliberately its own ref rather than reading previousGameRef, which the
@@ -1230,27 +1236,14 @@ export function PokerApp() {
     && (freeGoldRemainingToday === null || freeGoldRemainingToday > 0);
 
   /**
-   * When to offer a rewarded ad.
-   *
-   * Everything this component knows about the feature is these two lines and
-   * the modal at the bottom. The rules live in lib/rewards/triggers.ts, the
-   * money in lib/server/rewarded-ad-service.ts, and the pages that have no
-   * snapshot to diff reach it through lib/rewards/events.ts -- so adding a new
-   * trigger never touches this file. The lobby's own "Free Gold" row is a
-   * second, deliberately separate way into the same modal -- see
-   * FREE_GOLD_TRIGGER and freeGoldOpen above.
+   * When to offer a rewarded ad: only when the lobby's "Get Free Gold" row is
+   * clicked. `!game` here is belt-and-suspenders -- the row itself only
+   * renders inside the lobby's `{!game && ...}` block below -- but the point
+   * of this feature is "never mid-hand", so the modal's own gate says that
+   * directly rather than trusting the menu not to change shape later.
    */
-  const { offer: rewardOffer, dismiss: dismissRewardOffer } = useGameAchievements(game, profile);
-  const activeRewardTrigger = rewardOffer ?? (freeGoldOpen ? FREE_GOLD_TRIGGER : null);
-  // Closes whichever is actually open. Clearing both rather than branching on
-  // which one is active means a stray freeGoldOpen left over from before an
-  // achievement offer arrived can never reopen the modal right after this
-  // dismissal -- only one of the two is ever true in practice, but nothing
-  // here depends on that staying true.
-  const closeRewardModal = () => {
-    if (rewardOffer) dismissRewardOffer();
-    setFreeGoldOpen(false);
-  };
+  const activeRewardTrigger = freeGoldOpen && !game ? FREE_GOLD_TRIGGER : null;
+  const closeRewardModal = () => setFreeGoldOpen(false);
 
   const lobbyMenuItems: MenuItem[] = [
     // First, and only for an account that can actually take either. A
@@ -1392,6 +1385,9 @@ export function PokerApp() {
             onCycleRoomTheme={cycleRoomTheme}
             onSignIn={() => void signIn()}
             onSignOut={() => void signOut()}
+            reactions={reactions}
+            onSendReaction={sendReaction}
+            reactionCooldown={reactionCooldown}
           />
         )
         : (

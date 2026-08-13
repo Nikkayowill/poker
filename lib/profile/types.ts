@@ -38,6 +38,8 @@ export interface PlayerProfile {
   unlimitedGold: boolean;
   /** ISO timestamp of the last successful daily-Gold claim, or null if never claimed. */
   lastDailyClaimAt: string | null;
+  /** ISO timestamp of the last broke-player recovery top-up, or null if never claimed. See lib/profile/backstop.ts. */
+  lastBackstopAt: string | null;
   /**
    * Whether this profile is backed by a real account. Deliberately a boolean
    * rather than the account id: the client only needs to know if progress is

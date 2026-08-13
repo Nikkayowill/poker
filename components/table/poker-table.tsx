@@ -25,6 +25,9 @@ import {
 import { Menu, type MenuItem } from "@/components/nav/menu";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { tapSound } from "@/lib/audio/ui-sounds";
+import type { ReactionId } from "@/lib/game/reaction-channel";
+import type { SeatReaction } from "@/lib/game/use-table-reactions";
+import { ReactionButton } from "./table-reactions";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { ActionBar } from "./action-bar";
@@ -142,6 +145,9 @@ export function PokerTable({
   onCycleRoomTheme,
   onSignIn,
   onSignOut,
+  reactions,
+  onSendReaction,
+  reactionCooldown,
 }: {
   game: GameSnapshot;
   pending: boolean;
@@ -164,6 +170,10 @@ export function PokerTable({
   onCycleRoomTheme: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
+  /** This hand's active reactions, keyed by seat id -- see use-table-reactions.ts. */
+  reactions: Record<string, SeatReaction>;
+  onSendReaction: (reactionId: ReactionId) => void;
+  reactionCooldown: boolean;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
@@ -299,7 +309,12 @@ export function PokerTable({
     const AVATAR_MAX_PX = 78;
     const AVATAR_WIDTH_RATIO = 0.72;
     const DEALER_PUCK_RADIUS = 12; // half of .dealer-puck's own 24px (08-seat.css)
-    const DEALER_PUCK_GAP = 8;
+    // 8px used to leave the puck sitting in the rail's own padded cushion for
+    // any seat close to the felt's edge -- worst on the seat across from the
+    // viewer, whose whole avatar already overhangs .poker-rail's inset (see
+    // the comment on .poker-rail in 06-table.css). 24px pulls it far enough
+    // inward that it clears the cushion and reads as sitting on the felt.
+    const DEALER_PUCK_GAP = 24;
     const avatarDiameter = Math.min(
       AVATAR_MAX_PX,
       Math.max(AVATAR_MIN_PX, seatRect.width * AVATAR_WIDTH_RATIO),
@@ -905,11 +920,22 @@ export function PokerTable({
                 is; anything drawn there collides with it, which is why this
                 grows downward on the left rather than making the band
                 taller. */}
-            <ul className="table-feed" aria-live="polite">
-              {game.log.slice(0, 3).map((entry) => (
-                <li key={entry.id} className={`table-feed-${entry.kind}`}>{entry.text}</li>
-              ))}
-            </ul>
+            {/* Grouped with the feed instead of a fourth child of .table-hud's
+                space-between row, which was tuned for two or three children
+                and would reflow if a bare sibling landed here. Puts the
+                trigger right beside the social corner the desktop spec asks
+                for, and opts back into pointer-events since .table-hud is
+                click-through decoration. */}
+            <div className="table-hud-left">
+              <ul className="table-feed" aria-live="polite">
+                {game.log.slice(0, 3).map((entry) => (
+                  <li key={entry.id} className={`table-feed-${entry.kind}`}>{entry.text}</li>
+                ))}
+              </ul>
+              {game.isSeated && (
+                <ReactionButton onSend={onSendReaction} disabled={reactionCooldown} />
+              )}
+            </div>
             {/* The result, where the eye already is. The same sentence has
                 always been in the action bar, but that is the busiest strip
                 on the screen and it is at the far end of it from the cards
@@ -1095,6 +1121,7 @@ export function PokerTable({
                 turnDeadlineAt={game.turnDeadlineAt}
                 winAmount={showFunnel ? game.winners.find((winner) => winner.seatId === seat.id)?.amount : undefined}
                 elementRef={(el) => { seatRefs.current[seat.id] = el; }}
+                reaction={reactions[seat.id] ?? null}
               />
             ))}
           </div>

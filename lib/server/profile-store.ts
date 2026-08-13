@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { avatarPresets, profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile, ProfileUpdate } from "@/lib/profile/types";
 import { defaultEquipped, normalizeEquipped, type EquippedCosmetics } from "@/lib/cosmetics/catalog";
+import { BACKSTOP_COOLDOWN_MS, BACKSTOP_GRANT } from "@/lib/profile/backstop";
 import { adminClient } from "./supabase-admin";
 
 // isRegistered is omitted and derived from userId in publicProfile, so the
@@ -63,15 +64,6 @@ const SIGNUP_GOLD_TARGET = 10000;
  */
 export const DAILY_GOLD_GRANT = 1000;
 
-/**
- * The broke-player recovery grant. Deliberately small -- exactly one seat at
- * the cheapest table, not a farmable income -- because a player who cannot
- * afford the cheapest seat has no way back into the game, and a stranded
- * player is a lost one.
- */
-const BACKSTOP_GRANT = 1000;
-const BACKSTOP_COOLDOWN_MS = 12 * 60 * 60 * 1000;
-
 function publicProfile(profile: StoredProfile): PlayerProfile {
   return {
     id: profile.id,
@@ -86,6 +78,7 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     goldBalance: profile.goldBalance,
     unlimitedGold: profile.unlimitedGold,
     lastDailyClaimAt: profile.lastDailyClaimAt,
+    lastBackstopAt: profile.lastBackstopAt,
     isRegistered: profile.userId !== null,
   };
 }

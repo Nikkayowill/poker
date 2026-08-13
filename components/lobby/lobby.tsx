@@ -6,6 +6,7 @@ import { Check, Cloud, Coins, ShieldCheck, Users, X } from "lucide-react";
 import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { TableRenderer } from "@/lib/scene/table-renderer";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { backstopState } from "@/lib/profile/backstop";
 import { accountsEnabled } from "@/lib/auth/client";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
@@ -130,10 +131,13 @@ export function Lobby({
     onJoinCode(name.trim() || "You", joinCode.trim());
   };
   // Below the cheapest buy-in there is no seat in the house they can take,
-  // so offer the recovery grant rather than letting them hit a dead end.
-  const needsTopUp = Boolean(
-    profile && !profile.unlimitedGold && (profile.goldBalance ?? 0) < TIER_CONFIG[CHEAPEST_TIER].minBuyIn,
-  );
+  // so offer the recovery grant rather than letting them hit a dead end --
+  // but only while it is actually claimable. This used to key off goldBalance
+  // alone, so a player who topped up and then busted back below the
+  // threshold within claimBackstopGold's cooldown saw the banner reappear
+  // and a "you've already had a top-up recently" error on the very button it
+  // showed them. backstopState knows the cooldown too.
+  const needsTopUp = backstopState(profile, new Date(), TIER_CONFIG[CHEAPEST_TIER].minBuyIn) === "ready";
   // Only nudge a guest once they have actually played -- a profile still
   // sitting on its untouched starting balance has nothing worth saving yet,
   // and prompting then is asking for a signup with no reason behind it.

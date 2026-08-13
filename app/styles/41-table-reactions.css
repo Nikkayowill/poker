@@ -1,0 +1,215 @@
+/* Table Reactions -- cosmetic emoji a seated player can send. Wire contract:
+   lib/game/reaction-channel.ts. Client state: lib/game/use-table-reactions.ts.
+   Picker UI: components/table/table-reactions.tsx. The bubble itself renders
+   inside the seat (components/table/player-seat.tsx), reusing --seat-out-x/-y
+   and --seat-width the same way .table-bet and .winner-badge already do
+   (08-seat.css) instead of a second measured overlay.
+
+   Last in the cascade before 99-scene.css, so nothing here has to fight the
+   seat/responsive sheets for the properties it touches. */
+
+/* ------------------------------------------------------------------------
+   THE TRIGGER + PANEL
+   ------------------------------------------------------------------------ */
+
+/* Grouped with .table-feed so the trigger reads as part of the same social
+   corner instead of a fourth child fighting .table-hud's space-between row. */
+.table-hud-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6, 12px);
+  pointer-events: none;
+}
+
+.reaction-launcher {
+  position: relative;
+  /* .table-hud is click-through decoration (06-table.css); this opts back
+     into pointer events for itself. */
+  pointer-events: auto;
+}
+
+.reaction-trigger {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: var(--radius-round, 50%);
+  background: rgba(255, 255, 255, .07);
+  color: #c6d2cb;
+  cursor: pointer;
+}
+.reaction-trigger:hover,
+.reaction-trigger:focus-visible {
+  background: rgba(255, 255, 255, .14);
+  color: var(--ink);
+  outline: none;
+}
+.reaction-trigger:disabled { opacity: .4; cursor: default; }
+
+.reaction-scrim { display: none; }
+
+/* Desktop and landscape default: a compact floating panel, same tokens as
+   .app-menu-panel (20-menu.css) -- the app's one other dropdown -- so this
+   one doesn't look like a different pattern. */
+.reaction-panel {
+  position: absolute;
+  top: calc(100% + var(--space-3, 6px));
+  left: 0;
+  z-index: var(--z-modal, 60);
+  display: flex;
+  flex-wrap: wrap;
+  width: max-content;
+  max-width: 224px;
+  gap: var(--space-2, 4px);
+  padding: var(--space-3, 6px);
+  border-radius: var(--radius-2xl, 14px);
+  background: #16121f;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .55);
+  animation: app-menu-in .12s ease-out both;
+}
+
+.reaction-option {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: var(--radius-lg, 9px);
+  background: transparent;
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+}
+.reaction-option:hover,
+.reaction-option:focus-visible {
+  background: rgba(255, 255, 255, .08);
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reaction-panel { animation: none; }
+}
+
+/* ------------------------------------------------------------------------
+   THE BUBBLE BESIDE A SEAT
+   ------------------------------------------------------------------------ */
+
+/* Anchored above the figure like .winner-badge (08-seat.css) -- that spot is
+   already proven clear of the nameplate and cards at every seat and
+   breakpoint -- with extra headroom (-30px/.34 against its -16px/.26) so the
+   two don't collide if a reaction lands right as a hand resolves. The
+   outward nudge along --seat-out-x is what keeps a bubble from always
+   sitting dead centre above the avatar: that vector already points a
+   different way at each of the six ring positions, so this is "the nearest
+   clear felt for this seat" without a per-seat special case. It's 0 for the
+   near/local seat, which is also right -- pushing outward there would aim
+   straight at the hole cards and action bar. */
+.seat-reaction-bubble {
+  position: absolute;
+  left: 50%;
+  top: calc(-30px - var(--seat-width) * .34);
+  z-index: 13;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(15, 12, 20, .82);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .4), inset 0 0 0 1px rgba(255, 255, 255, .1);
+  font-size: 17px;
+  line-height: 1;
+  pointer-events: none;
+  translate: calc(var(--seat-out-x, 0) * 22px) 0;
+  animation: reaction-bubble-life 2.2s cubic-bezier(.2, .85, .3, 1) both;
+}
+
+/* Scale up on entry, hold, then drift 6px up while fading out -- one
+   timeline, matching REACTION_BUBBLE_MS in reaction-channel.ts. */
+@keyframes reaction-bubble-life {
+  0% { opacity: 0; transform: translateX(-50%) scale(.9); }
+  8% { opacity: 1; transform: translateX(-50%) scale(1); }
+  82% { opacity: 1; transform: translateX(-50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -6px) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat-reaction-bubble { animation: reaction-bubble-life-reduced 2.2s ease both; }
+}
+@keyframes reaction-bubble-life-reduced {
+  0%, 82% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ------------------------------------------------------------------------
+   MOBILE PORTRAIT: A BOTTOM SHEET
+   ------------------------------------------------------------------------ */
+
+@media (max-width: 600px) {
+  .reaction-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-modal, 60) - 1);
+    background: rgba(4, 5, 8, .5);
+  }
+  .reaction-panel {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    width: auto;
+    max-width: none;
+    gap: var(--space-4, 8px);
+    padding: var(--space-8, 16px) var(--space-8, 16px) calc(var(--space-8, 16px) + var(--safe-bottom));
+    border-radius: var(--radius-2xl, 14px) var(--radius-2xl, 14px) 0 0;
+    animation: reaction-sheet-in .18s ease-out both;
+  }
+  .reaction-option {
+    width: auto;
+    height: 56px;
+    border-radius: var(--radius-xl, 12px);
+    background: rgba(255, 255, 255, .05);
+    font-size: 24px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reaction-panel { animation: none; }
+  }
+}
+
+@keyframes reaction-sheet-in {
+  from { transform: translateY(100%); }
+}
+
+/* ------------------------------------------------------------------------
+   MOBILE LANDSCAPE: A COMPACT POPOVER NEAR THE ACTION CONTROLS
+   ------------------------------------------------------------------------ */
+
+/* Same short-plate breakpoint the responsive/landscape sheets already key
+   their own overrides on. No sheet here -- no spare vertical room -- and the
+   panel opens from the same bottom-right corner .action-layer uses at this
+   size, which is what "near the action controls" means here: the trigger
+   stays up by the feed, but the open grid lands where the thumb already is. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .reaction-scrim { display: none; }
+  .reaction-panel {
+    position: fixed;
+    top: auto;
+    left: auto;
+    bottom: calc(12px + var(--safe-bottom));
+    right: max(16px, var(--safe-right));
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    width: max-content;
+    max-width: min(280px, 60vw);
+    gap: var(--space-2, 4px);
+    padding: var(--space-3, 6px);
+  }
+  .reaction-option { width: 34px; height: 34px; font-size: 17px; }
+}

@@ -8,6 +8,8 @@ import { avatarFace } from "@/lib/cosmetics/catalog";
 import { dealDelayMs } from "@/lib/game/deal-choreography";
 import { isBotAway } from "@/lib/game/seat-presence";
 import { isWinningCard } from "@/lib/game/winning-cards";
+import { reactionEmoji, reactionLabel } from "@/lib/game/reaction-channel";
+import type { SeatReaction } from "@/lib/game/use-table-reactions";
 import { missingArtwork } from "@/components/artwork-cache";
 import { PlayingCard } from "./playing-card";
 import { SeatTimer } from "./seat-timer";
@@ -17,7 +19,17 @@ import { SeatTimer } from "./seat-timer";
  * full character figures; the 2D table needs a contained face crop so the
  * avatar does not consume the cards' and nameplate's working space.
  */
-export function SeatFigure({ seat, active }: { seat: PublicSeat; active: boolean }) {
+export function SeatFigure({
+  seat,
+  active,
+  turnStartedAt,
+  turnDeadlineAt,
+}: {
+  seat: PublicSeat;
+  active: boolean;
+  turnStartedAt: string | null;
+  turnDeadlineAt: string | null;
+}) {
   const [, forceRerender] = useState(0);
   const declared = seat.avatarCosmetic ? avatarFace(seat.avatarCosmetic) : null;
   const artwork = declared && !missingArtwork.has(declared) ? declared : null;
@@ -58,6 +70,16 @@ export function SeatFigure({ seat, active }: { seat: PublicSeat; active: boolean
             )}
           </>
         )}
+      {/* Opponents' turn clock rings their own portrait rather than sitting as
+          a separate badge down in the nameplate -- a fuse that laps the face
+          it is timing, not a second circle competing with the stack number
+          for the same row. The local player keeps the nameplate clock (see
+          SeatNameplate below): their own figure is hidden on desktop
+          entirely (16-first-person.css), so there is no portrait here left
+          to ring. */}
+      {active && !seat.isMine && (
+        <SeatTimer startedAt={turnStartedAt} deadlineAt={turnDeadlineAt} />
+      )}
     </div>
   );
 }
@@ -179,9 +201,13 @@ function SeatNameplate({
             </span>
           )}
         {/* Only the seat on the clock carries one, so it doubles as the
-            "whose turn is it" cue and there is never more than one burning. */}
-        {seat.isCurrent && (
-          <SeatTimer startedAt={turnStartedAt} deadlineAt={turnDeadlineAt} large={seat.isMine} />
+            "whose turn is it" cue and there is never more than one burning.
+            Opponents' clocks moved onto their own portrait -- see SeatFigure
+            above -- so this is the local player's alone now: their figure is
+            hidden on desktop, so the nameplate is the only place left for it
+            to burn. */}
+        {seat.isCurrent && seat.isMine && (
+          <SeatTimer startedAt={turnStartedAt} deadlineAt={turnDeadlineAt} large />
         )}
       </div>
     </div>
@@ -203,6 +229,7 @@ export const PlayerSeat = memo(function PlayerSeat({
   dealSeatCount,
   dealVector,
   winningKeys,
+  reaction,
 }: {
   seat: PublicSeat;
   placement: string;
@@ -223,6 +250,8 @@ export const PlayerSeat = memo(function PlayerSeat({
   elementRef?: (el: HTMLElement | null) => void;
   /** Computed position and stacking order around the tilted table plane. */
   seatStyle?: React.CSSProperties;
+  /** This seat's current reaction bubble, if it has one -- see use-table-reactions.ts. */
+  reaction?: SeatReaction | null;
 }) {
   const folded = seat.status === "folded" || seat.status === "out";
   const away = isBotAway(seat);
@@ -241,7 +270,14 @@ export const PlayerSeat = memo(function PlayerSeat({
       winningKeys={winningKeys}
     />
   );
-  const figure = <SeatFigure seat={seat} active={seat.isCurrent} />;
+  const figure = (
+    <SeatFigure
+      seat={seat}
+      active={seat.isCurrent}
+      turnStartedAt={turnStartedAt}
+      turnDeadlineAt={turnDeadlineAt}
+    />
+  );
   const nameplate = (
     <SeatNameplate
       seat={seat}
@@ -302,6 +338,19 @@ export const PlayerSeat = memo(function PlayerSeat({
       {nameplate}
       {seat.streetBet > 0 && <span className="table-bet">${seat.streetBet}</span>}
       {isWinner && <span className="win-amount-float">+{winAmount.toLocaleString()}</span>}
+      {/* Keyed on reaction.key rather than reaction.reactionId, so sending
+          the same emoji twice in a row still remounts the bubble and
+          restarts the animation instead of React treating it as unchanged. */}
+      {reaction && (
+        <span
+          key={reaction.key}
+          className="seat-reaction-bubble"
+          role="status"
+          aria-label={`${seat.name} reacted: ${reactionLabel(reaction.reactionId)}`}
+        >
+          <span aria-hidden="true">{reactionEmoji(reaction.reactionId)}</span>
+        </span>
+      )}
     </article>
   );
 }, (previous, next) => (
@@ -316,6 +365,7 @@ export const PlayerSeat = memo(function PlayerSeat({
   && previous.seatStyle === next.seatStyle
   && previous.dealSlot === next.dealSlot
   && previous.dealSeatCount === next.dealSeatCount
+  && previous.reaction?.key === next.reaction?.key
   // By value, not identity. The vector arrives from a measurement that runs
   // on every observed resize; comparing the object would re-render all six
   // seats whenever the table was measured again to the same numbers. Leaving

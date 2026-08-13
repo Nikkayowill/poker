@@ -4,13 +4,17 @@
  * Debug render of the 2.5D table: floor, table body, rail, felt, and a
  * marker at every anchor `lib/scene/table-anchors.ts` defines.
  *
- * Still no characters -- a seated player is drawn as a stick and a head
- * dot, which is enough to judge whether the crowd sits where it should
- * without pretending to be art.
+ * A seated player is drawn as a stick and a head dot by default, which is
+ * enough to judge whether the crowd sits where it should without pretending
+ * to be art. Pass `seatArt` (a character id from `seat-art.generated.ts`) to
+ * swap those placeholders for the real cutouts instead, at every seat that
+ * character has a plate for -- that's the other half of this tool's job:
+ * judging where the art actually lands before anything ships wired to it.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  DEALER_ANGLE_DEG,
   FELT_TOP_Y,
   FLOOR_Y,
   HERO_SLOT,
@@ -25,6 +29,7 @@ import {
   pedestalOutline,
   project,
   seatAnchor,
+  seatAngleDeg,
   seatHead,
   seatShoulderRoom,
   tableOutline,
@@ -33,6 +38,7 @@ import {
   type Vec3,
 } from "@/lib/scene/table-anchors";
 import { MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
+import { pickSeatArt, seatArtCharacter } from "@/lib/scene/seat-art";
 
 const MARKER_COLOR = {
   seat: "#6fd6ff",
@@ -302,13 +308,90 @@ function drawHudLine(ctx: CanvasRenderingContext2D, frame: Frame) {
   ctx.restore();
 }
 
+/**
+ * How tall a seat's art is drawn, as a multiple of that seat's own
+ * `shoulderPx` budget (the projected gap to its nearest neighbour, the same
+ * number `racetrack-scene.tsx` reports to the DOM). Height rather than width
+ * because height is what the art is normalised on -- crown to hands, per
+ * `prepare-seat-art.py` -- so pinning it is what keeps every character's
+ * hands on the same line of cloth. Starting value, meant to be judged and
+ * moved from renders of this page rather than reasoned about; see
+ * DEALER_SLOT for the sibling constant this mirrors.
+ */
+const SEAT_ART_HEIGHT_RATIO = 1.35;
+
+/** How far the crown sits above the seat's own head anchor, as a fraction of
+ *  the drawn height. Same role as DEALER_SLOT.crown. */
+const SEAT_ART_CROWN_FRACTION = 0.06;
+
+/** Cross-request cache so a resize (a second `TableAnchorsDebug` on the same
+ *  page, or a re-fit) never re-fetches a plate it already has. Keyed on the
+ *  URL, which is the only identity a plate has. Every caller waiting on a
+ *  still-loading plate registers its own listener -- a lone `onload` would
+ *  only ever wake the component that happened to start the fetch, and this
+ *  page always has at least two (desktop and mobile) sharing one plate. */
+const seatArtImages = new Map<string, { image: HTMLImageElement; listeners: Set<() => void> }>();
+
+function loadSeatArt(src: string, onReady: () => void): HTMLImageElement | null {
+  const existing = seatArtImages.get(src);
+  const entry = existing ?? { image: new Image(), listeners: new Set<() => void>() };
+  if (!existing) {
+    seatArtImages.set(src, entry);
+    entry.image.onload = () => {
+      for (const listener of entry.listeners) listener();
+    };
+    entry.image.src = src;
+  }
+  if (entry.image.complete) return entry.image;
+  entry.listeners.add(onReady);
+  return null;
+}
+
+function drawSeatArt(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  image: HTMLImageElement,
+  floor: Vec3,
+  head: Vec3,
+  shoulderMetres: number,
+  aspect: number,
+  mirror: boolean,
+): boolean {
+  const crown = project(camera, head);
+  if (crown.depth <= 0) return false;
+  const left = project(camera, { x: floor.x - shoulderMetres / 2, y: head.y, z: floor.z });
+  const right = project(camera, { x: floor.x + shoulderMetres / 2, y: head.y, z: floor.z });
+  const shoulderPx = Math.abs(right.x - left.x);
+  const height = shoulderPx * SEAT_ART_HEIGHT_RATIO;
+  const width = height * aspect;
+  const top = crown.y - height * SEAT_ART_CROWN_FRACTION;
+  const boxLeft = crown.x - width / 2;
+
+  ctx.save();
+  if (mirror) {
+    ctx.translate(crown.x, 0);
+    ctx.scale(-1, 1);
+    ctx.translate(-crown.x, 0);
+  }
+  ctx.drawImage(image, boxLeft, top, width, height);
+  ctx.restore();
+  return true;
+}
+
 export interface TableAnchorsDebugProps {
   frame: Frame;
   label?: string;
+  /** A character id from `seat-art.generated.ts` -- draws its cutouts at
+   *  every seat it has a plate for instead of the placeholder markers. */
+  seatArt?: string;
 }
 
-export function TableAnchorsDebug({ frame, label }: TableAnchorsDebugProps) {
+export function TableAnchorsDebug({ frame, label, seatArt }: TableAnchorsDebugProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Bumped whenever a plate this frame is waiting on finishes loading, so
+  // the draw effect below re-runs and paints it in -- images decode
+  // asynchronously and the first pass through the seats will usually miss.
+  const [artVersion, setArtVersion] = useState(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -332,26 +415,41 @@ export function TableAnchorsDebug({ frame, label }: TableAnchorsDebugProps) {
     // table has to paint over their chests -- that occlusion is most of
     // what makes them read as sitting at it rather than floating behind it.
     // Furthest first, so a nearer neighbour overlaps a further one.
+    const character = seatArt ? seatArtCharacter(seatArt) : null;
+
     const seated = [];
     for (let slot = 0; slot < SEAT_COUNT; slot += 1) {
       if (slot === HERO_SLOT) continue;
       seated.push({
+        slot,
         floor: seatAnchor(slot),
         head: seatHead(slot),
+        rawShoulders: seatShoulderRoom(slot),
         shoulders: seatShoulderRoom(slot) * FIGURE_WIDTH_RATIO,
         color: MARKER_COLOR.seat,
         label: `seat${slot}`,
       });
     }
     seated.push({
+      slot: null,
       floor: dealerAnchor(),
       head: dealerHead(),
+      rawShoulders: seatShoulderRoom(3),
       shoulders: seatShoulderRoom(3) * FIGURE_WIDTH_RATIO,
       color: MARKER_COLOR.dealer,
       label: "DEALER",
     });
     seated.sort((a, b) => a.floor.z - b.floor.z);
     for (const person of seated) {
+      if (character && person.slot !== null) {
+        const offset = seatAngleDeg(person.slot) - DEALER_ANGLE_DEG;
+        const pick = pickSeatArt(character, offset);
+        const image = loadSeatArt(pick.src, () => setArtVersion((v) => v + 1));
+        if (image) {
+          drawSeatArt(ctx, camera, image, person.floor, person.head, person.rawShoulders, pick.aspect, pick.mirror);
+          continue;
+        }
+      }
       drawSeatedMarker(ctx, camera, person.floor, person.head, person.shoulders, person.color, person.label);
     }
 
@@ -363,7 +461,7 @@ export function TableAnchorsDebug({ frame, label }: TableAnchorsDebugProps) {
     }
 
     drawHudLine(ctx, frame);
-  }, [frame]);
+  }, [frame, seatArt, artVersion]);
 
   return (
     <div style={{ display: "inline-block" }}>

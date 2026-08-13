@@ -112,8 +112,166 @@ export async function createStoredGame(state: GameState): Promise<void> {
 const MATCHMAKING_CANDIDATES = 20;
 
 /**
+ * How long a table's most recently active human seat can go quiet before it
+ * stops counting as "populated" for matchmaking, and becomes eligible to be
+ * archived outright.
+ *
+ * The two jobs deliberately share one threshold. `/api/games/[id]/advance`
+ * -- the only thing that ever forces a stalled turn along -- can only be
+ * called by a seat still at the table (see that route's own check), so once
+ * every human seat has been this quiet, nobody can ever advance the table
+ * again either: the same fact that should stop matchmaking from preferring
+ * it is the fact that makes it worth retiring.
+ *
+ * Not the 15s turn clock: that fires only when *another* seated human's
+ * client is still around to notice the deadline passed. This is the much
+ * longer "is anyone plausibly still at this table at all" signal, read off
+ * `player_sessions.last_seen_at`, which is bumped by ordinary app traffic
+ * app-wide, not by this table specifically.
+ *
+ * A function, not a frozen constant, and read fresh on every call rather
+ * than once at import -- the same reason `botVoluntaryLeaveChance` in
+ * engine.ts is one: a test that sets the override after this module has
+ * already loaded needs it to take effect, not the value that was live at
+ * import time.
+ */
+function staleTableMs(): number {
+  const override = Number(process.env.RIVER_STALE_TABLE_MS);
+  return Number.isFinite(override) && override > 0 ? override : 30 * 60 * 1000;
+}
+
+/**
+ * Bound on one archive sweep. `archiveStaleGames` runs as a side effect of
+ * ordinary matchmaking traffic rather than off its own schedule (there is no
+ * cron here), so it stays a small, cheap pass -- the oldest-touched
+ * candidates first -- and drains the backlog over many calls rather than
+ * scanning every `playing` row on each one.
+ */
+const STALE_SWEEP_LIMIT = 25;
+
+/**
+ * Retires tables that no human can ever unstick.
+ *
+ * A table every human has abandoned has no path back to life: nothing
+ * server-side runs on a schedule, and the one route that can force a stalled
+ * turn along requires a caller who is themselves seated there. A table with
+ * no human seat at all (every occupant a bot) is included for the identical
+ * reason -- it is exactly as stuck, and seats nobody.
+ *
+ * Sets `status: "archived"`, never `"complete"`. `"complete"` is this
+ * engine's *between-hands* rest state -- `dealNextHandIfDue` deals the next
+ * hand the moment it sees one -- so writing it here would just relaunch the
+ * same dead table into another hand nobody will ever finish either.
+ * `"archived"` is the status nothing in the engine treats as anything but
+ * terminal, because every actionable guard checks `=== "playing"`
+ * positively (see `GameStatus`'s own comment) rather than `!== "complete"`.
+ *
+ * Refunds each abandoned human seat's stack before the table closes,
+ * best-effort and logged per seat rather than all-or-nothing -- the same
+ * shape `resolveTimedAdvance`'s inactive-release credit already uses above,
+ * and for the same reason: a missing profile (most often a deleted guest
+ * account) must not block the sweep, but a real balance must not simply
+ * vanish because the table that held it got cleaned up.
+ *
+ * Guarded on `status = "playing"` in the same write that sets `"archived"`,
+ * so a table someone genuinely returns to mid-sweep is left alone rather
+ * than yanked out from under them.
+ */
+export async function archiveStaleGames(limit = STALE_SWEEP_LIMIT): Promise<number> {
+  const supabase = adminClient();
+  const cutoffIso = new Date(Date.now() - staleTableMs()).toISOString();
+
+  if (!supabase) {
+    let archived = 0;
+    for (const state of memoryGames.values()) {
+      if (state.status !== "playing") continue;
+      if (state.updatedAt >= cutoffIso) continue;
+      for (const seat of state.seats) {
+        if (!seat.ownerToken || seat.stack <= 0) continue;
+        try {
+          await creditGold(seat.ownerToken, seat.stack);
+        } catch (error) {
+          console.error("table.stale_archive_credit_failed", { gameId: state.id, token: seat.ownerToken, error });
+        }
+      }
+      state.status = "archived";
+      state.updatedAt = new Date().toISOString();
+      archived += 1;
+      if (archived >= limit) break;
+    }
+    return archived;
+  }
+
+  // Oldest-touched first and bounded, not filtered on updated_at here: a
+  // table can be nudged (e.g. by a poll that finds nothing due) without any
+  // human genuinely being present, so updated_at alone would under-count
+  // staleness. The real check below, against player_sessions, is what
+  // decides -- this first query only picks which candidates to check.
+  const { data: candidates, error: candidateError } = await supabase
+    .from("games")
+    .select("id")
+    .eq("status", "playing")
+    .order("updated_at", { ascending: true })
+    .limit(limit);
+  if (candidateError || !candidates || candidates.length === 0) return 0;
+  const candidateIds = candidates.map((row) => row.id as string);
+
+  const { data: seatRows, error: seatError } = await supabase
+    .from("game_seats")
+    .select("game_id, owner_token, stack")
+    .in("game_id", candidateIds)
+    .not("owner_token", "is", null);
+  if (seatError) return 0;
+
+  const humanSeatsByGame = new Map<string, { token: string; stack: number }[]>();
+  for (const row of seatRows ?? []) {
+    const list = humanSeatsByGame.get(row.game_id as string) ?? [];
+    list.push({ token: row.owner_token as string, stack: Number(row.stack) });
+    humanSeatsByGame.set(row.game_id as string, list);
+  }
+
+  const allTokens = [...new Set([...humanSeatsByGame.values()].flat().map((seat) => seat.token))];
+  let recentTokens = new Set<string>();
+  if (allTokens.length > 0) {
+    const { data: sessions } = await supabase
+      .from("player_sessions")
+      .select("token")
+      .in("token", allTokens)
+      .gt("last_seen_at", cutoffIso);
+    recentTokens = new Set((sessions ?? []).map((row) => row.token as string));
+  }
+
+  const toArchive = candidateIds.filter((id) => {
+    const humans = humanSeatsByGame.get(id) ?? [];
+    return humans.every((seat) => !recentTokens.has(seat.token));
+  });
+  if (toArchive.length === 0) return 0;
+
+  const { data: archived, error: archiveError } = await supabase
+    .from("games")
+    .update({ status: "archived" })
+    .in("id", toArchive)
+    .eq("status", "playing")
+    .select("id");
+  if (archiveError || !archived) return 0;
+
+  for (const row of archived) {
+    const gameId = row.id as string;
+    for (const seat of humanSeatsByGame.get(gameId) ?? []) {
+      if (seat.stack <= 0) continue;
+      try {
+        await creditGold(seat.token, seat.stack);
+      } catch (error) {
+        console.error("table.stale_archive_credit_failed", { gameId, token: seat.token, error });
+      }
+    }
+  }
+  return archived.length;
+}
+
+/**
  * An open seat at a public table of this tier, preferring one that already has
- * a person at it.
+ * a person at it who is plausibly still around.
  *
  * The preference is the point. Quick-play has always joined an existing table
  * before creating one, but it took the *oldest* open table, and every table is
@@ -122,9 +280,16 @@ const MATCHMAKING_CANDIDATES = 20;
  * unplayed even when it was not. Ranking a populated table first is what makes
  * two people who press Play at the same time end up in the same hand.
  *
+ * "Populated" alone was not enough, and staying with it silently routed new
+ * players into tables three abandoned sessions had left mid-hand hours or
+ * days earlier -- occupied on paper, unplayable in fact (see
+ * `archiveStaleGames`'s comment for why nothing rescues those on its own).
+ * A seat only counts toward this preference if `staleTableMs()` has not
+ * passed since its owner's session was last seen anywhere in the app.
+ *
  * Falls back to the oldest open table, and then to nothing, which the caller
- * reads as "create one". A table with only bots is still a perfectly good
- * answer -- it is just the second-best one.
+ * reads as "create one". A table with only bots -- or only quiet humans --
+ * is still a perfectly good answer, just the second-best one.
  */
 export async function findOpenPublicGame(tier: StakesTier): Promise<string | null> {
   const config = TIER_CONFIG[tier];
@@ -136,16 +301,28 @@ export async function findOpenPublicGame(tier: StakesTier): Promise<string | nul
       if (state.isPrivate || state.status !== "playing") continue;
       if (state.tier !== tier) continue;
       if (!state.seats.some((seat) => seat.ownerToken === null)) continue;
-      const hasHuman = state.seats.some((seat) => seat.ownerToken !== null);
-      // A populated table beats any empty one; between two of the same kind,
-      // the older one still wins, so tables fill up rather than all filling
-      // one seat each.
+      // A recently-active human beats any empty or gone-quiet table; between
+      // two of the same kind, the older one still wins, so tables fill up
+      // rather than all filling one seat each. Memory mode has no separate
+      // session-recency signal, so the table's own updatedAt stands in for
+      // it -- reasonable for a single-process dev/test store where "quiet"
+      // and "abandoned" are the same fact, unlike the persisted Supabase case.
+      const staleCutoff = new Date(Date.now() - staleTableMs()).toISOString();
+      const hasHuman = state.seats.some((seat) => seat.ownerToken !== null) && state.updatedAt >= staleCutoff;
       if (!best || (hasHuman && !bestHasHuman) || (hasHuman === bestHasHuman && state.createdAt < best.createdAt)) {
         best = state;
         bestHasHuman = hasHuman;
       }
     }
     return best?.id ?? null;
+  }
+
+  try {
+    await archiveStaleGames();
+  } catch (error) {
+    // A failed sweep is not a failed match -- see the ranking fallback below
+    // for the same principle applied one step further down.
+    console.error("table.stale_sweep_failed", { error });
   }
 
   const { data, error } = await supabase
@@ -180,14 +357,36 @@ export async function findOpenPublicGame(tier: StakesTier): Promise<string | nul
 
   const { data: occupied, error: occupiedError } = await supabase
     .from("game_seats")
-    .select("game_id")
+    .select("game_id, owner_token")
     .in("game_id", candidateIds)
     .not("owner_token", "is", null);
   // A failure to rank is not a failure to match: the oldest open table is
   // still a table, and sending someone to it beats refusing to seat them.
   if (occupiedError) return candidateIds[0];
+  const occupiedRows = occupied ?? [];
 
-  const populated = new Set((occupied ?? []).map((row) => row.game_id));
+  // "Occupied" alone is not "populated" -- see this function's own comment.
+  // A seat only counts if its owner's session has been seen anywhere in the
+  // app within staleTableMs(); a failure here degrades to the old, coarser
+  // "any owner_token" behaviour rather than failing the match entirely, for
+  // the same reason as the fallback just above.
+  const ownerTokens = [...new Set(occupiedRows.map((row) => row.owner_token as string))];
+  let recentTokens: Set<string> | null = null;
+  if (ownerTokens.length > 0) {
+    const staleCutoff = new Date(Date.now() - staleTableMs()).toISOString();
+    const { data: sessions, error: sessionError } = await supabase
+      .from("player_sessions")
+      .select("token")
+      .in("token", ownerTokens)
+      .gt("last_seen_at", staleCutoff);
+    if (!sessionError) recentTokens = new Set((sessions ?? []).map((row) => row.token as string));
+  }
+
+  const populated = new Set(
+    occupiedRows
+      .filter((row) => (recentTokens ? recentTokens.has(row.owner_token as string) : true))
+      .map((row) => row.game_id),
+  );
   return candidateIds.find((id) => populated.has(id)) ?? candidateIds[0];
 }
 

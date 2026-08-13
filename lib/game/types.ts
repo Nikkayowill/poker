@@ -12,7 +12,16 @@ export interface Card {
 
 export type Street = "preflop" | "flop" | "turn" | "river" | "showdown";
 export type SeatStatus = "active" | "folded" | "all-in" | "out";
-export type GameStatus = "playing" | "complete";
+/**
+ * "complete" is a *between-hands* rest state, not a close: dealNextHandIfDue
+ * deals the next hand the moment it sees one. "archived" is the only status
+ * that is actually terminal -- lib/server/game-store.ts's archiveStaleGames
+ * is the one writer -- and every place that gates an action on the table
+ * being live checks `=== "playing"` positively rather than `!== "complete"`,
+ * which is what lets archived slot in as a third status with no change to
+ * those guards.
+ */
+export type GameStatus = "playing" | "complete" | "archived";
 export type BotPersonality = "MANIAC" | "ROCK" | "CALLING_STATION";
 
 export interface Seat {

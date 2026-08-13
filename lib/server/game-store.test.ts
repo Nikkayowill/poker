@@ -1,11 +1,15 @@
 import { randomUUID } from "crypto";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createGame } from "@/lib/game/engine";
+import type { StakesTier } from "@/lib/game/tiers";
 import { getPlayerStanding } from "./stats-store";
+import { ensureProfile } from "./profile-store";
 import {
   advanceStoredGameWithTimeouts,
+  archiveStaleGames,
   countActiveGames,
   createStoredGame,
+  findOpenPublicGame,
   getStoredGame,
   loadGameWithTimeouts,
 } from "./game-store";
@@ -190,5 +194,92 @@ describe("countActiveGames (memory mode)", () => {
     const live = createGame(randomUUID());
     await createStoredGame(live);
     expect((await countActiveGames()).publicTables).toBe(before.publicTables + 1);
+  });
+});
+
+describe("stale-table matchmaking and archival (memory mode)", () => {
+  // A short window so "stale" and "fresh" can both be produced deterministically
+  // within one test, by backdating a table's own updatedAt rather than waiting.
+  // beforeAll/afterAll, not beforeEach/afterEach: staleTableMs() is read fresh
+  // on every call (see its own comment), but an afterEach here would delete
+  // the override after the *first* test in this block and silently fall every
+  // later one back to the real 30-minute default.
+  let originalStaleMs: string | undefined;
+  beforeAll(() => {
+    originalStaleMs = process.env.RIVER_STALE_TABLE_MS;
+    process.env.RIVER_STALE_TABLE_MS = "1000";
+  });
+  afterAll(() => {
+    if (originalStaleMs === undefined) delete process.env.RIVER_STALE_TABLE_MS;
+    else process.env.RIVER_STALE_TABLE_MS = originalStaleMs;
+  });
+
+  // Every other test in this file (and shared memoryGames, a module-global
+  // with no per-test reset) creates its games at the default cheapest tier,
+  // and findOpenPublicGame ranks within one tier -- so each test below that
+  // asserts an *exact* winner uses its own tier, distinct from "1k" and from
+  // each other, rather than racing leftovers from the rest of the file or
+  // from earlier tests in this same block.
+  function backdatedGame(msAgo: number, tier: StakesTier) {
+    const game = createGame(randomUUID(), "You", undefined, { tier });
+    const stamp = new Date(Date.now() - msAgo).toISOString();
+    game.createdAt = stamp;
+    game.updatedAt = stamp;
+    return game;
+  }
+
+  it("does not prefer a populated table whose only human seat has gone quiet", async () => {
+    // Older and "populated" -- the exact shape that used to win outright.
+    const stale = backdatedGame(60_000, "500k");
+    await createStoredGame(stale);
+
+    const fresh = createGame(randomUUID(), "You", undefined, { tier: "500k" });
+    await createStoredGame(fresh);
+
+    expect(await findOpenPublicGame(fresh.tier)).toBe(fresh.id);
+  });
+
+  it("still falls back to the oldest table when nothing populated is fresh", async () => {
+    const older = backdatedGame(120_000, "250k");
+    await createStoredGame(older);
+    const newer = backdatedGame(60_000, "250k");
+    await createStoredGame(newer);
+
+    expect(await findOpenPublicGame(older.tier)).toBe(older.id);
+  });
+
+  it("archives a table nothing can ever unstick again, and refunds its human seat", async () => {
+    const token = randomUUID();
+    const before = await ensureProfile(token, "Ghost");
+    const game = createGame(token, "Ghost");
+    game.updatedAt = new Date(Date.now() - 60_000).toISOString();
+    const stake = game.seats.find((seat) => seat.ownerToken === token)!.stack;
+    await createStoredGame(game);
+
+    const archivedCount = await archiveStaleGames();
+    expect(archivedCount).toBeGreaterThanOrEqual(1);
+    expect((await getStoredGame(game.id))?.status).toBe("archived");
+
+    const after = await ensureProfile(token);
+    expect(after.goldBalance).toBe(before.goldBalance + stake);
+  });
+
+  it("leaves a fresh table alone", async () => {
+    const game = createGame(randomUUID());
+    await createStoredGame(game);
+
+    await archiveStaleGames();
+
+    expect((await getStoredGame(game.id))?.status).toBe("playing");
+  });
+
+  it("never writes 'complete' -- archiving must not relaunch a dead table into another hand", async () => {
+    const game = backdatedGame(60_000, "100k");
+    await createStoredGame(game);
+
+    await archiveStaleGames();
+
+    expect((await getStoredGame(game.id))?.status).toBe("archived");
+    expect((await getStoredGame(game.id))?.status).not.toBe("complete");
   });
 });

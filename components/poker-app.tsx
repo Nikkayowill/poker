@@ -57,7 +57,7 @@ import {
 } from "@/lib/game3d/room-theme";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
-import { Coins, Gift, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
+import { Gift, HeartHandshake, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
 import { Lobby } from "@/components/lobby/lobby";
 import { retireFirstRunStrip } from "@/components/lobby/first-run-strip";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
@@ -832,14 +832,6 @@ export function PokerApp() {
     }
   };
 
-  // The in-game rebuy purchase used to live here. It posted for a Checkout
-  // Session and treated every non-OK response the same way -- including the
-  // 412 the route returns when the Terms have not been accepted, which it
-  // surfaced as a bare error string with no way to accept from the table.
-  // That is why buying Gold from the lobby worked and buying it after
-  // busting did not. It now lives in components/table/rebuy-checkout.tsx,
-  // next to the acceptance step that answers that 412 in place.
-
   const act = async (action: PlayerAction) => {
     if (!game || loading) return;
     const actionSound: Partial<Record<PlayerAction["type"], Parameters<typeof playSound>[0]>> = {
@@ -1282,7 +1274,7 @@ export function PokerApp() {
       ]
       : []),
     { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
-    { kind: "link", label: "Buy Gold", href: gameId ? `/store?table=${gameId}` : "/store", icon: <Coins size={15} /> },
+    { kind: "link", label: "Support StackChips", href: gameId ? `/store?table=${gameId}` : "/store", icon: <HeartHandshake size={15} /> },
     { kind: "link", label: "Leaderboard", href: "/leaderboard", icon: <Trophy size={15} /> },
     { kind: "separator" },
     {
@@ -1335,10 +1327,10 @@ export function PokerApp() {
               <StackChipsMark size={50} />
             </span>
           </div>
-          {/* The hub tiles already carry Collection, Buy Gold and the
-              leaderboard, so repeating them here was three chances to tap the
-              same thing. Gold stays visible because it is the number a player
-              checks before choosing stakes. */}
+          {/* The hub tiles already carry Collection, Support StackChips and
+              the leaderboard, so repeating them here was three chances to
+              tap the same thing. Gold stays visible because it is the
+              number a player checks before choosing stakes. */}
           <div className="header-actions">
             {entryComplete && profile && (
               <GoldBadge profile={profile} claimable={dailyGold === "ready"} justClaimed={goldFlash} />
@@ -1372,6 +1364,7 @@ export function PokerApp() {
             onLeave={leaveTable}
             onLeaveSeat={leaveSeat}
             profile={profile}
+            onClaimBackstop={claimBackstop}
             onCustomize={() => setProfileOpen(true)}
             connectionState={connectionState}
             soundEnabled={soundEnabled}

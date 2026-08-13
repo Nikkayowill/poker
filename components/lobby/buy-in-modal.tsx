@@ -28,7 +28,6 @@ export function BuyInModal({
   onTableRendererChange,
   onClose,
   onConfirm,
-  onBuyGold,
 }: {
   title: string;
   description: string;
@@ -59,7 +58,6 @@ export function BuyInModal({
   onTableRendererChange?: (renderer: TableRenderer) => void;
   onClose: () => void;
   onConfirm: (tier: StakesTier, buyIn: number) => void;
-  onBuyGold?: () => void;
 }) {
   const [tier, setTier] = useState<StakesTier>(lockedTier ?? CHEAPEST_TIER);
   const config = TIER_CONFIG[tier];
@@ -198,14 +196,6 @@ export function BuyInModal({
           )}
 
           <footer className="buyin-footer">
-            {lockedTier && onBuyGold && !unlimitedGold && (
-              <div className="buyin-purchase">
-                <button className="secondary-action" type="button" disabled={pending} onClick={() => { tapSound(); onBuyGold(); }}>
-                  Buy 50,000 Gold for rebuy
-                </button>
-                <small>Gold has no cash value and cannot be redeemed or withdrawn.</small>
-              </div>
-            )}
             <button
               className="primary-action"
               type="button"

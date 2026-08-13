@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { GoldStore } from "@/components/store/gold-store";
+import { SupportPanel } from "@/components/store/support-panel";
 
 export const metadata: Metadata = {
-  title: "Buy Gold · StackChips",
+  title: "Support StackChips",
 };
 
 export default async function StorePage({
@@ -11,5 +11,5 @@ export default async function StorePage({
   searchParams: Promise<{ table?: string }>;
 }) {
   const { table } = await searchParams;
-  return <GoldStore gameId={table} />;
+  return <SupportPanel gameId={table} />;
 }

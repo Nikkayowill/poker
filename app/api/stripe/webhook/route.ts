@@ -6,20 +6,18 @@ import {
   stripeTestClient,
   stripeTestWebhookSecret,
   stripeWebhookSecret,
-  verifiedRebuySession,
-  verifiedTierSession,
+  verifiedSupportSession,
   type StripeMode,
 } from "@/lib/server/stripe";
-import { fulfillStripePayment } from "@/lib/server/stripe-store";
+import { fulfillStripePayment, syncSubscriptionState } from "@/lib/server/stripe-store";
 
 export const runtime = "nodejs";
 
 /**
- * One endpoint for both purchase shapes -- the rebuy-after-busting flow and
- * the general storefront -- distinguished by `metadata.kind` on the session
- * itself, which is set at Checkout creation time (see
- * app/api/stripe/checkout-session/route.ts) and echoed back on every event
- * Stripe sends about it.
+ * One endpoint for every support-payment shape -- one-time and the full
+ * monthly-subscription lifecycle -- distinguished by event type, and for
+ * checkout.session.completed, by `metadata.kind`/`session.mode` set at
+ * Checkout creation time (see app/api/stripe/checkout-session/route.ts).
  *
  * It is also one endpoint for both live and test mode: Stripe supports
  * registering the same URL twice, once per mode, each with its own signing
@@ -69,44 +67,63 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Stripe event livemode did not match the verifying secret." }, { status: 400 });
   }
 
+  const ack = () => NextResponse.json({ received: true });
+  const stripe = mode === "live" ? liveStripe! : testStripe!;
+  // Stripe's own event ordering, not our arrival order -- retries and
+  // redeliveries can arrive out of order, and syncSubscriptionState's
+  // recency guard compares against this, never Date.now().
+  const eventCreatedAt = new Date(event.created * 1000);
+
   try {
-    // checkout.session.completed covers card and every synchronous method.
-    // async_payment_succeeded only fires for delayed methods (bank debits,
-    // vouchers) if such a payment_method_type were ever enabled -- this app
-    // only offers "card", which never takes that path, but the handler costs
-    // nothing to keep in place against a future payment method change.
-    if (event.type !== "checkout.session.completed" && event.type !== "checkout.session.async_payment_succeeded") {
-      return NextResponse.json({ received: true });
-    }
-
-    const eventSession = event.data.object as Stripe.Checkout.Session;
-    if (eventSession.payment_status !== "paid") {
-      return NextResponse.json({ received: true });
-    }
-
-    if (eventSession.metadata?.kind === "gold_purchase") {
-      const { session, tier, profileId } = await verifiedTierSession(eventSession.id, undefined, mode);
-      if (session.payment_status !== "paid") return NextResponse.json({ received: true });
-      // A test-mode event for a profile not on the allowlist is acknowledged
-      // (so Stripe stops retrying) but never fulfilled -- ordinary players
-      // are never on this list, so this only ever blocks a stray test event.
-      if (mode === "test" && !isTestPurchaseAllowed(profileId)) {
-        return NextResponse.json({ received: true });
+    switch (event.type) {
+      case "checkout.session.completed":
+      case "checkout.session.async_payment_succeeded": {
+        // async_payment_succeeded only fires for delayed methods (bank
+        // debits, vouchers) if such a payment_method_type were ever enabled
+        // -- this app only offers "card", which never takes that path, but
+        // the handler costs nothing to keep in place against a future
+        // payment method change.
+        const session = event.data.object as Stripe.Checkout.Session;
+        if (session.mode === "subscription") {
+          if (typeof session.subscription !== "string") return ack();
+          await syncSubscriptionState(stripe, session.subscription, mode === "live", eventCreatedAt);
+          return ack();
+        }
+        // mode === "payment": the only kind left is support_one_time.
+        if (session.payment_status !== "paid" || session.metadata?.kind !== "support_one_time") return ack();
+        const { session: verified, tier, profileId } = await verifiedSupportSession(session.id, undefined, mode);
+        if (verified.payment_status !== "paid") return ack();
+        // A test-mode event for a profile not on the allowlist is
+        // acknowledged (so Stripe stops retrying) but never fulfilled --
+        // ordinary players are never on this list, so this only ever blocks
+        // a stray test event.
+        if (mode === "test" && !isTestPurchaseAllowed(profileId)) return ack();
+        await fulfillStripePayment(verified.id, profileId, null, {
+          kind: "support_one_time",
+          tierKey: tier.key,
+          livemode: mode === "live",
+        });
+        return ack();
       }
-      await fulfillStripePayment(session.id, profileId, tier.goldAmount, {
-        kind: "gold_purchase",
-        tierKey: tier.key,
-        livemode: mode === "live",
-      });
-    } else {
-      const { session, config, profileId } = await verifiedRebuySession(eventSession.id, undefined, mode);
-      if (session.payment_status !== "paid") return NextResponse.json({ received: true });
-      if (mode === "test" && !isTestPurchaseAllowed(profileId)) {
-        return NextResponse.json({ received: true });
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+        await syncSubscriptionState(stripe, subscription.id, mode === "live", eventCreatedAt);
+        return ack();
       }
-      await fulfillStripePayment(session.id, profileId, config.goldAmount, { livemode: mode === "live" });
+      case "invoice.paid":
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const subscriptionId = invoice.parent?.subscription_details?.subscription;
+        // A one-off invoice (not tied to a subscription) isn't ours.
+        if (!subscriptionId || typeof subscriptionId !== "string") return ack();
+        await syncSubscriptionState(stripe, subscriptionId, mode === "live", eventCreatedAt);
+        return ack();
+      }
+      default:
+        return ack();
     }
-    return NextResponse.json({ received: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid Stripe webhook.";
     return NextResponse.json({ error: message }, { status: 400 });

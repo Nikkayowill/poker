@@ -294,7 +294,8 @@ export function AccountEntryCard({
         </p>
         <nav className="entry-legal-links" aria-label="Legal">
           <a href="/legal/terms">Terms of Service</a>
-          <a href="/legal/gold-disclosure">Gold Purchase Disclosure</a>
+          <a href="/legal/privacy">Privacy Policy</a>
+          <a href="/legal/support">Supporting StackChips</a>
           <a href="/legal/disclaimer">App Disclaimer</a>
         </nav>
         <a className="entry-support" href="mailto:support@stackchips.app">

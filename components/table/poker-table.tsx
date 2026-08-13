@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
-  Box, Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Palette, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
+  Box, Copy, DoorOpen, HeartHandshake, History, Layers, LogIn, LogOut, Palette, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
@@ -33,7 +33,6 @@ import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { ActionBar } from "./action-bar";
 import { MuckDrift } from "./table-effects";
 import { HandHistoryDrawer } from "./hand-history-drawer";
-import { RebuyCheckout } from "./rebuy-checkout";
 import { PlayerSeat } from "./player-seat";
 import { LocalPlayerHud } from "./local-player-hud";
 import { TableLoadingSplash } from "./scene3d/table-loading-splash";
@@ -132,6 +131,7 @@ export function PokerTable({
   onLeave,
   onLeaveSeat,
   profile,
+  onClaimBackstop,
   onCustomize,
   connectionState,
   soundEnabled,
@@ -156,6 +156,8 @@ export function PokerTable({
   onLeave: () => void;
   onLeaveSeat: () => void;
   profile: PlayerProfile | null;
+  /** The broke-player recovery top-up -- see components/table/action-bar.tsx. */
+  onClaimBackstop: () => void;
   onCustomize: () => void;
   connectionState: ConnectionState;
   soundEnabled: boolean;
@@ -182,10 +184,6 @@ export function PokerTable({
   // might not work. See use-webgl-support.ts for why this is not an effect.
   const webglAvailable = useWebglSupport();
   const activeRenderer = resolveTableRenderer(tableRenderer, webglAvailable);
-  // Owned here rather than in ActionBar because ActionBar is keyed on
-  // game.version: a bump would otherwise unmount an open checkout and buy a
-  // second Stripe session when it came back.
-  const [showCheckout, setShowCheckout] = useState(false);
   const historyButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeHistory = useCallback(() => {
     setHistoryOpen(false);
@@ -745,7 +743,7 @@ export function PokerTable({
     items.push(
       { kind: "separator" },
       { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
-      { kind: "link", label: "Buy Gold", href: `/store?table=${game.id}`, icon: <Coins size={15} /> },
+      { kind: "link", label: "Support StackChips", href: `/store?table=${game.id}`, icon: <HeartHandshake size={15} /> },
       { kind: "link", label: "Leaderboard", href: "/leaderboard", icon: <Trophy size={15} /> },
       { kind: "separator" },
     );
@@ -1138,21 +1136,12 @@ export function PokerTable({
             pending={pending || connectionState !== "connected"}
             onAction={onAction}
             onLeave={onLeave}
-
             profile={profile}
-            onOpenCheckout={() => setShowCheckout(true)}
+            onClaimBackstop={onClaimBackstop}
             variant={sceneReady && activeRenderer === "webgl_3d" ? "3d" : "classic"}
           />
         </div>
       </section>
-
-      {/* Deliberately outside the `key={game.version}` subtree above.
-          Mounting RebuyCheckout posts for a Stripe Checkout Session, so a
-          remount is a second purchase -- and the key changes on every table
-          version, which is every action any player takes. */}
-      {showCheckout && (
-        <RebuyCheckout gameId={game.id} onClose={() => setShowCheckout(false)} />
-      )}
 
       {connectionState !== "connected" && (
         <div className="connection-overlay" role="status" aria-live="assertive">

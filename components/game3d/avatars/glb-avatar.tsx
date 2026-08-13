@@ -78,6 +78,7 @@ import {
 import type { AvatarMood, SeatModel } from "@/lib/game3d/scene-model";
 import { HUMAN_STANDING_UNITS } from "@/lib/game3d/dimensions";
 import { handPoseWeight } from "@/lib/game3d/hand-anchors";
+import { classifyAvatarMaterial } from "@/lib/game3d/material-classes";
 import { buildArmRig, createPoseScratch, poseAvatar, poseFingersOnly } from "./arm-rig";
 import { CHAIR_SEAT_Y } from "../scene/chair";
 
@@ -97,9 +98,37 @@ export const TARGET_HEIGHT = HUMAN_STANDING_UNITS;
  */
 const HIP_SIT_RISE = 0.03;
 
+/**
+ * Extra lift on top of HIP_SIT_RISE, for table clearance rather than cushion
+ * compression — a separate constant on purpose, so a future retune of one
+ * doesn't quietly absorb into the other's very different reasoning. Judged
+ * on a render against the rail/apron/skirt geometry (table-3d.tsx), not
+ * derived from a measurement the way HIP_SIT_RISE's cushion figure is.
+ */
+const TABLE_CLEARANCE_LIFT = 0.025;
+
 /** See the clamp in the clone below for why these exist and why they clamp. */
 const CLOTH_ROUGHNESS_FLOOR = 0.55;
 const CLOTH_METALNESS_CEILING = 0.15;
+/**
+ * Skin gets its own, gentler pair rather than the cloth clamp — lower than
+ * cloth's floor (skin is softer than fabric under a hard key) and a
+ * metalness ceiling close to zero (real skin isn't metallic at all;
+ * Daniel/Dora/Gloria/James's body materials are authored at `metalness 0.5`,
+ * a real authoring bug this exists to correct — the cloth clamp alone only
+ * pulled it down to 0.15, still visibly metallic).
+ */
+const SKIN_ROUGHNESS_FLOOR = 0.4;
+const SKIN_METALNESS_CEILING = 0.05;
+/**
+ * Eyes are close to a pass-through: only a floor low enough to stop a
+ * literal roughness-0 mirror artifact, so an authored glint (Pablo's
+ * `Eyes_MAT` ships at 0.03) survives close to intact instead of being
+ * force-raised to cloth's 0.55 — the direct cause of this roster's "dead
+ * eyes" read.
+ */
+const EYES_ROUGHNESS_FLOOR = 0.02;
+const EYES_METALNESS_CEILING = 0.05;
 
 export interface GlbAvatarProps {
   slot: number;
@@ -195,11 +224,26 @@ function GlbAvatarModel({
       for (const material of materials) {
         const standard = material as THREE.MeshStandardMaterial;
         if (!standard?.isMaterial) continue;
+        // Eyes/skin get their own gentler pair instead of the cloth clamp —
+        // see lib/game3d/material-classes.ts for the real per-character
+        // material names this is matched against and why a blanket clamp
+        // was flattening both. Unmatched materials (cloth, hair, props, and
+        // every premium character's single shared material) keep today's
+        // cloth clamp unchanged.
+        const materialClass = classifyAvatarMaterial(standard.name);
+        const roughnessFloor =
+          materialClass === "eyes" ? EYES_ROUGHNESS_FLOOR
+          : materialClass === "skin" ? SKIN_ROUGHNESS_FLOOR
+          : CLOTH_ROUGHNESS_FLOOR;
+        const metalnessCeiling =
+          materialClass === "eyes" ? EYES_METALNESS_CEILING
+          : materialClass === "skin" ? SKIN_METALNESS_CEILING
+          : CLOTH_METALNESS_CEILING;
         if (typeof standard.roughness === "number") {
-          standard.roughness = Math.max(standard.roughness, CLOTH_ROUGHNESS_FLOOR);
+          standard.roughness = Math.max(standard.roughness, roughnessFloor);
         }
         if (typeof standard.metalness === "number") {
-          standard.metalness = Math.min(standard.metalness, CLOTH_METALNESS_CEILING);
+          standard.metalness = Math.min(standard.metalness, metalnessCeiling);
         }
         if ("color" in standard && standard.color) {
           standard.userData.stackchipsBaseColor = standard.color.clone();
@@ -536,7 +580,7 @@ function GlbAvatarModel({
     <group
       ref={groupRef}
       scale={scale}
-      position={[0, CHAIR_SEAT_Y + HIP_SIT_RISE - hipOffset, 0]}
+      position={[0, CHAIR_SEAT_Y + HIP_SIT_RISE + TABLE_CLEARANCE_LIFT - hipOffset, 0]}
     >
       <primitive object={model} />
     </group>

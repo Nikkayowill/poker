@@ -37,12 +37,13 @@ import {
   FELT_RADIUS_X,
   FELT_RADIUS_Z,
   FELT_TOP_Y,
+  RAIL_WIDTH,
   holeCardPosition,
   seatAngle,
   seatPosition,
   type Vec3,
 } from "./seat-layout";
-import { add, clamp, cross, dist, len, norm, scale, sub, vec } from "./vec3-math";
+import { add, clamp, cross, dist, len, lerp, norm, scale, sub, vec } from "./vec3-math";
 
 /**
  * Which job a hand is doing. A poker player does not put both hands in the
@@ -77,27 +78,28 @@ export const WRIST_REST_HEIGHT = mm(34);
  */
 export const CARD_HAND_SETBACK = CARD.height / 2 + mm(92);
 
-/**
- * How much of that setback is given up when the player is the one to act.
- *
- * This is the "aware of the cards" beat: at their turn the hand settles
- * forward onto the card backs the way a player covers a live hand, and
- * relaxes back off them when the action passes. Small — a couple of
- * centimetres — because the read comes from the movement happening at all,
- * not from its size.
- */
-export const CARD_HAND_SNUG = mm(26);
-
 /** Lateral offset of the card hand from the seat's own centre line. */
 export const CARD_HAND_LATERAL = mm(18);
 
 /**
- * The off hand rests at the table edge, out toward that side's chips.
- * `RAIL_HAND_INSET` is a fraction of the felt radii, like every other spot
- * in `seat-layout.ts`; just inside 1.0 keeps the hand on cloth rather than
- * on the rail's own crown, where it would need the rail's height instead.
+ * How far onto the padded rail — not just up to the felt's own edge — a
+ * resting hand reaches, as a fraction of the rail's real modelled width
+ * (`RAIL_WIDTH`, shared with `table-3d.tsx`'s rail mesh via
+ * `seat-layout.ts`).
+ *
+ * THE MEASUREMENT THIS CONSTANT EXISTS BECAUSE OF: resting a hand at the
+ * felt's own inner edge (this file's first cut, a plain fraction just under
+ * 1.0 of the felt radii) still measured 0.49-0.52 world units from the
+ * seat — against the roster's 0.54-0.60 arm length, that is 87-91% of full
+ * extension, i.e. the same near-max reach this module exists to remove, not
+ * fixed. The felt's own edge is close to the SEAT_SETBACK away from every
+ * seat regardless of which point on the felt is chosen; a real player's
+ * idle hand does not reach that far, because it doesn't rest on the felt at
+ * all — it rests on the padded rail in front of them, which is physically
+ * closer. 0.6 leaves the hand shy of the rail's own outer lip rather than
+ * hanging off it.
  */
-export const RAIL_HAND_INSET = 0.94;
+export const RAIL_HAND_RIDGE = RAIL_WIDTH * 0.6;
 export const RAIL_HAND_LATERAL = mm(165);
 /** Pulled back from the edge by a palm, for the same reason as the card hand. */
 export const RAIL_HAND_SETBACK = mm(76);
@@ -125,6 +127,42 @@ export function seatFrame(slot: number): { forward: Vec3; right: Vec3 } {
 }
 
 /**
+ * The near-rail resting point shared by BOTH hands — the off hand always
+ * sits here, and (see `handAnchor`) the card hand now rests here too rather
+ * than staying parked near the cards.
+ *
+ * Real reference (Governor of Poker 3, Vegas Infinite): an idle hand sits
+ * close to the body, resting on the table's own padded rail, and travels
+ * only a short distance from there — not out onto the felt toward the
+ * middle. The point is stated as the felt's own boundary ellipse pushed
+ * OUTWARD by `RAIL_HAND_RIDGE`, onto the rail, rather than as a fraction of
+ * the felt radii short of 1.0 — see that constant for the render-measured
+ * reason a felt-side point wasn't close enough.
+ */
+function railAnchor(slot: number, sign: number, forward: Vec3, right: Vec3): HandAnchor {
+  const angle = seatAngle(slot);
+  const edge = vec(
+    Math.sin(angle) * (FELT_RADIUS_X + RAIL_HAND_RIDGE),
+    FELT_TOP_Y,
+    Math.cos(angle) * (FELT_RADIUS_Z + RAIL_HAND_RIDGE)
+  );
+  const wrist = add(
+    add(edge, scale(forward, -RAIL_HAND_SETBACK)),
+    scale(right, sign * RAIL_HAND_LATERAL)
+  );
+  return {
+    wrist: vec(wrist.x, FELT_TOP_Y + WRIST_REST_HEIGHT, wrist.z),
+    // Points into the table rather than off the side of it — a hand resting
+    // at the edge with its fingers aimed at the rail reads as a person
+    // facing away from the game.
+    aim: add(vec(wrist.x, FELT_TOP_Y, wrist.z), scale(forward, mm(180))),
+  };
+}
+
+const lerpVec = (a: Vec3, b: Vec3, t: number): Vec3 =>
+  vec(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t));
+
+/**
  * Where one hand wants to be.
  *
  * `lateralSign` is +1 for the hand on the seat's own right and -1 for its
@@ -135,6 +173,18 @@ export function seatFrame(slot: number): { forward: Vec3; right: Vec3 } {
  *
  * `snug` is 0 for a hand at rest and 1 for a player covering a live hand at
  * their own turn; it only moves the card hand.
+ *
+ * THE CARD HAND'S REST POINT IS THE RAIL POINT, NOT A SPOT NEAR THE CARDS.
+ * An earlier cut of this module rested the card hand `CARD_HAND_SETBACK`
+ * back from the card and only nudged it a further `CARD_HAND_SNUG` (a
+ * couple of centimetres) forward at `snug = 1` — which meant every seat's
+ * resting hand sat permanently close to `reachableTarget`'s comfortable-reach
+ * ceiling, reading as an arm stretched out rather than one at rest. Real
+ * reference games keep an idle hand near the body and only extend it onto
+ * the felt for something to do — checking a bet, covering a live hand at
+ * your own turn — so `snug` now sweeps the WHOLE distance from `railAnchor`
+ * (rest) to the true card-approach point (`snug = 1`), and the two roles
+ * share one rest formula rather than each tuning their own.
  */
 export function handAnchor(
   slot: number,
@@ -144,37 +194,26 @@ export function handAnchor(
 ): HandAnchor {
   const { forward, right } = seatFrame(slot);
   const sign = lateralSign >= 0 ? 1 : -1;
+  const rest = railAnchor(slot, sign, forward, right);
 
   if (role === "cards") {
     const card = holeCardPosition(slot);
-    const setback = CARD_HAND_SETBACK - CARD_HAND_SNUG * clamp(snug, 0, 1);
     const wrist = add(
-      add(card, scale(forward, -setback)),
+      add(card, scale(forward, -CARD_HAND_SETBACK)),
       scale(right, sign * CARD_HAND_LATERAL)
     );
-    return {
+    const acting: HandAnchor = {
       wrist: vec(wrist.x, FELT_TOP_Y + WRIST_REST_HEIGHT, wrist.z),
       aim: vec(card.x, FELT_TOP_Y, card.z),
     };
+    const t = clamp(snug, 0, 1);
+    return {
+      wrist: lerpVec(rest.wrist, acting.wrist, t),
+      aim: lerpVec(rest.aim, acting.aim, t),
+    };
   }
 
-  const angle = seatAngle(slot);
-  const edge = vec(
-    Math.sin(angle) * FELT_RADIUS_X * RAIL_HAND_INSET,
-    FELT_TOP_Y,
-    Math.cos(angle) * FELT_RADIUS_Z * RAIL_HAND_INSET
-  );
-  const wrist = add(
-    add(edge, scale(forward, -RAIL_HAND_SETBACK)),
-    scale(right, sign * RAIL_HAND_LATERAL)
-  );
-  return {
-    wrist: vec(wrist.x, FELT_TOP_Y + WRIST_REST_HEIGHT, wrist.z),
-    // The off hand still points into the table rather than off the side of
-    // it — a hand resting at the edge with its fingers aimed at the rail
-    // reads as a person facing away from the game.
-    aim: add(vec(wrist.x, FELT_TOP_Y, wrist.z), scale(forward, mm(180))),
-  };
+  return rest;
 }
 
 export interface ReachResult {
@@ -202,6 +241,28 @@ export interface ReachResult {
 export const COMFORTABLE_REACH = 0.89;
 
 /**
+ * The ceiling a RESTING hand is held to specifically — lower than
+ * `COMFORTABLE_REACH`, which stays what it always was: the ceiling for a
+ * hand actively settling onto its own cards at the player's own turn.
+ *
+ * THE MEASUREMENT THIS CONSTANT EXISTS BECAUSE OF. Moving the rest anchor
+ * onto the padded rail (`RAIL_HAND_RIDGE`) meaningfully shortened the raw
+ * target for most seats, but the near/local seat carries its own extra
+ * setback (`NEAR_SEAT_EXTRA_SETBACK`, seat-layout.ts) on top of the shared
+ * one, and its shoulder-to-rail-point distance still exceeds even a fairly
+ * generous ceiling — rendered, that seat's rest pose was unchanged by the
+ * anchor move alone, because 0.89 was still the binding constraint, not the
+ * raw target. A single shared ceiling can't serve both states: acting needs
+ * to stay close to 0.89 or a settling hand visibly stops well short of the
+ * cards it's meant to cover; resting needs to be well under that or the
+ * worst-case seat's elbow never bends regardless of where the raw anchor
+ * asks for. `poseAvatar` (arm-rig.ts) blends between the two by `snug`, the
+ * same lever the wrist target itself already blends by, so the ceiling
+ * relaxes in step with the pose rather than snapping at some threshold.
+ */
+export const RESTING_COMFORTABLE_REACH = 0.72;
+
+/**
  * Bring a wrist target inside what the arm can comfortably reach.
  *
  * THE HEIGHT IS PRESERVED WHERE IT CAN BE, and that is the whole design.
@@ -220,8 +281,13 @@ export const COMFORTABLE_REACH = 0.89;
  * height above the table, which no character here has, but which must not
  * produce a NaN if one ever does.
  */
-export function reachableTarget(shoulder: Vec3, armLength: number, target: Vec3): ReachResult {
-  const maxReach = Math.max(armLength * COMFORTABLE_REACH, 0);
+export function reachableTarget(
+  shoulder: Vec3,
+  armLength: number,
+  target: Vec3,
+  comfortableFraction: number = COMFORTABLE_REACH
+): ReachResult {
+  const maxReach = Math.max(armLength * comfortableFraction, 0);
   const toTarget = sub(target, shoulder);
   const distance = len(toTarget);
   if (distance <= maxReach || distance < 1e-6) return { target, deficit: 0 };

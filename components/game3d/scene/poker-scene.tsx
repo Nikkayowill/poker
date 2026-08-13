@@ -48,6 +48,7 @@ import { SceneSeam } from "./scene-seam";
 import { FoldCardFlights } from "./fold-card-flights";
 import { RoomSurround } from "./room-surround";
 import { allSeatsLoaded } from "@/lib/game3d/avatar-load-gate";
+import { ClockDeltaGuard } from "./clock-delta-guard";
 
 /**
  * How long the room waits for every seated character's .glb before giving up
@@ -464,6 +465,12 @@ export function PokerScene({
       {/* Must match the fog colour, or the fade draws a horizon line — both
           read the active theme's `backdrop`. */}
       <color attach="background" args={[theme.backdrop]} />
+      {/* Bounds every frame's delta at the source (THREE.Clock.getDelta) so a
+          main-thread stall (tab refocus, GC pause, shader compile) can't jump
+          every avatar's mixer forward in one visible snap — see
+          lib/game3d/clock-delta.ts. Mounted first so it patches the clock
+          before any mixer reads a delta this frame. */}
+      <ClockDeltaGuard />
       <SceneContents
         model={model}
         resumeBetFlights={resumeBetFlights}

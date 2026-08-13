@@ -21,8 +21,17 @@ export interface Vec3 {
 export const SEAT_COUNT_3D = 6;
 
 export const FLOOR_Y = 0;
-/** Top surface of the felt; chips and cards rest here. */
-export const FELT_TOP_Y = 0.86;
+
+/**
+ * Real height of a poker table's playing surface off the floor, in metres.
+ *
+ * Lives here rather than in dimensions.ts — its more natural home — for the
+ * same cycle-avoidance reason TABLE_LENGTH_M/TABLE_WIDTH_M do just below:
+ * FELT_TOP_Y needs it to build the room's one ruler, and dimensions.ts needs
+ * FELT_RADIUS_X from this file, so the dependency can only run one way.
+ * Re-exported from dimensions.ts so there is still exactly one 0.75.
+ */
+export const TABLE_HEIGHT_M = 0.75;
 
 /**
  * The playing surface of a six-max oval, both axes, in metres.
@@ -40,11 +49,10 @@ export const TABLE_WIDTH_M = 1.07;
 /**
  * The felt's half-length, in world units — the ruler `dimensions.ts`'s
  * `UNITS_PER_METRE` is built from (`= 2 * FELT_RADIUS_X / TABLE_LENGTH_M`).
- * Avatar height does NOT come off this ruler — a seated character's size is
- * set by `UNITS_PER_METRE_Y`, a separate constant keyed off `FELT_TOP_Y`
- * and `TABLE_HEIGHT_M` (see dimensions.ts) — so this value is purely "how
- * many world units the real 2.13 m table spans," independent of how big a
- * seated player looks.
+ * Avatar height is built off this SAME ruler too (`FELT_TOP_Y` below,
+ * `HUMAN_STANDING_UNITS` in dimensions.ts) — the two used to disagree; see
+ * `FELT_TOP_Y`'s own comment for why that was a real, recurring bug rather
+ * than a cosmetic inconsistency.
  *
  * Was 2.15, then 1.8, then 1.45. At 2.15 the table read oversized next to
  * the people sitting at it — real casino tables put six players
@@ -67,8 +75,19 @@ export const TABLE_WIDTH_M = 1.07;
  * pull-in worth doing at all — .table-area now runs to the room's real
  * bottom edge, and the corner placement means the near seat's own back can
  * approach it without ever sharing a footprint with the controls.
+ *
+ * Fifth move, back out to 1.32: the same mechanism as the fourth pull-in,
+ * run in reverse on purpose. Avatar height still doesn't ride this ruler, so
+ * growing the felt/ring pushes `frameCamera`'s own numeric search back out
+ * to keep everyone in frame — without growing the fixed-height people
+ * already there. The felt (and everything scaled through `UNITS_PER_METRE`
+ * with it — chips, cards, the pot/board) gets relatively MORE of the frame
+ * and the seated players relatively less, which is the fix for "the
+ * community cards, bets and pot are hard to read": the fourth pull-in traded
+ * exactly that legibility for elbow-room, and this gives some of it back.
+ * Not a full reversion to 1.45 — a measured step, judged on a render.
  */
-export const FELT_RADIUS_X = 1.2;
+export const FELT_RADIUS_X = 1.32;
 
 /**
  * Depth is DERIVED from the table's real plan proportions, not typed.
@@ -91,6 +110,40 @@ export const FELT_RADIUS_X = 1.2;
 export const FELT_RADIUS_Z = FELT_RADIUS_X * (TABLE_WIDTH_M / TABLE_LENGTH_M);
 
 /**
+ * Top surface of the felt; chips and cards rest here.
+ *
+ * ONE RULER, NOT TWO — this used to be an independent literal (0.86) with no
+ * relationship to FELT_RADIUS_X's own ruler. dimensions.ts's UNITS_PER_METRE
+ * is "how many world units a real metre is," built from the felt's LENGTH;
+ * this constant used to be a second, disagreeing answer to the same
+ * question, built from nothing, and every seated avatar was imported at a
+ * height converted through a THIRD constant (dimensions.ts's old
+ * UNITS_PER_METRE_Y) keyed off this literal instead of off FELT_RADIUS_X.
+ * The gap between the two rulers reached 1.76x at one point and was still
+ * ~1.08x here — never zero, because nothing tied them together.
+ *
+ * That gap was not cosmetic; it is why "resize the table" and "the arms
+ * don't reach the cards" kept being the same bug wearing different
+ * clothes. FELT_RADIUS_X moved five times chasing camera framing, and each
+ * time it did, the table's ruler moved while the people sitting at it
+ * (scaled off this constant, which didn't) silently didn't — so
+ * SEAT_SETBACK, hand-anchors.ts's reach math and the chair (chair.tsx) all
+ * had to be re-measured against a fresh render after every single one,
+ * chasing a target that had just moved again for an unrelated reason. A
+ * table resize and an avatar/arm-length change are the same edit now, so
+ * they can no longer drift apart in between.
+ *
+ * Restated on the SAME ratio FELT_RADIUS_X derives — `(2 * FELT_RADIUS_X) /
+ * TABLE_LENGTH_M` — rather than importing UNITS_PER_METRE from dimensions.ts,
+ * which would cycle straight back through this file's own FELT_RADIUS_X (the
+ * same reason TABLE_LENGTH_M is re-exported there rather than imported here).
+ * dimensions.test.ts pins the two computations equal, so this cannot quietly
+ * drift from dimensions.ts's own copy the way the old literal drifted from
+ * everything else.
+ */
+export const FELT_TOP_Y = TABLE_HEIGHT_M * ((2 * FELT_RADIUS_X) / TABLE_LENGTH_M);
+
+/**
  * How far above FELT_TOP_Y the padded rail's own cushion peaks. Table3D's
  * rail geometry (components/game3d/scene/table-3d.tsx) aligns its top to
  * exactly this offset — stated here, not there, so the felt-clamp IK
@@ -102,6 +155,20 @@ export const FELT_RADIUS_Z = FELT_RADIUS_X * (TABLE_WIDTH_M / TABLE_LENGTH_M);
  * silently reopen that gap.
  */
 export const RAIL_LIP_HEIGHT = 0.016;
+
+/**
+ * How far the padded rail's cushion extends outward past the felt's own
+ * edge — the same "one number, both consumers" reasoning as
+ * `RAIL_LIP_HEIGHT` just above. Table3D's rail mesh
+ * (components/game3d/scene/table-3d.tsx) is offset outward from the felt by
+ * exactly this width; `hand-anchors.ts` uses it to rest an idle hand ON the
+ * cushion a real player's forearm would use, not short of it on the felt
+ * itself — see that file's own header for why "closest point ON THE FELT"
+ * still measured as a near-full-arm reach even after this module's
+ * SEAT_SETBACK. Stated here so a future rail retune can't silently drift
+ * the two apart the way a second local literal would.
+ */
+export const RAIL_WIDTH = 0.0869;
 
 /**
  * The height a wrist has to clear at plan position (x, z): the felt's own

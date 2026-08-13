@@ -37,12 +37,16 @@
 
 import * as THREE from "three";
 import {
+  COMFORTABLE_REACH,
+  RESTING_COMFORTABLE_REACH,
   handAnchor,
   idleDrift,
   reachableTarget,
   seatFrame,
   type HandRole,
 } from "@/lib/game3d/hand-anchors";
+import { headGazeTarget } from "@/lib/game3d/head-aim";
+import { POT_POSITION, holeCardPosition } from "@/lib/game3d/seat-layout";
 import {
   FINGER_NAMES,
   blendHandShapes,
@@ -68,6 +72,17 @@ const FINGER_SEGMENTS = 3;
  * celebration taking over) is a change of intent and reads better eased.
  */
 const WEIGHT_DAMPING = 4;
+
+/**
+ * How strongly the head aim overrides the clip's own head motion, 0..1.
+ *
+ * Partial, not 1 — a person doesn't rigidly lock their head at a point, and
+ * this also lets whatever subtle head motion a clip already carries show
+ * through underneath. Scaled by `rig.weight` at the call site, so head
+ * tracking fades in/out with the rest of the procedural pose rather than
+ * fighting a fold or celebration one-shot's own arm-and-head content.
+ */
+const HEAD_AIM_WEIGHT = 0.6;
 
 interface FingerSegment {
   bone: THREE.Bone;
@@ -111,8 +126,23 @@ export interface ArmRig {
   deficit: number;
 }
 
+export interface HeadRig {
+  bone: THREE.Bone;
+  /**
+   * The head bone's first child (a Mixamo-style rig's `HeadTop_End`) —
+   * gives the head a "which way is it facing" reference the same way
+   * `buildHandRig`'s `forwardSource` does for a wrist, so the aim below
+   * never has to assume the bone's own local axis convention.
+   */
+  child: THREE.Bone;
+}
+
 export interface AvatarRig {
   arms: ArmRig[];
+  /** Null for a model whose head bone (or its child) can't be found — the
+   * room degrades to no head tracking for that character rather than
+   * throwing. */
+  head: HeadRig | null;
   /** Damped state, mutated in place by `poseAvatar`. */
   weight: number;
   snug: number;
@@ -300,7 +330,14 @@ export function buildArmRig(model: THREE.Object3D): AvatarRig | null {
 
   if (arms.length === 0) return null;
 
-  return { arms, weight: 0, snug: 0 };
+  // `/head$/i` already excludes "HeadTop_End" on its own — the pattern
+  // requires the name to END in "head", and "...End" doesn't. No explicit
+  // exclusion needed, unlike the hip lookup's Mixamo-prefix handling.
+  const headBone = findBone(model, /head$/i);
+  const headChild = headBone ? childBone(headBone) : null;
+  const head = headBone && headChild ? { bone: headBone, child: headChild } : null;
+
+  return { arms, head, weight: 0, snug: 0 };
 }
 
 /** Scratch, allocated once per mounted avatar rather than per frame. */
@@ -470,11 +507,21 @@ export function poseAvatar(rig: AvatarRig, scratch: PoseScratch, input: PoseInpu
       anchor.wrist.y + drift.y,
       anchor.wrist.z + drift.z
     );
-
+    // The rail hand never acts, so it stays at the low (resting) ceiling;
+    // the card hand blends toward the full COMFORTABLE_REACH ceiling as
+    // `snug` rises — the same lever `handAnchor` blends the wrist target by,
+    // so the two never disagree about how "settled" this hand is. See
+    // RESTING_COMFORTABLE_REACH's own header for why one shared ceiling
+    // can't serve both states.
+    const comfortableFraction =
+      role === "cards"
+        ? RESTING_COMFORTABLE_REACH + (COMFORTABLE_REACH - RESTING_COMFORTABLE_REACH) * rig.snug
+        : RESTING_COMFORTABLE_REACH;
     const reach = reachableTarget(
       { x: scratch.a.x, y: scratch.a.y, z: scratch.a.z },
       arm.armLength * input.modelScale,
-      { x: scratch.target.x, y: scratch.target.y, z: scratch.target.z }
+      { x: scratch.target.x, y: scratch.target.y, z: scratch.target.z },
+      comfortableFraction
     );
     arm.deficit = reach.deficit;
     scratch.target.set(reach.target.x, reach.target.y, reach.target.z);
@@ -521,6 +568,47 @@ export function poseAvatar(rig: AvatarRig, scratch: PoseScratch, input: PoseInpu
     aimChildAt(arm.elbow, scratch.b, scratch.c, scratch.solvedWrist, rig.weight, scratch);
 
     poseHand(arm, anchor.aim, frame, rig.weight, role, rig.snug, scratch);
+  }
+
+  // --- head ---------------------------------------------------------------
+  //
+  // Runs after the arms so it can't fight anything above — same
+  // after-the-mixer, after-the-arms ordering `poseHand` already relies on.
+  // See lib/game3d/head-aim.ts for why the clamp is stated relative to the
+  // seat's own forward frame and why this reuses `aimChildAt` rather than
+  // composing a yaw/pitch Euler locally.
+  if (rig.head) {
+    rig.head.bone.updateWorldMatrix(true, false);
+    rig.head.child.updateWorldMatrix(true, false);
+    scratch.a.setFromMatrixPosition(rig.head.bone.matrixWorld);
+    scratch.b.setFromMatrixPosition(rig.head.child.matrixWorld);
+
+    // The pot most of the time; their own cards at their own turn — the
+    // same isCurrent/snug beat the hands already use.
+    const card = holeCardPosition(input.slot);
+    const gazeAt = {
+      x: POT_POSITION.x + (card.x - POT_POSITION.x) * rig.snug,
+      y: POT_POSITION.y + (card.y - POT_POSITION.y) * rig.snug,
+      z: POT_POSITION.z + (card.z - POT_POSITION.z) * rig.snug,
+    };
+    const headPos = { x: scratch.a.x, y: scratch.a.y, z: scratch.a.z };
+    const gazePoint = headGazeTarget(
+      headPos,
+      gazeAt,
+      frame.forward,
+      frame.right,
+      input.slot,
+      input.timeS
+    );
+    scratch.target.set(gazePoint.x, gazePoint.y, gazePoint.z);
+    aimChildAt(
+      rig.head.bone,
+      scratch.a,
+      scratch.b,
+      scratch.target,
+      HEAD_AIM_WEIGHT * rig.weight,
+      scratch
+    );
   }
 }
 

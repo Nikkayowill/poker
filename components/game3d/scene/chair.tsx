@@ -23,23 +23,22 @@
 
 import { useMemo } from "react";
 import * as THREE from "three";
-import { UNITS_PER_METRE_Y } from "@/lib/game3d/dimensions";
+import { UNITS_PER_METRE } from "@/lib/game3d/dimensions";
 
 /**
- * A CHAIR IS BUILT ON THE CHARACTER'S RULER, NOT THE FELT'S, and getting
- * that wrong is what made the first version a doll's chair.
+ * A chair is furniture in real metres, converted through the room's one
+ * ruler — same as everything else, the felt included.
  *
- * dimensions.ts's `mm()` converts through UNITS_PER_METRE, which is derived
- * from the felt's length — correct for a chip or a card, which the eye
- * judges against the cloth they lie on. A chair is judged against the person
- * sitting in it, and glb-avatar scales that person by UNITS_PER_METRE_Y,
- * the ruler the table's *height* actually has. In a room where those two
- * disagree by 1.76x (see UNITS_PER_METRE_Y), a chair measured through `mm()`
- * would come out nearly twice the width of its own sitter. So every number
- * below is real furniture in metres, through the same ruler the sitter uses.
+ * This used to matter which ruler: `mm()`/`UNITS_PER_METRE` was the felt's
+ * own, and glb-avatar scaled a sitting person by a SECOND, disagreeing one
+ * (`UNITS_PER_METRE_Y`), so a chair built through the felt's ruler came out
+ * up to 1.76x the width of its own sitter. Both rulers are one ruler now
+ * (see `FELT_TOP_Y`'s comment in seat-layout.ts), so `chairM` below is only
+ * still a separate function from `mm()` for the unit conversion (whole
+ * metres here, millimetres there) — not because it points somewhere else.
  */
 function chairM(metres: number): number {
-  return metres * UNITS_PER_METRE_Y;
+  return metres * UNITS_PER_METRE;
 }
 
 /**

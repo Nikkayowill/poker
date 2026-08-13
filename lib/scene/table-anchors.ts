@@ -311,6 +311,25 @@ export function seatShoulderRoom(slot: number, count: number = SEAT_COUNT): numb
   return closest;
 }
 
+/**
+ * How wide the dealer may be drawn before she touches the chairs beside her.
+ *
+ * Her own budget rather than a seat's, because she does not have a seat's
+ * neighbours: she sits at far centre with a chair to each side, so the two
+ * gaps that bound her are the ones `seatShoulderRoom` would never measure.
+ * She also sits closer in than a player (`DEALER_SETBACK` against
+ * `SEAT_SETBACK`), which moves her relative to both of them.
+ */
+export function dealerShoulderRoom(count: number = SEAT_COUNT): number {
+  const dealer = dealerAnchor();
+  let closest = Infinity;
+  for (let slot = 1; slot < count; slot += 1) {
+    const seat = seatAnchor(slot, count);
+    closest = Math.min(closest, Math.hypot(dealer.x - seat.x, dealer.z - seat.z));
+  }
+  return Number.isFinite(closest) ? closest : TABLE_WIDTH_M;
+}
+
 /* ---------------------------------------------------------------------- *
  * What sits on the felt
  * ---------------------------------------------------------------------- */

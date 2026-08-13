@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CAMERA_ELEVATION_DEG,
   DEALER_ANGLE_DEG,
+  DEALER_SETBACK,
+  SEAT_SETBACK,
   DESKTOP_LANDSCAPE_FRAME,
   FELT,
   FELT_TOP_Y,
@@ -19,6 +21,7 @@ import {
   communityCardsAnchor,
   dealerAnchor,
   dealerButtonAnchor,
+  dealerShoulderRoom,
   dealerHead,
   debugMarkers,
   feltOutline,
@@ -418,5 +421,55 @@ describe("stadiumRayPoint", () => {
     // Not a formality: if the two shapes agreed, the tray anchor would not
     // have needed this function at all.
     expect(strictlyInside).toBeGreaterThan(0);
+  });
+});
+
+describe("the dealer's own place", () => {
+  it("sits at far centre, pulled in closer to the table than a player", () => {
+    const dealer = dealerAnchor();
+    expect(dealer.x).toBeCloseTo(0, 9);
+    expect(dealer.z).toBeLessThan(0);
+    // She is working at the table, not sitting back from it. Stated as the
+    // two setbacks rather than by comparing depths: she is at far centre, so
+    // her |z| is the largest at the table by construction and comparing it
+    // with a flank's says nothing about who is nearer the cloth.
+    expect(DEALER_SETBACK).toBeLessThan(SEAT_SETBACK);
+  });
+
+  /* Her own budget, not a seat's: her neighbours are the two chairs flanking
+     her, which is a gap `seatShoulderRoom` never measures. */
+  it("is bounded by the chairs beside her", () => {
+    const room = dealerShoulderRoom(SEAT_COUNT);
+    expect(room).toBeGreaterThan(0);
+    const nearest = Math.min(
+      ...Array.from({ length: SEAT_COUNT - 1 }, (_, i) => {
+        const seat = seatAnchor(i + 1, SEAT_COUNT);
+        const dealer = dealerAnchor();
+        return Math.hypot(dealer.x - seat.x, dealer.z - seat.z);
+      }),
+    );
+    expect(room).toBeCloseTo(nearest, 9);
+  });
+
+  /**
+   * Unchanged by the headcount, which is not the obvious answer and is worth
+   * pinning: the arc grows OUTWARD from the dealer (`seatAnglesDeg` seats the
+   * first pair immediately either side of her and adds later players further
+   * along), so the two chairs that bound her are the same two chairs at every
+   * size of game. A short-handed table empties the ends of the arc, not the
+   * middle, and her artwork therefore never needs to be re-scaled mid-session
+   * as players come and go.
+   */
+  it("has the same elbow room at every headcount -- the arc grows outward", () => {
+    const full = dealerShoulderRoom(SEAT_COUNT);
+    for (let count = 2; count <= SEAT_COUNT; count += 1) {
+      expect(dealerShoulderRoom(count)).toBeCloseTo(full, 9);
+    }
+  });
+
+  it("never has a seat on top of her", () => {
+    for (let count = 2; count <= SEAT_COUNT; count += 1) {
+      expect(dealerShoulderRoom(count)).toBeGreaterThan(0.1);
+    }
   });
 });

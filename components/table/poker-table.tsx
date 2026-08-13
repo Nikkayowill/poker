@@ -149,6 +149,66 @@ export const SEAT_HEIGHT_RATIO = 0.30;
 const RACETRACK_SEAT_MIN_PX = 86;
 const RACETRACK_SEAT_MAX_PX = 132;
 
+/**
+ * Where the dealer's own landmarks sit inside her artwork, as fractions of
+ * the image.
+ *
+ * Measured off `public/table2d5/dealer.png`'s alpha channel, not guessed, and
+ * they exist because the image box is not the character. Her ponytail runs to
+ * the very top of the frame and her right arm reaches out past her shoulder,
+ * so anchoring by the box would hang her a hair's height too low and centre
+ * her on her elbow. Three numbers fix that:
+ *
+ *   shoulder   her shoulder span as a fraction of the image's width, so the
+ *              scale is set by the part of her that has to fit between the
+ *              two chairs beside her rather than by how far her hair sprays.
+ *   crown      what the camera's projected head height should line up with,
+ *              as a fraction of the image's height -- effectively the top of
+ *              the artwork. See below; this one is not the obvious number.
+ *   headX      her head's centre as a fraction of the image's width. Not 0.5:
+ *              the artwork is asymmetric below the neck.
+ *
+ * CROWN IS THE TOP OF HER HAIR, NOT THE TOP OF HER SKULL, and that is a
+ * correction rather than a slip. Her actual crown sits at 0.139 of the image
+ * -- her ponytail occupies everything above it -- and anchoring there is what
+ * a "head position" appears to mean. Rendered, it is wrong twice over: the
+ * ponytail then runs off the top of the frame (measured: 4.5px clipped on a
+ * landscape phone, and flush against the edge on a desktop), and her hands
+ * come to rest up on the rail instead of on the cloth, which for artwork
+ * whose whole subject is a hand placing a card is the wrong read entirely.
+ *
+ * Both fall out of the same thing: `fitCamera` reserves its top margin
+ * against the heads in `framingPoints`, and what actually occupies that
+ * margin for this character is her hair. Lining the image's top edge up with
+ * the projected head height puts her hair in the space reserved for it and
+ * drops her body far enough to lean over the table. Checked against the three
+ * placements rendered at both frames; this is the one.
+ *
+ * Re-measure all four if the artwork is ever re-exported at a different crop.
+ */
+const DEALER_ART = {
+  aspect: 794 / 600,
+  shoulder: 0.908,
+  crown: 0.01,
+  headX: 0.425,
+} as const;
+
+/**
+ * Place the dealer's artwork from her projected anchor.
+ *
+ * Returns absolute pixels rather than leaving the arithmetic to CSS, because
+ * every term needs the art's own measured landmarks (`DEALER_ART`) and doing
+ * that in `calc()` spreads four constants across two files.
+ */
+function dealerStyle(dealer: { x: number; y: number; shoulderPx: number }): React.CSSProperties {
+  const width = dealer.shoulderPx / DEALER_ART.shoulder;
+  return {
+    left: `${(dealer.x - width * DEALER_ART.headX).toFixed(1)}px`,
+    top: `${(dealer.y - width * DEALER_ART.aspect * DEALER_ART.crown).toFixed(1)}px`,
+    width: `${width.toFixed(1)}px`,
+  };
+}
+
 export function seatWidthFor(table: { width: number; height: number }, count = 6): number {
   const base = Math.min(table.width * SEAT_WIDTH_RATIO, table.height * SEAT_HEIGHT_RATIO);
   const spacingScale = count <= 6 ? 1 : Math.sin(Math.PI / count) / Math.sin(Math.PI / 6);
@@ -1078,6 +1138,27 @@ export function PokerTable({
               <b>BB</b> {game.bigBlind.toLocaleString()}
             </span>
           </div>
+          {/* The dealer, at far centre, over the cloth rather than behind the
+              rail -- her artwork puts a hand and a card ON the table, and
+              painting her under it would take exactly that away. Behind every
+              seat (z-index 3, below the seats' own 4-and-up) because she is
+              the furthest thing at the table, and behind the board for the
+              same reason. */}
+          {isRacetrack && racetrackLayout && (
+            /* A plain <img>, not next/image: her box is solved per frame from
+               the live camera, so there is no build-time width or height for
+               the optimiser to work from, and she is one small already-sized
+               PNG rather than user content needing a CDN. */
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              className="racetrack-dealer"
+              src="/table2d5/dealer.png"
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              style={dealerStyle(racetrackLayout.dealer)}
+            />
+          )}
           <div
             className="poker-table-wrap"
             ref={tableWrapRef}

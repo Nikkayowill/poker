@@ -8,10 +8,14 @@ import { METRES_PER_WORLD_UNIT, racetrackChipSpace, type ChipSpace } from "@/lib
 import { MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
 import { perspectiveProjection, scaledProjection, type SceneProjection } from "@/lib/scene/scene-projection";
 import {
+  DEALER_HEAD_Y,
   FELT_TOP_Y,
   SEAT_SETBACK,
   TABLE_OUTER,
   communityCardsAnchor,
+  dealerAnchor,
+  dealerHead,
+  dealerShoulderRoom,
   feltOutline,
   fitCamera,
   potAnchor,
@@ -114,6 +118,12 @@ export interface RacetrackLayout {
   }>;
   board: { x: number; y: number };
   pot: { x: number; y: number };
+  /**
+   * The dealer's place at far centre. She is not one of the six seats -- a
+   * real oval table has a dealer cutout there and no chair -- so she is
+   * reported separately and carries no nameplate.
+   */
+  dealer: { x: number; y: number; shoulderPx: number };
 }
 
 export interface RacetrackSceneProps {
@@ -304,6 +314,12 @@ export function RacetrackScene({
           toward: { x: 0, y: -1 },
         });
       }
+      const dealerFloor = dealerAnchor();
+      const dealerCrown = engine.room.project(dealerHead());
+      const dealerRoom = dealerShoulderRoom(count);
+      const dealerLeft = engine.room.project({ x: dealerFloor.x - dealerRoom / 2, y: DEALER_HEAD_Y, z: dealerFloor.z });
+      const dealerRight = engine.room.project({ x: dealerFloor.x + dealerRoom / 2, y: DEALER_HEAD_Y, z: dealerFloor.z });
+
       const board = engine.room.project(communityCardsAnchor());
       const potSpot = engine.room.project(potAnchor());
       // Toward the pot as it actually appears, not as the plan says: under
@@ -321,6 +337,11 @@ export function RacetrackScene({
         seats: seatLayout,
         board: { x: board.x, y: board.y },
         pot: { x: potSpot.x, y: potSpot.y },
+        dealer: {
+          x: dealerCrown.x,
+          y: dealerCrown.y,
+          shoulderPx: Math.abs(dealerRight.x - dealerLeft.x),
+        },
       });
     };
 

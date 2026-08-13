@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { X } from "lucide-react";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHEAPEST_TIER, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
-import type { TableRenderer } from "@/lib/scene/table-renderer";
+import { RACETRACK_RENDERER, type TableRenderer } from "@/lib/scene/table-renderer";
 
 /**
  * Picks a stakes tier (unless locked, e.g. rebuying at an already-seated
@@ -25,6 +25,7 @@ export function BuyInModal({
   onPlayerNameChange,
   tableRenderer,
   webglAvailable,
+  landscape = true,
   onTableRendererChange,
   onClose,
   onConfirm,
@@ -55,6 +56,8 @@ export function BuyInModal({
    */
   tableRenderer?: TableRenderer;
   webglAvailable?: boolean;
+  /** Viewport wider than tall. The 2.5D table is landscape-only. */
+  landscape?: boolean;
   onTableRendererChange?: (renderer: TableRenderer) => void;
   onClose: () => void;
   onConfirm: (tier: StakesTier, buyIn: number) => void;
@@ -182,6 +185,20 @@ export function BuyInModal({
                 >
                   3D room
                 </button>
+                {/* Disabled in portrait rather than hidden, matching how the
+                    3D room handles a browser without WebGL just above. Hiding
+                    it would reflow the group on every rotation and leave the
+                    option's absence unexplained; disabling it keeps the row a
+                    fixed shape and the note below says why. */}
+                <button
+                  type="button"
+                  className={tableRenderer === RACETRACK_RENDERER ? "is-active" : undefined}
+                  aria-pressed={tableRenderer === RACETRACK_RENDERER}
+                  disabled={!landscape}
+                  onClick={() => { selectSound(); onTableRendererChange(RACETRACK_RENDERER); }}
+                >
+                  2.5D
+                </button>
                 <button
                   type="button"
                   className={tableRenderer === "canvas_2d" ? "is-active" : undefined}
@@ -192,6 +209,7 @@ export function BuyInModal({
                 </button>
               </div>
               {!webglAvailable && <small>3D room needs a browser with WebGL.</small>}
+              {!landscape && <small>2.5D table needs a landscape screen &mdash; turn your phone sideways.</small>}
             </div>
           )}
 

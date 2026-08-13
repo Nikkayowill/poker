@@ -172,6 +172,7 @@ export function PokerTable({
   onCycleBetStyle,
   tableRenderer,
   tableRendererSettled,
+  landscape,
   onCycleTableRenderer,
   roomThemeId,
   onCycleRoomTheme,
@@ -199,7 +200,10 @@ export function PokerTable({
   tableRenderer: TableRenderer;
   /** Has the stored renderer choice arrived? See the render gate below. */
   tableRendererSettled: boolean;
-  onCycleTableRenderer: (webglAvailable: boolean) => void;
+  /** Is the viewport wider than it is tall? The 2.5D table is landscape-only. */
+  landscape: boolean;
+  /** Called with the renderer currently mounted -- see poker-app.tsx. */
+  onCycleTableRenderer: (mounted: TableRenderer) => void;
   roomThemeId: RoomThemeId;
   onCycleRoomTheme: () => void;
   onSignIn: () => void;
@@ -215,7 +219,7 @@ export function PokerTable({
   // the 3D room sees the classic table for one frame rather than a canvas that
   // might not work. See use-webgl-support.ts for why this is not an effect.
   const webglAvailable = useWebglSupport();
-  const activeRenderer = resolveTableRenderer(tableRenderer, webglAvailable);
+  const activeRenderer = resolveTableRenderer(tableRenderer, webglAvailable, landscape);
   const historyButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeHistory = useCallback(() => {
     setHistoryOpen(false);
@@ -777,7 +781,7 @@ export function PokerTable({
       {
         kind: "action" as const,
         label: tableRendererLabel(activeRenderer),
-        onSelect: () => onCycleTableRenderer(webglAvailable),
+        onSelect: () => onCycleTableRenderer(activeRenderer),
         icon: <Box size={15} />,
       },
       // Same gating as the renderer entry above, plus a second condition: a

@@ -72,10 +72,13 @@ export function normalizeTableRenderer(value: unknown): TableRenderer {
 export function nextTableRenderer(
   renderer: TableRenderer,
   webglAvailable = true,
+  landscape = true,
 ): TableRenderer {
-  const available = webglAvailable
-    ? TABLE_RENDERERS
-    : TABLE_RENDERERS.filter((candidate) => candidate !== "webgl_3d");
+  const available = TABLE_RENDERERS.filter((candidate) => {
+    if (candidate === "webgl_3d") return webglAvailable;
+    if (candidate === RACETRACK_RENDERER) return landscape;
+    return true;
+  });
   const index = available.indexOf(renderer);
   // A renderer that is not in the cycle (the 3D room on a device that cannot
   // run it) steps to the first available one rather than nowhere: indexOf
@@ -137,11 +140,24 @@ export function canRenderWebGL(
 export function resolveTableRenderer(
   preference: TableRenderer,
   webglAvailable: boolean,
+  landscape = true,
 ): TableRenderer {
   if (preference === "webgl_3d" && !webglAvailable) return "canvas_2d";
-  // The racetrack is Canvas 2D like the classic room, so it has nothing to
-  // fall back from -- a browser that cannot give us a 2D context has no
-  // table at all, and that case is handled inside the renderer by leaving
-  // the DOM felt painting.
+  // The racetrack is landscape-only. Its table is 2:1, and there is no
+  // portrait framing of it that works: at 390x844 the felt comes out about
+  // 58px deep, the opponents' nameplates land on the cloth rather than above
+  // it, and the local player's own seat is stranded at the bottom with a
+  // screen of floor between them and the table. Falling back keeps the game
+  // playable in portrait and costs nothing, because rotating restores it --
+  // `useLandscape` is a live subscription, not a snapshot taken at mount.
+  //
+  // A fallback rather than a "rotate your device" gate, deliberately: an
+  // overlay a player cannot act through can time their turn out and fold
+  // them, which is a real cost for a cosmetic preference.
+  if (preference === RACETRACK_RENDERER && !landscape) return "canvas_2d";
+  // Nothing else falls back. The racetrack is Canvas 2D like the classic
+  // room, so a browser that cannot give us a 2D context has no table at all,
+  // and that case is handled inside the renderer by leaving the DOM felt
+  // painting.
   return preference;
 }

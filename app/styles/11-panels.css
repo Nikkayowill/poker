@@ -394,6 +394,33 @@
 }
 .buyin-renderer small { display: block; margin-top: 6px; color: #8f9d95; font-size: 11px; }
 
+/* Three tables to choose between now, not two, and `.entry-segment` is a
+   two-way control by construction -- `grid-template-columns: 1fr 1fr` in
+   04-lobby.css, where its only other consumer is the sign-in page's genuine
+   either/or. Left alone the third button wraps onto a second row inside the
+   track. Overridden here rather than generalised there, so the shared control
+   keeps meaning "one of two" everywhere else it is used. */
+.buyin-renderer .entry-segment {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* A choice that is not available here has never had a look, because until now
+   the only one was the 3D room on a browser without WebGL -- rare, and
+   explained by the note underneath. The 2.5D table is unavailable on every
+   phone held upright, which is not rare at all, so "you cannot pick this"
+   needs to be visible in the control rather than only in a line of text below
+   it. Deliberately not just dimmed: a dimmed button in a segmented control
+   reads as the unselected state, which is what every other button here is. */
+.buyin-renderer .entry-segment button:disabled {
+  cursor: not-allowed;
+  color: #5a6472;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent 0 6px,
+    rgba(147, 161, 187, .07) 6px 12px
+  );
+}
+
 .buyin-footer { margin-top: 26px; }
 .buyin-footer .primary-action { width: 100%; }
 

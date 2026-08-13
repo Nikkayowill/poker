@@ -172,10 +172,19 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   rather than hidden (same treatment the 3D room gets without WebGL). `.entry-segment` is
   a two-way control by construction, so the three-up grid is overridden under
   `.buyin-renderer` rather than generalised.
-- Known and deliberately unresolved (both are design calls, not defects): a ~140px band of
-  floor below the near rail near 16:9 — taking it up by lowering the camera was tried and
-  reverted because it wrecks every taller frame; and the dealer's place at far centre,
-  which is reserved and geometrically known but has no art.
+- **The dealer** (`public/table2d5/dealer.png`) sits at far centre, drawn OVER the cloth
+  rather than behind the rail — her art puts a hand and a card on the table and painting
+  her under it removes exactly that. z-index 3: above the canvas, below every seat. Her
+  supplied PNG was RGB-on-a-black-plate with a black shirt; the cutout threshold that
+  works is **luma ≤ 1**, and anything more generous eats her (see
+  `[[reference_stackchips_avatar_assets]]` for the full recipe). Placement is anchored to
+  the top of her HAIR, not her measured skull — `fitCamera` reserves its top margin
+  against head points and hair is what occupies it; anchoring the skull clips her ponytail
+  and lands her hands on the rail instead of the cloth. `DEALER_ART` in `poker-table.tsx`
+  holds the three measured fractions; re-measure them if the art is ever re-exported.
+- Known and deliberately unresolved (a design call, not a defect): a ~140px band of floor
+  below the near rail near 16:9 — taking it up by lowering the camera was tried and
+  reverted because it wrecks every taller frame.
 
 ### Rewarded-ad faucet (2026-08-11)
 - Wait moved 30s→5min (`REWARDED_AD_DURATION_MS`), grant TTL 10→20min to compensate. New direct

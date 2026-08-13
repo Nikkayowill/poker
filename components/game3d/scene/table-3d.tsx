@@ -24,6 +24,7 @@ import {
   FELT_RADIUS_Z,
   FELT_TOP_Y,
   RAIL_LIP_HEIGHT,
+  RAIL_WIDTH,
 } from "@/lib/game3d/seat-layout";
 import { offsetStadium } from "@/lib/game3d/table-shape";
 import {
@@ -86,8 +87,13 @@ const FELT_EXTENT = { halfLength: FELT_RADIUS_X, halfWidth: FELT_RADIUS_Z };
  * boundary by the same amount the old torus's tube did, so the cushion
  * still visually laps the cloth's stapled edge instead of butting against
  * it with a seam.
+ *
+ * `RAIL_WIDTH` now lives in seat-layout.ts — `hand-anchors.ts` needs the
+ * same real width to rest an idle hand on the cushion rather than short of
+ * it on the felt, and a second local copy here is exactly the kind of
+ * silently-drifting literal this file's own header already warns about for
+ * `RAIL_LIP_HEIGHT`.
  */
-const RAIL_WIDTH = 0.0869;
 const RAIL_OVERLAP = 0.0232;
 const RAIL_OUTER = offsetStadium(FELT_EXTENT.halfLength, FELT_EXTENT.halfWidth, RAIL_WIDTH);
 const RAIL_INNER = offsetStadium(FELT_EXTENT.halfLength, FELT_EXTENT.halfWidth, -RAIL_OVERLAP);

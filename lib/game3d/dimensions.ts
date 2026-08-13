@@ -16,18 +16,20 @@
  * sits on — the eye judges "a chip is about a fiftieth of the table", and
  * that is the ratio this file makes true.
  *
- * KNOWN INCONSISTENCY, DELIBERATELY LEFT. Under this ruler the placeholder
- * avatars are about half human size (AVATAR_HEAD_Y 1.5 units resolves to
- * 0.74 m, where a seated player's head is ~1.25 m). They are procedural
- * stand-ins for real character rigs, and the moment to fix their scale is
- * when those land: .glb characters are authored in metres, so the correct
- * import scale is UNITS_PER_METRE and nothing else. HUMAN_SEATED_HEAD_M
- * below is here for that day.
+ * ONE RULER FOR EVERYTHING, INCLUDING THE PEOPLE. This used to anchor only
+ * what lies flat on the cloth; seated avatars were imported through a
+ * second, independent ruler (`UNITS_PER_METRE_Y`, keyed off a felt-height
+ * literal that had never been derived from anything) that disagreed with
+ * this one by as much as 1.76x. See `FELT_TOP_Y`'s own comment in
+ * seat-layout.ts for what that actually cost — real, repeated bugs, not a
+ * cosmetic mismatch. `HUMAN_STANDING_UNITS` below now goes through this same
+ * `UNITS_PER_METRE`, so a table resize and an avatar-scale change are the
+ * same edit and cannot drift apart between rounds.
  *
  * Pure arithmetic with no three.js import, so `npm test` reaches it.
  */
 
-import { FELT_RADIUS_X, FELT_TOP_Y, TABLE_LENGTH_M } from "./seat-layout";
+import { FELT_RADIUS_X, TABLE_LENGTH_M } from "./seat-layout";
 
 /**
  * Playing surface of a six-max oval table, long axis, in metres.
@@ -89,41 +91,34 @@ export const DEALER_BUTTON = {
 
 /**
  * Head height of a seated player, in metres. The character rigs are checked
- * against this rather than eyeballed — see UNITS_PER_METRE_Y below for the
- * ruler that converts it.
+ * against this rather than eyeballed — converted through `UNITS_PER_METRE`,
+ * the room's one ruler, same as everything else in this file.
  */
 export const HUMAN_SEATED_HEAD_M = 1.25;
 
 /** Standing height of the adult the roster is normalized to, in metres. */
 export const HUMAN_STANDING_M = 1.75;
 
-/** Height of a real poker table's playing surface off the floor, in metres. */
-export const TABLE_HEIGHT_M = 0.75;
+/**
+ * Height of a real poker table's playing surface off the floor, in metres.
+ *
+ * Re-exported rather than restated, exactly like `TABLE_LENGTH_M` above:
+ * `FELT_TOP_Y` (seat-layout.ts) needs this to build the felt's height on
+ * this same `UNITS_PER_METRE` ruler, and that file cannot import from this
+ * one without a cycle (this file imports `FELT_RADIUS_X` from it). One 0.75
+ * in the codebase; dimensions.test.ts pins the two computations equal.
+ */
+export { TABLE_HEIGHT_M } from "./seat-layout";
 
 /**
- * THE ROOM IS NOT ISOTROPIC, AND THIS IS THE HONEST NAME FOR IT.
+ * Standing height of the roster's adult, in world units — through
+ * `UNITS_PER_METRE`, the same ruler the table itself is built on.
  *
- * UNITS_PER_METRE above is derived from the felt's *length* (2.13 m across
- * 2 * FELT_RADIUS_X) and is right for everything lying on the cloth. The
- * felt's *height* was never derived from anything: FELT_TOP_Y is a legacy
- * 0.86, which under that same ruler is a 0.43 m table — a bit over knee
- * height. So the room's horizontal and vertical scales genuinely disagree,
- * by a factor of about 1.76.
- *
- * A character imported at UNITS_PER_METRE — which dimensions.ts used to
- * instruct, and which is correct in a room whose table is the right height —
- * would therefore stand nearly twice as tall as this table wants, head and
- * shoulders over a surface that only comes up to their shin. Until the felt
- * is raised (a room-wide change: FELT_TOP_Y feeds the camera framing, the
- * studio spot and their tests), a human is scaled by the ruler the TABLE
- * actually has, so that a seated player reads correctly against the one
- * object they are judged next to.
- *
- * Reconciling the two means moving FELT_TOP_Y to TABLE_HEIGHT_M *
- * UNITS_PER_METRE (~1.51) and re-solving the camera; on that day this
- * constant collapses into UNITS_PER_METRE and can be deleted.
+ * Used to go through a second, independent ruler (`UNITS_PER_METRE_Y`) keyed
+ * off a felt-height literal nothing else derived from. That constant, and
+ * the felt-height literal it was keyed off, are gone — see `FELT_TOP_Y`'s
+ * own comment in seat-layout.ts for the bug that shape of drift caused and
+ * why one ruler for the whole room is the actual fix, not a simplification
+ * of it.
  */
-export const UNITS_PER_METRE_Y = FELT_TOP_Y / TABLE_HEIGHT_M;
-
-/** Standing height of the roster's adult, in world units. */
-export const HUMAN_STANDING_UNITS = HUMAN_STANDING_M * UNITS_PER_METRE_Y;
+export const HUMAN_STANDING_UNITS = HUMAN_STANDING_M * UNITS_PER_METRE;

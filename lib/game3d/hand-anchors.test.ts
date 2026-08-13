@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   CARD_HAND_LATERAL,
   CARD_HAND_SETBACK,
-  CARD_HAND_SNUG,
   COMFORTABLE_REACH,
   DRIFT_AMPLITUDE,
   RAIL_HAND_LATERAL,
+  RAIL_HAND_RIDGE,
+  RESTING_COMFORTABLE_REACH,
   WRIST_REST_HEIGHT,
   anchorSeparation,
   handAnchor,
@@ -15,8 +16,8 @@ import {
   roleForHand,
   seatFrame,
 } from "./hand-anchors";
-import { CARD } from "./dimensions";
-import { FELT_TOP_Y, SEAT_COUNT_3D, holeCardPosition, seatPosition } from "./seat-layout";
+import { CARD, mm } from "./dimensions";
+import { FELT_TOP_Y, RAIL_WIDTH, SEAT_COUNT_3D, holeCardPosition, seatPosition } from "./seat-layout";
 import { dist, dot, len, sub, vec } from "./vec3-math";
 
 const SLOTS = Array.from({ length: SEAT_COUNT_3D }, (_, i) => i);
@@ -87,12 +88,28 @@ describe("handAnchor", () => {
     }
   });
 
-  it("aims the card hand's fingers at the card spot itself", () => {
+  it("aims the card hand's fingers at the card spot once settled at their own turn", () => {
     for (const slot of SLOTS) {
-      const anchor = handAnchor(slot, "cards", -1);
+      const anchor = handAnchor(slot, "cards", -1, 1);
       const card = holeCardPosition(slot);
       expect(anchor.aim.x).toBeCloseTo(card.x, 9);
       expect(anchor.aim.z).toBeCloseTo(card.z, 9);
+    }
+  });
+
+  /**
+   * At rest the card hand IS the off hand's own resting geometry — same
+   * wrist, same aim — which is what makes it read as a hand near the body
+   * rather than one held out toward the cards. It only diverges as `snug`
+   * rises on the player's own turn.
+   */
+  it("matches the off hand's anchor exactly at rest", () => {
+    for (const slot of SLOTS) {
+      for (const sign of [1, -1]) {
+        const cardHand = handAnchor(slot, "cards", sign, 0);
+        const offHand = handAnchor(slot, "rail", sign, 0);
+        expect(cardHand).toEqual(offHand);
+      }
     }
   });
 
@@ -105,11 +122,17 @@ describe("handAnchor", () => {
     }
   });
 
-  it("mirrors the lateral offset with the sign", () => {
+  it("mirrors the lateral offset with the sign, at rest and at full snug", () => {
     for (const slot of SLOTS) {
-      const right = handAnchor(slot, "cards", 1);
-      const left = handAnchor(slot, "cards", -1);
-      expect(dist(right.wrist, left.wrist)).toBeCloseTo(2 * CARD_HAND_LATERAL, 9);
+      // At rest (snug=0) both hands share the rail formula's own lateral
+      // offset; at snug=1 the card hand has settled onto CARD_HAND_LATERAL.
+      const restRight = handAnchor(slot, "cards", 1, 0);
+      const restLeft = handAnchor(slot, "cards", -1, 0);
+      expect(dist(restRight.wrist, restLeft.wrist)).toBeCloseTo(2 * RAIL_HAND_LATERAL, 9);
+
+      const actingRight = handAnchor(slot, "cards", 1, 1);
+      const actingLeft = handAnchor(slot, "cards", -1, 1);
+      expect(dist(actingRight.wrist, actingLeft.wrist)).toBeCloseTo(2 * CARD_HAND_LATERAL, 9);
     }
   });
 
@@ -126,13 +149,34 @@ describe("handAnchor", () => {
     }
   });
 
-  it("settles the card hand forward by exactly the snug distance at their turn", () => {
+  /**
+   * The rest state is not a tuning of the acting state — it is a different
+   * point entirely (the same one the off hand uses), so the sweep between
+   * them is most of the seat's own reach, not a token nudge.
+   */
+  it("rests the card hand at the same point the off hand uses, then settles onto the cards at their turn", () => {
     for (const slot of SLOTS) {
       const resting = handAnchor(slot, "cards", 1, 0);
+      const offHand = handAnchor(slot, "rail", 1, 0);
       const acting = handAnchor(slot, "cards", 1, 1);
       const card = holeCardPosition(slot);
-      expect(dist(resting.wrist, acting.wrist)).toBeCloseTo(CARD_HAND_SNUG, 9);
+
+      expect(resting.wrist).toEqual(offHand.wrist);
       expect(flat(acting.wrist, card)).toBeLessThan(flat(resting.wrist, card));
+      // The sweep is a real reach, not the couple-centimetre nudge the
+      // previous design used.
+      expect(dist(resting.wrist, acting.wrist)).toBeGreaterThan(mm(100));
+    }
+  });
+
+  it("interpolates the card hand smoothly between rest and fully settled", () => {
+    for (const slot of SLOTS) {
+      const resting = handAnchor(slot, "cards", 1, 0);
+      const half = handAnchor(slot, "cards", 1, 0.5);
+      const acting = handAnchor(slot, "cards", 1, 1);
+      const restToActing = dist(resting.wrist, acting.wrist);
+      const restToHalf = dist(resting.wrist, half.wrist);
+      expect(restToHalf).toBeCloseTo(restToActing / 2, 6);
     }
   });
 
@@ -150,6 +194,17 @@ describe("handAnchor", () => {
 
   it("keeps the fingertips clear of the near card edge", () => {
     expect(CARD_HAND_SETBACK).toBeGreaterThan(CARD.height / 2);
+  });
+
+  /**
+   * The rest point moved off the felt and onto the padded rail — pinned
+   * against the real rail width both files share, so a future rail retune
+   * (table-3d.tsx) can't silently leave this resting shy of the felt's own
+   * edge or hanging off the rail's outer lip.
+   */
+  it("rests on the rail, not just short of the felt's own edge", () => {
+    expect(RAIL_HAND_RIDGE).toBeGreaterThan(0);
+    expect(RAIL_HAND_RIDGE).toBeLessThan(RAIL_WIDTH);
   });
 });
 
@@ -174,6 +229,30 @@ describe("reachableTarget", () => {
     const result = reachableTarget(shoulder, armLength, target);
     expect(result.deficit).toBeGreaterThan(0);
     expect(dist(shoulder, result.target)).toBeCloseTo(armLength * COMFORTABLE_REACH, 9);
+  });
+
+  /**
+   * The lever `poseAvatar` (arm-rig.ts) actually uses: a resting hand is
+   * held to a LOWER ceiling than an acting one, because even the rail-ridge
+   * rest anchor still exceeds COMFORTABLE_REACH for the near seat's own
+   * extra setback — see RESTING_COMFORTABLE_REACH's own header.
+   */
+  it("accepts a lower comfortable fraction for a resting hand", () => {
+    expect(RESTING_COMFORTABLE_REACH).toBeLessThan(COMFORTABLE_REACH);
+    const armLength = 0.6;
+    const target = vec(0, 1, 1.4 - armLength); // exactly full extension
+    const resting = reachableTarget(shoulder, armLength, target, RESTING_COMFORTABLE_REACH);
+    const acting = reachableTarget(shoulder, armLength, target, COMFORTABLE_REACH);
+    expect(dist(shoulder, resting.target)).toBeCloseTo(armLength * RESTING_COMFORTABLE_REACH, 9);
+    expect(dist(shoulder, resting.target)).toBeLessThan(dist(shoulder, acting.target));
+  });
+
+  it("defaults to COMFORTABLE_REACH when no fraction is given", () => {
+    const armLength = 0.6;
+    const target = vec(0, 1, 1.4 - armLength);
+    const withDefault = reachableTarget(shoulder, armLength, target);
+    const withExplicit = reachableTarget(shoulder, armLength, target, COMFORTABLE_REACH);
+    expect(withDefault).toEqual(withExplicit);
   });
 
   /**

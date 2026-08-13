@@ -10,13 +10,13 @@ import {
   TABLE_HEIGHT_M,
   TABLE_LENGTH_M,
   UNITS_PER_METRE,
-  UNITS_PER_METRE_Y,
   mm,
 } from "./dimensions";
 import {
   FELT_RADIUS_X,
   FELT_RADIUS_Z,
   FELT_TOP_Y,
+  TABLE_HEIGHT_M as LAYOUT_TABLE_HEIGHT_M,
   TABLE_WIDTH_M,
   TABLE_LENGTH_M as LAYOUT_TABLE_LENGTH_M,
 } from "./seat-layout";
@@ -35,11 +35,22 @@ describe("the room's ruler", () => {
     expect((2 * FELT_RADIUS_Z) / UNITS_PER_METRE).toBeCloseTo(TABLE_WIDTH_M, 6);
   });
 
-  it("has exactly one statement of the table's length", () => {
-    // dimensions.ts re-exports seat-layout's constant rather than declaring a
-    // second 2.13, because the depth derivation needs it and this file cannot
-    // export to seat-layout without a cycle.
+  it("resolves the felt's HEIGHT to a real table's height too — the same ruler, not a second one", () => {
+    // This is the fix: FELT_TOP_Y used to be an independent literal (0.86)
+    // that this ratio had no reason to land on. Now it's derived from the
+    // exact same (2 * FELT_RADIUS_X) / TABLE_LENGTH_M ratio the length and
+    // width checks above use, so a table resize can no longer move the
+    // horizontal ruler without moving this one along with it.
+    expect(FELT_TOP_Y / UNITS_PER_METRE).toBeCloseTo(TABLE_HEIGHT_M, 6);
+  });
+
+  it("has exactly one statement of the table's length and height", () => {
+    // dimensions.ts re-exports seat-layout's constants rather than declaring
+    // a second 2.13/0.75, because the ruler built here has to reach into
+    // seat-layout for FELT_RADIUS_X and that file cannot import back without
+    // a cycle.
     expect(TABLE_LENGTH_M).toBe(LAYOUT_TABLE_LENGTH_M);
+    expect(TABLE_HEIGHT_M).toBe(LAYOUT_TABLE_HEIGHT_M);
   });
 
   it("converts millimetres through that one scale", () => {
@@ -48,64 +59,19 @@ describe("the room's ruler", () => {
   });
 });
 
-describe("the vertical ruler a person is scaled by", () => {
-  it("resolves the felt's height to a real table's height", () => {
-    expect(FELT_TOP_Y / UNITS_PER_METRE_Y).toBeCloseTo(TABLE_HEIGHT_M, 6);
-  });
-
-  it("stands an adult the right height for THIS table, not a metric one", () => {
-    // 1.75 m under a 0.75 m table's own ruler. Importing at UNITS_PER_METRE
-    // instead — which dimensions.ts used to instruct — used to make the same
-    // adult taller, which is the mistake this constant exists to stop. The
-    // margin was 1.5x, then 1.4x, then 1.15x, each sized against a
-    // progressively smaller FELT_RADIUS_X (seat-layout.ts): pulling the
-    // table's horizontal ruler in to fix its size relative to a
-    // fixed-height avatar roster also narrows the two rulers' gap (see
-    // "records that the room is anisotropic" below).
-    //
-    // The fourth pull-in (1.45 -> 1.2) crossed the gap rather than just
-    // narrowing it: UNITS_PER_METRE is now the SMALLER of the two rulers,
-    // not the larger, so importing at the wrong one would make an adult
-    // shorter, not taller — the opposite mistake from every prior round.
-    // The size of the mistake is what actually kept shrinking, exactly as
-    // predicted, and now reads as under 2%: importing wrong here would no
-    // longer be visible at a glance the way a 76% or even 15% error was.
-    // That is coincidental, not a fix — FELT_TOP_Y (the room's actual
-    // defect) has not moved, see its own comment — so this is pinned
-    // narrowly enough that the next pull-in has to notice which way it
-    // moves rather than silently drifting further either direction.
-    expect(HUMAN_STANDING_UNITS).toBeCloseTo(HUMAN_STANDING_M * UNITS_PER_METRE_Y, 6);
-    const humanAtWrongRuler = HUMAN_STANDING_M * UNITS_PER_METRE;
-    expect(humanAtWrongRuler).toBeLessThan(HUMAN_STANDING_UNITS);
-    expect(humanAtWrongRuler).toBeGreaterThan(HUMAN_STANDING_UNITS * 0.97);
+describe("the ruler a person is scaled by — the SAME one the table uses", () => {
+  it("stands an adult the right height for a real 1.75m person under this ruler", () => {
+    // Used to be a second, independent ruler (UNITS_PER_METRE_Y, keyed off
+    // the old disagreeing FELT_TOP_Y literal) — this is now just
+    // UNITS_PER_METRE, restated for readability at the call site.
+    expect(HUMAN_STANDING_UNITS).toBeCloseTo(HUMAN_STANDING_M * UNITS_PER_METRE, 6);
   });
 
   it("puts a seated head clear of the felt but well under a standing one", () => {
     // The whole point of the room: shoulders and face read ABOVE the cloth.
-    const seatedHead = HUMAN_SEATED_HEAD_M * UNITS_PER_METRE_Y;
+    const seatedHead = HUMAN_SEATED_HEAD_M * UNITS_PER_METRE;
     expect(seatedHead).toBeGreaterThan(FELT_TOP_Y);
     expect(seatedHead).toBeLessThan(HUMAN_STANDING_UNITS);
-  });
-
-  it("records that the room is anisotropic rather than hiding it", () => {
-    // If this ever reads 1, the felt has been raised to metric truth and
-    // UNITS_PER_METRE_Y can collapse into UNITS_PER_METRE. Until then the
-    // disagreement is real and every human-scaled prop must use the Y ruler.
-    //
-    // Was 1.76, then 1.47, then 1.19, against progressively smaller
-    // FELT_RADIUS_X values (seat-layout.ts). Pulling the table in — the
-    // horizontal-only "table reads too big next to a fixed-height roster"
-    // fix — lowers UNITS_PER_METRE and so lowers this ratio too;
-    // UNITS_PER_METRE_Y (keyed to FELT_TOP_Y/TABLE_HEIGHT_M, untouched by
-    // that change) didn't move.
-    //
-    // The fourth pull-in (1.45 -> 1.2) took it past 1: UNITS_PER_METRE is now
-    // the smaller ruler, at 0.98 of UNITS_PER_METRE_Y rather than some
-    // multiple above it. The two rulers disagreeing by less is still
-    // incidental to the fix that causes it, not a step toward reconciling
-    // them — FELT_TOP_Y has not moved, and there is no reason the next
-    // pull-in keeps this number on the same side of 1.
-    expect(UNITS_PER_METRE / UNITS_PER_METRE_Y).toBeCloseTo(0.98, 2);
   });
 });
 

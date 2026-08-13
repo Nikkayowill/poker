@@ -65,11 +65,10 @@ import {
 /**
  * The props are authored in metres — measured, not assumed; see
  * MODELLED_CHIP_DIAMETER_M — so they mount on the ruler the felt sets, with
- * no per-asset fudge factor.
- *
- * Note this is the HORIZONTAL ruler deliberately. The room is not isotropic
- * (dimensions.ts's UNITS_PER_METRE_Y explains why), but these props lie ON
- * the cloth, and everything lying on the cloth is judged against the cloth.
+ * no per-asset fudge factor. `UNITS_PER_METRE` is the room's only ruler now
+ * (see `FELT_TOP_Y`'s comment in seat-layout.ts) — these props lie ON the
+ * cloth, so they'd use it either way, but it is no longer a choice between
+ * two disagreeing ones.
  */
 const PROP_SCALE = UNITS_PER_METRE;
 

@@ -18,10 +18,14 @@ const adsterraOrigins = [
   "https://*.effectivecreativeformat.com",
 ].join(" ");
 
+// The Turnstile bot-check widget on the sign-in/sign-up form
+// (components/auth/turnstile-widget.tsx). Fixed host, unlike Adsterra.
+const turnstileOrigin = "https://challenges.cloudflare.com";
+
 const csp = [
   "default-src 'self'",
   // 'wasm-unsafe-eval' is for the 3D table room's Meshopt decoder
-  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' ${adsterraOrigins}${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' ${adsterraOrigins} ${turnstileOrigin}${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: https://*.supabase.co ${adsterraOrigins}`,
   "font-src 'self' data:",
@@ -29,8 +33,8 @@ const csp = [
   "worker-src 'self' blob:",
   // blob: is for the 3D table room's GLTFLoader.
   // CRITICAL FIX: Explicitly added "ws://192.168.2.144:*" to connect-src to allow the dev client's HMR system over the LAN.
-  `connect-src 'self' blob: https://*.supabase.co wss://*.supabase.co ${adsterraOrigins}${isDev ? " ws: ws://192.168.2.144:*" : ""}`,
-  `frame-src 'self' ${adsterraOrigins}`,
+  `connect-src 'self' blob: https://*.supabase.co wss://*.supabase.co ${adsterraOrigins} ${turnstileOrigin}${isDev ? " ws: ws://192.168.2.144:*" : ""}`,
+  `frame-src 'self' ${adsterraOrigins} ${turnstileOrigin}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

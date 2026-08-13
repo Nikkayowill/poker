@@ -1104,14 +1104,18 @@ export function PokerApp() {
    * it, and linkAccount attaches it to whatever profile this browser is
    * already using. Neither function links anything itself.
    */
-  const signInWithEmail = async (email: string, password: string) => {
+  const signInWithEmail = async (email: string, password: string, captchaToken?: string) => {
     const client = authClient();
     if (!client) return;
     setError(null);
     setSignInPending(true);
     try {
       await applySessionPreference();
-      const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+      const { error: signInError } = await client.auth.signInWithPassword({
+        email,
+        password,
+        options: { captchaToken },
+      });
       if (signInError) throw signInError;
     } catch (caught) {
       setSignInPending(false);
@@ -1119,14 +1123,18 @@ export function PokerApp() {
     }
   };
 
-  const signUpWithEmail = async (email: string, password: string) => {
+  const signUpWithEmail = async (email: string, password: string, captchaToken?: string) => {
     const client = authClient();
     if (!client) return;
     setError(null);
     setSignInPending(true);
     try {
       await applySessionPreference();
-      const { data, error: signUpError } = await client.auth.signUp({ email, password });
+      const { data, error: signUpError } = await client.auth.signUp({
+        email,
+        password,
+        options: { captchaToken },
+      });
       if (signUpError) throw signUpError;
       // A Supabase project with email confirmation turned on returns a user
       // but no session here -- onAuthStateChange never fires, so this is the
@@ -1407,8 +1415,8 @@ export function PokerApp() {
             authNotice={authNotice}
             onDismissAuthNotice={() => setAuthNotice(null)}
             onSaveProgress={signIn}
-            onEmailSignIn={(email, password) => void signInWithEmail(email, password)}
-            onEmailSignUp={(email, password) => void signUpWithEmail(email, password)}
+            onEmailSignIn={(email, password, captchaToken) => void signInWithEmail(email, password, captchaToken)}
+            onEmailSignUp={(email, password, captchaToken) => void signUpWithEmail(email, password, captchaToken)}
             onDismissSaveProgress={() => setSavePromptDismissed(true)}
             savePromptDismissed={savePromptDismissed}
             entryComplete={entryComplete}

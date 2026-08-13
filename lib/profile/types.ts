@@ -48,6 +48,25 @@ export interface PlayerProfile {
   isRegistered: boolean;
 }
 
+/**
+ * What one player may know about *another* player -- friends, leaderboard
+ * entries, invite/duel-challenge senders. Deliberately excludes goldBalance,
+ * unlimitedGold, and the claim timestamps: those are wallet-adjacent and
+ * belong only in a profile's own PlayerProfile view. Keeping this as its own
+ * narrower type (rather than trusting every call site of
+ * getPublicProfilesByIds to destructure carefully) means a future call site
+ * can't accidentally hand another player's balance to the client just by
+ * spreading the object.
+ */
+export interface PublicProfileSummary {
+  id: string;
+  displayName: string;
+  initials: string;
+  avatarUrl: string | null;
+  avatarPreset: AvatarPreset;
+  accent: string;
+}
+
 export interface ProfileUpdate {
   displayName: string;
   avatarPreset: AvatarPreset;

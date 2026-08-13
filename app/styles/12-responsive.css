@@ -200,7 +200,7 @@
      where the seat ring stands, so the figures meet the rail from outside. */
   .poker-rail {
     inset: 9% 7%;
-    background-image: url("/pokertable/table-mobile.png");
+    background-image: url("/pokertable/table-mobile.webp");
   }
   /* The board, grown into the room the bigger table left behind. Five cards
      plus their gaps come to 246px inside a 323px felt at 390 wide, so this is
@@ -212,11 +212,23 @@
   .card-small { width: clamp(28px, 7.6vw, 36px); }
   .community-cards {
     gap: 3px;
-    /* Lifted on a narrow table, where the ring is proportionally larger and
-       the seats either side of the near edge otherwise sit across the bottom
-       row of the board. Verified: removing this puts two figures over it. */
+  }
+  /* Lifted on a narrow table, where the ring is proportionally larger and
+     the seats either side of the near edge otherwise sit across the bottom
+     row of the board. Verified: removing this puts two figures over it.
+     Was `.community-cards { top: 47% }` before the pot amount joined it in
+     .board-stack -- same coordinate, now shared by both. */
+  .board-stack {
     top: 47%;
   }
+  /* --deck-y has no mobile override elsewhere, and 06-table.css's own value
+     changed (33%, up from 26%) to match a corrected crop on
+     table-desktop.webp -- desktop only. table-mobile.webp was never
+     recropped and wasn't part of that bug, so this table's felt is exactly
+     as it was; restating the old value here is what keeps this breakpoint's
+     pot-anchor, chip flights and dealt-card origin untouched by a fix that
+     was never about them. */
+  .poker-felt { --deck-y: 26%; }
   /* The showdown, at a size a phone can actually settle a hand with.
      Everything below had no mobile rule at all and inherited the desktop
      values, which are the smallest type in the app: an 11px winner line, a
@@ -273,7 +285,13 @@
   .blind-label span { display: none; }
   .seat-stack { font-size: 9px; }
   .seat-stack strong { font-size: 10px; }
-  .table-bet { --bet-reach: 106px; }
+  /* 08-seat.css split the one shared `--bet-reach` into `--bet-reach-x` /
+     `--bet-reach-y` (a single reach cannot fit a DOM ellipse whose x and y
+     radii aren't proportional to the canvas one's -- see its own note).
+     This portrait tier's ellipse was not part of that regression and has
+     not been re-measured per-axis, so both keep the old flat 106px rather
+     than silently changing behaviour nobody has verified here. */
+  .table-bet { --bet-reach-x: 106px; --bet-reach-y: 106px; }
       .action-layer { padding: 0 4px calc(6px + var(--safe-bottom)); padding-left: max(4px, var(--safe-left)); padding-right: max(4px, var(--safe-right)); }
   .profile-trigger:not(.profile-trigger-compact) {
     min-width: 0;
@@ -461,11 +479,6 @@
     padding: 3px 7px;
   }
   .table-feed li:nth-child(n + 2) { display: none; }
-  /* A 42px header cannot take the stacked label-over-number the taller
-     breakpoints use, so the pot lies down into a single baseline row. */
-  .game-header .pot-display { display: flex; align-items: baseline; gap: 7px; }
-  .game-header .pot-display > span { font-size: 8px; letter-spacing: .1em; }
-  .game-header .pot-display strong { margin-top: 0; font-size: 17px; }
   .card-large { width: clamp(32px, 7.5vw, 42px); }
 
   /* FLOATING HUD CONTROLS.

@@ -8,7 +8,12 @@ import {
   fitView, project, projectedFeltDepth, projectedFeltWidth, type SceneView,
 } from "@/lib/scene/projection";
 import { FELT, MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
-import { ringPoint, seatBetOrigin } from "@/lib/scene/seat-ring";
+import {
+  NEAR_SEAT_BET_INSET,
+  NEAR_SEAT_BET_INSET_DESKTOP,
+  ringPoint,
+  seatBetOrigin,
+} from "@/lib/scene/seat-ring";
 // Type-only, but it is what installs the `Window.__stackchipsScene`
 // augmentation for this file. The shape is shared with the R3F room -- see
 // that module's header for why it is one declaration and not two.
@@ -21,19 +26,20 @@ import {
   SLEEPING,
   type SchedulerState,
 } from "@/lib/scene/render-scheduler";
-import { carpetTile, paintChip, paintRoom } from "./paint";
+import { paintChip } from "./paint";
 
 /**
- * The 2.5D room, painted in Canvas 2D behind the DOM table.
+ * The chip layer, painted in Canvas 2D over the DOM table.
  *
- * Everything with a shape lives in here; everything with words in it stays
- * in the DOM on top. That split is not a compromise, it is the point — a
- * player's name, their stack, the pot and every button have to be
- * selectable, translatable, screen-reader-addressable and pixel-crisp at
- * any zoom, and a painted pixel is none of those things. The HUD — seats,
- * avatars, cards, feed, action bar, sounds — is exactly the HUD it was
- * before this canvas existed; the canvas only paints the furniture and the
- * chips.
+ * The felt, rail and room are real art now (`public/pokertable/`,
+ * `app/styles/06-table.css`/`05-game-header.css`), painted as ordinary CSS
+ * the same way every other piece of chrome in this app is — this canvas
+ * exists only for the chips, which move every frame and have no DOM
+ * equivalent that could keep up. Everything with words in it stays in the
+ * DOM on top, exactly as before: a player's name, their stack, the pot and
+ * every button have to be selectable, translatable, screen-reader-
+ * addressable and pixel-crisp at any zoom, and a painted pixel is none of
+ * those things.
  *
  * MOUNTING. The canvas fills `.table-area` and sits at the bottom of its
  * stacking order (`app/styles/99-scene.css`), so every existing DOM layer
@@ -44,9 +50,20 @@ import { carpetTile, paintChip, paintRoom } from "./paint";
  * FAILING SOFT. If a 2D context cannot be created, this mounts nothing and
  * the table is exactly the DOM table it was before: `.scene-lit` is never
  * applied, so the CSS felt and rail keep painting themselves. The pot's
- * value is always legible in `.pot-display` regardless of whether a single
- * chip ever renders.
+ * value is always legible in `.center-pot-amount` regardless of whether a
+ * single chip ever renders.
  */
+
+/**
+ * Matches `16-first-person.css`'s own `min-width: 901px` — the breakpoint
+ * that hides `.seat-mine .seat-figure` and switches the near seat's bet
+ * reach from the figure-avoiding corridor to the ordinary seat inset (see
+ * `NEAR_SEAT_BET_INSET_DESKTOP`). Written here rather than imported: this
+ * file has no access to the stylesheet, so the pixel value is one decision
+ * kept in step by hand, the same way `LANDSCAPE_MAX_HEIGHT_PX`
+ * (table-geometry.ts) keeps its own media query in step.
+ */
+const NEAR_SEAT_DESKTOP_MIN_WIDTH_PX = 901;
 
 export interface TableSceneProps {
   /** Seats in ring order: index 0 is the near edge, the local player. */
@@ -132,7 +149,6 @@ export function TableScene({
   const engineRef = useRef<{
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
-    carpet: CanvasPattern | null;
     chips: ChipLayer;
     scheduler: SchedulerState;
     view: SceneView;
@@ -140,6 +156,8 @@ export function TableScene({
     lastFrameMs: number;
     frames: number;
     reducedMotion: boolean;
+    /** Mirrors `NEAR_SEAT_DESKTOP_MIN_WIDTH_PX` — see `onDesktopChange`. */
+    nearSeatDesktop: boolean;
     seatCount: number;
     handledFlights: Set<string>;
     funnelledHand: number | null;
@@ -170,17 +188,21 @@ export function TableScene({
       engine.scheduler = markDirty(engine.scheduler, performance.now());
     };
 
+    const desktopQuery = window.matchMedia(`(min-width: ${NEAR_SEAT_DESKTOP_MIN_WIDTH_PX}px)`);
+    const chips = new ChipLayer(markChanged);
+    chips.setNearSeatDesktop(desktopQuery.matches);
+
     engineRef.current = {
       canvas,
       ctx,
-      carpet: ctx.createPattern(carpetTile(), "repeat"),
-      chips: new ChipLayer(markChanged),
+      chips,
       scheduler: markDirty(SLEEPING, performance.now()),
       view: { cx: 0, cy: 0, scale: 1, radiusZ: FELT.radiusZ },
       size: { width: 0, height: 0 },
       lastFrameMs: performance.now(),
       frames: 0,
       reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      nearSeatDesktop: desktopQuery.matches,
       seatCount: Math.max(1, seats.length),
       handledFlights: new Set(),
       funnelledHand: null,
@@ -252,6 +274,18 @@ export function TableScene({
     };
     motionQuery.addEventListener("change", onMotionChange);
 
+    // The near seat's own figure appears/disappears at this same breakpoint
+    // (16-first-person.css) — a resize across it has to retarget any bet not
+    // already in flight, the same way a felt resize retargets one.
+    const onDesktopChange = () => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      engine.nearSeatDesktop = desktopQuery.matches;
+      engine.chips.setNearSeatDesktop(desktopQuery.matches);
+      markChanged();
+    };
+    desktopQuery.addEventListener("change", onDesktopChange);
+
     /* ---------------------------------------------------------------- *
      * The loop. Wakes on a change, sleeps when the felt is still.
      * ---------------------------------------------------------------- */
@@ -271,7 +305,10 @@ export function TableScene({
 
       const ratio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
       engine.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      paintRoom(engine.ctx, engine.view, engine.size, engine.carpet);
+      // The room is the DOM's job now (see the header comment); this canvas
+      // only ever holds chips, so a frame is just last frame's chips cleared
+      // away before this frame's are drawn back in below.
+      engine.ctx.clearRect(0, 0, engine.size.width, engine.size.height);
       // Painter's algorithm: draw far chips first, and within one column
       // the lower chips first, so a stack occludes itself correctly.
       const chips = engine.chips.drawList()
@@ -336,7 +373,10 @@ export function TableScene({
         betSpot: (slot: number) => {
           const engine = engineRef.current;
           if (!engine) return { x: 0, y: 0 };
-          return toViewport(project(engine.view, seatBetOrigin(slot, engine.seatCount, engine.view.radiusZ)));
+          const nearSeatInset = engine.nearSeatDesktop ? NEAR_SEAT_BET_INSET_DESKTOP : NEAR_SEAT_BET_INSET;
+          return toViewport(
+            project(engine.view, seatBetOrigin(slot, engine.seatCount, engine.view.radiusZ, nearSeatInset)),
+          );
         },
         roomScale: () => engineRef.current?.view.scale ?? 0,
         roomFelt: () => {
@@ -361,6 +401,7 @@ export function TableScene({
       observer.disconnect();
       window.removeEventListener("orientationchange", fit);
       motionQuery.removeEventListener("change", onMotionChange);
+      desktopQuery.removeEventListener("change", onDesktopChange);
       if (frameHandle) cancelAnimationFrame(frameHandle);
       delete window.__stackchipsScene;
       if (engine) engine.disposed = true;

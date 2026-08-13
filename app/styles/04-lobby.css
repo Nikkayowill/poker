@@ -1212,7 +1212,7 @@ button:disabled { cursor: wait; opacity: .62; }
  * tile shows is unmistakably poker -- which is the whole reason to keep the
  * artwork rather than swap it for an icon. */
 .hub-tile-play {
-  --tile-art: url("/pokertable/table-desktop.png");
+  --tile-art: url("/pokertable/table-desktop.webp");
   /* A trace of the room's own violet, not a colour wash over the art -- see
      above for what happened at .24. */
   --tile-tint: rgba(152,63,224,.07);

@@ -42,7 +42,15 @@ import {
 } from "./bet-style";
 import { POT_CHIP_DENOMINATIONS_BB } from "@/lib/game/pot-chips";
 import { FELT, type Vec3 } from "./scene-config";
-import { potPosition, ringPoint, seatAngle, seatBetOrigin, seatTrayOrigin } from "./seat-ring";
+import {
+  NEAR_SEAT_BET_INSET,
+  NEAR_SEAT_BET_INSET_DESKTOP,
+  potPosition,
+  ringPoint,
+  seatAngle,
+  seatBetOrigin,
+  seatTrayOrigin,
+} from "./seat-ring";
 
 /** Compact 2D token size; the 3D room owns its own physical chip scale. */
 export const CHIP_RADIUS = 0.14;
@@ -233,12 +241,29 @@ export class ChipLayer {
    * equivalent of rewriting history.
    */
   private betStyle: BetAnimationStyle = DEFAULT_BET_STYLE;
+  /**
+   * The near seat's own reach — see `NEAR_SEAT_BET_INSET_DESKTOP`. Defaults
+   * to the figure-avoiding corridor so a layer built before the renderer's
+   * first breakpoint check (or under test, with nobody driving it) still
+   * describes the plate its figure is actually standing on.
+   */
+  private nearSeatInset: number = NEAR_SEAT_BET_INSET;
 
   constructor(private readonly onChanged: () => void) {}
 
   /** Select how future bet sprays travel. No repaint: nothing on screen moves. */
   setBetStyle(style: BetAnimationStyle): void {
     this.betStyle = style;
+  }
+
+  /**
+   * Switch the near seat's bet reach to match whichever plate the DOM is
+   * currently showing. `.seat-mine .seat-figure` is only hidden at
+   * `min-width: 901px` (16-first-person.css) — the same condition the
+   * renderer checks to call this.
+   */
+  setNearSeatDesktop(desktop: boolean): void {
+    this.nearSeatInset = desktop ? NEAR_SEAT_BET_INSET_DESKTOP : NEAR_SEAT_BET_INSET;
   }
 
   /**
@@ -345,7 +370,7 @@ export class ChipLayer {
       // spreads beyond one 16-chip column.
       const heap = get2DChipHeap(amount, bigBlind, 1);
       if (heap.length === 0) continue;
-      const origin = seatBetOrigin(slot, seatCount, this.radiusZ);
+      const origin = seatBetOrigin(slot, seatCount, this.radiusZ, this.nearSeatInset);
       const theta = seatAngle(slot, seatCount);
       // Plan-space tangent of the ellipse at this seat, unit length.
       const tangent = { x: -Math.sin(theta), z: Math.cos(theta) };
@@ -475,7 +500,7 @@ export class ChipLayer {
     // was outside the painted rail entirely, so every bet in this room has
     // been flying in from the carpet.
     const origin = seatTrayOrigin(slot, seatCount, this.radiusZ);
-    const spot = seatBetOrigin(slot, seatCount, this.radiusZ);
+    const spot = seatBetOrigin(slot, seatCount, this.radiusZ, this.nearSeatInset);
     const denominations = betSprayDenominations(amount, bigBlind);
     const spray = denominations.length > 0
       ? denominations

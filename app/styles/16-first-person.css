@@ -34,13 +34,24 @@
    more breathing room. The canvas bet spot remains on the felt, while the
    figure and its cards move down with the player's point of view. Keep the
    phone/tablet geometry untouched: their shorter plate needs the existing
-   near-seat corridor. */
+   near-seat corridor.
+
+   +100px, not +28px: the figure this box used to hold is hidden here (see
+   the seat-figure rule below) and the cards it used to hold beside the
+   figure now anchor straight to the bottom of the *screen* (`position:
+   fixed`, same rule) rather than living in this box at all -- so all this
+   margin still positions on desktop is the plate. Left at the old figure-era
+   offset, the name sat in the middle of the now-empty band the cards used to
+   fill, floating well above the felt's own bottom edge with nothing under
+   it. Pulled down another 72px, close enough to the fixed cards below that
+   the two read as one seat again instead of two unrelated pieces of chrome
+   at different heights. */
 @media (min-width: 901px) {
   .seat-mine.seat-ring {
     margin-top: calc(
       (var(--seat-width) + var(--plate-h)) / -2
       + var(--seat-out-y, 1) * var(--seat-outset, 14px)
-      + 28px
+      + 100px
     );
   }
 }
@@ -102,11 +113,19 @@
    fudge on top of it. NEAR_SEAT_BET_INSET (lib/scene/seat-ring.ts) is 0.35
    against the ordinary seat's 0.74 -- pulled deep into the corridor between
    your own figure and the board rather than out toward the rail -- so the
-   pile it targets sits far closer to the pot than to your seat. Measured
-   against window.__stackchipsScene.betSpot(0) the same way: 205px lands this
-   number within a couple of pixels of that pile. */
+   pile it targets sits far closer to the pot than to your seat. Your own
+   seat has `--seat-dx: 0` always (it sits dead centre on the near edge), so
+   only the y reach ever matters here; --bet-reach-x is left at 08-seat.css's
+   default, unused. Measured against window.__stackchipsScene.betSpot(0) the
+   same way: 243px lands this number within a couple of pixels of that pile
+   -- was 205px, before RADIUS_Y (table-geometry.ts) pulled the far seat's
+   headroom in and moved every seat's anchor with it; see 08-seat.css's own
+   note on the same regression.
+
+   This is the below-901px value now -- see the desktop override further
+   down, next to the rule that hides the figure this corridor exists for. */
 .seat-mine .table-bet {
-  --bet-reach: 205px;
+  --bet-reach-y: 243px;
 }
 
 /* The made-hand label used to be pulled out of flow to sit under the cards,
@@ -128,3 +147,74 @@
 
 /* Your own name, slightly brighter than the room. */
 .seat-mine .seat-name-row strong { color: #f4f8f4; }
+
+/* Desktop: the avatar moves to local-player-hud.tsx's corner card (see
+   06-table.css's .player-hud), so the near-field band it used to share with
+   your own cards is now the cards' alone. Mobile keeps the figure -- that
+   HUD is desktop-only for the same reason player-hud-corner.tsx's 3D
+   original is, and this seat's own near-field band is shorter there with no
+   room to spare.
+
+   Everything below only fires once the figure is actually gone, at the same
+   901px the corner HUD itself switches on -- the two are one decision. */
+@media (min-width: 901px) {
+  .seat-mine .seat-figure { display: none; }
+
+  /* Off the seat's own box entirely and onto the screen itself. Centred in
+     the seat's box (the previous rule here) still tied the pair's position
+     to the felt's own coordinate space -- move the table, move the cards,
+     and on a short viewport the pair could still end up crossing the rail.
+     `position: fixed` breaks that link outright: nothing between here and
+     the viewport (.game-shell, .game-content, .table-area, .poker-table-wrap)
+     carries a transform/filter/perspective of its own, so `fixed` resolves
+     against the real screen edge the way .connection-overlay's already does
+     a few sheets up, not against any ancestor's box.
+
+     Pinned to the bottom centre of that screen, with the pair's own lower
+     edge tucked a little past it (`bottom: -22px` against roughly a 50-60px
+     tall card) -- the read the reference photo was pointing at: a hand held
+     up into frame from below, not a hand resting inside a seat slot. The
+     action bar has already vacated this exact stretch for the bottom-right
+     corner (06-table.css), so the middle of the bottom edge is this pair's
+     alone to use. */
+  .seat-mine .seat-cards {
+    position: fixed;
+    left: 50%;
+    top: auto;
+    bottom: -22px;
+    margin-left: 0;
+    transform: translateX(-50%);
+    z-index: 20;
+  }
+
+  /* "Nice and big": nothing shares this band with the cards any more, so
+     the old 50px ceiling -- sized specifically to stay clear of the figure
+     beside it -- no longer has anything to stay clear of. Roughly 2.6x the
+     old cap, short of the 104px this file's own history already tried and
+     rejected as a placard rather than a hand. */
+  .seat-mine .own-cards .playing-card {
+    width: clamp(70px, calc(var(--seat-width) * .55), 130px);
+    border-radius: 9px;
+  }
+
+  /* Scaled with the card width above, same -.4 ratio the base rule keeps
+     between its own .30 width and -.12 overlap. */
+  .seat-mine .own-cards .dealt-card-shell + .dealt-card-shell {
+    margin-left: calc(var(--seat-width) * -.22);
+  }
+
+  /* The bet corridor above exists to clear your own figure, and this is the
+     rule that just deleted it (`.seat-figure { display: none }`). With
+     nothing left in the way, `lib/scene/seat-ring.ts`'s
+     `NEAR_SEAT_BET_INSET_DESKTOP` moves the canvas target out to
+     `BET_INSET` -- the same reach every opponent's pile already gets --
+     rather than leaving your own chips parked in close on the flop. This is
+     the DOM label following it out: measured the same way as the base rule,
+     against `window.__stackchipsScene.betSpot(0)` at 1440x900 with the table
+     renderer forced to `canvas_2d` (the default is the 3D room, which mounts
+     a differently-sized rail and would silently mis-tune this), 169.4px
+     lands it within a pixel of that pile. */
+  .seat-mine .table-bet {
+    --bet-reach-y: 169.4px;
+  }
+}

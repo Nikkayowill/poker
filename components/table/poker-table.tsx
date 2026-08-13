@@ -15,6 +15,7 @@ import {
 } from "@/lib/scene/table-renderer";
 import { roomThemeLabel, type RoomThemeId } from "@/lib/game3d/room-theme";
 import { useWebglSupport } from "./use-webgl-support";
+import { useFeltArtReady } from "./use-felt-art-ready";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   radiiForTable,
@@ -31,6 +32,7 @@ import { MuckDrift } from "./table-effects";
 import { HandHistoryDrawer } from "./hand-history-drawer";
 import { RebuyCheckout } from "./rebuy-checkout";
 import { PlayerSeat } from "./player-seat";
+import { LocalPlayerHud } from "./local-player-hud";
 import { TableLoadingSplash } from "./scene3d/table-loading-splash";
 import { PlayingCard } from "./playing-card";
 import { isWinningCard, winningCardKeys } from "@/lib/game/winning-cards";
@@ -248,6 +250,17 @@ export function PokerTable({
   const seatRefs = useRef<Record<string, HTMLElement | null>>({});
   const tableWrapRef = useRef<HTMLDivElement | null>(null);
   const showFunnel = game.status === "complete" && game.winners.length > 0;
+  // What beat you, stated in as many words. handLabel is only non-null once
+  // a hand is revealed (won, or shown at a real showdown -- see
+  // seatCardsWereShown in engine.ts), so a truthy value here already means
+  // "I did not fold and this was a genuine comparison," not just "I lost."
+  // An uncontested win reaches nobody's handLabel but the winner's, so this
+  // is silent for exactly the hands where "what beat you" has no answer.
+  const mySeat = mySeatIndex !== -1 ? game.seats[mySeatIndex] : null;
+  const myShowdownLoss = showFunnel && mySeat?.handLabel
+    && !game.winners.some((winner) => winner.seatId === mySeat.id)
+    ? mySeat.handLabel
+    : null;
   // Null unless the hand reached a genuine showdown: an uncontested pot has no
   // bestFive to point at, because nobody saw the cards that won it.
   const winningKeys = useMemo(
@@ -260,14 +273,53 @@ export function PokerTable({
   const dealerMeasuredOnceRef = useRef(false);
   const [dealerAnimated, setDealerAnimated] = useState(false);
   const measureDealer = useCallback(() => {
-    const anchorEl = potRef.current;
+    const wrapEl = tableWrapRef.current;
     const seatEl = dealerSeatId ? seatRefs.current[dealerSeatId] : null;
-    if (!anchorEl || !seatEl) return;
-    const anchorRect = anchorEl.getBoundingClientRect();
+    if (!wrapEl || !seatEl) return;
+    const wrapRect = wrapEl.getBoundingClientRect();
     const seatRect = seatEl.getBoundingClientRect();
+    // The seat's own toward-pot unit vector (--seat-dx/-dy, set inline by
+    // ringGeometry) reused rather than re-derived, same source .table-bet's
+    // reach already trusts. A flat pull inward off the seat's own centre --
+    // not all the way to the pot -- so the button lands on visible felt
+    // beside the player instead of stamped on their avatar.
+    const seatStyle = getComputedStyle(seatEl);
+    const towardX = Number.parseFloat(seatStyle.getPropertyValue("--seat-dx")) || 0;
+    const towardY = Number.parseFloat(seatStyle.getPropertyValue("--seat-dy")) || 0;
+    // A flat 46px pull inward cleared a desktop-sized avatar by only a few
+    // pixels -- and stamped the puck across it outright the moment a seat
+    // rendered smaller than that, which a short-but-wide viewport does
+    // (--table-height-cap in 06-table.css shrinks the whole table, seats
+    // included, well before it shrinks the puck's own fixed offset). Mirrors
+    // .seat-figure's own clamp(40px, 72%, 78px) (08-seat.css) instead of a
+    // second, disagreeing guess at the avatar's size, so the puck's radius
+    // tracks the actual circle it has to clear at every seat size rather
+    // than just the one desktop width it was measured against.
+    const AVATAR_MIN_PX = 40;
+    const AVATAR_MAX_PX = 78;
+    const AVATAR_WIDTH_RATIO = 0.72;
+    const DEALER_PUCK_RADIUS = 12; // half of .dealer-puck's own 24px (08-seat.css)
+    const DEALER_PUCK_GAP = 8;
+    const avatarDiameter = Math.min(
+      AVATAR_MAX_PX,
+      Math.max(AVATAR_MIN_PX, seatRect.width * AVATAR_WIDTH_RATIO),
+    );
+    const DEALER_PUCK_INSET = avatarDiameter / 2 + DEALER_PUCK_RADIUS + DEALER_PUCK_GAP;
+    const targetX = seatRect.left + seatRect.width / 2 + towardX * DEALER_PUCK_INSET;
+    const targetY = seatRect.top + seatRect.height / 2 + towardY * DEALER_PUCK_INSET;
+    // The offset is now an absolute pixel delta off the wrap's own top-left
+    // corner -- not a delta off .pot-anchor added to a `left:50%; top:19%`
+    // guess (08-seat.css's old rule). That guess was a flat percentage of
+    // .poker-table-wrap, while .pot-anchor sits inset and re-tilted inside
+    // .poker-rail's own perspective transform -- two coordinate spaces that
+    // were never actually the same point, which is why the puck used to
+    // settle somewhere in the middle of the felt instead of by any seat.
+    // Anchoring the CSS side at the wrap's literal (0, 0) removes the second
+    // coordinate space entirely: this delta is the only number the puck's
+    // position depends on.
     setDealerVector({
-      dx: seatRect.left + seatRect.width / 2 - (anchorRect.left + anchorRect.width / 2),
-      dy: seatRect.top + seatRect.height / 2 - (anchorRect.top + anchorRect.height / 2),
+      dx: targetX - wrapRect.left,
+      dy: targetY - wrapRect.top,
     });
     if (!dealerMeasuredOnceRef.current) {
       dealerMeasuredOnceRef.current = true;
@@ -459,12 +511,26 @@ export function PokerTable({
   // old token and therefore cannot un-light the room that replaced them.
   const sceneToken = useMemo(() => ({ renderer: activeRenderer }), [activeRenderer]);
   const [readySceneToken, setReadySceneToken] = useState<typeof sceneToken | null>(null);
-  const sceneReady = readySceneToken === sceneToken;
   const reportSceneReady = useCallback((ready: boolean) => {
     setReadySceneToken((current) => (
       ready ? sceneToken : current === sceneToken ? null : current
     ));
   }, [sceneToken]);
+
+  // TableScene's own onReady fires the instant its canvas exists -- it says
+  // nothing about the CSS background-image felt/rail plate underneath it,
+  // which loads over the network like any other image (see
+  // use-felt-art-ready.ts). The classic table is only genuinely "there" once
+  // both have happened, the same bar the 3D room already holds itself to
+  // (every seated avatar mounted, not just a WebGL context existing). Unlike
+  // 3D, there's no staggered/async child here to race a remount against --
+  // TableScene's mount effect is one synchronous shot -- so this skips the
+  // token machinery below and derives straight from render-time state.
+  const [canvas2DMounted, setCanvas2DMounted] = useState(false);
+  const feltArtReady = useFeltArtReady();
+  const sceneReady = activeRenderer === "webgl_3d"
+    ? readySceneToken === sceneToken
+    : canvas2DMounted && feltArtReady;
 
   // Ring slots, not engine seat positions. The scene rings its table from the
   // local player's chair exactly as the DOM does, so a bet has to be handed
@@ -489,6 +555,15 @@ export function PokerTable({
       .map((seat, slot) => ({ slot, amount: seat.streetBet }))
       .filter((bet) => bet.amount > 0),
     [orderedSeats],
+  );
+  // What the centre pile is actually showing -- pot minus whatever is still
+  // standing at a seat -- so its label agrees with the chips the scene draws
+  // there by construction rather than restating the pot number the standing
+  // bets haven't reached yet. See TableScene's own identical subtraction
+  // (components/table/scene/table-scene.tsx) for the invariant this mirrors.
+  const centerPotAmount = useMemo(
+    () => Math.max(0, game.pot - orderedSeats.reduce((sum, seat) => sum + seat.streetBet, 0)),
+    [game.pot, orderedSeats],
   );
   const sceneWinners = useMemo(
     () => (showFunnel
@@ -731,21 +806,15 @@ export function PokerTable({
         <button className="wordmark wordmark-mark-only" onClick={() => { tapSound(); onLeave(); }} aria-label="Leave table">
           <span className="wordmark-mark"><StackChipsMark size={32} /></span>
         </button>
-        {/* The pot, in the one strip of the screen no seat can ever reach.
-            It spent its last two milestones in .table-hud, pinned to the top
-            of .table-area -- which was correct while there were 70 clear
-            pixels there. The Slot 0 refactor spent most of them on a bigger
-            table, and the ring's top seat now overhangs the felt far enough
-            up that the pot was drawn across its head: 20px of overlap at
-            1440x900, 10px on a 390px phone, measured. The header is chrome,
-            laid out above .game-content entirely, so nothing on the table can
-            grow into it no matter what the geometry does next. It also sits
-            on the same centre line as the pot on the cloth, directly above
-            the chips it is counting. */}
-        <div className={clsx("pot-display", showFunnel && "pot-display-paid")}>
-          <span>MAIN POT</span>
-          <strong><span className="chip-stack-icon" />{game.pot.toLocaleString()}</strong>
-        </div>
+        {/* No pot readout here any more -- the felt already carries it
+            (.center-pot-amount, in .board-stack below) directly over the
+            chips it counts, which is a strictly better answer to "how much
+            is in the pot" than a second number in the chrome above the
+            table. This header used to run three columns so MAIN POT could
+            sit on the viewport's true centre; with nothing left for that
+            middle column to hold, the header goes back to two, the same
+            shape .game-header-3d already used once its own camera HUD took
+            over the pot (see 05-game-header.css). */}
         <div className="game-header-actions">
           <button className="leave-button" onClick={() => { tapSound(); onLeave(); }}>Leave table</button>
           <Menu
@@ -799,10 +868,17 @@ export function PokerTable({
               handNumber={game.handNumber}
               betFlights={betFlights}
               betStyle={betStyle}
-              onReady={reportSceneReady}
+              onReady={setCanvas2DMounted}
             />
           )}
-          <TableLoadingSplash active={activeRenderer === "webgl_3d" && !sceneReady} />
+          <TableLoadingSplash active={!sceneReady} />
+          {/* Desktop only (see local-player-hud.tsx and its CSS) and only on
+              the classic table -- the 3D room mounts its own equivalent
+              (game3d/hud/player-hud-corner.tsx) inside TableScene3D above,
+              so rendering this one too would be the same avatar twice. */}
+          {activeRenderer !== "webgl_3d" && mySeat && (
+            <LocalPlayerHud name={mySeat.name} stack={mySeat.stack} profile={profile} />
+          )}
           {/* The pot and the stakes, in the black space around the table
               rather than on the cloth. On the felt they had to be small
               enough not to fight the board, and at 1440x900 the blinds line
@@ -848,6 +924,19 @@ export function PokerTable({
                     <i>{winner.hand}</i>
                   </span>
                 ))}
+                {/* The comparison a loss actually needs: the winner's line
+                    above already says what beat you, this says what you lost
+                    with. Both are on screen already (this seat's own cards,
+                    the winner's revealed ones) -- this just states the
+                    losing half in the same sentence shape as the winning
+                    one, instead of leaving it to be pieced together from two
+                    different corners of the felt. */}
+                {myShowdownLoss && (
+                  <span className="hand-result-line hand-result-mine">
+                    <b>You had</b>
+                    <i>{myShowdownLoss}</i>
+                  </span>
+                )}
               </div>
             )}
             <span
@@ -866,6 +955,16 @@ export function PokerTable({
           >
             <div className="poker-rail">
               <div className="poker-felt">
+                {/* The felt's own faint watermark -- was literal CSS text
+                    ("STACKCHIPS · NO LIMIT HOLD'EM" via ::after), now the
+                    real vector mark so it can never render out of the wrong
+                    glyphs at a weird weight the way baked type can. See
+                    .felt-mark in 06-table.css for the position/opacity this
+                    inherited unchanged from the old rule. */}
+                <span className="felt-mark" aria-hidden="true">
+                  <StackChipsMark size={14} />
+                  <i>NO LIMIT HOLD&rsquo;EM</i>
+                </span>
                 {/* Where the chips go, now that the number that counts them
                     lives outside the table. Three separate effects measure
                     this element's centre -- chips flying in from a seat, the
@@ -883,39 +982,59 @@ export function PokerTable({
                     45x35 never moves. Removing it would drag both remaining
                     trajectories with it and nothing would visibly break. */}
                 <div className="pot-anchor" ref={potRef} aria-hidden="true" />
-                <div className="community-cards">
-                  {[0, 1, 2, 3, 4].map((index) => (
-                    <span
-                      className={clsx(
-                        "community-card-shell",
-                        game.community[index] && "community-card-revealed",
-                        // Only ever both-or-neither: once there is a winning
-                        // hand to point at, every board card is either part of
-                        // it or explicitly not, so the five that won read as
-                        // chosen rather than merely lit.
-                        winningKeys && (isWinningCard(winningKeys, game.community[index])
-                          ? "community-card-winning"
-                          : "community-card-spent"),
-                      )}
-                      key={`${game.handNumber}-${index}`}
-                      style={{
-                        "--community-delay": `${index < 3 ? index * 110 : 0}ms`,
-                      } as React.CSSProperties}
-                    >
-                      {game.community[index]
-                        ? (
-                          <span className="community-card-flipper">
-                            <span className="community-card-backface" aria-hidden="true">
-                              <PlayingCard card={null} back={myCardBack} />
+                {/* Above the board: the only pot figure left anywhere on
+                    screen now that the header doesn't print a second one,
+                    directly answering "how much is that stack of chips in
+                    front of me." Paired with the community cards in one
+                    .board-stack column, sharing that single centred
+                    coordinate, rather than the amount sitting off on its own
+                    -- it used to be a flat 30px beside .pot-anchor, which put
+                    real distance between the number and the pile it was
+                    counting on anything wider than a phone. Hidden at zero
+                    rather than printing "$0" over an empty spot on the felt
+                    -- there is nothing standing centre-table until the first
+                    street closes and bets sweep in. */}
+                <div className="board-stack">
+                  {centerPotAmount > 0 && (
+                    <div className="center-pot-amount" aria-hidden="true">
+                      <span>Pot</span>
+                      <strong>${centerPotAmount.toLocaleString()}</strong>
+                    </div>
+                  )}
+                  <div className="community-cards">
+                    {[0, 1, 2, 3, 4].map((index) => (
+                      <span
+                        className={clsx(
+                          "community-card-shell",
+                          game.community[index] && "community-card-revealed",
+                          // Only ever both-or-neither: once there is a winning
+                          // hand to point at, every board card is either part of
+                          // it or explicitly not, so the five that won read as
+                          // chosen rather than merely lit.
+                          winningKeys && (isWinningCard(winningKeys, game.community[index])
+                            ? "community-card-winning"
+                            : "community-card-spent"),
+                        )}
+                        key={`${game.handNumber}-${index}`}
+                        style={{
+                          "--community-delay": `${index < 3 ? index * 110 : 0}ms`,
+                        } as React.CSSProperties}
+                      >
+                        {game.community[index]
+                          ? (
+                            <span className="community-card-flipper">
+                              <span className="community-card-backface" aria-hidden="true">
+                                <PlayingCard card={null} back={myCardBack} />
+                              </span>
+                              <span className="community-card-face">
+                                <PlayingCard card={game.community[index]} />
+                              </span>
                             </span>
-                            <span className="community-card-face">
-                              <PlayingCard card={game.community[index]} />
-                            </span>
-                          </span>
-                        )
-                        : <PlayingCard card={null} ghost />}
-                    </span>
-                  ))}
+                          )
+                          : <PlayingCard card={null} ghost />}
+                      </span>
+                    ))}
+                  </div>
                 </div>
                 <span className="street-label">{game.street}</span>
               </div>

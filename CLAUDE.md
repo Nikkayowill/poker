@@ -125,6 +125,42 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   falling back to "Return to lobby" (where every faucet lives) otherwise. See "Bot / economy behavior"
   above for why no faucet number needed to change.
 
+### The 2.5D racetrack table (2026-08-13)
+- Third table renderer, `racetrack_2d5` / "Table: 2.5D", alongside `canvas_2d` and
+  `webgl_3d`. A third entry rather than a replacement for `canvas_2d` on purpose:
+  the classic table is what `resolveTableRenderer` falls back to when a browser has
+  no WebGL context, so it has to keep working. Promote it once it has been judged in
+  real hands.
+- **It is camera-led where every other table is CSS-led, and that inversion is the
+  whole design.** The classic room has `.poker-rail` carrying the felt as background
+  art with seats on a hand-tuned CSS ellipse, and the canvas measures that rail to
+  place chips inside it. Here `fitCamera` solves a perspective camera from the frame,
+  the canvas paints the entire table from it, and the DOM follows anchors the scene
+  projects and reports through `onLayout`. A perspective ring and a CSS ellipse are
+  not the same kind of curve and cannot be tuned into agreement — one has to be
+  derived from the other. `42-racetrack-table.css` collapses `.poker-table-wrap` onto
+  `.table-area` so canvas pixels and wrap pixels are the same number.
+- Shared with the classic room through three seams rather than forked: `SceneProjection`
+  (one chip painter for both cameras — `scaleAt()` is the entire difference, constant
+  under orthography and depth-dependent under perspective), `ChipSpace` (ChipLayer no
+  longer imports the classic ellipse directly), and `seatAnglesDeg()` (the measured
+  six-handed arc generalised to 2-6 players, reproducing the 3/2 split exactly at six).
+  **Both spaces speak the chip layer's world units**; the racetrack's metres convert
+  once, at the projection. Converting the layer to metres means rescaling a dozen
+  tuned motion constants and missing one yields a chip that never settles, not an error.
+- `99-scene.css`'s canvas raise is scoped away from this room as well as the 3D one.
+  Unscoped, the canvas paints over every seat, nameplate, card and the board — and the
+  symptom is a correct but *empty* table, which reads as "the players failed to load".
+- `ringPoint` traces the **inscribed ellipse**, not the stadium boundary, and is inside
+  it by up to 23mm on this 2:1 table. Any anchor that must be a known distance *outside*
+  the felt needs `offsetStadium` plus `stadiumRayPoint`; scaling radii is only exact on
+  a real ellipse. This shipped a bet tray 29mm inside the cloth before it was caught.
+- Known and deliberately unresolved (all three are design calls, not defects): a ~140px
+  band of floor below the near rail near 16:9 — taking it up by lowering the camera was
+  tried and reverted because it wrecks every taller frame; portrait, where a 2:1 table
+  collapses to a 58px-deep sliver and which was never in the brief; and the dealer's
+  place at far centre, which is reserved and geometrically known but has no art.
+
 ### Rewarded-ad faucet (2026-08-11)
 - Wait moved 30s→5min (`REWARDED_AD_DURATION_MS`), grant TTL 10→20min to compensate. New direct
   "Free Gold" row in the lobby player menu (same eligibility threshold as the existing busted-hand

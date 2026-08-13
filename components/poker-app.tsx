@@ -72,6 +72,7 @@ import { RewardedAdModal } from "@/components/rewards/rewarded-ad-modal";
 import { REWARDED_AD_ELIGIBLE_BELOW } from "@/lib/rewards/config";
 import type { RewardTrigger } from "@/lib/rewards/triggers";
 import { PokerTable, type ConnectionState } from "@/components/table/poker-table";
+import { useTableReactions } from "@/lib/game/use-table-reactions";
 import {
   LEGACY_SOUND_STORAGE_KEY,
   MUSIC_STORAGE_KEY,
@@ -276,6 +277,9 @@ export function PokerApp() {
   // one-shot moment right after creating a room, not table state.
   const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null);
   const gameId = game?.id;
+  const mySeatId = game?.seats.find((seat) => seat.isMine)?.id ?? null;
+  const { reactions, sendReaction, onCooldown: reactionCooldown } =
+    useTableReactions(gameId ?? null, mySeatId);
   const gameVersionRef = useRef(game?.version ?? 0);
   const previousGameRef = useRef<GameSnapshot | null>(null);
   // Deliberately its own ref rather than reading previousGameRef, which the
@@ -1381,6 +1385,9 @@ export function PokerApp() {
             onCycleRoomTheme={cycleRoomTheme}
             onSignIn={() => void signIn()}
             onSignOut={() => void signOut()}
+            reactions={reactions}
+            onSendReaction={sendReaction}
+            reactionCooldown={reactionCooldown}
           />
         )
         : (

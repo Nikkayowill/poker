@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "crypto";
 import { avatarPresets, profileAccents } from "@/lib/profile/types";
-import type { AvatarPreset, PlayerProfile, ProfileUpdate } from "@/lib/profile/types";
+import type { AvatarPreset, PlayerProfile, ProfileUpdate, PublicProfileSummary } from "@/lib/profile/types";
 import { defaultEquipped, normalizeEquipped, type EquippedCosmetics } from "@/lib/cosmetics/catalog";
 import { BACKSTOP_COOLDOWN_MS, BACKSTOP_GRANT } from "@/lib/profile/backstop";
 import { adminClient } from "./supabase-admin";
@@ -80,6 +80,18 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     lastDailyClaimAt: profile.lastDailyClaimAt,
     lastBackstopAt: profile.lastBackstopAt,
     isRegistered: profile.userId !== null,
+  };
+}
+
+/** The subset of publicProfile() that's safe to show about someone *else*. See PublicProfileSummary. */
+function otherPlayerSummary(profile: StoredProfile): PublicProfileSummary {
+  return {
+    id: profile.id,
+    displayName: profile.displayName,
+    initials: profile.initials,
+    avatarUrl: profile.avatarUrl,
+    avatarPreset: profile.avatarPreset,
+    accent: profile.accent,
   };
 }
 
@@ -638,7 +650,7 @@ export async function claimBackstopGold(token: string, threshold: number): Promi
  * about display names or avatars) without every reader needing to know the
  * profiles table's column names.
  */
-export async function getPublicProfilesByIds(ids: string[]): Promise<Map<string, PlayerProfile>> {
+export async function getPublicProfilesByIds(ids: string[]): Promise<Map<string, PublicProfileSummary>> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return new Map();
   const supabase = adminClient();
@@ -647,13 +659,13 @@ export async function getPublicProfilesByIds(ids: string[]): Promise<Map<string,
     return new Map(
       unique.flatMap((id) => {
         const profile = byId.get(id);
-        return profile ? [[id, publicProfile(profile)] as const] : [];
+        return profile ? [[id, otherPlayerSummary(profile)] as const] : [];
       }),
     );
   }
   const { data, error } = await supabase.from("profiles").select("*").in("id", unique);
   if (error) throw new Error(`Could not load profiles: ${error.message}`);
-  return new Map((data ?? []).map((row) => [String(row.id), publicProfile(fromRow(row))]));
+  return new Map((data ?? []).map((row) => [String(row.id), otherPlayerSummary(fromRow(row))]));
 }
 
 export async function listProfiles(): Promise<AdminProfileSummary[]> {

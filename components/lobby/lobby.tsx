@@ -84,8 +84,8 @@ export function Lobby({
   authNotice: string | null;
   onDismissAuthNotice: () => void;
   onSaveProgress: () => void;
-  onEmailSignIn: (email: string, password: string) => void;
-  onEmailSignUp: (email: string, password: string) => void;
+  onEmailSignIn: (email: string, password: string, captchaToken?: string) => void;
+  onEmailSignUp: (email: string, password: string, captchaToken?: string) => void;
   onDismissSaveProgress: () => void;
   savePromptDismissed: boolean;
   entryComplete: boolean;

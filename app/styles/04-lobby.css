@@ -623,6 +623,11 @@ button:disabled { cursor: wait; opacity: .62; }
 .entry-remember-copy strong { color: #dde3ec; font-size: 13px; font-weight: 650; }
 .entry-remember-copy small { color: #93a1bb; font-size: 11px; }
 
+/* Turnstile renders its own iframe at a fixed ~300px width; centering it
+   keeps the widget tidy on the narrower end of the form's own width range. */
+.account-turnstile { display: flex; justify-content: center; }
+.account-turnstile:empty { display: none; }
+
 .entry-divider {
   display: flex;
   align-items: center;

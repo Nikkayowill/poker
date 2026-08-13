@@ -6,6 +6,8 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import { StackChipsLogo } from "@/components/brand/stackchips-logo";
 import { InstallLine } from "@/components/pwa/install-line";
 import { selectSound } from "@/lib/audio/ui-sounds";
+import { TurnstileWidget } from "@/components/auth/turnstile-widget";
+import { TURNSTILE_SITE_KEY } from "@/lib/auth/turnstile";
 
 // Matches Supabase's password_min_length (Authentication -> Providers ->
 // Email). NIST SP 800-63B and OWASP ASVS L1 both put the floor at 8.
@@ -80,8 +82,8 @@ export function AccountEntryCard({
   error: string | null;
   onRememberChange: (remember: boolean) => void;
   onSignIn: () => void;
-  onEmailSignIn: (email: string, password: string) => void;
-  onEmailSignUp: (email: string, password: string) => void;
+  onEmailSignIn: (email: string, password: string, captchaToken?: string) => void;
+  onEmailSignUp: (email: string, password: string, captchaToken?: string) => void;
   onContinueAccount: () => void;
   onContinueAsGuest: () => void;
   onSignOut: () => void;
@@ -91,6 +93,8 @@ export function AccountEntryCard({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaResetSignal, setCaptchaResetSignal] = useState(0);
   const busy = !ready || pending;
 
   const submitEmailForm = (event: FormEvent) => {
@@ -102,9 +106,18 @@ export function AccountEntryCard({
       setFormError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
+    if (TURNSTILE_SITE_KEY && !captchaToken) {
+      setFormError("Please complete the verification below.");
+      return;
+    }
     selectSound();
-    if (emailMode === "sign-in") onEmailSignIn(email.trim(), password);
-    else onEmailSignUp(email.trim(), password);
+    const token = captchaToken ?? undefined;
+    // Tokens are single-use regardless of outcome, so the widget always gets
+    // a fresh one queued up for the next attempt.
+    setCaptchaToken(null);
+    setCaptchaResetSignal((signal) => signal + 1);
+    if (emailMode === "sign-in") onEmailSignIn(email.trim(), password, token);
+    else onEmailSignUp(email.trim(), password, token);
   };
 
   return (
@@ -239,6 +252,12 @@ export function AccountEntryCard({
                       <small>Remember this player on this device</small>
                     </span>
                   </label>
+
+                  <TurnstileWidget
+                    siteKey={TURNSTILE_SITE_KEY}
+                    onToken={setCaptchaToken}
+                    resetSignal={captchaResetSignal}
+                  />
 
                   <button type="submit" className="account-primary-action" disabled={busy}>
                     {pending

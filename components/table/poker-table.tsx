@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
+import { betFlightKind, type BetFlight } from "@/lib/scene/chips/bet-flight";
+import type { ChipMoveKind } from "@/lib/scene/chips/chip-motion";
 import { dealerArtSrc, dealerForHand, dealerSlotBox } from "@/lib/scene/dealer-roster";
 import { DEALER_ANGLE_DEG, seatAngleDeg } from "@/lib/scene/table-anchors";
 import {
@@ -620,7 +622,9 @@ export function PokerTable({
   // disconnect -- skips flight generation entirely for that one snapshot,
   // so neither initial hydration nor a reconnect ever replays history.
   const streetBetsRef = useRef<{ handNumber: number; street: string; bets: Record<string, number> } | null>(null);
-  const [chipFlights, setChipFlights] = useState<Array<{ id: string; seatId: string; amount: number }>>([]);
+  const [chipFlights, setChipFlights] = useState<
+    Array<{ id: string; seatId: string; amount: number; kind: ChipMoveKind }>
+  >([]);
   useEffect(() => {
     if (connectionState !== "connected") {
       streetBetsRef.current = null;
@@ -631,6 +635,14 @@ export function PokerTable({
     const sameStreet = prev !== null && prev.handNumber === game.handNumber && prev.street === game.street;
     const baseline = sameStreet ? prev!.bets : {};
     if (prev !== null) {
+      // What the table was already facing when these chips left. Read off the
+      // same baseline the arrivals are, so it is the state *before* the action
+      // rather than after it -- comparing a raise against its own new high bet
+      // would classify every aggression as a call.
+      const previousHighBet = game.seats.reduce(
+        (high, seat) => Math.max(high, baseline[seat.id] ?? 0),
+        0,
+      );
       const arrivals = game.seats
         .filter((seat) => seat.streetBet > (baseline[seat.id] ?? 0))
         .map((seat) => ({
@@ -640,6 +652,14 @@ export function PokerTable({
           // not its whole street -- a raise to 200 from a seat that already
           // had 50 committed flies the 150, exactly as a dealer cuts it out.
           amount: seat.streetBet - (baseline[seat.id] ?? 0),
+          // Which gesture this is, and therefore how fast the chips move: a
+          // call is the quickest thing at the table and a shove is allowed to
+          // be a moment. See `betFlightKind`.
+          kind: betFlightKind({
+            allIn: seat.status === "all-in",
+            previousHighBet,
+            streetBet: seat.streetBet,
+          }),
         }));
       if (arrivals.length) {
         setChipFlights((current) => [...current, ...arrivals]);
@@ -717,9 +737,14 @@ export function PokerTable({
     orderedSeats.forEach((seat, index) => slots.set(seat.id, index));
     return slots;
   }, [orderedSeats]);
-  const betFlights = useMemo(
+  const betFlights = useMemo<BetFlight[]>(
     () => chipFlights
-      .map((flight) => ({ id: flight.id, slot: slotOf.get(flight.seatId) ?? -1, amount: flight.amount }))
+      .map((flight) => ({
+        id: flight.id,
+        slot: slotOf.get(flight.seatId) ?? -1,
+        amount: flight.amount,
+        kind: flight.kind,
+      }))
       .filter((flight) => flight.slot >= 0),
     [chipFlights, slotOf],
   );

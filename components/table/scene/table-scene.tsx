@@ -3,13 +3,15 @@
 import { useEffect, useRef } from "react";
 import type { PublicSeat } from "@/lib/game/types";
 import type { BetAnimationStyle } from "@/lib/scene/bet-style";
-import { ChipLayer } from "@/lib/scene/chip-layer";
+import type { BetFlight } from "@/lib/scene/chips/bet-flight";
+import { ChipScene } from "@/lib/scene/chips/chip-scene";
+import { solveChipWorldRadius } from "@/lib/scene/chips/chip-spec";
 import {
   fitView, project, projectedFeltDepth, projectedFeltWidth, type SceneView,
 } from "@/lib/scene/projection";
 import { classicChipSpace, type ChipSpace } from "@/lib/scene/chip-space";
 import { orthographicProjection } from "@/lib/scene/scene-projection";
-import { FELT, MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
+import { CHIP_RADIUS, FELT, MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
 import {
   NEAR_SEAT_BET_INSET,
   NEAR_SEAT_BET_INSET_DESKTOP,
@@ -28,7 +30,7 @@ import {
   SLEEPING,
   type SchedulerState,
 } from "@/lib/scene/render-scheduler";
-import { paintChip } from "./paint";
+import { paintChip, paintChipShadow } from "./chip-painter";
 
 /**
  * The chip layer, painted in Canvas 2D over the DOM table.
@@ -99,7 +101,7 @@ export interface TableSceneProps {
    * seat actually committed — the spray is that number as chips. Consumed
    * by id.
    */
-  betFlights: Array<{ id: string; slot: number; amount: number }>;
+  betFlights: BetFlight[];
   /**
    * How a bet's chips travel — the player's own preference. Applied to
    * future sprays only; a chip already in flight finishes the journey it
@@ -151,7 +153,9 @@ export function TableScene({
   const engineRef = useRef<{
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
-    chips: ChipLayer;
+    chips: ChipScene;
+    /** The drawn chip radius this fit solved for, in world units. */
+    chipRadius: number;
     scheduler: SchedulerState;
     view: SceneView;
     space: ChipSpace;
@@ -201,7 +205,7 @@ export function TableScene({
       engineRef.current?.view.radiusZ ?? FELT.radiusZ,
       desktopQuery.matches ? NEAR_SEAT_BET_INSET_DESKTOP : NEAR_SEAT_BET_INSET,
     );
-    const chips = new ChipLayer(markChanged);
+    const chips = new ChipScene(markChanged);
 
     engineRef.current = {
       canvas,
@@ -210,6 +214,7 @@ export function TableScene({
       scheduler: markDirty(SLEEPING, performance.now()),
       view: { cx: 0, cy: 0, scale: 1, radiusZ: FELT.radiusZ },
       space: classicChipSpace(),
+      chipRadius: CHIP_RADIUS,
       size: { width: 0, height: 0 },
       lastFrameMs: performance.now(),
       frames: 0,
@@ -281,6 +286,13 @@ export function TableScene({
       if (!engine) return;
       engine.space = buildSpace();
       engine.chips.setSpace(engine.space);
+      // The chip's drawn size is solved from the fit rather than left to the
+      // projection: below about 44 pixels per world unit the honest size puts
+      // the side wall under a pixel, and a chip with no wall is a circle. The
+      // layout needs the same answer the painter uses, or the mound is spaced
+      // for one chip size and drawn at another.
+      engine.chipRadius = solveChipWorldRadius(CHIP_RADIUS, engine.view.scale);
+      engine.chips.setChipRadius(engine.chipRadius);
     };
     applySpace();
     fit();
@@ -334,9 +346,14 @@ export function TableScene({
       // Painter's algorithm: draw far chips first, and within one column
       // the lower chips first, so a stack occludes itself correctly.
       const chips = engine.chips.drawList()
-        .sort((a, b) => a.position.z - b.position.z || a.position.y - b.position.y);
+        .sort((a, b) => a.position.z - b.position.z || a.stackIndex - b.stackIndex);
       const projection = orthographicProjection(engine.view);
-      for (const chip of chips) paintChip(engine.ctx, projection, engine.space, chip);
+      // Two passes. A shadow belongs to the felt, so every one of them has to
+      // be down before any chip is: interleaving them lays the near chips'
+      // shadows across the far chips' faces, which is the grey smear a mound
+      // painted chip-by-chip turns into.
+      for (const chip of chips) paintChipShadow(engine.ctx, projection, engine.space, chip, engine.chipRadius);
+      for (const chip of chips) paintChip(engine.ctx, projection, engine.space, chip, engine.chipRadius);
       engine.frames += 1;
 
       // A timed chip reports its terminal snap on this frame. Once the last
@@ -497,11 +514,12 @@ export function TableScene({
     if (!engine) return;
     const standing = streetBets.reduce((sum, bet) => sum + bet.amount, 0);
     engine.chips.syncPile(Math.max(0, pot - standing), bigBlind, paying);
-    if (paying) {
-      engine.chips.clearBets();
-    } else {
-      engine.chips.syncBets(streetBets, engine.seatCount, bigBlind);
-    }
+    // Deliberately no `clearBets()` on the paying branch. The chips standing
+    // in front of the callers are part of the pot that was just won, and
+    // `payOut` sends them to the winner from where they stand; deleting them
+    // here is what used to make a caller's bet blink out of existence the
+    // moment the hand ended.
+    if (!paying) engine.chips.syncBets(streetBets, engine.seatCount, bigBlind);
     pumpRef.current?.();
   }, [pot, bigBlind, paying, streetBets]);
 
@@ -517,7 +535,7 @@ export function TableScene({
       // renders and must spawn it exactly once.
       if (engine.handledFlights.has(flight.id)) continue;
       engine.handledFlights.add(flight.id);
-      engine.chips.spawnBet(flight.slot, engine.seatCount, flight.amount, bigBlind);
+      engine.chips.spawnBet(flight.slot, engine.seatCount, flight.amount, bigBlind, flight.kind);
     }
     pumpRef.current?.();
   }, [betFlights, bigBlind]);
@@ -541,7 +559,7 @@ export function TableScene({
      * about to launch.
      */
     engine.chips.clearFlights();
-    engine.chips.spawnFunnel(winners, engine.seatCount, bigBlind);
+    engine.chips.payOut(winners, engine.seatCount, bigBlind);
     pumpRef.current?.();
   }, [paying, winners, handNumber, bigBlind]);
 

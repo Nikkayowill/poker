@@ -1079,27 +1079,47 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 
 /*
- * Missions: daily/weekly objectives, in the same full-width-strip slot below
- * the rank strip -- same "renders nothing until it has something to say"
- * contract, same reasoning about `.hub-grid`'s arithmetic column spans.
+ * Challenges: a compact door into /challenges, in the same full-width-strip
+ * slot below the rank strip -- same "renders nothing until it has something
+ * to say" contract, same reasoning about `.hub-grid`'s arithmetic column
+ * spans. Used to be the daily/weekly list itself; that moved to
+ * components/missions/challenges-floor.tsx for the same reason the arcade
+ * catalogue moved out of its hub tile (see arcade-panel.tsx's header) -- the
+ * classes below it (.missions-group, .missions-list, .mission-row*) are
+ * shared with that page rather than restated there.
  */
 .missions-panel {
   position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  align-items: center;
+  gap: 12px;
   margin-bottom: clamp(18px, 2.5vw, 26px);
+  padding: 14px 18px;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface);
+  text-decoration: none;
+  transition: box-shadow var(--duration-base) ease;
+}
+.missions-panel:hover { box-shadow: var(--accent-edge), var(--accent-glow); }
+.missions-panel:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+
+.missions-panel-icon { flex: 0 0 auto; color: var(--brand-gold-light); }
+
+.missions-panel-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.missions-panel-copy strong { color: #e2e8f2; font: 500 15px Georgia, serif; }
+.missions-panel-copy small { color: #7f8ba4; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+.missions-panel-go { flex: 0 0 auto; color: #7f8ba4; }
+
+/* The challenges page: daily and weekly side by side once there is room --
+   see challenges-floor.tsx. Single column below that, same as everything
+   else on a phone-width floor page. */
+.challenges-groups { display: grid; gap: 4px; }
+@media (min-width: 720px) {
+  .challenges-groups { grid-template-columns: 1fr 1fr; gap: clamp(28px, 4vw, 44px); }
 }
 
 .missions-group { display: flex; flex-direction: column; gap: 8px; }
-
-.missions-kicker {
-  color: #7f8ba4;
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: .25em;
-  text-transform: uppercase;
-}
 
 .missions-list {
   display: grid;

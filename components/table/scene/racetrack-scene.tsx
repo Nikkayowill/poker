@@ -123,6 +123,17 @@ export interface RacetrackLayout {
      * the corner, on top of its own nameplate.
      */
     toward: { x: number; y: number };
+    /**
+     * Where this seat's standing bet actually rests on the cloth, canvas-local
+     * CSS pixels -- the same point `ChipLayer` paints the pile at (via
+     * `ChipSpace.betSpot`), not a guess from the seat's own geometry. The
+     * amount label needs this rather than `toward`: `toward` is a direction
+     * for things that travel a CSS-tuned distance, and the classic room's own
+     * `--bet-reach-*` constants (08-seat.css) are tuned against that room's
+     * ellipse -- reusing them here landed the label off the actual pile by
+     * however far this camera's projection differs from that ellipse.
+     */
+    bet: { x: number; y: number };
   }>;
   board: { x: number; y: number };
   pot: { x: number; y: number };
@@ -310,6 +321,7 @@ export function RacetrackScene({
         const left = engine.room.project({ x: floor.x - room / 2, y: head.y, z: floor.z });
         const right = engine.room.project({ x: floor.x + room / 2, y: head.y, z: floor.z });
         const hands = engine.room.project(seatTrayAnchor(slot, count));
+        const bet = engine.chipView.project(engine.space.betSpot(slot, count));
         seatLayout.push({
           slot,
           x: crown.x,
@@ -322,6 +334,7 @@ export function RacetrackScene({
           near: (floor.z / SEAT_RING_HALF_WIDTH + 1) / 2,
           // Overwritten below, once the pot's own screen position is known.
           toward: { x: 0, y: -1 },
+          bet: { x: bet.x, y: bet.y },
         });
       }
       const dealerFloor = dealerAnchor();

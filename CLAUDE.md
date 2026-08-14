@@ -199,6 +199,15 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 - Known and deliberately unresolved (a design call, not a defect): a ~140px band of floor
   below the near rail near 16:9 — taking it up by lowering the camera was tried and
   reverted because it wrecks every taller frame.
+- `.poker-table-wrap` has `isolation: isolate` (for 99-scene.css's canvas-raise trick) but no
+  z-index of its own — normally harmless, but it means the whole felt (board, every seat) sits
+  in the CSS stacking "level 0" bucket, which **always loses to any sibling with an explicit
+  positive z-index** — `.racetrack-dealer` (z-index 3) — no matter how high a *descendant's*
+  own z-index is raised; isolation traps it. Only fix is an explicit z-index on
+  `.poker-table-wrap` itself (now 4, matching the far seats' own floor). Found via the pot
+  label (2026-08-14): raising `.poker-rail` to 20 had zero visible effect, confirmed a real
+  paint bug (not test tooling) by sampling actual pixels — `document.elementsFromPoint` is
+  useless here since most of this subtree is `pointer-events: none`.
 
 ### Rewarded-ad faucet (2026-08-11)
 - Wait moved 30s→5min (`REWARDED_AD_DURATION_MS`), grant TTL 10→20min to compensate. New direct

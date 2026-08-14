@@ -583,6 +583,19 @@ export function PokerTable({
         "--seat-dy": placed.toward.y.toFixed(3),
         "--seat-out-x": (-placed.toward.x).toFixed(3),
         "--seat-out-y": (-placed.toward.y).toFixed(3),
+        // Where the bet-amount label belongs, as an offset from this seat's
+        // own crown -- not a reach constant. `.table-bet` (08-seat.css) is
+        // positioned relative to the seat's own box, so a page-space point
+        // has to arrive as a delta from that box's origin (the crown) rather
+        // than as `left`/`top` directly. See 42-racetrack-table.css.
+        "--bet-dx-px": `${(placed.bet.x - placed.x).toFixed(1)}px`,
+        "--bet-dy-px": `${(placed.bet.y - placed.y).toFixed(1)}px`,
+        // The same bet position, but relative to the STAGE rather than this
+        // seat's own crown -- for `.seat-mine` alone, whose box is not on the
+        // projection at all (anchored to the stage's bottom edge instead, see
+        // 42-racetrack-table.css). Only that one override reads these.
+        "--bet-x-rel-px": `${(placed.bet.x - racetrackLayout.width / 2).toFixed(1)}px`,
+        "--bet-y-rel-px": `${(placed.bet.y - racetrackLayout.height).toFixed(1)}px`,
       } as React.CSSProperties;
     });
   }, [isRacetrack, racetrackLayout, orderedSeats, ringGeometry]);
@@ -1219,6 +1232,13 @@ export function PokerTable({
                   "--board-y": `${racetrackLayout.board.y.toFixed(1)}px`,
                   "--pot-x": `${racetrackLayout.pot.x.toFixed(1)}px`,
                   "--pot-y": `${racetrackLayout.pot.y.toFixed(1)}px`,
+                  // How far above the community cards the pot's own readout
+                  // sits -- the real gap to the pot's projected position, not
+                  // the flat 6px every other table uses. The pot anchor is
+                  // deliberately set well toward the dealer (table-anchors.ts'
+                  // own POT_DEPTH_FRACTION), and on this camera that reads as
+                  // "further up the felt" -- see .board-stack below.
+                  "--pot-gap": `${Math.max(6, racetrackLayout.board.y - racetrackLayout.pot.y).toFixed(1)}px`,
                 }
                 : {}),
             } as React.CSSProperties}

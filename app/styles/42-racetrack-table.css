@@ -41,6 +41,25 @@
   max-width: none;
   aspect-ratio: auto;
   margin: 0;
+  /* `.poker-table-wrap` carries `isolation: isolate` (06-table.css, for
+     99-scene.css's canvas-raise trick -- see its own long comment) but no
+     z-index of its own, which normally does not matter: an isolated box with
+     z-index:auto still paints in the "positioned, level 0" bucket, same as
+     any ordinary stacking context. What breaks here is that this room adds a
+     sibling with a real POSITIVE z-index -- `.racetrack-dealer`, 3 -- and
+     positive z-index is a bucket of its own, painted after level 0 no matter
+     how a level-0 box's OWN descendants are numbered. Every seat and
+     everything on the felt lives inside this isolated, level-0 box, so all
+     of it -- not just the pot label -- was losing to the dealer whenever
+     they happened to share screen space, which the design comment on
+     `.racetrack-dealer` (poker-table.tsx) says should never happen ("below
+     every seat"). Raising a descendant (`.poker-rail`, tried first) cannot
+     fix this: isolation traps it, so no number in there ever escapes to be
+     compared against the dealer at all. The wrap itself has to carry the
+     positive z-index, so the whole group -- felt, board, every seat -- is
+     what gets compared, and 4 (matching the far seats' own floor, `seatZ`,
+     table-geometry.ts) is enough to clear the dealer's 3. */
+  z-index: 4;
 }
 
 .scene-room-racetrack .poker-rail,
@@ -81,6 +100,58 @@
 .scene-room-racetrack .pot-anchor {
   left: var(--pot-x, 50%);
   top: var(--pot-y, 26%);
+}
+
+/* The pot's own readout, lifted off the community-card row it sits in.
+   -------------------------------------------------------------------------
+   Every other table centres `.center-pot-amount` in a flex column with
+   `.community-cards` (06-table.css) -- a flat 6px gap, because that room's
+   pot pile rests right behind the board. This camera's pot anchor is
+   deliberately much further toward the dealer (`POT_DEPTH_FRACTION`,
+   table-anchors.ts), which reads as "well up the felt" once projected, so
+   the flat gap would leave the label floating over empty cloth well short of
+   the chips it names.
+
+   Taken out of the flex flow instead of widening that gap, so the cards
+   themselves stay exactly where `--board-x/-y` already puts them -- only the
+   label moves. `--pot-gap` (poker-table.tsx) is the real measured distance
+   from the board to the pot's projected position; `bottom: 100%` anchors to
+   the (now pot-amount-free) stack's own top edge, i.e. the top of the cards,
+   and the margin lifts it the rest of the way up toward the dealer. */
+.scene-room-racetrack .center-pot-amount {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  margin-bottom: var(--pot-gap, 22px);
+  transform: translateX(-50%);
+}
+
+/* A seat's bet-amount pill, aimed at where its chips actually rest.
+   -------------------------------------------------------------------------
+   `.table-bet` (08-seat.css) is built for the classic ellipse: it hangs off
+   the seat's own box and reaches for the pile using `--bet-reach-x/-y`
+   constants tuned against that room's `betSpot()`. This camera's pile lands
+   somewhere else entirely, so those constants would put the label beside an
+   empty patch of felt (or on top of a neighbour's chips) rather than beside
+   this seat's own pile.
+
+   `--bet-dx-px`/`--bet-dy-px` (poker-table.tsx) are the real projected pile
+   position, already expressed as a delta from this seat's own crown -- the
+   coordinate system `.table-bet`'s `position: absolute` resolves against,
+   since its containing block is the seat box's own padding edge. `left: 50%`
+   is that box's horizontal centre (the crown), so adding the delta lands
+   exactly on the pile; `top: 0` is the box's top edge (the crown itself), so
+   the y delta alone reaches it. The trailing `translate(26px, 0)` is the same
+   "beside, not on top of, the pile" clearance the classic room uses.
+
+   Not `.seat-mine`: that seat is deliberately off the projection (see its own
+   block below and in this file's header) and anchored to the stage's bottom
+   edge instead, so it has no crown here to measure a delta from -- see its
+   own override further down, which measures from the stage instead. */
+.scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .table-bet {
+  left: calc(50% + var(--bet-dx-px, 0px));
+  top: var(--bet-dy-px, 0px);
+  transform: translate(-50%, -50%) translate(26px, 0);
 }
 
 /* An opponent's seat.
@@ -142,6 +213,26 @@
 
 .scene-room-racetrack .player-seat.seat-mine .seat-figure {
   display: none;
+}
+
+/* The local player's own bet, aimed the same way as every opponent's above --
+   just measured from the stage instead of a crown, because this seat's own
+   box has none (it is bottom-anchored, not projected; see the block above).
+   `--bet-x-rel-px`/`--bet-y-rel-px` (poker-table.tsx) are the pile's real
+   position relative to the stage's horizontal centre and bottom edge, both of
+   which this seat's box is itself pinned to -- `left: 50%` and `bottom: ...`
+   above -- so they can be added straight onto that box's own known edges
+   without ever needing its (auto, unknown) height.
+
+   The width term recovers the box's left edge from its centre (both known
+   lengths); the height term instead rides `100%` -- the one way to reach a
+   box's own far edge in CSS without knowing its size -- rather than
+   subtracting `--seat-width`, which is this seat's WIDTH budget, not its
+   unrelated (content-sized) height. */
+.scene-room-racetrack .player-seat.seat-mine .table-bet {
+  left: calc(var(--bet-x-rel-px, 0px) + var(--seat-width) / 2);
+  top: calc(100% + var(--bet-y-rel-px, 0px) + max(var(--safe-bottom, 0px), calc(var(--seat-width) * .24)));
+  transform: translate(-50%, -50%) translate(26px, 0);
 }
 
 /* The dealer.

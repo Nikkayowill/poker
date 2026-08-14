@@ -158,7 +158,7 @@ export const SEAT_ART_OVERRIDES: Partial<Record<number, SeatArtOverride>> = {
  * Adjust these values to fix your layout layout uniquely on big monitors!
  */
 export const DESKTOP_SEAT_ART_OVERRIDES: Partial<Record<number, SeatArtOverride>> = {
-  1: { scale: 1.3, offsetX: 10, offsetY: 50, angle: 40 },
+  1: { scale: 1.3, offsetX: 10, offsetY: 20, angle: 40 },
   2: { scale: 1.1, offsetX: 10, offsetY: 0 },
   5: { scale: 1.1, offsetX: 30, offsetY: 10 }, // 💡 Change these right here for desktop
 };

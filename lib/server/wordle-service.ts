@@ -20,6 +20,7 @@ import {
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
+import { applyMissionEvent } from "./mission-store";
 import { ensureProfile } from "./profile-store";
 
 /**
@@ -212,7 +213,8 @@ export async function playWordleGuess(
   }
 
   const next = submitWordleGuess(current.round, input.guess);
-  const stored = await advancePuzzleRound<WordleRound>(current, next, next.status !== "active");
+  const complete = next.status !== "active";
+  const stored = await advancePuzzleRound<WordleRound>(current, next, complete);
   if (!stored) {
     // A lost race did not happen. Return the board that did.
     const live = await getPuzzleRound<WordleRound>(profile.id, WORDLE_GAME, clock.day);
@@ -221,6 +223,10 @@ export async function playWordleGuess(
       round: live ? snapshot(live) : undefined,
     });
   }
+
+  // Win or lose, the attempt is finished -- "complete one brain game" is
+  // about playing, not winning.
+  if (complete) void applyMissionEvent(profile.id, { kind: "puzzle_completed" });
 
   return view(stored, profile, clock);
 }

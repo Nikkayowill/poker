@@ -1,6 +1,7 @@
 import "server-only";
 import { checkAvatarUnlocks } from "./avatar-unlocks";
 import { archiveCompletedHand } from "./hand-archive-store";
+import { applyMissionEvent } from "./mission-store";
 import { ensureProfile } from "./profile-store";
 import { awardWager } from "./progression-store";
 import { recordHandStats } from "./stats-store";
@@ -72,6 +73,14 @@ export async function onHandCompleted(state: GameState): Promise<void> {
   // won. Unlike recordHandStats this has no per-(game, hand) key of its own, so
   // that contract is what keeps a hand from being counted twice.
   try {
+    // Same gate the per-seat loop below applies, run once up front so
+    // multiplayer is known before any seat's mission event fires -- every
+    // qualifying seat in the same hand shares the same answer.
+    const qualifyingSeats = state.seats.filter(
+      (seat) => seat.isHuman && Boolean(seat.ownerToken) && seat.holeCards.length > 0 && seat.committed > 0,
+    ).length;
+    const multiplayer = qualifyingSeats >= 2;
+
     await Promise.all(state.seats.map(async (seat) => {
       // Same gate recordHandStats uses: real players only, and only seats
       // actually dealt into this hand.
@@ -79,6 +88,9 @@ export async function onHandCompleted(state: GameState): Promise<void> {
       if (seat.committed <= 0) return;
       const profile = await ensureProfile(seat.ownerToken);
       await awardWager(profile.id, seat.ownerToken, seat.committed);
+      // Missions ride beside XP, not gated on it -- applyMissionEvent keeps
+      // its own never-throw contract, same as awardWager's.
+      void applyMissionEvent(profile.id, { kind: "poker_hand_played", multiplayer });
     }));
   } catch (error) {
     failures.push(error);

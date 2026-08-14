@@ -26,6 +26,7 @@ import {
   getPvpMatchById,
   type StoredPvpMatch,
 } from "./pvp-match-store";
+import { applyMissionEvent } from "./mission-store";
 import {
   creditGoldByProfile,
   ensureProfile,
@@ -208,6 +209,11 @@ async function payOutMatch(match: StoredPvpMatch): Promise<void> {
         error,
       });
     }
+  }
+
+  // A draw is not a win: only a decided match feeds the "win a duel" missions.
+  if (match.winnerSeat !== null) {
+    void applyMissionEvent(match.players[match.winnerSeat], { kind: "duel_won" });
   }
 }
 

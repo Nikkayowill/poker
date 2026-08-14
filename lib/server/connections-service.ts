@@ -209,7 +209,11 @@ export async function playConnectionsGuess(
     });
   }
 
-  if (complete) void applyMissionEvent(profile.id, { kind: "puzzle_completed" });
+  // Awaited: the route responds with this function's own return value, so a
+  // fire-and-forget call here could be dropped by a frozen serverless
+  // invocation right after the response goes out. applyMissionEvent never
+  // throws, so this only costs latency, not reliability.
+  if (complete) await applyMissionEvent(profile.id, { kind: "puzzle_completed" });
 
   return view(stored, profile, clock);
 }

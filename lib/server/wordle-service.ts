@@ -225,8 +225,11 @@ export async function playWordleGuess(
   }
 
   // Win or lose, the attempt is finished -- "complete one brain game" is
-  // about playing, not winning.
-  if (complete) void applyMissionEvent(profile.id, { kind: "puzzle_completed" });
+  // about playing, not winning. Awaited: the route responds with this
+  // function's own return value, so a fire-and-forget call here could be
+  // dropped by a frozen serverless invocation right after the response goes
+  // out. applyMissionEvent never throws, so this only costs latency.
+  if (complete) await applyMissionEvent(profile.id, { kind: "puzzle_completed" });
 
   return view(stored, profile, clock);
 }

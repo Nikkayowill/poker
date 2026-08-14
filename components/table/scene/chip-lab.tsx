@@ -50,6 +50,7 @@ function chipAt(
     rollRad: 0,
     scaleX: 1,
     scaleY: 1,
+    opacity: 1,
   };
 }
 
@@ -186,7 +187,7 @@ export function ChipMotionLab({ pixelsPerUnit }: { pixelsPerUnit: number }) {
       { at: 1500, label: "raise", run: () => scene.spawnBet(4, SEATS, 260, 10, "raise") },
       { at: 2400, label: "all-in", run: () => scene.spawnBet(0, SEATS, 1400, 10, "all_in") },
       { at: 3600, label: "sweep", run: () => { scene.sweepBets(); scene.syncPile(1790, 10, false); } },
-      { at: 5200, label: "payout", run: () => { scene.syncPile(1790, 10, true); scene.spawnFunnel([{ slot: 4, amount: 1790 }], SEATS, 10); } },
+      { at: 5200, label: "payout", run: () => scene.payOut([{ slot: 4, amount: 1790 }], SEATS, 10) },
       { at: 6600, label: "reset", run: () => { scene.clearFlights(); scene.clearBets(); scene.syncPile(0, 10, false); } },
     ];
 
@@ -197,9 +198,8 @@ export function ChipMotionLab({ pixelsPerUnit }: { pixelsPerUnit: number }) {
     let phase = "idle";
     const loopMs = 7600;
 
-    const frame = (now: number) => {
-      const delta = Math.min(64, now - last);
-      last = now;
+    /** Advance the scene by `delta` and repaint. The clock is not read here. */
+    const advance = (delta: number) => {
       clock += delta;
       while (cursor < script.length && clock >= script[cursor].at) {
         phase = script[cursor].label;
@@ -219,17 +219,58 @@ export function ChipMotionLab({ pixelsPerUnit }: { pixelsPerUnit: number }) {
       ctx.fillRect(0, 0, width, height);
       ctx.fillStyle = "rgba(255,255,255,0.75)";
       ctx.font = '12px ui-monospace, "SF Mono", Menlo, monospace';
-      ctx.fillText(`${phase}`, 16, 22);
+      ctx.fillText(`${phase}  ${Math.round(clock)}ms`, 16, 22);
 
       const chips = scene.drawList()
         .sort((a, b) => a.position.z - b.position.z || a.stackIndex - b.stackIndex);
       for (const chip of chips) paintChipShadow(ctx, projection, space, chip, chipRadius);
       for (const chip of chips) paintChip(ctx, projection, space, chip, chipRadius);
+    };
 
+    const frame = (now: number) => {
+      const delta = Math.min(64, now - last);
+      last = now;
+      advance(delta);
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+
+    /**
+     * A deterministic driver for the bench, so a screenshot can be taken at an
+     * exact point in the animation.
+     *
+     * Headless Chromium runs `requestAnimationFrame` off an on-demand
+     * BeginFrame source — single-digit frames per second rather than sixty —
+     * and this loop clamps its delta at 64ms, so under a headless capture the
+     * whole script plays at roughly a fifth speed. Sampling it on wall-clock
+     * time therefore photographs the wrong moment and quietly reports that
+     * whatever you were checking looks fine. Same class of trap as
+     * `window.__stackchipsScene`, and the same answer: give the test process a
+     * handle and let it drive.
+     */
+    const seam = {
+      seek(toMs: number, stepMs = 1000 / 60) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+        if (toMs < clock) {
+          scene.clearFlights();
+          scene.clearBets();
+          scene.syncPile(0, 10, false);
+          scene.syncBets([], SEATS, 10);
+          clock = 0;
+          cursor = 0;
+        }
+        while (clock < toMs) advance(Math.min(stepMs, toMs - clock));
+      },
+      phase: () => phase,
+      clockMs: () => clock,
+    };
+    (window as unknown as { __chipLab?: typeof seam }).__chipLab = seam;
+
+    return () => {
+      cancelAnimationFrame(raf);
+      delete (window as unknown as { __chipLab?: typeof seam }).__chipLab;
+    };
   }, [pixelsPerUnit]);
 
   return (

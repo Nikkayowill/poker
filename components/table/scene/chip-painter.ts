@@ -170,6 +170,8 @@ export function paintChipShadow(
   chip: RenderChip,
   chipRadius: number,
 ): void {
+  const opacity = clamp(chip.opacity, 0, 1);
+  if (opacity <= 0.01) return;
   const spot = place(projection, space, chip, chipRadius);
   const resting = !chip.airborne;
   // Only the chip on the bottom of a column shadows the cloth. `stackIndex` is
@@ -179,7 +181,9 @@ export function paintChipShadow(
   // 0 on the cloth, 1 at the apex of the tallest arc in the system.
   const height = clamp(chip.lift, 0, 1);
   const spread = spot.rx * (resting ? 1.02 : 1.02 - height * 0.42);
-  const alpha = resting ? 0.3 : 0.3 * (1 - height * 0.6);
+  // The shadow fades with the chip. A paid chip that dissolved while its
+  // shadow stayed put would leave a dark smudge on the felt.
+  const alpha = (resting ? 0.3 : 0.3 * (1 - height * 0.6)) * opacity;
   if (spread <= 0.2 || alpha <= 0.01) return;
 
   // The core's share of the radius: a tight, hard pool under a chip about to
@@ -211,6 +215,8 @@ export function paintChip(
   chip: RenderChip,
   chipRadius: number,
 ): void {
+  const opacity = clamp(chip.opacity, 0, 1);
+  if (opacity <= 0.01) return;
   const spot = place(projection, space, chip, chipRadius);
   if (!Number.isFinite(spot.x) || !Number.isFinite(spot.y) || spot.rx <= 0) return;
 
@@ -218,6 +224,7 @@ export function paintChip(
   const { rx, ry, wall } = spot;
 
   ctx.save();
+  if (opacity < 1) ctx.globalAlpha = opacity;
   ctx.translate(spot.x, spot.y);
   if (spot.rotation !== 0) ctx.rotate(spot.rotation);
   if (spot.scaleX !== 1 || spot.scaleY !== 1) ctx.scale(spot.scaleX, spot.scaleY);
@@ -489,7 +496,10 @@ function paintGrain(ctx: CanvasRenderingContext2D, rx: number, ry: number): void
   ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
   ctx.clip();
   ctx.globalCompositeOperation = "overlay";
-  ctx.globalAlpha = 0.14;
+  // Multiplied rather than assigned: the caller may already have dimmed the
+  // context for a payout chip's fade, and a flat assignment here would leave
+  // the grain at full strength on a chip that is otherwise nearly gone.
+  ctx.globalAlpha *= 0.14;
   ctx.fillStyle = pattern;
   ctx.fillRect(-rx, -ry, rx * 2, ry * 2);
   ctx.restore();

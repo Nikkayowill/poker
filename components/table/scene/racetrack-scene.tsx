@@ -569,11 +569,12 @@ export function RacetrackScene({
     if (!engine) return;
     const standing = streetBets.reduce((sum, bet) => sum + bet.amount, 0);
     engine.chips.syncPile(Math.max(0, pot - standing), bigBlind, paying);
-    if (paying) {
-      engine.chips.clearBets();
-    } else {
-      engine.chips.syncBets(streetBets, engine.seatCount, bigBlind);
-    }
+    // Deliberately no `clearBets()` on the paying branch. The chips standing
+    // in front of the callers are part of the pot that was just won, and
+    // `payOut` sends them to the winner from where they stand; deleting them
+    // here is what used to make a caller's bet blink out of existence the
+    // moment the hand ended.
+    if (!paying) engine.chips.syncBets(streetBets, engine.seatCount, bigBlind);
     pumpRef.current?.();
   }, [pot, bigBlind, paying, streetBets]);
 
@@ -602,7 +603,7 @@ export function RacetrackScene({
     // be on its way in when it starts leaving. Cleared before `spawnFunnel`,
     // not after: clearing second would sweep up the very spray this launches.
     engine.chips.clearFlights();
-    engine.chips.spawnFunnel(winners, engine.seatCount, bigBlind);
+    engine.chips.payOut(winners, engine.seatCount, bigBlind);
     pumpRef.current?.();
   }, [paying, winners, handNumber, bigBlind]);
 

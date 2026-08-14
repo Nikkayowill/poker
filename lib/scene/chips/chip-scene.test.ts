@@ -106,12 +106,19 @@ describe("the pot as an object", () => {
     expect(scene.debugPileSize()).toBe(MAX_POT_CHIPS);
   });
 
-  it("empties while the payout runs — the pot flying out already contains it", () => {
+  it("is left standing while the payout runs, because the payout sends it", () => {
+    // This asserted the opposite until 2026-08-14. Emptying the mound the
+    // instant `paying` went true is what made the pot blink out and an
+    // unrelated stack slide away in its place; `payOut` consumes these chips
+    // now, so deleting them here would delete the payout. See
+    // `chip-payout.test.ts`.
     const { scene } = makeScene();
     scene.syncPile(200, BIG_BLIND, false);
     settle(scene);
+    const resting = scene.debugPileSize();
+    expect(resting).toBeGreaterThan(0);
     scene.syncPile(200, BIG_BLIND, true);
-    expect(scene.debugPileSize()).toBe(0);
+    expect(scene.debugPileSize()).toBe(resting);
   });
 });
 
@@ -212,10 +219,11 @@ describe("the frame", () => {
   it("goes idle after every flight, rather than creeping toward its target", () => {
     // A friction slide is asymptotic and never arrives; this has to.
     const { scene } = makeScene();
-    scene.spawnFunnel([{ slot: 2, amount: 500 }], SEATS, BIG_BLIND);
+    scene.payOut([{ slot: 2, amount: 500 }], SEATS, BIG_BLIND);
     const elapsed = settle(scene);
     expect(scene.isIdle()).toBe(true);
-    expect(elapsed).toBeLessThan(sprayDurationMs(12, MOTION.payout) + 100);
+    // Flight, then the hold in front of the winner, then the fade.
+    expect(elapsed).toBeLessThan(sprayDurationMs(12, MOTION.payout) + 1400);
   });
 
   it("parks every chip exactly on its slot rather than a rest-epsilon away", () => {

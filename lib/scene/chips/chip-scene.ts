@@ -107,6 +107,11 @@ export interface RenderChip {
   /** Landing squash. */
   scaleX: number;
   scaleY: number;
+  /**
+   * 1 everywhere except the tail of a payout, where a chip that has landed in
+   * front of its winner fades out rather than being cut. See `payOut`.
+   */
+  opacity: number;
 }
 
 interface PermanentChip {
@@ -142,6 +147,32 @@ interface Flight {
   delayMs: number;
   /** Runs once, on arrival, before the flight is destroyed. */
   onArrive?: () => void;
+  /**
+   * Set once the chip has parked and is only waiting out its linger.
+   *
+   * A separate flag rather than `elapsedMs >= durationMs` because a lingering
+   * chip must stop being integrated entirely — it has arrived, and re-running
+   * the spring against a target it is already on would keep handing it
+   * sub-pixel corrections forever.
+   */
+  landed: boolean;
+  /**
+   * Whether the chip is already on the felt while it waits out its stagger.
+   *
+   * False for a bet spray, whose chips are in the player's tray until they
+   * leave — drawing one early would put a chip on the rail that nobody has
+   * bet yet. True for a payout, whose chips are the pot: they are sitting on
+   * the table in plain sight, and hiding them until their turn came was a
+   * second, subtler version of the vanishing this method exists to fix — the
+   * mound visibly thinned out from the top as the stagger worked through it.
+   */
+  visibleBeforeLaunch: boolean;
+  /**
+   * How long the chip rests where it landed before fading, and how long the
+   * fade takes. Absent for every flight except a payout, which is the only
+   * one whose chips have nothing to hand over to on arrival.
+   */
+  linger?: { holdMs: number; fadeMs: number; elapsedMs: number };
 }
 
 /** How high a chip joining the pot drops in from, in chip radii. */
@@ -155,11 +186,43 @@ const BET_DROP_RADII = 2.6;
 /** The most chips one bet pushes in. Past ten a spray is a particle effect. */
 const MAX_SPRAY_CHIPS = 10;
 /**
- * The payout's cap, and it is a deadline rather than a taste: the celebration
- * has to be finished before `NEXT_HAND_DELAY_MS` deals over the top of it.
- * Twelve chips at the payout's stagger is 576ms against a budget of 2,800.
+ * The payout's fallback cap, used only when there were no chips on the felt to
+ * send (a divergent snapshot, or a hand that ended before anything was
+ * committed). The ordinary path sends the chips that are actually there.
  */
 const MAX_PAYOUT_CHIPS = 12;
+
+/**
+ * How long the whole payout spends launching, however many chips it is
+ * sending.
+ *
+ * A fixed per-chip stagger cannot survive this animation any more. It sends
+ * every chip on the felt now — a big pot's mound plus whatever was still
+ * standing in front of the callers — which can be eighty discs where the old
+ * recomputed spray was always twelve. At a flat 16ms that is over a second of
+ * chips leaving one at a time. The stagger is divided out of this window
+ * instead, so a two-chip pot still leaves as two distinct chips and an
+ * eighty-chip pot leaves as a wave.
+ */
+const PAYOUT_LAUNCH_WINDOW_MS = 320;
+
+/**
+ * How long a paid chip sits in front of its winner before fading, and how long
+ * the fade takes.
+ *
+ * The chips used to be destroyed the frame they arrived, which meant the pot
+ * visibly went somewhere and then was never *seen* to be there — the eye
+ * tracked the movement and found nothing at the end of it. Holding the stack
+ * for most of a second is what turns the payout into "they won that": you get
+ * to look at the pile sitting in front of the winner before it is absorbed
+ * into their stack.
+ *
+ * Budgeted against `NEXT_HAND_DELAY_MS` (2,800): the launch window, the flight
+ * and both of these together come to about 1,820ms, so the next hand is never
+ * dealt over the top of a pot still being paid.
+ */
+const PAYOUT_HOLD_MS = 700;
+const PAYOUT_FADE_MS = 400;
 
 export class ChipScene {
   private readonly pile = new Map<string, PermanentChip>();
@@ -246,9 +309,23 @@ export class ChipScene {
       this.paying = paying;
       this.onChanged();
     }
-    // While the payout runs the pot has already left; leaving the mound under
-    // it would show the same chips twice.
-    const units = paying ? [] : chipBreakdown(pot, bigBlind, MAX_POT_CHIPS);
+    /**
+     * While the payout runs, the felt is left exactly as it is.
+     *
+     * This used to empty the mound the instant `paying` went true, and it is
+     * worth writing down what that looked like, because it is the whole reason
+     * the payout read as chips vanishing. The pot's mound and every standing
+     * bet blinked out in one frame; `payOut` then built a *fresh* twelve-chip
+     * stack from a recomputed breakdown and slid that out from the pot's
+     * centre. So the chips that arrived at the winner were never the chips
+     * that had been sitting on the table, they were a different shape, and the
+     * eye caught the substitution even when it could not name it.
+     *
+     * `payOut` consumes the felt itself now, so clearing here would be
+     * deleting the very chips it is about to send.
+     */
+    if (paying) return;
+    const units = chipBreakdown(pot, bigBlind, MAX_POT_CHIPS);
     const slots = pileSlots(units.length, this.chipRadius, MAX_POT_COLUMNS);
     const centre = this.space.pot();
     const wanted = new Set<string>();
@@ -440,38 +517,133 @@ export class ChipScene {
   }
 
   /**
-   * The pot going home: each winner's actual payout travels from the mound to
-   * that winner's own edge of the felt — chips are pushed to a player, not
-   * thrown at them.
+   * The pot going home.
+   *
+   * THE CHIPS THAT WERE ON THE TABLE ARE THE CHIPS THAT TRAVEL. That is the
+   * whole of this method and it is what the previous version got wrong: it
+   * recomputed a fresh breakdown of each winner's amount and flew that out of
+   * the pot's centre, while `syncPile` separately deleted the mound and
+   * `clearBets` deleted the standing bets. Three operations, and between them
+   * the pot vanished, the callers' bets vanished, and an unrelated stack of a
+   * different size slid away from a spot none of them had been sitting on.
+   *
+   * So this consumes the felt. Every resting chip — the mound and every chip
+   * still standing in front of a caller, because those are part of the pot too
+   * and they go to whoever won it — is turned into a flight that starts from
+   * exactly where that chip already was. Nothing is deleted and nothing is
+   * conjured.
+   *
+   * They also stop being destroyed on arrival. A paid chip lands, rests in
+   * front of its winner for `PAYOUT_HOLD_MS`, and then fades. Cutting them at
+   * the moment of arrival is what made the pot go somewhere and then not be
+   * there: the eye follows the movement and finds nothing at the end of it.
+   *
+   * Split pots divide the chips by share rather than by value. The exact
+   * amounts are in the HUD and always have been; what the felt has to show is
+   * that two people were paid out of one pile.
    */
-  spawnFunnel(
+  payOut(
     winners: Array<{ slot: number; amount: number }>,
     seatCount: number,
     bigBlind: number,
   ): void {
-    const profile = MOTION.payout;
-    const pot = this.space.pot();
-    for (const { slot, amount } of winners) {
-      const denominations = spraySequence(amount, bigBlind, MAX_PAYOUT_CHIPS);
-      if (denominations.length === 0) continue;
-      const source = pileSlots(denominations.length, this.chipRadius, MAX_POT_COLUMNS);
-      const landing = betSlots(denominations.length, this.chipRadius);
-      const home = this.space.payout(slot, seatCount);
-      denominations.forEach((denomination, index) => {
-        const start = source[index];
-        const place = landing[index];
+    if (winners.length === 0) return;
+
+    // A reservation whose carrier is still dropping in is about to have its
+    // chip flown away; drop the carrier so it cannot land on an empty slot.
+    for (const entry of [...this.pile.values(), ...this.bets.values()]) {
+      if (!entry.carrier) continue;
+      const index = this.flights.indexOf(entry.carrier);
+      if (index >= 0) this.flights.splice(index, 1);
+      entry.carrier = null;
+      entry.visible = true;
+    }
+
+    // Top of the stack first, the way a hand actually lifts a pile: the chips
+    // that were on top are the ones that leave first.
+    const resting = [...this.pile.values(), ...this.bets.values()]
+      .map((entry) => entry.chip)
+      .sort((a, b) => b.stackIndex - a.stackIndex);
+    this.pile.clear();
+    this.bets.clear();
+
+    const total = winners.reduce((sum, winner) => sum + Math.max(0, winner.amount), 0);
+    let cursor = 0;
+
+    winners.forEach((winner, index) => {
+      const home = this.space.payout(winner.slot, seatCount);
+      const last = index === winners.length - 1;
+      const share = total > 0 ? Math.max(0, winner.amount) / total : 1 / winners.length;
+      const wanted = last
+        ? resting.length - cursor
+        : Math.min(resting.length - cursor, Math.max(1, Math.round(resting.length * share)));
+      const chips = resting.slice(cursor, cursor + Math.max(0, wanted));
+      cursor += chips.length;
+
+      // Nothing was resting on the felt — a divergent snapshot, or a hand that
+      // ended before anything was committed. Fall back to the amount as chips,
+      // leaving from the middle, so a winner is still visibly paid.
+      const sources = chips.length > 0
+        ? chips.map((chip) => ({ denomination: chip.denomination, from: { ...chip.position }, fromStack: chip.stackIndex }))
+        : this.fallbackPayoutSources(winner.amount, bigBlind);
+      if (sources.length === 0) return;
+
+      /**
+       * Where the chips come to rest in front of the winner.
+       *
+       * A payout can be bigger than a mound's own capacity — the pot is capped
+       * at `MAX_POT_CHIPS`, but this sends the standing bets as well, so a
+       * river call into a big pot can be half as many chips again. Rather than
+       * dropping the overflow (which would be the vanishing this whole method
+       * exists to stop), the layout wraps: each extra pass over the slots
+       * stacks another tier on top. A monster pot lands as a taller mound,
+       * which is exactly what it should look like.
+       */
+      const landing = pileSlots(
+        Math.min(sources.length, MAX_POT_CHIPS),
+        this.chipRadius,
+        MAX_POT_COLUMNS,
+      );
+      if (landing.length === 0) return;
+      const tierHeight = Math.max(...landing.map((slot) => slot.index)) + 1;
+      const stagger = Math.min(
+        MOTION.payout.staggerMs,
+        PAYOUT_LAUNCH_WINDOW_MS / Math.max(1, sources.length),
+      );
+
+      sources.forEach((source, order) => {
+        const base = landing[order % landing.length];
+        const tier = Math.floor(order / landing.length);
+        const slot = { ...base, index: base.index + tier * tierHeight };
         this.launch({
-          denomination,
-          from: { x: pot.x + start.offsetX, y: this.space.feltY, z: pot.z + start.offsetZ },
-          to: { x: home.x + place.offsetX, y: this.space.feltY, z: home.z },
-          fromStack: start.index,
-          toStack: place.index,
-          profile,
-          delayMs: index * profile.staggerMs,
+          denomination: source.denomination,
+          from: source.from,
+          to: { x: home.x + slot.offsetX, y: this.space.feltY, z: home.z + slot.offsetZ },
+          fromStack: source.fromStack,
+          toStack: slot.index,
+          profile: MOTION.payout,
+          delayMs: order * stagger,
+          linger: { holdMs: PAYOUT_HOLD_MS, fadeMs: PAYOUT_FADE_MS, elapsedMs: 0 },
+          visibleBeforeLaunch: true,
         });
       });
-    }
+    });
     this.onChanged();
+  }
+
+  /** The amount as chips at the pot's centre, when the felt had none to send. */
+  private fallbackPayoutSources(
+    amount: number,
+    bigBlind: number,
+  ): Array<{ denomination: number; from: Vec3; fromStack: number }> {
+    const pot = this.space.pot();
+    const denominations = spraySequence(amount, bigBlind, MAX_PAYOUT_CHIPS);
+    const slots = pileSlots(denominations.length, this.chipRadius, MAX_POT_COLUMNS);
+    return denominations.map((denomination, index) => ({
+      denomination,
+      from: { x: pot.x + slots[index].offsetX, y: this.space.feltY, z: pot.z + slots[index].offsetZ },
+      fromStack: slots[index].index,
+    }));
   }
 
   /**
@@ -510,6 +682,25 @@ export class ChipScene {
     for (let index = this.flights.length - 1; index >= 0; index -= 1) {
       const flight = this.flights[index];
 
+      // Landed and only waiting out its linger. Held still, then faded — the
+      // chip is not integrated again, because it has arrived and re-running
+      // the spring against a target it is already sitting on would hand it
+      // sub-pixel corrections forever.
+      if (flight.landed) {
+        const linger = flight.linger;
+        if (!linger) {
+          this.flights.splice(index, 1);
+          continue;
+        }
+        linger.elapsedMs += delta;
+        const fading = linger.elapsedMs - linger.holdMs;
+        flight.chip.opacity = fading <= 0
+          ? 1
+          : linger.fadeMs > 0 ? Math.max(0, 1 - fading / linger.fadeMs) : 0;
+        if (fading >= linger.fadeMs) this.flights.splice(index, 1);
+        continue;
+      }
+
       if (!reducedMotion && flight.delayMs > 0) {
         flight.delayMs -= delta;
         // A chip waiting its turn is still motion: the scheduler must not
@@ -537,6 +728,12 @@ export class ChipScene {
         flight.chip.scaleX = 1;
         flight.chip.scaleY = 1;
         flight.onArrive?.();
+        if (flight.linger) {
+          // A payout chip has nothing to hand over to, so it stays visible
+          // where it landed instead of being cut on the frame it arrives.
+          flight.landed = true;
+          continue;
+        }
         this.flights.splice(index, 1);
         continue;
       }
@@ -581,9 +778,11 @@ export class ChipScene {
     for (const entry of this.pile.values()) if (entry.visible) out.push(entry.chip);
     for (const entry of this.bets.values()) if (entry.visible) out.push(entry.chip);
     for (const flight of this.flights) {
-      // A chip still waiting its turn in a spray has not left the tray; it is
-      // not on the felt yet and must not be drawn sitting on the rail.
-      if (flight.delayMs > 0) continue;
+      // A chip still waiting its turn in a bet spray has not left the tray; it
+      // is not on the felt yet and must not be drawn sitting on the rail. A
+      // payout chip waiting its turn *is* on the felt — it is part of the pot
+      // everyone is looking at — so it keeps being drawn until it leaves.
+      if (flight.delayMs > 0 && !flight.visibleBeforeLaunch) continue;
       out.push(flight.chip);
     }
     return out;
@@ -664,6 +863,7 @@ export class ChipScene {
         rollRad: 0,
         scaleX: 1,
         scaleY: 1,
+        opacity: 1,
       },
     };
     entry.carrier = this.launch({
@@ -692,6 +892,8 @@ export class ChipScene {
     delayMs: number;
     varianceScale?: number;
     onArrive?: () => void;
+    linger?: { holdMs: number; fadeMs: number; elapsedMs: number };
+    visibleBeforeLaunch?: boolean;
   }): Flight {
     this.flightSeed += 1;
     const seed = this.flightSeed;
@@ -710,6 +912,7 @@ export class ChipScene {
         rollRad: 0,
         scaleX: 1,
         scaleY: 1,
+        opacity: 1,
       },
       from: { ...spec.from },
       to: { ...spec.to },
@@ -726,6 +929,9 @@ export class ChipScene {
       elapsedMs: 0,
       delayMs: Math.max(0, spec.delayMs),
       onArrive: spec.onArrive,
+      landed: false,
+      linger: spec.linger,
+      visibleBeforeLaunch: spec.visibleBeforeLaunch ?? false,
     };
     this.flights.push(flight);
     return flight;

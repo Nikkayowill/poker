@@ -91,10 +91,10 @@ describe("stylesheets", () => {
      * `chip-shuffle-to-winner` used to head this list. The pot going out to
      * its winners is meshes on a friction slide now, which has no keyframes
      * and no declared duration for a stylesheet reader to find -- so its half
-     * of this budget moved to `lib/scene/chip-physics.test.ts`, which solves
-     * for a duration instead of reading one. Between them the two tests still
-     * cover the whole celebration; neither covers it alone, which is worth
-     * knowing before deleting either.
+     * of this budget moved to `lib/scene/chips/chip-payout.test.ts`, which
+     * solves for a duration instead of reading one. Between them the two
+     * tests still cover the whole celebration; neither covers it alone,
+     * which is worth knowing before deleting either.
      *
      * `pot-drain` used to close this list -- the animation on the header's
      * own MAIN POT readout as it emptied. That readout is gone (the felt's

@@ -193,8 +193,11 @@ export async function awardWager(
     // The "rank up" mission's only hook: awardWager is already the single
     // funnel every wager-driven level-up passes through (poker, blackjack,
     // tips, PvP accept), so this is where it's detected rather than at each
-    // of those call sites again. applyMissionEvent never throws.
-    void applyMissionEvent(profileId, { kind: "level_gained", levels: levelUps.length });
+    // of those call sites again. applyMissionEvent never throws, so awaiting
+    // it costs latency, not reliability -- and most of those callers await
+    // awardWager itself before responding, where a fire-and-forget call can
+    // simply never run if the serverless invocation freezes right after.
+    await applyMissionEvent(profileId, { kind: "level_gained", levels: levelUps.length });
     const owed = goldForLevelUps(levelForXp(previousXp), levelForXp(newXp));
     let goldAwarded = 0;
     let profile: PlayerProfile | null = null;

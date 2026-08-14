@@ -332,6 +332,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* 10px, not 6px: each card now casts its own felt-contact shadow below it
+     (.community-card-shell.community-card-revealed::before), and 6px let
+     that shadow crowd the pot readout stacked underneath. */
   gap: 10px;
   transform: translate(-50%, -50%);
 }
@@ -566,6 +569,9 @@
 .community-card-shell {
   position: relative;
   display: grid;
+  /* The 3D depth for .community-card-flipper's rotateY turn below --
+     eyeballed for a natural-looking flip at this row's own ~56-76px card
+     size (the clamp above), not derived from it. */
   perspective: 850px;
 }
 

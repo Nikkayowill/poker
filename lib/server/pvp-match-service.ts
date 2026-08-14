@@ -212,8 +212,12 @@ async function payOutMatch(match: StoredPvpMatch): Promise<void> {
   }
 
   // A draw is not a win: only a decided match feeds the "win a duel" missions.
+  // Awaited, not fired-and-forgotten: every caller of payOutMatch awaits it
+  // before its own route responds, and a serverless invocation can be frozen
+  // right after the response is sent -- an un-awaited call here could simply
+  // never run. applyMissionEvent never throws, so this adds no new failure.
   if (match.winnerSeat !== null) {
-    void applyMissionEvent(match.players[match.winnerSeat], { kind: "duel_won" });
+    await applyMissionEvent(match.players[match.winnerSeat], { kind: "duel_won" });
   }
 }
 

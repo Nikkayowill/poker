@@ -233,7 +233,12 @@ async function applyOne(
       p_delta: delta,
       p_event_day: eventDay,
     })
-    .single();
+    // maybeSingle, not single: the RPC does a bare `return;` (zero rows) when
+    // the mission is unknown, disabled, or outside its active window -- a
+    // deliberate no-op, not an error. .single() would throw on that zero-row
+    // case, turning a mission the catalog cache hasn't caught up on yet into
+    // a swallowed error instead of the silent no-op it's meant to be.
+    .maybeSingle();
   if (error) throw new Error(`Could not update mission progress: ${error.message}`);
   const result = data as { newly_completed: boolean } | null;
   return { newlyCompleted: Boolean(result?.newly_completed) };
@@ -246,8 +251,11 @@ async function grantOne(profileId: string, definition: MissionDefinition, now: D
   if (!supabase) {
     const key = `mission:${definition.code}:${profileId}:${period}`;
     if (memoryGrants.has(key)) return;
-    memoryGrants.add(key);
+    // Mark granted only after the credit succeeds -- marking it first and
+    // crediting second would lose the reward for good if creditGoldByProfile
+    // throws, since a retry would then see the key already claimed.
     await creditGoldByProfile(profileId, definition.rewardGold);
+    memoryGrants.add(key);
     return;
   }
 

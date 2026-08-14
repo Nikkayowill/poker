@@ -10,7 +10,7 @@
  *
  * Nothing here touches the DOM, a clock or `Math.random`. A caller passes the
  * elapsed time in; two renders of the same moment must agree, which is the
- * same determinism contract lib/scene/chip-physics.ts holds.
+ * same determinism contract lib/scene/chips/chip-motion.ts holds.
  */
 
 /** How long a credit meter takes to roll from one balance to the next. */

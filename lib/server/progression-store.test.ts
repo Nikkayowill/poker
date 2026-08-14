@@ -7,7 +7,7 @@ import {
   xpToReachLevel,
 } from "@/lib/progression/rank";
 import { dailyGrantFor, utcDayKey } from "@/lib/progression/streak";
-import { ensureProfile } from "./profile-store";
+import { ensureProfile, findProfileBySessionToken } from "./profile-store";
 import {
   __resetProgressionMemory,
   awardWager,
@@ -85,8 +85,13 @@ describe("awarding XP for a wager", () => {
     const award = await awardWager(profileId, token, goldFor(target));
     expect(award!.goldAwarded).toBe(owed);
     // The wallet comes back with the payout already in it, so a caller
-    // serialising this response cannot show a level-up beside a stale balance.
-    expect(award!.profile?.goldBalance).toBe(startingGold + owed);
+    // serialising this response cannot show a level-up beside a stale
+    // balance -- checked against a fresh read rather than startingGold + owed,
+    // since crossing several levels in one wager also completes the
+    // "weekly_level_up" mission, whose own Gold lands in this same balance.
+    const fresh = await findProfileBySessionToken(token);
+    expect(award!.profile?.goldBalance).toBe(fresh?.goldBalance);
+    expect(award!.profile?.goldBalance).toBeGreaterThanOrEqual(startingGold + owed);
 
     // Crossing nothing pays nothing: the second wager is inside level 5.
     const again = await awardWager(profileId, token, goldFor(1));

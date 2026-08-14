@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  BOARD_CARD_FLOP_OVERLAP_FRACTION,
+  BOARD_CARD_REVEAL_GAP_FRACTION,
+  BOARD_CARD_WIDTH_M,
   CAMERA_ELEVATION_DEG,
   DEALER_ANGLE_DEG,
   DEALER_SETBACK,
@@ -37,6 +40,7 @@ import {
   seatHead,
   tableOutline,
 } from "./table-anchors";
+import { clampBoardCardWidth } from "./board-clearance";
 
 /** Signed distance to a stadium's boundary: negative inside, positive out. */
 function stadiumSignedDistance(point: { x: number; z: number }, halfLength: number, halfWidth: number): number {
@@ -210,6 +214,35 @@ describe("what sits on the felt", () => {
       expect(Math.hypot(seat.x - button.x, seat.z - button.z))
         .toBeLessThan(Math.hypot(seat.x - chips.x, seat.z - chips.z));
     }
+  });
+
+  it("sizes a real 63mm card, not zero or a whole seat", () => {
+    expect(BOARD_CARD_WIDTH_M).toBeCloseTo(0.063, 6);
+  });
+
+  it("keeps clampBoardCardWidth's default fractions equal to these constants", () => {
+    // board-clearance.ts's rowWidthAt has to agree with these two exact
+    // numbers or the board's width clamp shrinks to the wrong footprint.
+    // This pins that agreement instead of relying on two files staying in
+    // sync by hand.
+    const wide = clampBoardCardWidth(
+      100,
+      { x: 0, y: 0 },
+      { x: 0, y: 10_000 },
+      { min: 10, max: 100 },
+    );
+    const withExplicitFractions = clampBoardCardWidth(
+      100,
+      { x: 0, y: 0 },
+      { x: 0, y: 10_000 },
+      {
+        min: 10,
+        max: 100,
+        revealGapFraction: BOARD_CARD_REVEAL_GAP_FRACTION,
+        flopOverlapFraction: BOARD_CARD_FLOP_OVERLAP_FRACTION,
+      },
+    );
+    expect(wide).toBe(withExplicitFractions);
   });
 });
 

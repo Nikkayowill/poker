@@ -1,3 +1,5 @@
+import { BOARD_CARD_FLOP_OVERLAP_FRACTION, BOARD_CARD_REVEAL_GAP_FRACTION } from "./table-anchors";
+
 /**
  * How wide the community-card row is allowed to render before it risks
  * reaching the pot -- a screen-space check, not a felt-space one.
@@ -19,10 +21,11 @@ const MIN_ZONE_GAP_PX = 18;
  * The row's rendered width at a given card size -- five cards, the flop's
  * three overlapping each other, the turn and river keeping the ordinary
  * reveal gap. Mirrors `app/styles/42-racetrack-table.css`'s own gap/margin
- * rules for `.community-cards`/`.community-card-shell` exactly; if that CSS
- * changes, this constant has to change with it, the same way `rowWidthAt`'s
- * shape already has to match `BOARD_CARD_REVEAL_GAP_FRACTION` and
- * `BOARD_CARD_FLOP_OVERLAP_FRACTION` (table-anchors.ts).
+ * rules for `.community-cards`/`.community-card-shell`, which read the same
+ * `BOARD_CARD_REVEAL_GAP_FRACTION`/`BOARD_CARD_FLOP_OVERLAP_FRACTION`
+ * through the `--board-card-reveal-gap-fraction`/`--board-card-flop-overlap-fraction`
+ * custom properties poker-table.tsx sets alongside `--board-card-width` --
+ * one source of truth (table-anchors.ts) instead of three copies.
  */
 function rowWidthAt(cardPx: number, revealGapFraction: number, flopOverlapFraction: number): number {
   const flopOverlap = cardPx * flopOverlapFraction * 2; // two shells (2nd, 3rd) pulled in
@@ -33,7 +36,7 @@ function rowWidthAt(cardPx: number, revealGapFraction: number, flopOverlapFracti
 export interface ClampBoardCardWidthOptions {
   min: number;
   max: number;
-  /** Defaults match `BOARD_CARD_REVEAL_GAP_FRACTION`/`BOARD_CARD_FLOP_OVERLAP_FRACTION`. */
+  /** Defaults to `BOARD_CARD_REVEAL_GAP_FRACTION`/`BOARD_CARD_FLOP_OVERLAP_FRACTION`. */
   revealGapFraction?: number;
   flopOverlapFraction?: number;
 }
@@ -55,8 +58,8 @@ export function clampBoardCardWidth(
 ): number {
   const {
     min, max,
-    revealGapFraction = 0.14,
-    flopOverlapFraction = 0.2,
+    revealGapFraction = BOARD_CARD_REVEAL_GAP_FRACTION,
+    flopOverlapFraction = BOARD_CARD_FLOP_OVERLAP_FRACTION,
   } = options;
   const gapPx = Math.hypot(pot.x - board.x, pot.y - board.y);
   let width = Math.min(max, Math.max(min, rawWidthPx));

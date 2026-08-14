@@ -222,7 +222,7 @@ test("the pot lands on the winner it was paid to", async ({ browser }) => {
      * A note for whoever revisits this, since the absence is deliberate.
      *
      * The exact landing point is not checked here and does not need to be:
-     * `lib/scene/chip-physics.test.ts` fixes the slide's arithmetic and
+     * `lib/scene/chips/chip-payout.test.ts` fixes the slide's arithmetic and
      * proves the whole funnel lands inside NEXT_HAND_DELAY_MS, and
      * `lib/scene/seat-ring.test.ts` fixes the ring it is aimed at -- both
      * deterministically, rather than against six bots and a clock. What

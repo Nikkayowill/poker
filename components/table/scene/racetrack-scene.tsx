@@ -221,8 +221,8 @@ export function RacetrackScene({
     reducedMotion: boolean;
     seatCount: number;
     handledFlights: Set<string>;
-    funnelledHand: number | null;
-    lastFunnelSlots: number[];
+    paidOutHand: number | null;
+    lastPayoutSlots: number[];
     disposed: boolean;
   } | null>(null);
 
@@ -273,8 +273,8 @@ export function RacetrackScene({
       reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
       seatCount: Math.max(1, seats.length),
       handledFlights: new Set(),
-      funnelledHand: null,
-      lastFunnelSlots: [],
+      paidOutHand: null,
+      lastPayoutSlots: [],
       disposed: false,
     };
 
@@ -517,7 +517,7 @@ export function RacetrackScene({
           return feltScreenSize(engine.room);
         },
         roomLift: () => engineRef.current?.room.project({ x: 0, y: 0, z: 0 }).y ?? 0,
-        lastFunnel: () => engineRef.current?.lastFunnelSlots ?? [],
+        lastFunnel: () => engineRef.current?.lastPayoutSlots ?? [],
         awake: () => isAwake(engineRef.current?.scheduler ?? SLEEPING),
         framesRendered: () => engineRef.current?.frames ?? 0,
       };
@@ -624,12 +624,12 @@ export function RacetrackScene({
     const engine = engineRef.current;
     if (!engine) return;
     if (!paying || winners.length === 0) return;
-    if (engine.funnelledHand === handNumber) return;
-    engine.funnelledHand = handNumber;
-    engine.lastFunnelSlots = winners.map((winner) => winner.slot);
+    if (engine.paidOutHand === handNumber) return;
+    engine.paidOutHand = handNumber;
+    engine.lastPayoutSlots = winners.map((winner) => winner.slot);
     // The bets are already the pot by the time it is won, so nothing may still
-    // be on its way in when it starts leaving. Cleared before `spawnFunnel`,
-    // not after: clearing second would sweep up the very spray this launches.
+    // be on its way in when it starts leaving. Cleared before `payOut`, not
+    // after: clearing second would sweep up the very spray this launches.
     engine.chips.clearFlights();
     engine.chips.payOut(winners, engine.seatCount, bigBlind);
     pumpRef.current?.();

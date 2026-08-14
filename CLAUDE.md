@@ -217,6 +217,31 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 - Known and deliberately unresolved (a design call, not a defect): a ~140px band of floor
   below the near rail near 16:9 — taking it up by lowering the camera was tried and
   reverted because it wrecks every taller frame.
+- `.poker-table-wrap` has `isolation: isolate` (for 99-scene.css's canvas-raise trick) but no
+  z-index of its own — normally harmless, but it means the whole felt (board, every seat) sits
+  in the CSS stacking "level 0" bucket, which **always loses to any sibling with an explicit
+  positive z-index** — `.racetrack-dealer` (z-index 3) — no matter how high a *descendant's*
+  own z-index is raised; isolation traps it. Only fix is an explicit z-index on
+  `.poker-table-wrap` itself (now 4, matching the far seats' own floor). Found via the pot
+  label (2026-08-14): raising `.poker-rail` to 20 had zero visible effect, confirmed a real
+  paint bug (not test tooling) by sampling actual pixels — `document.elementsFromPoint` is
+  useless here since most of this subtree is `pointer-events: none`.
+- The board itself was still unsized (2026-08-14): `.community-cards` had no racetrack override at
+  all, so it was inheriting the classic room's breakpoint clamp (`clamp(56px, 4.4vw, 76px)` on
+  desktop, plus its pill padding/border) — a 429px-wide row at the ceiling, on a felt whose real
+  63mm-card math (`BOARD_CARD_WIDTH_M`, table-anchors.ts) says a card should read as ~6% of the
+  cloth. `.board-stack` also carried the classic room's `z-index: 7`, above every seat (4–6) — so
+  that oversized row could paint over a seat's own cards/plate wherever the two overlapped on
+  screen, not just the pot. Fixed three ways: the row is now sized from the same camera projection
+  as everything else on this table (`RACETRACK_BOARD_CARD_MIN/MAX_PX`, 44–52px, floor matches
+  `12-responsive.css`'s own proven card-legibility floor); the flop's three cards overlap each
+  other 20% (a laid fan) while the turn/river keep the normal reveal gap, which is most of the
+  footprint reduction; `.board-stack` gets an explicit `z-index: 2` for this room (above the canvas,
+  below the dealer and every seat, same "furthest person still wins" rule the dealer already
+  follows). `lib/scene/board-clearance.ts`'s `clampBoardCardWidth` shrinks the row further still,
+  every frame, until its real rendered footprint clears the live screen-space gap to the pot —
+  a fixed CSS margin can't do that job because the gap between the board and pot anchors changes
+  with every camera fit, not just with screen width.
 
 ### Rewarded-ad faucet (2026-08-11)
 - Wait moved 30s→5min (`REWARDED_AD_DURATION_MS`), grant TTL 10→20min to compensate. New direct

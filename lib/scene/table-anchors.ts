@@ -340,6 +340,35 @@ export function communityCardsAnchor(): Vec3 {
   return { x: 0, y: FELT_TOP_Y, z: -FELT.halfWidth * BOARD_DEPTH_FRACTION };
 }
 
+/**
+ * A real poker card is 63mm wide -- ISO 216-adjacent "poker size", the same
+ * proportion `.playing-card`'s `aspect-ratio: .7` already assumes. Sizing the
+ * board off this rather than a breakpoint clamp is what makes it small and
+ * proportionate ON THIS TABLE SPECIFICALLY, the same way seats and chips are
+ * already sized from the live camera rather than eyeballed: at 1.07m of felt
+ * width, 63mm reads as about 6% of the cloth, well under the classic room's
+ * own `.community-cards .playing-card` ceiling of 76px, which this camera
+ * was inheriting unchanged before it had a rule of its own.
+ */
+export const BOARD_CARD_WIDTH_M = 0.063;
+
+/**
+ * The gap between a "just revealed" card and its neighbour -- the turn
+ * joining the flop, the river joining the turn. A fraction of the card's own
+ * width rather than a fixed number, so five cards read as a laid row at
+ * every size instead of drifting apart on a big desktop frame.
+ */
+export const BOARD_CARD_REVEAL_GAP_FRACTION = 0.14;
+
+/**
+ * How far the flop's three cards overlap each other -- a dealer lays them
+ * close enough to touch, not spread for a photo. Only the flop: the turn and
+ * river keep `BOARD_CARD_REVEAL_GAP_FRACTION`'s ordinary gap instead, because
+ * that gap is the signal a new card just arrived. Overlapping all five
+ * evenly would compress the row further but erase that signal.
+ */
+export const BOARD_CARD_FLOP_OVERLAP_FRACTION = 0.2;
+
 /** The pot rests between the board and the dealer, never under the board. */
 export const POT_DEPTH_FRACTION = 0.52;
 export function potAnchor(): Vec3 {

@@ -170,3 +170,29 @@
      the seam. It matters most on the dogs, whose whole silhouette is fur. */
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .55));
 }
+
+/* Opponent seat art -- lib/scene/seat-art.ts computes left/top/width/height
+   and a mirror transform per seat (poker-table.tsx); z-index comes in inline
+   too (seatZ, the same near-based value the seat's own .player-seat article
+   carries), so there is nothing positional here, only the layer rules and
+   the same seam-hiding shadow the dealer gets. Both width and height are set
+   inline (unlike the dealer's height: auto) because this box comes from a
+   real two-anchor fit, not one dimension left to the browser. */
+.racetrack-seat-art {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .55));
+}
+
+/* .seat-figure's own circular avatar is replaced by .racetrack-seat-art
+   above for any opponent seat that has one -- showing both would double the
+   portrait. Hidden outright rather than left in for its turn-ring: the ring
+   is sized off .seat-figure's own small clamp(40px, 72%, 78px) box, and next
+   to art several times that size it reads as a disconnected stray mark
+   rather than a ring around anything. Re-anchoring the ring to the seat art
+   is a real follow-up, not solved here -- the nameplate's own turn
+   highlight (.seat-current .seat-plate) still carries the signal until then. */
+.scene-room-racetrack .player-seat:not(.seat-mine) .seat-figure {
+  display: none;
+}

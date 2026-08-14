@@ -150,6 +150,51 @@ export function seatArtSlotFor(slot: number, isDesktop?: boolean): { scale: numb
   };
 }
 
+export interface SeatArtBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  mirror: boolean;
+}
+
+/**
+ * A seat's art box in real screen pixels, from its own projected crown and
+ * hands anchors -- the DOM sibling of `table-anchors-debug.tsx`'s canvas
+ * math (`drawSeatArt`), and it has to reproduce that exactly rather than
+ * "look about right": the debug page is where every number in
+ * `SEAT_ART_OVERRIDES` was judged, so a different formula here would make
+ * those numbers wrong again the moment they hit a real seat.
+ *
+ * MIRRORING HAPPENS AFTER POSITIONING, NOT BY MOVING THE BOX. The box below
+ * is placed at its un-mirrored position (`left`); the caller applies
+ * `transform: scaleX(-1)` to the image when `mirror` is true, which flips
+ * the art's CONTENT in place around the box's own centre without moving the
+ * box itself. That only reproduces the canvas version because the box is
+ * symmetric about the crown when `offsetX` is 0 -- worked through in full in
+ * this function's own history; do not "simplify" this by mirroring `left`
+ * instead, which moves the box rather than the picture inside it.
+ */
+export function seatArtBox(
+  head: { x: number; y: number },
+  hands: { x: number; y: number },
+  aspect: number,
+  mirror: boolean,
+  slot: { scale: number; crown: number; offsetX: number; offsetY: number },
+): SeatArtBox | null {
+  const fit = hands.y - head.y;
+  if (fit <= 0) return null;
+  const height = (fit / (1 - slot.crown)) * slot.scale;
+  const width = height * aspect;
+  return {
+    left: head.x - width / 2 + slot.offsetX,
+    top: head.y - height * slot.crown + slot.offsetY,
+    width,
+    height,
+    mirror,
+  };
+}
+
 export interface SeatArtPick {
   src: string;
   /** Aspect ratio of the art, width / height -- for sizing the drawn box. */

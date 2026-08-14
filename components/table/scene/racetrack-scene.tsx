@@ -22,6 +22,7 @@ import {
   seatAnchor,
   seatHead,
   seatShoulderRoom,
+  seatTrayAnchor,
   type Camera,
 } from "@/lib/scene/table-anchors";
 import type { StackchipsSceneSeam } from "@/lib/scene/seam-contract";
@@ -95,6 +96,13 @@ export interface RacetrackLayout {
     /** The seat's crown, canvas-local CSS pixels. */
     x: number;
     y: number;
+    /**
+     * Where this seat's hands belong -- the chip tray on the rail, canvas-local
+     * CSS pixels. Same anchor `lib/scene/seat-art.ts` sizes a character's art
+     * from: the pixel gap between this and the crown above is the exact height
+     * that puts that seat's hands on its own rail, at any camera distance.
+     */
+    hands: { x: number; y: number };
     /**
      * How wide a figure at this seat may be drawn, in CSS pixels, before it
      * touches its neighbour. Projected from the seat's own world budget, so a
@@ -301,10 +309,12 @@ export function RacetrackScene({
         const room = seatShoulderRoom(slot, count);
         const left = engine.room.project({ x: floor.x - room / 2, y: head.y, z: floor.z });
         const right = engine.room.project({ x: floor.x + room / 2, y: head.y, z: floor.z });
+        const hands = engine.room.project(seatTrayAnchor(slot, count));
         seatLayout.push({
           slot,
           x: crown.x,
           y: crown.y,
+          hands: { x: hands.x, y: hands.y },
           shoulderPx: Math.abs(right.x - left.x),
           // World Z runs toward the camera and the seat ring spans the table's
           // own half-width, so this maps the far rail to 0 and the near one

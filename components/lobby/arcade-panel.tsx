@@ -46,7 +46,7 @@ export function ArcadePanel({
       <div className="arcade-head">
         <Gamepad2 size={16} aria-hidden="true" />
         <div className="arcade-head-copy">
-          <strong id="arcade-heading">Arcade &amp; Puzzles</strong>
+          <strong id="arcade-heading">Ante Up</strong>
           <small>
             {summary.free} free every day · {summary.staked} staked in Gold
           </small>

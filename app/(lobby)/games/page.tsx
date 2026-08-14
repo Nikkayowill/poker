@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { ArcadeFloor } from "@/components/arcade/arcade-floor";
 
 export const metadata: Metadata = {
-  title: "Arcade & Puzzles · StackChips",
+  title: "Ante Up · StackChips",
   // No count. This said "Ten games" and was already wrong twice over by the
   // time anyone read it -- the 2026-08-12 retirement removed five and the
   // duels added four. The page itself counts the catalogue every render

@@ -95,6 +95,60 @@
 .scene-room-racetrack .board-stack {
   left: var(--board-x, 50%);
   top: var(--board-y, 48%);
+  /* `.board-stack` inherits `z-index: 7` from the classic ellipse room
+     (06-table.css), tuned for a felt where nothing above `.seat-plate`'s
+     `z-index: 6` exists. On this table `.player-seat` and its children start
+     at `var(--seat-z, 4)` and the dealer sits at 3 -- 7 lets a board wider
+     than its own zone paint over either one. Pin it explicitly instead of
+     trusting inheritance: above the canvas (0, `.table-scene`'s own base
+     rule), below the dealer (3) and every seat (4+), matching the "furthest
+     person still wins" rule `.racetrack-dealer`'s own comment already
+     states. The board and the pot never need to out-rank a person. */
+  z-index: 2;
+}
+
+/* The board itself: smaller and flat on the cloth, not the classic room's
+   floating placeholder pill.
+   -------------------------------------------------------------------------
+   06-table.css's `.community-cards` is a translucent pill sized for a
+   breakpoint (padding, border, `clamp(56px, 4.4vw, 76px)` cards on desktop)
+   -- chrome and scale tuned for a card row with no table under it to read as
+   sitting on. This room paints real felt at a real distance and sizes the
+   row from the live camera instead (`--board-card-width`, poker-table.tsx),
+   so it can drop that panel and let each card cast its own small shadow
+   directly onto the cloth, the same "sitting at the table, not stuck on top
+   of it" treatment `.racetrack-dealer` and `.racetrack-seat-art` already
+   get. */
+.scene-room-racetrack .community-cards {
+  /* The reveal gap: what separates the turn and the river from their
+     neighbour, so a newly-dealt card still reads as newly arrived. */
+  gap: calc(var(--board-card-width, 48px) * .14);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.scene-room-racetrack .community-cards .playing-card {
+  width: var(--board-card-width, 48px);
+  /* Tighter and closer than the base card's `0 7px 16px` -- that shadow
+     reads as a card held up off the table; this one reads as a card lying
+     on it. */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .45);
+}
+
+/* The flop lies close enough to touch -- a laid three-card fan, not three
+   cards spread the way the turn and river that follow them are. Only the
+   2nd and 3rd shells pull left: the 1st has nothing to its left to pull
+   into, and the 4th/5th (turn, river) keep the ordinary gap above so their
+   arrival still reads as a new card, not a continuation of the fan. This is
+   the compaction that gets the row's footprint down by roughly a quarter
+   without shrinking the cards past their own legibility floor -- see
+   RACETRACK_BOARD_CARD_MIN_PX's comment in poker-table.tsx. */
+.scene-room-racetrack .community-card-shell:nth-child(2),
+.scene-room-racetrack .community-card-shell:nth-child(3) {
+  margin-left: calc(var(--board-card-width, 48px) * -.2);
 }
 
 .scene-room-racetrack .pot-anchor {

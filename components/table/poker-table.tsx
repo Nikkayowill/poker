@@ -10,6 +10,7 @@ import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
 import { dealerArtSrc, dealerForHand, dealerSlotBox } from "@/lib/scene/dealer-roster";
 import { DEALER_ANGLE_DEG, seatAngleDeg } from "@/lib/scene/table-anchors";
+import { clampBoardCardWidth } from "@/lib/scene/board-clearance";
 import {
   pickSeatArtForSlot,
   seatArtBox,
@@ -157,6 +158,25 @@ export const SEAT_HEIGHT_RATIO = 0.30;
  */
 const RACETRACK_SEAT_MIN_PX = 86;
 const RACETRACK_SEAT_MAX_PX = 132;
+
+/**
+ * The board's own bounds, in CSS pixels -- same reasoning as the seat pair
+ * above, applied to a card instead of a chair.
+ *
+ * `BOARD_CARD_WIDTH_M` run through the live camera is the real 63mm card at
+ * whatever distance the board happens to sit. The floor matters far more
+ * than the ceiling: `12-responsive.css`'s own `.playing-card { width:
+ * clamp(44px, ...) }` is this app's proven-shipped legibility floor for a
+ * bare card, so 44 is not a stylistic guess here either. The ceiling is set
+ * well under the classic room's own 76px (`06-table.css`'s desktop
+ * `.community-cards .playing-card` clamp, which this camera was inheriting
+ * unmodified until now) -- smaller and flatter on the cloth is the whole
+ * point of sizing this off the camera instead of a breakpoint. Between the
+ * two, `clampBoardCardWidth` (lib/scene/board-clearance.ts) shrinks further
+ * still, every frame, until the row actually clears the pot -- see its own
+ * header for why a static clamp alone can't guarantee that. */
+const RACETRACK_BOARD_CARD_MIN_PX = 44;
+const RACETRACK_BOARD_CARD_MAX_PX = 52;
 
 /**
  * Place the dealer's artwork in the slot the scene projected for it.
@@ -1230,6 +1250,17 @@ export function PokerTable({
                 ? {
                   "--board-x": `${racetrackLayout.board.x.toFixed(1)}px`,
                   "--board-y": `${racetrackLayout.board.y.toFixed(1)}px`,
+                  // The real 63mm-card projection, clamped to this table's
+                  // own [min, max] and then shrunk further, if it must,
+                  // until the row's rendered footprint actually clears the
+                  // pot at THIS frame's camera fit -- see
+                  // RACETRACK_BOARD_CARD_MIN/MAX_PX and board-clearance.ts.
+                  "--board-card-width": `${Math.round(clampBoardCardWidth(
+                    racetrackLayout.board.cardWidthPx,
+                    racetrackLayout.board,
+                    racetrackLayout.pot,
+                    { min: RACETRACK_BOARD_CARD_MIN_PX, max: RACETRACK_BOARD_CARD_MAX_PX },
+                  ))}px`,
                   "--pot-x": `${racetrackLayout.pot.x.toFixed(1)}px`,
                   "--pot-y": `${racetrackLayout.pot.y.toFixed(1)}px`,
                   // The pot's projected position, as a signed delta from

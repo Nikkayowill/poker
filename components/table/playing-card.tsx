@@ -83,15 +83,11 @@ export function PlayingCard({
       className={clsx("playing-card", sizeClass, red && "card-red")}
       aria-label={`${spokenRanks[card.rank]} of ${card.suit}`}
     >
-      <span className="card-index card-index-top">
+      <span className="card-index">
         <span className="card-index-rank">{card.rank}</span>
         <span className="card-index-glyph"><SuitGlyph suit={card.suit} /></span>
       </span>
       <span className="card-suit-large"><SuitGlyph suit={card.suit} /></span>
-      <span className="card-index card-index-bottom">
-        <span className="card-index-rank">{card.rank}</span>
-        <span className="card-index-glyph"><SuitGlyph suit={card.suit} /></span>
-      </span>
     </div>
   );
 }

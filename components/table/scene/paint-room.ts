@@ -1,5 +1,6 @@
 /**
- * The racetrack room: floor, table body, rail and cloth, from the live camera.
+ * The racetrack room: the table's own body, rail and cloth, from the live
+ * camera, plus its contact shadow on a floor this file no longer paints.
  *
  * The classic 2D table is a photograph -- `.poker-rail`'s CSS background art,
  * cut at one fixed perspective (`public/pokertable/`). That works precisely
@@ -114,30 +115,24 @@ export interface RoomFrame {
 }
 
 /**
- * The floor, and the pool of light on it.
+ * The floor -- or rather, the absence of one.
  *
- * The floor IS the background. At this elevation the camera's horizon sits
- * above the top of the frame at every shipped aspect, so no ray leaves the
- * ground -- there is no wall or sky to paint instead, and none can be added
- * without moving the camera. The 3D room reached the same conclusion the hard
- * way and derives its own floor radius from the camera fit for the same
- * reason (`lib/game3d/floor-environment.ts`).
+ * The floor IS the background, but that background is not this canvas's to
+ * paint any more: `.game-shell` already carries the app's own lounge photo
+ * and its warm floor-pool glow (05-game-header.css), the same backdrop the
+ * classic table sits on, and `.table-scene` is `background: transparent`
+ * specifically so it shows through (99-scene.css). Painting a second, flatly
+ * neutral floor here just occluded that photo with a slab that read as
+ * generic grey next to the rest of the app's branding. Clearing -- not
+ * filling -- is what lets it through.
+ *
+ * At this elevation the camera's horizon sits above the top of the frame at
+ * every shipped aspect, so no ray leaves the ground; there is no wall or sky
+ * this canvas could paint instead even if it wanted to. The 3D room reached
+ * the same conclusion the hard way (`lib/game3d/floor-environment.ts`).
  */
-function paintFloor(ctx: CanvasRenderingContext2D, camera: Camera, frame: RoomFrame): void {
-  ctx.fillStyle = "#0a0b10";
-  ctx.fillRect(0, 0, frame.width, frame.height);
-
-  const table = screenBounds(camera, tableOutline(), FLOOR_Y);
-  const centreX = (table.minX + table.maxX) / 2;
-  const centreY = (table.minY + table.maxY) / 2;
-  const radius = (table.maxX - table.minX) * 0.95;
-  if (!(radius > 0)) return;
-  const pool = ctx.createRadialGradient(centreX, centreY, radius * 0.1, centreX, centreY, radius);
-  pool.addColorStop(0, "#232634");
-  pool.addColorStop(0.55, "#171a24");
-  pool.addColorStop(1, "#0a0b10");
-  ctx.fillStyle = pool;
-  ctx.fillRect(0, 0, frame.width, frame.height);
+function paintFloor(ctx: CanvasRenderingContext2D, frame: RoomFrame): void {
+  ctx.clearRect(0, 0, frame.width, frame.height);
 }
 
 /** The table's own shadow on the floor, spread wider than the pedestal casting it. */
@@ -212,13 +207,13 @@ function paintTable(ctx: CanvasRenderingContext2D, camera: Camera): void {
 /**
  * The whole room, in one call, back to front.
  *
- * Opaque: this clears the frame itself rather than expecting the caller to,
- * because the floor gradient is the background and a transparent clear would
- * show whatever the DOM has behind the canvas -- which is the classic table's
- * own room photograph.
+ * Transparent: this clears the frame itself rather than expecting the caller
+ * to, so a resized or re-fit table never leaves a stale frame behind -- but
+ * the clear is to nothing, deliberately, so the DOM's own room photograph
+ * shows through underneath the table this paints.
  */
 export function paintRoom(ctx: CanvasRenderingContext2D, camera: Camera, frame: RoomFrame): void {
-  paintFloor(ctx, camera, frame);
+  paintFloor(ctx, frame);
   paintContactShadow(ctx, camera);
   paintTable(ctx, camera);
 }

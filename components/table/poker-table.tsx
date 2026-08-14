@@ -13,7 +13,7 @@ import { DEALER_ANGLE_DEG, seatAngleDeg } from "@/lib/scene/table-anchors";
 import {
   pickSeatArtForSlot,
   seatArtBox,
-  seatArtCharacter,
+  seatArtCharacterForSlot,
   seatArtSlotFor,
 } from "@/lib/scene/seat-art";
 import {
@@ -157,21 +157,6 @@ export const SEAT_HEIGHT_RATIO = 0.30;
  */
 const RACETRACK_SEAT_MIN_PX = 86;
 const RACETRACK_SEAT_MAX_PX = 132;
-
-/**
- * Which `seat-art.generated.ts` character sits in every opponent's chair on
- * the racetrack table, for now.
- *
- * There is exactly one seat-art character built so far, so every opponent
- * seat draws it rather than the player's own chosen avatar cosmetic --
- * unlike the classic table's `.seat-figure`, this is not yet tied to who is
- * actually sitting there. That's a real, known gap: the roster this hangs
- * off (`SEAT_ART_CHARACTERS`) is built to take more the same way the dealer
- * roster took more dealers, but nothing here picks a specific one per
- * player yet. Fixing that is a `Seat`/cosmetics question, not a rendering
- * one, so it's left as this one constant rather than half-solved here.
- */
-const RACETRACK_SEAT_ART_CHARACTER_ID = "character1";
 
 /**
  * Place the dealer's artwork in the slot the scene projected for it.
@@ -537,9 +522,10 @@ export function PokerTable({
 
   /**
    * Character art for each opponent seat on the racetrack table -- the
-   * dealer's own sibling one step less settled: every seat draws
-   * `RACETRACK_SEAT_ART_CHARACTER_ID` since that's the only character built
-   * so far, not a per-player choice yet (see that constant's own note).
+   * dealer's own sibling, one step further settled now that the roster has
+   * five characters for the five opponent chairs: `seatArtCharacterForSlot`
+   * picks a different one per seat, rotating with the dealer's own down.
+   * Still per-SEAT, not per-PLAYER -- see that function's own note.
    *
    * Filtered down to seats that actually get a box rather than left with
    * holes, since the render below maps this straight to `<img>` elements --
@@ -548,12 +534,12 @@ export function PokerTable({
    */
   const racetrackSeatArt = useMemo(() => {
     if (!isRacetrack || !racetrackLayout) return [];
-    const character = seatArtCharacter(RACETRACK_SEAT_ART_CHARACTER_ID);
-    if (!character) return [];
     return orderedSeats.flatMap((seat, index) => {
       if (seat.isMine) return [];
       const placed = racetrackLayout.seats[index];
       if (!placed) return [];
+      const character = seatArtCharacterForSlot(game.id, game.handNumber, placed.slot);
+      if (!character) return [];
       const offset = seatAngleDeg(placed.slot) - DEALER_ANGLE_DEG;
       const pick = pickSeatArtForSlot(character, placed.slot, offset, isDesktopViewport);
       const slot = seatArtSlotFor(placed.slot, isDesktopViewport);
@@ -566,7 +552,7 @@ export function PokerTable({
       // nearer seat's art still correctly out-stacks a farther seat's.
       return [{ seatId: seat.id, src: pick.src, box, zIndex: seatZ(placed.near) }];
     });
-  }, [isRacetrack, racetrackLayout, orderedSeats, isDesktopViewport]);
+  }, [isRacetrack, racetrackLayout, orderedSeats, isDesktopViewport, game.id, game.handNumber]);
 
   /**
    * Where each seat actually goes.
@@ -1198,8 +1184,8 @@ export function PokerTable({
               the table, and drawing it behind the rail would clip exactly
               that. .seat-figure's own circular avatar is hidden for these
               seats (42-racetrack-table.css) rather than left showing under
-              this -- see RACETRACK_SEAT_ART_CHARACTER_ID's own note for what
-              is and isn't wired up yet. */}
+              this -- see `seatArtCharacterForSlot`'s own note for what is and
+              isn't wired up yet (per-seat, not per-player). */}
           {racetrackSeatArt.map(({ seatId, src, box, zIndex }) => (
             // eslint-disable-next-line @next/next/no-img-element
             <img

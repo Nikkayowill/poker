@@ -95,6 +95,24 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   table. Not routed through `buildInstancedProp` — that helper's metalness clamp is tuned for the
   chip roster and would dull this asset's brass trim, and nothing here repeats to instance.
 
+### Economy/retention redesign, milestone 1: missions (2026-08-14)
+- Kayo's directive: redesign the economy around progression/collection/achievement, not
+  monetization (Gold is no longer sold for cash — see below). Sequenced one milestone at a time;
+  missions shipped first. Remaining, not yet planned: achievements/badges, streak recovery,
+  cosmetic categories beyond avatar/card-back, a "brain games" identity, non-win celebrations.
+- Daily/weekly objectives, auto-credited on completion — no claim button, unlike the daily Gold
+  grant. New `mission_definitions`/`player_mission_progress`/`mission_reward_grants` tables plus
+  `apply_mission_progress`/`grant_mission_reward` RPCs, same row-locked shape as
+  `award_progression_xp`. `lib/missions/events.ts` is the one place a domain event fans out to every
+  mission it feeds (poker hand played, duel won, puzzle completed, level gained) — hooks land beside
+  the *existing* `awardWager` call sites, not new ones, plus one addition inside `payOutMatch` for
+  duel wins (which `awardWager` never covered — XP there is earned once at accept time, not on the
+  outcome). `lib/server/mission-store.ts` never throws, same contract as `awardWager`.
+- `profile_badges` (populated by season rollover) and four cosmetic catalog entries
+  (`back-riverwood`, `avatar-housename`, `avatar-finaltable`, `avatar-ace`) already have
+  achievement-shaped descriptions but nothing grants them — surfaced for the next milestone, not
+  touched by this one.
+
 ### Voluntary support payments replace Buy-Gold (2026-08-13)
 - The Gold storefront (`components/store/gold-store.tsx`, the general tier ladder, and the legacy
   one-click rebuy Checkout Session) is gone, replaced by `components/store/support-panel.tsx` at the

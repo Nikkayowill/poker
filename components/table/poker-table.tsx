@@ -9,6 +9,13 @@ import {
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
 import { dealerArtSrc, dealerForHand, dealerSlotBox } from "@/lib/scene/dealer-roster";
+import { DEALER_ANGLE_DEG, seatAngleDeg } from "@/lib/scene/table-anchors";
+import {
+  pickSeatArtForSlot,
+  seatArtBox,
+  seatArtCharacter,
+  seatArtSlotFor,
+} from "@/lib/scene/seat-art";
 import {
   resolveTableRenderer,
   tableRendererLabel,
@@ -16,6 +23,7 @@ import {
 } from "@/lib/scene/table-renderer";
 import { roomThemeLabel, type RoomThemeId } from "@/lib/game3d/room-theme";
 import { useWebglSupport } from "./use-webgl-support";
+import { useDesktopViewport } from "@/components/use-desktop-viewport";
 import { useFeltArtReady } from "./use-felt-art-ready";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
@@ -151,6 +159,21 @@ const RACETRACK_SEAT_MIN_PX = 86;
 const RACETRACK_SEAT_MAX_PX = 132;
 
 /**
+ * Which `seat-art.generated.ts` character sits in every opponent's chair on
+ * the racetrack table, for now.
+ *
+ * There is exactly one seat-art character built so far, so every opponent
+ * seat draws it rather than the player's own chosen avatar cosmetic --
+ * unlike the classic table's `.seat-figure`, this is not yet tied to who is
+ * actually sitting there. That's a real, known gap: the roster this hangs
+ * off (`SEAT_ART_CHARACTERS`) is built to take more the same way the dealer
+ * roster took more dealers, but nothing here picks a specific one per
+ * player yet. Fixing that is a `Seat`/cosmetics question, not a rendering
+ * one, so it's left as this one constant rather than half-solved here.
+ */
+const RACETRACK_SEAT_ART_CHARACTER_ID = "character1";
+
+/**
  * Place the dealer's artwork in the slot the scene projected for it.
  *
  * ONE PLACE, A ROSTER OF PEOPLE TO PUT IN IT, AND NO PER-DEALER NUMBERS: the
@@ -242,6 +265,11 @@ export function PokerTable({
   // might not work. See use-webgl-support.ts for why this is not an effect.
   const webglAvailable = useWebglSupport();
   const activeRenderer = resolveTableRenderer(tableRenderer, webglAvailable, landscape);
+  // Which of lib/scene/seat-art.ts's two hand-tuned tables applies to seat
+  // art on the racetrack table -- see useDesktopViewport's own note for why
+  // this has to be a real subscription and not a `window.matchMedia` read
+  // buried inside the picker functions themselves.
+  const isDesktopViewport = useDesktopViewport();
   const historyButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeHistory = useCallback(() => {
     setHistoryOpen(false);
@@ -506,6 +534,39 @@ export function PokerTable({
      than held in state, so it survives a remount, agrees with every other
      client at the table, and can only change between hands. */
   const dealerId = dealerForHand(game.id, game.handNumber);
+
+  /**
+   * Character art for each opponent seat on the racetrack table -- the
+   * dealer's own sibling one step less settled: every seat draws
+   * `RACETRACK_SEAT_ART_CHARACTER_ID` since that's the only character built
+   * so far, not a per-player choice yet (see that constant's own note).
+   *
+   * Filtered down to seats that actually get a box rather than left with
+   * holes, since the render below maps this straight to `<img>` elements --
+   * the hero's own seat never gets one (no figure is drawn there on any
+   * table), and neither does a seat the layout hasn't reported a fit for.
+   */
+  const racetrackSeatArt = useMemo(() => {
+    if (!isRacetrack || !racetrackLayout) return [];
+    const character = seatArtCharacter(RACETRACK_SEAT_ART_CHARACTER_ID);
+    if (!character) return [];
+    return orderedSeats.flatMap((seat, index) => {
+      if (seat.isMine) return [];
+      const placed = racetrackLayout.seats[index];
+      if (!placed) return [];
+      const offset = seatAngleDeg(placed.slot) - DEALER_ANGLE_DEG;
+      const pick = pickSeatArtForSlot(character, placed.slot, offset, isDesktopViewport);
+      const slot = seatArtSlotFor(placed.slot, isDesktopViewport);
+      const box = seatArtBox(placed, placed.hands, pick.aspect, pick.mirror, slot);
+      if (!box) return [];
+      // Same z-index its own .player-seat article gets (seatZ, near-based),
+      // and rendered earlier in the document than any seat -- so at that
+      // shared value document order settles the tie in the seat's favour,
+      // putting cards and the nameplate over their own seat's art, while a
+      // nearer seat's art still correctly out-stacks a farther seat's.
+      return [{ seatId: seat.id, src: pick.src, box, zIndex: seatZ(placed.near) }];
+    });
+  }, [isRacetrack, racetrackLayout, orderedSeats, isDesktopViewport]);
 
   /**
    * Where each seat actually goes.
@@ -1132,6 +1193,32 @@ export function PokerTable({
               style={dealerStyle(racetrackLayout.dealer)}
             />
           )}
+          {/* Opponent portraits on the racetrack table, over the cloth same as
+              the dealer -- and same reason: the art puts hands (and cards) on
+              the table, and drawing it behind the rail would clip exactly
+              that. .seat-figure's own circular avatar is hidden for these
+              seats (42-racetrack-table.css) rather than left showing under
+              this -- see RACETRACK_SEAT_ART_CHARACTER_ID's own note for what
+              is and isn't wired up yet. */}
+          {racetrackSeatArt.map(({ seatId, src, box, zIndex }) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={seatId}
+              className="racetrack-seat-art"
+              src={src}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              style={{
+                left: `${box.left.toFixed(1)}px`,
+                top: `${box.top.toFixed(1)}px`,
+                width: `${box.width.toFixed(1)}px`,
+                height: `${box.height.toFixed(1)}px`,
+                zIndex,
+                transform: box.mirror ? "scaleX(-1)" : undefined,
+              }}
+            />
+          ))}
           <div
             className="poker-table-wrap"
             ref={tableWrapRef}

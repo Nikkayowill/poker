@@ -167,8 +167,8 @@ export function TableScene({
     nearSeatDesktop: boolean;
     seatCount: number;
     handledFlights: Set<string>;
-    funnelledHand: number | null;
-    lastFunnelSlots: number[];
+    paidOutHand: number | null;
+    lastPayoutSlots: number[];
     disposed: boolean;
   } | null>(null);
 
@@ -222,8 +222,8 @@ export function TableScene({
       nearSeatDesktop: desktopQuery.matches,
       seatCount: Math.max(1, seats.length),
       handledFlights: new Set(),
-      funnelledHand: null,
-      lastFunnelSlots: [],
+      paidOutHand: null,
+      lastPayoutSlots: [],
       disposed: false,
     };
 
@@ -428,7 +428,7 @@ export function TableScene({
           };
         },
         roomLift: () => engineRef.current?.view.cy ?? 0,
-        lastFunnel: () => engineRef.current?.lastFunnelSlots ?? [],
+        lastFunnel: () => engineRef.current?.lastPayoutSlots ?? [],
         awake: () => isAwake(engineRef.current?.scheduler ?? SLEEPING),
         framesRendered: () => engineRef.current?.frames ?? 0,
       };
@@ -544,9 +544,9 @@ export function TableScene({
     const engine = engineRef.current;
     if (!engine) return;
     if (!paying || winners.length === 0) return;
-    if (engine.funnelledHand === handNumber) return;
-    engine.funnelledHand = handNumber;
-    engine.lastFunnelSlots = winners.map((winner) => winner.slot);
+    if (engine.paidOutHand === handNumber) return;
+    engine.paidOutHand = handNumber;
+    engine.lastPayoutSlots = winners.map((winner) => winner.slot);
     /**
      * The bets are already the pot by the time it is won, so nothing may
      * still be on its way into the middle when it starts leaving. The slide
@@ -554,7 +554,7 @@ export function TableScene({
      * hand that ends on a call has that caller's chips barely a third of
      * the way in when the payout fires; left alone they crawl into a centre
      * the pile has vacated while the payout flies the other way. Cleared
-     * before `spawnFunnel`, not after: the payout's own chips are equally
+     * before `payOut`, not after: the payout's own chips are equally
      * transient, and clearing second would sweep up the very spray this is
      * about to launch.
      */

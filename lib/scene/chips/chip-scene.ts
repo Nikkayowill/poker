@@ -66,6 +66,15 @@ import {
 import { flightVariance, type FlightVariance } from "./chip-spec";
 
 /**
+ * The golden angle, in radians. Stepping by it (as `sweepBets` and
+ * `spawnBet`'s scatter both do below) spreads N points around a circle with
+ * no two ever landing close together, at any N -- the same distribution a
+ * sunflower's seeds use, and why this reads as a natural scatter instead of
+ * a repeating pattern the way a fixed fraction of a turn would.
+ */
+const GOLDEN_ANGLE_RAD = 2.39996;
+
+/**
  * What the painter is handed for one chip.
  *
  * Ground position and stack index are separate fields, and that separation is
@@ -414,7 +423,7 @@ export class ChipScene {
       // Aimed at the mound's own footprint rather than at one point, so a
       // swept street piles up instead of stacking into a single spike.
       const spread = this.chipRadius * 1.9;
-      const angle = order * 2.39996;
+      const angle = order * GOLDEN_ANGLE_RAD;
       const to: Vec3 = {
         x: pot.x + Math.cos(angle) * spread,
         y: this.space.feltY,
@@ -493,8 +502,8 @@ export class ChipScene {
       const place = layout[index];
       const scatter = style.scatterRadii > 0
         ? {
-          x: Math.sin(index * 2.39996) * style.scatterRadii * this.chipRadius,
-          z: Math.cos(index * 2.39996) * style.scatterRadii * this.chipRadius * 0.6,
+          x: Math.sin(index * GOLDEN_ANGLE_RAD) * style.scatterRadii * this.chipRadius,
+          z: Math.cos(index * GOLDEN_ANGLE_RAD) * style.scatterRadii * this.chipRadius * 0.6,
         }
         : { x: 0, z: 0 };
       this.launch({

@@ -357,8 +357,10 @@ share it through `ChipSpace`/`SceneProjection`. The 3D room's chips are separate
   it is 2–3px of cap height and reads as dirt; colour carries the denomination, which is what casino
   chips are colour-coded for.
 - `app/dev/chips` is the bench: every denomination, stack height, pot silhouette and action's motion
-  at the measured real scales (classic desktop ≈ 49 px/unit, portrait phone ≈ 17, racetrack ≈ 76).
-  Judge chip art there, at those scales, not zoomed.
+  at the classic room's own measured scales (desktop rail ≈ 44 px/unit, portrait phone rail ≈ 17,
+  large desktop ≈ 60). The racetrack has no fixed scale to bench against — its camera-derived
+  `scaleAt()` varies by viewport (`racetrack-scene.tsx`) rather than landing on one constant the way
+  the classic room's rail width does. Judge chip art there, at those scales, not zoomed.
 
 ### Bot / economy behavior
 - Bots leave/return voluntarily between hands (`BOT_VOLUNTARY_LEAVE_CHANCE`, never below 3 funded

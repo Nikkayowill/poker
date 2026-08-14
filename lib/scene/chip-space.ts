@@ -1,11 +1,12 @@
 /**
  * The four places a chip can be, on whichever table is being drawn.
  *
- * `ChipLayer` animates chips between a pot, a bet spot, a tray and a payout
- * landing. It has never cared what shape the table is -- it asks for those
- * four points and moves chips along them -- but it used to reach for them
- * directly, through module imports from `seat-ring.ts`, which quietly made
- * the classic room's ellipse the only table it could ever animate on.
+ * `ChipScene` (lib/scene/chips/chip-scene.ts) animates chips between a pot, a
+ * bet spot, a tray and a payout landing. It has never cared what shape the
+ * table is -- it asks for those four points and moves chips along them --
+ * but the chip system it replaced used to reach for them directly, through
+ * module imports from `seat-ring.ts`, which quietly made the classic room's
+ * ellipse the only table it could ever animate on.
  *
  * Naming that dependency is the whole of this file. The animation, stagger,
  * spring, pile layout, sweep and funnel are one implementation serving both
@@ -78,9 +79,9 @@ export interface ChipSpace {
  * solved plan depth (see `SceneView.radiusZ` -- a portrait phone's table is a
  * different shape from a desktop's) and the near seat's bet inset, which
  * switches at the breakpoint where the local player's own figure stops being
- * drawn. Both used to live on `ChipLayer` as mutable fields threaded into
- * every anchor call; here they are captured once and the layer rebuilds its
- * space when either changes.
+ * drawn. Both used to live on the old chip system as mutable fields threaded
+ * into every anchor call; here they are captured once and `ChipScene`
+ * rebuilds its space when either changes.
  */
 export function classicChipSpace(
   radiusZ: number = FELT.radiusZ,

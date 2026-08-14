@@ -69,6 +69,7 @@ export function Lobby({
   onSignOut,
   tableRenderer,
   webglAvailable,
+  landscape,
   onTableRendererChange,
 }: {
   profile: PlayerProfile | null;
@@ -100,6 +101,7 @@ export function Lobby({
    * own header for why it belongs there and not only in the in-game menu. */
   tableRenderer: TableRenderer;
   webglAvailable: boolean;
+  landscape: boolean;
   onTableRendererChange: (renderer: TableRenderer) => void;
 }) {
   /*
@@ -403,6 +405,7 @@ export function Lobby({
           onPlayerNameChange={setNameOverride}
           tableRenderer={tableRenderer}
           webglAvailable={webglAvailable}
+          landscape={landscape}
           onTableRendererChange={onTableRendererChange}
           onConfirm={(tier, buyIn) => {
             if (buyInMode === "host") onHostPrivate(name.trim() || "You", tier, buyIn);

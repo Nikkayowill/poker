@@ -257,7 +257,11 @@ export const PlayerSeat = memo(function PlayerSeat({
   const away = isBotAway(seat);
   const isWinner = winAmount !== undefined;
   const seatNear = Number((seatStyle as Record<string, string | number> | undefined)?.["--seat-near"] ?? 1);
-  const isFarSeat = placement === "seat-ring" && Number.isFinite(seatNear) && seatNear < 0.38;
+  /* Both ring placements report `--seat-near` on the same 0..1 scale (0 at
+     the far rail), so the far-seat treatment applies to either. The racetrack
+     needs it more, not less: its whole crowd sits on the far arc. */
+  const onTableRing = placement === "seat-ring" || placement === "seat-racetrack";
+  const isFarSeat = onTableRing && Number.isFinite(seatNear) && seatNear < 0.38;
   const cards = (
     <SeatCards
       seat={seat}

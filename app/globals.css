@@ -64,6 +64,10 @@
 @import "./styles/39-trivia.css";
 @import "./styles/40-word-race.css";
 @import "./styles/41-table-reactions.css";
+/* After 06/08/12/16/17: the racetrack room re-homes the table box and every
+   seat on it, so it has to cascade after the table, seat, responsive,
+   first-person and landscape sheets whose positioning it overrides. */
+@import "./styles/42-racetrack-table.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

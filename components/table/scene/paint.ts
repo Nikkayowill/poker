@@ -17,8 +17,8 @@
 import { CHIP_PALETTE, chipPalette, shadeHex } from "@/lib/scene/chip-physics";
 import { flightScale } from "@/lib/scene/chip-spring";
 import { CHIP_RADIUS, CHIP_THICKNESS, type SceneChip } from "@/lib/scene/chip-layer";
-import { project, type SceneView } from "@/lib/scene/projection";
-import { FELT, TILT_SIN } from "@/lib/scene/scene-config";
+import type { ChipSpace } from "@/lib/scene/chip-space";
+import type { SceneProjection } from "@/lib/scene/scene-projection";
 
 const hex = (value: number) => `#${value.toString(16).padStart(6, "0")}`;
 
@@ -57,7 +57,12 @@ const NUMERAL_MIN_RADIUS = 8;
  * per-chip filter forces an intermediate layer, which is real money on the
  * phones this scene is DPI-upscaled for.
  */
-export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: SceneChip): void {
+export function paintChip(
+  ctx: CanvasRenderingContext2D,
+  projection: SceneProjection,
+  space: ChipSpace,
+  chip: SceneChip,
+): void {
   /* Standard layered 2D poker-chip painter. The cylinder edge, stack bands,
      bevel, inserts and inlay are all painted in screen space from the same
      authoritative SceneChip position. */
@@ -83,17 +88,17 @@ export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: 
   // The physical chip radius is deliberately enlarged in the 2D painter.
   // At the table's phone-sized projection, the true scale collapses the
   // cylinder edge and makes a whole stack read as colored specks.
-  const rx = CHIP_RADIUS * view.scale * swell * 1.35;
-  const ry = rx * TILT_SIN;
   const { position } = chip;
+  const rx = CHIP_RADIUS * projection.scaleAt(position) * swell * 1.35;
+  const ry = rx * projection.groundSquash;
 
   // The decoupled ground shadow, only for a chip genuinely in flight. The
   // gate is the layer's own airborne flag, not height alone: a chip resting
   // mid-stack is also "high", and painting a hovering shadow pool under a
   // settled pile is exactly what made stacks read as floating chips.
-  const height = Math.max(0, position.y - FELT.y);
+  const height = Math.max(0, position.y - space.feltY);
   if (chip.airborne && height > CHIP_THICKNESS) {
-    const ground = project(view, { x: position.x, y: FELT.y, z: position.z });
+    const ground = projection.project({ x: position.x, y: space.feltY, z: position.z });
     // 0..1 over the tallest arc in the system; drives both the shrink and
     // the softening, so a chip at its apex casts a small, diffuse pool and
     // one about to land casts a tight, hard one.
@@ -109,7 +114,7 @@ export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: 
     const alpha = 0.25 * (1 - heightFraction * 0.55);
     ctx.save();
     ctx.translate(ground.x, ground.y);
-    ctx.scale(1, TILT_SIN);
+    ctx.scale(1, projection.groundSquash);
     const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, spread);
     pool.addColorStop(0, `rgba(0, 0, 0, ${alpha})`);
     pool.addColorStop(Math.max(0.05, 0.65 - heightFraction * 0.45), `rgba(0, 0, 0, ${alpha * 0.85})`);
@@ -121,8 +126,8 @@ export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: 
     ctx.restore();
   }
 
-  const bottom = project(view, { x: position.x, y: position.y - CHIP_THICKNESS / 2, z: position.z });
-  const top = project(view, { x: position.x, y: position.y + CHIP_THICKNESS / 2, z: position.z });
+  const bottom = projection.project({ x: position.x, y: position.y - CHIP_THICKNESS / 2, z: position.z });
+  const top = projection.project({ x: position.x, y: position.y + CHIP_THICKNESS / 2, z: position.z });
 
   // Edge: the band between the two ellipse levels plus the lower arc,
   // shaded darker toward the felt so the cylinder turns away from the lamp.
@@ -239,7 +244,7 @@ export function paintChip(ctx: CanvasRenderingContext2D, view: SceneView, chip: 
     ctx.save();
     ctx.translate(top.x, top.y);
     // Print lies on the face, so it foreshortens with it.
-    ctx.scale(1, TILT_SIN);
+    ctx.scale(1, projection.groundSquash);
     ctx.font = `700 ${(rx * (label.length > 2 ? 0.4 : 0.54)).toFixed(1)}px Georgia, "Times New Roman", serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";

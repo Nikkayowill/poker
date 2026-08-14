@@ -1,0 +1,201 @@
+/**
+ * Which character art to draw at a racetrack seat, and where.
+ *
+ * A dealer always faces the camera dead-on, so `dealer-roster.ts` only ever
+ * has one plate per dealer. A PLAYER doesn't -- the five opponent seats sit
+ * at five different angles off dead centre (see `seatAnglesDeg` in
+ * `table-anchors.ts`), so a character here is a BUCKET of turned plates
+ * (`art/seats/<id>/<angle>.png`, built by `scripts/prepare-seat-art.py`) and
+ * this module's job is picking which one a given seat draws and deciding
+ * which way it has to face. See `pickSeatArt` for how that pick is capped --
+ * it is not simply "nearest angle."
+ *
+ * ONE BUCKET SERVES BOTH SIDES OF THE TABLE, MIRRORED. Every angle plate is
+ * shot turning the same way -- toward screen-left, the convention the build
+ * script's docstring pins down -- so it's correct as-is for a seat that
+ * should look screen-left (toward the pot from the RIGHT of the dealer) and
+ * has to be flipped for a seat that should look screen-right (toward the pot
+ * from the LEFT). Shooting a mirrored second set of plates would be doubling
+ * the art to draw a reflection CSS already does for free.
+ */
+
+import { SEAT_ART_CHARACTERS, type SeatArtCharacter } from "./seat-art.generated";
+
+export type { SeatArtCharacter };
+export { SEAT_ART_CHARACTERS };
+
+export function seatArtCharacter(id: string): SeatArtCharacter | null {
+  return SEAT_ART_CHARACTERS.find((c) => c.id === id) ?? null;
+}
+
+export function seatArtSrc(characterId: string, angle: number): string {
+  return `/table2d5/seats/${characterId}/${angle}.webp`;
+}
+
+/**
+ * A seat's art box, in terms the camera can answer -- the sibling of
+ * `DEALER_SLOT` in `dealer-roster.ts`, but NOT the same shape, and that
+ * difference is deliberate.
+ *
+ * The dealer has exactly one place at the table, so `DEALER_SLOT.height`
+ * could just be a ratio tuned by eye against that one position and it would
+ * never need to be right anywhere else. Five seats at five different
+ * distances from the camera don't have that luxury: a single ratio applied
+ * to each seat's own `shoulderPx` was the first cut of this and it read as
+ * "some characters floating, some touching the table, for no visible
+ * reason" -- because shoulder room and camera distance don't scale together,
+ * so the same ratio needed a different actual height at every seat to make
+ * the hands land on the rail, and one number can't be several different
+ * numbers.
+ *
+ * SIZED FROM TWO PROJECTED ANCHORS INSTEAD OF ONE RATIO. Every seat has a
+ * crown (`seatHead`) and a place its hands belong (`seatTrayAnchor` -- the
+ * chip tray on the rail, which is exactly where a player's hands read as
+ * resting). Projecting both and measuring the pixel gap between them gives
+ * the exact height that makes THIS seat's hands land on THIS seat's rail,
+ * camera distance and all -- at `scale: 1` every seat's hands touch down,
+ * by construction, not by having found the right ratio for it. `scale` is
+ * then a pure artistic knob on top of that -- bigger or smaller than the
+ * exact fit -- rather than the thing standing between a character and the
+ * table.
+ */
+export const SEAT_ART_SLOT = {
+  /**
+   * Multiplier on the exact crown-to-hands fit. 1 means the art's hands
+   * land precisely on the seat's own tray anchor; this is the only number
+   * that should ever need retuning by eye, and it does the same job at
+   * every seat because the fit itself is already per-seat correct.
+   */
+  scale: 1,
+  /**
+   * How far the crown sits above the seat's own head anchor, as a fraction
+   * of the drawn height. Same role as `DEALER_SLOT.crown`.
+   */
+  crown: 0.02,
+} as const;
+
+export interface SeatArtOverride {
+  /** Overrides `SEAT_ART_SLOT.scale` for this seat only. */
+  scale?: number;
+  /** Overrides `SEAT_ART_SLOT.crown` for this seat only. */
+  crown?: number;
+  /**
+   * Nudge in screen-space CSS pixels, applied on top of the anchor-based
+   * fit -- positive X is always rightward on screen and positive Y is always
+   * downward, regardless of which side of the table the seat mirrors onto.
+   */
+  offsetX?: number;
+  offsetY?: number;
+  /**
+   * Forces a specific angle plate for this seat, bypassing `pickSeatArt`'s
+   * own magnitude-based pick entirely -- not a bias on it, a replacement.
+   * For an exception to the shared rule rather than a correction to it: seat1
+   * is the only seat drawing the character's 40deg plate (2026-08-13), which
+   * the shared rule would never reach on its own since it caps every seat at
+   * the second angle. Must be one of the character's own `angles`.
+   */
+  angle?: number;
+}
+
+/**
+ * Per-seat hand-tuning for MOBILE screens (Default fallback).
+ */
+export const SEAT_ART_OVERRIDES: Partial<Record<number, SeatArtOverride>> = {
+  1: { scale: 1.2, offsetX: 10, offsetY: 20, angle: 40 },
+  2: { scale: 1.1, offsetX: 10, offsetY: 0 },
+  5: { scale: 1.1, offsetX: 30, offsetY: 10 },
+};
+
+/**
+ * Per-seat hand-tuning SPECIFICALLY for DESKTOP screens (1024px width and up).
+ * Adjust these values to fix your layout layout uniquely on big monitors!
+ */
+export const DESKTOP_SEAT_ART_OVERRIDES: Partial<Record<number, SeatArtOverride>> = {
+  1: { scale: 1.3, offsetX: 10, offsetY: 50, angle: 40 },
+  2: { scale: 1.1, offsetX: 10, offsetY: 0 },
+  5: { scale: 1.1, offsetX: 30, offsetY: 10 }, // 💡 Change these right here for desktop
+};
+
+export const DESKTOP_BREAKPOINT_PX = 1024;
+
+/**
+ * Which table applies, mobile or desktop.
+ *
+ * `isDesktop` is the frame actually being drawn -- pass it whenever the
+ * caller knows that (the debug page does, for both canvases it renders).
+ * WITHOUT it this falls back to the live browser viewport via
+ * `matchMedia`, which is only correct when there's exactly one canvas on
+ * screen and it fills the window. `/dev/table-layout` breaks that
+ * assumption on purpose (it renders the 1600px and 844px frames side by
+ * side, in the SAME window, to compare them) -- checking the window there
+ * can't tell which canvas is asking, so both silently got the same answer
+ * regardless of which frame they were actually drawing. Always pass
+ * `isDesktop` from a known frame width when one is available; the
+ * viewport fallback exists for a real single-table page, not this one.
+ */
+function getActiveOverrides(isDesktop?: boolean): Partial<Record<number, SeatArtOverride>> {
+  const desktop = isDesktop ?? (typeof window !== "undefined" && window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT_PX}px)`).matches);
+  return desktop ? DESKTOP_SEAT_ART_OVERRIDES : SEAT_ART_OVERRIDES;
+}
+
+/** `SEAT_ART_SLOT` plus this seat's own override, matching desktop or mobile.
+ *  See `getActiveOverrides` for what `isDesktop` means and when to pass it. */
+export function seatArtSlotFor(slot: number, isDesktop?: boolean): { scale: number; crown: number; offsetX: number; offsetY: number } {
+  const override = getActiveOverrides(isDesktop)[slot];
+  return {
+    scale: override?.scale ?? SEAT_ART_SLOT.scale,
+    crown: override?.crown ?? SEAT_ART_SLOT.crown,
+    offsetX: override?.offsetX ?? 0,
+    offsetY: override?.offsetY ?? 0,
+  };
+}
+
+export interface SeatArtPick {
+  src: string;
+  /** Aspect ratio of the art, width / height -- for sizing the drawn box. */
+  aspect: number;
+  /** CSS transform to apply on top of positioning; empty string when the
+   *  plate already faces the right way. */
+  mirror: boolean;
+}
+
+/**
+ * The plate to draw at a seat, and whether it needs flipping.
+ *
+ * `offsetDeg` is signed distance from the dealer's own angle (dead centre) --
+ * negative is a seat to the dealer's LEFT, positive to the dealer's RIGHT
+ * (the same sign `seatAngleDeg(slot) - DEALER_ANGLE_DEG` gives). A seat to
+ * the dealer's right should look screen-left toward the pot, which is what
+ * every plate already does un-mirrored; a seat to the left needs the flip.
+ *
+ * CAPPED AT THE CHARACTER'S SECOND ANGLE BY DEFAULT, HOWEVER MANY WIDER
+ * PLATES EXIST. Judged against a real render (2026-08-13): a seat right
+ * beside the dealer reads best nearly square-on, and every seat further out
+ * than that reads better on the SAME mild turn rather than turning more with
+ * distance -- so the default is two tiers, not nearest-of-N: the seat(s) at
+ * the character's own smallest non-zero angle get the flattest plate, and
+ * everything past that gets the next one up and stops there.
+ *
+ * `forceAngle` overrides that pick entirely for one seat -- see
+ * `SeatArtOverride.angle` for why this is a named exception rather than a
+ * third tier in the rule above. Prefer `pickSeatArtForSlot` at a real call
+ * site; it reads `forceAngle` out of `SEAT_ART_OVERRIDES` for you.
+ */
+export function pickSeatArt(character: SeatArtCharacter, offsetDeg: number, forceAngle?: number): SeatArtPick {
+  const magnitude = Math.abs(offsetDeg);
+  const sorted = [...character.angles].sort((a, b) => a - b);
+  const flattest = sorted[0] ?? 0;
+  const turned = sorted[1] ?? flattest;
+  const angle = forceAngle ?? (magnitude <= turned ? flattest : turned);
+  return {
+    src: seatArtSrc(character.id, angle),
+    aspect: character.box.width / character.box.height,
+    mirror: offsetDeg < 0,
+  };
+}
+
+/** `pickSeatArt` wrapped with this seat's own angle override, if it has one.
+ *  See `getActiveOverrides` for what `isDesktop` means and when to pass it. */
+export function pickSeatArtForSlot(character: SeatArtCharacter, slot: number, offsetDeg: number, isDesktop?: boolean): SeatArtPick {
+  return pickSeatArt(character, offsetDeg, getActiveOverrides(isDesktop)[slot]?.angle);
+}

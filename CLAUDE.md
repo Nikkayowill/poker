@@ -125,6 +125,81 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   falling back to "Return to lobby" (where every faucet lives) otherwise. See "Bot / economy behavior"
   above for why no faucet number needed to change.
 
+### The 2.5D racetrack table (2026-08-13)
+- Third table renderer, `racetrack_2d5` / "Table: 2.5D", alongside `canvas_2d` and
+  `webgl_3d`. A third entry rather than a replacement for `canvas_2d` on purpose:
+  the classic table is what `resolveTableRenderer` falls back to when a browser has
+  no WebGL context, so it has to keep working. Promote it once it has been judged in
+  real hands.
+- **It is camera-led where every other table is CSS-led, and that inversion is the
+  whole design.** The classic room has `.poker-rail` carrying the felt as background
+  art with seats on a hand-tuned CSS ellipse, and the canvas measures that rail to
+  place chips inside it. Here `fitCamera` solves a perspective camera from the frame,
+  the canvas paints the entire table from it, and the DOM follows anchors the scene
+  projects and reports through `onLayout`. A perspective ring and a CSS ellipse are
+  not the same kind of curve and cannot be tuned into agreement — one has to be
+  derived from the other. `42-racetrack-table.css` collapses `.poker-table-wrap` onto
+  `.table-area` so canvas pixels and wrap pixels are the same number.
+- Shared with the classic room through three seams rather than forked: `SceneProjection`
+  (one chip painter for both cameras — `scaleAt()` is the entire difference, constant
+  under orthography and depth-dependent under perspective), `ChipSpace` (ChipLayer no
+  longer imports the classic ellipse directly), and `seatAnglesDeg()` (the measured
+  six-handed arc generalised to 2-6 players, reproducing the 3/2 split exactly at six).
+  **Both spaces speak the chip layer's world units**; the racetrack's metres convert
+  once, at the projection. Converting the layer to metres means rescaling a dozen
+  tuned motion constants and missing one yields a chip that never settles, not an error.
+- `99-scene.css`'s canvas raise is scoped away from this room as well as the 3D one.
+  Unscoped, the canvas paints over every seat, nameplate, card and the board — and the
+  symptom is a correct but *empty* table, which reads as "the players failed to load".
+- `ringPoint` traces the **inscribed ellipse**, not the stadium boundary, and is inside
+  it by up to 23mm on this 2:1 table. Any anchor that must be a known distance *outside*
+  the felt needs `offsetStadium` plus `stadiumRayPoint`; scaling radii is only exact on
+  a real ellipse. This shipped a bet tray 29mm inside the cloth before it was caught.
+- **Landscape-only.** A 2:1 table has no portrait framing — at 390×844 the felt is ~58px
+  deep with the nameplates on the cloth — so `resolveTableRenderer` sends the preference
+  to `canvas_2d` in portrait. A quiet fallback, never a rotate-to-play gate: an overlay a
+  player cannot act through times their turn out and folds them, which is too high a
+  price for a cosmetic preference. Nothing rewrites the stored choice, so rotating brings
+  it straight back — `useLandscape` (`components/use-landscape.ts`) is a live `matchMedia`
+  subscription built like `useWebglSupport`, not a snapshot taken at mount, and
+  `racetrack-landscape.spec.ts` pins the rotation because a subscription that never fires
+  is indistinguishable from one that does until the device is turned.
+- The table menu cycles from the renderer **actually mounted**, not the stored preference.
+  They differ exactly when a preference has been resolved away (3D without WebGL, 2.5D in
+  portrait), and stepping from the stored value there produces an entry that visibly does
+  nothing — it lands on what is already on screen.
+- Offered in the buy-in preselect as a third `.entry-segment` button, disabled in portrait
+  rather than hidden (same treatment the 3D room gets without WebGL). `.entry-segment` is
+  a two-way control by construction, so the three-up grid is overridden under
+  `.buyin-renderer` rather than generalised.
+- **The dealer** sits at far centre, drawn OVER the cloth rather than behind the rail —
+  the art puts a hand and a card on the table and painting it under removes exactly that.
+  z-index 3: above the canvas, below every seat. There is a **rotation** of dealers, one
+  at a time: `dealerForHand(tableId, handNumber)` in `lib/scene/dealer-roster.ts`, pure
+  over two server-authoritative fields so every client at a table agrees without anything
+  crossing the wire, and changing only between hands (`HANDS_PER_DOWN`).
+- **Adding a dealer must never need a number.** Drop a plate in `art/dealers/<id>.png`,
+  run `scripts/prepare-dealers.py`; it keys, normalises and regenerates
+  `public/table2d5/dealers/*.webp` plus `lib/scene/dealer-art.generated.ts`. Normalising
+  is what makes one slot serve everybody: each plate is scaled so its crown-to-hands
+  height fills a shared box and centred on the alpha-weighted middle of its head band, so
+  the app holds ONE placement (`DEALER_SLOT`) instead of per-dealer landmarks. The plate
+  must be framed head-to-hands running off the bottom edge — that framing IS the contract,
+  and a per-dealer offset appearing in the roster means a plate is wrong, not the code.
+  The shared box is recomputed across the whole bucket per run, so every file is rewritten.
+- Placement anchors to the top of the HAIR, not the measured skull — `fitCamera` reserves
+  its top margin against head points and hair is what occupies it; anchoring the skull
+  clips a ponytail or a pair of ears and lands the hands on the rail instead of the cloth.
+  The slot's size comes from the projected gap between the two chairs flanking the dealer,
+  so it grows with the table like everything else rather than being pinned in pixels.
+- Every plate so far arrived RGB-on-a-black-plate with a black shirt, and Loki is a black
+  dog: the cutout floods **inward from the border at luma ≤ 1**. Any colour key — or one
+  step more generous than 1 — escapes through the clothing and eats the figure (see
+  `[[reference_stackchips_avatar_assets]]` for the full recipe).
+- Known and deliberately unresolved (a design call, not a defect): a ~140px band of floor
+  below the near rail near 16:9 — taking it up by lowering the camera was tried and
+  reverted because it wrecks every taller frame.
+
 ### Rewarded-ad faucet (2026-08-11)
 - Wait moved 30s→5min (`REWARDED_AD_DURATION_MS`), grant TTL 10→20min to compensate. New direct
   "Free Gold" row in the lobby player menu (same eligibility threshold as the existing busted-hand

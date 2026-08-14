@@ -70,6 +70,29 @@ export const SEAT_RING = {
 export const RAIL_SCALE = 1.14;
 
 /**
+ * A chip, in world units.
+ *
+ * Here rather than in `chip-layer.ts` (which still re-exports both, so every
+ * existing caller is unchanged) because `chip-space.ts` needs the radius to
+ * fix the racetrack room's metres-per-world-unit, and `chip-layer.ts` needs
+ * `chip-space.ts` back -- an import cycle whose failure mode is a
+ * `const`-in-temporal-dead-zone ReferenceError at module load, dependent on
+ * which file the bundler happened to reach first. This file is a leaf and
+ * cannot take part in one.
+ */
+export const CHIP_RADIUS = 0.14;
+/**
+ * The stack pitch and the painted edge height are both exactly this value,
+ * which is what keeps a resting stack literally flush: chip i's top face is
+ * chip i+1's bottom face, no daylight.
+ *
+ * Slightly exaggerated for the tilted 2D canvas: the physical ratio is too
+ * thin at phone/desktop CSS-pixel sizes and makes flush chips look
+ * intersected.
+ */
+export const CHIP_THICKNESS = 0.050;
+
+/**
  * Device pixel ratio ceiling.
  *
  * A modern phone reports 3 or 4, which would have the canvas shading nine to

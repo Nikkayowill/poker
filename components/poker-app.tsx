@@ -68,6 +68,7 @@ import { GoldBadge } from "@/components/profile/gold-badge";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RoomCreatedModal } from "@/components/table/room-created-modal";
 import { useWebglSupport } from "@/components/table/use-webgl-support";
+import { useLandscape } from "@/components/use-landscape";
 import { RewardedAdModal } from "@/components/rewards/rewarded-ad-modal";
 import { REWARDED_AD_ELIGIBLE_BELOW } from "@/lib/rewards/config";
 import type { RewardTrigger } from "@/lib/rewards/triggers";
@@ -244,6 +245,10 @@ export function PokerApp() {
   // asked here too now that the buy-in modal offers the same choice before
   // any table exists to mount it into.
   const webglAvailable = useWebglSupport();
+  // The 2.5D table is landscape-only -- see `resolveTableRenderer`. Owned here
+  // rather than in each consumer so the lobby's preselect and the table itself
+  // can never disagree about which way up the device is.
+  const landscape = useLandscape();
 
   // The lobby and signed-out form scroll inside their own viewport because
   // the table must remain a fixed-height screen. Listen to that scroller
@@ -306,9 +311,21 @@ export function PokerApp() {
     setBetStyleState(nextBetStyle);
   }, [setBetStyleState]);
 
-  const cycleTableRenderer = useCallback(() => {
-    setTableRendererState(nextTableRenderer);
-  }, [setTableRendererState]);
+  /**
+   * Steps from the renderer that is actually MOUNTED, which the table passes
+   * in, rather than from the stored preference.
+   *
+   * They differ whenever a preference has been resolved away -- the 3D room on
+   * a device without WebGL, or the 2.5D table in portrait -- and stepping from
+   * the stored value in that state produces a menu entry that visibly does
+   * nothing. Concretely: stored 2.5D, held in portrait, so the classic table is
+   * mounted and the entry reads "Table: Classic"; stepping from the stored
+   * 2.5D lands on canvas_2d, which is what is already on screen, so the label
+   * does not change and the tap looks broken.
+   */
+  const cycleTableRenderer = useCallback((mounted: TableRenderer) => {
+    setTableRendererState(nextTableRenderer(mounted, webglAvailable, landscape));
+  }, [setTableRendererState, webglAvailable, landscape]);
 
   const cycleRoomTheme = useCallback(() => {
     setRoomThemeIdState(nextRoomThemeId);
@@ -1381,6 +1398,7 @@ export function PokerApp() {
             onCycleBetStyle={cycleBetStyle}
             tableRenderer={tableRenderer}
             tableRendererSettled={tableRendererSettled}
+            landscape={landscape}
             onCycleTableRenderer={cycleTableRenderer}
             roomThemeId={roomThemeId}
             onCycleRoomTheme={cycleRoomTheme}
@@ -1429,6 +1447,7 @@ export function PokerApp() {
             onSignOut={() => void signOut()}
             tableRenderer={tableRenderer}
             webglAvailable={webglAvailable}
+            landscape={landscape}
             onTableRendererChange={setTableRendererState}
           />
         )}

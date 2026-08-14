@@ -1232,13 +1232,15 @@ export function PokerTable({
                   "--board-y": `${racetrackLayout.board.y.toFixed(1)}px`,
                   "--pot-x": `${racetrackLayout.pot.x.toFixed(1)}px`,
                   "--pot-y": `${racetrackLayout.pot.y.toFixed(1)}px`,
-                  // How far above the community cards the pot's own readout
-                  // sits -- the real gap to the pot's projected position, not
-                  // the flat 6px every other table uses. The pot anchor is
-                  // deliberately set well toward the dealer (table-anchors.ts'
-                  // own POT_DEPTH_FRACTION), and on this camera that reads as
-                  // "further up the felt" -- see .board-stack below.
-                  "--pot-gap": `${Math.max(6, racetrackLayout.board.y - racetrackLayout.pot.y).toFixed(1)}px`,
+                  // The pot's projected position, as a signed delta from
+                  // .board-stack's own centre (--board-y) rather than from
+                  // any edge of it -- `.board-stack` only ever exposes its
+                  // centre by construction (`transform: translate(-50%,
+                  // -50%)`), and measuring from an edge instead is what
+                  // previously put the label a stack's-height too high (see
+                  // 42-racetrack-table.css's own note on this). Negative
+                  // here means "toward the dealer, above the board".
+                  "--pot-y-delta-px": `${(racetrackLayout.pot.y - racetrackLayout.board.y).toFixed(1)}px`,
                 }
                 : {}),
             } as React.CSSProperties}

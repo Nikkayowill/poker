@@ -102,28 +102,39 @@
   top: var(--pot-y, 26%);
 }
 
-/* The pot's own readout, lifted off the community-card row it sits in.
+/* The pot's own readout, moved off the community-card row to sit where the
+   pile it names actually rests.
    -------------------------------------------------------------------------
    Every other table centres `.center-pot-amount` in a flex column with
    `.community-cards` (06-table.css) -- a flat 6px gap, because that room's
-   pot pile rests right behind the board. This camera's pot anchor is
-   deliberately much further toward the dealer (`POT_DEPTH_FRACTION`,
-   table-anchors.ts), which reads as "well up the felt" once projected, so
-   the flat gap would leave the label floating over empty cloth well short of
-   the chips it names.
+   pot pile rests right behind the board. Under this camera the pot anchor
+   (`POT_DEPTH_FRACTION`, table-anchors.ts) projects to a point measurably
+   toward the dealer from the board, so a flat gap leaves the label either
+   short of the pile or -- the bug this replaced -- floating well past it.
 
-   Taken out of the flex flow instead of widening that gap, so the cards
-   themselves stay exactly where `--board-x/-y` already puts them -- only the
-   label moves. `--pot-gap` (poker-table.tsx) is the real measured distance
-   from the board to the pot's projected position; `bottom: 100%` anchors to
-   the (now pot-amount-free) stack's own top edge, i.e. the top of the cards,
-   and the margin lifts it the rest of the way up toward the dealer. */
+   THE BUG THAT REPLACED: measuring the board-to-pot gap from `.board-stack`'s
+   CENTRE (`--board-y`, the only board coordinate JS has) and then applying it
+   from `bottom: 100%` -- the (post-refactor, cards-only) stack's TOP edge --
+   silently added a second offset worth half the board's own height on top of
+   the real gap. The label ended up beside the dealer, a real chip stack away
+   from its own pile.
+
+   Fixed by never touching the board's edges at all. `.board-stack`'s
+   `left: var(--board-x); top: var(--board-y); transform: translate(-50%,
+   -50%)` makes its own 50%/50% point exactly (--board-x, --board-y) by
+   construction, independent of its size -- so a child at `top: 50%` starts
+   at that same point regardless of the stack's height, and adding
+   `--pot-y-delta-px` (poker-table.tsx: the real, signed, pot-minus-board
+   pixel delta -- no board height involved) lands it exactly on the pot
+   anchor. `translate(-50%, -50%)` centres the pill there the same
+   H-independent way the bet labels above do; the extra `-6px` is the
+   classic room's own clearance, so the label sits just above the pile
+   rather than dead centre on it. */
 .scene-room-racetrack .center-pot-amount {
   position: absolute;
   left: 50%;
-  bottom: 100%;
-  margin-bottom: var(--pot-gap, 22px);
-  transform: translateX(-50%);
+  top: calc(50% + var(--pot-y-delta-px, -22px));
+  transform: translate(-50%, calc(-50% - 6px));
 }
 
 /* A seat's bet-amount pill, aimed at where its chips actually rest.

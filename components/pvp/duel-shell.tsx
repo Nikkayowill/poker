@@ -269,7 +269,7 @@ export function DuelShell<TSnapshot>({
   return (
     <main className="duel-shell">
       <header className="floor-bar">
-        <Link className="floor-back" href="/games">← Arcade</Link>
+        <Link className="floor-back" href="/games">← Ante Up</Link>
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
           <strong>

@@ -116,7 +116,7 @@ export function ArcadeFloor() {
       </header>
 
       <div className="floor-head">
-        <div className="lobby-kicker">Arcade &amp; Puzzles</div>
+        <div className="lobby-kicker">Ante Up</div>
         {/* Both numbers are counted off the catalogue, never written down --
             the same rule lib/arcade/games.ts states about prices and blurbs,
             which has been broken there three times. Spelled as words because

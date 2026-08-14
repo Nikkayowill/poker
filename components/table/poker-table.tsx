@@ -11,7 +11,12 @@ import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
 import { betFlightKind, type BetFlight } from "@/lib/scene/chips/bet-flight";
 import type { ChipMoveKind } from "@/lib/scene/chips/chip-motion";
 import { dealerArtSrc, dealerForHand, dealerSlotBox } from "@/lib/scene/dealer-roster";
-import { DEALER_ANGLE_DEG, seatAngleDeg } from "@/lib/scene/table-anchors";
+import {
+  BOARD_CARD_FLOP_OVERLAP_FRACTION,
+  BOARD_CARD_REVEAL_GAP_FRACTION,
+  DEALER_ANGLE_DEG,
+  seatAngleDeg,
+} from "@/lib/scene/table-anchors";
 import { clampBoardCardWidth } from "@/lib/scene/board-clearance";
 import {
   pickSeatArtForSlot,
@@ -1284,8 +1289,18 @@ export function PokerTable({
                     racetrackLayout.board.cardWidthPx,
                     racetrackLayout.board,
                     racetrackLayout.pot,
-                    { min: RACETRACK_BOARD_CARD_MIN_PX, max: RACETRACK_BOARD_CARD_MAX_PX },
+                    {
+                      min: RACETRACK_BOARD_CARD_MIN_PX,
+                      max: RACETRACK_BOARD_CARD_MAX_PX,
+                      revealGapFraction: BOARD_CARD_REVEAL_GAP_FRACTION,
+                      flopOverlapFraction: BOARD_CARD_FLOP_OVERLAP_FRACTION,
+                    },
                   ))}px`,
+                  // Mirrored into CSS so 42-racetrack-table.css's gap/margin
+                  // rules read the same numbers this clamp used, instead of
+                  // carrying their own hardcoded copies.
+                  "--board-card-reveal-gap-fraction": BOARD_CARD_REVEAL_GAP_FRACTION,
+                  "--board-card-flop-overlap-fraction": BOARD_CARD_FLOP_OVERLAP_FRACTION,
                   "--pot-x": `${racetrackLayout.pot.x.toFixed(1)}px`,
                   "--pot-y": `${racetrackLayout.pot.y.toFixed(1)}px`,
                   // The pot's projected position, as a signed delta from

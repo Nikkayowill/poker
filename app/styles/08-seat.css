@@ -760,6 +760,11 @@
 .table-bet {
   --bet-reach-x: 155.6px;
   --bet-reach-y: 95px;
+  /* The "beside, not on top of, the pile" nudge below -- shared with the
+     racetrack room's own .table-bet overrides (42-racetrack-table.css),
+     which read it back with a fallback rather than carrying their own
+     copy of the number. */
+  --bet-label-offset-x: 26px;
   position: absolute;
   left: 50%;
   top: calc(var(--seat-width) * .72);
@@ -767,7 +772,7 @@
   transform:
     translate(-50%, -50%)
     translate(calc(var(--seat-dx, 0) * var(--bet-reach-x)), calc(var(--seat-dy, -1) * var(--bet-reach-y)))
-    translate(26px, 0);
+    translate(var(--bet-label-offset-x), 0);
   padding: 2px 8px;
   border: 1px solid rgba(217, 184, 93, .32);
   border-radius: 999px;

@@ -121,8 +121,12 @@
    get. */
 .scene-room-racetrack .community-cards {
   /* The reveal gap: what separates the turn and the river from their
-     neighbour, so a newly-dealt card still reads as newly arrived. */
-  gap: calc(var(--board-card-width, 48px) * .14);
+     neighbour, so a newly-dealt card still reads as newly arrived. The
+     fraction itself lives once, in table-anchors.ts's
+     BOARD_CARD_REVEAL_GAP_FRACTION -- poker-table.tsx sets
+     --board-card-reveal-gap-fraction from it; the .14 here is only a
+     fallback for the custom property being unset. */
+  gap: calc(var(--board-card-width, 48px) * var(--board-card-reveal-gap-fraction, .14));
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -148,7 +152,9 @@
    RACETRACK_BOARD_CARD_MIN_PX's comment in poker-table.tsx. */
 .scene-room-racetrack .community-card-shell:nth-child(2),
 .scene-room-racetrack .community-card-shell:nth-child(3) {
-  margin-left: calc(var(--board-card-width, 48px) * -.2);
+  /* Same single-source fraction as the gap above, from
+     BOARD_CARD_FLOP_OVERLAP_FRACTION via --board-card-flop-overlap-fraction. */
+  margin-left: calc(var(--board-card-width, 48px) * var(--board-card-flop-overlap-fraction, .2) * -1);
 }
 
 .scene-room-racetrack .pot-anchor {
@@ -206,8 +212,10 @@
    since its containing block is the seat box's own padding edge. `left: 50%`
    is that box's horizontal centre (the crown), so adding the delta lands
    exactly on the pile; `top: 0` is the box's top edge (the crown itself), so
-   the y delta alone reaches it. The trailing `translate(26px, 0)` is the same
-   "beside, not on top of, the pile" clearance the classic room uses.
+   the y delta alone reaches it. The trailing `translate(var(--bet-label-offset-x,
+   26px), 0)` is the same "beside, not on top of, the pile" clearance the
+   classic room uses -- read from 08-seat.css's `.table-bet`, with a literal
+   fallback only in case that rule hasn't loaded.
 
    Not `.seat-mine`: that seat is deliberately off the projection (see its own
    block below and in this file's header) and anchored to the stage's bottom
@@ -216,7 +224,7 @@
 .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .table-bet {
   left: calc(50% + var(--bet-dx-px, 0px));
   top: var(--bet-dy-px, 0px);
-  transform: translate(-50%, -50%) translate(26px, 0);
+  transform: translate(-50%, -50%) translate(var(--bet-label-offset-x, 26px), 0);
 }
 
 /* An opponent's seat.
@@ -297,7 +305,7 @@
 .scene-room-racetrack .player-seat.seat-mine .table-bet {
   left: calc(var(--bet-x-rel-px, 0px) + var(--seat-width) / 2);
   top: calc(100% + var(--bet-y-rel-px, 0px) + max(var(--safe-bottom, 0px), calc(var(--seat-width) * .24)));
-  transform: translate(-50%, -50%) translate(26px, 0);
+  transform: translate(-50%, -50%) translate(var(--bet-label-offset-x, 26px), 0);
 }
 
 /* The dealer.

@@ -332,7 +332,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   transform: translate(-50%, -50%);
 }
 
@@ -533,15 +533,19 @@
    --deck-y's comment on .poker-felt): the card row's bottom edge landed past
    the felt's real bottom edge and crowded the rail, and 48% centred the row
    on the felt's actual vertical middle in the cropped asset. .board-stack
-   restates that same 48% for the pair. */
+   restates that same 48% for the pair.
+
+   No border/background/box-shadow of its own any more either. That plate
+   used to sit directly under the pot pill with only .board-stack's gap
+   between them, so two stacked translucent boxes read as one shape clipping
+   into the other -- and it capped how far the winning-card glow
+   (.community-card-winning below) could bloom before it hit the plate's own
+   edge. The row now sits straight on the felt; each card carries its own
+   grounding (07-cards.css, plus the contact shadow on
+   .community-card-revealed below). */
 .community-cards {
   display: flex;
   gap: clamp(6px, .9vw, 12px);
-  padding: 7px 10px;
-  border: 1px solid rgba(238, 210, 132, .13);
-  border-radius: 14px;
-  background: rgba(18, 13, 10, .18);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, .16);
 }
 
 /* Desktop's felt has real width to spend and the board is what every street
@@ -560,8 +564,27 @@
 }
 
 .community-card-shell {
+  position: relative;
   display: grid;
   perspective: 850px;
+}
+
+/* The felt-contact shadow: a blurred ellipse under the card, closer to how
+   a card actually shadows cloth than the card's own rectangular box-shadow
+   (07-cards.css) reads on its own. Only once a card is actually dealt --
+   nothing here casts a shadow before it exists. No z-index: ::before is
+   generated first, so .community-card-flipper, coming after it in document
+   order, paints on top for free. */
+.community-card-shell.community-card-revealed::before {
+  content: "";
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: -8%;
+  height: 22%;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,.42), rgba(0,0,0,0) 72%);
+  filter: blur(2px);
+  pointer-events: none;
 }
 
 .community-card-flipper {

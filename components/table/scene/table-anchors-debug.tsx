@@ -32,13 +32,14 @@ import {
   seatAngleDeg,
   seatHead,
   seatShoulderRoom,
+  seatTrayAnchor,
   tableOutline,
   type Camera,
   type Frame,
   type Vec3,
 } from "@/lib/scene/table-anchors";
 import { MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
-import { pickSeatArt, seatArtCharacter } from "@/lib/scene/seat-art";
+import { DESKTOP_BREAKPOINT_PX, pickSeatArtForSlot, seatArtCharacter, seatArtSlotFor } from "@/lib/scene/seat-art";
 
 const MARKER_COLOR = {
   seat: "#6fd6ff",
@@ -308,22 +309,6 @@ function drawHudLine(ctx: CanvasRenderingContext2D, frame: Frame) {
   ctx.restore();
 }
 
-/**
- * How tall a seat's art is drawn, as a multiple of that seat's own
- * `shoulderPx` budget (the projected gap to its nearest neighbour, the same
- * number `racetrack-scene.tsx` reports to the DOM). Height rather than width
- * because height is what the art is normalised on -- crown to hands, per
- * `prepare-seat-art.py` -- so pinning it is what keeps every character's
- * hands on the same line of cloth. Starting value, meant to be judged and
- * moved from renders of this page rather than reasoned about; see
- * DEALER_SLOT for the sibling constant this mirrors.
- */
-const SEAT_ART_HEIGHT_RATIO = 1.35;
-
-/** How far the crown sits above the seat's own head anchor, as a fraction of
- *  the drawn height. Same role as DEALER_SLOT.crown. */
-const SEAT_ART_CROWN_FRACTION = 0.06;
-
 /** Cross-request cache so a resize (a second `TableAnchorsDebug` on the same
  *  page, or a re-fit) never re-fetches a plate it already has. Keyed on the
  *  URL, which is the only identity a plate has. Every caller waiting on a
@@ -351,20 +336,24 @@ function drawSeatArt(
   ctx: CanvasRenderingContext2D,
   camera: Camera,
   image: HTMLImageElement,
-  floor: Vec3,
   head: Vec3,
-  shoulderMetres: number,
+  hands: Vec3,
   aspect: number,
   mirror: boolean,
+  slot: { scale: number; crown: number; offsetX: number; offsetY: number },
 ): boolean {
   const crown = project(camera, head);
-  if (crown.depth <= 0) return false;
-  const left = project(camera, { x: floor.x - shoulderMetres / 2, y: head.y, z: floor.z });
-  const right = project(camera, { x: floor.x + shoulderMetres / 2, y: head.y, z: floor.z });
-  const shoulderPx = Math.abs(right.x - left.x);
-  const height = shoulderPx * SEAT_ART_HEIGHT_RATIO;
+  const grip = project(camera, hands);
+  if (crown.depth <= 0 || grip.depth <= 0) return false;
+  // The pixel gap between this seat's own crown and its own tray anchor --
+  // different for every seat, which is the whole point. At scale 1 the art's
+  // hands land exactly on `grip`; see SEAT_ART_SLOT's own note for why this
+  // replaced a single ratio applied to every seat alike.
+  const fit = grip.y - crown.y;
+  if (fit <= 0) return false;
+  const height = (fit / (1 - slot.crown)) * slot.scale;
   const width = height * aspect;
-  const top = crown.y - height * SEAT_ART_CROWN_FRACTION;
+  const top = crown.y - height * slot.crown + slot.offsetY;
   const boxLeft = crown.x - width / 2;
 
   ctx.save();
@@ -373,7 +362,10 @@ function drawSeatArt(
     ctx.scale(-1, 1);
     ctx.translate(-crown.x, 0);
   }
-  ctx.drawImage(image, boxLeft, top, width, height);
+  // offsetX is screen-space (positive = rightward as drawn on screen); the
+  // mirror above negates X displacement from the crown, so it has to be
+  // un-negated here to keep that promise for a mirrored seat too.
+  ctx.drawImage(image, boxLeft + (mirror ? -slot.offsetX : slot.offsetX), top, width, height);
   ctx.restore();
   return true;
 }
@@ -382,7 +374,12 @@ export interface TableAnchorsDebugProps {
   frame: Frame;
   label?: string;
   /** A character id from `seat-art.generated.ts` -- draws its cutouts at
-   *  every seat it has a plate for instead of the placeholder markers. */
+   *  every seat it has a plate for instead of the placeholder markers.
+   *  Sizing/position come from `seatArtSlotFor` in `lib/scene/seat-art.ts` --
+   *  edit `SEAT_ART_SLOT` (shared) or `SEAT_ART_OVERRIDES` (per seat) there
+   *  and save; this page hot-reloads. No live props for it any more -- that
+   *  was this page's first cut, replaced once per-seat tuning needed a
+   *  degree of freedom (an X/Y nudge) a slider never had. */
   seatArt?: string;
 }
 
@@ -411,10 +408,6 @@ export function TableAnchorsDebug({ frame, label, seatArt }: TableAnchorsDebugPr
     drawFloor(ctx, camera, frame);
     drawContactShadow(ctx, camera);
 
-    // People BEFORE the table. Everyone is behind the far rail, so the
-    // table has to paint over their chests -- that occlusion is most of
-    // what makes them read as sitting at it rather than floating behind it.
-    // Furthest first, so a nearer neighbour overlaps a further one.
     const character = seatArt ? seatArtCharacter(seatArt) : null;
 
     const seated = [];
@@ -424,7 +417,6 @@ export function TableAnchorsDebug({ frame, label, seatArt }: TableAnchorsDebugPr
         slot,
         floor: seatAnchor(slot),
         head: seatHead(slot),
-        rawShoulders: seatShoulderRoom(slot),
         shoulders: seatShoulderRoom(slot) * FIGURE_WIDTH_RATIO,
         color: MARKER_COLOR.seat,
         label: `seat${slot}`,
@@ -434,26 +426,55 @@ export function TableAnchorsDebug({ frame, label, seatArt }: TableAnchorsDebugPr
       slot: null,
       floor: dealerAnchor(),
       head: dealerHead(),
-      rawShoulders: seatShoulderRoom(3),
       shoulders: seatShoulderRoom(3) * FIGURE_WIDTH_RATIO,
       color: MARKER_COLOR.dealer,
       label: "DEALER",
     });
     seated.sort((a, b) => a.floor.z - b.floor.z);
-    for (const person of seated) {
+
+    // This canvas's own frame decides desktop vs. mobile overrides -- NOT
+    // the browser window, which both frames share on this page. See
+    // `getActiveOverrides` in seat-art.ts for why that distinction matters.
+    const isDesktop = frame.width >= DESKTOP_BREAKPOINT_PX;
+
+    // Resolved once per person so both passes below agree on who's drawing
+    // as art vs. as a placeholder marker.
+    const plans = seated.map((person) => {
       if (character && person.slot !== null) {
         const offset = seatAngleDeg(person.slot) - DEALER_ANGLE_DEG;
-        const pick = pickSeatArt(character, offset);
+        const pick = pickSeatArtForSlot(character, person.slot, offset, isDesktop);
         const image = loadSeatArt(pick.src, () => setArtVersion((v) => v + 1));
-        if (image) {
-          drawSeatArt(ctx, camera, image, person.floor, person.head, person.rawShoulders, pick.aspect, pick.mirror);
-          continue;
-        }
+        if (image) return { person, slot: person.slot, art: { image, pick } };
       }
-      drawSeatedMarker(ctx, camera, person.floor, person.head, person.shoulders, person.color, person.label);
+      return { person, slot: person.slot, art: null };
+    });
+
+    // Placeholder markers BEFORE the table. These intentionally read as
+    // "sunk behind" the rail -- the table paints over their chests, which is
+    // what makes a bare stick-and-disc marker look seated at the table
+    // rather than floating in front of it (there's no art here to show
+    // hands on the felt with, so there's nothing lost by occluding them).
+    for (const { person, art } of plans) {
+      if (!art) drawSeatedMarker(ctx, camera, person.floor, person.head, person.shoulders, person.color, person.label);
     }
 
     drawTable(ctx, camera);
+
+    // Character art AFTER the table -- the same treatment the dealer's own
+    // art gets in the real game: drawn OVER the cloth, not behind the rail,
+    // because the whole composition is a pair of hands (and cards) resting
+    // ON the felt. Occluding that the way the placeholder markers are
+    // occluded would clip away exactly the part the pose exists to show.
+    // Same furthest-first order as the marker pass, so a nearer neighbour
+    // still overlaps a further one among the art itself.
+    for (const { person, slot, art } of plans) {
+      if (art && slot !== null) {
+        drawSeatArt(
+          ctx, camera, art.image, person.head, seatTrayAnchor(slot), art.pick.aspect, art.pick.mirror,
+          seatArtSlotFor(slot, isDesktop),
+        );
+      }
+    }
 
     for (const marker of debugMarkers()) {
       if (marker.kind === "seat" || marker.kind === "dealer") continue;

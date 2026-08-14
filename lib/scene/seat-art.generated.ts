@@ -17,5 +17,5 @@ export interface SeatArtCharacter {
 }
 
 export const SEAT_ART_CHARACTERS: readonly SeatArtCharacter[] = [
-  { id: "character1", angles: [0, 20, 40] as const, box: { width: 898, height: 1075 } },
+  { id: "character1", angles: [0, 20, 40] as const, box: { width: 892, height: 1047 } },
 ] as const;

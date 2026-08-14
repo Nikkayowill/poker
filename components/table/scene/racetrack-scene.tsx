@@ -3,9 +3,11 @@
 import { useEffect, useRef } from "react";
 import type { PublicSeat } from "@/lib/game/types";
 import type { BetAnimationStyle } from "@/lib/scene/bet-style";
-import { ChipLayer } from "@/lib/scene/chip-layer";
+import type { BetFlight } from "@/lib/scene/chips/bet-flight";
+import { ChipScene } from "@/lib/scene/chips/chip-scene";
+import { solveChipWorldRadius } from "@/lib/scene/chips/chip-spec";
 import { METRES_PER_WORLD_UNIT, racetrackChipSpace, type ChipSpace } from "@/lib/scene/chip-space";
-import { MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
+import { CHIP_RADIUS, MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
 import { perspectiveProjection, scaledProjection, type SceneProjection } from "@/lib/scene/scene-projection";
 import {
   DEALER_HEAD_Y,
@@ -34,7 +36,7 @@ import {
   SLEEPING,
   type SchedulerState,
 } from "@/lib/scene/render-scheduler";
-import { paintChip } from "./paint";
+import { paintChip, paintChipShadow } from "./chip-painter";
 import { paintRoom } from "./paint-room";
 
 /**
@@ -143,7 +145,7 @@ export interface RacetrackSceneProps {
   paying: boolean;
   winners: Array<{ slot: number; amount: number }>;
   handNumber: number;
-  betFlights: Array<{ id: string; slot: number; amount: number }>;
+  betFlights: BetFlight[];
   betStyle: BetAnimationStyle;
   onReady?: (ready: boolean) => void;
   /** Fires on mount and on every re-fit. See `RacetrackLayout`. */
@@ -179,7 +181,9 @@ export function RacetrackScene({
   const engineRef = useRef<{
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
-    chips: ChipLayer;
+    chips: ChipScene;
+    /** The drawn chip radius this fit solved for, in world units. */
+    chipRadius: number;
     space: ChipSpace;
     scheduler: SchedulerState;
     camera: Camera;
@@ -222,7 +226,7 @@ export function RacetrackScene({
     };
 
     const space = racetrackChipSpace();
-    const chips = new ChipLayer(markChanged);
+    const chips = new ChipScene(markChanged);
     // Once, at mount, and never again: unlike the classic room's ellipse this
     // table is a fixed physical object, so nothing about a resize moves an
     // anchor. Only the camera adapts.
@@ -238,6 +242,7 @@ export function RacetrackScene({
       camera: startCamera,
       room: perspectiveProjection(startCamera),
       chipView: scaledProjection(perspectiveProjection(startCamera), METRES_PER_WORLD_UNIT),
+      chipRadius: CHIP_RADIUS,
       size: { width: 0, height: 0 },
       lastFrameMs: performance.now(),
       frames: 0,
@@ -274,6 +279,16 @@ export function RacetrackScene({
       });
       engine.room = perspectiveProjection(engine.camera);
       engine.chipView = scaledProjection(engine.room, METRES_PER_WORLD_UNIT);
+      // Solved at the pot, which is the depth the mound actually sits at. A
+      // chip nearer the camera than that draws larger and one at the far rail
+      // smaller, which is the perspective doing its job -- what this pins is
+      // the scale everything is *laid out* against, so the mound's columns and
+      // the chips filling them agree about how big a chip is.
+      engine.chipRadius = solveChipWorldRadius(
+        CHIP_RADIUS,
+        engine.chipView.scaleAt(engine.space.pot()),
+      );
+      engine.chips.setChipRadius(engine.chipRadius);
       publishLayout();
       markChanged();
       // Not just `markChanged`. A resize is the one event that can arrive
@@ -404,8 +419,15 @@ export function RacetrackScene({
       // Painter's algorithm: far chips first, and within one column the lower
       // chips first, so a stack occludes itself correctly.
       const drawList = engine.chips.drawList()
-        .sort((a, b) => a.position.z - b.position.z || a.position.y - b.position.y);
-      for (const chip of drawList) paintChip(engine.ctx, engine.chipView, engine.space, chip);
+        .sort((a, b) => a.position.z - b.position.z || a.stackIndex - b.stackIndex);
+      // Two passes: every shadow down before any chip, or the near chips'
+      // shadows land across the far chips' faces. See `chip-painter.ts`.
+      for (const chip of drawList) {
+        paintChipShadow(engine.ctx, engine.chipView, engine.space, chip, engine.chipRadius);
+      }
+      for (const chip of drawList) {
+        paintChip(engine.ctx, engine.chipView, engine.space, chip, engine.chipRadius);
+      }
       engine.frames += 1;
 
       engine.scheduler = engine.chips.isIdle()
@@ -564,7 +586,7 @@ export function RacetrackScene({
       // must spawn it exactly once.
       if (engine.handledFlights.has(flight.id)) continue;
       engine.handledFlights.add(flight.id);
-      engine.chips.spawnBet(flight.slot, engine.seatCount, flight.amount, bigBlind);
+      engine.chips.spawnBet(flight.slot, engine.seatCount, flight.amount, bigBlind, flight.kind);
     }
     pumpRef.current?.();
   }, [betFlights, bigBlind]);

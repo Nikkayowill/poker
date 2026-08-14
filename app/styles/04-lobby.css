@@ -1078,6 +1078,123 @@ button:disabled { cursor: wait; opacity: .62; }
   .rank-next { display: none; }
 }
 
+/*
+ * Missions: daily/weekly objectives, in the same full-width-strip slot below
+ * the rank strip -- same "renders nothing until it has something to say"
+ * contract, same reasoning about `.hub-grid`'s arithmetic column spans.
+ */
+.missions-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: clamp(18px, 2.5vw, 26px);
+}
+
+.missions-group { display: flex; flex-direction: column; gap: 8px; }
+
+.missions-kicker {
+  color: #7f8ba4;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+}
+
+.missions-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  list-style: none;
+}
+
+.mission-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface);
+}
+.mission-row-complete { opacity: .7; }
+
+.mission-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.mission-row-title {
+  overflow: hidden;
+  color: #e2e8f2;
+  font: 500 13.5px Georgia, serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mission-row-reward {
+  flex: 0 0 auto;
+  color: var(--brand-gold);
+  font-size: 11.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.mission-row-desc {
+  overflow: hidden;
+  color: #7f8ba4;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mission-track {
+  height: 5px;
+  margin-top: 2px;
+  border-radius: 3px;
+  background: rgba(164,186,224,.09);
+  overflow: hidden;
+}
+.mission-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--brand-purple), var(--brand-gold));
+  transition: width var(--duration-base) ease;
+}
+
+.mission-row-progress {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #7f8ba4;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.mission-row-complete .mission-row-progress { color: var(--brand-gold); }
+.mission-row-progress svg { flex: 0 0 auto; }
+
+/* Stacked, self-dismissing completion toasts -- each <p> mounts only while
+   its mission is showing, rather than the always-mounted single-region
+   pattern .puzzle-toast in 25-puzzles.css uses, since more than one can be
+   on screen at once. */
+.mission-toast-stack {
+  position: absolute;
+  top: -6px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+}
+.mission-toast {
+  padding: 7px 14px;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  color: #e2e8f2;
+  font-size: 12px;
+  font-weight: 550;
+  animation: mission-toast-in var(--duration-base) ease;
+}
+@keyframes mission-toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .hub-grid {
   display: grid;
   grid-template-columns: 1fr;

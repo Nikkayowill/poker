@@ -11,6 +11,7 @@ import { accountsEnabled } from "@/lib/auth/client";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
+import { MissionsPanel } from "@/components/missions/missions-panel";
 import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
 import { FirstRunStrip } from "./first-run-strip";
@@ -278,6 +279,7 @@ export function Lobby({
             either. */}
         <FirstRunStrip profile={profile} onTakeSeat={() => setBuyInMode("join")} />
         <RankStrip />
+        <MissionsPanel />
 
         {/* Tiles carry the real artwork -- the same table plate the game
             renders and the chip/avatar art from public/ -- rather than a flat

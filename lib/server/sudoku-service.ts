@@ -21,6 +21,7 @@ import {
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
+import { applyMissionEvent } from "./mission-store";
 import { ensureProfile } from "./profile-store";
 
 /**
@@ -215,7 +216,8 @@ export async function fillSudoku(
   }
 
   const { round: next, correct } = fillSudokuCell(current.round, input.index, input.value, now);
-  const stored = await advancePuzzleRound<SudokuRound>(current, next, next.status === "solved");
+  const complete = next.status === "solved";
+  const stored = await advancePuzzleRound<SudokuRound>(current, next, complete);
   if (!stored) {
     // A lost race did not happen. Costs a fill rather than money, but a
     // double-fired request must not be able to count two mistakes for one
@@ -232,6 +234,8 @@ export async function fillSudoku(
     // of the request, and it carries the updated board so the counter moves.
     throw new SudokuRequestError("Not that one.", 409, { reason: "wrong", round: snapshot(stored) });
   }
+
+  if (complete) void applyMissionEvent(profile.id, { kind: "puzzle_completed" });
 
   return view(stored, profile, clock, difficulty);
 }

@@ -20,6 +20,7 @@ import {
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
+import { applyMissionEvent } from "./mission-store";
 import { ensureProfile } from "./profile-store";
 
 /**
@@ -198,7 +199,8 @@ export async function playConnectionsGuess(
   }
 
   const next = submitConnectionsGuess(current.round, input.selection);
-  const stored = await advancePuzzleRound<ConnectionsRound>(current, next, next.status !== "active");
+  const complete = next.status !== "active";
+  const stored = await advancePuzzleRound<ConnectionsRound>(current, next, complete);
   if (!stored) {
     const live = await getPuzzleRound<ConnectionsRound>(profile.id, CONNECTIONS_GAME, clock.day);
     throw new ConnectionsRequestError("That board moved on. Here is where it actually stands.", 409, {
@@ -206,6 +208,8 @@ export async function playConnectionsGuess(
       round: live ? snapshot(live) : undefined,
     });
   }
+
+  if (complete) void applyMissionEvent(profile.id, { kind: "puzzle_completed" });
 
   return view(stored, profile, clock);
 }

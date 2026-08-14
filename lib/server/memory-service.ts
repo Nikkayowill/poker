@@ -19,6 +19,7 @@ import {
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
+import { applyMissionEvent } from "./mission-store";
 import { ensureProfile } from "./profile-store";
 
 /**
@@ -167,7 +168,8 @@ export async function flipMemory(
   }
 
   const next = flipMemoryTile(current.round, input.index, now);
-  const stored = await advancePuzzleRound<MemoryRound>(current, next, next.status === "solved");
+  const complete = next.status === "solved";
+  const stored = await advancePuzzleRound<MemoryRound>(current, next, complete);
   if (!stored) {
     // A lost race did not happen: a double-fired tap must not burn two turns
     // on one card.
@@ -177,6 +179,8 @@ export async function flipMemory(
       round: live ? snapshot(live) : undefined,
     });
   }
+
+  if (complete) void applyMissionEvent(profile.id, { kind: "puzzle_completed" });
 
   return view(stored, profile, clock);
 }

@@ -10,6 +10,7 @@ import {
 import { liveStreak, streakAfterClaim, utcDayKey } from "@/lib/progression/streak";
 import type { ProgressionSnapshot } from "@/lib/progression/types";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { applyMissionEvent } from "./mission-store";
 import { creditGold, creditGoldByProfile } from "./profile-store";
 import { adminClient } from "./supabase-admin";
 
@@ -189,6 +190,11 @@ export async function awardWager(
     }
 
     const levelUps = rewardsBetween(levelForXp(previousXp), levelForXp(newXp));
+    // The "rank up" mission's only hook: awardWager is already the single
+    // funnel every wager-driven level-up passes through (poker, blackjack,
+    // tips, PvP accept), so this is where it's detected rather than at each
+    // of those call sites again. applyMissionEvent never throws.
+    void applyMissionEvent(profileId, { kind: "level_gained", levels: levelUps.length });
     const owed = goldForLevelUps(levelForXp(previousXp), levelForXp(newXp));
     let goldAwarded = 0;
     let profile: PlayerProfile | null = null;

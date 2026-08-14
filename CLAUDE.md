@@ -172,16 +172,30 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   rather than hidden (same treatment the 3D room gets without WebGL). `.entry-segment` is
   a two-way control by construction, so the three-up grid is overridden under
   `.buyin-renderer` rather than generalised.
-- **The dealer** (`public/table2d5/dealer.png`) sits at far centre, drawn OVER the cloth
-  rather than behind the rail — her art puts a hand and a card on the table and painting
-  her under it removes exactly that. z-index 3: above the canvas, below every seat. Her
-  supplied PNG was RGB-on-a-black-plate with a black shirt; the cutout threshold that
-  works is **luma ≤ 1**, and anything more generous eats her (see
-  `[[reference_stackchips_avatar_assets]]` for the full recipe). Placement is anchored to
-  the top of her HAIR, not her measured skull — `fitCamera` reserves its top margin
-  against head points and hair is what occupies it; anchoring the skull clips her ponytail
-  and lands her hands on the rail instead of the cloth. `DEALER_ART` in `poker-table.tsx`
-  holds the three measured fractions; re-measure them if the art is ever re-exported.
+- **The dealer** sits at far centre, drawn OVER the cloth rather than behind the rail —
+  the art puts a hand and a card on the table and painting it under removes exactly that.
+  z-index 3: above the canvas, below every seat. There is a **rotation** of dealers, one
+  at a time: `dealerForHand(tableId, handNumber)` in `lib/scene/dealer-roster.ts`, pure
+  over two server-authoritative fields so every client at a table agrees without anything
+  crossing the wire, and changing only between hands (`HANDS_PER_DOWN`).
+- **Adding a dealer must never need a number.** Drop a plate in `art/dealers/<id>.png`,
+  run `scripts/prepare-dealers.py`; it keys, normalises and regenerates
+  `public/table2d5/dealers/*.webp` plus `lib/scene/dealer-art.generated.ts`. Normalising
+  is what makes one slot serve everybody: each plate is scaled so its crown-to-hands
+  height fills a shared box and centred on the alpha-weighted middle of its head band, so
+  the app holds ONE placement (`DEALER_SLOT`) instead of per-dealer landmarks. The plate
+  must be framed head-to-hands running off the bottom edge — that framing IS the contract,
+  and a per-dealer offset appearing in the roster means a plate is wrong, not the code.
+  The shared box is recomputed across the whole bucket per run, so every file is rewritten.
+- Placement anchors to the top of the HAIR, not the measured skull — `fitCamera` reserves
+  its top margin against head points and hair is what occupies it; anchoring the skull
+  clips a ponytail or a pair of ears and lands the hands on the rail instead of the cloth.
+  The slot's size comes from the projected gap between the two chairs flanking the dealer,
+  so it grows with the table like everything else rather than being pinned in pixels.
+- Every plate so far arrived RGB-on-a-black-plate with a black shirt, and Loki is a black
+  dog: the cutout floods **inward from the border at luma ≤ 1**. Any colour key — or one
+  step more generous than 1 — escapes through the clothing and eats the figure (see
+  `[[reference_stackchips_avatar_assets]]` for the full recipe).
 - Known and deliberately unresolved (a design call, not a defect): a ~140px band of floor
   below the near rail near 16:9 — taking it up by lowering the camera was tried and
   reverted because it wrecks every taller frame.

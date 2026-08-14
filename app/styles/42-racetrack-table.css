@@ -146,24 +146,27 @@
 
 /* The dealer.
    -------------------------------------------------------------------------
-   Positioned entirely from JS (`dealerStyle` in poker-table.tsx) against her
-   own measured landmarks, so there is nothing here but the layer rules. She
-   is a `.table-area` child rather than a `.poker-table-wrap` one only because
-   the wrap is collapsed onto the same box anyway; keeping her outside it
-   means she takes no part in the coordinate system the muck drift, the dealer
-   puck and the deal vectors all measure against.
+   One element, whoever is on shift -- `lib/scene/dealer-roster.ts` picks them
+   and carries their art's own landmarks. Positioned entirely from JS
+   (`dealerStyle` in poker-table.tsx) against those landmarks, so there is
+   nothing here but the layer rules. It is a `.table-area` child rather than a
+   `.poker-table-wrap` one only because the wrap is collapsed onto the same box
+   anyway; keeping it outside means the dealer takes no part in the coordinate
+   system the muck drift, the dealer puck and the deal vectors all measure
+   against.
 
    z-index 3: above the canvas that paints the table and below every seat,
-   which start at 4. She is the furthest person at the table, so anyone
-   leaning in front of her should win. */
+   which start at 4. The dealer is the furthest person at the table, so anyone
+   leaning in front of them should win. */
 .racetrack-dealer {
   position: absolute;
   z-index: 3;
   height: auto;
   pointer-events: none;
   user-select: none;
-  /* Her plate was cut off a solid black background and the recovered edge is
-     a pixel or two soft; a faint drop shadow under her reads as her sitting
-     at the table rather than as a sticker on it, and hides the seam. */
+  /* Every dealer's plate was cut off a solid black background and the
+     recovered edge is a pixel or two soft; a faint drop shadow under them
+     reads as sitting at the table rather than as a sticker on it, and hides
+     the seam. It matters most on the dogs, whose whole silhouette is fur. */
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .55));
 }

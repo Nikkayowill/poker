@@ -78,22 +78,33 @@ export interface GoldTierDef {
   testEnvVar: string;
 }
 
+/**
+ * envVar names deliberately reuse the pre-existing vars from the old 4-tier
+ * ladder (Kayo never removed them from Vercel when support payments
+ * replaced Buy Gold) rather than minting new ones -- STRIPE_REBUY_PRICE_ID
+ * now points at a new $2.99 CAD Price (prod_V4ps93p85SZfo0 /
+ * price_1U4gD5HrjHRpeZPReMjQYirb, 50k Gold), STRIPE_PRICE_VALUE at the
+ * pre-existing $9.99 CAD Price that was already sitting in the account
+ * (prod_UyFbT9n1qvgaNF / price_1TyJ6NHrjHRpeZPRtZBjlPb6, 500k Gold here --
+ * its old tier_key: "value" Stripe metadata is stale and unused; goldAmount
+ * always comes from this array, never from anything stored on the Price).
+ */
 export const GOLD_TIERS: GoldTierDef[] = [
   {
     key: "starter",
     label: "Starter Pack",
     description: "A solid stack to sit down with.",
     goldAmount: 50000,
-    envVar: "STRIPE_PRICE_GOLD_STARTER",
-    testEnvVar: "STRIPE_TEST_PRICE_GOLD_STARTER",
+    envVar: "STRIPE_REBUY_PRICE_ID",
+    testEnvVar: "STRIPE_TEST_PRICE_STARTER",
   },
   {
     key: "high_roller",
     label: "High Roller",
     description: "Ten packs worth, all at once.",
     goldAmount: 500000,
-    envVar: "STRIPE_PRICE_GOLD_HIGH_ROLLER",
-    testEnvVar: "STRIPE_TEST_PRICE_GOLD_HIGH_ROLLER",
+    envVar: "STRIPE_PRICE_VALUE",
+    testEnvVar: "STRIPE_TEST_PRICE_VALUE",
   },
 ];
 

@@ -78,6 +78,47 @@
   top: var(--board-y, 48%);
 }
 
+/* The board itself: smaller and flat on the cloth, not a floating placeholder.
+   -------------------------------------------------------------------------
+   06-table.css's `.community-cards` is a translucent pill with its own
+   border and drop shadow -- chrome for a card row that has no table under
+   it to read as sitting on. This room paints real felt at a real distance,
+   so the row can drop that panel and let each card cast its own small
+   shadow directly onto the cloth instead, the same "sitting at the table,
+   not stuck on top of it" treatment `.racetrack-dealer` and
+   `.racetrack-seat-art` already get.
+
+   `--board-card-width` is `BOARD_CARD_WIDTH_M` -- a real 63mm card -- run
+   through the live camera and clamped in poker-table.tsx
+   (RACETRACK_BOARD_CARD_MIN_PX/MAX_PX); see that constant's own comment for
+   the measured range across shipped frames. The gap is a fraction of it
+   rather than its own fixed number, so five cards read as a laid row at
+   every size instead of drifting apart on a big desktop frame. */
+.scene-room-racetrack .community-cards {
+  gap: calc(var(--board-card-width, 56px) * .16);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.scene-room-racetrack .community-cards .playing-card {
+  width: var(--board-card-width, 56px);
+}
+
+/* The shadow above is scoped off .card-ghost, not stated on the bare
+   .playing-card rule -- a ghost is still a `.playing-card` for sizing, and a
+   selector that doesn't say otherwise painted a real shadow under a slot
+   that has no card in it, which is exactly the "there's still an outline"
+   this room had left after 07-cards.css made an empty slot draw nothing. */
+.scene-room-racetrack .community-cards .playing-card:not(.card-ghost) {
+  /* Tighter and closer than the base card's own shadow (07-cards.css) --
+     that shadow reads as a card held up off the table; this one reads as a
+     card lying on it. */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .45);
+}
+
 .scene-room-racetrack .pot-anchor {
   left: var(--pot-x, 50%);
   top: var(--pot-y, 26%);

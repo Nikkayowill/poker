@@ -159,6 +159,25 @@ const RACETRACK_SEAT_MIN_PX = 86;
 const RACETRACK_SEAT_MAX_PX = 132;
 
 /**
+ * The board's own bounds, in CSS pixels -- same reasoning as the seat pair
+ * above, applied to a card instead of a chair.
+ *
+ * `BOARD_CARD_WIDTH_M` run through the live camera is the real 63mm card at
+ * whatever distance the board happens to sit, and across shipped frames that
+ * ranges from ~15px (a short landscape phone) to ~58px (an ultra-wide
+ * desktop) -- measured in `table-anchors.test.ts`'s "board card scale"
+ * cases. The floor matters far more than the ceiling: true-to-life scale
+ * reads five rank/suit glyphs at all on almost nothing narrower than a
+ * tablet, so 44px is not a stylistic minimum, it is `12-responsive.css`'s
+ * own proven-shipped floor for a bare `.playing-card`'s legibility. The
+ * ceiling only guards the rare very wide frame, and is set well under the
+ * classic room's own 76px ceiling on purpose -- smaller and flatter on the
+ * cloth is the whole point of sizing this off the camera at all.
+ */
+const RACETRACK_BOARD_CARD_MIN_PX = 44;
+const RACETRACK_BOARD_CARD_MAX_PX = 64;
+
+/**
  * Place the dealer's artwork in the slot the scene projected for it.
  *
  * ONE PLACE, A ROSTER OF PEOPLE TO PUT IN IT, AND NO PER-DEALER NUMBERS: the
@@ -1217,6 +1236,10 @@ export function PokerTable({
                 ? {
                   "--board-x": `${racetrackLayout.board.x.toFixed(1)}px`,
                   "--board-y": `${racetrackLayout.board.y.toFixed(1)}px`,
+                  "--board-card-width": `${Math.round(Math.min(
+                    RACETRACK_BOARD_CARD_MAX_PX,
+                    Math.max(RACETRACK_BOARD_CARD_MIN_PX, racetrackLayout.board.cardWidthPx),
+                  ))}px`,
                   "--pot-x": `${racetrackLayout.pot.x.toFixed(1)}px`,
                   "--pot-y": `${racetrackLayout.pot.y.toFixed(1)}px`,
                 }

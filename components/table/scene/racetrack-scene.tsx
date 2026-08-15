@@ -8,6 +8,7 @@ import { METRES_PER_WORLD_UNIT, racetrackChipSpace, type ChipSpace } from "@/lib
 import { MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
 import { perspectiveProjection, scaledProjection, type SceneProjection } from "@/lib/scene/scene-projection";
 import {
+  BOARD_CARD_WIDTH_M,
   DEALER_HEAD_Y,
   FELT_TOP_Y,
   SEAT_SETBACK,
@@ -124,7 +125,19 @@ export interface RacetrackLayout {
      */
     toward: { x: number; y: number };
   }>;
-  board: { x: number; y: number };
+  board: {
+    x: number;
+    y: number;
+    /**
+     * One board card's width, in CSS pixels, at the depth the camera puts
+     * the board -- `BOARD_CARD_WIDTH_M` run through the same pinhole scale
+     * that already sizes seats and chips, not a breakpoint. The row is
+     * fronto-parallel (all five cards share the board anchor's Z), so this
+     * one number is exact for every card in it; nothing here needs a
+     * per-card anchor the way a receding row would.
+     */
+    cardWidthPx: number;
+  };
   pot: { x: number; y: number };
   /**
    * The dealer's place at far centre. She is not one of the six seats -- a
@@ -330,7 +343,9 @@ export function RacetrackScene({
       const dealerLeft = engine.room.project({ x: dealerFloor.x - dealerRoom / 2, y: DEALER_HEAD_Y, z: dealerFloor.z });
       const dealerRight = engine.room.project({ x: dealerFloor.x + dealerRoom / 2, y: DEALER_HEAD_Y, z: dealerFloor.z });
 
-      const board = engine.room.project(communityCardsAnchor());
+      const boardAnchor = communityCardsAnchor();
+      const board = engine.room.project(boardAnchor);
+      const boardCardWidthPx = BOARD_CARD_WIDTH_M * engine.room.scaleAt(boardAnchor);
       const potSpot = engine.room.project(potAnchor());
       // Toward the pot as it actually appears, not as the plan says: under
       // perspective a seat's inward direction on screen is not the direction
@@ -345,7 +360,7 @@ export function RacetrackScene({
         width: engine.size.width,
         height: engine.size.height,
         seats: seatLayout,
-        board: { x: board.x, y: board.y },
+        board: { x: board.x, y: board.y, cardWidthPx: boardCardWidthPx },
         pot: { x: potSpot.x, y: potSpot.y },
         dealer: {
           x: dealerCrown.x,

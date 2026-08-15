@@ -340,6 +340,22 @@ export function communityCardsAnchor(): Vec3 {
   return { x: 0, y: FELT_TOP_Y, z: -FELT.halfWidth * BOARD_DEPTH_FRACTION };
 }
 
+/**
+ * A real poker card is 63mm wide -- ISO 216-adjacent "poker size", the same
+ * proportion `.playing-card`'s `aspect-ratio: .7` already assumes. Sizing the
+ * board off this rather than a hand-picked pixel figure is what makes it
+ * SMALL AND PROPORTIONATE ON THIS TABLE SPECIFICALLY: at 1.07m of felt width,
+ * 63mm reads as about 6% of the cloth, well under the placeholder row's
+ * ~9-10%, and it falls out of the same camera math that already sizes seats
+ * and chips rather than a breakpoint tuned by eye.
+ */
+export const BOARD_CARD_WIDTH_M = 0.063;
+
+/** Real cards laid out for a board sit close, not spread -- a fifth of a
+ * card's own width apart reads as a laid row rather than a hand of cards
+ * fanned for a photo. */
+export const BOARD_CARD_GAP_FRACTION = 0.16;
+
 /** The pot rests between the board and the dealer, never under the board. */
 export const POT_DEPTH_FRACTION = 0.52;
 export function potAnchor(): Vec3 {

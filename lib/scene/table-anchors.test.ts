@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BOARD_CARD_WIDTH_M,
   CAMERA_ELEVATION_DEG,
   DEALER_ANGLE_DEG,
   DEALER_SETBACK,
@@ -37,6 +38,7 @@ import {
   seatHead,
   tableOutline,
 } from "./table-anchors";
+import { perspectiveProjection } from "./scene-projection";
 
 /** Signed distance to a stadium's boundary: negative inside, positive out. */
 function stadiumSignedDistance(point: { x: number; z: number }, halfLength: number, halfWidth: number): number {
@@ -210,6 +212,34 @@ describe("what sits on the felt", () => {
       expect(Math.hypot(seat.x - button.x, seat.z - button.z))
         .toBeLessThan(Math.hypot(seat.x - chips.x, seat.z - chips.z));
     }
+  });
+});
+
+describe("board card scale", () => {
+  it("sizes a board card off the real 63mm card, smaller than the classic room's placeholder", () => {
+    for (const frame of [DESKTOP_LANDSCAPE_FRAME, MOBILE_LANDSCAPE_FRAME]) {
+      const room = perspectiveProjection(fitCamera(frame));
+      const widthPx = BOARD_CARD_WIDTH_M * room.scaleAt(communityCardsAnchor());
+      // The classic room's own bare `.playing-card` ceiling (06-table.css,
+      // `.community-cards .playing-card`) -- what this replaces on this table.
+      expect(widthPx).toBeLessThan(76);
+      // A sanity floor only -- not the legibility floor. True-to-life scale
+      // on a short landscape phone genuinely projects well under a readable
+      // card (see the "scales with the frame" case below and
+      // `RACETRACK_BOARD_CARD_MIN_PX`'s own comment in poker-table.tsx);
+      // clamping that up to something readable is that component's job, not
+      // this module's -- this only guards against a broken/degenerate camera
+      // handing back zero or a negative width.
+      expect(widthPx).toBeGreaterThan(5);
+    }
+  });
+
+  it("scales with the frame rather than landing on one fixed number", () => {
+    const desktop = perspectiveProjection(fitCamera(DESKTOP_LANDSCAPE_FRAME));
+    const mobile = perspectiveProjection(fitCamera(MOBILE_LANDSCAPE_FRAME));
+    const desktopWidth = BOARD_CARD_WIDTH_M * desktop.scaleAt(communityCardsAnchor());
+    const mobileWidth = BOARD_CARD_WIDTH_M * mobile.scaleAt(communityCardsAnchor());
+    expect(desktopWidth).not.toBeCloseTo(mobileWidth, 0);
   });
 });
 

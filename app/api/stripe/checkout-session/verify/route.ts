@@ -3,9 +3,11 @@ import { z } from "zod";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import {
+  enforceGoldBillingRestriction,
   isTestPurchaseAllowed,
   stripeClient,
   stripeTestClient,
+  verifiedGoldSession,
   verifiedSupportSession,
   type StripeMode,
 } from "@/lib/server/stripe";
@@ -64,6 +66,22 @@ export async function GET(request: NextRequest) {
       } else {
         membership = await syncSubscriptionState(stripe, peek.subscription, mode === "live", new Date());
         paid = peek.payment_status === "paid";
+      }
+    } else if (peek.metadata?.kind === "gold_purchase") {
+      const { session, tier, profileId } = await verifiedGoldSession(sessionId.data, profile.id, mode);
+      paid = session.payment_status === "paid";
+      if (paid && await enforceGoldBillingRestriction(session, mode)) {
+        return NextResponse.json(
+          { error: "Gold purchases aren't available in your region. Your payment has been refunded.", paid: false },
+          { status: 403 },
+        );
+      }
+      if (paid) {
+        await fulfillStripePayment(session.id, profileId, tier.goldAmount, {
+          kind: "gold_purchase",
+          tierKey: tier.key,
+          livemode: mode === "live",
+        });
       }
     } else {
       const { session, tier, profileId } = await verifiedSupportSession(sessionId.data, profile.id, mode);

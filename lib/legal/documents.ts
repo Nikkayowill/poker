@@ -16,6 +16,7 @@
 export type LegalDocumentSlug =
   | "terms_of_service"
   | "privacy_policy"
+  | "gold_disclosure"
   | "support_disclosure"
   | "app_disclaimer";
 
@@ -23,10 +24,17 @@ export type LegalDocumentSlug =
  * Every slug that needs accepting, in prompt order. A caller with no profile
  * yet has accepted none of them, so this doubles as the "nothing accepted"
  * answer -- worth sharing rather than restating the list per call site.
+ *
+ * gold_disclosure is in this global list rather than gated only on the Buy
+ * Gold panel, same as support_disclosure -- a support-only buyer sees one
+ * extra checkbox they'll never act on, which costs nothing; scoping
+ * pendingAcceptances per-flow would need threading a required-slugs param
+ * through every call site for a UX nicety that isn't worth it here.
  */
 export const LEGAL_DOCUMENT_SLUGS: readonly LegalDocumentSlug[] = [
   "terms_of_service",
   "privacy_policy",
+  "gold_disclosure",
   "support_disclosure",
 ];
 
@@ -84,21 +92,32 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
       "We may update this policy as the app changes. Continuing to play after an update takes effect means you accept the current version; if you were asked to accept again, it is because something material changed.",
     ],
   },
+  gold_disclosure: {
+    slug: "gold_disclosure",
+    // Reinstated 2026-08-15: Gold-for-money was pulled on 2026-08-13 over
+    // the Big Fish Casino gambling-law fact pattern (real money -> virtual
+    // currency -> spent in a chance-based game; see git history around
+    // support_disclosure below and CLAUDE.md). Kayo made an informed call to
+    // bring it back after that risk was explained -- the litigation theory
+    // is real but has mostly succeeded under Washington State's unusually
+    // broad "thing of value" gambling statute, so the one mitigation applied
+    // is blocking Washington billing addresses at checkout (see
+    // lib/server/stripe.ts's enforceGoldBillingRestriction) rather than
+    // geoblocking everywhere or dropping the feature again. This does not
+    // eliminate the risk elsewhere, which Kayo has explicitly accepted.
+    // Don't silently re-remove this without asking -- it's a deliberate,
+    // informed business decision, not an oversight to "clean up."
+    version: 1,
+    title: "Gold Purchase Disclosure",
+    body: [
+      "Gold is a virtual, in-app entertainment currency. It has no cash value, cannot be redeemed for cash, and cannot be exchanged, transferred, or cashed out for any real-world currency, cryptocurrency, goods, or prize of monetary value under any circumstances.",
+      "Purchasing Gold is optional and never required to play. A Gold purchase is a one-time payment for the stated amount of in-app Gold, charged immediately at checkout. Purchases are final; Gold already credited to your balance cannot be refunded except where required by law.",
+      "Prices are shown in the currency charged by Stripe, our payment processor, at checkout before you pay. We never store your card details -- Stripe handles payment directly.",
+      "Gold purchases are not currently available to residents of Washington State; a Washington billing address is refunded automatically rather than completed.",
+    ],
+  },
   support_disclosure: {
     slug: "support_disclosure",
-    // Replaces gold_disclosure. StackChips no longer sells Gold for real
-    // money -- see lib/legal/documents.ts history and CLAUDE.md for why:
-    // paying real money for anything that plays into a chance-based game is
-    // exactly the fact pattern that drew the Big Fish Casino litigation, and
-    // Stripe's own restricted-business rules separately require a genuine
-    // no-consideration donation not to resemble a sale. Voluntary support
-    // grants nothing back -- no Gold, no gameplay advantage, no odds
-    // change -- specifically so it stays a real donation rather than a sale
-    // wearing a donation label. Do not attach a Gold reward, a gameplay
-    // perk, or anything with in-game economic effect to any support tier
-    // without redoing this analysis; a purely cosmetic, gameplay-neutral
-    // thank-you (e.g., a name badge) would be fine and would just need a
-    // version bump to disclose.
     version: 1,
     title: "Supporting StackChips",
     body: [
@@ -130,6 +149,7 @@ export function currentVersion(slug: LegalDocumentSlug): number {
 export function legalDocumentPath(slug: LegalDocumentSlug): string {
   if (slug === "terms_of_service") return "/legal/terms";
   if (slug === "privacy_policy") return "/legal/privacy";
+  if (slug === "gold_disclosure") return "/legal/gold-disclosure";
   if (slug === "support_disclosure") return "/legal/support";
   return "/legal/disclaimer";
 }

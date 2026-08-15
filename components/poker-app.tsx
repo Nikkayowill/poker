@@ -1,8 +1,9 @@
 "use client";
 
 import type { RealtimeChannel, Session } from "@supabase/supabase-js";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
+import { applyOptimisticAction } from "@/lib/game/optimistic-action";
 import type { StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
 import { oauthCallbackUrl } from "@/lib/auth/oauth-redirect";
@@ -117,6 +118,13 @@ const FREE_GOLD_TRIGGER: RewardTrigger = {
 
 export function PokerApp() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
+  // A predicted view of `game` for the caller's own fold/call/raise/all-in,
+  // so the felt reacts on the tap instead of on the round trip -- see
+  // lib/game/optimistic-action.ts. Only ever rendered from, never treated
+  // as truth: React reverts to `game` itself once the transition that
+  // queued a prediction settles, whether or not the request succeeded.
+  const [optimisticGame, addOptimisticAction] = useOptimistic(game, applyOptimisticAction);
+  const [, startActionTransition] = useTransition();
   const [loadedProfile, setProfile] = useState<PlayerProfile | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -849,7 +857,7 @@ export function PokerApp() {
     }
   };
 
-  const act = async (action: PlayerAction) => {
+  const act = (action: PlayerAction) => {
     if (!game || loading) return;
     const actionSound: Partial<Record<PlayerAction["type"], Parameters<typeof playSound>[0]>> = {
       fold: "fold",
@@ -866,6 +874,18 @@ export function PokerApp() {
     if (effect) playSound(effect);
     setLoading(true);
     setError(null);
+    // addOptimisticAction must fire inside the same transition as the
+    // request it's predicting -- that's what makes React hold the
+    // prediction until this settles and then always defer to whatever
+    // ingest() actually writes, success or failure.
+    startActionTransition(async () => {
+      addOptimisticAction(action);
+      await sendAction(action);
+    });
+  };
+
+  const sendAction = async (action: PlayerAction) => {
+    if (!game) return;
     try {
       const response = await fetch(`/api/games/${game.id}/actions`, {
         method: "POST",
@@ -1382,7 +1402,7 @@ export function PokerApp() {
       {game
         ? (
           <PokerTable
-            game={game}
+            game={optimisticGame ?? game}
             pending={loading}
             error={error}
             onAction={act}

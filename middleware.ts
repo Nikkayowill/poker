@@ -76,8 +76,12 @@ export const config = {
   matcher: [
     /*
      * Every dynamic request reaches the cheap origin/API fast path above.
-     * Supabase refreshes only continue for rendered pages.
+     * Supabase refreshes only continue for rendered pages that actually read
+     * a server-side session. Static/marketing pages (legal, store, leaderboard,
+     * collection) never touch cookies() or a Supabase server client, so
+     * routing them through auth.getUser() was a pure round-trip tax on every
+     * load with nothing downstream to consume the refreshed cookie.
      */
-    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|icon.svg|icon-192.png|icon-512.png|apple-icon.png|sounds/|avatars/).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|icon.svg|icon-192.png|icon-512.png|apple-icon.png|sounds/|avatars/|legal/|store|leaderboard|collection).*)",
   ],
 };

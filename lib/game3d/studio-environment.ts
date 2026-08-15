@@ -34,7 +34,6 @@ import {
   SEAT_RING_RADIUS_X,
   SEAT_RING_RADIUS_Z,
   seatPosition,
-  faceCentreRotationY,
   type Vec3,
 } from "./seat-layout";
 /**
@@ -307,5 +306,3 @@ export const DEALER_STAND: Vec3 = {
   y: 0,
   z: Math.cos(DEALER_ANGLE) * (SEAT_RING_RADIUS_Z + DEALER_STAND_MARGIN),
 };
-
-export const DEALER_FACING_Y = faceCentreRotationY(DEALER_STAND);

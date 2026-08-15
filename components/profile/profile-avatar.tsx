@@ -3,7 +3,6 @@
 import { useState } from "react";
 import clsx from "clsx";
 import Image from "next/image";
-import { Settings2 } from "lucide-react";
 import { avatarFace, cosmeticById } from "@/lib/cosmetics/catalog";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { missingArtwork } from "@/components/artwork-cache";
@@ -61,28 +60,5 @@ export function ProfileAvatar({
         </>
       )}
     </span>
-  );
-}
-
-export function ProfileTrigger({
-  profile,
-  onClick,
-  compact = false,
-}: {
-  profile: PlayerProfile;
-  onClick: () => void;
-  compact?: boolean;
-}) {
-  return (
-    <button className={clsx("profile-trigger", compact && "profile-trigger-compact")} onClick={onClick}>
-      <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
-      {!compact && (
-        <span>
-          <strong>{profile.displayName}</strong>
-          <small>Profile</small>
-        </span>
-      )}
-      <Settings2 size={14} />
-    </button>
   );
 }

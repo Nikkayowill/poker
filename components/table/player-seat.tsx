@@ -5,7 +5,9 @@ import clsx from "clsx";
 import Image from "next/image";
 import type { PublicSeat } from "@/lib/game/types";
 import { avatarFace } from "@/lib/cosmetics/catalog";
+import { calculateChipDenominations, cssHex } from "@/lib/game/chip-denominations";
 import { dealDelayMs } from "@/lib/game/deal-choreography";
+import { resolveLandscapeCutout } from "@/lib/game/landscape-cutout-placeholder";
 import { isBotAway } from "@/lib/game/seat-presence";
 import { isWinningCard } from "@/lib/game/winning-cards";
 import { reactionEmoji, reactionLabel } from "@/lib/game/reaction-channel";
@@ -24,15 +26,23 @@ export function SeatFigure({
   active,
   turnStartedAt,
   turnDeadlineAt,
+  dealSlot,
 }: {
   seat: PublicSeat;
   active: boolean;
   turnStartedAt: string | null;
   turnDeadlineAt: string | null;
+  /** Position on the ring, 0 being the local player. Only read to pick a
+      landscape-band opponent cutout below -- see resolveLandscapeCutout. */
+  dealSlot: number;
 }) {
   const [, forceRerender] = useState(0);
   const declared = seat.avatarCosmetic ? avatarFace(seat.avatarCosmetic) : null;
   const artwork = declared && !missingArtwork.has(declared) ? declared : null;
+  // Landscape-band 2D.5 redesign only, opponents only -- see the CSS-gated
+  // render note below. Placeholder art until real per-character cutouts
+  // exist (lib/game/landscape-cutout-placeholder.ts).
+  const cutout = seat.isMine ? null : resolveLandscapeCutout(dealSlot - 1);
 
   return (
     <div className={clsx("seat-figure", active && "seat-figure-active")}>
@@ -70,6 +80,26 @@ export function SeatFigure({
             )}
           </>
         )}
+      {/* Landscape-band 2D.5 opponents only: a full-body cutout standing in
+          for the medallion above, sunk into the felt with the same mask
+          dissolve .seat-far already uses rather than true DOM occlusion --
+          a scaled seat is its own stacking context, so a body drawn behind a
+          real rail layer inside it could not climb back out for its own
+          nameplate (see seatZ's note in table-geometry.ts; that is the bug
+          the medallion treatment was built to avoid, and this keeps it
+          avoided). Always rendered; 17-landscape.css shows it and hides the
+          medallion above only inside the landscape-band media query, so
+          there is no JS orientation branch. */}
+      {cutout && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          className="seat-figure-cutout"
+          src={cutout.src}
+          alt=""
+          aria-hidden="true"
+          style={cutout.flip ? { transform: "scaleX(-1)" } : undefined}
+        />
+      )}
       {/* Opponents' turn clock rings their own portrait rather than sitting as
           a separate badge down in the nameplate -- a fuse that laps the face
           it is timing, not a second circle competing with the stack number
@@ -145,6 +175,35 @@ function SeatCards({
   );
 }
 
+/**
+ * A small layered chip-disc stack, standing in for `chip-dot` (below) on the
+ * landscape-band 2D.5 nameplate -- CSS picks one glyph per breakpoint, same
+ * "always render, CSS gates" pattern as SeatFigure's cutout above.
+ *
+ * Built from the app's real chip palette (lib/game/chip-denominations.ts),
+ * not a separate table, so this glyph never drifts from what the pot/bet
+ * piles actually show -- see that module's own note on why there is exactly
+ * one chip-colour table in the tree.
+ */
+function ChipStackGlyph({ amount, bigBlind }: { amount: number; bigBlind: number }) {
+  const buckets = calculateChipDenominations(amount, { bigBlind }).slice(0, 3);
+  if (buckets.length === 0) return null;
+  return (
+    <span className="chip-stack-glyph" aria-hidden="true">
+      {buckets.map((bucket, index) => (
+        <span
+          key={bucket.denomination}
+          className="chip-stack-glyph-disc"
+          style={{
+            background: `repeating-conic-gradient(from 0deg, ${cssHex(bucket.colour.edge)} 0deg 20deg, ${cssHex(bucket.colour.body)} 20deg 40deg)`,
+            zIndex: buckets.length - index,
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
 function SeatNameplate({
   seat,
   isWinner,
@@ -197,6 +256,7 @@ function SeatNameplate({
               aria-label={`${seat.stack.toLocaleString()} chips`}
             >
               <span className="chip-dot" />
+              <ChipStackGlyph amount={seat.stack} bigBlind={bigBlind} />
               <strong>{seat.stack.toLocaleString()}</strong>
             </span>
           )}
@@ -280,6 +340,7 @@ export const PlayerSeat = memo(function PlayerSeat({
       active={seat.isCurrent}
       turnStartedAt={turnStartedAt}
       turnDeadlineAt={turnDeadlineAt}
+      dealSlot={dealSlot}
     />
   );
   const nameplate = (

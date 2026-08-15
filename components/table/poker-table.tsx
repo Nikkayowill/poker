@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import clsx from "clsx";
 import {
   Box, Copy, DoorOpen, HeartHandshake, History, Layers, LogIn, LogOut, Palette, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
@@ -35,6 +36,8 @@ import { useDesktopViewport } from "@/components/use-desktop-viewport";
 import { useFeltArtReady } from "./use-felt-art-ready";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
+  isLandscapeBand,
+  landscapeTopArcGeometry,
   radiiForTable,
   seatGeometry,
   seatZ,
@@ -492,11 +495,19 @@ export function PokerTable({
   // rather than projecting a competing one back onto it.
   const ringGeometry = useMemo(
     () => orderedSeats.map((_, index) => {
-      const geometry = seatGeometry(
-        index,
-        orderedSeats.length,
-        radiiForTable(tableSize, viewport ?? undefined),
-      );
+      // The landscape-band 2D.5 redesign puts opponents on a top arc rather
+      // than the general ellipse -- see landscapeTopArcGeometry's own note.
+      // The hero (index 0) stays on the ellipse output here even in that
+      // band: .seat-mine.seat-ring (17-landscape.css) already takes it off
+      // the ring entirely with `!important`, so what this computes for slot
+      // 0 there is inert.
+      const geometry = index > 0 && viewport && isLandscapeBand(viewport)
+        ? landscapeTopArcGeometry(index - 1)
+        : seatGeometry(
+          index,
+          orderedSeats.length,
+          radiiForTable(tableSize, viewport ?? undefined),
+        );
       return {
         left: `${geometry.x}%`,
         top: `${geometry.y}%`,
@@ -1479,6 +1490,24 @@ export function PokerTable({
             onClaimBackstop={onClaimBackstop}
             variant={sceneReady && activeRenderer === "webgl_3d" ? "3d" : "classic"}
           />
+        </div>
+
+        {/* Landscape-band 2D.5 only (43-landscape-cutouts.css hides this
+            everywhere else) -- the reference's right-edge icon rail, wired
+            to the same actions the header's own dropdown already carries
+            rather than stubs, so there is exactly one History/Leaderboard/
+            Edit-profile behaviour in the app, not a second copy for this
+            breakpoint. */}
+        <div className="landscape-tool-rail">
+          <button type="button" onClick={() => setHistoryOpen(true)} title="Hand history">
+            <History size={15} />
+          </button>
+          <Link href="/leaderboard" title="Leaderboard">
+            <Trophy size={15} />
+          </Link>
+          <button type="button" onClick={onCustomize} title="Edit profile">
+            <Settings2 size={15} />
+          </button>
         </div>
       </section>
 

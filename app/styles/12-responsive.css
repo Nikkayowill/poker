@@ -438,6 +438,49 @@
      because the ring and the rail were re-solved together. */
   .poker-rail { inset: 14% 4% 4%; }
 
+  /* PLAYPOKERGO-STYLE NOIR TABLE, LANDSCAPE ONLY.
+     Portrait and desktop keep the painted green-felt art (table-desktop.webp
+     / table-mobile.webp) -- this replaces it with CSS-only rings on one
+     stadium-shaped box instead, the way the source brief for this redesign
+     draws its own landscape table: leather rail, deep navy felt, a thin gold
+     pinstripe, no image asset. `border-radius: 999px` on a box wider than it
+     is tall clamps into a stadium rather than a circle, which is the ring
+     shape a 3:1 plate wants. */
+  .poker-rail {
+    /* Warmed from the source mock's cool grey (#3a3b44) toward a leather
+       tone -- against the felt's own blue-black underneath, a same-hue rail
+       barely read as a separate material, which is most of why the first
+       pass looked like one flat plate instead of a rim around a bowl. A
+       stronger inset highlight is the other half of the same fix: more
+       light caught on the rail's inner edge, more of a raised lip it reads
+       as sitting above the cloth rather than level with it. */
+    background: linear-gradient(180deg, #4a4640, #241f1a 38%, #120f0c);
+    border: 1px solid #000;
+    border-radius: 999px;
+    box-shadow:
+      inset 0 3px 4px rgba(255,255,255,.3),
+      inset 0 -10px 18px rgba(0,0,0,.75),
+      0 26px 50px rgba(0,0,0,.65);
+  }
+  /* The felt itself, as a pseudo-element rather than restyling .poker-felt
+     directly -- the board, the pot and every seat position against .poker-felt
+     as a plain positioning box (percentages, no padding), and this only needs
+     to paint behind them, not join their layout. Unlike ::before on a normal
+     element, it still paints before any real child in DOM order, so nothing
+     here needs its own z-index to stay behind the board and the seats. */
+  .poker-felt::before {
+    content: "";
+    position: absolute;
+    inset: 6%;
+    border-radius: 999px;
+    background: radial-gradient(ellipse at 50% 16%, #242c42, #121624 52%, #0a0c13 100%);
+    box-shadow:
+      inset 0 0 0 2px rgba(217,184,93,.55),
+      inset 0 14px 34px rgba(120,150,220,.07),
+      inset 0 0 70px rgba(0,0,0,.55);
+    pointer-events: none;
+  }
+
   /* The wrap fills the stage rather than being capped by leftover height.
      `--table-height-cap` exists to stop the table overflowing a viewport it
      cannot measure; inside a stage of known, fixed shape there is nothing
@@ -527,6 +570,33 @@
     height: auto;
     align-items: center;
     pointer-events: auto;
+  }
+
+  /* PLAYPOKERGO-STYLE FLOATING PILLS. The bar chrome drops out entirely --
+     no panel, no border -- and each decision becomes its own white pill with
+     black display type directly on the felt, per the source brief. Equal
+     specificity to .action-button-fold/-check/-call/-raise (one class each)
+     and both sides carry `!important`, so this wins purely on cascading
+     after 09-action-bar.css, the same way .action-bar-3d's own override does.
+     Every action reads the same pill on purpose -- the reference draws
+     FOLD / CHECK-CALL / BET-RAISE identically and lets the label carry the
+     meaning, not the colour. */
+  .action-layer .action-slot-controls button {
+    border: 1px solid rgba(0,0,0,.5) !important;
+    border-radius: 11px;
+    color: #0d0d10 !important;
+    background: linear-gradient(180deg,#ffffff,#ececec) !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,.45), inset 0 -2px 0 rgba(0,0,0,.12);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .01em;
+    text-transform: uppercase;
+  }
+  /* The raise button open (its label reads "Cancel") stays a way out rather
+     than a second gold confirm -- greyed instead of white, same idea as the
+     classic bar's own .action-open treatment. */
+  .action-layer .action-button-raise.action-open {
+    background: linear-gradient(180deg,#d9d9d9,#bfbfbf) !important;
   }
 
   .history-drawer { width: min(300px, 82%); }

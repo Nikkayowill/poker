@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isLandscapeBand,
+  landscapeTopArcGeometry,
   radiiForTable,
   RAIL_Z,
   seatGeometry,
@@ -131,6 +132,61 @@ describe("table geometry", () => {
       // 12-responsive.css, so its centre is 55%. The two are one decision;
       // this is the half of it a test can hold.
       expect((near.y + far.y) / 2).toBeCloseTo(55, 5);
+    });
+  });
+
+  describe("landscape top arc (2D.5 opponent layout)", () => {
+    it("spreads the five opponents left-to-right, all above centre", () => {
+      const points = [0, 1, 2, 3, 4].map((slot) => landscapeTopArcGeometry(slot));
+      // Strictly increasing x, so no two opponents land at the same column --
+      // unlike the general ellipse, whose flank pairs share an x.
+      for (let i = 1; i < points.length; i += 1) {
+        expect(points[i].x).toBeGreaterThan(points[i - 1].x);
+      }
+      // Every opponent above the rail's own centre (55%, see the ellipse
+      // describe block above) -- the whole point of a top arc.
+      points.forEach((point) => expect(point.y).toBeLessThan(55));
+    });
+
+    it("mirrors the outer pair and the inner pair about the centre column", () => {
+      const [edgeLeft, innerLeft, apex, innerRight, edgeRight] =
+        [0, 1, 2, 3, 4].map((slot) => landscapeTopArcGeometry(slot));
+      expect(edgeLeft.x + edgeRight.x).toBeCloseTo(100, 5);
+      expect(innerLeft.x + innerRight.x).toBeCloseTo(100, 5);
+      expect(edgeLeft.y).toBeCloseTo(edgeRight.y, 5);
+      expect(innerLeft.y).toBeCloseTo(innerRight.y, 5);
+      expect(apex.x).toBeCloseTo(50, 5);
+    });
+
+    it("reads the apex as farthest and the arc's edges as nearest", () => {
+      const apex = landscapeTopArcGeometry(2);
+      const edge = landscapeTopArcGeometry(0);
+      expect(apex.depth).toBeLessThan(edge.depth);
+      expect(apex.depth).toBeCloseTo(0, 5);
+      expect(edge.depth).toBeCloseTo(1, 5);
+    });
+
+    it("points every seat's towardPot vector back at the table centre", () => {
+      const edge = landscapeTopArcGeometry(0);
+      // The left edge seat sits right of nothing and above the centre line,
+      // so the pot is inward-right and downward from it.
+      expect(edge.towardPot.x).toBeGreaterThan(0);
+      expect(edge.towardPot.y).toBeGreaterThan(0);
+      // Box-normed like seatGeometry's own towardPot: the larger axis is
+      // exactly 1, not the usual Euclidean unit vector.
+      expect(Math.max(Math.abs(edge.towardPot.x), Math.abs(edge.towardPot.y))).toBeCloseTo(1, 5);
+
+      const apex = landscapeTopArcGeometry(2);
+      // Dead centre horizontally, so the only pull toward the pot is downward.
+      expect(apex.towardPot.x).toBeCloseTo(0, 5);
+      expect(apex.towardPot.y).toBeGreaterThan(0);
+    });
+
+    it("clamps rather than throwing on an out-of-range slot", () => {
+      expect(() => landscapeTopArcGeometry(-1)).not.toThrow();
+      expect(() => landscapeTopArcGeometry(9)).not.toThrow();
+      expect(landscapeTopArcGeometry(-1)).toEqual(landscapeTopArcGeometry(0));
+      expect(landscapeTopArcGeometry(9)).toEqual(landscapeTopArcGeometry(4));
     });
   });
 

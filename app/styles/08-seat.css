@@ -113,6 +113,14 @@
   background: center/cover no-repeat;
 }
 
+/* Landscape-band 2D.5 opponent cutout, off by default. 17-landscape.css
+   turns it on and hides the medallion pieces above it in the same query --
+   both always render (see SeatFigure in player-seat.tsx) so there is no JS
+   orientation branch, only CSS picking which one paints. */
+.seat-figure-cutout {
+  display: none;
+}
+
 /* Whose turn it is, said with light on the player rather than a box drawn
    round them: a warm pool at their feet and the figure lifted out of the haze
    the distance falloff put on them. */
@@ -579,6 +587,11 @@
 }
 .seat-stack strong { color: inherit; font: 750 12px/1.1 ui-sans-serif, system-ui, sans-serif; }
 .seat-stack .chip-dot { width: 8px; height: 5px; box-shadow: 0 -2px 0 #725d26, 0 2px 0 #a98634; }
+/* Landscape-band 2D.5 nameplate glyph, off by default -- 17-landscape.css
+   swaps it in for chip-dot above inside the landscape-band query. */
+.chip-stack-glyph {
+  display: none;
+}
 
 .hand-strength {
   display: block;

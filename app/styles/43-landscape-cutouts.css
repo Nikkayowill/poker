@@ -1,0 +1,155 @@
+/* The landscape-band 2D.5 redesign: opponents, the nameplate chip glyph, and
+ * the right-edge tool rail.
+ *
+ * A sibling of 17-landscape.css rather than an addition to it -- that file's
+ * own header says its scope is deliberately narrow ("this one carries only
+ * the local seat... nothing here shares a selector with anything there"),
+ * and everything below is about the OTHER five seats plus new chrome that
+ * belongs to neither the local seat nor 12-responsive.css's table/action-bar
+ * concerns. Same landscape-band condition as both of those, restated here
+ * rather than shared, for the same reason table-geometry.ts's own note
+ * gives: the three have to switch on together or seats fall out of step
+ * with the felt they are drawn against.
+ *
+ * PLACEHOLDER ART. The opponent cutout below points at two generic renders
+ * (lib/game/landscape-cutout-placeholder.ts), not real per-character art --
+ * see that file's own note. The sizing/mask numbers here are a first pass
+ * against that placeholder pair and are expected to need retuning once real
+ * art lands, the same way every other landscape number in this app was
+ * "measured, not reasoned" against an actual render.
+ */
+
+/* Off the stage everywhere else. Always rendered (poker-table.tsx), shown
+   only inside the landscape band below. */
+.landscape-tool-rail {
+  display: none;
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  /* ---------------------------------------------------------------------
+     OPPONENT CUTOUT, replacing the medallion for the five ring seats only
+     -- the hero keeps the medallion (17-landscape.css owns that seat).
+     Both markups always render (SeatFigure, player-seat.tsx); this is the
+     only place that picks between them.
+     --------------------------------------------------------------------- */
+  .player-seat:not(.seat-mine) .seat-figure-fallback,
+  .player-seat:not(.seat-mine) .seat-figure-art,
+  .player-seat:not(.seat-mine) .seat-figure-photo {
+    display: none;
+  }
+  /* Taller than it is wide -- a torso-up cutout, not the medallion's square
+     crop -- and considerably bigger, since it is meant to read as a person
+     seated at the table rather than a contained face marker. */
+  .player-seat:not(.seat-mine) .seat-figure {
+    width: clamp(64px, 13vw, 120px);
+    aspect-ratio: .78;
+    margin-bottom: -6%;
+  }
+  .player-seat:not(.seat-mine) .seat-figure-cutout {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: 50% 100%;
+    /* Same dissolve-into-the-room idea as .seat-far (08-seat.css) and the
+       dealer stage (27-dealer-stage.css), not true DOM occlusion by a rail
+       layer -- see the note in player-seat.tsx's SeatFigure for why: a
+       scaled seat is its own stacking context, and sinking the body behind
+       a real rail layer inside it would trap the nameplate and cards behind
+       that layer too, which is the exact regression table-geometry.ts's
+       seatZ() comment records fixing once already. */
+    -webkit-mask-image: linear-gradient(to bottom, #000 0 72%, transparent 97%);
+    mask-image: linear-gradient(to bottom, #000 0 72%, transparent 97%);
+    /* Atmospheric falloff, lifted from the dealer stage's own stops: a
+       cut-out at full saturation out-punches the cards it sits behind. */
+    filter: saturate(.88) brightness(.94) contrast(.97) drop-shadow(0 8px 14px rgba(0,0,0,.5));
+  }
+  .player-seat.seat-current:not(.seat-mine) .seat-figure-cutout {
+    filter: saturate(1) brightness(1.08) contrast(1) drop-shadow(0 10px 18px rgba(0,0,0,.55));
+  }
+
+  /* ---------------------------------------------------------------------
+     NAMEPLATE ABOVE THE HEAD, opponents only -- the reference's own
+     arrangement, and the opposite of every other breakpoint's plate-below-
+     figure order. `order` on a flex child, not a position change: .seat-far
+     .seat-plate's own -4% pull-up (08-seat.css) is written for a plate
+     BELOW the figure and would land the pill on top of the face here, so
+     this carries a stronger selector ((0,3,0) against that rule's (0,2,0))
+     that wins on specificity rather than relying on cascade order.
+     --------------------------------------------------------------------- */
+  .player-seat:not(.seat-mine) .seat-plate {
+    order: -1;
+    margin-top: 0;
+    margin-bottom: 6px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(8,10,14,.78);
+    border: 1px solid rgba(255,255,255,.12);
+  }
+
+  /* ---------------------------------------------------------------------
+     CHIP GLYPH. Every seat, hero included -- this is a straight upgrade
+     over the single chip-dot bullet, not an opponent-only treatment. Built
+     from the app's real chip palette in player-seat.tsx's ChipStackGlyph,
+     not a separate table (see chip-denominations.ts's own note on why there
+     is exactly one of those in the tree).
+     --------------------------------------------------------------------- */
+  .chip-dot {
+    display: none;
+  }
+  .chip-stack-glyph {
+    display: inline-flex;
+    align-items: flex-end;
+    height: 14px;
+  }
+  .chip-stack-glyph-disc {
+    width: 12px;
+    height: 12px;
+    margin-left: -6px;
+    border: 1px solid rgba(0,0,0,.25);
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0,0,0,.5), inset 0 0 0 1.5px rgba(245,240,224,.85);
+  }
+  .chip-stack-glyph-disc:first-child {
+    margin-left: 0;
+  }
+
+  /* ---------------------------------------------------------------------
+     TOOL RAIL. New chrome, not present at any other breakpoint -- vertically
+     centred on the right edge, clear of the action bar's bottom-right
+     corner (12-responsive.css) and the top-right area 12-responsive.css's
+     own comments already document as tight on the shortest handsets.
+     --------------------------------------------------------------------- */
+  .landscape-tool-rail {
+    display: flex;
+    position: absolute;
+    right: 8px;
+    top: 40%;
+    z-index: 18;
+    flex-direction: column;
+    gap: 8px;
+    transform: translateY(-50%);
+  }
+  /* button and Link both -- the Leaderboard item is internal navigation
+     (next/link -> an <a>), the other two are in-page actions, and the rail
+     reads as one row of equal icons regardless of which each turns out to
+     be under the hood. */
+  .landscape-tool-rail button,
+  .landscape-tool-rail a {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 9px;
+    background: rgba(14,21,18,.85);
+    color: #c9b46a;
+    box-shadow: 0 4px 10px rgba(0,0,0,.35);
+    cursor: pointer;
+  }
+  .landscape-tool-rail button:hover,
+  .landscape-tool-rail a:hover {
+    border-color: rgba(217,184,93,.32);
+    color: #f0dfaa;
+  }
+}

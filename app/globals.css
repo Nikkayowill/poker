@@ -68,6 +68,11 @@
    seat on it, so it has to cascade after the table, seat, responsive,
    first-person and landscape sheets whose positioning it overrides. */
 @import "./styles/42-racetrack-table.css";
+/* After 08/09/12/17/42: the landscape-band 2D.5 redesign restyles opponent
+   seats, the nameplate chip glyph and the action bar's buttons, so it must
+   cascade after the sheets that define what it is overriding (and after 42,
+   since the two are independent but share the "landscape-band" condition). */
+@import "./styles/43-landscape-cutouts.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

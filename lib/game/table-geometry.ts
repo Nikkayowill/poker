@@ -298,6 +298,73 @@ export function seatZ(depth: number): number {
   return 4 + Math.round(depth);
 }
 
+/**
+ * Opponent positions for the landscape-band 2D.5 redesign: a top arc rather
+ * than the full ellipse `seatGeometry` draws for every other plate.
+ *
+ * PlayPokerGO-style — every opponent sits above centre with their nameplate
+ * over their head, instead of the flank pair the general ellipse puts low on
+ * the felt (measured: y=69% at LANDSCAPE_RADIUS_Y/CENTER_Y above, well below
+ * this arc's y=36% edges). That is a different shape, not a retuned one, so
+ * it is a second table rather than a branch inside `seatGeometry`.
+ *
+ * Five fixed points, not a formula over `count`: this app is fixed six-max
+ * (one hero + five opponents), so there is nothing to generalise over, and
+ * hand-placed points are what LANDSCAPE_RADIUS_X/Y themselves are, just
+ * solved against a top arc instead of a full oval.
+ *
+ * THE APEX'S Y IS THE ELLIPSE'S OWN "cy - ry >= 24.6" FLOOR (see
+ * LANDSCAPE_RADIUS_Y's comment above), not a number carried over from the
+ * source mock. A first pass used the mock's own 12/17/17 -- a percentage
+ * that means nothing on its own here, because `.seat-ring` (08-seat.css)
+ * lifts every seat by roughly half its own box height to centre it ON that
+ * percentage point, the same mechanic the ellipse's far seat is solved
+ * against. Copied without re-solving for it, 12% put that lift's TOP edge
+ * behind the 42px landscape header -- measured on a real render, the far
+ * seat's whole nameplate render was clipped by `.table-area`'s own
+ * `overflow: hidden`, not merely mis-placed. 27/31 reuse and build outward
+ * from the ellipse's already-proven-safe 27 rather than re-deriving a new
+ * floor by hand. The arc reads flatter than the source mock as a result --
+ * clearing this header at this stage height costs some of the bow. */
+const LANDSCAPE_TOP_ARC: ReadonlyArray<{ x: number; y: number }> = [
+  { x: 8, y: 36 }, { x: 27, y: 31 }, { x: 50, y: 27 }, { x: 73, y: 31 }, { x: 92, y: 36 },
+];
+/* The arc's own y extremes, not LANDSCAPE_RADIUS_Y/CENTER_Y -- depth here
+   reads off this shape, not the ellipse it replaces. */
+const LANDSCAPE_ARC_NEAR_Y = 36;
+const LANDSCAPE_ARC_FAR_Y = 27;
+
+/**
+ * Geometry for one opponent on the landscape top arc. `opponentSlot` is
+ * 0-indexed among the five opponents (hero excluded, same convention as
+ * `seatGeometry`'s `slot - 1`); out-of-range slots clamp to the arc rather
+ * than throwing, since a defensive caller should still get a seat on stage.
+ */
+export function landscapeTopArcGeometry(opponentSlot: number): SeatGeometry {
+  const point = LANDSCAPE_TOP_ARC[Math.min(Math.max(opponentSlot, 0), LANDSCAPE_TOP_ARC.length - 1)];
+  const centerY = LANDSCAPE_CENTER_Y;
+
+  // Same measure seatGeometry uses depth for: 0 at the far rail, 1 nearest
+  // the viewer. The arc's own edges (y=36) read as near, its apex (y=12) as
+  // far -- the two seats flanking the hero versus the one across the table.
+  const depth = (point.y - LANDSCAPE_ARC_FAR_Y) / (LANDSCAPE_ARC_NEAR_Y - LANDSCAPE_ARC_FAR_Y);
+
+  // Toward (50, centerY), the same box-norm seatGeometry derives its own
+  // towardPot from -- a bet chip needs to travel inward from this arc too,
+  // and deriving it keeps that true without a seat-specific override.
+  const inwardX = 50 - point.x;
+  const inwardY = centerY - point.y;
+  const dominant = Math.max(Math.abs(inwardX), Math.abs(inwardY)) || 1;
+
+  return {
+    x: point.x,
+    y: point.y,
+    depth,
+    z: Math.round(depth * 100),
+    towardPot: { x: inwardX / dominant, y: inwardY / dominant },
+  };
+}
+
 export interface SeatGeometry {
   /** Percentage across the table's bounding box. */
   x: number;

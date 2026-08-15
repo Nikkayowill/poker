@@ -248,6 +248,15 @@ export function chipFlightPlan(
   return flattenChipBuckets(calculateChipDenominations(amount, rest), maxChips);
 }
 
+/**
+ * A `ChipColour` channel as a CSS hex string, for the one DOM consumer
+ * (the landscape nameplate's chip glyph, components/table/player-seat.tsx) --
+ * everything else here stays numbers on purpose, see `ChipColour`'s own note.
+ */
+export function cssHex(channel: number): string {
+  return `#${channel.toString(16).padStart(6, "0")}`;
+}
+
 /** Every denomination the house stocks, descending. For tests and catalogues. */
 export const ALL_CHIP_DENOMINATIONS: readonly number[] = Object.keys(CHIP_COLOURS)
   .map(Number)

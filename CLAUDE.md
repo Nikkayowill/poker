@@ -243,6 +243,37 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   a fixed CSS margin can't do that job because the gap between the board and pot anchors changes
   with every camera fit, not just with screen width.
 
+### Landscape-band 2D.5 HUD redesign (2026-08-13, branch `feat/landscape-2d5-mobile-hud`)
+- PlayPokerGO-style, **landscape-band only** (`isLandscapeBand`) — portrait/desktop and the whole
+  3D/WebGL room are untouched by design (imported from a claude.ai/design mock, scope narrowed to
+  landscape after review). New `landscapeTopArcGeometry` (`lib/game/table-geometry.ts`) is a second,
+  hardcoded 5-point seat table for the opponent ring in this band — a real shape fork from the
+  general ellipse `seatGeometry` draws everywhere else (top arc vs. a full oval), not a retuned
+  constant; hardcoded rather than parametric because this app is fixed six-max. Opponents there get
+  a full-body cutout figure (`.seat-figure-cutout`, mask-fade like `.seat-far`/the Blackjack dealer
+  stage, **not** true DOM occlusion — a scaled seat is its own stacking context and sinking a body
+  behind a real rail layer inside it re-traps the nameplate, the exact regression `seatZ()`'s own
+  comment records fixing once already) and a nameplate reordered above the head. Hero seat gets a
+  bottom-left row instead of centered (`17-landscape.css`, still "local seat only" scope). Action bar
+  goes to floating white pills and a new right-edge tool rail appears (History/Leaderboard/Edit
+  profile, wired to the same handlers the header dropdown already uses — no second copy of that
+  logic). New `app/styles/43-landscape-cutouts.css` owns all of this — neither `17-landscape.css`
+  ("local seat only") nor `12-responsive.css` ("header/table/action-bar sizing") was the right home
+  for opponent-seat styling or new chrome, so it's a sibling, not an addition to either. Numbered 43,
+  not 42 — `42-racetrack-table.css` landed first and claimed that slot.
+- **Placeholder art, not real character art.** No per-character full-body cutout art exists anywhere
+  in the repo (the 8 unlockable characters are `.glb` only; the 20 illustrated cosmetics are bust
+  crops) — `lib/game/landscape-cutout-placeholder.ts` alternates two generic test renders
+  (`public/pokertable/landscape-cutout-{a,b}.png`, not committed by Claude — Kayo drops these in
+  locally) across every opponent seat regardless of identity, the same way the source mock did.
+  Swapping in real per-character art later is a path/lookup change in that one file, not a rendering
+  rewrite.
+- Nameplate's `chip-dot` glyph gets a landscape-only sibling, `ChipStackGlyph`
+  (`components/table/player-seat.tsx`), a small layered chip-disc stack built from the app's real
+  `CHIP_COLOURS`/`calculateChipDenominations` (a new `cssHex()` export converts the numeric channels
+  chip-denominations.ts is intentionally full of into CSS strings for this one DOM consumer) — not
+  the source mock's own separate 4-rung palette, to avoid forking the shared, drift-guarded table.
+
 ### Rewarded-ad faucet (2026-08-11)
 - Wait moved 30s→5min (`REWARDED_AD_DURATION_MS`), grant TTL 10→20min to compensate. New direct
   "Free Gold" row in the lobby player menu (same eligibility threshold as the existing busted-hand

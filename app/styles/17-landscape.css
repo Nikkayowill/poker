@@ -56,9 +56,20 @@
      one property: writing `scale(1.15)` alone here would drop the
      `translateX(-50%)` that centres it and hang the seat off the right of
      the stage. The pair are always written together. */
+  /* PLAYPOKERGO-STYLE HERO ROW. Off dead-centre, toward the bottom-left
+     corner, per the 2D.5 redesign this block's own top comment now also
+     carries. The mock draws the hero HUD and the hole cards as two separate
+     bottom-left/bottom-centre fixtures; this moves the one cluster this file
+     already has (figure + cards + plate, cards anchored at `left: 100%` of
+     the figure by .seat-mine .seat-cards in 16-first-person.css) left as a
+     whole instead of splitting it into two independently-positioned pieces
+     -- every measurement this file already carries (--bet-reach-y, the
+     scale/transform-origin pair below) stays correct, because nothing about
+     how the cluster is built changed, only where it sits. Revisit if a real
+     render wants the two further apart than one shifted cluster can reach. */
   .seat-mine.seat-ring {
     position: absolute;
-    left: 50% !important;
+    left: 18% !important;
     top: auto !important;
     bottom: -12px;
     z-index: 20;

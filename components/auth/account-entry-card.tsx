@@ -151,7 +151,7 @@ export function AccountEntryCard({
           // what falls off the bottom.
           <p>
             Poker, blackjack, Hi-Lo and the daily puzzles — one wallet across
-            the whole arcade.
+            all of Ante Up.
           </p>
         )}
       </header>

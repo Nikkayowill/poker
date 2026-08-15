@@ -58,7 +58,7 @@ import {
 } from "@/lib/game3d/room-theme";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
-import { Gift, HeartHandshake, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
+import { Coins, Gift, HeartHandshake, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
 import { Lobby } from "@/components/lobby/lobby";
 import { retireFirstRunStrip } from "@/components/lobby/first-run-strip";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
@@ -1319,6 +1319,7 @@ export function PokerApp() {
       ]
       : []),
     { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
+    { kind: "link", label: "Buy Gold", href: gameId ? `/store/gold?table=${gameId}` : "/store/gold", icon: <Coins size={15} /> },
     { kind: "link", label: "Support StackChips", href: gameId ? `/store?table=${gameId}` : "/store", icon: <HeartHandshake size={15} /> },
     { kind: "link", label: "Leaderboard", href: "/leaderboard", icon: <Trophy size={15} /> },
     { kind: "separator" },

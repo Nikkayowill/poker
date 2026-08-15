@@ -328,9 +328,9 @@ export function Lobby({
             </span>
           </button>
 
-          <Link className="hub-tile hub-tile-gold" href="/store" style={tileIndexStyle(2)} onClick={tapSound}>
+          <Link className="hub-tile hub-tile-gold" href="/store/gold" style={tileIndexStyle(2)} onClick={tapSound}>
             <span className="hub-tile-body">
-              <strong>Support StackChips</strong>
+              <strong>Buy Gold</strong>
               <small>Optional — never required to play</small>
             </span>
           </Link>

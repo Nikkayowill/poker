@@ -58,6 +58,198 @@ export function isTestPurchaseAllowed(profileId: string): boolean {
     .includes(profileId);
 }
 
+// ---- Gold purchase (reinstated 2026-08-15) ------------------------------
+//
+// See lib/legal/documents.ts's gold_disclosure for why this exists again
+// after being pulled: an informed, accepted risk decision, not an
+// oversight. Two tiers only, both one-time, each a live Stripe Price read
+// at request time the same way the support tiers below are -- a Price's
+// amount can only be changed by creating a new Price, never edited in
+// place, so what Stripe returns is authoritative over anything cached here.
+
+export interface GoldTierDef {
+  key: string;
+  label: string;
+  description: string;
+  goldAmount: number;
+  /** Which env var holds this tier's live Stripe Price id. */
+  envVar: string;
+  /** Which env var holds this tier's test-mode Price id, for verification. */
+  testEnvVar: string;
+}
+
+/**
+ * envVar names deliberately reuse the pre-existing vars from the old 4-tier
+ * ladder (Kayo never removed them from Vercel when support payments
+ * replaced Buy Gold) rather than minting new ones -- STRIPE_REBUY_PRICE_ID
+ * now points at a new $2.99 CAD Price (prod_V4ps93p85SZfo0 /
+ * price_1U4gD5HrjHRpeZPReMjQYirb, 50k Gold), STRIPE_PRICE_VALUE at the
+ * pre-existing $9.99 CAD Price that was already sitting in the account
+ * (prod_UyFbT9n1qvgaNF / price_1TyJ6NHrjHRpeZPRtZBjlPb6, 500k Gold here --
+ * its old tier_key: "value" Stripe metadata is stale and unused; goldAmount
+ * always comes from this array, never from anything stored on the Price).
+ */
+export const GOLD_TIERS: GoldTierDef[] = [
+  {
+    key: "starter",
+    label: "Starter Pack",
+    description: "A solid stack to sit down with.",
+    goldAmount: 50000,
+    envVar: "STRIPE_REBUY_PRICE_ID",
+    testEnvVar: "STRIPE_TEST_PRICE_STARTER",
+  },
+  {
+    key: "high_roller",
+    label: "High Roller",
+    description: "Ten packs worth, all at once.",
+    goldAmount: 500000,
+    envVar: "STRIPE_PRICE_VALUE",
+    testEnvVar: "STRIPE_TEST_PRICE_VALUE",
+  },
+];
+
+export function goldTierByKey(key: string): GoldTierDef | null {
+  return GOLD_TIERS.find((tier) => tier.key === key) ?? null;
+}
+
+export interface ResolvedGoldTier {
+  key: string;
+  label: string;
+  description: string;
+  goldAmount: number;
+  priceId: string;
+  unitAmount: number;
+  currency: string;
+}
+
+const resolvedGoldTierCache = new Map<string, Promise<ResolvedGoldTier>>();
+
+/**
+ * Reads a tier's Price from Stripe rather than trusting anything stored
+ * locally -- same validation shape as resolveSupportPrice below. Cached per
+ * mode+tier key so a burst of checkout requests does not hit the Stripe API
+ * once per request.
+ */
+export function resolveGoldTier(key: string, mode: StripeMode = "live"): Promise<ResolvedGoldTier> {
+  const cacheKey = `${mode}:${key}`;
+  const cached = resolvedGoldTierCache.get(cacheKey);
+  if (cached) return cached;
+
+  const work = (async () => {
+    const def = goldTierByKey(key);
+    if (!def) throw new Error("That Gold pack does not exist.");
+    const stripe = clientFor(mode);
+    const priceId = process.env[mode === "live" ? def.envVar : def.testEnvVar]?.trim();
+    if (!stripe || !priceId) throw new Error("That Gold pack is not configured yet.");
+
+    const price = await stripe.prices.retrieve(priceId);
+    if (price.livemode !== (mode === "live")) {
+      throw new Error(`The ${key} Price and secret key are from different modes.`);
+    }
+    if (!price.active || price.type !== "one_time" || price.unit_amount === null) {
+      throw new Error(`The ${key} Price must be an active, fixed one-time Price.`);
+    }
+
+    const productId = typeof price.product === "string" ? price.product : price.product.id;
+    const product = await stripe.products.retrieve(productId);
+    if ("deleted" in product && product.deleted) throw new Error(`The ${key} Product has been deleted.`);
+    if (!("active" in product) || !product.active) throw new Error(`The ${key} Product is not active.`);
+
+    return {
+      key: def.key,
+      label: def.label,
+      description: def.description,
+      goldAmount: def.goldAmount,
+      priceId,
+      unitAmount: price.unit_amount,
+      currency: price.currency,
+    };
+  })();
+
+  resolvedGoldTierCache.set(cacheKey, work);
+  work.catch(() => resolvedGoldTierCache.delete(cacheKey));
+  return work;
+}
+
+/**
+ * Every Gold tier that has a Price configured, resolved and validated -- a
+ * tier whose env var is unset simply does not appear. Always live: the
+ * public storefront never sells a test-mode pack.
+ */
+export async function listGoldTiers(): Promise<ResolvedGoldTier[]> {
+  const settled = await Promise.allSettled(GOLD_TIERS.map((tier) => resolveGoldTier(tier.key)));
+  return settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+}
+
+export async function verifiedGoldSession(sessionId: string, expectedProfileId?: string, mode: StripeMode = "live") {
+  const stripe = clientFor(mode);
+  if (!stripe) throw new Error("Stripe payments are not configured yet.");
+  const session = await stripe.checkout.sessions.retrieve(sessionId, {
+    expand: ["line_items.data.price"],
+  });
+  const metadata = session.metadata ?? {};
+  const tierKey = metadata.tier_key;
+  if (!tierKey) throw new Error("Stripe session has no StackChips Gold tier metadata.");
+  const tier = await resolveGoldTier(tierKey, mode);
+
+  const lineItems = session.line_items?.data ?? [];
+  const item = lineItems[0];
+  const itemPriceId = typeof item?.price === "string" ? item.price : item?.price?.id;
+  const valid = (
+    session.mode === "payment"
+    && session.livemode === (mode === "live")
+    && session.currency === tier.currency
+    && session.amount_total === tier.unitAmount
+    && lineItems.length === 1
+    && item?.quantity === 1
+    && itemPriceId === tier.priceId
+    && metadata.kind === "gold_purchase"
+    && metadata.gold_amount === String(tier.goldAmount)
+    && Boolean(metadata.profile_id)
+    && session.client_reference_id === metadata.profile_id
+    && (!expectedProfileId || metadata.profile_id === expectedProfileId)
+  );
+  if (!valid) throw new Error("Stripe payment details did not match the requested Gold pack.");
+  return { session, tier, profileId: metadata.profile_id! };
+}
+
+/**
+ * US states where selling a chance-game-usable virtual currency for real
+ * money is a live litigation risk (Kater v. Churchill Downs / Big Fish
+ * Casino, decided under Washington's unusually broad "thing of value"
+ * gambling statute -- see lib/legal/documents.ts's gold_disclosure). This is
+ * the one mitigation applied; it is not a claim that buying Gold is risk-free
+ * everywhere else.
+ */
+const RESTRICTED_GOLD_BILLING_STATES: Record<string, ReadonlySet<string>> = {
+  US: new Set(["WA"]),
+};
+
+function isRestrictedGoldBillingAddress(address: Stripe.Address | null | undefined): boolean {
+  if (!address?.country) return false;
+  const blocked = RESTRICTED_GOLD_BILLING_STATES[address.country];
+  if (!blocked || !address.state) return false;
+  return blocked.has(address.state.toUpperCase());
+}
+
+/**
+ * Refunds a Gold purchase whose Stripe-collected billing address is in a
+ * restricted state, and reports whether it did. Checkout collects the
+ * address in the same step as payment (see billing_address_collection:
+ * "required" at session creation), so this runs after the charge exists
+ * rather than blocking it beforehand -- the charge is refunded immediately,
+ * before any Gold is credited, never the other way around.
+ */
+export async function enforceGoldBillingRestriction(session: Stripe.Checkout.Session, mode: StripeMode): Promise<boolean> {
+  if (!isRestrictedGoldBillingAddress(session.customer_details?.address)) return false;
+  const stripe = clientFor(mode);
+  const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
+  if (stripe && paymentIntentId) {
+    await stripe.refunds.create({ payment_intent: paymentIntentId, reason: "requested_by_customer" });
+  }
+  return true;
+}
+
 // ---- Voluntary support (one-time and monthly) --------------------------
 //
 // No tier here ever grants Gold or anything with in-game economic effect --

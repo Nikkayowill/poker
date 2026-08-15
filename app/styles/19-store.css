@@ -1,5 +1,26 @@
 /* The support panel: browse-any-time one-time/monthly options. Mirrors the
-   leaderboard/collection page shell pattern rather than inventing a new one. */
+   leaderboard/collection page shell pattern rather than inventing a new one.
+   GoldStore (components/store/gold-store.tsx) reuses every .support-panel-*
+   class below -- the two panels share a layout. These two are the only
+   classes unique to GoldStore, for the header balance badge SupportPanel
+   doesn't have. */
+
+.gold-store-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gold-store-balance {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 11px;
+  background: rgba(219,156,11,.12);
+  color: var(--gold-light);
+  font-size: 13px;
+  white-space: nowrap;
+}
 
 .support-panel-shell {
   min-height: 100vh;

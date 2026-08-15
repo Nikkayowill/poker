@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureProfile } from "@/lib/server/profile-store";
 import {
+  resolveGoldTier,
   stripeClient,
   supportTierByKey,
 } from "@/lib/server/stripe";
@@ -12,17 +13,33 @@ import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
+const noCashValueNotice = "StackChips Gold is virtual entertainment currency with no cash value and cannot be redeemed, exchanged, or withdrawn for real money.";
+
 /**
- * One request shape: a support tier plus which billing option, any time.
- * `gameId` only sends the player back to the table they were at, if any --
- * there is no rebuy-with-money flow anymore (a busted seat is recovered
- * through the backstop grant / lobby faucets, never a purchase).
+ * Two request shapes, distinguished by the presence of `billing`:
+ *
+ *  - {tierKey, billing, gameId?} is a voluntary support payment (one-time or
+ *    monthly), unchanged from before.
+ *  - {tierKey, gameId?} (no `billing`) is a Gold purchase -- always one-time.
+ *    Tried second in the union: an object carrying `billing` would still
+ *    structurally satisfy this looser shape (z.object ignores extra keys by
+ *    default), so the stricter support shape must be tried first.
+ *
+ * There is no rebuy-with-money flow anymore -- a busted seat is recovered
+ * through the backstop grant / lobby faucets or a Gold purchase, never a
+ * dedicated rebuy product.
  */
-const bodySchema = z.object({
-  tierKey: z.string().min(1),
-  billing: z.enum(["one_time", "monthly"]),
-  gameId: z.string().uuid().optional(),
-});
+const bodySchema = z.union([
+  z.object({
+    tierKey: z.string().min(1),
+    billing: z.enum(["one_time", "monthly"]),
+    gameId: z.string().uuid().optional(),
+  }),
+  z.object({
+    tierKey: z.string().min(1),
+    gameId: z.string().uuid().optional(),
+  }),
+]);
 
 export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, "stripe:checkout", 5, 60 * 1000);
@@ -32,11 +49,11 @@ export async function POST(request: NextRequest) {
     const ownerToken = readSessionToken(request);
     if (!ownerToken) return NextResponse.json({ error: "Your table session expired." }, { status: 401 });
     const parsed = bodySchema.safeParse(await request.json());
-    if (!parsed.success) return NextResponse.json({ error: "A valid support tier is required." }, { status: 400 });
+    if (!parsed.success) return NextResponse.json({ error: "A valid Gold pack or support tier is required." }, { status: 400 });
 
     const stripe = stripeClient();
     if (!stripe) {
-      return NextResponse.json({ error: "Support payments are not configured yet." }, { status: 503 });
+      return NextResponse.json({ error: "Payments are not configured yet." }, { status: 503 });
     }
 
     const profile = await ensureProfile(ownerToken);
@@ -47,9 +64,35 @@ export async function POST(request: NextRequest) {
     const pending = await pendingAcceptances(profile.id);
     if (pending.length > 0) {
       return NextResponse.json(
-        { error: "Please accept the Terms of Service and support disclosure first.", pendingAcceptances: pending },
+        { error: "Please accept the Terms of Service and disclosures first.", pendingAcceptances: pending },
         { status: 412 },
       );
+    }
+
+    const origin = request.nextUrl.origin;
+
+    if (!("billing" in parsed.data)) {
+      const { tierKey, gameId } = parsed.data;
+      const tier = await resolveGoldTier(tierKey);
+      const returnPath = gameId ? `/store/gold?table=${gameId}` : "/store/gold";
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        payment_method_types: ["card"],
+        billing_address_collection: "required",
+        line_items: [{ price: tier.priceId, quantity: 1 }],
+        success_url: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=cancelled`,
+        client_reference_id: profile.id,
+        custom_text: { submit: { message: noCashValueNotice } },
+        metadata: {
+          kind: "gold_purchase",
+          tier_key: tier.key,
+          profile_id: profile.id,
+          gold_amount: String(tier.goldAmount),
+        },
+      });
+      if (!session.url) throw new Error("Stripe did not return a checkout URL.");
+      return NextResponse.json({ url: session.url });
     }
 
     const def = supportTierByKey(parsed.data.tierKey);
@@ -57,7 +100,6 @@ export async function POST(request: NextRequest) {
 
     const { billing, gameId } = parsed.data;
     const returnPath = gameId ? `/store?table=${gameId}` : "/store";
-    const origin = request.nextUrl.origin;
 
     // A repeat supporter should not accumulate duplicate Stripe Customers.
     const existing = await latestStripeSubscription(profile.id);

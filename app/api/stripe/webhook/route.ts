@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import {
+  enforceGoldBillingRestriction,
   isTestPurchaseAllowed,
   stripeClient,
   stripeTestClient,
   stripeTestWebhookSecret,
   stripeWebhookSecret,
+  verifiedGoldSession,
   verifiedSupportSession,
   type StripeMode,
 } from "@/lib/server/stripe";
@@ -14,10 +16,11 @@ import { fulfillStripePayment, syncSubscriptionState } from "@/lib/server/stripe
 export const runtime = "nodejs";
 
 /**
- * One endpoint for every support-payment shape -- one-time and the full
- * monthly-subscription lifecycle -- distinguished by event type, and for
- * checkout.session.completed, by `metadata.kind`/`session.mode` set at
- * Checkout creation time (see app/api/stripe/checkout-session/route.ts).
+ * One endpoint for every payment shape -- Gold purchases, one-time support,
+ * and the full monthly-subscription lifecycle -- distinguished by event
+ * type, and for checkout.session.completed, by `metadata.kind`/
+ * `session.mode` set at Checkout creation time (see
+ * app/api/stripe/checkout-session/route.ts).
  *
  * It is also one endpoint for both live and test mode: Stripe supports
  * registering the same URL twice, once per mode, each with its own signing
@@ -89,8 +92,26 @@ export async function POST(request: NextRequest) {
           await syncSubscriptionState(stripe, session.subscription, mode === "live", eventCreatedAt);
           return ack();
         }
-        // mode === "payment": the only kind left is support_one_time.
-        if (session.payment_status !== "paid" || session.metadata?.kind !== "support_one_time") return ack();
+        // mode === "payment": the only kinds left are gold_purchase and
+        // support_one_time.
+        if (session.payment_status !== "paid") return ack();
+
+        if (session.metadata?.kind === "gold_purchase") {
+          const { session: verified, tier, profileId } = await verifiedGoldSession(session.id, undefined, mode);
+          if (verified.payment_status !== "paid") return ack();
+          if (mode === "test" && !isTestPurchaseAllowed(profileId)) return ack();
+          // Refunded (never fulfilled) if the collected billing address is
+          // in a restricted state -- see enforceGoldBillingRestriction.
+          if (await enforceGoldBillingRestriction(verified, mode)) return ack();
+          await fulfillStripePayment(verified.id, profileId, tier.goldAmount, {
+            kind: "gold_purchase",
+            tierKey: tier.key,
+            livemode: mode === "live",
+          });
+          return ack();
+        }
+
+        if (session.metadata?.kind !== "support_one_time") return ack();
         const { session: verified, tier, profileId } = await verifiedSupportSession(session.id, undefined, mode);
         if (verified.payment_status !== "paid") return ack();
         // A test-mode event for a profile not on the allowlist is

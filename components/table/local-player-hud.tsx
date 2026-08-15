@@ -22,6 +22,7 @@
 
 import { useProgression } from "@/components/profile/use-progression";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
+import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /** A poker chip, not a coin -- this reads the table stack, not the Gold
@@ -66,6 +67,10 @@ export function LocalPlayerHud({
 
   return (
     <div className="player-hud">
+      <div className="player-hud-watermark">
+        <StackChipsMark size={104} />
+      </div>
+
       <div className="player-hud-portrait">
         {profile ? (
           <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
@@ -75,14 +80,17 @@ export function LocalPlayerHud({
           </span>
         )}
         {progression && (
-          <span className="player-hud-level" title={progression.title}>
+          <span className="player-hud-level" title={`Level ${progression.level}`}>
             {progression.level}
           </span>
         )}
       </div>
 
       <div className="player-hud-body">
-        <span className="player-hud-name">{name}</span>
+        <div className="player-hud-heading">
+          <span className="player-hud-name">{name}</span>
+          {progression && <span className="player-hud-title">{progression.title}</span>}
+        </div>
 
         {progression && (
           <div
@@ -97,12 +105,16 @@ export function LocalPlayerHud({
               className="player-hud-xp-fill"
               style={{ width: `${Math.round(progression.ratio * 100)}%` }}
             />
+            <div className="player-hud-xp-ticks" aria-hidden="true" />
           </div>
         )}
 
-        <span className="player-hud-cash">
-          <ChipGlyph />${stack.toLocaleString()}
-        </span>
+        <div className="player-hud-stat">
+          <span className="player-hud-stat-label">Stack</span>
+          <span className="player-hud-cash">
+            <ChipGlyph />${stack.toLocaleString()}
+          </span>
+        </div>
       </div>
     </div>
   );

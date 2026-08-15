@@ -49,7 +49,26 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
-### In progress (2026-08-12)
+### Desktop HUD/hole-card pass (2026-08-15, branch `feat/desktop-hud-and-hole-cards`)
+- Kayo's complaint about `local-player-hud.tsx`'s corner card: "generic profile icon," true even
+  though it's the player's real `<ProfileAvatar>`, because a plain circle is what a profile picture
+  looks like everywhere else in the app too. Fix is a hexagonal medallion frame scoped to this one
+  instance (`--hud-hex` custom property on `.player-hud-portrait`, shared by a backdrop `::before`,
+  the avatar and the fallback initials) plus real content the HUD already fetched and never showed:
+  the progression rank title (`lib/progression/rank.ts`) beside the name, and a labelled "Stack"
+  readout instead of a bare number. `box-shadow`/`border` don't follow `clip-path`'s cut corners, so
+  the gold ring is a separate, slightly larger hex painted behind the avatar rather than a border
+  on it. A `<StackChipsMark>` watermark (the header's own inline mark, large and faint) is a real
+  child element, not a pseudo-element — it needs `z-index: 0` against the portrait/body's `z-index: 1`
+  to paint behind them, and flex items respect `z-index` without needing `position` of their own, so
+  no extra stacking-context plumbing was needed on the two content columns.
+- Hero hole cards (`.seat-mine .own-cards .playing-card`, desktop only): bigger again (130px ceiling
+  → 190px) but *less* of each card actually shows on screen, not more — Kayo's ask was cards "coming
+  out of the bottom of the viewport," showing half, not the ~88%-visible read the old `bottom: -22px`
+  gave a 130px card. `--hole-card-w` on `.seat-mine` is the one source of truth for both the width
+  rule and `.seat-cards`' fixed `bottom` offset (`calc(var(--hole-card-w) / -1.4)`, half of
+  `playing-card`'s own `aspect-ratio: .7` height) — "half" has to hold at every viewport width this
+  clamp resolves to, not be a value retuned by hand alongside the width.
 - Three click sounds (`lib/audio/ui-sounds.ts`: `tapSound()`/`selectSound()`/`gameOnSound()`) replaced
   the old single `ui` cue with three call sites; wiring is centralized in `components/nav/menu.tsx`
   (the one dropdown behind both the lobby and table menus). `gameOnSound` is **edge-triggered** off

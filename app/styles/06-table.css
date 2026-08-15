@@ -697,7 +697,17 @@
    as a badge rather than a fixture. Welding it to the actual screen edge --
    `left: 0; bottom: 0`, no border on the two edges it meets -- and giving
    the pill more length to run before it rounds off is what makes it read as
-   mounted to the frame instead of dropped onto the felt near it. */
+   mounted to the frame instead of dropped onto the felt near it.
+
+   Rebuilt to read as a HUD plaque rather than a profile chip (Kayo: "generic
+   profile icon" -- true even though it's the player's real avatar, because a
+   plain circle is what a profile picture looks like everywhere else in this
+   app too). Three additions carry that, all sized to the extra width below
+   rather than the old 420px cap: a rank-title tag beside the name (real
+   progression data already fetched here, just never surfaced), a labelled
+   stack readout instead of a bare number, and a faint StackChipsMark
+   watermark -- the same inline mark the header uses at icon size, here large
+   and low-opacity as a plaque texture, not a logo placement. */
 .player-hud { display: none; }
 
 @media (min-width: 901px) {
@@ -708,11 +718,12 @@
     bottom: 0;
     z-index: 6;
     align-items: center;
-    gap: 16px;
-    max-width: min(420px, 38vw);
-    padding: 12px 34px 12px 14px;
-    padding-left: max(14px, env(safe-area-inset-left));
-    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    gap: 18px;
+    /* Was min(420px, 38vw) -- the room the title tag and stack label need. */
+    max-width: min(480px, 42vw);
+    padding: 13px 36px 13px 15px;
+    padding-left: max(15px, env(safe-area-inset-left));
+    padding-bottom: max(13px, env(safe-area-inset-bottom));
     border-radius: 0 999px 999px 0;
     border: 1px solid rgba(217, 184, 93, .3);
     border-left: none;
@@ -726,42 +737,99 @@
       0 0 42px rgba(217, 184, 93, .08);
     backdrop-filter: blur(18px);
     pointer-events: none;
+    overflow: hidden;
   }
+
+  /* A thin brand-sweep rule tucked inside the top edge -- a HUD "power rail"
+     touch, not a border around the whole pill (which would fight the welded
+     left/bottom edges above). Inset to the same padding as the content
+     below it rather than run corner to corner, so it never crosses the
+     rounded top-right end. */
+  .player-hud::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 15px;
+    right: 36px;
+    height: 2px;
+    background: var(--brand-sweep);
+    opacity: .55;
+  }
+}
+
+/* The plaque's own texture, not a logo lockup: large, faint, and clipped to
+   the panel along with everything else (`.player-hud`'s `overflow: hidden`)
+   so it can never poke past the rounded end. z-index: 0 against the portrait
+   and body's z-index: 1 below keeps it under the real content -- both of
+   those are flex items, which respect z-index without needing their own
+   `position` (see the flexbox spec), so no extra stacking-context plumbing
+   is needed to keep a plain absolutely-positioned mark from painting over
+   flex siblings that never asked to be positioned. */
+.player-hud-watermark {
+  position: absolute;
+  right: -8px;
+  bottom: -14px;
+  z-index: 0;
+  opacity: .1;
+  pointer-events: none;
 }
 
 .player-hud-portrait {
   position: relative;
+  z-index: 1;
   flex: 0 0 auto;
-  width: 64px;
-  height: 64px;
+  width: 68px;
+  height: 68px;
+  /* A hexagonal medallion, not the plain circle every other <ProfileAvatar>
+     in the app wears -- shared by the backdrop frame below and the avatar/
+     fallback themselves so all three clip to the same silhouette. */
+  --hud-hex: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+
+/* The medallion's frame. box-shadow/border don't follow a clip-path's cut
+   corners, so the gold ring is a separate, slightly larger hex sitting
+   behind the avatar rather than a border on it -- painted, not outlined. */
+.player-hud-portrait::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  clip-path: var(--hud-hex);
+  background: linear-gradient(155deg, var(--gold-light) 0%, var(--gold) 55%, #7a5608 100%);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .5);
 }
 
 /* Overrides 03-profile.css's 34px default via a descendant selector rather
    than a wider class list, so it wins on specificity regardless of load
    order -- same reasoning as the 3D HUD's identical override. */
 .player-hud-portrait .profile-avatar {
-  width: 64px;
-  height: 64px;
-  border: 2px solid var(--gold-light);
-  box-shadow: 0 0 0 3px rgba(8, 7, 5, .85), 0 6px 16px rgba(0, 0, 0, .5);
+  position: relative;
+  z-index: 1;
+  width: 68px;
+  height: 68px;
+  clip-path: var(--hud-hex);
+  border: none;
+  box-shadow: none;
 }
 
 .player-hud-portrait-fallback {
+  position: relative;
+  z-index: 1;
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  border: 2px solid var(--gold-light);
+  width: 68px;
+  height: 68px;
+  clip-path: var(--hud-hex);
   background: #1b1611;
   color: #f5f2ea;
   font: 700 24px Georgia, "Times New Roman", serif;
 }
 
 /* Overlapping the portrait's own bottom-right corner, not another line in
-   the text column -- the level is a property of the player pictured. */
+   the text column -- the level is a property of the player pictured.
+   z-index: 2 clears both the medallion frame (0) and the avatar (1). */
 .player-hud-level {
   position: absolute;
+  z-index: 2;
   right: -4px;
   bottom: -4px;
   min-width: 24px;
@@ -779,14 +847,26 @@
 }
 
 .player-hud-body {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
+  min-width: 0;
+}
+
+.player-hud-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
 }
 
 .player-hud-name {
-  max-width: 240px;
+  /* Flex-shrinks against the title tag's fixed width instead of a hardcoded
+     max-width guessed against the old, narrower panel. */
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   color: #f5f2ea;
   font-size: 15px;
@@ -795,9 +875,29 @@
   white-space: nowrap;
 }
 
+/* The rank title (Rail Bird / Grinder / .../ Legend, lib/progression/rank.ts)
+   -- real data this HUD already fetches for the level badge and never
+   showed. Longest string is "High Roller" at 11 characters; flex: 0 0 auto
+   against the name's flex: 1 1 auto is what keeps it from ever being the
+   thing that gets clipped. */
+.player-hud-title {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid rgba(217, 184, 93, .35);
+  background: rgba(217, 184, 93, .1);
+  color: var(--gold-light);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .player-hud-xp-track {
-  width: 190px;
-  max-width: 40vw;
+  position: relative;
+  width: 210px;
+  max-width: 42vw;
   height: 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, .1);
@@ -811,13 +911,42 @@
   transition: width 400ms ease;
 }
 
+/* Segmented ticks over the fill -- a scored meter, not a smooth loading bar,
+   which is what "level progress" reads as everywhere else on the web. Drawn
+   as hairline gaps rather than separate DOM segments so it stays one element
+   regardless of how many percent the fill covers. */
+.player-hud-xp-ticks {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(0, 0, 0, .32) 0 1px,
+    transparent 1px 21px
+  );
+  pointer-events: none;
+}
+
+.player-hud-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.player-hud-stat-label {
+  color: rgba(217, 184, 93, .55);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
 .player-hud-cash {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #d9c98a;
-  font-size: 13px;
-  font-weight: 700;
+  color: #f0dfaa;
+  font-size: 16px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 

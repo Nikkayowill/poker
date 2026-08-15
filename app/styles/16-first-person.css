@@ -160,6 +160,17 @@
 @media (min-width: 901px) {
   .seat-mine .seat-figure { display: none; }
 
+  /* One source of truth for the pair's size, referenced by both the width
+     rule below and the fixed offset that tucks half of it under the fold --
+     see that rule's own comment for why they have to share it. Defined on
+     the seat root rather than on .seat-cards/.playing-card directly so both
+     can read it: custom properties inherit down the DOM regardless of the
+     `position: fixed` a couple of rules down, which only breaks layout
+     containment, not the cascade. */
+  .seat-mine {
+    --hole-card-w: clamp(104px, calc(var(--seat-width) * .72), 190px);
+  }
+
   /* Off the seat's own box entirely and onto the screen itself. Centred in
      the seat's box (the previous rule here) still tied the pair's position
      to the felt's own coordinate space -- move the table, move the cards,
@@ -170,37 +181,48 @@
      against the real screen edge the way .connection-overlay's already does
      a few sheets up, not against any ancestor's box.
 
-     Pinned to the bottom centre of that screen, with the pair's own lower
-     edge tucked a little past it (`bottom: -22px` against roughly a 50-60px
-     tall card) -- the read the reference photo was pointing at: a hand held
-     up into frame from below, not a hand resting inside a seat slot. The
-     action bar has already vacated this exact stretch for the bottom-right
-     corner (06-table.css), so the middle of the bottom edge is this pair's
-     alone to use. */
+     Pinned to the bottom centre of that screen. `bottom` used to be a flat
+     -22px, which at the old 130px ceiling left roughly 88% of the card
+     showing -- closer to a hand resting on the rail than one held up into
+     frame. Kayo's ask was the opposite direction: bigger cards, but only
+     half shown, coming up from off-screen. `-1 * height / 2`, height being
+     width / .7 (playing-card's own aspect-ratio, 07-cards.css) -- exactly
+     half of whatever the pair's current width resolves to at this viewport,
+     so "half" holds at every breakpoint rather than being retuned by hand
+     alongside the width below. The felt is never at risk from this getting
+     bigger: the visible half only grows with the ceiling's square root of
+     nothing -- it *shrinks* slightly against the old build (max ~135px
+     visible against the old ~164px), because doubling a card's height while
+     hiding half of it still leaves less on screen than showing all of a
+     smaller one. */
   .seat-mine .seat-cards {
     position: fixed;
     left: 50%;
     top: auto;
-    bottom: -22px;
+    bottom: calc(var(--hole-card-w) / -1.4);
     margin-left: 0;
     transform: translateX(-50%);
     z-index: 20;
   }
 
-  /* "Nice and big": nothing shares this band with the cards any more, so
-     the old 50px ceiling -- sized specifically to stay clear of the figure
-     beside it -- no longer has anything to stay clear of. Roughly 2.6x the
-     old cap, short of the 104px this file's own history already tried and
-     rejected as a placard rather than a hand. */
+  /* "Nice and big, held up from below": nothing shares this band with the
+     cards any more, so the old 50px ceiling -- sized specifically to stay
+     clear of the figure beside it -- no longer has anything to stay clear
+     of. Bigger again than the previous desktop pass (130px -> 190px), safe
+     to push further now that half the card sits below the fold rather than
+     the whole thing on it -- see .seat-cards' own comment above. Still short
+     of the 104px *mobile* ceiling this file's history already tried and
+     rejected as a placard, scaled for how much larger a desktop viewport is. */
   .seat-mine .own-cards .playing-card {
-    width: clamp(70px, calc(var(--seat-width) * .55), 130px);
-    border-radius: 9px;
+    width: var(--hole-card-w);
+    border-radius: 10px;
   }
 
-  /* Scaled with the card width above, same -.4 ratio the base rule keeps
-     between its own .30 width and -.12 overlap. */
+  /* Same -.4 ratio the base rule keeps between its own .30 width and -.12
+     overlap, now read off --hole-card-w instead of restating the ratio
+     against --seat-width directly. */
   .seat-mine .own-cards .dealt-card-shell + .dealt-card-shell {
-    margin-left: calc(var(--seat-width) * -.22);
+    margin-left: calc(var(--hole-card-w) * -.4);
   }
 
   /* The bet corridor above exists to clear your own figure, and this is the

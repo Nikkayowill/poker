@@ -361,6 +361,13 @@ export async function rolloverSeasonIfDue(): Promise<string | null> {
     // for local/dev parity. What matters here is the rollover mechanics: the
     // season closes and exactly one new one opens.
     void rows;
+    // Mirrors rollover_season()'s prune: a closed season is never read again
+    // (every query above filters to the active season), so its rows would
+    // otherwise sit in this Map forever -- the memory-mode version of the
+    // same unbounded-growth problem the DB migration fixes.
+    for (const [key, row] of memorySeasonStats) {
+      if (row.seasonId === due.id) memorySeasonStats.delete(key);
+    }
     due.archived = true;
     memorySeasons.push({ id: randomUUID(), startsAt: due.endsAt, endsAt: due.endsAt + SEASON_LENGTH_MS, archived: false });
     return due.id;

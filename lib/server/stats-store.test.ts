@@ -180,5 +180,14 @@ describe("season rollover (memory mode)", () => {
 
     // Rolling over again immediately is a no-op: nothing is due yet.
     expect(await rolloverSeasonIfDue()).toBeNull();
+
+    // The closed season's stats are pruned, not left to accumulate forever --
+    // nothing ever reads a closed season's season_stats again (every query
+    // filters to the active season), so a leftover row here would just be
+    // the memory-mode mirror of the same unbounded-growth problem the
+    // matching DB migration (rollover_season_prunes_season_stats) fixes.
+    const remaining = [...globalThis.__riverRoomSeasonStats!.values()]
+      .filter((row) => row.seasonId === closedId);
+    expect(remaining).toHaveLength(0);
   });
 });

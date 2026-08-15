@@ -6,9 +6,12 @@ import {
   rememberCookieName,
   sessionCookieName,
   withRequestSessionCookie,
+  withSessionCookie,
   withSessionPreferenceCookie,
   withoutSessionCookie,
 } from "./session";
+
+const VALID_UUID = "123e4567-e89b-42d3-a456-426614174000";
 
 describe("session persistence preference", () => {
   afterEach(() => {
@@ -72,5 +75,69 @@ describe("session persistence preference", () => {
     expect(response.cookies.get("__Host-river_session")?.secure).toBe(true);
     expect(response.cookies.get("__Host-river_session")?.path).toBe("/");
     expect(response.cookies.get("river_session")?.maxAge).toBe(0);
+  });
+});
+
+describe("session token signing (SESSION_SECRET)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("stores a bare UUID when SESSION_SECRET is unset -- signing is fully optional", () => {
+    const response = withSessionCookie(NextResponse.json({ ok: true }), VALID_UUID);
+    expect(response.cookies.get("river_session")?.value).toBe(VALID_UUID);
+  });
+
+  it("signs the cookie once SESSION_SECRET is set, and reads its own signed value back", () => {
+    vi.stubEnv("SESSION_SECRET", "test-secret");
+
+    const written = withSessionCookie(NextResponse.json({ ok: true }), VALID_UUID);
+    const storedValue = written.cookies.get("river_session")?.value ?? "";
+    expect(storedValue).not.toBe(VALID_UUID);
+    expect(storedValue.startsWith(`${VALID_UUID}.`)).toBe(true);
+
+    const request = new NextRequest("https://stackchips.test/", {
+      headers: { cookie: `river_session=${storedValue}` },
+    });
+    expect(readSessionToken(request)).toBe(VALID_UUID);
+  });
+
+  it("still accepts a legacy unsigned cookie once SESSION_SECRET is set, so turning on signing cannot sign out an existing session", () => {
+    vi.stubEnv("SESSION_SECRET", "test-secret");
+    const legacy = new NextRequest("https://stackchips.test/", {
+      headers: { cookie: `river_session=${VALID_UUID}` },
+    });
+    expect(readSessionToken(legacy)).toBe(VALID_UUID);
+  });
+
+  it("rejects a tampered signature", () => {
+    vi.stubEnv("SESSION_SECRET", "test-secret");
+    const written = withSessionCookie(NextResponse.json({ ok: true }), VALID_UUID);
+    const storedValue = written.cookies.get("river_session")?.value ?? "";
+    const tampered = `${storedValue.split(".")[0]}.not-the-real-signature`;
+
+    const request = new NextRequest("https://stackchips.test/", {
+      headers: { cookie: `river_session=${tampered}` },
+    });
+    expect(readSessionToken(request)).toBeNull();
+  });
+
+  it("rejects a signature produced under a different secret", () => {
+    vi.stubEnv("SESSION_SECRET", "secret-a");
+    const written = withSessionCookie(NextResponse.json({ ok: true }), VALID_UUID);
+    const storedValue = written.cookies.get("river_session")?.value ?? "";
+
+    vi.stubEnv("SESSION_SECRET", "secret-b");
+    const request = new NextRequest("https://stackchips.test/", {
+      headers: { cookie: `river_session=${storedValue}` },
+    });
+    expect(readSessionToken(request)).toBeNull();
+  });
+
+  it("rejects a signed-looking value when no secret is configured to verify it", () => {
+    const request = new NextRequest("https://stackchips.test/", {
+      headers: { cookie: `river_session=${VALID_UUID}.some-signature` },
+    });
+    expect(readSessionToken(request)).toBeNull();
   });
 });

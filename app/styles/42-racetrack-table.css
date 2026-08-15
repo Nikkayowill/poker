@@ -136,6 +136,14 @@
 
 .scene-room-racetrack .community-cards .playing-card {
   width: var(--board-card-width, 48px);
+}
+
+/* The dealt-card shadow, scoped off ghost (undealt) slots -- a ghost draws
+   nothing (07-cards.css's .card-ghost), and this room's own rule was
+   overriding that back on by targeting every .playing-card regardless of
+   whether it held a card. Undealt slots were rendering as blurred dark
+   outlines instead of empty felt. */
+.scene-room-racetrack .community-cards .playing-card:not(.card-ghost) {
   /* Tighter and closer than the base card's `0 7px 16px` -- that shadow
      reads as a card held up off the table; this one reads as a card lying
      on it. */
@@ -149,9 +157,13 @@
    arrival still reads as a new card, not a continuation of the fan. This is
    the compaction that gets the row's footprint down by roughly a quarter
    without shrinking the cards past their own legibility floor -- see
-   RACETRACK_BOARD_CARD_MIN_PX's comment in poker-table.tsx. */
-.scene-room-racetrack .community-card-shell:nth-child(2),
-.scene-room-racetrack .community-card-shell:nth-child(3) {
+   RACETRACK_BOARD_CARD_MIN_PX's comment in poker-table.tsx.
+   Scoped to .community-card-revealed (poker-table.tsx only adds that class
+   once game.community[index] is dealt) -- unscoped, the same pull-together
+   applied to undealt ghost slots too, so pre-flop the row showed three
+   overlapping ghost outlines instead of a clean empty row. */
+.scene-room-racetrack .community-card-shell.community-card-revealed:nth-child(2),
+.scene-room-racetrack .community-card-shell.community-card-revealed:nth-child(3) {
   /* Same single-source fraction as the gap above, from
      BOARD_CARD_FLOP_OVERLAP_FRACTION via --board-card-flop-overlap-fraction. */
   margin-left: calc(var(--board-card-width, 48px) * var(--board-card-flop-overlap-fraction, .2) * -1);

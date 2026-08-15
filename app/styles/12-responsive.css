@@ -293,11 +293,6 @@
      than silently changing behaviour nobody has verified here. */
   .table-bet { --bet-reach-x: 106px; --bet-reach-y: 106px; }
       .action-layer { padding: 0 4px calc(6px + var(--safe-bottom)); padding-left: max(4px, var(--safe-left)); padding-right: max(4px, var(--safe-right)); }
-  .profile-trigger:not(.profile-trigger-compact) {
-    min-width: 0;
-    padding: 4px 7px 4px 4px;
-  }
-  .profile-trigger:not(.profile-trigger-compact) > span:nth-child(2) { display: none; }
   .profile-overlay { padding: 0; align-items: end; }
   .profile-modal {
     width: 100%;

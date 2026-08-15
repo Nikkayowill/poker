@@ -30,9 +30,6 @@ export const DUEL_GAMES: Readonly<Record<string, AnyDuelGame>> = {
   "word-race": WORD_RACE_DUEL,
 };
 
-/** The keys, for route validation and the matchmaking UI. */
-export const DUEL_GAME_IDS = Object.keys(DUEL_GAMES);
-
 export function isDuelGameId(value: unknown): value is string {
   return typeof value === "string" && value in DUEL_GAMES;
 }

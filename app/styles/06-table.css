@@ -521,7 +521,7 @@
   }
 }
 
-.chip-stack-icon, .chip-dot {
+.chip-dot {
   display: inline-block;
   width: 13px;
   height: 9px;

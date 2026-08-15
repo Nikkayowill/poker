@@ -68,7 +68,7 @@ export function manualInstallSteps(platform: InstallPlatform): readonly string[]
 
 /** Headline for the install offer. Kept short enough for a phone width. */
 export function installHeadline(platform: InstallPlatform): string {
-  return platform === "other" ? "Take the arcade with you" : "Install the app";
+  return platform === "other" ? "Take Ante Up with you" : "Install the app";
 }
 
 /**

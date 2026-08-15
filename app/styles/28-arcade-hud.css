@@ -218,10 +218,6 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.hud-bet-on {
-  border-color: rgba(217,184,93,.55);
-  background: linear-gradient(168deg, rgba(217,184,93,.24), rgba(26,38,33,.9));
-}
 .hud-bet:disabled .hud-bet-odds { color: #64736b; }
 
 /* ---- Phone ---- */

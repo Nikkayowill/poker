@@ -196,10 +196,6 @@ export function seatColor(seat: DuelSeat): PieceColor {
   return seat === 0 ? "w" : "b";
 }
 
-export function colorSeat(color: PieceColor): DuelSeat {
-  return color === "w" ? 0 : 1;
-}
-
 function pieceFor(color: PieceColor, letter: PieceLetter): ChessPiece {
   return (color === "w" ? letter : letter.toLowerCase()) as ChessPiece;
 }

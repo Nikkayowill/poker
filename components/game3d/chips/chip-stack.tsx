@@ -52,8 +52,6 @@ import {
  * should be, and now carrying enough surface to read as clay rather than
  * needing size to stand in for detail.
  */
-export const CHIP_RADIUS = CHIP.radius;
-export const CHIP_THICKNESS = CHIP.thickness;
 
 /**
  * Segment count is up from 24 because the disc is now small on screen: a

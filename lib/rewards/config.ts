@@ -57,9 +57,6 @@ export const REWARDED_AD_GRANT_TTL_MS = 10 * 60_000;
  */
 export const REWARDED_AD_DAILY_LIMIT = 6;
 
-/** The most Gold this faucet can produce in one UTC day, stated once so a test can pin it. */
-export const REWARDED_AD_DAILY_GOLD_CEILING = REWARDED_AD_GOLD * REWARDED_AD_DAILY_LIMIT;
-
 /** Whole seconds, for a countdown readout. */
 export const REWARDED_AD_DURATION_SECONDS = Math.round(REWARDED_AD_DURATION_MS / 1000);
 

@@ -21,7 +21,6 @@ import { toArcadeWallet } from "@/lib/arcade/games";
 import { canCoverStake } from "@/lib/arcade/blackjack";
 import {
   VIDEO_POKER_PAYTABLE,
-  payLine,
   videoPokerOutcomeLabel,
   type VideoPokerSnapshot,
 } from "@/lib/arcade/video-poker";
@@ -243,6 +242,3 @@ export function VideoPokerMachine() {
     </main>
   );
 }
-
-/** Exported for the page's metadata description -- the machine's one-line pitch. */
-export const VIDEO_POKER_TAGLINE = `Jacks or Better pays ${payLine("jacks-or-better").multiplier}x, a royal pays ${payLine("royal-flush").multiplier}x.`;

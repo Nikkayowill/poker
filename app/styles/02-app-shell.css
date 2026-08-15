@@ -160,56 +160,6 @@
   gap: 14px;
 }
 
-.profile-trigger {
-  appearance: none;
-  min-width: 174px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 9px 6px 6px;
-  color: #9c93b1;
-  border: 0;
-  border-radius: 12px;
-  background: rgba(255,255,255,.05);
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--duration-base) ease, color var(--duration-base) ease;
-}
-
-.profile-trigger:hover {
-  color: #ece7f7;
-  background: rgba(255,255,255,.1);
-}
-
-.profile-trigger:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
-
-.profile-trigger > span:nth-child(2) {
-  flex: 1;
-  min-width: 0;
-}
-
-.profile-trigger strong {
-  display: block;
-  max-width: 100px;
-  overflow: hidden;
-  color: #e4eae5;
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.profile-trigger small {
-  display: block;
-  margin-top: 2px;
-  color: #64736b;
-  font-size: 8px;
-}
-
-.profile-trigger-compact {
-  min-width: 0;
-  padding: 4px 7px 4px 4px;
-}
-
 .gold-badge {
   display: flex;
   align-items: center;

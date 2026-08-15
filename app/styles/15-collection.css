@@ -185,17 +185,6 @@
   height: 100% !important;
 }
 
-.cosmetic-art-pending {
-  color: var(--ink-faint, #6d7c75);
-  font-size: 10px;
-  text-align: center;
-  letter-spacing: .05em;
-  text-transform: uppercase;
-  line-height: 1.5;
-  display: grid;
-  place-items: center;
-}
-
 .equipped-flag {
   position: absolute;
   top: 6px;

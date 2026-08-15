@@ -221,7 +221,13 @@ export async function getLeaderboard(scope: LeaderboardScope, limit = 10): Promi
   const supabase = adminClient();
   if (!supabase) {
     if (scope === "lifetime") {
-      const rows = [...memoryPlayerStats.values()].sort((a, b) => b.netProfit - a.netProfit).slice(0, limit);
+      // Lifetime is ranked by Gold won (totalChipsWon), not net profit -- the
+      // "season by season" board resets every 30 days and rewards a hot
+      // streak, but the all-time leader is whoever has won the most Gold
+      // across every hand they've ever played, win or lose since. Net profit
+      // would drop a lifetime high-roller off the top the moment a rough
+      // week outweighs a historic one; totalChipsWon never goes backwards.
+      const rows = [...memoryPlayerStats.values()].sort((a, b) => b.totalChipsWon - a.totalChipsWon).slice(0, limit);
       return decorate(rows);
     }
     const season = memoryActiveSeason();
@@ -244,10 +250,12 @@ export async function getLeaderboard(scope: LeaderboardScope, limit = 10): Promi
   }
 
   if (scope === "lifetime") {
+    // See the memory-mode branch above for why this orders on
+    // total_chips_won rather than net_profit.
     const { data, error } = await supabase
       .from("player_stats")
       .select("*")
-      .order("net_profit", { ascending: false })
+      .order("total_chips_won", { ascending: false })
       .limit(limit);
     if (error) throw new Error(`Could not load the leaderboard: ${error.message}`);
     return decorate((data ?? []).map(rowToPlayerStats));
@@ -299,7 +307,11 @@ export async function getPlayerStanding(
     const all = scope === "lifetime"
       ? [...memoryPlayerStats.values()]
       : [...memorySeasonStats.values()].filter((row) => row.seasonId === memoryActiveSeason()?.id);
-    const rank = 1 + all.filter((row) => row.netProfit > stats.netProfit).length;
+    // Rank on the same field the board is sorted by: total_chips_won for
+    // lifetime, net_profit for a season.
+    const rank = scope === "lifetime"
+      ? 1 + all.filter((row) => row.totalChipsWon > stats.totalChipsWon).length
+      : 1 + all.filter((row) => row.netProfit > stats.netProfit).length;
     return { stats, rank };
   }
 
@@ -316,7 +328,7 @@ export async function getPlayerStanding(
     const { count, error: rankError } = await supabase
       .from("player_stats")
       .select("profile_id", { count: "exact", head: true })
-      .gt("net_profit", stats.netProfit);
+      .gt("total_chips_won", stats.totalChipsWon);
     if (rankError) throw new Error(`Could not compute rank: ${rankError.message}`);
     return { stats, rank: (count ?? 0) + 1 };
   }

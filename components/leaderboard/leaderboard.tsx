@@ -16,6 +16,7 @@ interface LeaderboardEntry {
   vpipHands: number;
   netProfit: number;
   biggestPotWon: number;
+  totalChipsWon: number;
 }
 
 interface SeasonInfo {
@@ -35,7 +36,7 @@ function daysRemaining(endsAt: string): number {
   return Math.max(0, Math.ceil((Date.parse(endsAt) - Date.now()) / 86_400_000));
 }
 
-function Row({ entry, mine }: { entry: LeaderboardEntry; mine: boolean }) {
+function Row({ entry, mine, scope }: { entry: LeaderboardEntry; mine: boolean; scope: Scope }) {
   return (
     <div className={clsx("leaderboard-row", mine && "leaderboard-row-mine")}>
       <span className="leaderboard-rank">
@@ -48,9 +49,18 @@ function Row({ entry, mine }: { entry: LeaderboardEntry; mine: boolean }) {
       <span className="leaderboard-stat">{entry.handsPlayed}</span>
       <span className="leaderboard-stat">{entry.handsPlayed > 0 ? Math.round((entry.vpipHands / entry.handsPlayed) * 100) : 0}%</span>
       <span className="leaderboard-stat">{entry.biggestPotWon.toLocaleString()}</span>
-      <span className={clsx("leaderboard-profit", entry.netProfit >= 0 ? "leaderboard-profit-up" : "leaderboard-profit-down")}>
-        {formatProfit(entry.netProfit)}
-      </span>
+      {/* All time is ranked by Gold won (never nets out a loss, so it is the
+          board's actual sort key); a season resets every 30 days and is
+          ranked by net profit for that window instead, which can go
+          negative. Same column slot, different stat, so the grid never
+          needs a scope-conditional column count. */}
+      {scope === "lifetime" ? (
+        <span className="leaderboard-profit leaderboard-profit-up">{entry.totalChipsWon.toLocaleString()}</span>
+      ) : (
+        <span className={clsx("leaderboard-profit", entry.netProfit >= 0 ? "leaderboard-profit-up" : "leaderboard-profit-down")}>
+          {formatProfit(entry.netProfit)}
+        </span>
+      )}
     </div>
   );
 }
@@ -99,7 +109,12 @@ export function Leaderboard() {
           <h1>The leaderboard.</h1>
           {/* An em dash, not the codebase's `--` comment idiom: this string is
               rendered prose, and a double hyphen prints as a double hyphen. */}
-          <p>Ranked by Gold won, not Gold bought. Entertainment only &mdash; nothing here can be cashed out.</p>
+          <p>
+            {scope === "lifetime"
+              ? "All time, ranked by total Gold won — never nets out a loss."
+              : "This season, ranked by net Gold won. Resets every 30 days."}{" "}
+            Entertainment only &mdash; nothing here can be cashed out.
+          </p>
         </div>
         <Link className="leaderboard-back" href="/">← Back to the table</Link>
       </header>
@@ -143,15 +158,15 @@ export function Leaderboard() {
             <span>Hands</span>
             <span>VPIP</span>
             <span>Best pot</span>
-            <span>Net</span>
+            <span>{scope === "lifetime" ? "Gold won" : "Net"}</span>
           </div>
           {entries.map((entry) => (
-            <Row key={entry.profileId} entry={entry} mine={entry.profileId === mine?.profileId} />
+            <Row key={entry.profileId} entry={entry} mine={entry.profileId === mine?.profileId} scope={scope} />
           ))}
           {mine && !mineIsRanked && (
             <>
               <div className="leaderboard-divider" />
-              <Row entry={mine} mine />
+              <Row entry={mine} mine scope={scope} />
             </>
           )}
         </div>

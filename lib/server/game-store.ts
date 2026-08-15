@@ -409,15 +409,58 @@ export async function countActiveGames(): Promise<{ publicTables: number; privat
     return { publicTables, privateTables };
   }
   const [publicResult, privateResult] = await Promise.all([
-    supabase.from("games").select("id").eq("is_private", false).in("status", ["waiting", "playing"]),
-    supabase.from("games").select("id").eq("is_private", true).in("status", ["waiting", "playing"]),
+    supabase
+      .from("games")
+      .select("id", { count: "exact", head: true })
+      .eq("is_private", false)
+      .in("status", ["waiting", "playing"]),
+    supabase
+      .from("games")
+      .select("id", { count: "exact", head: true })
+      .eq("is_private", true)
+      .in("status", ["waiting", "playing"]),
   ]);
   if (publicResult.error) throw new Error(`Could not count public tables: ${publicResult.error.message}`);
   if (privateResult.error) throw new Error(`Could not count private tables: ${privateResult.error.message}`);
   return {
-    publicTables: publicResult.data?.length ?? 0,
-    privateTables: privateResult.data?.length ?? 0,
+    publicTables: publicResult.count ?? 0,
+    privateTables: privateResult.count ?? 0,
   };
+}
+
+const GAME_ACTIONS_RETENTION_DAYS = 30;
+const GAME_ACTIONS_PRUNE_BATCH = 5000;
+// Bounds how much a single cron invocation will chew through, so a large
+// backlog is worked off over a few daily runs instead of one long request.
+const GAME_ACTIONS_PRUNE_MAX_BATCHES = 20;
+
+/**
+ * Deletes game_actions rows older than the retention window, in bounded
+ * batches. Nothing reads this table back today (see the migration's own
+ * comment) -- it exists purely as a future dispute/replay trail, so a rolling
+ * window is enough. No-op in memory mode: game_actions is a Supabase-only
+ * table, never populated by the in-memory dev store.
+ */
+export async function pruneGameActions(): Promise<{ deleted: number; batches: number }> {
+  const supabase = adminClient();
+  if (!supabase) return { deleted: 0, batches: 0 };
+
+  let deleted = 0;
+  let batches = 0;
+  for (; batches < GAME_ACTIONS_PRUNE_MAX_BATCHES; batches += 1) {
+    const { data, error } = await supabase.rpc("prune_game_actions", {
+      p_older_than_days: GAME_ACTIONS_RETENTION_DAYS,
+      p_batch_limit: GAME_ACTIONS_PRUNE_BATCH,
+    });
+    if (error) throw new Error(`Could not prune game_actions: ${error.message}`);
+    const batchDeleted = (data as number | null) ?? 0;
+    deleted += batchDeleted;
+    if (batchDeleted < GAME_ACTIONS_PRUNE_BATCH) {
+      batches += 1;
+      break;
+    }
+  }
+  return { deleted, batches };
 }
 
 /** Resolves a shareable private-room code to its table id. */

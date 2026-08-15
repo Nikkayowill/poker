@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/rollover-season",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/prune-game-actions",
+      "schedule": "0 7 * * *"
     }
   ]
 }

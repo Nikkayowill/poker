@@ -31,9 +31,11 @@ const csp = [
   "font-src 'self' data:",
   // Sentry's session-replay integration compresses events in a Worker
   "worker-src 'self' blob:",
-  // blob: is for the 3D table room's GLTFLoader.
-  // CRITICAL FIX: Explicitly added "ws://192.168.2.144:*" to connect-src to allow the dev client's HMR system over the LAN.
-  `connect-src 'self' blob: https://*.supabase.co wss://*.supabase.co ${adsterraOrigins} ${turnstileOrigin}${isDev ? " ws: ws://192.168.2.144:*" : ""}`,
+  // blob: is for the 3D table room's GLTFLoader. Dev HMR needs ws: for its
+  // websocket -- the bare scheme (any host) rather than a specific LAN IP,
+  // so this doesn't leak a developer's home network address into source
+  // control and still works from any device on the LAN, not just one.
+  `connect-src 'self' blob: https://*.supabase.co wss://*.supabase.co ${adsterraOrigins} ${turnstileOrigin}${isDev ? " ws:" : ""}`,
   `frame-src 'self' ${adsterraOrigins} ${turnstileOrigin}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",

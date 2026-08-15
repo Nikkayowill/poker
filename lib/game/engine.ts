@@ -1160,6 +1160,9 @@ function applyTurnAction(state: GameState, action: TurnAction) {
     if (action.type === "all-in" && !legal.canAllIn) {
       throw new Error("Going all-in would be an illegal raise.");
     }
+    if (action.type !== "all-in" && !Number.isFinite(action.amount)) {
+      throw new Error("Raise amount must be a finite number.");
+    }
     const raiseTo = action.type === "all-in" ? legal.maxRaiseTo : Math.floor(action.amount);
     if (raiseTo <= state.currentBet) {
       if (action.type === "all-in") {

@@ -668,6 +668,12 @@ export async function getPublicProfilesByIds(ids: string[]): Promise<Map<string,
   return new Map((data ?? []).map((row) => [String(row.id), otherPlayerSummary(fromRow(row))]));
 }
 
+const LIST_PROFILES_PAGE_SIZE = 1000;
+// A safety backstop on the internal drain loop below, not a visibility cap --
+// at 1000/page this is 500k profiles before the loop gives up and returns
+// what it has, far past anything this app has seen.
+const LIST_PROFILES_MAX_PAGES = 500;
+
 export async function listProfiles(): Promise<AdminProfileSummary[]> {
   const supabase = adminClient();
   if (!supabase) {
@@ -675,13 +681,40 @@ export async function listProfiles(): Promise<AdminProfileSummary[]> {
       .map(adminProfileView)
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   }
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(1000);
-  if (error) throw new Error(`Could not list profiles: ${error.message}`);
-  return (data ?? []).map((row) => adminProfileView(fromRow(row)));
+
+  // Was a flat `.limit(1000)` -- past 1000 signups the admin dashboard
+  // silently couldn't see anyone older than that, with no way to page
+  // further. This drains the whole table internally via a keyset cursor
+  // (created_at, id) instead, so the dashboard's own "load everything, then
+  // search/filter client-side" behavior keeps working unchanged. A plain
+  // OFFSET-based page walk would do here too, except profiles are inserted
+  // continuously (every new visitor mints one) -- paging by offset while
+  // rows keep landing at the front shifts everything underneath the walk and
+  // skips or repeats a row at each page boundary; a keyset cursor is what
+  // the same problem was already solved with in hand-archive-store.ts.
+  const all: AdminProfileSummary[] = [];
+  let cursor: { createdAt: string; id: string } | null = null;
+  for (let page = 0; page < LIST_PROFILES_MAX_PAGES; page += 1) {
+    let query = supabase
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(LIST_PROFILES_PAGE_SIZE);
+    if (cursor) {
+      query = query.or(
+        `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
+      );
+    }
+    const { data, error } = await query;
+    if (error) throw new Error(`Could not list profiles: ${error.message}`);
+    const rows = data ?? [];
+    all.push(...rows.map((row) => adminProfileView(fromRow(row))));
+    if (rows.length < LIST_PROFILES_PAGE_SIZE) break;
+    const last = rows[rows.length - 1];
+    cursor = { createdAt: String(last.created_at), id: String(last.id) };
+  }
+  return all;
 }
 
 /** Cheap ban check -- called by every join-flow route and the actions route before letting a token do anything. */
@@ -815,20 +848,15 @@ export async function adjustGold(profileId: string, delta: number): Promise<Play
     return publicProfile(next);
   }
 
-  const { data: current, error: readError } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", profileId)
+  const { data: rpcData, error: rpcError } = await supabase
+    .rpc("adjust_gold_by_profile", { p_profile_id: profileId, p_delta: delta })
     .single();
-  if (readError) throw new Error("Profile not found.");
-  const nextBalance = Math.max(0, Number(current.gold_balance) + delta);
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({ gold_balance: nextBalance, updated_at: now })
-    .eq("id", profileId)
-    .select("*")
-    .single();
-  if (error) throw new Error(`Could not adjust Gold: ${error.message}`);
+  if (rpcError) throw new Error(`Could not adjust Gold: ${rpcError.message}`);
+  const result = rpcData as { success: boolean; gold_balance: number } | null;
+  if (!result?.success) throw new Error("Profile not found.");
+
+  const { data, error } = await supabase.from("profiles").select("*").eq("id", profileId).single();
+  if (error) throw new Error(`Could not load profile: ${error.message}`);
   return publicProfile(fromRow(data));
 }
 

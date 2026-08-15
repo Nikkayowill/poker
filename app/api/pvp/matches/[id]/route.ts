@@ -6,6 +6,7 @@ import {
   resignDuelMatch,
   toDuelErrorResponse,
 } from "@/lib/server/pvp-match-service";
+import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
@@ -72,6 +73,17 @@ export async function POST(
       return withRequestSessionCookie(
         request,
         NextResponse.json({ error: "Send a move." }, { status: 400 }),
+        token,
+      );
+    }
+
+    // Resigning is forfeiting your own match -- a suspended account must
+    // still be able to do that. Continuing to play (and potentially win a
+    // payout) is what's gated, same posture as challenge accept vs. cancel.
+    if (parsed.data.action === "move" && (await isBanned(token))) {
+      return withRequestSessionCookie(
+        request,
+        NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),
         token,
       );
     }

@@ -819,6 +819,27 @@
 
 .player-hud-cash svg { color: var(--gold-light); flex: 0 0 auto; }
 
+/* The racetrack's local hand signal belongs to the same lower-left identity
+   HUD as the player's name and avatar. Keeping it in this row means the
+   useful information cannot disappear underneath the POV hole cards. */
+.player-hud-hand-strength {
+  display: block;
+  flex: 0 0 auto;
+  max-width: 180px;
+  overflow: hidden;
+  padding: 5px 8px;
+  border: 1px solid rgba(101, 214, 162, .34);
+  border-radius: 5px;
+  background: rgba(39, 114, 81, .22);
+  color: #d9f1e4;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 @keyframes community-flip {
   0% {
     opacity: 0;

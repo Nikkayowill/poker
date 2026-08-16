@@ -1,0 +1,116 @@
+/* The lobby footer, and the informational pages it points at (How to Play,
+ * Rewards, Help, About). The pages themselves borrow .legal-page and
+ * .floor-* wholesale from 35-legal.css and 22-arcade.css -- this file adds
+ * only what those shells never needed before: list styling inside a legal
+ * page's prose, an FAQ definition list, and the footer itself.
+ *
+ * After 35: extends .legal-page-document's rules for elements (ol, ul) it
+ * never had a reason to style, the same relationship 24-hi-lo.css has with
+ * 23-blackjack.css's shell.
+ */
+
+/* ===========================================================================
+   How to Play / About / Help — additions to the .legal-page shell.
+   =========================================================================== */
+
+.info-page-section { margin-bottom: clamp(28px, 4vw, 40px); }
+.info-page-section:last-child { margin-bottom: 0; }
+
+.info-page-section h2 {
+  margin: 0 0 14px;
+  color: var(--brand-gold-light);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+}
+
+.legal-page-document ol,
+.legal-page-document ul {
+  max-width: 60ch;
+  margin: 0 0 16px;
+  padding-left: 22px;
+  color: #c2cbc5;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.legal-page-document li { margin-bottom: 6px; }
+.legal-page-document li:last-child { margin-bottom: 0; }
+.legal-page-document li strong { color: var(--ink); }
+
+.info-faq-list { margin: 0 0 32px; }
+
+.info-faq-item {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+.info-faq-item:first-child { padding-top: 0; }
+.info-faq-item:last-child { border-bottom: none; }
+
+.info-faq-item dt {
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.info-faq-item dd {
+  margin: 0;
+  max-width: 62ch;
+  color: #c2cbc5;
+  font-size: 14.5px;
+  line-height: 1.7;
+}
+
+.info-faq-item a,
+.legal-page-document a { color: var(--gold-light); }
+
+/* ===========================================================================
+   The lobby footer. See components/nav/site-footer.tsx.
+   =========================================================================== */
+
+.site-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-top: clamp(40px, 6vw, 64px);
+  padding-top: 22px;
+  position: relative;
+}
+
+/* A fading hairline, not a border -- --rule is the one divider token this
+   chrome uses, same reasoning as .floor-section-head's underline. */
+.site-footer::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: var(--rule);
+}
+
+.site-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: 22px;
+  row-gap: 8px;
+}
+
+.site-footer-links a {
+  color: #93a1bb;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color var(--duration-base) ease;
+}
+.site-footer-links a:hover { color: #eef2f8; }
+.site-footer-links a:focus-visible { outline: 0; border-radius: var(--radius-control); box-shadow: var(--brand-focus); }
+
+.site-footer-meta {
+  margin: 0;
+  color: #5f6a80;
+  font-size: 11px;
+  text-align: center;
+}

@@ -49,6 +49,31 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### Site footer + info pages (2026-08-16)
+- Kayo wanted the lobby to feel like "a genuine web gaming platform" (PlayPokerGO's menu was the
+  reference) rather than a single-purpose app. Root problem: five `/legal/*` pages already existed
+  (terms, privacy, gold-disclosure, support-disclosure, disclaimer) with nothing anywhere in the app
+  linking to any of them.
+- Added a lobby-only `SiteFooter` (`components/nav/site-footer.tsx`, mounted at the bottom of
+  `components/lobby/lobby.tsx`'s `.hub`) plus four new pages it and it alone points at: `/about`,
+  `/help` (FAQ + contact), `/how-to-play` (hand rankings, hand structure, duel summary), and
+  `/rewards` (every Gold source in one place). Deliberately **not** in `components/nav/menu.tsx`'s
+  dropdown or on the table — the menu is account actions opened on demand, the footer is a trust
+  surface that should be visible without opening anything, and none of it belongs mid-hand.
+- `/rewards` is wayfinding, not a second claim surface: it fetches `/api/profile` (same deferred-timer
+  shape as `arcade-floor.tsx`) to show a live Gold balance and each source's claim state, but every
+  "claim" link routes back to where the action already lives (the lobby's player menu, `/challenges`,
+  `/store/gold`) rather than re-implementing `claimDailyGold`/rewarded-ad/backstop calls a second
+  place for the money-ordering rules to be gotten wrong in.
+- `/about`, `/help`, `/how-to-play` reuse the `/legal` shell (`.legal-page`) rather than a new layout;
+  `/rewards` reuses the arcade floor's `.floor-shell`/`.floor-card` shell. New CSS is
+  `43-site-info.css` — only the footer itself plus the list/FAQ styling those two shells never
+  needed before.
+- `middleware.ts`'s matcher gained `about|help|how-to-play` alongside the existing
+  `legal/|store|leaderboard|collection` static-page exclusions (pure content, no server-session
+  read). `/rewards` was deliberately left in the auth-refreshing set, matching `/games` and
+  `/challenges` — it does read a profile.
+
 ### In progress (2026-08-12)
 - Three click sounds (`lib/audio/ui-sounds.ts`: `tapSound()`/`selectSound()`/`gameOnSound()`) replaced
   the old single `ui` cue with three call sites; wiring is centralized in `components/nav/menu.tsx`

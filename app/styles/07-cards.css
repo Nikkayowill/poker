@@ -48,29 +48,24 @@
 }
 .card-red { color: #961818; }
 
-/* One corner index (rank + suit glyph), plus a subtle centered suit
-   watermark. A held card mirrors its index into the bottom-right corner too,
-   for whoever's looking at it from the other side -- nothing here is ever
-   viewed from the other side, so the second index was only ever a duplicate
-   of the first. The index is the one piece of text on the felt that a hand
-   turns on, so it reads large and dark rather than a corner label; the
-   watermark stays low-opacity and centered so it never competes with it. */
+/* One crisp corner index: rank plus one suit glyph. The previous centered
+   suit duplicated the same information and softened the face at small mobile
+   sizes, especially while the community row was tilted in the racetrack
+   renderer. */
 /* Sized and inset in cqw (the card's own width), so it holds its proportion
    at every card tier instead of needing a per-tier override. */
-.card-index { position: absolute; top: 7cqw; left: 8cqw; display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.card-index {
+  position: absolute;
+  top: 7cqw;
+  left: 8cqw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: .9;
+}
 .card-index-rank { font: 700 36cqw Georgia, serif; }
 .card-index-glyph { width: 19cqw; height: 19cqw; margin-top: 1cqw; }
 .card-index-glyph svg { display: block; width: 100%; height: 100%; }
-.card-suit-large {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  opacity: .13;
-  pointer-events: none;
-}
-.card-suit-large svg { width: 56%; height: 56%; }
-
 /* The three size tiers used to restate every index dimension, and
    12-responsive.css restated the widths again on top of that -- five sets of
    numbers describing one card. The proportions above cover all of them, so a

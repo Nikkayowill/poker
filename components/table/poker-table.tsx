@@ -178,13 +178,14 @@ const RACETRACK_SEAT_MAX_PX = 132;
  * bare card, so 44 is not a stylistic guess here either. The ceiling is set
  * well under the classic room's own 76px (`06-table.css`'s desktop
  * `.community-cards .playing-card` clamp, which this camera was inheriting
- * unmodified until now) -- smaller and flatter on the cloth is the whole
- * point of sizing this off the camera instead of a breakpoint. Between the
- * two, `clampBoardCardWidth` (lib/scene/board-clearance.ts) shrinks further
- * still, every frame, until the row actually clears the pot -- see its own
- * header for why a static clamp alone can't guarantee that. */
+ * unmodified until now) -- reads big on the cloth like a real dealt hand
+ * instead of flattened UI chrome, sized off the camera instead of a
+ * breakpoint. Between the two, `clampBoardCardWidth`
+ * (lib/scene/board-clearance.ts) shrinks further still, every frame, until
+ * the row actually clears the pot -- see its own header for why a static
+ * clamp alone can't guarantee that. */
 const RACETRACK_BOARD_CARD_MIN_PX = 44;
-const RACETRACK_BOARD_CARD_MAX_PX = 52;
+const RACETRACK_BOARD_CARD_MAX_PX = 72;
 
 /**
  * Place the dealer's artwork in the slot the scene projected for it.
@@ -1413,8 +1414,25 @@ export function PokerTable({
                       </span>
                     ))}
                   </div>
+                  {/* Racetrack only: the street and the blinds, read as one
+                      caption directly under the board instead of the street
+                      sitting alone at a fixed felt percentage (tuned for the
+                      classic ellipse, not this camera's board position) and
+                      the blinds sitting in the black space above the table.
+                      Replaces .street-label/.blind-structure for this room --
+                      see their display:none in 42-racetrack-table.css. */}
+                  {isRacetrack && (
+                    <div className="board-caption" aria-hidden="true">
+                      <span className="board-caption-street">{game.street}</span>
+                      <span className="board-caption-blinds">
+                        <b>SB</b> {game.smallBlind.toLocaleString()}
+                        <i>/</i>
+                        <b>BB</b> {game.bigBlind.toLocaleString()}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <span className="street-label">{game.street}</span>
+                {!isRacetrack && <span className="street-label">{game.street}</span>}
               </div>
             </div>
             {dealerSeatId && (

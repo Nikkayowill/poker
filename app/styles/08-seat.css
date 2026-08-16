@@ -169,10 +169,29 @@
   margin-top: 0;
   padding: 2px 6px 3px;
   border: 0;
-  background: none;
-  box-shadow: none;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(43, 55, 48, .82), rgba(12, 23, 18, .76)),
+    radial-gradient(circle at 50% 0%, rgba(239, 217, 141, .12), transparent 65%);
+  box-shadow:
+    0 5px 12px rgba(0, 0, 0, .3),
+    0 1px 0 rgba(255, 255, 255, .1) inset;
   text-align: center;
   text-shadow: 0 1px 3px rgba(0,0,0,.92), 0 0 10px rgba(0,0,0,.65);
+}
+
+/* A quiet highlight on the top edge makes the plate read like finished
+   metal and glass instead of a generic dark rectangle. It is deliberately
+   part of the plate's paint, so it cannot alter seat geometry. */
+.seat-plate::before {
+  content: "";
+  position: absolute;
+  inset: 1px 14% auto;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(255, 244, 191, .6), transparent);
+  opacity: .7;
+  pointer-events: none;
 }
 
 /* The states that used to be carried by a border colour now colour the name
@@ -409,6 +428,76 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Opponent status HUD: a quiet name/action readout above the avatar. The
+   parent plate stays in the seat flow so the ring geometry does not move;
+   only the paint is lifted into the space above the figure. */
+.seat-ring .seat-opponent-hud {
+  width: max(100%, 86px);
+  max-width: 150%;
+  margin-top: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  transform: translateY(calc(-100% - 5px));
+  text-shadow: 0 2px 5px rgba(0,0,0,.9);
+}
+
+.seat-ring .seat-status-idle,
+.seat-ring .seat-status-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: #f0ead5;
+  font: italic 10px/1 Georgia, serif;
+  letter-spacing: .08em;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.seat-ring .seat-status-idle {
+  min-height: 24px;
+  padding: 0 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(9, 16, 13, .72);
+  box-shadow: 0 4px 12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);
+}
+
+.seat-ring .seat-status-stack {
+  display: block;
+  margin-top: 3px;
+  color: rgba(239, 217, 141, .9);
+  font: 700 10px/1 ui-sans-serif, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .03em;
+  text-shadow: 0 2px 5px rgba(0,0,0,.9);
+}
+
+.seat-ring .seat-timer-pill {
+  width: max(100%, 86px);
+  height: 24px;
+  min-width: 0;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(9, 16, 13, .72);
+  box-shadow: 0 4px 12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);
+}
+
+.seat-ring .seat-timer-pill svg { inset: 0; width: 100%; height: 100%; transform: none; }
+.seat-ring .seat-timer-pill rect { fill: none; stroke-width: 1.5; }
+.seat-ring .seat-timer-pill .seat-timer-track { stroke: rgba(255,255,255,.14); }
+.seat-ring .seat-timer-pill .seat-timer-fuse { stroke-width: 2; stroke: var(--fuse-colour, #5cc98a); }
+.seat-ring .seat-timer-pill b { position: absolute; right: 7px; font-size: 9px; }
+.seat-ring .seat-timer-pill .seat-status-label { padding-right: 12px; }
+
 /* The last-seconds pulse. Used to be a `.seat-timer-critical` class that React
    toggled once the remaining fraction crossed .15, which meant a render.
 
@@ -538,25 +627,28 @@
   grid-auto-flow: column;
   gap: 4px;
   padding: 0 6px;
-  border: 1px solid rgba(99,157,233,.28);
-  border-radius: 5px;
-  color: #9dc9ff;
-  background: linear-gradient(180deg, rgba(58,123,202,.28), rgba(35,78,139,.22));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+  border: 0;
+  border-radius: 0;
+  color: #c6e4ff;
+  background: none;
+  box-shadow: none;
+  text-shadow: 0 1px 3px rgba(0,0,0,.65);
+  font: italic 10px/1 Georgia, serif;
+  letter-spacing: .08em;
 }
 .blind-label b {
-  font-size: 9px;
-  letter-spacing: .04em;
+  font: inherit;
+  font-weight: 700;
 }
 .blind-label span {
   color: rgba(220,235,251,.78);
-  font-size: 7px;
+  font: inherit;
+  font-size: 9px;
   font-variant-numeric: tabular-nums;
 }
 .seat-big-blind .blind-label {
-  color: #ffc078;
-  border-color: rgba(244,158,70,.52);
-  background: linear-gradient(180deg, rgba(188,99,29,.34), rgba(119,59,20,.26));
+  color: #ffe0a2;
+  text-shadow: 0 1px 3px rgba(0,0,0,.7), 0 0 8px rgba(245,171,70,.22);
 }
 .seat-big-blind .blind-label span {
   color: rgba(255,226,191,.82);
@@ -629,6 +721,35 @@
 .seat-cards:not(.own-cards) .playing-card {
   width: calc(var(--seat-width) * .20 * var(--seat-depth, 1));
   border-radius: 3px;
+  border-color: rgba(239, 217, 141, .55);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.45) inset,
+    0 2px 3px rgba(0,0,0,.38),
+    0 8px 13px -5px rgba(0,0,0,.58),
+    0 0 0 1px rgba(0,0,0,.24);
+}
+
+/* The pair gets a small dealer-grade cradle: a warm edge behind the cards
+   gives them a deliberate object-level silhouette without changing their
+   size, overlap, or anchor point. */
+.seat-cards:not(.own-cards)::before {
+  content: "";
+  position: absolute;
+  inset: -5px -8px;
+  z-index: -1;
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(24, 35, 29, .78), rgba(7, 14, 11, .68));
+  box-shadow:
+    0 6px 12px rgba(0,0,0,.3),
+    inset 0 1px 0 rgba(255,255,255,.1);
+  pointer-events: none;
+}
+
+.seat-cards:not(.own-cards) .card-back {
+  border-width: 2px;
+  border-color: rgba(247, 239, 211, .92);
+  background: #173d30;
 }
 
 /* An opponent's cards ARE this small right up until a showdown reveals them
@@ -648,6 +769,7 @@
 .seat-cards:not(.own-cards) .playing-card:not(.card-back) {
   width: calc(var(--seat-width) * .23 * var(--seat-depth, 1));
   border-radius: 4px;
+  border-color: rgba(255, 246, 213, .82);
 }
 
 /* Desktop only: the pair now sits in its own clear band above the portrait

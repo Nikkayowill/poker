@@ -87,7 +87,6 @@ export function PlayingCard({
         <span className="card-index-rank">{card.rank}</span>
         <span className="card-index-glyph"><SuitGlyph suit={card.suit} /></span>
       </span>
-      <span className="card-suit-large"><SuitGlyph suit={card.suit} /></span>
     </div>
   );
 }

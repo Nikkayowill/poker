@@ -152,6 +152,7 @@ function SeatNameplate({
   bigBlind,
   turnStartedAt,
   turnDeadlineAt,
+  opponentHud,
 }: {
   seat: PublicSeat;
   isWinner: boolean;
@@ -159,6 +160,7 @@ function SeatNameplate({
   bigBlind: number;
   turnStartedAt: string | null;
   turnDeadlineAt: string | null;
+  opponentHud: boolean;
 }) {
   const blind = seat.isSmallBlind
     ? { abbreviation: "SB", name: "Small Blind", amount: smallBlind }
@@ -166,6 +168,40 @@ function SeatNameplate({
       ? { abbreviation: "BB", name: "Big Blind", amount: bigBlind }
       : null;
   const away = isBotAway(seat);
+  if (!seat.isMine && opponentHud) {
+    const action = seat.lastAction
+      && !/^(small blind|big blind)/i.test(seat.lastAction)
+      ? (seat.lastAction.startsWith("Timed out")
+        ? seat.lastAction.split(" · ").at(-1)
+        : seat.lastAction.split(" · ")[0].replace(/^Raise to$/, "Raise"))
+      : null;
+    const statusLabel = action ? action.toUpperCase() : seat.name;
+    const started = Date.parse(turnStartedAt ?? "");
+    const deadline = Date.parse(turnDeadlineAt ?? "");
+    const hasTurnTimer = Number.isFinite(started) && Number.isFinite(deadline) && deadline > started;
+
+    return (
+      <div className="seat-plate seat-opponent-hud">
+        {seat.isCurrent && hasTurnTimer ? (
+          <SeatTimer
+            startedAt={turnStartedAt}
+            deadlineAt={turnDeadlineAt}
+            pill
+          >
+            <strong className="seat-status-label">{statusLabel}</strong>
+          </SeatTimer>
+        ) : (
+          <span className="seat-status-idle">{statusLabel}</span>
+        )}
+        {!away && (
+          <span className="seat-status-stack" aria-label={`${seat.stack.toLocaleString()} chips`}>
+            {seat.stack.toLocaleString()}
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="seat-plate">
       <div className="seat-name-row">
@@ -290,6 +326,7 @@ export const PlayerSeat = memo(function PlayerSeat({
       bigBlind={bigBlind}
       turnStartedAt={turnStartedAt}
       turnDeadlineAt={turnDeadlineAt}
+      opponentHud={placement === "seat-ring"}
     />
   );
   const handStrength = seat.isMine && seat.handLabel

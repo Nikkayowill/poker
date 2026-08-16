@@ -79,7 +79,11 @@ import { paintRoom } from "./paint-room";
  * inside `.table-area` is the local player's own seat furniture along the
  * bottom, which is what this covers.
  */
-const HUD_FRACTION = 0.12;
+// The mobile landscape action controls are docked over the lower edge of the
+// stage, so the camera only needs to reserve a small visual allowance there.
+// Giving four more points back to the scene lets the table stretch slightly
+// without changing the DOM card placement or the control bar's position.
+const HUD_FRACTION = 0.08;
 
 /**
  * How far the seat ring reaches in Z, for normalising a seat's nearness.

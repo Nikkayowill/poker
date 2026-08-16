@@ -36,7 +36,6 @@ function makeSeat(overrides: Partial<PublicSeat> = {}): PublicSeat {
     acted: false,
     actedAtBet: null,
     lastAction: null,
-    timeCardsRemaining: 0,
     missedTurns: 0,
     vpip: false,
     reseatEligibleAt: null,

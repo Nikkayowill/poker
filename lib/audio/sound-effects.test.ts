@@ -103,15 +103,11 @@ describe("playSound", () => {
     expect(built).toHaveLength(0);
   });
 
-  it("builds the clock cues, which used to be silent", async () => {
+  it("builds the clock cue, which used to be silent", async () => {
     const { playSound } = await loadPlayer();
     playSound("timeout");
-    playSound("time-card");
-    // One element each even though they share a recording, per the keying
-    // above -- and both audible, which they were not before TimeBank landed.
-    expect(built).toHaveLength(2);
+    expect(built).toHaveLength(1);
     expect(built[0].src).toBe(SOUND_FILES.timeout);
-    expect(built[1].src).toBe(SOUND_FILES["time-card"]);
   });
 
   it("goes silent when sound is off, and comes back without rebuilding", async () => {

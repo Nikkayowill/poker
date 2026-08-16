@@ -25,7 +25,7 @@ import { DECK_TEMPLATE, makeDeck } from "./deck";
 const streetOrder: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
 type TurnAction = Exclude<
   PlayerAction,
-  { type: "next-hand" } | { type: "leave-seat" } | { type: "use-time-card" }
+  { type: "next-hand" } | { type: "leave-seat" }
 >;
 // A table always has SEAT_COUNT total seats; any not claimed by a human are
 // bot-controlled.
@@ -178,8 +178,6 @@ function botAvatarFor(identity: number): string {
 // rather than waiting for it; there is nothing to be gained by also making
 // the browser suite race a wall clock.
 export const TURN_TIMEOUT_MS = Number(process.env.RIVER_TURN_TIMEOUT_MS) || 15_000;
-export const TIME_CARD_EXTENSION_MS = 20_000;
-export const STARTING_TIME_CARDS = 3;
 
 /**
  * How long a finished hand stays on screen before the next one is dealt.
@@ -378,7 +376,6 @@ function restoreBotControl(seat: Seat, identity: number = seat.position) {
   // for missing three turns -- must not leave a 400,000 Gold card back behind
   // for a bot to keep playing with.
   seat.cardBackCosmetic = botCardBackFor(identity);
-  seat.timeCardsRemaining = 0;
   seat.missedTurns = 0;
   // Cleared on every reseat, not just set by the voluntary-leave path that
   // uses it: a seat coming back under any circumstance is funded and playing
@@ -691,7 +688,6 @@ export function createGame(
       acted: false,
       actedAtBet: null,
       lastAction: null,
-      timeCardsRemaining: STARTING_TIME_CARDS,
       missedTurns: 0,
       vpip: false,
       reseatEligibleAt: null,
@@ -718,7 +714,6 @@ export function createGame(
       acted: false,
       actedAtBet: null,
       lastAction: null,
-      timeCardsRemaining: 0,
       missedTurns: 0,
       vpip: false,
       reseatEligibleAt: null,
@@ -820,7 +815,6 @@ export function claimSeat(
   seat.avatarCosmetic = profile.equipped.avatar2d;
   seat.avatar3dCosmetic = profile.equipped.avatar3d;
   seat.cardBackCosmetic = profile.equipped.cardBack;
-  seat.timeCardsRemaining = STARTING_TIME_CARDS;
   // A claimed seat owns exactly the buy-in the player paid for, including chips
   // this seat already committed before the bot was replaced. Resetting the
   // behind-stack to the full buy-in would mint every posted blind/bet again.
@@ -1629,9 +1623,6 @@ export function normalizeGameState(state: GameState): GameState {
     if (typeof seat.reseatEligibleAt !== "string") seat.reseatEligibleAt = null;
   });
   state.seats.forEach((seat) => {
-    if (!Number.isInteger(seat.timeCardsRemaining)) {
-      seat.timeCardsRemaining = seat.isHuman ? STARTING_TIME_CARDS : 0;
-    }
     // Which identity this bot is wearing, for tables persisted before seats
     // carried one. `position` is the right backfill and not merely a safe
     // one: it is the identity that seat has been showing all along, so a
@@ -1847,18 +1838,6 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
   if (seatIndex === -1) throw new Error("You are not seated at this table.");
   if (action.type === "leave-seat") {
     vacateSeat(state, callerToken);
-  } else if (action.type === "use-time-card") {
-    if (state.status !== "playing" || state.currentPlayer !== seatIndex) {
-      throw new Error("Time cards can only be used on your turn.");
-    }
-    const seat = state.seats[seatIndex];
-    if (seat.timeCardsRemaining <= 0) throw new Error("You have no time cards left.");
-    const deadline = Math.max(Date.now(), Date.parse(state.turnDeadlineAt ?? ""));
-    seat.timeCardsRemaining -= 1;
-    seat.missedTurns = 0;
-    state.turnDeadlineAt = new Date(deadline + TIME_CARD_EXTENSION_MS).toISOString();
-    seat.lastAction = `Time card · ${seat.timeCardsRemaining} left`;
-    addLog(state, `${seat.name} uses a time card (+20s)`);
   } else if (action.type === "next-hand") {
     if (state.status !== "complete") throw new Error("Finish the current hand first.");
     setupHand(state);

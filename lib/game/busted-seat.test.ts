@@ -160,7 +160,7 @@ describe("all three release paths, together", () => {
     expect(busted.seats[0].isHuman).toBe(false);
   });
 
-  it("never leaves a released seat owned, holding a time card, or counting misses", () => {
+  it("never leaves a released seat owned or counting misses", () => {
     const now = Date.now();
     const busted = allHumanTable();
     busted.seats[0].stack = 0;
@@ -171,7 +171,6 @@ describe("all three release paths, together", () => {
 
     const seat = busted.seats[0];
     expect(seat.ownerToken).toBeNull();
-    expect(seat.timeCardsRemaining).toBe(0);
     expect(seat.missedTurns).toBe(0);
   });
 });

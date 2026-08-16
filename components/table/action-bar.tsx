@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useFuse } from "./use-fuse";
 import clsx from "clsx";
-import { Check, FoldVertical, TimerReset } from "lucide-react";
+import { Check, FoldVertical } from "lucide-react";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { TIER_CONFIG } from "@/lib/game/tiers";
 import { backstopState } from "@/lib/profile/backstop";
@@ -242,25 +242,11 @@ export function ActionBar({
       />
 
       {/* No countdown here any more: the fuse burning around the seat on the
-          clock carries it, right where the player is already looking. This
-          column is just the time gems now, and everything it used to take
-          goes to the three decisions. */}
-      <div className="action-slot-tools">
-        <button
-          type="button"
-          className="time-card-button"
-          disabled={!myTurn || pending || !mySeat || mySeat.timeCardsRemaining <= 0}
-          onClick={() => onAction({ type: "use-time-card" })}
-          title="Add 20 seconds to this turn"
-        >
-          <TimerReset size={16} />
-          <span className="time-card-stack" aria-label={`${mySeat?.timeCardsRemaining ?? 0} time gems remaining`}>
-            {[0, 1, 2].map((index) => (
-              <i key={index} className={index < (mySeat?.timeCardsRemaining ?? 0) ? "available" : ""} />
-            ))}
-          </span>
-        </button>
-      </div>
+          clock carries it, right where the player is already looking. There
+          used to be a time-card column here too (+20s, three per seat) --
+          gone along with the rest of the file's time-bank plumbing, since
+          nothing in this app has real money on the line and the column was
+          costing width the three decisions could use instead. */}
 
       {/* Three permanent slots. An action you cannot take is disabled, never
           absent, so nothing to its right slides across to fill the gap. */}

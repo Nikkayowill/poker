@@ -137,10 +137,6 @@
     font-size: 14px;
     border-radius: 14px;
   }
-  .game-content:not(:has(.scene-room-3d)) .action-layer .time-card-button {
-    min-width: 60px;
-    padding: 6px 0;
-  }
 }
 
 .poker-table-wrap {

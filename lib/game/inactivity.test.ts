@@ -87,17 +87,6 @@ describe("counting missed turns", () => {
     expect(seat.missedTurns).toBe(0);
   });
 
-  it("resets when a time card is spent, which is also being present", () => {
-    const game = allHumanTable();
-    const seat = game.seats[game.currentPlayer!];
-    seat.missedTurns = MAX_MISSED_TURNS - 1;
-    // allHumanTable promotes bot seats without a time bank; only the original
-    // human seat is dealt one, and the first to act preflop is not that seat.
-    seat.timeCardsRemaining = 1;
-    applyPlayerAction(game, { type: "use-time-card" }, seat.ownerToken!);
-    expect(seat.missedTurns).toBe(0);
-  });
-
   it("counts consecutively across hands, not within one", () => {
     // A player who has walked away misses one turn per hand, so a counter
     // that reset each deal would never reach any threshold at all.

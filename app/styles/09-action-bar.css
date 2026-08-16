@@ -83,10 +83,6 @@
     0 0 48px rgba(217, 184, 93, 0.18);
 }
 
-.action-bar-3d .action-slot-tools {
-  border-color: rgba(255, 255, 255, 0.09);
-}
-
 .action-bar-3d .action-slot-controls button {
   border-radius: 16px;
   text-transform: uppercase;
@@ -104,17 +100,21 @@
 /* ---------------------------------------------------------------------------
    One shape, every state.
 
-   .action-bar is a fixed-height grid of exactly two areas: a tools column on
-   the left and the controls on the right. Nothing here is conditional, so no
-   state change can move a button, and the bar's height is a constant the
-   table's own sizing can be computed against -- see --action-bar-height in
-   06-table.css, which is what finally makes the height reserve honest.
+   .action-bar is a fixed-height grid, one column wide by default -- the
+   playing state's lone .action-slot-controls just fills it. The
+   between-hands states (status text next to a Rebuy/Return button) are the
+   only ones that need a second column, so :has() adds it only when a
+   .action-slot-status sibling is actually present. Nothing here is
+   conditional on React state, so no state change can move a button, and the
+   bar's height is a constant the table's own sizing can be computed against
+   -- see --action-bar-height in 06-table.css, which is what finally makes
+   the height reserve honest.
    --------------------------------------------------------------------------- */
 
 .action-bar {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
   gap: var(--space-5, 10px);
   height: var(--action-bar-height, 76px);
@@ -130,17 +130,13 @@
   box-shadow: var(--elevation-4, 0 15px 35px rgba(0, 0, 0, .22));
 }
 
+.action-bar:has(.action-slot-status) {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
 .action-bar-your-turn {
   border-color: rgba(217,184,93,.18);
   box-shadow: 0 15px 35px rgba(0,0,0,.22), 0 0 32px rgba(217,184,93,.045);
-}
-
-.action-slot-tools {
-  display: flex;
-  align-items: stretch;
-  gap: var(--space-3, 6px);
-  padding-right: var(--space-5, 10px);
-  border-right: 1px solid var(--line);
 }
 
 .action-slot-status {
@@ -159,31 +155,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.time-card-button {
-  min-width: 52px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1, 2px);
-  color: #d8c881;
-  border: 1px solid rgba(217,184,93,.18);
-  border-radius: var(--radius-lg, 9px);
-  background: rgba(217,184,93,.04);
-  cursor: pointer;
-}
-.time-card-button:disabled { opacity: .35; cursor: not-allowed; }
-.time-card-stack { display: flex; gap: 2px; }
-.time-card-stack i {
-  width: 9px;
-  height: 5px;
-  display: block;
-  border: 1px solid #566159;
-  border-radius: 1px;
-  background: transparent;
-}
-.time-card-stack i.available { border-color: #cbb963; background: #cbb963; }
 
 /* Equal shares, so the three decisions sit in the same place on every turn
    regardless of which of them happens to be legal. */

@@ -10,8 +10,6 @@ import {
   expireIdleTurn,
   normalizeGameState,
   preflopHandTier,
-  STARTING_TIME_CARDS,
-  TIME_CARD_EXTENSION_MS,
   TURN_TIMEOUT_MS,
   toSnapshot,
   vacateSeat,
@@ -1134,34 +1132,6 @@ describe("idle turn timeout", () => {
     const due = advanceTimedTurn(game, deadline);
     expect(due.action).not.toBeNull();
     expect(due.state.version).toBe(beforeVersion + 1);
-  });
-});
-
-describe("time cards", () => {
-  it("gives each human three cards and extends only their active deadline", () => {
-    const token = crypto.randomUUID();
-    let game = advanceBotsUntilHuman(createGame(token, "Host"));
-    expect(game.currentPlayer).toBe(0);
-    expect(game.seats[0].timeCardsRemaining).toBe(STARTING_TIME_CARDS);
-
-    const deadlineBefore = Date.parse(game.turnDeadlineAt!);
-    game = applyPlayerAction(game, { type: "use-time-card" }, token);
-
-    expect(game.currentPlayer).toBe(0);
-    expect(game.seats[0].timeCardsRemaining).toBe(STARTING_TIME_CARDS - 1);
-    expect(Date.parse(game.turnDeadlineAt!)).toBe(deadlineBefore + TIME_CARD_EXTENSION_MS);
-  });
-
-  it("cannot spend a fourth time card", () => {
-    const token = crypto.randomUUID();
-    let game = advanceBotsUntilHuman(createGame(token, "Host"));
-
-    for (let index = 0; index < STARTING_TIME_CARDS; index += 1) {
-      game = applyPlayerAction(game, { type: "use-time-card" }, token);
-    }
-
-    expect(game.seats[0].timeCardsRemaining).toBe(0);
-    expect(() => applyPlayerAction(game, { type: "use-time-card" }, token)).toThrow(/time cards/i);
   });
 });
 

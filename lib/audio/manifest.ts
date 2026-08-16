@@ -22,7 +22,6 @@ export type SoundEffect =
   | "win"
   | "lose"
   | "timeout"
-  | "time-card"
   | "your-turn";
 
 export const SOUND_FILES: Record<SoundEffect, string | null> = {
@@ -76,11 +75,7 @@ export const SOUND_FILES: Record<SoundEffect, string | null> = {
   // now, so the two no longer differ only by gain.
   "your-turn": "/sounds/Your_Turn.mp3",
   lose: null,
-  // Both clock cues, and deliberately the same recording: they are the same
-  // event to the player -- their time is the thing in question -- and the
-  // targets below are equal for that reason rather than by omission.
   timeout: "/sounds/TimeBank.mp3",
-  "time-card": "/sounds/TimeBank.mp3",
 };
 
 /**
@@ -171,10 +166,9 @@ const EFFECT_TARGET_DB: Record<SoundEffect, number> = {
   // Silent by design -- no file, so the target is unused. Kept in the record
   // so adding an asset is one line and the compiler names the other.
   lose: -30,
-  // The clock. Both sit under the betting cues: running out of time is
+  // The clock. Sits under the betting cues: running out of time is
   // information, not a moment, and it arrives while the table is already busy.
   timeout: -30,
-  "time-card": -30,
 };
 
 /**

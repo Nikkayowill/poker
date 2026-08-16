@@ -356,6 +356,7 @@ export function PokerTable({
   const potRef = useRef<HTMLDivElement | null>(null);
   const seatRefs = useRef<Record<string, HTMLElement | null>>({});
   const tableWrapRef = useRef<HTMLDivElement | null>(null);
+  const racetrackForegroundRef = useRef<HTMLDivElement | null>(null);
   const showFunnel = game.status === "complete" && game.winners.length > 0;
   // What beat you, stated in as many words. handLabel is only non-null once
   // a hand is revealed (won, or shown at a real showdown -- see
@@ -1112,6 +1113,7 @@ export function PokerTable({
               betStyle={betStyle}
               onReady={setCanvas2DMounted}
               onLayout={onRacetrackLayout}
+              foregroundHostRef={racetrackForegroundRef}
             />
           ) : activeRenderer === "webgl_3d" ? (
             <TableScene3D
@@ -1328,6 +1330,7 @@ export function PokerTable({
                 : {}),
             } as React.CSSProperties}
           >
+            <div className="racetrack-chip-foreground" ref={racetrackForegroundRef} aria-hidden="true" />
             <div className="poker-rail">
               <div className="poker-felt">
                 {/* The felt's own faint watermark -- was literal CSS text

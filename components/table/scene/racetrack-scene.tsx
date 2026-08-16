@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { RefObject } from "react";
 import type { PublicSeat } from "@/lib/game/types";
 import type { BetAnimationStyle } from "@/lib/scene/bet-style";
 import type { BetFlight } from "@/lib/scene/chips/bet-flight";
@@ -172,6 +173,8 @@ export interface RacetrackSceneProps {
   betFlights: BetFlight[];
   betStyle: BetAnimationStyle;
   onReady?: (ready: boolean) => void;
+  /** Mount point inside the DOM table, above the board but below hole cards. */
+  foregroundHostRef?: RefObject<HTMLDivElement | null>;
   /** Fires on mount and on every re-fit. See `RacetrackLayout`. */
   onLayout?: (layout: RacetrackLayout) => void;
 }
@@ -188,6 +191,7 @@ export function RacetrackScene({
   betFlights,
   betStyle,
   onReady,
+  foregroundHostRef,
   onLayout,
 }: RacetrackSceneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -205,6 +209,8 @@ export function RacetrackScene({
   const engineRef = useRef<{
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
+    foregroundCanvas: HTMLCanvasElement | null;
+    foregroundCtx: CanvasRenderingContext2D | null;
     chips: ChipScene;
     /** The drawn chip radius this fit solved for, in world units. */
     chipRadius: number;
@@ -242,6 +248,12 @@ export function RacetrackScene({
       return;
     }
     host.appendChild(canvas);
+    const foregroundCanvas = document.createElement("canvas");
+    const foregroundCtx = foregroundCanvas.getContext("2d");
+    const foregroundHost = foregroundHostRef?.current;
+    if (foregroundHost && foregroundCtx) {
+      foregroundHost.appendChild(foregroundCanvas);
+    }
 
     const markChanged = () => {
       const engine = engineRef.current;
@@ -260,6 +272,8 @@ export function RacetrackScene({
     engineRef.current = {
       canvas,
       ctx,
+      foregroundCanvas: foregroundHost && foregroundCtx ? foregroundCanvas : null,
+      foregroundCtx: foregroundHost && foregroundCtx ? foregroundCtx : null,
       chips,
       space,
       scheduler: markDirty(SLEEPING, performance.now()),
@@ -294,6 +308,10 @@ export function RacetrackScene({
       const ratio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
       engine.canvas.width = Math.round(hostBox.width * ratio);
       engine.canvas.height = Math.round(hostBox.height * ratio);
+      if (engine.foregroundCanvas) {
+        engine.foregroundCanvas.width = Math.round(hostBox.width * ratio);
+        engine.foregroundCanvas.height = Math.round(hostBox.height * ratio);
+      }
       engine.size = { width: hostBox.width, height: hostBox.height };
 
       engine.camera = fitCamera({
@@ -450,11 +468,26 @@ export function RacetrackScene({
         .sort((a, b) => a.position.z - b.position.z || a.stackIndex - b.stackIndex);
       // Two passes: every shadow down before any chip, or the near chips'
       // shadows land across the far chips' faces. See `chip-painter.ts`.
+      // Keep the authoritative table pass drawing every chip. The local bet
+      // is repeated in the optional foreground pass below; making this pass
+      // depend on that second canvas being mounted caused a visibility gap
+      // during mount/remounts.
       for (const chip of drawList) {
         paintChipShadow(engine.ctx, engine.chipView, engine.space, chip, engine.chipRadius);
       }
       for (const chip of drawList) {
         paintChip(engine.ctx, engine.chipView, engine.space, chip, engine.chipRadius);
+      }
+      if (engine.foregroundCtx && engine.foregroundCanvas) {
+        engine.foregroundCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        engine.foregroundCtx.clearRect(0, 0, engine.size.width, engine.size.height);
+        const localBetChips = engine.chips.drawListForOwner(0);
+        for (const chip of localBetChips) {
+          paintChipShadow(engine.foregroundCtx, engine.chipView, engine.space, chip, engine.chipRadius);
+        }
+        for (const chip of localBetChips) {
+          paintChip(engine.foregroundCtx, engine.chipView, engine.space, chip, engine.chipRadius);
+        }
       }
       engine.frames += 1;
 
@@ -535,6 +568,7 @@ export function RacetrackScene({
       delete window.__stackchipsScene;
       if (engine) engine.disposed = true;
       canvas.remove();
+      foregroundCanvas.remove();
       engineRef.current = null;
       pumpRef.current = null;
     };

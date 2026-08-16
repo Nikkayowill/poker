@@ -107,6 +107,25 @@
   z-index: 2;
 }
 
+/* The racetrack canvas normally sits behind this DOM wrapper. That is the
+   correct order for the shared table chips, but the local player's bet is in
+   the near foreground: allowing it to paint over the board gives a large
+   stack the same depth cue it has from the player's chair. This host receives
+   only owner-slot 0 bet chips; the pot, opponents' bets and all room paint
+   remain on the original canvas. Keep it below the local hole cards. */
+.scene-room-racetrack .racetrack-chip-foreground {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+}
+
+.scene-room-racetrack .racetrack-chip-foreground canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 /* The board itself: smaller and flat on the cloth, not the classic room's
    floating placeholder pill.
    -------------------------------------------------------------------------
@@ -136,6 +155,34 @@
 
 .scene-room-racetrack .community-cards .playing-card {
   width: var(--board-card-width, 48px);
+}
+
+/* Mobile landscape is the hardest read: the camera quite correctly keeps a
+   real card footprint, but at the 44px floor the shared card index becomes
+   too delicate at a glance. Keep the card itself at its camera-derived size
+   and give only the board's printed face more ink. One rank and one suit in a
+   single corner is quicker to parse than a second centred suit, especially
+   after the row's perspective tilt. The proportions are container-relative,
+   so this stays sharp as the live camera gives the card a few more pixels. */
+.scene-room-racetrack .community-cards .card-index,
+.scene-room-racetrack .seat-mine .own-cards .card-index {
+  top: 7cqw;
+  left: 8cqw;
+  line-height: .88;
+  text-rendering: geometricPrecision;
+}
+
+.scene-room-racetrack .community-cards .card-index-rank,
+.scene-room-racetrack .seat-mine .own-cards .card-index-rank {
+  font-size: 45cqw;
+  letter-spacing: -.04em;
+}
+
+.scene-room-racetrack .community-cards .card-index-glyph,
+.scene-room-racetrack .seat-mine .own-cards .card-index-glyph {
+  width: 30cqw;
+  height: 30cqw;
+  margin-top: 2cqw;
 }
 
 /* The dealt-card shadow, scoped off ghost (undealt) slots -- a ghost draws

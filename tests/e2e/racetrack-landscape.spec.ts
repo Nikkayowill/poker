@@ -66,7 +66,7 @@ test("the 2.5D table falls back to Classic in portrait and returns on rotation",
   }
 });
 
-test("the buy-in preselect offers all three tables, with 2.5D disabled in portrait", async ({ browser }) => {
+test("the buy-in preselect offers Classic and 2.5D, with 2.5D disabled in portrait", async ({ browser }) => {
   test.setTimeout(120_000);
   for (const size of [LANDSCAPE, PORTRAIT]) {
     const context = await browser.newContext({ viewport: size });
@@ -78,7 +78,7 @@ test("the buy-in preselect offers all three tables, with 2.5D disabled in portra
 
       const segment = page.locator(".buyin-renderer .entry-segment");
       await expect(segment).toBeVisible({ timeout: 20_000 });
-      expect(await segment.locator("button").allInnerTexts()).toEqual(["3D room", "2.5D", "Classic"]);
+      expect(await segment.locator("button").allInnerTexts()).toEqual(["2.5D", "Classic"]);
 
       /* Disabled rather than hidden, so the control keeps one shape across a
          rotation and the note underneath can explain the absence. */

@@ -394,14 +394,11 @@
 }
 .buyin-renderer small { display: block; margin-top: 6px; color: #8f9d95; font-size: 11px; }
 
-/* Three tables to choose between now, not two, and `.entry-segment` is a
-   two-way control by construction -- `grid-template-columns: 1fr 1fr` in
-   04-lobby.css, where its only other consumer is the sign-in page's genuine
-   either/or. Left alone the third button wraps onto a second row inside the
-   track. Overridden here rather than generalised there, so the shared control
-   keeps meaning "one of two" everywhere else it is used. */
+/* The 3D room is currently hidden, so the pre-sit picker has exactly two
+   choices: Classic and 2.5D. Keep this explicit here because the shared
+   `.entry-segment` control also has other consumers with their own layouts. */
 .buyin-renderer .entry-segment {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
 }
 
 /* A choice that is not available here has never had a look, because until now

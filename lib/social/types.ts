@@ -28,6 +28,14 @@ export interface FriendSummary {
   accent: string;
   /** When the friendship was created, not when either profile was. */
   since: string;
+  /**
+   * Wins/losses/draws across every settled duel against this friend, or null
+   * if the two of you have never finished one. Derived from pvp_matches at
+   * read time -- see getDuelRecordsAgainst -- so this can lag a match that
+   * settled in the last few seconds by at most one poll, same as everything
+   * else in the drawer.
+   */
+  duelRecord: { wins: number; losses: number; draws: number } | null;
 }
 
 export interface PendingRequest {

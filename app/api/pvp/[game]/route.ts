@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { STAKES_TIERS } from "@/lib/game/tiers";
+import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 import { isDuelGameId } from "@/lib/pvp/registry";
 import { isBanned } from "@/lib/server/profile-store";
 import {
@@ -33,7 +33,7 @@ export const runtime = "nodejs";
  */
 
 const openSchema = z.object({
-  tier: z.enum(STAKES_TIERS),
+  stake: z.number().int().min(MIN_DUEL_STAKE),
   /** Null/absent is an open challenge -- anyone may take it. */
   opponentId: z.string().uuid().nullish(),
 });
@@ -101,7 +101,10 @@ export async function POST(
     if (!parsed.success) {
       return withRequestSessionCookie(
         request,
-        NextResponse.json({ error: "Pick a stake to challenge at." }, { status: 400 }),
+        NextResponse.json(
+          { error: `Wager at least ${MIN_DUEL_STAKE.toLocaleString()} Gold to challenge at.` },
+          { status: 400 },
+        ),
         token,
       );
     }
@@ -116,7 +119,7 @@ export async function POST(
     const result = await openDuelChallenge(
       token,
       game,
-      parsed.data.tier,
+      parsed.data.stake,
       parsed.data.opponentId ?? null,
     );
     return withRequestSessionCookie(request, NextResponse.json(result), token);

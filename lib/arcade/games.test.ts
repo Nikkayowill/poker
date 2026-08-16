@@ -39,6 +39,7 @@ describe("arcade catalogue", () => {
       "Checkers",
       "Trivia Showdown",
       "Word Race",
+      "Ante Up: Sudoku",
     ]);
   });
 
@@ -57,7 +58,7 @@ describe("arcade catalogue", () => {
     for (const entry of retired) expect(entry.href).toBeNull();
 
     const floor = splitArcadeFloor();
-    const onFloor = [...floor.free, ...floor.duels, ...floor.staked].map((entry) => entry.id);
+    const onFloor = [...floor.free, ...floor.duels, ...floor.wagers, ...floor.staked].map((entry) => entry.id);
     for (const entry of retired) expect(onFloor).not.toContain(entry.id);
   });
 
@@ -84,9 +85,12 @@ describe("arcade catalogue", () => {
     }
   });
 
-  it("never puts a price on a daily puzzle", () => {
+  it("never puts a price on a daily puzzle, or a floor under a solo wager", () => {
+    // Both are legitimately 0, for opposite reasons: a puzzle has nothing to
+    // wager, a wager's floor is "free" because the real amount is picked on
+    // the page itself, same as a duel's stake tier used to be picked there.
     for (const entry of ARCADE_GAMES) {
-      if (entry.kind === "puzzle") expect(entry.entryCost).toBe(0);
+      if (entry.kind === "puzzle" || entry.kind === "wager") expect(entry.entryCost).toBe(0);
       else expect(entry.entryCost).toBeGreaterThan(0);
     }
   });

@@ -65,7 +65,7 @@
   justify-content: space-between;
   gap: 10px;
   margin-top: auto;
-  min-height: 38px;
+  min-height: 44px;
   padding: 0 12px;
   color: #e9dcfb;
   text-decoration: none;
@@ -267,7 +267,11 @@
   align-items: center;
   justify-content: center;
   min-width: 62px;
-  min-height: 34px;
+  /* 44px, not the old 34 -- this is the single most reused tappable control
+     on the whole floor (every card, every staked row, the duel lobby and
+     Word Race's submit all wear it), so it is the highest-leverage touch
+     target in the arcade to get right. */
+  min-height: 44px;
   padding: 0 14px;
   color: #e9dcfb;
   text-decoration: none;

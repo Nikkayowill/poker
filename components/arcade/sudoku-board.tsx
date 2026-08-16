@@ -150,6 +150,18 @@ export function SudokuBoard() {
     }
   };
 
+  // A digit that already sits in all nine cells has nowhere left to go --
+  // graying it out on the pad is the cue: "you're done placing this one."
+  // Counts both givens and entries, since a digit the puzzle handed you fills
+  // the same slot as one you typed in.
+  const digitCounts = new Array(10).fill(0);
+  if (round) {
+    for (let i = 0; i < SUDOKU_CELLS; i += 1) {
+      const value = round.puzzle[i] || round.entries[i];
+      if (value) digitCounts[value] += 1;
+    }
+  }
+
   const elapsed = round
     ? round.elapsedMs ?? Math.max(0, now - Date.parse(round.startedAt))
     : 0;
@@ -277,17 +289,21 @@ export function SudokuBoard() {
               </div>
             ) : (
               <div className="sk-pad" role="group" aria-label="Digits">
-                {DIGITS.map((digit) => (
-                  <button
-                    key={digit}
-                    type="button"
-                    className="sk-key"
-                    disabled={busy || selected === null}
-                    onClick={() => void fill(digit)}
-                  >
-                    {digit}
-                  </button>
-                ))}
+                {DIGITS.map((digit) => {
+                  const complete = digitCounts[digit] >= SUDOKU_SIZE;
+                  return (
+                    <button
+                      key={digit}
+                      type="button"
+                      className={clsx("sk-key", complete && "sk-key-complete")}
+                      disabled={busy || selected === null || complete}
+                      aria-label={complete ? `${digit}, all placed` : `${digit}`}
+                      onClick={() => void fill(digit)}
+                    >
+                      {digit}
+                    </button>
+                  );
+                })}
                 <button
                   type="button"
                   className="sk-key sk-key-erase"

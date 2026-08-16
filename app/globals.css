@@ -68,6 +68,7 @@
    seat on it, so it has to cascade after the table, seat, responsive,
    first-person and landscape sheets whose positioning it overrides. */
 @import "./styles/42-racetrack-table.css";
+@import "./styles/43-site-info.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

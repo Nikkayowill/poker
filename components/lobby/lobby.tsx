@@ -10,6 +10,7 @@ import { backstopState } from "@/lib/profile/backstop";
 import { accountsEnabled } from "@/lib/auth/client";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
+import { SiteFooter } from "@/components/nav/site-footer";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { MissionsPanel } from "@/components/missions/missions-panel";
 import { RankStrip } from "@/components/profile/rank-strip";
@@ -389,6 +390,9 @@ export function Lobby({
           </form>
         </div>
       </section>
+
+      <SiteFooter />
+
       {friendsOpen && <FriendsDrawer onClose={() => setFriendsOpen(false)} />}
       {buyInMode && (
         <BuyInModal

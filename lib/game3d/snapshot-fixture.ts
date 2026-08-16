@@ -59,7 +59,6 @@ export function makePublicSeat(overrides: Partial<PublicSeat> = {}): PublicSeat 
     acted: false,
     actedAtBet: null,
     lastAction: null,
-    timeCardsRemaining: 3,
     missedTurns: 0,
     vpip: false,
     reseatEligibleAt: null,

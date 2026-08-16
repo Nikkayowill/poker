@@ -121,6 +121,8 @@ export interface RenderChip {
    * front of its winner fades out rather than being cut. See `payOut`.
    */
   opacity: number;
+  /** The seat that owns a standing bet or its incoming flight, when any. */
+  ownerSlot?: number;
 }
 
 interface PermanentChip {
@@ -398,7 +400,7 @@ export class ChipScene {
           this.rehome(existing, rest, place.index);
           return;
         }
-        this.bets.set(key, this.arrive(key, unit.denomination, rest, place, BET_DROP_RADII, 0));
+        this.bets.set(key, this.arrive(key, unit.denomination, rest, place, BET_DROP_RADII, 0, slot));
         this.onChanged();
       });
     }
@@ -508,6 +510,7 @@ export class ChipScene {
         : { x: 0, z: 0 };
       this.launch({
         denomination,
+        ownerSlot: slot,
         from: { x: origin.x, y: this.space.feltY, z: origin.z },
         to: {
           x: spot.x + tangent.x * place.offsetX + scatter.x,
@@ -797,6 +800,11 @@ export class ChipScene {
     return out;
   }
 
+  /** Chips belonging to one player's standing bet or incoming bet flight. */
+  drawListForOwner(ownerSlot: number): RenderChip[] {
+    return this.drawList().filter((chip) => chip.ownerSlot === ownerSlot);
+  }
+
   /* ---------------------------------------------------------------- *
    * Test seams. See `StackchipsSceneSeam`.
    * ---------------------------------------------------------------- */
@@ -856,6 +864,7 @@ export class ChipScene {
     slot: StackSlot,
     dropRadii: number,
     delayMs: number,
+    ownerSlot?: number,
   ): PermanentChip {
     const entry: PermanentChip = {
       visible: false,
@@ -873,10 +882,12 @@ export class ChipScene {
         scaleX: 1,
         scaleY: 1,
         opacity: 1,
+        ownerSlot,
       },
     };
     entry.carrier = this.launch({
       denomination,
+      ownerSlot,
       from: { ...rest, y: rest.y + dropRadii * this.chipRadius },
       to: rest,
       fromStack: slot.index,
@@ -893,6 +904,7 @@ export class ChipScene {
 
   private launch(spec: {
     denomination: number;
+    ownerSlot?: number;
     from: Vec3;
     to: Vec3;
     fromStack: number;
@@ -922,6 +934,7 @@ export class ChipScene {
         scaleX: 1,
         scaleY: 1,
         opacity: 1,
+        ownerSlot: spec.ownerSlot,
       },
       from: { ...spec.from },
       to: { ...spec.to },

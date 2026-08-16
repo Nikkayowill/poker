@@ -58,12 +58,13 @@ import {
 } from "@/lib/game3d/room-theme";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
-import { Coins, Gift, HeartHandshake, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
+import { Coins, Gift, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
 import { Lobby } from "@/components/lobby/lobby";
 import { retireFirstRunStrip } from "@/components/lobby/first-run-strip";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { ProfileModal } from "@/components/profile/profile-modal";
 import { Menu, type MenuItem } from "@/components/nav/menu";
+import { DonateButton } from "@/components/nav/donate-button";
 import { AuthButton } from "@/components/profile/auth-button";
 import { GoldBadge } from "@/components/profile/gold-badge";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
@@ -865,7 +866,6 @@ export function PokerApp() {
       call: "call",
       raise: "raise",
       "all-in": "all-in",
-      "use-time-card": "time-card",
       "next-hand": "ui",
       "leave-seat": "ui",
       rebuy: "ui",
@@ -1319,8 +1319,11 @@ export function PokerApp() {
       ]
       : []),
     { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
+    // The main store entry -- Support StackChips used to sit right below this
+    // as an equal-weight row, which read as two competing stores in one
+    // dropdown. It now lives as the small heart button in the header instead
+    // (DonateButton, below), so this is the only purchase path left here.
     { kind: "link", label: "Buy Gold", href: gameId ? `/store/gold?table=${gameId}` : "/store/gold", icon: <Coins size={15} /> },
-    { kind: "link", label: "Support StackChips", href: gameId ? `/store?table=${gameId}` : "/store", icon: <HeartHandshake size={15} /> },
     { kind: "link", label: "Leaderboard", href: "/leaderboard", icon: <Trophy size={15} /> },
     { kind: "separator" },
     {
@@ -1373,14 +1376,16 @@ export function PokerApp() {
               <StackChipsMark size={50} />
             </span>
           </div>
-          {/* The hub tiles already carry Collection, Support StackChips and
-              the leaderboard, so repeating them here was three chances to
-              tap the same thing. Gold stays visible because it is the
-              number a player checks before choosing stakes. */}
+          {/* The hub tiles already carry Collection and the leaderboard, so
+              repeating them here was three chances to tap the same thing.
+              Gold stays visible because it is the number a player checks
+              before choosing stakes. The heart is the one persistent nav
+              fixture Support StackChips gets now -- see DonateButton. */}
           <div className="header-actions">
             {entryComplete && profile && (
               <GoldBadge profile={profile} claimable={dailyGold === "ready"} justClaimed={goldFlash} />
             )}
+            {entryComplete && <DonateButton />}
             {entryComplete
               ? (
                 <Menu

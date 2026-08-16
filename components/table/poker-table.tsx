@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
-  Box, Copy, DoorOpen, HeartHandshake, History, Layers, LogIn, LogOut, Palette, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
+  Box, Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Palette, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
@@ -40,6 +40,7 @@ import {
   seatZ,
 } from "@/lib/game/table-geometry";
 import { Menu, type MenuItem } from "@/components/nav/menu";
+import { DonateButton } from "@/components/nav/donate-button";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { tapSound } from "@/lib/audio/ui-sounds";
 import type { ReactionId } from "@/lib/game/reaction-channel";
@@ -177,13 +178,14 @@ const RACETRACK_SEAT_MAX_PX = 132;
  * bare card, so 44 is not a stylistic guess here either. The ceiling is set
  * well under the classic room's own 76px (`06-table.css`'s desktop
  * `.community-cards .playing-card` clamp, which this camera was inheriting
- * unmodified until now) -- smaller and flatter on the cloth is the whole
- * point of sizing this off the camera instead of a breakpoint. Between the
- * two, `clampBoardCardWidth` (lib/scene/board-clearance.ts) shrinks further
- * still, every frame, until the row actually clears the pot -- see its own
- * header for why a static clamp alone can't guarantee that. */
+ * unmodified until now) -- reads big on the cloth like a real dealt hand
+ * instead of flattened UI chrome, sized off the camera instead of a
+ * breakpoint. Between the two, `clampBoardCardWidth`
+ * (lib/scene/board-clearance.ts) shrinks further still, every frame, until
+ * the row actually clears the pot -- see its own header for why a static
+ * clamp alone can't guarantee that. */
 const RACETRACK_BOARD_CARD_MIN_PX = 44;
-const RACETRACK_BOARD_CARD_MAX_PX = 52;
+const RACETRACK_BOARD_CARD_MAX_PX = 72;
 
 /**
  * Place the dealer's artwork in the slot the scene projected for it.
@@ -355,6 +357,7 @@ export function PokerTable({
   const potRef = useRef<HTMLDivElement | null>(null);
   const seatRefs = useRef<Record<string, HTMLElement | null>>({});
   const tableWrapRef = useRef<HTMLDivElement | null>(null);
+  const racetrackForegroundRef = useRef<HTMLDivElement | null>(null);
   const showFunnel = game.status === "complete" && game.winners.length > 0;
   // What beat you, stated in as many words. handLabel is only non-null once
   // a hand is revealed (won, or shown at a real showdown -- see
@@ -966,7 +969,11 @@ export function PokerTable({
     items.push(
       { kind: "separator" },
       { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
-      { kind: "link", label: "Support StackChips", href: `/store?table=${game.id}`, icon: <HeartHandshake size={15} /> },
+      // Was missing here entirely -- the lobby's hub tile says "Buy Gold" but
+      // this in-game menu only offered "Support StackChips", so a player who
+      // opened it mid-session saw a donate link where they expected the
+      // store. Donating now lives in the header instead (DonateButton).
+      { kind: "link", label: "Buy Gold", href: `/store/gold?table=${game.id}`, icon: <Coins size={15} /> },
       { kind: "link", label: "Leaderboard", href: "/leaderboard", icon: <Trophy size={15} /> },
       { kind: "separator" },
     );
@@ -1031,7 +1038,10 @@ export function PokerTable({
           into the avatar's menu. Leave Table stays a first-class button
           rather than a menu entry: it is the one control a player may want
           in a hurry, and burying it two taps deep to satisfy a rule about
-          tidiness would be the wrong trade. */}
+          tidiness would be the wrong trade. The donate heart is the one
+          addition to that rule -- same reasoning as the lobby header's own
+          copy of it (components/poker-app.tsx): a single persistent icon,
+          not a menu row, so it costs nothing to keep visible. */}
       <header className={clsx(
         "game-header",
         sceneReady && activeRenderer === "webgl_3d" && "game-header-3d",
@@ -1053,6 +1063,7 @@ export function PokerTable({
             over the pot (see 05-game-header.css). */}
         <div className="game-header-actions">
           <button className="leave-button" onClick={() => { tapSound(); onLeave(); }}>Leave table</button>
+          <DonateButton gameId={game.id} />
           <Menu
             label="Open player menu"
             trigger={
@@ -1103,6 +1114,7 @@ export function PokerTable({
               betStyle={betStyle}
               onReady={setCanvas2DMounted}
               onLayout={onRacetrackLayout}
+              foregroundHostRef={racetrackForegroundRef}
             />
           ) : activeRenderer === "webgl_3d" ? (
             <TableScene3D
@@ -1128,8 +1140,11 @@ export function PokerTable({
             />
           )}
           <TableLoadingSplash active={!sceneReady} />
-          {/* Desktop only (see local-player-hud.tsx and its CSS) and only on
-              the classic table -- the 3D room mounts its own equivalent
+          {/* Desktop-only on the classic table, but shown at every width on
+              the racetrack -- see 42-racetrack-table.css's own note on why
+              that table needs the corner HUD on mobile too (its local seat
+              has no figure to fall back on at any width). Never on the 3D
+              room: it mounts its own equivalent
               (game3d/hud/player-hud-corner.tsx) inside TableScene3D above,
               so rendering this one too would be the same avatar twice. */}
           {activeRenderer !== "webgl_3d" && mySeat && (
@@ -1316,6 +1331,7 @@ export function PokerTable({
                 : {}),
             } as React.CSSProperties}
           >
+            <div className="racetrack-chip-foreground" ref={racetrackForegroundRef} aria-hidden="true" />
             <div className="poker-rail">
               <div className="poker-felt">
                 {/* The felt's own faint watermark -- was literal CSS text
@@ -1398,8 +1414,25 @@ export function PokerTable({
                       </span>
                     ))}
                   </div>
+                  {/* Racetrack only: the street and the blinds, read as one
+                      caption directly under the board instead of the street
+                      sitting alone at a fixed felt percentage (tuned for the
+                      classic ellipse, not this camera's board position) and
+                      the blinds sitting in the black space above the table.
+                      Replaces .street-label/.blind-structure for this room --
+                      see their display:none in 42-racetrack-table.css. */}
+                  {isRacetrack && (
+                    <div className="board-caption" aria-hidden="true">
+                      <span className="board-caption-street">{game.street}</span>
+                      <span className="board-caption-blinds">
+                        <b>SB</b> {game.smallBlind.toLocaleString()}
+                        <i>/</i>
+                        <b>BB</b> {game.bigBlind.toLocaleString()}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <span className="street-label">{game.street}</span>
+                {!isRacetrack && <span className="street-label">{game.street}</span>}
               </div>
             </div>
             {dealerSeatId && (

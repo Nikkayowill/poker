@@ -98,8 +98,6 @@ export interface Seat {
    */
   actedAtBet: number | null;
   lastAction: string | null;
-  /** Consumable 20-second extensions. Human players receive three when they take a seat. */
-  timeCardsRemaining: number;
   /**
    * Turns in a row this seat let the clock resolve for it.
    *
@@ -206,7 +204,6 @@ export type PlayerAction =
   | { type: "call" }
   | { type: "raise"; amount: number }
   | { type: "all-in" }
-  | { type: "use-time-card" }
   | { type: "next-hand" }
   | { type: "leave-seat" }
   | { type: "rebuy"; amount: number };

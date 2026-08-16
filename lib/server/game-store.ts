@@ -748,7 +748,7 @@ export async function persistSeatClaim(state: GameState, seatId: string): Promis
 async function persistTimedTurn(
   state: GameState,
   actorSeatId: string | null,
-  action: Exclude<PlayerAction, { type: "leave-seat" | "use-time-card" }>,
+  action: Exclude<PlayerAction, { type: "leave-seat" }>,
 ): Promise<boolean> {
   const supabase = adminClient();
   if (!supabase) {

@@ -23,7 +23,6 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("call") }),
   z.object({ type: z.literal("raise"), amount: z.number().int().positive() }),
   z.object({ type: z.literal("all-in") }),
-  z.object({ type: z.literal("use-time-card") }),
   z.object({ type: z.literal("next-hand") }),
   z.object({ type: z.literal("leave-seat") }),
   z.object({ type: z.literal("rebuy"), amount: z.number().int().positive() }),

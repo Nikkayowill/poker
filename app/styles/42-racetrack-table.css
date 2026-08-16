@@ -107,6 +107,25 @@
   z-index: 2;
 }
 
+/* The racetrack canvas normally sits behind this DOM wrapper. That is the
+   correct order for the shared table chips, but the local player's bet is in
+   the near foreground: allowing it to paint over the board gives a large
+   stack the same depth cue it has from the player's chair. This host receives
+   only owner-slot 0 bet chips; the pot, opponents' bets and all room paint
+   remain on the original canvas. Keep it below the local hole cards. */
+.scene-room-racetrack .racetrack-chip-foreground {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+}
+
+.scene-room-racetrack .racetrack-chip-foreground canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 /* The board itself: smaller and flat on the cloth, not the classic room's
    floating placeholder pill.
    -------------------------------------------------------------------------
@@ -132,10 +151,53 @@
   border-radius: 0;
   background: none;
   box-shadow: none;
+  /* Every other card in this room -- the dealer's, a seat's, the chips --
+     is drawn by the real perspective camera and recedes with the felt. This
+     row was the one flat, front-facing sticker left: a plain CSS layout with
+     no relationship to that camera at all. Tipping it back around its own
+     near edge (the row's bottom, where it meets the cloth) gives it the same
+     "lying on the table, receding away" read instead of "held up in front of
+     it" -- default `transform-style: flat` renders the row as one flattened
+     plane first, so the tilt applies to the whole laid fan at once rather
+     than each card getting its own independent 3D placement. */
+  transform: perspective(600px) rotateX(26deg);
+  transform-origin: 50% 100%;
+  /* Lower the row inside the projected board zone so the upper character
+     band has breathing room on short landscape captures. Margin is used
+     instead of a second transform so the caption below follows the cards. */
+  margin-top: 48px;
 }
 
 .scene-room-racetrack .community-cards .playing-card {
   width: var(--board-card-width, 48px);
+}
+
+/* Mobile landscape is the hardest read: the camera quite correctly keeps a
+   real card footprint, but at the 44px floor the shared card index becomes
+   too delicate at a glance. Keep the card itself at its camera-derived size
+   and give only the board's printed face more ink. One rank and one suit in a
+   single corner is quicker to parse than a second centred suit, especially
+   after the row's perspective tilt. The proportions are container-relative,
+   so this stays sharp as the live camera gives the card a few more pixels. */
+.scene-room-racetrack .community-cards .card-index,
+.scene-room-racetrack .seat-mine .own-cards .card-index {
+  top: 7cqw;
+  left: 8cqw;
+  line-height: .88;
+  text-rendering: geometricPrecision;
+}
+
+.scene-room-racetrack .community-cards .card-index-rank,
+.scene-room-racetrack .seat-mine .own-cards .card-index-rank {
+  font-size: 45cqw;
+  letter-spacing: -.04em;
+}
+
+.scene-room-racetrack .community-cards .card-index-glyph,
+.scene-room-racetrack .seat-mine .own-cards .card-index-glyph {
+  width: 30cqw;
+  height: 30cqw;
+  margin-top: 2cqw;
 }
 
 /* The dealt-card shadow, scoped off ghost (undealt) slots -- a ghost draws
@@ -174,6 +236,57 @@
   top: var(--pot-y, 26%);
 }
 
+/* The street and the blinds, as one caption under the board.
+   -------------------------------------------------------------------------
+   poker-table.tsx renders this only for isRacetrack, right after
+   .community-cards inside .board-stack, so it inherits that column's centred
+   flex layout and sits directly beneath the last-dealt card -- no coordinate
+   of its own to solve, unlike everything else this file positions from the
+   camera. .table-hud's own .blind-structure (06-table.css) is hidden below
+   for this room since this caption replaces it; .street-label is never
+   rendered here at all (see the JSX). */
+.scene-room-racetrack .board-caption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transform: translateY(8px);
+  white-space: nowrap;
+}
+.scene-room-racetrack .board-caption-street {
+  font: italic 12px Georgia, serif;
+  text-transform: capitalize;
+  color: rgba(222, 232, 225, .55);
+}
+.scene-room-racetrack .board-caption-blinds {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: rgba(226, 235, 228, .72);
+  font: italic 12px Georgia, serif;
+  letter-spacing: .06em;
+}
+.scene-room-racetrack .board-caption-blinds b { font-weight: 700; }
+.scene-room-racetrack .board-caption-blinds b:first-of-type { color: #8fc7ff; }
+.scene-room-racetrack .board-caption-blinds b:last-of-type { color: #ffc06f; }
+.scene-room-racetrack .board-caption-blinds i { color: #53625a; font-style: normal; }
+
+.scene-room-racetrack .table-hud .blind-structure {
+  display: none;
+}
+
+/* The dealer button. A real dealer stands at far centre on this table (the
+   rotating character art below); a "D" puck marking whose turn it would be
+   to deal is a fiction the classic ellipse still needs and this room does
+   not, so it never shows here at all -- not just below 900px, where
+   08-seat.css already hides it. */
+.scene-room-racetrack .dealer-puck {
+  display: none;
+}
+
 /* The pot's own readout, moved off the community-card row to sit where the
    pile it names actually rests.
    -------------------------------------------------------------------------
@@ -206,7 +319,23 @@
   position: absolute;
   left: 50%;
   top: calc(50% + var(--pot-y-delta-px, -22px));
+  z-index: 3;
   transform: translate(-50%, calc(-50% - 6px));
+}
+
+/* Landscape phones have less vertical room and a proportionally taller card
+   row. Keep the readout compact and give it a little more air from the card
+   plane; the projected pot anchor remains the source of truth for where the
+   chips themselves sit. */
+@media (max-width: 900px) and (orientation: landscape) {
+  .scene-room-racetrack .center-pot-amount {
+    gap: 4px;
+    padding: 2px 7px;
+    transform: translate(-50%, calc(-50% - 10px));
+  }
+
+  .scene-room-racetrack .center-pot-amount span { font-size: 8px; }
+  .scene-room-racetrack .center-pot-amount strong { font-size: 11px; }
 }
 
 /* A seat's bet-amount pill, aimed at where its chips actually rest.
@@ -371,4 +500,122 @@
    highlight (.seat-current .seat-plate) still carries the signal until then. */
 .scene-room-racetrack .player-seat:not(.seat-mine) .seat-figure {
   display: none;
+}
+
+/* Mobile racetrack: corner HUD instead of a bottom-centre nameplate.
+   -------------------------------------------------------------------------
+   Every other table only makes this trade past 901px (16-first-person.css)
+   -- below that, a phone still has the seat's own figure standing in for
+   identity. This room's local seat never has one: `.seat-mine .seat-figure`
+   is hidden above at every width, not just desktop, because the camera
+   sits in that chair. So below 901px the only thing left carrying "who you
+   are" was the nameplate, sitting dead centre on the stage's own bottom
+   edge -- fighting the hole cards it was meant to sit beside for the same
+   strip of felt.
+
+   Width, not height/orientation, is the right gate here, unlike
+   17-landscape.css's equivalent tier for the classic room: this renderer
+   never mounts in portrait at all (resolveTableRenderer sends that viewport
+   to canvas_2d before RacetrackScene ever draws), so there is no second axis
+   to gate on. 900px is the exact complement of 16-first-person.css's own
+   901px, so the two tiers meet with no gap and no overlap. */
+@media (max-width: 900px) {
+  .scene-room-racetrack .player-hud {
+    display: flex;
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    z-index: 6;
+    align-items: center;
+    gap: 8px;
+    max-width: min(200px, 34vw);
+    padding: 5px 14px 5px 7px;
+    padding-left: max(7px, env(safe-area-inset-left));
+    padding-bottom: max(5px, env(safe-area-inset-bottom));
+    border-radius: 0 999px 999px 0;
+    border: 1px solid rgba(217, 184, 93, .3);
+    border-left: none;
+    border-bottom: none;
+    background:
+      radial-gradient(circle at 0% 120%, rgba(217, 184, 93, .16), transparent 60%),
+      linear-gradient(180deg, rgba(18, 15, 10, .94), rgba(8, 7, 5, .97));
+    box-shadow: inset 0 1px rgba(255, 255, 255, .08), 0 10px 24px rgba(0, 0, 0, .48);
+    backdrop-filter: blur(12px);
+    pointer-events: none;
+  }
+  .scene-room-racetrack .player-hud-portrait,
+  .scene-room-racetrack .player-hud-portrait .profile-avatar,
+  .scene-room-racetrack .player-hud-portrait-fallback {
+    width: 34px;
+    height: 34px;
+  }
+  .scene-room-racetrack .player-hud-portrait-fallback { font-size: 14px; }
+  .scene-room-racetrack .player-hud-level {
+    right: -2px;
+    bottom: -2px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 3px;
+    font-size: 8px;
+  }
+  .scene-room-racetrack .player-hud-body { gap: 3px; }
+  .scene-room-racetrack .player-hud-name { max-width: 100px; font-size: 10.5px; }
+  .scene-room-racetrack .player-hud-xp-track { width: 70px; height: 4px; }
+  .scene-room-racetrack .player-hud-cash { gap: 4px; font-size: 10px; }
+  .scene-room-racetrack .player-hud-cash svg { width: 10px; height: 10px; }
+
+  /* The nameplate the corner HUD above replaces -- name, stack and level all
+     move there instead of sitting bottom-centre. Its own turn clock isn't
+     lost: the action bar's TurnProgressBar burns on the identical deadline,
+     right where the thumb already is when it's actually your turn. */
+  .scene-room-racetrack .player-seat.seat-mine .seat-plate {
+    display: none;
+  }
+
+  /* Off the seat's own box and onto the stage's bottom edge -- the same move
+     16-first-person.css makes at 901px+, needed here below it too because
+     this seat has no figure for the cards to sit beside instead (see this
+     block's own header). Landed fully on-screen rather than hanging past the
+     edge the way the desktop tier's -22px does: a phone has less room to
+     spare, and "seeable" was the ask, not "held up into frame". */
+  .scene-room-racetrack .player-seat.seat-mine .seat-cards {
+    position: fixed;
+    left: 50%;
+    top: auto;
+    bottom: max(4px, var(--safe-bottom));
+    margin-left: 0;
+    transform: translateX(-50%);
+    z-index: 20;
+  }
+  .scene-room-racetrack .player-seat.seat-mine .own-cards .playing-card {
+    width: clamp(52px, calc(var(--seat-width) * .38), 78px);
+    border-radius: 8px;
+  }
+  .scene-room-racetrack .player-seat.seat-mine .own-cards .dealt-card-shell + .dealt-card-shell {
+    margin-left: calc(var(--seat-width) * -.16);
+  }
+
+  /* Smaller and tighter in its corner. These are 12-responsive.css's own
+     letterboxed-handset numbers, proved there for the classic room's
+     narrowest tier -- applied here at every racetrack mobile width rather
+     than only the narrowest aspect, since this table's controls share the
+     same corner of felt at any of them. */
+  .scene-room-racetrack .action-layer .action-bar {
+    width: min(100%, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    min-width: 0;
+    padding: 4px 8px;
+    gap: 7px;
+  }
+  .scene-room-racetrack .action-layer .action-slot-controls {
+    min-width: 0;
+    gap: 6px;
+  }
+  .scene-room-racetrack .action-layer .action-slot-controls button {
+    min-width: 0;
+    overflow: hidden;
+    padding: 0 9px;
+    font-size: 11px;
+    border-radius: 10px;
+  }
 }

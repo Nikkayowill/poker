@@ -62,9 +62,9 @@ export function applyOptimisticAction(
       nextSeat = commit(paid);
       break;
     // "check" moves no chips -- nothing to predict. Everything else
-    // (rebuy, leave-seat, use-time-card, next-hand) either isn't the
-    // acting-on-your-turn family this exists for, or has effects (Gold
-    // spend, profile updates) not worth guessing at.
+    // (rebuy, leave-seat, next-hand) either isn't the acting-on-your-turn
+    // family this exists for, or has effects (Gold spend, profile updates)
+    // not worth guessing at.
     default:
       return game;
   }

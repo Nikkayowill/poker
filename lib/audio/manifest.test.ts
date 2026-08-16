@@ -92,11 +92,7 @@ describe("the mix", () => {
     expect(playbackDb("all-in")).toBeGreaterThan(playbackDb("raise"));
   });
 
-  it("plays one recording for both clock cues", () => {
-    // Deliberately shared: to the player, a timeout and a spent time card are
-    // the same subject. Equal targets here are the intent, not an oversight.
-    expect(SOUND_FILES.timeout).toBe(SOUND_FILES["time-card"]);
-    expect(soundGain("timeout")).toBe(soundGain("time-card"));
+  it("places the clock cue among the betting cues, not housekeeping", () => {
     // The clock is worth hearing -- it sits in among the betting cues rather
     // than down with housekeeping -- but it never outranks the cue whose whole
     // job is to interrupt, or the hand ending.
@@ -152,9 +148,7 @@ describe("the mix", () => {
     expect({ file: SOUND_FILES.lose, gain: soundGain("lose") })
       .toEqual({ file: null, gain: 0 });
     expect(AUDIBLE_EFFECTS).not.toContain("lose");
-    for (const effect of ["timeout", "time-card"] as SoundEffect[]) {
-      expect({ effect, audible: AUDIBLE_EFFECTS.includes(effect) })
-        .toEqual({ effect, audible: true });
-    }
+    expect({ effect: "timeout", audible: AUDIBLE_EFFECTS.includes("timeout") })
+      .toEqual({ effect: "timeout", audible: true });
   });
 });

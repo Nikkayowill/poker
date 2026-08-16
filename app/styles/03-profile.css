@@ -38,6 +38,29 @@
   100% { color: #f0dfaa; transform: scale(1); }
 }
 
+/* The heart in the header -- components/nav/donate-button.tsx. Same footprint
+   as .app-menu-fallback (34px round, quiet by default) so it sits evenly next
+   to the avatar/menu trigger; only on hover/focus does it warm toward the
+   brand red, since a red heart at rest would be exactly the "wash across a
+   surface" the chrome's borderless pass avoids. */
+.donate-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .07);
+  color: #9c93b1;
+  transition: background var(--duration-base) ease, color var(--duration-base) ease;
+}
+.donate-button:hover,
+.donate-button:focus-visible {
+  background: rgba(220, 20, 19, .16);
+  color: #ff8f87;
+  outline: none;
+}
+
 .profile-avatar {
   --avatar-accent: #e7c66a;
   width: 34px;

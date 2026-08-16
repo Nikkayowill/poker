@@ -361,16 +361,22 @@ export const BOARD_CARD_WIDTH_M = 0.063;
 export const BOARD_CARD_REVEAL_GAP_FRACTION = 0.14;
 
 /**
- * How far the flop's three cards overlap each other -- a dealer lays them
- * close enough to touch, not spread for a photo. Only the flop: the turn and
- * river keep `BOARD_CARD_REVEAL_GAP_FRACTION`'s ordinary gap instead, because
- * that gap is the signal a new card just arrived. Overlapping all five
- * evenly would compress the row further but erase that signal.
+ * How far the flop's three cards overlap each other -- corners just
+ * touching, like a dealer laying them in a loose fan, not stacked deep
+ * enough to eat a neighbour's pips. Only the flop: the turn and river keep
+ * `BOARD_CARD_REVEAL_GAP_FRACTION`'s ordinary gap instead, because that gap
+ * is the signal a new card just arrived. Overlapping all five evenly would
+ * compress the row further but erase that signal.
  */
-export const BOARD_CARD_FLOP_OVERLAP_FRACTION = 0.2;
+export const BOARD_CARD_FLOP_OVERLAP_FRACTION = 0.06;
 
-/** The pot rests between the board and the dealer, never under the board. */
-export const POT_DEPTH_FRACTION = 0.52;
+/** The pot rests between the board and the dealer, never under the board.
+ * Pulled a bit further toward the dealer than a straight midpoint would put
+ * it -- bigger board cards (RACETRACK_BOARD_CARD_MAX_PX) grew the row's own
+ * height enough to press into a pot sitting right at 0.52; this buys the
+ * gap back on every frame size, since it's a felt-space fraction rather than
+ * a pixel offset. */
+export const POT_DEPTH_FRACTION = 0.74;
 export function potAnchor(): Vec3 {
   return { x: 0, y: FELT_TOP_Y, z: -FELT.halfWidth * POT_DEPTH_FRACTION };
 }
@@ -653,7 +659,11 @@ export function cameraAtDistance(frame: Frame, distance: number): Camera {
  * a table in a room, and the reference leaves about this much. */
 const SIDE_MARGIN = 0.08;
 /** Headroom above the tallest thing in frame. */
-const TOP_MARGIN = 0.05;
+// Keep the far character/dealer band a little closer to the header on short
+// landscape stages. This is intentionally a small composition adjustment;
+// the camera still owns all projected coordinates and the fit remains the
+// source of truth for every DOM overlay.
+const TOP_MARGIN = 0.04;
 
 /**
  * Everything the fit has to keep on screen: the far half of the table, and

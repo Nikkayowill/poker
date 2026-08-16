@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The local player's own corner HUD on the classic 2D table -- desktop only,
+ * The local player's own corner HUD on the classic 2D and racetrack tables --
  * bottom-left, a direct port of the 3D room's <PlayerHudCorner> (see
  * components/game3d/hud/player-hud-corner.tsx, which this mirrors call for
  * call rather than reinventing).
@@ -14,10 +14,12 @@
  * desktop (16-first-person.css, `min-width: 901px`) and putting the avatar
  * here instead is what frees the near-field band for the cards alone.
  *
- * Mobile keeps the figure. The 3D reference is desktop-only for the same
- * reason 12-responsive.css never touches this file: a phone's near-field
- * band has no spare corner to plant a second HUD in without crowding the
- * action bar underneath it.
+ * Classic-table mobile keeps the figure instead of this HUD -- a phone's
+ * near-field band has no spare corner to plant a second HUD in without
+ * crowding the action bar underneath it. The racetrack table is the one
+ * exception: its local seat never has a figure at any width (the camera
+ * sits in that chair), so it shows this HUD at every width instead of only
+ * past 901px -- see 42-racetrack-table.css's own note.
  */
 
 import { useProgression } from "@/components/profile/use-progression";

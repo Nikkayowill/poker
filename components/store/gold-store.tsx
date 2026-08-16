@@ -167,13 +167,18 @@ export function GoldStore({ gameId }: { gameId?: string }) {
           <h2><ShieldCheck size={16} /> Before you buy</h2>
           {pendingDocuments.map((doc) => (
             <div className="support-panel-legal-doc" key={doc.slug}>
-              <h3>
-                {doc.title}
-                <Link className="support-panel-legal-link" href={legalDocumentPath(doc.slug)}>
-                  Read full text
-                </Link>
-              </h3>
-              {doc.body.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+              <h3>{doc.title}</h3>
+              {/* One line up front, the rest tucked behind a toggle -- this
+                  used to print all four documents' full paragraphs on the
+                  page every time, which is the "wall of text" a first-time
+                  buyer had to scroll past before they could see a price. */}
+              <p className="support-panel-legal-summary">{doc.body[0]}</p>
+              {doc.body.length > 1 && (
+                <details className="support-panel-legal-details">
+                  <summary>Read the rest</summary>
+                  {doc.body.slice(1).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+                </details>
+              )}
               <label className="support-panel-legal-checkbox">
                 <input
                   type="checkbox"

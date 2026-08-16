@@ -30,10 +30,14 @@ export function SeatTimer({
   startedAt,
   deadlineAt,
   large = false,
+  pill = false,
+  children,
 }: {
   startedAt: string | null;
   deadlineAt: string | null;
   large?: boolean;
+  pill?: boolean;
+  children?: React.ReactNode;
 }) {
   const fuseRef = useFuse(startedAt, deadlineAt);
   const digitRef = useFuseDigit(startedAt, deadlineAt);
@@ -46,7 +50,7 @@ export function SeatTimer({
   return (
     <span
       ref={fuseRef as React.RefObject<HTMLSpanElement>}
-      className={clsx("seat-timer", large && "seat-timer-large")}
+      className={clsx("seat-timer", large && "seat-timer-large", pill && "seat-timer-pill")}
       role="timer"
       // Replaced by useFuseDigit on its first frame; this is what a screen
       // reader gets in the gap before it, and if scripting never runs.
@@ -54,18 +58,35 @@ export function SeatTimer({
       // The dash length the keyframes animate towards. Passed as a property
       // rather than written into the stylesheet because it is derived from the
       // radius, and the two must not be able to drift apart.
-      style={{ ["--fuse-circumference" as string]: CIRCUMFERENCE }}
+      style={{ ["--fuse-circumference" as string]: pill ? 1 : CIRCUMFERENCE }}
     >
-      <svg viewBox="0 0 36 36" aria-hidden="true">
-        <circle className="seat-timer-track" cx="18" cy="18" r={RADIUS} />
-        <circle
-          className="seat-timer-fuse"
-          cx="18"
-          cy="18"
-          r={RADIUS}
-          strokeDasharray={CIRCUMFERENCE}
-        />
-      </svg>
+      {pill ? (
+        <svg viewBox="0 0 120 30" preserveAspectRatio="none" aria-hidden="true">
+          <rect className="seat-timer-track" x="1" y="1" width="118" height="28" rx="14" pathLength="1" />
+          <rect
+            className="seat-timer-fuse"
+            x="1"
+            y="1"
+            width="118"
+            height="28"
+            rx="14"
+            pathLength="1"
+            strokeDasharray="1"
+          />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 36 36" aria-hidden="true">
+          <circle className="seat-timer-track" cx="18" cy="18" r={RADIUS} />
+          <circle
+            className="seat-timer-fuse"
+            cx="18"
+            cy="18"
+            r={RADIUS}
+            strokeDasharray={CIRCUMFERENCE}
+          />
+        </svg>
+      )}
+      {children}
       <b ref={digitRef as React.RefObject<HTMLElement>} aria-hidden="true" />
     </span>
   );

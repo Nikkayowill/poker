@@ -3,6 +3,7 @@ import {
   DEFAULT_TABLE_RENDERER,
   RACETRACK_RENDERER,
   TABLE_RENDERERS,
+  TABLE_RENDERER_3D_ENABLED,
   TABLE_RENDERER_STORAGE_KEY,
   type TableRenderer,
   canRenderWebGL,
@@ -11,6 +12,11 @@ import {
   resolveTableRenderer,
   tableRendererLabel,
 } from "./table-renderer";
+
+// The 3D room is temporarily disabled (TABLE_RENDERER_3D_ENABLED). Rather than
+// hardcode the disabled behaviour, these tests read the flag so they keep
+// meaning both now and once it flips back.
+const webglRenderer = TABLE_RENDERER_3D_ENABLED ? "webgl_3d" : "canvas_2d";
 
 describe("normalizeTableRenderer", () => {
   it("passes through both real renderers", () => {
@@ -27,14 +33,15 @@ describe("normalizeTableRenderer", () => {
 
 describe("nextTableRenderer", () => {
   it("cycles and returns to where it started", () => {
+    const expectedCount = TABLE_RENDERER_3D_ENABLED ? TABLE_RENDERERS.length : TABLE_RENDERERS.length - 1;
     let renderer: TableRenderer = "canvas_2d";
     const seen = new Set<TableRenderer>();
-    for (let i = 0; i < TABLE_RENDERERS.length; i += 1) {
+    for (let i = 0; i < expectedCount; i += 1) {
       seen.add(renderer);
       renderer = nextTableRenderer(renderer);
     }
     expect(renderer).toBe("canvas_2d");
-    expect(seen.size).toBe(TABLE_RENDERERS.length);
+    expect(seen.size).toBe(expectedCount);
   });
 });
 
@@ -78,8 +85,8 @@ describe("canRenderWebGL", () => {
 });
 
 describe("resolveTableRenderer", () => {
-  it("honours a 3D preference when WebGL is available", () => {
-    expect(resolveTableRenderer("webgl_3d", true)).toBe("webgl_3d");
+  it("honours a 3D preference when WebGL is available and 3D is enabled", () => {
+    expect(resolveTableRenderer("webgl_3d", true)).toBe(webglRenderer);
   });
 
   it("falls back to the classic table when WebGL is not available", () => {
@@ -119,7 +126,7 @@ describe("the 2.5D table is landscape-only", () => {
 
   it("leaves the other two renderers alone in portrait", () => {
     expect(resolveTableRenderer("canvas_2d", true, false)).toBe("canvas_2d");
-    expect(resolveTableRenderer("webgl_3d", true, false)).toBe("webgl_3d");
+    expect(resolveTableRenderer("webgl_3d", true, false)).toBe(webglRenderer);
   });
 
   it("defaults to landscape, so every existing caller is unchanged", () => {
@@ -134,7 +141,7 @@ describe("the 2.5D table is landscape-only", () => {
       seen.add(renderer);
     }
     expect(seen.has(RACETRACK_RENDERER)).toBe(false);
-    expect(seen).toEqual(new Set(["canvas_2d", "webgl_3d"]));
+    expect(seen).toEqual(new Set([webglRenderer, "canvas_2d"].filter((v, i, a) => a.indexOf(v) === i)));
   });
 
   it("is in the cycle in landscape", () => {
@@ -144,7 +151,10 @@ describe("the 2.5D table is landscape-only", () => {
       renderer = nextTableRenderer(renderer, true, true);
       seen.add(renderer);
     }
-    expect(seen).toEqual(new Set(["canvas_2d", "webgl_3d", RACETRACK_RENDERER]));
+    const expected = TABLE_RENDERER_3D_ENABLED
+      ? new Set(["canvas_2d", "webgl_3d", RACETRACK_RENDERER])
+      : new Set(["canvas_2d", RACETRACK_RENDERER]);
+    expect(seen).toEqual(expected);
   });
 
   /**
@@ -154,11 +164,16 @@ describe("the 2.5D table is landscape-only", () => {
    * move the label -- an entry that lands on what is already on screen looks
    * broken.
    */
-  it("moves the label when cycled from a resolved-away preference", () => {
-    const mounted = resolveTableRenderer(RACETRACK_RENDERER, true, false);
-    expect(mounted).toBe("canvas_2d");
-    expect(nextTableRenderer(mounted, true, false)).not.toBe(mounted);
-  });
+  // Only meaningful with a second renderer available in portrait to step to --
+  // with the 3D room disabled, canvas_2d is the only portrait option left.
+  it.skipIf(!TABLE_RENDERER_3D_ENABLED)(
+    "moves the label when cycled from a resolved-away preference",
+    () => {
+      const mounted = resolveTableRenderer(RACETRACK_RENDERER, true, false);
+      expect(mounted).toBe("canvas_2d");
+      expect(nextTableRenderer(mounted, true, false)).not.toBe(mounted);
+    },
+  );
 
   it("cycles somewhere real even with nothing else available", () => {
     // No WebGL and portrait: the classic table is the only option left, and

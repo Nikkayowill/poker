@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { X } from "lucide-react";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHEAPEST_TIER, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
-import { RACETRACK_RENDERER, type TableRenderer } from "@/lib/scene/table-renderer";
+import { RACETRACK_RENDERER, TABLE_RENDERER_3D_ENABLED, type TableRenderer } from "@/lib/scene/table-renderer";
 
 /**
  * Picks a stakes tier (unless locked, e.g. rebuying at an already-seated
@@ -176,15 +176,20 @@ export function BuyInModal({
             <div className="buyin-renderer">
               <span>Table view</span>
               <div className="entry-segment" role="group" aria-label="Table view">
-                <button
-                  type="button"
-                  className={tableRenderer === "webgl_3d" ? "is-active" : undefined}
-                  aria-pressed={tableRenderer === "webgl_3d"}
-                  disabled={!webglAvailable}
-                  onClick={() => { selectSound(); onTableRendererChange("webgl_3d"); }}
-                >
-                  3D room
-                </button>
+                {/* 3D room temporarily disabled (TABLE_RENDERER_3D_ENABLED) while
+                    it's being reworked -- hidden rather than disabled, since this
+                    isn't a per-browser capability gap like WebGL/portrait below. */}
+                {TABLE_RENDERER_3D_ENABLED && (
+                  <button
+                    type="button"
+                    className={tableRenderer === "webgl_3d" ? "is-active" : undefined}
+                    aria-pressed={tableRenderer === "webgl_3d"}
+                    disabled={!webglAvailable}
+                    onClick={() => { selectSound(); onTableRendererChange("webgl_3d"); }}
+                  >
+                    3D room
+                  </button>
+                )}
                 {/* Disabled in portrait rather than hidden, matching how the
                     3D room handles a browser without WebGL just above. Hiding
                     it would reflow the group on every rotation and leave the
@@ -208,7 +213,7 @@ export function BuyInModal({
                   Classic
                 </button>
               </div>
-              {!webglAvailable && <small>3D room needs a browser with WebGL.</small>}
+              {TABLE_RENDERER_3D_ENABLED && !webglAvailable && <small>3D room needs a browser with WebGL.</small>}
               {!landscape && <small>2.5D table needs a landscape screen &mdash; turn your phone sideways.</small>}
             </div>
           )}

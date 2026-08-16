@@ -429,6 +429,14 @@
   display: none;
 }
 
+/* The corner HUD is the local player's identity and hand-information anchor
+   at every racetrack size. The projected seat copy is redundant and, when
+   the POV cards hang over it, is the wrong place for a made-hand signal. */
+.scene-room-racetrack .player-seat.seat-mine .seat-plate,
+.scene-room-racetrack .player-seat.seat-mine .hand-strength {
+  display: none;
+}
+
 /* The local player's own bet, aimed the same way as every opponent's above --
    just measured from the stage instead of a crown, because this seat's own
    box has none (it is bottom-anchored, not projected; see the block above).
@@ -528,7 +536,7 @@
     z-index: 6;
     align-items: center;
     gap: 8px;
-    max-width: min(200px, 34vw);
+    max-width: min(560px, 70vw);
     padding: 5px 14px 5px 7px;
     padding-left: max(7px, env(safe-area-inset-left));
     padding-bottom: max(5px, env(safe-area-inset-bottom));
@@ -563,12 +571,23 @@
   .scene-room-racetrack .player-hud-xp-track { width: 70px; height: 4px; }
   .scene-room-racetrack .player-hud-cash { gap: 4px; font-size: 10px; }
   .scene-room-racetrack .player-hud-cash svg { width: 10px; height: 10px; }
+  .scene-room-racetrack .player-hud-hand-strength {
+    max-width: min(150px, 24vw);
+    padding: 4px 7px;
+    font-size: 9px;
+  }
 
   /* The nameplate the corner HUD above replaces -- name, stack and level all
      move there instead of sitting bottom-centre. Its own turn clock isn't
      lost: the action bar's TurnProgressBar burns on the identical deadline,
      right where the thumb already is when it's actually your turn. */
   .scene-room-racetrack .player-seat.seat-mine .seat-plate {
+    display: none;
+  }
+
+  /* The made-hand signal now travels with the lower-left HUD, rather than
+     being left in the clipped seat box beneath the POV cards. */
+  .scene-room-racetrack .player-seat.seat-mine .hand-strength {
     display: none;
   }
 

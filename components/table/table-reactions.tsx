@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { SmilePlus } from "lucide-react";
 import { REACTIONS, type ReactionId } from "@/lib/game/reaction-channel";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -22,10 +22,13 @@ import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 export function ReactionButton({
   onSend,
   disabled,
+  trigger,
 }: {
   onSend: (reactionId: ReactionId) => void;
   /** True while on cooldown -- see lib/game/use-table-reactions.ts. */
   disabled: boolean;
+  /** Optional custom trigger, used by the 2.5D HUD's profile avatar. */
+  trigger?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -66,7 +69,7 @@ export function ReactionButton({
     <div className="reaction-launcher" ref={rootRef}>
       <button
         type="button"
-        className="reaction-trigger"
+        className={`reaction-trigger${trigger ? " reaction-trigger-custom" : ""}`}
         aria-label="Send a reaction"
         aria-haspopup="true"
         aria-expanded={open}
@@ -74,7 +77,7 @@ export function ReactionButton({
         disabled={disabled}
         onClick={() => { tapSound(); setOpen((current) => !current); }}
       >
-        <SmilePlus size={15} />
+        {trigger ?? <SmilePlus size={15} />}
       </button>
       {open && (
         <>

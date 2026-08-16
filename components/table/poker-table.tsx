@@ -1148,7 +1148,14 @@ export function PokerTable({
               (game3d/hud/player-hud-corner.tsx) inside TableScene3D above,
               so rendering this one too would be the same avatar twice. */}
           {activeRenderer !== "webgl_3d" && mySeat && (
-            <LocalPlayerHud name={mySeat.name} stack={mySeat.stack} profile={profile} />
+            <LocalPlayerHud
+              name={mySeat.name}
+              stack={mySeat.stack}
+              profile={profile}
+              handLabel={isRacetrack ? mySeat.handLabel : null}
+              onSendReaction={isRacetrack ? onSendReaction : undefined}
+              reactionCooldown={isRacetrack ? reactionCooldown : undefined}
+            />
           )}
           {/* The pot and the stakes, in the black space around the table
               rather than on the cloth. On the felt they had to be small
@@ -1188,7 +1195,7 @@ export function PokerTable({
                   <li key={entry.id} className={`table-feed-${entry.kind}`}>{entry.text}</li>
                 ))}
               </ul>
-              {game.isSeated && (
+              {game.isSeated && !isRacetrack && (
                 <ReactionButton onSend={onSendReaction} disabled={reactionCooldown} />
               )}
             </div>

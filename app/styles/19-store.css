@@ -74,18 +74,27 @@
 }
 .support-panel-legal h2 svg { color: var(--gold); }
 
-.support-panel-legal-doc { margin-bottom: 16px; }
-.support-panel-legal-doc h3 { margin: 0 0 6px; font-size: 13px; color: var(--gold-light); }
-.support-panel-legal-link {
-  margin-left: 8px;
+.support-panel-legal-doc { margin-bottom: 14px; }
+.support-panel-legal-doc h3 { margin: 0 0 4px; font-size: 13px; color: var(--gold-light); }
+.support-panel-legal-summary { margin: 0 0 6px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+
+/* The rest of each document, collapsed by default -- see support-panel.tsx
+   and gold-store.tsx's own comment on why. Four full documents used to print
+   unconditionally here; now only the first line of each does, and the whole
+   text is one tap away for anyone who wants it. */
+.support-panel-legal-details { margin: 0 0 8px; }
+.support-panel-legal-details summary {
+  cursor: pointer;
+  list-style: none;
   color: var(--muted);
-  font-size: 10px;
-  font-weight: 400;
+  font-size: 11px;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.support-panel-legal-link:hover { color: var(--ink); }
-.support-panel-legal-doc p { margin: 0 0 8px; color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+.support-panel-legal-details summary::-webkit-details-marker { display: none; }
+.support-panel-legal-details summary:hover { color: var(--ink); }
+.support-panel-legal-details[open] summary { margin-bottom: 6px; }
+.support-panel-legal-details p { margin: 0 0 8px; color: var(--muted); font-size: 12.5px; line-height: 1.55; }
 
 .support-panel-legal-checkbox {
   display: flex;

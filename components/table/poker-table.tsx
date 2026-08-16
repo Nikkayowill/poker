@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
-  Box, Copy, DoorOpen, HeartHandshake, History, Layers, LogIn, LogOut, Palette, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
+  Box, Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Palette, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
@@ -40,6 +40,7 @@ import {
   seatZ,
 } from "@/lib/game/table-geometry";
 import { Menu, type MenuItem } from "@/components/nav/menu";
+import { DonateButton } from "@/components/nav/donate-button";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { tapSound } from "@/lib/audio/ui-sounds";
 import type { ReactionId } from "@/lib/game/reaction-channel";
@@ -966,7 +967,11 @@ export function PokerTable({
     items.push(
       { kind: "separator" },
       { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
-      { kind: "link", label: "Support StackChips", href: `/store?table=${game.id}`, icon: <HeartHandshake size={15} /> },
+      // Was missing here entirely -- the lobby's hub tile says "Buy Gold" but
+      // this in-game menu only offered "Support StackChips", so a player who
+      // opened it mid-session saw a donate link where they expected the
+      // store. Donating now lives in the header instead (DonateButton).
+      { kind: "link", label: "Buy Gold", href: `/store/gold?table=${game.id}`, icon: <Coins size={15} /> },
       { kind: "link", label: "Leaderboard", href: "/leaderboard", icon: <Trophy size={15} /> },
       { kind: "separator" },
     );
@@ -1031,7 +1036,10 @@ export function PokerTable({
           into the avatar's menu. Leave Table stays a first-class button
           rather than a menu entry: it is the one control a player may want
           in a hurry, and burying it two taps deep to satisfy a rule about
-          tidiness would be the wrong trade. */}
+          tidiness would be the wrong trade. The donate heart is the one
+          addition to that rule -- same reasoning as the lobby header's own
+          copy of it (components/poker-app.tsx): a single persistent icon,
+          not a menu row, so it costs nothing to keep visible. */}
       <header className={clsx(
         "game-header",
         sceneReady && activeRenderer === "webgl_3d" && "game-header-3d",
@@ -1053,6 +1061,7 @@ export function PokerTable({
             over the pot (see 05-game-header.css). */}
         <div className="game-header-actions">
           <button className="leave-button" onClick={() => { tapSound(); onLeave(); }}>Leave table</button>
+          <DonateButton gameId={game.id} />
           <Menu
             label="Open player menu"
             trigger={
@@ -1128,8 +1137,11 @@ export function PokerTable({
             />
           )}
           <TableLoadingSplash active={!sceneReady} />
-          {/* Desktop only (see local-player-hud.tsx and its CSS) and only on
-              the classic table -- the 3D room mounts its own equivalent
+          {/* Desktop-only on the classic table, but shown at every width on
+              the racetrack -- see 42-racetrack-table.css's own note on why
+              that table needs the corner HUD on mobile too (its local seat
+              has no figure to fall back on at any width). Never on the 3D
+              room: it mounts its own equivalent
               (game3d/hud/player-hud-corner.tsx) inside TableScene3D above,
               so rendering this one too would be the same avatar twice. */}
           {activeRenderer !== "webgl_3d" && mySeat && (

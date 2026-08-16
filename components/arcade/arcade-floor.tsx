@@ -95,7 +95,7 @@ export function ArcadeFloor() {
   }, []);
 
   const wallet = toArcadeWallet(profile);
-  const { free, duels, staked } = splitArcadeFloor();
+  const { free, duels, wagers, staked } = splitArcadeFloor();
 
   return (
     <main className="floor-shell">
@@ -122,7 +122,7 @@ export function ArcadeFloor() {
             which has been broken there three times. Spelled as words because
             these are sentences: "10 more ways in." reads as a spec line and
             "Ten more ways in." reads as a person saying it. */}
-        <h1>{spell(free.length + duels.length + staked.length)} more ways in.</h1>
+        <h1>{spell(free.length + duels.length + wagers.length + staked.length)} more ways in.</h1>
         <p>
           {spell(free.length)} are free every day. The rest stake Gold from the same
           wallet as the tables.
@@ -154,6 +154,24 @@ export function ArcadeFloor() {
           <div className="floor-free-grid">
             {duels.map((game) => (
               <DuelCard key={game.id} game={game} wallet={wallet} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {wagers.length > 0 && (
+        <section className="floor-section" aria-labelledby="floor-wagers">
+          {/* Also its own section, for the mirror-image reason the duels get
+              one: here the Gold you stake goes to YOU if you beat the
+              challenge, or nowhere at all if you don't -- there is no house
+              edge and no opponent, only the clock. */}
+          <h2 className="floor-section-head" id="floor-wagers">Ante up</h2>
+          <p className="floor-section-note">
+            Wager on your own ability. Beat the challenge and cash out; miss it and the wager is gone.
+          </p>
+          <div className="floor-free-grid">
+            {wagers.map((game) => (
+              <WagerCard key={game.id} game={game} wallet={wallet} />
             ))}
           </div>
         </section>
@@ -203,6 +221,31 @@ function DuelCard({ game, wallet }: { game: ArcadeGame; wallet: ArcadeWallet }) 
       <strong>{game.name}</strong>
       <small>{game.blurb}</small>
       <small className="floor-card-stake">from {arcadeEntryLabel(game)} Gold</small>
+      {blocked === null && game.href ? (
+        <Link className="floor-play" href={game.href} onClick={gameOnSound}>{arcadeActionLabel(game, wallet)}</Link>
+      ) : (
+        <button type="button" className="floor-play" disabled>
+          {arcadeActionLabel(game, wallet)}
+        </button>
+      )}
+    </article>
+  );
+}
+
+/**
+ * A solo skill wager. Card-shaped like a duel for the same reason: the
+ * decision is "do I want to try this", not "what does it cost" -- the wager
+ * (including free) is picked on the page itself. `arcadeEntryLabel` already
+ * returns a full phrase ("Free to play") for this kind rather than a bare
+ * number, so it is not wrapped in "from … Gold" the way a duel's floor is.
+ */
+function WagerCard({ game, wallet }: { game: ArcadeGame; wallet: ArcadeWallet }) {
+  const blocked = arcadeBlockedReason(game, wallet);
+  return (
+    <article className="floor-card">
+      <strong>{game.name}</strong>
+      <small>{game.blurb}</small>
+      <small className="floor-card-stake">{arcadeEntryLabel(game)}</small>
       {blocked === null && game.href ? (
         <Link className="floor-play" href={game.href} onClick={gameOnSound}>{arcadeActionLabel(game, wallet)}</Link>
       ) : (

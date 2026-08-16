@@ -1,6 +1,5 @@
 import "server-only";
 import { randomUUID } from "crypto";
-import type { StakesTier } from "@/lib/game/tiers";
 import { adminClient } from "./supabase-admin";
 
 /**
@@ -45,7 +44,7 @@ export interface StoredPvpChallenge {
   challengerId: string;
   /** Null means open to anyone -- the matchmaking queue. */
   opponentId: string | null;
-  tier: StakesTier;
+  tier: string;
   /** What the challenger has ALREADY been debited. A refund pays back exactly this. */
   stake: number;
   status: PvpChallengeStatus;
@@ -96,7 +95,7 @@ function fromRow(row: ChallengeRow): StoredPvpChallenge {
     game: String(row.game),
     challengerId: String(row.challenger_id),
     opponentId: row.opponent_id ? String(row.opponent_id) : null,
-    tier: String(row.tier) as StakesTier,
+    tier: String(row.tier),
     stake: Number(row.stake),
     status: String(row.status) as PvpChallengeStatus,
     matchId: row.match_id ? String(row.match_id) : null,
@@ -154,7 +153,7 @@ export async function createChallenge(input: {
   game: string;
   challengerId: string;
   opponentId: string | null;
-  tier: StakesTier;
+  tier: string;
   stake: number;
 }): Promise<StoredPvpChallenge> {
   const now = new Date();

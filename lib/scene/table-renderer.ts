@@ -26,6 +26,14 @@ export type TableRenderer = "canvas_2d" | "webgl_3d" | "racetrack_2d5";
 export const TABLE_RENDERERS: readonly TableRenderer[] = ["canvas_2d", "webgl_3d", "racetrack_2d5"];
 
 /**
+ * Temporary kill switch for the 3D room while it's being reworked. Flip back
+ * to `true` to bring it back -- everything downstream (resolveTableRenderer,
+ * nextTableRenderer, the default preference, the buy-in picker) reads this
+ * one flag rather than needing to be individually re-enabled.
+ */
+export const TABLE_RENDERER_3D_ENABLED = false;
+
+/**
  * The 2.5D racetrack room -- a third Canvas-2D table, drawn from a real
  * perspective camera instead of the classic room's orthographic tilt.
  *
@@ -41,8 +49,9 @@ export const TABLE_RENDERERS: readonly TableRenderer[] = ["canvas_2d", "webgl_3d
  */
 export const RACETRACK_RENDERER: TableRenderer = "racetrack_2d5";
 
-/** See the header: use the animated room whenever the browser supports it. */
-export const DEFAULT_TABLE_RENDERER: TableRenderer = "webgl_3d";
+/** See the header: use the animated room whenever the browser supports it
+ * and the 3D room isn't disabled (see TABLE_RENDERER_3D_ENABLED above). */
+export const DEFAULT_TABLE_RENDERER: TableRenderer = TABLE_RENDERER_3D_ENABLED ? "webgl_3d" : "canvas_2d";
 
 /** Same `stackchips:` namespace as the sound, music and bet-style preferences. */
 export const TABLE_RENDERER_STORAGE_KEY = "stackchips:table-renderer";
@@ -75,7 +84,7 @@ export function nextTableRenderer(
   landscape = true,
 ): TableRenderer {
   const available = TABLE_RENDERERS.filter((candidate) => {
-    if (candidate === "webgl_3d") return webglAvailable;
+    if (candidate === "webgl_3d") return webglAvailable && TABLE_RENDERER_3D_ENABLED;
     if (candidate === RACETRACK_RENDERER) return landscape;
     return true;
   });
@@ -142,7 +151,7 @@ export function resolveTableRenderer(
   webglAvailable: boolean,
   landscape = true,
 ): TableRenderer {
-  if (preference === "webgl_3d" && !webglAvailable) return "canvas_2d";
+  if (preference === "webgl_3d" && (!webglAvailable || !TABLE_RENDERER_3D_ENABLED)) return "canvas_2d";
   // The racetrack is landscape-only. Its table is 2:1, and there is no
   // portrait framing of it that works: at 390x844 the felt comes out about
   // 58px deep, the opponents' nameplates land on the cloth rather than above

@@ -39,6 +39,83 @@
 .legal-page-document li:last-child { margin-bottom: 0; }
 .legal-page-document li strong { color: var(--ink); }
 
+.hand-ranking-intro {
+  margin-bottom: 18px;
+  max-width: 60ch;
+}
+
+.legal-page-document ol.hand-ranking-list {
+  display: grid;
+  gap: 10px;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hand-ranking-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: rgb(255 255 255 / 2%);
+}
+
+.hand-ranking-cards {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+}
+
+.ranking-card {
+  display: flex;
+  width: 34px;
+  height: 46px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #aeb8b2;
+  border-radius: 4px;
+  background: #f6f3ec;
+  color: #17201e;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  line-height: 1;
+  box-shadow: 0 2px 5px rgb(0 0 0 / 18%);
+}
+
+.ranking-card span:last-child { margin-top: 3px; font-size: 15px; }
+.ranking-card-red { color: #aa3c43; }
+
+.hand-ranking-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hand-ranking-copy strong {
+  color: var(--ink);
+  font-size: 14px;
+  text-transform: capitalize;
+}
+
+.hand-ranking-copy span {
+  color: #9ca9a2;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+@media (max-width: 520px) {
+  .hand-ranking-item { align-items: flex-start; gap: 10px; padding: 10px; }
+  .hand-ranking-cards { gap: 2px; }
+  .ranking-card { width: 27px; height: 39px; font-size: 11px; }
+  .ranking-card span:last-child { margin-top: 2px; font-size: 12px; }
+  .hand-ranking-copy span { font-size: 12px; }
+}
+
 .info-faq-list { margin: 0 0 32px; }
 
 .info-faq-item {

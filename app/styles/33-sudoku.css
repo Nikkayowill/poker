@@ -142,6 +142,15 @@
 .sk-key:active:not(:disabled) { transform: translateY(1px); }
 .sk-key:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
 .sk-key:disabled { opacity: .35; cursor: not-allowed; }
+/* All nine of this digit are already on the board -- there is nowhere left to
+   put another one. Distinct from the plain disabled dim (no cell picked yet):
+   a faint success green instead of the gold key colour, so it reads as
+   "done", not just "unavailable right now". */
+.sk-key-complete {
+  color: #6fd6a4;
+  background: rgba(111,214,164,.08);
+  opacity: .55;
+}
 .sk-key-erase { color: #9fb0a7; display: flex; align-items: center; justify-content: center; }
 
 /* ---- Finished ---- */
@@ -159,7 +168,10 @@
 @media (max-width: 640px) {
   .sk-grid { width: min(100%, 340px); }
   .sk-pad { width: min(100%, 340px); }
-  .sk-key { min-height: 38px; font-size: 15px; }
+  /* 44px, not the old 38 -- this pad is the one control on the page a thumb
+     actually taps repeatedly, and every other keypad in the app (Wordle,
+     the action bar) already holds that floor. */
+  .sk-key { min-height: 44px; font-size: 15px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

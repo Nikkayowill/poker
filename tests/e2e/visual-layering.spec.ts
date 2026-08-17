@@ -212,7 +212,7 @@ async function verifyOpponentLayout(page: Page) {
   }
 }
 
-test("table layers keep cards, portraits, status and controls in reserved space", async ({ browser, baseURL }) => {
+test("@visual table layers keep cards, portraits, status and controls in reserved space", async ({ browser, baseURL }) => {
   for (const viewport of viewports) {
     const { context, page } = await openIsolatedTable(browser, viewport, baseURL!);
     try {

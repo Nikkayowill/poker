@@ -9,6 +9,10 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:visual": "playwright test --grep @visual",
     "test:e2e": "playwright test"
   },
   "dependencies": {

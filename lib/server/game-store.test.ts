@@ -230,7 +230,10 @@ describe("stale-table matchmaking and archival (memory mode)", () => {
 
   it("does not prefer a populated table whose only human seat has gone quiet", async () => {
     // Older and "populated" -- the exact shape that used to win outright.
-    const stale = backdatedGame(60_000, "500k");
+    // Keep this beyond the production 30-minute default as well as the short
+    // test override. That makes the fixture stale even if another Vitest
+    // worker temporarily restores the process-level environment.
+    const stale = backdatedGame(31 * 60_000, "500k");
     await createStoredGame(stale);
 
     const fresh = createGame(randomUUID(), "You", undefined, { tier: "500k" });

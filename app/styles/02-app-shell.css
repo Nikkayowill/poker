@@ -19,6 +19,12 @@
 
 .app-root:has(.lobby-hub) { background: var(--brand-room); }
 
+/* The lobby owns an inner scroll viewport, so the final safe-area strip can
+   be painted by `body` after the scroll box ends. Keep that strip in the same
+   room as the hub; otherwise iOS shows the plain document colour beneath the
+   home indicator as a hard horizontal cutoff. */
+body:has(.lobby-hub) { background: var(--brand-room); }
+
 /* The signed-out ceiling belongs to the app shell, not the scrolling form.
    That lets the transparent navbar reveal the exact same pixels as the
    content below it instead of ending the sky at the header boundary. */

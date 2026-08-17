@@ -11,6 +11,7 @@
  */
 
 import { CHARACTERS_3D } from "@/lib/game3d/characters";
+import { SEAT_ART_CHARACTERS, seatArtSrc } from "@/lib/scene/seat-art";
 
 export type Rarity = "standard" | "premium" | "rare" | "signature";
 
@@ -51,17 +52,21 @@ export interface Cosmetic {
 }
 
 /**
- * Where an avatar's artwork lives, by convention from its id rather than a
- * field on the entry. Adding a character is then one catalog entry and two
- * files with matching names -- there is no third place to update and no path
- * to typo, and a half-added avatar cannot render someone else's face.
+ * An avatar's artwork is the seat-art roster's own 0deg plate
+ * (`art/seats/<id>/0.png`, built by `scripts/prepare-seat-art.py` -- see
+ * `lib/scene/seat-art.ts`). One character-shaped id space now serves the
+ * store card, the small circular avatar, and the character actually drawn
+ * at that player's own racetrack seat, which is what makes "buy a
+ * character" and "that's who you are at the table" the same claim.
  *
- * scripts/prepare-avatars.sh writes both from a single source image.
- */
-/**
- * The whole figure, for the store card and the seat at the table.
+ * `avatarFigure`/`avatarFace` used to be two different derivative images (a
+ * full figure and a separate head crop) off a retired `art/avatars/`
+ * convention. A seat-art plate is already framed head-to-hands -- the same
+ * shot works at both sizes -- so both functions resolve to the same file
+ * now; they stay separate functions because their call sites (store card vs.
+ * small circle) are conceptually different and may want to diverge again.
  *
- * No cache-busting version on these paths, deliberately. Ids are stable so
+ * No cache-busting version on this path, deliberately. Ids are stable so
  * ownership survives an art change, which leaves the URL stable too -- but
  * both the raw file and the optimised one are served `max-age=0,
  * must-revalidate`, so a browser asks every time and replaced artwork appears
@@ -71,15 +76,12 @@ export interface Cosmetic {
  * unless they are enumerated in images.localPatterns.
  */
 export function avatarFigure(id: string): string {
-  return `/avatars/${id}.webp`;
+  return seatArtSrc(id, 0);
 }
 
-/**
- * A square crop of the head, for anywhere the avatar is a small circle. The
- * full figure is mostly jacket and hands; at 40px it reads as a smudge.
- */
+/** Same file as `avatarFigure` -- see that function's own comment for why. */
 export function avatarFace(id: string): string {
-  return `/avatars/${id}-face.webp`;
+  return seatArtSrc(id, 0);
 }
 
 /** Browser-captured thumbnail of a rigged character for the Collection grid. */
@@ -160,200 +162,51 @@ const cardBackCosmetics: Cosmetic[] = [
 ];
 
 /**
- * Avatars. Supplied artwork rather than composed layers -- one image per
- * character, sold through exactly the same ownership and purchase path as
- * card backs, which is what makes this a single system instead of two.
+ * Avatars. The same 11-character roster the racetrack table draws opponent
+ * seats from (`lib/scene/seat-art.ts`'s `SEAT_ART_CHARACTERS`) is what's for
+ * sale here -- one id space, so "buy a character" and "that's who's drawn at
+ * my seat" are the same claim instead of two systems that happen to agree.
  *
- * Artwork is matched by id -- see avatarFigure/avatarFace above. Until the
- * files exist an entry still lists and sells; it renders the player's monogram
- * in the meantime, so a character and its artwork can land apart.
+ * Every roster entry needs an offer below; a character added to the seat-art
+ * bucket with no matching entry here throws rather than silently landing on
+ * the free-starter default (see `characterAvatarCosmetics`).
  *
- * Adding one is a matter of appending here and dropping a source image named
- * <id>.png through the prepare script. Nothing counts the roster.
- *
- * Four tiers, in order:
- *  - standard (5): the starter roster. Free from the moment a profile
- *    exists -- a new player picks whichever one looks like them, not just
- *    whichever came first.
- *  - premium (7): earned by playing, not bought. price stays null and
- *    unlock carries a lifetime hands-won or chips-won threshold, checked by
- *    lib/server/avatar-unlocks.ts after every hand. The two conditions
- *    alternate so grinding either style of game makes progress.
- *  - rare (5): the limited tier -- purchasable, deliberately expensive, the
- *    thing a signature avatar is not. Priced in lib/server/stripe.ts's
- *    Gold-pack economy, not arbitrarily.
- *  - signature (3): unchanged -- earned via a specific one-off achievement,
- *    never for sale, no relation to the hands/chips-won unlock ladder.
+ * Two tiers, in order:
+ *  - standard (character1-5): the starter roster. Free from the moment a
+ *    profile exists.
+ *  - rare (character6-11): Gold-purchasable, ladder pricing. These currently
+ *    only have a 0deg plate -- they sell and equip today exactly like a
+ *    character with a full angle bucket; wider turns are a pure art drop
+ *    (`scripts/prepare-seat-art.py`) with no catalog change needed.
  */
-const illustratedAvatarCosmetics: Cosmetic[] = [
-  {
-    id: "avatar-regular",
+const characterAvatarOffers: Record<string, { name: string; description: string; price: number }> = {
+  character1: { name: "The Hustler", description: "Makes friends at the table and takes their chips anyway.", price: 0 },
+  character2: { name: "Downtown", description: "Grew up two blocks from here. Plays like it.", price: 0 },
+  character3: { name: "Northside", description: "Reppin' the block, stacking the felt.", price: 0 },
+  character4: { name: "The Professional", description: "Dressed for a boardroom, playing like it's one.", price: 0 },
+  character5: { name: "The Operator", description: "Never raises his voice. Never needs to.", price: 0 },
+  character6: { name: "The Charmer", description: "Talks the table into folding better hands.", price: 400_000 },
+  character7: { name: "Cold Read", description: "Doesn't blink. Doesn't need to.", price: 700_000 },
+  character8: { name: "Golden Boy", description: "Looks like he's never had a bad beat.", price: 1_200_000 },
+  character9: { name: "The Wildcard", description: "Unreadable, and she likes it that way.", price: 2_000_000 },
+  character10: { name: "Velvet", description: "Smooth as the felt she's sitting at.", price: 3_200_000 },
+  character11: { name: "The Rebel", description: "Plays every hand like she's got somewhere else to be.", price: 5_000_000 },
+};
+
+export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((character) => {
+  const offer = characterAvatarOffers[character.id];
+  if (!offer) {
+    throw new Error(`Seat-art character ${character.id} has no avatar catalog entry.`);
+  }
+  return {
+    id: character.id,
     slot: "avatar",
-    name: "The Regular",
-    description: "Knows the room, knows the rake. Yours from the start.",
-    rarity: "standard",
-    price: 0,
-  },
-  {
-    id: "avatar-grinder",
-    slot: "avatar",
-    name: "The Grinder",
-    description: "Plays the long session. Counts profit by the month, not the hand.",
-    rarity: "standard",
-    price: 0,
-  },
-  {
-    id: "avatar-shark",
-    slot: "avatar",
-    name: "The Shark",
-    description: "Quiet until the river.",
-    rarity: "standard",
-    price: 0,
-  },
-  {
-    id: "avatar-prospect",
-    slot: "avatar",
-    name: "The Prospect",
-    description: "New to the room and already hard to read.",
-    rarity: "standard",
-    price: 0,
-  },
-  {
-    id: "avatar-rock",
-    slot: "avatar",
-    name: "The Rock",
-    description: "Folds for an hour, then takes your stack.",
-    rarity: "standard",
-    price: 0,
-  },
-  {
-    id: "avatar-rounder",
-    slot: "avatar",
-    name: "The Rounder",
-    description: "Makes a living in rooms like this one.",
-    rarity: "premium",
-    price: null,
-    unlock: { handsWon: 25 },
-  },
-  {
-    id: "avatar-closer",
-    slot: "avatar",
-    name: "The Closer",
-    description: "Never leaves a pot on the table.",
-    rarity: "premium",
-    price: null,
-    unlock: { chipsWon: 50000 },
-  },
-  {
-    id: "avatar-host",
-    slot: "avatar",
-    name: "The Host",
-    description: "Runs the room, and remembers every hand you've played in it.",
-    rarity: "premium",
-    price: null,
-    unlock: { handsWon: 75 },
-  },
-  {
-    id: "avatar-veteran",
-    slot: "avatar",
-    name: "The Veteran",
-    description: "Has folded better hands than you've shown.",
-    rarity: "premium",
-    price: null,
-    unlock: { chipsWon: 250000 },
-  },
-  {
-    id: "avatar-maniac",
-    slot: "avatar",
-    name: "The Maniac",
-    description: "Raises. You will find out why later.",
-    rarity: "premium",
-    price: null,
-    unlock: { handsWon: 200 },
-  },
-  {
-    id: "avatar-crusher",
-    slot: "avatar",
-    name: "The Crusher",
-    description: "Table changes when they sit down.",
-    rarity: "premium",
-    price: null,
-    unlock: { chipsWon: 1000000 },
-  },
-  {
-    id: "avatar-latereg",
-    slot: "avatar",
-    name: "The Late Reg",
-    description: "Arrives on the second break and still finishes ahead.",
-    rarity: "premium",
-    price: null,
-    unlock: { handsWon: 500 },
-  },
-  {
-    id: "avatar-nightowl",
-    slot: "avatar",
-    name: "The Night Owl",
-    description: "Plays best after everyone sensible has gone home.",
-    rarity: "rare",
-    price: 750000,
-  },
-  {
-    id: "avatar-highroller",
-    slot: "avatar",
-    name: "The High Roller",
-    description: "Buys in for the maximum. Every time, without asking the price.",
-    rarity: "rare",
-    price: 1500000,
-  },
-  {
-    id: "avatar-chipleader",
-    slot: "avatar",
-    name: "The Chip Leader",
-    description: "Counts it in towers because it no longer fits in stacks.",
-    rarity: "rare",
-    price: 2500000,
-  },
-  {
-    id: "avatar-nosebleed",
-    slot: "avatar",
-    name: "The Nosebleed",
-    description: "Plays stakes the rest of the room comes to watch.",
-    rarity: "rare",
-    price: 4000000,
-  },
-  {
-    id: "avatar-ambassador",
-    slot: "avatar",
-    name: "The Ambassador",
-    description: "The face the room puts on its poster.",
-    rarity: "rare",
-    price: 6000000,
-  },
-  {
-    id: "avatar-housename",
-    slot: "avatar",
-    name: "House Name",
-    description: "Awarded for taking a High-stakes pot. Not for sale.",
-    rarity: "signature",
-    price: null,
-  },
-  {
-    id: "avatar-finaltable",
-    slot: "avatar",
-    name: "Final Table",
-    description: "Awarded for being the last player with chips. Not for sale.",
-    rarity: "signature",
-    price: null,
-  },
-  {
-    id: "avatar-ace",
-    slot: "avatar",
-    name: "The Ace",
-    description: "The room's own. Earned, never bought.",
-    rarity: "signature",
-    price: null,
-  },
-];
+    name: offer.name,
+    description: offer.description,
+    rarity: offer.price > 0 ? "rare" : "standard",
+    price: offer.price,
+  };
+});
 
 /**
  * Acquisition rules for the eight customer-pack characters. Keeping this
@@ -430,13 +283,13 @@ export const character3DCosmetics: Cosmetic[] = CHARACTERS_3D.map((character) =>
 });
 
 export const avatarCosmetics: Cosmetic[] = [
-  ...illustratedAvatarCosmetics,
+  ...characterAvatarCosmetics,
   ...character3DCosmetics,
 ];
 
 /** What a brand-new profile has, and falls back to if anything goes missing. */
 export const DEFAULT_CARD_BACK = "back-house";
-export const DEFAULT_AVATAR_COSMETIC = "avatar-regular";
+export const DEFAULT_AVATAR_COSMETIC = "character1";
 
 export const cosmetics: Cosmetic[] = [...cardBackCosmetics, ...avatarCosmetics];
 
@@ -466,7 +319,8 @@ export function cardBackArt(id: string | null | undefined): CardBackArtwork {
 /**
  * The backs a bot may be dealt, by seat position.
  *
- * Standard tier only. Bots cycle the *whole* avatar roster (botAvatarFor)
+ * Standard tier only. Bots cycle the *whole* character avatar roster
+ * (botAvatarFor, `characterAvatarCosmetics` only -- not the 3D roster)
  * because a face is just a face, but a card back is something a player is
  * asked to spend 400,000 Gold on, and a table where the bots are holding the
  * rare items devalues the only thing this catalog sells. Restricting them to

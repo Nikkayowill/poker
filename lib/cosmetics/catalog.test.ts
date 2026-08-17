@@ -6,6 +6,7 @@ import {
   avatarFace,
   avatarFigure,
   character3DCosmetics,
+  characterAvatarCosmetics,
   characterThumbnail,
   cosmetics,
   DEFAULT_AVATAR_COSMETIC,
@@ -14,6 +15,7 @@ import {
   defaultEquipped,
   normalizeEquipped,
 } from "./catalog";
+import { SEAT_ART_CHARACTERS, seatArtSrc } from "@/lib/scene/seat-art";
 
 const publicDir = path.join(process.cwd(), "public");
 const onDisk = (webPath: string) => existsSync(path.join(publicDir, webPath));
@@ -49,14 +51,14 @@ describe("cosmetic catalog", () => {
   });
 
   it("keeps independent 2D and 3D equipment slots", () => {
-    expect(defaultEquipped.avatar2d).toBe("avatar-regular");
+    expect(defaultEquipped.avatar2d).toBe("character1");
     expect(character3DCosmetics.map((item) => item.id)).toContain(defaultEquipped.avatar3d);
     expect(normalizeEquipped({ avatar: "marcus" })).toMatchObject({
-      avatar2d: "avatar-regular",
+      avatar2d: "character1",
       avatar3d: "marcus",
     });
-    expect(normalizeEquipped({ avatar2d: "avatar-shark", avatar3d: "victor" })).toMatchObject({
-      avatar2d: "avatar-shark",
+    expect(normalizeEquipped({ avatar2d: "character2", avatar3d: "victor" })).toMatchObject({
+      avatar2d: "character2",
       avatar3d: "victor",
     });
   });
@@ -133,6 +135,43 @@ describe("cosmetic catalog", () => {
       // id. An entry with both, or neither, renders as nothing at all.
       expect(Boolean(item.art)).toBe(item.slot === "cardBack");
       if (item.renderMode === "3d") expect(item.slot).toBe("avatar");
+    }
+  });
+});
+
+describe("character avatars (the seat-art roster, sold in the store)", () => {
+  it("has exactly one catalog entry per seat-art character, and vice versa", () => {
+    expect(characterAvatarCosmetics.map((item) => item.id).sort()).toEqual(
+      SEAT_ART_CHARACTERS.map((character) => character.id).sort(),
+    );
+  });
+
+  it("gives character1-5 away free and prices character6-11 as an ascending Gold ladder", () => {
+    const starters = ["character1", "character2", "character3", "character4", "character5"];
+    for (const id of starters) {
+      const item = characterAvatarCosmetics.find((entry) => entry.id === id);
+      expect(item?.price).toBe(0);
+      expect(item?.rarity).toBe("standard");
+    }
+
+    const paidIds = ["character6", "character7", "character8", "character9", "character10", "character11"];
+    const prices = paidIds.map((id) => characterAvatarCosmetics.find((entry) => entry.id === id)?.price as number);
+    expect(prices.every((price) => typeof price === "number" && price > 0)).toBe(true);
+    // A ladder, not just "all priced" -- each rung costs strictly more than
+    // the last, matching the 3D roster's own Gold-purchase pattern.
+    expect(prices).toEqual([...prices].sort((a, b) => a - b));
+    expect(new Set(prices).size).toBe(prices.length);
+    for (const id of paidIds) {
+      expect(characterAvatarCosmetics.find((entry) => entry.id === id)?.rarity).toBe("rare");
+    }
+  });
+
+  it("resolves avatarFigure/avatarFace to the character's own 0deg seat-art plate", () => {
+    // One image now serves the store card and every small-circle avatar --
+    // there is no separate face-crop derivative any more.
+    for (const item of characterAvatarCosmetics) {
+      expect(avatarFigure(item.id)).toBe(seatArtSrc(item.id, 0));
+      expect(avatarFace(item.id)).toBe(seatArtSrc(item.id, 0));
     }
   });
 });

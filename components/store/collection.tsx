@@ -11,6 +11,7 @@ import {
   type CosmeticSlot,
   type EquippedCosmetics,
 } from "@/lib/cosmetics/catalog";
+import { seatArtCharacter, seatArtSrc } from "@/lib/scene/seat-art";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { CardBackArt } from "@/components/card-back-art";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -38,8 +39,13 @@ const SLOTS: { slot: CosmeticSlot; title: string; blurb: string }[] = [
  * Artwork for one item. Avatars are supplied images; card backs are drawn.
  * A missing image file falls back rather than showing a broken icon, so
  * catalog entries can ship before their artwork.
+ *
+ * `angle` is only meaningful for an avatar backed by the seat-art roster --
+ * the preview dialog passes the angle its own switcher has selected so a
+ * buyer can see the character turned before spending Gold on it; the grid
+ * card never passes one and always shows the 0deg plate.
  */
-function CosmeticArt({ item }: { item: Cosmetic }) {
+function CosmeticArt({ item, angle }: { item: Cosmetic; angle?: number }) {
   const [failed, setFailed] = useState(false);
 
   if (item.art) return <CardBackArt art={item.art} className="cosmetic-art" />;
@@ -49,13 +55,13 @@ function CosmeticArt({ item }: { item: Cosmetic }) {
   }
 
   if (item.slot === "avatar" && !failed) {
-    // The whole figure here, not the head crop the seat plate uses. This is
-    // the card someone decides to spend Gold on, and what they are buying is
-    // a person sitting at a table -- the jacket, the posture and the hands on
-    // the rail are the product.
+    // The same plate the seat-art bucket draws at the table, not a
+    // separately-sized "figure" derivative -- this is the card someone
+    // decides to spend Gold on, and what they are buying is the exact
+    // character who'll sit at their seat.
     return (
       <Image
-        src={avatarFigure(item.id)}
+        src={angle !== undefined ? seatArtSrc(item.id, angle) : avatarFigure(item.id)}
         alt=""
         fill
         sizes="(max-width: 640px) 40vw, 160px"
@@ -83,6 +89,7 @@ export function Collection() {
   const [notice, setNotice] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<Cosmetic | null>(null);
   const [previewing, setPreviewing] = useState<Cosmetic | null>(null);
+  const [previewAngle, setPreviewAngle] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -204,8 +211,33 @@ export function Collection() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="preview-art-frame">
-              <CosmeticArt item={previewing} />
+              <CosmeticArt item={previewing} angle={previewing.slot === "avatar" ? previewAngle : undefined} />
             </div>
+            {(() => {
+              // Only avatars backed by the seat-art roster have more than one
+              // angle to switch between; a single-angle character (today,
+              // every one of character6-11) gets no row at all rather than a
+              // button with nothing to switch to -- it grows in on its own
+              // the moment a wider turn ships, no code change here needed.
+              if (previewing.slot !== "avatar") return null;
+              const angles = seatArtCharacter(previewing.id)?.angles;
+              if (!angles || angles.length < 2) return null;
+              return (
+                <div className="preview-angle-switch" role="group" aria-label="Preview angle">
+                  {[...angles].sort((a, b) => a - b).map((angle) => (
+                    <button
+                      key={angle}
+                      type="button"
+                      className={`preview-angle-button${angle === previewAngle ? " is-active" : ""}`}
+                      aria-pressed={angle === previewAngle}
+                      onClick={() => { tapSound(); setPreviewAngle(angle); }}
+                    >
+                      {angle}°
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
             <h2 id="preview-title">{previewing.name}</h2>
             <p>{previewing.description}</p>
             {!owned.includes(previewing.id) && (() => {
@@ -293,7 +325,7 @@ export function Collection() {
                     <button
                       type="button"
                       className="cosmetic-art-frame cosmetic-art-preview"
-                      onClick={() => { tapSound(); setPreviewing(item); }}
+                      onClick={() => { tapSound(); setPreviewAngle(0); setPreviewing(item); }}
                       aria-label={`Preview ${item.name}`}
                     >
                       <CosmeticArt item={item} />

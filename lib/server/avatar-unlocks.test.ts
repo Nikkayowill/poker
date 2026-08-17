@@ -55,48 +55,34 @@ describe("checkAvatarUnlocks", () => {
     expect(owned).not.toContain("claira");
   });
 
-  it("awards a chips-won avatar the moment a single hand crosses its threshold", async () => {
-    const token = randomUUID();
-    const profile = await ensureProfile(token);
-
-    const before = await listOwnedCosmetics(profile.id);
-    expect(before).not.toContain("avatar-closer");
-
-    const state = wonHand(token, 60_000);
-    state.id = randomUUID();
-    state.handNumber = 1;
-    const touched = await recordHandStats(state);
-    expect(touched).toEqual([profile.id]);
-    await checkAvatarUnlocks(touched);
-
-    const after = await listOwnedCosmetics(profile.id);
-    expect(after).toContain("avatar-closer");
-    // 60,000 clears avatar-closer's 50,000 chips-won bar but not
-    // avatar-veteran's 250,000 -- crossing one threshold must not award
-    // every avatar past it.
-    expect(after).not.toContain("avatar-veteran");
-    // Only one hand has been recorded, nowhere near avatar-rounder's
-    // 25 hands-won bar -- the two unlock metrics must not bleed into
-    // each other.
-    expect(after).not.toContain("avatar-rounder");
-  });
+  // The 2D avatar catalog (character1-11, replacing the retired illustrated
+  // roster) has no chipsWon-gated entry any more than the old one's
+  // avatar-closer/avatar-veteran did -- every unlockable is handsWon-gated,
+  // so checkAvatarUnlocks's chipsWon branch has no live catalog entry to
+  // exercise it against until a chipsWon avatar exists again. The two tests
+  // below cover what's real instead: crossing exactly one handsWon bar per
+  // hand recorded, and never twice.
 
   it("does not re-award an avatar the profile already owns", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
+    const gameId = randomUUID();
 
-    const first = wonHand(token, 60_000);
-    first.id = randomUUID();
-    first.handNumber = 1;
-    await checkAvatarUnlocks(await recordHandStats(first));
-    expect(await listOwnedCosmetics(profile.id)).toContain("avatar-closer");
+    for (let handNumber = 1; handNumber <= 50; handNumber++) {
+      const state = wonHand(token, 1000);
+      state.id = gameId;
+      state.handNumber = handNumber;
+      await checkAvatarUnlocks(await recordHandStats(state));
+    }
+    expect(await listOwnedCosmetics(profile.id)).toContain("donni");
 
-    const second = wonHand(token, 60_000);
-    second.id = first.id;
-    second.handNumber = 2;
-    await checkAvatarUnlocks(await recordHandStats(second));
+    // A 51st win must not grant a second copy of an avatar already owned.
+    const again = wonHand(token, 1000);
+    again.id = gameId;
+    again.handNumber = 51;
+    await checkAvatarUnlocks(await recordHandStats(again));
 
     const owned = await listOwnedCosmetics(profile.id);
-    expect(owned.filter((id) => id === "avatar-closer")).toHaveLength(1);
+    expect(owned.filter((id) => id === "donni")).toHaveLength(1);
   });
 });

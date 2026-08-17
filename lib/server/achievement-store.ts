@@ -47,7 +47,10 @@ const DEFAULT_DEFINITIONS: AchievementDefinition[] = [
   { code: "net_profit_1m", category: "net_profit", tier: 3, sourceKind: "stat", metric: "net_profit", threshold: 1000000, rewardGold: 25000, rewardCosmeticId: null, title: "High Roller", description: "Reach 1,000,000 lifetime net profit.", sortOrder: 33 },
 
   { code: "biggest_pot_10k", category: "biggest_pot_won", tier: 1, sourceKind: "stat", metric: "biggest_pot_won", threshold: 10000, rewardGold: 500, rewardCosmeticId: null, title: "Nice Pot", description: "Win a single pot of 10,000 chips or more.", sortOrder: 41 },
-  { code: "biggest_pot_50k", category: "biggest_pot_won", tier: 2, sourceKind: "stat", metric: "biggest_pot_won", threshold: 50000, rewardGold: 3000, rewardCosmeticId: "avatar-housename", title: "House Name", description: "Win a single high-stakes pot of 50,000 chips or more.", sortOrder: 42 },
+  // rewardCosmeticId was "avatar-housename" until the illustrated 2D avatar
+  // roster it named was retired in favor of the seat-art-backed catalog --
+  // Gold-only until a replacement cosmetic exists to name this tier after.
+  { code: "biggest_pot_50k", category: "biggest_pot_won", tier: 2, sourceKind: "stat", metric: "biggest_pot_won", threshold: 50000, rewardGold: 3000, rewardCosmeticId: null, title: "House Name", description: "Win a single high-stakes pot of 50,000 chips or more.", sortOrder: 42 },
   { code: "biggest_pot_250k", category: "biggest_pot_won", tier: 3, sourceKind: "stat", metric: "biggest_pot_won", threshold: 250000, rewardGold: 25000, rewardCosmeticId: null, title: "The Big One", description: "Win a single pot of 250,000 chips or more.", sortOrder: 43 },
 
   { code: "chips_won_100k", category: "total_chips_won", tier: 1, sourceKind: "stat", metric: "total_chips_won", threshold: 100000, rewardGold: 300, rewardCosmeticId: null, title: "Getting Started", description: "Win 100,000 chips lifetime.", sortOrder: 51 },

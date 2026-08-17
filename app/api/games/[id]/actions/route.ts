@@ -91,11 +91,14 @@ export async function POST(
     if (action.type === "rebuy") {
       const seat = game.seats.find((candidate) => candidate.ownerToken === ownerToken);
       if (!seat) return NextResponse.json({ error: "You are not seated at this table." }, { status: 403 });
-      if (game.status !== "complete") {
-        return NextResponse.json({ error: "You can only rebuy between hands." }, { status: 409 });
-      }
       if (seat.stack > 0) {
         return NextResponse.json({ error: "Your seat still has chips." }, { status: 409 });
+      }
+      // Mirrors applyPlayerAction's own guard: rebuy is allowed any time
+      // this seat itself isn't currently live in a hand in progress, not
+      // just between hands (see the bust-grace-period removal in engine.ts).
+      if (game.status === "playing" && seat.status !== "out") {
+        return NextResponse.json({ error: "Wait for this hand to finish deciding your seat." }, { status: 409 });
       }
       const clamped = clampBuyIn(game.tier, action.amount);
       profile = await spendGold(ownerToken, clamped);

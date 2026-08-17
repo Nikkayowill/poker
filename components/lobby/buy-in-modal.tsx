@@ -190,11 +190,9 @@ export function BuyInModal({
                     3D room
                   </button>
                 )}
-                {/* Disabled in portrait rather than hidden, matching how the
-                    3D room handles a browser without WebGL just above. Hiding
-                    it would reflow the group on every rotation and leave the
-                    option's absence unexplained; disabling it keeps the row a
-                    fixed shape and the note below says why. */}
+                {/* The 2.5D room is the only table presentation. It remains
+                    landscape-oriented, so portrait users are prompted below
+                    to rotate rather than being offered a removed fallback. */}
                 <button
                   type="button"
                   className={tableRenderer === RACETRACK_RENDERER ? "is-active" : undefined}
@@ -203,14 +201,6 @@ export function BuyInModal({
                   onClick={() => { selectSound(); onTableRendererChange(RACETRACK_RENDERER); }}
                 >
                   2.5D
-                </button>
-                <button
-                  type="button"
-                  className={tableRenderer === "canvas_2d" ? "is-active" : undefined}
-                  aria-pressed={tableRenderer === "canvas_2d"}
-                  onClick={() => { selectSound(); onTableRendererChange("canvas_2d"); }}
-                >
-                  Classic
                 </button>
               </div>
               {TABLE_RENDERER_3D_ENABLED && !webglAvailable && <small>3D room needs a browser with WebGL.</small>}

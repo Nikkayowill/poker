@@ -6,17 +6,14 @@ import Image from "next/image";
 import { Coins } from "lucide-react";
 import {
   avatarFigure,
-  characterThumbnail,
   rarityLabels,
   type Cosmetic,
   type CosmeticSlot,
   type EquippedCosmetics,
 } from "@/lib/cosmetics/catalog";
-import { characterById } from "@/lib/game3d/characters";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { CardBackArt } from "@/components/card-back-art";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
-import { Character3DPreview } from "./character-3d-preview";
 
 interface UnlockStats {
   handsWon: number;
@@ -42,23 +39,13 @@ const SLOTS: { slot: CosmeticSlot; title: string; blurb: string }[] = [
  * A missing image file falls back rather than showing a broken icon, so
  * catalog entries can ship before their artwork.
  */
-function CosmeticArt({ item, show3D = false }: { item: Cosmetic; show3D?: boolean }) {
+function CosmeticArt({ item }: { item: Cosmetic }) {
   const [failed, setFailed] = useState(false);
 
   if (item.art) return <CardBackArt art={item.art} className="cosmetic-art" />;
 
   if (item.renderMode === "3d") {
-    const character = characterById(item.id);
-    if (show3D && character) return <Character3DPreview character={character} />;
-    return (
-      <Image
-        src={characterThumbnail(item.id)}
-        alt=""
-        fill
-        sizes="(max-width: 640px) 40vw, 160px"
-        className="cosmetic-art-image"
-      />
-    );
+    return null;
   }
 
   if (item.slot === "avatar" && !failed) {
@@ -96,7 +83,6 @@ export function Collection() {
   const [notice, setNotice] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<Cosmetic | null>(null);
   const [previewing, setPreviewing] = useState<Cosmetic | null>(null);
-  const [avatarView, setAvatarView] = useState<"2d" | "3d">("2d");
 
   const load = useCallback(async () => {
     try {
@@ -218,7 +204,7 @@ export function Collection() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="preview-art-frame">
-              <CosmeticArt item={previewing} show3D />
+              <CosmeticArt item={previewing} />
             </div>
             <h2 id="preview-title">{previewing.name}</h2>
             <p>{previewing.description}</p>
@@ -278,35 +264,16 @@ export function Collection() {
       {SLOTS.map(({ slot, title, blurb }) => {
         const items = catalog.filter((item) =>
           item.slot === slot &&
-          (slot !== "avatar" || (item.renderMode ?? "2d") === avatarView),
+          // The Collection currently presents illustrated 2D characters only.
+          // Keep 3D cosmetics available to the table and server equipment
+          // paths without mounting their WebGL preview here.
+          (slot !== "avatar" || (item.renderMode ?? "2d") !== "3d"),
         );
         if (items.length === 0) return null;
         return (
           <section key={slot} className="collection-section">
             <h2>{title}</h2>
             <p className="collection-blurb">{blurb}</p>
-            {slot === "avatar" && (
-              <div className="collection-view-switch" role="tablist" aria-label="Character style">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={avatarView === "2d"}
-                  className={avatarView === "2d" ? "is-active" : ""}
-                  onClick={() => { selectSound(); setAvatarView("2d"); }}
-                >
-                  2D characters
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={avatarView === "3d"}
-                  className={avatarView === "3d" ? "is-active" : ""}
-                  onClick={() => { selectSound(); setAvatarView("3d"); }}
-                >
-                  3D characters
-                </button>
-              </div>
-            )}
             <div className="cosmetic-grid">
               {items.map((item) => {
                 const isOwned = owned.includes(item.id);

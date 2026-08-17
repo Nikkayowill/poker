@@ -1,7 +1,7 @@
 /**
- * Which renderer draws the table: the Canvas-2D room or the WebGL one.
+ * Which renderer draws the table.
  *
- * The two are interchangeable at exactly one seam. Both mount inside
+ * The table room mounts inside
  * `.table-area` as the first child, both report through a single
  * `onReady(boolean)`, and `.scene-lit` — which stops the DOM felt and rail
  * painting — is applied from that one signal for either. Everything else at
@@ -9,12 +9,9 @@
  * turn-clock fuse, every sound) is DOM above the canvas and does not know or
  * care which room is underneath it.
  *
- * That is what makes this a preference rather than a fork: nothing downstream
- * branches on it.
- *
- * The 3D room is now the default so real hands exercise the rigged character
- * animations. Browsers that cannot create a WebGL context still fall back to
- * the classic renderer through resolveTableRenderer below.
+ * The 2.5D racetrack is the only shipped table. The legacy renderer values are
+ * still accepted as wire/storage values so an older browser preference cannot
+ * bring the removed Classic or 3D rooms back.
  *
  * In `lib/` rather than beside either renderer because `vitest.config.ts`
  * collects only `lib/` and `app/` — the same reason `bet-style.ts`, whose
@@ -23,7 +20,7 @@
 
 export type TableRenderer = "canvas_2d" | "webgl_3d" | "racetrack_2d5";
 
-export const TABLE_RENDERERS: readonly TableRenderer[] = ["canvas_2d", "webgl_3d", "racetrack_2d5"];
+export const TABLE_RENDERERS: readonly TableRenderer[] = ["racetrack_2d5"];
 
 /**
  * Temporary kill switch for the 3D room while it's being reworked. Flip back
@@ -51,16 +48,14 @@ export const RACETRACK_RENDERER: TableRenderer = "racetrack_2d5";
 
 /** See the header: use the animated room whenever the browser supports it
  * and the 3D room isn't disabled (see TABLE_RENDERER_3D_ENABLED above). */
-export const DEFAULT_TABLE_RENDERER: TableRenderer = TABLE_RENDERER_3D_ENABLED ? "webgl_3d" : "canvas_2d";
+export const DEFAULT_TABLE_RENDERER: TableRenderer = RACETRACK_RENDERER;
 
 /** Same `stackchips:` namespace as the sound, music and bet-style preferences. */
 export const TABLE_RENDERER_STORAGE_KEY = "stackchips:table-renderer";
 
 /** A stored or wire value, coerced to a real renderer. Anything else is the default. */
 export function normalizeTableRenderer(value: unknown): TableRenderer {
-  return TABLE_RENDERERS.includes(value as TableRenderer)
-    ? (value as TableRenderer)
-    : DEFAULT_TABLE_RENDERER;
+  return value === RACETRACK_RENDERER ? RACETRACK_RENDERER : DEFAULT_TABLE_RENDERER;
 }
 
 /**
@@ -83,16 +78,10 @@ export function nextTableRenderer(
   webglAvailable = true,
   landscape = true,
 ): TableRenderer {
-  const available = TABLE_RENDERERS.filter((candidate) => {
-    if (candidate === "webgl_3d") return webglAvailable && TABLE_RENDERER_3D_ENABLED;
-    if (candidate === RACETRACK_RENDERER) return landscape;
-    return true;
-  });
-  const index = available.indexOf(renderer);
-  // A renderer that is not in the cycle (the 3D room on a device that cannot
-  // run it) steps to the first available one rather than nowhere: indexOf
-  // returns -1, and -1 + 1 is 0.
-  return available[(index + 1) % available.length];
+  void renderer;
+  void webglAvailable;
+  void landscape;
+  return RACETRACK_RENDERER;
 }
 
 /** What the table menu prints for each renderer. */
@@ -151,22 +140,8 @@ export function resolveTableRenderer(
   webglAvailable: boolean,
   landscape = true,
 ): TableRenderer {
-  if (preference === "webgl_3d" && (!webglAvailable || !TABLE_RENDERER_3D_ENABLED)) return "canvas_2d";
-  // The racetrack is landscape-only. Its table is 2:1, and there is no
-  // portrait framing of it that works: at 390x844 the felt comes out about
-  // 58px deep, the opponents' nameplates land on the cloth rather than above
-  // it, and the local player's own seat is stranded at the bottom with a
-  // screen of floor between them and the table. Falling back keeps the game
-  // playable in portrait and costs nothing, because rotating restores it --
-  // `useLandscape` is a live subscription, not a snapshot taken at mount.
-  //
-  // A fallback rather than a "rotate your device" gate, deliberately: an
-  // overlay a player cannot act through can time their turn out and fold
-  // them, which is a real cost for a cosmetic preference.
-  if (preference === RACETRACK_RENDERER && !landscape) return "canvas_2d";
-  // Nothing else falls back. The racetrack is Canvas 2D like the classic
-  // room, so a browser that cannot give us a 2D context has no table at all,
-  // and that case is handled inside the renderer by leaving the DOM felt
-  // painting.
-  return preference;
+  void preference;
+  void webglAvailable;
+  void landscape;
+  return RACETRACK_RENDERER;
 }

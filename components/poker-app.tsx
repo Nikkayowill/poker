@@ -302,6 +302,15 @@ export function PokerApp() {
   const wasSeatedRef = useRef(false);
   const linkedAccountIdRef = useRef<string | null>(null);
   const accountLinkPromiseRef = useRef<Promise<boolean> | null>(null);
+  // The id of the table `leave()` last cleared `game` for, if any. Requests
+  // for that table already in flight when the player left (a poll, a pending
+  // action, the turn clock) still resolve afterward -- without this, their
+  // stale snapshot would repopulate `game` and the player would reappear at
+  // a table they just walked away from, frozen on whatever that snapshot
+  // showed. Explicit joins (quickPlay/hostPrivate/joinByCode/the deep-link
+  // bootstrap) bypass it deliberately: rejoining is a real decision, not a
+  // stale response, even if it lands on the same table id.
+  const leftGameIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setRememberSession(readRememberAuthSession()), 0);
@@ -471,6 +480,7 @@ export function PokerApp() {
   }, []);
 
   const ingest = useCallback((data: { game: GameSnapshot; persistence: string; profile?: PlayerProfile }) => {
+    leftGameIdRef.current = null;
     setGame((current) => (
       current && current.id === data.game.id && current.version > data.game.version
         ? current
@@ -484,11 +494,15 @@ export function PokerApp() {
     if (data.profile) setProfile(data.profile);
   }, []);
 
-  const refresh = useCallback(async (id: string) => {
+  // `force` is for the one caller that represents a deliberate join rather
+  // than a background poll -- the ?table= deep-link bootstrap, which must
+  // apply even if this id happens to match a table the player left earlier
+  // in this same tab's life.
+  const refresh = useCallback(async (id: string, opts?: { force?: boolean }) => {
     const response = await fetch(`/api/games/${id}`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "Could not refresh the table.");
-    ingest(data);
+    if (opts?.force || data.game.id !== leftGameIdRef.current) ingest(data);
     return data as { game: GameSnapshot; persistence: string };
   }, [ingest]);
 
@@ -496,7 +510,7 @@ export function PokerApp() {
     const response = await fetch(`/api/games/${id}/advance`, { method: "POST" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "Could not advance the table.");
-    ingest(data);
+    if (data.game.id !== leftGameIdRef.current) ingest(data);
     return data as { game: GameSnapshot; persistence: string; retryAfterMs: number | null };
   }, [ingest]);
 
@@ -538,7 +552,7 @@ export function PokerApp() {
     const code = params.get("code");
     if (!tableId && !code) return;
     const timer = window.setTimeout(() => {
-      const opened = tableId ? refresh(tableId) : joinByCode(code!);
+      const opened = tableId ? refresh(tableId, { force: true }) : joinByCode(code!);
       void opened.catch((caught) => {
         setError(caught instanceof Error ? caught.message : "Could not open that table.");
         window.history.replaceState({}, "", "/");
@@ -898,12 +912,13 @@ export function PokerApp() {
       const data = await response.json();
       if (response.status === 409 && data?.stale && data?.game) {
         // Already applied. Adopt the server's state; this is not an error the
-        // player needs to see.
-        ingest(data);
+        // player needs to see. Unless the player left in the meantime -- see
+        // leftGameIdRef.
+        if (data.game.id !== leftGameIdRef.current) ingest(data);
         return;
       }
       if (!response.ok) throw new Error(data.error ?? "That action was not accepted.");
-      ingest(data);
+      if (data.game.id !== leftGameIdRef.current) ingest(data);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "That action was not accepted.");
     } finally {
@@ -912,6 +927,7 @@ export function PokerApp() {
   };
 
   const leave = () => {
+    leftGameIdRef.current = game?.id ?? null;
     setGame(null);
     setError(null);
     window.history.replaceState({}, "", "/");
@@ -1217,6 +1233,7 @@ export function PokerApp() {
     // still holding the signed-in profile while the UI claimed otherwise.
     await authClient()?.auth.signOut().catch(() => {});
     await fetch("/api/auth/signout", { method: "POST" }).catch(() => {});
+    leftGameIdRef.current = game?.id ?? null;
     setGame(null);
     linkedAccountIdRef.current = null;
     setEntryOpened(false);

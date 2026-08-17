@@ -26,6 +26,7 @@ import {
   type StoredAnteUpAttempt,
 } from "./ante-up-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
+import { applyAchievementEvent } from "./achievement-store";
 import { applyMissionEvent } from "./mission-store";
 import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
 import { awardWager } from "./progression-store";
@@ -98,6 +99,7 @@ async function payOutWin(profileId: string, attempt: AnteUpAttempt): Promise<voi
     console.error("ante-up.payout_credit_failed", { profileId, payout, error });
   }
   await applyMissionEvent(profileId, { kind: "puzzle_completed" });
+  await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
 }
 
 /** Settles an attempt whose clock has run out, and reads back the truth either way. */

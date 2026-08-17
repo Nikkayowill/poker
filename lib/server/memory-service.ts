@@ -19,6 +19,7 @@ import {
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
+import { applyAchievementEvent } from "./achievement-store";
 import { applyMissionEvent } from "./mission-store";
 import { ensureProfile } from "./profile-store";
 
@@ -185,6 +186,7 @@ export async function flipMemory(
   // invocation right after the response goes out. applyMissionEvent never
   // throws, so this only costs latency, not reliability.
   if (complete) await applyMissionEvent(profile.id, { kind: "puzzle_completed" });
+  if (complete) await applyAchievementEvent(profile.id, { kind: "puzzle_completed" });
 
   return view(stored, profile, clock);
 }

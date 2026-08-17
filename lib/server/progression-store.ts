@@ -10,6 +10,7 @@ import {
 import { liveStreak, streakAfterClaim, utcDayKey } from "@/lib/progression/streak";
 import type { ProgressionSnapshot } from "@/lib/progression/types";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { checkAchievements } from "./achievement-store";
 import { applyMissionEvent } from "./mission-store";
 import { creditGold, creditGoldByProfile } from "./profile-store";
 import { adminClient } from "./supabase-admin";
@@ -198,6 +199,17 @@ export async function awardWager(
     // awardWager itself before responding, where a fire-and-forget call can
     // simply never run if the serverless invocation freezes right after.
     await applyMissionEvent(profileId, { kind: "level_gained", levels: levelUps.length });
+    if (levelUps.length > 0) {
+      // Its own try/catch even though this whole function already sits
+      // inside one (the outer catch below discards the entire WagerAward,
+      // level-up display included, on any error) -- an achievement-check bug
+      // must not cost the level-up result on top of nothing.
+      try {
+        await checkAchievements([profileId]);
+      } catch (error) {
+        console.error("achievements.level_check_failed", { profileId, error });
+      }
+    }
     const owed = goldForLevelUps(levelForXp(previousXp), levelForXp(newXp));
     let goldAwarded = 0;
     let profile: PlayerProfile | null = null;

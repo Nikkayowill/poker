@@ -1,4 +1,5 @@
 import "server-only";
+import { checkAchievements } from "./achievement-store";
 import { checkAvatarUnlocks } from "./avatar-unlocks";
 import { archiveCompletedHand } from "./hand-archive-store";
 import { applyMissionEvent } from "./mission-store";
@@ -57,6 +58,15 @@ export async function onHandCompleted(state: GameState): Promise<void> {
   if (touchedProfileIds.length > 0) {
     try {
       await checkAvatarUnlocks(touchedProfileIds);
+    } catch (error) {
+      failures.push(error);
+    }
+    // Isolated sibling of checkAvatarUnlocks, same "after recordHandStats"
+    // ordering constraint and same best-effort contract: achievement
+    // thresholds are read back out of the same lifetime stats this call
+    // just wrote.
+    try {
+      await checkAchievements(touchedProfileIds);
     } catch (error) {
       failures.push(error);
     }

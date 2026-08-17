@@ -22,12 +22,10 @@ import { tapSound } from "@/lib/audio/ui-sounds";
  * rules in CLAUDE.md to be gotten right, for no reader benefit over "open
  * the lobby."
  *
- * Achievements/badges are deliberately listed as not-yet-open rather than
- * left off the page -- `profile_badges` and four cosmetic catalog entries
- * already have achievement-shaped descriptions with nothing granting them
- * yet (CLAUDE.md, "economy/retention redesign"). Naming the gap is the same
- * call components/nav/menu.tsx makes for a claimed daily grant: a state is
- * worth saying, not hiding.
+ * Achievements/badges (milestone 2 of the economy/retention redesign) link
+ * to /achievements the same way missions link to /challenges -- a live page,
+ * not a claim surface here, for the same reason the rest of this section
+ * routes back to where each mechanism actually lives.
  *
  * Fetches its own profile, same reasoning and same deferred-timer shape as
  * components/arcade/arcade-floor.tsx: this route doesn't mount PokerApp, so
@@ -93,6 +91,12 @@ export function RewardsHub() {
           </article>
 
           <article className="floor-card">
+            <strong>Achievements &amp; badges</strong>
+            <small>One-time Gold and cosmetics for lifetime milestones — hands, wins, duels, brain games, rank.</small>
+            <Link className="floor-play" href="/achievements" onClick={tapSound}>Open Achievements</Link>
+          </article>
+
+          <article className="floor-card">
             <strong>Daily Gold</strong>
             <small>
               Comes back bigger the more days in a row you claim it — up to{" "}
@@ -135,17 +139,6 @@ export function RewardsHub() {
             <strong>Support StackChips</strong>
             <small>A voluntary gift toward running costs — grants no Gold and no gameplay edge.</small>
             <Link className="floor-play" href="/store" onClick={tapSound}>Open Support</Link>
-          </article>
-        </div>
-      </section>
-
-      <section className="floor-section" aria-labelledby="rewards-coming">
-        <h2 className="floor-section-head" id="rewards-coming">Coming</h2>
-        <div className="floor-free-grid">
-          <article className="floor-card">
-            <strong>Achievements &amp; badges</strong>
-            <small>Not open yet — the next stop on StackChips&rsquo; progression roadmap.</small>
-            <button type="button" className="floor-play" disabled>Coming soon</button>
           </article>
         </div>
       </section>

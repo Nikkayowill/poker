@@ -5,6 +5,7 @@ import type { AnyDuelGame, DuelOutcome, DuelSeat } from "@/lib/pvp/match-contrac
 import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 import { duelGame } from "@/lib/pvp/registry";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { applyAchievementEvent } from "./achievement-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { isBlockedEitherWay } from "./friends-store";
 import {
@@ -210,13 +211,16 @@ async function payOutMatch(match: StoredPvpMatch): Promise<void> {
     }
   }
 
-  // A draw is not a win: only a decided match feeds the "win a duel" missions.
-  // Awaited, not fired-and-forgotten: every caller of payOutMatch awaits it
-  // before its own route responds, and a serverless invocation can be frozen
-  // right after the response is sent -- an un-awaited call here could simply
-  // never run. applyMissionEvent never throws, so this adds no new failure.
+  // A draw is not a win: only a decided match feeds the "win a duel" missions
+  // and achievements. Awaited, not fired-and-forgotten: every caller of
+  // payOutMatch awaits it before its own route responds, and a serverless
+  // invocation can be frozen right after the response is sent -- an
+  // un-awaited call here could simply never run. Neither call ever throws,
+  // so this adds no new failure.
   if (match.winnerSeat !== null) {
-    await applyMissionEvent(match.players[match.winnerSeat], { kind: "duel_won" });
+    const winnerId = match.players[match.winnerSeat];
+    await applyMissionEvent(winnerId, { kind: "duel_won" });
+    await applyAchievementEvent(winnerId, { kind: "duel_won" });
   }
 }
 

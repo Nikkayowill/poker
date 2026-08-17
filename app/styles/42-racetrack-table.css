@@ -425,6 +425,22 @@
   margin-top: 0;
 }
 
+/* The winner badge is intentionally lifted above its player's crown in the
+   shared seat skin. On this projected room the far seats can sit only a few
+   pixels below `.table-area`'s top edge, so that lift crossed the stage's
+   `overflow: hidden` boundary and was cut at the transparent game navbar.
+   Transparency does not change clipping or stacking: the header still paints
+   above the table. Keep the badge's normal lift where there is room, but clamp
+   its top edge to the racetrack stage using the projected seat y coordinate.
+   This is scoped to the 2.5D room; the classic and 3D layouts have different
+   seat geometry and their existing winner placement is deliberate. */
+.scene-room-racetrack .player-seat.seat-racetrack .winner-badge {
+  top: max(
+    calc(-16px - var(--seat-width) * .26),
+    calc(-1 * var(--seat-y, 0px) + 4px)
+  );
+}
+
 /* The local player is not at this table.
    -------------------------------------------------------------------------
    The camera is sitting in slot 0's chair, so that seat's own anchor projects
@@ -652,31 +668,84 @@
     width: clamp(52px, calc(var(--seat-width) * .38), 78px);
     border-radius: 8px;
   }
+  /* A small overlap, not the old -.16's big one -- that pulled the second
+     card left far enough to bury the first card's own suit under it. A flat
+     10px gap fixed the hiding but read as two loose cards side by side
+     rather than a held hand; this splits the difference, close enough to
+     still touch and fan like a hand of cards without covering either
+     corner index. */
   .scene-room-racetrack .player-seat.seat-mine .own-cards .dealt-card-shell + .dealt-card-shell {
-    margin-left: calc(var(--seat-width) * -.16);
+    margin-left: -8px;
   }
 
-  /* Smaller and tighter in its corner. These are 12-responsive.css's own
-     letterboxed-handset numbers, proved there for the classic room's
-     narrowest tier -- applied here at every racetrack mobile width rather
-     than only the narrowest aspect, since this table's controls share the
-     same corner of felt at any of them. */
-  .scene-room-racetrack .action-layer .action-bar {
-    width: min(100%, calc(100vw - 32px));
-    max-width: calc(100vw - 32px);
-    min-width: 0;
-    padding: 4px 8px;
-    gap: 7px;
+  /* The controls read as loose chrome floating over the felt here, not a
+     second bordered card next to the identity HUD's own panel -- so the
+     bar itself carries no fill, border or shadow, just the three buttons.
+     `width: auto` is the actual fix: the old rule stretched this bar to
+     nearly the full stage width (`calc(100vw - 32px)`) while it stayed
+     absolutely positioned and right-anchored (12-responsive.css's floating
+     corner), so its left edge reached past centre and crossed the POV hole
+     cards. Sized to its own content, it stays where it's pinned.
+
+     `:not(:has(.action-slot-status))` keeps this off the busted/hand-complete
+     panel, which still needs a real background for its status text to read
+     against the felt.
+
+     `.game-content:has(.scene-room-racetrack) .action-layer`, not
+     `.scene-room-racetrack .action-layer` -- .action-layer is `.table-area`'s
+     sibling inside `.game-content` (poker-table.tsx), not its descendant, so
+     the bare descendant selector this block used to write here never matched
+     anything at all. Same fix 06-table.css already had to make for the 3D
+     room's identical sibling shape; matching its pattern rather than
+     reinventing one. */
+  .game-content:has(.scene-room-racetrack) .action-layer {
+    right: max(6px, var(--safe-right));
+    bottom: max(6px, var(--safe-bottom));
   }
-  .scene-room-racetrack .action-layer .action-slot-controls {
+  .game-content:has(.scene-room-racetrack) .action-layer .action-bar:not(:has(.action-slot-status)) {
+    width: auto;
+    max-width: none;
     min-width: 0;
+    padding: 0;
     gap: 6px;
+    border: none;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
   }
-  .scene-room-racetrack .action-layer .action-slot-controls button {
+  .game-content:has(.scene-room-racetrack) .action-layer .action-slot-controls {
     min-width: 0;
+    gap: 8px;
+  }
+  /* 46px, not whatever the text alone needed -- this bar floats free of any
+     reserved strip now, so nothing else is bidding for the height, and a
+     thumb on a landscape phone wants a real target more than it wants a
+     compact one. */
+  .game-content:has(.scene-room-racetrack) .action-layer .action-slot-controls button {
+    min-width: 0;
+    min-height: 46px;
     overflow: hidden;
-    padding: 0 9px;
-    font-size: 11px;
-    border-radius: 10px;
+    padding: 0 18px;
+    font-size: 13px;
+    border-radius: 12px;
+  }
+  /* Fold's and Check's icons are a mark next to a word already saying the
+     same thing -- at this width that's tap-target space Call's own amount
+     needs more. */
+  .game-content:has(.scene-room-racetrack) .action-layer .action-slot-controls button svg {
+    display: none;
+  }
+
+  /* The raise drawer opens *over* the felt, not inside the bar (see
+     action-bar.tsx), but it still inherited the bar's own width -- which is
+     now sized to just three compact buttons, not a slider plus five preset
+     buttons. Cramped only when it's open, so only the open drawer gets more
+     room: unpinned from the bar's left edge and given its own width, still
+     anchored to the same right edge the bar itself is pinned to so it grows
+     leftward, over the felt, instead of shifting the corner it's rooted in. */
+  .game-content:has(.scene-room-racetrack) .action-layer .raise-drawer {
+    left: auto;
+    right: 0;
+    width: min(360px, 88vw);
   }
 }

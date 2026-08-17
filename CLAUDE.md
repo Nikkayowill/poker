@@ -267,6 +267,43 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
   every frame, until its real rendered footprint clears the live screen-space gap to the pot —
   a fixed CSS margin can't do that job because the gap between the board and pot anchors changes
   with every camera fit, not just with screen width.
+### The avatar collection and the racetrack seat-art roster became one system (2026-08-17)
+- Seat-art roster grown to 11 characters. `character6`–`character11` joined `character1`–`character5`
+  in `lib/scene/seat-art.ts`'s bucket, built from a single 6-up grid sheet per angle
+  (`scripts/prepare-seat-art.py` takes one character per source directory, not a sheet — each sheet is
+  pre-cropped by hand into six `art/seats/characterN/<angle>.png` files first). `character6`-`character11`
+  currently only have a `0deg` plate; `pickSeatArt`'s `forceAngle` used to assume every character had
+  whatever angle a seat override named and would request a file that doesn't exist for a single-angle
+  character — fixed (`seatArtCharacterForSlot`'s `forcedAnglesForSlot` filter, plus `pickSeatArt`
+  itself) to keep a character out of a seat whose override forces an angle it doesn't have, and to
+  fall back to the normal magnitude-based pick rather than requesting a missing file.
+- Same day, the same 11-character roster became the *entire* `avatar` cosmetic slot, replacing the old
+  20-entry illustrated catalog (`avatar-regular`…`avatar-ace`) outright — art and catalog both. An
+  earlier pass at exactly this same deletion, same day, got fully reverted mid-conversation because it
+  landed uncommitted, unauthorized, and half-finished (empty `/collection`, no purchase path, no
+  per-player wiring); this is the real, complete version, confirmed piece by piece with Kayo before
+  landing. **One id space now does three jobs**: `characterAvatarCosmetics`
+  (`lib/cosmetics/catalog.ts`) sells/equips `character1`-`character11` through the existing generic
+  purchase/equip path (character1-5 free, character6-11 a Gold ladder, same RPC everything else
+  already used — no new migration); `avatarFigure`/`avatarFace` both resolve to the character's own
+  `seatArtSrc(id, 0)` plate (one image now serves the store card and every small-circle avatar,
+  header/lobby/profile/HUD, since a seat-art plate is already framed head-to-hands); and
+  `poker-table.tsx`'s racetrack seat renderer reads `seat.avatarCosmetic` directly
+  (`seatArtCharacter(seat.avatarCosmetic) ?? seatArtCharacterForSlot(...)`) instead of always hashing —
+  a seated player's actual equipped character is what's drawn at their opponent seat now, the hash
+  pick only survives as the fallback for an unresolvable id. `botAvatarFor` (`lib/game/engine.ts`) had
+  to be repointed from the combined `avatarCosmetics` (2D+3D, would occasionally hand a bot a 3D-only
+  id in its 2D slot) to `characterAvatarCosmetics` alone, or that per-player wiring would silently
+  fall back to the hash pick for whichever bots landed on a 3D id.
+- `/collection`'s preview dialog gained an angle switcher (`previewAngle` state, buttons per
+  `seatArtCharacter(id)?.angles`) — a buyer can turn a character before spending Gold on it. Only
+  renders when a character has more than one angle, so character6-11 show nothing extra today and
+  gain the row automatically the moment wider turns ship — no code change needed for that later.
+- `art/avatars/`, `public/avatars/`, `scripts/prepare-avatars.sh` are deleted, not just their catalog
+  entries — `art/seats/`/`scripts/prepare-seat-art.py` is the only avatar art pipeline left.
+  `biggest_pot_50k`'s `avatar-housename` cosmetic reward repointed to Gold-only again (same fix as the
+  reverted attempt), same for its not-yet-deployed migration (confirmed absent via
+  `list_migrations` before editing directly).
 
 ### Rewarded-ad faucet (2026-08-11)
 - Wait moved 30s→5min (`REWARDED_AD_DURATION_MS`), grant TTL 10→20min to compensate. New direct

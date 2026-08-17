@@ -34,15 +34,30 @@ describe("seatArtCharacterForSlot", () => {
     expect(seatArtCharacterForSlot("table-a", HANDS_PER_DOWN, 1)).not.toBe(first);
   });
 
-  /* The whole point of five characters for five opponent chairs: within one
-     down, no two seats should draw the same face. A pick that ignored `slot`
-     would fail this the moment the roster and the seat count line up. */
-  it("seats a different character in every opponent slot, within one down", () => {
+  /* Seats 2-5 all draw from the same unfiltered roster (no forced angle to
+     narrow the pool -- see the next test), so within one down they should
+     still never repeat a face. Seat 1 is deliberately excluded here: its
+     pool is narrowed to whichever characters have its forced angle, which
+     can legitimately collide with a seat drawing from the full roster. */
+  it("seats a different character in every unrestricted opponent slot, within one down", () => {
     const seen = new Set<string | null>();
-    for (let slot = 1; slot <= 5; slot += 1) {
+    for (let slot = 2; slot <= 5; slot += 1) {
       seen.add(seatArtCharacterForSlot("table-a", 3, slot)?.id ?? null);
     }
-    expect(seen.size).toBe(5);
+    expect(seen.size).toBe(4);
+  });
+
+  /* The regression this whole filter exists for: a character shot at 0deg
+     only has no business at seat 1, which forces its widest plate. Landing
+     there would draw the character facing the camera dead-on at the one
+     seat that most needs to look turned toward the pot. */
+  it("never seats a character missing seat 1's forced angle", () => {
+    for (let hand = 0; hand < HANDS_PER_DOWN * 20; hand += HANDS_PER_DOWN) {
+      for (const tableId of ["table-a", "table-b", "table-c", "table-d"]) {
+        const character = seatArtCharacterForSlot(tableId, hand, 1);
+        expect(character?.angles).toContain(40);
+      }
+    }
   });
 
   it("is a pure function of the table id, hand number and slot", () => {

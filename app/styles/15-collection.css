@@ -348,3 +348,25 @@
 }
 .preview-art-frame .cosmetic-art,
 .preview-art-frame .cosmetic-art-image { width: 100%; height: 100%; object-fit: cover; }
+
+/* Only shown for a seat-art character with more than one plate -- see the
+   component's own comment for why a single-angle character gets no row. */
+.preview-angle-switch {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin: -4px 0 14px;
+}
+.preview-angle-button {
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  border: 0;
+  background: var(--brand-surface-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--duration-base) ease, color var(--duration-base) ease;
+}
+.preview-angle-button:hover { background: rgba(255,255,255,.12); }
+.preview-angle-button.is-active { background: var(--brand-gold-light); color: #1c1305; }

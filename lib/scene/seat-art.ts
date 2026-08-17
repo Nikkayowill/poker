@@ -66,13 +66,37 @@ function hashTableId(id: string): number {
  * care who is actually sitting there, only which chair. Tying it to the
  * actual occupant (their own chosen cosmetic, stable across reseats) is a
  * real follow-up and a `Seat`/cosmetics question, same as before.
+ *
+ * NEVER OFFERS A CHARACTER MISSING A SLOT'S OWN FORCED ANGLE. Seat 1 forces
+ * its widest plate (see `SEAT_ART_OVERRIDES`/`DESKTOP_SEAT_ART_OVERRIDES`
+ * below); a character shot at 0deg only has no such plate, and would land
+ * there facing the camera dead-on at the one seat that most needs to look
+ * turned toward the pot -- wrong in a way `pickSeatArt`'s own fallback can't
+ * fix after the fact, because by then the character is already picked. Cut
+ * down to whichever characters actually have every angle either breakpoint's
+ * override could force for this slot *before* hashing, not after -- falling
+ * back to the full roster only if that would leave nothing to pick from.
  */
+function forcedAnglesForSlot(slot: number): readonly number[] {
+  const angles = new Set<number>();
+  const mobile = SEAT_ART_OVERRIDES[slot]?.angle;
+  const desktop = DESKTOP_SEAT_ART_OVERRIDES[slot]?.angle;
+  if (mobile !== undefined) angles.add(mobile);
+  if (desktop !== undefined) angles.add(desktop);
+  return [...angles];
+}
+
 export function seatArtCharacterForSlot(tableId: string, handNumber: number, slot: number): SeatArtCharacter | null {
   if (SEAT_ART_CHARACTERS.length === 0) return null;
+  const required = forcedAnglesForSlot(slot);
+  const eligible = required.length === 0
+    ? SEAT_ART_CHARACTERS
+    : SEAT_ART_CHARACTERS.filter((character) => required.every((angle) => character.angles.includes(angle)));
+  const pool = eligible.length > 0 ? eligible : SEAT_ART_CHARACTERS;
   const hand = Number.isFinite(handNumber) ? Math.max(0, Math.floor(handNumber)) : 0;
   const down = Math.floor(hand / HANDS_PER_DOWN);
-  const index = (hashTableId(tableId) + down + slot) % SEAT_ART_CHARACTERS.length;
-  return SEAT_ART_CHARACTERS[index];
+  const index = (hashTableId(tableId) + down + slot) % pool.length;
+  return pool[index];
 }
 
 export function seatArtSrc(characterId: string, angle: number): string {
@@ -272,13 +296,21 @@ export interface SeatArtPick {
  * `SeatArtOverride.angle` for why this is a named exception rather than a
  * third tier in the rule above. Prefer `pickSeatArtForSlot` at a real call
  * site; it reads `forceAngle` out of `SEAT_ART_OVERRIDES` for you.
+ *
+ * IGNORED IF THE CHARACTER DOESN'T HAVE THAT PLATE. The roster now holds
+ * characters shot at 0deg only (2026-08-17, awaiting their 20/40 turns) --
+ * `forceAngle` is tuned against characters with a full bucket, and a seat
+ * override is a fixed per-SEAT number that has no idea which character the
+ * hash rotation is about to seat there, so it can land on either. Falling
+ * back to the normal pick rather than requesting a plate that was never
+ * built is what keeps that pairing from a broken image instead of a bug.
  */
 export function pickSeatArt(character: SeatArtCharacter, offsetDeg: number, forceAngle?: number): SeatArtPick {
   const magnitude = Math.abs(offsetDeg);
   const sorted = [...character.angles].sort((a, b) => a - b);
   const flattest = sorted[0] ?? 0;
   const turned = sorted[1] ?? flattest;
-  const angle = forceAngle ?? (magnitude <= turned ? flattest : turned);
+  const angle = forceAngle !== undefined && character.angles.includes(forceAngle) ? forceAngle : (magnitude <= turned ? flattest : turned);
   return {
     src: seatArtSrc(character.id, angle),
     aspect: character.box.width / character.box.height,

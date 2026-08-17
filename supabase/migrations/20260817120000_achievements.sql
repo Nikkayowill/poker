@@ -243,10 +243,12 @@ revoke all on public.achievement_grants from anon, authenticated;
 -- catalog's expensive cosmetics outright, and mostly reachable only by
 -- players already deep into the game.
 --
--- back-riverwood ("thousand hands") and avatar-housename ("High-stakes
--- pot", redefined here as 50,000+ chips in one pot) are the only two
--- reward_cosmetic_id values -- avatar-finaltable and avatar-ace stay
--- exactly as they are today, out of scope.
+-- back-riverwood ("thousand hands") is the only reward_cosmetic_id value --
+-- avatar-finaltable and avatar-ace stay exactly as they are today, out of
+-- scope. biggest_pot_50k ("House Name") named avatar-housename here
+-- originally; Gold-only now that the illustrated 2D avatar roster it named
+-- is retired in favor of the seat-art-backed catalog -- see
+-- lib/server/achievement-store.ts.
 -- ---------------------------------------------------------------------------
 
 insert into public.achievement_definitions
@@ -265,7 +267,7 @@ values
   ('net_profit_1m',      'net_profit',        3, 'stat',    'net_profit',        1000000,  25000, null,               'High Roller',         'Reach 1,000,000 lifetime net profit.', 33),
 
   ('biggest_pot_10k',    'biggest_pot_won',   1, 'stat',    'biggest_pot_won',   10000,    500,   null,               'Nice Pot',            'Win a single pot of 10,000 chips or more.', 41),
-  ('biggest_pot_50k',    'biggest_pot_won',   2, 'stat',    'biggest_pot_won',   50000,    3000,  'avatar-housename', 'House Name',          'Win a single high-stakes pot of 50,000 chips or more.', 42),
+  ('biggest_pot_50k',    'biggest_pot_won',   2, 'stat',    'biggest_pot_won',   50000,    3000,  null,               'House Name',          'Win a single high-stakes pot of 50,000 chips or more.', 42),
   ('biggest_pot_250k',   'biggest_pot_won',   3, 'stat',    'biggest_pot_won',   250000,   25000, null,               'The Big One',         'Win a single pot of 250,000 chips or more.', 43),
 
   ('chips_won_100k',     'total_chips_won',   1, 'stat',    'total_chips_won',   100000,   300,   null,               'Getting Started',     'Win 100,000 chips lifetime.', 51),

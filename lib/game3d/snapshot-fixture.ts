@@ -22,17 +22,18 @@ export const FIXTURE_NAMES = [
 const ACCENTS = ["#db9c0b", "#983fe0", "#dc1413", "#2f9a63", "#5b82c0", "#c96f1d"];
 
 /**
- * Real catalogue art ids (public/avatars/<id>.webp), one per seat, so the
- * demo renders six distinct illustrated characters. Exported for the
- * artifact bundle, which inlines exactly these files as data URIs.
+ * Real catalogue character ids (public/table2d5/seats/<id>/0.webp via
+ * avatarFigure/avatarFace), one per seat, so the demo renders six distinct
+ * characters. Exported for the artifact bundle, which inlines exactly these
+ * files as data URIs.
  */
 export const FIXTURE_AVATARS = [
-  "avatar-grinder",
-  "avatar-nightowl",
-  "avatar-maniac",
-  "avatar-highroller",
-  "avatar-shark",
-  "avatar-closer",
+  "character1",
+  "character2",
+  "character3",
+  "character4",
+  "character5",
+  "character6",
 ] as const;
 
 export function makePublicSeat(overrides: Partial<PublicSeat> = {}): PublicSeat {

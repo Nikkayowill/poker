@@ -21,6 +21,7 @@ import { clampBoardCardWidth } from "@/lib/scene/board-clearance";
 import {
   pickSeatArtForSlot,
   seatArtBox,
+  seatArtCharacter,
   seatArtCharacterForSlot,
   seatArtSlotFor,
 } from "@/lib/scene/seat-art";
@@ -552,10 +553,15 @@ export function PokerTable({
 
   /**
    * Character art for each opponent seat on the racetrack table -- the
-   * dealer's own sibling, one step further settled now that the roster has
-   * five characters for the five opponent chairs: `seatArtCharacterForSlot`
-   * picks a different one per seat, rotating with the dealer's own down.
-   * Still per-SEAT, not per-PLAYER -- see that function's own note.
+   * dealer's own sibling, one step further settled now that the avatar
+   * catalog and the seat-art roster are the same id space: a seat draws the
+   * character its own occupant actually bought/equipped (`avatarCosmetic`,
+   * already on every `PublicSeat` -- humans via their equipped avatar, bots
+   * via `botAvatarFor`), a real per-PLAYER pick rather than the old
+   * per-SEAT hash. `seatArtCharacterForSlot`'s hash pick survives as the
+   * fallback for a seat whose `avatarCosmetic` doesn't resolve to a roster
+   * character (a stale/legacy id) -- everyone at the table still agrees,
+   * since `avatarCosmetic` is already part of the snapshot every client has.
    *
    * Filtered down to seats that actually get a box rather than left with
    * holes, since the render below maps this straight to `<img>` elements --
@@ -568,7 +574,8 @@ export function PokerTable({
       if (seat.isMine) return [];
       const placed = racetrackLayout.seats[index];
       if (!placed) return [];
-      const character = seatArtCharacterForSlot(game.id, game.handNumber, placed.slot);
+      const character = seatArtCharacter(seat.avatarCosmetic)
+        ?? seatArtCharacterForSlot(game.id, game.handNumber, placed.slot);
       if (!character) return [];
       const offset = seatAngleDeg(placed.slot) - DEALER_ANGLE_DEG;
       const pick = pickSeatArtForSlot(character, placed.slot, offset, isDesktopViewport);

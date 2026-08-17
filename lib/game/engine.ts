@@ -14,8 +14,8 @@ import type {
 } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
-  avatarCosmetics,
   botCardBackFor,
+  characterAvatarCosmetics,
   DEFAULT_AVATAR_COSMETIC,
   DEFAULT_CARD_BACK,
 } from "@/lib/cosmetics/catalog";
@@ -161,8 +161,11 @@ function pickBotIdentity(state: GameState, position: number): number {
  * brings its own face with it instead of inheriting the chair's.
  */
 function botAvatarFor(identity: number): string {
-  if (avatarCosmetics.length === 0) return DEFAULT_AVATAR_COSMETIC;
-  return avatarCosmetics[identity % avatarCosmetics.length].id;
+  // The 2D character roster only, never avatarCosmetics' combined list --
+  // that also holds the 3D-only roster, and landing a bot on a 3D id here
+  // would give it a face the racetrack's seat-art lookup can't resolve.
+  if (characterAvatarCosmetics.length === 0) return DEFAULT_AVATAR_COSMETIC;
+  return characterAvatarCosmetics[identity % characterAvatarCosmetics.length].id;
 }
 
 // Humans get a short decision clock plus three optional time-bank cards.

@@ -522,12 +522,27 @@ export function PokerApp() {
         void refresh(gameId).catch(() => setConnectionState("reconnecting"));
       }
     };
+    // A backgrounded tab's setTimeout (the turn clock) and its Realtime
+    // socket are both fair game for the browser to throttle or suspend --
+    // observed worst case, a table sat between hands while the player who'd
+    // just busted had switched away, and nothing forced a check on return.
+    // Rejoining the queue's own schedule fixes it eventually, but "eventually"
+    // is exactly the frozen feeling this closes: a resync the instant the tab
+    // is looked at again, same request the reconnect path above already uses.
+    const resyncOnReturn = () => {
+      if (document.hidden || !gameId) return;
+      void refresh(gameId).catch(() => {});
+    };
     window.addEventListener("offline", markOffline);
     window.addEventListener("online", reconnect);
+    document.addEventListener("visibilitychange", resyncOnReturn);
+    window.addEventListener("focus", resyncOnReturn);
     if (!window.navigator.onLine) markOffline();
     return () => {
       window.removeEventListener("offline", markOffline);
       window.removeEventListener("online", reconnect);
+      document.removeEventListener("visibilitychange", resyncOnReturn);
+      window.removeEventListener("focus", resyncOnReturn);
     };
   }, [gameId, refresh]);
 

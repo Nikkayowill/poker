@@ -79,12 +79,12 @@ function expiresIn(expiresAt: string, now: number): string {
  * the duel lobby's stake input stays editable down to MIN_DUEL_STAKE -- so
  * this can be generous without needing to be exact.
  */
-function suggestedWager(record: { wins: number } | null): number {
+function suggestedWager(record: FriendSummary["duelRecord"]): number {
   return MIN_DUEL_STAKE + 500 * (record?.wins ?? 0);
 }
 
 /** "4-2" against a friend, or "4-2-1" once a draw has actually happened. */
-function DuelRecordBadge({ record }: { record: { wins: number; losses: number; draws: number } }) {
+function DuelRecordBadge({ record }: { record: NonNullable<FriendSummary["duelRecord"]> }) {
   if (record.wins === 0 && record.losses === 0 && record.draws === 0) return null;
   return (
     <span className="friend-duel-record" title={`${record.wins} won, ${record.losses} lost against them`}>

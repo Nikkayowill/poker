@@ -297,12 +297,21 @@ export const DUEL_RECORD_MATCH_LIMIT = 500;
  * derived from pvp_matches rather than a maintained counter -- see the doc
  * comment on the migration that indexes this.
  *
+ * `opponentIds`, when given, narrows both queries to that set (the friends
+ * drawer's only caller passes its own friend list) -- without it, a player
+ * who has duelled far more strangers than friends pays for a scan-and-discard
+ * over rows nobody reads, and a real friend's older matches could fall outside
+ * DUEL_RECORD_MATCH_LIMIT because unrelated stranger duels crowded them out.
+ *
  * Two queries, not one `or()`, for the same reason getFriendsOverview's
  * asA/asB split is two queries: each one uses its own partial index
  * (pvp_matches_player0_settled_idx / _player1_settled_idx), where a single
  * `or()` would leave the planner no good index to pick.
  */
-export async function getDuelRecordsAgainst(profileId: string): Promise<Map<string, DuelRecord>> {
+export async function getDuelRecordsAgainst(
+  profileId: string,
+  opponentIds?: string[],
+): Promise<Map<string, DuelRecord>> {
   const records = new Map<string, DuelRecord>();
   const tally = (opponentId: string, outcome: "win" | "loss" | "draw") => {
     const current = records.get(opponentId) ?? { wins: 0, losses: 0, draws: 0 };
@@ -311,6 +320,10 @@ export async function getDuelRecordsAgainst(profileId: string): Promise<Map<stri
     else current.draws += 1;
     records.set(opponentId, current);
   };
+  // An empty filter means "nobody to look up", not "everybody" -- return
+  // early rather than let `.in("...", [])` reach Postgres.
+  if (opponentIds && opponentIds.length === 0) return records;
+  const wanted = opponentIds ? new Set(opponentIds) : null;
 
   const supabase = adminClient();
   if (!supabase) {
@@ -321,6 +334,7 @@ export async function getDuelRecordsAgainst(profileId: string): Promise<Map<stri
     for (const match of mine) {
       const seat = match.players[0] === profileId ? 0 : 1;
       const opponentId = match.players[seat === 0 ? 1 : 0];
+      if (wanted && !wanted.has(opponentId)) continue;
       const outcome = match.winnerSeat === null ? "draw" : match.winnerSeat === seat ? "win" : "loss";
       tally(opponentId, outcome);
     }
@@ -328,20 +342,24 @@ export async function getDuelRecordsAgainst(profileId: string): Promise<Map<stri
   }
 
   const [asPlayer0, asPlayer1] = await Promise.all([
-    supabase
-      .from("pvp_matches")
-      .select("player1_id, winner_seat")
-      .eq("player0_id", profileId)
-      .eq("status", "settled")
-      .order("settled_at", { ascending: false })
-      .limit(DUEL_RECORD_MATCH_LIMIT),
-    supabase
-      .from("pvp_matches")
-      .select("player0_id, winner_seat")
-      .eq("player1_id", profileId)
-      .eq("status", "settled")
-      .order("settled_at", { ascending: false })
-      .limit(DUEL_RECORD_MATCH_LIMIT),
+    (() => {
+      let query = supabase
+        .from("pvp_matches")
+        .select("player1_id, winner_seat")
+        .eq("player0_id", profileId)
+        .eq("status", "settled");
+      if (opponentIds) query = query.in("player1_id", opponentIds);
+      return query.order("settled_at", { ascending: false }).limit(DUEL_RECORD_MATCH_LIMIT);
+    })(),
+    (() => {
+      let query = supabase
+        .from("pvp_matches")
+        .select("player0_id, winner_seat")
+        .eq("player1_id", profileId)
+        .eq("status", "settled");
+      if (opponentIds) query = query.in("player0_id", opponentIds);
+      return query.order("settled_at", { ascending: false }).limit(DUEL_RECORD_MATCH_LIMIT);
+    })(),
   ]);
   if (asPlayer0.error) throw new Error(`Could not load duel record: ${asPlayer0.error.message}`);
   if (asPlayer1.error) throw new Error(`Could not load duel record: ${asPlayer1.error.message}`);

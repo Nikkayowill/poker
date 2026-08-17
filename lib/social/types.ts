@@ -1,4 +1,8 @@
 import type { AvatarPreset } from "@/lib/profile/types";
+// Type-only: pvp-match-store.ts is server-only, but its type declarations
+// carry no runtime code, so importing just the type here doesn't pull the
+// service-role client into the browser bundle.
+import type { DuelRecord } from "@/lib/server/pvp-match-store";
 
 /**
  * The friends wire contract, shared rather than server-only.
@@ -35,7 +39,7 @@ export interface FriendSummary {
    * settled in the last few seconds by at most one poll, same as everything
    * else in the drawer.
    */
-  duelRecord: { wins: number; losses: number; draws: number } | null;
+  duelRecord: DuelRecord | null;
 }
 
 export interface PendingRequest {

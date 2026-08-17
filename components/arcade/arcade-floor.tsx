@@ -153,7 +153,7 @@ export function ArcadeFloor() {
           </p>
           <div className="floor-free-grid">
             {duels.map((game) => (
-              <DuelCard key={game.id} game={game} wallet={wallet} />
+              <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={`from ${arcadeEntryLabel(game)} Gold`} />
             ))}
           </div>
         </section>
@@ -171,7 +171,7 @@ export function ArcadeFloor() {
           </p>
           <div className="floor-free-grid">
             {wagers.map((game) => (
-              <WagerCard key={game.id} game={game} wallet={wallet} />
+              <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={arcadeEntryLabel(game)} />
             ))}
           </div>
         </section>
@@ -206,46 +206,26 @@ function FreeCard({ game }: { game: ArcadeGame }) {
 }
 
 /**
- * A duel. Card-shaped like a daily rather than row-shaped like a house game,
- * because the decision here is "who do I want to play", not "what does it
- * cost" -- the stake is picked inside, on the challenge, the same way a table
- * buy-in is. The catalogue's entryCost is therefore rendered as a floor
- * ("from 1,000"), never as the price: quoting one number for a game that
- * offers eight is the same class of lie as the placeholder prices
- * lib/arcade/games.ts's header records getting wrong three times.
+ * A duel or a solo skill wager. Card-shaped like a daily rather than
+ * row-shaped like a house game, because the decision here is "who/what do I
+ * want to play", not "what does it cost" -- the stake is picked inside, on
+ * the challenge or the wager step, the same way a table buy-in is.
+ *
+ * `stakeLabel` carries the one difference between the two callers: a duel's
+ * catalogue entryCost is a floor across up to eight stakes ("from 1,000
+ * Gold"), never the price -- quoting one number for a game that offers eight
+ * is the same class of lie as the placeholder prices lib/arcade/games.ts's
+ * header records getting wrong three times. A wager's `arcadeEntryLabel`
+ * already returns a full phrase ("Free to play") for this kind, so it is
+ * passed as-is rather than wrapped in "from … Gold".
  */
-function DuelCard({ game, wallet }: { game: ArcadeGame; wallet: ArcadeWallet }) {
+function GameCard({ game, wallet, stakeLabel }: { game: ArcadeGame; wallet: ArcadeWallet; stakeLabel: string }) {
   const blocked = arcadeBlockedReason(game, wallet);
   return (
     <article className="floor-card">
       <strong>{game.name}</strong>
       <small>{game.blurb}</small>
-      <small className="floor-card-stake">from {arcadeEntryLabel(game)} Gold</small>
-      {blocked === null && game.href ? (
-        <Link className="floor-play" href={game.href} onClick={gameOnSound}>{arcadeActionLabel(game, wallet)}</Link>
-      ) : (
-        <button type="button" className="floor-play" disabled>
-          {arcadeActionLabel(game, wallet)}
-        </button>
-      )}
-    </article>
-  );
-}
-
-/**
- * A solo skill wager. Card-shaped like a duel for the same reason: the
- * decision is "do I want to try this", not "what does it cost" -- the wager
- * (including free) is picked on the page itself. `arcadeEntryLabel` already
- * returns a full phrase ("Free to play") for this kind rather than a bare
- * number, so it is not wrapped in "from … Gold" the way a duel's floor is.
- */
-function WagerCard({ game, wallet }: { game: ArcadeGame; wallet: ArcadeWallet }) {
-  const blocked = arcadeBlockedReason(game, wallet);
-  return (
-    <article className="floor-card">
-      <strong>{game.name}</strong>
-      <small>{game.blurb}</small>
-      <small className="floor-card-stake">{arcadeEntryLabel(game)}</small>
+      <small className="floor-card-stake">{stakeLabel}</small>
       {blocked === null && game.href ? (
         <Link className="floor-play" href={game.href} onClick={gameOnSound}>{arcadeActionLabel(game, wallet)}</Link>
       ) : (

@@ -198,7 +198,7 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
       hydrate(pending
         .filter((row) => row.requesterId === me)
         .map((row) => ({ id: row.id, profileId: row.addresseeId, createdAt: row.createdAt }))),
-      getDuelRecordsAgainst(me),
+      getDuelRecordsAgainst(me, friendRows.map((row) => row.profileId)),
     ]);
     for (const friend of friends) friend.duelRecord = records.get(friend.profileId) ?? null;
     return { friends, incoming, outgoing };
@@ -266,7 +266,7 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
     hydrate(pending
       .filter((row) => row.requesterId === me)
       .map((row) => ({ id: row.id, profileId: row.addresseeId, createdAt: row.createdAt }))),
-    getDuelRecordsAgainst(me),
+    getDuelRecordsAgainst(me, friendRows.map((row) => row.profileId)),
   ]);
   for (const friend of friends) friend.duelRecord = records.get(friend.profileId) ?? null;
   return { friends, incoming, outgoing };

@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { MIN_DUEL_STAKE, type DuelSeat } from "@/lib/pvp/match-contract";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { StakePicker } from "./stake-picker";
 
 /** Round-number quick-picks above the floor. A custom field covers everything else. */
 const STAKE_QUICK_PICKS = [MIN_DUEL_STAKE, 1000, 5000, 10_000, 25_000] as const;
@@ -378,30 +379,13 @@ function DuelLobby({
         {/* Both players ante the same amount and the winner takes both, so
             the pot is stated as well as the stake -- "1,000" alone reads as
             the price of a round rather than as half of what is on the table. */}
-        <div className="duel-tiers" role="group" aria-label="Stake">
-          {STAKE_QUICK_PICKS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={clsx("duel-tier", option === stake && "duel-tier-active")}
-              onClick={() => onStake(option)}
-              aria-pressed={option === stake}
-            >
-              {option.toLocaleString()}
-            </button>
-          ))}
-          <label className="duel-tier-custom">
-            <span>Custom</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={MIN_DUEL_STAKE}
-              step={100}
-              value={stake}
-              onChange={(event) => onStake(Math.max(0, Math.round(Number(event.target.value) || 0)))}
-            />
-          </label>
-        </div>
+        <StakePicker
+          ariaLabel="Stake"
+          picks={STAKE_QUICK_PICKS}
+          value={stake}
+          min={MIN_DUEL_STAKE}
+          onChange={onStake}
+        />
         <p className="duel-pot-note">
           {stake < MIN_DUEL_STAKE
             ? `Wager at least ${MIN_DUEL_STAKE.toLocaleString()} Gold to open a duel.`

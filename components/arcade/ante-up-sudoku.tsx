@@ -5,6 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { Coins, Eraser } from "lucide-react";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { StakePicker } from "@/components/pvp/stake-picker";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { ANTE_UP_TIERS, MIN_ANTE_UP_WAGER, type AnteUpSnapshot } from "@/lib/arcade/ante-up";
 import {
@@ -224,38 +225,14 @@ export function AnteUpSudoku() {
 
           <section className="duel-panel">
             <h2 className="floor-section-head">Your wager</h2>
-            <div className="duel-tiers" role="group" aria-label="Wager">
-              <button
-                type="button"
-                className={clsx("duel-tier", wager === 0 && "duel-tier-active")}
-                onClick={() => { selectSound(); setWager(0); }}
-                aria-pressed={wager === 0}
-              >
-                Free
-              </button>
-              {STAKE_QUICK_PICKS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  className={clsx("duel-tier", option === wager && "duel-tier-active")}
-                  onClick={() => { selectSound(); setWager(option); }}
-                  aria-pressed={option === wager}
-                >
-                  {option.toLocaleString()}
-                </button>
-              ))}
-              <label className="duel-tier-custom">
-                <span>Custom</span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  step={100}
-                  value={wager}
-                  onChange={(event) => setWager(Math.max(0, Math.round(Number(event.target.value) || 0)))}
-                />
-              </label>
-            </div>
+            <StakePicker
+              ariaLabel="Wager"
+              picks={STAKE_QUICK_PICKS}
+              value={wager}
+              min={0}
+              leading={{ label: "Free", value: 0 }}
+              onChange={(next) => { selectSound(); setWager(next); }}
+            />
             <p className="duel-pot-note">
               {wager === 0
                 ? "Free practice -- no payout on a win, but there's no fun in that."

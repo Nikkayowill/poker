@@ -394,11 +394,11 @@
 }
 .buyin-renderer small { display: block; margin-top: 6px; color: #8f9d95; font-size: 11px; }
 
-/* The 3D room is currently hidden, so the pre-sit picker has exactly two
-   choices: Classic and 2.5D. Keep this explicit here because the shared
-   `.entry-segment` control also has other consumers with their own layouts. */
+/* Classic and 3D remain available in the codebase but are disabled from the
+   client. The pre-sit picker intentionally has one full-width choice, so it
+   does not imply that a second table option is missing. */
 .buyin-renderer .entry-segment {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: 1fr;
 }
 
 /* A choice that is not available here has never had a look, because until now

@@ -1,8 +1,8 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 /**
- * The 2.5D table is the only shipped table. This is the half of that rule no
- * unit test can reach: the browser must mount the racetrack room itself.
+ * The 2.5D table is landscape-only. Portrait is a client-side orientation
+ * gate; the disabled Classic implementation is not mounted.
  *
  * `resolveTableRenderer` is pure and covered in `table-renderer.test.ts`. What
  * is only true in a browser is that the orientation actually reaches it: the
@@ -40,20 +40,23 @@ async function seatWithRacetrackChosen(browser: Browser, size: { width: number; 
 const roomClass = (page: Page) =>
   page.evaluate(() => document.querySelector(".table-area")?.className ?? "");
 
-test("the 2.5D table remains the only mounted room across rotation", async ({ browser }) => {
+test("the 2.5D table returns after the portrait mobile fallback", async ({ browser }) => {
   test.setTimeout(120_000);
   const { context, page } = await seatWithRacetrackChosen(browser, PORTRAIT);
   try {
-    await expect.poll(() => roomClass(page), { timeout: 20_000 }).toContain(RACETRACK_CLASS);
+    await expect(page.getByRole("status")).toContainText("Turn your phone sideways");
+    await expect.poll(() => roomClass(page), { timeout: 20_000 }).not.toContain(RACETRACK_CLASS);
 
     // Rotate. No reload, and that is the assertion: the preference was never
     // rewritten, so the room comes back the moment the media query flips.
     await page.setViewportSize(LANDSCAPE);
     await expect.poll(() => roomClass(page), { timeout: 20_000 }).toContain(RACETRACK_CLASS);
 
-    // ...and back, so the renderer choice does not change on rotation.
+    // ...and back, so the orientation gate returns without changing the
+    // stored 2.5D preference.
     await page.setViewportSize(PORTRAIT);
-    await expect.poll(() => roomClass(page), { timeout: 20_000 }).toContain(RACETRACK_CLASS);
+    await expect(page.getByRole("status")).toContainText("Turn your phone sideways");
+    await expect.poll(() => roomClass(page), { timeout: 20_000 }).not.toContain(RACETRACK_CLASS);
 
     // The stored choice survived the whole trip untouched.
     const stored = await page.evaluate(() => window.localStorage.getItem("stackchips:table-renderer"));

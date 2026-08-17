@@ -425,6 +425,22 @@
   margin-top: 0;
 }
 
+/* The winner badge is intentionally lifted above its player's crown in the
+   shared seat skin. On this projected room the far seats can sit only a few
+   pixels below `.table-area`'s top edge, so that lift crossed the stage's
+   `overflow: hidden` boundary and was cut at the transparent game navbar.
+   Transparency does not change clipping or stacking: the header still paints
+   above the table. Keep the badge's normal lift where there is room, but clamp
+   its top edge to the racetrack stage using the projected seat y coordinate.
+   This is scoped to the 2.5D room; the classic and 3D layouts have different
+   seat geometry and their existing winner placement is deliberate. */
+.scene-room-racetrack .player-seat.seat-racetrack .winner-badge {
+  top: max(
+    calc(-16px - var(--seat-width) * .26),
+    calc(-1 * var(--seat-y, 0px) + 4px)
+  );
+}
+
 /* The local player is not at this table.
    -------------------------------------------------------------------------
    The camera is sitting in slot 0's chair, so that seat's own anchor projects

@@ -156,7 +156,7 @@ describe("table traffic: staggered bot re-entry", () => {
    * due deadline. Matches the `dueForTheNextHand`-style pattern used
    * elsewhere in this suite (e.g. `busted-seat.test.ts`) rather than
    * routing through `scheduleNextHand`, so the deadline is exact and not
-   * incidentally dependent on `BUSTED_REBUY_GRACE_MS`/`NEXT_HAND_DELAY_MS`.
+   * incidentally dependent on `NEXT_HAND_DELAY_MS`.
    */
   function fundedTableDueNow(now: number): GameState {
     const game = createGame(crypto.randomUUID(), "Host");

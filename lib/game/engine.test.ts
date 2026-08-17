@@ -375,21 +375,21 @@ describe("server game engine", () => {
     expect(guestView.seats[0].handLabel).toBeNull();
   });
 
-  it("releases a busted human seat before the next deal", () => {
+  it("keeps a busted human's own seat sitting out through the next deal", () => {
     const hostToken = crypto.randomUUID();
     let game = createGame(hostToken, "Host");
     game.status = "complete";
     game.seats[0].stack = 0;
 
     game = applyPlayerAction(game, { type: "next-hand" }, hostToken);
-    expect(game.seats[0].ownerToken).toBeNull();
-    expect(game.seats[0].isHuman).toBe(false);
-    expect(toSnapshot(game, hostToken).isSeated).toBe(false);
-    // The replacement bot sits down funded, the same way it does when a player
-    // leaves or is released for inactivity. This asserted "out" while the seat
-    // was handed over holding nothing -- see lib/game/busted-seat.test.ts.
-    expect(game.seats[0].status).toBe("active");
-    expect(game.seats[0].stack).toBe(TIER_CONFIG[game.tier].minBuyIn);
+    // No bot standing in for them -- see lib/game/busted-seat.test.ts for the
+    // full behaviour. This asserted the opposite while a bust still handed
+    // the seat to a bot after a grace period.
+    expect(game.seats[0].ownerToken).toBe(hostToken);
+    expect(game.seats[0].isHuman).toBe(true);
+    expect(toSnapshot(game, hostToken).isSeated).toBe(true);
+    expect(game.seats[0].status).toBe("out");
+    expect(game.seats[0].stack).toBe(0);
   });
 
   it("rejects a check facing a bet and enforces the minimum raise", () => {
@@ -1202,15 +1202,29 @@ describe("stakes tiers and buy-ins", () => {
     expect(game.status).toBe("playing"); // rebuy immediately deals the next hand
   });
 
-  it("refuses to rebuy a seat that still has chips, or outside a completed hand", () => {
+  it("refuses to rebuy a seat that still has chips, or one still live in the current hand", () => {
     const token = crypto.randomUUID();
     const game = createGame(token, "Host");
-    expect(() => applyPlayerAction(game, { type: "rebuy", amount: 1000 }, token))
-      .toThrow(/rebuy between hands/i);
-
-    game.status = "complete";
+    // Still funded -- checked first, regardless of table status.
     expect(() => applyPlayerAction(game, { type: "rebuy", amount: 1000 }, token))
       .toThrow(/still has chips/i);
+
+    game.status = "complete";
+    game.seats[0].stack = 0;
+    expect(() => applyPlayerAction(game, { type: "rebuy", amount: 1000 }, token))
+      .not.toThrow();
+  });
+
+  it("refuses a rebuy for a busted seat still live in a hand in progress", () => {
+    const token = crypto.randomUUID();
+    const game = createGame(token, "Host");
+    // Not sitting out -- still contesting this exact hand's pot (e.g. an
+    // all-in whose showdown hasn't been reached yet). No timer to wait out,
+    // just the one hand this seat is still part of.
+    game.seats[0].stack = 0;
+    game.seats[0].status = "all-in";
+    expect(() => applyPlayerAction(game, { type: "rebuy", amount: 1000 }, token))
+      .toThrow(/finish/i);
   });
 
   it("charges a full buy-in even when the outgoing bot left chips on the seat", () => {

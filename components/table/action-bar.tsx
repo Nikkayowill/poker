@@ -128,22 +128,16 @@ export function ActionBar({
     window.setTimeout(() => setPressedAction((current) => (current === action.type ? null : current)), 150);
   };
 
-  if (game.status === "complete") {
-    const busted = game.isSeated && mySeat?.stack === 0;
-    // Someone else at the table busted, not me. The table is never actually
-    // waiting on them -- releaseBustedSeats hands their seat to a bot the
-    // moment the grace period lapses, rebuy or not -- but with no clock on
-    // screen a static "Hand complete" reads exactly like it's blocked on
-    // them, which gets worse the more seats there are. Named here so the
-    // other players see the table is handling it, not stuck.
-    const otherBustedSeat = game.seats.find((seat) => seat.isHuman && !seat.isMine && seat.stack === 0) ?? null;
-    // A finished hand carries a deadline for the next one unless the table
-    // cannot deal another -- fewer than two seats with chips left. The Deal
-    // button used to be the way out of that; with the deal automatic there is
-    // no button, so without this the controls are simply empty and the only
-    // exit is the header. Reading the deadline rather than counting stacks
-    // keeps this agreeing with scheduleNextHand by construction.
-    const tableIsDone = game.isSeated && !busted && !game.nextHandAt;
+  // Stack at zero, still seated. Checked ahead of everything else below,
+  // because it no longer keys off `game.status` -- there is no grace period
+  // any more, so a bust just leaves this seat sitting out, exactly like any
+  // other unfunded seat, through as many hands as it takes until they rebuy
+  // or leave. This can be true while the table reads "playing" (someone
+  // else's hand is running) just as easily as "complete" (between hands);
+  // it never delays either one.
+  const busted = game.isSeated && mySeat?.stack === 0;
+
+  if (busted) {
     // Whether a rebuy is reachable right now. Unlimited Gold always is;
     // otherwise it takes this table's minimum buy-in.
     const canRebuyWithGold = Boolean(profile?.unlimitedGold)
@@ -153,40 +147,18 @@ export function ActionBar({
     // top-up" banner uses) is the fast path when it's eligible; otherwise
     // the lobby (where every faucet lives: backstop, daily Gold, rewarded
     // ads) is the only way back in.
-    const backstop = game.isSeated && busted
-      ? backstopState(profile, new Date(), TIER_CONFIG[game.tier].minBuyIn)
-      : null;
+    const backstop = backstopState(profile, new Date(), TIER_CONFIG[game.tier].minBuyIn);
     return (
       <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>
         <div className="action-slot-status">
-          <span className="action-kicker">
-            {!game.isSeated
-              ? "Seat closed"
-              : busted ? "Stack exhausted" : tableIsDone ? "Table finished" : "Hand complete"}
-            {/* The clock itself: absent once the table is genuinely done
-                dealing (tableIsDone), present through both the ordinary 2.8s
-                beat and the 20s bust-rebuy grace so neither ever sits with no
-                visible sign it will move on its own. */}
-            {game.isSeated && !tableIsDone && game.nextHandAt && (
-              <> · <NextHandCountdown deadlineAt={game.nextHandAt} />s</>
-            )}
-          </span>
+          <span className="action-kicker">Stack exhausted</span>
           <strong>
-            {!game.isSeated
-              ? "You’re out of chips. Start a fresh table when you’re ready."
-              : busted
-                ? (backstop === "ready"
-                  ? "You’re sat out until you rebuy. Claim a top-up to get right back in."
-                  : "You’re sat out until you rebuy. Leave table, above, to give up the seat.")
-                : otherBustedSeat
-                  ? `${otherBustedSeat.name} is sat out — the table deals on without them.`
-                  : game.message}
+            {backstop === "ready"
+              ? "You’re sat out until you rebuy. Claim a top-up to get right back in."
+              : "You’re sat out until you rebuy. The table plays on without you -- take your time."}
           </strong>
         </div>
         <div className="action-slot-controls">
-          {(!game.isSeated || tableIsDone) && (
-            <button className="primary-action action-slot-wide" onClick={onLeave}>Return to lobby</button>
-          )}
           {/* No "close seat" control here on purpose: the header's Leave
               table button already calls leave-seat for a seated player (see
               leaveTable in poker-app.tsx), which is the one exit a busted
@@ -199,26 +171,24 @@ export function ActionBar({
               lobby's own banner offers, inline, so a bust doesn't force a
               trip back; otherwise every faucet (backstop's cooldown, daily
               Gold, rewarded ads) lives in the lobby, so that's the exit. */}
-          {game.isSeated && busted && (
-            canRebuyWithGold ? (
-              <button
-                className="primary-action action-slot-wide"
-                disabled={pending}
-                onClick={() => setShowRebuyModal(true)}
-              >
-                Rebuy
-              </button>
-            ) : backstop === "ready" ? (
-              <button
-                className="primary-action action-slot-wide"
-                disabled={pending}
-                onClick={onClaimBackstop}
-              >
-                Claim a top-up
-              </button>
-            ) : (
-              <button className="primary-action action-slot-wide" onClick={onLeave}>Return to lobby</button>
-            )
+          {canRebuyWithGold ? (
+            <button
+              className="primary-action action-slot-wide"
+              disabled={pending}
+              onClick={() => setShowRebuyModal(true)}
+            >
+              Rebuy
+            </button>
+          ) : backstop === "ready" ? (
+            <button
+              className="primary-action action-slot-wide"
+              disabled={pending}
+              onClick={onClaimBackstop}
+            >
+              Claim a top-up
+            </button>
+          ) : (
+            <button className="primary-action action-slot-wide" onClick={onLeave}>Return to lobby</button>
           )}
         </div>
         {showRebuyModal && (
@@ -238,12 +208,55 @@ export function ActionBar({
     );
   }
 
+  if (game.status === "complete") {
+    // Someone else at the table busted, not me. Their seat just sits out,
+    // same as any other unfunded seat -- the table was never actually
+    // waiting on them -- but a bare "Hand complete" reads exactly like it's
+    // blocked on them. Named here so it visibly isn't.
+    const otherBustedSeat = game.seats.find((seat) => seat.isHuman && !seat.isMine && seat.stack === 0) ?? null;
+    // A finished hand carries a deadline for the next one unless the table
+    // cannot deal another -- fewer than two seats with chips left. The Deal
+    // button used to be the way out of that; with the deal automatic there is
+    // no button, so without this the controls are simply empty and the only
+    // exit is the header. Reading the deadline rather than counting stacks
+    // keeps this agreeing with scheduleNextHand by construction.
+    const tableIsDone = game.isSeated && !game.nextHandAt;
+    return (
+      <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>
+        <div className="action-slot-status">
+          <span className="action-kicker">
+            {!game.isSeated ? "Seat closed" : tableIsDone ? "Table finished" : "Hand complete"}
+            {/* The clock itself: absent once the table is genuinely done
+                dealing (tableIsDone), present otherwise so the ordinary beat
+                between every hand never sits with no visible sign it's
+                moving on its own. Always the same beat, bust or no bust. */}
+            {game.isSeated && !tableIsDone && game.nextHandAt && (
+              <> · <NextHandCountdown deadlineAt={game.nextHandAt} />s</>
+            )}
+          </span>
+          <strong>
+            {!game.isSeated
+              ? "You’re out of chips. Start a fresh table when you’re ready."
+              : otherBustedSeat
+                ? `${otherBustedSeat.name} is sat out — the table deals on without them.`
+                : game.message}
+          </strong>
+        </div>
+        <div className="action-slot-controls">
+          {(!game.isSeated || tableIsDone) && (
+            <button className="primary-action action-slot-wide" onClick={onLeave}>Return to lobby</button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // A seat can be claimed mid-hand -- the new occupant sits out the hand
   // already in progress (see claimSeat in lib/game/engine.ts) rather than
-  // inheriting whatever the bot she replaced was holding. `status === "out"`
-  // while the table is otherwise `"playing"` only ever means this: every
-  // other reason a seat reads "out" happens between hands, where the
-  // `game.status === "complete"` branch above already returns first.
+  // inheriting whatever the bot she replaced was holding. Busted is handled
+  // above and always returns first, so a seat reading "out" here is always
+  // funded and simply waiting for the next deal, never someone who needs to
+  // rebuy.
   if (game.isSeated && mySeat?.status === "out") {
     return (
       <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>

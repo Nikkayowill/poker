@@ -603,9 +603,18 @@
     top: auto;
     bottom: max(4px, var(--safe-bottom));
     margin-left: 0;
-    transform: translateX(-50%);
+    transform: translateX(-50%) translateY(48%);
+    /* Keep the racetrack room consistent with the classic landscape room:
+       the lower half belongs below the phone's bottom edge. */
+    clip-path: inset(0 -18px 35% -18px);
     z-index: 20;
   }
+  .scene-room-racetrack .seat-mine .own-cards .card-index {
+    flex-direction: row;
+    align-items: center;
+    gap: 2cqw;
+  }
+  .scene-room-racetrack .seat-mine .own-cards .card-index-glyph { margin-top: 0; }
   .scene-room-racetrack .player-seat.seat-mine .own-cards .playing-card {
     width: clamp(52px, calc(var(--seat-width) * .38), 78px);
     border-radius: 8px;

@@ -24,6 +24,36 @@
    compressed. */
 
 @media (max-height: 500px) and (orientation: landscape) {
+  /* The browser's landscape viewport is shorter than the installed PWA's
+     usable stage once Safari's chrome is present. Keep the local hand in the
+     same foreground slot as the PWA: only the upper half of each card rises
+     into the frame, leaving the lower half below the stage instead of letting
+     the pair steal table/control space. The translated seat below is already
+     anchored to this same bottom edge. */
+  .seat-mine .seat-cards {
+    position: fixed;
+    left: 50%;
+    top: auto;
+    bottom: 0;
+    margin-left: 0;
+    transform: translateX(-50%) translateY(48%);
+    /* The stage is transformed on landscape, so its overflow boundary is
+       not guaranteed to crop a fixed descendant at the viewport edge. Clip
+       the lower half explicitly instead of relying on that incidental crop. */
+    /* The cards are rotated and fanned, so their corners extend beyond the
+       flex row's nominal width. Leave horizontal breathing room in the clip
+       or the pair loses its side edges. */
+    clip-path: inset(0 -18px 35% -18px);
+    z-index: 20;
+  }
+
+  .seat-mine .own-cards .card-index {
+    flex-direction: row;
+    align-items: center;
+    gap: 2cqw;
+  }
+  .seat-mine .own-cards .card-index-glyph { margin-top: 0; }
+
   .seat-mine .hand-strength {
     padding: 2px 5px;
     font-size: 6px;

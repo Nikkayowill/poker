@@ -195,15 +195,6 @@ export const TURN_TIMEOUT_MS = Number(process.env.RIVER_TURN_TIMEOUT_MS) || 15_0
 export const NEXT_HAND_DELAY_MS = 2_800;
 
 /**
- * The same wait, for a table where a seated human has just lost their last
- * chip. Dealing on the normal delay would call releaseBustedSeats and
- * hand their seat to a bot while the rebuy dialog was still open in front of
- * them -- so they get a real chance to decide, and the table still moves on
- * rather than stalling forever on someone who has walked away.
- */
-export const BUSTED_REBUY_GRACE_MS = 20_000;
-
-/**
  * Consecutive expired clocks before a seat is given back to the table.
  *
  * Three, because two is a bad connection and three is a person who has gone.
@@ -386,17 +377,16 @@ function restoreBotControl(seat: Seat, identity: number = seat.position) {
 /**
  * How many seats will hold chips once releaseBustedSeats has run.
  *
- * The mirror of that function, and it has to stay one: every busted human
- * becomes a funded bot, and busted bots are then topped up only as far as the
- * floor. Kept next to scheduleNextHand because that is the only caller and the
- * only reason it exists -- the deadline is written before the release happens.
+ * The mirror of that function, and it has to stay one: a busted human keeps
+ * their seat but not a stack, so they never count here -- only busted bots do,
+ * topped up as far as the floor. Kept next to scheduleNextHand because that is
+ * the only caller and the only reason it exists -- the deadline is written
+ * before the release happens.
  */
 function fundedSeatsAfterRelease(state: GameState): number {
   const funded = state.seats.filter((seat) => seat.stack > 0).length;
-  const bustedHumans = state.seats.filter((seat) => seat.isHuman && seat.stack <= 0).length;
   const bustedBots = state.seats.filter((seat) => !seat.isHuman && seat.stack <= 0).length;
-  const afterHumans = funded + bustedHumans;
-  return afterHumans + Math.min(bustedBots, Math.max(0, fundedFloor() - afterHumans));
+  return funded + Math.min(bustedBots, Math.max(0, fundedFloor() - funded));
 }
 
 /**
@@ -419,35 +409,22 @@ export function scheduleNextHand(state: GameState, now = Date.now()) {
     state.nextHandAt = null;
     return;
   }
-  const bustedHuman = state.seats.some((seat) => seat.isHuman && seat.stack <= 0);
-  const delay = bustedHuman ? BUSTED_REBUY_GRACE_MS : NEXT_HAND_DELAY_MS;
-  state.nextHandAt = new Date(now + delay).toISOString();
+  // The same beat regardless of who busted or how many did. One player
+  // running out of chips is never a reason for the table to make everyone
+  // else wait -- their own seat just sits out (see releaseBustedSeats) while
+  // play continues at the normal pace around them.
+  state.nextHandAt = new Date(now + NEXT_HAND_DELAY_MS).toISOString();
 }
 
 /**
- * Hands every busted seat back to a freshly-identified bot, funded.
+ * Puts a freshly-identified, funded bot in a seat that was empty.
  *
- * The refill is the whole point and was missing: `restoreBotControl` leaves the
- * stack alone, so without it the seat became a bot holding zero chips, which
- * `setupHand` then reads as unfunded and marks `"out"` forever. Nothing ever
- * refunded a bot, so every player who busted and let the rebuy grace lapse
- * permanently removed a seat -- a continuous table walked 6 -> 5 -> 4 down to
- * "Not enough players with chips to continue" and stopped.
- *
- * Busted *bots* have the same problem and used not to be covered here at all:
- * a bot that lost its last chip to a hot player was marked `"out"` and stayed
- * there, so a table left running long enough emptied itself the same way. They
- * are released on exactly the same terms, and this runs at the head of
- * `setupHand` -- before funded seats are counted and before any card is dealt,
- * which is what makes "the seats are refilled before the next hand" a property
- * of the deal rather than a race with it.
- *
- * `vacateSeat` and `releaseInactiveSeats` have always ended with this same
- * line; this is the third of the three release paths, not a new rule. Minting
- * the bot's stack is not a conservation break: bot chips are not backed by
- * Gold, and the invariant that matters -- a human's chips and their Gold are
- * the same chips -- is enforced by the `cashedOut` contract those two paths
- * carry, which a busted seat has no need of because its stack is zero.
+ * Only ever called for a *bot* seat now -- a busted human keeps their own
+ * seat and simply sits out (see releaseBustedSeats) rather than being handed
+ * to a replacement, real chips having no bot equivalent to mint. Minting the
+ * bot's stack is not a conservation break: bot chips are not backed by Gold,
+ * and the invariant that matters -- a human's chips and their Gold are the
+ * same chips -- never applies to this path.
  *
  * Status is set here rather than left to `setupHand`'s own recompute, even
  * though the only caller runs that recompute a few lines later: `setupHand`
@@ -462,16 +439,31 @@ function reseat(state: GameState, seat: Seat) {
   seat.status = "active";
 }
 
+/**
+ * Hands every busted *bot* seat back to a freshly-identified, funded one, and
+ * logs a busted human's seat once without touching it.
+ *
+ * A human who runs out of chips keeps their seat -- no grace period, no bot
+ * standing in for them, exactly like walking away from a real table broke.
+ * `setupHand`'s own per-seat pass a few lines after this call already reads
+ * their zero stack and sits them out for the next hand same as any other
+ * unfunded seat, so there is nothing left for this function to do for them
+ * beyond the log line, and that only once: `seat.status === "out"` is true on
+ * every call after the first, since the per-seat pass set it there and
+ * nothing refills it until they rebuy.
+ *
+ * Busted *bots* are a different problem and this is the fix for it: a bot
+ * that lost its last chip to a hot player used to be marked `"out"` and stay
+ * there, so a table left running long enough emptied itself down to
+ * "Not enough players with chips to continue". They refill up to the floor,
+ * and this runs at the head of `setupHand` -- before funded seats are counted
+ * and before any card is dealt -- which is what makes "the seats are refilled
+ * before the next hand" a property of the deal rather than a race with it.
+ */
 function releaseBustedSeats(state: GameState, now: number = Date.now()) {
-  // Busted humans first, and unconditionally: their seat is reclaimed because
-  // they are gone, not to keep the table populated, so the floor has no say in
-  // it. Doing them first also means the bots below count the seats these just
-  // funded and top up less.
   state.seats.forEach((seat) => {
-    if (!seat.isHuman || seat.stack > 0) return;
-    const playerName = seat.name;
-    reseat(state, seat);
-    addLog(state, `${playerName} is out of chips and leaves the table`);
+    if (!seat.isHuman || seat.stack > 0 || seat.status === "out") return;
+    addLog(state, `${seat.name} is out of chips and sits out until they rebuy`);
   });
 
   // A healthy bot occasionally decides it's done and stands up on its own --
@@ -1842,15 +1834,33 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
     if (state.status !== "complete") throw new Error("Finish the current hand first.");
     setupHand(state);
   } else if (action.type === "rebuy") {
-    if (state.status !== "complete") throw new Error("You can only rebuy between hands.");
     const seat = state.seats[seatIndex];
     if (seat.stack > 0) throw new Error("Your seat still has chips.");
-    // Refill and immediately deal, in one action -- refilling first means
-    // setupHand's own releaseBustedSeats (which only reclaims seats
-    // still at 0) leaves this seat alone rather than handing it to a bot.
+    // No "between hands" restriction any more: a busted seat sits out for as
+    // many hands as it takes, same as any other unfunded seat, so there is no
+    // reason to make the player wait for a lull before they can even submit
+    // this. The one thing still guarded against is rebuying a seat that is
+    // *currently* live in a hand in progress -- reachable only by calling the
+    // API directly, since the client never offers Rebuy except when `status`
+    // already reads "out" -- which would let a stack that lost its last chip
+    // this same hand un-lose it before the hand has even finished being
+    // decided.
+    if (state.status === "playing" && seat.status !== "out") {
+      throw new Error("Wait for this hand to finish deciding your seat.");
+    }
     seat.stack = clampBuyIn(state.tier, action.amount);
-    seat.status = "active";
-    setupHand(state);
+    if (state.status === "complete") {
+      // Refill and immediately deal, in one action -- refilling first means
+      // setupHand's own per-seat funding check leaves this seat alone rather
+      // than sitting it out again.
+      seat.status = "active";
+      setupHand(state);
+    } else {
+      // Mid-hand: this seat is already sitting out (checked above), so the
+      // hand in progress for everyone else is untouched. The chips just sit
+      // in front of it until the next deal picks it up as funded.
+      seat.status = "out";
+    }
   } else {
     if (state.status !== "playing") throw new Error("This hand is complete.");
     if (state.currentPlayer !== seatIndex) throw new Error("Wait for your turn.");

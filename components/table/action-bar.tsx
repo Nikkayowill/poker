@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useFuse } from "./use-fuse";
+import { useFuse, useFuseDigit } from "./use-fuse";
 import clsx from "clsx";
 import { Check, FoldVertical } from "lucide-react";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
@@ -37,6 +37,21 @@ export function TurnProgressBar({
       <div className="turn-progress-fill" />
     </div>
   );
+}
+
+/**
+ * Live seconds until `deadlineAt`, ticking in the kicker line.
+ *
+ * Between-hand pauses (the normal 2.8s beat, the 20s bust-rebuy grace) used
+ * to render as a static label with no clock on it -- indistinguishable from
+ * a stall, since nothing on screen said the wait was bounded or moving.
+ * Reuses useFuseDigit rather than a second timer: it already ticks off
+ * rAF (so it stops in a backgrounded tab and resyncs on return, instead of
+ * drifting), the same behavior this needed.
+ */
+function NextHandCountdown({ deadlineAt }: { deadlineAt: string }) {
+  const ref = useFuseDigit(null, deadlineAt);
+  return <span ref={ref as React.RefObject<HTMLSpanElement>} aria-hidden />;
 }
 
 /**
@@ -115,6 +130,13 @@ export function ActionBar({
 
   if (game.status === "complete") {
     const busted = game.isSeated && mySeat?.stack === 0;
+    // Someone else at the table busted, not me. The table is never actually
+    // waiting on them -- releaseBustedSeats hands their seat to a bot the
+    // moment the grace period lapses, rebuy or not -- but with no clock on
+    // screen a static "Hand complete" reads exactly like it's blocked on
+    // them, which gets worse the more seats there are. Named here so the
+    // other players see the table is handling it, not stuck.
+    const otherBustedSeat = game.seats.find((seat) => seat.isHuman && !seat.isMine && seat.stack === 0) ?? null;
     // A finished hand carries a deadline for the next one unless the table
     // cannot deal another -- fewer than two seats with chips left. The Deal
     // button used to be the way out of that; with the deal automatic there is
@@ -141,6 +163,13 @@ export function ActionBar({
             {!game.isSeated
               ? "Seat closed"
               : busted ? "Stack exhausted" : tableIsDone ? "Table finished" : "Hand complete"}
+            {/* The clock itself: absent once the table is genuinely done
+                dealing (tableIsDone), present through both the ordinary 2.8s
+                beat and the 20s bust-rebuy grace so neither ever sits with no
+                visible sign it will move on its own. */}
+            {game.isSeated && !tableIsDone && game.nextHandAt && (
+              <> · <NextHandCountdown deadlineAt={game.nextHandAt} />s</>
+            )}
           </span>
           <strong>
             {!game.isSeated
@@ -149,7 +178,9 @@ export function ActionBar({
                 ? (backstop === "ready"
                   ? "You’re sat out until you rebuy. Claim a top-up to get right back in."
                   : "You’re sat out until you rebuy. Leave table, above, to give up the seat.")
-                : game.message}
+                : otherBustedSeat
+                  ? `${otherBustedSeat.name} is sat out — the table deals on without them.`
+                  : game.message}
           </strong>
         </div>
         <div className="action-slot-controls">

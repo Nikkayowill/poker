@@ -634,7 +634,7 @@
     position: fixed;
     left: 50%;
     top: auto;
-    bottom: max(4px, var(--safe-bottom));
+    bottom: 4px;
     margin-left: 0;
     transform: translateX(-50%) translateY(48%);
     /* Keep the racetrack room consistent with the classic landscape room:

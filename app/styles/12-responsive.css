@@ -292,7 +292,7 @@
      not been re-measured per-axis, so both keep the old flat 106px rather
      than silently changing behaviour nobody has verified here. */
   .table-bet { --bet-reach-x: 106px; --bet-reach-y: 106px; }
-      .action-layer { padding: 0 4px calc(6px + var(--safe-bottom)); padding-left: max(4px, var(--safe-left)); padding-right: max(4px, var(--safe-right)); }
+      .action-layer { padding: 0 4px 6px; padding-left: max(4px, var(--safe-left)); padding-right: max(4px, var(--safe-right)); }
   .profile-overlay { padding: 0; align-items: end; }
   .profile-modal {
     width: 100%;
@@ -504,7 +504,7 @@
   .action-layer {
     position: absolute;
     z-index: 25;
-    bottom: calc(12px + var(--safe-bottom));
+    bottom: 12px;
     right: max(16px, var(--safe-right));
     padding: 0;
     /* The layer is only a positioning shell now, so it must not swallow taps

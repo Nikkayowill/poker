@@ -11,11 +11,9 @@
  * change here; adding a *new* metric is.
  */
 
-export type MissionEvent =
-  | { kind: "poker_hand_played"; multiplayer: boolean }
-  | { kind: "duel_won" }
-  | { kind: "puzzle_completed" }
-  | { kind: "level_gained"; levels: number };
+import type { DomainEvent } from "@/lib/domain-events";
+
+export type MissionEvent = DomainEvent;
 
 /** One increment to apply to every enabled mission on this metric. */
 export interface MissionSignal {

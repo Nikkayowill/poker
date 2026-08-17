@@ -1085,7 +1085,11 @@ button:disabled { cursor: wait; opacity: .62; }
  * components/missions/challenges-floor.tsx for the same reason the arcade
  * catalogue moved out of its hub tile (see arcade-panel.tsx's header) -- the
  * classes below it (.missions-group, .missions-list, .mission-row*) are
- * shared with that page rather than restated there.
+ * shared with that page rather than restated there, and with
+ * components/achievements/achievements-floor.tsx as well: an achievement row
+ * reads the same way a mission row does (title, reward, description,
+ * progress bar), so there is nothing achievement-specific to style beyond
+ * .mission-row-next below.
  */
 .missions-panel {
   position: relative;
@@ -1136,6 +1140,10 @@ button:disabled { cursor: wait; opacity: .62; }
   background: var(--brand-surface);
 }
 .mission-row-complete { opacity: .7; }
+/* achievements-floor.tsx only: the lowest not-yet-unlocked tier in a
+   category, called out the same way .floor-card:hover is -- an inset ring
+   instead of a border, per the chrome styling contract. */
+.mission-row-next { box-shadow: var(--accent-edge), var(--accent-glow); }
 
 .mission-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .mission-row-title {

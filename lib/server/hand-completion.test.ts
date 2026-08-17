@@ -81,6 +81,29 @@ describe("onHandCompleted", () => {
     const standing = await getPlayerStanding(profile.id, "lifetime");
     expect(standing?.stats.handsPlayed).toBe(1);
   });
+
+  it("keeps the stats it already wrote when the achievement check fails, and still reports the failure", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+
+    vi.resetModules();
+    vi.doMock("./achievement-store", () => ({
+      checkAchievements: () => Promise.reject(new Error("achievement lookup failed")),
+    }));
+    try {
+      const { onHandCompleted: withFailingAchievements } = await import("./hand-completion");
+      await expect(withFailingAchievements(wonHand(token, 60_000))).rejects.toThrow("achievement lookup failed");
+    } finally {
+      vi.doUnmock("./achievement-store");
+      vi.resetModules();
+    }
+
+    // Same isolation guarantee as the avatar-unlock sibling above: a
+    // best-effort achievement check failing must not roll back the stats
+    // write, and must not skip the avatar-unlock sibling either.
+    const standing = await getPlayerStanding(profile.id, "lifetime");
+    expect(standing?.stats.handsPlayed).toBe(1);
+  });
 });
 
 /**
@@ -104,6 +127,7 @@ describe("both hand-completion paths route through the hook", () => {
       expect(source).toMatch(/onHandCompleted\(/);
       expect(source).not.toMatch(/recordHandStats\(/);
       expect(source).not.toMatch(/checkAvatarUnlocks\(/);
+      expect(source).not.toMatch(/checkAchievements\(/);
     });
   }
 });

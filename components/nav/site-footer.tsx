@@ -21,6 +21,7 @@ export function SiteFooter() {
       <nav className="site-footer-links" aria-label="More about StackChips">
         <Link href="/how-to-play" onClick={tapSound}>How to Play</Link>
         <Link href="/rewards" onClick={tapSound}>Rewards</Link>
+        <Link href="/achievements" onClick={tapSound}>Achievements</Link>
         <Link href="/help" onClick={tapSound}>Help</Link>
         <Link href="/about" onClick={tapSound}>About</Link>
         <Link href="/legal" onClick={tapSound}>Legal</Link>

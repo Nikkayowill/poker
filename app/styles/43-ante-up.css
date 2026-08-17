@@ -51,15 +51,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The payout preview riding beside the wager in the live scoreline -- what a
-   win is actually worth, restated where the player is looking while the
-   clock runs rather than only in the lobby's pre-wager copy. */
-.duel-pot small {
-  margin-left: 4px;
-  color: var(--text-muted);
-  font-size: 10px;
-}
-
 @media (max-width: 640px) {
   .ante-difficulties { grid-template-columns: repeat(2, 1fr); }
 }

@@ -40,11 +40,22 @@
     /* The stage is transformed on landscape, so its overflow boundary is
        not guaranteed to crop a fixed descendant at the viewport edge. Clip
        the lower half explicitly instead of relying on that incidental crop. */
-    /* The cards are rotated and fanned, so their corners extend beyond the
-       flex row's nominal width. Leave horizontal breathing room in the clip
-       or the pair loses its side edges. */
+    /* Leave horizontal breathing room in the clip so the separated pair keeps
+       both side edges visible. */
     clip-path: inset(0 -18px 35% -18px);
     z-index: 20;
+  }
+
+  /* Landscape has enough width to show the two POV cards independently. The
+     normal overlap and fan can cover the first card's suit with the second
+     card, especially on the smaller landscape stages. */
+  .seat-mine .own-cards .dealt-card-shell + .dealt-card-shell {
+    margin-left: 8px;
+  }
+
+  .seat-mine .own-cards .dealt-card-shell:first-child .playing-card,
+  .seat-mine .own-cards .dealt-card-shell:last-child .playing-card {
+    transform: none;
   }
 
   .seat-mine .own-cards .card-index {

@@ -74,20 +74,26 @@ fewer than two seats have chips. A table that cannot deal must not advertise a
 deadline, or every seated browser would wake at it, ask to advance, and be told
 the same thing forever.
 
-Two delays:
+One delay, always: `NEXT_HAND_DELAY_MS` (2.8s) — derived from the celebration
+rather than chosen. The longest animation on a finished table is
+`win-amount-rise`, 1.4s from a .78s offset, so everything is over at 2.18s and
+this leaves a beat after it. `app/styles/stylesheets.test.ts` reads the
+stylesheets and fails if any celebration animation grows past the constant,
+because nothing else in the toolchain reads both a TypeScript value and a CSS
+keyframe. It was 4s while a player still pressed a button to move on; once the
+deal became automatic that extra second was dead air rather than a chance to
+act.
 
-- `NEXT_HAND_DELAY_MS` (2.8s) — derived from the celebration rather than
-  chosen. The longest animation on a finished table is `win-amount-rise`, 1.4s
-  from a .78s offset, so everything is over at 2.18s and this leaves a beat
-  after it. `app/styles/stylesheets.test.ts` reads the stylesheets and fails if
-  any celebration animation grows past the constant, because nothing else in
-  the toolchain reads both a TypeScript value and a CSS keyframe. It was 4s
-  while a player still pressed a button to move on; once the deal became
-  automatic that extra second was dead air rather than a chance to act.
-- `BUSTED_REBUY_GRACE_MS` (20s) — when a seated *human* has just lost their
-  last chip. Dealing on the normal beat runs `releaseBustedHumanSeats` and
-  hands their seat to a bot with the rebuy dialog still open in front of them.
-  A busted *bot* does not extend anything; nobody is reading a dialog.
+There used to be a second, longer delay here — `BUSTED_REBUY_GRACE_MS` (20s),
+held whenever a seated human had just lost their last chip, so the rebuy
+dialog stayed open in front of them before their seat was handed to a bot.
+Removed: it meant one player busting made every other seated browser wait 20s
+instead of 2.8s, and a real table never holds up the other players for one
+person's decision. A busted human now keeps their own seat — `setupHand`'s
+own per-seat pass reads their zero stack and sits them out, same as any other
+unfunded seat — and the table deals on at the normal beat regardless of who
+busted or how many did. See `releaseBustedSeats` and its callers in
+`lib/game/engine.ts`, and `lib/game/busted-seat.test.ts`.
 
 `setupHand` clears `nextHandAt` before its funded-seats check, so the dead-table
 branch cannot inherit the deadline that woke it.
@@ -136,10 +142,11 @@ it was removed rather than kept alongside the timer: two ways to start a hand
 means a button that is usually a no-op by the time it is pressed, and clutter
 in the one strip that has to stay legible. Nothing forces a deal by hand any
 more — the busted player's "Close seat", which was the same action wearing a
-different decision, is gone too; a busted seat now offers only Rebuy, and the
-header's persistent "Leave table" is the exit. The cost is that a table which
-*cannot* deal again has no button to offer, so ActionBar reads `nextHandAt`
-and offers "Return to lobby" instead of an empty control row.
+different decision, is gone too; a busted seat offers Rebuy (reachable any
+time, not just between hands — there is no window to miss), and the header's
+persistent "Leave table" is the exit. The cost is that a table which *cannot*
+deal again has no button to offer, so ActionBar reads `nextHandAt` and offers
+"Return to lobby" instead of an empty control row.
 
 **A persistent Node worker.** Code for one used to exist under
 `lib/server/table-manager/`, together with a `cash_game_sessions` ledger in

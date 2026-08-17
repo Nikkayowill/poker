@@ -3,7 +3,6 @@ import {
   advanceTimedTurn,
   applyPlayerAction,
   dealNextHandIfDue,
-  BUSTED_REBUY_GRACE_MS,
   claimSeat,
   createGame,
   NEXT_HAND_DELAY_MS,
@@ -21,9 +20,10 @@ import { defaultEquipped } from "@/lib/cosmetics/catalog";
  * The behaviour these lock down is not "a hand ends and another starts" --
  * that already worked when a player pressed Deal. It is that a finished hand
  * carries a deadline, that the deadline is honoured exactly once and only
- * when it is due, and that the two states where a table must NOT deal itself
- * are still respected: a table with nobody left to play, and a human who has
- * just busted and is looking at a rebuy dialog.
+ * when it is due, and that the one state where a table must NOT deal itself
+ * at all is still respected: nobody left with chips to play. A human busting
+ * is not one of these states any more -- see busted-seat.test.ts -- their
+ * seat just sits out and the table keeps to the same beat regardless.
  */
 
 const profile = (name: string) => ({
@@ -116,7 +116,7 @@ describe("a finished hand schedules the next one", () => {
   });
 });
 
-describe("the two tables that must not deal themselves", () => {
+describe("the table that must not deal itself", () => {
   it("refills busted bots and keeps dealing rather than stalling the table", () => {
     const { game: started, tokens } = tableWithTwoHumans();
     const game = foldToOneWinner(started);
@@ -177,20 +177,20 @@ describe("the two tables that must not deal themselves", () => {
       expect(state.nextHandAt).toBe(new Date(NOW + NEXT_HAND_DELAY_MS).toISOString());
     });
 
-    it("waits the grace period when a human has just lost their last chip", () => {
-      // Dealing on the normal beat would run releaseBustedHumanSeats and hand
-      // their seat to a bot with the rebuy dialog still open in front of them.
+    it("does not extend the wait when a human has just lost their last chip", () => {
+      // No grace period any more: their seat sits out, same as any other
+      // unfunded seat, and everyone else keeps to the normal beat regardless.
       const state = withStacks([
         { stack: 0, isHuman: true },
         { stack: 1_000, isHuman: false },
         { stack: 1_000, isHuman: false },
       ]);
       scheduleNextHand(state, NOW);
-      expect(state.nextHandAt).toBe(new Date(NOW + BUSTED_REBUY_GRACE_MS).toISOString());
+      expect(state.nextHandAt).toBe(new Date(NOW + NEXT_HAND_DELAY_MS).toISOString());
     });
 
     it("does not extend the wait for a busted bot", () => {
-      // A bot has no rebuy dialog to read, so nobody is waiting on anything.
+      // Nor a bot's -- nobody is waiting on anything, ever.
       const state = withStacks([
         { stack: 900, isHuman: true },
         { stack: 1_100, isHuman: false },

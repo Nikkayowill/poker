@@ -120,6 +120,8 @@ test.describe("safe-area insets", () => {
       await expect(page.locator(".game-header")).toBeVisible();
 
       const viewport = page.viewportSize()!;
+      const shell = await page.locator(".game-shell").boundingBox();
+      expect(Math.round(shell!.bottom)).toBe(viewport.height - PORTRAIT.bottom);
       const boxes = await collect(page, WATCHED);
       expect(boxes.length).toBeGreaterThan(2);
 

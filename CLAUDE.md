@@ -370,7 +370,10 @@ share it through `ChipSpace`/`SceneProjection`. The 3D room's chips are separate
   identity and re-rolled on every reseat; `trashContinueChance` per personality is what actually
   varies preflop looseness (VPIP ~45%/26%/64%).
 - `creditGold`/`spendGold` go through row-locking RPCs (`credit_gold`, `spend_gold`), never a plain
-  read-then-write — `adjustGold` is a deliberate exception, documented as admin-only for that reason.
+  read-then-write. `adjustGold` used to be a genuine read-then-write exception, tolerated only
+  because it's admin-only — that's fixed as of `20260815120000_adjust_gold_rpc.sql`: it now calls
+  `adjust_gold_by_profile`, a single atomic `UPDATE ... RETURNING`, so the lost-update race no
+  longer exists. It's still admin-only and still has no funds/unlimited-Gold guard, by design.
 - **There is no purchase path to Gold any more (2026-08-13).** Buy-Gold was removed; see "Voluntary
   support" below. Level rewards (every 5th level) and daily-streak multipliers (capped ×2.5 at 7
   days) are still deliberately small, but the *reason* changed: they used to be bounded against a

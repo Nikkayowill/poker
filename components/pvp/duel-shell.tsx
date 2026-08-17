@@ -4,9 +4,12 @@ import { useCallback, useEffect, useRef, useState, type ComponentType } from "re
 import Link from "next/link";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
-import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
-import type { DuelSeat } from "@/lib/pvp/match-contract";
+import { MIN_DUEL_STAKE, type DuelSeat } from "@/lib/pvp/match-contract";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { StakePicker } from "./stake-picker";
+
+/** Round-number quick-picks above the floor. A custom field covers everything else. */
+const STAKE_QUICK_PICKS = [MIN_DUEL_STAKE, 1000, 5000, 10_000, 25_000] as const;
 
 /**
  * The client half of every duel: the lobby, the poll, and the match frame.
@@ -51,7 +54,6 @@ export interface DuelChallenge {
   game: string;
   challenger: DuelPlayer;
   opponentId: string | null;
-  tier: StakesTier;
   stake: number;
   expiresAt: string;
   mine: boolean;
@@ -110,13 +112,13 @@ export function DuelShell<TSnapshot>({
   const [match, setMatch] = useState<DuelMatch<TSnapshot> | null>(null);
   const [challenges, setChallenges] = useState<DuelChallenge[]>([]);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
-  const [tier, setTier] = useState<StakesTier>("1k");
+  const [stake, setStake] = useState<number>(MIN_DUEL_STAKE);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
    * A specific opponent, carried in from the friends drawer's Challenge
-   * picker as `?challenge=<profileId>&name=<displayName>`.
+   * picker as `?challenge=<profileId>&name=<displayName>&suggested=<gold>`.
    *
    * Read from `window.location.search` in an effect rather than
    * `useSearchParams()`: that hook forces every one of the four /games/*
@@ -220,6 +222,8 @@ export function DuelShell<TSnapshot>({
       const params = new URLSearchParams(window.location.search);
       setChallengeTarget(params.get("challenge"));
       setChallengeName(params.get("name"));
+      const suggested = Number(params.get("suggested"));
+      if (Number.isFinite(suggested) && suggested >= MIN_DUEL_STAKE) setStake(suggested);
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -306,11 +310,11 @@ export function DuelShell<TSnapshot>({
           loaded={loaded}
           busy={busy}
           balance={balance}
-          tier={tier}
-          onTier={setTier}
+          stake={stake}
+          onStake={setStake}
           challenges={challenges}
           challengeName={challengeTarget ? challengeName : null}
-          onOpen={() => void send(`/api/pvp/${game}`, { tier, opponentId: challengeTarget ?? undefined })}
+          onOpen={() => void send(`/api/pvp/${game}`, { stake, opponentId: challengeTarget ?? undefined })}
           onAccept={(id) => void send(`/api/pvp/challenges/${id}`, { action: "accept" })}
           onCancel={(id) => void send(`/api/pvp/challenges/${id}`, { action: "cancel" })}
         />
@@ -328,8 +332,8 @@ function DuelLobby({
   loaded,
   busy,
   balance,
-  tier,
-  onTier,
+  stake,
+  onStake,
   challenges,
   challengeName,
   onOpen,
@@ -342,8 +346,8 @@ function DuelLobby({
   loaded: boolean;
   busy: boolean;
   balance: number;
-  tier: StakesTier;
-  onTier: (tier: StakesTier) => void;
+  stake: number;
+  onStake: (stake: number) => void;
   challenges: DuelChallenge[];
   /** The friend this lobby was opened to challenge, from the friends drawer's picker. Null for an ordinary visit. */
   challengeName: string | null;
@@ -351,8 +355,7 @@ function DuelLobby({
   onAccept: (id: string) => void;
   onCancel: (id: string) => void;
 }) {
-  const stake = TIER_CONFIG[tier].minBuyIn;
-  const canAfford = balance >= stake;
+  const canAfford = stake >= MIN_DUEL_STAKE && balance >= stake;
   const mine = challenges.find((challenge) => challenge.mine) ?? null;
   const others = challenges.filter((challenge) => !challenge.mine);
 
@@ -376,29 +379,27 @@ function DuelLobby({
         {/* Both players ante the same amount and the winner takes both, so
             the pot is stated as well as the stake -- "1,000" alone reads as
             the price of a round rather than as half of what is on the table. */}
-        <div className="duel-tiers" role="group" aria-label="Stake">
-          {STAKES_TIERS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={clsx("duel-tier", option === tier && "duel-tier-active")}
-              onClick={() => onTier(option)}
-              aria-pressed={option === tier}
-            >
-              {TIER_CONFIG[option].label}
-            </button>
-          ))}
-        </div>
+        <StakePicker
+          ariaLabel="Stake"
+          picks={STAKE_QUICK_PICKS}
+          value={stake}
+          min={MIN_DUEL_STAKE}
+          onChange={onStake}
+        />
         <p className="duel-pot-note">
-          You both put up {stake.toLocaleString()}. Winner takes {(stake * 2).toLocaleString()}.
-          A draw returns each of you your own.
+          {stake < MIN_DUEL_STAKE
+            ? `Wager at least ${MIN_DUEL_STAKE.toLocaleString()} Gold to open a duel.`
+            : <>
+                You both put up {stake.toLocaleString()}. Winner takes {(stake * 2).toLocaleString()}.
+                A draw returns each of you your own.
+              </>}
         </p>
 
         {mine ? (
           <div className="duel-mine">
             <span>
-              Your {TIER_CONFIG[mine.tier].label} challenge is open — {mine.stake.toLocaleString()} Gold
-              is held until {mine.opponentId ? "they accept" : "someone takes it"}.
+              Your {mine.stake.toLocaleString()} Gold challenge is open — held until{" "}
+              {mine.opponentId ? "they accept" : "someone takes it"}.
             </span>
             <button type="button" className="floor-play" disabled={busy} onClick={() => onCancel(mine.id)}>
               Withdraw
@@ -417,7 +418,7 @@ function DuelLobby({
                 ? "Not enough Gold"
                 : challengeName
                   ? `Challenge ${challengeName}`
-                  : `Open a ${TIER_CONFIG[tier].label} challenge`}
+                  : `Open a ${stake.toLocaleString()} Gold challenge`}
           </button>
         )}
       </section>

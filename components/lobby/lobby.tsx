@@ -299,14 +299,14 @@ export function Lobby({
             onClick={() => { tapSound(); setBuyInMode("join"); }}
           >
             <span className="hub-tile-body">
-              <span className="hub-tile-kicker">Poker · No-limit Hold&rsquo;em</span>
+              <span className="hub-tile-kicker">Poker - No-limit Hold&rsquo;em</span>
               <strong>Texas Hold&rsquo;em</strong>
               <small>
                 {!sessionReady
                   ? "Preparing your seat…"
                   : loading
                     ? "Joining table…"
-                    : "Six-max cash tables · Take the next open seat"}
+                    : "Six-max cash tables - Take the next open seat"}
               </small>
             </span>
             {/* No arrow. The hero's felt plate already occupies the right of
@@ -331,7 +331,7 @@ export function Lobby({
           <Link className="hub-tile hub-tile-gold" href="/store/gold" style={tileIndexStyle(2)} onClick={tapSound}>
             <span className="hub-tile-body">
               <strong>Buy Gold</strong>
-              <small>Optional — never required to play</small>
+              <small>Optional - Complete challenges for more free gold</small>
             </span>
           </Link>
 

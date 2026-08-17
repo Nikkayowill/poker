@@ -1,0 +1,56 @@
+/* Ante Up: Sudoku -- the solo half of Ante Up.
+ *
+ * Deliberately not a third copy of anything: the wager step, the lobby
+ * chrome and the result card reuse 36-duels.css's classes as-is (.duel-tiers,
+ * .duel-panel, .duel-result, .duel-resign...) since a solo skill wager is the
+ * same shape of decision a duel's stake step already is. The grid and digit
+ * pad reuse 33-sudoku.css's .sk-* classes untouched. This file holds only
+ * what neither of those has: the difficulty tiles (which need to show a time
+ * limit and a multiplier, not just a name) and the countdown clock.
+ */
+
+.ante-difficulties {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.ante-difficulty {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+.ante-difficulty strong { color: var(--text-primary); font-size: 13px; }
+.ante-difficulty span { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+
+/* Inset, same reasoning as .duel-tier-active: selecting a rung must not
+   reflow the row. */
+.ante-difficulty-active {
+  box-shadow: inset 0 0 0 1px var(--accent-edge), 0 0 12px var(--accent-glow);
+}
+.ante-difficulty-active strong { color: var(--text-primary); }
+
+/* The scoreline carries the clock where a duel's carries the opponent --
+   there is no opponent here, so the pot side of the row is the only thing
+   shared with .duel-scoreline. */
+.ante-scoreline { justify-content: space-between; }
+
+.ante-clock {
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--brand-surface);
+  color: var(--text-primary);
+  font: 600 14px Georgia, serif;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .ante-difficulties { grid-template-columns: repeat(2, 1fr); }
+}

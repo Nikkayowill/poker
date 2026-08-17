@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "crypto";
 import type { FriendSummary, FriendsOverview, PendingRequest } from "@/lib/social/types";
+import { getDuelRecordsAgainst } from "./pvp-match-store";
 import { getPublicProfilesByIds } from "./profile-store";
 import { adminClient } from "./supabase-admin";
 
@@ -153,6 +154,10 @@ async function hydrate<T extends { profileId: string }>(
       avatarUrl: profile.avatarUrl,
       avatarPreset: profile.avatarPreset,
       accent: profile.accent,
+      // Filled in for the `friends` list only, by getFriendsOverview after
+      // this returns -- a pending request is not an opponent yet. Set here
+      // just to satisfy the shared shape every hydrate() caller returns.
+      duelRecord: null,
     }];
   });
 }
@@ -185,7 +190,7 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, FRIENDS_PAGE_SIZE);
 
-    const [friends, incoming, outgoing] = await Promise.all([
+    const [friends, incoming, outgoing, records] = await Promise.all([
       hydrate(friendRows),
       hydrate(pending
         .filter((row) => row.addresseeId === me)
@@ -193,7 +198,9 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
       hydrate(pending
         .filter((row) => row.requesterId === me)
         .map((row) => ({ id: row.id, profileId: row.addresseeId, createdAt: row.createdAt }))),
+      getDuelRecordsAgainst(me, friendRows.map((row) => row.profileId)),
     ]);
+    for (const friend of friends) friend.duelRecord = records.get(friend.profileId) ?? null;
     return { friends, incoming, outgoing };
   }
 
@@ -251,7 +258,7 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
     createdAt: String(row.created_at),
   }));
 
-  const [friends, incoming, outgoing] = await Promise.all([
+  const [friends, incoming, outgoing, records] = await Promise.all([
     hydrate(friendRows),
     hydrate(pending
       .filter((row) => row.addresseeId === me)
@@ -259,7 +266,9 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
     hydrate(pending
       .filter((row) => row.requesterId === me)
       .map((row) => ({ id: row.id, profileId: row.addresseeId, createdAt: row.createdAt }))),
+    getDuelRecordsAgainst(me, friendRows.map((row) => row.profileId)),
   ]);
+  for (const friend of friends) friend.duelRecord = records.get(friend.profileId) ?? null;
   return { friends, incoming, outgoing };
 }
 

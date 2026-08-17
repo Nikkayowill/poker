@@ -70,6 +70,22 @@
 }
 .friend-identity small { color: #8d84a3; font-size: 10.5px; }
 
+/* Head-to-head duel record. A raised pill riding beside the name rather than
+   a border or a second line -- the drawer already has one, and a record is a
+   fact about this friend, not a separate row of its own. */
+.friend-duel-record {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  color: #c9a2f0;
+  background: rgba(152,63,224,.18);
+  border-radius: 8px;
+  font: 650 10px system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+  vertical-align: 1px;
+}
+
 .friend-actions { display: flex; flex: 0 0 auto; gap: 6px; }
 .friend-actions button {
   width: 30px;

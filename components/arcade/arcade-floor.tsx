@@ -95,7 +95,7 @@ export function ArcadeFloor() {
   }, []);
 
   const wallet = toArcadeWallet(profile);
-  const { free, duels, staked } = splitArcadeFloor();
+  const { free, duels, wagers, staked } = splitArcadeFloor();
 
   return (
     <main className="floor-shell">
@@ -122,7 +122,7 @@ export function ArcadeFloor() {
             which has been broken there three times. Spelled as words because
             these are sentences: "10 more ways in." reads as a spec line and
             "Ten more ways in." reads as a person saying it. */}
-        <h1>{spell(free.length + duels.length + staked.length)} more ways in.</h1>
+        <h1>{spell(free.length + duels.length + wagers.length + staked.length)} more ways in.</h1>
         <p>
           {spell(free.length)} are free every day. The rest stake Gold from the same
           wallet as the tables.
@@ -153,7 +153,25 @@ export function ArcadeFloor() {
           </p>
           <div className="floor-free-grid">
             {duels.map((game) => (
-              <DuelCard key={game.id} game={game} wallet={wallet} />
+              <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={`from ${arcadeEntryLabel(game)} Gold`} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {wagers.length > 0 && (
+        <section className="floor-section" aria-labelledby="floor-wagers">
+          {/* Also its own section, for the mirror-image reason the duels get
+              one: here the Gold you stake goes to YOU if you beat the
+              challenge, or nowhere at all if you don't -- there is no house
+              edge and no opponent, only the clock. */}
+          <h2 className="floor-section-head" id="floor-wagers">Ante up</h2>
+          <p className="floor-section-note">
+            Wager on your own ability. Beat the challenge and cash out; miss it and the wager is gone.
+          </p>
+          <div className="floor-free-grid">
+            {wagers.map((game) => (
+              <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={arcadeEntryLabel(game)} />
             ))}
           </div>
         </section>
@@ -188,21 +206,26 @@ function FreeCard({ game }: { game: ArcadeGame }) {
 }
 
 /**
- * A duel. Card-shaped like a daily rather than row-shaped like a house game,
- * because the decision here is "who do I want to play", not "what does it
- * cost" -- the stake is picked inside, on the challenge, the same way a table
- * buy-in is. The catalogue's entryCost is therefore rendered as a floor
- * ("from 1,000"), never as the price: quoting one number for a game that
- * offers eight is the same class of lie as the placeholder prices
- * lib/arcade/games.ts's header records getting wrong three times.
+ * A duel or a solo skill wager. Card-shaped like a daily rather than
+ * row-shaped like a house game, because the decision here is "who/what do I
+ * want to play", not "what does it cost" -- the stake is picked inside, on
+ * the challenge or the wager step, the same way a table buy-in is.
+ *
+ * `stakeLabel` carries the one difference between the two callers: a duel's
+ * catalogue entryCost is a floor across up to eight stakes ("from 1,000
+ * Gold"), never the price -- quoting one number for a game that offers eight
+ * is the same class of lie as the placeholder prices lib/arcade/games.ts's
+ * header records getting wrong three times. A wager's `arcadeEntryLabel`
+ * already returns a full phrase ("Free to play") for this kind, so it is
+ * passed as-is rather than wrapped in "from … Gold".
  */
-function DuelCard({ game, wallet }: { game: ArcadeGame; wallet: ArcadeWallet }) {
+function GameCard({ game, wallet, stakeLabel }: { game: ArcadeGame; wallet: ArcadeWallet; stakeLabel: string }) {
   const blocked = arcadeBlockedReason(game, wallet);
   return (
     <article className="floor-card">
       <strong>{game.name}</strong>
       <small>{game.blurb}</small>
-      <small className="floor-card-stake">from {arcadeEntryLabel(game)} Gold</small>
+      <small className="floor-card-stake">{stakeLabel}</small>
       {blocked === null && game.href ? (
         <Link className="floor-play" href={game.href} onClick={gameOnSound}>{arcadeActionLabel(game, wallet)}</Link>
       ) : (

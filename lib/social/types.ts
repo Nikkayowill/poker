@@ -1,4 +1,8 @@
 import type { AvatarPreset } from "@/lib/profile/types";
+// Type-only: pvp-match-store.ts is server-only, but its type declarations
+// carry no runtime code, so importing just the type here doesn't pull the
+// service-role client into the browser bundle.
+import type { DuelRecord } from "@/lib/server/pvp-match-store";
 
 /**
  * The friends wire contract, shared rather than server-only.
@@ -28,6 +32,14 @@ export interface FriendSummary {
   accent: string;
   /** When the friendship was created, not when either profile was. */
   since: string;
+  /**
+   * Wins/losses/draws across every settled duel against this friend, or null
+   * if the two of you have never finished one. Derived from pvp_matches at
+   * read time -- see getDuelRecordsAgainst -- so this can lag a match that
+   * settled in the last few seconds by at most one poll, same as everything
+   * else in the drawer.
+   */
+  duelRecord: DuelRecord | null;
 }
 
 export interface PendingRequest {

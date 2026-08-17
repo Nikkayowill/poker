@@ -6,6 +6,7 @@ import { Check, Send, Spade, UserMinus, UserPlus, X } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import type { GameSnapshot, PublicSeat } from "@/lib/game/types";
+import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 import type {
   FriendSummary,
@@ -70,6 +71,27 @@ function expiresIn(expiresAt: string, now: number): string {
   if (remaining <= 0) return "Expired";
   const minutes = Math.floor(remaining / 60_000);
   return minutes >= 1 ? `${minutes}m left` : `${Math.max(1, Math.ceil(remaining / 1000))}s left`;
+}
+
+/**
+ * The prefilled wager offered against one specific friend: the floor, raised
+ * 500 Gold for every time you've beaten them. Only ever a starting point --
+ * the duel lobby's stake input stays editable down to MIN_DUEL_STAKE -- so
+ * this can be generous without needing to be exact.
+ */
+function suggestedWager(record: FriendSummary["duelRecord"]): number {
+  return MIN_DUEL_STAKE + 500 * (record?.wins ?? 0);
+}
+
+/** "4-2" against a friend, or "4-2-1" once a draw has actually happened. */
+function DuelRecordBadge({ record }: { record: NonNullable<FriendSummary["duelRecord"]> }) {
+  if (record.wins === 0 && record.losses === 0 && record.draws === 0) return null;
+  return (
+    <span className="friend-duel-record" title={`${record.wins} won, ${record.losses} lost against them`}>
+      {record.wins}-{record.losses}
+      {record.draws > 0 && `-${record.draws}`}
+    </span>
+  );
 }
 
 /**
@@ -686,7 +708,10 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                 <div className="friend-row" key={person.profileId}>
                   <Avatar person={person} />
                   <div className="friend-identity">
-                    <strong>{person.displayName}</strong>
+                    <strong>
+                      {person.displayName}
+                      {person.duelRecord && <DuelRecordBadge record={person.duelRecord} />}
+                    </strong>
                     <small>
                       Friends since {new Date(person.since).toLocaleDateString(undefined, {
                         month: "short",
@@ -728,6 +753,12 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                         const params = new URLSearchParams({
                           challenge: person.profileId,
                           name: person.displayName,
+                          // A prefill only -- the wager step on the other end
+                          // stays freely editable down to MIN_DUEL_STAKE. Scaled
+                          // by wins against THIS friend specifically, so beating
+                          // someone repeatedly is what raises the suggested ante
+                          // against them, not against everyone.
+                          suggested: String(suggestedWager(person.duelRecord)),
                         });
                         router.push(`/games/${game}?${params.toString()}`);
                       }}

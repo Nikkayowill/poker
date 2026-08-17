@@ -11,7 +11,7 @@ import {
   resignDuelMatch,
 } from "./pvp-match-service";
 import { __resetPvpChallengesForTest } from "./pvp-challenge-store";
-import { __resetPvpMatchesForTest } from "./pvp-match-store";
+import { __resetPvpMatchesForTest, getDuelRecordsAgainst } from "./pvp-match-store";
 import { adjustGold, ensureProfile, setUnlimitedGold } from "./profile-store";
 
 /**
@@ -67,7 +67,7 @@ describe("challenge escrow", () => {
     const { a } = await table();
     const before = await balance(a.token);
 
-    await openDuelChallenge(a.token, "chess", "1k", null);
+    await openDuelChallenge(a.token, "chess", STAKE, null);
 
     // The stake is held from the moment the offer stands. An offer backed by
     // nothing is one the acceptor would pay into.
@@ -77,7 +77,7 @@ describe("challenge escrow", () => {
   it("refunds exactly once when the challenger withdraws", async () => {
     const { a } = await table();
     const before = await balance(a.token);
-    const { challenge } = await openDuelChallenge(a.token, "chess", "1k", null);
+    const { challenge } = await openDuelChallenge(a.token, "chess", STAKE, null);
 
     await cancelDuelChallenge(a.token, challenge.id);
     expect(await balance(a.token)).toBe(before);
@@ -90,7 +90,7 @@ describe("challenge escrow", () => {
 
   it("will not let another player withdraw somebody else's escrow", async () => {
     const { a, b } = await table();
-    const { challenge } = await openDuelChallenge(a.token, "chess", "1k", null);
+    const { challenge } = await openDuelChallenge(a.token, "chess", STAKE, null);
     const beforeB = await balance(b.token);
 
     await expect(cancelDuelChallenge(b.token, challenge.id)).rejects.toBeInstanceOf(DuelRequestError);
@@ -99,7 +99,7 @@ describe("challenge escrow", () => {
 
   it("refuses a stake the challenger cannot cover, without debiting", async () => {
     const poor = await funded(500);
-    await expect(openDuelChallenge(poor.token, "chess", "1k", null)).rejects.toBeInstanceOf(
+    await expect(openDuelChallenge(poor.token, "chess", STAKE, null)).rejects.toBeInstanceOf(
       DuelRequestError,
     );
     expect(await balance(poor.token)).toBe(500);
@@ -107,12 +107,12 @@ describe("challenge escrow", () => {
 
   it("holds one open challenge per player per game", async () => {
     const { a } = await table();
-    await openDuelChallenge(a.token, "chess", "1k", null);
+    await openDuelChallenge(a.token, "chess", STAKE, null);
     const after = await balance(a.token);
 
     // The second is refused and -- critically -- refunded: rule 1 says a stake
     // that bought nothing goes back.
-    await expect(openDuelChallenge(a.token, "chess", "1k", null)).rejects.toBeInstanceOf(
+    await expect(openDuelChallenge(a.token, "chess", STAKE, null)).rejects.toBeInstanceOf(
       DuelRequestError,
     );
     expect(await balance(a.token)).toBe(after);
@@ -120,17 +120,33 @@ describe("challenge escrow", () => {
 
   it("lets the same player hold a challenge at each game at once", async () => {
     const { a } = await table();
-    await openDuelChallenge(a.token, "chess", "1k", null);
-    await expect(openDuelChallenge(a.token, "checkers", "1k", null)).resolves.toBeTruthy();
+    await openDuelChallenge(a.token, "chess", STAKE, null);
+    await expect(openDuelChallenge(a.token, "checkers", STAKE, null)).resolves.toBeTruthy();
   });
 
   it("refuses a challenge to yourself before touching the wallet", async () => {
     const { a } = await table();
     const before = await balance(a.token);
-    await expect(openDuelChallenge(a.token, "chess", "1k", a.id)).rejects.toBeInstanceOf(
+    await expect(openDuelChallenge(a.token, "chess", STAKE, a.id)).rejects.toBeInstanceOf(
       DuelRequestError,
     );
     expect(await balance(a.token)).toBe(before);
+  });
+
+  it("refuses a wager under the floor, without touching the wallet", async () => {
+    const { a } = await table();
+    const before = await balance(a.token);
+    await expect(openDuelChallenge(a.token, "chess", 499, null)).rejects.toBeInstanceOf(
+      DuelRequestError,
+    );
+    expect(await balance(a.token)).toBe(before);
+  });
+
+  it("lets the challenger name any wager at or above the floor", async () => {
+    const { a } = await table();
+    const before = await balance(a.token);
+    await openDuelChallenge(a.token, "chess", 7777, null);
+    expect(await balance(a.token)).toBe(before - 7777);
   });
 });
 
@@ -139,7 +155,7 @@ describe("accepting", () => {
     const t = await table();
     const total = await t.total();
 
-    await openDuelChallenge(t.a.token, "chess", "1k", null);
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
     const { match } = await acceptDuelChallenge(t.b.token, await openId(t.a.token));
 
     expect(match.stake).toBe(STAKE);
@@ -150,7 +166,7 @@ describe("accepting", () => {
 
   it("seats the challenger at seat 0 and the acceptor at seat 1", async () => {
     const t = await table();
-    await openDuelChallenge(t.a.token, "chess", "1k", null);
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
     const { match } = await acceptDuelChallenge(t.b.token, await openId(t.a.token));
 
     expect(match.yourSeat).toBe(1);
@@ -161,7 +177,7 @@ describe("accepting", () => {
   it("lets exactly one of two racing acceptors in, and charges only them", async () => {
     const t = await table();
     const c = await funded();
-    await openDuelChallenge(t.a.token, "chess", "1k", null);
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
     const id = await openId(t.a.token);
 
     const results = await Promise.allSettled([
@@ -180,7 +196,7 @@ describe("accepting", () => {
   it("refunds nothing and reopens the challenge when the acceptor cannot pay", async () => {
     const t = await table();
     const poor = await funded(100);
-    await openDuelChallenge(t.a.token, "chess", "1k", null);
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
     const id = await openId(t.a.token);
 
     await expect(acceptDuelChallenge(poor.token, id)).rejects.toBeInstanceOf(DuelRequestError);
@@ -194,7 +210,7 @@ describe("accepting", () => {
 
   it("refuses a player accepting their own challenge", async () => {
     const t = await table();
-    await openDuelChallenge(t.a.token, "chess", "1k", null);
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
     const after = await balance(t.a.token);
 
     await expect(acceptDuelChallenge(t.a.token, await openId(t.a.token))).rejects.toBeInstanceOf(
@@ -211,7 +227,7 @@ describe("settlement", () => {
     const total = await t.total();
     const beforeA = await balance(t.a.token);
 
-    await openDuelChallenge(t.a.token, "chess", "1k", null);
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
     await acceptDuelChallenge(t.b.token, await openId(t.a.token));
     // Seat 1 resigns, so seat 0 -- the challenger -- takes the pot.
     const { match } = await resignDuelMatch(t.b.token, await matchId(t.a.token));
@@ -228,7 +244,7 @@ describe("settlement", () => {
   it("pays a resignation exactly once however many times it is sent", async () => {
     const t = await table();
     const total = await t.total();
-    await openDuelChallenge(t.a.token, "chess", "1k", null);
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
     await acceptDuelChallenge(t.b.token, await openId(t.a.token));
     const id = await matchId(t.a.token);
 
@@ -244,7 +260,7 @@ describe("settlement", () => {
   it("pays a pot once when both players resign at the same instant", async () => {
     const t = await table();
     const total = await t.total();
-    await openDuelChallenge(t.a.token, "chess", "1k", null);
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
     await acceptDuelChallenge(t.b.token, await openId(t.a.token));
     const id = await matchId(t.a.token);
 
@@ -258,14 +274,14 @@ describe("settlement", () => {
 
   it("frees both players to duel again once the match settles", async () => {
     const t = await table();
-    await openDuelChallenge(t.a.token, "chess", "1k", null);
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
     await acceptDuelChallenge(t.b.token, await openId(t.a.token));
     await resignDuelMatch(t.b.token, await matchId(t.a.token));
 
     // The unique index is partial on `active`, so a finished match must not
     // block the rematch.
     expect((await readDuelMatch(t.a.token, "chess")).match).toBeNull();
-    await expect(openDuelChallenge(t.a.token, "chess", "1k", null)).resolves.toBeTruthy();
+    await expect(openDuelChallenge(t.a.token, "chess", STAKE, null)).resolves.toBeTruthy();
   });
 });
 
@@ -273,7 +289,7 @@ describe("authorization", () => {
   it("refuses a move from somebody who is not in the match", async () => {
     const t = await table();
     const stranger = await funded();
-    await openDuelChallenge(t.a.token, "chess", "1k", null);
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
     await acceptDuelChallenge(t.b.token, await openId(t.a.token));
     const id = await matchId(t.a.token);
 
@@ -285,7 +301,7 @@ describe("authorization", () => {
   it("refuses a resignation from somebody who is not in the match", async () => {
     const t = await table();
     const stranger = await funded();
-    await openDuelChallenge(t.a.token, "chess", "1k", null);
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
     await acceptDuelChallenge(t.b.token, await openId(t.a.token));
 
     await expect(
@@ -302,7 +318,7 @@ describe("unlimited-Gold profiles", () => {
     await setUnlimitedGold(t.a.id, true);
     const beforeA = await balance(t.a.token);
 
-    await openDuelChallenge(t.a.token, "chess", "1k", null);
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
     await acceptDuelChallenge(t.b.token, await openId(t.a.token));
     await resignDuelMatch(t.b.token, await matchId(t.a.token));
 
@@ -331,7 +347,7 @@ describe("a real game, end to end", () => {
     const beforeA = await balance(t.a.token);
     const beforeB = await balance(t.b.token);
 
-    await openDuelChallenge(t.a.token, "checkers", "1k", null);
+    await openDuelChallenge(t.a.token, "checkers", STAKE, null);
     const { challenges } = await listDuelChallenges(t.a.token, "checkers");
     await acceptDuelChallenge(t.b.token, challenges.find((c) => c.mine)!.id);
 
@@ -394,6 +410,45 @@ describe("a real game, end to end", () => {
       expect(up).toBe(STAKE);
       expect(down).toBe(-STAKE);
     }
+  });
+});
+
+describe("head-to-head record", () => {
+  it("counts a win for the winner and a loss for the loser, from either side", async () => {
+    const t = await table();
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
+    await acceptDuelChallenge(t.b.token, await openId(t.a.token));
+    // Seat 1 (b) resigns, so seat 0 (a) wins.
+    await resignDuelMatch(t.b.token, await matchId(t.a.token));
+
+    const aRecord = (await getDuelRecordsAgainst(t.a.id)).get(t.b.id);
+    const bRecord = (await getDuelRecordsAgainst(t.b.id)).get(t.a.id);
+    expect(aRecord).toEqual({ wins: 1, losses: 0, draws: 0 });
+    expect(bRecord).toEqual({ wins: 0, losses: 1, draws: 0 });
+  });
+
+  it("accumulates across games and games settled the other way round", async () => {
+    const t = await table();
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
+    await acceptDuelChallenge(t.b.token, await openId(t.a.token));
+    await resignDuelMatch(t.b.token, await matchId(t.a.token)); // a wins
+
+    await openDuelChallenge(t.b.token, "checkers", STAKE, null);
+    const { challenges } = await listDuelChallenges(t.b.token, "checkers");
+    const { match: checkersMatch } = await acceptDuelChallenge(
+      t.a.token,
+      challenges.find((c) => c.mine)!.id,
+    );
+    await resignDuelMatch(t.a.token, checkersMatch.id); // b wins
+
+    const aRecord = (await getDuelRecordsAgainst(t.a.id)).get(t.b.id);
+    expect(aRecord).toEqual({ wins: 1, losses: 1, draws: 0 });
+  });
+
+  it("reports nothing against a stranger you have never settled a duel with", async () => {
+    const { a } = await table();
+    const stranger = await funded();
+    expect((await getDuelRecordsAgainst(a.id)).get(stranger.id)).toBeUndefined();
   });
 });
 

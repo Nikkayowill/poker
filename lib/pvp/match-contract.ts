@@ -43,6 +43,16 @@
 export type DuelSeat = 0 | 1;
 
 /**
+ * The floor for a player-chosen wager.
+ *
+ * A duel used to price itself off the poker stakes ladder (TIER_CONFIG); now
+ * the challenger names any amount, and this is the only limit -- low enough
+ * that a duel is not gated behind a table buy-in, high enough that it is
+ * still a real stake against a friend rather than a rounding error.
+ */
+export const MIN_DUEL_STAKE = 500;
+
+/**
  * How a match ended.
  *
  * `winner: null` is a DRAW, not "unfinished" -- an unfinished match returns

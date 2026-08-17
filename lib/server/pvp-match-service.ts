@@ -1,8 +1,8 @@
 import "server-only";
 import { randomInt } from "crypto";
 import { NextResponse } from "next/server";
-import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { AnyDuelGame, DuelOutcome, DuelSeat } from "@/lib/pvp/match-contract";
+import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 import { duelGame } from "@/lib/pvp/registry";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
@@ -108,7 +108,6 @@ export interface DuelChallengeView {
   challenger: DuelPlayerView;
   /** Null on an open-to-anyone challenge. */
   opponentId: string | null;
-  tier: StakesTier;
   stake: number;
   expiresAt: string;
   /** Whether the reader is the one whose Gold is escrowed against this. */
@@ -278,12 +277,17 @@ async function refundExpired(expired: StoredPvpChallenge[]): Promise<void> {
 export async function openDuelChallenge(
   token: string,
   gameId: string,
-  tier: StakesTier,
+  stake: number,
   opponentId: string | null,
 ): Promise<{ challenge: DuelChallengeView; profile: PlayerProfile }> {
   const game = requireGame(gameId);
   const profile = await ensureProfile(token);
-  const stake = TIER_CONFIG[tier].minBuyIn;
+  if (!Number.isInteger(stake) || stake < MIN_DUEL_STAKE) {
+    throw new DuelRequestError(
+      `Wager at least ${MIN_DUEL_STAKE.toLocaleString()} Gold to open a duel.`,
+      400,
+    );
+  }
 
   if (opponentId) {
     if (opponentId === profile.id) {
@@ -314,7 +318,9 @@ export async function openDuelChallenge(
       game: game.id,
       challengerId: profile.id,
       opponentId,
-      tier,
+      // Retained as a stored column, not a chosen ladder rung any more -- see
+      // MIN_DUEL_STAKE's doc comment. Nothing reads this back for meaning.
+      tier: "custom",
       stake,
     });
   } catch (error) {
@@ -334,7 +340,6 @@ export async function openDuelChallenge(
       game: challenge.game,
       challenger,
       opponentId: challenge.opponentId,
-      tier: challenge.tier,
       stake: challenge.stake,
       expiresAt: challenge.expiresAt,
       mine: true,
@@ -377,7 +382,6 @@ export async function listDuelChallenges(
           accent: challenger.accent,
         },
         opponentId: row.opponentId,
-        tier: row.tier,
         stake: row.stake,
         expiresAt: row.expiresAt,
         mine: row.challengerId === profile.id,

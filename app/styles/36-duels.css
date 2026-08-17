@@ -101,6 +101,37 @@
   color: var(--text-primary);
 }
 
+/* The custom-amount field. A pill of its own rather than styled to blend
+   into the quick-pick row -- it is a different kind of control (typing, not
+   picking) and reading as one would hide that a player can name any number. */
+.duel-tier-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 14px;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.duel-tier-custom input {
+  width: 88px;
+  padding: 7px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.duel-tier-custom input:focus-visible { outline: none; }
+/* Chrome/Safari/Edge's spinner arrows read as a form field in a chip row
+   that otherwise looks like buttons -- suppressed the same way the numeric
+   buy-in field elsewhere in this app already does. */
+.duel-tier-custom input::-webkit-outer-spin-button,
+.duel-tier-custom input::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.duel-tier-custom input[type=number] { appearance: textfield; }
+
 /* Set only when this lobby was opened from the friends drawer's Challenge
    picker -- the one moment before a challenge exists that this page has
    anything to say about who it's for. */
@@ -258,6 +289,16 @@
   color: var(--brand-gold);
   font-variant-numeric: tabular-nums;
   font-size: 14px;
+}
+
+/* The payout preview riding beside the stake/wager -- what a win is actually
+   worth, restated where the player is looking while a clock runs (Ante Up)
+   rather than only in the lobby's pre-wager copy. Owned here, beside
+   .duel-pot, even though only Ante Up's scoreline currently renders it. */
+.duel-pot small {
+  margin-left: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 /* The board sizes itself; this only bounds it and centres it. A per-game

@@ -1,6 +1,5 @@
 import "server-only";
 import { randomUUID } from "crypto";
-import type { StakesTier } from "@/lib/game/tiers";
 import type { DuelSeat } from "@/lib/pvp/match-contract";
 import { adminClient } from "./supabase-admin";
 
@@ -27,7 +26,7 @@ export interface StoredPvpMatch<TState = unknown> {
   game: string;
   /** Indexed by seat: [seat 0, seat 1]. Ordered, never sorted -- the seat is part of the game. */
   players: [string, string];
-  tier: StakesTier;
+  tier: string;
   /** Per player. The pot is stake * 2. */
   stake: number;
   status: PvpMatchStatus;
@@ -82,7 +81,7 @@ function fromRow<TState>(row: MatchRow): StoredPvpMatch<TState> {
     id: String(row.id),
     game: String(row.game),
     players: [String(row.player0_id), String(row.player1_id)],
-    tier: String(row.tier) as StakesTier,
+    tier: String(row.tier),
     stake: Number(row.stake),
     status: String(row.status) as PvpMatchStatus,
     winnerSeat: row.winner_seat === null ? null : (Number(row.winner_seat) as DuelSeat),
@@ -164,7 +163,7 @@ export async function getPvpMatchById<TState>(id: string): Promise<StoredPvpMatc
 export async function createPvpMatch<TState>(input: {
   game: string;
   players: [string, string];
-  tier: StakesTier;
+  tier: string;
   stake: number;
   state: TState;
 }): Promise<StoredPvpMatch<TState>> {
@@ -271,4 +270,107 @@ export async function advancePvpMatch<TState>(
     .maybeSingle();
   if (error) throw new Error(`Could not save that match: ${error.message}`);
   return data ? fromRow<TState>(data as MatchRow) : null;
+}
+
+// ---- head-to-head record -----------------------------------------------
+
+/** One player's record against one opponent, across every duel game combined. */
+export interface DuelRecord {
+  wins: number;
+  losses: number;
+  draws: number;
+}
+
+/**
+ * How many recent settled matches feed a head-to-head record, on each side of
+ * the player/opponent pair.
+ *
+ * A bound rather than every row ever played, matching FRIENDS_PAGE_SIZE's
+ * philosophy elsewhere in this app: the record is a badge in a friends list,
+ * not an archive, and an unbounded scan over years of matches would cost more
+ * than the number is worth.
+ */
+export const DUEL_RECORD_MATCH_LIMIT = 500;
+
+/**
+ * A player's record against every opponent they have settled a duel with,
+ * derived from pvp_matches rather than a maintained counter -- see the doc
+ * comment on the migration that indexes this.
+ *
+ * `opponentIds`, when given, narrows both queries to that set (the friends
+ * drawer's only caller passes its own friend list) -- without it, a player
+ * who has duelled far more strangers than friends pays for a scan-and-discard
+ * over rows nobody reads, and a real friend's older matches could fall outside
+ * DUEL_RECORD_MATCH_LIMIT because unrelated stranger duels crowded them out.
+ *
+ * Two queries, not one `or()`, for the same reason getFriendsOverview's
+ * asA/asB split is two queries: each one uses its own partial index
+ * (pvp_matches_player0_settled_idx / _player1_settled_idx), where a single
+ * `or()` would leave the planner no good index to pick.
+ */
+export async function getDuelRecordsAgainst(
+  profileId: string,
+  opponentIds?: string[],
+): Promise<Map<string, DuelRecord>> {
+  const records = new Map<string, DuelRecord>();
+  const tally = (opponentId: string, outcome: "win" | "loss" | "draw") => {
+    const current = records.get(opponentId) ?? { wins: 0, losses: 0, draws: 0 };
+    if (outcome === "win") current.wins += 1;
+    else if (outcome === "loss") current.losses += 1;
+    else current.draws += 1;
+    records.set(opponentId, current);
+  };
+  // An empty filter means "nobody to look up", not "everybody" -- return
+  // early rather than let `.in("...", [])` reach Postgres.
+  if (opponentIds && opponentIds.length === 0) return records;
+  const wanted = opponentIds ? new Set(opponentIds) : null;
+
+  const supabase = adminClient();
+  if (!supabase) {
+    const mine = [...memoryMatches.values()]
+      .filter((match) => match.status === "settled" && (match.players[0] === profileId || match.players[1] === profileId))
+      .sort((a, b) => (b.settledAt ?? "").localeCompare(a.settledAt ?? ""))
+      .slice(0, DUEL_RECORD_MATCH_LIMIT);
+    for (const match of mine) {
+      const seat = match.players[0] === profileId ? 0 : 1;
+      const opponentId = match.players[seat === 0 ? 1 : 0];
+      if (wanted && !wanted.has(opponentId)) continue;
+      const outcome = match.winnerSeat === null ? "draw" : match.winnerSeat === seat ? "win" : "loss";
+      tally(opponentId, outcome);
+    }
+    return records;
+  }
+
+  const [asPlayer0, asPlayer1] = await Promise.all([
+    (() => {
+      let query = supabase
+        .from("pvp_matches")
+        .select("player1_id, winner_seat")
+        .eq("player0_id", profileId)
+        .eq("status", "settled");
+      if (opponentIds) query = query.in("player1_id", opponentIds);
+      return query.order("settled_at", { ascending: false }).limit(DUEL_RECORD_MATCH_LIMIT);
+    })(),
+    (() => {
+      let query = supabase
+        .from("pvp_matches")
+        .select("player0_id, winner_seat")
+        .eq("player1_id", profileId)
+        .eq("status", "settled");
+      if (opponentIds) query = query.in("player0_id", opponentIds);
+      return query.order("settled_at", { ascending: false }).limit(DUEL_RECORD_MATCH_LIMIT);
+    })(),
+  ]);
+  if (asPlayer0.error) throw new Error(`Could not load duel record: ${asPlayer0.error.message}`);
+  if (asPlayer1.error) throw new Error(`Could not load duel record: ${asPlayer1.error.message}`);
+
+  for (const row of asPlayer0.data ?? []) {
+    const winnerSeat = row.winner_seat === null ? null : Number(row.winner_seat);
+    tally(String(row.player1_id), winnerSeat === null ? "draw" : winnerSeat === 0 ? "win" : "loss");
+  }
+  for (const row of asPlayer1.data ?? []) {
+    const winnerSeat = row.winner_seat === null ? null : Number(row.winner_seat);
+    tally(String(row.player0_id), winnerSeat === null ? "draw" : winnerSeat === 1 ? "win" : "loss");
+  }
+  return records;
 }

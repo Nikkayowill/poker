@@ -30,12 +30,13 @@
  *   sat at 500 and coin flip at 250, so the hub quoted prices no button in
  *   either game could charge -- the third and fourth times this went wrong
  *   (Hi-Lo's placeholder was the first). Price a new row off the ladder or
- *   leave it at 0. For a duel it is a floor, not a price: the challenger picks
- *   the tier, so the floor renders it as "from N".
+ *   leave it at 0. For a duel it is a floor, not a price: the challenger names
+ *   any wager at or above MIN_DUEL_STAKE, so the floor renders it as "from N".
  * - A blurb must not promise a mechanic the game lacks. Hi-Lo's said "ride the
  *   streak" when there was no streak.
  */
 
+import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 export type ArcadeGameId =
@@ -52,17 +53,24 @@ export type ArcadeGameId =
   | "chess-duel"
   | "checkers-duel"
   | "trivia-showdown"
-  | "word-race";
+  | "word-race"
+  | "ante-up-sudoku";
 
 /**
  * `casino` stakes Gold against the house on a chance outcome; `puzzle` is a
  * once-a-day free round; `duel` stakes Gold against another PLAYER in a
- * skill/social match, winner takes the pot -- see lib/pvp/. The split is what
- * decides whether a row is wallet-gated at all and how its "Play" button
- * behaves (deal immediately vs. open a challenge lobby), so it is a field
- * rather than something inferred from entryCost being zero.
+ * skill/social match, winner takes the pot -- see lib/pvp/; `wager` stakes
+ * Gold against your OWN performance -- beat a timed challenge or forfeit the
+ * wager, see lib/arcade/ante-up.ts. `wager` is not `casino` wearing a
+ * different name: nothing here is decided by odds the house sets, only by
+ * whether the challenge gets beaten, which is the same "skill, not chance"
+ * line that got the pure-chance games cut in the first place. The split is
+ * what decides whether a row is wallet-gated at all and how its "Play"
+ * button behaves (deal immediately vs. open a challenge lobby vs. open a
+ * wager step), so it is a field rather than something inferred from
+ * entryCost being zero.
  */
-export type ArcadeGameKind = "casino" | "puzzle" | "duel";
+export type ArcadeGameKind = "casino" | "puzzle" | "duel" | "wager";
 
 /**
  * `retired` is 2026-08-12's cut of every pure-chance-against-the-house game
@@ -215,7 +223,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     name: "Chess",
     blurb: "1v1, winner takes the pot",
     kind: "duel",
-    entryCost: 1000,
+    entryCost: MIN_DUEL_STAKE,
     status: "live",
     href: "/games/chess",
   },
@@ -224,7 +232,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     name: "Checkers",
     blurb: "1v1, winner takes the pot",
     kind: "duel",
-    entryCost: 1000,
+    entryCost: MIN_DUEL_STAKE,
     status: "live",
     href: "/games/checkers",
   },
@@ -233,7 +241,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     name: "Trivia Showdown",
     blurb: "Multiple choice, fastest correct answer wins",
     kind: "duel",
-    entryCost: 1000,
+    entryCost: MIN_DUEL_STAKE,
     status: "live",
     href: "/games/trivia",
   },
@@ -242,9 +250,22 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     name: "Word Race",
     blurb: "Unscramble it before they do",
     kind: "duel",
-    entryCost: 1000,
+    entryCost: MIN_DUEL_STAKE,
     status: "live",
     href: "/games/word-race",
+  },
+  // ---- Ante Up: a solo skill wager against the clock, not another player
+  // and not the house's fixed odds -- see lib/arcade/ante-up.ts. entryCost is
+  // 0 because a wager row's floor IS free: practice costs nothing, and
+  // naming any wager at all is what the player opts into on the page itself.
+  {
+    id: "ante-up-sudoku",
+    name: "Ante Up: Sudoku",
+    blurb: "Beat the clock, cash out up to 10x",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/ante-up-sudoku",
   },
 ];
 
@@ -270,7 +291,11 @@ export function canAffordArcadeGame(game: ArcadeGame, wallet: ArcadeWallet): boo
 
 /** What the row prints where a table tile would print its buy-in. */
 export function arcadeEntryLabel(game: ArcadeGame): string {
-  return game.entryCost <= 0 ? "Free daily" : game.entryCost.toLocaleString();
+  if (game.entryCost > 0) return game.entryCost.toLocaleString();
+  // A puzzle's zero is "there is nothing to wager here"; a wager row's zero
+  // is "you get to choose" -- the same number means opposite things, so it
+  // needs two different sentences rather than one that is wrong for either.
+  return game.kind === "wager" ? "Free to play" : "Free daily";
 }
 
 /**
@@ -292,12 +317,16 @@ export function arcadeBlockedReason(
 
 /**
  * The floor, split the way the page presents it: free dailies, then head-to-
- * head duels, then what is left of the house games.
+ * head duels, then solo skill wagers, then what is left of the house games.
  *
  * The split is on `kind`, not on `entryCost > 0`, and that distinction is the
  * whole reason `kind` is a field rather than something inferred -- a puzzle is
  * free because it is a puzzle, and a casino game priced at 0 by mistake would
- * otherwise silently promote itself into the free section.
+ * otherwise silently promote itself into the free section. `wager` gets its
+ * own bucket for the same reason `duel` did: it is priced at 0 (a floor, not
+ * a price -- the player names the real wager on the page) but is not free the
+ * way a puzzle is, and lumping it into either the free or the casino section
+ * would misdescribe it in both.
  *
  * Retired and coming-soon entries are both dropped: `live` is the filter, so a
  * game that stops being offered leaves the floor by changing one field, and a
@@ -307,12 +336,14 @@ export function arcadeBlockedReason(
 export function splitArcadeFloor(games: readonly ArcadeGame[] = ARCADE_GAMES): {
   free: ArcadeGame[];
   duels: ArcadeGame[];
+  wagers: ArcadeGame[];
   staked: ArcadeGame[];
 } {
   const live = games.filter((game) => game.status === "live");
   return {
     free: live.filter((game) => game.kind === "puzzle"),
     duels: live.filter((game) => game.kind === "duel"),
+    wagers: live.filter((game) => game.kind === "wager"),
     staked: live.filter((game) => game.kind === "casino"),
   };
 }
@@ -333,16 +364,16 @@ export function arcadeFloorSummary(games: readonly ArcadeGame[] = ARCADE_GAMES):
   staked: number;
   previewNames: string[];
 } {
-  const { free, duels, staked } = splitArcadeFloor(games);
+  const { free, duels, wagers, staked } = splitArcadeFloor(games);
   return {
     free: free.length,
-    // Duels are staked Gold too -- the tile's second number is "how many cost
-    // something", and splitting it further would need a third line of copy on
-    // a tile that has room for two.
-    staked: duels.length + staked.length,
+    // Duels and wagers are staked Gold too -- the tile's second number is
+    // "how many cost something", and splitting it further would need a third
+    // line of copy on a tile that has room for two.
+    staked: duels.length + wagers.length + staked.length,
     // Free first, matching the order the floor puts them in, so the tile and
     // the page it opens do not disagree about what the arcade leads with.
-    previewNames: [...free, ...duels, ...staked]
+    previewNames: [...free, ...duels, ...wagers, ...staked]
       .slice(0, FLOOR_PREVIEW_COUNT)
       .map((game) => game.name),
   };

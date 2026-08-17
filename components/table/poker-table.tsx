@@ -1031,6 +1031,19 @@ export function PokerTable({
     return <div style={{ width: "100vw", height: "100dvh", backgroundColor: "#0b0c0d" }} />;
   }
 
+  if (!landscape) {
+    return (
+      <main className="game-shell orientation-gate-shell">
+        <div className="orientation-gate" role="status" aria-live="polite">
+          <span className="orientation-gate-mark"><StackChipsMark size={44} /></span>
+          <h1>Turn your phone sideways</h1>
+          <p>StackChips tables are available in landscape mode.</p>
+          <small>Rotate your device to continue playing.</small>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="game-shell">
       {/* Gameplay only. The spec puts three things in the table HUD -- logo,

@@ -62,6 +62,39 @@
   z-index: 4;
 }
 
+/* There is no portrait composition for this room yet. The client gates the
+   table before mounting it and asks the player to rotate, while the Classic
+   renderer remains available in the codebase for a future mobile decision. */
+.orientation-gate-shell {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 24px;
+  background: #0b0c0d;
+  color: var(--ink);
+  text-align: center;
+}
+
+.orientation-gate {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  max-width: 320px;
+}
+
+.orientation-gate-mark { color: var(--brand-gold-light); }
+.orientation-gate h1 {
+  margin: 0;
+  font: 400 26px/1.1 Georgia, "Times New Roman", serif;
+}
+.orientation-gate p,
+.orientation-gate small {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.orientation-gate small { font-size: 12px; }
+
 .scene-room-racetrack .poker-rail,
 .scene-room-racetrack .poker-felt {
   position: absolute;

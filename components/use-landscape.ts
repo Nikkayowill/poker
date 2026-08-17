@@ -19,10 +19,9 @@
  *
  * WHAT USES IT: the 2.5D racetrack table is landscape-only. Its table is 2:1
  * and in a portrait frame the felt collapses to a ~58px sliver with the
- * opponents' nameplates on the cloth, so in portrait the renderer resolves to
- * the classic table instead (see `resolveTableRenderer`). Rotating back
- * restores it on the spot, because this is a subscription and not a snapshot
- * taken once at mount.
+ * opponents' nameplates on the cloth, so PokerTable shows an orientation gate
+ * instead of mounting a different renderer. Rotating back restores it on the
+ * spot, because this is a subscription and not a snapshot taken once at mount.
  */
 
 import { useSyncExternalStore } from "react";

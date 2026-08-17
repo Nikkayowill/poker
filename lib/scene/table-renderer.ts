@@ -9,9 +9,9 @@
  * turn-clock fuse, every sound) is DOM above the canvas and does not know or
  * care which room is underneath it.
  *
- * The 2.5D racetrack is the only shipped table. The legacy renderer values are
- * still accepted as wire/storage values so an older browser preference cannot
- * bring the removed Classic or 3D rooms back.
+ * The 2.5D racetrack is the only selectable table. The legacy renderer values
+ * remain in the type and implementation so they can be restored later, but
+ * the client does not expose them or mount them for gameplay.
  *
  * In `lib/` rather than beside either renderer because `vitest.config.ts`
  * collects only `lib/` and `app/` — the same reason `bet-style.ts`, whose
@@ -142,6 +142,9 @@ export function resolveTableRenderer(
 ): TableRenderer {
   void preference;
   void webglAvailable;
+  // Portrait is blocked by PokerTable's orientation gate. Keep resolving to
+  // the one active room so the removed Classic renderer cannot appear through
+  // a viewport fallback.
   void landscape;
   return RACETRACK_RENDERER;
 }

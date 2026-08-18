@@ -437,7 +437,7 @@
 }
 
 @media (max-width: 680px) {
-  .admin-shell { padding-top: 20px; }
+  .admin-shell { padding-top: calc(20px + var(--safe-top)); }
   .admin-header { align-items: flex-start; flex-direction: column; }
   .admin-header-actions { width: 100%; flex-wrap: wrap; }
   .admin-header-actions > * { flex: 1 1 auto; text-align: center; }

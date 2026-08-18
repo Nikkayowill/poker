@@ -241,6 +241,12 @@
   min-height: 100vh;
   min-height: 100svh;
   padding: 32px clamp(16px, 4vw, 48px) 64px;
+  /* Same idiom as .bj-shell/.collection-shell -- a moderator opening this on
+     a phone shouldn't lose the header under the status bar either. The
+     mobile override below (14-admin.css) replaces padding-top outright, so
+     it gets the same treatment there. */
+  padding-top: calc(32px + var(--safe-top));
+  padding-bottom: calc(64px + var(--safe-bottom));
   color: var(--ink);
   font-variant-numeric: tabular-nums;
   background:

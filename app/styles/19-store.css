@@ -28,6 +28,11 @@
   max-width: 780px;
   margin: 0 auto;
   padding: 32px clamp(16px, 4vw, 48px) 72px;
+  /* Same idiom as .bj-shell/.collection-shell: grow past the notch/status
+     bar and the home indicator rather than absorb them. Shared by GoldStore
+     too, which reuses this class wholesale. */
+  padding-top: calc(32px + var(--safe-top));
+  padding-bottom: calc(72px + var(--safe-bottom));
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }

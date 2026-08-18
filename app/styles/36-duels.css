@@ -36,7 +36,11 @@
   gap: 20px;
   width: min(960px, 100%);
   margin: 0 auto;
-  padding: 0 20px max(24px, var(--safe-bottom));
+  /* Top must clear the notch/status bar the same way .floor-shell's own
+     padding does -- this shell has no other top edge, so a bare 0 here put
+     the "← Ante Up" back link flush under the status bar/battery icon on an
+     installed iOS PWA. */
+  padding: calc(16px + var(--safe-top)) 20px max(24px, var(--safe-bottom));
   min-height: 100dvh;
 }
 
@@ -379,9 +383,12 @@
 
 @media (max-width: 640px) {
   .duel-shell {
-    padding: 0 12px max(16px, var(--safe-bottom));
+    padding: calc(12px + var(--safe-top)) 12px max(16px, var(--safe-bottom));
     gap: 14px;
   }
+
+  .duel-lobby { gap: 18px; }
+  .duel-panel { gap: 8px; }
 
   /* The pot is the one thing that must stay readable when the two names
      compete for the row; the labels under them go instead. */

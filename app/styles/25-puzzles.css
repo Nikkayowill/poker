@@ -343,4 +343,10 @@
   .cx-tile { min-height: 58px; }
   .wordle-key { min-height: 44px; font-size: 13px; }
   .puzzle-share-preview { font-size: 14px; }
+  /* Six rows at the desktop tile size don't leave room for the keyboard
+     under them on a short phone -- shrinking the tile is what buys that
+     room back, not shrinking the keyboard past its 44px touch floor. */
+  .wordle-tile { width: min(50px, 14.5vw); }
+  .wordle-grid, .wordle-keyboard { gap: 5px; }
+  .wordle-row, .wordle-keyrow { gap: 4px; }
 }

@@ -7,6 +7,12 @@
   width: min(820px, 100%);
   margin: 0 auto;
   padding: clamp(34px, 5vw, 64px) clamp(16px, 4vw, 48px) 80px;
+  /* Same idiom as .bj-shell/.collection-shell: grow past the notch/status
+     bar and the home indicator rather than absorb them. Shared by every
+     /legal/* document plus /about, /help and /how-to-play (43-site-info.css),
+     which all reuse this shell wholesale. */
+  padding-top: calc(clamp(34px, 5vw, 64px) + var(--safe-top));
+  padding-bottom: calc(80px + var(--safe-bottom));
   color: var(--ink);
 }
 

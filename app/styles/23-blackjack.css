@@ -368,6 +368,26 @@
     background: #0b1310;
   }
   .bj-action { min-height: 46px; padding: 0 10px; font-size: 12.5px; }
+
+  /* Sudoku, Wordle, Connections and Memory Match reuse .bj-shell but have no
+     docked .bj-controls bar -- only Blackjack/Hi-Lo do. The 126px reserved
+     above is real clearance for that fixed bar; on these four it was dead
+     space with nothing docked into it, and was most of why a daily puzzle's
+     grid+keypad forced the whole page to scroll on a phone. */
+  .sk-shell, .mm-shell, .puzzle-shell {
+    gap: 10px;
+    padding-bottom: calc(20px + var(--safe-bottom));
+  }
+
+  /* The explanatory paragraph above the grid -- true but not needed to play,
+     and on a short phone it was the difference between the keypad fitting
+     on screen and a player having to scroll mid-game to reach it. Wordle and
+     Connections never had this paragraph (their .puzzle-notice is a thin,
+     often-empty status line, not a fixed block of copy). */
+  .sk-shell .bj-practice-note,
+  .mm-shell .bj-practice-note {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -186,6 +186,42 @@ test.describe("safe-area insets", () => {
     }
   });
 
+  test("arcade/duel/menu shells clear the notch too", async ({ browser }) => {
+    // Regression for a real bug: .duel-shell (Chess/Checkers/Trivia/Word Race/
+    // Ante Up Sudoku) and the standalone page shells (.collection-shell,
+    // .leaderboard-shell, .legal-page, .support-panel-shell) each declared
+    // their own top padding instead of growing it by --safe-top, so on an
+    // installed iOS PWA the back link sat flush under the status bar/battery
+    // icon. .game-header/.lobby-header were already covered above; this is
+    // every other full-screen shell a player can land on outside a hand.
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await withInsets(context, PORTRAIT);
+    try {
+      const page = await context.newPage();
+      const routes: Array<{ path: string; back: string }> = [
+        { path: "/games/ante-up-sudoku", back: ".floor-back" },
+        { path: "/games/chess", back: ".floor-back" },
+        { path: "/collection", back: ".collection-back" },
+        { path: "/leaderboard", back: ".leaderboard-back" },
+        { path: "/legal/terms", back: ".legal-page-back" },
+        { path: "/store", back: ".support-panel-back" },
+      ];
+      for (const route of routes) {
+        await page.goto(route.path);
+        const back = page.locator(route.back).first();
+        await expect(back, `${route.path}: ${route.back} never became visible`).toBeVisible();
+        const box = await back.boundingBox();
+        // Playwright's boundingBox() returns {x, y, width, height} -- not a
+        // DOMRect, so this is .y, not .top.
+        if (!box) throw new Error(`${route.path}: no bounding box for ${route.back}`);
+        expect(box.y, `${route.path}: back link starts inside the status bar strip`)
+          .toBeGreaterThanOrEqual(PORTRAIT.top - 0.5);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
   test("a landscape phone keeps its side insets clear", async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width: 844, height: 390 } });
     await withInsets(context, LANDSCAPE);

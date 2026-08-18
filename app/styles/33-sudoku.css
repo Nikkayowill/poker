@@ -166,12 +166,19 @@
 .sk-player-head { justify-content: center; }
 
 @media (max-width: 640px) {
-  .sk-grid { width: min(100%, 340px); }
-  .sk-pad { width: min(100%, 340px); }
+  .sk-grid { width: min(100%, 300px); }
+  .sk-pad { width: min(100%, 300px); }
   /* 44px, not the old 38 -- this pad is the one control on the page a thumb
      actually taps repeatedly, and every other keypad in the app (Wordle,
      the action bar) already holds that floor. */
   .sk-key { min-height: 44px; font-size: 15px; }
+}
+
+@media (max-width: 420px) {
+  /* A short phone (SE-class, 667px tall) still needs a bit more back after
+     the 640px cap -- the grid is what has room to give it, not the keypad. */
+  .sk-grid { width: min(100%, 270px); }
+  .sk-pad { width: min(100%, 270px); }
 }
 
 @media (prefers-reduced-motion: reduce) {

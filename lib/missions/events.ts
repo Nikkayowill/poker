@@ -41,6 +41,8 @@ export function missionSignalsForEvent(event: MissionEvent): MissionSignal[] {
     }
     case "duel_won":
       return playedSomething("duels_won");
+    case "cribbage_won":
+      return playedSomething("cribbage_hands_won");
     case "puzzle_completed":
       return playedSomething("puzzles_completed");
     case "level_gained":

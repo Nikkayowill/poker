@@ -54,6 +54,7 @@ export type ArcadeGameId =
   | "checkers-duel"
   | "trivia-showdown"
   | "word-race"
+  | "cribbage-table"
   | "ante-up-sudoku";
 
 /**
@@ -254,6 +255,19 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     status: "live",
     href: "/games/word-race",
   },
+  // Not a 1v1 -- a 3-4 player free-for-all table, still winner-takes-the-
+  // pot with no house. `kind: "duel"` is a UI category ("staked against
+  // other players, opens a lobby rather than dealing"), not a literal
+  // headcount, so it fits here without a new kind or section.
+  {
+    id: "cribbage-table",
+    name: "Cribbage",
+    blurb: "3-4 players, winner takes the pot",
+    kind: "duel",
+    entryCost: MIN_DUEL_STAKE,
+    status: "live",
+    href: "/games/cribbage",
+  },
   // ---- Ante Up: a solo skill wager against the clock, not another player
   // and not the house's fixed odds -- see lib/arcade/ante-up.ts. entryCost is
   // 0 because a wager row's floor IS free: practice costs nothing, and
@@ -390,6 +404,9 @@ export function arcadeActionLabel(game: ArcadeGame, wallet: ArcadeWallet): strin
     default:
       // A duel is not dealt on the click -- it opens a challenge lobby, and
       // the button should say so rather than implying a round starts.
-      return game.kind === "duel" ? "Challenge" : "Play";
+      // Cribbage is `kind: "duel"` too (see its own catalog entry) but opens
+      // a joinable table list, not a 1:1 challenge -- "Challenge" would name
+      // an action the button does not actually offer.
+      return game.kind === "duel" && game.id !== "cribbage-table" ? "Challenge" : "Play";
   }
 }

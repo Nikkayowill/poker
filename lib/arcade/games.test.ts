@@ -39,6 +39,7 @@ describe("arcade catalogue", () => {
       "Checkers",
       "Trivia Showdown",
       "Word Race",
+      "Cribbage",
       "Ante Up: Sudoku",
     ]);
   });

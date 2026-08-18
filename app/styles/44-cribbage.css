@@ -1,0 +1,285 @@
+/* Cribbage: narrows 36-duels.css's shared shell the same way 37-40 narrow it
+ * for the 1v1 games -- .duel-shell, .duel-lobby, .duel-panel, .duel-tiers,
+ * .duel-avatar, .duel-match, .duel-board, .duel-controls, .duel-resign and
+ * .duel-result all come from there and are reused as-is. Cascades after 43
+ * (the next free number), which is fine: CSS specificity here is purely
+ * import order, not numeric proximity to 36-40.
+ *
+ * Two things cribbage needs that no 1v1 duel does, and this file's only real
+ * additions: a waiting room (N-of-4 seated, a host-start button) and an
+ * open-table lobby list, in place of duel-shell's challenge/accept list.
+ */
+
+.crib-open-table .duel-challenge-identity strong {
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------ waiting room */
+
+.crib-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.crib-seats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crib-seat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--brand-surface);
+}
+
+.crib-seat-open {
+  box-shadow: inset 0 0 0 1px var(--rule);
+  color: var(--text-muted);
+}
+
+.crib-seat-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.crib-waiting-controls {
+  gap: 12px;
+}
+
+/* ------------------------------------------------------------------- match */
+
+.crib-scoreline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+}
+
+.crib-score-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 5px;
+  border-radius: 999px;
+  background: var(--brand-surface);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+
+.crib-score-chip .duel-avatar {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  font-size: 10px;
+}
+
+.crib-score-chip-you {
+  box-shadow: inset 0 0 0 1px var(--accent-edge);
+  color: var(--text-primary);
+}
+
+/* --------------------------------------------------------------- the board */
+
+.crib-board {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 560px;
+}
+
+.crib-hand-number {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.crib-reveal {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand-gold) 10%, var(--brand-surface));
+}
+
+.crib-reveal summary {
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.crib-reveal ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crib-reveal-entry {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.crib-table-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+}
+
+.crib-crib,
+.crib-starter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.crib-label {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.crib-crib-owner {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.crib-pegging {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--brand-surface);
+}
+
+.crib-pegging-pile {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  min-height: 44px;
+}
+
+.crib-count {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.crib-count strong {
+  font-size: 22px;
+  color: var(--text-primary);
+}
+
+.crib-count-yours strong {
+  color: var(--brand-gold);
+}
+
+.crib-turn-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.crib-opponents {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+}
+
+.crib-opponent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.crib-opponent-name {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.crib-opponent-cards {
+  display: flex;
+}
+
+.crib-opponent-cards .playing-card {
+  margin-left: -14px;
+}
+.crib-opponent-cards .playing-card:first-child {
+  margin-left: 0;
+}
+
+.crib-your-hand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.crib-hand-prompt {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.crib-hand-cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.crib-card-button {
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+
+.crib-card-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.crib-card-button:not(:disabled):hover {
+  transform: translateY(-4px);
+}
+
+.crib-go {
+  padding: 7px 24px;
+}
+
+@media (max-width: 640px) {
+  .crib-table-area {
+    gap: 16px;
+  }
+  .crib-board {
+    gap: 12px;
+  }
+}

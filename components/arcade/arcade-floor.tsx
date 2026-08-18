@@ -143,13 +143,16 @@ export function ArcadeFloor() {
       {duels.length > 0 && (
         <section className="floor-section" aria-labelledby="floor-duels">
           {/* Its own section, above the house games, because a duel is a
-              different proposition again: the Gold goes to the other PLAYER,
-              not to the house, and nobody is playing against fixed odds. That
-              is the whole reason these exist, so it gets said in the header
-              rather than left for the player to infer from a blurb. */}
-          <h2 className="floor-section-head" id="floor-duels">Head to head</h2>
+              different proposition again: the Gold goes to the other
+              PLAYER(S), not to the house, and nobody is playing against fixed
+              odds. That is the whole reason these exist, so it gets said in
+              the header rather than left for the player to infer from a
+              blurb. Worded for "however many are seated" rather than "both"
+              since Cribbage joined this section as a 3-4 player table, not a
+              1v1 -- see its own catalog entry. */}
+          <h2 className="floor-section-head" id="floor-duels">Player vs. player</h2>
           <p className="floor-section-note">
-            Both players ante. Winner takes the pot — the house takes nothing.
+            Everyone seated antes in. Winner takes the pot — the house takes nothing.
           </p>
           <div className="floor-free-grid">
             {duels.map((game) => (

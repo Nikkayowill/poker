@@ -23,6 +23,8 @@ export function achievementCountersForEvent(event: DomainEvent): AchievementCoun
   switch (event.kind) {
     case "duel_won":
       return [{ metric: "duels_won", delta: 1 }];
+    case "cribbage_won":
+      return [{ metric: "cribbage_hands_won", delta: 1 }];
     case "puzzle_completed":
       return [{ metric: "puzzles_completed", delta: 1 }];
     case "poker_hand_played":

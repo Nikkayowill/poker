@@ -44,6 +44,50 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### Cribbage: a 3-4 player free-for-all table (2026-08-18)
+- Kayo's brother plays cribbage with a group, not 1v1 — this is a new N-seat (3 or 4), Gold-wagered,
+  winner-take-all table, not a fifth `lib/pvp/` duel. `pvp-match-service.ts`/`pvp_matches` are
+  2-player at every layer (`DuelSeat = 0|1`, `player0_id`/`player1_id` fixed columns, a trigger
+  written for exactly two ordered columns), confirmed by reading it before building anything —
+  cribbage gets its own parallel contract/store/service instead: `lib/cribbage/table-contract.ts`
+  (no registry — one N-seat game doesn't justify one), `lib/server/cribbage-table-store.ts` +
+  `cribbage-service.ts`, `cribbage_tables`/`cribbage_table_players` (a join table, mirroring
+  `game_seats` — the one existing precedent for "N humans at one row" — not a `players uuid[]`
+  column). Full standard rules: deal 5, discard 1 each to the crib (3-handed burns one extra card
+  from the deck so the crib is still exactly 4; 4-handed's 4×1 already is), pegging to 31, hand+crib
+  counting, race to 121. Counting has no player decisions in it, so there is no "counting" phase or
+  move — the instant pegging empties every hand, `lib/cribbage/engine.ts`'s `concludeHand` scores
+  everything automatically (non-dealers in turn order, then the dealer, then the dealer's crib,
+  stopping mid-count the instant someone crosses 121) and deals straight into the next hand.
+- A table caps at 4 and auto-starts the instant the 4th seat fills; once 3 are seated the host gets
+  a manual "Start now" button instead of waiting. Both routes through the SAME status-guarded
+  Postgres function (`deal_cribbage_table`) — one code path that can deal a hand into existence, per
+  the same reasoning `advancePvpMatch`'s version guard exists for. Human-only, like the duels — no
+  bot fill, unlike poker's continuous tables (an explicit call, not an oversight: a bot winning a
+  share of a real Gold pot was judged worse than a table someone has to wait on).
+- New `DomainEvent` kind `cribbage_won`, not folded into `duel_won` — that event's own catalog copy
+  says "PvP duels" ("Win 10 PvP duels"), and silently counting a 3-4 player table against it would
+  misword shipped text and dilute a metric that means something structurally different (always 1v1).
+  `cribbage_hands_won` mission/achievement plumbing is wired (`lib/missions/events.ts`,
+  `lib/achievements/events.ts`) with **no catalog rows yet** — `apply_achievement_counter` accumulates
+  with no catalog row required, so tiers can land in a later migration without touching code again.
+- Discovery is an open-table list (create/join, closer to poker's quick-play), not the friends
+  drawer's single-target `?challenge=<id>` picker — that flow has nowhere to carry 2-3 extra invitees.
+  Inviting specific friends to a cribbage table is a real gap, same class as the existing "no
+  pick-a-friend-and-invite flow for duels either" gap this file already tracked. Also not done this
+  pass: blocking a blocked/blocking relationship from joining someone's open table (the duel flow
+  checks this for a direct challenge; an open table has no single target to check against without
+  scanning every seated player, and it was cut for scope, not forgotten).
+- Resigning ends the WHOLE table immediately (pot to whichever remaining seat has the higher score)
+  rather than letting the rest keep playing — cribbage's pegging/counting order depends on every
+  seat, so there is no well-defined "the other 2-3 keep going" the way a poker fold has. A genuine
+  judgment call, flagged as one in `lib/cribbage/engine.ts`'s `resignCribbage`.
+- Stake reuses `MIN_DUEL_STAKE` (the same floor Chess/Checkers/etc. use), not a new tier ladder.
+- Caught by `engine.test.ts` before it ever touched money: hitting exactly 31 during pegging has to
+  reset the count IMMEDIATELY, even while another seat still holds a card that would have fit — a
+  first draft only reset once *everyone* was stuck (conflating 31 with a "go"), which let pegging
+  continue past 31 as if the count were still live.
+
 ### Site footer + info pages (2026-08-16)
 - Kayo wanted the lobby to feel like "a genuine web gaming platform" (PlayPokerGO's menu was the
   reference) rather than a single-purpose app. Root problem: five `/legal/*` pages already existed

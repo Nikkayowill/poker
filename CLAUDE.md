@@ -8,15 +8,6 @@ StackChips (`stackchips.app`) is a Next.js 16/React 19/strict TypeScript six-max
 
 `components -> app/api -> lib/game -> lib/server -> memory | Supabase`
 
-- `app/`: App Router pages/API; `app/page.tsx` mounts `components/poker-app.tsx`.
-- `components/`: client state plus lobby, table, profile, store, admin UI.
-- `lib/game/`: pure engine/types/evaluator/timing/snapshot redaction.
-- `lib/server/`: game/profile/economy/session/admin persistence.
-- `lib/supabase/`: shared browser client and SSR helpers.
-- `supabase/migrations/`: imperative schema, RLS, RPCs, Realtime.
-- `app/styles/`: numbered cascade; `app/globals.css` fixes load order.
-- Tests: colocated Vitest units; `tests/e2e/` Playwright.
-
 Realtime carries only versioned invalidations; `components/poker-app.tsx` refetches the filtered snapshot. Browser requests contain intents only.
 
 ## Read first
@@ -30,6 +21,10 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 - Realtime: `lib/game/table-channel.ts`
 - DB/env: `supabase/migrations/`, `supabase/config.toml`, `.env.example`
 - Product constraints: `docs/game-loop.md`, `docs/launch-checklist.md`, `docs/security-audit.md`
+
+Subsystem-specific gotchas moved out of this always-loaded file into where they load on demand:
+`components/game3d/CLAUDE.md` (3D room), `lib/scene/CLAUDE.md` (2D table), `lib/scene/chips/CLAUDE.md`
+(chip system), `app/styles/CLAUDE.md` (styling contract), and the `deploy-checklist` skill (pre-merge/deploy).
 
 ## Rules
 
@@ -327,103 +322,6 @@ Hi-Lo keep independent copies deliberately (live, moving real Gold, not worth re
 Version columns double as the settlement idempotency key — a lost race must return null, and null
 must never pay out (this is what makes a double-clicked action, a retry, or two tabs settle once).
 
-### Deploy / migration checklist
-Learned the expensive way: `credit_gold`'s calling code shipped to production before its migration
-was applied, so every credit threw and was silently swallowed by a `.catch()` — a day of cash-outs
-and buy-in refunds paid nothing.
-- A migration and the code that calls it are one change; ship together. Before merging, run
-  `supabase migration list --linked` and confirm the migration is on the remote.
-- `main` is Vercel's production branch, not any feature branch — pushing elsewhere only produces a
-  Preview deploy. Verify a real deploy via `gh api repos/Nikkayowill/poker/deployments` (Production
-  environment) and against the live site itself, not just that the merge succeeded.
-- Run `git log origin/main..HEAD` before opening a PR — this tree is shared with concurrent Claude
-  sessions, and a clean `git status` says nothing about what's already committed on your branch.
-
-### 3D room facts
-- Runs `frameloop="always"` and must — drei's `useAnimations` advances mixers from `useFrame`, so
-  demand-mode freezes every seated character. `awake()` reads an "is there pending work" registry
-  flag, not recent-paint timing (a shadow-mapped scene under headless SwiftShader renders ~2fps and a
-  timing-based check reported it permanently asleep).
-- No skybox/backdrop wall is possible beyond the balustrade ring above — every frustum ray hits the
-  floor at every shipped aspect. `lib/game3d/floor-environment.ts` derives floor radius from the
-  camera fit instead of a wall.
-- Camera fit (`frameCamera`) is a numeric search (bisect distance, Newton-step the aim), not a closed
-  form — a closed form summed two upper bounds that never co-occur and under-filled every landscape
-  aspect.
-- Table felt is 2:1 stadium-proportioned (a real six-max table's ratio), derived from
-  `TABLE_WIDTH_M`, not independently typed.
-- Avatars' hands rest on the felt aimed at their own cards (`lib/game3d/hand-anchors.ts`/
-  `arm-ik.ts`/`hand-rig.ts`) — five of six seats are physically out of reach of their own cards; the
-  fix aims the wrist a hand-length back from the card rather than leaning the torso (tried and
-  reverted — a lean big enough to matter reads as hunching and is unstable in a feedback loop).
-  Finger curl is rebuilt per-digit from each joint's own bind-pose geometry, not a uniform curl
-  applied to all five (which read as gripping a tube — "holding a flute").
-- Chips resolve to explicit per-chip slots (`lib/game3d/chip-instance-model.ts:pileSlot`), not a
-  golden-angle scatter — a resting pile's destination and a flight's landing target are the same
-  computed value now, which is what stopped chips reading as stacked inside each other.
-- 3D character ownership: 6 free starter avatars; Claira/Donni/Jimmy/Kenji unlock at 10/50/150/500
-  lifetime hands won; Derek/Oscar/Victor/Marcus cost 1m–6m Gold (`lib/cosmetics/catalog.ts`). Never
-  default a generated cosmetic entry to `price: 0` — free catalogue entries are implicit ownership.
-- Never call `renderer.forceContextLoss()` in a React cleanup on any WebGL work here — with a
-  React-owned canvas plus StrictMode's double-mount, a force-lost context can't be re-acquired and
-  permanently breaks the second mount. `renderer.dispose()` alone is correct.
-
-### 2D table facts
-- Canvas 2D room (`lib/scene/`), not WebGL — the WebGL room is preserved on `archive/webgl-room` but
-  was explicitly reverted at the user's request; don't resurrect it without being asked. `three` is
-  uninstalled on `main`.
-- The room fits `.poker-rail`'s measured box (not the table wrap's raw width) and solves both radii
-  per breakpoint — a fixed radius ratio painted a pancake on portrait phones.
-- The pot sits 0.55 of the felt's depth away from the viewer, never at centre (a centred pot stacks
-  under the community cards).
-- Standing street bets rest at the bettor's own seat and sweep to centre only when the street turns;
-  the centre pile always renders `pot − Σ streetBet` so felt chips match the HUD number
-  (unit-tested invariant).
-
-### Chip system (`lib/scene/chips/`, rebuilt 2026-08-14)
-The 2D chip system was deleted and rebuilt from scratch; `chip-layer.ts`, `chip-physics.ts`,
-`chip-spring.ts` and `paint.ts` no longer exist. Both 2D renderers (classic ellipse + racetrack)
-share it through `ChipSpace`/`SceneProjection`. The 3D room's chips are separate and untouched.
-- **A chip is sized in pixels, not world units** (`chip-spec.ts`). The old system sized it in world
-  units and let the projection decide, which gave the side wall 1.7px on a desktop and 0.65px on a
-  phone — under a pixel there is no cylinder, which is the whole "flat, like a UI element" problem.
-  The wall is clamped to 3–4px and the radius floor (6px) is *derived* from it (`MIN_WALL_PX /
-  WALL_RATIO`), not chosen. `solveChipWorldRadius` runs once per fit and feeds **both** the layout
-  and the painter — clamping in the painter alone spaces the mound for one chip size and draws
-  another, and the columns overlap.
-- **Stack height is a screen-space offset**, not world Y: `RenderChip` carries a ground position and
-  an integer `stackIndex`, and the painter multiplies it by a pitch derived from that chip's own
-  drawn size. That is what pins the gap between stacked chips at 3–4px on every plate and at every
-  depth under the racetrack's perspective camera.
-- **Two populations that never mix** (`chip-scene.ts`). Permanent chips (pot mound, standing bets)
-  are pure layout and never move; transient chips are spawned, flown and destroyed. A chip joining
-  the pot is a transient chip that reveals its permanent chip on landing. The old `keepOnArrival`
-  flag left settled chips in the moving list carrying a live target — every "the pot twitched" bug
-  came from that and none are expressible now.
-- **The motion is an analytic spring on a clock** (`chip-motion.ts`), not an integrated one. It must
-  terminate exactly at t=1 or the demand loop can never sleep; `omega` is solved from the requested
-  overshoot so a preset's overshoot is exact, and every preset's residual at t=1 is under half a
-  pixel on the longest journey. Timings come from the *action* (`ChipMoveKind`: call 200ms → all-in
-  620ms), derived client-side in `bet-flight.ts` — deliberately not on the wire.
-- The landing squash is a fraction of the post-landing window, never a fixed millisecond count: a
-  fixed 110ms squash outlives every flight's remaining clock and the terminal snap chops it, so
-  chips arrive still visibly squashed.
-- Bet style (`bet-style.ts`) is now three *modifiers* over that one engine (arc, stagger, variance,
-  scatter), not three separate animations. It cannot reorder the action timings.
-- The pot is a **mound**, not a wall: columns capped at 9, up to 6 columns in a triangular footprint
-  that grows into depth as well as width, capped at 54 chips. A pot's size is meant to be readable
-  from the silhouette; the exact number is in the HUD.
-- Wall edge inserts are shaded most of the way to the wall's own value on purpose — at face
-  brightness, nine chips of unaligned marks turn a column into a checkerboard.
-- The denomination numeral only prints at radius ≥ 9px (racetrack, large desktop plates). Below that
-  it is 2–3px of cap height and reads as dirt; colour carries the denomination, which is what casino
-  chips are colour-coded for.
-- `app/dev/chips` is the bench: every denomination, stack height, pot silhouette and action's motion
-  at the classic room's own measured scales (desktop rail ≈ 44 px/unit, portrait phone rail ≈ 17,
-  large desktop ≈ 60). The racetrack has no fixed scale to bench against — its camera-derived
-  `scaleAt()` varies by viewport (`racetrack-scene.tsx`) rather than landing on one constant the way
-  the classic room's rail width does. Judge chip art there, at those scales, not zoomed.
-
 ### Bot / economy behavior
 - Bots leave/return voluntarily between hands (`BOT_VOLUNTARY_LEAVE_CHANCE`, never below 3 funded
   seats; `TABLE_FUNDED_FLOOR` = 6) — forced to 0 whenever `VITEST` is set regardless of env override,
@@ -450,19 +348,6 @@ share it through `ChipSpace`/`SceneProjection`. The 3D room's chips are separate
   Buy-Gold didn't touch any of their numbers. Verified 2026-08-13 when Buy-Gold was removed: worst
   case for anyone is bounded by the shorter of "12h since the last backstop claim" or "next UTC day,"
   never indefinite.
-
-### Styling contract
-- Chrome (everything except the table) is borderless: separation comes from a raised fill, real
-  shadow, and space — not 1px hairline borders. `--accent-edge` (inset ring) + `--accent-glow` stand
-  in for a border; `--rule` is the one fading-hairline token for dividers between items (never an
-  outline around one).
-- Palette: dark obsidian ground (`--brand-ink` `#0a0a0b`), brand purple/red/gold
-  (`#983fe0`/`#dc1413`/`#db9c0b`, sampled from the real logo) reserved for the mark and single
-  primary actions — not a wash across a whole surface. Table felt/gold (`05-game-header.css` through
-  `09-action-bar.css`, plus `16`/`17`/`99`) is untouched green felt and out of scope for chrome work.
-- A single unbalanced CSS block comment silently kills the **entire** stylesheet — PostCSS drops it,
-  and neither tsc nor eslint reads CSS. `stylesheets.test.ts` guards against an orphaned comment
-  delimiter.
 
 ### Known open items / gaps
 - M17 (chip cosmetics) is deliberately parked until the 3D sim is finished.

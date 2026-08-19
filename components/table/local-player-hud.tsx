@@ -61,6 +61,7 @@ export function LocalPlayerHud({
   handLabel,
   onSendReaction,
   reactionCooldown,
+  activeReaction,
 }: {
   /** The seat's name, not the profile's -- a bot-turned-human mid-hand or a
    * guest's session name is what the felt actually calls this seat. */
@@ -70,6 +71,7 @@ export function LocalPlayerHud({
   handLabel?: string | null;
   onSendReaction?: (reactionId: ReactionId) => void;
   reactionCooldown?: boolean;
+  activeReaction?: ReactionId | null;
 }) {
   const data = useProgression();
   const progression = data?.progression ?? null;
@@ -89,6 +91,7 @@ export function LocalPlayerHud({
             onSend={onSendReaction}
             disabled={reactionCooldown ?? false}
             trigger={avatar}
+            activeReaction={activeReaction}
           />
         ) : avatar}
         {progression && (

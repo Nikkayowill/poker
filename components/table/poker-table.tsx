@@ -1175,6 +1175,7 @@ export function PokerTable({
               handLabel={isRacetrack ? mySeat.handLabel : null}
               onSendReaction={isRacetrack ? onSendReaction : undefined}
               reactionCooldown={isRacetrack ? reactionCooldown : undefined}
+              activeReaction={isRacetrack ? reactions[mySeat.id]?.reactionId ?? null : null}
             />
           )}
           {/* The pot and the stakes, in the black space around the table

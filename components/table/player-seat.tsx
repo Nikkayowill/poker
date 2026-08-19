@@ -6,11 +6,12 @@ import Image from "next/image";
 import type { PublicSeat } from "@/lib/game/types";
 import { avatarFace } from "@/lib/cosmetics/catalog";
 import { dealDelayMs } from "@/lib/game/deal-choreography";
-import { isBotAway } from "@/lib/game/seat-presence";
+import { isBotAway, isChallengeableSeat } from "@/lib/game/seat-presence";
 import { isWinningCard } from "@/lib/game/winning-cards";
 import { reactionEmoji, reactionLabel } from "@/lib/game/reaction-channel";
 import type { SeatReaction } from "@/lib/game/use-table-reactions";
 import { missingArtwork } from "@/components/artwork-cache";
+import { ChallengeSeatControl } from "./challenge-seat-control";
 import { PlayingCard } from "./playing-card";
 import { SeatTimer } from "./seat-timer";
 
@@ -168,6 +169,12 @@ function SeatNameplate({
       ? { abbreviation: "BB", name: "Big Blind", amount: bigBlind }
       : null;
   const away = isBotAway(seat);
+  // Rendered once, regardless of which plate shape below is used -- both
+  // are a <div className="seat-plate ..."> and 08-seat.css anchors the
+  // trigger to that shared wrapper.
+  const challenge = isChallengeableSeat(seat) && seat.profileId
+    ? <ChallengeSeatControl profileId={seat.profileId} displayName={seat.name} />
+    : null;
   if (!seat.isMine && opponentHud) {
     const action = seat.lastAction
       && !/^(small blind|big blind)/i.test(seat.lastAction)
@@ -182,6 +189,7 @@ function SeatNameplate({
 
     return (
       <div className="seat-plate seat-opponent-hud">
+        {challenge}
         {seat.isCurrent && hasTurnTimer ? (
           <SeatTimer
             startedAt={turnStartedAt}
@@ -204,6 +212,7 @@ function SeatNameplate({
 
   return (
     <div className="seat-plate">
+      {challenge}
       <div className="seat-name-row">
         <strong>{seat.name}</strong>
         {seat.isMine && <span className="you-chip">You</span>}

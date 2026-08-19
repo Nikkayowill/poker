@@ -138,10 +138,23 @@ async function loadCatalog(now: number): Promise<AchievementDefinition[]> {
   return rows;
 }
 
+/** The catalog title for one achievement code, or null if it doesn't (or no
+ * longer does) exist. Reads through loadCatalog's cache rather than a second
+ * copy of the titles -- used by badge-store.ts to label an
+ * 'achievement-<code>' profile_badges row. */
+export async function achievementTitle(code: string, now: Date = new Date()): Promise<string | null> {
+  const catalog = await loadCatalog(now.getTime());
+  return catalog.find((definition) => definition.code === code)?.title ?? null;
+}
+
 // ---- per-player reads -----------------------------------------------------
 
-/** Every achievement this profile has already been granted, code -> awardedAt ISO. */
-async function grantedCodes(profileId: string): Promise<Map<string, string>> {
+/** Every achievement this profile has already been granted, code -> awardedAt ISO.
+ * Exported for lib/server/badge-store.ts's memory-mode branch: memory mode has
+ * no profile_badges table to mirror (see stats-store.ts's rollover comment for
+ * the season-badge half of that gap), so a memory-mode badge readout is built
+ * from this instead of a second grants map. */
+export async function grantedCodes(profileId: string): Promise<Map<string, string>> {
   const supabase = adminClient();
   if (!supabase) {
     const result = new Map<string, string>();

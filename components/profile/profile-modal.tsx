@@ -1,8 +1,9 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { Camera, Palette, Save, Upload, X } from "lucide-react";
+import { Award, Camera, Palette, Save, Upload, X } from "lucide-react";
+import type { ProfileBadge } from "@/lib/badges/types";
 import { profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 import { ProfileAvatar, type AvatarView } from "./profile-avatar";
@@ -28,6 +29,28 @@ export function ProfileModal({
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [idCopied, setIdCopied] = useState(false);
+  const [badges, setBadges] = useState<ProfileBadge[] | null>(null);
+
+  // Fetched separately from the profile prop, same reasoning as
+  // achievements/missions: badges are only ever needed here, so folding them
+  // into every /api/profile response (poker-app.tsx's hot path) would be
+  // paid on every load for a section most loads never open.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/profile/badges", { cache: "no-store" });
+        if (cancelled || !response.ok) return;
+        const data = (await response.json()) as { badges: ProfileBadge[] };
+        setBadges(data.badges);
+      } catch {
+        // Silent, same contract as the achievements/missions hooks: a
+        // readout beside working controls should fail quietly.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [profile.id]);
+
   const copyPlayerId = async () => {
     try {
       await navigator.clipboard.writeText(profile.id);
@@ -171,6 +194,24 @@ export function ProfileModal({
                 />
               ))}
             </div>
+          </fieldset>
+
+          <fieldset className="badges-fieldset">
+            <legend><Award size={13} /> Badges</legend>
+            {badges === null ? null : badges.length > 0 ? (
+              <ul className="badges-list">
+                {badges.map((badge) => (
+                  <li key={badge.badge} className="badge-chip" title={`Earned ${new Date(badge.awardedAt).toLocaleDateString()}`}>
+                    {badge.label}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="badges-empty">
+                No badges yet. Earn one through an <Link href="/achievements">achievement</Link> or a
+                top-10 season finish.
+              </p>
+            )}
           </fieldset>
 
           <div className="player-id-row">

@@ -44,6 +44,30 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### Daily Wordle renamed to Word Stack (2026-08-19)
+- Trademark cleanup, on branch `feat/word-stack-rebrand` off main (a separate worktree, uncommitted):
+  the daily 5-letter puzzle no longer carries Wordle's name anywhere -- catalog id `daily-word-stack`,
+  route `/games/word-stack`, API at `/api/arcade/word-stack`, every internal identifier/CSS class/test
+  renamed to match (`lib/arcade/puzzles/word-stack.ts`, `word-stack-answers.ts`,
+  `word-stack-dictionary.ts`, `lib/server/word-stack-service.ts`,
+  `components/arcade/word-stack-board.tsx`). A new migration
+  (`20260819100000_rename_wordle_mission_copy.sql`) updates the one live-DB row the old name had
+  leaked into (the `daily_brain_game` mission's description); the two migrations that shipped the
+  original feature keep saying "Wordle" in their own historical prose, since migrations are
+  append-only and that text is internal, not user-facing.
+- Tile colors: correct stays green and present stays gold (`#2f7d4f`/`#b8952f` -- the app was already
+  off Wordle's yellow before this pass). Only `absent` changed, from a greenish-grey
+  (`#39443f`/`#232b28`) to a real blue-grey (`#3d4656`/`#262e3a`) matching `--brand-ink-lift-2`'s
+  chrome tone. The share-sheet emoji grid swapped its yellow present block (🟨) for orange (🟧) to
+  match -- there is no "gold" square emoji, and 🟦 was rejected since Connections already uses it for
+  one of its own four tiers and reusing it here would read as that game's color, not this one's.
+- Answer pool grown 751 → 1,119: candidates were hand-authored common 5-letter words, then
+  mechanically verified against the existing guess dictionary (word-stack-dictionary.ts's ~15k-word
+  allow-list) and deduped against the existing pool and each other -- not hand-verified one by one.
+  Plurals and two words that turned out non-standard on a second look (`dawdy`, `calor`) were dropped
+  even though both were technically dictionary-legal, per the file's own "never ask for an obscure
+  word" rule.
+
 ### Cribbage: a 3-4 player free-for-all table (2026-08-18)
 - Kayo's brother plays cribbage with a group, not 1v1 — this is a new N-seat (3 or 4), Gold-wagered,
   winner-take-all table, not a fifth `lib/pvp/` duel. `pvp-match-service.ts`/`pvp_matches` are

@@ -28,7 +28,7 @@ import { ensureProfile } from "./profile-store";
 /**
  * Everything between a Sudoku request and the board.
  *
- * The shape is wordle-service.ts's, and the rule that governs all of them is
+ * The shape is word-stack-service.ts's, and the rule that governs all of them is
  * restated rather than referenced because breaking it ruins the feature for
  * everyone rather than for one player:
  *

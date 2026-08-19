@@ -7,21 +7,21 @@ import { Delete, CornerDownLeft } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
-import { puzzleShareTitle, wordleShareText } from "@/lib/arcade/puzzles/share";
+import { puzzleShareTitle, wordStackShareText } from "@/lib/arcade/puzzles/share";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import {
-  WORDLE_MAX_GUESSES,
-  WORDLE_WORD_LENGTH,
-  type WordleSnapshot,
-  type WordleTile,
-} from "@/lib/arcade/puzzles/wordle";
+  WORD_STACK_MAX_GUESSES,
+  WORD_STACK_WORD_LENGTH,
+  type WordStackSnapshot,
+  type WordStackTile,
+} from "@/lib/arcade/puzzles/word-stack";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
- * Daily Wordle.
+ * Daily Word Stack.
  *
- * The rules live in lib/arcade/puzzles/wordle.ts and the answer lives on the
+ * The rules live in lib/arcade/puzzles/word-stack.ts and the answer lives on the
  * server. This file holds one snapshot and replaces it wholesale with whatever
  * the API returns, because every guess is a request and the response is the
  * new truth -- the same contract blackjack-table.tsx and hi-lo-table.tsx use.
@@ -41,8 +41,8 @@ import type { PlayerProfile } from "@/lib/profile/types";
 
 const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
 
-interface WordleResponse {
-  round: WordleSnapshot | null;
+interface WordStackResponse {
+  round: WordStackSnapshot | null;
   profile: PlayerProfile;
   day: string;
   puzzleNumber: number;
@@ -54,13 +54,13 @@ interface WordleResponse {
 /** How long a transient message ("Not in the word list") stays up. */
 const NOTICE_MS = 1800;
 
-export function WordleBoard() {
+export function WordStackBoard() {
   // Applies the player's stored mute on a route where PokerApp is not
   // mounted. The flag it sets is module-global, which is what lets the JSX
   // below call the chrome cues directly. See lib/audio/ui-sounds.ts.
   useArcadeSound();
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
-  const [round, setRound] = useState<WordleSnapshot | null>(null);
+  const [round, setRound] = useState<WordStackSnapshot | null>(null);
   const [meta, setMeta] = useState<{ day: string; puzzleNumber: number; nextPuzzleAt: number } | null>(null);
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -95,7 +95,7 @@ export function WordleBoard() {
             ? {}
             : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
         });
-        const data = (await response.json()) as Partial<WordleResponse>;
+        const data = (await response.json()) as Partial<WordStackResponse>;
         if (data.profile) setProfile(data.profile);
         if (data.day) {
           setMeta({
@@ -140,8 +140,8 @@ export function WordleBoard() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const response = await fetch("/api/arcade/wordle", { cache: "no-store" });
-      const data = (await response.json().catch(() => ({}))) as Partial<WordleResponse>;
+      const response = await fetch("/api/arcade/word-stack", { cache: "no-store" });
+      const data = (await response.json().catch(() => ({}))) as Partial<WordStackResponse>;
       if (cancelled) return;
       if (data.profile) setProfile(data.profile);
       if (data.day) {
@@ -156,7 +156,7 @@ export function WordleBoard() {
         setLoaded(true);
         return;
       }
-      await send("/api/arcade/wordle", {});
+      await send("/api/arcade/word-stack", {});
     })();
     return () => {
       cancelled = true;
@@ -168,13 +168,13 @@ export function WordleBoard() {
 
   const submit = useCallback(() => {
     if (!round || !canType) return;
-    if (draft.length !== WORDLE_WORD_LENGTH) {
-      flash(`A guess is ${WORDLE_WORD_LENGTH} letters.`);
+    if (draft.length !== WORD_STACK_WORD_LENGTH) {
+      flash(`A guess is ${WORD_STACK_WORD_LENGTH} letters.`);
       return;
     }
     const guess = draft;
     void (async () => {
-      const ok = await send("/api/arcade/wordle/actions", {
+      const ok = await send("/api/arcade/word-stack/actions", {
         day: round.day,
         version: round.version,
         guess,
@@ -188,7 +188,7 @@ export function WordleBoard() {
   const type = useCallback(
     (letter: string) => {
       if (!canType) return;
-      setDraft((current) => (current.length >= WORDLE_WORD_LENGTH ? current : current + letter));
+      setDraft((current) => (current.length >= WORD_STACK_WORD_LENGTH ? current : current + letter));
     },
     [canType],
   );
@@ -229,26 +229,26 @@ export function WordleBoard() {
     const drafting =
       round && !finished
         ? [{
-          letters: draft.padEnd(WORDLE_WORD_LENGTH, " ").split("").map((c) => c.trim()),
-          tiles: [] as WordleTile[],
+          letters: draft.padEnd(WORD_STACK_WORD_LENGTH, " ").split("").map((c) => c.trim()),
+          tiles: [] as WordStackTile[],
           state: "drafting" as const,
         }]
         : [];
     const blanks = Array.from(
-      { length: Math.max(0, WORDLE_MAX_GUESSES - played.length - drafting.length) },
-      () => ({ letters: Array(WORDLE_WORD_LENGTH).fill(""), tiles: [] as WordleTile[], state: "empty" as const }),
+      { length: Math.max(0, WORD_STACK_MAX_GUESSES - played.length - drafting.length) },
+      () => ({ letters: Array(WORD_STACK_WORD_LENGTH).fill(""), tiles: [] as WordStackTile[], state: "empty" as const }),
     );
     return [...played, ...drafting, ...blanks];
   }, [draft, finished, round]);
 
-  const shareText = round ? wordleShareText(round, { link: shareLink() }) : null;
+  const shareText = round ? wordStackShareText(round, { link: shareLink() }) : null;
 
   return (
     <main className="bj-shell puzzle-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
           <Link className="bj-back" href="/" onClick={tapSound}>← Back to the lobby</Link>
-          <h1>Daily Wordle</h1>
+          <h1>Daily Word Stack</h1>
           <p>
             {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Six guesses · One word a day for everyone
           </p>
@@ -272,22 +272,22 @@ export function WordleBoard() {
         {notice}
       </p>
 
-      <section className="wordle-grid" aria-label="Guesses" aria-busy={busy}>
+      <section className="word-stack-grid" aria-label="Guesses" aria-busy={busy}>
         {rows.map((row, rowIndex) => (
           <div
             key={rowIndex}
             className={clsx(
-              "wordle-row",
-              row.state === "drafting" && shake && "wordle-row-shake",
+              "word-stack-row",
+              row.state === "drafting" && shake && "word-stack-row-shake",
             )}
           >
-            {Array.from({ length: WORDLE_WORD_LENGTH }, (_, column) => (
+            {Array.from({ length: WORD_STACK_WORD_LENGTH }, (_, column) => (
               <span
                 key={column}
                 className={clsx(
-                  "wordle-tile",
-                  row.tiles[column] && `wordle-tile-${row.tiles[column]}`,
-                  row.letters[column] && row.state === "drafting" && "wordle-tile-filled",
+                  "word-stack-tile",
+                  row.tiles[column] && `word-stack-tile-${row.tiles[column]}`,
+                  row.letters[column] && row.state === "drafting" && "word-stack-tile-filled",
                 )}
                 style={row.state === "played" ? { animationDelay: `${column * 90}ms` } : undefined}
               >
@@ -312,20 +312,20 @@ export function WordleBoard() {
               the button read as "send this" rather than "send something". */}
           <pre className="puzzle-share-preview" aria-label="Your result">{shareText}</pre>
           {shareText && (
-            <ShareResultButton text={shareText} title={puzzleShareTitle("wordle", round.puzzleNumber)} />
+            <ShareResultButton text={shareText} title={puzzleShareTitle("word-stack", round.puzzleNumber)} />
           )}
           {meta && <NextPuzzleCountdown deadline={meta.nextPuzzleAt} />}
         </section>
       )}
 
       {!finished && (
-        <section className="wordle-keyboard" aria-label="Keyboard">
+        <section className="word-stack-keyboard" aria-label="Keyboard">
           {KEY_ROWS.map((row, index) => (
-            <div key={row} className="wordle-keyrow">
+            <div key={row} className="word-stack-keyrow">
               {index === 2 && (
                 <button
                   type="button"
-                  className="wordle-key wordle-key-wide"
+                  className="word-stack-key word-stack-key-wide"
                   onClick={() => { selectSound(); submit(); }}
                   disabled={!canType}
                   aria-label="Submit guess"
@@ -338,8 +338,8 @@ export function WordleBoard() {
                   key={letter}
                   type="button"
                   className={clsx(
-                    "wordle-key",
-                    round?.keyboard[letter] && `wordle-key-${round.keyboard[letter]}`,
+                    "word-stack-key",
+                    round?.keyboard[letter] && `word-stack-key-${round.keyboard[letter]}`,
                   )}
                   onClick={() => { tapSound(); type(letter); }}
                   disabled={!canType}
@@ -350,7 +350,7 @@ export function WordleBoard() {
               {index === 2 && (
                 <button
                   type="button"
-                  className="wordle-key wordle-key-wide"
+                  className="word-stack-key word-stack-key-wide"
                   onClick={() => { tapSound(); backspace(); }}
                   disabled={!canType}
                   aria-label="Delete letter"
@@ -377,5 +377,5 @@ export function WordleBoard() {
  */
 function shareLink(): string | undefined {
   if (typeof window === "undefined") return undefined;
-  return `${window.location.origin}/games/wordle`;
+  return `${window.location.origin}/games/word-stack`;
 }

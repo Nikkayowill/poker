@@ -27,13 +27,13 @@ import { ensureProfile } from "./profile-store";
 /**
  * Everything between a Connections request and the board.
  *
- * The shape is wordle-service.ts's, and the one rule that governs both is
+ * The shape is word-stack-service.ts's, and the one rule that governs both is
  * restated rather than referenced because breaking it silently ruins the
  * feature for everyone rather than for one player:
  *
  *   **The groups never leave this file.**
  *
- * Here that rule has a second edge the Wordle service does not need. The
+ * Here that rule has a second edge the Word Stack service does not need. The
  * answer is not only the four groups -- it is also *which group each word is
  * in*, which the server necessarily computes on every guess. Reporting those
  * per-word would turn four wrong guesses into a complete solution, so a wrong
@@ -106,7 +106,7 @@ export async function readConnectionsPuzzle(token: string): Promise<ConnectionsV
 /**
  * Opens today's board, or hands back the one already in progress -- including
  * a finished one. A completed attempt resumes rather than re-deals, for the
- * same reason it does at Wordle: replaying a board you have already solved
+ * same reason it does at Word Stack: replaying a board you have already solved
  * would make the shared grid a lie.
  */
 export async function startConnectionsPuzzle(
@@ -148,7 +148,7 @@ export async function startConnectionsPuzzle(
 /**
  * Plays one selection of four words.
  *
- * `day` and `version` are checked for the reasons they are at Wordle: a board
+ * `day` and `version` are checked for the reasons they are at Word Stack: a board
  * that rolled over at 00:00 UTC must not take a guess meant for yesterday's,
  * and a double-fired submit must not spend two of the player's four mistakes
  * on one selection.
@@ -220,7 +220,7 @@ export async function playConnectionsGuess(
   return view(stored, profile, clock);
 }
 
-/** Maps a thrown error to the response both Connections routes send. Same placement rationale as Wordle's. */
+/** Maps a thrown error to the response both Connections routes send. Same placement rationale as Word Stack's. */
 export function toConnectionsErrorResponse(error: unknown): NextResponse {
   return toArcadeErrorResponse(error, "That puzzle could not be played.");
 }

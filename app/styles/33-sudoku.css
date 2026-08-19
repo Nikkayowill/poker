@@ -169,7 +169,7 @@
   .sk-grid { width: min(100%, 300px); }
   .sk-pad { width: min(100%, 300px); }
   /* 44px, not the old 38 -- this pad is the one control on the page a thumb
-     actually taps repeatedly, and every other keypad in the app (Wordle,
+     actually taps repeatedly, and every other keypad in the app (Word Stack,
      the action bar) already holds that floor. */
   .sk-key { min-height: 44px; font-size: 15px; }
 }

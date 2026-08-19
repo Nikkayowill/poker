@@ -18,7 +18,7 @@
  * not started yet do not appear in a snapshot at all, in any form, since a
  * player who knew round four's word would spend round three practising it.
  *
- * That is the same boundary lib/arcade/puzzles/wordle.ts draws around its
+ * That is the same boundary lib/arcade/puzzles/word-stack.ts draws around its
  * answer, and for the same reason: a solution in the payload is not an exotic
  * attack, it is the first thing a curious player tries -- and this one decides
  * a real Gold payout rather than a share grid.

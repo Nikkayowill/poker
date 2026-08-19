@@ -14,7 +14,7 @@ import { adminClient } from "./supabase-admin";
  * The one that matters: its unique index is partial on `status = 'active'`, so
  * a *settled* round never blocks a new one -- which is correct for Hi-Lo,
  * where dealing again is the whole point, and catastrophic here. Everyone
- * shares one board per day. If finishing today's Wordle let you open another,
+ * shares one board per day. If finishing today's Word Stack let you open another,
  * the second attempt would be the same word you had just been shown, and the
  * share grid -- the only thing this feature exists to produce -- would be a
  * claim nobody could trust. The index below is therefore unconditional on

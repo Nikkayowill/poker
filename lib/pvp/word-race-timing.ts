@@ -17,7 +17,7 @@
  *
  * The bank is `server-only` now, which turns the mistake into a build failure
  * rather than a leak nobody notices. That is the same treatment
- * lib/pvp/trivia-questions.ts and lib/arcade/puzzles/wordle-answers.ts get, and
+ * lib/pvp/trivia-questions.ts and lib/arcade/puzzles/word-stack-answers.ts get, and
  * it is why these two constants had to move somewhere a client may reach.
  *
  * Nothing else belongs here. A third constant that the board does not render

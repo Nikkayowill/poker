@@ -17,7 +17,7 @@ import { ensureProfile } from "./profile-store";
  * The contract, in memory mode.
  *
  * The day's puzzle is derived with the same public function the service uses
- * rather than injected, for the reason the Wordle tests do it: a seam to
+ * rather than injected, for the reason the Word Stack tests do it: a seam to
  * override the daily selection is a seam an attacker would want. It also means
  * these tests fail loudly if the selection ever stops being deterministic.
  */

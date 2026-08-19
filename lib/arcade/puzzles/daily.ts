@@ -11,7 +11,7 @@
  *
  * A local-timezone rollover would be friendlier to a player in Auckland and
  * would destroy the game. The entire value of a daily puzzle is that everyone
- * had the *same* one: "Wordle 128 4/6" is a brag only if the person reading it
+ * had the *same* one: "Word Stack 128 4/6" is a brag only if the person reading it
  * knows which word 128 was. Roll over locally and two friends in different
  * zones are comparing scores on different words, which is worse than useless
  * -- it is a share button that quietly lies. So the day is UTC everywhere, and
@@ -86,7 +86,7 @@ function hashString(value: string): number {
 /**
  * Which entry of a pool today's puzzle draws.
  *
- * `salt` separates the games: Wordle and Connections must not advance in
+ * `salt` separates the games: Word Stack and Connections must not advance in
  * lockstep, or a player who works out one list's order has learned something
  * about the other's.
  *

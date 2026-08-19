@@ -25,12 +25,12 @@
 import type { ConnectionsLevel, ConnectionsSnapshot } from "./connections";
 import type { MemorySnapshot } from "./memory";
 import { formatDuration, type SudokuSnapshot } from "./sudoku";
-import type { WordleSnapshot, WordleTile } from "./wordle";
+import type { WordStackSnapshot, WordStackTile } from "./word-stack";
 
-/** Wordle's three states. Green correct, yellow present, dark block absent. */
-export const WORDLE_BLOCKS: Record<WordleTile, string> = {
+/** Word Stack's three states. Green correct, gold present, dark block absent -- StackChips' own palette, not the yellow/grey/green everyone associates with the game this is not. */
+export const WORD_STACK_BLOCKS: Record<WordStackTile, string> = {
   correct: "\u{1F7E9}", // 🟩
-  present: "\u{1F7E8}", // 🟨
+  present: "\u{1F7E7}", // 🟧
   absent: "\u{2B1B}", //  ⬛
 };
 
@@ -66,14 +66,14 @@ function withLink(lines: string[], options?: ShareOptions): string {
  * universally understood way of saying "did not get it" without a number that
  * would sort as better than a 6.
  */
-export function wordleScoreLine(snapshot: WordleSnapshot): string {
+export function wordStackScoreLine(snapshot: WordStackSnapshot): string {
   return snapshot.status === "won" ? `${snapshot.guesses.length}/${snapshot.maxGuesses}` : `X/${snapshot.maxGuesses}`;
 }
 
 /** One row of blocks per guess. This is the grid, without the heading. */
-export function wordleGrid(snapshot: WordleSnapshot): string {
+export function wordStackGrid(snapshot: WordStackSnapshot): string {
   return snapshot.results
-    .map((row) => row.map((tile) => WORDLE_BLOCKS[tile]).join(""))
+    .map((row) => row.map((tile) => WORD_STACK_BLOCKS[tile]).join(""))
     .join("\n");
 }
 
@@ -84,10 +84,10 @@ export function wordleGrid(snapshot: WordleSnapshot): string {
  * person who has not played yet, and returning something the caller has to
  * remember not to use is how that ships.
  */
-export function wordleShareText(snapshot: WordleSnapshot, options?: ShareOptions): string | null {
+export function wordStackShareText(snapshot: WordStackSnapshot, options?: ShareOptions): string | null {
   if (snapshot.status === "active") return null;
   return withLink(
-    [`StackChips Wordle #${snapshot.puzzleNumber} ${wordleScoreLine(snapshot)}`, "", wordleGrid(snapshot)],
+    [`StackChips Word Stack #${snapshot.puzzleNumber} ${wordStackScoreLine(snapshot)}`, "", wordStackGrid(snapshot)],
     options,
   );
 }
@@ -165,9 +165,9 @@ export const MEMORY_MISS_BLOCK = "\u2B1B"; // ⬛
 
 /** What the native share sheet shows as the subject. Short: some clients truncate hard. */
 export function puzzleShareTitle(
-  game: "wordle" | "connections" | "sudoku" | "memory",
+  game: "word-stack" | "connections" | "sudoku" | "memory",
   puzzleNumber: number,
 ): string {
-  const name = game === "wordle" ? "Wordle" : game === "connections" ? "Connections" : game === "sudoku" ? "Sudoku" : "Memory";
+  const name = game === "word-stack" ? "Word Stack" : game === "connections" ? "Connections" : game === "sudoku" ? "Sudoku" : "Memory";
   return `StackChips ${name} #${puzzleNumber}`;
 }

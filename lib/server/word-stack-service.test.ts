@@ -1,15 +1,15 @@
 import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { pickDaily, puzzleDay } from "@/lib/arcade/puzzles/daily";
-import { WORDLE_ANSWERS } from "@/lib/arcade/puzzles/wordle-answers";
+import { WORD_STACK_ANSWERS } from "@/lib/arcade/puzzles/word-stack-answers";
 import { __resetDailyPuzzlesForTest } from "./daily-puzzle-store";
 import {
-  WORDLE_GAME,
-  WordleRequestError,
-  playWordleGuess,
-  readWordlePuzzle,
-  startWordlePuzzle,
-} from "./wordle-service";
+  WORD_STACK_GAME,
+  WordStackRequestError,
+  playWordStackGuess,
+  readWordStackPuzzle,
+  startWordStackPuzzle,
+} from "./word-stack-service";
 import { ensureProfile } from "./profile-store";
 
 /**
@@ -25,7 +25,7 @@ import { ensureProfile } from "./profile-store";
 
 /** What today's word must be, computed the same way the service computes it. */
 function todaysAnswer(): string {
-  return pickDaily(WORDLE_ANSWERS, puzzleDay(new Date()), WORDLE_GAME);
+  return pickDaily(WORD_STACK_ANSWERS, puzzleDay(new Date()), WORD_STACK_GAME);
 }
 
 function today(): string {
@@ -49,28 +49,28 @@ beforeEach(() => {
   __resetDailyPuzzlesForTest();
 });
 
-describe("readWordlePuzzle", () => {
+describe("readWordStackPuzzle", () => {
   it("reports no board before one is opened, and does not open one", () => {
     // A read that opened a board would mean visiting the page consumed the
     // day's attempt.
     return (async () => {
       const token = await player();
-      expect((await readWordlePuzzle(token)).round).toBeNull();
-      expect((await readWordlePuzzle(token)).round).toBeNull();
+      expect((await readWordStackPuzzle(token)).round).toBeNull();
+      expect((await readWordStackPuzzle(token)).round).toBeNull();
     })();
   });
 
   it("carries the day and puzzle number even with no board", async () => {
-    const view = await readWordlePuzzle(await player());
+    const view = await readWordStackPuzzle(await player());
     expect(view.day).toBe(today());
     expect(view.puzzleNumber).toBeGreaterThan(0);
     expect(view.msUntilNextPuzzle).toBeGreaterThan(0);
   });
 });
 
-describe("startWordlePuzzle", () => {
+describe("startWordStackPuzzle", () => {
   it("opens an empty board", async () => {
-    const view = await startWordlePuzzle(await player());
+    const view = await startWordStackPuzzle(await player());
     expect(view.resumed).toBe(false);
     expect(view.round?.guesses).toEqual([]);
     expect(view.round?.status).toBe("active");
@@ -78,21 +78,21 @@ describe("startWordlePuzzle", () => {
 
   it("never sends the answer while the board is live", async () => {
     // The entire reason the round lives on the server.
-    const view = await startWordlePuzzle(await player());
+    const view = await startWordStackPuzzle(await player());
     expect(view.round?.answer).toBeNull();
     expect(JSON.stringify(view)).not.toContain(todaysAnswer());
   });
 
   it("resumes rather than re-dealing", async () => {
     const token = await player();
-    const first = await startWordlePuzzle(token);
-    await playWordleGuess(token, {
+    const first = await startWordStackPuzzle(token);
+    await playWordStackGuess(token, {
       day: today(),
       version: 1,
       guess: wrongGuesses(todaysAnswer())[0],
     });
 
-    const second = await startWordlePuzzle(token);
+    const second = await startWordStackPuzzle(token);
     expect(second.resumed).toBe(true);
     // The guess is still there: a second POST must not hand back a clean board.
     expect(second.round?.guesses).toHaveLength(1);
@@ -104,10 +104,10 @@ describe("startWordlePuzzle", () => {
     // so a replay would be the same word again -- and the shared grid would be
     // a claim nobody could trust.
     const token = await player();
-    await startWordlePuzzle(token);
-    await playWordleGuess(token, { day: today(), version: 1, guess: todaysAnswer() });
+    await startWordStackPuzzle(token);
+    await playWordStackGuess(token, { day: today(), version: 1, guess: todaysAnswer() });
 
-    const again = await startWordlePuzzle(token);
+    const again = await startWordStackPuzzle(token);
     expect(again.resumed).toBe(true);
     expect(again.round?.status).toBe("won");
     expect(again.round?.guesses).toHaveLength(1);
@@ -116,21 +116,21 @@ describe("startWordlePuzzle", () => {
   it("gives two players the same word on the same day", async () => {
     const [a, b] = await Promise.all([player(), player()]);
     const answer = todaysAnswer();
-    await Promise.all([startWordlePuzzle(a), startWordlePuzzle(b)]);
+    await Promise.all([startWordStackPuzzle(a), startWordStackPuzzle(b)]);
     const [first, second] = await Promise.all([
-      playWordleGuess(a, { day: today(), version: 1, guess: answer }),
-      playWordleGuess(b, { day: today(), version: 1, guess: answer }),
+      playWordStackGuess(a, { day: today(), version: 1, guess: answer }),
+      playWordStackGuess(b, { day: today(), version: 1, guess: answer }),
     ]);
     expect(first.round?.status).toBe("won");
     expect(second.round?.status).toBe("won");
   });
 });
 
-describe("playWordleGuess", () => {
+describe("playWordStackGuess", () => {
   it("scores a guess and advances the version", async () => {
     const token = await player();
-    await startWordlePuzzle(token);
-    const view = await playWordleGuess(token, {
+    await startWordStackPuzzle(token);
+    const view = await playWordStackGuess(token, {
       day: today(),
       version: 1,
       guess: wrongGuesses(todaysAnswer())[0],
@@ -143,12 +143,12 @@ describe("playWordleGuess", () => {
   it("reveals the answer only once the board is done", async () => {
     const token = await player();
     const answer = todaysAnswer();
-    await startWordlePuzzle(token);
+    await startWordStackPuzzle(token);
 
-    const mid = await playWordleGuess(token, { day: today(), version: 1, guess: wrongGuesses(answer)[0] });
+    const mid = await playWordStackGuess(token, { day: today(), version: 1, guess: wrongGuesses(answer)[0] });
     expect(mid.round?.answer).toBeNull();
 
-    const won = await playWordleGuess(token, { day: today(), version: 2, guess: answer });
+    const won = await playWordStackGuess(token, { day: today(), version: 2, guess: answer });
     expect(won.round?.status).toBe("won");
     expect(won.round?.answer).toBe(answer);
   });
@@ -156,11 +156,11 @@ describe("playWordleGuess", () => {
   it("gives a losing player the word", async () => {
     const token = await player();
     const answer = todaysAnswer();
-    await startWordlePuzzle(token);
+    await startWordStackPuzzle(token);
 
     let version = 1;
     for (const guess of wrongGuesses(answer).slice(0, 6)) {
-      const view = await playWordleGuess(token, { day: today(), version, guess });
+      const view = await playWordStackGuess(token, { day: today(), version, guess });
       version = version + 1;
       if (view.round?.status !== "active") {
         expect(view.round?.status).toBe("lost");
@@ -175,76 +175,76 @@ describe("playWordleGuess", () => {
     // Ordinary play, not a fault: the board must come back untouched or a
     // typo would cost a sixth of the game.
     const token = await player();
-    await startWordlePuzzle(token);
+    await startWordStackPuzzle(token);
     await expect(
-      playWordleGuess(token, { day: today(), version: 1, guess: "zzzzz" }),
+      playWordStackGuess(token, { day: today(), version: 1, guess: "zzzzz" }),
     ).rejects.toMatchObject({ status: 400, reason: "unknown-word" });
 
-    const after = await readWordlePuzzle(token);
+    const after = await readWordStackPuzzle(token);
     expect(after.round?.guesses).toEqual([]);
   });
 
   it("carries the true board back on a rejection, so a stuck client resyncs", async () => {
     const token = await player();
-    await startWordlePuzzle(token);
-    await playWordleGuess(token, { day: today(), version: 1, guess: wrongGuesses(todaysAnswer())[0] });
+    await startWordStackPuzzle(token);
+    await playWordStackGuess(token, { day: today(), version: 1, guess: wrongGuesses(todaysAnswer())[0] });
 
-    const error = await playWordleGuess(token, {
+    const error = await playWordStackGuess(token, {
       day: today(),
       version: 1,
       guess: wrongGuesses(todaysAnswer())[1],
-    }).catch((thrown) => thrown as WordleRequestError);
+    }).catch((thrown) => thrown as WordStackRequestError);
 
-    expect(error).toBeInstanceOf(WordleRequestError);
-    expect((error as WordleRequestError).status).toBe(409);
-    expect((error as WordleRequestError).round?.guesses).toHaveLength(1);
+    expect(error).toBeInstanceOf(WordStackRequestError);
+    expect((error as WordStackRequestError).status).toBe(409);
+    expect((error as WordStackRequestError).round?.guesses).toHaveLength(1);
   });
 
   it("refuses a stale version, so a double-fired submit costs one guess not two", async () => {
     const token = await player();
     const answer = todaysAnswer();
-    await startWordlePuzzle(token);
+    await startWordStackPuzzle(token);
 
     const [first, second] = await Promise.allSettled([
-      playWordleGuess(token, { day: today(), version: 1, guess: wrongGuesses(answer)[0] }),
-      playWordleGuess(token, { day: today(), version: 1, guess: wrongGuesses(answer)[1] }),
+      playWordStackGuess(token, { day: today(), version: 1, guess: wrongGuesses(answer)[0] }),
+      playWordStackGuess(token, { day: today(), version: 1, guess: wrongGuesses(answer)[1] }),
     ]);
     const accepted = [first, second].filter((result) => result.status === "fulfilled");
     expect(accepted).toHaveLength(1);
 
-    const after = await readWordlePuzzle(token);
+    const after = await readWordStackPuzzle(token);
     expect(after.round?.guesses).toHaveLength(1);
   });
 
   it("refuses a guess aimed at a board that has rolled over", async () => {
     const token = await player();
-    await startWordlePuzzle(token);
+    await startWordStackPuzzle(token);
     await expect(
-      playWordleGuess(token, { day: "2020-01-01", version: 1, guess: "slate" }),
+      playWordStackGuess(token, { day: "2020-01-01", version: 1, guess: "slate" }),
     ).rejects.toMatchObject({ status: 409, reason: "rolled-over" });
   });
 
   it("refuses a guess before the board is opened", async () => {
     await expect(
-      playWordleGuess(await player(), { day: today(), version: 1, guess: "slate" }),
+      playWordStackGuess(await player(), { day: today(), version: 1, guess: "slate" }),
     ).rejects.toMatchObject({ status: 404 });
   });
 
   it("refuses another guess once the board is done", async () => {
     const token = await player();
-    await startWordlePuzzle(token);
-    await playWordleGuess(token, { day: today(), version: 1, guess: todaysAnswer() });
+    await startWordStackPuzzle(token);
+    await playWordStackGuess(token, { day: today(), version: 1, guess: todaysAnswer() });
     await expect(
-      playWordleGuess(token, { day: today(), version: 2, guess: "slate" }),
+      playWordStackGuess(token, { day: today(), version: 2, guess: "slate" }),
     ).rejects.toMatchObject({ status: 409 });
   });
 
   it("keeps two players' boards apart", async () => {
     const [a, b] = await Promise.all([player(), player()]);
-    await Promise.all([startWordlePuzzle(a), startWordlePuzzle(b)]);
-    await playWordleGuess(a, { day: today(), version: 1, guess: wrongGuesses(todaysAnswer())[0] });
+    await Promise.all([startWordStackPuzzle(a), startWordStackPuzzle(b)]);
+    await playWordStackGuess(a, { day: today(), version: 1, guess: wrongGuesses(todaysAnswer())[0] });
 
-    expect((await readWordlePuzzle(a)).round?.guesses).toHaveLength(1);
-    expect((await readWordlePuzzle(b)).round?.guesses).toHaveLength(0);
+    expect((await readWordStackPuzzle(a)).round?.guesses).toHaveLength(1);
+    expect((await readWordStackPuzzle(b)).round?.guesses).toHaveLength(0);
   });
 });

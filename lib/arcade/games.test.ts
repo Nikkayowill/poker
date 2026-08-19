@@ -26,7 +26,7 @@ describe("arcade catalogue", () => {
   it("lists every catalogued game in display order", () => {
     expect(ARCADE_GAMES.map((entry) => entry.name)).toEqual([
       "Blackjack 21",
-      "Daily Wordle",
+      "Daily Word Stack",
       "Connections",
       "Hi-Lo",
       "Video Poker",

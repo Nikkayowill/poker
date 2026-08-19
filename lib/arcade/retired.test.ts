@@ -34,7 +34,7 @@ describe("retired arcade games", () => {
   it("leaves the skill games alone", () => {
     // The line the owner drew: chance-against-the-house is out, skill and
     // social are in. Blackjack has a decision every hand; the dailies are free.
-    for (const key of ["blackjack", "wordle", "connections", "sudoku", "memory"]) {
+    for (const key of ["blackjack", "word-stack", "connections", "sudoku", "memory"]) {
       expect(isRetiredArcadeGame(key)).toBe(false);
     }
   });

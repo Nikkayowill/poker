@@ -29,17 +29,32 @@ export default function Image() {
           fontFamily: "system-ui, sans-serif",
         }}
       >
+        {/* A gradient "ring" via a padding-box trick, not border-image --
+            Satori (next/og's renderer) doesn't implement border-image, which
+            rendered this whole mark invisible until caught by actually
+            fetching the deployed image rather than trusting the build to
+            catch it (ImageResponse runs at request time, not build time). */}
         <div
           style={{
             display: "flex",
             width: 220,
             height: 220,
             borderRadius: 48,
-            border: "10px solid transparent",
-            borderImage: "linear-gradient(100deg, #983fe0 0%, #db9c0b 52%, #dc1413 100%) 1",
+            padding: 10,
+            background: "linear-gradient(100deg, #983fe0 0%, #db9c0b 52%, #dc1413 100%)",
             marginBottom: 44,
           }}
-        />
+        >
+          <div
+            style={{
+              display: "flex",
+              width: "100%",
+              height: "100%",
+              borderRadius: 38,
+              background: "#0a0710",
+            }}
+          />
+        </div>
         <div
           style={{
             display: "flex",

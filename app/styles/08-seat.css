@@ -921,3 +921,95 @@
    display and height but not its overflow -- which clipped the raise drawer
    away completely while getBoundingClientRect still reported a box, so it
    looked present to a test and was invisible to a player. */
+
+/* Challenge this seat.
+   -------------------------------------------------------------------------
+   A direct duel challenge on an opponent's own seat, skipping the Friends
+   drawer detour (Friends -> Add friend -> Friends -> Challenge). Only ever
+   rendered for a registered human opponent -- see
+   lib/game/seat-presence.ts's isChallengeableSeat and
+   components/table/challenge-seat-control.tsx.
+
+   The trigger is anchored to .seat-plate, the one wrapper both nameplate
+   shapes share -- the full plate and the compact opponent HUD
+   (player-seat.tsx's SeatNameplate) -- so it needs no separate placement
+   for either, and no override in 42-racetrack-table.css: that room reuses
+   the same full plate for every opponent. Not offered on the 3D room: its
+   nameplates are deliberately panel-free (see the "No panel here on
+   purpose" note in game3d.module.css) and its SeatModel carries no
+   profileId to challenge against yet. */
+.seat-challenge-trigger {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  z-index: 3;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: #cabcdb;
+  border: 1px solid rgba(201, 162, 240, .35);
+  border-radius: 50%;
+  background: rgba(20, 14, 28, .85);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .4);
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease, border-color .15s ease;
+}
+.seat-challenge-trigger:hover,
+.seat-challenge-trigger:focus-visible {
+  color: #c9a2f0;
+  border-color: rgba(201, 162, 240, .7);
+  background: rgba(152, 63, 224, .3);
+  outline: none;
+}
+
+/* The picker, portaled to <body> and fixed to the viewport rather than
+   anchored off the trigger above -- see the control's own doc comment for
+   why. Same dropdown look as .app-menu-panel (20-menu.css) and .reaction-
+   panel (41-table-reactions.css), just centred as a bottom sheet instead of
+   anchored off a corner, since a fixed-position seat has no fixed corner to
+   anchor from. */
+.seat-challenge-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal, 60);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 0 max(16px, env(safe-area-inset-bottom));
+  background: rgba(3, 9, 7, .6);
+  animation: overlay-in .18s ease both;
+}
+.seat-challenge-panel {
+  width: min(300px, calc(100vw - 32px));
+  border-radius: var(--radius-2xl, 14px);
+  background: #16121f;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .55);
+  animation: modal-in .18s ease both;
+}
+.seat-challenge-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 6px;
+  color: #edeaf3;
+  font-size: 13px;
+  font-weight: 700;
+}
+.seat-challenge-close {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  color: #9c93b1;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .06);
+  cursor: pointer;
+}
+.seat-challenge-close:hover { color: #e08d8d; background: rgba(224, 141, 141, .18); }
+
+/* Each option reuses .app-menu-item (20-menu.css) for the row itself --
+   same dropdown, same look. */
+.seat-challenge-options { display: flex; flex-direction: column; padding: 6px; }

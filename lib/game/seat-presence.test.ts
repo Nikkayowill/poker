@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { PublicSeat } from "./types";
-import { isBotAway } from "./seat-presence";
+import { isBotAway, isChallengeableSeat } from "./seat-presence";
 
 /**
  * isBotAway is the one line deciding whether a seat renders as "a bot
@@ -80,4 +80,28 @@ describe("isBotAway", () => {
     const seat = makeSeat({ status: "active", reseatEligibleAt: "2026-08-05T00:00:00.000Z" });
     expect(isBotAway(seat)).toBe(false);
   });
+});
+
+describe("isChallengeableSeat", () => {
+  test("a registered opponent is challengeable", () => {
+    const seat = makeSeat({ isHuman: true, isMine: false, profileId: "profile-1" });
+    expect(isChallengeableSeat(seat)).toBe(true);
+  });
+
+  const notChallengeableCases: Array<[string, Partial<PublicSeat>]> = [
+    ["a bot", { isHuman: false, isMine: false, profileId: null }],
+    // isMine wins even if profileId is somehow set -- you can't challenge
+    // yourself.
+    ["your own seat", { isHuman: true, isMine: true, profileId: "profile-1" }],
+    // A guest's profile dies with its cookie -- see the profileId doc
+    // comment on Seat in types.ts -- so it is never set for one, but the
+    // predicate itself should still require it rather than trusting isHuman
+    // alone.
+    ["a human seat with no profileId (a guest)", { isHuman: true, isMine: false, profileId: null }],
+  ];
+  for (const [label, overrides] of notChallengeableCases) {
+    test(`${label} is not challengeable`, () => {
+      expect(isChallengeableSeat(makeSeat(overrides))).toBe(false);
+    });
+  }
 });

@@ -6,6 +6,7 @@ import { Check, Send, Spade, UserMinus, UserPlus, X } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import type { GameSnapshot, PublicSeat } from "@/lib/game/types";
+import { CHALLENGEABLE_DUELS } from "@/lib/pvp/duel-list";
 import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 import type {
@@ -14,23 +15,6 @@ import type {
   PendingRequest,
   PendingTableInvite,
 } from "@/lib/social/types";
-
-/**
- * The four duels, for the Challenge picker. NOT sourced from
- * lib/pvp/registry.ts -- that index pulls in every engine, and trivia's and
- * word-race's carry `import "server-only"` question/word banks (see
- * lib/pvp/trivia-questions.ts). This file is a client component, and
- * importing the registry here would ship both banks into the browser bundle
- * the same way Word Race's once did before that file existed. Each /games/*
- * page hardcodes its own id and title for the same reason; this is that same
- * duplication, once, for the picker that names all four.
- */
-const DUEL_GAMES: readonly { id: string; label: string }[] = [
-  { id: "chess", label: "Chess" },
-  { id: "checkers", label: "Checkers" },
-  { id: "trivia", label: "Trivia Showdown" },
-  { id: "word-race", label: "Word Race" },
-];
 
 /**
  * The empty overview, used before the first fetch lands and after a failure.
@@ -764,7 +748,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                       }}
                     >
                       <option value="" disabled>Challenge…</option>
-                      {DUEL_GAMES.map((duel) => (
+                      {CHALLENGEABLE_DUELS.map((duel) => (
                         <option key={duel.id} value={duel.id}>{duel.label}</option>
                       ))}
                     </select>

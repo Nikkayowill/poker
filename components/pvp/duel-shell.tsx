@@ -230,14 +230,30 @@ export function DuelShell<TSnapshot>({
 
   useEffect(() => {
     mounted.current = true;
+    // A hidden tab (backgrounded window, switched tab) has no opponent to
+    // watch move -- skip the round-trip rather than polling a screen nobody
+    // is looking at, same reasoning poker-app.tsx's menu-music sync applies
+    // to document.hidden.
+    const poll = () => {
+      if (!document.hidden) void refresh();
+    };
     // Deferred a tick so the first paint is the empty lobby rather than a
     // suspended render, matching every arcade machine.
-    const first = window.setTimeout(() => void refresh(), 0);
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
+    const first = window.setTimeout(poll, 0);
+    const timer = window.setInterval(poll, POLL_MS);
+    // The interval above still fires while hidden, just skipping the fetch --
+    // it can still miss a move made and settled entirely while the tab was
+    // away. Resync the instant the tab is looked at again, same pattern
+    // poker-app.tsx's resyncOnReturn uses for the table itself.
+    const resyncOnReturn = () => {
+      if (!document.hidden) void refresh();
+    };
+    document.addEventListener("visibilitychange", resyncOnReturn);
     return () => {
       mounted.current = false;
       window.clearTimeout(first);
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", resyncOnReturn);
     };
   }, [refresh]);
 

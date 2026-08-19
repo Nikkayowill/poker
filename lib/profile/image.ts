@@ -1,3 +1,5 @@
+import sharp from "sharp";
+
 export interface DetectedImage {
   contentType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
   extension: "png" | "jpg" | "webp" | "gif";
@@ -92,6 +94,32 @@ export function readImageDimensions(bytes: Uint8Array, contentType: DetectedImag
     return null;
   }
   return null;
+}
+
+// Avatars render as ~150px circles everywhere they appear -- there is no
+// reason to keep a validated-but-still-up-to-4096x4096/2MB original around.
+export const AVATAR_STORED_DIMENSION = 256;
+
+/**
+ * Resizes/re-encodes an already-validated upload before it's stored. Runs
+ * after detectImage/readImageDimensions have bounded the decoded footprint,
+ * so this is the first point anything here actually decodes the pixels.
+ * Cover-fit crops to a square without distorting it; withoutEnlargement
+ * leaves an image already at or under the target alone rather than
+ * upscaling it.
+ */
+export async function resizeAvatar(bytes: Uint8Array, contentType: DetectedImage["contentType"]): Promise<Buffer> {
+  const image = sharp(bytes, { animated: contentType === "image/gif" }).resize(
+    AVATAR_STORED_DIMENSION,
+    AVATAR_STORED_DIMENSION,
+    { fit: "cover", withoutEnlargement: true },
+  );
+  switch (contentType) {
+    case "image/png": return image.png().toBuffer();
+    case "image/jpeg": return image.jpeg({ quality: 85 }).toBuffer();
+    case "image/webp": return image.webp({ quality: 85 }).toBuffer();
+    case "image/gif": return image.gif().toBuffer();
+  }
 }
 
 export function detectImage(bytes: Uint8Array): DetectedImage | null {

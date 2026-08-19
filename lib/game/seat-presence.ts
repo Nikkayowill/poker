@@ -20,3 +20,18 @@ import type { PublicSeat } from "./types";
 export function isBotAway(seat: PublicSeat): boolean {
   return seat.status === "out" && seat.reseatEligibleAt !== null;
 }
+
+/**
+ * Whether this seat may be challenged to a duel directly from the table.
+ *
+ * `profileId` is the durable identity a *registered* human seat carries (see
+ * its own doc comment on `Seat` in types.ts) -- null for a bot, an open seat,
+ * and a guest, whose profile dies with its cookie and could never accept a
+ * challenge addressed to it. `isMine` rules out challenging yourself. Kept
+ * here rather than inline in the seat component for the same reason
+ * isBotAway is: it's a pure read of snapshot fields, and vitest.config.ts's
+ * `include` only covers lib/ and app/, so a components/ test never runs.
+ */
+export function isChallengeableSeat(seat: PublicSeat): boolean {
+  return !seat.isMine && seat.isHuman && seat.profileId !== null;
+}

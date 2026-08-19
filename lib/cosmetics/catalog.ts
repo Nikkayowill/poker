@@ -86,7 +86,7 @@ export function avatarFace(id: string): string {
 
 /** Browser-captured thumbnail of a rigged character for the Collection grid. */
 export function characterThumbnail(id: string): string {
-  return `/avatars3d/collection/${id}.png`;
+  return `/collection/${id}.png`;
 }
 
 /**

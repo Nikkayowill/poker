@@ -1,4 +1,4 @@
-import { AUDIBLE_EFFECTS, SOUND_FILES, soundGain, type SoundEffect } from "./manifest";
+import { AUDIBLE_EFFECTS, SOUND_FILES, SOUND_REPEAT, soundGain, type SoundEffect } from "./manifest";
 
 export type { SoundEffect };
 
@@ -54,13 +54,30 @@ export function setSoundEnabled(value: boolean) {
   enabled = value;
 }
 
-export function playSound(effect: SoundEffect) {
-  if (!enabled) return;
-  const audio = playerFor(effect);
-  if (!audio) return;
+function fire(audio: HTMLAudioElement) {
   audio.currentTime = 0;
   void audio.play().catch(() => {
     // Autoplay can still be blocked before any gesture reaches this tab;
     // the next real interaction will succeed, nothing to recover here.
   });
+}
+
+export function playSound(effect: SoundEffect) {
+  if (!enabled) return;
+  const audio = playerFor(effect);
+  if (!audio) return;
+  fire(audio);
+
+  // A handful of effects are a real gesture repeated -- a double knock on
+  // the felt for `check` -- rather than one longer recording. Timed replays
+  // of the same element, not two overlapping calls to play() in the same
+  // tick, which would just restart it once.
+  const repeat = SOUND_REPEAT[effect];
+  if (!repeat) return;
+  for (let i = 1; i < repeat.times; i++) {
+    setTimeout(() => {
+      if (!enabled) return;
+      fire(audio);
+    }, repeat.gapMs * i);
+  }
 }

@@ -3,6 +3,16 @@ import type { SoundEffect } from "./manifest";
 import { soundForSeatAction } from "./seat-action-sound";
 
 /**
+ * The bar for the crowd cheer rather than the quieter regular-pot cue.
+ *
+ * In big blinds, not chips, so it scales across every tier without a table
+ * of thresholds: every tier in `TIER_CONFIG` buys in for exactly 100 big
+ * blinds, so this is "the winner took a full starting stack or more" --
+ * someone got properly stacked -- at the 1k table same as the 500k one.
+ */
+export const HUGE_POT_BIG_BLINDS = 100;
+
+/**
  * What the table sounds like between two snapshots.
  *
  * A pure function over (previous, current) rather than a chain of playSound
@@ -40,9 +50,25 @@ export function tableSounds(
     if (revealed === 3 && previous.community.length === 0) sounds.push("flop");
     else if (revealed > 0) sounds.push("card");
 
+    // Whether the local seat's own streetBet moving this snapshot is an echo
+    // of something act() already announced on tap (a call, a raise, an
+    // all-in) rather than a stack change nothing else voiced -- a posted
+    // blind, which has no seatSound of its own (see soundForSeatAction).
+    // Without this, a bet you just made hits twice: the optimistic sound
+    // on tap, then this "chips" sound again, later, when the server confirms
+    // it -- two sounds, out of sync, for one action.
+    const mine = current.seats.find((seat) => seat.isMine);
+    const mineBefore = mine && seatBefore(mine.id);
+    const mineAlreadySounded =
+      !!mineBefore &&
+      mine!.lastAction !== mineBefore.lastAction &&
+      soundForSeatAction(mine!.lastAction) !== null;
+
     const chipsMoved = current.seats.some((seat) => {
       const before = seatBefore(seat.id);
-      return before && seat.streetBet > before.streetBet;
+      if (!before || !(seat.streetBet > before.streetBet)) return false;
+      if (seat.isMine && mineAlreadySounded) return false;
+      return true;
     });
     if (chipsMoved) sounds.push("chips");
 
@@ -81,10 +107,16 @@ export function tableSounds(
   if (mine?.isCurrent && !seatBefore(mine.id)?.isCurrent) sounds.push("your-turn");
 
   if (current.status === "complete" && previous.status !== "complete") {
-    // The room cheers for whoever won it, not only when it is you. `lose`
+    // The room reacts for whoever won it, not only when it is you. `lose`
     // has no file behind it, so the old branch meant most hands at a
     // six-handed table ended in silence.
-    sounds.push("win");
+    //
+    // Only a genuinely huge pot gets the crowd cheer -- a table roaring for
+    // every walked blind and min-raised pot, hand after hand, stopped
+    // reading as excitement and started reading as noise. Ordinary pots get
+    // the quieter cue instead.
+    const isHuge = current.pot >= current.bigBlind * HUGE_POT_BIG_BLINDS;
+    sounds.push(isHuge ? "win" : "win-modest");
   }
 
   const latestLog = current.log[0];

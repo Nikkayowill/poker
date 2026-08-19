@@ -56,6 +56,7 @@ function snapshot(overrides: Partial<GameSnapshot> = {}): GameSnapshot {
     status: "playing",
     community: [],
     pot: 0,
+    bigBlind: 10,
     log: [],
     seats: [seat({ id: "me", isMine: true }), seat({ id: "bot" })],
     ...overrides,
@@ -92,8 +93,8 @@ describe("tableSounds", () => {
     // acting simultaneously.
     const before = snapshot({
       seats: [
-        seat({ id: "me", isMine: true, streetBet: 40, lastAction: "Raise 40" }),
-        seat({ id: "bot", streetBet: 40, lastAction: "Call 40" }),
+        seat({ id: "me", isMine: true, streetBet: 40, lastAction: "Raise to · 40" }),
+        seat({ id: "bot", streetBet: 40, lastAction: "Call · 40" }),
       ],
       community: board("Ah", "Kd", "2c"),
     });
@@ -124,18 +125,33 @@ describe("tableSounds", () => {
   it("plays another player's action, and the chips underneath it", () => {
     const before = snapshot();
     const after = next(before, {
-      seats: [seat({ id: "me", isMine: true }), seat({ id: "bot", streetBet: 50, lastAction: "Raise 50" })],
+      seats: [seat({ id: "me", isMine: true }), seat({ id: "bot", streetBet: 50, lastAction: "Raise to · 50" })],
     });
     expect(tableSounds(before, after)).toEqual(["chips", "raise"]);
   });
 
   it("stays quiet about the local player's own action", () => {
     // act() already played it optimistically on tap. Playing it again when the
-    // server confirms is a stutter on every decision the player makes.
+    // server confirms is a stutter on every decision the player makes -- the
+    // raise sound on tap, then a lone "chips" sound again once the snapshot
+    // catches up, out of sync with each other.
     const before = snapshot();
     const after = next(before, {
       seats: [
-        seat({ id: "me", isMine: true, streetBet: 50, lastAction: "Raise 50" }),
+        seat({ id: "me", isMine: true, streetBet: 50, lastAction: "Raise to · 50" }),
+        seat({ id: "bot" }),
+      ],
+    });
+    expect(tableSounds(before, after)).toEqual([]);
+  });
+
+  it("still sounds a posted blind for the local player, which has no seatSound of its own", () => {
+    // A blind is posted automatically, not chosen -- act() never fires for
+    // it, so the chip sound here is the only cue a stack just moved.
+    const before = snapshot();
+    const after = next(before, {
+      seats: [
+        seat({ id: "me", isMine: true, streetBet: 10, lastAction: "Big blind · 10" }),
         seat({ id: "bot" }),
       ],
     });
@@ -188,13 +204,22 @@ describe("tableSounds", () => {
     expect(tableSounds(before, after)).not.toContain("your-turn");
   });
 
-  it("cheers once, for whoever won", () => {
-    const playing = snapshot();
+  it("reacts once, for whoever won -- quietly for a routine pot", () => {
+    const playing = snapshot({ pot: 200, bigBlind: 10 }); // 20bb, well under the huge-pot bar
     const complete = next(playing, { status: "complete" });
-    expect(tableSounds(playing, complete)).toContain("win");
+    expect(tableSounds(playing, complete)).toContain("win-modest");
+    expect(tableSounds(playing, complete)).not.toContain("win");
     // The celebration holds for 2.8s while snapshots keep arriving.
     const stillComplete = next(complete, { pot: 0 });
-    expect(tableSounds(complete, stillComplete)).not.toContain("win");
+    expect(tableSounds(complete, stillComplete)).not.toContain("win-modest");
+  });
+
+  it("reserves the crowd cheer for a genuinely huge pot", () => {
+    // 100 big blinds -- a full starting stack, same at every tier.
+    const playing = snapshot({ pot: 1000, bigBlind: 10 });
+    const complete = next(playing, { status: "complete" });
+    expect(tableSounds(playing, complete)).toContain("win");
+    expect(tableSounds(playing, complete)).not.toContain("win-modest");
   });
 
   it("calls out a player who ran out of time, once per entry", () => {
@@ -214,7 +239,7 @@ describe("tableSounds", () => {
       community: board("Ah", "Kd", "2c"),
       seats: [
         seat({ id: "me", isMine: true, isCurrent: true }),
-        seat({ id: "bot", streetBet: 50, lastAction: "Call 50" }),
+        seat({ id: "bot", streetBet: 50, lastAction: "Call · 50" }),
       ],
     });
     expect(tableSounds(before, after)).toEqual(["flop", "chips", "call", "your-turn"]);

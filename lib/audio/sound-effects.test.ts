@@ -125,6 +125,34 @@ describe("playSound", () => {
     expect(built[0].play).toHaveBeenCalledTimes(2);
   });
 
+  it("plays check as two real knocks, spaced like a live double-tap", async () => {
+    vi.useFakeTimers();
+    const { playSound } = await loadPlayer();
+    playSound("check");
+    // The first knock is immediate, same as every other effect.
+    expect(built).toHaveLength(1);
+    expect(built[0].play).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(189);
+    expect(built[0].play).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    // The second knock reuses the same element -- rewound, not a new one.
+    expect(built).toHaveLength(1);
+    expect(built[0].play).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it("drops a pending repeat if sound is turned off before it fires", async () => {
+    vi.useFakeTimers();
+    const { playSound, setSoundEnabled } = await loadPlayer();
+    playSound("check");
+    setSoundEnabled(false);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(built[0].play).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
   it("survives a rejected play() without throwing", async () => {
     // Autoplay policy rejects until a gesture lands. An unhandled rejection
     // here would surface as an error in the middle of a hand.

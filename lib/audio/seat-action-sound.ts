@@ -16,16 +16,24 @@ import type { SoundEffect } from "./manifest";
  */
 export function soundForSeatAction(lastAction: string | null): SoundEffect | null {
   if (!lastAction) return null;
-  // "Timed out · Fold" and "Timed out · Check" carry the same sound as the
-  // deliberate versions. From across the table there is no difference: a fold
-  // is a fold whether the player chose it or the clock did.
-  const action = lastAction.split("·").pop()?.trim() ?? lastAction;
+
+  // Every lastAction the engine writes for a real decision puts the action
+  // name first and the amount after a " · " separator -- "Call · 500",
+  // "Raise to · 500", "All-in · 500" -- so the name to match is the text
+  // *before* the separator, not after it. "Timed out · Fold" and
+  // "Timed out · Check" are the one string built the other way round (reason
+  // first, action second) and carry the same sound as the deliberate
+  // versions: from across the table there is no difference between a fold a
+  // player chose and one the clock made for them.
+  const action = lastAction.startsWith("Timed out")
+    ? lastAction.split("·").pop()?.trim() ?? lastAction
+    : lastAction;
 
   if (action.startsWith("Fold")) return "fold";
   if (action.startsWith("Check")) return "check";
   if (action.startsWith("Call")) return "call";
   if (action.startsWith("Raise") || action.startsWith("Bet")) return "raise";
-  if (action.startsWith("All in")) return "all-in";
+  if (action.startsWith("All-in") || action.startsWith("All in")) return "all-in";
 
   // Blinds are posted, not chosen, and the chip sound already fires for the
   // stack movement. A second sound here would double every deal.

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveAvatar } from "@/lib/server/profile-store";
 import { persistenceMode } from "@/lib/server/game-store";
-import { detectImage, readImageDimensions, MAX_AVATAR_DIMENSION, MAX_AVATAR_PIXELS } from "@/lib/profile/image";
+import { detectImage, readImageDimensions, resizeAvatar, MAX_AVATAR_DIMENSION, MAX_AVATAR_PIXELS } from "@/lib/profile/image";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
 
@@ -45,7 +45,8 @@ export async function POST(request: NextRequest) {
         { status: 422 },
       );
     }
-    const profile = await saveAvatar(token, bytes, detected.contentType, detected.extension);
+    const resized = await resizeAvatar(bytes, detected.contentType);
+    const profile = await saveAvatar(token, resized, detected.contentType, detected.extension);
     return NextResponse.json({ profile, persistence: persistenceMode() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not upload that avatar.";

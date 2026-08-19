@@ -127,6 +127,32 @@ describe("checkAchievements against stat-sourced metrics", () => {
     expect(afterSecond).toBe(afterFirst);
   });
 
+  it("grants each profile independently when several are checked in one call", async () => {
+    // checkAchievements fans its per-profile work out with Promise.all --
+    // this pins that running two profiles concurrently still grades each
+    // one only against its own standing, with no cross-talk between them.
+    const playerA = await newPlayer("ParallelA");
+    const playerB = await newPlayer("ParallelB");
+
+    const touchedA = await recordHandStats(wonHand(playerA.token, 50_000, randomUUID(), 1));
+    const touchedB = await recordHandStats(wonHand(playerB.token, 5_000, randomUUID(), 1));
+
+    await checkAchievements([...touchedA, ...touchedB]);
+
+    const viewA = await getAchievementsView(playerA.profileId);
+    const viewB = await getAchievementsView(playerB.profileId);
+    expect(findAchievement(viewA, "biggest_pot_10k").unlocked).toBe(true);
+    expect(findAchievement(viewA, "biggest_pot_50k").unlocked).toBe(true);
+    expect(findAchievement(viewB, "biggest_pot_10k").unlocked).toBe(false);
+    expect(findAchievement(viewB, "biggest_pot_50k").unlocked).toBe(false);
+
+    const profileA = await ensureProfile(playerA.token);
+    const profileB = await ensureProfile(playerB.token);
+    // biggest_pot_10k (500) + biggest_pot_50k (3000) + net_profit_10k (500).
+    expect(profileA.goldBalance).toBe(playerA.startingGold + 500 + 3000 + 500);
+    expect(profileB.goldBalance).toBe(playerB.startingGold);
+  });
+
   it("reports real progress toward a locked tier", async () => {
     const { token, profileId } = await newPlayer("Climbing");
     const gameId = randomUUID();

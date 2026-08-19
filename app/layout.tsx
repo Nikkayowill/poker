@@ -1,14 +1,34 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+const TITLE = "StackChips - Play Free Texas Hold’em";
+const DESCRIPTION =
+  "Six-max Texas Hold’em, PvP duels, and cribbage tables played with Gold — an in-app currency with no cash value. No pure-chance games, no rake.";
+
 export const metadata: Metadata = {
-  title: "Play Free, StackChips - Texas Hold’em",
-  description: "A server-authoritative Texas Hold’em table powered by Supabase.",
+  metadataBase: new URL("https://stackchips.app"),
+  title: TITLE,
+  description: DESCRIPTION,
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "StackChips",
+  },
+  // The opengraph-image.tsx file convention supplies the image itself; this
+  // just fills in the text half of the card so a shared link reads right
+  // before the image even loads (and for the platforms that skip images).
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    url: "https://stackchips.app",
+    siteName: "StackChips",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
   },
 };
 

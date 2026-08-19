@@ -176,6 +176,9 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   (`back-riverwood`, `avatar-housename`, `avatar-finaltable`, `avatar-ace`) already have
   achievement-shaped descriptions but nothing grants them — surfaced for the next milestone, not
   touched by this one.
+- Milestone 2 (achievements/badges) has since shipped (PR #100/#102). Remaining, not yet planned:
+  streak recovery, cosmetic categories beyond avatar/card-back, a "brain games" identity, non-win
+  celebrations.
 
 ### Voluntary support payments replace Buy-Gold (2026-08-13)
 - The Gold storefront (`components/store/gold-store.tsx`, the general tier ladder, and the legacy
@@ -397,11 +400,71 @@ must never pay out (this is what makes a double-clicked action, a retry, or two 
 - M17 (chip cosmetics) is deliberately parked until the 3D sim is finished.
 - No in-app way to *pick a friend* and challenge/invite them yet — `Seat.profileId` carries the id
   but nothing surfaces a "challenge this seat" control (same gap for PvP duels and M16 table invites).
+  `feat/challenge-this-seat` (open branch as of 2026-08-19) is in progress on part of this.
 - PvP duel sync is a 2s poll, not Realtime.
 - Blackjack's Supabase persistence branch has never been exercised by a real hand in production
   (only type-checked, plus the memory-mode branch under test).
 - `multiplayer.spec.ts`'s six-player test and two `safe-area.spec.ts` table tests fail identically at
   a pristine HEAD worktree, unrelated to recent work — reconfirm against a fresh worktree before
   treating a red run here as a regression (see `[[reference_stackchips_e2e_traps]]`).
+
+### Public-launch readiness pass (2026-08-19)
+Play-money platform: Gold has no cash value and nothing here is real-money wagering. "Make money"
+means Gold purchases + voluntary support (`lib/legal/documents.ts`'s existing disclosures), both
+already live Stripe integrations — this pass is production/scale hardening, not a new business model.
+
+**Correction to `docs/launch-checklist.md`'s own text**: it still reads "session identity is an
+HttpOnly random cookie rather than a verified email/social login," and an earlier pass in this file
+repeated that as the single biggest gap. Both are stale. Real Supabase Auth already ships — email/
+password (`signInWithEmail`/`signUpWithEmail` in `components/poker-app.tsx`) and Google OAuth
+(`app/auth/callback/route.ts`), with cross-device account recovery: `lib/server/link-account.ts`'s
+`linkAuthenticatedUser` restores an existing profile by Supabase user id on a new device, or links a
+guest's current Gold/avatar to a newly-created account. Checked by reading the actual code, not the
+doc, after almost repeating the doc's stale claim into this file a second time — verify an
+auth/session claim against `lib/server/link-account.ts` and `components/poker-app.tsx`, not
+`docs/launch-checklist.md`, which needs its own edit to stop asserting this.
+
+Real remaining gaps, in order:
+- **Rate limiting is genuinely process-local** (`lib/server/rate-limit.ts`, an in-memory Map) and is
+  called from 77 different API routes via `enforceRateLimit`/`checkRateLimit`, most of them
+  money-adjacent (Stripe, Gold, cosmetics purchases). A correct fix means making that function async
+  and backing it with a shared store (Postgres-RPC or Upstash Redis) — a real, valuable change, but a
+  77-call-site refactor across every payment-adjacent route is exactly the kind of change that needs
+  a human reviewing it live, not one running unsupervised overnight. Deliberately left undone this
+  pass; next concrete step if picked up: a `rate_limit_buckets` table + row-locked RPC (no new
+  external credential needed, matches every other money RPC's shape), then a scripted `await` add
+  across the 77 call sites, verified by the existing test suite before merging.
+- Realtime still runs on one small `game_signals` channel, capped by the checklist itself at ~3,000
+  concurrent subscribers before a migration to Realtime Broadcast is needed — a real scale trigger,
+  not an immediate blocker.
+- Supabase Auth's "leaked password protection" advisor (`auth_leaked_password_protection`, WARN) is
+  off. It matters now that real password sign-up exists — it didn't when the checklist was written.
+  No MCP tool exposes this; toggle it at Dashboard → Authentication → Policies → Password Security.
+- The checklist's 15-minute live multi-browser production soak after any gameplay/persistence change
+  should be reconfirmed given how much shipped recently (cribbage, achievements, mid-hand rebuy).
+
+Shipped this pass (branch `feat/production-launch-readiness`): OG/Twitter card metadata + a generated
+`opengraph-image.tsx` (there was no share-link preview at all before — a shared stackchips.app link
+fell back to a bare text card), `robots.ts`/`sitemap.ts`, and `middleware.ts`'s exclusion list
+extended to cover them (same "no session to refresh" reasoning as the existing legal/about/help
+exclusions). A full marketing landing page was deliberately **not** built — Kayo explicitly stripped
+`app/page.tsx` down to the bare sign-in form on 2026-08-09 ("less chrome, less copy"), and reversing
+that is a real product call, not an inference to make unsupervised; flagged for Kayo's decision, not
+decided here. Also applied `20260819090000_missing_fk_indexes.sql` (six missing indexes from the
+Supabase performance advisor; `cash_game_sessions`' own finding was skipped — that table's store was
+already deleted in the 2026-08-06 repo-quality pass).
+
+### 3D table: scrap under consideration, not decided (2026-08-19)
+Kayo is weighing dropping the WebGL 3D table outright — "too much work, don't want to waste time on
+it" — floated, not committed. If a future pass sees `components/game3d`/`lib/game3d` deleted and the
+`webgl_3d` renderer option gone, treat it as decided; otherwise this is still open. Measured same day:
+`components/game3d/` + `lib/game3d/` is 101 files / ~18,400 lines, and 23 e2e specs touch the 3D room.
+That matches the churn already logged above (eight geometry-rebuild rounds, arm-IK, the hand/finger
+rig, the nameplate collision fix, a camera that structurally never sees a horizon, a meshopt pass, an
+abandoned local character-gen effort) for one of three table renderers. The 2.5D racetrack table is
+the one actually converging with real polish and already shares the seat-art/avatar system with the
+rest of the app; `canvas_2d` stays as the no-WebGL fallback regardless of what happens to 3D, so
+removing it wouldn't remove a fallback path. If this lands, M17 above (parked "until the 3D sim is
+finished") needs Kayo's explicit re-decision, not a silent default.
 
 Update this section when scope changes; keep `CLAUDE.md` synchronized.

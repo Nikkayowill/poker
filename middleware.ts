@@ -84,7 +84,10 @@ export const config = {
      * the refreshed cookie. /rewards is left out of this list on purpose --
      * unlike those, it fetches /api/profile client-side to show a real Gold
      * balance and claim states, the same as /games and /challenges do.
+     * robots.txt/sitemap.xml/opengraph-image are crawler-fetched constants
+     * with no session to refresh either -- same reasoning, added when those
+     * routes were added rather than left to inherit the slow path by default.
      */
-    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|icon.svg|icon-192.png|icon-512.png|apple-icon.png|sounds/|avatars/|legal/|store|leaderboard|collection|about|help|how-to-play).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|icon.svg|icon-192.png|icon-512.png|apple-icon.png|sounds/|avatars/|legal/|store|leaderboard|collection|about|help|how-to-play|robots.txt|sitemap.xml|opengraph-image).*)",
   ],
 };

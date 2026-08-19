@@ -307,17 +307,20 @@ export async function checkAchievements(profileIds: string[], now: Date = new Da
   const catalog = await loadCatalog(now.getTime());
   if (catalog.length === 0) return;
 
-  for (const profileId of profileIds) {
+  // Same fan-out shape as hand-completion.ts's per-seat Promise.all: every
+  // profile's reads and grants are independent of every other profile's, so
+  // there is nothing to serialize between them.
+  await Promise.all(profileIds.map(async (profileId) => {
     const granted = await grantedCodes(profileId);
     const remaining = catalog.filter((definition) => !granted.has(definition.code));
-    if (remaining.length === 0) continue;
+    if (remaining.length === 0) return;
 
     const sources = await readSources(profileId, remaining);
     for (const definition of remaining) {
       const current = currentValueFor(definition, sources.standing, sources.level, sources.counters);
       if (current >= definition.threshold) await grantOne(profileId, definition, now);
     }
-  }
+  }));
 }
 
 /**

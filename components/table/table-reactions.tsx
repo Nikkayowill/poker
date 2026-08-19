@@ -5,6 +5,19 @@ import { SmilePlus } from "lucide-react";
 import { REACTIONS, type ReactionId } from "@/lib/game/reaction-channel";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 
+/** Branded vector reaction artwork. It stays deliberately simple so it reads
+ * at table scale and remains identical across operating systems. */
+export function ReactionEmote({ reactionId }: { reactionId: ReactionId }) {
+  if (reactionId === "nice_hand") {
+    return <span className="reaction-art reaction-art-nice-hand" aria-hidden="true">👏</span>;
+  }
+  if (reactionId === "lucky") {
+    return <span className="reaction-art reaction-art-lucky" aria-hidden="true">♣</span>;
+  }
+  const face = reactionId === "angry" ? "╲╱" : reactionId === "facepalm" ? "•‿•" : reactionId === "tired" ? "﹏﹏" : "⊙﹏⊙";
+  return <span className={`reaction-art reaction-art-${reactionId}`} aria-hidden="true">{face}</span>;
+}
+
 /**
  * The trigger and picker for sending a table reaction.
  *
@@ -23,12 +36,15 @@ export function ReactionButton({
   onSend,
   disabled,
   trigger,
+  activeReaction,
 }: {
   onSend: (reactionId: ReactionId) => void;
   /** True while on cooldown -- see lib/game/use-table-reactions.ts. */
   disabled: boolean;
   /** Optional custom trigger, used by the 2.5D HUD's profile avatar. */
   trigger?: ReactNode;
+  /** The most recent reaction, used to make the avatar emote in place. */
+  activeReaction?: ReactionId | null;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -77,7 +93,16 @@ export function ReactionButton({
         disabled={disabled}
         onClick={() => { tapSound(); setOpen((current) => !current); }}
       >
-        {trigger ?? <SmilePlus size={15} />}
+        {trigger ? (
+          <span className="reaction-avatar-stage">
+            {trigger}
+            {activeReaction && (
+              <span className={`reaction-avatar-emote reaction-emote-${activeReaction}`} aria-hidden="true">
+                <ReactionEmote reactionId={activeReaction} />
+              </span>
+            )}
+          </span>
+        ) : <SmilePlus size={15} />}
       </button>
       {open && (
         <>
@@ -97,7 +122,7 @@ export function ReactionButton({
                 title={reaction.label}
                 onClick={() => pick(reaction.id)}
               >
-                <span aria-hidden="true">{reaction.emoji}</span>
+                <ReactionEmote reactionId={reaction.id} />
               </button>
             ))}
           </div>

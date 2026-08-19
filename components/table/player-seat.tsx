@@ -8,12 +8,13 @@ import { avatarFace } from "@/lib/cosmetics/catalog";
 import { dealDelayMs } from "@/lib/game/deal-choreography";
 import { isBotAway, isChallengeableSeat } from "@/lib/game/seat-presence";
 import { isWinningCard } from "@/lib/game/winning-cards";
-import { reactionEmoji, reactionLabel } from "@/lib/game/reaction-channel";
+import { reactionLabel } from "@/lib/game/reaction-channel";
 import type { SeatReaction } from "@/lib/game/use-table-reactions";
 import { missingArtwork } from "@/components/artwork-cache";
 import { ChallengeSeatControl } from "./challenge-seat-control";
 import { PlayingCard } from "./playing-card";
 import { SeatTimer } from "./seat-timer";
+import { ReactionEmote } from "./table-reactions";
 
 /**
  * A compact player marker for the classic 2D HUD. The room renderer owns the
@@ -25,11 +26,13 @@ export function SeatFigure({
   active,
   turnStartedAt,
   turnDeadlineAt,
+  reaction,
 }: {
   seat: PublicSeat;
   active: boolean;
   turnStartedAt: string | null;
   turnDeadlineAt: string | null;
+  reaction?: SeatReaction | null;
 }) {
   const [, forceRerender] = useState(0);
   const declared = seat.avatarCosmetic ? avatarFace(seat.avatarCosmetic) : null;
@@ -80,6 +83,16 @@ export function SeatFigure({
           to ring. */}
       {active && !seat.isMine && (
         <SeatTimer startedAt={turnStartedAt} deadlineAt={turnDeadlineAt} />
+      )}
+      {reaction && (
+        <span
+          key={reaction.key}
+          className={`seat-reaction-emote reaction-emote-${reaction.reactionId}`}
+          role="status"
+          aria-label={`${seat.name} reacted: ${reactionLabel(reaction.reactionId)}`}
+        >
+          <ReactionEmote reactionId={reaction.reactionId} />
+        </span>
       )}
     </div>
   );
@@ -325,6 +338,7 @@ export const PlayerSeat = memo(function PlayerSeat({
       active={seat.isCurrent}
       turnStartedAt={turnStartedAt}
       turnDeadlineAt={turnDeadlineAt}
+      reaction={reaction}
     />
   );
   const nameplate = (
@@ -388,19 +402,6 @@ export const PlayerSeat = memo(function PlayerSeat({
       {nameplate}
       {seat.streetBet > 0 && <span className="table-bet">${seat.streetBet}</span>}
       {isWinner && <span className="win-amount-float">+{winAmount.toLocaleString()}</span>}
-      {/* Keyed on reaction.key rather than reaction.reactionId, so sending
-          the same emoji twice in a row still remounts the bubble and
-          restarts the animation instead of React treating it as unchanged. */}
-      {reaction && (
-        <span
-          key={reaction.key}
-          className="seat-reaction-bubble"
-          role="status"
-          aria-label={`${seat.name} reacted: ${reactionLabel(reaction.reactionId)}`}
-        >
-          <span aria-hidden="true">{reactionEmoji(reaction.reactionId)}</span>
-        </span>
-      )}
     </article>
   );
 }, (previous, next) => (

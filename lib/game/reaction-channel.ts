@@ -17,14 +17,12 @@
  */
 
 export const REACTIONS = [
+  { id: "angry", emoji: "😤", label: "Angry" },
+  { id: "facepalm", emoji: "🤦", label: "SMH" },
+  { id: "tired", emoji: "😩", label: "Tired" },
+  { id: "confused", emoji: "😵", label: "Why is this happening?" },
   { id: "nice_hand", emoji: "👏", label: "Nice hand" },
-  { id: "wow", emoji: "😮", label: "Wow" },
-  { id: "ouch", emoji: "😬", label: "Ouch" },
-  { id: "lol", emoji: "😂", label: "LOL" },
-  { id: "eyes", emoji: "👀", label: "Watching" },
-  { id: "good_call", emoji: "👍", label: "Good call" },
-  { id: "unlucky", emoji: "🍀", label: "Unlucky" },
-  { id: "thanks", emoji: "❤️", label: "Thanks" },
+  { id: "lucky", emoji: "🍀", label: "Got lucky" },
 ] as const;
 
 export type ReactionId = (typeof REACTIONS)[number]["id"];

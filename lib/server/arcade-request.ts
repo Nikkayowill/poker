@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 /**
  * The rejection-and-response layer every arcade service shares.
  *
- * Blackjack, Hi-Lo, Wordle and Connections each carried their own copy of an
+ * Blackjack, Hi-Lo, Word Stack and Connections each carried their own copy of an
  * identical error class and an all-but-identical response mapper. Four copies
  * of one contract is four places to fix a bug in it, and they had already
  * started to drift: two of them dropped the `reason` field entirely, so a
@@ -25,7 +25,7 @@ import { NextResponse } from "next/server";
  * guessing -- which is what makes a 409 recoverable rather than a dead end.
  *
  * `reason` separates the rejections that are ordinary play from the ones that
- * are faults: a player typing a non-word at Wordle, or re-trying a group at
+ * are faults: a player typing a non-word at Word Stack, or re-trying a group at
  * Connections, costs nothing and the board should shrug rather than raise a
  * banner. The type parameter keeps each game's vocabulary its own, so a
  * service cannot emit a reason its own client has never heard of.

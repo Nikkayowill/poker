@@ -1,7 +1,7 @@
 import "server-only";
 
 /**
- * Every word Daily Wordle will accept as a guess.
+ * Every word Daily Word Stack will accept as a guess.
  *
  * `server-only`, and that import is load-bearing rather than decorative: this
  * list is the shape of the answer space, and a browser holding it could filter
@@ -15,7 +15,7 @@ import "server-only";
  * matters for feel: too small a dictionary rejects real words a player has
  * every right to try, and a rejection reads as a bug rather than a rule.
  *
- * Guesses are wide on purpose; ANSWERS (wordle-answers.ts) is narrow and
+ * Guesses are wide on purpose; ANSWERS (word-stack-answers.ts) is narrow and
  * hand-picked. A player may guess an obscure word, but must never be *asked*
  * for one.
  *
@@ -1029,8 +1029,8 @@ const ALLOWED = `
 `;
 
 /** A Set, not an array: this is only ever asked "is this word in you?". */
-export const WORDLE_ALLOWED_GUESSES: ReadonlySet<string> = new Set(ALLOWED.trim().split(/\s+/));
+export const WORD_STACK_ALLOWED_GUESSES: ReadonlySet<string> = new Set(ALLOWED.trim().split(/\s+/));
 
-export function isAllowedWordleGuess(word: string): boolean {
-  return WORDLE_ALLOWED_GUESSES.has(word.trim().toLowerCase());
+export function isAllowedWordStackGuess(word: string): boolean {
+  return WORD_STACK_ALLOWED_GUESSES.has(word.trim().toLowerCase());
 }

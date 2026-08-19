@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 /**
  * Submit one selection of four words against today's board.
  *
- * `day` and `version` do the same two jobs they do at Wordle: catch a board
+ * `day` and `version` do the same two jobs they do at Word Stack: catch a board
  * that rolled over at 00:00 UTC, and stop a double-fired submit from spending
  * two of the player's four mistakes on one selection.
  *

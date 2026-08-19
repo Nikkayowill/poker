@@ -288,7 +288,7 @@ export function Lobby({
         <div className="hub-grid">
           {/* Named for the game, not for the verb.
               "Join table" was unambiguous when a table was the only thing in
-              this app; next to Blackjack, Hi-Lo, Wordle and Connections it is
+              this app; next to Blackjack, Hi-Lo, Word Stack and Connections it is
               the one tile that never says what it deals. The title is
               therefore constant and the status moved into the sub-line, so
               the hero cannot stop naming the game while it is busy. */}

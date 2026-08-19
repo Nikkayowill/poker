@@ -41,7 +41,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
 
 export type ArcadeGameId =
   | "blackjack-21"
-  | "daily-wordle"
+  | "daily-word-stack"
   | "connections"
   | "hi-lo"
   | "video-poker"
@@ -129,8 +129,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     href: "/games/blackjack",
   },
   {
-    id: "daily-wordle",
-    name: "Daily Wordle",
+    id: "daily-word-stack",
+    name: "Daily Word Stack",
     // Accurate to the mechanic: one word a day, shared by everyone, which is
     // what makes the emoji grid worth posting. A blurb promising something the
     // board does not do is a promise broken on the click -- see Hi-Lo's.
@@ -138,7 +138,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     kind: "puzzle",
     entryCost: 0,
     status: "live",
-    href: "/games/wordle",
+    href: "/games/word-stack",
   },
   {
     id: "connections",

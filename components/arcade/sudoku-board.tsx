@@ -84,7 +84,7 @@ export function SudokuBoard() {
         if (!response.ok) {
           // A wrong digit is ordinary play, not a fault: the board takes the
           // updated state (the mistake counter moved) and shrugs rather than
-          // raising a banner. Same treatment Wordle gives a non-word.
+          // raising a banner. Same treatment Word Stack gives a non-word.
           if (data.reason === "wrong") {
             if (data.round) setState((current) => (current ? { ...current, round: data.round! } : current));
             return { wrong: true };

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { playWordleGuess, toWordleErrorResponse } from "@/lib/server/wordle-service";
+import { playWordStackGuess, toWordStackErrorResponse } from "@/lib/server/word-stack-service";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
@@ -35,7 +35,7 @@ const actionSchema = z.object({
 export async function POST(request: NextRequest) {
   // Six guesses a day makes anything past this a script, but the limit is
   // generous enough to absorb a player retyping into a bad connection.
-  const limited = enforceRateLimit(request, "arcade:wordle:guess", 120, 60 * 1000);
+  const limited = enforceRateLimit(request, "arcade:word-stack:guess", 120, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);
@@ -50,10 +50,10 @@ export async function POST(request: NextRequest) {
     }
     return withRequestSessionCookie(
       request,
-      NextResponse.json(await playWordleGuess(token, parsed.data)),
+      NextResponse.json(await playWordStackGuess(token, parsed.data)),
       token,
     );
   } catch (error) {
-    return withRequestSessionCookie(request, toWordleErrorResponse(error), token);
+    return withRequestSessionCookie(request, toWordStackErrorResponse(error), token);
   }
 }

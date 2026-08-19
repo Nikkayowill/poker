@@ -4,7 +4,7 @@ import type { ConnectionsPuzzle } from "./connections";
 /**
  * The Connections puzzle set.
  *
- * `server-only`, for the same reason wordle-answers.ts is: the groups ARE the
+ * `server-only`, for the same reason word-stack-answers.ts is: the groups ARE the
  * solution, and a browser holding this file has solved every board this app
  * will ever serve.
  *

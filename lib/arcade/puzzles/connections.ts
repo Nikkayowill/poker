@@ -1,7 +1,7 @@
 /**
  * Connections -- sixteen words, four hidden groups of four.
  *
- * Pure and synchronous, and like wordle.ts it takes the puzzle as *data*
+ * Pure and synchronous, and like word-stack.ts it takes the puzzle as *data*
  * rather than importing one. This module is client-imported (the board renders
  * from these types and the share matrix is built from its levels), so a puzzle
  * set imported here would ship every future answer to every browser. The sets
@@ -164,7 +164,7 @@ export function startConnectionsRound(puzzle: ConnectionsPuzzle, randomInt: Rand
  * Plays one selection of four words.
  *
  * Inert on a selection the round cannot accept -- same convention as
- * submitWordleGuess and callHiLo: the service re-checks and answers 409, and a
+ * submitWordStackGuess and callHiLo: the service re-checks and answers 409, and a
  * throw here would surface as a 500.
  */
 export function submitConnectionsGuess(round: ConnectionsRound, selection: string[]): ConnectionsRound {

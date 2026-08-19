@@ -1,16 +1,16 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { msUntilNextPuzzle, pickDaily, puzzleDay, puzzleNumber } from "@/lib/arcade/puzzles/daily";
-import { WORDLE_ANSWERS } from "@/lib/arcade/puzzles/wordle-answers";
-import { isAllowedWordleGuess } from "@/lib/arcade/puzzles/wordle-dictionary";
+import { WORD_STACK_ANSWERS } from "@/lib/arcade/puzzles/word-stack-answers";
+import { isAllowedWordStackGuess } from "@/lib/arcade/puzzles/word-stack-dictionary";
 import {
-  startWordleRound,
-  submitWordleGuess,
-  toWordleSnapshot,
-  wordleGuessProblem,
-  type WordleRound,
-  type WordleSnapshot,
-} from "@/lib/arcade/puzzles/wordle";
+  startWordStackRound,
+  submitWordStackGuess,
+  toWordStackSnapshot,
+  wordStackGuessProblem,
+  type WordStackRound,
+  type WordStackSnapshot,
+} from "@/lib/arcade/puzzles/word-stack";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   DailyPuzzleAlreadyStarted,
@@ -25,7 +25,7 @@ import { applyMissionEvent } from "./mission-store";
 import { ensureProfile } from "./profile-store";
 
 /**
- * Everything between a Wordle request and the board.
+ * Everything between a Word Stack request and the board.
  *
  * No Gold moves here, so the three ordering rules that govern
  * blackjack-service.ts and hi-lo-service.ts do not apply -- there is no stake
@@ -35,7 +35,7 @@ import { ensureProfile } from "./profile-store";
  *   **The answer never leaves this file.**
  *
  * The word is read from a `server-only` list, put straight into the stored
- * round, and every path out to the browser goes through toWordleSnapshot,
+ * round, and every path out to the browser goes through toWordStackSnapshot,
  * which nulls it until the round is over. That is not defence in depth against
  * a determined attacker -- it is defence against the first thing a curious
  * player does, which is open the network tab. A daily puzzle that can be read
@@ -49,11 +49,11 @@ import { ensureProfile } from "./profile-store";
  * firmly as playing does.
  */
 
-export const WORDLE_GAME = "wordle";
+export const WORD_STACK_GAME = "word-stack";
 
-export interface WordleView {
+export interface WordStackView {
   /** Null when the player has not opened today's board yet. */
-  round: WordleSnapshot | null;
+  round: WordStackSnapshot | null;
   profile: PlayerProfile;
   day: string;
   puzzleNumber: number;
@@ -65,14 +65,14 @@ export interface WordleView {
  * `unknown-word` is a player typing a non-word: expected, costs nothing, and
  * the board should shrug rather than show an error banner.
  */
-export class WordleRequestError extends ArcadeRequestError<
-  WordleSnapshot,
+export class WordStackRequestError extends ArcadeRequestError<
+  WordStackSnapshot,
   "unknown-word" | "rolled-over" | "stale"
 > {
-  readonly name = "WordleRequestError";
+  readonly name = "WordStackRequestError";
 }
 
-type StoredWordle = StoredPuzzleRound<WordleRound>;
+type StoredWordStack = StoredPuzzleRound<WordStackRound>;
 
 /** Everything a request needs to know about "today", resolved once per call. */
 function today(now = new Date()) {
@@ -80,8 +80,8 @@ function today(now = new Date()) {
   return { day, number: puzzleNumber(day), msUntilNext: msUntilNextPuzzle(now) };
 }
 
-function snapshot(stored: StoredWordle): WordleSnapshot {
-  return toWordleSnapshot(stored.round, {
+function snapshot(stored: StoredWordStack): WordStackSnapshot {
+  return toWordStackSnapshot(stored.round, {
     day: stored.day,
     puzzleNumber: puzzleNumber(stored.day),
     version: stored.version,
@@ -89,10 +89,10 @@ function snapshot(stored: StoredWordle): WordleSnapshot {
 }
 
 function view(
-  stored: StoredWordle | null,
+  stored: StoredWordStack | null,
   profile: PlayerProfile,
   clock: ReturnType<typeof today>,
-): WordleView {
+): WordStackView {
   return {
     round: stored ? snapshot(stored) : null,
     profile,
@@ -110,10 +110,10 @@ function view(
  * write. Opening is POST, which costs the client one extra request on the
  * first visit of a day and nothing after.
  */
-export async function readWordlePuzzle(token: string): Promise<WordleView> {
+export async function readWordStackPuzzle(token: string): Promise<WordStackView> {
   const profile = await ensureProfile(token);
   const clock = today();
-  const stored = await getPuzzleRound<WordleRound>(profile.id, WORDLE_GAME, clock.day);
+  const stored = await getPuzzleRound<WordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
   return view(stored, profile, clock);
 }
 
@@ -126,23 +126,23 @@ export async function readWordlePuzzle(token: string): Promise<WordleView> {
  * not a fresh word. Replaying a word you have already been shown would make
  * the share grid a lie.
  */
-export async function startWordlePuzzle(token: string): Promise<WordleView & { resumed: boolean }> {
+export async function startWordStackPuzzle(token: string): Promise<WordStackView & { resumed: boolean }> {
   const profile = await ensureProfile(token);
   const clock = today();
 
-  const existing = await getPuzzleRound<WordleRound>(profile.id, WORDLE_GAME, clock.day);
+  const existing = await getPuzzleRound<WordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
   if (existing) return { ...view(existing, profile, clock), resumed: true };
 
   // The answer is chosen here and nowhere else. pickDaily walks the pool, so
   // every player asking on the same UTC day gets the same word -- which is the
   // entire premise of a shareable result.
-  const round = startWordleRound(pickDaily(WORDLE_ANSWERS, clock.day, WORDLE_GAME));
+  const round = startWordStackRound(pickDaily(WORD_STACK_ANSWERS, clock.day, WORD_STACK_GAME));
 
-  let stored: StoredWordle;
+  let stored: StoredWordStack;
   try {
-    stored = await createPuzzleRound<WordleRound>({
+    stored = await createPuzzleRound<WordStackRound>({
       profileId: profile.id,
-      game: WORDLE_GAME,
+      game: WORD_STACK_GAME,
       day: clock.day,
       round,
       complete: false,
@@ -150,7 +150,7 @@ export async function startWordlePuzzle(token: string): Promise<WordleView & { r
   } catch (error) {
     if (error instanceof DailyPuzzleAlreadyStarted) {
       // Lost a race with another tab. The board that won is the real one.
-      const live = await getPuzzleRound<WordleRound>(profile.id, WORDLE_GAME, clock.day);
+      const live = await getPuzzleRound<WordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
       if (live) return { ...view(live, profile, clock), resumed: true };
     }
     throw error;
@@ -169,57 +169,57 @@ export async function startWordlePuzzle(token: string): Promise<WordleView & { r
  * guess to the exact state they were looking at, so a double-fired submit
  * cannot spend two of their six on one word.
  */
-export async function playWordleGuess(
+export async function playWordStackGuess(
   token: string,
   input: { day: string; version: number; guess: string },
-): Promise<WordleView> {
+): Promise<WordStackView> {
   const profile = await ensureProfile(token);
   const clock = today();
 
   if (input.day !== clock.day) {
-    throw new WordleRequestError(
+    throw new WordStackRequestError(
       "A new puzzle just went up — this board has rolled over.",
       409,
       { reason: "rolled-over" },
     );
   }
 
-  const current = await getPuzzleRound<WordleRound>(profile.id, WORDLE_GAME, clock.day);
-  if (!current) throw new WordleRequestError("You have not started today's puzzle.", 404);
+  const current = await getPuzzleRound<WordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
+  if (!current) throw new WordStackRequestError("You have not started today's puzzle.", 404);
 
   if (current.version !== input.version) {
-    throw new WordleRequestError("That board moved on. Here is where it actually stands.", 409, {
+    throw new WordStackRequestError("That board moved on. Here is where it actually stands.", 409, {
       reason: "stale",
       round: snapshot(current),
     });
   }
 
-  const problem = wordleGuessProblem(current.round, input.guess);
+  const problem = wordStackGuessProblem(current.round, input.guess);
   if (problem === "finished") {
-    throw new WordleRequestError("Today's puzzle is already done.", 409, { round: snapshot(current) });
+    throw new WordStackRequestError("Today's puzzle is already done.", 409, { round: snapshot(current) });
   }
   if (problem) {
-    throw new WordleRequestError("A guess is five letters.", 400, { round: snapshot(current) });
+    throw new WordStackRequestError("A guess is five letters.", 400, { round: snapshot(current) });
   }
 
   // The dictionary check is here rather than in the engine because the word
   // list is server-only -- shipping it to the browser would hand over the
   // shape of every future answer. A non-word is ordinary play, not a fault:
   // it costs no guess and the board is returned untouched.
-  if (!isAllowedWordleGuess(input.guess)) {
-    throw new WordleRequestError("Not in the word list.", 400, {
+  if (!isAllowedWordStackGuess(input.guess)) {
+    throw new WordStackRequestError("Not in the word list.", 400, {
       reason: "unknown-word",
       round: snapshot(current),
     });
   }
 
-  const next = submitWordleGuess(current.round, input.guess);
+  const next = submitWordStackGuess(current.round, input.guess);
   const complete = next.status !== "active";
-  const stored = await advancePuzzleRound<WordleRound>(current, next, complete);
+  const stored = await advancePuzzleRound<WordStackRound>(current, next, complete);
   if (!stored) {
     // A lost race did not happen. Return the board that did.
-    const live = await getPuzzleRound<WordleRound>(profile.id, WORDLE_GAME, clock.day);
-    throw new WordleRequestError("That board moved on. Here is where it actually stands.", 409, {
+    const live = await getPuzzleRound<WordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
+    throw new WordStackRequestError("That board moved on. Here is where it actually stands.", 409, {
       reason: "stale",
       round: live ? snapshot(live) : undefined,
     });
@@ -237,11 +237,11 @@ export async function playWordleGuess(
 }
 
 /**
- * Maps a thrown error to the response both Wordle routes send. Lives here
+ * Maps a thrown error to the response both Word Stack routes send. Lives here
  * rather than beside the handlers because every other file under app/api is a
  * route.ts, and lib/server/api-auth.ts already established that a lib/server
  * module may hand back a NextResponse.
  */
-export function toWordleErrorResponse(error: unknown): NextResponse {
+export function toWordStackErrorResponse(error: unknown): NextResponse {
   return toArcadeErrorResponse(error, "That puzzle could not be played.");
 }

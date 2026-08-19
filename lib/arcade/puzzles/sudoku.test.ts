@@ -138,7 +138,7 @@ describe("generateSudoku", () => {
 
   it("gives the four difficulties genuinely different boards", () => {
     // Salted per difficulty, so solving the easy grid hands nobody the expert
-    // one -- the same separation daily.ts gives Wordle and Connections.
+    // one -- the same separation daily.ts gives Word Stack and Connections.
     const boards = SUDOKU_DIFFICULTIES.map((difficulty) => generateSudoku("2026-08-06", difficulty));
     for (let a = 0; a < boards.length; a += 1) {
       for (let b = a + 1; b < boards.length; b += 1) {

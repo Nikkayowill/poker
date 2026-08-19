@@ -88,8 +88,8 @@ export const FIRST_RUN_STEPS: readonly FirstRunStep[] = [
   {
     id: "free",
     body: `${FREE_DAILY_COUNT} puzzles are free every day and never touch your Gold. They reset at midnight UTC.`,
-    actionLabel: "Play today's Wordle",
-    action: { kind: "link", href: "/games/wordle" },
+    actionLabel: "Play today's Word Stack",
+    action: { kind: "link", href: "/games/word-stack" },
     nextLabel: "Got it",
   },
 ];

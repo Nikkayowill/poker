@@ -9,7 +9,7 @@
  * ## The layout is dealt per player, not per day
  *
  * Every other daily here gives everybody the same board, and that is the point
- * of them: "Wordle 128 4/6" only means something because word 128 was the same
+ * of them: "Word Stack 128 4/6" only means something because word 128 was the same
  * word for everyone. Memory is the one puzzle where a shared board would
  * destroy the game rather than make it. The whole test is whether *you*
  * remember where a card was, so a layout anyone could be told in advance is

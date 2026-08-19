@@ -66,51 +66,51 @@ describe("dailyIndex", () => {
     const seen = new Set<number>();
     for (let offset = 0; offset < POOL; offset += 1) {
       const day = new Date(Date.parse(`${PUZZLE_EPOCH_DAY}T00:00:00Z`) + offset * 86_400_000);
-      seen.add(dailyIndex(puzzleDay(day), POOL, "wordle"));
+      seen.add(dailyIndex(puzzleDay(day), POOL, "word-stack"));
     }
     expect(seen.size).toBe(POOL);
   });
 
   it("does not walk the pool in order", () => {
-    const first = dailyIndex("2026-01-01", POOL, "wordle");
-    const second = dailyIndex("2026-01-02", POOL, "wordle");
+    const first = dailyIndex("2026-01-01", POOL, "word-stack");
+    const second = dailyIndex("2026-01-02", POOL, "word-stack");
     expect(second - first).not.toBe(1);
   });
 
   it("separates the games, so one list's order says nothing about the other's", () => {
     const days = ["2026-01-01", "2026-02-14", "2026-08-05", "2026-12-31"];
-    const wordle = days.map((day) => dailyIndex(day, POOL, "wordle"));
+    const wordStack = days.map((day) => dailyIndex(day, POOL, "word-stack"));
     const connections = days.map((day) => dailyIndex(day, POOL, "connections"));
-    expect(wordle).not.toEqual(connections);
+    expect(wordStack).not.toEqual(connections);
   });
 
   it("is stable -- the same day always yields the same puzzle", () => {
     // The share text names a puzzle number. If this ever moved, two people
     // comparing "#128" would be comparing different words.
-    expect(dailyIndex("2026-08-05", POOL, "wordle")).toBe(dailyIndex("2026-08-05", POOL, "wordle"));
+    expect(dailyIndex("2026-08-05", POOL, "word-stack")).toBe(dailyIndex("2026-08-05", POOL, "word-stack"));
   });
 
   it("stays in range for a day before the epoch", () => {
     // JS % keeps the dividend's sign, so a clock skew or a backfill would
     // index negatively without the correction.
-    const index = dailyIndex("2025-12-30", POOL, "wordle");
+    const index = dailyIndex("2025-12-30", POOL, "word-stack");
     expect(index).toBeGreaterThanOrEqual(0);
     expect(index).toBeLessThan(POOL);
   });
 
   it("handles a single-entry pool", () => {
-    expect(dailyIndex("2026-08-05", 1, "wordle")).toBe(0);
+    expect(dailyIndex("2026-08-05", 1, "word-stack")).toBe(0);
   });
 
   it("rejects an empty pool rather than returning NaN", () => {
-    expect(() => dailyIndex("2026-08-05", 0, "wordle")).toThrow();
+    expect(() => dailyIndex("2026-08-05", 0, "word-stack")).toThrow();
   });
 });
 
 describe("pickDaily", () => {
   it("picks from the pool by index", () => {
     const pool = ["a", "b", "c", "d", "e"];
-    expect(pool).toContain(pickDaily(pool, "2026-08-05", "wordle"));
-    expect(pickDaily(pool, "2026-08-05", "wordle")).toBe(pool[dailyIndex("2026-08-05", 5, "wordle")]);
+    expect(pool).toContain(pickDaily(pool, "2026-08-05", "word-stack"));
+    expect(pickDaily(pool, "2026-08-05", "word-stack")).toBe(pool[dailyIndex("2026-08-05", 5, "word-stack")]);
   });
 });

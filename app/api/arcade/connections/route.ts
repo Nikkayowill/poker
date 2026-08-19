@@ -15,7 +15,7 @@ export const runtime = "nodejs";
  *
  * GET reads today's board and never opens one; POST opens it and is idempotent
  * for the day, resuming rather than re-dealing even after the board is
- * finished. Same contract as the Wordle route.
+ * finished. Same contract as the Word Stack route.
  *
  * The browser never receives the groups. toConnectionsSnapshot sends the words
  * still on the board plus the groups already solved, and withholds both the

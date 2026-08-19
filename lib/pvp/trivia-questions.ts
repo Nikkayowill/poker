@@ -3,7 +3,7 @@ import "server-only";
 /**
  * The questions Trivia Showdown actually asks, and the answers to them.
  *
- * `server-only`, for exactly the reason lib/arcade/puzzles/wordle-answers.ts
+ * `server-only`, for exactly the reason lib/arcade/puzzles/word-stack-answers.ts
  * is: a browser holding this file has not cheated one question, it has cheated
  * every match it will ever play, and this one settles real Gold. The snapshot
  * that reaches a client carries a prompt and four choices with no answerIndex

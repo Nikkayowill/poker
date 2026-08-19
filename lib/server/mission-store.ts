@@ -31,7 +31,7 @@ import { adminClient } from "./supabase-admin";
 const DEFAULT_DEFINITIONS: MissionDefinition[] = [
   { code: "daily_play_hands", cadence: "daily", metric: "poker_hands_played", target: 5, rewardGold: 150, dedupeDaily: false, title: "Play five poker hands", description: "Sit in and see five hands to showdown or fold.", sortOrder: 10 },
   { code: "daily_win_duels", cadence: "daily", metric: "duels_won", target: 3, rewardGold: 150, dedupeDaily: false, title: "Win three duels", description: "Win three PvP duels — any game.", sortOrder: 20 },
-  { code: "daily_brain_game", cadence: "daily", metric: "puzzles_completed", target: 1, rewardGold: 100, dedupeDaily: false, title: "Complete one brain game", description: "Finish a Wordle, Sudoku, Connections or Memory round.", sortOrder: 30 },
+  { code: "daily_brain_game", cadence: "daily", metric: "puzzles_completed", target: 1, rewardGold: 100, dedupeDaily: false, title: "Complete one brain game", description: "Finish a Word Stack, Sudoku, Connections or Memory round.", sortOrder: 30 },
   { code: "daily_multiplayer", cadence: "daily", metric: "multiplayer_hands_played", target: 1, rewardGold: 150, dedupeDaily: false, title: "Play with real players", description: "Play a poker hand at a table with another real player.", sortOrder: 40 },
   { code: "weekly_win_duels", cadence: "weekly", metric: "duels_won", target: 10, rewardGold: 1000, dedupeDaily: false, title: "Win ten duels", description: "Win ten PvP duels this week.", sortOrder: 10 },
   { code: "weekly_active_days", cadence: "weekly", metric: "active_day", target: 5, rewardGold: 1200, dedupeDaily: true, title: "Show up five days", description: "Play something on five separate days this week.", sortOrder: 20 },

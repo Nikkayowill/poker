@@ -2,20 +2,20 @@ import { describe, expect, it } from "vitest";
 import { startConnectionsRound, submitConnectionsGuess, toConnectionsSnapshot, type ConnectionsPuzzle } from "./connections";
 import {
   CONNECTIONS_BLOCKS,
-  WORDLE_BLOCKS,
+  WORD_STACK_BLOCKS,
   connectionsGrid,
   connectionsShareText,
   puzzleShareTitle,
-  wordleGrid,
-  wordleScoreLine,
-  wordleShareText,
+  wordStackGrid,
+  wordStackScoreLine,
+  wordStackShareText,
 } from "./share";
-import { startWordleRound, submitWordleGuess, toWordleSnapshot } from "./wordle";
+import { startWordStackRound, submitWordStackGuess, toWordStackSnapshot } from "./word-stack";
 
 const meta = { day: "2026-08-05", puzzleNumber: 217, version: 1 };
 
-function wordle(answer: string, guesses: string[]) {
-  return toWordleSnapshot(guesses.reduce(submitWordleGuess, startWordleRound(answer)), meta);
+function wordStack(answer: string, guesses: string[]) {
+  return toWordStackSnapshot(guesses.reduce(submitWordStackGuess, startWordStackRound(answer)), meta);
 }
 
 const PUZZLE: ConnectionsPuzzle = {
@@ -31,65 +31,65 @@ function connections(selections: string[][]) {
   return toConnectionsSnapshot(selections.reduce(submitConnectionsGuess, startConnectionsRound(PUZZLE, () => 0)), meta);
 }
 
-describe("wordleScoreLine", () => {
+describe("wordStackScoreLine", () => {
   it("counts the guesses it took", () => {
-    expect(wordleScoreLine(wordle("crane", ["slate", "crane"]))).toBe("2/6");
+    expect(wordStackScoreLine(wordStack("crane", ["slate", "crane"]))).toBe("2/6");
   });
 
   it("prints X on a loss, not a number that would sort as a good score", () => {
-    const lost = wordle("crane", ["slate", "brick", "pound", "fudge", "vinyl", "mirth"]);
-    expect(wordleScoreLine(lost)).toBe("X/6");
+    const lost = wordStack("crane", ["slate", "brick", "pound", "fudge", "vinyl", "mirth"]);
+    expect(wordStackScoreLine(lost)).toBe("X/6");
   });
 });
 
-describe("wordleGrid", () => {
+describe("wordStackGrid", () => {
   it("is one row of blocks per guess", () => {
-    const grid = wordleGrid(wordle("crane", ["slate", "crane"]));
+    const grid = wordStackGrid(wordStack("crane", ["slate", "crane"]));
     const rows = grid.split("\n");
     expect(rows).toHaveLength(2);
-    expect(rows[1]).toBe(WORDLE_BLOCKS.correct.repeat(5));
+    expect(rows[1]).toBe(WORD_STACK_BLOCKS.correct.repeat(5));
     // Five blocks a row, counted by code point -- these are astral characters,
     // so String.length would report ten and quietly pass a broken grid.
     expect([...rows[0]]).toHaveLength(5);
   });
 
   it("uses the three blocks everyone already reads", () => {
-    expect(WORDLE_BLOCKS.correct).toBe("🟩");
-    expect(WORDLE_BLOCKS.present).toBe("🟨");
-    expect(WORDLE_BLOCKS.absent).toBe("⬛");
+    expect(WORD_STACK_BLOCKS.correct).toBe("🟩");
+    expect(WORD_STACK_BLOCKS.present).toBe("🟧");
+    expect(WORD_STACK_BLOCKS.absent).toBe("⬛");
   });
 });
 
-describe("wordleShareText", () => {
+describe("wordStackShareText", () => {
   it("is a heading, a blank line and the grid", () => {
-    expect(wordleShareText(wordle("crane", ["nacre", "crane"]))).toBe(
-      ["StackChips Wordle #217 2/6", "", "🟨🟨🟨🟨🟩", "🟩🟩🟩🟩🟩"].join("\n"),
+    expect(wordStackShareText(wordStack("crane", ["nacre", "crane"]))).toBe(
+      ["StackChips Word Stack #217 2/6", "", "🟧🟧🟧🟧🟩", "🟩🟩🟩🟩🟩"].join("\n"),
     );
   });
 
   it("never contains the answer or a guessed word", () => {
     // The property that makes the result postable at all: a share that spoils
     // the puzzle is worse than no share button.
-    const snapshot = wordle("crane", ["slate", "crane"]);
-    const text = wordleShareText(snapshot) as string;
+    const snapshot = wordStack("crane", ["slate", "crane"]);
+    const text = wordStackShareText(snapshot) as string;
     expect(text).not.toContain("crane");
     expect(text).not.toContain("slate");
     // The grid itself must be blocks and newlines and nothing else -- the
     // heading is the only place letters are allowed, so checking the whole
     // string would only ever be testing the word "StackChips".
-    expect(wordleGrid(snapshot)).not.toMatch(/[a-z]/i);
+    expect(wordStackGrid(snapshot)).not.toMatch(/[a-z]/i);
   });
 
   it("refuses to build a share for a round still in progress", () => {
     // Null rather than a partial grid -- a mid-round share is a spoiler, and
     // returning something the caller must remember not to use is how that ships.
-    expect(wordleShareText(wordle("crane", ["slate"]))).toBeNull();
+    expect(wordStackShareText(wordStack("crane", ["slate"]))).toBeNull();
   });
 
   it("appends a link only when asked", () => {
-    const text = wordleShareText(wordle("crane", ["crane"]), { link: "https://stackchips.app" }) as string;
+    const text = wordStackShareText(wordStack("crane", ["crane"]), { link: "https://stackchips.app" }) as string;
     expect(text.endsWith("\n\nhttps://stackchips.app")).toBe(true);
-    expect(wordleShareText(wordle("crane", ["crane"]))).not.toContain("stackchips.app");
+    expect(wordStackShareText(wordStack("crane", ["crane"]))).not.toContain("stackchips.app");
   });
 });
 
@@ -150,7 +150,7 @@ describe("connectionsShareText", () => {
 
 describe("puzzleShareTitle", () => {
   it("names the game and the puzzle", () => {
-    expect(puzzleShareTitle("wordle", 217)).toBe("StackChips Wordle #217");
+    expect(puzzleShareTitle("word-stack", 217)).toBe("StackChips Word Stack #217");
     expect(puzzleShareTitle("connections", 217)).toBe("StackChips Connections #217");
   });
 });

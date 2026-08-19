@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { HANDS_PER_DOWN } from "./dealer-roster";
 import { SEAT_ART_CHARACTERS } from "./seat-art.generated";
-import { seatArtCharacterForSlot, seatArtSrc } from "./seat-art";
+import { pickSeatArt, seatArtCharacterForSlot, seatArtSrc } from "./seat-art";
 
 const publicDir = path.join(process.cwd(), "public");
 
@@ -80,5 +80,15 @@ describe("seatArtCharacterForSlot", () => {
       expect(ids).toContain(seatArtCharacterForSlot("table-a", hand, 3)?.id);
     }
     expect(ids).toContain(seatArtCharacterForSlot("", 4, 1)?.id);
+  });
+});
+
+describe("pickSeatArt angle contracts", () => {
+  it("keeps the normal 20-degree tier separate from the forced 40-degree seat", () => {
+    const character = SEAT_ART_CHARACTERS.find((entry) => entry.id === "character6");
+    expect(character).toBeDefined();
+
+    expect(pickSeatArt(character!, 25).src).toBe(seatArtSrc("character6", 20));
+    expect(pickSeatArt(character!, 25, 40).src).toBe(seatArtSrc("character6", 40));
   });
 });

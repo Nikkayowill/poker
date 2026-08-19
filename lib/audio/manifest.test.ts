@@ -3,6 +3,7 @@ import {
   AUDIBLE_EFFECTS,
   SOUND_FILES,
   SOUND_LEVELS_FOR_TEST,
+  SOUND_REPEAT,
   soundGain,
   type SoundEffect,
 } from "./manifest";
@@ -138,6 +139,23 @@ describe("the mix", () => {
       expect(playbackDb(quiet)).toBeLessThan(playbackDb("call"));
     }
     expect(playbackDb("game-on")).toBeLessThan(playbackDb("win"));
+  });
+
+  it("keeps the regular-pot cue under the crowd cheer, and under its own file's true hit", () => {
+    // win-modest is the routine case, win the rare one -- and the trimmed
+    // file it plays only has real content in its first ~1.7s, so its target
+    // has to stay reachable against that file's measured level like every
+    // other effect (covered generically above; this pins the ordering).
+    expect(playbackDb("win-modest")).toBeLessThan(playbackDb("win"));
+  });
+
+  it("repeats the check cue as two real plays, not a longer recording", () => {
+    // A live player raps the table twice; the file behind `check` is one
+    // knock, so the second hit has to be a timed replay of the same
+    // element -- see sound-effects.ts's playSound.
+    expect(SOUND_REPEAT.check).toEqual({ times: 2, gapMs: 190 });
+    // Nothing else repeats without a reason to.
+    expect(Object.keys(SOUND_REPEAT)).toEqual(["check"]);
   });
 
   it("stays silent where there is no asset", () => {

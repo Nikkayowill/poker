@@ -20,6 +20,7 @@ export type SoundEffect =
   | "raise"
   | "all-in"
   | "win"
+  | "win-modest"
   | "lose"
   | "timeout"
   | "your-turn";
@@ -65,11 +66,19 @@ export const SOUND_FILES: Record<SoundEffect, string | null> = {
   // No longer the raise recording at a hotter gain: an all-in is the one bet
   // that ends someone's hand, and it now has its own take to say so.
   "all-in": "/sounds/All_In.mp3",
-  // Deliberately still the stock crowd cheer. The two supplied alternatives
-  // run 10.2s and 3.9s against a NEXT_HAND_DELAY_MS of 2,800 -- either one is
-  // still playing while the next hand deals. This file is 2.5s, which is the
-  // only reason the win reads as a reaction to the hand that just ended.
+  // The stock crowd cheer, now reserved for a genuinely huge pot (see
+  // `HUGE_POT_BIG_BLINDS` in table-sounds.ts) rather than every showdown --
+  // a full table roaring for a routine walked blind was the "regular tables
+  // sound like a stadium" complaint this split fixes. Still 2.5s for the same
+  // reason as before: it has to finish reacting before the next hand deals.
   win: "/sounds/freesound_community-crowd-cheer-ii-6263.mp3",
+  // Every other pot. One of the two supplied alternatives noted above --
+  // `Winning_a_regular_pot_2.mp3` -- turned out to hold its real hit in the
+  // first 1.7s with over two seconds of trailing silence baked into the
+  // export; trimmed to that, at 1.85s, it clears NEXT_HAND_DELAY_MS same as
+  // the cheer does. (Its sibling `Winning_a_regular_pot.mp3` has a genuine
+  // 5.2s hit and still doesn't fit -- left on disk unused.)
+  "win-modest": "/sounds/Winning_a_regular_pot_trimmed.mp3",
   // The one sound that has to reach someone who is not looking at the screen.
   // It borrowed the UI tap for want of a dedicated asset; it has a real cue
   // now, so the two no longer differ only by gain.
@@ -112,6 +121,7 @@ const FILE_LEVEL_DB: Record<string, number> = {
   "/sounds/oxidvideos-placing-poker-chips-522521.mp3": -21.5,
   "/sounds/oxidvideos-taking-playing-card-3-522513.mp3": -29.2,
   "/sounds/playing-card-flipped-over-epic-stock-media-1-00-00.mp3": -31.6,
+  "/sounds/Winning_a_regular_pot_trimmed.mp3": -21.9,
 };
 
 /**
@@ -132,6 +142,9 @@ const EFFECT_TARGET_DB: Record<SoundEffect, number> = {
   // so it plays as a bed under the celebration rather than a hit, and it is
   // trimmed well below its own peak to keep it from swamping the payout.
   win: -24,
+  // The ordinary case -- a routine pot at a routine table. Quieter and
+  // shorter than the cheer above: a moment, not a celebration.
+  "win-modest": -26,
   // The bets, in the order they deserve attention.
   "all-in": -26,
   raise: -29,
@@ -190,5 +203,16 @@ export function soundGain(effect: SoundEffect): number {
 /** Every effect that has a file behind it, for priming and for the tests. */
 export const AUDIBLE_EFFECTS = (Object.keys(SOUND_FILES) as SoundEffect[])
   .filter((effect) => SOUND_FILES[effect] !== null);
+
+/**
+ * Effects that repeat rather than play once. `check` is the one case: a live
+ * player checks by rapping the felt twice, and the file behind it
+ * (`freesound_community-knocking-wood-61988.mp3`) is a single knock -- so the
+ * gesture is two real plays of that same file with a knock's own gap between
+ * them, not a second, longer recording.
+ */
+export const SOUND_REPEAT: Partial<Record<SoundEffect, { times: number; gapMs: number }>> = {
+  check: { times: 2, gapMs: 190 },
+};
 
 export const SOUND_LEVELS_FOR_TEST = { FILE_LEVEL_DB, EFFECT_TARGET_DB };

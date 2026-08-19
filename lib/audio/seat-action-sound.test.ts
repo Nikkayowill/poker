@@ -3,13 +3,19 @@ import { soundForSeatAction } from "./seat-action-sound";
 import { SOUND_FILES } from "./manifest";
 
 describe("soundForSeatAction", () => {
+  // These are the literal strings engine.ts writes to lastAction, not
+  // approximations of them -- see the `seat.lastAction =` assignments in
+  // performAction. A fixture that drifts from the real format is exactly how
+  // this went unnoticed before: every one of these but Fold/Check used to
+  // come back null in production while a "Raise 50"-shaped test fixture
+  // still passed.
   it.each([
     ["Fold", "fold"],
     ["Check", "check"],
-    ["Call 20", "call"],
-    ["Raise to 60", "raise"],
-    ["Bet 40", "raise"],
-    ["All in", "all-in"],
+    ["Call · 20", "call"],
+    ["Raise to · 60", "raise"],
+    ["Bet · 40", "raise"],
+    ["All-in · 500", "all-in"],
   ])("%s sounds like %s", (label, expected) => {
     expect(soundForSeatAction(label)).toBe(expected);
   });
@@ -37,7 +43,7 @@ describe("soundForSeatAction", () => {
     // A typo here would be silent in the worst way: playSound would look up
     // undefined and simply do nothing, which is indistinguishable from the
     // bug this whole file exists to fix.
-    const labels = ["Fold", "Check", "Call 20", "Raise to 60", "All in", "Timed out · Fold"];
+    const labels = ["Fold", "Check", "Call · 20", "Raise to · 60", "All-in · 20", "Timed out · Fold"];
     labels.forEach((label) => {
       const effect = soundForSeatAction(label);
       expect(effect).not.toBeNull();

@@ -398,9 +398,10 @@ must never pay out (this is what makes a double-clicked action, a retry, or two 
 
 ### Known open items / gaps
 - M17 (chip cosmetics) is deliberately parked until the 3D sim is finished.
-- No in-app way to *pick a friend* and challenge/invite them yet — `Seat.profileId` carries the id
-  but nothing surfaces a "challenge this seat" control (same gap for PvP duels and M16 table invites).
-  `feat/challenge-this-seat` (open branch as of 2026-08-19) is in progress on part of this.
+- Challenging a specific opponent shipped for table seats (`components/table/challenge-seat-control.tsx`,
+  PR #111, 2026-08-19) — a seated player can now be challenged to a duel directly. Picking a friend to
+  invite to an empty seat (M16 table invites) is still open; that's a different flow (no seated
+  opponent to challenge).
 - PvP duel sync is a 2s poll, not Realtime.
 - Blackjack's Supabase persistence branch has never been exercised by a real hand in production
   (only type-checked, plus the memory-mode branch under test).

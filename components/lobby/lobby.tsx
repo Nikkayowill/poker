@@ -5,10 +5,13 @@ import Link from "next/link";
 import { Check, Cloud, Coins, ShieldCheck, Users, X } from "lucide-react";
 import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { TableRenderer } from "@/lib/scene/table-renderer";
+import type { BetAnimationStyle } from "@/lib/scene/bet-style";
 import type { PlayerProfile } from "@/lib/profile/types";
+import type { DailyGoldState } from "@/lib/profile/daily-gold";
 import { backstopState } from "@/lib/profile/backstop";
 import { accountsEnabled } from "@/lib/auth/client";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { usePhoneViewport } from "@/components/use-phone-viewport";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
 import { SiteFooter } from "@/components/nav/site-footer";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
@@ -18,6 +21,7 @@ import { InstallPrompt } from "@/components/install-prompt";
 import { FirstRunStrip } from "./first-run-strip";
 import { ArcadePanel } from "./arcade-panel";
 import { BuyInModal } from "./buy-in-modal";
+import { MobileShell } from "./mobile-shell";
 
 /**
  * `--tile-index` for the entrance stagger (see `@keyframes hub-tile-in` in
@@ -73,6 +77,18 @@ export function Lobby({
   webglAvailable,
   landscape,
   onTableRendererChange,
+  soundEnabled,
+  onToggleSound,
+  musicEnabled,
+  onToggleMenuMusic,
+  betStyle,
+  onCycleBetStyle,
+  dailyGold,
+  claimingGold,
+  onClaimDailyGold,
+  freeGoldEligible,
+  onGetFreeGold,
+  onEditProfile,
 }: {
   profile: PlayerProfile | null;
   onQuickPlay: (name: string, tier: StakesTier, buyIn: number) => void;
@@ -105,6 +121,23 @@ export function Lobby({
   webglAvailable: boolean;
   landscape: boolean;
   onTableRendererChange: (renderer: TableRenderer) => void;
+  /* The phone shell's third pane is where these live on a phone. They stay in
+   * the in-game table menu too -- that copy is the one reachable mid-hand,
+   * which is when a player actually reaches for the mute. */
+  soundEnabled: boolean;
+  onToggleSound: () => void;
+  musicEnabled: boolean;
+  onToggleMenuMusic: () => void;
+  betStyle: BetAnimationStyle;
+  onCycleBetStyle: () => void;
+  /* The phone header carries only the mark and the Gold balance, so the player
+   * menu's own rows have to live somewhere. They live in the third pane. */
+  dailyGold: DailyGoldState | null;
+  claimingGold: boolean;
+  onClaimDailyGold: () => void;
+  freeGoldEligible: boolean;
+  onGetFreeGold: () => void;
+  onEditProfile: () => void;
 }) {
   /*
    * The buy-in modal's name field: the player's own edit if they have made one,
@@ -126,6 +159,11 @@ export function Lobby({
   // this, and the drawer owns its own fetch, so there is no shared state for
   // the parent to hold.
   const [friendsOpen, setFriendsOpen] = useState(false);
+  /* Phone widths get the swipeable shell instead of the hub grid. False through
+   * the server render and hydration, then the real measurement -- see the hook
+   * for why that is the honest default and how 45-mobile-shell.css covers the
+   * gap. Must stay above the early returns below: it is a hook. */
+  const phone = usePhoneViewport();
   const submitJoin = (event: FormEvent) => {
     event.preventDefault();
     if (joinCode.trim().length !== 6) return;
@@ -195,6 +233,79 @@ export function Lobby({
             {error && <p className="form-error"><X size={14} /> {error}</p>}
           </div>
         </section>
+      </main>
+    );
+  }
+
+  if (phone) {
+    return (
+      <main className="lobby lobby-hub lobby-shell">
+        <section className="hub">
+          <MobileShell
+            profile={profile}
+            loading={loading}
+            sessionReady={sessionReady}
+            error={error}
+            cashOutNotice={cashOutNotice}
+            onDismissCashOut={onDismissCashOut}
+            authNotice={authNotice}
+            onDismissAuthNotice={onDismissAuthNotice}
+            showSavePrompt={showSavePrompt}
+            onSaveProgress={onSaveProgress}
+            onDismissSaveProgress={onDismissSaveProgress}
+            needsTopUp={needsTopUp}
+            onClaimBackstop={onClaimBackstop}
+            /* Straight to a seat, no modal: every tier is a fixed buy-in
+               (minBuyIn === maxBuyIn in lib/game/tiers.ts), so the stake the
+               player picked in the pane already IS the amount, and the modal
+               would only ask it again. Hosting still opens it -- that flow
+               also carries the table name. */
+            onQuickPlay={(tier) => onQuickPlay(name.trim() || "You", tier, TIER_CONFIG[tier].minBuyIn)}
+            onHostPrivate={() => setBuyInMode("host")}
+            onJoinCode={(code) => onJoinCode(name.trim() || "You", code)}
+            onOpenFriends={() => setFriendsOpen(true)}
+            onSignOut={profile.isRegistered ? onSignOut : onSaveProgress}
+            soundEnabled={soundEnabled}
+            onToggleSound={onToggleSound}
+            musicEnabled={musicEnabled}
+            onToggleMenuMusic={onToggleMenuMusic}
+            betStyle={betStyle}
+            onCycleBetStyle={onCycleBetStyle}
+            dailyGold={dailyGold}
+            claimingGold={claimingGold}
+            onClaimDailyGold={onClaimDailyGold}
+            freeGoldEligible={freeGoldEligible}
+            onGetFreeGold={onGetFreeGold}
+            onEditProfile={onEditProfile}
+          />
+        </section>
+
+        {friendsOpen && <FriendsDrawer onClose={() => setFriendsOpen(false)} />}
+        {buyInMode && (
+          <BuyInModal
+            title={buyInMode === "host" ? "Host a private table" : "Join a table"}
+            description={
+              buyInMode === "host"
+                ? "Pick your stakes and buy-in, then share the room code with friends."
+                : "Pick a stakes tier and how much of your Gold to buy in for."
+            }
+            goldBalance={profile.goldBalance}
+            unlimitedGold={profile.unlimitedGold}
+            confirmLabel={buyInMode === "host" ? "Host table" : "Join table"}
+            pending={loading}
+            onClose={() => setBuyInMode(null)}
+            playerName={name}
+            onPlayerNameChange={setNameOverride}
+            tableRenderer={tableRenderer}
+            webglAvailable={webglAvailable}
+            landscape={landscape}
+            onTableRendererChange={onTableRendererChange}
+            onConfirm={(tier, buyIn) => {
+              if (buyInMode === "host") onHostPrivate(name.trim() || "You", tier, buyIn);
+              else onQuickPlay(name.trim() || "You", tier, buyIn);
+            }}
+          />
+        )}
       </main>
     );
   }

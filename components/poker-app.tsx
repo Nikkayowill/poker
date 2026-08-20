@@ -71,6 +71,7 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RoomCreatedModal } from "@/components/table/room-created-modal";
 import { useWebglSupport } from "@/components/table/use-webgl-support";
 import { useLandscape } from "@/components/use-landscape";
+import { usePhoneViewport } from "@/components/use-phone-viewport";
 import { RewardedAdModal } from "@/components/rewards/rewarded-ad-modal";
 import { REWARDED_AD_ELIGIBLE_BELOW } from "@/lib/rewards/config";
 import type { RewardTrigger } from "@/lib/rewards/triggers";
@@ -258,25 +259,44 @@ export function PokerApp() {
   // rather than in each consumer so the lobby's preselect and the table itself
   // can never disagree about which way up the device is.
   const landscape = useLandscape();
+  // Not used to render anything here -- it is a dependency of the scroll-listener
+  // effect below, which has to re-bind when the lobby swaps between the hub's
+  // single scroller and the phone shell's three panes.
+  const phoneViewport = usePhoneViewport();
 
   // The lobby and signed-out form scroll inside their own viewport because
   // the table must remain a fixed-height screen. Listen to that scroller
   // rather than window: the header stays quiet over the room, then becomes a
   // readable surface when the player reverses direction and scrolls upward.
   useEffect(() => {
-    const scroller = document.querySelector<HTMLElement>('.account-entry-page, .lobby-hub');
-    if (!scroller) return;
+    // `.mshell-pane` is the phone shell's per-pane scroller: there the lobby
+    // itself no longer scrolls (the tab bar has to stay put), so listening only
+    // for `.lobby-hub` would leave the header frozen on every phone. All of
+    // them, each remembering its own last position -- otherwise swiping from a
+    // scrolled pane to a fresh one reads as a big upward scroll and flashes the
+    // header on.
+    const scrollers = Array.from(
+      document.querySelectorAll<HTMLElement>('.account-entry-page, .lobby-hub, .mshell-pane'),
+    );
+    if (scrollers.length === 0) return;
 
-    let previousTop = scroller.scrollTop;
-    const onScroll = () => {
+    const previousTops = new WeakMap<HTMLElement, number>();
+    const onScroll = (event: Event) => {
+      const scroller = event.currentTarget as HTMLElement;
       const currentTop = scroller.scrollTop;
+      const previousTop = previousTops.get(scroller) ?? currentTop;
       setNavShowing(currentTop > 8 && currentTop < previousTop);
-      previousTop = currentTop;
+      previousTops.set(scroller, currentTop);
     };
 
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', onScroll);
-  }, [entryComplete, game]);
+    for (const scroller of scrollers) {
+      previousTops.set(scroller, scroller.scrollTop);
+      scroller.addEventListener('scroll', onScroll, { passive: true });
+    }
+    return () => {
+      for (const scroller of scrollers) scroller.removeEventListener('scroll', onScroll);
+    };
+  }, [entryComplete, game, phoneViewport]);
   const [claimingGold, setClaimingGold] = useState(false);
   const [goldFlash, setGoldFlash] = useState(false);
   // The lobby menu's own "Free Gold" entry -- the only way this modal opens.
@@ -1507,6 +1527,18 @@ export function PokerApp() {
             webglAvailable={webglAvailable}
             landscape={landscape}
             onTableRendererChange={setTableRendererState}
+            soundEnabled={soundEnabled}
+            onToggleSound={toggleSound}
+            musicEnabled={musicEnabled}
+            onToggleMenuMusic={toggleMenuMusic}
+            betStyle={betStyle}
+            onCycleBetStyle={cycleBetStyle}
+            dailyGold={dailyGold}
+            claimingGold={claimingGold}
+            onClaimDailyGold={() => void claimDailyGold()}
+            freeGoldEligible={freeGoldEligible}
+            onGetFreeGold={() => setFreeGoldOpen(true)}
+            onEditProfile={() => setProfileOpen(true)}
           />
         )}
       {createdRoomCode && (

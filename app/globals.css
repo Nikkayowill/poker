@@ -65,6 +65,9 @@
 /* After 36: narrows the duel shell's lobby/match/result classes the same way
    37-40 do for the four 1v1 games -- see that file's own header. */
 @import "./styles/44-cribbage.css";
+/* After 04 (overrides .lobby/.hub for the phone shell) and after 18/22, whose
+   full-page shells it re-sizes as swipe panes. */
+@import "./styles/45-mobile-shell.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

@@ -1,8 +1,8 @@
 import type { AvatarPreset } from "@/lib/profile/types";
-// Type-only: pvp-match-store.ts is server-only, but its type declarations
+// Type-only: head-to-head-store.ts is server-only, but its type declarations
 // carry no runtime code, so importing just the type here doesn't pull the
 // service-role client into the browser bundle.
-import type { DuelRecord } from "@/lib/server/pvp-match-store";
+import type { HeadToHeadRecord } from "@/lib/server/head-to-head-store";
 
 /**
  * The friends wire contract, shared rather than server-only.
@@ -33,13 +33,18 @@ export interface FriendSummary {
   /** When the friendship was created, not when either profile was. */
   since: string;
   /**
-   * Wins/losses/draws across every settled duel against this friend, or null
-   * if the two of you have never finished one. Derived from pvp_matches at
-   * read time -- see getDuelRecordsAgainst -- so this can lag a match that
-   * settled in the last few seconds by at most one poll, same as everything
-   * else in the drawer.
+   * Wins/losses/draws against this friend across every game that has two
+   * named players (the duels and cribbage), or null if the two of you have
+   * never finished one. Read from head_to_head_records, which is written at
+   * settlement -- so this can lag a match that settled in the last few
+   * seconds by at most one poll, same as everything else in the drawer.
+   *
+   * The leaderboard's Friends tab shows the same numbers split per game.
+   * Both read the same store on purpose: a drawer badge and a board that
+   * disagreed about one player's record would be worse than either being
+   * slightly stale.
    */
-  duelRecord: DuelRecord | null;
+  duelRecord: HeadToHeadRecord | null;
 }
 
 export interface PendingRequest {

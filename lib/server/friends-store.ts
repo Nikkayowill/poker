@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "crypto";
 import type { FriendSummary, FriendsOverview, PendingRequest } from "@/lib/social/types";
-import { getDuelRecordsAgainst } from "./pvp-match-store";
+import { getHeadToHeadRecords } from "./head-to-head-store";
 import { getPublicProfilesByIds } from "./profile-store";
 import { adminClient } from "./supabase-admin";
 
@@ -171,12 +171,20 @@ async function hydrate<T extends { profileId: string }>(
  * and three separate fetches would let it render a friend and their still-
  * pending request to you at the same time.
  */
-export async function getFriendsOverview(profileId: string): Promise<FriendsOverview> {
+/**
+ * Who counts as the caller's friends, as raw rows.
+ *
+ * Extracted so getFriendsOverview and listFriendIds cannot disagree about
+ * it: the two-column match, the cap and the recency order are one rule, and
+ * a friends leaderboard that included someone the drawer didn't would be a
+ * bug nobody would think to look for here.
+ */
+async function friendRowsFor(profileId: string): Promise<{ profileId: string; since: string }[]> {
   const me = profileId.toLowerCase();
   const supabase = adminClient();
 
   if (!supabase) {
-    const friendRows = [...memoryDb.friendships.values()]
+    return [...memoryDb.friendships.values()]
       .filter((row) => row.profileA === me || row.profileB === me)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, FRIENDS_PAGE_SIZE)
@@ -184,24 +192,6 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
         profileId: row.profileA === me ? row.profileB : row.profileA,
         since: row.createdAt,
       }));
-
-    const pending = [...memoryDb.requests.values()]
-      .filter((row) => row.status === "pending")
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(0, FRIENDS_PAGE_SIZE);
-
-    const [friends, incoming, outgoing, records] = await Promise.all([
-      hydrate(friendRows),
-      hydrate(pending
-        .filter((row) => row.addresseeId === me)
-        .map((row) => ({ id: row.id, profileId: row.requesterId, createdAt: row.createdAt }))),
-      hydrate(pending
-        .filter((row) => row.requesterId === me)
-        .map((row) => ({ id: row.id, profileId: row.addresseeId, createdAt: row.createdAt }))),
-      getDuelRecordsAgainst(me, friendRows.map((row) => row.profileId)),
-    ]);
-    for (const friend of friends) friend.duelRecord = records.get(friend.profileId) ?? null;
-    return { friends, incoming, outgoing };
   }
 
   // "My friends" matches either column, which is the cost of storing a
@@ -209,7 +199,7 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
   // own index (the primary key for profile_a, friendships_profile_b_idx for
   // profile_b), where a single or() would give the planner the choice of
   // neither.
-  const [asA, asB, requests] = await Promise.all([
+  const [asA, asB] = await Promise.all([
     supabase
       .from("friendships")
       .select("profile_b, created_at")
@@ -222,20 +212,13 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
       .eq("profile_b", me)
       .order("created_at", { ascending: false })
       .limit(FRIENDS_PAGE_SIZE),
-    supabase
-      .from("friend_requests")
-      .select("id, requester_id, addressee_id, created_at")
-      .eq("status", "pending")
-      .or(`requester_id.eq.${me},addressee_id.eq.${me}`)
-      .order("created_at", { ascending: false })
-      .limit(FRIENDS_PAGE_SIZE),
   ]);
 
-  for (const result of [asA, asB, requests]) {
+  for (const result of [asA, asB]) {
     if (result.error) throw new Error(`Could not load your friends: ${result.error.message}`);
   }
 
-  const friendRows = [
+  return [
     ...(asA.data ?? []).map((row) => ({
       profileId: String(row.profile_b),
       since: String(row.created_at),
@@ -250,6 +233,53 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
     // ordered by which column matched rather than by recency.
     .sort((a, b) => b.since.localeCompare(a.since))
     .slice(0, FRIENDS_PAGE_SIZE);
+}
+
+/** Just the ids, for callers that hydrate profiles themselves (the friends leaderboard). */
+export async function listFriendIds(profileId: string): Promise<string[]> {
+  return (await friendRowsFor(profileId)).map((row) => row.profileId);
+}
+
+export async function getFriendsOverview(profileId: string): Promise<FriendsOverview> {
+  const me = profileId.toLowerCase();
+  const supabase = adminClient();
+
+  if (!supabase) {
+    const friendRows = await friendRowsFor(me);
+
+    const pending = [...memoryDb.requests.values()]
+      .filter((row) => row.status === "pending")
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, FRIENDS_PAGE_SIZE);
+
+    const [friends, incoming, outgoing, records] = await Promise.all([
+      hydrate(friendRows),
+      hydrate(pending
+        .filter((row) => row.addresseeId === me)
+        .map((row) => ({ id: row.id, profileId: row.requesterId, createdAt: row.createdAt }))),
+      hydrate(pending
+        .filter((row) => row.requesterId === me)
+        .map((row) => ({ id: row.id, profileId: row.addresseeId, createdAt: row.createdAt }))),
+      getHeadToHeadRecords(me, friendRows.map((row) => row.profileId)),
+    ]);
+    for (const friend of friends) friend.duelRecord = records.get(friend.profileId) ?? null;
+    return { friends, incoming, outgoing };
+  }
+
+  // Still one round of parallel queries, the same as before the friendship
+  // half moved into friendRowsFor: the drawer opens on all of this at once.
+  const [friendRows, requests] = await Promise.all([
+    friendRowsFor(me),
+    supabase
+      .from("friend_requests")
+      .select("id, requester_id, addressee_id, created_at")
+      .eq("status", "pending")
+      .or(`requester_id.eq.${me},addressee_id.eq.${me}`)
+      .order("created_at", { ascending: false })
+      .limit(FRIENDS_PAGE_SIZE),
+  ]);
+
+  if (requests.error) throw new Error(`Could not load your friends: ${requests.error.message}`);
 
   const pending = (requests.data ?? []).map((row) => ({
     id: String(row.id),
@@ -266,7 +296,7 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
     hydrate(pending
       .filter((row) => row.requesterId === me)
       .map((row) => ({ id: row.id, profileId: row.addresseeId, createdAt: row.createdAt }))),
-    getDuelRecordsAgainst(me, friendRows.map((row) => row.profileId)),
+    getHeadToHeadRecords(me, friendRows.map((row) => row.profileId)),
   ]);
   for (const friend of friends) friend.duelRecord = records.get(friend.profileId) ?? null;
   return { friends, incoming, outgoing };

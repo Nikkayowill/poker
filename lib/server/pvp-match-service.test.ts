@@ -10,9 +10,10 @@ import {
   readDuelMatch,
   resignDuelMatch,
 } from "./pvp-match-service";
+import { __resetHeadToHeadMemory, getHeadToHeadRecords } from "./head-to-head-store";
 import { __resetLeaderboardMemory, getGameLeaderboard } from "./leaderboard-store";
 import { __resetPvpChallengesForTest } from "./pvp-challenge-store";
-import { __resetPvpMatchesForTest, getDuelRecordsAgainst } from "./pvp-match-store";
+import { __resetPvpMatchesForTest } from "./pvp-match-store";
 import { adjustGold, ensureProfile, setUnlimitedGold } from "./profile-store";
 
 /**
@@ -62,6 +63,7 @@ beforeEach(() => {
   __resetPvpChallengesForTest();
   __resetPvpMatchesForTest();
   __resetLeaderboardMemory();
+  __resetHeadToHeadMemory();
 });
 
 describe("challenge escrow", () => {
@@ -423,10 +425,10 @@ describe("head-to-head record", () => {
     // Seat 1 (b) resigns, so seat 0 (a) wins.
     await resignDuelMatch(t.b.token, await matchId(t.a.token));
 
-    const aRecord = (await getDuelRecordsAgainst(t.a.id)).get(t.b.id);
-    const bRecord = (await getDuelRecordsAgainst(t.b.id)).get(t.a.id);
-    expect(aRecord).toEqual({ wins: 1, losses: 0, draws: 0 });
-    expect(bRecord).toEqual({ wins: 0, losses: 1, draws: 0 });
+    const aRecord = (await getHeadToHeadRecords(t.a.id, [t.b.id])).get(t.b.id);
+    const bRecord = (await getHeadToHeadRecords(t.b.id, [t.a.id])).get(t.a.id);
+    expect(aRecord).toEqual({ wins: 1, losses: 0, draws: 0, currentStreak: 1, bestStreak: 1 });
+    expect(bRecord).toEqual({ wins: 0, losses: 1, draws: 0, currentStreak: -1, bestStreak: 0 });
   });
 
   it("accumulates across games and games settled the other way round", async () => {
@@ -443,14 +445,17 @@ describe("head-to-head record", () => {
     );
     await resignDuelMatch(t.a.token, checkersMatch.id); // b wins
 
-    const aRecord = (await getDuelRecordsAgainst(t.a.id)).get(t.b.id);
-    expect(aRecord).toEqual({ wins: 1, losses: 1, draws: 0 });
+    const aRecord = (await getHeadToHeadRecords(t.a.id, [t.b.id])).get(t.b.id);
+    expect(aRecord).toMatchObject({ wins: 1, losses: 1, draws: 0 });
+    // Two games in play, so there is no single ordering to call a streak --
+    // the per-game rows carry those. See getHeadToHeadSummaries.
+    expect(aRecord?.currentStreak).toBe(0);
   });
 
   it("reports nothing against a stranger you have never settled a duel with", async () => {
     const { a } = await table();
     const stranger = await funded();
-    expect((await getDuelRecordsAgainst(a.id)).get(stranger.id)).toBeUndefined();
+    expect((await getHeadToHeadRecords(a.id, [stranger.id])).get(stranger.id)).toBeUndefined();
   });
 });
 

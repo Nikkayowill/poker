@@ -1,5 +1,7 @@
 import "server-only";
 import { LEADERBOARD_GAMES, leaderboardGame, type LeaderboardStats } from "@/lib/leaderboard/contract";
+import { listFriendIds } from "./friends-store";
+import { getHeadToHeadSummaries, recordHeadToHeadDuel, recordHeadToHeadTable } from "./head-to-head-store";
 import { getPublicProfilesByIds } from "./profile-store";
 import { __memoryPlayerStatsForGlobalBlend } from "./stats-store";
 import { adminClient } from "./supabase-admin";
@@ -24,6 +26,12 @@ import { adminClient } from "./supabase-admin";
  * DomainEvent (see lib/domain-events.ts's own header for why the union stays
  * minimal: this module needs a loser id, every cribbage seat, and a raw
  * metric, payload the mission/achievement consumers don't want).
+ *
+ * The two of them that carry named opponents also fan the same result out to
+ * head-to-head-store.ts (the friends board) from in here, rather than from a
+ * second call beside each settlement. One settled match is one event, and
+ * two call sites is how the world board and the friends board end up
+ * disagreeing about the same game.
  */
 
 export interface LeaderboardEntry {
@@ -34,6 +42,30 @@ export interface LeaderboardEntry {
   accent: string;
   stats: LeaderboardStats;
   cells: Record<string, string>;
+}
+
+/**
+ * One friend on the Friends board: your record against them, not theirs
+ * against the world.
+ *
+ * The only board here whose rows differ per viewer, which is also why it has
+ * no rank -- there is no ordering of your friends that means anything the
+ * way "#3 by Gold won" does. Sorted by how much you have actually played
+ * each other instead.
+ */
+export interface FriendBoardEntry {
+  profileId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  accent: string;
+  wins: number;
+  losses: number;
+  draws: number;
+  /** Signed, and only meaningful when a single game accounts for every result -- see getHeadToHeadSummaries. */
+  currentStreak: number;
+  bestStreak: number;
+  /** Per game, most played first. Empty for a friend you have never finished a game against. */
+  games: { gameId: string; label: string; wins: number; losses: number; draws: number; currentStreak: number }[];
 }
 
 export interface GlobalLeaderboardEntry {
@@ -124,7 +156,7 @@ async function applyResult(
 
 // ---- writes -----------------------------------------------------------
 
-/** A 2-player duel's result. `winnerSeat` null is a draw -- both players get one. Never throws. */
+/** A 2-player duel's result, on both the world board and the two players' head-to-head record. `winnerSeat` null is a draw -- both players get one. Never throws. */
 export async function recordDuelResult(
   gameId: string,
   players: [string, string],
@@ -132,24 +164,31 @@ export async function recordDuelResult(
 ): Promise<void> {
   try {
     if (winnerSeat === null) {
+      // No early return here: a draw still has to reach the head-to-head
+      // write below, which is the whole reason this branch is an if/else
+      // rather than a guard clause.
       await Promise.all([
         applyResult(players[0], gameId, { win: false, loss: false, draw: true }),
         applyResult(players[1], gameId, { win: false, loss: false, draw: true }),
       ]);
-      return;
+    } else {
+      const winnerId = players[winnerSeat];
+      const loserId = players[winnerSeat === 0 ? 1 : 0];
+      await Promise.all([
+        applyResult(winnerId, gameId, { win: true, loss: false, draw: false }),
+        applyResult(loserId, gameId, { win: false, loss: true, draw: false }),
+      ]);
     }
-    const winnerId = players[winnerSeat];
-    const loserId = players[winnerSeat === 0 ? 1 : 0];
-    await Promise.all([
-      applyResult(winnerId, gameId, { win: true, loss: false, draw: false }),
-      applyResult(loserId, gameId, { win: false, loss: true, draw: false }),
-    ]);
   } catch (error) {
     console.error("leaderboard.record_duel_result_failed", { gameId, players, winnerSeat, error });
   }
+  // Outside the try on purpose: this one keeps its own contract of never
+  // throwing, and a world-board failure above must not swallow the friends
+  // board's copy of the same result.
+  await recordHeadToHeadDuel(gameId, players, winnerSeat);
 }
 
-/** An N-player table's result (cribbage): the winner gets a win, everyone else a loss. Never throws. */
+/** An N-player table's result (cribbage): the winner gets a win, everyone else a loss, and the winner takes a head-to-head win off each of them. Never throws. */
 export async function recordMultiWayResult(
   gameId: string,
   participantIds: string[],
@@ -168,6 +207,7 @@ export async function recordMultiWayResult(
   } catch (error) {
     console.error("leaderboard.record_multi_way_result_failed", { gameId, participantIds, winnerId, error });
   }
+  await recordHeadToHeadTable(gameId, participantIds, winnerId);
 }
 
 /** A metric-only result (Memory Match's turn count). No win/loss/draw. Never throws. */
@@ -280,6 +320,56 @@ export async function getGameStanding(
   if (index === -1) return null;
   const [decorated] = await decorateGameRows(gameId, [sorted[index]]);
   return decorated ? { ...decorated, rank: index + 1 } : null;
+}
+
+// ---- friends board ------------------------------------------------------
+
+/**
+ * Every friend, with the caller's head-to-head record against each.
+ *
+ * Friends with no shared history are kept rather than filtered out: "you two
+ * have never played" is the thing the board exists to fix, and dropping them
+ * would make an empty board look broken to someone who has friends but no
+ * duels yet. They sort last.
+ */
+export async function getFriendsBoard(profileId: string): Promise<FriendBoardEntry[]> {
+  const friendIds = await listFriendIds(profileId);
+  if (friendIds.length === 0) return [];
+
+  const [summaries, profiles] = await Promise.all([
+    getHeadToHeadSummaries(profileId, friendIds),
+    getPublicProfilesByIds(friendIds),
+  ]);
+
+  const entries = friendIds.flatMap((friendId) => {
+    const profile = profiles.get(friendId);
+    // Same reasoning as the friends drawer's own hydrate(): a row whose
+    // profile has vanished mid-deletion is dropped, not rendered blank.
+    if (!profile) return [];
+    const summary = summaries.get(friendId);
+    return [{
+      profileId: friendId,
+      displayName: profile.displayName,
+      avatarUrl: profile.avatarUrl,
+      accent: profile.accent,
+      wins: summary?.wins ?? 0,
+      losses: summary?.losses ?? 0,
+      draws: summary?.draws ?? 0,
+      currentStreak: summary?.currentStreak ?? 0,
+      bestStreak: summary?.bestStreak ?? 0,
+      games: (summary?.games ?? []).map((game) => ({
+        gameId: game.gameId,
+        label: game.label,
+        wins: game.wins,
+        losses: game.losses,
+        draws: game.draws,
+        currentStreak: game.currentStreak,
+      })),
+    }];
+  });
+
+  const played = (entry: FriendBoardEntry) => entry.wins + entry.losses + entry.draws;
+  return entries.sort((a, b) => played(b) - played(a) || a.displayName.localeCompare(b.displayName));
 }
 
 // ---- global read --------------------------------------------------------

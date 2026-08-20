@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import clsx from "clsx";
 import Link from "next/link";
-import { Coins, Crown } from "lucide-react";
+import { ChevronDown, Coins, Crown } from "lucide-react";
 import type { LeaderboardColumn } from "@/lib/leaderboard/contract";
-import { leaderboardTabs } from "@/lib/leaderboard/contract";
+import { formatRecord, formatStreak, leaderboardTabs } from "@/lib/leaderboard/contract";
 import { selectSound } from "@/lib/audio/ui-sounds";
 
 interface PokerEntry {
@@ -36,6 +36,19 @@ interface GlobalEntry {
   accent: string;
   globalScore: number;
   gamesCounted: number;
+}
+
+/** One friend on the Friends tab: your record against them, not theirs against the world. */
+interface FriendEntry {
+  profileId: string;
+  displayName: string;
+  accent: string;
+  wins: number;
+  losses: number;
+  draws: number;
+  currentStreak: number;
+  bestStreak: number;
+  games: { gameId: string; label: string; wins: number; losses: number; draws: number; currentStreak: number }[];
 }
 
 interface SeasonInfo {
@@ -72,6 +85,83 @@ function Avatar({ displayName, accent }: { displayName: string; accent: string }
     <span className="leaderboard-avatar" style={{ "--avatar-accent": accent } as React.CSSProperties}>
       {displayName.slice(0, 2).toUpperCase()}
     </span>
+  );
+}
+
+function played(entry: { wins: number; losses: number; draws: number }): number {
+  return entry.wins + entry.losses + entry.draws;
+}
+
+function winRatePct(entry: { wins: number; losses: number; draws: number }): number {
+  const total = played(entry);
+  return total > 0 ? Math.round((entry.wins / total) * 100) : 0;
+}
+
+/**
+ * One friend, expandable into the per-game split behind the totals.
+ *
+ * The whole row is the button rather than a separate chevron control: the
+ * split is the point of the row, and a 14px target beside a name is the kind
+ * of thing that only works with a mouse. A friend you have never finished a
+ * game against has nothing to expand, so their row is inert.
+ */
+function FriendRow({
+  entry,
+  expanded,
+  onToggle,
+}: {
+  entry: FriendEntry;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const total = played(entry);
+  const rate = winRatePct(entry);
+  return (
+    <div className="leaderboard-friend">
+      <button
+        type="button"
+        className={clsx("leaderboard-row", "leaderboard-row-friend", expanded && "leaderboard-row-friend-open")}
+        onClick={onToggle}
+        disabled={entry.games.length === 0}
+        aria-expanded={entry.games.length === 0 ? undefined : expanded}
+      >
+        <Avatar displayName={entry.displayName} accent={entry.accent} />
+        <span className="leaderboard-name">{entry.displayName}</span>
+        {total === 0 ? (
+          <span className="leaderboard-friend-none">No games yet</span>
+        ) : (
+          <>
+            <span className="leaderboard-stat">{formatRecord(entry.wins, entry.losses, entry.draws)}</span>
+            <span className={clsx("leaderboard-stat", rate >= 50 ? "leaderboard-profit-up" : "leaderboard-profit-down")}>
+              {rate}%
+            </span>
+            {/* Blank rather than a dash when several games are in play: the
+                overall streak is only reported when one game accounts for
+                every result, since ordering across games isn't recoverable
+                from per-game counters. The per-game rows below carry it. */}
+            <span className={clsx("leaderboard-stat", entry.currentStreak < 0 && "leaderboard-profit-down")}>
+              {entry.games.length === 1 ? formatStreak(entry.currentStreak) : ""}
+            </span>
+          </>
+        )}
+        {entry.games.length > 0 && (
+          <ChevronDown size={14} className={clsx("leaderboard-friend-chevron", expanded && "leaderboard-friend-chevron-open")} />
+        )}
+      </button>
+      {expanded && (
+        <div className="leaderboard-friend-games">
+          {entry.games.map((game) => (
+            <div key={game.gameId} className="leaderboard-friend-game">
+              <span className="leaderboard-friend-game-label">{game.label}</span>
+              <span className="leaderboard-stat">{formatRecord(game.wins, game.losses, game.draws)}</span>
+              <span className={clsx("leaderboard-stat", game.currentStreak < 0 && "leaderboard-profit-down")}>
+                {formatStreak(game.currentStreak)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -154,6 +244,9 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
   const [genericMine, setGenericMine] = useState<GenericEntry | null>(null);
   const [globalEntries, setGlobalEntries] = useState<GlobalEntry[]>([]);
   const [globalMine, setGlobalMine] = useState<GlobalEntry | null>(null);
+  const [friendEntries, setFriendEntries] = useState<FriendEntry[]>([]);
+  const [friendsRequireAccount, setFriendsRequireAccount] = useState(false);
+  const [expandedFriend, setExpandedFriend] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -173,6 +266,9 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
       } else if (nextGame === "global") {
         setGlobalEntries(data.entries);
         setGlobalMine(data.mine);
+      } else if (nextGame === "friends") {
+        setFriendEntries(data.entries);
+        setFriendsRequireAccount(Boolean(data.requiresAccount));
       } else {
         setGenericColumns(data.columns ?? []);
         setGenericLabel(data.label ?? "");
@@ -191,10 +287,15 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
     return () => window.clearTimeout(timer);
   }, [load, game, scope]);
 
-  const entries = game === "poker" ? pokerEntries : game === "global" ? globalEntries : genericEntries;
+  // Counted per board rather than off one shared `entries` array: the
+  // Friends tab's rows are a different shape (your record against them, no
+  // rank and no `mine`), and merging the two only to split them again in
+  // every branch below buys nothing.
+  const rankedEntries = game === "poker" ? pokerEntries : game === "global" ? globalEntries : genericEntries;
   const mineId = game === "poker" ? pokerMine?.profileId : game === "global" ? globalMine?.profileId : genericMine?.profileId;
-  const mineIsRanked = mineId !== undefined && entries.some((entry) => entry.profileId === mineId);
-  const empty = !loading && !error && entries.length === 0;
+  const mineIsRanked = mineId !== undefined && rankedEntries.some((entry) => entry.profileId === mineId);
+  const entryCount = game === "friends" ? friendEntries.length : rankedEntries.length;
+  const empty = !loading && !error && entryCount === 0;
 
   const Shell = embedded ? "div" : "main";
   const Heading = embedded ? "h2" : "h1";
@@ -214,7 +315,9 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
                 : "This season, ranked by net Gold won. Resets every 30 days.")
               : game === "global"
                 ? "One rank across every game, blended from where you stand in each."
-                : `${genericLabel || "This game"}'s own board.`}{" "}
+                : game === "friends"
+                  ? "Your record against each friend, across every game the two of you can play head to head."
+                  : `${genericLabel || "This game"}'s own board.`}{" "}
             Entertainment only &mdash; nothing here can be cashed out.
           </p>
         </div>
@@ -265,7 +368,11 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
           <Coins size={15} />{" "}
           {game === "poker"
             ? `Nobody has finished a hand ${scope === "season" ? "this season" : "yet"}. Be the first.`
-            : "Nobody has qualified yet. Be the first."}
+            : game === "friends"
+              ? (friendsRequireAccount
+                ? "Sign in to keep a record against your friends."
+                : "No friends yet. Add someone from the players menu, then beat them at something.")
+              : "Nobody has qualified yet. Be the first."}
         </p>
       )}
 
@@ -313,7 +420,31 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       )}
 
-      {game !== "poker" && game !== "global" && genericEntries.length > 0 && (
+      {game === "friends" && friendEntries.length > 0 && (
+        <div className="leaderboard-table">
+          <div className={clsx("leaderboard-row", "leaderboard-row-head", "leaderboard-row-friend")}>
+            <span />
+            <span>Friend</span>
+            <span>W-L</span>
+            <span>Win %</span>
+            <span>Streak</span>
+            <span />
+          </div>
+          {friendEntries.map((entry) => (
+            <FriendRow
+              key={entry.profileId}
+              entry={entry}
+              expanded={expandedFriend === entry.profileId}
+              onToggle={() => {
+                selectSound();
+                setExpandedFriend((current) => (current === entry.profileId ? null : entry.profileId));
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {game !== "poker" && game !== "global" && game !== "friends" && genericEntries.length > 0 && (
         <div className="leaderboard-table">
           <div className={clsx("leaderboard-row", "leaderboard-row-head", "leaderboard-row-generic", `leaderboard-row-generic-${genericColumns.length}`)}>
             <span>#</span>

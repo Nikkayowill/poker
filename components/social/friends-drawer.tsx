@@ -6,6 +6,7 @@ import { Check, Send, Spade, UserMinus, UserPlus, X } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import type { GameSnapshot, PublicSeat } from "@/lib/game/types";
+import { formatRecord } from "@/lib/leaderboard/contract";
 import { CHALLENGEABLE_DUELS } from "@/lib/pvp/duel-list";
 import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
@@ -67,13 +68,18 @@ function suggestedWager(record: FriendSummary["duelRecord"]): number {
   return MIN_DUEL_STAKE + 500 * (record?.wins ?? 0);
 }
 
-/** "4-2" against a friend, or "4-2-1" once a draw has actually happened. */
+/**
+ * "4-2" against a friend, or "4-2-1" once a draw has actually happened.
+ *
+ * Formatted through the leaderboard contract's shared helper: this badge and
+ * the leaderboard's Friends tab show the same record from the same store, so
+ * they must spell it identically.
+ */
 function DuelRecordBadge({ record }: { record: NonNullable<FriendSummary["duelRecord"]> }) {
   if (record.wins === 0 && record.losses === 0 && record.draws === 0) return null;
   return (
     <span className="friend-duel-record" title={`${record.wins} won, ${record.losses} lost against them`}>
-      {record.wins}-{record.losses}
-      {record.draws > 0 && `-${record.draws}`}
+      {formatRecord(record.wins, record.losses, record.draws)}
     </span>
   );
 }

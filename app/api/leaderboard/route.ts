@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { leaderboardGame } from "@/lib/leaderboard/contract";
-import { getGameLeaderboard, getGameStanding, getGlobalLeaderboard, getGlobalStanding } from "@/lib/server/leaderboard-store";
+import { getFriendsBoard, getGameLeaderboard, getGameStanding, getGlobalLeaderboard, getGlobalStanding } from "@/lib/server/leaderboard-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
@@ -20,11 +20,13 @@ const querySchema = z.object({
  *
  * `game=poker` (the default) is the original poker leaderboard, byte-for-
  * byte unchanged, `scope` meaningful only here. `game=global` is the
- * percentile blend across every game a player qualifies in. Any other known
- * id (see lib/leaderboard/contract.ts's registry) is that game's own
- * win/loss or average-metric board, with pre-formatted `cells` a client
- * renders without knowing the game's shape -- this is what lets a future
- * game join with no UI change.
+ * percentile blend across every game a player qualifies in. `game=friends`
+ * is the caller's own head-to-head record against each of their friends --
+ * the one board with no top 10 and no `mine`, since every row is already
+ * about them. Any other known id (see lib/leaderboard/contract.ts's
+ * registry) is that game's own win/loss or average-metric board, with
+ * pre-formatted `cells` a client renders without knowing the game's shape --
+ * this is what lets a future game join with no UI change.
  */
 export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request, "leaderboard:read", 60, 60 * 1000);
@@ -42,6 +44,16 @@ export async function GET(request: NextRequest) {
     // unranked" would fill the roster with players who never sat down.
     const token = readSessionToken(request);
     const profile = token ? await ensureProfile(token) : null;
+
+    if (game === "friends") {
+      // The only board that needs an account: a head-to-head record is
+      // between two named players, and a guest has neither friends nor a
+      // durable identity to have played anyone under. Answered as an empty
+      // board with a reason rather than a 401, which the client would have
+      // to translate back into the same sentence.
+      if (!profile) return NextResponse.json({ game, entries: [], requiresAccount: true });
+      return NextResponse.json({ game, entries: await getFriendsBoard(profile.id) });
+    }
 
     if (game === "global") {
       const [entries, mine] = await Promise.all([

@@ -63,10 +63,33 @@ function winRatePct(stats: LeaderboardStats): number {
   return total > 0 ? Math.round((stats.wins / total) * 100) : 0;
 }
 
-function streakLabel(stats: LeaderboardStats): string {
-  if (stats.currentStreak > 0) return `W${stats.currentStreak}`;
-  if (stats.currentStreak < 0) return `L${-stats.currentStreak}`;
+/**
+ * "W3" / "L5" / "—" for a signed streak.
+ *
+ * Exported because the friends board (components/leaderboard/leaderboard.tsx)
+ * renders the same idea from head-to-head rows, and two hand-written versions
+ * of "how a streak reads" is exactly the kind of near-miss that shows up as
+ * one screen saying L5 and another saying -5.
+ */
+export function formatStreak(currentStreak: number): string {
+  if (currentStreak > 0) return `W${currentStreak}`;
+  if (currentStreak < 0) return `L${-currentStreak}`;
   return "—";
+}
+
+/**
+ * "4-2", or "4-2-1" once a draw has actually happened.
+ *
+ * Shared with the friends drawer's badge for the same reason as formatStreak
+ * -- the drawer and the board show one player's record from one store, so
+ * they have to spell it the same way.
+ */
+export function formatRecord(wins: number, losses: number, draws: number): string {
+  return draws > 0 ? `${wins}-${losses}-${draws}` : `${wins}-${losses}`;
+}
+
+function streakLabel(stats: LeaderboardStats): string {
+  return formatStreak(stats.currentStreak);
 }
 
 /** Shared by every win/loss-record duel -- only the label and gameId differ. */
@@ -124,7 +147,22 @@ export function isLeaderboardGameId(value: unknown): value is LeaderboardGameId 
 }
 
 /**
- * Every tab the leaderboard page offers, poker and Global always first.
+ * Whether a game can hold a record between two named players, which is what
+ * the friends board is built from (see lib/server/head-to-head-store.ts).
+ *
+ * Derived from the game's own kind rather than a second hand-written list:
+ * an average-metric game (Memory Match) has no opponent to have a record
+ * against, and every win/loss game does. A future duel joins the friends
+ * board on the same one-registry-entry terms it joins the leaderboard on.
+ */
+export function isHeadToHeadGame(gameId: string): boolean {
+  return leaderboardGame(gameId)?.kind === "win_loss_record";
+}
+
+/**
+ * Every tab the leaderboard page offers, poker, Global and Friends always
+ * first.
+ *
  * Client-safe (no "server-only" import anywhere in this file's dependency
  * chain), unlike app/api/leaderboard/route.ts -- components/leaderboard/
  * leaderboard.tsx imports this directly rather than the route module.
@@ -133,6 +171,10 @@ export function leaderboardTabs(): { id: string; label: string }[] {
   return [
     { id: "poker", label: "Poker" },
     { id: "global", label: "Global" },
+    // Not a game: your own record against each friend, and the one tab whose
+    // rows differ per viewer. It sits with the two cross-game tabs rather
+    // than after the per-game ones for that reason.
+    { id: "friends", label: "Friends" },
     ...Object.values(LEADERBOARD_GAMES).map((contract) => ({ id: contract.gameId, label: contract.label })),
   ];
 }

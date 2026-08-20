@@ -237,3 +237,80 @@
   .leaderboard-row-generic-2 { grid-template-columns: 22px 26px 1fr 64px 64px; gap: 7px; padding: 8px 10px; }
   .leaderboard-row-generic-3 { grid-template-columns: 22px 26px 1fr 52px 52px 64px; gap: 7px; padding: 8px 10px; }
 }
+
+/* The Friends tab: your record against one person, which is a different row
+   from every other board here -- no rank column (there is no ranking of your
+   friends that means anything), and the row itself is a disclosure button
+   for the per-game split behind the totals. */
+.leaderboard-row-friend {
+  grid-template-columns: 30px 1fr 76px 72px 56px 18px;
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-base) ease;
+}
+/* The zebra wash the base row gets from its own position in the table: a
+   friend's row is wrapped (it owns the expanded panel below it), so it is
+   always its wrapper's first child and never striped on its own. */
+.leaderboard-friend:nth-child(even) .leaderboard-row-friend { background: rgba(255,255,255,.025); }
+.leaderboard-row-friend:hover:not(:disabled) { background: rgba(255,255,255,.06); }
+.leaderboard-row-friend:disabled { cursor: default; }
+.leaderboard-row-friend-open { background: rgba(217,184,93,.06); }
+/* The head row reuses this grid, so it must not pick up the button styling. */
+.leaderboard-row-head.leaderboard-row-friend { cursor: default; }
+.leaderboard-row-head.leaderboard-row-friend > :nth-child(n+3) { text-align: right; }
+/* Tracked-out uppercase in a 72px column: "Win %" wraps onto two lines and
+   drags the whole strip taller unless it is told not to. */
+.leaderboard-row-head.leaderboard-row-friend > * { white-space: nowrap; }
+
+/* A friend you have never finished a game against: one span across every
+   stat column rather than three dashes, which read as missing data. */
+.leaderboard-friend-none {
+  grid-column: 3 / -1;
+  color: #8d84a3;
+  font-size: 12px;
+  text-align: right;
+}
+
+.leaderboard-friend-chevron {
+  color: #8d84a3;
+  transition: transform var(--duration-base) ease;
+}
+.leaderboard-friend-chevron-open { transform: rotate(180deg); }
+
+.leaderboard-friend-games {
+  padding: 2px 14px 10px 44px;
+  background: rgba(217,184,93,.04);
+}
+
+.leaderboard-friend-game {
+  display: grid;
+  grid-template-columns: 1fr 76px 56px;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+}
+.leaderboard-friend-game-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+@media (max-width: 560px) {
+  .leaderboard-row-friend { grid-template-columns: 26px 1fr 60px 48px 44px 16px; gap: 6px; padding: 8px 10px; }
+  /* The base row hides its 5th and 6th children on a phone -- VPIP and best
+     pot, which poker can afford to drop. On this row those two are the
+     streak and the chevron, and the streak is the single most legible thing
+     on the board ("L5 to her"), so it stays. */
+  .leaderboard-row-friend > :nth-child(5),
+  .leaderboard-row-friend > :nth-child(6) { display: revert; }
+  /* Nowrapped labels in 44-60px columns need the tracking back off, or
+     "WIN %" and "STREAK" run into each other. */
+  .leaderboard-row-head.leaderboard-row-friend { font-size: 9px; letter-spacing: .06em; }
+  .leaderboard-friend-games { padding: 2px 10px 8px 33px; }
+  .leaderboard-friend-game { grid-template-columns: 1fr 64px 44px; gap: 7px; }
+}

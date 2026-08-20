@@ -44,6 +44,41 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### Friends leaderboard: a head-to-head record per opponent (2026-08-20)
+- On `feat/global-leaderboard`, on top of the same day's per-game leaderboard. Kayo's ask: "if I play
+  against my girl and lose 5 times it should track." That is a different fact from anything the
+  leaderboard held -- `game_leaderboard_stats` totals you against the world, and nothing anywhere
+  stored "me vs her".
+- New `head_to_head_records` (profile, opponent, game) + `apply_head_to_head_result`, plus
+  `lib/server/head-to-head-store.ts`. Rows are **directed and written in mirrored pairs by one RPC**:
+  A's row and B's row land in one statement, so "my record vs my friends" is one primary-key-prefix
+  read with no `or()` and no flipping anyone's wins into losses at read time. The mirror is an
+  invariant (A.wins vs B == B.losses vs A), which is why an N-way cribbage table records only
+  winner-vs-each-loser -- two players who both lost get nothing against each other, since recording a
+  loss on both sides would have each holding a loss to the other.
+- **No new settlement call sites.** `recordDuelResult`/`recordMultiWayResult` (leaderboard-store) fan
+  the same result out to the head-to-head store themselves. One settled match is one event; two call
+  sites is how the world board and the friends board end up disagreeing. Membership is
+  `isHeadToHeadGame` = the game's own `kind === "win_loss_record"`, so a future duel joins both boards
+  on the same single registry entry. Memory Match (no opponent) and poker (a pot at a six-handed table
+  is not a result between two named players) are never written.
+- The migration **backfills** from settled `pvp_matches` and completed `cribbage_tables`, streaks
+  included (run-length off the latest result, gaps-and-islands for the best one) -- history that
+  already happened shows up the day it deploys instead of everyone starting 0-0. Verified against a
+  throwaway Postgres 17 container with stub tables, not just eyeballed: 1-5 with L5, mirrors exact,
+  active matches excluded.
+- The friends drawer's own W-L badge was repointed off `getDuelRecordsAgainst` (derived by scanning
+  the last 500 matches, duels only) onto this store, and that function is deleted. One source now
+  feeds both, and `formatRecord`/`formatStreak` are shared out of the leaderboard contract so the
+  badge and the board can't spell the same record two ways.
+- A per-friend **overall** streak is only reported when a single game accounts for every result. The
+  ordering across games isn't recoverable from per-game counters, so the row leaves it blank and the
+  expanded per-game rows carry the streaks instead -- deliberate, not an oversight.
+- UI: a third cross-game tab ("Friends", after Poker/Global), rows expanding into the per-game split.
+  Friends you have never played stay on the board as "No games yet" (that's the thing it exists to
+  fix). Watch the base `.leaderboard-row` mobile rule -- it hides children 5 and 6, which on this row
+  are the streak and the chevron; `.leaderboard-row-friend` has to `display: revert` them back.
+
 ### The five retired casino games are gone, not just retired (2026-08-20)
 - On branch `chore/delete-retired-casino-games` off main. Roulette, Video Poker, Coin Flip, Baccarat
   and Hi-Lo were retired 2026-08-12 (blocked from play, code and routes left mounted, per the

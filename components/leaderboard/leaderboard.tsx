@@ -133,8 +133,16 @@ function GlobalRow({ entry, mine }: { entry: GlobalEntry; mine: boolean }) {
 /**
  * Public rankings. Entertainment-only, same as the Gold it's built from --
  * this is the social-proof loop, not a money one.
+ *
+ * `embedded` is for the phone lobby's third pane
+ * (components/lobby/mobile-shell.tsx), which renders this component rather than
+ * a second copy of it. It swaps the page `<main>` for a div (PokerApp already
+ * owns the page's), demotes the h1 to an h2 (the pane is not the document's
+ * top-level heading), and drops the "← Back to the table" link, which would
+ * navigate out of the shell the player is standing in. Defaults to the route's
+ * behaviour, so `app/leaderboard/page.tsx` is unchanged.
  */
-export function Leaderboard() {
+export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
   const [game, setGame] = useState<Game>("poker");
   const [scope, setScope] = useState<Scope>("season");
   const [pokerEntries, setPokerEntries] = useState<PokerEntry[]>([]);
@@ -188,12 +196,15 @@ export function Leaderboard() {
   const mineIsRanked = mineId !== undefined && entries.some((entry) => entry.profileId === mineId);
   const empty = !loading && !error && entries.length === 0;
 
+  const Shell = embedded ? "div" : "main";
+  const Heading = embedded ? "h2" : "h1";
+
   return (
-    <main className="leaderboard-shell">
+    <Shell className={embedded ? "leaderboard-shell leaderboard-shell-embedded" : "leaderboard-shell"}>
       <header className="leaderboard-header">
         <div>
           <div className="lobby-kicker">Standings</div>
-          <h1>The leaderboard.</h1>
+          <Heading>The leaderboard.</Heading>
           {/* An em dash, not the codebase's `--` comment idiom: this string is
               rendered prose, and a double hyphen prints as a double hyphen. */}
           <p>
@@ -207,7 +218,7 @@ export function Leaderboard() {
             Entertainment only &mdash; nothing here can be cashed out.
           </p>
         </div>
-        <Link className="leaderboard-back" href="/">← Back to the table</Link>
+        {!embedded && <Link className="leaderboard-back" href="/">← Back to the table</Link>}
       </header>
 
       <div className="leaderboard-game-tabs">
@@ -321,6 +332,6 @@ export function Leaderboard() {
           )}
         </div>
       )}
-    </main>
+    </Shell>
   );
 }

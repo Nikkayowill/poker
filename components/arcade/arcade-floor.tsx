@@ -57,8 +57,27 @@ function spell(count: number): string {
  * The wallet is fetched here rather than passed in: this route does not mount
  * PokerApp, so there is no profile in scope -- the same reason each arcade
  * machine fetches its own.
+ *
+ * EMBEDDED. The phone lobby renders this same component as one of its swipe
+ * panes (components/lobby/mobile-shell.tsx) rather than reimplementing the
+ * floor, so two props exist for that case and only that case:
+ *   - `profile` hands it the wallet PokerApp already holds. Without it the pane
+ *     would keep a second copy that a buy-in or a claim never updates, and the
+ *     two would visibly disagree.
+ *   - `embedded` drops the page furniture: the `<main>` (it would nest inside
+ *     PokerApp's) and the `.floor-bar` header, whose "← The floor" link would
+ *     navigate away from the shell the player is already standing in and whose
+ *     wallet readout duplicates the real one in the header above it.
+ * Both default to the route's behaviour, so `app/(lobby)/games/page.tsx` is
+ * unchanged.
  */
-export function ArcadeFloor() {
+export function ArcadeFloor({
+  profile: suppliedProfile,
+  embedded = false,
+}: {
+  profile?: PlayerProfile | null;
+  embedded?: boolean;
+} = {}) {
   // Load-bearing, not decorative: this is what applies the player's stored
   // mute on a route where PokerApp is not mounted. The module-level flag it
   // sets is global, which is what lets the cards below call tapSound and
@@ -66,11 +85,17 @@ export function ArcadeFloor() {
   // components. Delete it and the whole floor goes loud for a muted player.
   // See lib/audio/ui-sounds.ts.
   useArcadeSound();
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [fetchedProfile, setFetchedProfile] = useState<PlayerProfile | null>(null);
+  const [fetched, setFetched] = useState(false);
   const mounted = useRef(true);
+  // A supplied wallet is already loaded by definition -- PokerApp does not hand
+  // one down until it has one.
+  const supplied = suppliedProfile !== undefined;
+  const profile = supplied ? suppliedProfile : fetchedProfile;
+  const loaded = supplied ? true : fetched;
 
   useEffect(() => {
+    if (supplied) return;
     mounted.current = true;
     // Deferred through a timer rather than fired from the effect body, matching
     // the profile load in poker-app.tsx and components/profile/rank-strip.tsx:
@@ -79,26 +104,32 @@ export function ArcadeFloor() {
       try {
         const response = await fetch("/api/profile", { cache: "no-store" });
         if (!mounted.current) return;
-        if (response.ok) setProfile(((await response.json()) as { profile: PlayerProfile }).profile);
+        if (response.ok) setFetchedProfile(((await response.json()) as { profile: PlayerProfile }).profile);
       } catch {
         // An unreachable wallet is an empty one, which is what toArcadeWallet
         // already returns for a null profile. The floor still lists every
         // game; the staked rows simply say what they cost.
       } finally {
-        if (mounted.current) setLoaded(true);
+        if (mounted.current) setFetched(true);
       }
     }, 0);
     return () => {
       mounted.current = false;
       window.clearTimeout(timer);
     };
-  }, []);
+  }, [supplied]);
 
   const wallet = toArcadeWallet(profile);
   const { free, duels, wagers, staked } = splitArcadeFloor();
 
+  // A plain div when embedded: PokerApp already owns the page's <main>, and a
+  // nested one is invalid. The extra class is what 45-mobile-shell.css hangs
+  // the "this is a pane, not a page" sizing off.
+  const Shell = embedded ? "div" : "main";
+
   return (
-    <main className="floor-shell">
+    <Shell className={embedded ? "floor-shell floor-shell-embedded" : "floor-shell"}>
+      {!embedded && (
       <header className="floor-bar">
         <Link className="floor-back" href="/" onClick={tapSound}>← The floor</Link>
         {/* .gold-balance is the navbar badge's own coin+amount layout
@@ -114,6 +145,7 @@ export function ArcadeFloor() {
           </strong>
         </span>
       </header>
+      )}
 
       <div className="floor-head">
         <div className="lobby-kicker">Ante Up</div>
@@ -190,7 +222,7 @@ export function ArcadeFloor() {
           </ul>
         </section>
       )}
-    </main>
+    </Shell>
   );
 }
 

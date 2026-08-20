@@ -1,0 +1,635 @@
+/* 45-mobile-shell.css -- the phone lobby: three swipeable panes under the
+   existing header, with a tab bar at the bottom.
+   =========================================================================
+   Turns on at max-width 600px, the same width every other mobile rule in this
+   app already uses (`--lobby-header-h` drops to 68px there, `.hub-grid` goes
+   two-up there). `usePhoneViewport` matches the same query in JS -- if one
+   moves, both move.
+
+   Chrome rules from app/styles/CLAUDE.md hold here: no 1px outlines, lift
+   fills plus real shadow for separation, `--rule` only ever between rows.
+   Green felt appears exactly once, on the poker hero, because that one card is
+   the table. */
+
+/* The server always renders the hub -- it has no viewport to measure -- so on a
+   phone the grid would paint for the moment between first paint and
+   `usePhoneViewport` reporting, then be replaced by the shell. Hide the two
+   big pieces for that window only.
+
+   Scoped `:not(.lobby-shell)` so the rule is live exactly while the shell has
+   not taken over yet: the class arrives with the shell, which lifts the rule,
+   and by then these elements are not rendered anyway. `.hub-head` is
+   deliberately left visible -- it also carries the "Preparing your seat…"
+   branch, which is the honest thing to show in that gap. */
+@media (max-width: 600px) {
+  .lobby-hub:not(.lobby-shell) .hub-grid,
+  .lobby-hub:not(.lobby-shell) > .site-footer {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  /* .lobby is normally the scroll viewport. Here each pane scrolls on its own,
+     so the shell takes the full height and nothing scrolls at this level --
+     otherwise the tab bar scrolls away with the content. */
+  .lobby.lobby-shell {
+    width: 100%;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .lobby.lobby-shell .hub {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    gap: 0;
+    padding: 0;
+  }
+
+  .mshell {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    min-height: 0;
+  }
+
+  /* ---- the swipe track ------------------------------------------------ */
+
+  .mshell-viewport {
+    flex-grow: 1;
+    min-height: 0;
+    overflow: hidden;
+    /* Vertical pans belong to the pane; horizontal ones are ours to read.
+       Without this the browser claims the drag and the panes never move. */
+    touch-action: pan-y;
+  }
+
+  .mshell-track {
+    display: flex;
+    height: 100%;
+    will-change: transform;
+  }
+
+  .mshell-track-settling {
+    transition: transform var(--duration-slower, .25s) var(--ease-decelerate, cubic-bezier(.2, .8, .3, 1));
+  }
+
+  .mshell-pane {
+    flex-shrink: 0;
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 8px 16px 20px;
+  }
+
+  /* Every child keeps its own height. A flex item's automatic minimum size is
+     what normally stops this, but `overflow: hidden` -- which the hero and the
+     stakes ladder both need -- resolves that minimum to zero, so without this
+     the hero is crushed to a green sliver by the content below it. */
+  .mshell-pane > * {
+    flex-shrink: 0;
+  }
+
+  /* The PWA nudge pins itself to the viewport's bottom edge (13-status.css).
+     Inside the shell it cannot reach the viewport at all: `.mshell-track` is
+     transformed, and a transformed ancestor becomes the containing block for
+     `position: fixed` descendants. So `bottom: 0` here means the bottom of the
+     swipe area, not the screen -- which is exactly where it belongs, sitting
+     on the dots with the tab bar below it. Its safe-area padding comes off
+     with it; the bar underneath already covers that strip. */
+  .lobby-shell .install-strip {
+    bottom: 0;
+    padding-bottom: 10px;
+  }
+
+  /* A pane that is not the current one must not be reachable by a screen
+     reader or the tab key -- it is off-screen, not hidden, so neither notices
+     without help. `inert` on the element does the rest. */
+  .mshell-pane[inert] { pointer-events: none; }
+
+  /* ---- the two borrowed page shells ------------------------------------ */
+
+  /* Ante Up and the leaderboard are the route components, rendered inside a
+     pane. Both are written as full pages: a `100svh` floor, their own safe-area
+     padding and a centred max-width column. Inside a pane the pane owns all
+     three, so strip them rather than fork the components. */
+  .mshell-pane .floor-shell-embedded,
+  .mshell-pane .leaderboard-shell-embedded {
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Both shells set their heading at page scale. In a pane it is a section
+     heading, so it takes the pane's own title size -- and the leaderboard's
+     header stops reserving a row for the back link it no longer has. */
+  .mshell-pane .leaderboard-shell-embedded h2,
+  .mshell-pane .floor-shell-embedded h1 {
+    font-size: 27px;
+    line-height: 1.04;
+    letter-spacing: -.03em;
+  }
+
+  .mshell-pane .leaderboard-shell-embedded .leaderboard-header {
+    display: block;
+    margin-bottom: 14px;
+  }
+
+  .mshell-pane .leaderboard-shell-embedded .leaderboard-header p {
+    margin-bottom: 0;
+  }
+
+  /* Each shell paints the room itself through a `position: fixed` ::before,
+     for the routes where nothing else does. The lobby already has one, and two
+     of the same gradient stacked reads as a brighter, wronger room. */
+  .mshell-pane .floor-shell-embedded::before,
+  .mshell-pane .leaderboard-shell-embedded::before {
+    display: none;
+  }
+
+  /* ---- section furniture ---------------------------------------------- */
+
+  .mshell-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .mshell-section {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .mshell-section-note {
+    margin: -3px 0 0;
+    color: #7f8ba4;
+    font-size: 11.5px;
+    line-height: 1.45;
+    text-wrap: pretty;
+  }
+
+  .mshell-title {
+    margin: 0;
+    color: #f3f6fb;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 27px;
+    font-weight: 400;
+    letter-spacing: -.03em;
+    line-height: 1.04;
+  }
+
+  .mshell-lede {
+    margin: 0;
+    color: #93a1bb;
+    font-size: 12.5px;
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+
+  /* The hub tile recipe, kept identical so the shell and the desktop grid are
+     visibly the same material. */
+  .mshell-card {
+    border-radius: var(--radius-card);
+    background-color: var(--brand-ink-lift);
+    background-image:
+      linear-gradient(148deg, rgba(18, 22, 31, .95) 0%, rgba(18, 22, 31, .76) 44%, rgba(18, 22, 31, .06) 100%),
+      linear-gradient(160deg, #222937, #171b25);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 2px 10px rgba(0, 0, 0, .3);
+  }
+
+  .mshell-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  /* ---- the poker hero -------------------------------------------------- */
+
+  .mshell-hero {
+    position: relative;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--radius-2xl, 14px);
+    padding: 0;
+    text-align: left;
+    background: linear-gradient(168deg, #1d6c4f 0%, var(--felt) 46%, var(--felt-dark) 100%);
+    box-shadow:
+      0 18px 44px rgba(0, 0, 0, .5),
+      inset 0 0 0 1px rgba(219, 156, 11, .34),
+      0 0 30px -8px rgba(219, 156, 11, .4);
+  }
+
+  .mshell-hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(150% 80% at 50% -18%, rgba(246, 201, 74, .26), transparent 62%),
+      radial-gradient(120% 70% at 50% 118%, rgba(4, 10, 8, .6), transparent 60%);
+  }
+
+  .mshell-hero-body {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+    padding: 17px 17px 16px;
+  }
+
+  .mshell-hero-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .mshell-hero-kicker { color: rgba(246, 201, 74, .8); }
+
+  .mshell-hero-name {
+    display: block;
+    margin-top: 4px;
+    color: #fbf6e6;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 29px;
+    font-weight: 600;
+    letter-spacing: -.02em;
+    line-height: 1.02;
+  }
+
+  .mshell-hero-seats {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-pill);
+    background: rgba(6, 20, 14, .5);
+    color: #cfe6d8;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .mshell-hero-seats::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-round);
+    background: #63e08f;
+    box-shadow: 0 0 8px rgba(99, 224, 143, .9);
+  }
+
+  .mshell-hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .mshell-hero-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-pill);
+    background: rgba(6, 20, 14, .5);
+    color: #cfe6d8;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+
+  /* ---- the one saturated action --------------------------------------- */
+
+  .mshell-primary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    height: 52px;
+    border: 0;
+    border-radius: var(--radius-control);
+    color: #1c1305;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
+    box-shadow: 0 12px 30px rgba(219, 156, 11, .34), inset 0 1px rgba(255, 255, 255, .45);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .mshell-primary:disabled {
+    opacity: .55;
+    box-shadow: none;
+    cursor: default;
+  }
+
+  .mshell-primary:not(:disabled):active { transform: scale(.985); }
+
+  /* ---- stakes ladder --------------------------------------------------- */
+
+  .mshell-tiers {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scroll-snap-type: x proximity;
+  }
+
+  .mshell-tier {
+    flex-shrink: 0;
+    /* 44px is the hit-target floor for everything in this shell. The min-width
+       is so a short label ("1k") still reads as a pill rather than a coin. */
+    height: 44px;
+    min-width: 68px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: var(--radius-pill);
+    scroll-snap-align: center;
+    background: var(--brand-surface);
+    color: #a9b6cd;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .mshell-tier-on {
+    background: linear-gradient(152deg, var(--brand-gold-light), var(--brand-gold));
+    color: #1c1305;
+    font-weight: 700;
+    box-shadow: 0 6px 16px rgba(219, 156, 11, .28);
+  }
+
+  .mshell-tier:disabled {
+    opacity: .4;
+    cursor: default;
+  }
+
+  /* ---- rows and tiles -------------------------------------------------- */
+
+  .mshell-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    border: 0;
+    padding: 12px 14px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .mshell-row + .mshell-row { box-shadow: 0 -1px 0 0 transparent; }
+
+  .mshell-row-body {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .mshell-row-body strong {
+    color: #eef2f8;
+    font-size: 14.5px;
+    font-weight: 600;
+  }
+
+  .mshell-row-body small {
+    color: #93a1bb;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .mshell-rule {
+    height: 1px;
+    background: var(--rule);
+  }
+
+  .mshell-badge {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-control);
+    background: rgba(219, 156, 11, .12);
+    color: var(--brand-gold-light);
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .mshell-badge-free {
+    background: rgba(152, 63, 224, .14);
+    color: #c79cf0;
+  }
+
+  .mshell-action {
+    flex-shrink: 0;
+    height: 34px;
+    padding: 0 13px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: var(--brand-surface-2);
+    color: var(--brand-gold-light);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .mshell-action-free {
+    background: #e8edf6;
+    color: var(--brand-ink);
+  }
+
+  .mshell-action[aria-disabled="true"] {
+    opacity: .45;
+    cursor: default;
+  }
+
+  .mshell-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    min-height: 92px;
+    border: 0;
+    padding: 13px 14px;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .mshell-tile strong {
+    color: #eef2f8;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 15.5px;
+    font-weight: 600;
+  }
+
+  .mshell-tile small {
+    color: #93a1bb;
+    font-size: 11.5px;
+    line-height: 1.35;
+  }
+
+  .mshell-tile svg { color: var(--brand-gold-light); }
+
+  /* Chrome is borderless, so the pressed/hover state is the accent ring plus
+     its glow rather than a border appearing out of nowhere. */
+  .mshell-tile:active,
+  .mshell-row:active,
+  .mshell-hero:active {
+    transform: scale(.985);
+  }
+
+  @media (hover: hover) {
+    .mshell-tile:hover,
+    .mshell-row:hover {
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 2px 10px rgba(0, 0, 0, .3), var(--accent-edge);
+    }
+  }
+
+  .mshell-tile:focus-visible,
+  .mshell-row:focus-visible,
+  .mshell-tier:focus-visible,
+  .mshell-primary:focus-visible,
+  .mshell-action:focus-visible,
+  .mshell-nav-item:focus-visible {
+    outline: none;
+    box-shadow: var(--brand-focus);
+  }
+
+  /* ---- pane 3 furniture ------------------------------------------------ */
+
+  .mshell-scope {
+    display: flex;
+    gap: 3px;
+    padding: 3px;
+    border-radius: var(--radius-pill);
+    background: var(--brand-surface);
+  }
+
+  .mshell-scope button {
+    height: 30px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: #9fadc5;
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .mshell-scope button[aria-pressed="true"] {
+    background: #e8edf6;
+    color: var(--brand-ink);
+  }
+
+  .mshell-setting-value {
+    flex-shrink: 0;
+    color: var(--gold);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  /* ---- page dots + tab bar --------------------------------------------- */
+
+  .mshell-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 0;
+  }
+
+  .mshell-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: rgba(164, 186, 224, .22);
+    transition:
+      width var(--duration-slower, .25s) var(--ease-decelerate, cubic-bezier(.2, .8, .3, 1)),
+      background var(--duration-slower, .25s) linear;
+  }
+
+  .mshell-dot-on {
+    width: 20px;
+    background: var(--brand-gold-light);
+  }
+
+  .mshell-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    flex-shrink: 0;
+    /* The safe-area strip is part of the bar, not a gap under it -- otherwise
+       iOS paints the document colour beneath the home indicator. */
+    padding-bottom: var(--safe-bottom);
+    background: rgba(26, 31, 43, .92);
+    box-shadow: 0 -1px 0 rgba(164, 186, 224, .1), 0 -12px 30px rgba(0, 0, 0, .4);
+  }
+
+  @supports (backdrop-filter: blur(18px)) {
+    .mshell-nav { backdrop-filter: blur(18px); }
+  }
+
+  .mshell-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 58px;
+    border: 0;
+    background: transparent;
+    color: #7f8ba4;
+    font: inherit;
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: .02em;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: color var(--duration-base, .15s) linear;
+  }
+
+  .mshell-nav-on { color: var(--brand-gold-light); }
+
+  /* ---- motion opt-out --------------------------------------------------- */
+
+  @media (prefers-reduced-motion: reduce) {
+    .mshell-track-settling { transition: none; }
+    .mshell-dot { transition: none; }
+    .mshell-tile:active,
+    .mshell-row:active,
+    .mshell-hero:active,
+    .mshell-primary:not(:disabled):active { transform: none; }
+  }
+}

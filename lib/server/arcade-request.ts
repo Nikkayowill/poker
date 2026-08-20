@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 /**
  * The rejection-and-response layer every arcade service shares.
  *
- * Blackjack, Hi-Lo, Word Stack and Connections each carried their own copy of an
+ * Blackjack, Word Stack and Connections each carried their own copy of an
  * identical error class and an all-but-identical response mapper. Four copies
  * of one contract is four places to fix a bug in it, and they had already
  * started to drift: two of them dropped the `reason` field entirely, so a

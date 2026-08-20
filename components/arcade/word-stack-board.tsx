@@ -24,7 +24,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * The rules live in lib/arcade/puzzles/word-stack.ts and the answer lives on the
  * server. This file holds one snapshot and replaces it wholesale with whatever
  * the API returns, because every guess is a request and the response is the
- * new truth -- the same contract blackjack-table.tsx and hi-lo-table.tsx use.
+ * new truth -- the same contract blackjack-table.tsx uses.
  *
  * The client cannot score a guess and does not try: `snapshot.answer` is null
  * until the board is over, so the tiles come back coloured from the server or

@@ -370,7 +370,7 @@
   .bj-action { min-height: 46px; padding: 0 10px; font-size: 12.5px; }
 
   /* Sudoku, Word Stack, Connections and Memory Match reuse .bj-shell but have no
-     docked .bj-controls bar -- only Blackjack/Hi-Lo do. The 126px reserved
+     docked .bj-controls bar -- only Blackjack does. The 126px reserved
      above is real clearance for that fixed bar; on these four it was dead
      space with nothing docked into it, and was most of why a daily puzzle's
      grid+keypad forced the whole page to scroll on a phone. */

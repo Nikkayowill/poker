@@ -28,7 +28,7 @@ import { ensureProfile } from "./profile-store";
  * Everything between a Word Stack request and the board.
  *
  * No Gold moves here, so the three ordering rules that govern
- * blackjack-service.ts and hi-lo-service.ts do not apply -- there is no stake
+ * blackjack-service.ts do not apply -- there is no stake
  * to debit before a round exists and no payout to fire exactly once. What
  * replaces them is one rule of its own, and it is the whole game:
  *

@@ -34,7 +34,8 @@ export function makeDeck(randomInt: RandomInt): Card[] {
 }
 
 /**
- * A shuffled shoe of `decks` packs, as baccarat is dealt from.
+ * A shuffled shoe of `decks` packs combined into one -- the way a real
+ * multi-deck casino game deals from a shoe rather than a single deck.
  *
  * One Fisher-Yates over the whole shoe, not `decks` shuffled packs stacked --
  * those are different distributions, and the stacked one cannot put two copies

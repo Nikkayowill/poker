@@ -127,16 +127,16 @@ describe("level rewards", () => {
     expect(goldForLevelUps(9, 4)).toBe(0);
   });
 
-  it("keeps the whole ladder inside the house's edge on the turnover it takes", () => {
+  it("keeps the whole ladder a small fraction of the turnover it takes to climb", () => {
     // The economic guard, not a style point: level rewards are a Gold faucet,
-    // and Gold is sold for money. Reaching MAX_LEVEL costs a known amount of
-    // wagering, and the arcade's edge on that turnover has to more than cover
-    // everything the ladder pays out along the way -- otherwise grinding the
-    // ladder is a way to print Gold.
+    // and Gold is sold for money. There is no house edge anywhere in this
+    // economy to weigh the faucet against any more -- every staked game left
+    // is winner-take-all PvP with no rake -- so the bar is simpler and more
+    // direct: reaching MAX_LEVEL must pay back only a small sliver of what it
+    // cost to get there, or grinding the ladder becomes a way to print Gold
+    // that undermines what a real-money purchase of it is worth.
     const turnover = xpToReachLevel(MAX_LEVEL) * GOLD_PER_XP;
     const paid = goldForLevelUps(1, MAX_LEVEL);
-    // Hi-Lo prices a 3% edge; staying under 1% of turnover leaves the margin
-    // intact with room for the daily grant and streak on top.
     expect(paid / turnover).toBeLessThan(0.01);
   });
 });

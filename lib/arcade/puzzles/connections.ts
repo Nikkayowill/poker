@@ -164,7 +164,7 @@ export function startConnectionsRound(puzzle: ConnectionsPuzzle, randomInt: Rand
  * Plays one selection of four words.
  *
  * Inert on a selection the round cannot accept -- same convention as
- * submitWordStackGuess and callHiLo: the service re-checks and answers 409, and a
+ * submitWordStackGuess: the service re-checks and answers 409, and a
  * throw here would surface as a 500.
  */
 export function submitConnectionsGuess(round: ConnectionsRound, selection: string[]): ConnectionsRound {

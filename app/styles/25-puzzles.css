@@ -1,9 +1,9 @@
 /* Daily Word Stack and Connections.
  *
  * Both pages reuse the Blackjack shell (.bj-shell, .bj-header, .bj-back,
- * .bj-hand-who) the same way Hi-Lo does, so this file holds only what a puzzle
- * genuinely adds: the two boards, the keyboard, and the share summary. It
- * cascades after 23/24 because it overrides pieces of that shell.
+ * .bj-hand-who) directly, so this file holds only what a puzzle genuinely
+ * adds: the two boards, the keyboard, and the share summary. It cascades
+ * after 23 because it overrides pieces of that shell.
  *
  * The palette is the app's own green felt and brass -- these are not recoloured
  * to match the games they are modelled on. The one place the source palette is

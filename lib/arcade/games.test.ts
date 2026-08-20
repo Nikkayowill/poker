@@ -12,8 +12,8 @@ import {
 } from "./games";
 
 const game = (over: Partial<ArcadeGame> = {}): ArcadeGame => ({
-  id: "coin-flip",
-  name: "Coin Flip",
+  id: "blackjack-21",
+  name: "Blackjack 21",
   blurb: "",
   kind: "casino",
   entryCost: 250,
@@ -28,13 +28,8 @@ describe("arcade catalogue", () => {
       "Blackjack 21",
       "Daily Word Stack",
       "Connections",
-      "Hi-Lo",
-      "Video Poker",
-      "Roulette Wheel",
       "Daily Sudoku",
       "Memory Match",
-      "Baccarat",
-      "Coin Flip",
       "Chess",
       "Checkers",
       "Trivia Showdown",
@@ -44,23 +39,18 @@ describe("arcade catalogue", () => {
     ]);
   });
 
-  it("keeps every retired game off the floor and unlinked", () => {
-    // The catalog half of the 2026-08-12 retirement. The half that actually
-    // matters -- that the deal routes refuse -- is pinned in retired.test.ts;
-    // this is what stops one of them being quietly relinked.
-    const retired = ARCADE_GAMES.filter((entry) => entry.status === "retired");
-    expect(retired.map((entry) => entry.id)).toEqual([
-      "hi-lo",
-      "video-poker",
-      "roulette-wheel",
-      "baccarat",
-      "coin-flip",
-    ]);
-    for (const entry of retired) expect(entry.href).toBeNull();
+  it("keeps a retired game off the floor and unlinked", () => {
+    // Nothing in the live catalog is retired right now -- every game that
+    // ever was got deleted outright on 2026-08-20 rather than left in this
+    // state. The mechanism itself (lib/arcade/retired.ts's guard, this
+    // status value, splitArcadeFloor's live-only filter) stays for whichever
+    // game gets retired next, so this exercises it against a standalone
+    // synthetic fixture rather than a real catalog row.
+    const retired = game({ status: "retired", href: null });
+    expect(retired.href).toBeNull();
 
-    const floor = splitArcadeFloor();
-    const onFloor = [...floor.free, ...floor.duels, ...floor.wagers, ...floor.staked].map((entry) => entry.id);
-    for (const entry of retired) expect(onFloor).not.toContain(entry.id);
+    const floor = splitArcadeFloor([retired]);
+    expect([...floor.free, ...floor.duels, ...floor.wagers, ...floor.staked]).toHaveLength(0);
   });
 
   it("stakes every duel and never lists one as free", () => {

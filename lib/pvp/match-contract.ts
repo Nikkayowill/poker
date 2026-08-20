@@ -4,9 +4,9 @@
  *
  * A duel is 1v1, staked, winner-take-all: both players ante the same amount,
  * the winner takes both, a draw returns each their own. lib/server/
- * pvp-match-service.ts implements that once, for every game, which is the same
- * argument lib/server/casino-round-service.ts already won here -- six copies of
- * one money sequence is six chances to get it wrong.
+ * pvp-match-service.ts implements that once, for every game, rather than once
+ * per game: four (now five, with cribbage generalized to N) copies of one
+ * money sequence is four chances to get it wrong instead of one.
  *
  * ## What a game supplies, and what it must not
  *

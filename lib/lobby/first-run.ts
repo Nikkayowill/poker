@@ -80,7 +80,7 @@ export const FIRST_RUN_STEPS: readonly FirstRunStep[] = [
   },
   {
     id: "arcade",
-    body: "Ten more games sit behind Ante Up — blackjack, Hi-Lo, head-to-head duels and the rest.",
+    body: "Ten more games sit behind Ante Up — blackjack, brain games, head-to-head duels and the rest.",
     actionLabel: "Open Ante Up",
     action: { kind: "link", href: "/games" },
     nextLabel: "Next",

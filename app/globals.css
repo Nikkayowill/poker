@@ -30,10 +30,7 @@
 @import "./styles/21-friends.css";
 @import "./styles/22-arcade.css";
 @import "./styles/23-blackjack.css";
-/* After 23: Hi-Lo reuses the Blackjack shell and only adds to it, so it must
-   cascade later. */
-@import "./styles/24-hi-lo.css";
-/* After 23/24: the puzzle pages reuse the Blackjack shell and override parts
+/* After 23: the puzzle pages reuse the Blackjack shell and override parts
    of it, so they must cascade later. */
 @import "./styles/25-puzzles.css";
 /* After 11: the rewarded-ad offer rides .profile-overlay/.profile-modal and
@@ -42,13 +39,6 @@
 /* After 23: the dealers' 3D stage sits inside .bj-felt and leans on that
    file's box, so it must cascade later. */
 @import "./styles/27-dealer-stage.css";
-/* After 23: the shared arcade cabinet narrows .bj-felt and .bj-verdict-chip
-   from the Blackjack shell, and every machine sheet below narrows this one. */
-@import "./styles/28-arcade-hud.css";
-@import "./styles/29-video-poker.css";
-@import "./styles/30-roulette.css";
-@import "./styles/31-coin-flip.css";
-@import "./styles/32-baccarat.css";
 @import "./styles/33-sudoku.css";
 /* After 33: Memory reuses .sk-start and .sk-done from the Sudoku sheet rather
    than restating them, so it must cascade later. */
@@ -56,8 +46,8 @@
 @import "./styles/35-legal.css";
 /* 36-40: the head-to-head duels. 36 is the shared shell -- the lobby, the
    match frame, the result card -- and every per-game sheet below narrows it,
-   so they must cascade later. Same relationship 28-arcade-hud.css has with the
-   machine sheets above it. */
+   so they must cascade later. Same relationship 23-blackjack.css has with
+   25-puzzles.css. */
 @import "./styles/36-duels.css";
 @import "./styles/37-chess.css";
 @import "./styles/38-checkers.css";

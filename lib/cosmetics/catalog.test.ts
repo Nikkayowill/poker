@@ -146,7 +146,7 @@ describe("character avatars (the seat-art roster, sold in the store)", () => {
     );
   });
 
-  it("gives character1-5 away free and prices character6-11 as an ascending Gold ladder", () => {
+  it("gives character1-5 away free and prices character6-12 as an ascending Gold ladder", () => {
     const starters = ["character1", "character2", "character3", "character4", "character5"];
     for (const id of starters) {
       const item = characterAvatarCosmetics.find((entry) => entry.id === id);
@@ -154,7 +154,7 @@ describe("character avatars (the seat-art roster, sold in the store)", () => {
       expect(item?.rarity).toBe("standard");
     }
 
-    const paidIds = ["character6", "character7", "character8", "character9", "character10", "character11"];
+    const paidIds = ["character6", "character7", "character8", "character9", "character10", "character11", "character12"];
     const prices = paidIds.map((id) => characterAvatarCosmetics.find((entry) => entry.id === id)?.price as number);
     expect(prices.every((price) => typeof price === "number" && price > 0)).toBe(true);
     // A ladder, not just "all priced" -- each rung costs strictly more than

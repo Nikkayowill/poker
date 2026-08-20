@@ -162,7 +162,7 @@ const cardBackCosmetics: Cosmetic[] = [
 ];
 
 /**
- * Avatars. The same 11-character roster the racetrack table draws opponent
+ * Avatars. The same 12-character roster the racetrack table draws opponent
  * seats from (`lib/scene/seat-art.ts`'s `SEAT_ART_CHARACTERS`) is what's for
  * sale here -- one id space, so "buy a character" and "that's who's drawn at
  * my seat" are the same claim instead of two systems that happen to agree.
@@ -174,10 +174,7 @@ const cardBackCosmetics: Cosmetic[] = [
  * Two tiers, in order:
  *  - standard (character1-5): the starter roster. Free from the moment a
  *    profile exists.
- *  - rare (character6-11): Gold-purchasable, ladder pricing. These currently
- *    only have a 0deg plate -- they sell and equip today exactly like a
- *    character with a full angle bucket; wider turns are a pure art drop
- *    (`scripts/prepare-seat-art.py`) with no catalog change needed.
+ *  - rare (character6-12): Gold-purchasable, ladder pricing.
  */
 const characterAvatarOffers: Record<string, { name: string; description: string; price: number }> = {
   character1: { name: "The Hustler", description: "Makes friends at the table and takes their chips anyway.", price: 0 },
@@ -191,6 +188,7 @@ const characterAvatarOffers: Record<string, { name: string; description: string;
   character9: { name: "The Wildcard", description: "Unreadable, and she likes it that way.", price: 2_000_000 },
   character10: { name: "Velvet", description: "Smooth as the felt she's sitting at.", price: 3_200_000 },
   character11: { name: "The Rebel", description: "Plays every hand like she's got somewhere else to be.", price: 5_000_000 },
+  character12: { name: "The Closer", description: "By the river, it's already over. She just lets you catch up.", price: 7_500_000 },
 };
 
 export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((character) => {

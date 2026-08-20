@@ -47,6 +47,7 @@ import {
   ShieldCheck,
   User,
   Users,
+  Video,
   Volume2,
   VolumeX,
   X,
@@ -55,6 +56,7 @@ import {
 import { CHEAPEST_TIER, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
 import type { PlayerProfile } from "@/lib/profile/types";
+import type { DailyGoldState } from "@/lib/profile/daily-gold";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   beginSwipe,
@@ -66,6 +68,7 @@ import {
 import { ArcadeFloor } from "@/components/arcade/arcade-floor";
 import { Leaderboard } from "@/components/leaderboard/leaderboard";
 import { SiteFooter } from "@/components/nav/site-footer";
+import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
 
@@ -105,6 +108,12 @@ export function MobileShell({
   onToggleMenuMusic,
   betStyle,
   onCycleBetStyle,
+  dailyGold,
+  claimingGold,
+  onClaimDailyGold,
+  freeGoldEligible,
+  onGetFreeGold,
+  onEditProfile,
 }: {
   profile: PlayerProfile;
   loading: boolean;
@@ -130,6 +139,12 @@ export function MobileShell({
   onToggleMenuMusic: () => void;
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
+  dailyGold: DailyGoldState | null;
+  claimingGold: boolean;
+  onClaimDailyGold: () => void;
+  freeGoldEligible: boolean;
+  onGetFreeGold: () => void;
+  onEditProfile: () => void;
 }) {
   const [page, setPage] = useState(0);
   /** Live drag distance in px. Null whenever no horizontal drag is in flight. */
@@ -234,6 +249,12 @@ export function MobileShell({
               onToggleMenuMusic={onToggleMenuMusic}
               betStyle={betStyle}
               onCycleBetStyle={onCycleBetStyle}
+              onEditProfile={onEditProfile}
+              dailyGold={dailyGold}
+              claimingGold={claimingGold}
+              onClaimDailyGold={onClaimDailyGold}
+              freeGoldEligible={freeGoldEligible}
+              onGetFreeGold={onGetFreeGold}
             />
           </section>
         </div>
@@ -377,22 +398,18 @@ function PlayPane({
 
       {error && <p className="form-error"><X size={14} /> {error}</p>}
 
-      {/* The one green surface in the chrome, because this one card IS the
-          table. Everything else on the phone stays on the blue-grey ground. */}
+      {/* The real table plate from public/pokertable, the same art the desktop
+          hero tile carries, dissolved into the card rather than sat on top of
+          it. The card itself stays on the chrome's own ground, so the felt
+          reads as a photograph of the table and not as a green panel. */}
       <div className="mshell-hero">
+        <div className="mshell-hero-art" aria-hidden="true" />
         <div className="mshell-hero-body">
-          <div className="mshell-hero-head">
-            <div>
-              <span className="lobby-kicker mshell-hero-kicker">Poker · No-limit Hold&rsquo;em</span>
-              <strong className="mshell-hero-name">Texas Hold&rsquo;em</strong>
-            </div>
-            <span className="mshell-hero-seats">Six-max</span>
-          </div>
-
-          <div className="mshell-hero-meta">
-            <span className="mshell-hero-chip">{config.label} buy-in</span>
-            <span className="mshell-hero-chip">{config.smallBlind} / {config.bigBlind} blinds</span>
-          </div>
+          <span className="lobby-kicker mshell-hero-kicker">Six-max cash game</span>
+          <strong className="mshell-hero-name">Texas Hold&rsquo;em</strong>
+          <span className="mshell-hero-meta">
+            {config.label} to sit down. Blinds {config.smallBlind} and {config.bigBlind}.
+          </span>
 
           <button
             type="button"
@@ -401,21 +418,21 @@ function PlayPane({
             onClick={() => { selectSound(); onQuickPlay(tier); }}
           >
             {!sessionReady
-              ? "Preparing your seat…"
+              ? "Getting your seat ready"
               : loading
-                ? "Joining table…"
+                ? "Finding you a table"
                 : affordable
                   ? "Take a seat"
-                  : "Not enough Gold"}
+                  : `You need ${config.minBuyIn.toLocaleString()} Gold`}
             {!loading && sessionReady && affordable && <ArrowRight size={18} aria-hidden="true" />}
           </button>
         </div>
       </div>
 
       {/* Every tier is a fixed buy-in (minBuyIn === maxBuyIn), so picking the
-          stake IS picking the amount -- which is why the phone goes straight to
-          a seat instead of opening the buy-in modal the desktop hub uses.
-          Hosting still opens it: that flow also names the room. */}
+          stake is also picking the amount. That is why the phone goes straight
+          to a seat instead of opening the buy-in modal the desktop hub uses.
+          Hosting still opens it, because that flow also names the room. */}
       <div className="mshell-section">
         <div className="mshell-section-head">
           <span className="lobby-kicker">Stakes</span>
@@ -490,6 +507,12 @@ function PlayPane({
 function YouPane({
   profile,
   onSignOut,
+  onEditProfile,
+  dailyGold,
+  claimingGold,
+  onClaimDailyGold,
+  freeGoldEligible,
+  onGetFreeGold,
   soundEnabled,
   onToggleSound,
   musicEnabled,
@@ -499,6 +522,12 @@ function YouPane({
 }: {
   profile: PlayerProfile;
   onSignOut: () => void;
+  onEditProfile: () => void;
+  dailyGold: DailyGoldState | null;
+  claimingGold: boolean;
+  onClaimDailyGold: () => void;
+  freeGoldEligible: boolean;
+  onGetFreeGold: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   musicEnabled: boolean;
@@ -506,11 +535,69 @@ function YouPane({
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
 }) {
+  const dailyReady = dailyGold === "ready";
+  const dailyClaimed = dailyGold === "claimed";
+
   return (
     <>
-      {/* The route's own leaderboard, embedded -- its game tabs, season/all-time
-          toggle, kicker and fetch all come with it, so this pane adds no header
-          of its own above it. */}
+      {/* This pane is why the phone header carries no avatar: your name, your
+          level and everything you can do to your account are here. */}
+      <div className="mshell-card mshell-me">
+        <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
+        <span className="mshell-me-body">
+          <strong>{profile.displayName}</strong>
+          <small>
+            {profile.unlimitedGold
+              ? "Unlimited Gold"
+              : `${profile.goldBalance.toLocaleString()} Gold`}
+            {profile.isRegistered ? "" : " · Guest"}
+          </small>
+        </span>
+        <button type="button" className="mshell-action" onClick={() => { tapSound(); onEditProfile(); }}>
+          Edit
+        </button>
+      </div>
+
+      {(dailyReady || dailyClaimed || freeGoldEligible) && (
+        <div className="mshell-card">
+          {freeGoldEligible && (
+            <>
+              <button type="button" className="mshell-row" onClick={() => { selectSound(); onGetFreeGold(); }}>
+                <Video size={19} strokeWidth={1.8} aria-hidden="true" />
+                <span className="mshell-row-body">
+                  <strong>Watch an ad for Gold</strong>
+                  <small>Tops you up when you are running low</small>
+                </span>
+                <ChevronRight size={18} aria-hidden="true" />
+              </button>
+              {(dailyReady || dailyClaimed) && <div className="mshell-rule" />}
+            </>
+          )}
+          {(dailyReady || dailyClaimed) && (
+            <button
+              type="button"
+              className="mshell-row"
+              disabled={dailyClaimed || claimingGold}
+              onClick={() => { selectSound(); onClaimDailyGold(); }}
+            >
+              <Gift size={19} strokeWidth={1.8} aria-hidden="true" />
+              <span className="mshell-row-body">
+                <strong>
+                  {dailyClaimed
+                    ? "Daily Gold claimed"
+                    : claimingGold ? "Claiming" : "Claim your daily Gold"}
+                </strong>
+                <small>{dailyClaimed ? "Come back tomorrow for more" : "One free top-up a day"}</small>
+              </span>
+              {!dailyClaimed && <ChevronRight size={18} aria-hidden="true" />}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* The route's own leaderboard, embedded. Its game tabs, season toggle,
+          kicker and fetch all come with it, so this pane adds no header above
+          it. */}
       <Leaderboard embedded />
 
       <div className="mshell-section">
@@ -537,10 +624,15 @@ function YouPane({
             <span className="mshell-setting-value">{betStyleLabel(betStyle).replace(/^Chip style: /, "")}</span>
           </button>
           <div className="mshell-rule" />
+          {/* A guest has no account to sign out of, so the same slot offers the
+              one thing that keeps their Gold: making one. */}
           <button type="button" className="mshell-row" onClick={() => { tapSound(); onSignOut(); }}>
-            <LogOut size={19} strokeWidth={1.8} aria-hidden="true" />
+            {profile.isRegistered
+              ? <LogOut size={19} strokeWidth={1.8} aria-hidden="true" />
+              : <Cloud size={19} strokeWidth={1.8} aria-hidden="true" />}
             <span className="mshell-row-body">
-              <strong>{profile.isRegistered ? "Sign out" : "Save progress"}</strong>
+              <strong>{profile.isRegistered ? "Sign out" : "Save your progress"}</strong>
+              {!profile.isRegistered && <small>Keep your Gold if you switch phones</small>}
             </span>
           </button>
         </div>
@@ -567,7 +659,7 @@ function YouPane({
           <Link className="mshell-card mshell-tile" href="/store/gold" onClick={tapSound}>
             <Coins size={19} strokeWidth={1.8} aria-hidden="true" />
             <strong>Buy Gold</strong>
-            <small>Optional — never required</small>
+            <small>Never required to play</small>
           </Link>
         </div>
       </div>

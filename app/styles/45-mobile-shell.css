@@ -7,9 +7,9 @@
    moves, both move.
 
    Chrome rules from app/styles/CLAUDE.md hold here: no 1px outlines, lift
-   fills plus real shadow for separation, `--rule` only ever between rows.
-   Green felt appears exactly once, on the poker hero, because that one card is
-   the table. */
+   fills plus real shadow for separation, `--rule` only ever between rows. The
+   poker hero carries the real table plate as artwork rather than a green
+   panel, so no surface in this file is felt-coloured. */
 
 /* The server always renders the hub -- it has no viewport to measure -- so on a
    phone the grid would paint for the moment between first paint and
@@ -29,6 +29,32 @@
 }
 
 @media (max-width: 600px) {
+  /* ---- the header, stripped back ---------------------------------------- */
+
+  /* On a phone the third pane IS the profile: it holds the avatar, the name,
+     the daily claim, Edit profile and Sign out. Repeating an avatar in the
+     header meant two ways to the same place, one of them a 34px circle, so
+     the header keeps the mark and the balance and nothing else. The heart
+     goes with it; Support StackChips is reachable from the footer in that
+     same pane. */
+  .app-root:has(.lobby-shell) .lobby-header .app-menu,
+  .app-root:has(.lobby-shell) .lobby-header .donate-button {
+    display: none;
+  }
+
+  /* And the balance is a readout, not a control, so it loses the pill it was
+     wearing. Nothing here is tappable, so nothing should look tappable. */
+  .app-root:has(.lobby-shell) .lobby-header .gold-badge {
+    padding: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  .app-root:has(.lobby-shell) .lobby-header .gold-balance strong {
+    font-size: 15px;
+    color: var(--brand-gold-light);
+  }
+
   /* .lobby is normally the scroll viewport. Here each pane scrolls on its own,
      so the shell takes the full height and nothing scrolls at this level --
      otherwise the tab bar scrolls away with the content. */
@@ -92,7 +118,7 @@
   /* Every child keeps its own height. A flex item's automatic minimum size is
      what normally stops this, but `overflow: hidden` -- which the hero and the
      stakes ladder both need -- resolves that minimum to zero, so without this
-     the hero is crushed to a green sliver by the content below it. */
+     the hero is crushed to a sliver by the content below it. */
   .mshell-pane > * {
     flex-shrink: 0;
   }
@@ -216,97 +242,89 @@
 
   /* ---- the poker hero -------------------------------------------------- */
 
+  /* Dark card, gold rim, real chips. The felt plate was tried here first and
+     does not work at this size: `table-mobile.webp` is a 1:2 portrait oval, so
+     anything wide enough to sit behind the type crops down to an unreadable
+     arc of rail. The fanned chip cluster reads as poker instantly, carries the
+     gold the rest of the card is already using, and brings no green with it. */
   .mshell-hero {
     position: relative;
+    isolation: isolate;
     overflow: hidden;
     border: 0;
     border-radius: var(--radius-2xl, 14px);
     padding: 0;
     text-align: left;
-    background: linear-gradient(168deg, #1d6c4f 0%, var(--felt) 46%, var(--felt-dark) 100%);
+    background-color: var(--brand-ink-lift);
+    background-image: linear-gradient(158deg, #262f42 0%, #171c27 58%, #12161f 100%);
     box-shadow:
-      0 18px 44px rgba(0, 0, 0, .5),
-      inset 0 0 0 1px rgba(219, 156, 11, .34),
-      0 0 30px -8px rgba(219, 156, 11, .4);
+      inset 0 1px 0 rgba(255, 255, 255, .08),
+      inset 0 0 0 1px rgba(219, 156, 11, .26),
+      0 16px 38px rgba(0, 0, 0, .5);
   }
 
-  .mshell-hero::before {
+  .mshell-hero-art {
+    position: absolute;
+    z-index: -1;
+    top: -14px;
+    right: -22px;
+    width: 122px;
+    height: 122px;
+    background-image: url("/chips/cluster-fanned.webp");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    /* Tipped off-axis so it reads as chips dropped on the card rather than an
+       icon centred in a box. */
+    transform: rotate(-14deg);
+    filter: drop-shadow(0 12px 26px rgba(0, 0, 0, .6));
+  }
+
+  /* A warm rake of light off the top-right corner, so the chips have a source
+     and the gold rim has a reason. */
+  .mshell-hero::after {
     content: "";
     position: absolute;
     inset: 0;
+    z-index: -2;
     pointer-events: none;
-    background-image:
-      radial-gradient(150% 80% at 50% -18%, rgba(246, 201, 74, .26), transparent 62%),
-      radial-gradient(120% 70% at 50% 118%, rgba(4, 10, 8, .6), transparent 60%);
+    background-image: radial-gradient(110% 86% at 92% -10%, rgba(219, 156, 11, .22), transparent 60%);
   }
 
   .mshell-hero-body {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 13px;
-    padding: 17px 17px 16px;
-  }
-
-  .mshell-hero-head {
-    display: flex;
     align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
+    gap: 6px;
+    padding: 18px 18px 16px;
   }
 
-  .mshell-hero-kicker { color: rgba(246, 201, 74, .8); }
+  .mshell-hero-kicker { color: rgba(246, 201, 74, .82); }
+
+  .mshell-hero-name,
+  .mshell-hero-kicker,
+  .mshell-hero-meta {
+    /* Clear of the chips in the top-right corner. */
+    padding-right: 88px;
+  }
 
   .mshell-hero-name {
     display: block;
-    margin-top: 4px;
-    color: #fbf6e6;
+    color: #f7f2e4;
     font-family: Georgia, "Times New Roman", serif;
-    font-size: 29px;
+    font-size: 30px;
     font-weight: 600;
     letter-spacing: -.02em;
     line-height: 1.02;
   }
 
-  .mshell-hero-seats {
-    display: inline-flex;
-    align-items: center;
-    flex-shrink: 0;
-    gap: 6px;
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--radius-pill);
-    background: rgba(6, 20, 14, .5);
-    color: #cfe6d8;
-    font-size: 11px;
-    font-weight: 600;
-  }
-
-  .mshell-hero-seats::before {
-    content: "";
-    width: 6px;
-    height: 6px;
-    border-radius: var(--radius-round);
-    background: #63e08f;
-    box-shadow: 0 0 8px rgba(99, 224, 143, .9);
-  }
-
   .mshell-hero-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .mshell-hero-chip {
-    display: inline-flex;
-    align-items: center;
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--radius-pill);
-    background: rgba(6, 20, 14, .5);
-    color: #cfe6d8;
-    font-size: 11.5px;
-    font-weight: 600;
+    display: block;
+    margin-bottom: 12px;
+    color: #9aa8c0;
+    font-size: 12.5px;
+    line-height: 1.45;
   }
 
   /* ---- the one saturated action --------------------------------------- */
@@ -560,6 +578,52 @@
     color: var(--gold);
     font-size: 13px;
     font-weight: 600;
+  }
+
+  /* ---- the profile card ------------------------------------------------- */
+
+  .mshell-me {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 14px;
+  }
+
+  .mshell-me .profile-avatar {
+    flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+  }
+
+  .mshell-me-body {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .mshell-me-body strong {
+    color: #f3f6fb;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 19px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mshell-me-body small {
+    color: #93a1bb;
+    font-size: 11.5px;
+  }
+
+  .mshell-row:disabled {
+    cursor: default;
+  }
+
+  .mshell-row:disabled .mshell-row-body strong {
+    color: #93a1bb;
   }
 
   /* ---- page dots + tab bar --------------------------------------------- */

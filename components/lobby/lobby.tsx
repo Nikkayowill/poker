@@ -7,6 +7,7 @@ import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { TableRenderer } from "@/lib/scene/table-renderer";
 import type { BetAnimationStyle } from "@/lib/scene/bet-style";
 import type { PlayerProfile } from "@/lib/profile/types";
+import type { DailyGoldState } from "@/lib/profile/daily-gold";
 import { backstopState } from "@/lib/profile/backstop";
 import { accountsEnabled } from "@/lib/auth/client";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -82,6 +83,12 @@ export function Lobby({
   onToggleMenuMusic,
   betStyle,
   onCycleBetStyle,
+  dailyGold,
+  claimingGold,
+  onClaimDailyGold,
+  freeGoldEligible,
+  onGetFreeGold,
+  onEditProfile,
 }: {
   profile: PlayerProfile | null;
   onQuickPlay: (name: string, tier: StakesTier, buyIn: number) => void;
@@ -123,6 +130,14 @@ export function Lobby({
   onToggleMenuMusic: () => void;
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
+  /* The phone header carries only the mark and the Gold balance, so the player
+   * menu's own rows have to live somewhere. They live in the third pane. */
+  dailyGold: DailyGoldState | null;
+  claimingGold: boolean;
+  onClaimDailyGold: () => void;
+  freeGoldEligible: boolean;
+  onGetFreeGold: () => void;
+  onEditProfile: () => void;
 }) {
   /*
    * The buy-in modal's name field: the player's own edit if they have made one,
@@ -256,6 +271,12 @@ export function Lobby({
             onToggleMenuMusic={onToggleMenuMusic}
             betStyle={betStyle}
             onCycleBetStyle={onCycleBetStyle}
+            dailyGold={dailyGold}
+            claimingGold={claimingGold}
+            onClaimDailyGold={onClaimDailyGold}
+            freeGoldEligible={freeGoldEligible}
+            onGetFreeGold={onGetFreeGold}
+            onEditProfile={onEditProfile}
           />
         </section>
 

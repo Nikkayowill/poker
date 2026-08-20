@@ -1533,6 +1533,12 @@ export function PokerApp() {
             onToggleMenuMusic={toggleMenuMusic}
             betStyle={betStyle}
             onCycleBetStyle={cycleBetStyle}
+            dailyGold={dailyGold}
+            claimingGold={claimingGold}
+            onClaimDailyGold={() => void claimDailyGold()}
+            freeGoldEligible={freeGoldEligible}
+            onGetFreeGold={() => setFreeGoldOpen(true)}
+            onEditProfile={() => setProfileOpen(true)}
           />
         )}
       {createdRoomCode && (

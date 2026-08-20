@@ -33,41 +33,47 @@ import { adminClient } from "./supabase-admin";
 // duplication every memory-mode store here carries against its own table's
 // defaults.
 
+// Tier-2/3 reward amounts roughly doubled on 2026-08-20 (supabase/
+// migrations/20260820130000_mission_achievement_reward_bumps.sql), tier 1
+// left as-is (already an onboarding-speed reward) -- same play-driven-income
+// direction as the mission bump above. Keep this array matching that
+// migration's UPDATE statements exactly. New lifetime ceiling across the
+// whole 24-achievement catalog is roughly 331,000 Gold (was ~167,000).
 const DEFAULT_DEFINITIONS: AchievementDefinition[] = [
   { code: "hands_played_100", category: "hands_played", tier: 1, sourceKind: "stat", metric: "hands_played", threshold: 100, rewardGold: 300, rewardCosmeticId: null, title: "Ante Up", description: "Play 100 hands.", sortOrder: 11 },
-  { code: "hands_played_1000", category: "hands_played", tier: 2, sourceKind: "stat", metric: "hands_played", threshold: 1000, rewardGold: 1500, rewardCosmeticId: "back-riverwood", title: "Regular", description: "Play 1,000 hands in this room.", sortOrder: 12 },
-  { code: "hands_played_10000", category: "hands_played", tier: 3, sourceKind: "stat", metric: "hands_played", threshold: 10000, rewardGold: 15000, rewardCosmeticId: null, title: "Lifer", description: "Play 10,000 hands in this room.", sortOrder: 13 },
+  { code: "hands_played_1000", category: "hands_played", tier: 2, sourceKind: "stat", metric: "hands_played", threshold: 1000, rewardGold: 3000, rewardCosmeticId: "back-riverwood", title: "Regular", description: "Play 1,000 hands in this room.", sortOrder: 12 },
+  { code: "hands_played_10000", category: "hands_played", tier: 3, sourceKind: "stat", metric: "hands_played", threshold: 10000, rewardGold: 30000, rewardCosmeticId: null, title: "Lifer", description: "Play 10,000 hands in this room.", sortOrder: 13 },
 
   { code: "hands_won_50", category: "hands_won", tier: 1, sourceKind: "stat", metric: "hands_won", threshold: 50, rewardGold: 300, rewardCosmeticId: null, title: "First Blood", description: "Win 50 hands.", sortOrder: 21 },
-  { code: "hands_won_500", category: "hands_won", tier: 2, sourceKind: "stat", metric: "hands_won", threshold: 500, rewardGold: 1500, rewardCosmeticId: null, title: "Sharp", description: "Win 500 hands.", sortOrder: 22 },
-  { code: "hands_won_5000", category: "hands_won", tier: 3, sourceKind: "stat", metric: "hands_won", threshold: 5000, rewardGold: 15000, rewardCosmeticId: null, title: "Grinder's Edge", description: "Win 5,000 hands.", sortOrder: 23 },
+  { code: "hands_won_500", category: "hands_won", tier: 2, sourceKind: "stat", metric: "hands_won", threshold: 500, rewardGold: 3000, rewardCosmeticId: null, title: "Sharp", description: "Win 500 hands.", sortOrder: 22 },
+  { code: "hands_won_5000", category: "hands_won", tier: 3, sourceKind: "stat", metric: "hands_won", threshold: 5000, rewardGold: 30000, rewardCosmeticId: null, title: "Grinder's Edge", description: "Win 5,000 hands.", sortOrder: 23 },
 
   { code: "net_profit_10k", category: "net_profit", tier: 1, sourceKind: "stat", metric: "net_profit", threshold: 10000, rewardGold: 500, rewardCosmeticId: null, title: "In The Black", description: "Reach 10,000 lifetime net profit.", sortOrder: 31 },
-  { code: "net_profit_100k", category: "net_profit", tier: 2, sourceKind: "stat", metric: "net_profit", threshold: 100000, rewardGold: 3000, rewardCosmeticId: null, title: "Building A Bankroll", description: "Reach 100,000 lifetime net profit.", sortOrder: 32 },
-  { code: "net_profit_1m", category: "net_profit", tier: 3, sourceKind: "stat", metric: "net_profit", threshold: 1000000, rewardGold: 25000, rewardCosmeticId: null, title: "High Roller", description: "Reach 1,000,000 lifetime net profit.", sortOrder: 33 },
+  { code: "net_profit_100k", category: "net_profit", tier: 2, sourceKind: "stat", metric: "net_profit", threshold: 100000, rewardGold: 6000, rewardCosmeticId: null, title: "Building A Bankroll", description: "Reach 100,000 lifetime net profit.", sortOrder: 32 },
+  { code: "net_profit_1m", category: "net_profit", tier: 3, sourceKind: "stat", metric: "net_profit", threshold: 1000000, rewardGold: 50000, rewardCosmeticId: null, title: "High Roller", description: "Reach 1,000,000 lifetime net profit.", sortOrder: 33 },
 
   { code: "biggest_pot_10k", category: "biggest_pot_won", tier: 1, sourceKind: "stat", metric: "biggest_pot_won", threshold: 10000, rewardGold: 500, rewardCosmeticId: null, title: "Nice Pot", description: "Win a single pot of 10,000 chips or more.", sortOrder: 41 },
   // rewardCosmeticId was "avatar-housename" until the illustrated 2D avatar
   // roster it named was retired in favor of the seat-art-backed catalog --
   // Gold-only until a replacement cosmetic exists to name this tier after.
-  { code: "biggest_pot_50k", category: "biggest_pot_won", tier: 2, sourceKind: "stat", metric: "biggest_pot_won", threshold: 50000, rewardGold: 3000, rewardCosmeticId: null, title: "House Name", description: "Win a single high-stakes pot of 50,000 chips or more.", sortOrder: 42 },
-  { code: "biggest_pot_250k", category: "biggest_pot_won", tier: 3, sourceKind: "stat", metric: "biggest_pot_won", threshold: 250000, rewardGold: 25000, rewardCosmeticId: null, title: "The Big One", description: "Win a single pot of 250,000 chips or more.", sortOrder: 43 },
+  { code: "biggest_pot_50k", category: "biggest_pot_won", tier: 2, sourceKind: "stat", metric: "biggest_pot_won", threshold: 50000, rewardGold: 6000, rewardCosmeticId: null, title: "House Name", description: "Win a single high-stakes pot of 50,000 chips or more.", sortOrder: 42 },
+  { code: "biggest_pot_250k", category: "biggest_pot_won", tier: 3, sourceKind: "stat", metric: "biggest_pot_won", threshold: 250000, rewardGold: 50000, rewardCosmeticId: null, title: "The Big One", description: "Win a single pot of 250,000 chips or more.", sortOrder: 43 },
 
   { code: "chips_won_100k", category: "total_chips_won", tier: 1, sourceKind: "stat", metric: "total_chips_won", threshold: 100000, rewardGold: 300, rewardCosmeticId: null, title: "Getting Started", description: "Win 100,000 chips lifetime.", sortOrder: 51 },
-  { code: "chips_won_1m", category: "total_chips_won", tier: 2, sourceKind: "stat", metric: "total_chips_won", threshold: 1000000, rewardGold: 1500, rewardCosmeticId: null, title: "Millionaire", description: "Win 1,000,000 chips lifetime.", sortOrder: 52 },
-  { code: "chips_won_10m", category: "total_chips_won", tier: 3, sourceKind: "stat", metric: "total_chips_won", threshold: 10000000, rewardGold: 15000, rewardCosmeticId: null, title: "Empire", description: "Win 10,000,000 chips lifetime.", sortOrder: 53 },
+  { code: "chips_won_1m", category: "total_chips_won", tier: 2, sourceKind: "stat", metric: "total_chips_won", threshold: 1000000, rewardGold: 3000, rewardCosmeticId: null, title: "Millionaire", description: "Win 1,000,000 chips lifetime.", sortOrder: 52 },
+  { code: "chips_won_10m", category: "total_chips_won", tier: 3, sourceKind: "stat", metric: "total_chips_won", threshold: 10000000, rewardGold: 30000, rewardCosmeticId: null, title: "Empire", description: "Win 10,000,000 chips lifetime.", sortOrder: 53 },
 
   { code: "duels_won_10", category: "duels_won", tier: 1, sourceKind: "counter", metric: "duels_won", threshold: 10, rewardGold: 500, rewardCosmeticId: null, title: "Duelist", description: "Win 10 PvP duels.", sortOrder: 61 },
-  { code: "duels_won_50", category: "duels_won", tier: 2, sourceKind: "counter", metric: "duels_won", threshold: 50, rewardGold: 2500, rewardCosmeticId: null, title: "Gunslinger", description: "Win 50 PvP duels.", sortOrder: 62 },
-  { code: "duels_won_250", category: "duels_won", tier: 3, sourceKind: "counter", metric: "duels_won", threshold: 250, rewardGold: 20000, rewardCosmeticId: null, title: "Undefeated", description: "Win 250 PvP duels.", sortOrder: 63 },
+  { code: "duels_won_50", category: "duels_won", tier: 2, sourceKind: "counter", metric: "duels_won", threshold: 50, rewardGold: 5000, rewardCosmeticId: null, title: "Gunslinger", description: "Win 50 PvP duels.", sortOrder: 62 },
+  { code: "duels_won_250", category: "duels_won", tier: 3, sourceKind: "counter", metric: "duels_won", threshold: 250, rewardGold: 40000, rewardCosmeticId: null, title: "Undefeated", description: "Win 250 PvP duels.", sortOrder: 63 },
 
   { code: "puzzles_completed_10", category: "puzzles_completed", tier: 1, sourceKind: "counter", metric: "puzzles_completed", threshold: 10, rewardGold: 300, rewardCosmeticId: null, title: "Warming Up", description: "Complete 10 brain games.", sortOrder: 71 },
-  { code: "puzzles_completed_100", category: "puzzles_completed", tier: 2, sourceKind: "counter", metric: "puzzles_completed", threshold: 100, rewardGold: 1500, rewardCosmeticId: null, title: "Puzzle Regular", description: "Complete 100 brain games.", sortOrder: 72 },
-  { code: "puzzles_completed_500", category: "puzzles_completed", tier: 3, sourceKind: "counter", metric: "puzzles_completed", threshold: 500, rewardGold: 12000, rewardCosmeticId: null, title: "Puzzle Master", description: "Complete 500 brain games.", sortOrder: 73 },
+  { code: "puzzles_completed_100", category: "puzzles_completed", tier: 2, sourceKind: "counter", metric: "puzzles_completed", threshold: 100, rewardGold: 3000, rewardCosmeticId: null, title: "Puzzle Regular", description: "Complete 100 brain games.", sortOrder: 72 },
+  { code: "puzzles_completed_500", category: "puzzles_completed", tier: 3, sourceKind: "counter", metric: "puzzles_completed", threshold: 500, rewardGold: 24000, rewardCosmeticId: null, title: "Puzzle Master", description: "Complete 500 brain games.", sortOrder: 73 },
 
   { code: "level_10", category: "levels_gained", tier: 1, sourceKind: "live", metric: "profile_level", threshold: 10, rewardGold: 500, rewardCosmeticId: null, title: "On The Board", description: "Reach level 10.", sortOrder: 81 },
-  { code: "level_25", category: "levels_gained", tier: 2, sourceKind: "live", metric: "profile_level", threshold: 25, rewardGold: 2500, rewardCosmeticId: null, title: "Made Man", description: "Reach level 25.", sortOrder: 82 },
-  { code: "level_50", category: "levels_gained", tier: 3, sourceKind: "live", metric: "profile_level", threshold: 50, rewardGold: 20000, rewardCosmeticId: null, title: "Legend Of The Room", description: "Reach level 50.", sortOrder: 83 },
+  { code: "level_25", category: "levels_gained", tier: 2, sourceKind: "live", metric: "profile_level", threshold: 25, rewardGold: 5000, rewardCosmeticId: null, title: "Made Man", description: "Reach level 25.", sortOrder: 82 },
+  { code: "level_50", category: "levels_gained", tier: 3, sourceKind: "live", metric: "profile_level", threshold: 50, rewardGold: 40000, rewardCosmeticId: null, title: "Legend Of The Room", description: "Reach level 50.", sortOrder: 83 },
 ];
 
 // ---- memory-mode mirror -------------------------------------------------

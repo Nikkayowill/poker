@@ -10,6 +10,7 @@ import {
   readDuelMatch,
   resignDuelMatch,
 } from "./pvp-match-service";
+import { __resetLeaderboardMemory, getGameLeaderboard } from "./leaderboard-store";
 import { __resetPvpChallengesForTest } from "./pvp-challenge-store";
 import { __resetPvpMatchesForTest, getDuelRecordsAgainst } from "./pvp-match-store";
 import { adjustGold, ensureProfile, setUnlimitedGold } from "./profile-store";
@@ -60,6 +61,7 @@ async function table() {
 beforeEach(() => {
   __resetPvpChallengesForTest();
   __resetPvpMatchesForTest();
+  __resetLeaderboardMemory();
 });
 
 describe("challenge escrow", () => {
@@ -449,6 +451,31 @@ describe("head-to-head record", () => {
     const { a } = await table();
     const stranger = await funded();
     expect((await getDuelRecordsAgainst(a.id)).get(stranger.id)).toBeUndefined();
+  });
+});
+
+describe("per-game leaderboard stats", () => {
+  it("writes a win and a loss for every decided match, through both playDuelMove and resignDuelMatch", async () => {
+    const t = await table();
+
+    // Two decided by resignation.
+    for (let round = 0; round < 2; round += 1) {
+      await openDuelChallenge(t.a.token, "chess", STAKE, null);
+      await acceptDuelChallenge(t.b.token, await openId(t.a.token));
+      await resignDuelMatch(t.b.token, await matchId(t.a.token)); // a wins
+    }
+    // A third, played out for real, so both settlement call sites -- the
+    // move path and the resignation path -- are exercised here.
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
+    const { match } = await acceptDuelChallenge(t.b.token, await openId(t.a.token));
+    await resignDuelMatch(t.a.token, match.id); // this time b wins
+
+    // Below chess's minSample (3) until this third result lands.
+    const board = await getGameLeaderboard("chess", 10);
+    const rowA = board.find((row) => row.profileId === t.a.id)!;
+    const rowB = board.find((row) => row.profileId === t.b.id)!;
+    expect(rowA.stats).toMatchObject({ wins: 2, losses: 1 });
+    expect(rowB.stats).toMatchObject({ wins: 1, losses: 2 });
   });
 });
 

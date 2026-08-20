@@ -145,7 +145,7 @@ describe("reward idempotency", () => {
     }
 
     const profile = await ensureProfile(token);
-    expect(profile.goldBalance).toBe(startingGold + 150);
+    expect(profile.goldBalance).toBe(startingGold + 450);
   });
 
   it("does not re-credit a mission that already completed on an earlier call", async () => {
@@ -154,7 +154,7 @@ describe("reward idempotency", () => {
 
     await applyMissionEvent(profileId, { kind: "puzzle_completed" }, now); // completes daily_brain_game
     const afterFirst = await ensureProfile(token);
-    expect(afterFirst.goldBalance).toBe(startingGold + 100);
+    expect(afterFirst.goldBalance).toBe(startingGold + 300);
 
     await applyMissionEvent(profileId, { kind: "puzzle_completed" }, now); // already complete
     const afterSecond = await ensureProfile(token);

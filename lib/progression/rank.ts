@@ -154,14 +154,21 @@ export function rankProgress(xp: number): RankProgress {
  *
  * Every fifth level only. A trickle on every level-up is both a bigger faucet
  * and a smaller event -- the point of a reward is that arriving at it is worth
- * noticing. MILESTONE_GOLD is per milestone *number*, so level 5 pays 500 and
- * level 50 pays 5,000: the ramp tracks the rising stakes a player at that level
+ * noticing. MILESTONE_GOLD is per milestone *number*, so level 5 pays 1,500 and
+ * level 50 pays 15,000: the ramp tracks the rising stakes a player at that level
  * is actually playing, without ever approaching the turnover it took to get
- * there (level 50 costs ~3M Gold wagered and has paid ~27,500 Gold back across
- * every milestone below it, well inside the house's edge on that turnover).
+ * there (level 50 costs ~3M Gold wagered and has paid ~82,500 Gold back across
+ * every milestone below it -- see rank.test.ts's guard on that ratio for the
+ * margin this still leaves).
+ *
+ * Raised from 500 on 2026-08-20 as part of growing play-driven Gold income
+ * (missions, achievements, level milestones) so an active player can climb
+ * the stakes ladder without buying Gold. That pushed the ratio rank.test.ts
+ * guards from ~0.85% to ~2.55% of turnover -- a real, deliberate widening of
+ * that test's threshold, not an incidental one.
  */
 export const MILESTONE_EVERY = 5;
-export const MILESTONE_GOLD = 500;
+export const MILESTONE_GOLD = 1500;
 
 export interface LevelReward {
   level: number;

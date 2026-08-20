@@ -288,6 +288,19 @@ function rowToPlayerStats(row: Record<string, unknown>): PlayerStats {
 }
 
 /**
+ * Every lifetime player_stats row with at least `minHands` played, for the
+ * Global leaderboard's percentile blend (lib/server/leaderboard-store.ts) in
+ * memory mode only -- production computes the same filter directly in SQL,
+ * inside get_global_leaderboard() (supabase/migrations/
+ * 20260820120000_game_leaderboard_stats.sql). Exported rather than read off
+ * this module's private global directly, to keep that global an
+ * implementation detail of this file alone.
+ */
+export function __memoryPlayerStatsForGlobalBlend(minHands: number): PlayerStats[] {
+  return [...memoryPlayerStats.values()].filter((row) => row.handsPlayed >= minHands);
+}
+
+/**
  * A profile's own stats and rank, even when they are well outside the top of
  * the board -- "you are #482" is still worth showing on their own profile.
  */

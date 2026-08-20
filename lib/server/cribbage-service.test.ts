@@ -13,6 +13,7 @@ import {
   startCribbageTableAsHost,
 } from "./cribbage-service";
 import { __resetCribbageTablesForTest } from "./cribbage-table-store";
+import { __resetLeaderboardMemory, getGameLeaderboard } from "./leaderboard-store";
 import { adjustGold, ensureProfile } from "./profile-store";
 
 /**
@@ -52,6 +53,7 @@ async function group(n: number) {
 
 beforeEach(() => {
   __resetCribbageTablesForTest();
+  __resetLeaderboardMemory();
 });
 
 describe("opening and joining", () => {
@@ -286,6 +288,32 @@ describe("resigning", () => {
     const { table: again } = await resignCribbageTable(players[1].token, opened.id);
     expect(again.status).toBe("completed");
     expect(await total()).toBe(before);
+  });
+});
+
+describe("per-game leaderboard stats", () => {
+  it("credits a win to whoever the table pays and a loss to every other seated player", async () => {
+    const { players } = await group(3);
+    const tokens = players.map((p) => p.token);
+
+    // Three tables, same three seats each time -- resigned immediately after
+    // dealing, same minimal shape the "resigning" describe block above
+    // already exercises, just repeated past cribbage's minSample (3) so a
+    // ranked board exists to check.
+    for (let round = 0; round < 3; round += 1) {
+      const { table: opened } = await openCribbageTable(tokens[0], STAKE);
+      await joinCribbageTable(tokens[1], opened.id);
+      await joinCribbageTable(tokens[2], opened.id);
+      await startCribbageTableAsHost(tokens[0], opened.id);
+      await resignCribbageTable(tokens[0], opened.id);
+    }
+
+    const board = await getGameLeaderboard("cribbage", 10);
+    expect(board).toHaveLength(3);
+    const total = board.reduce((sum, row) => sum + row.stats.wins + row.stats.losses, 0);
+    // Every one of the 3 tables produced exactly one win and two losses.
+    expect(total).toBe(3 * 3);
+    expect(board.reduce((sum, row) => sum + row.stats.wins, 0)).toBe(3);
   });
 });
 

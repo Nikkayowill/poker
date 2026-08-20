@@ -44,6 +44,37 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### The five retired casino games are gone, not just retired (2026-08-20)
+- On branch `chore/delete-retired-casino-games` off main. Roulette, Video Poker, Coin Flip, Baccarat
+  and Hi-Lo were retired 2026-08-12 (blocked from play, code and routes left mounted, per the
+  reasoning `lib/arcade/retired.ts`'s guard existed for) — Kayo's explicit follow-up call: "hi lo
+  shouldve been deleted from my repo and all reference files a while ago," extended to the whole
+  retired family, not just Hi-Lo. Deleted outright: each game's engine, service, API routes, page and
+  table component (38 files), plus their five per-game CSS sheets.
+- Cascaded one level further than the five games themselves: `lib/server/casino-round-service.ts`
+  (the shared wallet path for Roulette/Video Poker/Coin Flip/Baccarat — Blackjack and Hi-Lo were
+  always on their own independent copies, never migrated onto it) had zero real callers left once its
+  four consumers were deleted, so it went too, along with the client-side counterpart nothing had
+  actually adopted either (`components/arcade/{use-casino-machine.ts,arcade-hud.tsx}`,
+  `lib/arcade/hud.ts`, `28-arcade-hud.css`) — confirmed dead by grepping for real importers before
+  deleting, not inferred from the games list.
+- `lib/arcade/retired.ts`'s guard mechanism stays — deliberately not deleted. It's the documented,
+  reusable way to retire a *future* game without a same-day code deletion; `RETIRED_ARCADE_GAMES` is
+  just `[]` now. Don't re-delete it if it looks unused; unused-with-nothing-currently-retired is its
+  normal resting state.
+- Every comment citing one of the five as a naming-convention example (there were ~20, across
+  services, components, CSS headers and two lines of user-facing copy on the sign-in page and the
+  first-run onboarding step) got reworded to a still-live example or a self-contained explanation,
+  not left dangling. `lib/progression/rank.ts`'s "stay under the house's edge" framing was rewritten
+  more substantively than a name-swap: there is no house edge left anywhere in this economy at all
+  (every staked game is winner-take-all PvP with no rake), so the real constraint is now stated as
+  "don't undermine what a real-money Gold purchase is worth" instead of citing a specific retired
+  game's payout table.
+- Supabase migrations mentioning these games in their own header prose were left untouched —
+  migrations are append-only, same precedent as the Word Stack rebrand's Wordle-naming migrations.
+  No dedicated table existed for any of the five (all shared `arcade_rounds`); their historical rows
+  there are orphaned, not deleted, which is the accepted cost of that table's own append-only design.
+
 ### Daily Wordle renamed to Word Stack (2026-08-19)
 - Trademark cleanup, on branch `feat/word-stack-rebrand` off main (a separate worktree, uncommitted):
   the daily 5-letter puzzle no longer carries Wordle's name anywhere -- catalog id `daily-word-stack`,
@@ -382,16 +413,20 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   `STAKES_TIERS` is a single readonly tuple now instead of three hand-written copies that had already
   drifted.
 
-### Money-ordering rules (every staked game — Blackjack, Hi-Lo, PvP duels, the casino-round games)
+### Money-ordering rules (every staked game — Blackjack, PvP duels, Cribbage, Ante Up)
 1. Debit the stake before the thing it pays for exists; a failed creation refunds.
 2. Credit a payout only after the version-guarded settlement write is confirmed.
 3. Settlement is always a single credit (`stake + net`), never a second debit.
 4. (PvP only) Escrow releases exactly once, via a status-guarded write returning the row at most once.
 Each service restates these at the top of its own file on purpose — breaking one is a silent money
-bug. `lib/server/casino-round-service.ts` centralizes them for the newer casino games; Blackjack and
-Hi-Lo keep independent copies deliberately (live, moving real Gold, not worth restacking unproven).
-Version columns double as the settlement idempotency key — a lost race must return null, and null
-must never pay out (this is what makes a double-clicked action, a retry, or two tabs settle once).
+bug. `pvp-match-service.ts` centralizes them for every duel and `cribbage-service.ts` generalizes the
+same shape to N players; Blackjack keeps an independent copy deliberately (live, moving real Gold,
+not worth restacking). `lib/server/casino-round-service.ts` used to centralize this for four other
+casino games (Roulette/Video Poker/Coin Flip/Baccarat) — deleted 2026-08-20 along with those games
+and Hi-Lo (see that date's entry); Blackjack was never migrated onto it, so nothing else depended on
+it once its four real callers were gone. Version columns double as the settlement idempotency key —
+a lost race must return null, and null must never pay out (this is what makes a double-clicked
+action, a retry, or two tabs settle once).
 
 ### Bot / economy behavior
 - Bots leave/return voluntarily between hands (`BOT_VOLUNTARY_LEAVE_CHANCE`, never below 3 funded
@@ -410,7 +445,7 @@ must never pay out (this is what makes a double-clicked action, a retry, or two 
   like an achievement — not to protect a sale. `[[project_stackchips_gold_economy]]`'s
   revenue-protection framing is superseded, not still binding; don't cite it as the reason for a
   faucet number going forward.
-- The only way back into Blackjack/Hi-Lo/duels/poker after busting to 0 Gold is the faucet stack:
+- The only way back into Blackjack/duels/poker after busting to 0 Gold is the faucet stack:
   `claimBackstopGold` (`lib/profile/backstop.ts`, 1,000 Gold, open to guests, no wait on a first
   claim — only a 12h cooldown on repeat claims), the daily grant (`DAILY_GOLD_GRANT` × streak
   multiplier, independent UTC-day clock), and rewarded ads for registered players

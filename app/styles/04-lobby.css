@@ -1331,7 +1331,7 @@ button:disabled { cursor: wait; opacity: .62; }
 /* The hero's category line, in the chrome's one micro-label voice
    (.lobby-kicker): 10px, .25em, uppercase. It is what
    makes "Texas Hold'em" legible as a *game* in a hub that now also lists
-   Blackjack, Hi-Lo and two daily puzzles. */
+   Blackjack and the daily puzzles. */
 .hub-tile-kicker {
   margin-bottom: 5px;
   color: #9d93b8;

@@ -30,7 +30,7 @@ beforeEach(() => {
   __resetArcadeRoundsForTest();
 });
 
-async function open(profileId: string, game = "hi-lo", settled = false) {
+async function open(profileId: string, game = "blackjack-21", settled = false) {
   return createArcadeRound<Fake>({
     profileId,
     game,
@@ -47,28 +47,28 @@ describe("one active round per profile per game", () => {
     const stored = await open(profileId);
     expect(stored.version).toBe(1);
     expect(stored.status).toBe("active");
-    expect(stored.game).toBe("hi-lo");
+    expect(stored.game).toBe("blackjack-21");
 
-    const found = await getActiveArcadeRound<Fake>(profileId, "hi-lo");
+    const found = await getActiveArcadeRound<Fake>(profileId, "blackjack-21");
     expect(found?.id).toBe(stored.id);
     expect(found?.round).toEqual(fake());
   });
 
   it("refuses a second live round of the same game", async () => {
     const profileId = randomUUID();
-    await open(profileId, "hi-lo");
-    await expect(open(profileId, "hi-lo")).rejects.toBeInstanceOf(ActiveArcadeRoundExists);
+    await open(profileId, "blackjack-21");
+    await expect(open(profileId, "blackjack-21")).rejects.toBeInstanceOf(ActiveArcadeRoundExists);
   });
 
   it("lets one player sit at two different games at once", async () => {
     // The whole reason the index is on (profile_id, game) and not profile_id:
-    // Hi-Lo and the next game are different tables in the lounge.
+    // Two different games are different tables in the lounge.
     const profileId = randomUUID();
-    const hiLo = await open(profileId, "hi-lo");
-    const other = await open(profileId, "coin-flip");
-    expect(other.id).not.toBe(hiLo.id);
-    expect((await getActiveArcadeRound<Fake>(profileId, "hi-lo"))?.id).toBe(hiLo.id);
-    expect((await getActiveArcadeRound<Fake>(profileId, "coin-flip"))?.id).toBe(other.id);
+    const first = await open(profileId, "blackjack-21");
+    const other = await open(profileId, "ante-up-sudoku");
+    expect(other.id).not.toBe(first.id);
+    expect((await getActiveArcadeRound<Fake>(profileId, "blackjack-21"))?.id).toBe(first.id);
+    expect((await getActiveArcadeRound<Fake>(profileId, "ante-up-sudoku"))?.id).toBe(other.id);
   });
 
   it("does not let one profile's round block another's", async () => {
@@ -79,22 +79,22 @@ describe("one active round per profile per game", () => {
   it("does not hand one player another player's round", async () => {
     const mine = randomUUID();
     await open(mine);
-    expect(await getActiveArcadeRound<Fake>(randomUUID(), "hi-lo")).toBeNull();
+    expect(await getActiveArcadeRound<Fake>(randomUUID(), "blackjack-21")).toBeNull();
   });
 
   it("frees the game once the round settles", async () => {
     const profileId = randomUUID();
     const stored = await open(profileId);
     await advanceArcadeRound<Fake>(stored, fake(2), true);
-    expect(await getActiveArcadeRound<Fake>(profileId, "hi-lo")).toBeNull();
+    expect(await getActiveArcadeRound<Fake>(profileId, "blackjack-21")).toBeNull();
     await expect(open(profileId)).resolves.toBeTruthy();
   });
 
   it("stores a round that settled on the deal as settled, not active", async () => {
     const profileId = randomUUID();
-    const stored = await open(profileId, "hi-lo", true);
+    const stored = await open(profileId, "blackjack-21", true);
     expect(stored.status).toBe("settled");
-    expect(await getActiveArcadeRound<Fake>(profileId, "hi-lo")).toBeNull();
+    expect(await getActiveArcadeRound<Fake>(profileId, "blackjack-21")).toBeNull();
   });
 });
 
@@ -115,7 +115,7 @@ describe("the version guard", () => {
     // The same call again, still pinned to version 1.
     expect(await advanceArcadeRound<Fake>(stored, fake(99), false)).toBeNull();
 
-    const live = await getActiveArcadeRound<Fake>(profileId, "hi-lo");
+    const live = await getActiveArcadeRound<Fake>(profileId, "blackjack-21");
     expect(live?.version).toBe(2);
     expect(live?.round).toEqual(fake(2));
   });
@@ -141,6 +141,6 @@ describe("isolation", () => {
     const stored = await open(profileId);
     stored.round.step = 999;
 
-    expect((await getActiveArcadeRound<Fake>(profileId, "hi-lo"))?.round.step).toBe(1);
+    expect((await getActiveArcadeRound<Fake>(profileId, "blackjack-21"))?.round.step).toBe(1);
   });
 });

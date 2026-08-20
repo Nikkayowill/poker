@@ -37,7 +37,8 @@ export function ArcadePanel({
   // Counted, not written down. The header used to read "10 games in the
   // works", which was true when none of them were and quietly became a lie
   // the day Blackjack shipped -- a hub blurb must not misdescribe what is
-  // behind it (see the note on Hi-Lo's blurb in lib/arcade/games.ts).
+  // behind it (see lib/arcade/games.ts's own header for the rule this broke
+  // once, on a game that has since been deleted).
   const summary = arcadeFloorSummary(ARCADE_GAMES);
   const wallet = toArcadeWallet(profile);
 

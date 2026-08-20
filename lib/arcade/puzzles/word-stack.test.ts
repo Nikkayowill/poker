@@ -119,8 +119,9 @@ describe("submitWordStackGuess", () => {
   });
 
   it("is inert on a guess it cannot accept, rather than throwing", () => {
-    // Same convention as callHiLo: the service re-checks and answers 409, and
-    // a throw here would surface to the player as a 500.
+    // Same convention as connections.ts's submitConnectionsGuess: the service
+    // re-checks and answers 409, and a throw here would surface to the
+    // player as a 500.
     const round = startWordStackRound("crane");
     expect(submitWordStackGuess(round, "nope")).toBe(round);
     const finished = play("crane", ["crane"]);

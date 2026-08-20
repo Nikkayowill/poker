@@ -11,9 +11,14 @@
  * The floor was ten house games and free dailies. On 2026-08-12 the owner cut
  * every game whose only mechanic was a wager against fixed odds -- "the legit
  * brain dead gambling games are dead" -- and asked for social, skill-based
- * games to stake Gold on instead. So five rows are `retired` (their code and
- * their arcade_rounds history are untouched; lib/arcade/retired.ts is what
- * actually stops a new round) and four `duel` rows replace them.
+ * games to stake Gold on instead. Five rows (Hi-Lo, Video Poker, Roulette
+ * Wheel, Baccarat, Coin Flip) went `retired` that day, then were deleted
+ * outright on 2026-08-20 -- code, routes, components, all of it, per the
+ * owner's own follow-up that "retired but still in the repo" wasn't good
+ * enough. lib/arcade/retired.ts's guard mechanism stays (it is the correct,
+ * reusable way to retire a *future* game without a code deletion the same
+ * day), it just has nobody in its list right now. Four `duel` rows replaced
+ * the five removed casino rows.
  *
  * A duel is the first thing here that is NOT played against the house: both
  * players ante, the winner takes the pot, and there is no rake. That is why
@@ -26,14 +31,14 @@
  * - A live entry needs an href and a non-live one must not have one. A test
  *   pins it: a live row with a null href renders an unclickable Play, and a
  *   coming-soon row with an href is a 404 waiting to be linked.
- * - `entryCost` must be a stake TIER_CONFIG can actually select. Video poker
- *   sat at 500 and coin flip at 250, so the hub quoted prices no button in
- *   either game could charge -- the third and fourth times this went wrong
- *   (Hi-Lo's placeholder was the first). Price a new row off the ladder or
- *   leave it at 0. For a duel it is a floor, not a price: the challenger names
- *   any wager at or above MIN_DUEL_STAKE, so the floor renders it as "from N".
- * - A blurb must not promise a mechanic the game lacks. Hi-Lo's said "ride the
- *   streak" when there was no streak.
+ * - `entryCost` must be a stake TIER_CONFIG can actually select. Two of the
+ *   now-deleted casino rows once sat at prices no button could actually
+ *   charge, and a placeholder before that made the same mistake. Price a new
+ *   row off the ladder or leave it at 0. For a duel it is a floor, not a
+ *   price: the challenger names any wager at or above MIN_DUEL_STAKE, so the
+ *   floor renders it as "from N".
+ * - A blurb must not promise a mechanic the game lacks -- a now-deleted row
+ *   once promised "ride the streak" on a game with no streak.
  */
 
 import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
@@ -43,13 +48,8 @@ export type ArcadeGameId =
   | "blackjack-21"
   | "daily-word-stack"
   | "connections"
-  | "hi-lo"
-  | "video-poker"
-  | "roulette-wheel"
   | "daily-sudoku"
   | "memory-match"
-  | "baccarat"
-  | "coin-flip"
   | "chess-duel"
   | "checkers-duel"
   | "trivia-showdown"
@@ -74,14 +74,14 @@ export type ArcadeGameId =
 export type ArcadeGameKind = "casino" | "puzzle" | "duel" | "wager";
 
 /**
- * `retired` is 2026-08-12's cut of every pure-chance-against-the-house game
- * (the owner's call: "the legit brain dead gambling games are dead"). Code,
- * routes and the arcade_rounds history are all left in place -- only the
- * catalog listing and new rounds are blocked, at casino-round-service.ts's
- * and hi-lo-service.ts's single guard. Deliberately a distinct status from
- * `coming-soon`: one is "not built yet", the other is "was built, moved real
- * Gold, and a human decided to stop offering it" -- collapsing them would
- * lose that distinction the moment anyone next reads this file.
+ * `retired` is the status a game gets when it stops being offered but the
+ * decision to stop isn't "this was never finished" -- see lib/arcade/
+ * retired.ts, the guard that actually blocks a new round for whichever ids
+ * are in its list (empty today; every game that was ever in it has since
+ * been deleted outright, not merely retired). Deliberately a distinct status
+ * from `coming-soon`: one is "not built yet", the other is "was built, moved
+ * real Gold, and a human decided to stop offering it" -- collapsing them
+ * would lose that distinction the moment anyone next reads this file.
  */
 export type ArcadeGameStatus = "coming-soon" | "live" | "retired";
 
@@ -133,7 +133,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     name: "Daily Word Stack",
     // Accurate to the mechanic: one word a day, shared by everyone, which is
     // what makes the emoji grid worth posting. A blurb promising something the
-    // board does not do is a promise broken on the click -- see Hi-Lo's.
+    // board does not do is a promise broken on the click -- see this file's
+    // own header for the row that learned that the hard way.
     blurb: "Five letters, six guesses, one a day",
     kind: "puzzle",
     entryCost: 0,
@@ -148,36 +149,6 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     entryCost: 0,
     status: "live",
     href: "/games/connections",
-  },
-  {
-    id: "hi-lo",
-    name: "Hi-Lo",
-    blurb: "Call the next card, higher or lower",
-    kind: "casino",
-    entryCost: 1000,
-    // Retired 2026-08-12 with the rest of the pure-chance games. Route and
-    // service code are untouched (arcade_rounds keeps the history); dealHiLo
-    // rejects a new round with "This game has been retired."
-    status: "retired",
-    href: null,
-  },
-  {
-    id: "video-poker",
-    name: "Video Poker",
-    blurb: "Jacks or better, single hand",
-    kind: "casino",
-    entryCost: 1000,
-    status: "retired",
-    href: null,
-  },
-  {
-    id: "roulette-wheel",
-    name: "Roulette Wheel",
-    blurb: "European single zero",
-    kind: "casino",
-    entryCost: 1000,
-    status: "retired",
-    href: null,
   },
   {
     id: "daily-sudoku",
@@ -196,24 +167,6 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     entryCost: 0,
     status: "live",
     href: "/games/memory",
-  },
-  {
-    id: "baccarat",
-    name: "Baccarat",
-    blurb: "Punto banco, player or bank",
-    kind: "casino",
-    entryCost: 5000,
-    status: "retired",
-    href: null,
-  },
-  {
-    id: "coin-flip",
-    name: "Coin Flip",
-    blurb: "Call it, then bank or let it ride",
-    kind: "casino",
-    entryCost: 1000,
-    status: "retired",
-    href: null,
   },
   // ---- Duels: skill/social games staked against another PLAYER, not the
   // house. Winner takes the pot both players anted -- see lib/pvp/. Priced at

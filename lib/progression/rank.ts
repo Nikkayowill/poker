@@ -9,12 +9,14 @@
  *
  * The economics worth stating up front, because they constrain every constant
  * below. Gold is bought with real money and granted as progression; chips are
- * gameplay. A level-up reward is therefore a *faucet*, and a faucet that pays
- * back more than the house takes turns the arcade into a money pump pointed at
- * StackChips. So the rewards here are deliberately small in Gold and large in
- * standing: rank names, badges and milestone unlocks cost the economy nothing
- * and are what actually make a player feel like they have been somewhere.
- * Hi-Lo's payout table has the same shape of argument in lib/arcade/hi-lo.ts.
+ * gameplay. A level-up reward is therefore a *faucet*, and there is no house
+ * edge anywhere in this economy to weigh it against any more -- every staked
+ * game left is winner-take-all PvP with no rake. So the constraint is more
+ * direct than "stay under the house's cut": a faucet that hands out too much
+ * undermines what a real-money Gold purchase is actually worth. The rewards
+ * here are deliberately small in Gold and large in standing instead: rank
+ * names, badges and milestone unlocks cost the economy nothing and are what
+ * actually make a player feel like they have been somewhere.
  */
 
 /**

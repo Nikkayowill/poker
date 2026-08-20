@@ -121,7 +121,9 @@ export interface SceneArt {
    * SOFT 17"; lib/arcade/blackjack.ts implements no insurance at all and the
    * dealer STANDS on soft 17. Felt print is not decoration -- it is the same
    * promise the page header makes, six inches lower, and the two disagreeing
-   * is the defect this project already fixed once in the Hi-Lo hub blurb.
+   * is the defect this project has already fixed once before, in a hub
+   * blurb that promised a mechanic a (since-deleted) game didn't have --
+   * see lib/arcade/games.ts's own header.
    */
   table: string | null;
 }

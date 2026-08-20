@@ -149,8 +149,7 @@ export function BlackjackTable() {
    * fetch path. A ref belongs in an effect rather than in a chain reachable
    * from a click handler, and every path that can produce a settled hand -- an
    * action, a resume, a 409 carrying the true state -- goes through `round`,
-   * so there is one place to get this right instead of three. Kept identical
-   * to the Hi-Lo table's, since the two are read side by side.
+   * so there is one place to get this right instead of three.
    */
   useEffect(() => {
     if (!round || round.phase !== "settled" || scored.current.has(round.id)) return;

@@ -1,7 +1,7 @@
 /**
  * Daily Word Stack -- the rules, and nothing else.
  *
- * Pure and synchronous like lib/arcade/hi-lo.ts: every function takes a round
+ * Pure and synchronous like the rest of lib/arcade/puzzles/: every function takes a round
  * and returns the next one. Crucially it also takes the *answer* as data --
  * there is no word list in this file. That is not tidiness, it is the security
  * boundary: this module is imported by the browser (the board renders from its
@@ -111,7 +111,8 @@ export function startWordStackRound(answer: string): WordStackRound {
  *
  * Inert on a guess the round cannot accept, rather than throwing -- the
  * service re-checks first and turns a rejection into a 4xx, and a throw here
- * would be a 500 where a 409 belongs. Same convention as callHiLo.
+ * would be a 500 where a 409 belongs. Same convention connections.ts's
+ * submitConnectionsGuess uses.
  */
 export function submitWordStackGuess(round: WordStackRound, guess: string): WordStackRound {
   if (wordStackGuessProblem(round, guess)) return round;

@@ -120,10 +120,10 @@ describe("checkAchievements against stat-sourced metrics", () => {
     await checkAchievements(secondTouched);
     const afterSecond = (await ensureProfile(token)).goldBalance;
 
-    // biggest_pot_10k (500) + biggest_pot_50k (3000, the pot tier); a
+    // biggest_pot_10k (500) + biggest_pot_50k (6000, the pot tier); a
     // 500-chip commit against a 50,000 win also clears net_profit_10k's
     // 10,000 threshold (500) in the same pass.
-    expect(afterFirst).toBe(startingGold + 500 + 3000 + 500);
+    expect(afterFirst).toBe(startingGold + 500 + 6000 + 500);
     expect(afterSecond).toBe(afterFirst);
   });
 
@@ -148,8 +148,8 @@ describe("checkAchievements against stat-sourced metrics", () => {
 
     const profileA = await ensureProfile(playerA.token);
     const profileB = await ensureProfile(playerB.token);
-    // biggest_pot_10k (500) + biggest_pot_50k (3000) + net_profit_10k (500).
-    expect(profileA.goldBalance).toBe(playerA.startingGold + 500 + 3000 + 500);
+    // biggest_pot_10k (500) + biggest_pot_50k (6000) + net_profit_10k (500).
+    expect(profileA.goldBalance).toBe(playerA.startingGold + 500 + 6000 + 500);
     expect(profileB.goldBalance).toBe(playerB.startingGold);
   });
 

@@ -137,6 +137,11 @@ describe("level rewards", () => {
     // that undermines what a real-money purchase of it is worth.
     const turnover = xpToReachLevel(MAX_LEVEL) * GOLD_PER_XP;
     const paid = goldForLevelUps(1, MAX_LEVEL);
-    expect(paid / turnover).toBeLessThan(0.01);
+    // MILESTONE_GOLD's 2026-08-20 raise (500 -> 1500, to grow play-driven
+    // Gold income) pushed this from ~0.85% to ~2.55% of turnover -- a real,
+    // deliberate widening of the threshold below, not an incidental one.
+    // 3% is still a small sliver of what it costs to reach MAX_LEVEL; it is
+    // the line that must not move without another deliberate decision.
+    expect(paid / turnover).toBeLessThan(0.03);
   });
 });

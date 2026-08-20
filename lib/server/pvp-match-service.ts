@@ -8,6 +8,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import { applyAchievementEvent } from "./achievement-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { isBlockedEitherWay } from "./friends-store";
+import { recordDuelResult } from "./leaderboard-store";
 import {
   attachMatchToChallenge,
   claimChallenge,
@@ -210,6 +211,13 @@ async function payOutMatch(match: StoredPvpMatch): Promise<void> {
       });
     }
   }
+
+  // Leaderboard stats record unconditionally -- unlike the mission/
+  // achievement calls below, a draw is a real result on a per-game record
+  // and must show up on both players' rows, not just a decided match's
+  // winner. recordDuelResult never throws, same contract as the two calls
+  // it sits beside.
+  await recordDuelResult(match.game, match.players, match.winnerSeat);
 
   // A draw is not a win: only a decided match feeds the "win a duel" missions
   // and achievements. Awaited, not fired-and-forgotten: every caller of

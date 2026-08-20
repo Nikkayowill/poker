@@ -7,6 +7,7 @@ import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { applyAchievementEvent } from "./achievement-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
+import { recordMultiWayResult } from "./leaderboard-store";
 import {
   advanceCribbageTable,
   cancelEmptyCribbageTable,
@@ -178,6 +179,10 @@ async function payOutTable(table: StoredCribbageTable, seats: CribbageSeatRow[])
   // failure mode of its own.
   await applyMissionEvent(table.winnerId, { kind: "cribbage_won" });
   await applyAchievementEvent(table.winnerId, { kind: "cribbage_won" });
+  // Every seated player, not just the winner: a leaderboard record needs a
+  // loss row for the other 2-3 seats, which mission/achievement events never
+  // did (cribbage_won only fires for the winner).
+  await recordMultiWayResult("cribbage", seats.map((seat) => seat.playerId), table.winnerId);
 }
 
 /** Settles a table if the game says it is over, and pays it. Reads/writes off the already-durable state. */

@@ -20,6 +20,7 @@ import {
 } from "./daily-puzzle-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
+import { recordMetricResult } from "./leaderboard-store";
 import { applyMissionEvent } from "./mission-store";
 import { ensureProfile } from "./profile-store";
 
@@ -187,6 +188,9 @@ export async function flipMemory(
   // throws, so this only costs latency, not reliability.
   if (complete) await applyMissionEvent(profile.id, { kind: "puzzle_completed" });
   if (complete) await applyAchievementEvent(profile.id, { kind: "puzzle_completed" });
+  // The turn count IS the score (see this file's header) -- lower is
+  // better, averaged at read time by the leaderboard store, never here.
+  if (complete) await recordMetricResult(MEMORY_GAME, profile.id, next.turns);
 
   return view(stored, profile, clock);
 }

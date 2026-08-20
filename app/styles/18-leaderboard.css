@@ -82,6 +82,37 @@
   font-size: 12px;
 }
 
+/* The game tab strip sits above the scope toggle (poker's own season/lifetime
+   pair only renders under it) -- same pill idiom as .leaderboard-scope, kept
+   as its own rules rather than shared class names since the two rows serve
+   different jobs (which game vs. which window of one game). */
+.leaderboard-game-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.leaderboard-game-tab {
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  border: 0;
+  background: rgba(255,255,255,.06);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background var(--duration-base) ease, color var(--duration-base) ease;
+}
+.leaderboard-game-tab:hover { color: var(--ink); background: rgba(255,255,255,.12); }
+.leaderboard-game-tab-active {
+  background: linear-gradient(140deg, var(--brand-purple), var(--brand-purple-deep));
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(152,63,224,.32);
+}
+.leaderboard-game-tab-active:hover { color: #fff; background: linear-gradient(140deg, var(--brand-purple), var(--brand-purple-deep)); }
+
 .leaderboard-error { color: #ff9e9e; margin: 0 0 14px; font-size: 13px; }
 .leaderboard-empty {
   display: flex;
@@ -191,4 +222,18 @@
      are the two numbers worth keeping on a phone. */
   .leaderboard-row > :nth-child(5),
   .leaderboard-row > :nth-child(6) { display: none; }
+}
+
+/* Every non-poker board (a game's own win/loss or average-metric board, and
+   Global) shares this shape instead of the poker row's fixed 7 columns --
+   rank, avatar, name, then 2 or 3 stat columns depending on how many the
+   game's own contract names. Overrides the base .leaderboard-row grid
+   rather than hiding columns on mobile the way the poker row does, since a
+   generic row never has more than 3 stats to begin with. */
+.leaderboard-row-generic-2 { grid-template-columns: 28px 30px 1fr 76px 76px; }
+.leaderboard-row-generic-3 { grid-template-columns: 28px 30px 1fr 64px 64px 76px; }
+
+@media (max-width: 560px) {
+  .leaderboard-row-generic-2 { grid-template-columns: 22px 26px 1fr 64px 64px; gap: 7px; padding: 8px 10px; }
+  .leaderboard-row-generic-3 { grid-template-columns: 22px 26px 1fr 52px 52px 64px; gap: 7px; padding: 8px 10px; }
 }

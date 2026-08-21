@@ -19,8 +19,10 @@ import {
   getPuzzleRound,
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
+import { wordStackDailyBonusMultiplier } from "@/lib/arcade/ante-up-word-stack";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
+import { creditDailyBonus } from "./daily-puzzle-bonus";
 import { applyMissionEvent } from "./mission-store";
 import { ensureProfile } from "./profile-store";
 
@@ -232,6 +234,10 @@ export async function playWordStackGuess(
   // out. applyMissionEvent never throws, so this only costs latency.
   if (complete) await applyMissionEvent(profile.id, { kind: "puzzle_completed" });
   if (complete) await applyAchievementEvent(profile.id, { kind: "puzzle_completed" });
+  // The per-game daily bonus -- replaces the retired flat "daily_brain_game"
+  // mission, see lib/server/daily-puzzle-bonus.ts. Pays even on a loss, at
+  // the floor multiplier.
+  if (complete) await creditDailyBonus(profile.id, wordStackDailyBonusMultiplier(next));
 
   return view(stored, profile, clock);
 }

@@ -154,10 +154,10 @@ export function ArcadeFloor({
             which has been broken there three times. Spelled as words because
             these are sentences: "10 more ways in." reads as a spec line and
             "Ten more ways in." reads as a person saying it. */}
-        <h1>{spell(free.length + duels.length + wagers.length + staked.length)} more ways in.</h1>
+        <h1>{spell(duels.length + wagers.length + staked.length)} more ways in.</h1>
         <p>
-          {spell(free.length)} are free every day. The rest stake Gold from the same
-          wallet as the tables.
+          Every Ante Up game starts free — wager Gold from the same wallet as the
+          tables once you&apos;ve got the hang of it.
         </p>
       </div>
 
@@ -199,10 +199,12 @@ export function ArcadeFloor({
           {/* Also its own section, for the mirror-image reason the duels get
               one: here the Gold you stake goes to YOU if you beat the
               challenge, or nowhere at all if you don't -- there is no house
-              edge and no opponent, only the clock. */}
+              edge and no opponent, only your own performance. Every row here
+              is a brain game with a free daily play built in (2026-08-21) --
+              see lib/arcade/games.ts's own note on the merge. */}
           <h2 className="floor-section-head" id="floor-wagers">Ante up</h2>
           <p className="floor-section-note">
-            Wager on your own ability. Beat the challenge and cash out; miss it and the wager is gone.
+            One free daily puzzle each. Wager on your own ability after and cash out; miss it and the wager is gone.
           </p>
           <div className="floor-free-grid">
             {wagers.map((game) => (

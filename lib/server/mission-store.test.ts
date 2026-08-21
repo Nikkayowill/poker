@@ -29,7 +29,6 @@ describe("applying a mission event", () => {
     expect(daily("daily_play_hands").progress).toBe(1);
     // Not fed by a poker hand at all: untouched.
     expect(daily("daily_win_duels").progress).toBe(0);
-    expect(daily("daily_brain_game").progress).toBe(0);
     // No second real player, so the multiplayer mission does not move either.
     expect(daily("daily_multiplayer").progress).toBe(0);
     // A single hand still feeds both cross-category weekly missions.
@@ -52,12 +51,26 @@ describe("applying a mission event", () => {
     const now = at("2026-08-13T12:00:00.000Z");
 
     for (let round = 0; round < 10; round += 1) {
-      await applyMissionEvent(profileId, { kind: "puzzle_completed" }, now);
+      await applyMissionEvent(profileId, { kind: "duel_won" }, now);
     }
 
-    const mission = (await getMissionsView(profileId, now)).daily.find((m) => m.code === "daily_brain_game")!;
-    expect(mission.progress).toBe(mission.target); // target is 1
+    const mission = (await getMissionsView(profileId, now)).daily.find((m) => m.code === "daily_win_duels")!;
+    expect(mission.progress).toBe(mission.target); // target is 3
     expect(mission.completed).toBe(true);
+  });
+
+  it("still feeds the weekly cross-category and active-day metrics after daily_brain_game's retirement", async () => {
+    const { profileId } = await newPlayer("PuzzleFan");
+    const now = at("2026-08-13T12:00:00.000Z");
+
+    await applyMissionEvent(profileId, { kind: "puzzle_completed" }, now);
+    const view = await getMissionsView(profileId, now);
+
+    expect(view.weekly.find((m) => m.code === "weekly_cross_category")!.progress).toBe(1);
+    expect(view.weekly.find((m) => m.code === "weekly_active_days")!.progress).toBe(1);
+    // No daily mission is fed by puzzle_completed any more -- the per-game
+    // daily bonus (lib/server/daily-puzzle-bonus.ts) replaced daily_brain_game.
+    expect(view.daily.find((m) => m.code === "daily_brain_game")).toBeUndefined();
   });
 
   it("accumulates games_played_any across different kinds of event", async () => {
@@ -128,8 +141,8 @@ describe("period boundaries", () => {
     const day1 = at("2026-08-10T09:00:00.000Z");
     const day2 = at("2026-08-11T09:00:00.000Z");
 
-    await applyMissionEvent(profileId, { kind: "puzzle_completed" }, day1);
-    const mission = (await getMissionsView(profileId, day2)).daily.find((m) => m.code === "daily_brain_game")!;
+    await applyMissionEvent(profileId, { kind: "duel_won" }, day1);
+    const mission = (await getMissionsView(profileId, day2)).daily.find((m) => m.code === "daily_win_duels")!;
     expect(mission.progress).toBe(0);
   });
 });
@@ -152,11 +165,12 @@ describe("reward idempotency", () => {
     const { token, profileId, startingGold } = await newPlayer("Retryer");
     const now = at("2026-08-13T12:00:00.000Z");
 
-    await applyMissionEvent(profileId, { kind: "puzzle_completed" }, now); // completes daily_brain_game
+    // completes daily_multiplayer (target 1)
+    await applyMissionEvent(profileId, { kind: "poker_hand_played", multiplayer: true }, now);
     const afterFirst = await ensureProfile(token);
-    expect(afterFirst.goldBalance).toBe(startingGold + 300);
+    expect(afterFirst.goldBalance).toBe(startingGold + 450);
 
-    await applyMissionEvent(profileId, { kind: "puzzle_completed" }, now); // already complete
+    await applyMissionEvent(profileId, { kind: "poker_hand_played", multiplayer: true }, now); // already complete
     const afterSecond = await ensureProfile(token);
     expect(afterSecond.goldBalance).toBe(afterFirst.goldBalance);
   });

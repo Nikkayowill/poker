@@ -44,6 +44,58 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### Ante Up unified: one section, four brain games, daily bonus + repeatable wager (2026-08-21)
+- Kayo's report: "I still see free to play section in the ante up tab... it still only shows ante
+  up for sudoku." Nothing was reverted — PR #88 (2026-08-16) built the solo-wager mechanic but
+  scoped it to Sudoku only, and never got extended. On branch `feat/ante-up-unify-brain-games`
+  (worktree `.claude/worktrees/ante-up-unify`), committed, not yet pushed/PR'd.
+- One merged "Ante Up" section now holds Word Stack, Connections, Sudoku and Memory Match — the old
+  "Free today"/"Ante up" split is gone (`lib/arcade/games.ts`: all four flipped from `kind: "puzzle"`
+  to `kind: "wager"`, the standalone `ante-up-sudoku` catalog row deleted). Per game, per day: the
+  first play is the existing shared daily puzzle (same puzzle for everyone, Word Stack's share grid
+  intact) — completing it pays a skill-scored Gold bonus via new `lib/server/daily-puzzle-bonus.ts`
+  (`DAILY_BONUS_BASE = 300`, matching the flat mission it replaces; a LOSS still pays the floor
+  multiplier, confirmed with Kayo). After that, unlimited free replay on freshly-seeded rounds (no
+  reward), or repeatable Gold wagers on freshly-seeded rounds — generalizing Sudoku's existing Ante
+  Up mechanic to all three other games for the first time.
+- The retired flat "Complete one brain game" mission (300 Gold, once/day, ANY one of the four) is
+  disabled via migration (`mission_definitions.enabled = false` for `daily_brain_game`), not deleted
+  — `player_mission_progress` keeps its history, the catalog already filters on `enabled`. The new
+  bonus pays per game, per day (up to 4x what the old mission ever paid in a day if all four are
+  played) — a deliberate faucet increase, confirmed with Kayo, not an oversight.
+- Schema: `ante_up_attempts` generalized from Sudoku-only to all four games (migration
+  `20260821130000_ante_up_unify_brain_games.sql`) — added a `game` column, renamed
+  Sudoku-specific `difficulty` to a nullable generic `tier`, and the "one active attempt" unique
+  index moved from `(profile_id)` to `(profile_id, game)` so the four games don't collide. The daily
+  wagered-attempt cap (`ANTE_UP_..._DAILY_WAGERED_LIMIT = 10`) is per-game per-service, not one pool
+  shared across all four — confirmed with Kayo, preserves what Sudoku ante-up players already had.
+  `lib/server/ante-up-store.ts` is now generic (`StoredAnteUpAttempt<TState>`), mirroring
+  `daily-puzzle-store.ts`'s existing "one table, many games" shape.
+- Word Stack and Connections already had a natural loss condition (six guesses / four mistakes) to
+  hang a wager's forfeit on, so their Ante Up engines (`lib/arcade/ante-up-word-stack.ts`,
+  `ante-up-connections.ts`) need no clock — payout is skill-scored at settlement (guesses/mistakes
+  used), not fixed at open the way Sudoku's difficulty-tier multiplier is. **Memory Match has no
+  loss condition at all** (the board always eventually clears) — wagering on it as shipped would be
+  risk-free, so `lib/arcade/ante-up-memory.ts` invents one: `ANTE_UP_MEMORY_MAX_TURNS = 20`, a turn
+  cap (not a clock) that forfeits a wagered attempt that runs past it; free/daily play stays
+  untimed and uncapped, matching Kayo's explicit choice of a turn-based cap over a timer.
+- Each of the three new games got its own route+component (`/games/ante-up-word-stack`,
+  `-connections`, `-memory`), mirroring `ante-up-sudoku.tsx`/its API routes, reusing each daily
+  board's existing CSS classes rather than inventing new styling. The daily page stays the one
+  catalog link target; it's expected to surface an "Ante Up" call-to-action once that day's puzzle
+  is done (not yet wired into the daily board components themselves — flagged as the one remaining
+  UI gap, see below).
+- Fixed the actual root of Kayo's complaint: `arcadeEntryLabel()`'s bare `"Free to play"` on a
+  zero-cost wager row read as "nothing is wagered here," backwards for a card that leads with a free
+  daily play and then offers a real wager. Now reads `"Free daily · wager after"`.
+- Not done this pass: the daily board components (`word-stack-board.tsx`, `connections-board.tsx`,
+  `memory-board.tsx`, the Sudoku daily board) don't yet link to their new Ante Up sibling once the
+  day's puzzle is complete — the wager routes exist and work standalone, but nothing on the daily
+  page surfaces them yet. A real gap, not an oversight; next concrete step if picked up.
+- Verified: 2376 tests passing (up from 2296), clean lint, clean production build with all six new
+  routes present. Two pre-existing failures unrelated to this work (`memory-service.test.ts`'s
+  `tsc` type-narrowing warning, `safe-area.spec.ts` — both red on `origin/main` too, confirmed by
+  diffing against it before writing this note).
 ### The phone lobby's tab bar (2026-08-21)
 - Kayo: the mobile nav "is too high up", and should look like every other app's. Two causes, both
   fixed on `feat/mobile-nav-polish`. The bar carried a row of page dots on top of it (24px of chrome

@@ -55,6 +55,30 @@ export const ANTE_UP_TIERS: Record<SudokuDifficulty, AnteUpTier> = {
 };
 
 /**
+ * What the shared DAILY board's completion bonus pays, as a multiplier on
+ * DAILY_BONUS_BASE (lib/server/daily-puzzle-bonus.ts) -- not the wager tiers
+ * above, which are a different context entirely. Sudoku's daily mode is
+ * untimed and has no loss condition, so this only needs a floor for "many
+ * mistakes" scaled by difficulty, not a separate loss case the way Word
+ * Stack/Connections need one. Starting numbers, easy to retune here.
+ */
+const DAILY_BONUS_FLOOR_BY_DIFFICULTY: Record<SudokuDifficulty, number> = {
+  easy: 1.0, medium: 1.2, hard: 1.5, expert: 2.0,
+};
+const DAILY_BONUS_CEILING_BY_DIFFICULTY: Record<SudokuDifficulty, number> = {
+  easy: 1.3, medium: 1.6, hard: 2.0, expert: 2.5,
+};
+
+export function sudokuDailyBonusMultiplier(
+  round: Pick<SudokuRound, "mistakes">,
+  difficulty: SudokuDifficulty,
+): number {
+  return round.mistakes <= 2
+    ? DAILY_BONUS_CEILING_BY_DIFFICULTY[difficulty]
+    : DAILY_BONUS_FLOOR_BY_DIFFICULTY[difficulty];
+}
+
+/**
  * `active` is still playing. `won` solved it in time. `lost` is an early
  * resignation -- a player who gives up rather than let the clock run out.
  * `timed-out` is the clock itself ending it. The three failure-adjacent

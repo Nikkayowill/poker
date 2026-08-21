@@ -66,7 +66,9 @@ export class AnteUpRequestError extends ArcadeRequestError<AnteUpSnapshot, never
 }
 
 /**
- * How many wagered attempts a player may open in a rolling day.
+ * How many wagered attempts a player may open in a rolling day, at Sudoku
+ * specifically -- each of the four Ante Up games has its own pool of this
+ * size (lib/server/ante-up-store.ts's countWageredAttemptsSince is per-game).
  *
  * Free (wager 0) practice is uncapped. This exists because a player skilled
  * enough to reliably beat Expert inside five minutes could otherwise farm
@@ -74,12 +76,15 @@ export class AnteUpRequestError extends ArcadeRequestError<AnteUpSnapshot, never
  */
 export const ANTE_UP_DAILY_WAGERED_LIMIT = 10;
 
+/** This game's id in ante_up_attempts -- see lib/server/ante-up-store.ts. */
+const GAME = "sudoku";
+
 function parseDifficulty(value: string): SudokuDifficulty {
   if (!isSudokuDifficulty(value)) throw new AnteUpRequestError("Not a real difficulty.", 400);
   return value;
 }
 
-function snapshot(stored: StoredAnteUpAttempt, now: Date): AnteUpSnapshot {
+function snapshot(stored: StoredAnteUpAttempt<AnteUpAttempt>, now: Date): AnteUpSnapshot {
   return toAnteUpSnapshot(stored.state, { id: stored.id, version: stored.version }, now);
 }
 
@@ -90,7 +95,7 @@ function snapshot(stored: StoredAnteUpAttempt, now: Date): AnteUpSnapshot {
  * Gold. Logged loudly instead, same reasoning as pvp-match-service.ts's
  * payOutMatch.
  */
-async function payOutWin(profileId: string, attempt: AnteUpAttempt): Promise<void> {
+async function payOutWin(profileId: string, attempt: Pick<AnteUpAttempt, "wager" | "multiplier">): Promise<void> {
   const payout = anteUpPayout(attempt);
   if (payout <= 0) return;
   try {
@@ -105,16 +110,16 @@ async function payOutWin(profileId: string, attempt: AnteUpAttempt): Promise<voi
 /** Settles an attempt whose clock has run out, and reads back the truth either way. */
 async function settleIfExpired(
   profile: PlayerProfile,
-  stored: StoredAnteUpAttempt,
+  stored: StoredAnteUpAttempt<AnteUpAttempt>,
   now: Date,
-): Promise<StoredAnteUpAttempt> {
+): Promise<StoredAnteUpAttempt<AnteUpAttempt>> {
   const ticked = tickAnteUpAttempt(stored.state, now);
   if (ticked === null) return stored;
 
   const advanced = await advanceAnteUpAttempt(stored, ticked);
   // Rule 2: a lost race did not happen -- somebody else's read already
   // settled (and, on a win, paid) this same attempt.
-  return advanced ?? (await getAnteUpAttemptById(stored.id)) ?? stored;
+  return advanced ?? (await getAnteUpAttemptById<AnteUpAttempt>(stored.id)) ?? stored;
 }
 
 /** The caller's live attempt, or null. Ticks the clock first, same as readDuelMatch. */
@@ -123,7 +128,7 @@ export async function readAnteUpAttempt(
   now = new Date(),
 ): Promise<{ attempt: AnteUpSnapshot | null; profile: PlayerProfile }> {
   const profile = await ensureProfile(token);
-  const stored = await getActiveAnteUpAttempt(profile.id);
+  const stored = await getActiveAnteUpAttempt<AnteUpAttempt>(profile.id, GAME);
   if (!stored) return { attempt: null, profile };
 
   const settled = await settleIfExpired(profile, stored, now);
@@ -157,7 +162,7 @@ export async function openAnteUpAttempt(
 
   if (wagerInput > 0) {
     const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const wageredToday = await countWageredAttemptsSince(profile.id, sinceYesterday);
+    const wageredToday = await countWageredAttemptsSince(profile.id, GAME, sinceYesterday);
     if (wageredToday >= ANTE_UP_DAILY_WAGERED_LIMIT) {
       throw new AnteUpRequestError(
         `You've wagered Ante Up ${ANTE_UP_DAILY_WAGERED_LIMIT} times in the last day. Try again later, or play free.`,
@@ -178,9 +183,16 @@ export async function openAnteUpAttempt(
 
   const state = startAnteUpAttempt(difficulty, wagerInput, randomUUID(), now);
 
-  let stored: StoredAnteUpAttempt;
+  let stored: StoredAnteUpAttempt<AnteUpAttempt>;
   try {
-    stored = await createAnteUpAttempt({ profileId: profile.id, state });
+    stored = await createAnteUpAttempt({
+      profileId: profile.id,
+      game: GAME,
+      tier: difficulty,
+      wager: state.wager,
+      multiplier: state.multiplier,
+      state,
+    });
   } catch (error) {
     // The attempt never came into existence, so the player must not have
     // paid for it.
@@ -210,7 +222,7 @@ export async function fillAnteUpAttempt(
   now = new Date(),
 ): Promise<{ attempt: AnteUpSnapshot; profile: PlayerProfile }> {
   const profile = await ensureProfile(token);
-  const current = await getActiveAnteUpAttempt(profile.id);
+  const current = await getActiveAnteUpAttempt<AnteUpAttempt>(profile.id, GAME);
   if (!current) throw new AnteUpRequestError("Start an attempt first.", 404);
 
   const ticked = tickAnteUpAttempt(current.state, now);
@@ -218,7 +230,8 @@ export async function fillAnteUpAttempt(
     // The clock already ran out -- settle that before refusing the fill, so
     // the response carries the true (timed-out) state rather than a stale
     // "active" one the player could mistake for still-playable.
-    const settled = (await advanceAnteUpAttempt(current, ticked)) ?? await getAnteUpAttemptById(current.id) ?? current;
+    const settled =
+      (await advanceAnteUpAttempt(current, ticked)) ?? (await getAnteUpAttemptById<AnteUpAttempt>(current.id)) ?? current;
     throw new AnteUpRequestError("Time's up.", 409, { round: snapshot(settled, now) });
   }
 
@@ -239,7 +252,7 @@ export async function fillAnteUpAttempt(
   const stored = await advanceAnteUpAttempt(current, next);
   if (!stored) {
     // Rule 2: a lost race did not happen.
-    const live = (await getAnteUpAttemptById(current.id)) ?? current;
+    const live = (await getAnteUpAttemptById<AnteUpAttempt>(current.id)) ?? current;
     throw new AnteUpRequestError("That board moved on.", 409, { round: snapshot(live, now) });
   }
 
@@ -260,11 +273,12 @@ export async function resignAnteUp(
   now = new Date(),
 ): Promise<{ attempt: AnteUpSnapshot | null; profile: PlayerProfile }> {
   const profile = await ensureProfile(token);
-  const current = await getActiveAnteUpAttempt(profile.id);
+  const current = await getActiveAnteUpAttempt<AnteUpAttempt>(profile.id, GAME);
   if (!current) return { attempt: null, profile };
 
   const next = resignAnteUpAttempt(current.state);
-  const stored = (await advanceAnteUpAttempt(current, next)) ?? await getAnteUpAttemptById(current.id) ?? current;
+  const stored =
+    (await advanceAnteUpAttempt(current, next)) ?? (await getAnteUpAttemptById<AnteUpAttempt>(current.id)) ?? current;
   return { attempt: snapshot(stored, now), profile };
 }
 

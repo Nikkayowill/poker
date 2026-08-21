@@ -18,8 +18,10 @@ import {
   getPuzzleRound,
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
+import { memoryDailyBonusMultiplier } from "@/lib/arcade/ante-up-memory";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
+import { creditDailyBonus } from "./daily-puzzle-bonus";
 import { recordMetricResult } from "./leaderboard-store";
 import { applyMissionEvent } from "./mission-store";
 import { ensureProfile } from "./profile-store";
@@ -191,6 +193,10 @@ export async function flipMemory(
   // The turn count IS the score (see this file's header) -- lower is
   // better, averaged at read time by the leaderboard store, never here.
   if (complete) await recordMetricResult(MEMORY_GAME, profile.id, next.turns);
+  // The per-game daily bonus -- replaces the retired flat "daily_brain_game"
+  // mission, see lib/server/daily-puzzle-bonus.ts. Memory's daily mode has no
+  // loss condition, so this always pays (scaled by turns taken).
+  if (complete) await creditDailyBonus(profile.id, memoryDailyBonusMultiplier(next));
 
   return view(stored, profile, clock);
 }

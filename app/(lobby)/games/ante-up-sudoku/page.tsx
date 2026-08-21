@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
-import { AnteUpSudoku } from "@/components/arcade/ante-up-sudoku";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Ante Up: Sudoku · StackChips",
-};
-
-/** `(lobby)` is a route group, so the URL is /games/ante-up-sudoku -- the parens are not a path segment. */
-export default function AnteUpSudokuPage() {
-  return <AnteUpSudoku />;
+/**
+ * `/games/ante-up-sudoku` folded into `/games/sudoku` on 2026-08-21 -- Sudoku
+ * has no separate free/wager routes any more, just the one game. This stays
+ * mounted only as a redirect for whatever still links the old URL (a bookmark,
+ * a stale share, an old e2e path).
+ */
+export default function AnteUpSudokuRedirect() {
+  redirect("/games/sudoku");
 }

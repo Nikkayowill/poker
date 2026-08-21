@@ -12,9 +12,13 @@ import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server
 
 export const runtime = "nodejs";
 
-const dealSchema = z.object({
-  tier: z.enum(STAKES_TIERS),
-});
+// A deal is either a real stake off the ladder, or Blackjack's own free
+// practice mode -- lib/server/blackjack-service.ts's dealBlackjackRound takes
+// the same two shapes.
+const dealSchema = z.union([
+  z.object({ tier: z.enum(STAKES_TIERS) }),
+  z.object({ practice: z.literal(true) }),
+]);
 
 /**
  * The arcade Blackjack table.
@@ -61,7 +65,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await dealBlackjackRound(token, parsed.data.tier);
+    const result = "practice" in parsed.data
+      ? await dealBlackjackRound(token, { practice: true })
+      : await dealBlackjackRound(token, { tier: parsed.data.tier });
     return withRequestSessionCookie(request, NextResponse.json(result), token);
   } catch (error) {
     return withRequestSessionCookie(request, toBlackjackErrorResponse(error), token);

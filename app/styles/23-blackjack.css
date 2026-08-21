@@ -261,10 +261,17 @@
 
 .bj-controls { display: flex; flex-direction: column; gap: 10px; }
 
+/* The tier ladder plus the practice toggle sitting beside it. The toggle is
+   flex: 0 0 auto so the ladder keeps the scroll width it already had -- it
+   does not shrink to make room. */
+.bj-stake-row { display: flex; align-items: center; gap: 8px; }
+
 /* Eight tiers do not fit a phone in one row, so the ladder scrolls sideways
    rather than wrapping into a block that pushes the actions off screen. */
 .bj-stakes {
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   gap: 7px;
   overflow-x: auto;
   padding-bottom: 2px;
@@ -272,6 +279,9 @@
   -ms-overflow-style: none;
 }
 .bj-stakes::-webkit-scrollbar { display: none; }
+/* Practice mode is on: the tier ladder still shows what it was set to, but
+   dimmed, since a practice deal ignores it entirely. */
+.bj-stakes-dim { opacity: .4; }
 .bj-stake {
   flex: 0 0 auto;
   padding: 8px 13px;
@@ -291,6 +301,29 @@
 }
 .bj-stake:disabled { opacity: .4; cursor: not-allowed; }
 .bj-stake:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+
+/* Same base look as .bj-stake -- it is a peer of the ladder, not a smaller
+   or larger idea -- but its own class, since "on" here means the opposite
+   of the ladder being live: a real tier is dimmed instead. */
+.bj-practice-toggle {
+  flex: 0 0 auto;
+  padding: 8px 13px;
+  color: #9fb0a7;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255,255,255,.025);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color .16s ease, color .16s ease, background .16s ease;
+}
+.bj-practice-toggle-on {
+  color: #17170f;
+  border-color: transparent;
+  background: var(--gold-light);
+}
+.bj-practice-toggle:disabled { opacity: .4; cursor: not-allowed; }
+.bj-practice-toggle:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
 
 .bj-actions { display: grid; grid-auto-flow: column; gap: 9px; }
 .bj-action {

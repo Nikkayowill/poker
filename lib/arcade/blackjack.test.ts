@@ -103,9 +103,17 @@ describe("startRound", () => {
     expect(round.netGold).toBe(37);
   });
 
-  it("rejects a stake that is not a positive number", () => {
-    expect(() => startRound({ stake: 0, deck: stacked(["9S", "7H"], ["6D", "5C"]) })).toThrow();
+  it("rejects a negative or non-finite stake", () => {
     expect(() => startRound({ stake: -5, deck: stacked(["9S", "7H"], ["6D", "5C"]) })).toThrow();
+    expect(() => startRound({ stake: NaN, deck: stacked(["9S", "7H"], ["6D", "5C"]) })).toThrow();
+  });
+
+  // A stake of exactly 0 is legal: Blackjack's own practice mode
+  // (lib/server/blackjack-service.ts) deals a real hand for it.
+  it("deals a practice round on a stake of 0", () => {
+    const round = startRound({ stake: 0, deck: stacked(["9S", "7H"], ["6D", "5C"]) });
+    expect(round.baseStake).toBe(0);
+    expect(round.stake).toBe(0);
   });
 
   it("does not mutate the deck it was handed", () => {
@@ -302,6 +310,27 @@ describe("settlementPayout", () => {
     const round = startRound({ stake: 1000, deck: stacked(["6S", "5H"], ["10D", "8C"]) });
     expect(round.phase).toBe("player-turn");
     expect(settlementPayout(round)).toBe(0);
+  });
+
+  // A practice hand (stake 0) has to settle to exactly 0 on every outcome --
+  // this is what lets the server skip crediting a practice round without a
+  // separate practice check of its own (see the note on settlementPayout).
+  it("settles a practice hand to 0 on a win, a loss, and a push alike", () => {
+    const won = stand(startRound({ stake: 0, deck: stacked(["10S", "9H"], ["10D", "8C"]) }));
+    expect(won.outcome).toBe("player-win");
+    expect(settlementPayout(won)).toBe(0);
+
+    const lost = stand(startRound({ stake: 0, deck: stacked(["10S", "6H"], ["10D", "9C"]) }));
+    expect(lost.outcome).toBe("dealer-win");
+    expect(settlementPayout(lost)).toBe(0);
+
+    const pushed = stand(startRound({ stake: 0, deck: stacked(["10S", "9H"], ["10D", "9C"]) }));
+    expect(pushed.outcome).toBe("push");
+    expect(settlementPayout(pushed)).toBe(0);
+
+    const natural = startRound({ stake: 0, deck: stacked(["AS", "KH"], ["10D", "8C"]) });
+    expect(natural.outcome).toBe("player-blackjack");
+    expect(settlementPayout(natural)).toBe(0);
   });
 });
 

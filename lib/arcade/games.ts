@@ -74,18 +74,36 @@ export type ArcadeGameId =
  * "Free today" branch, which the empty-bucket guard already hides at zero
  * code cost) in case a genuinely free-only puzzle is added later.
  *
- * ## 2026-08-21: the four brain games merged into one Ante Up section
+ * ## 2026-08-21: the four brain games gained a wager, one way each
  *
  * Word Stack, Connections, Sudoku and Memory Match were `kind: "puzzle"`
  * (free-only) with a separate standalone `ante-up-sudoku` wager row beside
  * them -- the split Kayo flagged as confusing ("I still see free to play...
- * it was supposed to allow players to wager"). All four are `kind: "wager"`
- * now: each keeps its existing free daily route as the one entry point (a
- * completed daily play earns a skill-scored Gold bonus, see
- * lib/server/daily-puzzle-bonus.ts), and each page surfaces its own "Ante
- * Up" wager mode once that day's puzzle is done. The standalone
- * `ante-up-sudoku` row is gone -- Sudoku's wager mode is reached through the
- * merged `daily-sudoku` row instead of a second catalog entry.
+ * it was supposed to allow players to wager"). A same-day first pass merged
+ * all four into one shape (free daily play first, a separate repeatable
+ * "Ante Up" wager sibling unlocked after) and shipped it; Kayo's follow-up
+ * the same day ("choose a wager before the game even starts... no more daily
+ * limits except word stack and connections") split that shape back in two,
+ * because it wasn't actually two different problems:
+ *
+ * - **Sudoku and Memory Match have no daily identity worth protecting** (no
+ *   shared board, nothing shareable) -- they lost the daily gate entirely.
+ *   `/games/sudoku` and `/games/memory` open straight into a wager-or-Free
+ *   step, replayable any time, no bonus, no cap -- see lib/arcade/ante-up.ts
+ *   and lib/arcade/ante-up-memory.ts.
+ * - **Word Stack and Connections keep their once-a-day shared puzzle** (the
+ *   share grid is the reason the feature exists), but the wager-or-Free step
+ *   now gates opening *that one attempt* instead of trailing it as a link to
+ *   a second, unlimited game -- see lib/server/word-stack-service.ts and
+ *   lib/server/connections-service.ts.
+ *
+ * All four stay `kind: "wager"` -- the mechanic (skill, not chance; beat a
+ * challenge or forfeit the stake) didn't change, only where the daily line
+ * sits. The standalone `ante-up-sudoku`/`ante-up-memory`/`ante-up-word-stack`/
+ * `ante-up-connections` catalog rows never existed as separate entries and
+ * still don't; their old routes now just redirect (Sudoku/Memory) or were
+ * deleted outright (Word Stack/Connections, which no longer have a second,
+ * unlimited mode to redirect to).
  */
 export type ArcadeGameKind = "casino" | "puzzle" | "duel" | "wager";
 
@@ -148,11 +166,11 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     id: "daily-word-stack",
     name: "Daily Word Stack",
     // Accurate to the mechanic: one word a day, shared by everyone, which is
-    // what makes the emoji grid worth posting -- that stays true for this
-    // free first play. A blurb promising something the board does not do is
-    // a promise broken on the click -- see this file's own header for the
-    // row that learned that the hard way.
-    blurb: "One free daily puzzle, then wager Gold",
+    // what makes the emoji grid worth posting -- that stays true. A blurb
+    // promising something the board does not do is a promise broken on the
+    // click -- see this file's own header for the row that learned that the
+    // hard way.
+    blurb: "Wager Gold on today's word, or play free",
     kind: "wager",
     entryCost: 0,
     status: "live",
@@ -161,7 +179,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "connections",
     name: "Connections",
-    blurb: "One free daily puzzle, then wager Gold",
+    blurb: "Wager Gold on today's puzzle, or play free",
     kind: "wager",
     entryCost: 0,
     status: "live",
@@ -169,8 +187,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   },
   {
     id: "daily-sudoku",
-    name: "Daily Sudoku",
-    blurb: "One free daily puzzle, then wager Gold",
+    name: "Sudoku",
+    blurb: "Wager Gold, or play free — any time",
     kind: "wager",
     entryCost: 0,
     status: "live",
@@ -179,7 +197,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "memory-match",
     name: "Memory Match",
-    blurb: "One free daily puzzle, then wager Gold",
+    blurb: "Wager Gold, or play free — any time",
     kind: "wager",
     entryCost: 0,
     status: "live",
@@ -268,12 +286,15 @@ export function arcadeEntryLabel(game: ArcadeGame): string {
   // needs two different sentences rather than one that is wrong for either.
   //
   // A bare "Free to play" on a wager row reads as "nothing is actually
-  // wagered here", which is backwards for every row in this bucket now that
-  // it holds the four brain games (2026-08-21) -- each leads with a free
-  // daily play and then offers a real wager, and the old wording is what
-  // made that free daily play look like the whole game. See this file's own
-  // 2026-08-21 note above.
-  return game.kind === "wager" ? "Free daily · wager after" : "Free daily";
+  // wagered here", which is backwards for a row where the wager is chosen up
+  // front, before anything deals -- see this file's own 2026-08-21 note
+  // above. The exact wording still differs by the two sub-shapes that note
+  // describes: Sudoku/Memory Match are unlimited (no daily identity to name),
+  // Word Stack/Connections are still the one shared puzzle for the day.
+  if (game.kind !== "wager") return "Free daily";
+  return game.id === "daily-word-stack" || game.id === "connections"
+    ? "Free daily · or wager it"
+    : "Free, or wager Gold";
 }
 
 /**

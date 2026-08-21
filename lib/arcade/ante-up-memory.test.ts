@@ -5,7 +5,6 @@ import {
   anteUpMemoryFlipProblem,
   anteUpMemoryPayout,
   flipAnteUpMemoryTile,
-  memoryDailyBonusMultiplier,
   resignAnteUpMemory,
   startAnteUpMemory,
   toAnteUpMemorySnapshot,
@@ -155,17 +154,6 @@ describe("anteUpMemoryPayout", () => {
 
   it("rounds to a whole Gold amount", () => {
     expect(anteUpMemoryPayout({ wager: 333, board: fakeSolvedBoard(13) })).toBe(Math.round(333 * 2.5));
-  });
-});
-
-describe("memoryDailyBonusMultiplier", () => {
-  // Memory's daily mode has no loss to floor against -- only call this once solved, per the file's own header.
-  it("scales down the same way as the wager payout, but always pays something", () => {
-    expect(memoryDailyBonusMultiplier({ turns: MEMORY_PAIRS })).toBe(3.0);
-    expect(memoryDailyBonusMultiplier({ turns: 10 })).toBe(2.0);
-    expect(memoryDailyBonusMultiplier({ turns: 13 })).toBe(1.4);
-    expect(memoryDailyBonusMultiplier({ turns: 16 })).toBe(1.1);
-    expect(memoryDailyBonusMultiplier({ turns: 20 })).toBe(1.0);
   });
 });
 

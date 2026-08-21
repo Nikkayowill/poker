@@ -200,11 +200,12 @@ export function ArcadeFloor({
               one: here the Gold you stake goes to YOU if you beat the
               challenge, or nowhere at all if you don't -- there is no house
               edge and no opponent, only your own performance. Every row here
-              is a brain game with a free daily play built in (2026-08-21) --
-              see lib/arcade/games.ts's own note on the merge. */}
+              is a brain game -- see lib/arcade/games.ts's own note for the
+              two sub-shapes ("keeps a daily puzzle" vs. "no daily gate at
+              all") this one line has to cover for both. */}
           <h2 className="floor-section-head" id="floor-wagers">Ante up</h2>
           <p className="floor-section-note">
-            One free daily puzzle each. Wager on your own ability after and cash out; miss it and the wager is gone.
+            Choose a wager, or play free — miss it and the wager is gone, but there&apos;s never a cost to trying.
           </p>
           <div className="floor-free-grid">
             {wagers.map((game) => (

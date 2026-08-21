@@ -28,7 +28,7 @@ describe("arcade catalogue", () => {
       "Blackjack 21",
       "Daily Word Stack",
       "Connections",
-      "Daily Sudoku",
+      "Sudoku",
       "Memory Match",
       "Chess",
       "Checkers",
@@ -38,11 +38,12 @@ describe("arcade catalogue", () => {
     ]);
   });
 
-  it("merges all four brain games into one Ante Up section, not a separate free section", () => {
+  it("keeps all four brain games as wager rows, not a separate free section", () => {
     // 2026-08-21: Word Stack/Connections/Sudoku/Memory Match moved from
-    // kind "puzzle" to kind "wager" -- each keeps its free daily play as the
-    // entry point, but the catalog now expresses that as a wager row rather
-    // than a separate free-only one. See lib/arcade/games.ts's own note.
+    // kind "puzzle" to kind "wager". Word Stack/Connections still lead with
+    // a free daily play (the wager now gates that one attempt); Sudoku/
+    // Memory Match have no daily gate left at all. Both shapes are still
+    // `kind: "wager"` -- see lib/arcade/games.ts's own note.
     const floor = splitArcadeFloor();
     expect(floor.free).toHaveLength(0);
     expect(floor.wagers.map((entry) => entry.id)).toEqual([
@@ -147,8 +148,19 @@ describe("labels", () => {
     // The whole reason this label exists as its own function: a bare "Free
     // to play" on a wager row used to read as "nothing is wagered here",
     // which is backwards -- see this file's own 2026-08-21 note.
-    expect(arcadeEntryLabel(game({ kind: "wager", entryCost: 0 }))).toBe("Free daily · wager after");
+    expect(arcadeEntryLabel(game({ kind: "wager", entryCost: 0 }))).toBe("Free, or wager Gold");
     expect(arcadeEntryLabel(game({ kind: "puzzle", entryCost: 0 }))).toBe("Free daily");
+  });
+
+  it("names the daily identity for Word Stack/Connections specifically, unlike Sudoku/Memory Match", () => {
+    expect(arcadeEntryLabel(game({ id: "daily-word-stack", kind: "wager", entryCost: 0 })))
+      .toBe("Free daily · or wager it");
+    expect(arcadeEntryLabel(game({ id: "connections", kind: "wager", entryCost: 0 })))
+      .toBe("Free daily · or wager it");
+    expect(arcadeEntryLabel(game({ id: "daily-sudoku", kind: "wager", entryCost: 0 })))
+      .toBe("Free, or wager Gold");
+    expect(arcadeEntryLabel(game({ id: "memory-match", kind: "wager", entryCost: 0 })))
+      .toBe("Free, or wager Gold");
   });
 
   it("reports unavailability ahead of affordability", () => {

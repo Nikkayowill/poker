@@ -1,21 +1,26 @@
 /**
- * Ante Up: Sudoku -- a solo skill wager.
+ * Sudoku -- a solo skill wager, or free practice, any time.
  *
  * Wager Gold, beat a fresh grid against the clock, cash out a multiple of the
- * wager if you do. This is the SOLO half of "Ante Up" (the PvP duels are the
- * other half, in lib/pvp/); it stakes Gold against your own performance, not
- * another player and not the house's fixed odds -- the only thing that
- * decides the outcome is whether the grid gets solved before the deadline,
- * which is exactly the "skill, not chance" line the 2026-08-12 cut of the
- * pure-chance games drew.
+ * wager if you do. It stakes Gold against your own performance, not another
+ * player and not the house's fixed odds -- the only thing that decides the
+ * outcome is whether the grid gets solved before the deadline, which is
+ * exactly the "skill, not chance" line the 2026-08-12 cut of the pure-chance
+ * games drew.
+ *
+ * This is the whole game now -- there is no separate free daily Sudoku with
+ * its own once-a-day gate any more (there was, briefly, on 2026-08-21, as
+ * part of that day's short-lived "Ante Up" brain-games unification; Kayo's
+ * follow-up call the same day put Sudoku back to always-wager-or-free,
+ * unlimited, and that is what /games/sudoku renders directly now -- see
+ * CLAUDE.md's 2026-08-21 note for the full history).
  *
  * Reuses lib/arcade/puzzles/sudoku.ts's engine untouched -- same
  * `startSudokuRound`/`fillSudokuCell`/`sudokuFillProblem`, same "the solution
  * never leaves the server" contract via `toSudokuSnapshot`. The one thing
  * this file changes about how that engine is used: `generateSudoku` is seeded
- * with a fresh random string per attempt rather than a calendar day, so an
- * Ante Up attempt is its own grid, independent of (and never competing for)
- * the shared Daily Sudoku at /games/sudoku.
+ * with a fresh random string per attempt rather than a calendar day, so every
+ * attempt is its own grid.
  */
 
 import {
@@ -53,30 +58,6 @@ export const ANTE_UP_TIERS: Record<SudokuDifficulty, AnteUpTier> = {
   hard: { timeLimitMs: 7 * 60_000, multiplier: 5 },
   expert: { timeLimitMs: 5 * 60_000, multiplier: 10 },
 };
-
-/**
- * What the shared DAILY board's completion bonus pays, as a multiplier on
- * DAILY_BONUS_BASE (lib/server/daily-puzzle-bonus.ts) -- not the wager tiers
- * above, which are a different context entirely. Sudoku's daily mode is
- * untimed and has no loss condition, so this only needs a floor for "many
- * mistakes" scaled by difficulty, not a separate loss case the way Word
- * Stack/Connections need one. Starting numbers, easy to retune here.
- */
-const DAILY_BONUS_FLOOR_BY_DIFFICULTY: Record<SudokuDifficulty, number> = {
-  easy: 1.0, medium: 1.2, hard: 1.5, expert: 2.0,
-};
-const DAILY_BONUS_CEILING_BY_DIFFICULTY: Record<SudokuDifficulty, number> = {
-  easy: 1.3, medium: 1.6, hard: 2.0, expert: 2.5,
-};
-
-export function sudokuDailyBonusMultiplier(
-  round: Pick<SudokuRound, "mistakes">,
-  difficulty: SudokuDifficulty,
-): number {
-  return round.mistakes <= 2
-    ? DAILY_BONUS_CEILING_BY_DIFFICULTY[difficulty]
-    : DAILY_BONUS_FLOOR_BY_DIFFICULTY[difficulty];
-}
 
 /**
  * `active` is still playing. `won` solved it in time. `lost` is an early

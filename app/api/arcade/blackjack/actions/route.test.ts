@@ -16,8 +16,8 @@ describe("POST /api/arcade/blackjack/actions", () => {
     const profile = await ensureProfile(token);
     await adjustGold(profile.id, 100_000 - profile.goldBalance);
 
-    let dealt = await dealBlackjackRound(token, "1k");
-    while (dealt.round?.phase === "settled") dealt = await dealBlackjackRound(token, "1k");
+    let dealt = await dealBlackjackRound(token, { tier: "1k" });
+    while (dealt.round?.phase === "settled") dealt = await dealBlackjackRound(token, { tier: "1k" });
     const round = dealt.round!;
     await banProfile(profile.id, true);
 

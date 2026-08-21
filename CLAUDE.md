@@ -44,6 +44,65 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### Ante Up split back in two: Sudoku/Memory unlimited, Word Stack/Connections keep the daily gate (2026-08-21)
+- Same-day follow-up to the section directly below this one. Kayo's report after that shipped: "still
+  not how I want it... choose a wager before the game even starts... no more daily limits EXCEPT for
+  daily word stack and connections." Nothing about that day's merge was wrong on its own terms -- it
+  just solved a different problem than the one being asked now, on branch
+  `feat/wager-before-game-start` off origin/main (a separate worktree; the branch this was built on had
+  no idea the section below existed until `git log` turned it up mid-conversation -- see
+  `[[reference_stackchips_concurrent_sessions]]`, this is exactly the trap that memory exists for).
+- **Sudoku and Memory Match lost their daily gate entirely.** `/games/sudoku` and `/games/memory` now
+  render what `/games/ante-up-sudoku` and `/games/ante-up-memory` already rendered (lib/arcade/ante-up.ts,
+  ante-up-memory.ts, and their services/components) directly -- wager-or-Free chosen up front, replayable
+  any time, no bonus, no cap. The old free-only daily boards (`lib/server/sudoku-service.ts`,
+  `memory-service.ts`, their routes, `sudoku-board.tsx`/`memory-board.tsx`) are deleted, not retired.
+  `/games/ante-up-sudoku` and `/games/ante-up-memory` are now thin redirects to the primary routes, kept
+  only for stale links. Memory's turn-count leaderboard hook (`recordMetricResult`, previously only on
+  the deleted daily path) moved into `ante-up-memory-service.ts`'s win handler so it keeps feeding on
+  every clear, wagered or free, rather than going silent.
+- **Word Stack and Connections keep their once-a-day shared puzzle -- that was never in question.** What
+  changed is where the wager sits: instead of a free daily play followed by a link to a second,
+  separately-repeatable "Ante Up" sibling on a fresh (non-shared) board, the wager-or-Free step now
+  gates *opening that one daily attempt*. The repeatable siblings (`ante-up-word-stack-service.ts`,
+  `ante-up-connections-service.ts`, their routes, `ante-up-word-stack.tsx`/`ante-up-connections.tsx`
+  components) are deleted outright -- Kayo's explicit call was that these two stay capped at one
+  attempt a day no matter how it's played, which is structurally incompatible with a second unlimited
+  mode existing at all. Their payout-scoring math survives, trimmed down to pure functions
+  (`anteUpWordStackPayout`, `anteUpConnectionsPayout`, the `*DailyBonusMultiplier` pair) in
+  `lib/arcade/ante-up-word-stack.ts`/`ante-up-connections.ts`, now called directly by
+  `word-stack-service.ts`/`connections-service.ts` against the SAME stored round instead of a second one.
+  The stored round gained a `wager: number` field embedded in its own JSON state (`StoredWordStackRound`/
+  `StoredConnectionsRound`) rather than a new migration column -- `daily-puzzle-store.ts` is generic over
+  the round shape by design, so this needed no schema change.
+- **A wager replaces the free path's daily completion bonus, it does not stack with it** -- confirmed
+  with Kayo rather than assumed, since this app has a history of every faucet-sizing decision like this
+  one being an explicit call, not a default. Free (wager 0) play is byte-for-byte the same behavior as
+  before: `creditDailyBonus` on completion, win or lose. A wagered attempt earns the wager's own
+  win-only payout instead, following the same three money-ordering rules every other staked game in
+  this file restates: debit before the row exists (refund on a failed insert), credit only after the
+  version-guarded settle write is confirmed, one credit, never a second debit.
+- `lib/server/daily-puzzle-bonus.ts`'s `claimSudokuDailyBonus` (the once-per-day-total idempotency gate
+  across Sudoku's four difficulties) is deleted along with the daily mode it existed for; the flat
+  retired "Complete one brain game" mission stays disabled exactly as the section below left it.
+- Catalog (`lib/arcade/games.ts`): all four rows stay `kind: "wager"` -- the mechanic didn't change,
+  only where the daily line sits. `daily-sudoku`'s display name is now plain "Sudoku"; its id string is
+  untouched (internal, not user-facing, and renaming it would ripple into every place that keys off it
+  for no reader-facing benefit). `arcadeEntryLabel` now reads two different sentences for the same
+  `kind: "wager"` zero-cost row, keyed off which sub-shape a game is in ("Free daily · or wager it" for
+  Word Stack/Connections, "Free, or wager Gold" for Sudoku/Memory Match) -- collapsing them into one
+  sentence was exactly what the section below got right (bare "Free to play" reading as "nothing is
+  wagered here") and exactly what would go wrong again if a shared sentence tried to describe two now-
+  different mechanics.
+- Blackjack gained a "Practice hand (Free)" toggle the same pass, kept deliberately separate from the
+  shared `STAKES_TIERS` ladder (also used by the real-money poker lobby buy-in flow) -- see
+  `lib/server/blackjack-service.ts` and the new migration loosening `blackjack_rounds.base_stake`'s
+  check to `>= 0`.
+- Verified: full `npx vitest run` (2330/2330) green, `npx tsc --noEmit` clean (only the pre-existing,
+  already-documented `safe-area.spec.ts` failure), clean `npm run lint`, clean production `npm run
+  build` with every route present. Not yet applied: the Blackjack migration (`apply_migration` is a
+  deploy-time step, not part of this pass) -- see `[[reference_stackchips_migrations_not_auto_applied]]`.
+
 ### Ante Up unified: one section, four brain games, daily bonus + repeatable wager (2026-08-21)
 - Kayo's report: "I still see free to play section in the ante up tab... it still only shows ante
   up for sudoku." Nothing was reverted — PR #88 (2026-08-16) built the solo-wager mechanic but

@@ -7,6 +7,7 @@ import { Coins, Delete, CornerDownLeft } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
+import { StakePicker } from "@/components/pvp/stake-picker";
 import { puzzleShareTitle, wordStackShareText } from "@/lib/arcade/puzzles/share";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
@@ -16,6 +17,7 @@ import {
   type WordStackSnapshot,
   type WordStackTile,
 } from "@/lib/arcade/puzzles/word-stack";
+import { MIN_ANTE_UP_WAGER } from "@/lib/arcade/ante-up-word-stack";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
@@ -30,6 +32,15 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * until the board is over, so the tiles come back coloured from the server or
  * not at all. That is the whole reason this is not a static page.
  *
+ * ## The wager, and why it gates opening rather than trailing it
+ *
+ * Today's board still opens once and stays open for the day (one shared word,
+ * one shareable grid) -- that part never changed. What changed 2026-08-21 is
+ * where the wager choice sits: before the board opens, not as a link offered
+ * only after it is finished. `round === null` after the initial read is the
+ * "not opened yet" state, and it now renders a wager step (Free is always a
+ * choice) instead of auto-opening -- see startBoard.
+ *
  * ## The on-screen keyboard is not decoration
  *
  * A phone will not raise its keyboard for a page with no focused input, and
@@ -40,9 +51,10 @@ import type { PlayerProfile } from "@/lib/profile/types";
  */
 
 const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000] as const;
 
 interface WordStackResponse {
-  round: WordStackSnapshot | null;
+  round: (WordStackSnapshot & { wager: number; payout: number }) | null;
   profile: PlayerProfile;
   day: string;
   puzzleNumber: number;
@@ -60,8 +72,9 @@ export function WordStackBoard() {
   // below call the chrome cues directly. See lib/audio/ui-sounds.ts.
   useArcadeSound({ gameSounds: true });
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
-  const [round, setRound] = useState<WordStackSnapshot | null>(null);
+  const [round, setRound] = useState<(WordStackSnapshot & { wager: number; payout: number }) | null>(null);
   const [meta, setMeta] = useState<{ day: string; puzzleNumber: number; nextPuzzleAt: number } | null>(null);
+  const [wager, setWager] = useState<number>(MIN_ANTE_UP_WAGER);
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -134,9 +147,10 @@ export function WordStackBoard() {
     [flash],
   );
 
-  // Read first, then open a board if there is none. The GET is deliberately
-  // read-only server-side -- visiting a page must not consume the day's
-  // attempt -- so opening costs one extra request on the first visit of a day.
+  // Read-only first -- visiting a page must not consume the day's attempt.
+  // If today's board already exists (any status), it loads straight in; if
+  // not, the wager step below is what actually opens one, on the player's
+  // own click.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -151,17 +165,20 @@ export function WordStackBoard() {
           nextPuzzleAt: Date.now() + (data.msUntilNextPuzzle ?? 0),
         });
       }
-      if (data.round) {
-        setRound(data.round);
-        setLoaded(true);
-        return;
-      }
-      await send("/api/arcade/word-stack", {});
+      setRound(data.round ?? null);
+      setLoaded(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [send]);
+  }, []);
+
+  const startBoard = useCallback(() => {
+    void send("/api/arcade/word-stack", { wager });
+  }, [send, wager]);
+
+  const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
+  const canAffordWager = balance >= wager;
 
   const finished = Boolean(round && round.status !== "active");
   const canType = Boolean(round) && !finished && !busy;
@@ -272,31 +289,63 @@ export function WordStackBoard() {
         {notice}
       </p>
 
-      <section className="word-stack-grid" aria-label="Guesses" aria-busy={busy}>
-        {rows.map((row, rowIndex) => (
-          <div
-            key={rowIndex}
-            className={clsx(
-              "word-stack-row",
-              row.state === "drafting" && shake && "word-stack-row-shake",
-            )}
+      {loaded && !round && (
+        <section className="puzzle-summary">
+          <p className="puzzle-verdict">Wager Gold on today&apos;s word, or play free.</p>
+          <StakePicker
+            ariaLabel="Wager"
+            picks={STAKE_QUICK_PICKS}
+            value={wager}
+            min={0}
+            leading={{ label: "Free", value: 0 }}
+            onChange={(next) => { selectSound(); setWager(next); }}
+          />
+          <p className="puzzle-verdict">
+            {wager === 0
+              ? "Free daily play — no Gold at stake."
+              : wager < MIN_ANTE_UP_WAGER
+                ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
+                : "Fewer guesses, bigger payout — miss all six and the wager is gone."}
+          </p>
+          <button
+            type="button"
+            className="puzzle-share-button"
+            disabled={busy || (wager > 0 && wager < MIN_ANTE_UP_WAGER) || (wager > 0 && !canAffordWager)}
+            onClick={() => { selectSound(); startBoard(); }}
           >
-            {Array.from({ length: WORD_STACK_WORD_LENGTH }, (_, column) => (
-              <span
-                key={column}
-                className={clsx(
-                  "word-stack-tile",
-                  row.tiles[column] && `word-stack-tile-${row.tiles[column]}`,
-                  row.letters[column] && row.state === "drafting" && "word-stack-tile-filled",
-                )}
-                style={row.state === "played" ? { animationDelay: `${column * 90}ms` } : undefined}
-              >
-                {row.letters[column] ?? ""}
-              </span>
-            ))}
-          </div>
-        ))}
-      </section>
+            <Coins size={15} aria-hidden="true" />
+            {busy ? "Dealing…" : wager > 0 && !canAffordWager ? "Not enough Gold" : wager === 0 ? "Play free" : "Ante up"}
+          </button>
+        </section>
+      )}
+
+      {round && (
+        <section className="word-stack-grid" aria-label="Guesses" aria-busy={busy}>
+          {rows.map((row, rowIndex) => (
+            <div
+              key={rowIndex}
+              className={clsx(
+                "word-stack-row",
+                row.state === "drafting" && shake && "word-stack-row-shake",
+              )}
+            >
+              {Array.from({ length: WORD_STACK_WORD_LENGTH }, (_, column) => (
+                <span
+                  key={column}
+                  className={clsx(
+                    "word-stack-tile",
+                    row.tiles[column] && `word-stack-tile-${row.tiles[column]}`,
+                    row.letters[column] && row.state === "drafting" && "word-stack-tile-filled",
+                  )}
+                  style={row.state === "played" ? { animationDelay: `${column * 90}ms` } : undefined}
+                >
+                  {row.letters[column] ?? ""}
+                </span>
+              ))}
+            </div>
+          ))}
+        </section>
+      )}
 
       {finished && round && (
         <section className="puzzle-summary">
@@ -308,12 +357,16 @@ export function WordStackBoard() {
               <em> The word was <strong>{round.answer.toUpperCase()}</strong>.</em>
             )}
           </p>
+          {round.wager > 0 && (
+            <p className="puzzle-verdict">
+              {round.status === "won"
+                ? <strong>+{round.payout.toLocaleString()} Gold</strong>
+                : <strong>−{round.wager.toLocaleString()} Gold</strong>}
+            </p>
+          )}
           {/* The grid, exactly as it will be posted. Showing it is what makes
               the button read as "send this" rather than "send something". */}
           <pre className="puzzle-share-preview" aria-label="Your result">{shareText}</pre>
-          <Link href="/games/ante-up-word-stack" className="puzzle-share-button" onClick={tapSound}>
-            <Coins size={15} aria-hidden="true" /> Ante Up: wager Gold
-          </Link>
           {shareText && (
             <ShareResultButton text={shareText} title={puzzleShareTitle("word-stack", round.puzzleNumber)} />
           )}
@@ -321,7 +374,7 @@ export function WordStackBoard() {
         </section>
       )}
 
-      {!finished && (
+      {round && !finished && (
         <section className="word-stack-keyboard" aria-label="Keyboard">
           {KEY_ROWS.map((row, index) => (
             <div key={row} className="word-stack-keyrow">

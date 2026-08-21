@@ -25,7 +25,14 @@
  * only owns the pointer plumbing and what the panes contain.
  */
 
-import { FormEvent, PointerEvent as ReactPointerEvent, useCallback, useRef, useState } from "react";
+import {
+  FormEvent,
+  PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -57,6 +64,7 @@ import { CHEAPEST_TIER, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type { DailyGoldState } from "@/lib/profile/daily-gold";
+import { browserSessionStorage } from "@/lib/profile/session-continuity";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   beginSwipe,
@@ -75,6 +83,33 @@ import { InstallPrompt } from "@/components/install-prompt";
 const PAGES = ["Play", "Ante Up", "You"] as const;
 const PAGE_COUNT = PAGES.length;
 const PAGE_ICONS: readonly LucideIcon[] = [Spade, Gamepad2, User];
+
+/**
+ * Which pane the player was last on, so leaving the shell and coming back
+ * lands where they left rather than back on Play.
+ *
+ * Half of this shell's doors -- Collection, Achievements, Rewards, Buy Gold,
+ * Challenges, every tile on Ante Up -- are real routes that unmount PokerApp,
+ * so returning from one rebuilt the shell from scratch. Tab bars do not behave
+ * that way anywhere else, and the tell was landing two panes away from the
+ * link you had just pressed.
+ *
+ * sessionStorage, never localStorage: this is where you are in this visit, not
+ * a preference. A fresh open should still start on Play. Same reasoning as
+ * lib/profile/session-continuity.ts, which is where the storage accessor comes
+ * from.
+ */
+const PAGE_STORAGE_KEY = "stackchips:lobby-pane";
+
+function readStoredPage(): number {
+  const store = browserSessionStorage();
+  if (!store) return 0;
+  try {
+    return clampPage(Number.parseInt(store.getItem(PAGE_STORAGE_KEY) ?? "", 10) || 0, PAGE_COUNT);
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * Anything that scrolls sideways inside a pane -- the stakes ladder today.
@@ -146,38 +181,91 @@ export function MobileShell({
   onGetFreeGold: () => void;
   onEditProfile: () => void;
 }) {
-  const [page, setPage] = useState(0);
+  // Lazy, and safe to touch storage in: `usePhoneViewport` reports false on the
+  // server, so this component only ever mounts on the client.
+  const [page, setPage] = useState(readStoredPage);
   /** Live drag distance in px. Null whenever no horizontal drag is in flight. */
   const [drag, setDrag] = useState<number | null>(null);
   const gestureRef = useRef<SwipeGesture | null>(null);
 
+  useEffect(() => {
+    try {
+      browserSessionStorage()?.setItem(PAGE_STORAGE_KEY, String(page));
+    } catch {
+      // A full or disabled store just means the next return starts on Play.
+    }
+  }, [page]);
+
+  /*
+   * Which panes have been looked at, or are one gesture away from being looked
+   * at. All three are mounted from the start -- that is what makes the slide a
+   * slide -- but a mounted pane runs its effects, and the leaderboard's effect
+   * is a fetch. So the shell used to spend a request on a board nobody had
+   * swiped to, racing the profile fetch the visible pane was waiting on.
+   *
+   * Reached rather than current, and never unset: a pane keeps its content
+   * once it has had any, so going back to it is instant. Neighbours count as
+   * reached the moment a drag begins, which is why a pane is never caught
+   * empty halfway through the slide that reveals it.
+   */
+  const [reached, setReached] = useState<readonly boolean[]>(
+    () => PAGES.map((_, index) => index === page),
+  );
+  const reach = useCallback((...indexes: number[]) => {
+    setReached((current) => {
+      if (indexes.every((index) => current[index] ?? true)) return current;
+      const next = [...current];
+      for (const index of indexes) if (next[index] !== undefined) next[index] = true;
+      return next;
+    });
+  }, []);
+
   const goTo = useCallback((next: number) => {
+    const target = clampPage(next, PAGE_COUNT);
+    reach(target);
     setPage((current) => {
-      const target = clampPage(next, PAGE_COUNT);
       // `select`, not `tap`: a tab is a choice, and it changes what is on screen.
       if (target !== current) selectSound();
       return target;
     });
     setDrag(null);
-  }, []);
+  }, [reach]);
 
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.buttons !== 1) return;
     if (event.target instanceof Element && event.target.closest(HORIZONTAL_SCROLLER)) return;
+    reach(page - 1, page + 1);
     gestureRef.current = beginSwipe(
       event.clientX,
       event.clientY,
       event.currentTarget.clientWidth,
     );
-    // Without capture the drag dies the moment the finger crosses out of the
-    // element, which on a full-width pane happens constantly at the edges.
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }, []);
+  }, [page, reach]);
 
   const onPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current;
     if (!gesture) return;
     const move = trackSwipe(gesture, event.clientX, event.clientY, page, PAGE_COUNT);
+    /*
+     * Capture on the axis lock, NOT on press.
+     *
+     * Capture is still needed -- without it the drag dies the moment the
+     * pointer crosses out of the element, which on a full-width pane happens
+     * constantly at the edges. But a captured pointer also redirects the
+     * `click` that follows it to the capture target, so capturing every press
+     * meant the click never reached whatever was actually pressed. Touch
+     * happens to survive that (the browser retargets it back), which is why
+     * this was invisible on a phone -- with a mouse, every link and button
+     * inside the panes was simply dead: Collection, Achievements, Rewards,
+     * Buy Gold, Challenges, every tile on the Ante Up pane, the whole footer.
+     *
+     * `trackSwipe` only reports "horizontal" once the finger has travelled
+     * AXIS_LOCK_PX, and a tap never travels that far, so taking capture here
+     * gives the drag everything it needs and leaves a press alone.
+     */
+    if (gesture.axis !== "horizontal" && move.gesture.axis === "horizontal") {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
     gestureRef.current = move.gesture;
     setDrag(move.offset);
   }, [page]);
@@ -255,6 +343,7 @@ export function MobileShell({
               onClaimDailyGold={onClaimDailyGold}
               freeGoldEligible={freeGoldEligible}
               onGetFreeGold={onGetFreeGold}
+              showLeaderboard={reached[2] ?? true}
             />
           </section>
         </div>
@@ -519,6 +608,7 @@ function YouPane({
   onToggleMenuMusic,
   betStyle,
   onCycleBetStyle,
+  showLeaderboard,
 }: {
   profile: PlayerProfile;
   onSignOut: () => void;
@@ -534,6 +624,8 @@ function YouPane({
   onToggleMenuMusic: () => void;
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
+  /** False until this pane is one gesture away -- see `reached` in MobileShell. */
+  showLeaderboard: boolean;
 }) {
   const dailyReady = dailyGold === "ready";
   const dailyClaimed = dailyGold === "claimed";
@@ -597,8 +689,9 @@ function YouPane({
 
       {/* The route's own leaderboard, embedded. Its game tabs, season toggle,
           kicker and fetch all come with it, so this pane adds no header above
-          it. */}
-      <Leaderboard embedded />
+          it -- and the fetch is why it waits for `showLeaderboard` rather than
+          mounting with the shell. */}
+      {showLeaderboard && <Leaderboard embedded />}
 
       <div className="mshell-section">
         <span className="lobby-kicker">Settings</span>

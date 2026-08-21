@@ -67,7 +67,12 @@ function ensurePlayer(): HTMLAudioElement | null {
   // A single-track playlist loops itself. A real one must not, or `ended`
   // never fires and the first track is the only one anybody ever hears.
   audio.loop = MENU_MUSIC_TRACKS.length === 1;
-  audio.preload = "auto";
+  // "none", not "auto". The tracks are 2-3.5MB each, and autoplay policy means
+  // the first one usually cannot play until the player touches something
+  // anyway -- so "auto" spent a phone's whole connection on a file that was
+  // not going to be heard yet, while the lobby was still loading around it.
+  // play() streams it when there is actually something to hear.
+  audio.preload = "none";
   audio.volume = 0;
   audio.addEventListener("ended", playNextTrack);
   player = audio;

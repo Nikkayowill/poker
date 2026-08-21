@@ -58,7 +58,7 @@ export function WordStackBoard() {
   // Applies the player's stored mute on a route where PokerApp is not
   // mounted. The flag it sets is module-global, which is what lets the JSX
   // below call the chrome cues directly. See lib/audio/ui-sounds.ts.
-  useArcadeSound();
+  useArcadeSound({ gameSounds: true });
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [round, setRound] = useState<WordStackSnapshot | null>(null);
   const [meta, setMeta] = useState<{ day: string; puzzleNumber: number; nextPuzzleAt: number } | null>(null);

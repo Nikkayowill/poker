@@ -64,7 +64,7 @@ export function SudokuBoard() {
   const [rejected, setRejected] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
-  const play = useArcadeSound();
+  const play = useArcadeSound({ gameSounds: true });
   const round = state?.round ?? null;
   const solved = round?.status === "solved";
 

@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import { playSound, setSoundEnabled, type SoundEffect } from "@/lib/audio/sound-effects";
+import {
+  playSound,
+  primeTableSounds,
+  setSoundEnabled,
+  type SoundEffect,
+} from "@/lib/audio/sound-effects";
 import {
   LEGACY_SOUND_STORAGE_KEY,
   SOUND_STORAGE_KEY,
@@ -23,7 +28,9 @@ import { browserPreferenceStorage, parseEnabledFlag, readStoredPreference } from
  * that wrote a *second* opinion of the preference into the same key from a
  * second place is how the two would drift.
  */
-export function useArcadeSound(): (effect: SoundEffect) => void {
+export function useArcadeSound(
+  { gameSounds = false }: { gameSounds?: boolean } = {},
+): (effect: SoundEffect) => void {
   useEffect(() => {
     setSoundEnabled(
       readStoredPreference(browserPreferenceStorage(), {
@@ -33,6 +40,15 @@ export function useArcadeSound(): (effect: SoundEffect) => void {
       }),
     );
   }, []);
+
+  // A machine plays the deal/chip/win cues, so it fetches them on mount rather
+  // than mid-round. A menu -- the arcade floor, the lobby -- does not, and
+  // must not: both of those are screens the phone shell renders on load, and
+  // priming there is what used to pull the whole sound set down before anyone
+  // had started anything. See primeTableSounds in lib/audio/sound-effects.
+  useEffect(() => {
+    if (gameSounds) primeTableSounds();
+  }, [gameSounds]);
 
   // Stable, so a caller can safely list it in an effect's dependencies -- which
   // every machine does, since sounds fire as a reaction to the round changing

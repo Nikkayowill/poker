@@ -122,6 +122,21 @@ test.describe("phone lobby", () => {
       .toHaveAttribute("aria-current", "page");
   });
 
+  /* A press inside a pane must still be a press.
+     The pager used to take pointer capture on pointerdown, and a captured
+     pointer redirects the click that follows it to the capture target -- so
+     the link never saw it and nothing navigated. Touch happened to survive
+     that (the browser retargets it back), which is exactly why a mouse is the
+     input this test uses: it is the one that regressed silently. */
+  test("a link inside a pane still follows on a plain click", async ({ page }) => {
+    await enterAsGuest(page);
+    await tabBar(page).getByRole("button", { name: "You", exact: true }).click();
+
+    await pane(page, "You").getByRole("link", { name: /Collection/ }).click();
+
+    await expect(page).toHaveURL(/\/collection$/);
+  });
+
   test("the tab bar stays on screen while a pane scrolls", async ({ page }) => {
     await enterAsGuest(page);
     await tabBar(page).getByRole("button", { name: "You", exact: true }).click();

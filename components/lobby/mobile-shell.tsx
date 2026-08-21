@@ -349,15 +349,6 @@ export function MobileShell({
         </div>
       </div>
 
-      {/* The dots widen the active one rather than colouring a dead one, so the
-          indicator reads as a position on a strip and not as three buttons.
-          They are decoration: the tab bar below is the control. */}
-      <div className="mshell-dots" aria-hidden="true">
-        {PAGES.map((name, index) => (
-          <span key={name} className={`mshell-dot${index === page ? " mshell-dot-on" : ""}`} />
-        ))}
-      </div>
-
       <nav className="mshell-nav" aria-label="Lobby sections">
         {PAGES.map((name, index) => {
           const Icon = PAGE_ICONS[index];

@@ -62,6 +62,15 @@
     width: 100%;
     overflow: hidden;
     padding: 0;
+    /* .lobby is sized from `100svh`, the SMALLEST viewport -- the height with
+       every browser toolbar showing. A browser that retracts its toolbars then
+       leaves the shell short of the real bottom edge, and the tab bar floats
+       above a strip of bare room. `dvh` is the live one, so the bar stays on
+       the bottom edge through the whole animation. The usual argument against
+       it (a bar that jumps while the page scrolls) needs a scrolling root, and
+       nothing scrolls at this level -- each pane scrolls on its own. Browsers
+       without `dvh` drop this line and keep the `svh` height above. */
+    height: calc(100dvh - var(--lobby-header-h) - var(--safe-top));
   }
 
   .lobby.lobby-shell .hub {
@@ -128,8 +137,8 @@
      transformed, and a transformed ancestor becomes the containing block for
      `position: fixed` descendants. So `bottom: 0` here means the bottom of the
      swipe area, not the screen -- which is exactly where it belongs, sitting
-     on the dots with the tab bar below it. Its safe-area padding comes off
-     with it; the bar underneath already covers that strip. */
+     resting on top of the tab bar. Its safe-area padding comes off with it;
+     the bar underneath already covers that strip. */
   .lobby-shell .install-strip {
     bottom: 0;
     padding-bottom: 10px;
@@ -626,39 +635,28 @@
     color: #93a1bb;
   }
 
-  /* ---- page dots + tab bar --------------------------------------------- */
+  /* ---- the tab bar ----------------------------------------------------- */
 
-  .mshell-dots {
-    display: flex;
-    justify-content: center;
-    gap: 6px;
-    padding: 9px 0;
-  }
-
-  .mshell-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: var(--radius-pill);
-    background: rgba(164, 186, 224, .22);
-    transition:
-      width var(--duration-slower, .25s) var(--ease-decelerate, cubic-bezier(.2, .8, .3, 1)),
-      background var(--duration-slower, .25s) linear;
-  }
-
-  .mshell-dot-on {
-    width: 20px;
-    background: var(--brand-gold-light);
-  }
-
+  /* Built to the shape both phone platforms use: a ~50px row of icon-over-label
+     targets sitting directly on the safe-area strip, with nothing between it
+     and the pane above. It used to carry a row of page dots on top, which is
+     24px of chrome no other app's tab bar has and which lifted the whole
+     control clear of the bottom edge -- that is what read as floating too high.
+     The bar is the position indicator now, the way every swipeable tab bar on
+     either platform already works, and the block comes out at 50 + inset,
+     which is the height a native one is. */
   .mshell-nav {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     flex-shrink: 0;
     /* The safe-area strip is part of the bar, not a gap under it -- otherwise
-       iOS paints the document colour beneath the home indicator. */
-    padding-bottom: var(--safe-bottom);
-    background: rgba(26, 31, 43, .92);
-    box-shadow: 0 -1px 0 rgba(164, 186, 224, .1), 0 -12px 30px rgba(0, 0, 0, .4);
+       iOS paints the document colour beneath the home indicator. The 6px floor
+       is for everything that reports no inset (Android, any desktop browser at
+       this width): 50px of row alone sits tighter to the screen edge than a bar
+       on either platform does, and 56px is Material's own height. */
+    padding-bottom: max(var(--safe-bottom), 6px);
+    background: rgba(22, 27, 38, .94);
+    box-shadow: 0 -1px 0 rgba(164, 186, 224, .1), 0 -14px 34px rgba(0, 0, 0, .46);
   }
 
   @supports (backdrop-filter: blur(18px)) {
@@ -670,15 +668,17 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    height: 58px;
+    gap: 3px;
+    /* 50px is the platform row height either OS uses, and it clears the 44px
+       hit-target floor the rest of this shell is built to on its own. */
+    height: 50px;
     border: 0;
     background: transparent;
     color: #7f8ba4;
     font: inherit;
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 650;
-    letter-spacing: .02em;
+    letter-spacing: .01em;
     cursor: pointer;
     touch-action: manipulation;
     transition: color var(--duration-base, .15s) linear;
@@ -686,11 +686,14 @@
 
   .mshell-nav-on { color: var(--brand-gold-light); }
 
+  /* The active icon carries a little of its own light, so the current tab is
+     legible at a glance rather than only by comparing three label colours. */
+  .mshell-nav-on svg { filter: drop-shadow(0 2px 8px rgba(219, 156, 11, .45)); }
+
   /* ---- motion opt-out --------------------------------------------------- */
 
   @media (prefers-reduced-motion: reduce) {
     .mshell-track-settling { transition: none; }
-    .mshell-dot { transition: none; }
     .mshell-tile:active,
     .mshell-row:active,
     .mshell-hero:active,

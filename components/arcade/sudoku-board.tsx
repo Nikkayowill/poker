@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { Eraser } from "lucide-react";
+import { Coins, Eraser } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
@@ -279,6 +279,9 @@ export function SudokuBoard() {
                   Solved in {formatDuration(round.elapsedMs ?? elapsed)} · {round.mistakes}{" "}
                   {round.mistakes === 1 ? "mistake" : "mistakes"}
                 </strong>
+                <Link href="/games/ante-up-sudoku" className="puzzle-share-button" onClick={tapSound}>
+                  <Coins size={15} aria-hidden="true" /> Ante Up: wager Gold
+                </Link>
                 {shareText && (
                   <ShareResultButton
                     text={shareText}

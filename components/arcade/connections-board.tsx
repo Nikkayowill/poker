@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { Shuffle } from "lucide-react";
+import { Coins, Shuffle } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
@@ -350,6 +350,9 @@ export function ConnectionsBoard() {
               : "Out of mistakes. The groups are above."}
           </p>
           <pre className="puzzle-share-preview" aria-label="Your result">{shareText}</pre>
+          <Link href="/games/ante-up-connections" className="puzzle-share-button" onClick={tapSound}>
+            <Coins size={15} aria-hidden="true" /> Ante Up: wager Gold
+          </Link>
           {shareText && (
             <ShareResultButton
               text={shareText}

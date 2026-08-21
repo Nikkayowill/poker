@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
+import { Coins } from "lucide-react";
 import { PlayingCard } from "@/components/table/playing-card";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
@@ -201,6 +202,9 @@ export function MemoryBoard() {
                   {formatDuration(round.elapsedMs ?? elapsed)} · {round.turns} turns
                   {round.turns === round.perfectTurns ? " · perfect" : ""}
                 </strong>
+                <Link href="/games/ante-up-memory" className="puzzle-share-button" onClick={tapSound}>
+                  <Coins size={15} aria-hidden="true" /> Ante Up: wager Gold
+                </Link>
                 {shareText && (
                   <ShareResultButton
                     text={shareText}

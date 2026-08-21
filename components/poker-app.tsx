@@ -2,6 +2,7 @@
 
 import type { RealtimeChannel, Session } from "@supabase/supabase-js";
 import { useCallback, useEffect, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import dynamic from "next/dynamic";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { applyOptimisticAction } from "@/lib/game/optimistic-action";
 import type { StakesTier } from "@/lib/game/tiers";
@@ -33,7 +34,7 @@ import {
   writeCachedProfile,
 } from "@/lib/profile/session-continuity";
 import { useStoredPreference } from "@/components/use-stored-preference";
-import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
+import { playSound, primeTableSounds, setSoundEnabled } from "@/lib/audio/sound-effects";
 import { gameOnSound } from "@/lib/audio/ui-sounds";
 import {
   BET_STYLE_STORAGE_KEY,
@@ -75,13 +76,32 @@ import { usePhoneViewport } from "@/components/use-phone-viewport";
 import { RewardedAdModal } from "@/components/rewards/rewarded-ad-modal";
 import { REWARDED_AD_ELIGIBLE_BELOW } from "@/lib/rewards/config";
 import type { RewardTrigger } from "@/lib/rewards/triggers";
-import { PokerTable, type ConnectionState } from "@/components/table/poker-table";
+import type { ConnectionState } from "@/components/table/poker-table";
 import { useTableReactions } from "@/lib/game/use-table-reactions";
 import {
   LEGACY_SOUND_STORAGE_KEY,
   MUSIC_STORAGE_KEY,
   SOUND_STORAGE_KEY,
 } from "@/lib/audio/sound-preference";
+
+/**
+ * The table, fetched only when there is one to show.
+ *
+ * It is the heaviest thing in the app -- three renderers, the chip scene, the
+ * seat-art roster, the evaluator -- and it was imported straight into this
+ * file, which is the lobby. So a phone downloaded and parsed the whole table
+ * before it could paint a single tab, on a screen with no table on it. That
+ * parse is most of the gap between the lobby's first paint and the lobby
+ * actually appearing.
+ *
+ * `ssr: false` costs nothing: `game` is null until a client fetch says
+ * otherwise, so the server never had a table to render either. The warm-up in
+ * `useEffect` below is what keeps sitting down as fast as it was -- see there.
+ */
+const PokerTable = dynamic(
+  () => import("@/components/table/poker-table").then((module) => module.PokerTable),
+  { ssr: false },
+);
 
 /**
  * How long a lobby notice stays up before it retires itself.
@@ -429,6 +449,23 @@ export function PokerApp() {
     };
   }, [game, musicEnabled]);
 
+  // Fetch the table's chunk (see the `dynamic` call at the top of this file)
+  // while the lobby is sitting still, so taking a seat costs no more than it
+  // did when the table was imported eagerly. Idle rather than on mount: the
+  // lobby's own paint and its profile fetch go first, and a player who never
+  // sits down never waits on this at all.
+  useEffect(() => {
+    if (game) return;
+    const warm = () => { void import("@/components/table/poker-table"); };
+    const idle = window.requestIdleCallback;
+    if (idle) {
+      const handle = idle(warm, { timeout: 4_000 });
+      return () => window.cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(warm, 1_500);
+    return () => window.clearTimeout(timer);
+  }, [game]);
+
   useEffect(() => {
     // Every rule about what the table sounds like lives in tableSounds, where
     // it can be tested. This effect's only job is to hold the previous
@@ -462,7 +499,12 @@ export function PokerApp() {
     const seated = Boolean(game);
     const was = wasSeatedRef.current;
     wasSeatedRef.current = seated;
-    if (seated && !was) gameOnSound();
+    if (!seated || was) return;
+    gameOnSound();
+    // The same edge is where the hand's own sounds become reachable, so it is
+    // where they are fetched. Before this they were pulled by the first tap
+    // anywhere, lobby included -- see primeTableSounds.
+    primeTableSounds();
   }, [game]);
   useEffect(() => {
     gameVersionRef.current = game?.version ?? 0;

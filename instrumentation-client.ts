@@ -22,8 +22,14 @@ Sentry.init({
   // Add optional integrations for additional features
   integrations: [Sentry.replayIntegration()],
 
-  // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
-  tracesSampleRate: 1,
+  // Sampled, not exhaustive. At 1 every page load and every route change built
+  // a transaction with a span per fetch and beaconed it through this app's own
+  // server (tunnelRoute in next.config.ts) -- so the cost of a slow or
+  // unreachable Sentry lands on the player's own connection, which is the
+  // failure the comment above already describes in the dev case. A tenth is
+  // plenty to see a trend on a play-money app, and real errors are not sampled
+  // by this number at all.
+  tracesSampleRate: 0.1,
   // Enable logs to be sent to Sentry
   enableLogs: true,
 

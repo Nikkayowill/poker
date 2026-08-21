@@ -54,7 +54,7 @@ export function AnteUpSudoku() {
   const [rejected, setRejected] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
-  const play = useArcadeSound();
+  const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
   const settled = attempt !== null && attempt.status !== "active";
 

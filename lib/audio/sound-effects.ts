@@ -1,4 +1,11 @@
-import { AUDIBLE_EFFECTS, SOUND_FILES, SOUND_REPEAT, soundGain, type SoundEffect } from "./manifest";
+import {
+  AUDIBLE_EFFECTS,
+  CHROME_EFFECTS,
+  SOUND_FILES,
+  SOUND_REPEAT,
+  soundGain,
+  type SoundEffect,
+} from "./manifest";
 
 export type { SoundEffect };
 
@@ -33,21 +40,42 @@ function playerFor(effect: SoundEffect): HTMLAudioElement | null {
 }
 
 /**
- * Instantiates (and starts loading) every mapped sound once, the first time
- * the player interacts with the page. Browsers block audio playback before
- * any user gesture, so there is nothing to gain by loading earlier, and
- * building every <audio> element up front means later playSound calls only
- * ever reuse an existing element -- never create one mid-game.
+ * Instantiates (and starts loading) a set of sounds once. Browsers block audio
+ * playback before any user gesture, so there is nothing to gain by loading
+ * earlier, and building the <audio> elements up front means later playSound
+ * calls only ever reuse an existing element -- never create one mid-game.
+ *
+ * WHAT gets primed WHEN is the part that matters. This used to be every
+ * audible effect on the first gesture anywhere, which meant the first tap on
+ * the lobby pulled the entire table sound set down the wire on a screen with
+ * no table on it -- ~450KB competing with the lobby's own first load, on the
+ * one connection a phone has. The set is split instead: the chrome cues on
+ * first gesture (they are the only ones the lobby can make), the table's own
+ * on the way into a game. Both are idempotent, so the second caller is free.
  */
-function primeOnce() {
-  if (primed || typeof window === "undefined") return;
+function prime(effects: readonly SoundEffect[]) {
+  if (typeof window === "undefined") return;
+  for (const effect of effects) playerFor(effect);
+}
+
+function primeChromeOnce() {
+  if (primed) return;
   primed = true;
-  for (const effect of AUDIBLE_EFFECTS) playerFor(effect);
+  prime(CHROME_EFFECTS);
+}
+
+/**
+ * Loads the cues a hand makes. Called on the edge of arriving at a game --
+ * poker-app.tsx, and the arcade tables through use-arcade-sound -- so the deal
+ * finds its elements already built rather than fetching mid-hand.
+ */
+export function primeTableSounds() {
+  prime(AUDIBLE_EFFECTS);
 }
 
 if (typeof window !== "undefined") {
-  window.addEventListener("pointerdown", primeOnce, { once: true, passive: true });
-  window.addEventListener("keydown", primeOnce, { once: true });
+  window.addEventListener("pointerdown", primeChromeOnce, { once: true, passive: true });
+  window.addEventListener("keydown", primeChromeOnce, { once: true });
 }
 
 export function setSoundEnabled(value: boolean) {

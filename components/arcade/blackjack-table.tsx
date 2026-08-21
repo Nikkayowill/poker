@@ -115,7 +115,7 @@ export function BlackjackTable() {
   // Applies the player's stored mute on a route where PokerApp is not
   // mounted. The flag it sets is module-global, which is what lets the JSX
   // below call the chrome cues directly. See lib/audio/ui-sounds.ts.
-  useArcadeSound();
+  useArcadeSound({ gameSounds: true });
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [tier, setTier] = useState<StakesTier>("1k");

@@ -205,6 +205,19 @@ export const AUDIBLE_EFFECTS = (Object.keys(SOUND_FILES) as SoundEffect[])
   .filter((effect) => SOUND_FILES[effect] !== null);
 
 /**
+ * The cues a screen with no table on it can actually make -- the three chrome
+ * presses of ./ui-sounds, and nothing else.
+ *
+ * This split exists for bytes, not for taste. Priming used to mean every
+ * audible effect at once, and the first tap on the phone lobby pulled the
+ * whole table's sound set (~450KB across sixteen files) down a phone
+ * connection, for a hand that had not been dealt and a seat nobody had taken.
+ * `primeChromeSounds` covers this list; `primeTableSounds` covers the rest and
+ * runs when a game actually starts. See ./sound-effects.
+ */
+export const CHROME_EFFECTS: readonly SoundEffect[] = ["ui", "select", "game-on"];
+
+/**
  * Effects that repeat rather than play once. `check` is the one case: a live
  * player checks by rapping the felt twice, and the file behind it
  * (`freesound_community-knocking-wood-61988.mp3`) is a single knock -- so the

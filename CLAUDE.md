@@ -44,6 +44,20 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### The phone lobby's tab bar (2026-08-21)
+- Kayo: the mobile nav "is too high up", and should look like every other app's. Two causes, both
+  fixed on `feat/mobile-nav-polish`. The bar carried a row of page dots on top of it (24px of chrome
+  no other app's tab bar has), and its own row was 58px, so on an iPhone the block stood 116px off
+  the bottom edge. It is now a 50px row on the safe-area strip -- 84px on a notched phone, which is
+  what a native tab bar measures -- and the dots are **deleted**, not hidden: the bar itself is the
+  position indicator, the same as every swipeable tab bar on either platform. Don't re-add them.
+- `.lobby.lobby-shell` is sized in `dvh` where `.lobby` uses `svh`. `svh` is the height with every
+  browser toolbar showing, so a browser that retracts one leaves the bar floating above a strip of
+  bare room. Nothing scrolls at that level (each pane scrolls on its own), so the usual reason to
+  avoid `dvh` cannot bite here.
+- `padding-bottom` on the bar is `max(var(--safe-bottom), 6px)`: devices reporting no inset (Android
+  browsers, a narrow desktop window) would otherwise get a 50px bar sitting on the screen edge.
+
 ### Friends leaderboard: a head-to-head record per opponent (2026-08-20)
 - On `feat/global-leaderboard`, on top of the same day's per-game leaderboard. Kayo's ask: "if I play
   against my girl and lose 5 times it should track." That is a different fact from anything the

@@ -96,6 +96,19 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   routes present. Two pre-existing failures unrelated to this work (`memory-service.test.ts`'s
   `tsc` type-narrowing warning, `safe-area.spec.ts` — both red on `origin/main` too, confirmed by
   diffing against it before writing this note).
+### The phone lobby's tab bar (2026-08-21)
+- Kayo: the mobile nav "is too high up", and should look like every other app's. Two causes, both
+  fixed on `feat/mobile-nav-polish`. The bar carried a row of page dots on top of it (24px of chrome
+  no other app's tab bar has), and its own row was 58px, so on an iPhone the block stood 116px off
+  the bottom edge. It is now a 50px row on the safe-area strip -- 84px on a notched phone, which is
+  what a native tab bar measures -- and the dots are **deleted**, not hidden: the bar itself is the
+  position indicator, the same as every swipeable tab bar on either platform. Don't re-add them.
+- `.lobby.lobby-shell` is sized in `dvh` where `.lobby` uses `svh`. `svh` is the height with every
+  browser toolbar showing, so a browser that retracts one leaves the bar floating above a strip of
+  bare room. Nothing scrolls at that level (each pane scrolls on its own), so the usual reason to
+  avoid `dvh` cannot bite here.
+- `padding-bottom` on the bar is `max(var(--safe-bottom), 6px)`: devices reporting no inset (Android
+  browsers, a narrow desktop window) would otherwise get a 50px bar sitting on the screen edge.
 
 ### Friends leaderboard: a head-to-head record per opponent (2026-08-20)
 - On `feat/global-leaderboard`, on top of the same day's per-game leaderboard. Kayo's ask: "if I play
@@ -489,6 +502,57 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   `biggest_pot_50k`'s `avatar-housename` cosmetic reward repointed to Gold-only again (same fix as the
   reverted attempt), same for its not-yet-deployed migration (confirmed absent via
   `list_migrations` before editing directly).
+
+### Seat-art roster grown to 15, then 21, and a slicer for the sheets (2026-08-21)
+- `character13`-`character15` added. Kayo now supplies a character as ONE labelled 3-up JPEG
+  turnaround sheet (0/20/40 side by side, captions above and below each panel), not as pre-cropped
+  per-angle files, so `scripts/slice-seat-sheet.py <sheet> <id>` does the cutting before
+  `prepare-seat-art.py` runs. It finds the figure band as the tallest run of non-black rows (captions
+  are short bands, so they never have to be located, only out-grown), splits on the gutters, and keys
+  each panel by flooding in from its border.
+- **It floods at luma <= 6, not `prepare-seat-art.py`'s <= 1, and that is the entire reason it
+  exists**: these sheets arrive as JPEG and the "black" plate carries ringing up around 6, so the
+  stricter flood stops at the noise and the plate comes out a solid opaque rectangle. It writes real
+  alpha, which `prepare-seat-art.py` detects and passes through instead of re-keying. Connectivity is
+  still the key, not colour — a colour key at any threshold eats the dark hair and the black chair.
+  Stray islands (ringing across a gutter) are dropped, or they widen the character's normalised box
+  for nothing.
+- Every roster entry needs a `characterAvatarOffers` entry in `lib/cosmetics/catalog.ts` —
+  `characterAvatarCosmetics` throws for one without, deliberately, rather than falling through to the
+  free-starter default. Names and copy are first-draft, written from the art; nothing keys off a name.
+- **These three are EARNED, not sold** (Kayo's call, same day, right after they landed): a third tier
+  under the existing standard/rare ones — `price: null` plus `unlock: { handsWon }` at 250/750/1,500
+  lifetime hands won, rarity `signature`. No new machinery: `lib/server/avatar-unlocks.ts` already
+  sweeps every `avatarCosmetics` entry carrying an `unlock` after each hand, `purchaseCosmetic`
+  already refuses a null price, `equipCosmetic` already demands ownership, and the Collection already
+  renders the progress bar. The only real code change was the tier derivation —
+  `price > 0 ? "rare" : "standard"` puts a null-priced item in the FREE bucket, so an earned character
+  would have shipped as a starter giveaway.
+- Bots no longer draw from the whole character roster: `botAvatarCosmetics` excludes the earned tier
+  (`botAvatarFor`, `lib/game/engine.ts`). Same reasoning `botCardBacks` already stopped bots at
+  standard-tier decks — a bot wearing a face a player is 1,500 won hands away from says the threshold
+  buys nothing anyone can see. Gold-priced characters stay in the bot pool on purpose; those
+  advertise the store rather than making a claim about history at this table.
+- Six more the same day, `character16`-`character21`, from six more 3-up sheets through the same
+  slicer with no script change. Kayo's call on the tier: **extend the Gold ladder, not the earned
+  one** — the signature tier stays exactly the three rungs it was set at, 250/750/1,500 hands, rather
+  than growing to nine and diluting what it means.
+- The new rungs step by ~20% each (9,000,000 up to 17,000,000) where `character6`-`character12` step
+  by ~60%. That is a deliberate break, not a slip: the original ladder was already decelerating
+  (×1.75 down to ×1.50 by its last rung), and holding ~60% past `character12` would land the top at
+  about 85,000,000 — an order of magnitude past every other item in this catalog and past anything
+  the faucet stack pays out. The catalog's own comment carries this reasoning; the ladder test now
+  spans both blocks as one ascending sequence, since the earned tier interrupts the id run but not
+  the pricing.
+- **A seventh sheet was rejected and is not in the roster.** Its three panels are boxed scenes — a
+  tufted chair filling the frame and a brown desk under the figure's hands — rather than a figure on
+  a black plate, so there is nothing for the border flood to remove: `key_panel` keeps the whole
+  rectangle and the "cutout" is an opaque box. Two of its panels also touch with no gutter, so the
+  band splits into 2 instead of 3 and the slicer refuses outright. Both symptoms are the same root
+  cause, and no threshold fixes either — the chair's charcoal and the suit's charcoal are the same
+  luma. The framing contract in `prepare-seat-art.py`'s docstring (black plate, head-to-hands,
+  running off the bottom edge) is what a sheet has to satisfy; a sheet that doesn't needs
+  re-rendering, not a looser key.
 
 ### Rewarded-ad faucet (2026-08-11)
 - Wait moved 30s→5min (`REWARDED_AD_DURATION_MS`), grant TTL 10→20min to compensate. New direct

@@ -146,7 +146,7 @@ describe("character avatars (the seat-art roster, sold in the store)", () => {
     );
   });
 
-  it("gives character1-5 away free and prices character6-12 as an ascending Gold ladder", () => {
+  it("gives character1-5 away free and prices every rare character as one ascending Gold ladder", () => {
     const starters = ["character1", "character2", "character3", "character4", "character5"];
     for (const id of starters) {
       const item = characterAvatarCosmetics.find((entry) => entry.id === id);
@@ -154,7 +154,23 @@ describe("character avatars (the seat-art roster, sold in the store)", () => {
       expect(item?.rarity).toBe("standard");
     }
 
-    const paidIds = ["character6", "character7", "character8", "character9", "character10", "character11", "character12"];
+    const paidIds = [
+      "character6",
+      "character7",
+      "character8",
+      "character9",
+      "character10",
+      "character11",
+      "character12",
+      // The earned tier (character13-15) interrupts the id run, not the
+      // ladder -- these six pick the pricing back up above The Closer.
+      "character16",
+      "character17",
+      "character18",
+      "character19",
+      "character20",
+      "character21",
+    ];
     const prices = paidIds.map((id) => characterAvatarCosmetics.find((entry) => entry.id === id)?.price as number);
     expect(prices.every((price) => typeof price === "number" && price > 0)).toBe(true);
     // A ladder, not just "all priced" -- each rung costs strictly more than
@@ -164,6 +180,23 @@ describe("character avatars (the seat-art roster, sold in the store)", () => {
     for (const id of paidIds) {
       expect(characterAvatarCosmetics.find((entry) => entry.id === id)?.rarity).toBe("rare");
     }
+  });
+
+  it("earns character13-15 on an ascending hands-won ladder instead of selling them", () => {
+    // The tier only means anything while it stays unbuyable, so this pins the
+    // absent price as hard as it pins the threshold -- putting a Gold price on
+    // one of these is the failure mode, not forgetting a rung.
+    const earnedIds = ["character13", "character14", "character15"];
+    const earned = earnedIds.map((id) => characterAvatarCosmetics.find((entry) => entry.id === id));
+    for (const item of earned) {
+      expect(item?.price).toBeNull();
+      expect(item?.rarity).toBe("signature");
+      expect(item?.unlock).toBeDefined();
+    }
+
+    const thresholds = earned.map((item) => (item?.unlock as { handsWon: number }).handsWon);
+    expect(thresholds).toEqual([...thresholds].sort((a, b) => a - b));
+    expect(new Set(thresholds).size).toBe(thresholds.length);
   });
 
   it("resolves avatarFigure/avatarFace to the character's own 0deg seat-art plate", () => {

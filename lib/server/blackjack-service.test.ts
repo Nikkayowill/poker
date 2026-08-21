@@ -45,10 +45,20 @@ async function funded(gold?: number) {
 async function playableRound(gold = 2000) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const token = await funded(gold);
-    const result = await dealBlackjackRound(token, "1k");
+    const result = await dealBlackjackRound(token, { tier: "1k" });
     if (result.round?.phase === "player-turn") return { token, round: result.round, profile: result.profile };
   }
   throw new Error("Could not deal a round that needed a decision.");
+}
+
+/** Same idea as playableRound, for a practice deal instead of a real tier. */
+async function practicePlayableRound(gold = 2000) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const token = await funded(gold);
+    const result = await dealBlackjackRound(token, { practice: true });
+    if (result.round?.phase === "player-turn") return { token, round: result.round, profile: result.profile };
+  }
+  throw new Error("Could not deal a practice round that needed a decision.");
 }
 
 beforeEach(() => {
@@ -58,7 +68,7 @@ beforeEach(() => {
 describe("dealing", () => {
   it("debits the stake as the hand is dealt", async () => {
     const token = await funded(2000);
-    const result = await dealBlackjackRound(token, "1k");
+    const result = await dealBlackjackRound(token, { tier: "1k" });
     expect(result.resumed).toBe(false);
     expect(result.round).not.toBeNull();
     // A hand that settled on the deal has already been paid; one still
@@ -69,14 +79,14 @@ describe("dealing", () => {
 
   it("refuses a stake the wallet cannot cover, and charges nothing", async () => {
     const token = await funded(999);
-    await expect(dealBlackjackRound(token, "1k")).rejects.toBeInstanceOf(BlackjackRequestError);
+    await expect(dealBlackjackRound(token, { tier: "1k" })).rejects.toBeInstanceOf(BlackjackRequestError);
     const profile = await ensureProfile(token);
     expect(profile.goldBalance).toBe(999);
   });
 
   it("resumes a live round instead of dealing a second one", async () => {
     const { token, round } = await playableRound();
-    const again = await dealBlackjackRound(token, "1k");
+    const again = await dealBlackjackRound(token, { tier: "1k" });
     expect(again.resumed).toBe(true);
     expect(again.round?.id).toBe(round.id);
     expect(again.round?.version).toBe(round.version);
@@ -111,7 +121,7 @@ describe("settlement", () => {
     // hold for every one of them.
     for (let hand = 0; hand < 25; hand += 1) {
       const token = await funded(2000);
-      const dealt = await dealBlackjackRound(token, "1k");
+      const dealt = await dealBlackjackRound(token, { tier: "1k" });
       const finished = dealt.round!.phase === "settled"
         ? dealt
         : await actOnBlackjackRound(token, {
@@ -131,7 +141,7 @@ describe("settlement", () => {
       version: round.version,
       action: "stand",
     });
-    const next = await dealBlackjackRound(token, "1k");
+    const next = await dealBlackjackRound(token, { tier: "1k" });
     expect(next.resumed).toBe(false);
     expect(next.round?.id).not.toBe(settled.round?.id);
   });
@@ -140,7 +150,7 @@ describe("settlement", () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
     await setUnlimitedGold(profile.id, true);
-    const dealt = await dealBlackjackRound(token, "500k");
+    const dealt = await dealBlackjackRound(token, { tier: "500k" });
     expect(dealt.round).not.toBeNull();
     // spendGold and creditGold are both no-ops for an unlimited profile, and
     // this table must not become the one place that mints from them.
@@ -257,5 +267,92 @@ describe("doubling", () => {
       }),
     ).rejects.toMatchObject({ status: 409 });
     expect((await ensureProfile(token)).goldBalance).toBe(before);
+  });
+});
+
+describe("practice hands", () => {
+  it("deals for free and moves no Gold even when the hand settles as a win", async () => {
+    // Repeated for the same reason the real-money settlement test is: the
+    // outcome is genuinely random, and the invariant (balance never moves)
+    // has to hold across wins, losses, pushes, naturals and busts alike.
+    for (let hand = 0; hand < 25; hand += 1) {
+      const token = await funded(2000);
+      const dealt = await dealBlackjackRound(token, { practice: true });
+      expect(dealt.round?.baseStake).toBe(0);
+      const finished = dealt.round!.phase === "settled"
+        ? dealt
+        : await actOnBlackjackRound(token, {
+          roundId: dealt.round!.id,
+          version: dealt.round!.version,
+          action: "stand",
+        });
+      expect(finished.round?.phase).toBe("settled");
+      expect(finished.round?.netGold).toBe(0);
+      // Not "creditGold was never called" -- the actual invariant this table
+      // exists to protect: the balance a practice hand leaves you with is
+      // the balance you sat down with, on every outcome.
+      expect(finished.profile.goldBalance).toBe(2000);
+    }
+  });
+
+  it("lets a player with zero Gold deal a practice hand", async () => {
+    const token = await funded(0);
+    const dealt = await dealBlackjackRound(token, { practice: true });
+    expect(dealt.resumed).toBe(false);
+    expect(dealt.round).not.toBeNull();
+    expect((await ensureProfile(token)).goldBalance).toBe(0);
+  });
+
+  it("does not charge for a practice double down", async () => {
+    const { token, round } = await practicePlayableRound();
+    const before = (await ensureProfile(token)).goldBalance;
+    const settled = await actOnBlackjackRound(token, {
+      roundId: round.id,
+      version: round.version,
+      action: "double",
+    });
+    expect(settled.round?.doubled).toBe(true);
+    // The doubled stake is still 0 -- there was nothing to double.
+    expect(settled.round?.stake).toBe(0);
+    expect(settled.round?.netGold).toBe(0);
+    // The whole point: double did not take a second stake it never charged
+    // a first one for.
+    expect(settled.profile.goldBalance).toBe(before);
+  });
+
+  it("resumes a live practice round instead of dealing a second one", async () => {
+    const { token, round } = await practicePlayableRound();
+    const again = await dealBlackjackRound(token, { practice: true });
+    expect(again.resumed).toBe(true);
+    expect(again.round?.id).toBe(round.id);
+  });
+});
+
+describe("a normal deal is unaffected by practice mode", () => {
+  it("still debits a real tier's stake exactly as before", async () => {
+    const token = await funded(2000);
+    const result = await dealBlackjackRound(token, { tier: "1k" });
+    const expected = result.round!.phase === "settled" ? 2000 + result.round!.netGold : 1000;
+    expect(result.profile.goldBalance).toBe(expected);
+    expect(result.round?.baseStake).toBe(1000);
+  });
+
+  it("still refuses a stake the wallet cannot cover", async () => {
+    const token = await funded(999);
+    await expect(dealBlackjackRound(token, { tier: "1k" })).rejects.toBeInstanceOf(BlackjackRequestError);
+    expect((await ensureProfile(token)).goldBalance).toBe(999);
+  });
+
+  it("still charges the second stake on a real double down", async () => {
+    const { token, round } = await playableRound();
+    const settled = await actOnBlackjackRound(token, {
+      roundId: round.id,
+      version: round.version,
+      action: "double",
+    });
+    expect(settled.round?.stake).toBe(STAKE * 2);
+    // 2000 in, 2000 staked across two debits, settled to netGold either way --
+    // same invariant the "doubling" describe block above pins.
+    expect(settled.profile.goldBalance).toBe(2000 + settled.round!.netGold);
   });
 });

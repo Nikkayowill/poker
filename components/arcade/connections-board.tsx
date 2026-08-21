@@ -7,6 +7,7 @@ import { Coins, Shuffle } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
+import { StakePicker } from "@/components/pvp/stake-picker";
 import { connectionsShareText, puzzleShareTitle } from "@/lib/arcade/puzzles/share";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
@@ -19,6 +20,7 @@ import {
   selectionKey,
   shuffleBoardOrder,
 } from "@/lib/arcade/puzzles/board-order";
+import { MIN_ANTE_UP_WAGER } from "@/lib/arcade/ante-up-connections";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
@@ -46,10 +48,17 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * candidate group up is how you look at four words together before spending a
  * mistake on them, so it earns the first press; making it every press would
  * take the plain shuffle away. Changing the selection re-arms it.
+ *
+ * ## The wager, and why it gates opening rather than trailing it
+ *
+ * Same change, same day, as word-stack-board.tsx: `round === null` after the
+ * initial read no longer auto-opens today's board -- it renders a wager step
+ * (Free is always a choice) that opens it on the player's own click. See
+ * startBoard.
  */
 
 interface ConnectionsResponse {
-  round: ConnectionsSnapshot | null;
+  round: (ConnectionsSnapshot & { wager: number; payout: number }) | null;
   profile: PlayerProfile;
   day: string;
   puzzleNumber: number;
@@ -59,6 +68,7 @@ interface ConnectionsResponse {
 }
 
 const NOTICE_MS = 1800;
+const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000] as const;
 
 /** Level 0-3 as the board's four colours, matching the share matrix's yellow-to-purple ramp. */
 const LEVEL_CLASS = ["cx-level-0", "cx-level-1", "cx-level-2", "cx-level-3"];
@@ -69,8 +79,9 @@ export function ConnectionsBoard() {
   // below call the chrome cues directly. See lib/audio/ui-sounds.ts.
   useArcadeSound({ gameSounds: true });
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
-  const [round, setRound] = useState<ConnectionsSnapshot | null>(null);
+  const [round, setRound] = useState<(ConnectionsSnapshot & { wager: number; payout: number }) | null>(null);
   const [meta, setMeta] = useState<{ day: string; puzzleNumber: number; nextPuzzleAt: number } | null>(null);
+  const [wager, setWager] = useState<number>(MIN_ANTE_UP_WAGER);
   const [selection, setSelection] = useState<string[]>([]);
   /** Local display order. Empty until a board arrives; reshuffled only by the button. */
   const [order, setOrder] = useState<string[]>([]);
@@ -172,8 +183,10 @@ export function ConnectionsBoard() {
     [flash],
   );
 
-  // Read-only GET first, then open a board if there is none -- visiting the
-  // page must not consume the day's attempt.
+  // Read-only GET first -- visiting the page must not consume the day's
+  // attempt. If today's board already exists (any status), it loads
+  // straight in; if not, the wager step below opens one, on the player's
+  // own click.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -188,17 +201,20 @@ export function ConnectionsBoard() {
           nextPuzzleAt: Date.now() + (data.msUntilNextPuzzle ?? 0),
         });
       }
-      if (data.round) {
-        setRound(data.round);
-        setLoaded(true);
-        return;
-      }
-      await send("/api/arcade/connections", {});
+      setRound(data.round ?? null);
+      setLoaded(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [send]);
+  }, []);
+
+  const startBoard = useCallback(() => {
+    void send("/api/arcade/connections", { wager });
+  }, [send, wager]);
+
+  const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
+  const canAffordWager = balance >= wager;
 
   const finished = Boolean(round && round.status !== "active");
   const playable = Boolean(round) && !finished && !busy;
@@ -276,34 +292,66 @@ export function ConnectionsBoard() {
         {notice}
       </p>
 
-      <section className="cx-board" aria-busy={busy}>
-        {/* Solved groups rise to the top as bars, which is what makes the
-            board visibly shrink toward a solve. */}
-        {round?.revealed.map((group) => (
-          <div
-            key={group.level}
-            className={clsx("cx-group", LEVEL_CLASS[group.level], !group.solved && "cx-group-missed")}
+      {loaded && !round && (
+        <section className="puzzle-summary">
+          <p className="puzzle-verdict">Wager Gold on today&apos;s puzzle, or play free.</p>
+          <StakePicker
+            ariaLabel="Wager"
+            picks={STAKE_QUICK_PICKS}
+            value={wager}
+            min={0}
+            leading={{ label: "Free", value: 0 }}
+            onChange={(next) => { selectSound(); setWager(next); }}
+          />
+          <p className="puzzle-verdict">
+            {wager === 0
+              ? "Free daily play — no Gold at stake."
+              : wager < MIN_ANTE_UP_WAGER
+                ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
+                : "A clean solve pays out the most — run out of mistakes and the wager is gone."}
+          </p>
+          <button
+            type="button"
+            className="puzzle-share-button"
+            disabled={busy || (wager > 0 && wager < MIN_ANTE_UP_WAGER) || (wager > 0 && !canAffordWager)}
+            onClick={() => { selectSound(); startBoard(); }}
           >
-            <strong>{group.label}</strong>
-            <span>{group.members.join(", ")}</span>
-          </div>
-        ))}
+            <Coins size={15} aria-hidden="true" />
+            {busy ? "Dealing…" : wager > 0 && !canAffordWager ? "Not enough Gold" : wager === 0 ? "Play free" : "Ante up"}
+          </button>
+        </section>
+      )}
 
-        <div className={clsx("cx-tiles", shake && "cx-tiles-shake")}>
-          {displayed.map((word) => (
-            <button
-              key={word}
-              type="button"
-              className={clsx("cx-tile", picked.includes(word) && "cx-tile-on")}
-              onClick={() => { tapSound(); toggle(word); }}
-              disabled={!playable}
-              aria-pressed={picked.includes(word)}
+      {round && (
+        <section className="cx-board" aria-busy={busy}>
+          {/* Solved groups rise to the top as bars, which is what makes the
+              board visibly shrink toward a solve. */}
+          {round.revealed.map((group) => (
+            <div
+              key={group.level}
+              className={clsx("cx-group", LEVEL_CLASS[group.level], !group.solved && "cx-group-missed")}
             >
-              {word}
-            </button>
+              <strong>{group.label}</strong>
+              <span>{group.members.join(", ")}</span>
+            </div>
           ))}
-        </div>
-      </section>
+
+          <div className={clsx("cx-tiles", shake && "cx-tiles-shake")}>
+            {displayed.map((word) => (
+              <button
+                key={word}
+                type="button"
+                className={clsx("cx-tile", picked.includes(word) && "cx-tile-on")}
+                onClick={() => { tapSound(); toggle(word); }}
+                disabled={!playable}
+                aria-pressed={picked.includes(word)}
+              >
+                {word}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {!finished && round && (
         <>
@@ -349,10 +397,14 @@ export function ConnectionsBoard() {
                 : `Solved with ${round.mistakes} mistake${round.mistakes === 1 ? "" : "s"}.`
               : "Out of mistakes. The groups are above."}
           </p>
+          {round.wager > 0 && (
+            <p className="puzzle-verdict">
+              {round.status === "won"
+                ? <strong>+{round.payout.toLocaleString()} Gold</strong>
+                : <strong>−{round.wager.toLocaleString()} Gold</strong>}
+            </p>
+          )}
           <pre className="puzzle-share-preview" aria-label="Your result">{shareText}</pre>
-          <Link href="/games/ante-up-connections" className="puzzle-share-button" onClick={tapSound}>
-            <Coins size={15} aria-hidden="true" /> Ante Up: wager Gold
-          </Link>
           {shareText && (
             <ShareResultButton
               text={shareText}

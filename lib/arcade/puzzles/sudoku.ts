@@ -1,11 +1,13 @@
 /**
- * Daily Sudoku.
+ * Sudoku.
  *
- * Four grids a day -- one per difficulty -- generated from the calendar day
- * rather than stored, so there is no puzzle bank to run out and every player
- * gets provably the same board. Pure and clock-free like the rest of
- * lib/arcade/puzzles: the day comes in as a string and `now` comes in as a
- * Date, so the whole thing is reachable from `npm test`.
+ * A grid per difficulty, generated from a seed string rather than stored, so
+ * there is no puzzle bank to run out. Pure and clock-free like the rest of
+ * lib/arcade/puzzles: the seed comes in as a string and `now` comes in as a
+ * Date, so the whole thing is reachable from `npm test`. The seed is a fresh
+ * random string per attempt (see lib/arcade/ante-up.ts, the only caller as of
+ * 2026-08-21) -- this file itself has no opinion on where a seed comes from,
+ * and its own name predates Sudoku losing its once-a-day gate that day.
  *
  * ## The solution never leaves the server, and that shapes the whole design
  *

@@ -22,12 +22,19 @@ import { adminClient } from "./supabase-admin";
 
 export type BlackjackRoundStatus = "active" | "settled";
 
+/**
+ * "practice" is Blackjack's own free mode (lib/server/blackjack-service.ts),
+ * not a rung on the shared stakes ladder -- it is layered on here rather than
+ * added to lib/game/tiers.ts, which the real-money poker lobby also reads.
+ */
+export type BlackjackRoundTier = StakesTier | "practice";
+
 export interface StoredBlackjackRound {
   id: string;
   profileId: string;
   version: number;
   status: BlackjackRoundStatus;
-  tier: StakesTier;
+  tier: BlackjackRoundTier;
   baseStake: number;
   round: BlackjackRound;
 }
@@ -68,7 +75,7 @@ function fromRow(row: RoundRow): StoredBlackjackRound {
     profileId: String(row.profile_id),
     version: Number(row.version),
     status: String(row.status) as BlackjackRoundStatus,
-    tier: String(row.tier) as StakesTier,
+    tier: String(row.tier) as BlackjackRoundTier,
     baseStake: Number(row.base_stake),
     round: row.state as BlackjackRound,
   };
@@ -111,7 +118,7 @@ export async function getActiveBlackjackRound(profileId: string): Promise<Stored
  */
 export async function createBlackjackRound(input: {
   profileId: string;
-  tier: StakesTier;
+  tier: BlackjackRoundTier;
   baseStake: number;
   round: BlackjackRound;
 }): Promise<StoredBlackjackRound> {

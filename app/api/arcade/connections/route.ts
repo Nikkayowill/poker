@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import {
   readConnectionsPuzzle,
   startConnectionsPuzzle,
@@ -7,6 +8,9 @@ import {
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
+
+/** `wager` is optional and defaults to 0 (free) -- an empty POST body is still a valid open. */
+const startSchema = z.object({ wager: z.number().int().min(0).optional() });
 
 export const runtime = "nodejs";
 
@@ -49,9 +53,17 @@ export async function POST(request: NextRequest) {
         token,
       );
     }
+    const parsed = startSchema.safeParse(await request.json().catch(() => ({})));
+    if (!parsed.success) {
+      return withRequestSessionCookie(
+        request,
+        NextResponse.json({ error: "That is not a wager." }, { status: 400 }),
+        token,
+      );
+    }
     return withRequestSessionCookie(
       request,
-      NextResponse.json(await startConnectionsPuzzle(token)),
+      NextResponse.json(await startConnectionsPuzzle(token, parsed.data.wager ?? 0)),
       token,
     );
   } catch (error) {

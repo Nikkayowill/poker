@@ -19,18 +19,19 @@ import {
   getPuzzleRound,
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
-import { connectionsDailyBonusMultiplier } from "@/lib/arcade/ante-up-connections";
+import { MIN_ANTE_UP_WAGER, anteUpConnectionsPayout, connectionsDailyBonusMultiplier } from "@/lib/arcade/ante-up-connections";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
 import { creditDailyBonus } from "./daily-puzzle-bonus";
 import { applyMissionEvent } from "./mission-store";
-import { ensureProfile } from "./profile-store";
+import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
+import { awardWager } from "./progression-store";
 
 /**
  * Everything between a Connections request and the board.
  *
- * The shape is word-stack-service.ts's, and the one rule that governs both is
- * restated rather than referenced because breaking it silently ruins the
+ * The shape is word-stack-service.ts's, and the rules that govern both are
+ * restated rather than referenced because breaking one silently ruins the
  * feature for everyone rather than for one player:
  *
  *   **The groups never leave this file.**
@@ -44,16 +45,29 @@ import { ensureProfile } from "./profile-store";
  * redaction lives in toConnectionsSnapshot; this file's job is to make sure
  * every path out to the browser goes through it.
  *
- * No Gold moves here, so the casino services' three ordering rules do not
- * apply. The day rule does: one board per player per UTC day, enforced by the
- * store's unique index rather than by a check here.
+ * The day rule: one board per player per UTC day, enforced by the store's
+ * unique index rather than by a check here. **A wager does not relax this**,
+ * same explicit call as Word Stack's (2026-08-21, see word-stack-service.ts's
+ * header for the full reasoning) -- Connections keeps its once-a-day limit no
+ * matter how it is played; a wager attaches to that one attempt.
+ *
+ * Money now moves here when wagered, following the same three rules
+ * word-stack-service.ts restates: debit before the row exists (refund on a
+ * failed insert), credit only after the version-guarded settle write is
+ * confirmed, and a wager replaces the free path's daily bonus rather than
+ * stacking with it.
  */
 
 export const CONNECTIONS_GAME = "connections";
 
+/** The stored round, plus the wager it was opened with. Zero for the free daily play. */
+export interface StoredConnectionsRound extends ConnectionsRound {
+  wager: number;
+}
+
 export interface ConnectionsView {
   /** Null when the player has not opened today's board yet. */
-  round: ConnectionsSnapshot | null;
+  round: (ConnectionsSnapshot & { wager: number; payout: number }) | null;
   profile: PlayerProfile;
   day: string;
   puzzleNumber: number;
@@ -68,13 +82,14 @@ export class ConnectionsRequestError extends ArcadeRequestError<
   readonly name = "ConnectionsRequestError";
 }
 
-type StoredConnections = StoredPuzzleRound<ConnectionsRound>;
+type StoredConnections = StoredPuzzleRound<StoredConnectionsRound>;
 
 function today(now = new Date()) {
   const day = puzzleDay(now);
   return { day, number: puzzleNumber(day), msUntilNext: msUntilNextPuzzle(now) };
 }
 
+/** The base redacted snapshot, no wager/payout -- what error payloads carry. */
 function snapshot(stored: StoredConnections): ConnectionsSnapshot {
   return toConnectionsSnapshot(stored.round, {
     day: stored.day,
@@ -89,7 +104,13 @@ function view(
   clock: ReturnType<typeof today>,
 ): ConnectionsView {
   return {
-    round: stored ? snapshot(stored) : null,
+    round: stored
+      ? {
+          ...snapshot(stored),
+          wager: stored.round.wager,
+          payout: anteUpConnectionsPayout({ wager: stored.round.wager, puzzle: stored.round }),
+        }
+      : null,
     profile,
     day: clock.day,
     puzzleNumber: clock.number,
@@ -101,35 +122,58 @@ function view(
 export async function readConnectionsPuzzle(token: string): Promise<ConnectionsView> {
   const profile = await ensureProfile(token);
   const clock = today();
-  const stored = await getPuzzleRound<ConnectionsRound>(profile.id, CONNECTIONS_GAME, clock.day);
+  const stored = await getPuzzleRound<StoredConnectionsRound>(profile.id, CONNECTIONS_GAME, clock.day);
   return view(stored, profile, clock);
 }
 
 /**
- * Opens today's board, or hands back the one already in progress -- including
- * a finished one. A completed attempt resumes rather than re-deals, for the
- * same reason it does at Word Stack: replaying a board you have already solved
- * would make the shared grid a lie.
+ * Opens today's board at a wager (0 for the free play this has always been),
+ * or hands back the one already in progress -- including a finished one. A
+ * completed attempt resumes rather than re-deals, for the same reason it does
+ * at Word Stack: replaying a board you have already solved would make the
+ * shared grid a lie, and the wager chosen on a resume is ignored -- the one
+ * that opened the row is the one that is live.
+ *
+ * Rule 1: the wager leaves before the row exists, and a row that fails to
+ * persist refunds it.
  */
 export async function startConnectionsPuzzle(
   token: string,
+  wagerInput = 0,
 ): Promise<ConnectionsView & { resumed: boolean }> {
   const profile = await ensureProfile(token);
   const clock = today();
 
-  const existing = await getPuzzleRound<ConnectionsRound>(profile.id, CONNECTIONS_GAME, clock.day);
+  const existing = await getPuzzleRound<StoredConnectionsRound>(profile.id, CONNECTIONS_GAME, clock.day);
   if (existing) return { ...view(existing, profile, clock), resumed: true };
+
+  if (!Number.isInteger(wagerInput) || wagerInput < 0) {
+    throw new ConnectionsRequestError("That is not a wager.", 400);
+  }
+  if (wagerInput > 0 && wagerInput < MIN_ANTE_UP_WAGER) {
+    throw new ConnectionsRequestError(
+      `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`,
+      400,
+    );
+  }
+
+  // Rule 1: the wager leaves first. Null is "cannot afford", not an error --
+  // spendGoldByProfile is the authority.
+  const debited = wagerInput > 0 ? await spendGoldByProfile(profile.id, wagerInput) : profile;
+  if (!debited) {
+    throw new ConnectionsRequestError(`You need ${wagerInput.toLocaleString()} Gold to wager this.`, 400);
+  }
 
   // Same puzzle for everyone on the day (pickDaily), different tile order for
   // each player (randomInt) -- the board is shared, the shuffle is not, and
   // node:crypto's randomInt is used rather than Math.random for the same
   // reason the deck uses it: this is the only randomness the server owns here.
   const puzzle = pickDaily(CONNECTIONS_PUZZLES, clock.day, CONNECTIONS_GAME);
-  const round = startConnectionsRound(puzzle, randomInt);
+  const round: StoredConnectionsRound = { ...startConnectionsRound(puzzle, randomInt), wager: wagerInput };
 
   let stored: StoredConnections;
   try {
-    stored = await createPuzzleRound<ConnectionsRound>({
+    stored = await createPuzzleRound<StoredConnectionsRound>({
       profileId: profile.id,
       game: CONNECTIONS_GAME,
       day: clock.day,
@@ -137,12 +181,15 @@ export async function startConnectionsPuzzle(
       complete: false,
     });
   } catch (error) {
+    if (wagerInput > 0) await creditGoldByProfile(profile.id, wagerInput).catch(() => null);
     if (error instanceof DailyPuzzleAlreadyStarted) {
-      const live = await getPuzzleRound<ConnectionsRound>(profile.id, CONNECTIONS_GAME, clock.day);
+      const live = await getPuzzleRound<StoredConnectionsRound>(profile.id, CONNECTIONS_GAME, clock.day);
       if (live) return { ...view(live, profile, clock), resumed: true };
     }
     throw error;
   }
+
+  if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, new Date()).catch(() => null);
 
   return { ...view(stored, profile, clock), resumed: false };
 }
@@ -170,7 +217,7 @@ export async function playConnectionsGuess(
     );
   }
 
-  const current = await getPuzzleRound<ConnectionsRound>(profile.id, CONNECTIONS_GAME, clock.day);
+  const current = await getPuzzleRound<StoredConnectionsRound>(profile.id, CONNECTIONS_GAME, clock.day);
   if (!current) throw new ConnectionsRequestError("You have not started today's puzzle.", 404);
 
   if (current.version !== input.version) {
@@ -201,11 +248,12 @@ export async function playConnectionsGuess(
     });
   }
 
-  const next = submitConnectionsGuess(current.round, input.selection);
+  const nextPuzzle = submitConnectionsGuess(current.round, input.selection);
+  const next: StoredConnectionsRound = { ...nextPuzzle, wager: current.round.wager };
   const complete = next.status !== "active";
-  const stored = await advancePuzzleRound<ConnectionsRound>(current, next, complete);
+  const stored = await advancePuzzleRound<StoredConnectionsRound>(current, next, complete);
   if (!stored) {
-    const live = await getPuzzleRound<ConnectionsRound>(profile.id, CONNECTIONS_GAME, clock.day);
+    const live = await getPuzzleRound<StoredConnectionsRound>(profile.id, CONNECTIONS_GAME, clock.day);
     throw new ConnectionsRequestError("That board moved on. Here is where it actually stands.", 409, {
       reason: "stale",
       round: live ? snapshot(live) : undefined,
@@ -218,10 +266,24 @@ export async function playConnectionsGuess(
   // throws, so this only costs latency, not reliability.
   if (complete) await applyMissionEvent(profile.id, { kind: "puzzle_completed" });
   if (complete) await applyAchievementEvent(profile.id, { kind: "puzzle_completed" });
-  // The per-game daily bonus -- replaces the retired flat "daily_brain_game"
-  // mission, see lib/server/daily-puzzle-bonus.ts. Pays even on a loss, at
-  // the floor multiplier.
-  if (complete) await creditDailyBonus(profile.id, connectionsDailyBonusMultiplier(next));
+
+  // A wager REPLACES the daily completion bonus, it does not stack with it --
+  // same explicit call as Word Stack's. A win credits wager * multiplier only
+  // after the settle write above is confirmed; a loss credits nothing, the
+  // wager already having left the wallet when the board was opened.
+  if (complete && current.round.wager > 0) {
+    const payout = anteUpConnectionsPayout({ wager: current.round.wager, puzzle: next });
+    if (payout > 0) {
+      await creditGoldByProfile(profile.id, payout).catch((error) => {
+        console.error("connections.wager_payout_credit_failed", { profileId: profile.id, payout, error });
+      });
+    }
+  } else if (complete) {
+    // The per-game daily bonus -- replaces the retired flat "daily_brain_game"
+    // mission, see lib/server/daily-puzzle-bonus.ts. Pays even on a loss, at
+    // the floor multiplier. Only the FREE path earns this.
+    await creditDailyBonus(profile.id, connectionsDailyBonusMultiplier(next));
+  }
 
   return view(stored, profile, clock);
 }

@@ -125,7 +125,11 @@ function settle(round: BlackjackRound, outcome: BlackjackOutcome): BlackjackRoun
         return round.stake;
       case "player-bust":
       case "dealer-win":
-        return -round.stake;
+        // `|| 0` rather than the bare negation: a practice loss negates a
+        // stake of 0, and JS's -0 fails a strict `=== 0`/`toBe(0)` check
+        // even though it is the same number -- `-0 || 0` is the one-line fix
+        // that keeps the loss branch a plain negation for every real stake.
+        return -round.stake || 0;
       case "push":
         return 0;
     }
@@ -161,7 +165,11 @@ function playDealer(round: BlackjackRound): BlackjackRound {
  * player's first card.
  */
 export function startRound({ stake, deck }: { stake: number; deck: Card[] }): BlackjackRound {
-  if (!Number.isFinite(stake) || stake <= 0) throw new Error("A round needs a positive stake.");
+  // A stake of exactly 0 is legal -- it is Blackjack's own practice mode (see
+  // lib/server/blackjack-service.ts). Every payout below scales off `stake`,
+  // so a practice hand settles with netGold 0 on every outcome for free;
+  // nothing negative or non-finite is ever a real stake.
+  if (!Number.isFinite(stake) || stake < 0) throw new Error("A round needs a non-negative stake.");
 
   const round: BlackjackRound = {
     deck: [...deck],
@@ -260,6 +268,12 @@ export function dealerUpCards(round: BlackjackRound): Card[] {
  * natural returns the stake plus the 3:2. Deriving it from netGold rather
  * than re-switching on the outcome means the payout cannot drift away from
  * the number the felt just showed the player.
+ *
+ * A practice hand (stake 0) settles to exactly 0 here on every outcome --
+ * win, loss or push -- since both terms it sums are 0. That is what lets
+ * lib/server/blackjack-service.ts's payOut skip crediting a practice round
+ * without a separate practice check of its own: `payout <= 0` is already
+ * true for every practice outcome.
  */
 export function settlementPayout(round: BlackjackRound): number {
   if (round.phase !== "settled") return 0;

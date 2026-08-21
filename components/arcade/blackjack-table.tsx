@@ -119,6 +119,13 @@ export function BlackjackTable() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [tier, setTier] = useState<StakesTier>("1k");
+  /**
+   * Practice hand: a $0 deal with nothing at risk. Separate boolean rather
+   * than a rung on the tier ladder -- STAKES_TIERS also drives the real-money
+   * poker lobby's buy-in flow, and a free entry there would leak a $0 buy-in
+   * into table selection. Picking a real tier below turns this back off.
+   */
+  const [practice, setPractice] = useState(false);
   const [round, setRound] = useState<BlackjackSnapshot | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -200,7 +207,10 @@ export function BlackjackTable() {
   }, [send]);
 
   const wallet = toArcadeWallet(profile);
-  const stake = TIER_CONFIG[tier].minBuyIn;
+  // Practice deals for $0 -- canCoverStake(0, ...) is always open, same as an
+  // unlimited-Gold wallet, so nothing below needs a separate practice branch
+  // to stay affordable.
+  const stake = practice ? 0 : TIER_CONFIG[tier].minBuyIn;
   // An unloaded wallet is an empty one (toArcadeWallet never fails open), so
   // every gate below is closed for the length of one fetch. That is the right
   // default, but it must not be *worded* as a verdict -- "Not enough Gold"
@@ -209,12 +219,20 @@ export function BlackjackTable() {
   const live = Boolean(round && round.phase !== "settled");
   const actions = round?.legal ?? { hit: false, stand: false, double: false };
   // The opening wager is already debited, so doubling needs one more of it in
-  // the wallet -- not two.
+  // the wallet -- not two. A practice round's baseStake is 0, so this stays
+  // open the same way the deal gate does.
   const canAffordDouble = round ? canCoverStake(round.baseStake, wallet).open : false;
+  // A round's own baseStake, not the live toggle, is what marks a settled
+  // hand as practice -- the toggle can move on before a result is read.
+  const isPracticeRound = round?.baseStake === 0;
+  const outcomeWon = round?.outcome === "player-blackjack"
+    || round?.outcome === "player-win"
+    || round?.outcome === "dealer-bust";
+  const outcomeLost = round?.outcome === "dealer-win" || round?.outcome === "player-bust";
 
   const deal = () => {
     if (!cover.open || busy) return;
-    void send("/api/arcade/blackjack", { tier });
+    void send("/api/arcade/blackjack", practice ? { practice: true } : { tier });
   };
 
   const act = (action: "hit" | "stand" | "double") => {
@@ -320,8 +338,9 @@ export function BlackjackTable() {
       {/* Said once, plainly, rather than buried -- this table stakes real
           Gold, and a player deserves to know that before the first click. */}
       <p className="bj-practice-note">
-        Rounds are dealt on the server and settled against your real balance. Your stake leaves your
-        Gold when the hand is dealt and any winnings are paid when it finishes.
+        {practice
+          ? "Practice hand -- nothing leaves your Gold and nothing is paid out."
+          : "Rounds are dealt on the server and settled against your real balance. Your stake leaves your Gold when the hand is dealt and any winnings are paid when it finishes."}
       </p>
 
       {error && <p className="bj-error" role="alert">{error}</p>}
@@ -414,19 +433,29 @@ export function BlackjackTable() {
               <span
                 className={clsx(
                   "bj-verdict-chip",
-                  round.netGold > 0 && "bj-verdict-win",
-                  round.netGold < 0 && "bj-verdict-loss",
+                  // A practice round's netGold is always 0 (see settlementPayout),
+                  // so the win/loss chip color reads off the outcome itself
+                  // rather than the Gold sign -- true for a real hand too, since
+                  // netGold's sign already agrees with the outcome there.
+                  outcomeWon && "bj-verdict-win",
+                  outcomeLost && "bj-verdict-loss",
                 )}
               >
                 {outcomeLabel(round.outcome)}
                 <em>
-                  {round.netGold > 0 ? `+${round.netGold.toLocaleString()}`
-                    : round.netGold < 0 ? round.netGold.toLocaleString()
-                      : "Stake returned"}
+                  {isPracticeRound
+                    ? (outcomeLost ? "Practice round -- nothing lost" : "Practice round -- no Gold at stake")
+                    : round.netGold > 0 ? `+${round.netGold.toLocaleString()}`
+                      : round.netGold < 0 ? round.netGold.toLocaleString()
+                        : "Stake returned"}
                 </em>
               </span>
             )
-            : <span className="bj-verdict-idle">{round ? "Your move" : "Pick a stake and deal"}</span>}
+            : (
+              <span className="bj-verdict-idle">
+                {round ? "Your move" : practice ? "Practice hand -- nothing at stake" : "Pick a stake and deal"}
+              </span>
+            )}
         </div>
 
         <Hand
@@ -448,23 +477,38 @@ export function BlackjackTable() {
       </section>
 
       <section className="bj-controls">
-        <div className="bj-stakes" role="group" aria-label="Stake">
-          {STAKES_TIERS.map((entry) => {
-            const affordable = canCoverStake(TIER_CONFIG[entry].minBuyIn, wallet).open;
-            return (
-              <button
-                key={entry}
-                type="button"
-                className={clsx("bj-stake", entry === tier && "bj-stake-on")}
-                // Locked mid-round: the wager is already committed.
-                disabled={live || busy || !loaded || !affordable}
-                title={!loaded || affordable ? undefined : "More Gold needed for this stake"}
-                onClick={() => { selectSound(); setTier(entry); }}
-              >
-                {TIER_CONFIG[entry].label}
-              </button>
-            );
-          })}
+        <div className="bj-stake-row">
+          <div className={clsx("bj-stakes", practice && "bj-stakes-dim")} role="group" aria-label="Stake">
+            {STAKES_TIERS.map((entry) => {
+              const affordable = canCoverStake(TIER_CONFIG[entry].minBuyIn, wallet).open;
+              return (
+                <button
+                  key={entry}
+                  type="button"
+                  className={clsx("bj-stake", entry === tier && !practice && "bj-stake-on")}
+                  // Locked mid-round: the wager is already committed.
+                  disabled={live || busy || !loaded || !affordable}
+                  title={!loaded || affordable ? undefined : "More Gold needed for this stake"}
+                  // Picking a real tier is how a player leaves practice mode --
+                  // there is no separate "confirm" step.
+                  onClick={() => { selectSound(); setPractice(false); setTier(entry); }}
+                >
+                  {TIER_CONFIG[entry].label}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            className={clsx("bj-practice-toggle", practice && "bj-practice-toggle-on")}
+            aria-pressed={practice}
+            // Locked mid-round, same as the tier row -- the wager (or lack of
+            // one) is already committed.
+            disabled={live || busy || !loaded}
+            onClick={() => { selectSound(); setPractice((value) => !value); }}
+          >
+            Practice hand (Free)
+          </button>
         </div>
 
         <div className="bj-actions">
@@ -504,7 +548,7 @@ export function BlackjackTable() {
                     ? "Dealing…"
                     : !cover.open
                       ? "Not enough Gold"
-                      : round ? "Deal again" : `Deal · ${stake.toLocaleString()}`}
+                      : round ? "Deal again" : practice ? "Deal · Free" : `Deal · ${stake.toLocaleString()}`}
               </button>
             )}
         </div>

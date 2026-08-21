@@ -19,20 +19,18 @@ import {
   getPuzzleRound,
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
-import { wordStackDailyBonusMultiplier } from "@/lib/arcade/ante-up-word-stack";
+import { MIN_ANTE_UP_WAGER, anteUpWordStackPayout, wordStackDailyBonusMultiplier } from "@/lib/arcade/ante-up-word-stack";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
 import { creditDailyBonus } from "./daily-puzzle-bonus";
 import { applyMissionEvent } from "./mission-store";
-import { ensureProfile } from "./profile-store";
+import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
+import { awardWager } from "./progression-store";
 
 /**
  * Everything between a Word Stack request and the board.
  *
- * No Gold moves here, so the three ordering rules that govern
- * blackjack-service.ts do not apply -- there is no stake
- * to debit before a round exists and no payout to fire exactly once. What
- * replaces them is one rule of its own, and it is the whole game:
+ * The rule that always applied still does, restated rather than weakened:
  *
  *   **The answer never leaves this file.**
  *
@@ -48,14 +46,41 @@ import { ensureProfile } from "./profile-store";
  * The second rule is the day. One board per player per UTC day, enforced by
  * the store's unique index rather than by a check here -- see
  * daily-puzzle-store.ts for why finishing must block a new attempt just as
- * firmly as playing does.
+ * firmly as playing does. **A wager does not relax this** -- Kayo's explicit
+ * call (2026-08-21) was that Word Stack keeps its once-a-day limit no matter
+ * how it is played, unlike Sudoku/Memory Match which lost their daily gate
+ * entirely the same day. A wager just attaches to that one attempt instead of
+ * unlocking a second, separately-repeatable game.
+ *
+ * ## Money now moves here, and the ordering rules apply
+ *
+ * A wager is optional -- the player picks it before opening today's board, 0
+ * meaning the free daily play this game has always been. When wagered:
+ *
+ *   1. The wager leaves the wallet before the board's row exists
+ *      (startWordStackPuzzle below); a row that fails to persist refunds it.
+ *   2. A payout is credited only after the version-guarded settle write
+ *      (advancePuzzleRound) is confirmed -- a lost race must never pay.
+ *   3. Settlement is a single credit, never a second debit: a win pays
+ *      wager * multiplier (anteUpWordStackPayout), a loss pays nothing because
+ *      the wager is already spent.
+ *
+ * **A wager replaces the free path's daily completion bonus, it does not stack
+ * with it** -- Kayo's explicit call. Free play still earns creditDailyBonus
+ * exactly as it always has; a wagered attempt earns the wager's own payout
+ * instead.
  */
 
 export const WORD_STACK_GAME = "word-stack";
 
+/** The stored round, plus the wager it was opened with. Zero for the free daily play. */
+export interface StoredWordStackRound extends WordStackRound {
+  wager: number;
+}
+
 export interface WordStackView {
   /** Null when the player has not opened today's board yet. */
-  round: WordStackSnapshot | null;
+  round: (WordStackSnapshot & { wager: number; payout: number }) | null;
   profile: PlayerProfile;
   day: string;
   puzzleNumber: number;
@@ -74,7 +99,7 @@ export class WordStackRequestError extends ArcadeRequestError<
   readonly name = "WordStackRequestError";
 }
 
-type StoredWordStack = StoredPuzzleRound<WordStackRound>;
+type StoredWordStack = StoredPuzzleRound<StoredWordStackRound>;
 
 /** Everything a request needs to know about "today", resolved once per call. */
 function today(now = new Date()) {
@@ -82,6 +107,7 @@ function today(now = new Date()) {
   return { day, number: puzzleNumber(day), msUntilNext: msUntilNextPuzzle(now) };
 }
 
+/** The base redacted snapshot, no wager/payout -- what error payloads carry. */
 function snapshot(stored: StoredWordStack): WordStackSnapshot {
   return toWordStackSnapshot(stored.round, {
     day: stored.day,
@@ -96,7 +122,13 @@ function view(
   clock: ReturnType<typeof today>,
 ): WordStackView {
   return {
-    round: stored ? snapshot(stored) : null,
+    round: stored
+      ? {
+          ...snapshot(stored),
+          wager: stored.round.wager,
+          payout: anteUpWordStackPayout({ wager: stored.round.wager, word: stored.round }),
+        }
+      : null,
     profile,
     day: clock.day,
     puzzleNumber: clock.number,
@@ -115,34 +147,65 @@ function view(
 export async function readWordStackPuzzle(token: string): Promise<WordStackView> {
   const profile = await ensureProfile(token);
   const clock = today();
-  const stored = await getPuzzleRound<WordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
+  const stored = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
   return view(stored, profile, clock);
 }
 
 /**
- * Opens today's board, or hands back the one already in progress.
+ * Opens today's board at a wager (0 for the free play this has always been),
+ * or hands back the one already in progress.
  *
  * A refresh, a second tab or a back-button is a resume, not a new board --
  * and here that is stricter than the casino games' version of the same rule:
  * a finished attempt resumes too. The player gets their completed grid back,
  * not a fresh word. Replaying a word you have already been shown would make
- * the share grid a lie.
+ * the share grid a lie. **The wager chosen on a resume is ignored** -- the
+ * one that opened the row is the one that is live; a second open cannot
+ * change what is already staked.
+ *
+ * Rule 1 of the money-ordering rules restated at the top of this file: the
+ * wager leaves before the row exists, and a row that fails to persist
+ * refunds it.
  */
-export async function startWordStackPuzzle(token: string): Promise<WordStackView & { resumed: boolean }> {
+export async function startWordStackPuzzle(
+  token: string,
+  wagerInput = 0,
+): Promise<WordStackView & { resumed: boolean }> {
   const profile = await ensureProfile(token);
   const clock = today();
 
-  const existing = await getPuzzleRound<WordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
+  const existing = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
   if (existing) return { ...view(existing, profile, clock), resumed: true };
+
+  if (!Number.isInteger(wagerInput) || wagerInput < 0) {
+    throw new WordStackRequestError("That is not a wager.", 400);
+  }
+  if (wagerInput > 0 && wagerInput < MIN_ANTE_UP_WAGER) {
+    throw new WordStackRequestError(
+      `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`,
+      400,
+    );
+  }
+
+  // Rule 1: the wager leaves first. Null is "cannot afford", not an error --
+  // spendGoldByProfile is the authority.
+  const debited = wagerInput > 0 ? await spendGoldByProfile(profile.id, wagerInput) : profile;
+  if (!debited) {
+    throw new WordStackRequestError(`You need ${wagerInput.toLocaleString()} Gold to wager this.`, 400);
+  }
 
   // The answer is chosen here and nowhere else. pickDaily walks the pool, so
   // every player asking on the same UTC day gets the same word -- which is the
-  // entire premise of a shareable result.
-  const round = startWordStackRound(pickDaily(WORD_STACK_ANSWERS, clock.day, WORD_STACK_GAME));
+  // entire premise of a shareable result. Every player's wager is their own;
+  // the word itself never depends on it.
+  const round: StoredWordStackRound = {
+    ...startWordStackRound(pickDaily(WORD_STACK_ANSWERS, clock.day, WORD_STACK_GAME)),
+    wager: wagerInput,
+  };
 
   let stored: StoredWordStack;
   try {
-    stored = await createPuzzleRound<WordStackRound>({
+    stored = await createPuzzleRound<StoredWordStackRound>({
       profileId: profile.id,
       game: WORD_STACK_GAME,
       day: clock.day,
@@ -150,13 +213,19 @@ export async function startWordStackPuzzle(token: string): Promise<WordStackView
       complete: false,
     });
   } catch (error) {
+    // The row never came into existence, so the player must not have paid for it.
+    if (wagerInput > 0) await creditGoldByProfile(profile.id, wagerInput).catch(() => null);
     if (error instanceof DailyPuzzleAlreadyStarted) {
       // Lost a race with another tab. The board that won is the real one.
-      const live = await getPuzzleRound<WordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
+      const live = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
       if (live) return { ...view(live, profile, clock), resumed: true };
     }
     throw error;
   }
+
+  // Only a real wager earns XP -- nothing was risked on a free attempt, same
+  // reasoning ante-up-service.ts's openAnteUpAttempt gives.
+  if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, new Date()).catch(() => null);
 
   return { ...view(stored, profile, clock), resumed: false };
 }
@@ -186,7 +255,7 @@ export async function playWordStackGuess(
     );
   }
 
-  const current = await getPuzzleRound<WordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
+  const current = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
   if (!current) throw new WordStackRequestError("You have not started today's puzzle.", 404);
 
   if (current.version !== input.version) {
@@ -215,12 +284,13 @@ export async function playWordStackGuess(
     });
   }
 
-  const next = submitWordStackGuess(current.round, input.guess);
+  const nextWord = submitWordStackGuess(current.round, input.guess);
+  const next: StoredWordStackRound = { ...nextWord, wager: current.round.wager };
   const complete = next.status !== "active";
-  const stored = await advancePuzzleRound<WordStackRound>(current, next, complete);
+  const stored = await advancePuzzleRound<StoredWordStackRound>(current, next, complete);
   if (!stored) {
     // A lost race did not happen. Return the board that did.
-    const live = await getPuzzleRound<WordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
+    const live = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
     throw new WordStackRequestError("That board moved on. Here is where it actually stands.", 409, {
       reason: "stale",
       round: live ? snapshot(live) : undefined,
@@ -234,10 +304,24 @@ export async function playWordStackGuess(
   // out. applyMissionEvent never throws, so this only costs latency.
   if (complete) await applyMissionEvent(profile.id, { kind: "puzzle_completed" });
   if (complete) await applyAchievementEvent(profile.id, { kind: "puzzle_completed" });
-  // The per-game daily bonus -- replaces the retired flat "daily_brain_game"
-  // mission, see lib/server/daily-puzzle-bonus.ts. Pays even on a loss, at
-  // the floor multiplier.
-  if (complete) await creditDailyBonus(profile.id, wordStackDailyBonusMultiplier(next));
+
+  // A wager REPLACES the daily completion bonus, it does not stack with it --
+  // Kayo's explicit call. Rule 2/3: a win credits wager * multiplier only
+  // after the settle write above is confirmed; a loss credits nothing, the
+  // wager already having left the wallet when the board was opened.
+  if (complete && current.round.wager > 0) {
+    const payout = anteUpWordStackPayout({ wager: current.round.wager, word: next });
+    if (payout > 0) {
+      await creditGoldByProfile(profile.id, payout).catch((error) => {
+        console.error("word-stack.wager_payout_credit_failed", { profileId: profile.id, payout, error });
+      });
+    }
+  } else if (complete) {
+    // The per-game daily bonus -- replaces the retired flat "daily_brain_game"
+    // mission, see lib/server/daily-puzzle-bonus.ts. Pays even on a loss, at
+    // the floor multiplier. Only the FREE path earns this.
+    await creditDailyBonus(profile.id, wordStackDailyBonusMultiplier(next));
+  }
 
   return view(stored, profile, clock);
 }

@@ -19,6 +19,7 @@ import {
   advanceBlackjackRound,
   createBlackjackRound,
   getActiveBlackjackRound,
+  type BlackjackRoundTier,
   type StoredBlackjackRound,
 } from "./blackjack-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
@@ -48,6 +49,11 @@ import { awardWager } from "./progression-store";
  *   3. The stake having already left the wallet is why settlement is a single
  *      credit of stake + netGold (see settlementPayout) rather than a second
  *      debit on a loss.
+ *
+ * Practice hands (stake 0) are the one deliberate exception to rule 1: there
+ * is nothing to debit, and spendGold/creditGold both throw on a non-positive
+ * amount by design (lib/server/profile-store.ts), so every practice code path
+ * below skips them entirely rather than calling either with 0.
  */
 
 export interface BlackjackView {
@@ -109,31 +115,49 @@ export async function readBlackjackRound(token: string): Promise<BlackjackView> 
 }
 
 /**
- * Opens a round at the tier's stake.
+ * Opens a round at the tier's stake, or a free practice hand.
  *
  * A caller who already has a live round gets it back untouched rather than an
  * error: a refresh, a back-button, or a second tab is a resume, not a second
  * wager, and dealing again would debit twice for one hand.
+ *
+ * Practice is Blackjack's own free mode: a $0 hand with nothing at risk, for
+ * a player who wants to see how a hand plays before staking real Gold on the
+ * tier ladder. It is a Blackjack-only concept on purpose -- lib/game/tiers.ts
+ * stays untouched because the poker lobby's real-money buy-in flow reads the
+ * same STAKES_TIERS tuple, and a $0 rung there would leak a free buy-in into
+ * table selection.
  */
 export async function dealBlackjackRound(
   token: string,
-  tier: StakesTier,
+  input: { tier: StakesTier } | { practice: true },
 ): Promise<BlackjackView & { resumed: boolean }> {
   let profile = await ensureProfile(token);
 
   const existing = await getActiveBlackjackRound(profile.id);
   if (existing) return { ...view(existing, profile), resumed: true };
 
-  const stake = TIER_CONFIG[tier].minBuyIn;
-  if (!profile.unlimitedGold && profile.goldBalance < stake) {
+  let tier: BlackjackRoundTier;
+  let stake: number;
+  if ("practice" in input) {
+    tier = "practice";
+    stake = 0;
+  } else {
+    tier = input.tier;
+    stake = TIER_CONFIG[input.tier].minBuyIn;
+  }
+
+  if (stake > 0 && !profile.unlimitedGold && profile.goldBalance < stake) {
     throw new BlackjackRequestError(
       `You need ${stake.toLocaleString()} Gold to sit at this table.`,
       400,
     );
   }
 
-  // Rule 1: the stake leaves first.
-  profile = await spendGold(token, stake);
+  // Rule 1: the stake leaves first -- when there is one. A practice hand has
+  // nothing to debit, so it skips spendGold entirely (see the note on the
+  // money-ordering rules at the top of this file).
+  if (stake > 0) profile = await spendGold(token, stake);
 
   // node:crypto's randomInt, not Math.random. The deck decides real Gold now,
   // and it is dealt here rather than in the browser precisely so its
@@ -146,7 +170,7 @@ export async function dealBlackjackRound(
   } catch (error) {
     // The hand never came into existence, so the player must not have paid
     // for it. Same make-them-whole shape as app/api/games/route.ts.
-    profile = await creditGold(token, stake).catch(() => profile);
+    if (stake > 0) profile = await creditGold(token, stake).catch(() => profile);
     if (error instanceof ActiveBlackjackRoundExists) {
       // Two deals raced and the other one won. Theirs is the real round.
       const live = await getActiveBlackjackRound(profile.id);
@@ -158,16 +182,23 @@ export async function dealBlackjackRound(
 
   // A natural settles inside dealRound, so the round can be over before the
   // player has done anything. The insert is the once-only event that guards
-  // this credit, the way the version bump guards the others.
+  // this credit, the way the version bump guards the others. payOut already
+  // skips crediting when settlementPayout is <= 0 -- which every practice
+  // outcome is, since a $0 stake settles to netGold 0 on a win, a loss or a
+  // push alike (see settlementPayout's own note) -- so there is no separate
+  // practice check to add here.
   if (stored.status === "settled") profile = await payOut(token, stored, profile);
 
   // Progression is keyed to the wager, and the wager is real from here on: the
   // insert above succeeded, so this cannot credit XP for a hand that was rolled
-  // back. Awaited rather than fired and forgotten so a milestone payout is in
-  // the balance this response carries; awardWager swallows its own failures, so
-  // a progression outage cannot fail a dealt hand.
-  const award = await awardWager(profile.id, token, stake);
-  if (award?.profile) profile = award.profile;
+  // back. Only a real wager earns XP -- nothing was risked on a practice hand.
+  // Awaited rather than fired and forgotten so a milestone payout is in the
+  // balance this response carries; awardWager swallows its own failures, so a
+  // progression outage cannot fail a dealt hand.
+  if (stake > 0) {
+    const award = await awardWager(profile.id, token, stake);
+    if (award?.profile) profile = award.profile;
+  }
 
   return { ...view(stored, profile), resumed: false };
 }
@@ -210,8 +241,10 @@ export async function actOnBlackjackRound(
   // Doubling stakes the opening wager a second time, so it is charged before
   // the card is drawn -- and it is legal only on the opening two cards, which
   // is why the extra is exactly baseStake and not some fraction of `stake`.
+  // A practice hand's baseStake is 0, so there is nothing to charge -- same
+  // "skip spendGold rather than call it with 0" guard dealBlackjackRound uses.
   let doubleCharge = 0;
-  if (input.action === "double") {
+  if (input.action === "double" && current.baseStake > 0) {
     if (!profile.unlimitedGold && profile.goldBalance < current.baseStake) {
       throw new BlackjackRequestError(
         "Not enough Gold to double this hand.",

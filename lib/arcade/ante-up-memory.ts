@@ -1,12 +1,16 @@
 /**
- * Ante Up: Memory Match -- a solo skill wager, and the daily bonus's scoring.
+ * Memory Match -- a solo skill wager, or free practice, any time.
  *
- * Wager Gold, clear a fresh board (never the shared daily layout), cash out a
- * multiple of the wager if you clear it inside the turn cap. Same shape as
- * ante-up-word-stack.ts/ante-up-connections.ts -- see ante-up-word-stack.ts's
- * header for the reasoning this mirrors.
+ * Wager Gold, clear a fresh board, cash out a multiple of the wager if you
+ * clear it inside the turn cap. Same shape as ante-up-word-stack.ts's header
+ * described before that file was trimmed down to scoring-only -- Memory kept
+ * its full engine because, unlike Word Stack and Connections, it never had a
+ * daily identity worth protecting (no shared board, no shareable grid), so
+ * there was nothing to keep separate. /games/memory renders this directly,
+ * unlimited, no daily gate -- see lib/arcade/ante-up.ts's header for the
+ * 2026-08-21 history that applies here too.
  *
- * ## The one thing this file adds that the other two do not
+ * ## The one thing this file adds that Word Stack/Connections do not
  *
  * Memory Match has no natural loss condition -- lib/arcade/puzzles/memory.ts's
  * board always eventually clears, given enough turns. Word Stack and
@@ -14,9 +18,10 @@
  * wager's forfeit on; Memory does not, so wagering on it as-is would be
  * risk-free. `ANTE_UP_MEMORY_MAX_TURNS` is the invented failure condition: a
  * wager attempt that exceeds it forfeits, same as running out of guesses
- * does at the other two games. This applies to WAGERED attempts only -- the
- * shared daily board and free practice attempts stay untimed and
- * turn-uncapped, exactly as they are today.
+ * does at the other two games. The cap applies whether or not the attempt is
+ * wagered -- it is this game's actual challenge, not merely a wager's risk
+ * gate, so a free attempt can still "run out of turns" the same as a wagered
+ * one; only the payout is gated on wager > 0.
  */
 
 import {
@@ -50,15 +55,6 @@ function wagerMultiplierForTurns(turns: number): number {
   if (turns <= 13) return 2.5;
   if (turns <= 16) return 1.5;
   return 1.2; // 17-20: a real win, just not a fast one -- ANTE_UP_MEMORY_MAX_TURNS forfeits anything slower.
-}
-
-/** Always-pays multiplier for the shared daily board's completion bonus -- Memory's daily mode has no loss to floor against. */
-function dailyBonusMultiplierForTurns(turns: number): number {
-  if (turns <= MEMORY_PAIRS) return 3.0;
-  if (turns <= 10) return 2.0;
-  if (turns <= 13) return 1.4;
-  if (turns <= 16) return 1.1;
-  return 1.0;
 }
 
 export type AnteUpMemoryStatus = "active" | "won" | "lost";
@@ -111,16 +107,6 @@ export function resignAnteUpMemory(attempt: AnteUpMemoryAttempt): AnteUpMemoryAt
 export function anteUpMemoryPayout(attempt: Pick<AnteUpMemoryAttempt, "wager" | "board">): number {
   if (attempt.board.status !== "solved") return 0;
   return Math.round(attempt.wager * wagerMultiplierForTurns(attempt.board.turns));
-}
-
-/**
- * What the shared daily board's completion bonus pays, as a multiplier on
- * DAILY_BONUS_BASE (lib/server/daily-puzzle-bonus.ts). Only call this once
- * `round.status === "solved"` -- unlike Word Stack/Connections, Memory's
- * daily mode has no loss condition to floor against.
- */
-export function memoryDailyBonusMultiplier(round: Pick<MemoryRound, "turns">): number {
-  return dailyBonusMultiplierForTurns(round.turns);
 }
 
 /**

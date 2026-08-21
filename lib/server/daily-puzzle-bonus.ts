@@ -1,9 +1,8 @@
 import "server-only";
-import { DailyPuzzleAlreadyStarted, createPuzzleRound } from "./daily-puzzle-store";
 import { creditGoldByProfile } from "./profile-store";
 
 /**
- * The per-game daily bonus: Gold for a brain game's first completion each
+ * The per-game daily bonus: Gold for a brain game's free-play completion each
  * day, scaled by how well it was played.
  *
  * Replaces the flat "Complete one brain game" mission (300 Gold, once/day,
@@ -15,6 +14,18 @@ import { creditGoldByProfile } from "./profile-store";
  * A LOST daily attempt still pays the floor amount (1.0x) -- confirmed with
  * the product owner: the old mission paid on any completion, win or lose, and
  * this keeps that. Only the multiplier on top is skill-scored.
+ *
+ * As of 2026-08-21 this only covers Word Stack and Connections -- the two
+ * games that kept a real once-a-day identity (a shared daily word/puzzle).
+ * Sudoku and Memory Match lost their daily gate the same day (see
+ * lib/arcade/ante-up.ts's header) and pay entirely through their own wager
+ * mechanic now, with no separate daily bonus; `claimSudokuDailyBonus`, the
+ * per-day idempotency gate this file used to export for Sudoku specifically,
+ * is gone along with the daily mode it existed for.
+ *
+ * A wager REPLACES this bonus rather than stacking with it -- see
+ * word-stack-service.ts/connections-service.ts, both of which only call
+ * `creditDailyBonus` on the free (wager === 0) path.
  */
 export const DAILY_BONUS_BASE = 300;
 
@@ -32,28 +43,5 @@ export async function creditDailyBonus(profileId: string, multiplier: number): P
     await creditGoldByProfile(profileId, payout);
   } catch (error) {
     console.error("daily-puzzle-bonus.credit_failed", { profileId, payout, error });
-  }
-}
-
-/**
- * Sudoku's daily bonus is claimed once per day TOTAL, not once per
- * difficulty -- the merged Ante Up floor names "Sudoku" as one row, even
- * though four separate `sudoku-{difficulty}` daily_puzzle_rounds exist
- * underneath it (see sudoku-service.ts's sudokuGameId).
- *
- * Reuses daily-puzzle-store.ts's own idempotency mechanism as the claim gate,
- * rather than a new table: a tiny marker round under a shared `sudoku-bonus`
- * game id, guarded by the same (profile, game, day) unique index every other
- * daily puzzle already relies on. Returns true the first time this is called
- * for a player on a given day (the caller should credit), false on every
- * later difficulty finished the same day (already claimed, skip).
- */
-export async function claimSudokuDailyBonus(profileId: string, day: string): Promise<boolean> {
-  try {
-    await createPuzzleRound({ profileId, game: "sudoku-bonus", day, round: {}, complete: true });
-    return true;
-  } catch (error) {
-    if (error instanceof DailyPuzzleAlreadyStarted) return false;
-    throw error;
   }
 }

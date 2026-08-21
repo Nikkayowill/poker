@@ -3,7 +3,7 @@
 
     scripts/prepare-seat-art.py [source-dir]      (default: art/seats)
 
-Same idea as scripts/prepare-dealers.py, one level deeper: a player isn't
+Same idea as scripts/prepare-dealer.py, one level deeper: a player isn't
 drawn face-on like the dealer, so each character is a BUCKET OF ANGLES rather
 than one plate. `art/seats/<character>/<angle>.png`, where <angle> is the
 turn away from facing the camera in degrees (0, 20, 40, ...). The seat picks
@@ -28,7 +28,7 @@ WHAT COMES OUT
   - lib/scene/seat-art.generated.ts, listing each character's ids, its
     available angles and its box.
 
-THE KEY IS CONNECTIVITY, NOT COLOUR -- see prepare-dealers.py's note. Same
+THE KEY IS CONNECTIVITY, NOT COLOUR -- see prepare-dealer.py's note. Same
 recipe: flood inward from the border, luma <= 1 only.
 """
 

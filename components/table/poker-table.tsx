@@ -10,7 +10,7 @@ import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
 import { betFlightKind, type BetFlight } from "@/lib/scene/chips/bet-flight";
 import type { ChipMoveKind } from "@/lib/scene/chips/chip-motion";
-import { dealerArtSrc, dealerForHand, dealerSlotBox } from "@/lib/scene/dealer-roster";
+import { DEALER_ART_SRC, dealerSlotBox } from "@/lib/scene/table-dealer";
 import {
   BOARD_CARD_FLOP_OVERLAP_FRACTION,
   BOARD_CARD_REVEAL_GAP_FRACTION,
@@ -191,10 +191,9 @@ const RACETRACK_BOARD_CARD_MAX_PX = 72;
 /**
  * Place the dealer's artwork in the slot the scene projected for it.
  *
- * ONE PLACE, A ROSTER OF PEOPLE TO PUT IN IT, AND NO PER-DEALER NUMBERS: the
- * art is normalised onto a shared box before it ever gets here, so this is the
- * same arithmetic whoever is dealing. `lib/scene/dealer-roster.ts` owns both
- * the slot and the rotation.
+ * ONE PLACE, ONE DEALER, AND NO NUMBERS ABOUT HER: the art is normalised onto
+ * a known box before it ever gets here, so a redraw changes nothing in this
+ * file. `lib/scene/table-dealer.ts` owns the slot.
  *
  * Absolute pixels rather than CSS `calc()`, because the box is solved from the
  * live camera and the numbers behind it live in that module, not in a
@@ -545,11 +544,6 @@ export function PokerTable({
      inert: every rule that reads it is scoped to `.scene-room-racetrack`, and
      the two consumers below both gate on `isRacetrack` as well, so the only
      thing keeping it buys is one less state write on a preference toggle. */
-
-  /* Who is dealing. Derived from the table's own id and hand number rather
-     than held in state, so it survives a remount, agrees with every other
-     client at the table, and can only change between hands. */
-  const dealerId = dealerForHand(game.id, game.handNumber);
 
   /**
    * Character art for each opponent seat on the racetrack table -- the
@@ -1258,27 +1252,20 @@ export function PokerTable({
               <b>BB</b> {game.bigBlind.toLocaleString()}
             </span>
           </div>
-          {/* Whoever is dealing this down, at far centre, over the cloth rather
-              than behind the rail -- every dealer's art puts a hand and a card
-              ON the table, and painting them under it would take exactly that
-              away. Behind every seat (z-index 3, below the seats' own 4-and-up)
-              because they are the furthest thing at the table, and behind the
-              board for the same reason. */}
+          {/* The dealer, at far centre, over the cloth rather than behind the
+              rail -- her art puts her hands ON the table, and painting them
+              under it would take exactly that away. Behind every seat (z-index
+              3, below the seats' own 4-and-up) because she is the furthest
+              thing at the table, and behind the board for the same reason. */}
           {isRacetrack && racetrackLayout && (
             /* A plain <img>, not next/image: the box is solved per frame from
                the live camera, so there is no build-time width or height for
-               the optimiser to work from, and these are small already-sized
-               files rather than user content needing a CDN.
-
-               Keyed by dealer so a rotation swaps the element instead of
-               repointing one <img>'s src -- the browser holds the old bitmap
-               up until the new one decodes, which shows the outgoing dealer
-               stretched to the incoming one's box for a frame. */
+               the optimiser to work from, and this is one small already-sized
+               file rather than user content needing a CDN. */
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              key={dealerId}
               className="racetrack-dealer"
-              src={dealerArtSrc(dealerId)}
+              src={DEALER_ART_SRC}
               alt=""
               aria-hidden="true"
               draggable={false}

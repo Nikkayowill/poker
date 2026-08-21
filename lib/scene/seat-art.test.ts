@@ -2,9 +2,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { HANDS_PER_DOWN } from "./dealer-roster";
 import { SEAT_ART_CHARACTERS } from "./seat-art.generated";
-import { pickSeatArt, seatArtCharacterForSlot, seatArtSrc } from "./seat-art";
+import { HANDS_PER_CAST, pickSeatArt, seatArtCharacterForSlot, seatArtSrc } from "./seat-art";
 
 const publicDir = path.join(process.cwd(), "public");
 
@@ -26,20 +25,20 @@ describe("the seat art roster", () => {
 });
 
 describe("seatArtCharacterForSlot", () => {
-  it("holds one lineup for a whole down, then hands over", () => {
+  it("holds one lineup for a whole cast, then turns it over", () => {
     const first = seatArtCharacterForSlot("table-a", 0, 1);
-    for (let hand = 0; hand < HANDS_PER_DOWN; hand += 1) {
+    for (let hand = 0; hand < HANDS_PER_CAST; hand += 1) {
       expect(seatArtCharacterForSlot("table-a", hand, 1)).toBe(first);
     }
-    expect(seatArtCharacterForSlot("table-a", HANDS_PER_DOWN, 1)).not.toBe(first);
+    expect(seatArtCharacterForSlot("table-a", HANDS_PER_CAST, 1)).not.toBe(first);
   });
 
   /* Seats 2-5 all draw from the same unfiltered roster (no forced angle to
-     narrow the pool -- see the next test), so within one down they should
+     narrow the pool -- see the next test), so within one cast they should
      still never repeat a face. Seat 1 is deliberately excluded here: its
      pool is narrowed to whichever characters have its forced angle, which
      can legitimately collide with a seat drawing from the full roster. */
-  it("seats a different character in every unrestricted opponent slot, within one down", () => {
+  it("seats a different character in every unrestricted opponent slot, within one cast", () => {
     const seen = new Set<string | null>();
     for (let slot = 2; slot <= 5; slot += 1) {
       seen.add(seatArtCharacterForSlot("table-a", 3, slot)?.id ?? null);
@@ -52,7 +51,7 @@ describe("seatArtCharacterForSlot", () => {
      there would draw the character facing the camera dead-on at the one
      seat that most needs to look turned toward the pot. */
   it("never seats a character missing seat 1's forced angle", () => {
-    for (let hand = 0; hand < HANDS_PER_DOWN * 20; hand += HANDS_PER_DOWN) {
+    for (let hand = 0; hand < HANDS_PER_CAST * 20; hand += HANDS_PER_CAST) {
       for (const tableId of ["table-a", "table-b", "table-c", "table-d"]) {
         const character = seatArtCharacterForSlot(tableId, hand, 1);
         expect(character?.angles).toContain(40);

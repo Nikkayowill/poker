@@ -1,8 +1,8 @@
 /**
  * Which character art to draw at a racetrack seat, and where.
  *
- * A dealer always faces the camera dead-on, so `dealer-roster.ts` only ever
- * has one plate per dealer. A PLAYER doesn't -- the five opponent seats sit
+ * The dealer always faces the camera dead-on, so `table-dealer.ts` needs only
+ * the one plate. A PLAYER doesn't -- the five opponent seats sit
  * at five different angles off dead centre (see `seatAnglesDeg` in
  * `table-anchors.ts`), so a character here is a BUCKET of turned plates
  * (`art/seats/<id>/<angle>.png`, built by `scripts/prepare-seat-art.py`) and
@@ -19,7 +19,6 @@
  * the art to draw a reflection CSS already does for free.
  */
 
-import { HANDS_PER_DOWN } from "./dealer-roster";
 import { SEAT_ART_CHARACTERS, type SeatArtCharacter } from "./seat-art.generated";
 
 export type { SeatArtCharacter };
@@ -31,9 +30,9 @@ export function seatArtCharacter(id: string): SeatArtCharacter | null {
 
 /**
  * A stable 32-bit hash of a table id, so different tables do not all seat the
- * same lineup. Same FNV-1a as `dealer-roster.ts`'s own copy -- duplicated
- * rather than imported, matching how this app already keeps that boilerplate
- * (`lib/game/engine.ts`, the arcade puzzle generators) local to each caller.
+ * same lineup. FNV-1a, kept local rather than shared, matching how this app
+ * already keeps that boilerplate (`lib/game/engine.ts`, the arcade puzzle
+ * generators) beside each caller.
  */
 function hashTableId(id: string): number {
   let hash = 0x811c9dc5;
@@ -48,19 +47,19 @@ function hashTableId(id: string): number {
  * Which roster character sits in a given opponent seat.
  *
  * Five characters, five opponent seats (`SEAT_COUNT - 1` at a 6-max table) --
- * so `hashTableId(tableId) + down + slot`, taken mod the roster size, is a
- * full permutation for any one table/down: every opponent seat gets a
+ * so `hashTableId(tableId) + cast + slot`, taken mod the roster size, is a
+ * full permutation for any one table/cast: every opponent seat gets a
  * DIFFERENT character, not the same one five times over. Growing the roster
  * past five needs no change here; some seats would just start repeating less
- * often as the roster grows, the same way `dealerForHand` ages gracefully as
- * `DEALER_IDS` grows.
+ * often as it grows.
  *
- * ROTATES WITH THE DEALER'S OWN DOWN, deliberately sharing `HANDS_PER_DOWN`
- * rather than inventing a separate cadence -- the whole table's cast changes
- * together, not the dealer alone. Pure over `tableId`/`handNumber`/`slot`,
- * all three server-authoritative and already in every snapshot, so every
- * client at the table agrees without a byte crossing the wire for it -- same
- * reasoning as `dealerForHand`.
+ * TURNS OVER EVERY `HANDS_PER_CAST` HANDS. That cadence used to belong to the
+ * dealer -- the table's cast changed when the dealer's down did, and the
+ * constant lived beside the rotation that drove it. There is one dealer now
+ * and she never leaves, so the number moved here, to the only rotation left.
+ * Pure over `tableId`/`handNumber`/`slot`, all three server-authoritative and
+ * already in every snapshot, so every client at the table agrees without a
+ * byte crossing the wire for it.
  *
  * This is still a per-SEAT pick, not a per-PLAYER one: it does not know or
  * care who is actually sitting there, only which chair. Tying it to the
@@ -77,6 +76,15 @@ function hashTableId(id: string): number {
  * override could force for this slot *before* hashing, not after -- falling
  * back to the full roster only if that would leave nothing to pick from.
  */
+/**
+ * How many hands the opponent seats hold their cast before it turns over.
+ *
+ * A whole number of HANDS rather than a duration so the swap can only ever
+ * happen between hands -- a seat whose occupant changes face mid-hand reads as
+ * a glitch, and a clock-based rotation cannot promise it will not.
+ */
+export const HANDS_PER_CAST = 8;
+
 function forcedAnglesForSlot(slot: number): readonly number[] {
   const angles = new Set<number>();
   const mobile = SEAT_ART_OVERRIDES[slot]?.angle;
@@ -94,8 +102,8 @@ export function seatArtCharacterForSlot(tableId: string, handNumber: number, slo
     : SEAT_ART_CHARACTERS.filter((character) => required.every((angle) => character.angles.includes(angle)));
   const pool = eligible.length > 0 ? eligible : SEAT_ART_CHARACTERS;
   const hand = Number.isFinite(handNumber) ? Math.max(0, Math.floor(handNumber)) : 0;
-  const down = Math.floor(hand / HANDS_PER_DOWN);
-  const index = (hashTableId(tableId) + down + slot) % pool.length;
+  const cast = Math.floor(hand / HANDS_PER_CAST);
+  const index = (hashTableId(tableId) + cast + slot) % pool.length;
   return pool[index];
 }
 
@@ -105,7 +113,7 @@ export function seatArtSrc(characterId: string, angle: number): string {
 
 /**
  * A seat's art box, in terms the camera can answer -- the sibling of
- * `DEALER_SLOT` in `dealer-roster.ts`, but NOT the same shape, and that
+ * `DEALER_SLOT` in `table-dealer.ts`, but NOT the same shape, and that
  * difference is deliberate.
  *
  * The dealer has exactly one place at the table, so `DEALER_SLOT.height`

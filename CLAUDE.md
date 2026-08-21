@@ -473,20 +473,17 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   a two-way control by construction, so the three-up grid is overridden under
   `.buyin-renderer` rather than generalised.
 - **The dealer** sits at far centre, drawn OVER the cloth rather than behind the rail —
-  the art puts a hand and a card on the table and painting it under removes exactly that.
-  z-index 3: above the canvas, below every seat. There is a **rotation** of dealers, one
-  at a time: `dealerForHand(tableId, handNumber)` in `lib/scene/dealer-roster.ts`, pure
-  over two server-authoritative fields so every client at a table agrees without anything
-  crossing the wire, and changing only between hands (`HANDS_PER_DOWN`).
-- **Adding a dealer must never need a number.** Drop a plate in `art/dealers/<id>.png`,
-  run `scripts/prepare-dealers.py`; it keys, normalises and regenerates
-  `public/table2d5/dealers/*.webp` plus `lib/scene/dealer-art.generated.ts`. Normalising
-  is what makes one slot serve everybody: each plate is scaled so its crown-to-hands
-  height fills a shared box and centred on the alpha-weighted middle of its head band, so
-  the app holds ONE placement (`DEALER_SLOT`) instead of per-dealer landmarks. The plate
-  must be framed head-to-hands running off the bottom edge — that framing IS the contract,
-  and a per-dealer offset appearing in the roster means a plate is wrong, not the code.
-  The shared box is recomputed across the whole bucket per run, so every file is rewritten.
+  the art puts hands on the table and painting it under removes exactly that. z-index 3:
+  above the canvas, below every seat. See the single-dealer entry dated 2026-08-21 below
+  for who she is and what replaced the rotation that used to live here.
+- **Redrawing the dealer must never need a number.** Drop a plate in `art/dealers/`, run
+  `scripts/prepare-dealer.py`; it keys, normalises and regenerates
+  `public/table2d5/dealer.webp` plus `lib/scene/dealer-art.generated.ts`. Normalising is
+  what lets the app hold ONE placement (`DEALER_SLOT`) instead of per-plate landmarks: the
+  plate is scaled so its crown-to-hands height fills a known box and centred on the
+  alpha-weighted middle of its head band. The plate must be framed head-to-hands running
+  off the bottom edge — that framing IS the contract, and an offset appearing in
+  `table-dealer.ts` means the plate is wrong, not the code.
 - Placement anchors to the top of the HAIR, not the measured skull — `fitCamera` reserves
   its top margin against head points and hair is what occupies it; anchoring the skull
   clips a ponytail or a pair of ears and lands the hands on the rail instead of the cloth.
@@ -524,6 +521,43 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   every frame, until its real rendered footprint clears the live screen-space gap to the pot —
   a fixed CSS margin can't do that job because the gap between the board and pot anchors changes
   with every camera fit, not just with screen width.
+### One dealer, everywhere on the 2.5D table: Claira with Finn and Loki (2026-08-21)
+- Kayo supplied a portrait of his girlfriend holding both dogs and asked for her as "the sole
+  dealer person," with the rotation "cut out completely." Scoped mid-pass to **the 2.5D table
+  only** — Blackjack's own dealers (`lib/arcade/dealer.ts`, `dealer-scene.ts`, `dealer-stage.tsx`,
+  `public/dealer/{loki,finn}.webp`) are deliberately untouched, so the app currently has two
+  different dealer identities on two different surfaces. That is a known, chosen split, not drift.
+  Extending her to Blackjack is the obvious next step if it is ever wanted.
+- The rotation is **deleted, not reduced to a roster of one**: `dealerForHand`, `HANDS_PER_DOWN`,
+  `DEALER_IDS` and the table-id hash are gone, along with `lib/scene/dealer-roster.ts` itself
+  (now `lib/scene/table-dealer.ts`, holding only `DEALER_SLOT`/`dealerSlotBox` and re-exporting
+  the generated `DEALER_ART_SRC`). A rotation that never rotates is machinery a reader has to
+  disprove. `poker-table.tsx` lost its `key={dealerId}` remount trick with it — there is no
+  outgoing bitmap to cross-fade any more.
+- `HANDS_PER_DOWN` had a **second consumer**: `seat-art.ts` rotated the opponent seats' cast on
+  the dealer's own cadence, deliberately, so the whole table changed together. That rotation is
+  about players, not the dealer, so it stays — the constant moved into `seat-art.ts` as
+  `HANDS_PER_CAST` (same value, 8). Deleting it outright would have silently frozen every
+  opponent seat's character for the life of a table.
+- `scripts/prepare-dealers.py` → `scripts/prepare-dealer.py`, one plate in, one file out
+  (`public/table2d5/dealer.webp`). Its keying **auto-detects plate polarity** from the border
+  ring's median luma, because this plate arrived white-on-JPEG where all three previous ones were
+  RGB-on-black. Dark plates still flood at luma ≤ 1 (unchanged, and still not a knob); a light
+  plate floods at luma ≥ 200, measured rather than guessed — between 245 and 200 the kept-pixel
+  count moves 0.17%, because the illustration carries a hard dark outline all the way round, so
+  the looser threshold puts the cut on the outline instead of on a rim of near-white JPEG ringing.
+  Interior highlights (eye whites, teeth) survive because a border flood can never reach them.
+- The supplied plate already satisfied the framing contract, so **no crop was needed** — crown at
+  y=19, figure running off the bottom edge at 1023. Her hands sit a little above the plate's
+  bottom because the dogs are in her lap, which lands the dogs' paws on the rail line rather than
+  her hands. Verified in a real browser at 1440×900 and 844×390 (landscape phone): scale matches
+  the flanking seats, cutout is clean against the room, art decodes.
+- `public/table2d5/dealer.png` — the pre-rotation single-dealer file that commit 21219be
+  un-deleted and explicitly left for "whoever lands that work" — is finally deleted here, since
+  going back to one dealer is exactly that.
+- Verified: `npx vitest run` 2324/2324 green, clean lint, clean production build, `tsc` clean
+  apart from the pre-existing `safe-area.spec.ts` failure.
+
 ### The avatar collection and the racetrack seat-art roster became one system (2026-08-17)
 - Seat-art roster grown to 11 characters. `character6`–`character11` joined `character1`–`character5`
   in `lib/scene/seat-art.ts`'s bucket, built from a single 6-up grid sheet per angle

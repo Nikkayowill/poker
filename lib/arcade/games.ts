@@ -54,22 +54,38 @@ export type ArcadeGameId =
   | "checkers-duel"
   | "trivia-showdown"
   | "word-race"
-  | "cribbage-table"
-  | "ante-up-sudoku";
+  | "cribbage-table";
 
 /**
- * `casino` stakes Gold against the house on a chance outcome; `puzzle` is a
- * once-a-day free round; `duel` stakes Gold against another PLAYER in a
- * skill/social match, winner takes the pot -- see lib/pvp/; `wager` stakes
- * Gold against your OWN performance -- beat a timed challenge or forfeit the
- * wager, see lib/arcade/ante-up.ts. `wager` is not `casino` wearing a
- * different name: nothing here is decided by odds the house sets, only by
- * whether the challenge gets beaten, which is the same "skill, not chance"
- * line that got the pure-chance games cut in the first place. The split is
- * what decides whether a row is wallet-gated at all and how its "Play"
- * button behaves (deal immediately vs. open a challenge lobby vs. open a
- * wager step), so it is a field rather than something inferred from
- * entryCost being zero.
+ * `casino` stakes Gold against the house on a chance outcome; `duel` stakes
+ * Gold against another PLAYER in a skill/social match, winner takes the pot
+ * -- see lib/pvp/; `wager` stakes Gold against your OWN performance -- beat a
+ * challenge or forfeit the wager, see lib/arcade/ante-up*.ts. `wager` is not
+ * `casino` wearing a different name: nothing here is decided by odds the
+ * house sets, only by whether the challenge gets beaten, which is the same
+ * "skill, not chance" line that got the pure-chance games cut in the first
+ * place. The split is what decides whether a row is wallet-gated at all and
+ * how its "Play" button behaves (deal immediately vs. open a challenge lobby
+ * vs. open a wager step), so it is a field rather than something inferred
+ * from entryCost being zero.
+ *
+ * `puzzle` is unused as of 2026-08-21 -- see that date's note below -- but
+ * kept as a type value (and `splitArcadeFloor`/`arcade-floor.tsx` keep their
+ * "Free today" branch, which the empty-bucket guard already hides at zero
+ * code cost) in case a genuinely free-only puzzle is added later.
+ *
+ * ## 2026-08-21: the four brain games merged into one Ante Up section
+ *
+ * Word Stack, Connections, Sudoku and Memory Match were `kind: "puzzle"`
+ * (free-only) with a separate standalone `ante-up-sudoku` wager row beside
+ * them -- the split Kayo flagged as confusing ("I still see free to play...
+ * it was supposed to allow players to wager"). All four are `kind: "wager"`
+ * now: each keeps its existing free daily route as the one entry point (a
+ * completed daily play earns a skill-scored Gold bonus, see
+ * lib/server/daily-puzzle-bonus.ts), and each page surfaces its own "Ante
+ * Up" wager mode once that day's puzzle is done. The standalone
+ * `ante-up-sudoku` row is gone -- Sudoku's wager mode is reached through the
+ * merged `daily-sudoku` row instead of a second catalog entry.
  */
 export type ArcadeGameKind = "casino" | "puzzle" | "duel" | "wager";
 
@@ -132,11 +148,12 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     id: "daily-word-stack",
     name: "Daily Word Stack",
     // Accurate to the mechanic: one word a day, shared by everyone, which is
-    // what makes the emoji grid worth posting. A blurb promising something the
-    // board does not do is a promise broken on the click -- see this file's
-    // own header for the row that learned that the hard way.
-    blurb: "Five letters, six guesses, one a day",
-    kind: "puzzle",
+    // what makes the emoji grid worth posting -- that stays true for this
+    // free first play. A blurb promising something the board does not do is
+    // a promise broken on the click -- see this file's own header for the
+    // row that learned that the hard way.
+    blurb: "One free daily puzzle, then wager Gold",
+    kind: "wager",
     entryCost: 0,
     status: "live",
     href: "/games/word-stack",
@@ -144,8 +161,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "connections",
     name: "Connections",
-    blurb: "Find the four hidden groups",
-    kind: "puzzle",
+    blurb: "One free daily puzzle, then wager Gold",
+    kind: "wager",
     entryCost: 0,
     status: "live",
     href: "/games/connections",
@@ -153,8 +170,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "daily-sudoku",
     name: "Daily Sudoku",
-    blurb: "One grid a day, four difficulties",
-    kind: "puzzle",
+    blurb: "One free daily puzzle, then wager Gold",
+    kind: "wager",
     entryCost: 0,
     status: "live",
     href: "/games/sudoku",
@@ -162,8 +179,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "memory-match",
     name: "Memory Match",
-    blurb: "Pair the card backs against the clock",
-    kind: "puzzle",
+    blurb: "One free daily puzzle, then wager Gold",
+    kind: "wager",
     entryCost: 0,
     status: "live",
     href: "/games/memory",
@@ -221,19 +238,6 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     status: "live",
     href: "/games/cribbage",
   },
-  // ---- Ante Up: a solo skill wager against the clock, not another player
-  // and not the house's fixed odds -- see lib/arcade/ante-up.ts. entryCost is
-  // 0 because a wager row's floor IS free: practice costs nothing, and
-  // naming any wager at all is what the player opts into on the page itself.
-  {
-    id: "ante-up-sudoku",
-    name: "Ante Up: Sudoku",
-    blurb: "Beat the clock, cash out up to 10x",
-    kind: "wager",
-    entryCost: 0,
-    status: "live",
-    href: "/games/ante-up-sudoku",
-  },
 ];
 
 /**
@@ -262,7 +266,14 @@ export function arcadeEntryLabel(game: ArcadeGame): string {
   // A puzzle's zero is "there is nothing to wager here"; a wager row's zero
   // is "you get to choose" -- the same number means opposite things, so it
   // needs two different sentences rather than one that is wrong for either.
-  return game.kind === "wager" ? "Free to play" : "Free daily";
+  //
+  // A bare "Free to play" on a wager row reads as "nothing is actually
+  // wagered here", which is backwards for every row in this bucket now that
+  // it holds the four brain games (2026-08-21) -- each leads with a free
+  // daily play and then offers a real wager, and the old wording is what
+  // made that free daily play look like the whole game. See this file's own
+  // 2026-08-21 note above.
+  return game.kind === "wager" ? "Free daily · wager after" : "Free daily";
 }
 
 /**

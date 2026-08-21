@@ -10,7 +10,7 @@ import {
 } from "./ante-up-service";
 import { __resetAnteUpAttemptsForTest, getActiveAnteUpAttempt } from "./ante-up-store";
 import { adjustGold, ensureProfile } from "./profile-store";
-import { ANTE_UP_TIERS } from "@/lib/arcade/ante-up";
+import { ANTE_UP_TIERS, type AnteUpAttempt } from "@/lib/arcade/ante-up";
 
 /**
  * The Ante Up money contract, in memory mode.
@@ -36,7 +36,7 @@ async function balance(token: string): Promise<number> {
 
 /** Drives a real attempt to a win by reading the true solution straight off the store. */
 async function solveActiveAttempt(token: string, profileId: string) {
-  let stored = await getActiveAnteUpAttempt(profileId);
+  let stored = await getActiveAnteUpAttempt<AnteUpAttempt>(profileId, "sudoku");
   if (!stored) throw new Error("no active attempt");
   let version = stored.version;
 
@@ -49,7 +49,7 @@ async function solveActiveAttempt(token: string, profileId: string) {
     const { attempt } = await fillAnteUpAttempt(token, { version, index, value: digit });
     version = attempt.version;
     if (attempt.status !== "active") return attempt;
-    stored = await getActiveAnteUpAttempt(profileId);
+    stored = await getActiveAnteUpAttempt<AnteUpAttempt>(profileId, "sudoku");
   }
   throw new Error("solved every cell but never won");
 }
@@ -131,7 +131,7 @@ describe("settlement", () => {
     const before = await balance(token);
     await openAnteUpAttempt(token, "expert", 500);
 
-    const stored = await getActiveAnteUpAttempt(id);
+    const stored = await getActiveAnteUpAttempt<AnteUpAttempt>(id, "sudoku");
     const pastDeadline = new Date(Date.parse(stored!.state.expiresAt) + 1000);
     const { attempt } = await readAnteUpAttempt(token, pastDeadline);
 

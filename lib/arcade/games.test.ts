@@ -35,7 +35,21 @@ describe("arcade catalogue", () => {
       "Trivia Showdown",
       "Word Race",
       "Cribbage",
-      "Ante Up: Sudoku",
+    ]);
+  });
+
+  it("merges all four brain games into one Ante Up section, not a separate free section", () => {
+    // 2026-08-21: Word Stack/Connections/Sudoku/Memory Match moved from
+    // kind "puzzle" to kind "wager" -- each keeps its free daily play as the
+    // entry point, but the catalog now expresses that as a wager row rather
+    // than a separate free-only one. See lib/arcade/games.ts's own note.
+    const floor = splitArcadeFloor();
+    expect(floor.free).toHaveLength(0);
+    expect(floor.wagers.map((entry) => entry.id)).toEqual([
+      "daily-word-stack",
+      "connections",
+      "daily-sudoku",
+      "memory-match",
     ]);
   });
 
@@ -127,6 +141,14 @@ describe("labels", () => {
   it("prints a free puzzle as free and a stake with separators", () => {
     expect(arcadeEntryLabel(game({ entryCost: 0 }))).toBe("Free daily");
     expect(arcadeEntryLabel(game({ entryCost: 5000 }))).toBe("5,000");
+  });
+
+  it("tells a zero-cost wager row apart from a zero-cost puzzle row", () => {
+    // The whole reason this label exists as its own function: a bare "Free
+    // to play" on a wager row used to read as "nothing is wagered here",
+    // which is backwards -- see this file's own 2026-08-21 note.
+    expect(arcadeEntryLabel(game({ kind: "wager", entryCost: 0 }))).toBe("Free daily · wager after");
+    expect(arcadeEntryLabel(game({ kind: "puzzle", entryCost: 0 }))).toBe("Free daily");
   });
 
   it("reports unavailability ahead of affordability", () => {

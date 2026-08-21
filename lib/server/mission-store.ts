@@ -33,10 +33,16 @@ import { adminClient } from "./supabase-admin";
 // income specifically, so an active player can climb the stakes ladder
 // without ever buying Gold. Keep this array's numbers matching that
 // migration's UPDATE statements exactly.
+//
+// `daily_brain_game` (300 Gold, once/day across any one puzzle) was retired
+// 2026-08-21 (supabase/migrations/20260821130000_ante_up_unify_brain_games.sql)
+// -- replaced by a per-game skill-scored daily bonus, see
+// lib/server/daily-puzzle-bonus.ts. Left out of this array entirely rather
+// than kept-but-disabled: this array is the memory-mode/test mirror of the
+// live catalog, which already excludes it via `enabled = false`.
 const DEFAULT_DEFINITIONS: MissionDefinition[] = [
   { code: "daily_play_hands", cadence: "daily", metric: "poker_hands_played", target: 5, rewardGold: 450, dedupeDaily: false, title: "Play five poker hands", description: "Sit in and see five hands to showdown or fold.", sortOrder: 10 },
   { code: "daily_win_duels", cadence: "daily", metric: "duels_won", target: 3, rewardGold: 450, dedupeDaily: false, title: "Win three duels", description: "Win three PvP duels — any game.", sortOrder: 20 },
-  { code: "daily_brain_game", cadence: "daily", metric: "puzzles_completed", target: 1, rewardGold: 300, dedupeDaily: false, title: "Complete one brain game", description: "Finish a Word Stack, Sudoku, Connections or Memory round.", sortOrder: 30 },
   { code: "daily_multiplayer", cadence: "daily", metric: "multiplayer_hands_played", target: 1, rewardGold: 450, dedupeDaily: false, title: "Play with real players", description: "Play a poker hand at a table with another real player.", sortOrder: 40 },
   { code: "weekly_win_duels", cadence: "weekly", metric: "duels_won", target: 10, rewardGold: 3000, dedupeDaily: false, title: "Win ten duels", description: "Win ten PvP duels this week.", sortOrder: 10 },
   { code: "weekly_active_days", cadence: "weekly", metric: "active_day", target: 5, rewardGold: 3600, dedupeDaily: true, title: "Show up five days", description: "Play something on five separate days this week.", sortOrder: 20 },

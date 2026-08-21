@@ -16,7 +16,10 @@ WHAT A SOURCE PLATE HAS TO BE
   - The SAME turn convention in every character's bucket: increasing angle
     turns the face toward screen-LEFT (matching the first character's own
     turnaround). A character shot turning the other way mirrors backwards at
-    every seat it's placed at.
+    every seat it's placed at -- it ends up looking away from the pot rather
+    than at it. Normalise it on the way IN (slice-seat-sheet.py --mirror, or
+    flip the plates yourself) rather than teaching the app two conventions;
+    character13-21 arrived turning screen-right and were flipped this way.
   - RGB on a solid black plate, or already cut out with real alpha.
 
 WHAT COMES OUT

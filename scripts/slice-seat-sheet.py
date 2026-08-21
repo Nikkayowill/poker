@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cut a supplied turnaround SHEET into the per-angle plates prepare-seat-art.py eats.
 
-    scripts/slice-seat-sheet.py <sheet.jpg|png> <character-id> [angle,angle,...]
+    scripts/slice-seat-sheet.py [--mirror] <sheet.jpg|png> <character-id> [angle,angle,...]
 
 The characters arrive as one image holding the whole turnaround side by side on
 a black plate, usually with a caption above and below each panel ("ANGLE 20
@@ -23,6 +23,17 @@ WHAT IT DOES
     see the seat/dealer scripts' own notes.
   - Drops every stray island but the figure. JPEG ringing across a gutter
     leaves specks that would otherwise widen the plate's box for nothing.
+
+WHICH WAY THE SHEET TURNS -- CHECK THIS BEFORE RUNNING
+  The app's whole seat system assumes one turn convention: a rising angle turns
+  the face toward screen-LEFT, so the un-mirrored plate serves a seat sitting to
+  the dealer's right and lib/scene/seat-art.ts flips it with CSS for a seat on
+  the other side. A sheet that turns the other way is not a little bit off -- it
+  faces AWAY from the pot at every seat it lands in, and no code flag fixes that
+  for one character without splitting the convention in two. Open the widest
+  panel: if the chair back is on the figure's screen-LEFT and the profile looks
+  screen-right, pass --mirror and it comes in the right way round. (This is how
+  character13-21 arrived; they were mirrored on 2026-08-21 and rebuilt.)
 
 The output is RGBA with real alpha, which prepare-seat-art.py detects and
 passes through instead of re-keying (its own luma <= 1 flood would not survive
@@ -127,10 +138,12 @@ def key_panel(panel):
 
 
 def main():
-    if len(sys.argv) < 3:
-        raise SystemExit(f"usage: {sys.argv[0]} <sheet> <character-id> [angle,angle,...]")
-    sheet_path, char_id = sys.argv[1], sys.argv[2]
-    angles = [int(a) for a in sys.argv[3].split(",")] if len(sys.argv) > 3 else list(DEFAULT_ANGLES)
+    argv = [a for a in sys.argv[1:] if a != "--mirror"]
+    mirror = len(argv) != len(sys.argv) - 1
+    if len(argv) < 2:
+        raise SystemExit(f"usage: {sys.argv[0]} [--mirror] <sheet> <character-id> [angle,angle,...]")
+    sheet_path, char_id = argv[0], argv[1]
+    angles = [int(a) for a in argv[2].split(",")] if len(argv) > 2 else list(DEFAULT_ANGLES)
 
     sheet = Image.open(sheet_path)
     luma = luma_of(sheet)
@@ -150,7 +163,8 @@ def main():
 
     out_dir = os.path.join(OUT_ROOT, char_id)
     os.makedirs(out_dir, exist_ok=True)
-    print(f"{sheet_path}: figure band rows {top}-{bottom}, {len(columns)} panel(s)")
+    print(f"{sheet_path}: figure band rows {top}-{bottom}, {len(columns)} panel(s)"
+          + (", mirrored to the screen-left turn convention" if mirror else ""))
     for angle, (x0, x1) in zip(angles, columns):
         panel = sheet.crop((
             max(0, x0 - MARGIN),
@@ -159,6 +173,10 @@ def main():
             min(sheet.height, bottom + MARGIN),
         ))
         art, size, strays = key_panel(panel)
+        # Per panel, not per sheet: mirroring the whole sheet would also reverse
+        # the panel ORDER, handing 40deg's plate to the 0deg slot.
+        if mirror:
+            art = art.transpose(Image.FLIP_LEFT_RIGHT)
         dest = os.path.join(out_dir, f"{angle}.png")
         art.save(dest)
         print(f"  {angle:<3d} -> {dest}  {art.size[0]}x{art.size[1]}, {size} px kept, {strays} stray island(s) dropped")

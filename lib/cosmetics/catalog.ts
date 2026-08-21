@@ -162,7 +162,7 @@ const cardBackCosmetics: Cosmetic[] = [
 ];
 
 /**
- * Avatars. The same 12-character roster the racetrack table draws opponent
+ * Avatars. The same 21-character roster the racetrack table draws opponent
  * seats from (`lib/scene/seat-art.ts`'s `SEAT_ART_CHARACTERS`) is what's for
  * sale here -- one id space, so "buy a character" and "that's who's drawn at
  * my seat" are the same claim instead of two systems that happen to agree.
@@ -171,12 +171,25 @@ const cardBackCosmetics: Cosmetic[] = [
  * bucket with no matching entry here throws rather than silently landing on
  * the free-starter default (see `characterAvatarCosmetics`).
  *
- * Two tiers, in order:
+ * Three tiers, in order:
  *  - standard (character1-5): the starter roster. Free from the moment a
  *    profile exists.
- *  - rare (character6-12): Gold-purchasable, ladder pricing.
+ *  - rare (character6-12, then character16-21): Gold-purchasable, one ladder
+ *    running through both blocks. The second block's rungs step by ~20% each
+ *    rather than the first block's ~60%, continuing a ladder that was already
+ *    decelerating on its way up. Holding the ~60% growth past character12
+ *    would have ended around 85,000,000, an order of magnitude clear of every
+ *    other item this catalog sells and of what any faucet stack pays out.
+ *  - signature (character13-15): earned only, on a lifetime hands-won ladder
+ *    checked by `lib/server/avatar-unlocks.ts` after every hand. `price` is
+ *    null on these and must stay null -- Gold buying a shortcut past the
+ *    threshold is exactly what would make the tier mean nothing, the same
+ *    rule `back-riverwood` and the 3D roster's earned characters follow.
  */
-const characterAvatarOffers: Record<string, { name: string; description: string; price: number }> = {
+const characterAvatarOffers: Record<
+  string,
+  { name: string; description: string; price: number | null; unlock?: Cosmetic["unlock"] }
+> = {
   character1: { name: "The Hustler", description: "Makes friends at the table and takes their chips anyway.", price: 0 },
   character2: { name: "Downtown", description: "Grew up two blocks from here. Plays like it.", price: 0 },
   character3: { name: "Northside", description: "Reppin' the block, stacking the felt.", price: 0 },
@@ -189,6 +202,30 @@ const characterAvatarOffers: Record<string, { name: string; description: string;
   character10: { name: "Velvet", description: "Smooth as the felt she's sitting at.", price: 3_200_000 },
   character11: { name: "The Rebel", description: "Plays every hand like she's got somewhere else to be.", price: 5_000_000 },
   character12: { name: "The Closer", description: "By the river, it's already over. She just lets you catch up.", price: 7_500_000 },
+  character13: {
+    name: "The Prodigy",
+    description: "Youngest at the table, last one out of the hand. Earned by winning 250 hands.",
+    price: null,
+    unlock: { handsWon: 250 },
+  },
+  character14: {
+    name: "Cali",
+    description: "Sun-bleached and unbothered, right up until he raises. Earned by winning 750 hands.",
+    price: null,
+    unlock: { handsWon: 750 },
+  },
+  character15: {
+    name: "The Drifter",
+    description: "Rolled in off the highway with a flannel and a plan. Earned by winning 1,500 hands.",
+    price: null,
+    unlock: { handsWon: 1_500 },
+  },
+  character16: { name: "The Heir", description: "Nobody taught him this game. He just watched, and then he sat down.", price: 9_000_000 },
+  character17: { name: "Young Blood", description: "Half your age, twice your patience.", price: 10_500_000 },
+  character18: { name: "Static", description: "Reads the whole table through a curtain of hair and misses nothing.", price: 12_000_000 },
+  character19: { name: "The Architect", description: "Ran the numbers before the flop and hasn't stopped since.", price: 13_500_000 },
+  character20: { name: "Shades", description: "You won't get a read. There's nothing there to read.", price: 15_000_000 },
+  character21: { name: "Marigold", description: "Polite, patient, and holding the nuts more often than she lets on.", price: 17_000_000 },
 };
 
 export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((character) => {
@@ -201,8 +238,12 @@ export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((cha
     slot: "avatar",
     name: offer.name,
     description: offer.description,
-    rarity: offer.price > 0 ? "rare" : "standard",
+    // An earned character reads as `signature`, not as a `standard` starter.
+    // Deriving the tier from `price > 0` alone would put the whole earned
+    // ladder in the free bucket, since both carry no Gold price.
+    rarity: offer.unlock ? "signature" : offer.price ? "rare" : "standard",
     price: offer.price,
+    ...(offer.unlock ? { unlock: offer.unlock } : {}),
   };
 });
 
@@ -317,9 +358,9 @@ export function cardBackArt(id: string | null | undefined): CardBackArtwork {
 /**
  * The backs a bot may be dealt, by seat position.
  *
- * Standard tier only. Bots cycle the *whole* character avatar roster
- * (botAvatarFor, `characterAvatarCosmetics` only -- not the 3D roster)
- * because a face is just a face, but a card back is something a player is
+ * Standard tier only. Bots cycle the character avatar roster minus its
+ * earned tier (botAvatarFor, `botAvatarCosmetics` below) because a face is
+ * mostly just a face, but a card back is something a player is
  * asked to spend 400,000 Gold on, and a table where the bots are holding the
  * rare items devalues the only thing this catalog sells. Restricting them to
  * the free and cheap tier keeps a real player's back the most interesting one
@@ -333,6 +374,18 @@ export function botCardBackFor(position: number): string {
   if (botCardBacks.length === 0) return DEFAULT_CARD_BACK;
   return botCardBacks[position % botCardBacks.length].id;
 }
+
+/**
+ * The faces a bot may wear. The whole character roster except the earned
+ * tier -- for the same reason `botCardBacks` stops at standard, one step
+ * further along. A bot showing up in a character a player is 1,500 won hands
+ * away from is the avatar version of bots holding the rare card backs: it
+ * says the threshold buys you nothing anyone can see. Gold-priced characters
+ * stay in, deliberately -- a bot wearing one advertises the store, and it is
+ * a thing a player can go and get today rather than a claim about their
+ * history at this table.
+ */
+export const botAvatarCosmetics: Cosmetic[] = characterAvatarCosmetics.filter((item) => !item.unlock);
 
 /** Items granted to everyone -- free, so never held in the ownership table. */
 export function isFreeCosmetic(item: Cosmetic): boolean {

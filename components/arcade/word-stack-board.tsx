@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { Delete, CornerDownLeft } from "lucide-react";
+import { Coins, Delete, CornerDownLeft } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
@@ -311,6 +311,9 @@ export function WordStackBoard() {
           {/* The grid, exactly as it will be posted. Showing it is what makes
               the button read as "send this" rather than "send something". */}
           <pre className="puzzle-share-preview" aria-label="Your result">{shareText}</pre>
+          <Link href="/games/ante-up-word-stack" className="puzzle-share-button" onClick={tapSound}>
+            <Coins size={15} aria-hidden="true" /> Ante Up: wager Gold
+          </Link>
           {shareText && (
             <ShareResultButton text={shareText} title={puzzleShareTitle("word-stack", round.puzzleNumber)} />
           )}

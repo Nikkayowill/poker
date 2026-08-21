@@ -1,9 +1,9 @@
-/* Daily Word Stack and Connections.
- *
- * Both pages reuse the Blackjack shell (.bj-shell, .bj-header, .bj-back,
- * .bj-hand-who) directly, so this file holds only what a puzzle genuinely
- * adds: the two boards, the keyboard, and the share summary. It cascades
- * after 23 because it overrides pieces of that shell.
+/* Daily Word Stack and Connections, plus the shared felt override Sudoku and
+ * Memory Match need (see `.hud-felt-plain` below) -- all four reuse the
+ * Blackjack shell (.bj-shell, .bj-header, .bj-back, .bj-hand-who) directly,
+ * so this file holds only what a puzzle genuinely adds: the boards, the
+ * keyboard, the share summary, and that felt fix. It cascades after 23
+ * because it overrides pieces of that shell.
  *
  * The palette is the app's own green felt and brass -- these are not recoloured
  * to match the games they are modelled on. The one place the source palette is
@@ -11,6 +11,40 @@
  * they have to match the emoji in the shared grid, or a player's board and
  * their own posted result disagree.
  */
+
+/* ---- Daily Sudoku and Memory Match's felt ----
+ *
+ * `.bj-felt` is the BLACKJACK ROOM: a two-row grid whose first row is Loki
+ * and Finn's airspace and whose boundary with the second row IS the rail
+ * (23-blackjack.css). Blackjack wraps its cards in `.bj-play` and lands them
+ * in row two, which is correct there and only there. Sudoku and Memory Match
+ * write `.bj-felt hud-felt-plain` and drop their grid, verdict and finished
+ * card straight in with no `.bj-play` wrapper -- without this rule they
+ * inherit that two-row grid by accident, land in the airspace row sized for
+ * dealer art (132-260px, empty on these two pages), and push everything
+ * after it -- including a solved board's Ante Up/share row -- down past the
+ * felt's own `overflow: hidden`, clipped off and effectively gone.
+ *
+ * `.hud-felt-plain` used to live in 28-arcade-hud.css, the shared styling for
+ * the casino machines (roulette, video poker, coin flip, baccarat, hi-lo).
+ * That file was deleted whole when those five games were deleted outright
+ * (2026-08-20) -- correctly, since arcade-hud.tsx/use-casino-machine.ts had
+ * no real importers left, but this one rule inside it did: Sudoku and Memory
+ * Match never stopped referencing the class, so the deletion silently
+ * reintroduced the exact clipping bug this rule was written to fix. Restored
+ * here instead of in a resurrected 28-arcade-hud.css, since its only two
+ * consumers are both puzzles that already live in this file.
+ */
+.hud-felt-plain {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, 1.6vw, 16px);
+  justify-content: center;
+  min-height: 0;
+  /* Grow into the leftover page, never shrink below the content. */
+  flex: 1 0 auto;
+  padding: clamp(20px, 3.2vw, 34px) clamp(14px, 3vw, 30px);
+}
 
 .puzzle-shell {
   align-items: center;

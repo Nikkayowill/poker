@@ -22,8 +22,8 @@ export default function TableLayoutDevPage() {
         seat1/seat2/seat5 are hand-tuned in <code>SEAT_ART_OVERRIDES</code>, both in{" "}
         <code>lib/scene/seat-art.ts</code>. Edit and save to see it update.
       </div>
-      <TableAnchorsDebug frame={DESKTOP_LANDSCAPE_FRAME} label="Desktop landscape (1600x900)" seatArt="character1" />
-      <TableAnchorsDebug frame={MOBILE_LANDSCAPE_FRAME} label="Mobile landscape (844x390)" seatArt="character1" />
+      <TableAnchorsDebug frame={DESKTOP_LANDSCAPE_FRAME} label="Desktop landscape (1600x900)" seatArt="character16" />
+      <TableAnchorsDebug frame={MOBILE_LANDSCAPE_FRAME} label="Mobile landscape (844x390)" seatArt="character16" />
     </div>
   );
 }

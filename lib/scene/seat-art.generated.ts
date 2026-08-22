@@ -17,10 +17,6 @@ export interface SeatArtCharacter {
 }
 
 export const SEAT_ART_CHARACTERS: readonly SeatArtCharacter[] = [
-  { id: "character1", angles: [0, 20, 40] as const, box: { width: 892, height: 1047 } },
-  { id: "character10", angles: [0, 20, 40] as const, box: { width: 606, height: 501 } },
-  { id: "character11", angles: [0, 20, 40] as const, box: { width: 676, height: 508 } },
-  { id: "character12", angles: [0, 20, 40] as const, box: { width: 886, height: 1149 } },
   { id: "character13", angles: [0, 20, 40] as const, box: { width: 334, height: 527 } },
   { id: "character14", angles: [0, 20, 40] as const, box: { width: 328, height: 522 } },
   { id: "character15", angles: [0, 20, 40] as const, box: { width: 324, height: 526 } },
@@ -28,7 +24,6 @@ export const SEAT_ART_CHARACTERS: readonly SeatArtCharacter[] = [
   { id: "character17", angles: [0, 20, 40] as const, box: { width: 334, height: 515 } },
   { id: "character18", angles: [0, 20, 40] as const, box: { width: 326, height: 511 } },
   { id: "character19", angles: [0, 20, 40] as const, box: { width: 354, height: 520 } },
-  { id: "character2", angles: [0, 20, 40] as const, box: { width: 942, height: 1099 } },
   { id: "character20", angles: [0, 20, 40] as const, box: { width: 334, height: 483 } },
   { id: "character21", angles: [0, 20, 40] as const, box: { width: 324, height: 483 } },
   { id: "character22", angles: [0, 20, 40] as const, box: { width: 326, height: 513 } },
@@ -39,13 +34,6 @@ export const SEAT_ART_CHARACTERS: readonly SeatArtCharacter[] = [
   { id: "character27", angles: [0, 20, 40] as const, box: { width: 300, height: 345 } },
   { id: "character28", angles: [0, 20, 40] as const, box: { width: 330, height: 512 } },
   { id: "character29", angles: [0, 20, 40] as const, box: { width: 386, height: 560 } },
-  { id: "character3", angles: [0, 20, 40] as const, box: { width: 794, height: 1120 } },
   { id: "character30", angles: [0, 20, 40] as const, box: { width: 376, height: 503 } },
   { id: "character31", angles: [0, 20, 40] as const, box: { width: 382, height: 559 } },
-  { id: "character4", angles: [0, 20, 40] as const, box: { width: 760, height: 1172 } },
-  { id: "character5", angles: [0, 20, 40] as const, box: { width: 866, height: 1086 } },
-  { id: "character6", angles: [0, 20, 40] as const, box: { width: 530, height: 521 } },
-  { id: "character7", angles: [0, 20, 40] as const, box: { width: 622, height: 520 } },
-  { id: "character8", angles: [0, 20, 40] as const, box: { width: 646, height: 524 } },
-  { id: "character9", angles: [0, 20, 40] as const, box: { width: 580, height: 512 } },
 ] as const;

@@ -35,7 +35,7 @@ describe("cardBackArt", () => {
     // An avatar id is a real cosmetic in the wrong slot -- the one wrong
     // value most likely to be passed here by mistake, since both live in one
     // catalog and a seat carries both.
-    expect(cardBackArt("character1")).toEqual(houseArt);
+    expect(cardBackArt("character16")).toEqual(houseArt);
   });
 });
 

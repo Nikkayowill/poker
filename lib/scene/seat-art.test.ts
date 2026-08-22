@@ -84,10 +84,10 @@ describe("seatArtCharacterForSlot", () => {
 
 describe("pickSeatArt angle contracts", () => {
   it("keeps the normal 20-degree tier separate from the forced 40-degree seat", () => {
-    const character = SEAT_ART_CHARACTERS.find((entry) => entry.id === "character6");
+    const character = SEAT_ART_CHARACTERS.find((entry) => entry.id === "character17");
     expect(character).toBeDefined();
 
-    expect(pickSeatArt(character!, 25).src).toBe(seatArtSrc("character6", 20));
-    expect(pickSeatArt(character!, 25, 40).src).toBe(seatArtSrc("character6", 40));
+    expect(pickSeatArt(character!, 25).src).toBe(seatArtSrc("character17", 20));
+    expect(pickSeatArt(character!, 25, 40).src).toBe(seatArtSrc("character17", 40));
   });
 });

@@ -353,7 +353,13 @@ function drawSeatArt(
   if (fit <= 0) return false;
   const height = (fit / (1 - slot.crown)) * slot.scale;
   const width = height * aspect;
-  const top = crown.y - height * slot.crown + slot.offsetY;
+  // Anchored at the hands (grip), not the crown -- see seatArtBox's own note
+  // in lib/scene/seat-art.ts, which this has to match exactly. Growing the
+  // box from a fixed head anchor pushed a scaled-up seat's hands down past
+  // `grip` by fit * (scale - 1); growing it from a fixed hands anchor keeps
+  // every character's hands on the felt at any scale.
+  const bottom = grip.y + slot.offsetY;
+  const top = bottom - height;
   const boxLeft = crown.x - width / 2;
 
   ctx.save();

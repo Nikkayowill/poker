@@ -245,6 +245,23 @@ export interface SeatArtBox {
  * `SEAT_ART_OVERRIDES` was judged, so a different formula here would make
  * those numbers wrong again the moment they hit a real seat.
  *
+ * ANCHORED AT THE HANDS, NOT THE HEAD. `slot.scale` exists to draw a seat
+ * bigger than its natural head-to-hands fit -- a bigger box has to grow
+ * from somewhere, and growing it from the bottom pushes the hands (and
+ * whatever's resting in them) down past the felt/rail line by
+ * `fit * (scale - 1)`, which is real screen pixels, not a rounding error:
+ * a character whose plate has no transparent margin below their hand (built
+ * flush to the crop edge, same as any other plate -- see
+ * prepare-seat-art.py) visibly sinks an arm into the table the moment scale
+ * departs from 1. Pinning the bottom at `hands` and growing the box upward
+ * instead keeps every character's hands on the felt at any scale; only
+ * their head/hair reaches higher. `offsetY` stays a plain screen-space
+ * nudge on top of that anchor, same as it always was -- it no longer has to
+ * fight a scale-proportional drift to do its job. Verified against seat 1's
+ * own forced-40deg override, the only seat that ever pushes scale/offsetY
+ * this hard (2026-08-22): character16 and character34 both used to submerge
+ * their hand into the rail there; neither does after this change.
+ *
  * MIRRORING HAPPENS AFTER POSITIONING, NOT BY MOVING THE BOX. The box below
  * is placed at its un-mirrored position (`left`); the caller applies
  * `transform: scaleX(-1)` to the image when `mirror` is true, which flips
@@ -265,9 +282,10 @@ export function seatArtBox(
   if (fit <= 0) return null;
   const height = (fit / (1 - slot.crown)) * slot.scale;
   const width = height * aspect;
+  const bottom = hands.y + slot.offsetY;
   return {
     left: head.x - width / 2 + slot.offsetX,
-    top: head.y - height * slot.crown + slot.offsetY,
+    top: bottom - height,
     width,
     height,
     mirror,

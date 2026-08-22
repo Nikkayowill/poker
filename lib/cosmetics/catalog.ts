@@ -162,7 +162,7 @@ const cardBackCosmetics: Cosmetic[] = [
 ];
 
 /**
- * Avatars. The same 21-character roster the racetrack table draws opponent
+ * Avatars. The same 23-character roster the racetrack table draws opponent
  * seats from (`lib/scene/seat-art.ts`'s `SEAT_ART_CHARACTERS`) is what's for
  * sale here -- one id space, so "buy a character" and "that's who's drawn at
  * my seat" are the same claim instead of two systems that happen to agree.
@@ -190,16 +190,18 @@ const cardBackCosmetics: Cosmetic[] = [
  *    moment a profile exists -- one man, one woman, picked as the cheapest
  *    clear-gender survivors when character1-12 were deleted (2026-08-22, see
  *    below). Was character1-5 (five, all standard tier) before that.
- *  - rare (character17-20, character22-31): Gold-purchasable, one ascending
- *    ladder, 80,000 up to 1,380,000 -- rebuilt from scratch the same pass,
- *    decelerating from ~50% a rung down to ~13%. character1-12's deletion
- *    took the entire old free tier and the first (400,000-7,500,000) rare
- *    rung with it, so there was nothing left to keep this ladder's shape
- *    anchored to; character22-31's own rung was already the cheapest thing
- *    left standing (9,000,000) once they were gone, still an unreasonable
- *    floor on Kayo's asked-for cheaper Gold pricing (see stripe.ts's
- *    GOLD_TIERS), so the whole ladder starts over rather than just sliding
- *    the survivors down by a fixed amount.
+ *  - rare (character17-20, character22-35): Gold-purchasable, one ascending
+ *    ladder, 80,000 up to 2,060,000 -- rebuilt from scratch the 2026-08-22
+ *    repricing pass, decelerating from ~50% a rung down to ~9% by the top.
+ *    character1-12's deletion took the entire old free tier and the first
+ *    (400,000-7,500,000) rare rung with it, so there was nothing left to
+ *    keep this ladder's shape anchored to; character22-31's own rung was
+ *    already the cheapest thing left standing (9,000,000) once they were
+ *    gone, still an unreasonable floor on Kayo's asked-for cheaper Gold
+ *    pricing (see stripe.ts's GOLD_TIERS), so the whole ladder starts over
+ *    rather than just sliding the survivors down by a fixed amount.
+ *    character32-35 just continue the same ladder at its existing ~9-12%
+ *    step rather than opening a new block.
  *  - signature (character13-15): earned only, on a lifetime hands-won ladder
  *    checked by `lib/server/avatar-unlocks.ts` after every hand. `price` is
  *    null on these and must stay null -- Gold buying a shortcut past the
@@ -213,11 +215,36 @@ const cardBackCosmetics: Cosmetic[] = [
  * where Kayo asked for only the bottom version, cropped and keyed by hand
  * rather than through slice-seat-sheet.py's usual column splitter, since that
  * sheet's per-row caption text sat inside the figure band and defeated the
- * script's gutter detection. All ten already turned screen-left at 40deg, so
- * none needed --mirror this round. Their `name` is a CHARACTER NAME, not a
+ * script's gutter detection. Their `name` is a CHARACTER NAME, not a
  * gamer tag -- character6-21's underscored handles here read as generated
- * rather than as a roster of characters; not a retroactive rename of those,
- * just where the correction starts.
+ * rather than as a roster of characters (confirmed again by Kayo when
+ * character32-35 landed: the underscored register is for the in-game bot
+ * pool only, so a player feels like they're facing real people -- a store
+ * card is a person's name, not a handle). Not a retroactive rename of
+ * character6-21, just where the correction starts.
+ *
+ * character22-31 were logged as "already turned screen-left at 40deg, so
+ * none needed --mirror" -- that call was wrong for all ten, caught the same
+ * day while slicing character32-35 and confirmed by pixel-checking every
+ * character in the batch against the working character16/17 reference (nose
+ * left, chair/ear right at 40deg): they were shot turning screen-RIGHT, the
+ * same mistake `slice-seat-sheet.py`'s docstring already warns about and the
+ * same one character13-21 needed fixing for on 2026-08-21. Fixed by flipping
+ * the nine already-sliced `art/seats/character22-31/*.png` plates in place
+ * (no re-slicing needed, they were already isolated per-angle) and rebuilding
+ * through prepare-seat-art.py. Nothing here checks facing automatically --
+ * see slice-seat-sheet.py's own note on why not -- so eyeball the widest
+ * panel against a known-good character before trusting a "no --mirror
+ * needed" call on a future batch.
+ *
+ * character32-35 (2026-08-22) arrived as four more Kayo-supplied turnaround
+ * sheets, all turning screen-right like every generated sheet so far, so all
+ * four went through slice-seat-sheet.py --mirror. character33's sheet had no
+ * gutter between its 20deg and 40deg panels (they touch, at a much thinner
+ * seam than the boxed-scene sheets a prior pass had to reject outright), so
+ * the script's automatic column split refused it; that one panel pair was
+ * split by hand at its column-count minimum (not a full re-render) and keyed
+ * with the same flood-fill the script uses.
  *
  * character1-12 deleted the same day (2026-08-22), Kayo's direct call --
  * every original standard-tier character (1-5) and the first rare rung
@@ -267,6 +294,10 @@ const characterAvatarOffers: Record<
   character29: { name: "Sadie Rowan", description: "Followed the game across three states. Never folds first.", price: 1_070_000 },
   character30: { name: "Gunner Zane", description: "Streams every session. Chat calls it a clinic.", price: 1_220_000 },
   character31: { name: "Walt Ironhand", description: "Been playing longer than most of the table's been alive.", price: 1_380_000 },
+  character32: { name: "Margot Delaney", description: "Doesn't blink at a big bet. Barely blinks at all.", price: 1_550_000 },
+  character33: { name: "Dahlia Cross", description: "Bluffs like it's a dare. Usually wins the dare.", price: 1_720_000 },
+  character34: { name: "Vivienne Ashworth", description: "Dressed for a gala, playing like it's rent money.", price: 1_890_000 },
+  character35: { name: "Malik Devon", description: "Too young to drink at this table. Never too young to win it.", price: 2_060_000 },
 };
 
 export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((character) => {

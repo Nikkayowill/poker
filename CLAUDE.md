@@ -44,6 +44,40 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### Seat-art roster grown to 35; character22-31 caught facing the wrong way (2026-08-22)
+- Four more Kayo-supplied turnaround sheets (`character32`-`35`), same
+  `slice-seat-sheet.py` pipeline, all `--mirror`ed (they turn screen-right
+  like every generated sheet has so far). `character33`'s sheet had two
+  panels touching with no gutter — the automatic column splitter refused it,
+  so that one pair was split by hand at the column-count minimum and keyed
+  with the script's own flood-fill, not a full re-render. Priced onto the
+  existing rare-tier ladder (1,550,000-2,060,000, continuing its ~9-12% step
+  rather than opening a new block); named as plain character names, not
+  gamer tags — Kayo's mid-task clarification: the underscored register
+  (`jaxdidthat`, `zay_brooks`, ...) is for the in-game bot pool only, so a
+  seated opponent reads as a real player's handle, and is a *separate* axis
+  from a store card's name, which is a normal name for the character on it.
+- **`character22`-`31` (yesterday's ten-character batch) were actually
+  facing screen-RIGHT, not screen-left as that pass's commit and catalog
+  comment both claimed.** Caught while eyeball-checking today's four new
+  sheets against the established convention: `character16`/`17` (long
+  verified) face screen-left at 40deg the way `lib/scene/seat-art.ts`'s
+  un-mirrored-plate contract requires; `character22` through `character31`
+  all faced screen-right instead — the exact mistake `character13`-`21`
+  needed fixing for on 2026-08-21, recurring because the "already turned
+  screen-left, none needed --mirror" call was eyeballed wrong a second time,
+  not because the pipeline changed. Fixed by flipping the nine already-cut
+  `art/seats/character22-31/*.png` plates in place (no re-slicing) and
+  rebuilding through `prepare-seat-art.py`. **There is still no automated
+  facing check** (see `slice-seat-sheet.py`'s own note on why one heuristic
+  tried and rejected false-positived on three good characters) — verify a
+  new batch's widest panel against `character16`/`17` specifically before
+  trusting a "no mirror needed" call, don't just eyeball the sheet in
+  isolation.
+- Verified: `npx vitest run` 2328/2328 green (catalog's ladder test extended
+  to cover `character32`-`35`), clean lint, clean production build with
+  every route present.
+
 ### Ante Up split back in two: Sudoku/Memory unlimited, Word Stack/Connections keep the daily gate (2026-08-21)
 - Same-day follow-up to the section directly below this one. Kayo's report after that shipped: "still
   not how I want it... choose a wager before the game even starts... no more daily limits EXCEPT for

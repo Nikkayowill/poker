@@ -13,4 +13,4 @@ export const DEALER_ART_SRC = "/table2d5/dealer.webp";
  * drawn size comes from the camera -- but both numbers are kept so a
  * regeneration that changes the box is visible in the diff.
  */
-export const DEALER_BOX = { width: 596, height: 794 } as const;
+export const DEALER_BOX = { width: 306, height: 478 } as const;

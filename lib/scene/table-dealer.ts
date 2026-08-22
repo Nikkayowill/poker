@@ -3,8 +3,9 @@
  *
  * The table has ONE dealer place -- far centre, the cutout a real oval table
  * has instead of a chair (`dealerAnchor()`) -- and now exactly one person in
- * it. Claira, with Finn and Loki, and she is the dealer everywhere: this room
- * and the Blackjack room draw the same file, `DEALER_ART_SRC`.
+ * it. Claira, in house uniform, and she is the only dealer this room has --
+ * `DEALER_ART_SRC` is the one file. (The Blackjack room still draws its own
+ * dealers from `public/dealer/`; the two surfaces are deliberately separate.)
  *
  * THERE WAS A ROTATION HERE AND IT IS GONE. Three plates took the table eight
  * hands at a time, picked by hashing the table id -- `dealerForHand`,

@@ -508,7 +508,7 @@
 
 /* The dealer.
    -------------------------------------------------------------------------
-   One element, one dealer -- Claira, with Finn and Loki.
+   One element, one dealer -- Claira, in house uniform.
    `lib/scene/table-dealer.ts` carries her art's landmarks and positions her
    entirely from JS (`dealerStyle` in poker-table.tsx), so there is nothing
    here but the layer rules. She is a `.table-area` child rather than a
@@ -528,8 +528,8 @@
   user-select: none;
   /* The plate was cut off a solid background and the recovered edge is a pixel
      or two soft; a faint drop shadow under her reads as sitting at the table
-     rather than as a sticker on it, and hides the seam. It matters most on the
-     two dogs in her arms, whose whole silhouette is fur. */
+     rather than as a sticker on it, and hides the seam. It matters most around
+     the hair, where the silhouette is finest. */
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .55));
 }
 

@@ -521,7 +521,7 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   every frame, until its real rendered footprint clears the live screen-space gap to the pot —
   a fixed CSS margin can't do that job because the gap between the board and pot anchors changes
   with every camera fit, not just with screen width.
-### One dealer, everywhere on the 2.5D table: Claira with Finn and Loki (2026-08-21)
+### One dealer on the 2.5D table: Claira (2026-08-21)
 - Kayo supplied a portrait of his girlfriend holding both dogs and asked for her as "the sole
   dealer person," with the rotation "cut out completely." Scoped mid-pass to **the 2.5D table
   only** — Blackjack's own dealers (`lib/arcade/dealer.ts`, `dealer-scene.ts`, `dealer-stage.tsx`,
@@ -547,11 +547,36 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   count moves 0.17%, because the illustration carries a hard dark outline all the way round, so
   the looser threshold puts the cut on the outline instead of on a rim of near-white JPEG ringing.
   Interior highlights (eye whites, teeth) survive because a border flood can never reach them.
-- The supplied plate already satisfied the framing contract, so **no crop was needed** — crown at
-  y=19, figure running off the bottom edge at 1023. Her hands sit a little above the plate's
-  bottom because the dogs are in her lap, which lands the dogs' paws on the rail line rather than
-  her hands. Verified in a real browser at 1440×900 and 844×390 (landscape phone): scale matches
-  the flanking seats, cutout is clean against the room, art decodes.
+- **Two plates were supplied in the same session and the second replaced the first.** The first was
+  her holding both dogs, on a white JPEG plate, 752×1005 of figure. The second — the one that
+  shipped — is a labelled "ANGLE SHEET / front" on a black JPEG plate: her alone in house uniform,
+  no dogs. Both go through the same script; between them they exercise every branch of it, which is
+  why the light-plate path is still tested by hand against the old file before a change lands.
+- Three things the second plate forced into `prepare-dealer.py`, all of them general rather than
+  one-off:
+  - **A dark JPEG plate cannot key at luma ≤ 1.** At that threshold the flood dies in the ringing
+    and the whole sheet comes out opaque. The threshold is now picked by FILE FORMAT, not just
+    polarity: lossless dark stays at ≤ 1 (the old hard-won rule, protecting a black shirt with
+    literal (0,0,0) in it), lossy dark goes to ≤ 6. Same number and same reason as
+    `slice-seat-sheet.py`. Measured: the cut bbox is identical at 4, 6 and 10, so 6 is mid-plateau.
+  - **A labelled sheet is now a valid plate.** The figure is isolated first as the tallest run of
+    non-background rows, so a boxed title above and a caption block below are out-grown rather than
+    located. Without this the alpha bounds span the whole sheet and the dealer ships as a stamp in
+    the middle of a mostly-empty box. No-op on a plain plate.
+  - **It never upscales.** `BOX_HEIGHT` became `BOX_MAX_HEIGHT`, a ceiling. This plate's figure is
+    only 303×478, and blowing it up to the old fixed 794 would ship a bigger, blurrier file with no
+    more detail in it. `DEALER_BOX` is now 306×478.
+- **Resolution is marginal on a large hi-DPI desktop, and that is the art, not the pipeline.**
+  Measured from the running app at DPR 2: 1920×1080 draws her 553 device px tall against a 478px
+  source (0.86× — a slight browser upscale), 1440×900 gives 1.13×, landscape phone 2.09×. If she
+  ever needs to be crisp on a big display, the fix is a sheet whose figure fills more of the frame
+  (or a 2048 render), not a change here.
+- The name badge in the artwork reads **ELENA**, not Claira. Illegible at the size she actually
+  draws (the badge is ~2px there), but it is in the file. Flagged for Kayo, not silently renamed —
+  nothing in code keys off her name, it appears only in comments.
+- Verified in a real browser at 1920×1080, 1440×900 and 844×390 (landscape phone): she sits behind
+  the rail with her hands on the cloth, scale matches the flanking seats, cutout clean against the
+  room.
 - `public/table2d5/dealer.png` — the pre-rotation single-dealer file that commit 21219be
   un-deleted and explicitly left for "whoever lands that work" — is finally deleted here, since
   going back to one dealer is exactly that.

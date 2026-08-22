@@ -186,23 +186,27 @@ const cardBackCosmetics: Cosmetic[] = [
  * player wearing character7 still shows their own name, never "terrelltilts".
  *
  * Three tiers, in order:
- *  - standard (character1-5): the starter roster. Free from the moment a
- *    profile exists.
- *  - rare (character6-12, then character16-31): Gold-purchasable, one ladder
- *    running through all three blocks. The second block's rungs step by ~20%
- *    each rather than the first block's ~60%, continuing a ladder that was
- *    already decelerating on its way up; the third block (character22-31,
- *    2026-08-22) keeps decelerating further, ~10-12% a rung, ending at
- *    45,500,000 -- well clear of every other item this catalog sells without
- *    repeating the first block's ~60% growth, which would have blown past
- *    what any faucet stack pays out. Holding the ~60% growth past character12
- *    would have ended around 85,000,000, an order of magnitude clear of every
- *    other item this catalog sells and of what any faucet stack pays out.
+ *  - standard (character16, character21): the starter roster. Free from the
+ *    moment a profile exists -- one man, one woman, picked as the cheapest
+ *    clear-gender survivors when character1-12 were deleted (2026-08-22, see
+ *    below). Was character1-5 (five, all standard tier) before that.
+ *  - rare (character17-20, character22-31): Gold-purchasable, one ascending
+ *    ladder, 80,000 up to 1,380,000 -- rebuilt from scratch the same pass,
+ *    decelerating from ~50% a rung down to ~13%. character1-12's deletion
+ *    took the entire old free tier and the first (400,000-7,500,000) rare
+ *    rung with it, so there was nothing left to keep this ladder's shape
+ *    anchored to; character22-31's own rung was already the cheapest thing
+ *    left standing (9,000,000) once they were gone, still an unreasonable
+ *    floor on Kayo's asked-for cheaper Gold pricing (see stripe.ts's
+ *    GOLD_TIERS), so the whole ladder starts over rather than just sliding
+ *    the survivors down by a fixed amount.
  *  - signature (character13-15): earned only, on a lifetime hands-won ladder
  *    checked by `lib/server/avatar-unlocks.ts` after every hand. `price` is
  *    null on these and must stay null -- Gold buying a shortcut past the
  *    threshold is exactly what would make the tier mean nothing, the same
  *    rule `back-riverwood` and the 3D roster's earned characters follow.
+ *    Untouched by the 2026-08-22 cull below -- earned status doesn't need
+ *    repricing, there was never a Gold price on these to begin with.
  *
  * character22-31 (2026-08-22) arrived as ten Kayo-supplied turnaround sheets;
  * one (character27) was a two-version sheet ("The Silent Dealer's Guild")
@@ -210,34 +214,25 @@ const cardBackCosmetics: Cosmetic[] = [
  * rather than through slice-seat-sheet.py's usual column splitter, since that
  * sheet's per-row caption text sat inside the figure band and defeated the
  * script's gutter detection. All ten already turned screen-left at 40deg, so
- * none needed --mirror this round.
+ * none needed --mirror this round. Their `name` is a CHARACTER NAME, not a
+ * gamer tag -- character6-21's underscored handles here read as generated
+ * rather than as a roster of characters; not a retroactive rename of those,
+ * just where the correction starts.
  *
- * character22-31's `name` is a CHARACTER NAME, not a gamer tag -- a same-day
- * correction to the block above. Kayo's original "everyone at the table gets
- * a gamer tag" ask (see the bot-pool register in lib/game/engine.ts) was
- * about who's sitting in the chair during a hand; it never meant this list,
- * the label on a store card in the Collection. Shipping character6-21 with
- * underscored handles here read as generated rather than as a roster of
- * characters, and that mistake stays fixed only for character22-31 -- Kayo
- * was explicit this is not a retroactive rename of character1-21, so those
- * keep their existing tags until a separate call says otherwise.
+ * character1-12 deleted the same day (2026-08-22), Kayo's direct call --
+ * every original standard-tier character (1-5) and the first rare rung
+ * (6-12) is gone, art and catalog entry both. `DEFAULT_AVATAR_COSMETIC`
+ * moved off the deleted character1 onto character16; `normalizeEquipped`
+ * already falls back to it for anyone whose stored `avatar2d` no longer
+ * resolves (`cosmeticById` returns null for a deleted id), so an existing
+ * profile that owned or had one of these twelve equipped just lands back on
+ * the new default next render -- no migration needed, confirmed by reading
+ * that fallback path before deleting anything.
  */
 const characterAvatarOffers: Record<
   string,
   { name: string; description: string; price: number | null; unlock?: Cosmetic["unlock"] }
 > = {
-  character1: { name: "deewavy", description: "Makes friends at the table and takes their chips anyway.", price: 0 },
-  character2: { name: "malik_23", description: "Grew up two blocks from here. Plays like it.", price: 0 },
-  character3: { name: "northside_sy", description: "Reppin' the block, stacking the felt.", price: 0 },
-  character4: { name: "nina_folds", description: "Dressed for a boardroom, playing like it's one.", price: 0 },
-  character5: { name: "rafthegoat", description: "Never raises his voice. Never needs to.", price: 0 },
-  character6: { name: "eli_easy", description: "Talks the table into folding better hands.", price: 400_000 },
-  character7: { name: "terrelltilts", description: "Doesn't blink. Doesn't need to.", price: 700_000 },
-  character8: { name: "chasin_aces", description: "Looks like he's never had a bad beat.", price: 1_200_000 },
-  character9: { name: "camiontop", description: "Unreadable, and she likes it that way.", price: 2_000_000 },
-  character10: { name: "simone_smooth", description: "Smooth as the felt she's sitting at.", price: 3_200_000 },
-  character11: { name: "riley_rowdy", description: "Plays every hand like she's got somewhere else to be.", price: 5_000_000 },
-  character12: { name: "viv_thecloser", description: "By the river, it's already over. She just lets you catch up.", price: 7_500_000 },
   character13: {
     name: "amaraa_04",
     description: "Youngest at the table, last one out of the hand. Earned by winning 250 hands.",
@@ -256,22 +251,22 @@ const characterAvatarOffers: Record<
     price: null,
     unlock: { handsWon: 1_500 },
   },
-  character16: { name: "ttv_danpark", description: "Nobody taught him this game. He just watched, and then he sat down.", price: 9_000_000 },
-  character17: { name: "zay_brooks", description: "Half your age, twice your patience.", price: 10_500_000 },
-  character18: { name: "nico_noscope", description: "Reads the whole table through a curtain of hair and misses nothing.", price: 12_000_000 },
-  character19: { name: "kohl_codes", description: "Ran the numbers before the flop and hasn't stopped since.", price: 13_500_000 },
-  character20: { name: "omar_theoracle", description: "You won't get a read. There's nothing there to read.", price: 15_000_000 },
-  character21: { name: "ellie_bee", description: "Polite, patient, and holding the nuts more often than she lets on.", price: 17_000_000 },
-  character22: { name: "Marcus Vale", description: "Wears the chip on his sleeve. Backs it up every time.", price: 19_000_000 },
-  character23: { name: "Milo Winters", description: "Collects more than cards. Reads people the same way.", price: 21_000_000 },
-  character24: { name: "Zoraq", description: "No tells, no eyelids, no chance you're getting a read.", price: 23_500_000 },
-  character25: { name: "Ari Locke", description: "Cracked the seed once, just to see if she could. Doesn't need to now.", price: 26_000_000 },
-  character26: { name: "Adelaide Sinclair", description: "Old money, older instincts. Never raises past what she already knows.", price: 29_000_000 },
-  character27: { name: "Kira Voss", description: "Never says a word behind those glasses. Doesn't have to.", price: 32_500_000 },
-  character28: { name: "Danny Marsh", description: "Plays every session like it's the last one that matters.", price: 35_500_000 },
-  character29: { name: "Sadie Rowan", description: "Followed the game across three states. Never folds first.", price: 39_000_000 },
-  character30: { name: "Gunner Zane", description: "Streams every session. Chat calls it a clinic.", price: 42_000_000 },
-  character31: { name: "Walt Ironhand", description: "Been playing longer than most of the table's been alive.", price: 45_500_000 },
+  character16: { name: "ttv_danpark", description: "Nobody taught him this game. He just watched, and then he sat down.", price: 0 },
+  character17: { name: "zay_brooks", description: "Half your age, twice your patience.", price: 80_000 },
+  character18: { name: "nico_noscope", description: "Reads the whole table through a curtain of hair and misses nothing.", price: 120_000 },
+  character19: { name: "kohl_codes", description: "Ran the numbers before the flop and hasn't stopped since.", price: 170_000 },
+  character20: { name: "omar_theoracle", description: "You won't get a read. There's nothing there to read.", price: 230_000 },
+  character21: { name: "ellie_bee", description: "Polite, patient, and holding the nuts more often than she lets on.", price: 0 },
+  character22: { name: "Marcus Vale", description: "Wears the chip on his sleeve. Backs it up every time.", price: 300_000 },
+  character23: { name: "Milo Winters", description: "Collects more than cards. Reads people the same way.", price: 380_000 },
+  character24: { name: "Zoraq", description: "No tells, no eyelids, no chance you're getting a read.", price: 470_000 },
+  character25: { name: "Ari Locke", description: "Cracked the seed once, just to see if she could. Doesn't need to now.", price: 570_000 },
+  character26: { name: "Adelaide Sinclair", description: "Old money, older instincts. Never raises past what she already knows.", price: 680_000 },
+  character27: { name: "Kira Voss", description: "Never says a word behind those glasses. Doesn't have to.", price: 800_000 },
+  character28: { name: "Danny Marsh", description: "Plays every session like it's the last one that matters.", price: 930_000 },
+  character29: { name: "Sadie Rowan", description: "Followed the game across three states. Never folds first.", price: 1_070_000 },
+  character30: { name: "Gunner Zane", description: "Streams every session. Chat calls it a clinic.", price: 1_220_000 },
+  character31: { name: "Walt Ironhand", description: "Been playing longer than most of the table's been alive.", price: 1_380_000 },
 };
 
 export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((character) => {
@@ -374,7 +369,7 @@ export const avatarCosmetics: Cosmetic[] = [
 
 /** What a brand-new profile has, and falls back to if anything goes missing. */
 export const DEFAULT_CARD_BACK = "back-house";
-export const DEFAULT_AVATAR_COSMETIC = "character1";
+export const DEFAULT_AVATAR_COSMETIC = "character16";
 
 export const cosmetics: Cosmetic[] = [...cardBackCosmetics, ...avatarCosmetics];
 

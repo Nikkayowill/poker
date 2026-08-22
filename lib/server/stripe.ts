@@ -62,7 +62,7 @@ export function isTestPurchaseAllowed(profileId: string): boolean {
 //
 // See lib/legal/documents.ts's gold_disclosure for why this exists again
 // after being pulled: an informed, accepted risk decision, not an
-// oversight. Two tiers only, both one-time, each a live Stripe Price read
+// oversight. Three tiers, all one-time, each a live Stripe Price read
 // at request time the same way the support tiers below are -- a Price's
 // amount can only be changed by creating a new Price, never edited in
 // place, so what Stripe returns is authoritative over anything cached here.
@@ -79,29 +79,40 @@ export interface GoldTierDef {
 }
 
 /**
- * envVar names deliberately reuse the pre-existing vars from the old 4-tier
- * ladder (Kayo never removed them from Vercel when support payments
- * replaced Buy Gold) rather than minting new ones -- STRIPE_REBUY_PRICE_ID
- * now points at a new $2.99 CAD Price (prod_V4ps93p85SZfo0 /
- * price_1U4gD5HrjHRpeZPReMjQYirb, 50k Gold), STRIPE_PRICE_VALUE at the
- * pre-existing $9.99 CAD Price that was already sitting in the account
- * (prod_UyFbT9n1qvgaNF / price_1TyJ6NHrjHRpeZPRtZBjlPb6, 500k Gold here --
- * its old tier_key: "value" Stripe metadata is stale and unused; goldAmount
- * always comes from this array, never from anything stored on the Price).
+ * Repriced cheaper 2026-08-22, Kayo's direct call. STRIPE_REBUY_PRICE_ID now
+ * points at a new $1.99 CAD Price (prod_V4ps93p85SZfo0 /
+ * price_1U7FarHrjHRpeZPRKf3Nw2gz, 20k Gold) on the same Starter Pack
+ * Product the old $2.99/50k Price lived on -- that old Price
+ * (price_1U4gD5HrjHRpeZPReMjQYirb) is deactivated, not deleted, so it stays
+ * on the account's own history. STRIPE_PRICE_VALUE is untouched -- the
+ * $9.99/500k High Roller Price already matched what Kayo asked for, so no
+ * new Price was needed there. The new middle rung is a brand new Product
+ * ("Value Pack", prod_V7Ua9qvg7XR3on) since nothing sat between Starter and
+ * High Roller before -- its env var (STRIPE_PRICE_VALUE_PACK) is new and
+ * needs setting in Vercel before this tier actually appears (listGoldTiers
+ * skips any tier whose env var is unset, same as every tier already did).
  */
 export const GOLD_TIERS: GoldTierDef[] = [
   {
     key: "starter",
     label: "Starter Pack",
     description: "A solid stack to sit down with.",
-    goldAmount: 50000,
+    goldAmount: 20000,
     envVar: "STRIPE_REBUY_PRICE_ID",
     testEnvVar: "STRIPE_TEST_PRICE_STARTER",
   },
   {
+    key: "value_pack",
+    label: "Value Pack",
+    description: "A bigger stack for the table.",
+    goldAmount: 100000,
+    envVar: "STRIPE_PRICE_VALUE_PACK",
+    testEnvVar: "STRIPE_TEST_PRICE_VALUE_PACK",
+  },
+  {
     key: "high_roller",
     label: "High Roller",
-    description: "Ten packs worth, all at once.",
+    description: "Five Value Packs worth, all at once.",
     goldAmount: 500000,
     envVar: "STRIPE_PRICE_VALUE",
     testEnvVar: "STRIPE_TEST_PRICE_VALUE",

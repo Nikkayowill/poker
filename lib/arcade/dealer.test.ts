@@ -37,9 +37,12 @@ describe("dealerLine", () => {
     expect(dealerLine("settled", "player-bust")).not.toBe(dealerLine("settled", "dealer-win"));
   });
 
-  it("names both dogs, in the same register as the bot pool", () => {
-    // Two single first names joined -- the same shape as the poker table's
-    // pool ("Jax", "Maya", "Theo"), not a product name.
+  it("names both dogs as themselves, not as players", () => {
+    // Two single first names joined, not a product name. Deliberately NOT the
+    // register the poker table's bot pool moved to on 2026-08-21 (gamer tags):
+    // these two are Kayo's actual dogs dealing the game, staff rather than
+    // someone you are playing against, and a handle over the dealer's chair
+    // would make them one more seat.
     expect(DEALER_NAME).toMatch(/^[A-Z][a-z]+ & [A-Z][a-z]+$/);
     for (const dog of DEALER_DOGS) expect(DEALER_NAME).toContain(dog.name);
   });

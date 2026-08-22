@@ -171,6 +171,20 @@ const cardBackCosmetics: Cosmetic[] = [
  * bucket with no matching entry here throws rather than silently landing on
  * the free-starter default (see `characterAvatarCosmetics`).
  *
+ * NAMES ARE GAMER TAGS (Kayo's call, 2026-08-21 -- these read "The Hustler",
+ * "Cold Read", "Golden Boy" before it, and briefly read as legal names in
+ * between, which was a misread of the same request). A character is a person
+ * somebody could be playing against, and what a person at an online table has
+ * over their seat is a handle they typed for themselves -- so these are
+ * written the way real tags are: lowercase, a nickname with something stuck to
+ * it, a number, an underscore, occasionally a prefix carried over from another
+ * game. The persona goes in the description; the name is just the handle.
+ *
+ * Same register as `lib/game/engine.ts`'s bot pool, deliberately, but a
+ * SEPARATE list of tags -- nothing maps a character to a bot. These are the
+ * store's labels for a FACE; the bot pool is who is sitting in the chair. A
+ * player wearing character7 still shows their own name, never "terrelltilts".
+ *
  * Three tiers, in order:
  *  - standard (character1-5): the starter roster. Free from the moment a
  *    profile exists.
@@ -190,42 +204,42 @@ const characterAvatarOffers: Record<
   string,
   { name: string; description: string; price: number | null; unlock?: Cosmetic["unlock"] }
 > = {
-  character1: { name: "The Hustler", description: "Makes friends at the table and takes their chips anyway.", price: 0 },
-  character2: { name: "Downtown", description: "Grew up two blocks from here. Plays like it.", price: 0 },
-  character3: { name: "Northside", description: "Reppin' the block, stacking the felt.", price: 0 },
-  character4: { name: "The Professional", description: "Dressed for a boardroom, playing like it's one.", price: 0 },
-  character5: { name: "The Operator", description: "Never raises his voice. Never needs to.", price: 0 },
-  character6: { name: "The Charmer", description: "Talks the table into folding better hands.", price: 400_000 },
-  character7: { name: "Cold Read", description: "Doesn't blink. Doesn't need to.", price: 700_000 },
-  character8: { name: "Golden Boy", description: "Looks like he's never had a bad beat.", price: 1_200_000 },
-  character9: { name: "The Wildcard", description: "Unreadable, and she likes it that way.", price: 2_000_000 },
-  character10: { name: "Velvet", description: "Smooth as the felt she's sitting at.", price: 3_200_000 },
-  character11: { name: "The Rebel", description: "Plays every hand like she's got somewhere else to be.", price: 5_000_000 },
-  character12: { name: "The Closer", description: "By the river, it's already over. She just lets you catch up.", price: 7_500_000 },
+  character1: { name: "deewavy", description: "Makes friends at the table and takes their chips anyway.", price: 0 },
+  character2: { name: "malik_23", description: "Grew up two blocks from here. Plays like it.", price: 0 },
+  character3: { name: "northside_sy", description: "Reppin' the block, stacking the felt.", price: 0 },
+  character4: { name: "nina_folds", description: "Dressed for a boardroom, playing like it's one.", price: 0 },
+  character5: { name: "rafthegoat", description: "Never raises his voice. Never needs to.", price: 0 },
+  character6: { name: "eli_easy", description: "Talks the table into folding better hands.", price: 400_000 },
+  character7: { name: "terrelltilts", description: "Doesn't blink. Doesn't need to.", price: 700_000 },
+  character8: { name: "chasin_aces", description: "Looks like he's never had a bad beat.", price: 1_200_000 },
+  character9: { name: "camiontop", description: "Unreadable, and she likes it that way.", price: 2_000_000 },
+  character10: { name: "simone_smooth", description: "Smooth as the felt she's sitting at.", price: 3_200_000 },
+  character11: { name: "riley_rowdy", description: "Plays every hand like she's got somewhere else to be.", price: 5_000_000 },
+  character12: { name: "viv_thecloser", description: "By the river, it's already over. She just lets you catch up.", price: 7_500_000 },
   character13: {
-    name: "The Prodigy",
+    name: "amaraa_04",
     description: "Youngest at the table, last one out of the hand. Earned by winning 250 hands.",
     price: null,
     unlock: { handsWon: 250 },
   },
   character14: {
-    name: "Cali",
+    name: "jesse_westside",
     description: "Sun-bleached and unbothered, right up until he raises. Earned by winning 750 hands.",
     price: null,
     unlock: { handsWon: 750 },
   },
   character15: {
-    name: "The Drifter",
+    name: "wyatt_wanders",
     description: "Rolled in off the highway with a flannel and a plan. Earned by winning 1,500 hands.",
     price: null,
     unlock: { handsWon: 1_500 },
   },
-  character16: { name: "The Heir", description: "Nobody taught him this game. He just watched, and then he sat down.", price: 9_000_000 },
-  character17: { name: "Young Blood", description: "Half your age, twice your patience.", price: 10_500_000 },
-  character18: { name: "Static", description: "Reads the whole table through a curtain of hair and misses nothing.", price: 12_000_000 },
-  character19: { name: "The Architect", description: "Ran the numbers before the flop and hasn't stopped since.", price: 13_500_000 },
-  character20: { name: "Shades", description: "You won't get a read. There's nothing there to read.", price: 15_000_000 },
-  character21: { name: "Marigold", description: "Polite, patient, and holding the nuts more often than she lets on.", price: 17_000_000 },
+  character16: { name: "ttv_danpark", description: "Nobody taught him this game. He just watched, and then he sat down.", price: 9_000_000 },
+  character17: { name: "zay_brooks", description: "Half your age, twice your patience.", price: 10_500_000 },
+  character18: { name: "nico_noscope", description: "Reads the whole table through a curtain of hair and misses nothing.", price: 12_000_000 },
+  character19: { name: "kohl_codes", description: "Ran the numbers before the flop and hasn't stopped since.", price: 13_500_000 },
+  character20: { name: "omar_theoracle", description: "You won't get a read. There's nothing there to read.", price: 15_000_000 },
+  character21: { name: "ellie_bee", description: "Polite, patient, and holding the nuts more often than she lets on.", price: 17_000_000 },
 };
 
 export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((character) => {

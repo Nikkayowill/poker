@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   advanceTimedTurn,
   applyPlayerAction,
+  BOT_TAGS,
   claimSeat,
   chooseBotAction,
   createGame,
@@ -10,6 +11,7 @@ import {
   expireIdleTurn,
   normalizeGameState,
   preflopHandTier,
+  SEAT_COUNT,
   TURN_TIMEOUT_MS,
   toSnapshot,
   vacateSeat,
@@ -1014,8 +1016,8 @@ describe("multi-human seating", () => {
 describe("giving up a seat", () => {
   /**
    * A vacated seat used to be handed back to the identity that chair started
-   * with -- seat 1 was always Maya. It now draws a fresh one, so a player who
-   * sits for an hour is not watching the same six names cycle. What has to
+   * with -- seat 1 was always the same tag. It now draws a fresh one, so a
+   * player who sits for an hour is not watching six handles cycle. What has to
    * hold is weaker but is the part that matters: a bot takes the seat, it is
    * somebody from the pool, and nobody at the table is wearing that identity
    * twice.
@@ -1042,7 +1044,7 @@ describe("giving up a seat", () => {
     expect(game.seats[0].botIdentity).not.toBeNull();
 
     // No duplicates: drawing an identity per seat without checking the table
-    // is exactly what puts two players called Maya in the same hand.
+    // is exactly what puts two seats wearing the same tag in one hand.
     const identities = game.seats.map((seat) => seat.botIdentity);
     expect(new Set(identities).size).toBe(identities.length);
     expect(new Set(game.seats.map((seat) => seat.name)).size).toBe(game.seats.length);
@@ -1615,5 +1617,38 @@ describe("seat profile ids in the public snapshot", () => {
     // round trip through the store, whatever put it there.
     const normalized = normalizeGameState(tampered);
     expect(normalized.seats.find((seat) => seat.id === bot.id)!.profileId).toBeNull();
+  });
+});
+
+describe("the bot pool's tags", () => {
+  /* Kayo's call, 2026-08-21: the table should read like a room of real people,
+     which means handles somebody typed for themselves rather than a cast of
+     single first names (this pool used to be Jax/Maya/Theo). Pinned here
+     because "these look like NPCs" is a thing only a person notices, and only
+     after the pool has quietly drifted back one well-meaning entry at a time. */
+  it("is written as gamer tags, not first names", () => {
+    for (const tag of BOT_TAGS) {
+      expect(tag, `${tag} is not in tag shape`).toMatch(/^[a-z0-9]+(?:_[a-z0-9]+)*$/);
+    }
+  });
+
+  it("stays inside a nameplate", () => {
+    // A human's own name is capped at 18 by joinTable and shares the plate; a
+    // bot has no such gate, so the pool is the gate.
+    for (const tag of BOT_TAGS) expect(tag.length, tag).toBeLessThanOrEqual(14);
+  });
+
+  it("never seats the same handle twice, and holds more handles than seats", () => {
+    expect(new Set(BOT_TAGS).size).toBe(BOT_TAGS.length);
+    expect(BOT_TAGS.length).toBeGreaterThan(SEAT_COUNT);
+  });
+
+  /* One visible formula across every entry gives the generated feel straight
+     back, however good the individual tags are. This is the cheapest way to
+     say "keep it varied" to whoever adds the next batch. */
+  it("mixes the shapes real tags come in", () => {
+    expect(BOT_TAGS.filter((tag) => tag.includes("_")).length).toBeGreaterThan(3);
+    expect(BOT_TAGS.filter((tag) => !tag.includes("_")).length).toBeGreaterThan(3);
+    expect(BOT_TAGS.filter((tag) => /\d/.test(tag)).length).toBeGreaterThan(1);
   });
 });

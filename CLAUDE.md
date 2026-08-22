@@ -613,6 +613,56 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   running off the bottom edge) is what a sheet has to satisfy; a sheet that doesn't needs
   re-rendering, not a looser key.
 
+### Nine characters turned the wrong way, and the roster took real names (2026-08-21)
+- Kayo: "some are facing the wrong way." `character13`-`character21` — every character that arrived
+  through `slice-seat-sheet.py` — turn toward screen-RIGHT as the angle rises; `character1`-`character12`
+  turn screen-LEFT, which is the convention `prepare-seat-art.py`'s docstring pins and the entire seat
+  system assumes (`pickSeatArt` mirrors only for a seat on the dealer's left, so an un-mirrored plate
+  has to look screen-left). Nine characters were therefore looking AWAY from the pot at every seat.
+- Fixed by normalising the ART, not by branching the app: the 27 source plates in
+  `art/seats/character13`-`21` were flipped horizontally and `prepare-seat-art.py` re-run (whole bucket
+  per character, so a mirrored 0deg plate keeps hair part/watch consistent with its own 20/40). Verified
+  the script is deterministic first — a no-op run before the flip rewrote nothing — so the rebuild's
+  diff is exactly those nine characters, plus ~2px box-width shifts from the head-centre re-rounding.
+  A per-character `facing` flag in `seat-art.generated.ts` was the alternative and was rejected: the
+  script can't detect facing, so the flag would be hand-maintained and silently wrong for the next
+  sheet, and it would teach the app two conventions to serve art that can just be flipped once.
+- `slice-seat-sheet.py` gained `--mirror` (flips each panel AFTER slicing — mirroring the whole sheet
+  would also reverse panel order and file 40deg's plate as 0deg) so the next wrong-turning sheet is
+  normalised on the way in. Both scripts' docstrings now say which way to check and what it looks like.
+- **No automated facing check exists, deliberately.** The obvious heuristic (torso/chair alpha centroid
+  sitting to the right of the head centre on the widest plate) was measured across all 21 and comes out
+  negative for `character3`, `character12` and `character16`, all of which are correct — it would fail
+  three good characters to catch a bad one. Eyeball the widest panel instead: chair back on the right,
+  profile looking left.
+- Same pass, Kayo's second ask: **everyone at the table is named with a gamer tag now, bots included.**
+  First read as "real names" and shipped that way for one round (The Hustler → Andre Cole); Kayo's
+  correction was "real peoples gamer tags... simulate the bots rotating seats to having realistic gamer
+  tags so it feels like theyre playing real people," with their own two handles as the reference. So:
+  - `lib/game/engine.ts`'s `botProfiles` — the pool a seat actually shows — moved off single first
+    names (Jax/Maya/Theo, which read as a cast of NPCs) onto handles: `jaxdidthat`, `maya_ontilt`,
+    `riverrat_rj`, `slowroll_sam`. Renamed IN PLACE and then appended to, never reordered — identity
+    indices are persisted on seats and every live table backfills bots from `position`, so moving an
+    entry would swap the players at every table in flight. Pool grown 18 → 30 the same pass, so a
+    rotating seat is less likely to hand back a tag the player just watched leave.
+  - `initials` was deliberately left alone and is NOT the tag's first two letters (JX for
+    `jaxdidthat`, RV for `riverrat_rj`). It is shorthand for the nickname inside the tag, which is
+    what the avatar circle wants and what a player already associates with that seat.
+  - `characterAvatarOffers` (`lib/cosmetics/catalog.ts`) is tags too, a SEPARATE list — `deewavy`,
+    `malik_23`, `ttv_danpark`. Nothing maps a character to a bot: the catalog names a FACE for the
+    store, the bot pool names who is in the chair, and a player wearing character7 still shows their
+    own name. Tying the two axes was considered and left alone; the engine's own comment calls them
+    deliberately separate and identity indices are persisted.
+  - Blackjack's dealers stay Loki & Finn, real names (`lib/arcade/dealer.test.ts` pins the shape).
+    They're Kayo's dogs dealing the game — staff, not someone you're playing against — and a handle
+    over the dealer's chair would make them one more seat.
+  - Four tests in `engine.test.ts` pin the register: tag shape, ≤14 chars (a human's name is capped at
+    18 and shares the nameplate; the plate crowds before that on a phone), no duplicates, and a MIX of
+    shapes. That last one is the point of the whole ask — one visible formula across every entry
+    ("name_word", 30 times) hands the generated feel straight back however good each tag is.
+- Verified: `npx vitest run` 2334/2334, clean lint, clean production build, `tsc` clean apart from the
+  pre-existing `safe-area.spec.ts` failure.
+
 ### Rewarded-ad faucet (2026-08-11)
 - Wait moved 30s→5min (`REWARDED_AD_DURATION_MS`), grant TTL 10→20min to compensate. New direct
   "Free Gold" row in the lobby player menu (same eligibility threshold as the existing busted-hand

@@ -188,10 +188,14 @@ const cardBackCosmetics: Cosmetic[] = [
  * Three tiers, in order:
  *  - standard (character1-5): the starter roster. Free from the moment a
  *    profile exists.
- *  - rare (character6-12, then character16-21): Gold-purchasable, one ladder
- *    running through both blocks. The second block's rungs step by ~20% each
- *    rather than the first block's ~60%, continuing a ladder that was already
- *    decelerating on its way up. Holding the ~60% growth past character12
+ *  - rare (character6-12, then character16-31): Gold-purchasable, one ladder
+ *    running through all three blocks. The second block's rungs step by ~20%
+ *    each rather than the first block's ~60%, continuing a ladder that was
+ *    already decelerating on its way up; the third block (character22-31,
+ *    2026-08-22) keeps decelerating further, ~10-12% a rung, ending at
+ *    45,500,000 -- well clear of every other item this catalog sells without
+ *    repeating the first block's ~60% growth, which would have blown past
+ *    what any faucet stack pays out. Holding the ~60% growth past character12
  *    would have ended around 85,000,000, an order of magnitude clear of every
  *    other item this catalog sells and of what any faucet stack pays out.
  *  - signature (character13-15): earned only, on a lifetime hands-won ladder
@@ -199,6 +203,24 @@ const cardBackCosmetics: Cosmetic[] = [
  *    null on these and must stay null -- Gold buying a shortcut past the
  *    threshold is exactly what would make the tier mean nothing, the same
  *    rule `back-riverwood` and the 3D roster's earned characters follow.
+ *
+ * character22-31 (2026-08-22) arrived as ten Kayo-supplied turnaround sheets;
+ * one (character27) was a two-version sheet ("The Silent Dealer's Guild")
+ * where Kayo asked for only the bottom version, cropped and keyed by hand
+ * rather than through slice-seat-sheet.py's usual column splitter, since that
+ * sheet's per-row caption text sat inside the figure band and defeated the
+ * script's gutter detection. All ten already turned screen-left at 40deg, so
+ * none needed --mirror this round.
+ *
+ * character22-31's `name` is a CHARACTER NAME, not a gamer tag -- a same-day
+ * correction to the block above. Kayo's original "everyone at the table gets
+ * a gamer tag" ask (see the bot-pool register in lib/game/engine.ts) was
+ * about who's sitting in the chair during a hand; it never meant this list,
+ * the label on a store card in the Collection. Shipping character6-21 with
+ * underscored handles here read as generated rather than as a roster of
+ * characters, and that mistake stays fixed only for character22-31 -- Kayo
+ * was explicit this is not a retroactive rename of character1-21, so those
+ * keep their existing tags until a separate call says otherwise.
  */
 const characterAvatarOffers: Record<
   string,
@@ -240,6 +262,16 @@ const characterAvatarOffers: Record<
   character19: { name: "kohl_codes", description: "Ran the numbers before the flop and hasn't stopped since.", price: 13_500_000 },
   character20: { name: "omar_theoracle", description: "You won't get a read. There's nothing there to read.", price: 15_000_000 },
   character21: { name: "ellie_bee", description: "Polite, patient, and holding the nuts more often than she lets on.", price: 17_000_000 },
+  character22: { name: "Marcus Vale", description: "Wears the chip on his sleeve. Backs it up every time.", price: 19_000_000 },
+  character23: { name: "Milo Winters", description: "Collects more than cards. Reads people the same way.", price: 21_000_000 },
+  character24: { name: "Zoraq", description: "No tells, no eyelids, no chance you're getting a read.", price: 23_500_000 },
+  character25: { name: "Ari Locke", description: "Cracked the seed once, just to see if she could. Doesn't need to now.", price: 26_000_000 },
+  character26: { name: "Adelaide Sinclair", description: "Old money, older instincts. Never raises past what she already knows.", price: 29_000_000 },
+  character27: { name: "Kira Voss", description: "Never says a word behind those glasses. Doesn't have to.", price: 32_500_000 },
+  character28: { name: "Danny Marsh", description: "Plays every session like it's the last one that matters.", price: 35_500_000 },
+  character29: { name: "Sadie Rowan", description: "Followed the game across three states. Never folds first.", price: 39_000_000 },
+  character30: { name: "Gunner Zane", description: "Streams every session. Chat calls it a clinic.", price: 42_000_000 },
+  character31: { name: "Walt Ironhand", description: "Been playing longer than most of the table's been alive.", price: 45_500_000 },
 };
 
 export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((character) => {

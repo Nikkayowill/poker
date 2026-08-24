@@ -14,7 +14,26 @@
  * would be a token nothing else could ever read.
  */
 
+/* `--chess-square` lives here, not on `.chess-grid`, so it reaches BOTH the
+ * grid's own template columns/rows and each ChessClock's width formula below
+ * -- their nearest shared ancestor. A custom property defined on `.chess-grid`
+ * itself never reaches sideways to its clock siblings; `.chess-clock`'s
+ * `var(--chess-square, 56px)` was silently running on its 56px fallback the
+ * whole time, harmless only by coincidence wherever both it and the grid
+ * separately landed on `min(100%, X)`'s shared 100% term.
+ *
+ * Sized off the viewport so eight of them plus the shell's own padding fit a
+ * 390px phone without the page ever panning sideways (the min() cap keeps a
+ * desktop board from growing into a table), AND off `100dvh` so the board
+ * itself is the thing that shrinks on a short screen instead of the page
+ * needing to scroll to see the clock or the "Give up" link below it -- 325px
+ * is the measured height of everything else this page stacks around the
+ * board, plus margin for device variance. The floor is a rotated phone in
+ * landscape, where `100dvh` briefly gets tiny: without it the board would
+ * shrink toward zero instead of asking for a little scroll, which is worse. */
 .chess-board-wrap {
+  --chess-square: min(11vw, 56px, max(28px, calc((100dvh - 325px) / 8)));
+
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -22,11 +41,7 @@
   width: 100%;
 }
 
-/* One square, sized off the viewport so eight of them plus the shell's own
-   padding fit a 390px phone without the page ever panning sideways. The cap
-   keeps a desktop board from growing into a table. */
 .chess-grid {
-  --chess-square: min(11vw, 56px);
   --chess-light: #7d879b;
   --chess-dark: #414b5f;
 
@@ -95,6 +110,13 @@
     0 1px 0 rgba(246, 248, 252, .6), 0 -1px 0 rgba(246, 248, 252, .6),
     1px 0 0 rgba(246, 248, 252, .6), -1px 0 0 rgba(246, 248, 252, .6),
     0 2px 5px rgba(0, 0, 0, .45);
+}
+
+/* Which sixteen are the viewer's own, at a glance, on top of whatever the
+   outline above already carries -- a filter rather than another text-shadow
+   layer, since text-shadow is already spent on the white/black outline. */
+.chess-piece-yours {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--brand-gold) 75%, transparent));
 }
 
 /* -------------------------------------------------------------- highlights */
@@ -237,8 +259,8 @@
 @media (max-width: 640px) {
   /* The shell drops to 12px of side padding on a phone, so the board may take
      the rest: 8 x 11.6vw is 92.8vw, which clears 390px with room to spare. */
-  .chess-grid {
-    --chess-square: min(11.6vw, 56px);
+  .chess-board-wrap {
+    --chess-square: min(11.6vw, 56px, max(28px, calc((100dvh - 325px) / 8)));
   }
 
   .chess-clock {

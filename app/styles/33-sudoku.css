@@ -1,9 +1,9 @@
-/* Daily Sudoku.
+/* Ante Up: Sudoku.
  *
- * The shell is .bj-* from 23-blackjack.css. What is here is the grid, which is
- * the one piece of this app where getting the *lines* right is most of getting
- * it right: a sudoku with uniform borders is unreadable, because the three-by-
- * three boxes are how a solver actually parses the board.
+ * The shell is .duel-shell/.ante-shell from 36-duels.css. What is here is the
+ * grid, which is the one piece of this app where getting the *lines* right is
+ * most of getting it right: a sudoku with uniform borders is unreadable,
+ * because the three-by-three boxes are how a solver actually parses the board.
  */
 
 .sk-difficulties { display: flex; gap: 7px; flex-wrap: wrap; }
@@ -22,13 +22,33 @@
  *
  * Square, centred, and capped so it never outgrows a desktop viewport. The
  * cell size follows from the container rather than being set per cell, so
- * there is one number to change.
- */
+ * there is one number to change: `--sk-board-w`, set once on `.ante-match`
+ * and read by the grid, the toolbar and the pad so all three always agree.
+ *
+ * The third term is the one that keeps the whole game on screen with no
+ * scroll: everything BELOW the grid (toolbar, pad, "Give up") is fixed-height
+ * content that doesn't shrink, so on a short viewport the grid is the one
+ * thing with room to give. `100dvh` is the real usable height (browser
+ * chrome included, unlike `vh`); 380px is the measured height of the shell's
+ * padding, header, scoreline and everything below the grid, plus margin for
+ * device variance -- not the width cap's job, and a width media query was
+ * tried for this once already and over-applied to every phone regardless of
+ * how much vertical room it actually had (see the git history on this file).
+ * The floor (170px) exists only for a rotated phone in landscape, where
+ * `100dvh` is suddenly tiny -- without it the board would shrink toward zero
+ * instead of asking for a little scroll, which is worse. It's set below what
+ * any real portrait phone needs on purpose: a floor that wins on a genuine
+ * short-portrait phone stops the calc from shrinking the board as far as
+ * that phone actually needs, which is exactly the bug this replaced a fixed
+ * breakpoint to fix in the first place. */
+.ante-match {
+  --sk-board-w: min(100%, 420px, max(170px, calc(100dvh - 380px)));
+}
 
 .sk-grid {
   display: grid;
   grid-template-columns: repeat(9, 1fr);
-  width: min(100%, 420px);
+  width: var(--sk-board-w);
   aspect-ratio: 1;
   margin: 0 auto;
   background: rgba(4,9,8,.6);
@@ -67,10 +87,14 @@
     var(--sk-rule-bottom),
     var(--sk-rule-left);
   background: rgba(255,255,255,.015);
-  font-size: clamp(13px, 3.4vw, 19px);
+  font-size: clamp(15px, 4.2vw, 22px);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
+  /* Nine columns of tap targets a thumb repeatedly double-taps in quick
+     succession -- without this, iOS occasionally reads that as a text
+     selection and pops the copy/lookup callout over the board. */
+  user-select: none;
   transition: background .12s ease, color .12s ease;
 }
 
@@ -117,13 +141,82 @@
   75% { transform: translateX(3px); }
 }
 
+/* ---- Pencil marks ----
+ *
+ * Candidates, not answers -- a 3x3 grid of the digit's own position (1 top-
+ * left, 5 centre, 9 bottom-right) so a solver can find "is 7 still possible
+ * here" without reading a list. Dimmer gold than a committed digit gets, on
+ * purpose: the two must never be confusable at a glance. */
+
+.sk-notes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: 100%;
+  height: 100%;
+  padding: 1px;
+}
+
+.sk-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* A smaller floor than the committed digit gets, deliberately -- a note
+     that read as large as an answer would stop being a note. But it still
+     has to clear real legibility on a phone screen, not just a desktop one,
+     so the floor is 7.5px, not whatever 1.7vw happens to round to on a
+     390px viewport (6.6px -- genuinely too small to read). */
+  font-size: clamp(7.5px, 1.9vw, 10px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: rgba(217,184,93,.65);
+}
+
+/* ---- The toolbar (notes toggle) ---- */
+
+.sk-toolbar {
+  display: flex;
+  justify-content: center;
+  width: var(--sk-board-w);
+  margin: 0 auto;
+}
+
+.sk-notes-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* 44px, the same floor .sk-key states and means: this is flipped on and
+     off constantly through a solve, same as the digit keys below it. */
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: rgba(255,255,255,.05);
+  color: #9fb0a7;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+}
+.sk-notes-toggle:hover:not(:disabled) { background: rgba(217,184,93,.14); }
+.sk-notes-toggle:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.sk-notes-toggle:disabled { opacity: .5; cursor: not-allowed; }
+
+/* On: the same gold wash a selected cell gets, so "notes are live" reads as
+   an active state rather than a second idle button next to the first. */
+.sk-notes-toggle-active {
+  background: rgba(217,184,93,.3);
+  color: #fff6dd;
+}
+
 /* ---- The keypad ---- */
 
 .sk-pad {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 6px;
-  width: min(100%, 420px);
+  width: var(--sk-board-w);
   margin: 0 auto;
 }
 .sk-key {
@@ -166,20 +259,21 @@
 .sk-player-head { justify-content: center; }
 
 @media (max-width: 640px) {
-  .sk-grid { width: min(100%, 300px); }
-  .sk-pad { width: min(100%, 300px); }
   /* 44px, not the old 38 -- this pad is the one control on the page a thumb
      actually taps repeatedly, and every other keypad in the app (Word Stack,
      the action bar) already holds that floor. */
   .sk-key { min-height: 44px; font-size: 15px; }
 }
 
-@media (max-width: 420px) {
-  /* A short phone (SE-class, 667px tall) still needs a bit more back after
-     the 640px cap -- the grid is what has room to give it, not the keypad. */
-  .sk-grid { width: min(100%, 270px); }
-  .sk-pad { width: min(100%, 270px); }
-}
+/* `--sk-board-w` (defined on `.ante-match` above) is deliberately NOT a width
+ * media-query step-down, on two counts of the same lesson learned twice on
+ * this file: a WIDTH breakpoint here once shrank the board on every phone
+ * regardless of how much vertical room it had (measured: a 340px cap on a
+ * 390px viewport with 366px genuinely free), and a discrete HEIGHT breakpoint
+ * replacing it still under- or over-shrank depending which side of its one
+ * cutoff a device landed on (a 320x568 phone still overflowed by 94px even
+ * under the height version). `calc(100dvh - 380px)` scales continuously with
+ * whatever vertical room a device actually has instead of guessing a cutoff. */
 
 @media (prefers-reduced-motion: reduce) {
   .sk-cell-wrong { animation: none; }

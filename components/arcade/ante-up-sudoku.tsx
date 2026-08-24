@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { Coins, Eraser } from "lucide-react";
+import { Coins, Eraser, Pencil } from "lucide-react";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -53,6 +53,12 @@ export function AnteUpSudoku() {
   const [selected, setSelected] = useState<number | null>(null);
   const [rejected, setRejected] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  // Pencil marks -- purely a client-side memory aid, never sent to the server:
+  // the engine only ever stores a cell's committed digit (lib/arcade/puzzles/
+  // sudoku.ts's `entries`), and a candidate note doesn't change what's correct
+  // or move any Gold, so there's nothing here for the server to referee.
+  const [notesMode, setNotesMode] = useState(false);
+  const [notes, setNotes] = useState<Record<number, Set<number>>>({});
 
   const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
@@ -147,28 +153,81 @@ export function AnteUpSudoku() {
 
   const start = () => {
     setSelected(null);
+    setNotes({});
     void send("/api/ante-up", { difficulty, wager });
   };
 
   const fill = async (value: number) => {
     if (!attempt || selected === null || busy || !active) return;
     if (attempt.puzzle[selected] !== 0) return;
+    const cellIndex = selected;
     const result = await send("/api/ante-up/actions", {
       action: "fill",
       version: attempt.version,
-      index: selected,
+      index: cellIndex,
       value,
     });
     if (result?.wrong) {
-      setRejected(selected);
+      setRejected(cellIndex);
       window.setTimeout(() => setRejected(null), 420);
     } else if (value !== 0) {
       play("ui");
+      // A committed digit answers this cell (drop its own notes entirely) and
+      // rules itself out as a candidate everywhere it now shares a row,
+      // column or box -- the same bookkeeping a solver does by hand once a
+      // number lands.
+      setNotes((prev) => {
+        let changed = false;
+        const next: Record<number, Set<number>> = {};
+        for (const [key, digits] of Object.entries(prev)) {
+          const index = Number(key);
+          if (index === cellIndex) { changed = true; continue; }
+          const isPeer =
+            rowOf(index) === rowOf(cellIndex) ||
+            columnOf(index) === columnOf(cellIndex) ||
+            boxOf(index) === boxOf(cellIndex);
+          if (isPeer && digits.has(value)) {
+            changed = true;
+            const filtered = new Set(digits);
+            filtered.delete(value);
+            if (filtered.size > 0) next[index] = filtered;
+          } else {
+            next[index] = digits;
+          }
+        }
+        return changed ? next : prev;
+      });
     }
   };
 
+  /** Toggles one candidate digit in the selected cell -- notes mode's version of `fill`. */
+  const toggleNote = (digit: number) => {
+    if (!attempt || selected === null) return;
+    if (attempt.puzzle[selected] !== 0 || attempt.entries[selected] !== 0) return;
+    tapSound();
+    const cellIndex = selected;
+    setNotes((prev) => {
+      const current = new Set(prev[cellIndex] ?? []);
+      if (current.has(digit)) current.delete(digit); else current.add(digit);
+      const next = { ...prev };
+      if (current.size > 0) next[cellIndex] = current; else delete next[cellIndex];
+      return next;
+    });
+  };
+
+  const clearNotes = () => {
+    if (selected === null || !notes[selected]) return;
+    tapSound();
+    const cellIndex = selected;
+    setNotes((prev) => {
+      const next = { ...prev };
+      delete next[cellIndex];
+      return next;
+    });
+  };
+
   const resign = () => void send("/api/ante-up/actions", { action: "resign" });
-  const playAgain = () => { setAttempt(null); setSelected(null); };
+  const playAgain = () => { setAttempt(null); setSelected(null); setNotes({}); };
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
   const canAfford = wager === 0 || (wager >= MIN_ANTE_UP_WAGER && balance >= wager);
@@ -277,6 +336,7 @@ export function AnteUpSudoku() {
                   boxOf(selected) === boxOf(index));
               const twin = selected !== null && value !== 0
                 && value === (attempt.puzzle[selected] || attempt.entries[selected]);
+              const cellNotes = value === 0 ? notes[index] : undefined;
 
               return (
                 <button
@@ -296,10 +356,23 @@ export function AnteUpSudoku() {
                     rowOf(index) === SUDOKU_SIZE - 1 && "sk-cell-box-bottom",
                   )}
                   disabled={!active}
-                  aria-label={`Row ${rowOf(index) + 1}, column ${columnOf(index) + 1}${value ? `, ${value}` : ", empty"}`}
+                  aria-label={
+                    `Row ${rowOf(index) + 1}, column ${columnOf(index) + 1}` +
+                    (value ? `, ${value}` : cellNotes?.size ? `, candidates ${[...cellNotes].sort().join(", ")}` : ", empty")
+                  }
                   onClick={() => { tapSound(); setSelected(index); }}
                 >
-                  {value || ""}
+                  {value ? (
+                    value
+                  ) : cellNotes?.size ? (
+                    <span className="sk-notes" aria-hidden="true">
+                      {DIGITS.map((digit) => (
+                        <span key={digit} className="sk-note">{cellNotes.has(digit) ? digit : ""}</span>
+                      ))}
+                    </span>
+                  ) : (
+                    ""
+                  )}
                 </button>
               );
             })}
@@ -325,6 +398,18 @@ export function AnteUpSudoku() {
             </div>
           ) : (
             <>
+              <div className="sk-toolbar">
+                <button
+                  type="button"
+                  className={clsx("sk-notes-toggle", notesMode && "sk-notes-toggle-active")}
+                  aria-pressed={notesMode}
+                  disabled={busy}
+                  onClick={() => { selectSound(); setNotesMode((mode) => !mode); }}
+                >
+                  <Pencil size={13} aria-hidden="true" />
+                  Notes {notesMode ? "on" : "off"}
+                </button>
+              </div>
               <div className="sk-pad" role="group" aria-label="Digits">
                 {DIGITS.map((digit) => (
                   <button
@@ -332,7 +417,7 @@ export function AnteUpSudoku() {
                     type="button"
                     className="sk-key"
                     disabled={busy || selected === null}
-                    onClick={() => void fill(digit)}
+                    onClick={() => (notesMode ? toggleNote(digit) : void fill(digit))}
                   >
                     {digit}
                   </button>
@@ -341,8 +426,8 @@ export function AnteUpSudoku() {
                   type="button"
                   className="sk-key sk-key-erase"
                   disabled={busy || selected === null}
-                  aria-label="Erase"
-                  onClick={() => void fill(0)}
+                  aria-label={notesMode ? "Clear notes" : "Erase"}
+                  onClick={() => (notesMode ? clearNotes() : void fill(0))}
                 >
                   <Eraser size={15} aria-hidden="true" />
                 </button>

@@ -134,11 +134,15 @@ export function CheckersBoard({ state, yourSeat, busy, onMove }: DuelBoardProps<
   const theirClock = state.clocks[yourSeat === 0 ? 1 : 0];
   const yourPieces = state.pieces[yourSeat];
   const theirPieces = state.pieces[yourSeat === 0 ? 1 : 0];
+  // Seat 0 is always red (lib/pvp/checkers.ts's own comment) -- restated here
+  // only for the clock-row labels, not as a second copy of the rule.
+  const yourColor = yourSeat === 0 ? "Red" : "Black";
+  const opponentColor = yourSeat === 0 ? "Black" : "Red";
 
   return (
     <div className="ck">
       <div className="ck-clock-row">
-        <span className="ck-side">Opponent</span>
+        <span className="ck-side">Opponent · {opponentColor}</span>
         <span className="ck-pieces">{theirPieces} left</span>
         <span className={clsx("ck-clock", !yourTurn && "ck-clock-running")}>
           {clockLabel(theirClock)}
@@ -187,7 +191,7 @@ export function CheckersBoard({ state, yourSeat, busy, onMove }: DuelBoardProps<
       </div>
 
       <div className="ck-clock-row">
-        <span className="ck-side">You</span>
+        <span className="ck-side">You · {yourColor}</span>
         <span className="ck-pieces">{yourPieces} left</span>
         <span className={clsx("ck-clock", yourTurn && "ck-clock-running")}>
           {clockLabel(yourClock)}

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState, type ComponentType } from "re
 import Link from "next/link";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
+import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import type { SoundEffect } from "@/lib/audio/sound-effects";
 import { MIN_DUEL_STAKE, type DuelSeat } from "@/lib/pvp/match-contract";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { StakePicker } from "./stake-picker";
@@ -141,11 +143,24 @@ export function DuelShell<TSnapshot>({
    */
   const sending = useRef(false);
   const mounted = useRef(true);
+  const play = useArcadeSound({ gameSounds: true });
 
   const applyResponse = useCallback((data: Partial<LobbyResponse>) => {
     if (data.profile) setProfile(data.profile);
     if (data.challenges) setChallenges(data.challenges);
-    if (data.match !== undefined) setMatch((data.match as DuelMatch<TSnapshot>) ?? null);
+    if (data.match !== undefined) {
+      setMatch((current) => {
+        // Once a match settles, the server correctly stops listing it as an
+        // "active" match once the settled-match grace window passes -- but
+        // the player still needs to see the result card until they
+        // explicitly move on (Play again). Without this, a poll landing
+        // after that window would return `null` and wipe the result screen
+        // out from under someone still reading it. Same guard
+        // cribbage-shell.tsx already carries for its own match frame.
+        if (!data.match && current?.status === "settled") return current;
+        return (data.match as DuelMatch<TSnapshot>) ?? null;
+      });
+    }
   }, []);
 
   /** Reads the lobby: the live match if there is one, the open challenges if not. */
@@ -314,6 +329,7 @@ export function DuelShell<TSnapshot>({
           match={match}
           busy={busy}
           Board={Board}
+          play={play}
           onMove={(move) => onMove(match, move)}
           onResign={() => void send(`/api/pvp/matches/${match.id}`, { action: "resign" })}
           onLeave={() => setMatch(null)}
@@ -322,7 +338,6 @@ export function DuelShell<TSnapshot>({
         <DuelLobby
           title={title}
           rules={rules}
-          game={game}
           loaded={loaded}
           busy={busy}
           balance={balance}
@@ -344,7 +359,6 @@ export function DuelShell<TSnapshot>({
 function DuelLobby({
   title,
   rules,
-  game,
   loaded,
   busy,
   balance,
@@ -358,7 +372,6 @@ function DuelLobby({
 }: {
   title: string;
   rules: string;
-  game: string;
   loaded: boolean;
   busy: boolean;
   balance: number;
@@ -482,8 +495,11 @@ function DuelLobby({
       <p className="duel-footnote">
         {/* Named rather than left implicit: the whole reason these games
             replaced the house games is that nobody is playing against the
-            room, and a player has no way to know that unless it is said. */}
-        No house cut. Every Gold staked at {game} goes to the other player.
+            room, and a player has no way to know that unless it is said.
+            The display title, not the registry id -- "word-race" read as a
+            raw slug here where every other id happened to already be a
+            plain word. */}
+        No house cut. Every Gold staked at {title} goes to the other player.
       </p>
     </div>
   );
@@ -495,6 +511,7 @@ function DuelMatchFrame<TSnapshot>({
   match,
   busy,
   Board,
+  play,
   onMove,
   onResign,
   onLeave,
@@ -502,6 +519,7 @@ function DuelMatchFrame<TSnapshot>({
   match: DuelMatch<TSnapshot>;
   busy: boolean;
   Board: ComponentType<DuelBoardProps<TSnapshot>>;
+  play: (effect: SoundEffect) => void;
   onMove: (move: unknown) => void;
   onResign: () => void;
   onLeave: () => void;
@@ -511,6 +529,17 @@ function DuelMatchFrame<TSnapshot>({
   const settled = match.status === "settled";
   const won = settled && match.winnerSeat === match.yourSeat;
   const drew = settled && match.winnerSeat === null;
+
+  // Fires once per match, on the edge of it actually settling -- not on every
+  // poll that still reports the same settled match. "lose" has no asset
+  // behind it (manifest.ts's own call: silence, not a synthesized stand-in),
+  // so only a win makes a sound; a loss or a draw stays quiet.
+  const announcedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!settled || announcedRef.current === match.id) return;
+    announcedRef.current = match.id;
+    play(won ? "win-modest" : "lose");
+  }, [settled, won, match.id, play]);
 
   return (
     <div className="duel-match">

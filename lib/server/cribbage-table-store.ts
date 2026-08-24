@@ -220,6 +220,65 @@ export async function getActiveCribbageTableFor(playerId: string): Promise<Store
   return data ? fromRow(data as TableRow) : null;
 }
 
+/**
+ * How long after a table completes it still counts as "recently completed"
+ * for getRecentlyCompletedCribbageTableFor. Same reasoning as pvp-match-
+ * store.ts's SETTLED_MATCH_GRACE_MS: only needs to outlast one poll cycle
+ * with room for jitter, since a client that has already picked the result up
+ * once holds onto it locally until the player dismisses it.
+ */
+const COMPLETED_TABLE_GRACE_MS = 20_000;
+
+/**
+ * A table this player was seated at that completed moments ago.
+ *
+ * getActiveCribbageTableFor stops returning a table the instant it completes
+ * -- correct for the "are you already at a table" gate, but it means a seated
+ * player whose OWN request didn't do the settling (someone else's move
+ * crossed 121, or someone else resigned) has no other way to find out: their
+ * next poll would return nothing and silently drop them back to the lobby.
+ */
+export async function getRecentlyCompletedCribbageTableFor(playerId: string): Promise<StoredCribbageTable | null> {
+  const supabase = adminClient();
+  const cutoff = Date.now() - COMPLETED_TABLE_GRACE_MS;
+
+  if (!supabase) {
+    const seatedTableIds = new Set(
+      [...memorySeats.entries()].filter(([, seats]) => seats.some((s) => s.playerId === playerId)).map(([id]) => id),
+    );
+    const candidates = [...memoryTables.values()]
+      .filter(
+        (t) =>
+          seatedTableIds.has(t.id)
+          && t.status === "completed"
+          && t.settledAt !== null
+          && Date.parse(t.settledAt) >= cutoff,
+      )
+      .sort((a, b) => (b.settledAt ?? "").localeCompare(a.settledAt ?? ""));
+    return candidates[0] ? cloneTable(candidates[0]) : null;
+  }
+
+  const { data: seatRows, error: seatError } = await supabase
+    .from("cribbage_table_players")
+    .select("table_id")
+    .eq("player_id", playerId);
+  if (seatError) throw new Error(`Could not load your cribbage tables: ${seatError.message}`);
+  const tableIds = [...new Set((seatRows ?? []).map((row) => String(row.table_id)))];
+  if (tableIds.length === 0) return null;
+
+  const { data, error } = await supabase
+    .from("cribbage_tables")
+    .select(TABLE_COLUMNS)
+    .in("id", tableIds)
+    .eq("status", "completed")
+    .gte("settled_at", new Date(cutoff).toISOString())
+    .order("settled_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Could not load your cribbage table: ${error.message}`);
+  return data ? fromRow(data as TableRow) : null;
+}
+
 // ---- writes -------------------------------------------------------------
 
 /** Opens a bare table, host not yet seated -- the caller seats them with claimCribbageSeat right after. */

@@ -129,6 +129,66 @@ export async function getActivePvpMatch<TState>(
 }
 
 /**
+ * How long after a match settles it still counts as "recently settled" for
+ * getRecentlySettledPvpMatch. Only needs to comfortably outlast one poll
+ * cycle (duel-shell.tsx polls every 2s) with room for jitter -- once a
+ * player's client has picked the result up once, it holds onto it locally
+ * until they dismiss it, so this window is not how long the result stays on
+ * screen, only how long a passive player has to catch it at all.
+ */
+const SETTLED_MATCH_GRACE_MS = 20_000;
+
+function memoryRecentlySettledFor(profileId: string, game: string): StoredPvpMatch | undefined {
+  const cutoff = Date.now() - SETTLED_MATCH_GRACE_MS;
+  return [...memoryMatches.values()]
+    .filter(
+      (match) =>
+        match.status === "settled"
+        && match.game === game
+        && match.settledAt !== null
+        && Date.parse(match.settledAt) >= cutoff
+        && (match.players[0] === profileId || match.players[1] === profileId),
+    )
+    .sort((a, b) => Date.parse(b.settledAt!) - Date.parse(a.settledAt!))[0];
+}
+
+/**
+ * A match of this game that settled moments ago and still names this player.
+ *
+ * getActivePvpMatch stops returning a match the instant it settles -- correct
+ * for the "can I open a new one" gate, but it means the player who did NOT
+ * make the settling move (their opponent resigned, flagged, or was the one
+ * whose poll happened to observe the win condition first) has no other way to
+ * find out: their own next poll would otherwise return nothing and drop them
+ * straight back to the lobby, with no result shown at all. This is that
+ * "otherwise."
+ */
+export async function getRecentlySettledPvpMatch<TState>(
+  profileId: string,
+  game: string,
+): Promise<StoredPvpMatch<TState> | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const found = memoryRecentlySettledFor(profileId, game);
+    return found ? (clone(found) as StoredPvpMatch<TState>) : null;
+  }
+
+  const cutoff = new Date(Date.now() - SETTLED_MATCH_GRACE_MS).toISOString();
+  const { data, error } = await supabase
+    .from("pvp_matches")
+    .select(MATCH_COLUMNS)
+    .eq("game", game)
+    .eq("status", "settled")
+    .gte("settled_at", cutoff)
+    .or(`player0_id.eq.${profileId},player1_id.eq.${profileId}`)
+    .order("settled_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Could not load the ${game} match: ${error.message}`);
+  return data ? fromRow<TState>(data as MatchRow) : null;
+}
+
+/**
  * A match by id, live or finished, whoever it belongs to.
  *
  * Authorization is the caller's: this returns anyone's match, and the service

@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState, type ComponentType } from "re
 import Link from "next/link";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
-import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
+import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import type { SoundEffect } from "@/lib/audio/sound-effects";
 import type { CribbageSeat, CribbageSnapshot } from "@/lib/cribbage/engine";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 
 /**
  * The client half of cribbage: the open-table lobby, the waiting room, the
@@ -93,6 +95,7 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
 
   const sending = useRef(false);
   const mounted = useRef(true);
+  const play = useArcadeSound({ gameSounds: true });
 
   const applyResponse = useCallback((data: Partial<LobbyResponse>) => {
     if (data.profile) setProfile(data.profile);
@@ -209,6 +212,7 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
             table={table}
             busy={busy}
             Board={Board}
+            play={play}
             onMove={(move) => onMove(table, move)}
             onResign={() => void send(`/api/cribbage/${table.id}`, { action: "resign" })}
             // Clears the finished table from the client only -- it is
@@ -379,6 +383,7 @@ function CribbageMatchFrame({
   table,
   busy,
   Board,
+  play,
   onMove,
   onResign,
   onLeave,
@@ -386,6 +391,7 @@ function CribbageMatchFrame({
   table: CribbageTable;
   busy: boolean;
   Board: ComponentType<CribbageBoardProps>;
+  play: (effect: SoundEffect) => void;
   onMove: (move: unknown) => void;
   onResign: () => void;
   onLeave: () => void;
@@ -394,6 +400,17 @@ function CribbageMatchFrame({
   const won = completed && table.winnerId !== null
     && table.players.find((p) => p.seat === table.yourSeat)?.profileId === table.winnerId;
   const winner = completed ? table.players.find((p) => p.profileId === table.winnerId) : null;
+
+  // Same edge-triggered announcement duel-shell.tsx's own match frame makes:
+  // once per table, on the edge of it actually completing, not on every poll
+  // that still reports the same completed table. Silence on a loss is
+  // deliberate -- "lose" has no asset behind it (manifest.ts's own call).
+  const announcedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!completed || announcedRef.current === table.id) return;
+    announcedRef.current = table.id;
+    play(won ? "win-modest" : "lose");
+  }, [completed, won, table.id, play]);
 
   return (
     <div className="duel-match crib-match">

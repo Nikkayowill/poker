@@ -1380,7 +1380,14 @@ button:disabled { cursor: wait; opacity: .62; }
    running straight through the chip cluster at the old 96px. */
 .hub-tile-private { --tile-art: url("/chips/cluster-three.webp"); background-size: auto, auto, 82px, auto; background-position: center, center, right 14px bottom 12px, center; }
 .hub-tile-gold { --tile-art: url("/chips/stack-three.webp"); background-size: auto, auto, 92px, auto; background-position: center, center, right 12px bottom 10px, center; }
-.hub-tile-collection { --tile-art: url("/avatars/avatar-shark-face.webp"); background-size: auto, auto, 90px, auto; background-position: center, center, right 10px bottom -6px, center; }
+/* The old illustrated-avatar asset this pointed at (public/avatars/) was
+   deleted 2026-08-17 when the seat-art character roster became the whole
+   avatar system -- this 404'd silently (a background-image, not an <img>,
+   so nothing ever surfaced it) and the tile has been missing its art since.
+   character16 is one of the two long-verified "faces screen-left correctly"
+   reference plates and is the free starter tier, so it reads as an
+   available face rather than a specific paid SKU. */
+.hub-tile-collection { --tile-art: url("/table2d5/seats/character16/0.webp"); background-size: auto, auto, 78px, auto; background-position: center, center, right 12px bottom -4px, center; }
 .hub-tile-leaderboard { --tile-art: url("/chips/chip-royal-spade.webp"); background-size: auto, auto, 78px, auto; background-position: center, center, right 16px bottom 12px, center; }
 
 /* The room-code tile is a form, so it stacks rather than bottom-aligning. */

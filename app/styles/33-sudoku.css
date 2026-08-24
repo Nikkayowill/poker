@@ -1,9 +1,9 @@
-/* Daily Sudoku.
+/* Ante Up: Sudoku.
  *
- * The shell is .bj-* from 23-blackjack.css. What is here is the grid, which is
- * the one piece of this app where getting the *lines* right is most of getting
- * it right: a sudoku with uniform borders is unreadable, because the three-by-
- * three boxes are how a solver actually parses the board.
+ * The shell is .duel-shell/.ante-shell from 36-duels.css. What is here is the
+ * grid, which is the one piece of this app where getting the *lines* right is
+ * most of getting it right: a sudoku with uniform borders is unreadable,
+ * because the three-by-three boxes are how a solver actually parses the board.
  */
 
 .sk-difficulties { display: flex; gap: 7px; flex-wrap: wrap; }
@@ -67,10 +67,14 @@
     var(--sk-rule-bottom),
     var(--sk-rule-left);
   background: rgba(255,255,255,.015);
-  font-size: clamp(13px, 3.4vw, 19px);
+  font-size: clamp(15px, 4.2vw, 22px);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
+  /* Nine columns of tap targets a thumb repeatedly double-taps in quick
+     succession -- without this, iOS occasionally reads that as a text
+     selection and pops the copy/lookup callout over the board. */
+  user-select: none;
   transition: background .12s ease, color .12s ease;
 }
 
@@ -115,6 +119,75 @@
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-3px); }
   75% { transform: translateX(3px); }
+}
+
+/* ---- Pencil marks ----
+ *
+ * Candidates, not answers -- a 3x3 grid of the digit's own position (1 top-
+ * left, 5 centre, 9 bottom-right) so a solver can find "is 7 still possible
+ * here" without reading a list. Dimmer gold than a committed digit gets, on
+ * purpose: the two must never be confusable at a glance. */
+
+.sk-notes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: 100%;
+  height: 100%;
+  padding: 1px;
+}
+
+.sk-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* A smaller floor than the committed digit gets, deliberately -- a note
+     that read as large as an answer would stop being a note. But it still
+     has to clear real legibility on a phone screen, not just a desktop one,
+     so the floor is 7.5px, not whatever 1.7vw happens to round to on a
+     390px viewport (6.6px -- genuinely too small to read). */
+  font-size: clamp(7.5px, 1.9vw, 10px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: rgba(217,184,93,.65);
+}
+
+/* ---- The toolbar (notes toggle) ---- */
+
+.sk-toolbar {
+  display: flex;
+  justify-content: center;
+  width: min(100%, 420px);
+  margin: 0 auto;
+}
+
+.sk-notes-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* 44px, the same floor .sk-key states and means: this is flipped on and
+     off constantly through a solve, same as the digit keys below it. */
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: rgba(255,255,255,.05);
+  color: #9fb0a7;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+}
+.sk-notes-toggle:hover:not(:disabled) { background: rgba(217,184,93,.14); }
+.sk-notes-toggle:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.sk-notes-toggle:disabled { opacity: .5; cursor: not-allowed; }
+
+/* On: the same gold wash a selected cell gets, so "notes are live" reads as
+   an active state rather than a second idle button next to the first. */
+.sk-notes-toggle-active {
+  background: rgba(217,184,93,.3);
+  color: #fff6dd;
 }
 
 /* ---- The keypad ---- */
@@ -166,19 +239,33 @@
 .sk-player-head { justify-content: center; }
 
 @media (max-width: 640px) {
-  .sk-grid { width: min(100%, 300px); }
-  .sk-pad { width: min(100%, 300px); }
   /* 44px, not the old 38 -- this pad is the one control on the page a thumb
      actually taps repeatedly, and every other keypad in the app (Word Stack,
      the action bar) already holds that floor. */
   .sk-key { min-height: 44px; font-size: 15px; }
 }
 
-@media (max-width: 420px) {
-  /* A short phone (SE-class, 667px tall) still needs a bit more back after
-     the 640px cap -- the grid is what has room to give it, not the keypad. */
-  .sk-grid { width: min(100%, 270px); }
-  .sk-pad { width: min(100%, 270px); }
+/* .sk-grid/.sk-pad/.sk-toolbar all read `width: min(100%, 420px)` with no
+ * mobile override, on purpose: 420px is a desktop ceiling that a phone's own
+ * content width (.duel-shell's side padding is all that's between this and
+ * the screen edge) never actually reaches, so `100%` already does the real
+ * shrinking. A phone-width step-down here used to fire on top of that and
+ * cap the board well under what the phone actually had free -- measured on a
+ * real 390px viewport, a 340px cap when 366px was available, every cell (and
+ * every pencil mark inside one) smaller than it needed to be for no reason.
+ *
+ * The one real mobile constraint is vertical, not horizontal: a short phone
+ * (SE-class, ~667px tall) doesn't have the height a full-width square grid
+ * plus the toolbar, pad and "Give up" link all assume. That's a height
+ * problem and gets a height query -- a WIDTH breakpoint here would also
+ * catch every modern narrow-but-TALL phone (iPhone 15 at 393x852 is
+ * narrower than the old 420px width trigger ever needed to be) and shrink
+ * a board that already had all the vertical room it needed.
+ */
+@media (max-height: 700px) {
+  .sk-grid { width: min(100%, 310px); }
+  .sk-pad { width: min(100%, 310px); }
+  .sk-toolbar { width: min(100%, 310px); }
 }
 
 @media (prefers-reduced-motion: reduce) {

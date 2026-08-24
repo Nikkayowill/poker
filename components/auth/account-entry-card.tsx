@@ -8,6 +8,7 @@ import { InstallLine } from "@/components/pwa/install-line";
 import { selectSound } from "@/lib/audio/ui-sounds";
 import { TurnstileWidget } from "@/components/auth/turnstile-widget";
 import { TURNSTILE_SITE_KEY } from "@/lib/auth/turnstile";
+import { requestPushPermissionAndSubscribe } from "@/lib/push/client";
 
 // Matches Supabase's password_min_length (Authentication -> Providers ->
 // Email). NIST SP 800-63B and OWASP ASVS L1 both put the floor at 8.
@@ -116,8 +117,17 @@ export function AccountEntryCard({
     // a fresh one queued up for the next attempt.
     setCaptchaToken(null);
     setCaptchaResetSignal((signal) => signal + 1);
-    if (emailMode === "sign-in") onEmailSignIn(email.trim(), password, token);
-    else onEmailSignUp(email.trim(), password, token);
+    if (emailMode === "sign-in") {
+      onEmailSignIn(email.trim(), password, token);
+    } else {
+      // Notification permission is asked right here, as part of creating
+      // the account, per Kayo's call -- not a soft prompt later, not a
+      // settings toggle nobody finds. Fire-and-forget: requestPermission
+      // shows its own browser dialog and never fails the account creation
+      // it's riding along with, whichever way the player answers it.
+      void requestPushPermissionAndSubscribe();
+      onEmailSignUp(email.trim(), password, token);
+    }
   };
 
   return (
@@ -275,7 +285,17 @@ export function AccountEntryCard({
                   type="button"
                   className="account-oauth-action"
                   disabled={busy}
-                  onClick={() => { selectSound(); onSignIn(); }}
+                  onClick={() => {
+                    selectSound();
+                    // This button serves both "sign in" and "create account"
+                    // (Google gives no way to tell which before the redirect
+                    // completes) -- see the note above submitEmailForm.
+                    // Asking here too is harmless for a returning player:
+                    // once permission is granted or denied, the browser
+                    // answers instantly with no dialog on every later call.
+                    void requestPushPermissionAndSubscribe();
+                    onSignIn();
+                  }}
                 >
                   <GoogleMark />
                   {pending ? "Opening Google…" : "Continue with Google"}

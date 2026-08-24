@@ -62,7 +62,13 @@ import {
 } from "@/lib/game3d/room-theme";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
-import { Coins, Gift, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
+import { Bell, BellOff, Coins, Gift, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
+import {
+  disablePushOnThisDevice,
+  isSubscribedOnThisDevice,
+  pushPermissionState,
+  requestPushPermissionAndSubscribe,
+} from "@/lib/push/client";
 import { Lobby } from "@/components/lobby/lobby";
 import { retireFirstRunStrip } from "@/components/lobby/first-run-strip";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
@@ -333,6 +339,38 @@ export function PokerApp() {
   // Set only by hostPrivate, cleared on dismiss: the share sheet is a
   // one-shot moment right after creating a room, not table state.
   const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null);
+  // Both start at the safe "off" default on the server render and the
+  // client's first render (Notification.permission/PushManager are
+  // unreachable during SSR), then this effect corrects them post-mount and
+  // again whenever the profile changes -- covering the sign-up flow
+  // granting permission a render or two before this menu is next opened.
+  // Permission and an active subscription are tracked separately because a
+  // browser never lets JS revoke permission once granted -- see
+  // isSubscribedOnThisDevice's own comment.
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">("unsupported");
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  // Both setState calls sit after the await on purpose -- calling either one
+  // synchronously the instant this runs (loadProfile above is the same
+  // shape) is the cascading-render pattern react-hooks/set-state-in-effect
+  // exists to catch, even from inside an async function invoked by the
+  // effect.
+  const refreshPushState = useCallback(async () => {
+    const subscribed = await isSubscribedOnThisDevice();
+    setPushSubscribed(subscribed);
+    setPushPermission(pushPermissionState());
+  }, []);
+  useEffect(() => {
+    // Deferred a tick, same as the loadProfile effect above -- the linter
+    // treats a setTimeout callback as opaque rather than tracing into it,
+    // which is what actually satisfies react-hooks/set-state-in-effect here
+    // (an awaited async call alone still gets flagged as reachable).
+    const timer = window.setTimeout(() => void refreshPushState(), 0);
+    return () => window.clearTimeout(timer);
+  }, [refreshPushState, profile?.id]);
+  const togglePushNotifications = () => {
+    const action = pushSubscribed ? disablePushOnThisDevice() : requestPushPermissionAndSubscribe();
+    void action.then(refreshPushState);
+  };
   const gameId = game?.id;
   const mySeatId = game?.seats.find((seat) => seat.isMine)?.id ?? null;
   const { reactions, sendReaction, onCooldown: reactionCooldown } =
@@ -1513,6 +1551,24 @@ export function PokerApp() {
       icon: <Music2 size={15} />,
     },
     { kind: "separator" },
+    // Registered only, same reasoning as "Claim daily Gold" above -- a
+    // guest has never been asked (the prompt rides account creation, see
+    // AccountEntryCard) and the cron sender only ever targets registered
+    // profiles, so a guest's row would just be dead. Hidden rather than
+    // disabled when the browser itself has no Notification API at all
+    // (pushPermission === "unsupported"), same treatment the 3D table gets
+    // without WebGL: nothing to offer, nothing to explain.
+    ...(profile?.isRegistered && pushPermission !== "unsupported"
+      ? [{
+        kind: "action" as const,
+        label: pushPermission === "denied"
+          ? "Notifications blocked — check browser settings"
+          : pushSubscribed ? "Notifications: On" : "Turn on notifications",
+        onSelect: togglePushNotifications,
+        disabled: pushPermission === "denied",
+        icon: pushSubscribed ? <Bell size={15} /> : <BellOff size={15} />,
+      }]
+      : []),
     ...(profile ? [{ kind: "action" as const, label: "Edit profile", onSelect: () => setProfileOpen(true), icon: <Settings2 size={15} /> }] : []),
     profile?.isRegistered
       ? { kind: "action", label: "Sign out", onSelect: () => void signOut(), icon: <LogOut size={15} /> }

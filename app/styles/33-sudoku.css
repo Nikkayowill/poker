@@ -22,13 +22,33 @@
  *
  * Square, centred, and capped so it never outgrows a desktop viewport. The
  * cell size follows from the container rather than being set per cell, so
- * there is one number to change.
- */
+ * there is one number to change: `--sk-board-w`, set once on `.ante-match`
+ * and read by the grid, the toolbar and the pad so all three always agree.
+ *
+ * The third term is the one that keeps the whole game on screen with no
+ * scroll: everything BELOW the grid (toolbar, pad, "Give up") is fixed-height
+ * content that doesn't shrink, so on a short viewport the grid is the one
+ * thing with room to give. `100dvh` is the real usable height (browser
+ * chrome included, unlike `vh`); 380px is the measured height of the shell's
+ * padding, header, scoreline and everything below the grid, plus margin for
+ * device variance -- not the width cap's job, and a width media query was
+ * tried for this once already and over-applied to every phone regardless of
+ * how much vertical room it actually had (see the git history on this file).
+ * The floor (170px) exists only for a rotated phone in landscape, where
+ * `100dvh` is suddenly tiny -- without it the board would shrink toward zero
+ * instead of asking for a little scroll, which is worse. It's set below what
+ * any real portrait phone needs on purpose: a floor that wins on a genuine
+ * short-portrait phone stops the calc from shrinking the board as far as
+ * that phone actually needs, which is exactly the bug this replaced a fixed
+ * breakpoint to fix in the first place. */
+.ante-match {
+  --sk-board-w: min(100%, 420px, max(170px, calc(100dvh - 380px)));
+}
 
 .sk-grid {
   display: grid;
   grid-template-columns: repeat(9, 1fr);
-  width: min(100%, 420px);
+  width: var(--sk-board-w);
   aspect-ratio: 1;
   margin: 0 auto;
   background: rgba(4,9,8,.6);
@@ -158,7 +178,7 @@
 .sk-toolbar {
   display: flex;
   justify-content: center;
-  width: min(100%, 420px);
+  width: var(--sk-board-w);
   margin: 0 auto;
 }
 
@@ -196,7 +216,7 @@
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 6px;
-  width: min(100%, 420px);
+  width: var(--sk-board-w);
   margin: 0 auto;
 }
 .sk-key {
@@ -245,28 +265,15 @@
   .sk-key { min-height: 44px; font-size: 15px; }
 }
 
-/* .sk-grid/.sk-pad/.sk-toolbar all read `width: min(100%, 420px)` with no
- * mobile override, on purpose: 420px is a desktop ceiling that a phone's own
- * content width (.duel-shell's side padding is all that's between this and
- * the screen edge) never actually reaches, so `100%` already does the real
- * shrinking. A phone-width step-down here used to fire on top of that and
- * cap the board well under what the phone actually had free -- measured on a
- * real 390px viewport, a 340px cap when 366px was available, every cell (and
- * every pencil mark inside one) smaller than it needed to be for no reason.
- *
- * The one real mobile constraint is vertical, not horizontal: a short phone
- * (SE-class, ~667px tall) doesn't have the height a full-width square grid
- * plus the toolbar, pad and "Give up" link all assume. That's a height
- * problem and gets a height query -- a WIDTH breakpoint here would also
- * catch every modern narrow-but-TALL phone (iPhone 15 at 393x852 is
- * narrower than the old 420px width trigger ever needed to be) and shrink
- * a board that already had all the vertical room it needed.
- */
-@media (max-height: 700px) {
-  .sk-grid { width: min(100%, 310px); }
-  .sk-pad { width: min(100%, 310px); }
-  .sk-toolbar { width: min(100%, 310px); }
-}
+/* `--sk-board-w` (defined on `.ante-match` above) is deliberately NOT a width
+ * media-query step-down, on two counts of the same lesson learned twice on
+ * this file: a WIDTH breakpoint here once shrank the board on every phone
+ * regardless of how much vertical room it had (measured: a 340px cap on a
+ * 390px viewport with 366px genuinely free), and a discrete HEIGHT breakpoint
+ * replacing it still under- or over-shrank depending which side of its one
+ * cutoff a device landed on (a 320x568 phone still overflowed by 94px even
+ * under the height version). `calc(100dvh - 380px)` scales continuously with
+ * whatever vertical room a device actually has instead of guessing a cutoff. */
 
 @media (prefers-reduced-motion: reduce) {
   .sk-cell-wrong { animation: none; }

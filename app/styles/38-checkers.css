@@ -16,7 +16,21 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: min(100%, 420px);
+  /* The clock rows and the board both stretch to fill this (flex-direction:
+     column's default align-items: stretch), so one width here is the one
+     number that has to change for all of it to move together.
+     `calc(100dvh - 330px)` is what keeps the whole game on screen with no
+     scroll on a short phone: everything below the board (the "You" clock
+     row) is fixed-height content that doesn't shrink, so the board is the
+     one thing with room to give. 330px is the measured height of everything
+     else this page stacks around the board, plus margin for device
+     variance -- a width breakpoint was tried for this exact problem on
+     Sudoku's grid and it over-shrank every phone regardless of how much
+     vertical room it actually had; this scales continuously instead of
+     guessing a cutoff. The floor is a rotated phone in landscape, where
+     `100dvh` briefly gets tiny: without it the board would shrink toward
+     zero instead of asking for a little scroll, which is worse. */
+  width: min(100%, 420px, max(240px, calc(100dvh - 330px)));
 }
 
 /* ---------------------------------------------------------------- clocks */

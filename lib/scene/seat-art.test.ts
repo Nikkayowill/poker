@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { SEAT_ART_CHARACTERS } from "./seat-art.generated";
-import { HANDS_PER_CAST, pickSeatArt, seatArtCharacterForSlot, seatArtSrc } from "./seat-art";
+import { HANDS_PER_CAST, pickSeatArt, seatArtBox, seatArtCharacterForSlot, seatArtSrc } from "./seat-art";
 
 const publicDir = path.join(process.cwd(), "public");
 
@@ -89,5 +89,36 @@ describe("pickSeatArt angle contracts", () => {
 
     expect(pickSeatArt(character!, 25).src).toBe(seatArtSrc("character17", 20));
     expect(pickSeatArt(character!, 25, 40).src).toBe(seatArtSrc("character17", 40));
+  });
+});
+
+describe("seatArtBox", () => {
+  // A character's plate has no transparent margin below the hand -- it's
+  // built flush to the crop edge, same as every other character (see
+  // prepare-seat-art.py). Any scale that grows the box from the head down
+  // instead of the hands up pushes that flush edge past the felt/rail line,
+  // which read as an arm sinking into the table (seat1's forced-40deg
+  // override, 2026-08-22 -- character16 and character34 both did this).
+  const head = { x: 100, y: 50 };
+  const hands = { x: 100, y: 250 };
+  const slot = { scale: 1, crown: 0.02, offsetX: 0, offsetY: 0 };
+
+  it("lands the box bottom exactly on the hands anchor at scale 1", () => {
+    const box = seatArtBox(head, hands, 0.7, false, slot);
+    expect(box!.top + box!.height).toBeCloseTo(hands.y, 5);
+  });
+
+  it("keeps the hands pinned to the anchor at any scale -- only the top should move", () => {
+    for (const scale of [0.8, 1.2, 1.3, 1.6]) {
+      const box = seatArtBox(head, hands, 0.7, false, { ...slot, scale });
+      expect(box!.top + box!.height).toBeCloseTo(hands.y, 5);
+    }
+  });
+
+  it("treats offsetY as a plain pixel nudge off the hands anchor, independent of scale", () => {
+    for (const scale of [1, 1.3]) {
+      const box = seatArtBox(head, hands, 0.7, false, { ...slot, scale, offsetY: 20 });
+      expect(box!.top + box!.height).toBeCloseTo(hands.y + 20, 5);
+    }
   });
 });

@@ -169,20 +169,27 @@ function identityHash(seed: string): number {
 
 /**
  * An identity for a seat that is turning over, unique among the bots currently
- * sitting at this table.
- *
- * Uniqueness is checked table-wide rather than per seat: drawing independently
- * per seat is what seats the same tag twice, which is the exact thing
- * rotation is meant to stop. Walking forward from the seeded offset rather
- * than re-drawing keeps it deterministic and bounded.
+ * sitting at this table -- both by tag (no two seats wearing the same name)
+ * and by avatarPreset (no two seats drawing the same icon, since the preset
+ * cycles every 6 pool entries and would otherwise repeat well before the tag
+ * does). Uniqueness is checked table-wide rather than per seat: drawing
+ * independently per seat is what seats the same tag or icon twice, which is
+ * the exact thing rotation is meant to stop. Walking forward from the seeded
+ * offset rather than re-drawing keeps it deterministic and bounded.
  */
 function pickBotIdentity(state: GameState, position: number): number {
-  const taken = new Set(
-    state.seats
-      .filter((seat) => seat.position !== position && !seat.isHuman && seat.botIdentity !== null)
-      .map((seat) => seat.botIdentity),
+  const others = state.seats.filter(
+    (seat) => seat.position !== position && !seat.isHuman && seat.botIdentity !== null,
   );
+  const taken = new Set(others.map((seat) => seat.botIdentity));
+  const takenPresets = new Set(others.map((seat) => botProfileFor(seat.botIdentity!).avatarPreset));
   const offset = identityHash(`${state.id}:${state.handNumber}:${position}`);
+  for (let step = 0; step < botProfiles.length; step += 1) {
+    const candidate = (offset + step) % botProfiles.length;
+    if (!taken.has(candidate) && !takenPresets.has(botProfiles[candidate].avatarPreset)) return candidate;
+  }
+  // Every preset already taken (a full table with fewer distinct presets than
+  // seats) -- fall back to tag-uniqueness only, same as before this existed.
   for (let step = 0; step < botProfiles.length; step += 1) {
     const candidate = (offset + step) % botProfiles.length;
     if (!taken.has(candidate)) return candidate;
@@ -788,6 +795,17 @@ export function createGame(
     createdAt: now,
     updatedAt: now,
   };
+  // Rotate the starting cast per table instead of always seating the same
+  // first SEAT_COUNT-1 pool entries in the same order -- the seats above are
+  // built from a fixed slice of botProfiles, so every fresh table used to
+  // open on the identical five bots (maya_ontilt, theo_wit_it, riverrat_rj,
+  // priyapushes, wrenzo_44), which is why "priya" and "river" showed up at
+  // every table a player loaded into. pickBotIdentity is seeded off
+  // state.id, so reusing it here varies the opening lineup per table the
+  // same way a mid-game reseat already varies who sits back down.
+  for (const seat of state.seats) {
+    if (!seat.isHuman) restoreBotControl(seat, pickBotIdentity(state, seat.position));
+  }
   setupHand(state, true);
   return state;
 }

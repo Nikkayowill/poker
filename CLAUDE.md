@@ -148,9 +148,17 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   then fail against the real table. The UI tells them apart from `board.explodedAt`, which the view
   now carries; a test pins both halves. Caught in a real browser — the result panel said "Gave up"
   after a player was blown up.
-- Leaderboard entry is **expert only** (`LEADERBOARD_DIFFICULTY`), labelled "Minesweeper (Expert)".
-  The board averages clear time, and an average across three board sizes is not a comparable number;
-  Memory Match gets that property for free by having one board size. Flagged as a judgement call.
+- **No leaderboard, and that is now a general rule: leaderboards are for PvP only, not solo play.**
+  Kayo's call, made when a first pass shipped a solo Minesweeper board and had to pick a difficulty
+  for it (an average clear time across three board sizes ranks whoever plays the easiest one). The
+  answer was that the premise was wrong, not the tie-break. `lib/server/ante-up-minesweeper-service.ts`
+  makes no `recordMetricResult` call and there is no `LEADERBOARD_GAMES` entry; a clear feeds missions
+  and achievements and nothing else. Apply this to the nine solo games still to come.
+- **`memory-match` still contradicts that rule** — it is a solo game with a live `LEADERBOARD_GAMES`
+  entry (average turns) and a `recordMetricResult` call in `ante-up-memory-service.ts`, predating the
+  rule. Left alone deliberately rather than deleted in passing: it is shipped behaviour with a live
+  tab and existing `game_leaderboard_stats` rows behind it. Raised with Kayo; decide before adding
+  any further solo board.
 - Input is where most of the feel is: long-press to flag (350ms), a sticky Flag-mode toggle for
   players who would rather not hold, right-click on desktop, and tapping an open number chords it.
   Verified in a browser that a long press flags *without* also opening the square.

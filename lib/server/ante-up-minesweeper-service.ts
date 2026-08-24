@@ -20,7 +20,6 @@ import {
 } from "@/lib/arcade/ante-up-minesweeper";
 import {
   isMinesweeperDifficulty,
-  minesweeperElapsedMs,
   type MinesweeperDifficulty,
   type MinesweeperMoveProblem,
 } from "@/lib/arcade/puzzles/minesweeper";
@@ -36,7 +35,6 @@ import {
 } from "./ante-up-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
-import { recordMetricResult } from "./leaderboard-store";
 import { applyMissionEvent } from "./mission-store";
 import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
 import { awardWager } from "./progression-store";
@@ -74,15 +72,10 @@ const GAME = "minesweeper";
 export const ANTE_UP_MINESWEEPER_DAILY_WAGERED_LIMIT = 10;
 
 /**
- * Which difficulty feeds the leaderboard.
- *
- * The board averages a clear time, and an average taken across three different
- * board sizes says nothing -- a 9x9 clear and a 10x18 clear are not comparable
- * numbers. Memory Match gets a meaningful average for free by only having one
- * board size; this pins one size to get the same property. Expert is the one
- * worth racing on.
+ * No leaderboard hook here on purpose: Kayo's call (2026-08-24) is that
+ * leaderboards are for PvP only, not solo play. A clear feeds missions and
+ * achievements through payOutWin and nothing else.
  */
-const LEADERBOARD_DIFFICULTY: MinesweeperDifficulty = "expert";
 
 function parseDifficulty(value: string): MinesweeperDifficulty {
   if (!isMinesweeperDifficulty(value)) {
@@ -302,15 +295,7 @@ export async function playAnteUpMinesweeper(
     });
   }
 
-  if (stored.state.status === "won") {
-    // Clear time is the score -- lower is better, wager or free. Expert only;
-    // see LEADERBOARD_DIFFICULTY for why the board pins one board size.
-    if (stored.state.difficulty === LEADERBOARD_DIFFICULTY) {
-      const seconds = Math.round(minesweeperElapsedMs(stored.state.board, now) / 1000);
-      await recordMetricResult(GAME, profile.id, seconds);
-    }
-    await payOutWin(profile.id, stored.state);
-  }
+  if (stored.state.status === "won") await payOutWin(profile.id, stored.state);
 
   return { attempt: snapshot(stored, now), profile };
 }

@@ -48,8 +48,17 @@ export const MIN_ANTE_UP_WAGER = 500;
  */
 export const ANTE_UP_MEMORY_MAX_TURNS = 20;
 
-/** Win-only payout multiplier, keyed by turns taken. Starting numbers, easy to retune here. */
-function wagerMultiplierForTurns(turns: number): number {
+/**
+ * Win-only payout multiplier, keyed by turns taken. Starting numbers, easy to
+ * retune here.
+ *
+ * Exported, not just used internally by anteUpMemoryPayout below: the board's
+ * own payout field is 0 for the entire game (it only becomes real once
+ * `status` is "solved" -- see anteUpMemoryPayout), so it cannot drive a live
+ * "cash out ~X right now" figure during play. This is the same formula, just
+ * callable against the turn count a live attempt already exposes.
+ */
+export function wagerMultiplierForTurns(turns: number): number {
   if (turns <= MEMORY_PAIRS) return 6;
   if (turns <= 10) return 4;
   if (turns <= 13) return 2.5;

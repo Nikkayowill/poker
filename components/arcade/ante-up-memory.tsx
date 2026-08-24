@@ -11,6 +11,7 @@ import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_MEMORY_MAX_TURNS,
   MIN_ANTE_UP_WAGER,
+  wagerMultiplierForTurns,
   type AnteUpMemorySnapshot,
 } from "@/lib/arcade/ante-up-memory";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -146,6 +147,14 @@ export function AnteUpMemory() {
   // A forfeit can only come from the turn cap or a resignation -- the turn
   // count is what tells them apart, since both settle as "lost".
   const ranOutOfTurns = attempt !== null && attempt.status === "lost" && attempt.turns > attempt.maxTurns;
+  // attempt.payout is 0 for the entire game -- it only becomes real once the
+  // board is solved (anteUpMemoryPayout's own rule) -- so the scoreline shows
+  // this instead while active: what a win pays at the CURRENT turn count,
+  // the live version of the lobby's own "the fewer turns it takes, the more
+  // it pays" promise. Once settled, attempt.payout is the true, final number.
+  const projectedPayout = attempt && active
+    ? Math.round(attempt.wager * wagerMultiplierForTurns(attempt.turns))
+    : attempt?.payout ?? 0;
 
   return (
     <main className="duel-shell ante-shell">
@@ -214,7 +223,7 @@ export function AnteUpMemory() {
             <span className="duel-pot">
               <Coins size={12} aria-hidden="true" />
               <strong>{attempt.wager.toLocaleString()}</strong>
-              {attempt.wager > 0 && <small>→ {attempt.payout.toLocaleString()}</small>}
+              {attempt.wager > 0 && <small>→ {projectedPayout.toLocaleString()}</small>}
             </span>
           </div>
 

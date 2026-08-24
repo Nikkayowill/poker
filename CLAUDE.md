@@ -154,11 +154,20 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   answer was that the premise was wrong, not the tie-break. `lib/server/ante-up-minesweeper-service.ts`
   makes no `recordMetricResult` call and there is no `LEADERBOARD_GAMES` entry; a clear feeds missions
   and achievements and nothing else. Apply this to the nine solo games still to come.
-- **`memory-match` still contradicts that rule** — it is a solo game with a live `LEADERBOARD_GAMES`
-  entry (average turns) and a `recordMetricResult` call in `ante-up-memory-service.ts`, predating the
-  rule. Left alone deliberately rather than deleted in passing: it is shipped behaviour with a live
-  tab and existing `game_leaderboard_stats` rows behind it. Raised with Kayo; decide before adding
-  any further solo board.
+- The rule in full, after Kayo restated it three times: **PvP games each get a leaderboard, poker
+  keeps its own richer one (hands won, biggest pot — not just W/L), and Ante Up solo games get none.**
+  Per-difficulty boards were considered and rejected by Kayo as "too much" — worth knowing that the
+  cost is screen, not compute: `game_leaderboard_stats` is one small row per player per game, but the
+  tab row is already 9 wide on a phone and ten solo games x3 difficulties would be 30 tabs.
+- **`memory-match` still contradicts the rule and is the next piece of work.** It is a solo game with
+  a live `LEADERBOARD_GAMES` entry (average turns) and a `recordMetricResult` call in
+  `ante-up-memory-service.ts`, both predating the rule. Deliberately NOT removed in the Minesweeper
+  pass, because it is not a one-line deletion: `global_leaderboard_entries()` hardcodes
+  `game_id = 'memory-match'` as its only `average_metric` branch, so a code-only removal would drop
+  the tab while Global kept blending it — it needs a migration too. And once it goes, `average_metric`
+  and `recordMetricResult` have no production caller left (park them like `lib/arcade/retired.ts`, or
+  delete). `lib/server/leaderboard-store.test.ts` uses memory-match as its fixture for that whole
+  path. Do it as its own branch.
 - Input is where most of the feel is: long-press to flag (350ms), a sticky Flag-mode toggle for
   players who would rather not hold, right-click on desktop, and tapping an open number chords it.
   Verified in a browser that a long press flags *without* also opening the square.

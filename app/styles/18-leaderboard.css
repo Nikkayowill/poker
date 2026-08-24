@@ -122,6 +122,9 @@
   font-size: 13px;
 }
 .leaderboard-empty svg { color: var(--gold); flex-shrink: 0; }
+/* The same empty-state line, but following a real table instead of replacing
+   one -- the viewer has rows to look at above it, so it needs its own gap. */
+.leaderboard-qualify-hint { margin-top: 12px; }
 
 /* No plate under the standings. The zebra wash on the rows below is what
    separates one player from the next; a translucent panel around all of them

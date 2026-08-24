@@ -29,6 +29,12 @@ interface GenericEntry {
   cells: Record<string, string>;
 }
 
+/** How close the viewer is to qualifying for a game's own board -- see mineProgress on GET /api/leaderboard. */
+interface QualifyProgress {
+  sample: number;
+  minSample: number;
+}
+
 interface GlobalEntry {
   profileId: string;
   rank: number;
@@ -70,6 +76,12 @@ function formatProfit(amount: number): string {
 
 function daysRemaining(endsAt: string): number {
   return Math.max(0, Math.ceil((Date.parse(endsAt) - Date.now()) / 86_400_000));
+}
+
+/** "Play 2 more games to qualify for this board." -- the gap between a played-once row and appearing on it. */
+function qualifyHint(progress: QualifyProgress): string {
+  const remaining = progress.minSample - progress.sample;
+  return `Play ${remaining} more game${remaining === 1 ? "" : "s"} to qualify for this board.`;
 }
 
 function RankBadge({ rank }: { rank: number }) {
@@ -242,6 +254,7 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
   const [genericLabel, setGenericLabel] = useState<string>("");
   const [genericEntries, setGenericEntries] = useState<GenericEntry[]>([]);
   const [genericMine, setGenericMine] = useState<GenericEntry | null>(null);
+  const [genericMineProgress, setGenericMineProgress] = useState<QualifyProgress | null>(null);
   const [globalEntries, setGlobalEntries] = useState<GlobalEntry[]>([]);
   const [globalMine, setGlobalMine] = useState<GlobalEntry | null>(null);
   const [friendEntries, setFriendEntries] = useState<FriendEntry[]>([]);
@@ -274,6 +287,7 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
         setGenericLabel(data.label ?? "");
         setGenericEntries(data.entries);
         setGenericMine(data.mine);
+        setGenericMineProgress(data.mineProgress ?? null);
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load the leaderboard.");
@@ -372,7 +386,9 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
               ? (friendsRequireAccount
                 ? "Sign in to keep a record against your friends."
                 : "No friends yet. Add someone from the players menu, then beat them at something.")
-              : "Nobody has qualified yet. Be the first."}
+              : genericMineProgress
+                ? qualifyHint(genericMineProgress)
+                : "Nobody has qualified yet. Be the first."}
         </p>
       )}
 
@@ -462,6 +478,12 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
             </>
           )}
         </div>
+      )}
+
+      {game !== "poker" && game !== "global" && game !== "friends" && genericEntries.length > 0 && !genericMine && genericMineProgress && (
+        <p className="leaderboard-empty leaderboard-qualify-hint">
+          <Coins size={15} />{" "}{qualifyHint(genericMineProgress)}
+        </p>
       )}
     </Shell>
   );

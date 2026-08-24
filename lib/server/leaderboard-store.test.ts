@@ -7,6 +7,7 @@ import {
   __resetLeaderboardMemory,
   getFriendsBoard,
   getGameLeaderboard,
+  getGameQualifyProgress,
   getGameStanding,
   getGlobalLeaderboard,
   getGlobalStanding,
@@ -159,6 +160,37 @@ describe("getGameLeaderboard / getGameStanding", () => {
   it("returns nothing for an unregistered game id rather than throwing", async () => {
     expect(await getGameLeaderboard("solitaire", 10)).toEqual([]);
     expect(await getGameStanding("solitaire", "whoever")).toBeNull();
+  });
+});
+
+describe("getGameQualifyProgress", () => {
+  it("reports how many more games are needed while below minSample", async () => {
+    const a = await newPlayer("A");
+    const b = await newPlayer("B");
+    await recordDuelResult("chess", [a.id, b.id], 0);
+
+    expect(await getGameQualifyProgress("chess", a.id)).toEqual({ sample: 1, minSample: 3 });
+
+    await recordDuelResult("chess", [a.id, b.id], 0);
+    expect(await getGameQualifyProgress("chess", a.id)).toEqual({ sample: 2, minSample: 3 });
+  });
+
+  it("returns null once qualified -- getGameStanding is the answer at that point", async () => {
+    const a = await newPlayer("A");
+    const b = await newPlayer("B");
+    for (let i = 0; i < 3; i += 1) await recordDuelResult("chess", [a.id, b.id], 0);
+
+    expect(await getGameQualifyProgress("chess", a.id)).toBeNull();
+    expect(await getGameStanding("chess", a.id)).not.toBeNull();
+  });
+
+  it("returns null for a player who has never played this game", async () => {
+    const a = await newPlayer("A");
+    expect(await getGameQualifyProgress("chess", a.id)).toBeNull();
+  });
+
+  it("returns null for an unregistered game id", async () => {
+    expect(await getGameQualifyProgress("solitaire", "whoever")).toBeNull();
   });
 });
 

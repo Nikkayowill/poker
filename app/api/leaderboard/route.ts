@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { leaderboardGame } from "@/lib/leaderboard/contract";
-import { getFriendsBoard, getGameLeaderboard, getGameStanding, getGlobalLeaderboard, getGlobalStanding } from "@/lib/server/leaderboard-store";
+import { getFriendsBoard, getGameLeaderboard, getGameQualifyProgress, getGameStanding, getGlobalLeaderboard, getGlobalStanding } from "@/lib/server/leaderboard-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
@@ -26,7 +26,10 @@ const querySchema = z.object({
  * about them. Any other known id (see lib/leaderboard/contract.ts's
  * registry) is that game's own win/loss or average-metric board, with
  * pre-formatted `cells` a client renders without knowing the game's shape --
- * this is what lets a future game join with no UI change.
+ * this is what lets a future game join with no UI change. That board also
+ * carries `mineProgress` (sample vs. the game's qualifying minSample) for a
+ * caller who has played but not yet qualified -- otherwise a real first
+ * result is indistinguishable from having never played this game at all.
  */
 export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request, "leaderboard:read", 60, 60 * 1000);
@@ -66,11 +69,14 @@ export async function GET(request: NextRequest) {
     if (game !== "poker") {
       const contract = leaderboardGame(game);
       if (!contract) return NextResponse.json({ error: "Unknown leaderboard." }, { status: 400 });
-      const [entries, mine] = await Promise.all([
+      // mineProgress is only ever non-null when mine is null -- a qualified
+      // player's own row already says everything progress would.
+      const [entries, mine, mineProgress] = await Promise.all([
         getGameLeaderboard(game, 10),
         profile ? getGameStanding(game, profile.id) : Promise.resolve(null),
+        profile ? getGameQualifyProgress(game, profile.id) : Promise.resolve(null),
       ]);
-      return NextResponse.json({ game, label: contract.label, columns: contract.columns, entries, mine });
+      return NextResponse.json({ game, label: contract.label, columns: contract.columns, entries, mine, mineProgress });
     }
 
     const [entries, season] = await Promise.all([

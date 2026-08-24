@@ -1,0 +1,180 @@
+/* Ante Up: Minesweeper.
+ *
+ * After 36-duels.css and 43-ante-up.css: the shell, the wager step, the result
+ * block and the difficulty tiles all come from those two, so what is here is
+ * the board and the two controls only this game has (the mine counter and the
+ * Flag-mode toggle).
+ *
+ * The one hard problem is fitting a board that is not square. Sudoku is always
+ * 9x9, so 33-sudoku.css can size it from width alone; here the grid is 9x9,
+ * 9x14 or 10x18, and expert is nearly twice as tall as it is wide. Sizing from
+ * width alone would run expert off the bottom of every phone, so the width is
+ * derived from the height the viewport can actually spare and then converted
+ * through the board's own aspect ratio -- see .ms-grid.
+ */
+
+.ms-match {
+  /* Everything below the board (toolbar, hint, "Give up") plus the shell's own
+     header and scoreline. Same reasoning as 33-sudoku.css's 380px: the board is
+     the one element with room to give on a short viewport. The 200px floor is
+     for a rotated phone, where 100dvh collapses and an un-floored calc would
+     shrink the board toward nothing instead of asking for a little scroll. */
+  --ms-spare-h: max(200px, calc(100dvh - 300px));
+}
+
+.ms-grid {
+  display: grid;
+  /* Both set inline from the snapshot's own board, so a new difficulty needs no
+     edit here. */
+  grid-template-columns: repeat(var(--ms-cols, 9), 1fr);
+  aspect-ratio: var(--ms-cols, 9) / var(--ms-rows, 9);
+  /* Whichever binds first: the container, a desktop cap, or the height the
+     viewport can spare converted to a width through the board's aspect. */
+  width: min(
+    100%,
+    460px,
+    calc(var(--ms-spare-h, 60dvh) * var(--ms-cols, 9) / var(--ms-rows, 9))
+  );
+  margin: 0 auto;
+  gap: 1px;
+  padding: 1px;
+  background: rgba(4, 9, 8, .6);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ms-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  font-size: clamp(11px, 3.4vw, 17px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  /* A grid of small tap targets a thumb hits repeatedly, and this game's flag
+     gesture is a deliberate long press -- without this, both platforms read
+     that as a text selection and pop a callout over the board mid-game. */
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition: background .1s ease, transform .1s ease;
+}
+.ms-cell:focus-visible { outline: 2px solid var(--gold-light); outline-offset: -2px; }
+.ms-cell:disabled { cursor: default; }
+
+/* Covered vs uncovered is the single distinction a player scans, constantly,
+   for the whole game -- so the gap between these two blocks is deliberately
+   much wider than a normal hover/rest pair. A first pass had them 5% apart in
+   the same direction (both lighter than the board) and the board read as one
+   flat grid: you could not see the shape of what you had opened, which is the
+   only thing Minesweeper asks you to look at. They now sit on opposite sides
+   of the board colour -- covers lighter and raised, opened darker and sunk. */
+.ms-cell-hidden {
+  background: rgba(255, 255, 255, .14);
+  box-shadow:
+    inset 1.5px 1.5px 0 rgba(255, 255, 255, .16),
+    inset -1.5px -1.5px 0 rgba(0, 0, 0, .38);
+  color: var(--gold-light);
+}
+.ms-cell-hidden:hover:not(:disabled) { background: rgba(255, 255, 255, .2); }
+.ms-cell-hidden:active:not(:disabled) { transform: scale(.94); }
+
+.ms-cell-open {
+  background: rgba(0, 0, 0, .42);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .5);
+  cursor: default;
+}
+/* A number is still tappable -- that is the chord. */
+.ms-cell-open.ms-cell-1,
+.ms-cell-open.ms-cell-2,
+.ms-cell-open.ms-cell-3,
+.ms-cell-open.ms-cell-4,
+.ms-cell-open.ms-cell-5,
+.ms-cell-open.ms-cell-6,
+.ms-cell-open.ms-cell-7,
+.ms-cell-open.ms-cell-8 { cursor: pointer; }
+
+/* The classic number colours, pulled toward this app's palette so they still
+   read against a dark board. Distinguishable at a glance is the whole job:
+   1s and 2s carry most of the game. */
+.ms-cell-1 { color: #6aa9ff; }
+.ms-cell-2 { color: #57c98a; }
+.ms-cell-3 { color: #ff7b7b; }
+.ms-cell-4 { color: #b48cff; }
+.ms-cell-5 { color: #ffb057; }
+.ms-cell-6 { color: #4fd1d1; }
+.ms-cell-7 { color: #e7ece6; }
+.ms-cell-8 { color: #9fb0a7; }
+
+.ms-cell-flagged { color: var(--gold-light); }
+
+/* The mine that ended it, every other mine, and a flag that was wrong -- three
+   different facts, so three different colours rather than one "revealed" look. */
+.ms-cell-exploded {
+  background: rgba(220, 70, 70, .55);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 120, 120, .6);
+}
+.ms-cell-mine { color: #ff9b9b; background: rgba(255, 255, 255, .04); }
+.ms-cell-wrong-flag { color: #ff7b7b; background: rgba(220, 70, 70, .16); text-decoration: line-through; }
+
+/* ---- Scoreline ----
+ * Three things instead of the duel scoreline's two, so the clock keeps the
+ * middle and the counters sit either side of it.
+ */
+.ms-scoreline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ms-scoreline .ante-clock { flex: 1; text-align: center; }
+
+.ms-mines {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #ff9b9b;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+.ms-mines strong { font-size: 14px; }
+
+/* ---- Toolbar ---- */
+.ms-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 10px auto 0;
+  width: min(100%, 460px);
+}
+
+.ms-flag-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .04);
+  color: #cfd8d2;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.ms-flag-toggle:hover { background: rgba(255, 255, 255, .08); }
+/* On is a real state change, not a hover: a tap now flags instead of opening,
+   which is the difference between winning and losing the board. */
+.ms-flag-toggle-active {
+  background: var(--gold-light);
+  border-color: var(--gold-light);
+  color: #14201b;
+}
+
+.ms-hint {
+  margin: 0;
+  color: #9fb0a7;
+  font-size: 11.5px;
+  text-align: center;
+  flex: 1 1 100%;
+}

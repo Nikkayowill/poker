@@ -134,7 +134,34 @@ export const LEADERBOARD_GAMES: Readonly<Record<string, LeaderboardGameContract>
       rounds: String(stats.metricCount),
     }),
   },
+  minesweeper: {
+    gameId: "minesweeper",
+    label: "Minesweeper (Expert)",
+    kind: "average_metric",
+    direction: "lower_better",
+    minSample: 3,
+    columns: [
+      { key: "avgTime", label: "Avg time" },
+      { key: "clears", label: "Clears" },
+    ],
+    // Expert only -- averaging clear times across three board sizes would not
+    // be a comparable number. See LEADERBOARD_DIFFICULTY in
+    // lib/server/ante-up-minesweeper-service.ts, and the label says so.
+    formatRow: (stats) => ({
+      avgTime:
+        stats.metricCount > 0
+          ? formatClearTime(Math.round(stats.metricSum / stats.metricCount))
+          : "—",
+      clears: String(stats.metricCount),
+    }),
+  },
 };
+
+/** "4:07" / "48s" -- a clear time reads as a stopwatch, not a bare number of seconds. */
+function formatClearTime(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
 
 export type LeaderboardGameId = keyof typeof LEADERBOARD_GAMES;
 

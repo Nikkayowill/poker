@@ -109,6 +109,57 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   with `/api/push/subscribe`, `/api/push/unsubscribe`, and `/api/cron/notify-inactive-players` all
   present. Grepped `.next/static` for the VAPID private key string, same reasoning as Word Race's
   answer-bank leak (2026-08-12) — clean, nothing server-only reached the client bundle.
+### Ante Up: Minesweeper, and the start of a 12-game catalog expansion (2026-08-24)
+- Kayo asked for ten more solo Ante Up games (Minesweeper, 2048, Nonogram, Mastermind, Word Search,
+  Block Puzzle, Lights Out, Pattern Memory, Spot the Difference, Logic Grid) plus PvP versions of
+  each, plus two PvP-first ones (Typing Race, Reaction Duel) that also need solo modes — roughly 24
+  modes. Kayo's explicit call on pacing: **one game at a time**, fully built and played before the
+  next starts, rather than a batch of shallow ones. Minesweeper picked first. Branch
+  `feat/ante-up-minesweeper` (worktree `.claude/worktrees/minesweeper`), off origin/main.
+- **No migration was needed and none should be written for the next nine.** `ante_up_attempts.game`
+  is free-form text with only a length bound and both its indexes are already generic over `game`, so
+  a new solo game is `const GAME = "<id>"` in its own service and nothing else. Confirmed by reading
+  `20260821130000_ante_up_unify_brain_games.sql`, not assumed.
+- Built as the established two-layer split: `lib/arcade/puzzles/minesweeper.ts` (board rules only) +
+  `lib/arcade/ante-up-minesweeper.ts` (wager/clock/payout wrapper), mirroring Sudoku's
+  `puzzles/sudoku.ts` + `ante-up.ts`. Service, two API routes, page and component all mirror the
+  Sudoku vertical slice; CSS is `46-minesweeper.css`, reusing `.duel-*`/`.ante-*` rather than a third
+  copy of either.
+- **Every board is guaranteed solvable by logic alone.** Mines are laid on the FIRST reveal (so the
+  opening click is always safe) and the layout is re-rolled until a solver — single-cell rules, the
+  subset rule for 1-2-1 walls, and the global mine-count rule — finishes it with no guess. A board
+  that ends in a coin flip is a slot machine, and this one settles real Gold. Measured at 3.9ms/board
+  for expert, converging in a handful of attempts, not the 400-attempt ceiling. `isNoGuessBoard` is
+  exported so the tests pin the guarantee directly instead of inferring it from timing.
+- **That guarantee is exactly why there is a clock.** With no forced guesses a careful player never
+  *has* to hit a mine, so the natural loss alone is weak — the per-tier limit (5/12/25 min, measured
+  from the first click, not from opening the attempt) is what keeps a wager a real bet, the same job
+  `ANTE_UP_MEMORY_MAX_TURNS` does for Memory. The limits are generous against real solve times on
+  purpose: the challenge is the board, the clock only stops someone walking away with the slot held.
+- Difficulty is capped at 10 columns (beginner 9x9/10, intermediate 9x14/22, expert 10x18/38),
+  tracking the classic *densities* rather than the classic grid sizes — the real 30-column expert
+  board is unplayable on a phone. Verified at 390x844: the 10x18 board plus toolbar and "Give up" fit
+  with no page scroll, because the grid's width is derived from the height the viewport can spare and
+  converted through the board's own aspect ratio (a width-only cap, which is all Sudoku needs, runs
+  expert off the bottom of every phone).
+- **A mine and a resignation both settle as status `lost`, and that must not be "fixed" with a new
+  status value.** `ante_up_attempts.status` is a CHECK over exactly
+  ('active','won','lost','timed-out'), so a `resigned` status would pass every memory-mode test and
+  then fail against the real table. The UI tells them apart from `board.explodedAt`, which the view
+  now carries; a test pins both halves. Caught in a real browser — the result panel said "Gave up"
+  after a player was blown up.
+- Leaderboard entry is **expert only** (`LEADERBOARD_DIFFICULTY`), labelled "Minesweeper (Expert)".
+  The board averages clear time, and an average across three board sizes is not a comparable number;
+  Memory Match gets that property for free by having one board size. Flagged as a judgement call.
+- Input is where most of the feel is: long-press to flag (350ms), a sticky Flag-mode toggle for
+  players who would rather not hold, right-click on desktop, and tapping an open number chords it.
+  Verified in a browser that a long press flags *without* also opening the square.
+- Verified: full `npx vitest run` 2428/2428 green, clean lint, clean production build with
+  `/games/minesweeper` and both API routes mounted, `tsc` clean apart from the pre-existing
+  `safe-area.spec.ts` failure. Also driven by hand against a memory-mode server: cascade, flag,
+  chord refusal, stale-version 409, and a check that neither the mine list nor the seed that would
+  reproduce it appears in any payload (the generator is deterministic, so the seed is as sensitive as
+  the mines — there is a test pinning this too).
 
 ### Seat-art roster grown to 35; character22-31 caught facing the wrong way (2026-08-22)
 - Four more Kayo-supplied turnaround sheets (`character32`-`35`), same

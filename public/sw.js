@@ -27,6 +27,9 @@
 // all), and the manifest's theme/background colours moved to matte obsidian.
 // Same reasoning as v6: the cached copies are exactly the assets a returning
 // player never re-fetches on their own.
+// v8: push/notificationclick/pushsubscriptionchange handlers added below --
+// no SHELL change, so the cache name is untouched; the browser's normal
+// byte-diff update check is what picks this file up.
 const CACHE_NAME = "stackchips-shell-v7";
 const SHELL = [
   "/",
@@ -86,5 +89,68 @@ self.addEventListener("fetch", (event) => {
         .catch(() => cached);
       return cached ?? network;
     }),
+  );
+});
+
+// Re-engagement pushes -- see lib/server/push-service.ts for what sends
+// these and lib/push/client.ts for how a device subscribes. The payload is
+// plain JSON: { title, body, url }. A malformed/missing payload still shows
+// a generic notification rather than silently doing nothing, since a push
+// event with no visible notification is exactly what browsers revoke
+// permission for.
+self.addEventListener("push", (event) => {
+  let payload = { title: "StackChips", body: "Come back and play.", url: "/" };
+  try {
+    if (event.data) payload = { ...payload, ...event.data.json() };
+  } catch {
+    // Non-JSON payload: fall through to the generic text above.
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: { url: payload.url || "/" },
+    }),
+  );
+});
+
+// Tapping the notification focuses an already-open StackChips tab instead of
+// stacking a new one -- most players already have the PWA open somewhere.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data && event.notification.data.url ? event.notification.data.url : "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.includes(self.location.origin) && "focus" in client) {
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(targetUrl);
+    }),
+  );
+});
+
+// The push service can rotate a subscription's endpoint out from under a
+// device without the app open (a browser-level renewal, not a player
+// action) -- the old endpoint just stops delivering silently otherwise.
+// Re-subscribing and re-posting is the documented recovery; no VAPID key is
+// available here to hand subscribe() explicitly, so this reuses whatever
+// key the expiring subscription itself was created with.
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    self.registration.pushManager
+      .subscribe(event.oldSubscription ? { applicationServerKey: event.oldSubscription.options.applicationServerKey, userVisibleOnly: true } : undefined)
+      .then((subscription) => {
+        const json = subscription.toJSON();
+        if (!json.endpoint || !json.keys) return;
+        return fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth }),
+        });
+      })
+      .catch(() => {}),
   );
 });

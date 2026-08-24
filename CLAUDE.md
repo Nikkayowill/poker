@@ -44,6 +44,72 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### Web Push re-engagement notifications (2026-08-24)
+- Kayo: "I need to notify users to come back somehow now that I have a solid PWA," with PlayPokerGO's
+  own push copy as the reference ("Case of the Mondays?... tap to play now"). Scoped down via two
+  direct answers: v1 trigger is only "come claim your daily Gold" (not turn-based/social pushes yet),
+  and permission is asked **as part of creating an account**, not a later soft prompt or a
+  settings-only toggle. On `feat/push-notifications` (worktree `.claude/worktrees/push-notifications`),
+  committed, not pushed/PR'd. There was zero push infrastructure anywhere in the app before this pass
+  — no VAPID keys, no subscription table, no `push`/`notificationclick` handlers in `public/sw.js`.
+- New `push_subscriptions` table (service-role only, same shape as `ante_up_attempts` — RLS enabled,
+  `revoke all from anon, authenticated`), `lib/server/push-subscription-store.ts` (twin memory/Supabase
+  branch), `lib/server/push-service.ts` wrapping the `web-push` package. Off by default: unset VAPID
+  env vars mean `requestPushPermissionAndSubscribe` never prompts and the cron sender no-ops, same
+  "empty key, feature quietly off" pattern as `TURNSTILE_SITE_KEY`.
+- Permission is requested inside `submitEmailForm`'s "Create account" branch and the "Continue with
+  Google" button's `onClick` (`components/auth/account-entry-card.tsx`) — both are real user gestures,
+  which is what lets `Notification.requestPermission()` show its dialog at all. Google's button is
+  asked every time (sign-in and sign-up both, since OAuth gives no way to tell which before the
+  redirect) — safe, because a browser that has already decided answers instantly with no dialog on
+  every later call, so a returning Google player is never re-prompted, just silently re-checked.
+- **The daily cron (`/api/cron/notify-inactive-players`, `0 22 * * *` in `vercel.json`) is a single
+  fixed UTC time with no per-player timezone** — this app has never stored one (registration is
+  email/Google, not a profile field). 22:00 UTC lands in the US afternoon/evening, which is a
+  compromise, not a fix; a real fix needs timezone capture at sign-up, flagged as a gap, not built
+  here. The query itself (`pushSubscriptionsForInactivePlayers`) joins subscriptions to
+  `profiles.last_daily_claim_at`, matching `isSameUtcDay`'s existing UTC-midnight boundary — a
+  `last_notified_at` column on each subscription is belt-and-suspenders against a Vercel cron retry
+  double-sending the same day.
+- `lib/push/copy.ts` holds a rotating pool of PlayPokerGO-style lines (`pickComeBackPushCopy`, seeded
+  off profile id + day so a re-run doesn't reshuffle who gets which line) rather than one fixed
+  string — Kayo's own reference example was specifically about that playful, varied register, not a
+  generic "You have a notification."
+- Player menu gained a "Notifications" toggle (`components/poker-app.tsx`), registered-profiles only.
+  It tracks TWO separate things, not one: `Notification.permission` (a browser can never let JS revoke
+  this once granted — only the OS/browser settings can) and whether this device currently holds a live
+  `PushSubscription` (what `disablePushOnThisDevice` actually unsubscribes) — collapsing them into one
+  boolean would have the toggle claim "On" forever after a player turns it off.
+- Wiring the permission-refresh effect around `react-hooks/set-state-in-effect` needed the same
+  `window.setTimeout(..., 0)` deferral `loadProfile`'s own effect already uses a few hundred lines up
+  — the linter still flags a `setState` reachable from an async function awaited directly inside an
+  effect, awaiting first is not enough on its own; wrapping the call in a deferred macrotask is what
+  the codebase already does and what actually satisfies it.
+- Real VAPID key pair generated this pass and handed to Kayo directly (not committed) — needs adding
+  as `NEXT_PUBLIC_VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` in Vercel env and `.env.local`
+  before anything here does anything. `supabase/migrations/20260824130000_push_subscriptions.sql` is
+  unapplied to production, per `[[reference_stackchips_migrations_not_auto_applied]]` — merging the PR
+  ships code only.
+- Privacy Policy bumped to version 3 for the new push-subscription data category (one new paragraph,
+  `lib/legal/documents.ts`) — this only re-triggers consent for players who open the store, per how
+  `pendingAcceptances` is actually gated; it does not touch the sign-up flow itself.
+- A real bug caught by the store's own tests before this ever shipped: the memory-mode branch of
+  `savePushSubscription` called `randomUUID()` twice per upsert (once for the Map key, once for the
+  row's own `id` field) — a resubscribe on the same device landed under a fresh map key while the old
+  row stayed put under its original one, so every re-subscribe silently duplicated the row instead of
+  updating it. Fixed by generating the id once and reusing it for both.
+- Not done this pass: turn/social triggers (someone's turn, a friend challenge) were explicitly cut to
+  v1 scope by Kayo's own answer — `lib/push/copy.ts`'s doc comment notes the pool is reusable for a
+  second trigger later. No per-player timezone (see the cron note above). No route-level tests for
+  `/api/push/subscribe`/`/unsubscribe` — coverage lives at the store/service level, matching this
+  repo's existing convention (4 of 74 API routes have dedicated route tests; the rest lean on their
+  service layer, and this follows suit).
+- Verified: full `npx vitest run` (2370/2370, up from 2356) green, `npx tsc --noEmit` clean apart from
+  the pre-existing `safe-area.spec.ts` failure, clean `npm run lint`, clean production `npm run build`
+  with `/api/push/subscribe`, `/api/push/unsubscribe`, and `/api/cron/notify-inactive-players` all
+  present. Grepped `.next/static` for the VAPID private key string, same reasoning as Word Race's
+  answer-bank leak (2026-08-12) — clean, nothing server-only reached the client bundle.
+
 ### Seat-art roster grown to 35; character22-31 caught facing the wrong way (2026-08-22)
 - Four more Kayo-supplied turnaround sheets (`character32`-`35`), same
   `slice-seat-sheet.py` pipeline, all `--mirror`ed (they turn screen-right

@@ -78,13 +78,18 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
     // the payment-data paragraph below described crediting a Gold balance,
     // which is no longer true and would misdescribe what a support payment
     // does with a player's data.
-    version: 2,
+    // Bumped to 3 for the push-notification paragraph below (2026-08-24) --
+    // a new category of data (the browser's push subscription endpoint and
+    // keys) that a player creating an account now grants alongside every
+    // sign-up. Nothing else on this version changed.
+    version: 3,
     title: "Privacy Policy",
     body: [
       "StackChips is operated from Nova Scotia, Canada. This policy explains what we collect when you use the app, why, and who else sees it, alongside the Terms of Service.",
       "If you play as a guest, we hold an HttpOnly session cookie identifying your profile and nothing else identifying. If you link an account, we hold the email or identifier your sign-in provider gives us. Either way we hold your display name, avatar image, Gold balance, hand history, rank, and other gameplay records tied to your profile. Uploaded avatar images are stored in a public bucket for image delivery -- do not upload an image you want to keep private.",
       "If you choose to support StackChips, one-time or monthly payments are processed by Stripe. We never receive or store your card number; we receive transaction and subscription status from Stripe, which we use only to keep the payment and billing records we are required to keep -- a support payment does not add anything to your profile for us to receive.",
       "We automatically receive technical data such as IP address, device and browser information, and crash/error reports (via Sentry) needed to run and debug the app. If you choose to watch a rewarded ad for free Gold, the ad is served by Adsterra, which may set its own cookies or identifiers under its own privacy policy; we do not use Adsterra outside that optional feature.",
+      "If you grant notification permission (asked when you create an account), we store the push subscription your browser gives us -- an endpoint and encryption keys tied to that browser, not to you personally -- so we can send reminders like an unclaimed daily Gold grant. We use it only for that; nothing else reads it, and you can revoke it any time from the player menu or your browser's own site settings.",
       "We do not sell your personal information. We share it only with the service providers that run the app for us -- Stripe (payments), Supabase (hosting, database, authentication), Sentry (error monitoring), and Adsterra (only for the optional rewarded-ad feature) -- and only for the purpose of running StackChips, not for their own independent marketing.",
       "We keep your data while your profile is active and delete or anonymize it on request, except records we must retain for legal, tax, or accounting reasons, such as payment history.",
       "You can ask us to access, correct, or delete your personal data at any time by emailing support@stackchips.app. Because StackChips operates from Nova Scotia, our baseline practice follows Canada's Personal Information Protection and Electronic Documents Act (PIPEDA); if the law where you live gives you additional rights, we will honor requests consistent with that law too.",

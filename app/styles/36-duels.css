@@ -346,6 +346,18 @@
   border-radius: 10px;
   background: var(--brand-surface);
   text-align: center;
+  /* The result replaces the board's controls the instant a match settles --
+     without a beat of its own it reads as the screen just changing, not as a
+     game ending. Same shape as 06-table.css's hand-result-in. */
+  animation: duel-result-in .4s cubic-bezier(.2,.9,.25,1.08) both;
+}
+
+@keyframes duel-result-in {
+  from { opacity: 0; transform: translateY(-6px) scale(.97); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .duel-result { animation: none; }
 }
 
 .duel-result strong {

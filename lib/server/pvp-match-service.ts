@@ -26,6 +26,7 @@ import {
   createPvpMatch,
   getActivePvpMatch,
   getPvpMatchById,
+  getRecentlySettledPvpMatch,
   type StoredPvpMatch,
 } from "./pvp-match-store";
 import { applyMissionEvent } from "./mission-store";
@@ -531,7 +532,19 @@ export async function readDuelMatch(
   const profile = await ensureProfile(token);
 
   let match = await getActivePvpMatch(profile.id, game.id);
-  if (!match) return { match: null, profile };
+  if (!match) {
+    // No live match -- but it may have JUST settled without this player being
+    // the one whose request settled it (their opponent resigned, flagged, or
+    // was the one whose own poll happened to observe the win condition
+    // first). Without this fallback that player's next poll would find
+    // nothing and drop them straight back to the lobby, having never seen
+    // whether they won or lost.
+    const recent = await getRecentlySettledPvpMatch<unknown>(profile.id, game.id);
+    if (!recent) return { match: null, profile };
+    const recentSeat = seatOf(recent, profile.id);
+    if (recentSeat === null) return { match: null, profile };
+    return { match: await matchView(game, recent, recentSeat, Date.now()), profile };
+  }
 
   const seat = seatOf(match, profile.id);
   if (seat === null) return { match: null, profile };

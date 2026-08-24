@@ -18,6 +18,7 @@ import {
   getCribbageSeats,
   getCribbageTableById,
   getOpenCribbageTables,
+  getRecentlyCompletedCribbageTableFor,
   getSeatCountsForTables,
   leaveCribbageTable as leaveCribbageTableRow,
   CribbageTableNotJoinable,
@@ -321,7 +322,16 @@ export async function readMyCribbageTable(
 ): Promise<{ table: CribbageTableView | null; profile: PlayerProfile }> {
   const profile = await ensureProfile(token);
   const table = await getActiveCribbageTableFor(profile.id);
-  if (!table) return { table: null, profile };
+  if (!table) {
+    // No live table -- but it may have just completed without this player's
+    // own request being the one that settled it (someone else's move crossed
+    // 121, or someone else resigned). Same fallback readDuelMatch's own
+    // comment explains, generalized to N seats.
+    const recent = await getRecentlyCompletedCribbageTableFor(profile.id);
+    if (!recent) return { table: null, profile };
+    const recentSeats = await getCribbageSeats(recent.id);
+    return { table: await tableView(recent, recentSeats, profile.id, Date.now()), profile };
+  }
 
   const seats = await getCribbageSeats(table.id);
   const live = table.status === "active" ? await settleIfFinished(table, seats) : table;

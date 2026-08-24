@@ -289,6 +289,24 @@ describe("resigning", () => {
     expect(again.status).toBe("completed");
     expect(await total()).toBe(before);
   });
+
+  it("surfaces the result to a seated player whose own poll never triggered the settlement", async () => {
+    const { players } = await group(3);
+    const { table: opened } = await openCribbageTable(players[0].token, STAKE);
+    await joinCribbageTable(players[1].token, opened.id);
+    await joinCribbageTable(players[2].token, opened.id);
+    await startCribbageTableAsHost(players[0].token, opened.id);
+
+    await resignCribbageTable(players[0].token, opened.id);
+
+    // players[1] and players[2] never called resignCribbageTable or any other
+    // move -- a plain readMyCribbageTable poll, as the shell sends every 2s,
+    // is the only way they find out the table ended.
+    const { table: seenByOther } = await readMyCribbageTable(players[1].token);
+    expect(seenByOther?.status).toBe("completed");
+    expect(seenByOther?.winnerId).not.toBeNull();
+    expect(seenByOther?.winnerId).not.toBe(players[0].id);
+  });
 });
 
 describe("per-game leaderboard stats", () => {

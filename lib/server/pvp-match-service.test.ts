@@ -276,16 +276,36 @@ describe("settlement", () => {
     expect(await t.total()).toBe(total);
   });
 
-  it("frees both players to duel again once the match settles", async () => {
+  it("frees both players to duel again once the match settles, even though the result stays visible briefly", async () => {
     const t = await table();
     await openDuelChallenge(t.a.token, "chess", STAKE, null);
     await acceptDuelChallenge(t.b.token, await openId(t.a.token));
-    await resignDuelMatch(t.b.token, await matchId(t.a.token));
+    const { match: settled } = await resignDuelMatch(t.b.token, await matchId(t.a.token));
 
-    // The unique index is partial on `active`, so a finished match must not
-    // block the rematch.
-    expect((await readDuelMatch(t.a.token, "chess")).match).toBeNull();
+    // getActivePvpMatch's unique index is partial on `active`, so the
+    // finished match must not block a rematch...
     await expect(openDuelChallenge(t.a.token, "chess", STAKE, null)).resolves.toBeTruthy();
+    // ...but readDuelMatch must still be able to hand the winner their own
+    // just-settled match on the poll that follows a resignation they did not
+    // send themselves -- see getRecentlySettledPvpMatch's own comment.
+    const read = await readDuelMatch(t.a.token, "chess");
+    expect(read.match?.id).toBe(settled.id);
+    expect(read.match?.status).toBe("settled");
+  });
+
+  it("surfaces a resignation to the winner even though their own poll never triggered the settlement", async () => {
+    const t = await table();
+    await openDuelChallenge(t.a.token, "chess", STAKE, null);
+    await acceptDuelChallenge(t.b.token, await openId(t.a.token));
+    const id = await matchId(t.a.token);
+
+    // b resigns -- a never sent a move or a request that could have settled
+    // this itself. Their next lobby poll is the only way they ever find out.
+    await resignDuelMatch(t.b.token, id);
+
+    const read = await readDuelMatch(t.a.token, "chess");
+    expect(read.match?.status).toBe("settled");
+    expect(read.match?.winnerSeat).toBe(0);
   });
 });
 

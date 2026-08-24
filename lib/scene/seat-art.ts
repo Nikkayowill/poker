@@ -168,10 +168,13 @@ export interface SeatArtOverride {
   /**
    * Forces a specific angle plate for this seat, bypassing `pickSeatArt`'s
    * own magnitude-based pick entirely -- not a bias on it, a replacement.
-   * For an exception to the shared rule rather than a correction to it: seat1
-   * is the only seat drawing the character's 40deg plate (2026-08-13), which
-   * the shared rule would never reach on its own since it caps every seat at
-   * the second angle. Must be one of the character's own `angles`.
+   * For an exception to the shared rule rather than a correction to it, not a
+   * routine knob: `pickSeatArt`'s default already caps every seat at the
+   * character's SECOND angle (typically 20deg), so this only matters for
+   * reaching a THIRD, wider plate (e.g. 40deg) -- and Kayo's call (2026-08-24)
+   * is that the roster stops at two turns, 0 and 20, seat 1 included. No
+   * seat currently sets this; leave it that way unless a wider turn is
+   * wanted again. Must be one of the character's own `angles`.
    */
   angle?: number;
 }
@@ -180,7 +183,7 @@ export interface SeatArtOverride {
  * Per-seat hand-tuning for MOBILE screens (Default fallback).
  */
 export const SEAT_ART_OVERRIDES: Partial<Record<number, SeatArtOverride>> = {
-  1: { scale: 1.2, offsetX: 10, offsetY: 20, angle: 40 },
+  1: { scale: 1.2, offsetX: 10, offsetY: 20 },
   2: { scale: 1.1, offsetX: 10, offsetY: 0 },
   5: { scale: 1.1, offsetX: 30, offsetY: 10 },
 };
@@ -190,7 +193,7 @@ export const SEAT_ART_OVERRIDES: Partial<Record<number, SeatArtOverride>> = {
  * Adjust these values to fix your layout layout uniquely on big monitors!
  */
 export const DESKTOP_SEAT_ART_OVERRIDES: Partial<Record<number, SeatArtOverride>> = {
-  1: { scale: 1.3, offsetX: 10, offsetY: 20, angle: 40 },
+  1: { scale: 1.3, offsetX: 10, offsetY: 20 },
   2: { scale: 1.1, offsetX: 10, offsetY: 0 },
   5: { scale: 1.1, offsetX: 30, offsetY: 10 }, // 💡 Change these right here for desktop
 };
@@ -258,9 +261,11 @@ export interface SeatArtBox {
  * their head/hair reaches higher. `offsetY` stays a plain screen-space
  * nudge on top of that anchor, same as it always was -- it no longer has to
  * fight a scale-proportional drift to do its job. Verified against seat 1's
- * own forced-40deg override, the only seat that ever pushes scale/offsetY
- * this hard (2026-08-22): character16 and character34 both used to submerge
- * their hand into the rail there; neither does after this change.
+ * own override (2026-08-22, when it still forced the character's 40deg
+ * plate -- see `SeatArtOverride.angle`'s own note for why that's gone now;
+ * seat 1's scale/offsetY push is unchanged and was still the hardest case
+ * on the roster): character16 and character34 both used to submerge their
+ * hand into the rail there; neither does after this change.
  *
  * MIRRORING HAPPENS AFTER POSITIONING, NOT BY MOVING THE BOX. The box below
  * is placed at its un-mirrored position (`left`); the caller applies

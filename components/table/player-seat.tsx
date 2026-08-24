@@ -10,6 +10,7 @@ import { isBotAway, isChallengeableSeat } from "@/lib/game/seat-presence";
 import { isWinningCard } from "@/lib/game/winning-cards";
 import { reactionLabel } from "@/lib/game/reaction-channel";
 import type { SeatReaction } from "@/lib/game/use-table-reactions";
+import type { SeatArtBox } from "@/lib/scene/seat-art";
 import { missingArtwork } from "@/components/artwork-cache";
 import { ChallengeSeatControl } from "./challenge-seat-control";
 import { PlayingCard } from "./playing-card";
@@ -288,6 +289,7 @@ export const PlayerSeat = memo(function PlayerSeat({
   dealVector,
   winningKeys,
   reaction,
+  racetrackArt,
 }: {
   seat: PublicSeat;
   placement: string;
@@ -310,6 +312,12 @@ export const PlayerSeat = memo(function PlayerSeat({
   seatStyle?: React.CSSProperties;
   /** This seat's current reaction bubble, if it has one -- see use-table-reactions.ts. */
   reaction?: SeatReaction | null;
+  /** The racetrack table's own full-height character portrait, drawn as this
+   *  seat's own child rather than as a page-space sibling -- see
+   *  `racetrackArtBySeat` (poker-table.tsx) for why it has to live here for
+   *  the cards to be able to draw behind it and the nameplate in front. Only
+   *  ever set for an opponent seat on the racetrack table. */
+  racetrackArt?: { src: string; mirror: boolean; box: SeatArtBox } | null;
 }) {
   const folded = seat.status === "folded" || seat.status === "out";
   const away = isBotAway(seat);
@@ -341,6 +349,31 @@ export const PlayerSeat = memo(function PlayerSeat({
       reaction={reaction}
     />
   );
+  // `left`/`top` are not set here -- both resolve from the same
+  // `--seat-art-dx`/`--seat-art-crown-dy` custom properties `seatStyle`
+  // already carries for the nameplate and hole cards (poker-table.tsx),
+  // inherited straight from this article's own inline style. `left: 50%`
+  // on an absolutely-positioned child of this seat lands exactly on the
+  // projected crown -- the seat's own box is centred on it by construction
+  // (`.seat-racetrack`'s negative margin-left, 42-racetrack-table.css) -- so
+  // adding the delta and pulling back by the image's own half-width
+  // (`translateX(-50%)`) reproduces the art's real left edge without this
+  // component needing to know the seat's pixel width at all.
+  const racetrackArtEl = racetrackArt ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      className="racetrack-seat-art"
+      src={racetrackArt.src}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+      style={{
+        width: `${racetrackArt.box.width.toFixed(1)}px`,
+        height: `${racetrackArt.box.height.toFixed(1)}px`,
+        transform: racetrackArt.mirror ? "translateX(-50%) scaleX(-1)" : "translateX(-50%)",
+      }}
+    />
+  ) : null;
   const nameplate = (
     <SeatNameplate
       seat={seat}
@@ -398,6 +431,7 @@ export const PlayerSeat = memo(function PlayerSeat({
           than a separate arrangement of elements. */}
       {figure}
       {cards}
+      {racetrackArtEl}
       {handStrength}
       {nameplate}
       {seat.streetBet > 0 && <span className="table-bet">${seat.streetBet}</span>}
@@ -429,4 +463,11 @@ export const PlayerSeat = memo(function PlayerSeat({
   // A plain === because it is a string; see winning-cards.ts for why it is
   // one rather than the Set it wants to be.
   && previous.winningKeys === next.winningKeys
+  // By value, same reasoning as dealVector: racetrackArtBySeat (poker-table.tsx)
+  // hands back a fresh object on every recompute even when nothing about this
+  // seat's own portrait actually changed. src/mirror is enough of a fingerprint
+  // -- the box's own pixel values only move together with `seatStyle` (both
+  // come from the same camera fit), which is already compared above.
+  && previous.racetrackArt?.src === next.racetrackArt?.src
+  && previous.racetrackArt?.mirror === next.racetrackArt?.mirror
 ));

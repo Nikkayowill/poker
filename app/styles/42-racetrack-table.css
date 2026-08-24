@@ -533,15 +533,34 @@
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .55));
 }
 
-/* Opponent seat art -- lib/scene/seat-art.ts computes left/top/width/height
-   and a mirror transform per seat (poker-table.tsx); z-index comes in inline
-   too (seatZ, the same near-based value the seat's own .player-seat article
-   carries), so there is nothing positional here, only the layer rules and
-   the same seam-hiding shadow the dealer gets. Both width and height are set
-   inline (unlike the dealer's height: auto) because this box comes from a
-   real two-anchor fit, not one dimension left to the browser. */
+/* Opponent seat art -- lib/scene/seat-art.ts computes width/height and a
+   mirror transform per seat (player-seat.tsx sets those two, plus the
+   mirror, inline; this box comes from a real two-anchor fit, not one
+   dimension left to the browser).
+
+   POSITIONED FROM THIS SEAT'S OWN CROWN, NOT PAGE-SPACE. `left: 50%` on an
+   absolutely-positioned child of `.player-seat` lands exactly on the
+   projected crown -- the seat's own box is centred on it by construction
+   (`.seat-racetrack`'s negative margin-left, below) -- and
+   `--seat-art-dx`/`--seat-art-crown-dy` (poker-table.tsx) are this
+   character's own known offset from that same point, the identical numbers
+   the nameplate and hole cards already read. `translateX(-50%)` (set inline,
+   alongside the mirror flip) pulls the image back by half its own rendered
+   width, the standard trick for centring an absolutely-positioned box whose
+   size the CSS doesn't otherwise know.
+
+   z-index reads --seat-z, exactly what the seat's OWN box carries (the
+   default `.seat-cards`/`.seat-plate` sit one and two steps above that,
+   08-seat.css) -- so at every width down to the mobile racetrack tier that
+   overrides the cards specifically, the plate stays in front of this art
+   and the default (desktop) cards do too, matching how this used to render
+   as a page-space sibling painting behind the whole seat. Only the mobile
+   landscape tier below pulls the cards back under it. */
 .racetrack-seat-art {
   position: absolute;
+  left: calc(50% + var(--seat-art-dx, 0px));
+  top: var(--seat-art-crown-dy, 0px);
+  z-index: var(--seat-z, 4);
   pointer-events: none;
   user-select: none;
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .55));
@@ -747,5 +766,169 @@
     left: auto;
     right: 0;
     width: min(360px, 88vw);
+  }
+
+  /* An opponent's name, lifted clear of their face.
+     -----------------------------------------------------------------------
+     `.seat-figure` -- the small circular avatar that normally leads a seat's
+     flex column and is the only thing giving the box any height -- is hidden
+     for every opponent in this room, because `.racetrack-seat-art` draws the
+     real full-height portrait as an absolutely positioned sibling instead.
+     That leaves `.seat-plate` as the only child in normal flow, so it renders
+     at the seat box's top edge, and this room anchors that edge to the top of
+     the player's HEAD -- the name sat across the forehead, not above it.
+
+     A STACK, NAME OVER STACK, NOT A ROW. A single wide line reads as a label
+     stuck to the character; two narrow centred lines read as a nameplate
+     floating above them, and each line can sit closer to the seat's own
+     (narrow) natural width instead of stretching for whichever line is
+     longer.
+
+     Sized off the plate's own known height rather than a percentage: `top` on
+     a relatively positioned box resolves percentages against its CONTAINING
+     block (the seat, whose height is this very plate), not against itself,
+     and a `transform` would make the plate a stacking context and trap the
+     challenge popover inside it. `--seat-art-crown-dy` (poker-table.tsx) is
+     the portrait's own top edge measured down from the seat anchor -- several
+     pixels ABOVE it wherever the slot scales the art up -- so this reaches a
+     real, measured clearance above the actual hair at every seat, not a fixed
+     offset from the anchor that happens to work for one character. */
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-plate {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    /* Sized to the name it is actually carrying, not to the seat: two far-arc
+       plates at full `--seat-width` (up to 103px) sit ~93px apart and would
+       overlap outright, and a plate padded out to that width buys the name
+       nothing anyway -- it is the row's own content that decides where the
+       ellipsis falls. 100px is the cap a 14-character bot tag needs before
+       it starts cutting, and only a plate that long ever reaches a
+       neighbour. */
+    width: fit-content;
+    max-width: 100px;
+    height: auto;
+    margin-top: 0;
+    padding: 2px 6px 3px;
+    /* Two lines want more clearance above the head than the far arc's own
+       crown has room for before running into `.table-area`'s own
+       `overflow: hidden` (its top edge is this stage's origin, `--seat-y`'s
+       own zero) -- the far seats' natural clearance is only ~26px, and two
+       lines need more than that. Same clamp `.winner-badge` already uses a
+       few rules below: reach for real headroom above the hair, but never
+       past the stage's own top edge, where the top line would be sheared
+       off rather than just cramped. */
+    top: max(
+      calc(var(--seat-art-crown-dy, 0px) - 36px),
+      calc(-1 * var(--seat-y, 0px) + 2px)
+    );
+    /* The seat box is centred on the projected crown; the portrait is that
+       plus its slot's own `offsetX` (`seatArtBox`). Seat 5's is 30px, which
+       is why the far-right name sat visibly left of the player it belongs to.
+       Reading the same number the art reads keeps every seat aligned, rather
+       than cancelling one seat's offset with a second hand-tuned number. */
+    left: var(--seat-art-dx, 0px);
+  }
+
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-name-row {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-name-row strong {
+    font-size: 10px;
+  }
+
+  /* The stack, its own line under the name -- not a smaller afterthought
+     beside it, the second half of what this plate is for. */
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-stack-row {
+    justify-content: center;
+  }
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-stack {
+    margin-top: 0;
+    font-size: 10px;
+  }
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-stack strong {
+    font-size: 10px;
+  }
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-stack .chip-dot {
+    display: none;
+  }
+  /* "SB"/"BB", without the amount. Both amounts are already printed in full
+     on the felt under the board ("Preflop  SB 5 / BB 10") and they do not
+     change hand to hand, so repeating them here would just cost the name
+     line room for no new information. */
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .blind-label {
+    height: auto;
+    padding: 0;
+  }
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .blind-label span {
+    display: none;
+  }
+
+  /* The hole cards, held close to the body -- behind the portrait, not in
+     front of it.
+     -----------------------------------------------------------------------
+     `.racetrack-seat-art` (the block above, in this seat's own stacking
+     context now -- see `racetrackArtBySeat`'s comment in poker-table.tsx for
+     why that nesting had to happen before this could work at all) paints at
+     this seat's own `--seat-z`; `.seat-cards`' base rule (08-seat.css) sits
+     one step ABOVE that by default, which put a flat pair of card backs
+     floating in front of the character's chest rather than tucked into the
+     hands holding them. One step below instead: still clear of the
+     table/board (z-index 0-2) and the dealer (3), just behind this one
+     seat's own art, where the character's own opaque silhouette does the
+     hiding -- the tips still read past their hands, the same way a held
+     hand actually looks. Scoped to this mobile tier only -- desktop keeps
+     the default (cards in front), unchanged from before this seat art moved.
+
+     `--seat-art-hands-dy` (poker-table.tsx) is the portrait's own bottom edge
+     measured down from the seat anchor, and `seatArtBox` pins that edge at
+     the hands -- so the cards track the art at every seat, scale and camera
+     fit rather than at one tuned breakpoint. */
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-cards {
+    z-index: calc(var(--seat-z, 4) - 1);
+    top: calc(var(--seat-art-hands-dy, 0px) - 6px);
+    left: calc(50% + var(--seat-art-dx, 0px));
+    transform: translate(-50%, -100%);
+  }
+
+  /* A REVEALED winning hand steps back in front and grows -- the moment a
+     showdown needs the cards seen, not held close any more.
+
+     `:has(.playing-card:not(.card-back))`, not a bare `.seat-winner` --
+     winning a hand and SHOWING it are different things. An uncontested win
+     (everyone else folds) never puts a real Card in `seat.holeCards`
+     (player-seat.tsx renders `null` there as a `.card-back`), and a losing
+     seat at a real showdown can muck instead of turning up too. Without this
+     guard every one of those wins popped a pair of face-down backs to the
+     front and blew them up to 1.6x, reading as "here is the winning hand"
+     over a hand that was never shown -- caught live, not in review.
+
+     `scale`, not `transform: scale()`: the base rule above already carries
+     this seat's own `translate`, and a `transform` declared here would
+     replace it outright rather than compose with it (same reasoning
+     12-responsive.css's own portrait-tier win rule states, which this
+     table's own landscape width never reaches -- that rule stops at 600px
+     and this room only ever renders past it). +3 clears the nameplate too
+     (`.seat-plate`'s own `+2`, 08-seat.css) -- a revealed, enlarged hand is
+     the thing this seat is showing off; nothing at this seat should still
+     be drawing over it. */
+  .scene-room-racetrack .player-seat.seat-racetrack.seat-winner:not(.seat-mine) .seat-cards:has(.playing-card:not(.card-back)) {
+    z-index: calc(var(--seat-z, 4) + 3);
+    scale: 1.6;
+    transform-origin: center;
+  }
+
+  /* No cradle behind a revealed winning hand. `.seat-cards:not(.own-cards)::before`
+     (08-seat.css) is a dark rounded backdrop meant to give a small, held-close
+     pair a bit of object silhouette against the felt -- at 1.6x, popped in
+     front of the character, it read as a slab behind the actual cards
+     everyone is looking at, not a quiet backing. The two revealed cards
+     already carry their own border and drop shadow (07-cards.css); they
+     don't need a second frame drawn behind them once they're the whole
+     point of the shot. */
+  .scene-room-racetrack .player-seat.seat-racetrack.seat-winner:not(.seat-mine) .seat-cards:has(.playing-card:not(.card-back))::before {
+    content: none;
   }
 }

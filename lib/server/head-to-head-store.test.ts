@@ -1,9 +1,10 @@
 import { randomUUID } from "crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetHeadToHeadMemory,
   getHeadToHeadRecords,
   getHeadToHeadSummaries,
+  listRecentOpponentIds,
   recordHeadToHeadDuel,
   recordHeadToHeadTable,
 } from "./head-to-head-store";
@@ -130,5 +131,46 @@ describe("getHeadToHeadSummaries", () => {
   it("asks for nothing when there is nobody to ask about", async () => {
     const a = await newPlayer("A");
     expect((await getHeadToHeadSummaries(a, [])).size).toBe(0);
+  });
+});
+
+describe("listRecentOpponentIds", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("orders opponents by their most recent result, not by who was played first", async () => {
+    vi.useFakeTimers();
+    const [a, b, c] = [await newPlayer("A"), await newPlayer("B"), await newPlayer("C")];
+    vi.setSystemTime(1_000);
+    await recordHeadToHeadDuel("chess", [a, b], 0);
+    vi.setSystemTime(2_000);
+    await recordHeadToHeadDuel("chess", [a, c], 0);
+    // B again, more recently than either -- should jump back to the front.
+    vi.setSystemTime(3_000);
+    await recordHeadToHeadDuel("checkers", [a, b], 0);
+
+    expect(await listRecentOpponentIds(a, 10)).toEqual([b, c]);
+  });
+
+  it("dedupes an opponent played across more than one game into a single entry", async () => {
+    const [a, b] = [await newPlayer("A"), await newPlayer("B")];
+    await recordHeadToHeadDuel("chess", [a, b], 0);
+    await recordHeadToHeadDuel("checkers", [a, b], 1);
+
+    expect(await listRecentOpponentIds(a, 10)).toEqual([b]);
+  });
+
+  it("respects the limit", async () => {
+    const a = await newPlayer("A");
+    const opponents = [await newPlayer("B"), await newPlayer("C"), await newPlayer("D")];
+    for (const opponent of opponents) await recordHeadToHeadDuel("chess", [a, opponent], 0);
+
+    expect(await listRecentOpponentIds(a, 2)).toHaveLength(2);
+  });
+
+  it("is empty for someone who has never played anyone", async () => {
+    const a = await newPlayer("A");
+    expect(await listRecentOpponentIds(a, 10)).toEqual([]);
   });
 });

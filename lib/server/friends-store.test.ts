@@ -4,12 +4,16 @@ import {
   __resetFriendsMemory,
   blockProfile,
   getFriendsOverview,
+  getOrCreateFriendInviteCode,
   isBlockedEitherWay,
+  redeemFriendInviteCode,
+  regenerateFriendInviteCode,
   removeFriend,
   respondToFriendRequest,
   sendFriendRequest,
   unblockProfile,
 } from "./friends-store";
+import { __resetHeadToHeadMemory, recordHeadToHeadDuel } from "./head-to-head-store";
 import { ensureProfile } from "./profile-store";
 
 /**
@@ -32,6 +36,7 @@ async function befriend(a: string, b: string) {
 
 beforeEach(() => {
   __resetFriendsMemory();
+  __resetHeadToHeadMemory();
 });
 
 describe("friend requests (memory mode)", () => {
@@ -269,5 +274,116 @@ describe("blocking", () => {
   it("refuses to block yourself", async () => {
     const hero = await newPlayer("Hero");
     expect(await blockProfile(hero, hero)).toBe(false);
+  });
+});
+
+describe("recent opponents", () => {
+  it("offers someone you've played but never friended", async () => {
+    const [hero, villain] = [await newPlayer("Hero"), await newPlayer("Villain")];
+    await recordHeadToHeadDuel("chess", [hero, villain], 0);
+
+    const recent = (await getFriendsOverview(hero)).recentOpponents;
+    expect(recent.map((row) => row.profileId)).toEqual([villain]);
+    expect(recent[0].duelRecord).toMatchObject({ wins: 1, losses: 0, draws: 0 });
+  });
+
+  it("excludes someone already a friend", async () => {
+    const [hero, villain] = [await newPlayer("Hero"), await newPlayer("Villain")];
+    await recordHeadToHeadDuel("chess", [hero, villain], 0);
+    await befriend(hero, villain);
+
+    expect((await getFriendsOverview(hero)).recentOpponents).toEqual([]);
+  });
+
+  it("excludes someone with a pending request in either direction", async () => {
+    const [hero, sentTo, sentBy] = [
+      await newPlayer("Hero"), await newPlayer("SentTo"), await newPlayer("SentBy"),
+    ];
+    await recordHeadToHeadDuel("chess", [hero, sentTo], 0);
+    await recordHeadToHeadDuel("chess", [hero, sentBy], 0);
+    await sendFriendRequest(hero, sentTo);
+    await sendFriendRequest(sentBy, hero);
+
+    expect((await getFriendsOverview(hero)).recentOpponents).toEqual([]);
+  });
+
+  it("excludes someone blocked in either direction", async () => {
+    const [hero, blockedByHero, blockedHero] = [
+      await newPlayer("Hero"), await newPlayer("BlockedByHero"), await newPlayer("BlockedHero"),
+    ];
+    await recordHeadToHeadDuel("chess", [hero, blockedByHero], 0);
+    await recordHeadToHeadDuel("chess", [hero, blockedHero], 0);
+    await blockProfile(hero, blockedByHero);
+    await blockProfile(blockedHero, hero);
+
+    expect((await getFriendsOverview(hero)).recentOpponents).toEqual([]);
+  });
+
+  it("is empty for someone who has never played anyone", async () => {
+    const hero = await newPlayer("Hero");
+    expect((await getFriendsOverview(hero)).recentOpponents).toEqual([]);
+  });
+});
+
+describe("invite codes", () => {
+  it("hands back the same code on repeated calls", async () => {
+    const hero = await newPlayer("Hero");
+    const first = await getOrCreateFriendInviteCode(hero);
+    const second = await getOrCreateFriendInviteCode(hero);
+    expect(second.code).toBe(first.code);
+  });
+
+  it("replaces the code on regeneration", async () => {
+    const hero = await newPlayer("Hero");
+    const before = await getOrCreateFriendInviteCode(hero);
+    const after = await regenerateFriendInviteCode(hero);
+    expect(after.code).not.toBe(before.code);
+    // The old code is dead -- nobody can redeem it once a fresh one exists.
+    const villain = await newPlayer("Villain");
+    expect(await redeemFriendInviteCode(villain, before.code)).toEqual({ status: "invalid_code" });
+  });
+
+  it("friends the redeemer directly, with no request/accept step", async () => {
+    const [hero, villain] = [await newPlayer("Hero"), await newPlayer("Villain")];
+    const { code } = await getOrCreateFriendInviteCode(hero);
+
+    expect(await redeemFriendInviteCode(villain, code)).toEqual({ status: "friended", profileId: hero });
+    expect((await getFriendsOverview(hero)).friends.map((row) => row.profileId)).toEqual([villain]);
+    expect((await getFriendsOverview(villain)).friends.map((row) => row.profileId)).toEqual([hero]);
+  });
+
+  it("is case- and whitespace-insensitive", async () => {
+    const [hero, villain] = [await newPlayer("Hero"), await newPlayer("Villain")];
+    const { code } = await getOrCreateFriendInviteCode(hero);
+
+    expect(await redeemFriendInviteCode(villain, ` ${code.toLowerCase()} `))
+      .toEqual({ status: "friended", profileId: hero });
+  });
+
+  it("reports already_friends rather than erroring on a second redemption", async () => {
+    const [hero, villain] = [await newPlayer("Hero"), await newPlayer("Villain")];
+    const { code } = await getOrCreateFriendInviteCode(hero);
+    await redeemFriendInviteCode(villain, code);
+
+    expect(await redeemFriendInviteCode(villain, code)).toEqual({ status: "already_friends", profileId: hero });
+  });
+
+  it("refuses your own code", async () => {
+    const hero = await newPlayer("Hero");
+    const { code } = await getOrCreateFriendInviteCode(hero);
+    expect(await redeemFriendInviteCode(hero, code)).toEqual({ status: "self" });
+  });
+
+  it("refuses a code from someone who blocked you, without saying so", async () => {
+    const [hero, villain] = [await newPlayer("Hero"), await newPlayer("Villain")];
+    const { code } = await getOrCreateFriendInviteCode(hero);
+    await blockProfile(hero, villain);
+
+    expect(await redeemFriendInviteCode(villain, code)).toEqual({ status: "blocked" });
+  });
+
+  it("reports an unknown code as invalid rather than throwing", async () => {
+    const villain = await newPlayer("Villain");
+    expect(await redeemFriendInviteCode(villain, "NOTREALCODE")).toEqual({ status: "invalid_code" });
   });
 });

@@ -1,14 +1,23 @@
 import "server-only";
-import { randomUUID } from "crypto";
-import type { FriendSummary, FriendsOverview, PendingRequest } from "@/lib/social/types";
-import { getHeadToHeadRecords } from "./head-to-head-store";
+import { randomInt, randomUUID } from "crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { FriendSummary, FriendsOverview, PendingRequest, RecentOpponent } from "@/lib/social/types";
+import { getHeadToHeadRecords, listRecentOpponentIds } from "./head-to-head-store";
 import { getPublicProfilesByIds } from "./profile-store";
 import { adminClient } from "./supabase-admin";
 
 // Re-exported so existing server callers keep importing these from the store.
 // The definitions live in lib/social/types.ts because the drawer needs them
 // and this module is server-only; see that file.
-export type { FriendSummary, FriendsOverview, PendingRequest };
+export type { FriendSummary, FriendsOverview, PendingRequest, RecentOpponent };
+
+/**
+ * How many recently-played opponents the drawer offers as one-tap adds.
+ *
+ * A shortlist, not a history -- the point is "the person you just played",
+ * not an exhaustive log of everyone you've ever faced.
+ */
+export const RECENT_OPPONENTS_LIMIT = 8;
 
 /**
  * How many friends and pending requests a single overview returns.
@@ -97,6 +106,8 @@ interface MemoryFriendsDb {
   requests: Map<string, MemoryRequest>;
   /** Keyed by canonical `${profileA}:${profileB}`. */
   friendships: Map<string, MemoryFriendship>;
+  /** One reusable invite code per profile: profileId -> code. */
+  inviteCodes: Map<string, string>;
 }
 
 declare global {
@@ -107,6 +118,7 @@ const memoryDb: MemoryFriendsDb = globalThis.__riverRoomFriends ?? {
   blocks: new Set<string>(),
   requests: new Map<string, MemoryRequest>(),
   friendships: new Map<string, MemoryFriendship>(),
+  inviteCodes: new Map<string, string>(),
 };
 globalThis.__riverRoomFriends = memoryDb;
 
@@ -115,6 +127,7 @@ export function __resetFriendsMemory(): void {
   memoryDb.blocks.clear();
   memoryDb.requests.clear();
   memoryDb.friendships.clear();
+  memoryDb.inviteCodes.clear();
 }
 
 function memoryBlockExists(x: string, y: string): boolean {
@@ -240,6 +253,57 @@ export async function listFriendIds(profileId: string): Promise<string[]> {
   return (await friendRowsFor(profileId)).map((row) => row.profileId);
 }
 
+/**
+ * People worth offering as a one-tap "Add friend": recently played,
+ * excluding anyone already a friend, already pending in either direction,
+ * or blocked.
+ *
+ * `known` is everyone the caller already computed for the friends/pending
+ * lists -- passed in rather than re-derived so this can never disagree with
+ * what the drawer is about to render beside it.
+ */
+async function recentOpponentsFor(profileId: string, known: ReadonlySet<string>): Promise<RecentOpponent[]> {
+  // Over-asks past RECENT_OPPONENTS_LIMIT so there is still a full list left
+  // after `known` and blocks are filtered out.
+  const candidateIds = (await listRecentOpponentIds(profileId, RECENT_OPPONENTS_LIMIT + known.size))
+    .filter((id) => !known.has(id));
+  if (candidateIds.length === 0) return [];
+
+  const blocked = await blockedCounterparts(profileId);
+  const ids = candidateIds.filter((id) => !blocked.has(id)).slice(0, RECENT_OPPONENTS_LIMIT);
+  if (ids.length === 0) return [];
+
+  const order = new Map(ids.map((id, index) => [id, index]));
+  const [hydrated, records] = await Promise.all([
+    hydrate(ids.map((id) => ({ profileId: id }))),
+    getHeadToHeadRecords(profileId, ids),
+  ]);
+
+  return hydrated
+    // hydrate() drops a profile that has since vanished; getHeadToHeadRecords
+    // only carries an entry for an opponent with at least one played game,
+    // which every id here already has -- but a row can settle between the
+    // two calls, so this stays a filter rather than a non-null assertion.
+    .flatMap((person) => {
+      const duelRecord = records.get(person.profileId);
+      return duelRecord ? [{ ...person, duelRecord }] : [];
+    })
+    .sort((a, b) => (order.get(a.profileId) ?? 0) - (order.get(b.profileId) ?? 0));
+}
+
+/** Attaches recentOpponents to an already-built overview, computed from the same `known` set the drawer renders. */
+async function withRecentOpponents(
+  profileId: string,
+  overview: Omit<FriendsOverview, "recentOpponents">,
+): Promise<FriendsOverview> {
+  const known = new Set([
+    ...overview.friends.map((person) => person.profileId),
+    ...overview.incoming.map((person) => person.profileId),
+    ...overview.outgoing.map((person) => person.profileId),
+  ]);
+  return { ...overview, recentOpponents: await recentOpponentsFor(profileId, known) };
+}
+
 export async function getFriendsOverview(profileId: string): Promise<FriendsOverview> {
   const me = profileId.toLowerCase();
   const supabase = adminClient();
@@ -263,7 +327,7 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
       getHeadToHeadRecords(me, friendRows.map((row) => row.profileId)),
     ]);
     for (const friend of friends) friend.duelRecord = records.get(friend.profileId) ?? null;
-    return { friends, incoming, outgoing };
+    return withRecentOpponents(me, { friends, incoming, outgoing });
   }
 
   // Still one round of parallel queries, the same as before the friendship
@@ -299,7 +363,7 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
     getHeadToHeadRecords(me, friendRows.map((row) => row.profileId)),
   ]);
   for (const friend of friends) friend.duelRecord = records.get(friend.profileId) ?? null;
-  return { friends, incoming, outgoing };
+  return withRecentOpponents(me, { friends, incoming, outgoing });
 }
 
 /** Whether either party has blocked the other. Directionless on purpose: a block stops traffic both ways. */
@@ -315,6 +379,41 @@ export async function isBlockedEitherWay(x: string, y: string): Promise<boolean>
     .limit(1);
   if (error) throw new Error(`Could not check block status: ${error.message}`);
   return (data ?? []).length > 0;
+}
+
+/**
+ * Every profile blocked in either direction against `profileId`, as a flat
+ * set of the *other* party's id.
+ *
+ * A batch counterpart to isBlockedEitherWay, for filtering a list (recent
+ * opponents) rather than checking one pair -- one query instead of one per
+ * candidate.
+ */
+async function blockedCounterparts(profileId: string): Promise<Set<string>> {
+  const me = profileId.toLowerCase();
+  const supabase = adminClient();
+  if (!supabase) {
+    const result = new Set<string>();
+    for (const key of memoryDb.blocks) {
+      const [blocker, blocked] = key.split(":");
+      if (blocker === me) result.add(blocked);
+      if (blocked === me) result.add(blocker);
+    }
+    return result;
+  }
+
+  const { data, error } = await supabase
+    .from("profile_blocks")
+    .select("blocker_id, blocked_id")
+    .or(`blocker_id.eq.${me},blocked_id.eq.${me}`);
+  if (error) throw new Error(`Could not check block status: ${error.message}`);
+  const result = new Set<string>();
+  for (const row of data ?? []) {
+    const blocker = String(row.blocker_id);
+    const blocked = String(row.blocked_id);
+    result.add(blocker === me ? blocked : blocker);
+  }
+  return result;
 }
 
 async function areFriends(x: string, y: string): Promise<boolean> {
@@ -549,4 +648,163 @@ export async function unblockProfile(blockerId: string, blockedId: string): Prom
     .select("blocker_id");
   if (error) throw new Error(`Could not unblock that player: ${error.message}`);
   return (data ?? []).length > 0;
+}
+
+// ---- invite codes -----------------------------------------------------
+//
+// A reusable "add me" code, for the person you just played who is no longer
+// at the same table -- see the migration's own comment for why this skips
+// the request/accept step entirely.
+
+/**
+ * The alphabet generateRoomCode() (lib/game/engine.ts) already uses for
+ * shareable codes -- excludes 0/O/1/I/L, which get misread aloud or
+ * mistyped. Duplicated rather than imported: that module is the poker
+ * engine, and pulling it into the social layer for one constant is a worse
+ * coupling than repeating six characters here.
+ */
+const INVITE_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+/** Longer than a room code (6): this one is handed out repeatedly rather than spent once. */
+const INVITE_CODE_LENGTH = 10;
+
+function generateInviteCode(): string {
+  let code = "";
+  for (let index = 0; index < INVITE_CODE_LENGTH; index += 1) {
+    code += INVITE_CODE_ALPHABET[randomInt(INVITE_CODE_ALPHABET.length)];
+  }
+  return code;
+}
+
+export interface FriendInviteCode {
+  code: string;
+  createdAt: string;
+}
+
+/**
+ * Generates and stores a fresh code for `profileId`, retrying on the
+ * astronomically unlikely chance it collides with someone else's. Used for
+ * both first creation and regeneration -- `onConflict: "profile_id"` makes
+ * the upsert replace whatever code the caller already had, so there is
+ * nothing left for a "does one already exist" branch to do.
+ */
+async function insertFreshInviteCode(supabase: SupabaseClient, profileId: string): Promise<FriendInviteCode> {
+  const attempts = 5;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const code = generateInviteCode();
+    const { data, error } = await supabase
+      .from("friend_invite_codes")
+      .upsert(
+        { profile_id: profileId, code, created_at: new Date().toISOString() },
+        { onConflict: "profile_id" },
+      )
+      .select("code, created_at")
+      .single();
+    if (!error) return { code: String(data.code), createdAt: String(data.created_at) };
+    // profile_id is the upsert's conflict target, so the only constraint
+    // left to fail is the code column's own unique index -- try again with
+    // a new random code. Anything else is a real error.
+    if (error.code !== UNIQUE_VIOLATION) {
+      throw new Error(`Could not create your invite code: ${error.message}`);
+    }
+  }
+  throw new Error("Could not create your invite code: ran out of attempts.");
+}
+
+/** The caller's reusable invite code, creating one on first call. */
+export async function getOrCreateFriendInviteCode(profileId: string): Promise<FriendInviteCode> {
+  const me = profileId.toLowerCase();
+  const supabase = adminClient();
+
+  if (!supabase) {
+    let code = memoryDb.inviteCodes.get(me);
+    if (!code) {
+      code = generateInviteCode();
+      memoryDb.inviteCodes.set(me, code);
+    }
+    return { code, createdAt: new Date().toISOString() };
+  }
+
+  const { data, error } = await supabase
+    .from("friend_invite_codes")
+    .select("code, created_at")
+    .eq("profile_id", me)
+    .maybeSingle();
+  if (error) throw new Error(`Could not load your invite code: ${error.message}`);
+  if (data) return { code: String(data.code), createdAt: String(data.created_at) };
+  return insertFreshInviteCode(supabase, me);
+}
+
+/**
+ * Replaces the caller's invite code with a new one. Whoever still has the
+ * old one is left holding a dead code -- there is no history of retired
+ * codes, matching the table's own comment.
+ */
+export async function regenerateFriendInviteCode(profileId: string): Promise<FriendInviteCode> {
+  const me = profileId.toLowerCase();
+  const supabase = adminClient();
+
+  if (!supabase) {
+    const code = generateInviteCode();
+    memoryDb.inviteCodes.set(me, code);
+    return { code, createdAt: new Date().toISOString() };
+  }
+
+  return insertFreshInviteCode(supabase, me);
+}
+
+export type RedeemInviteCodeResult =
+  | { status: "friended"; profileId: string }
+  | { status: "already_friends"; profileId: string }
+  | { status: "blocked" }
+  | { status: "self" }
+  | { status: "invalid_code" };
+
+/**
+ * Turns someone else's invite code into a friendship, directly -- no
+ * request, no accept step. Possessing the code already means its owner
+ * chose to share it, which is the consent an accept step would otherwise be
+ * collecting; see the migration's own comment.
+ */
+export async function redeemFriendInviteCode(
+  profileId: string,
+  rawCode: string,
+): Promise<RedeemInviteCodeResult> {
+  const me = profileId.toLowerCase();
+  const code = rawCode.trim().toUpperCase();
+  const supabase = adminClient();
+
+  if (!supabase) {
+    const owner = [...memoryDb.inviteCodes.entries()].find(([, owned]) => owned === code)?.[0];
+    if (!owner) return { status: "invalid_code" };
+    if (owner === me) return { status: "self" };
+    if (memoryBlockExists(me, owner)) return { status: "blocked" };
+    const [a, b] = canonicalPair(me, owner);
+    if (memoryDb.friendships.has(`${a}:${b}`)) return { status: "already_friends", profileId: owner };
+    memoryDb.friendships.set(`${a}:${b}`, { profileA: a, profileB: b, createdAt: new Date().toISOString() });
+    return { status: "friended", profileId: owner };
+  }
+
+  const { data: row, error } = await supabase
+    .from("friend_invite_codes")
+    .select("profile_id")
+    .eq("code", code)
+    .maybeSingle();
+  if (error) throw new Error(`Could not look up that code: ${error.message}`);
+  if (!row) return { status: "invalid_code" };
+  const owner = String(row.profile_id);
+
+  if (owner === me) return { status: "self" };
+  if (await isBlockedEitherWay(me, owner)) return { status: "blocked" };
+  if (await areFriends(me, owner)) return { status: "already_friends", profileId: owner };
+
+  const [a, b] = canonicalPair(me, owner);
+  const { error: insertError } = await supabase.from("friendships").insert({ profile_a: a, profile_b: b });
+  // A unique violation here means a race -- a second redeem, or a friend
+  // request accepted in the gap between the check above and this insert --
+  // landed the same pair first. Either way the friendship now exists, which
+  // is exactly what this call promises, so it is not reported as a failure.
+  if (insertError && insertError.code !== UNIQUE_VIOLATION) {
+    throw new Error(`Could not add that friend: ${insertError.message}`);
+  }
+  return { status: "friended", profileId: owner };
 }

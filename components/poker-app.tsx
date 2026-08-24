@@ -25,13 +25,16 @@ import { dailyGoldState } from "@/lib/profile/daily-gold";
 import { parseEnabledFlag } from "@/lib/profile/stored-preference";
 import {
   browserSessionStorage,
+  clearPendingFriendInvite,
   clearSessionContinuity,
   markAccountLinkAnnounced,
+  readPendingFriendInvite,
   serverProfileSnapshot,
   sessionProfileSnapshot,
   shouldAnnounceAccountLink,
   subscribeSessionCache,
   writeCachedProfile,
+  writePendingFriendInvite,
 } from "@/lib/profile/session-continuity";
 import { useStoredPreference } from "@/components/use-stored-preference";
 import { playSound, primeTableSounds, setSoundEnabled } from "@/lib/audio/sound-effects";
@@ -637,6 +640,89 @@ export function PokerApp() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [entryComplete, refresh, joinByCode]);
+
+  /**
+   * Redeems a friend invite code and reports the outcome as an auth notice
+   * -- the same toast used for "Welcome back"/"Progress secured", so an
+   * invite landing feels like the rest of this file's one-line confirmations
+   * rather than a separate kind of message.
+   */
+  const redeemFriendInvite = useCallback(async (code: string) => {
+    try {
+      const response = await fetch("/api/friends/invite-code/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = (await response.json().catch(() => null)) as { status?: string; error?: string } | null;
+      // Cleared on any resolved attempt, success or failure -- a bad or
+      // already-spent code should not be retried forever on every future
+      // sign-in in this tab.
+      clearPendingFriendInvite(browserSessionStorage());
+      if (!response.ok) {
+        setAuthNotice(data?.error ?? "Could not add that friend.");
+        return;
+      }
+      switch (data?.status) {
+        case "friended": setAuthNotice("Friend added."); break;
+        case "already_friends": setAuthNotice("You're already friends."); break;
+        case "self": setAuthNotice("That's your own invite link."); break;
+        // `blocked` stays undirected, same reasoning as the friends drawer's
+        // own addFriend: naming who blocked whom undoes the block.
+        case "blocked": setAuthNotice("That player can't be friended right now."); break;
+        default: break;
+      }
+    } catch {
+      // Left in place rather than cleared: a network failure is worth
+      // retrying on the next chance, unlike a code the server rejected.
+      setAuthNotice("Could not add that friend.");
+    }
+  }, []);
+
+  /**
+   * `?friend=<code>` on the URL -- someone opened a shared invite link.
+   * Handled the same way as the `table`/`code` params just above: consumed
+   * once entry is through the gate, then stripped so a refresh can't repeat
+   * it.
+   *
+   * A guest has no account for a friendship to attach to, so a guest's code
+   * is stashed rather than redeemed or dropped -- the effect below this one
+   * picks it up the moment this tab has a registered profile, whether that
+   * happens by signing in right now or on some later visit.
+   */
+  useEffect(() => {
+    if (!entryComplete || profileLoading) return;
+    const params = new URLSearchParams(window.location.search);
+    const friendCode = params.get("friend");
+    if (!friendCode) return;
+    window.history.replaceState({}, "", window.location.pathname);
+
+    const isRegistered = profile?.isRegistered;
+    const timer = window.setTimeout(() => {
+      if (!isRegistered) {
+        writePendingFriendInvite(browserSessionStorage(), friendCode);
+        setAuthNotice("Sign in to accept that friend invite.");
+        return;
+      }
+      void redeemFriendInvite(friendCode);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [entryComplete, profileLoading, profile?.isRegistered, redeemFriendInvite]);
+
+  /**
+   * The stashed code from the effect above, redeemed the moment this tab
+   * has a registered profile -- covers both signing in right now (this
+   * component keeps its state) and the Google OAuth round trip (a full
+   * reload mints a fresh mount, so this fires on the profile fetch that
+   * follows it instead of a state transition it would otherwise miss).
+   */
+  useEffect(() => {
+    if (!profile?.isRegistered) return;
+    const code = readPendingFriendInvite(browserSessionStorage());
+    if (!code) return;
+    const timer = window.setTimeout(() => void redeemFriendInvite(code), 0);
+    return () => window.clearTimeout(timer);
+  }, [profile?.isRegistered, redeemFriendInvite]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

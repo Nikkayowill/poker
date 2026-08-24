@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Send, Spade, UserMinus, UserPlus, X } from "lucide-react";
+import { Check, Copy, RotateCw, Send, Spade, UserMinus, UserPlus, X } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import type { GameSnapshot, PublicSeat } from "@/lib/game/types";
@@ -15,6 +15,7 @@ import type {
   FriendsOverview,
   PendingRequest,
   PendingTableInvite,
+  RecentOpponent,
 } from "@/lib/social/types";
 
 /**
@@ -24,7 +25,7 @@ import type {
  * without a guard, and so a failed refetch shows an empty list plus the error
  * rather than blanking the drawer to a spinner it will never leave.
  */
-const EMPTY: FriendsOverview = { friends: [], incoming: [], outgoing: [] };
+const EMPTY: FriendsOverview = { friends: [], incoming: [], outgoing: [], recentOpponents: [] };
 
 /**
  * The two ways this feature says no, which are different problems with
@@ -93,7 +94,7 @@ function DuelRecordBadge({ record }: { record: NonNullable<FriendSummary["duelRe
  * player's accent, which is the correct rendering for a list that never
  * fetched an equipped avatar, not a fallback for a failure.
  */
-function Avatar({ person }: { person: FriendSummary | PendingRequest | TableSeatPerson }) {
+function Avatar({ person }: { person: FriendSummary | PendingRequest | TableSeatPerson | RecentOpponent }) {
   return <ProfileAvatar profile={{ ...person, avatarCosmetic: "" }} />;
 }
 
@@ -110,6 +111,41 @@ interface TableSeatPerson {
   avatarUrl: string | null;
   avatarPreset: AvatarPreset;
   accent: string;
+}
+
+/**
+ * One row in "Recently played" -- the shortcut this whole feature exists
+ * for: someone you settled a duel or cribbage table against who is no
+ * longer seated with you, findable again instead of gone the moment the
+ * table ended.
+ */
+function RecentOpponentRow(
+  { person, busy, onAdd }: { person: RecentOpponent; busy: boolean; onAdd: () => void },
+) {
+  return (
+    <div className="friend-row">
+      <Avatar person={person} />
+      <div className="friend-identity">
+        <strong>
+          {person.displayName}
+          <DuelRecordBadge record={person.duelRecord} />
+        </strong>
+        <small>You&rsquo;ve played before</small>
+      </div>
+      <div className="friend-actions">
+        <button
+          type="button"
+          className="friend-invite"
+          disabled={busy}
+          onClick={onAdd}
+          aria-label={`Add ${person.displayName} as a friend`}
+        >
+          <UserPlus size={13} aria-hidden="true" />
+          Add friend
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export interface FriendsDrawerProps {
@@ -159,7 +195,16 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
   const [now, setNow] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** A confirmation that isn't an error -- "Friend added", not a failure -- so it can't be styled or read like one. */
+  const [notice, setNotice] = useState<string | null>(null);
   const [gate, setGate] = useState<Gate>("none");
+  /** This player's own reusable "add me" code, fetched alongside the overview. Null until it has loaded. */
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  /** Swaps the copy icon to a checkmark for a moment, same 1800ms as room-created-modal's own copy button. */
+  const [codeCopied, setCodeCopied] = useState(false);
+  /** The "have a code?" field, and whether a redeem is in flight. */
+  const [redeemValue, setRedeemValue] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
   /** Which profile/request ids have a mutation in flight, so their row can disable. */
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -245,6 +290,25 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
     }
   }, []);
 
+  /**
+   * The caller's own invite code, fetching-and-creating it on first open.
+   *
+   * Silent on failure like `loadInvites`: the code is a convenience this
+   * drawer offers on top of everything else, and a transient miss just
+   * leaves that one control showing its own loading state rather than
+   * blanking the whole drawer with an error banner.
+   */
+  const loadInviteCode = useCallback(async () => {
+    try {
+      const response = await fetch("/api/friends/invite-code", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = (await response.json()) as { code: string };
+      if (mounted.current) setInviteCode(data.code);
+    } catch {
+      // Left as-is; the widget below just keeps its "Loading…" placeholder.
+    }
+  }, []);
+
   useEffect(() => {
     mounted.current = true;
     // Deferred through a timer rather than called straight from the effect
@@ -253,6 +317,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
     const timer = window.setTimeout(() => {
       void load();
       void loadInvites();
+      void loadInviteCode();
     }, 0);
     // One interval drives both the refetch and the countdown: a row that has
     // just lapsed should stop being offered, not merely read "Expired".
@@ -265,7 +330,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
       window.clearTimeout(timer);
       window.clearInterval(poll);
     };
-  }, [load, loadInvites]);
+  }, [load, loadInvites, loadInviteCode]);
 
   useEffect(() => {
     // Whatever opened the drawer -- the lobby's Friends tile in practice.
@@ -454,6 +519,94 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
     }
   }, [load]);
 
+  /** Copies the invite link to the clipboard. Same try/catch-and-reset shape as room-created-modal's own copy button. */
+  const copyInviteLink = useCallback(async () => {
+    if (!inviteCode) return;
+    const url = `${window.location.origin}/?friend=${inviteCode}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCodeCopied(true);
+      window.setTimeout(() => setCodeCopied(false), 1800);
+    } catch {
+      // Clipboard permission can be silently refused. The code itself stays
+      // visible and selectable in the widget, so this is a lost convenience,
+      // not a dead end.
+    }
+  }, [inviteCode]);
+
+  /** Retires the current code and issues a new one -- for a link shared somewhere it shouldn't have been. */
+  const regenerateInviteCode = useCallback(async () => {
+    setBusy((current) => new Set(current).add("invite-code"));
+    try {
+      const response = await fetch("/api/friends/invite-code", { method: "POST" });
+      if (!mounted.current) return;
+      if (!response.ok) {
+        setError("Could not create a new invite code.");
+        return;
+      }
+      const data = (await response.json()) as { code: string };
+      setInviteCode(data.code);
+      setError(null);
+    } catch {
+      if (mounted.current) setError("Could not create a new invite code.");
+    } finally {
+      if (!mounted.current) return;
+      setBusy((current) => {
+        const next = new Set(current);
+        next.delete("invite-code");
+        return next;
+      });
+    }
+  }, []);
+
+  /** Redeems someone else's code, pasted or typed into the "have a code?" field. */
+  const submitRedeem = useCallback(async (event: FormEvent) => {
+    event.preventDefault();
+    const code = redeemValue.trim();
+    if (!code || redeeming) return;
+    selectSound();
+    setRedeeming(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/friends/invite-code/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      if (!mounted.current) return;
+      const data = (await response.json().catch(() => null)) as { status?: string; error?: string } | null;
+      if (!response.ok) {
+        setError(data?.error ?? "Could not add that friend.");
+        return;
+      }
+      switch (data?.status) {
+        case "friended":
+          setRedeemValue("");
+          setNotice("Friend added.");
+          await load();
+          break;
+        case "already_friends":
+          setRedeemValue("");
+          setNotice("You're already friends.");
+          break;
+        case "self":
+          setError("That's your own invite code.");
+          break;
+        // Undirected on purpose, same reasoning as addFriend's own `blocked`.
+        case "blocked":
+          setError("That player can't be friended right now.");
+          break;
+        default:
+          break;
+      }
+    } catch {
+      if (mounted.current) setError("Could not add that friend.");
+    } finally {
+      if (mounted.current) setRedeeming(false);
+    }
+  }, [redeemValue, redeeming, load]);
+
   /**
    * Answers an invite. Accepting seats the player, so the snapshot goes up.
    *
@@ -552,6 +705,49 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
 
         <div className="friends-list">
           {error && <p className="friends-error" role="alert">{error}</p>}
+          {notice && <p className="friends-notice" role="status">{notice}</p>}
+
+          {gate === "none" && (
+            <section className="friends-section friends-invite-code" aria-label="Add a friend by code">
+              <h3>Add a friend</h3>
+              <div className="invite-code-row">
+                <span className="invite-code-value">{inviteCode ?? "Loading…"}</span>
+                <button
+                  type="button"
+                  className="invite-code-copy"
+                  disabled={!inviteCode}
+                  onClick={() => { selectSound(); void copyInviteLink(); }}
+                  aria-label="Copy your invite link"
+                >
+                  {codeCopied ? <><Check size={13} aria-hidden="true" />Copied</> : <><Copy size={13} aria-hidden="true" />Copy link</>}
+                </button>
+                <button
+                  type="button"
+                  className="invite-code-regenerate"
+                  disabled={busy.has("invite-code")}
+                  onClick={() => { tapSound(); void regenerateInviteCode(); }}
+                  aria-label="Get a new invite code"
+                  title="Get a new code"
+                >
+                  <RotateCw size={13} aria-hidden="true" />
+                </button>
+              </div>
+              <p className="invite-code-hint">Anyone who opens your link becomes your friend instantly.</p>
+              <form className="invite-redeem-row" onSubmit={submitRedeem}>
+                <input
+                  type="text"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  placeholder="Have a code?"
+                  value={redeemValue}
+                  disabled={redeeming}
+                  onChange={(event) => setRedeemValue(event.target.value)}
+                  aria-label="Enter a friend's invite code"
+                />
+                <button type="submit" disabled={redeeming || !redeemValue.trim()}>Add</button>
+              </form>
+            </section>
+          )}
 
           {gate === "guest" && (
             <div className="friends-empty friends-upsell">
@@ -572,16 +768,17 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
             </div>
           )}
 
-          {gate === "none" && loading && total === 0 && liveInvites.length === 0 && atTable.length === 0 && (
+          {gate === "none" && loading && total === 0 && liveInvites.length === 0
+            && atTable.length === 0 && overview.recentOpponents.length === 0 && (
             <p className="friends-loading" role="status">Loading your friends…</p>
           )}
 
           {gate === "none" && !loading && total === 0 && liveInvites.length === 0
-            && atTable.length === 0 && !error && (
+            && atTable.length === 0 && overview.recentOpponents.length === 0 && !error && (
             <div className="friends-empty">
               <UserPlus size={20} aria-hidden="true" />
               <strong>No friends yet</strong>
-              <p>Add people you meet at the table, and they&rsquo;ll show up here.</p>
+              <p>Share your code above, or add people you meet at the table.</p>
             </div>
           )}
 
@@ -608,6 +805,20 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                     </button>
                   </div>
                 </div>
+              ))}
+            </section>
+          )}
+
+          {gate === "none" && overview.recentOpponents.length > 0 && (
+            <section className="friends-section" aria-label="Recently played">
+              <h3>Recently played</h3>
+              {overview.recentOpponents.map((person) => (
+                <RecentOpponentRow
+                  key={person.profileId}
+                  person={person}
+                  busy={busy.has(person.profileId)}
+                  onAdd={() => { selectSound(); void addFriend(person.profileId); }}
+                />
               ))}
             </section>
           )}

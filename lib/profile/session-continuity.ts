@@ -48,6 +48,18 @@ export const SESSION_PROFILE_KEY = "stackchips:session-profile";
 /** The account id this tab has already greeted, so a remount stays quiet. */
 export const SESSION_GREETED_KEY = "stackchips:session-greeted";
 
+/**
+ * A friend invite code clicked while signed out, waiting for a real account
+ * to redeem it against.
+ *
+ * Same sessionStorage-not-localStorage reasoning as the rest of this file,
+ * for the same reason: a code left over from a *previous* tab's session
+ * would silently friend whoever happens to sign in next on this browser,
+ * which is exactly the identity-confusion failure mode this file exists to
+ * avoid. clearSessionContinuity drops it on sign-out for the same reason.
+ */
+export const PENDING_FRIEND_INVITE_KEY = "stackchips:pending-friend-invite";
+
 /** `window.sessionStorage`, or null wherever it is unavailable or blocked. */
 export function browserSessionStorage(): PreferenceStorage | null {
   if (typeof window === "undefined") return null;
@@ -222,18 +234,52 @@ export function markAccountLinkAnnounced(
   }
 }
 
+/** The pending invite code, or null. Never validated here -- redeeming it is the server's job. */
+export function readPendingFriendInvite(storage: PreferenceStorage | null): string | null {
+  if (!storage) return null;
+  try {
+    return storage.getItem(PENDING_FRIEND_INVITE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Records a code to redeem once the tab has a registered profile. */
+export function writePendingFriendInvite(storage: PreferenceStorage | null, code: string): void {
+  if (!storage) return;
+  try {
+    storage.setItem(PENDING_FRIEND_INVITE_KEY, code);
+  } catch {
+    // A code that fails to persist just means the drawer's own "enter a
+    // code" field is the fallback -- not worth throwing out of a click.
+  }
+}
+
+/** Clears the pending code once it has been redeemed (or given up on). */
+export function clearPendingFriendInvite(storage: PreferenceStorage | null): void {
+  if (!storage) return;
+  try {
+    storage.removeItem(PENDING_FRIEND_INVITE_KEY);
+  } catch {
+    // See writePendingFriendInvite.
+  }
+}
+
 /**
  * Forgets everything this tab knows, on sign-out.
  *
- * Both keys, together, always. Clearing the greeting but keeping the cached
- * profile would paint the departing player's name and balance over the entry
- * card of whoever signs in next on this tab.
+ * All three keys, together, always. Clearing the greeting but keeping the
+ * cached profile would paint the departing player's name and balance over
+ * the entry card of whoever signs in next on this tab; keeping a pending
+ * invite code would hand it to that next person's account instead of the
+ * one who actually clicked the link.
  */
 export function clearSessionContinuity(storage: PreferenceStorage | null): void {
   if (!storage) return;
   try {
     storage.removeItem(SESSION_PROFILE_KEY);
     storage.removeItem(SESSION_GREETED_KEY);
+    storage.removeItem(PENDING_FRIEND_INVITE_KEY);
   } catch {
     // Nothing useful to do; the values expire with the tab regardless.
   } finally {

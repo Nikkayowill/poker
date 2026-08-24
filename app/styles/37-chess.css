@@ -97,6 +97,13 @@
     0 2px 5px rgba(0, 0, 0, .45);
 }
 
+/* Which sixteen are the viewer's own, at a glance, on top of whatever the
+   outline above already carries -- a filter rather than another text-shadow
+   layer, since text-shadow is already spent on the white/black outline. */
+.chess-piece-yours {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--brand-gold) 75%, transparent));
+}
+
 /* -------------------------------------------------------------- highlights */
 
 /* The move that just happened, so a player returning to the tab can see what

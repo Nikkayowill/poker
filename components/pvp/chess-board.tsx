@@ -64,6 +64,10 @@ export function ChessBoard({ state, yourSeat, status, busy, onMove }: DuelBoardP
 
   const opponentSeat = yourSeat === 0 ? 1 : 0;
   const flipped = yourSeat === 1;
+  // Seat 0 is always white (lib/pvp/chess.ts's seatColor) -- restated here only
+  // for the clock labels below, not as a second copy of the rule.
+  const yourColor = yourSeat === 0 ? "White" : "Black";
+  const opponentColor = yourSeat === 0 ? "Black" : "White";
 
   const movable = new Set(moves.map((move) => move.from));
   const destinations = new Set(
@@ -111,7 +115,7 @@ export function ChessBoard({ state, yourSeat, status, busy, onMove }: DuelBoardP
         key={`opponent-${state.clock[opponentSeat]}`}
         ms={state.clock[opponentSeat]}
         running={live && state.turn === opponentSeat}
-        label="Opponent"
+        label={`Opponent · ${opponentColor}`}
       />
 
       <div className="chess-grid" role="group" aria-label="Chess board">
@@ -151,6 +155,7 @@ export function ChessBoard({ state, yourSeat, status, busy, onMove }: DuelBoardP
                   className={clsx(
                     "chess-piece",
                     piece === piece.toUpperCase() ? "chess-piece-white" : "chess-piece-black",
+                    (piece === piece.toUpperCase()) === (yourSeat === 0) && "chess-piece-yours",
                   )}
                   aria-hidden="true"
                 >
@@ -166,7 +171,7 @@ export function ChessBoard({ state, yourSeat, status, busy, onMove }: DuelBoardP
         key={`you-${state.clock[yourSeat]}`}
         ms={state.clock[yourSeat]}
         running={live && state.turn === yourSeat}
-        label="You"
+        label={`You · ${yourColor}`}
       />
 
       {promoting ? (

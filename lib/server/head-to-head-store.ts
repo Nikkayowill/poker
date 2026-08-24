@@ -58,18 +58,31 @@ function inverse(outcome: Outcome): Outcome {
 
 declare global {
   var __riverRoomHeadToHead: Map<string, HeadToHeadRecord> | undefined;
+  // Separate from memoryRecords because HeadToHeadRecord carries no
+  // timestamp -- the real table's last_result_at exists precisely so
+  // listRecentOpponentIds can order by it, and the memory mirror needs its
+  // own copy of that fact to answer the same question in tests/dev.
+  var __riverRoomHeadToHeadRecency: Map<string, number> | undefined;
 }
 
 const memoryRecords = globalThis.__riverRoomHeadToHead ?? new Map<string, HeadToHeadRecord>();
 globalThis.__riverRoomHeadToHead = memoryRecords;
 
+const memoryRecency = globalThis.__riverRoomHeadToHeadRecency ?? new Map<string, number>();
+globalThis.__riverRoomHeadToHeadRecency = memoryRecency;
+
 function recordKey(profileId: string, opponentId: string, gameId: string): string {
   return `${profileId}|${opponentId}|${gameId}`;
+}
+
+function recencyKey(profileId: string, opponentId: string): string {
+  return `${profileId}|${opponentId}`;
 }
 
 /** Test-only reset. The mirror is process-global, so suites must clear it. */
 export function __resetHeadToHeadMemory(): void {
   memoryRecords.clear();
+  memoryRecency.clear();
 }
 
 function applyMemory(profileId: string, opponentId: string, gameId: string, outcome: Outcome): void {
@@ -87,6 +100,9 @@ function applyMemory(profileId: string, opponentId: string, gameId: string, outc
     currentStreak: nextStreak,
     bestStreak: outcome === "win" ? Math.max(current.bestStreak, nextStreak) : current.bestStreak,
   });
+  // Keyed on (profileId, opponentId) alone, not per game -- "recently played"
+  // means the pair's most recent activity across whatever games they share.
+  memoryRecency.set(recencyKey(profileId, opponentId), Date.now());
 }
 
 /**
@@ -217,6 +233,53 @@ async function rowsFor(profileId: string, opponentIds: string[]): Promise<Stored
 
 function played(record: HeadToHeadRecord): number {
   return record.wins + record.losses + record.draws;
+}
+
+/**
+ * Opponent ids you've settled a duel or cribbage result against, most
+ * recently played first.
+ *
+ * This is the raw ingredient for a "people you just played" friend
+ * shortcut -- see friends-store.ts's recentOpponentsFor, which is the one
+ * that actually excludes friends/blocks/pending requests before showing
+ * anything. This function only answers "who have I played and when";
+ * filtering who that's worth surfacing to is a friends concern, not a
+ * head-to-head one.
+ */
+export async function listRecentOpponentIds(profileId: string, limit: number): Promise<string[]> {
+  const supabase = adminClient();
+
+  if (!supabase) {
+    return [...memoryRecency]
+      .filter(([key]) => key.startsWith(`${profileId}|`))
+      .sort((a, b) => b[1] - a[1])
+      .map(([key]) => key.slice(profileId.length + 1))
+      .slice(0, limit);
+  }
+
+  // A player can hold rows against the same opponent in more than one game
+  // (chess AND cribbage, say), so this over-fetches and dedupes in JS rather
+  // than asking PostgREST for something like GROUP BY -- the number of
+  // opponents behind any one profile is small enough that this is cheap,
+  // and it lets last_result_at (not aggregated) drive the ordering directly.
+  const { data, error } = await supabase
+    .from("head_to_head_records")
+    .select("opponent_id, last_result_at")
+    .eq("profile_id", profileId)
+    .order("last_result_at", { ascending: false })
+    .limit(Math.max(limit * 4, 20));
+  if (error) throw new Error(`Could not load your recent opponents: ${error.message}`);
+
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const row of data ?? []) {
+    const opponentId = String(row.opponent_id);
+    if (seen.has(opponentId)) continue;
+    seen.add(opponentId);
+    ids.push(opponentId);
+    if (ids.length >= limit) break;
+  }
+  return ids;
 }
 
 /**

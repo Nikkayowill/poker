@@ -2,16 +2,20 @@ import { describe, expect, it } from "vitest";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type { PreferenceStorage } from "@/lib/profile/stored-preference";
 import {
+  PENDING_FRIEND_INVITE_KEY,
   SESSION_GREETED_KEY,
   SESSION_PROFILE_KEY,
+  clearPendingFriendInvite,
   clearSessionContinuity,
   markAccountLinkAnnounced,
   readCachedProfile,
+  readPendingFriendInvite,
   serverProfileSnapshot,
   sessionProfileSnapshot,
   shouldAnnounceAccountLink,
   subscribeSessionCache,
   writeCachedProfile,
+  writePendingFriendInvite,
 } from "@/lib/profile/session-continuity";
 
 function memoryStorage(seed: Record<string, string> = {}): PreferenceStorage {
@@ -193,5 +197,46 @@ describe("clearing on sign-out", () => {
 
     expect(storage.getItem(SESSION_PROFILE_KEY)).toBeNull();
     expect(storage.getItem(SESSION_GREETED_KEY)).toBeNull();
+  });
+
+  // A code left over from a previous account in this tab would otherwise
+  // friend whoever signs in next, not whoever actually clicked the link.
+  it("drops a pending friend invite too", () => {
+    const storage = memoryStorage();
+    writePendingFriendInvite(storage, "ABCD123456");
+
+    clearSessionContinuity(storage);
+
+    expect(storage.getItem(PENDING_FRIEND_INVITE_KEY)).toBeNull();
+  });
+});
+
+describe("pending friend invite", () => {
+  it("round-trips a code", () => {
+    const storage = memoryStorage();
+    writePendingFriendInvite(storage, "ABCD123456");
+    expect(readPendingFriendInvite(storage)).toBe("ABCD123456");
+  });
+
+  it("is null when nothing is pending", () => {
+    expect(readPendingFriendInvite(memoryStorage())).toBeNull();
+  });
+
+  it("clears without touching the rest of session continuity", () => {
+    const storage = memoryStorage();
+    writeCachedProfile(storage, profile);
+    writePendingFriendInvite(storage, "ABCD123456");
+
+    clearPendingFriendInvite(storage);
+
+    expect(readPendingFriendInvite(storage)).toBeNull();
+    expect(readCachedProfile(storage)).not.toBeNull();
+  });
+
+  it("is inert wherever storage is unavailable or throwing", () => {
+    expect(() => writePendingFriendInvite(null, "ABCD123456")).not.toThrow();
+    expect(readPendingFriendInvite(null)).toBeNull();
+    expect(() => clearPendingFriendInvite(throwingStorage())).not.toThrow();
+    expect(readPendingFriendInvite(throwingStorage())).toBeNull();
   });
 });

@@ -59,10 +59,31 @@ export interface PendingRequest {
   createdAt: string;
 }
 
+/**
+ * Someone you've settled a duel or cribbage result against, who isn't
+ * already a friend, a pending request in either direction, or blocked.
+ *
+ * The shortcut this exists for: a friendship's only entry point used to be
+ * "you're both seated at the same table right now," which disappears the
+ * moment either of you leaves. This is that same person, findable again
+ * after the fact -- `duelRecord` is never null here, unlike FriendSummary's,
+ * because membership in this list already means the two of you played.
+ */
+export interface RecentOpponent {
+  profileId: string;
+  displayName: string;
+  initials: string;
+  avatarUrl: string | null;
+  avatarPreset: AvatarPreset;
+  accent: string;
+  duelRecord: HeadToHeadRecord;
+}
+
 export interface FriendsOverview {
   friends: FriendSummary[];
   incoming: PendingRequest[];
   outgoing: PendingRequest[];
+  recentOpponents: RecentOpponent[];
 }
 
 /**

@@ -39,6 +39,7 @@ import os
 import sys
 from collections import deque
 
+import numpy as np
 from PIL import Image
 
 SOURCE_DIR = "art/seats"
@@ -48,6 +49,20 @@ MANIFEST = "lib/scene/seat-art.generated.ts"
 LUMA_MAX = 1
 HEAD_BAND = 0.35
 WEBP_QUALITY = 96
+
+# A plate framed exactly to the "hands on the table" contract has its hand
+# sitting flush against the crop's own bottom edge -- a straight rectangular
+# line, since that's just where the source image stops. Most plates have a
+# few px of margin there (a curled finger, a fold of sleeve) that hides it;
+# character34's didn't, and a straight edge slicing across a mid-pose hand
+# reads as a bad cutout rather than a hand resting on the table (2026-08-24).
+# Fading the last few rows to transparent turns that hard edge into the same
+# soft falloff a real vignette would have -- a no-op wherever a plate already
+# has margin (those rows are already alpha 0), and it can't move where the
+# hand anchors since seatArtBox pins the box's own bottom regardless.
+FEATHER_FRACTION = 0.025
+FEATHER_MIN_PX = 6
+FEATHER_MAX_PX = 28
 
 
 def cutout(path):
@@ -143,10 +158,17 @@ def process_character(char_id, src_dir, out_dir):
     half = max(max(a["centre"], a["art"].size[0] - a["centre"]) for a in angles)
     box_width = 2 * int(-(-half // 1))
 
+    feather = max(FEATHER_MIN_PX, min(FEATHER_MAX_PX, round(box_height * FEATHER_FRACTION)))
+
     os.makedirs(out_dir, exist_ok=True)
     for a in angles:
         canvas = Image.new("RGBA", (box_width, box_height), (0, 0, 0, 0))
         canvas.alpha_composite(a["art"], (round(box_width / 2 - a["centre"]), 0))
+        if feather > 1:
+            pixels = np.array(canvas).astype(np.float32)
+            ramp = np.linspace(1.0, 0.0, feather, endpoint=True)
+            pixels[box_height - feather :, :, 3] *= ramp[:, None]
+            canvas = Image.fromarray(pixels.astype(np.uint8), "RGBA")
         out = os.path.join(out_dir, f"{a['angle']}.webp")
         canvas.save(out, quality=WEBP_QUALITY, method=6)
         print(f"  {char_id}/{a['angle']:<3d} -> {out}  ({os.path.getsize(out) // 1024} KiB)")

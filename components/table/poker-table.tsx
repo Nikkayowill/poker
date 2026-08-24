@@ -24,6 +24,7 @@ import {
   seatArtCharacter,
   seatArtCharacterForSlot,
   seatArtSlotFor,
+  type SeatArtBox,
 } from "@/lib/scene/seat-art";
 import {
   resolveTableRenderer,
@@ -557,32 +558,39 @@ export function PokerTable({
    * character (a stale/legacy id) -- everyone at the table still agrees,
    * since `avatarCosmetic` is already part of the snapshot every client has.
    *
-   * Filtered down to seats that actually get a box rather than left with
-   * holes, since the render below maps this straight to `<img>` elements --
-   * the hero's own seat never gets one (no figure is drawn there on any
-   * table), and neither does a seat the layout hasn't reported a fit for.
+   * Keyed by seat rather than a flat list, and rendered as each seat's own
+   * child (see `<PlayerSeat racetrackArt=...>`) rather than as siblings of
+   * `.poker-table-wrap`, which is where this used to render. It has to be:
+   * `.poker-table-wrap` carries `isolation: isolate` (for the dealer's own
+   * z-index escape -- see that rule's own long comment), which makes the
+   * whole wrap ONE atomic layer from the outside. A sibling image can be
+   * ordered in front of or behind that entire layer, never in between two of
+   * its descendants -- so cards drawn behind this art and a nameplate drawn
+   * in front of it could never both be true while the art lived outside the
+   * wrap. Nested inside the seat itself, the three are ordinary siblings in
+   * one stacking context and a plain `z-index` finally does what it says.
+   *
+   * Absent for the hero's own seat (no figure is drawn there on any table)
+   * and for a seat the layout hasn't reported a fit for.
    */
-  const racetrackSeatArt = useMemo(() => {
-    if (!isRacetrack || !racetrackLayout) return [];
-    return orderedSeats.flatMap((seat, index) => {
-      if (seat.isMine) return [];
+  const racetrackArtBySeat = useMemo(() => {
+    const map = new Map<string, { src: string; mirror: boolean; box: SeatArtBox }>();
+    if (!isRacetrack || !racetrackLayout) return map;
+    orderedSeats.forEach((seat, index) => {
+      if (seat.isMine) return;
       const placed = racetrackLayout.seats[index];
-      if (!placed) return [];
+      if (!placed) return;
       const character = seatArtCharacter(seat.avatarCosmetic)
         ?? seatArtCharacterForSlot(game.id, game.handNumber, placed.slot);
-      if (!character) return [];
+      if (!character) return;
       const offset = seatAngleDeg(placed.slot) - DEALER_ANGLE_DEG;
       const pick = pickSeatArtForSlot(character, placed.slot, offset, isDesktopViewport);
       const slot = seatArtSlotFor(placed.slot, isDesktopViewport);
       const box = seatArtBox(placed, placed.hands, pick.aspect, pick.mirror, slot);
-      if (!box) return [];
-      // Same z-index its own .player-seat article gets (seatZ, near-based),
-      // and rendered earlier in the document than any seat -- so at that
-      // shared value document order settles the tie in the seat's favour,
-      // putting cards and the nameplate over their own seat's art, while a
-      // nearer seat's art still correctly out-stacks a farther seat's.
-      return [{ seatId: seat.id, src: pick.src, box, zIndex: seatZ(placed.near) }];
+      if (!box) return;
+      map.set(seat.id, { src: pick.src, mirror: pick.mirror, box });
     });
+    return map;
   }, [isRacetrack, racetrackLayout, orderedSeats, isDesktopViewport, game.id, game.handNumber]);
 
   /**
@@ -594,12 +602,32 @@ export function PokerTable({
    */
   const seatStyles = useMemo(() => {
     if (!isRacetrack || !racetrackLayout) return ringGeometry;
-    return orderedSeats.map((_, index) => {
+    return orderedSeats.map((seat, index) => {
       const placed = racetrackLayout.seats[index];
       if (!placed) return ringGeometry[index];
+      /* Where this seat's PORTRAIT ended up, as three offsets from the seat
+         box's own origin (the projected crown).
+
+         The seat box is centred on that anchor; the drawn character is not.
+         `seatArtBox` shifts it by the slot's hand-tuned `offsetX`, hangs its
+         bottom edge at the hands anchor plus `offsetY`, and grows it upward
+         from there by `scale` -- so at a scaled seat the art's real crown is
+         several pixels above the anchor and its hands several below. Anything
+         that has to line up with the PERSON rather than with the anchor (the
+         nameplate, the hole cards) needs the box, not the anchor.
+
+         Read off the same `seatArtBox` result the `<img>` is positioned from
+         rather than recomputed from the slot: one formula, so the two cannot
+         drift apart. Absent for a seat whose character doesn't resolve (no
+         portrait is drawn there at all), where the offsets collapse to zero
+         and everything falls back to the anchor it always used. */
+      const artBox = racetrackArtBySeat.get(seat.id)?.box;
       return {
         "--seat-x": `${placed.x.toFixed(1)}px`,
         "--seat-y": `${placed.y.toFixed(1)}px`,
+        "--seat-art-dx": `${(artBox ? artBox.left + artBox.width / 2 - placed.x : 0).toFixed(1)}px`,
+        "--seat-art-crown-dy": `${(artBox ? artBox.top - placed.y : 0).toFixed(1)}px`,
+        "--seat-art-hands-dy": `${(artBox ? artBox.top + artBox.height - placed.y : 0).toFixed(1)}px`,
         /* Per seat here, where the classic table sets one width on the wrap
            for all of them. It has to be: the crowd is clustered on the far
            arc, so a near flank has visibly more elbow room than a chair beside
@@ -629,7 +657,7 @@ export function PokerTable({
         "--bet-y-rel-px": `${(placed.bet.y - racetrackLayout.height).toFixed(1)}px`,
       } as React.CSSProperties;
     });
-  }, [isRacetrack, racetrackLayout, orderedSeats, ringGeometry]);
+  }, [isRacetrack, racetrackLayout, orderedSeats, ringGeometry, racetrackArtBySeat]);
 
   const seatOrderKey = orderedSeats.map((seat) => seat.id).join(",");
   // Both vectors answer the same question -- where is this seat, relative to
@@ -1272,32 +1300,12 @@ export function PokerTable({
               style={dealerStyle(racetrackLayout.dealer)}
             />
           )}
-          {/* Opponent portraits on the racetrack table, over the cloth same as
-              the dealer -- and same reason: the art puts hands (and cards) on
-              the table, and drawing it behind the rail would clip exactly
-              that. .seat-figure's own circular avatar is hidden for these
-              seats (42-racetrack-table.css) rather than left showing under
-              this -- see `seatArtCharacterForSlot`'s own note for what is and
-              isn't wired up yet (per-seat, not per-player). */}
-          {racetrackSeatArt.map(({ seatId, src, box, zIndex }) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={seatId}
-              className="racetrack-seat-art"
-              src={src}
-              alt=""
-              aria-hidden="true"
-              draggable={false}
-              style={{
-                left: `${box.left.toFixed(1)}px`,
-                top: `${box.top.toFixed(1)}px`,
-                width: `${box.width.toFixed(1)}px`,
-                height: `${box.height.toFixed(1)}px`,
-                zIndex,
-                transform: box.mirror ? "scaleX(-1)" : undefined,
-              }}
-            />
-          ))}
+          {/* Opponent portraits used to render here, as siblings of
+              `.poker-table-wrap` below. They moved to be each seat's own
+              child instead (`<PlayerSeat racetrackArt=...>`) -- see
+              `racetrackArtBySeat`'s own comment for why the isolated wrap
+              made that the only place cards could ever draw behind this
+              art while the nameplate stayed in front of it. */}
           <div
             className="poker-table-wrap"
             ref={tableWrapRef}
@@ -1492,6 +1500,7 @@ export function PokerTable({
                 // empty while they were drawn separately below the felt.
                 placement={isRacetrack ? "seat-racetrack" : "seat-ring"}
                 seatStyle={seatStyles[index]}
+                racetrackArt={racetrackArtBySeat.get(seat.id) ?? null}
                 // The ring slot, not the engine's seat position: dealing runs
                 // round the table as it looks from this chair, which puts the
                 // local player first. See lib/game/deal-choreography.ts.

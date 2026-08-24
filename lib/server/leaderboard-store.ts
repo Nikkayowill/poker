@@ -251,34 +251,37 @@ function sortDescendingByGoodness(gameId: string, rows: ScoredRow[]): ScoredRow[
   return [...rows].sort((a, b) => (ascending ? a.score - b.score : b.score - a.score));
 }
 
-async function allGameRows(gameId: string): Promise<ScoredRow[]> {
+/** Every stored row for a game, qualified or not -- allGameRows filters this, getGameQualifyProgress needs what it filters out. */
+async function rawGameRows(gameId: string): Promise<{ profileId: string; stats: LeaderboardStats }[]> {
   const supabase = adminClient();
-  let rows: { profileId: string; stats: LeaderboardStats }[];
 
   if (!supabase) {
-    rows = [...memoryStats.entries()]
+    return [...memoryStats.entries()]
       .filter(([key]) => key.endsWith(`:${gameId}`))
       .map(([key, stats]) => ({ profileId: key.slice(0, key.length - gameId.length - 1), stats }));
-  } else {
-    const { data, error } = await supabase
-      .from("game_leaderboard_stats")
-      .select("profile_id, wins, losses, draws, metric_sum, metric_count, current_streak, best_streak")
-      .eq("game_id", gameId);
-    if (error) throw new Error(`Could not load the ${gameId} leaderboard: ${error.message}`);
-    rows = (data ?? []).map((row) => ({
-      profileId: String(row.profile_id),
-      stats: {
-        wins: Number(row.wins),
-        losses: Number(row.losses),
-        draws: Number(row.draws),
-        metricSum: Number(row.metric_sum),
-        metricCount: Number(row.metric_count),
-        currentStreak: Number(row.current_streak),
-        bestStreak: Number(row.best_streak),
-      },
-    }));
   }
 
+  const { data, error } = await supabase
+    .from("game_leaderboard_stats")
+    .select("profile_id, wins, losses, draws, metric_sum, metric_count, current_streak, best_streak")
+    .eq("game_id", gameId);
+  if (error) throw new Error(`Could not load the ${gameId} leaderboard: ${error.message}`);
+  return (data ?? []).map((row) => ({
+    profileId: String(row.profile_id),
+    stats: {
+      wins: Number(row.wins),
+      losses: Number(row.losses),
+      draws: Number(row.draws),
+      metricSum: Number(row.metric_sum),
+      metricCount: Number(row.metric_count),
+      currentStreak: Number(row.current_streak),
+      bestStreak: Number(row.best_streak),
+    },
+  }));
+}
+
+async function allGameRows(gameId: string): Promise<ScoredRow[]> {
+  const rows = await rawGameRows(gameId);
   return rows
     .filter((row) => qualifies(gameId, row.stats))
     .map((row) => ({ ...row, score: scoreOf(gameId, row.stats) }));
@@ -320,6 +323,36 @@ export async function getGameStanding(
   if (index === -1) return null;
   const [decorated] = await decorateGameRows(gameId, [sorted[index]]);
   return decorated ? { ...decorated, rank: index + 1 } : null;
+}
+
+export interface LeaderboardQualifyProgress {
+  /** Games recorded so far toward this game's qualifying sample. */
+  sample: number;
+  /** The sample size needed before a player appears on the board at all. */
+  minSample: number;
+}
+
+/**
+ * How close a not-yet-qualified player is to appearing on their own game's
+ * board -- getGameStanding returns a flat null for them, which reads to a
+ * player who just played their first match as "you don't exist here,"
+ * indistinguishable from having never played. Null here too, but only when
+ * there is truly nothing to report: unknown game, zero games played, or
+ * already past the threshold (getGameStanding is the answer at that point).
+ */
+export async function getGameQualifyProgress(
+  gameId: string,
+  profileId: string,
+): Promise<LeaderboardQualifyProgress | null> {
+  const contract = leaderboardGame(gameId);
+  if (!contract) return null;
+  const row = (await rawGameRows(gameId)).find((entry) => entry.profileId === profileId);
+  if (!row) return null;
+  const sample = contract.kind === "average_metric"
+    ? row.stats.metricCount
+    : row.stats.wins + row.stats.losses + row.stats.draws;
+  if (sample <= 0 || sample >= contract.minSample) return null;
+  return { sample, minSample: contract.minSample };
 }
 
 // ---- friends board ------------------------------------------------------

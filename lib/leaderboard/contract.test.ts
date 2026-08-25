@@ -14,7 +14,7 @@ describe("registry completeness", () => {
   it("has a leaderboard entry for every duel lib/pvp offers", () => {
     for (const gameId of Object.keys(DUEL_GAMES)) {
       expect(LEADERBOARD_GAMES[gameId], `missing leaderboard contract for duel "${gameId}"`).toBeDefined();
-      expect(LEADERBOARD_GAMES[gameId].kind).toBe("win_loss_record");
+      expect(LEADERBOARD_GAMES[gameId].columns.map((column) => column.key)).toEqual(["record", "winRate", "streak"]);
     }
   });
 
@@ -98,7 +98,7 @@ describe("formatRow", () => {
   it("formats a win/loss record with a percentage and a readable streak", () => {
     const chess = LEADERBOARD_GAMES.chess;
     const row = chess.formatRow({
-      wins: 7, losses: 3, draws: 0, metricSum: 0, metricCount: 0, currentStreak: 3, bestStreak: 5,
+      wins: 7, losses: 3, draws: 0, currentStreak: 3, bestStreak: 5,
     });
     expect(row.record).toBe("7-3");
     expect(row.winRate).toBe("70%");
@@ -107,13 +107,13 @@ describe("formatRow", () => {
 
   it("reads a negative streak as a loss streak, and zero as a dash", () => {
     const chess = LEADERBOARD_GAMES.chess;
-    expect(chess.formatRow({ wins: 1, losses: 4, draws: 0, metricSum: 0, metricCount: 0, currentStreak: -2, bestStreak: 1 }).streak).toBe("L2");
-    expect(chess.formatRow({ wins: 0, losses: 0, draws: 1, metricSum: 0, metricCount: 0, currentStreak: 0, bestStreak: 0 }).streak).toBe("—");
+    expect(chess.formatRow({ wins: 1, losses: 4, draws: 0, currentStreak: -2, bestStreak: 1 }).streak).toBe("L2");
+    expect(chess.formatRow({ wins: 0, losses: 0, draws: 1, currentStreak: 0, bestStreak: 0 }).streak).toBe("—");
   });
 
   it("never divides by zero when nobody has played yet", () => {
     const chess = LEADERBOARD_GAMES.chess;
-    const row = chess.formatRow({ wins: 0, losses: 0, draws: 0, metricSum: 0, metricCount: 0, currentStreak: 0, bestStreak: 0 });
+    const row = chess.formatRow({ wins: 0, losses: 0, draws: 0, currentStreak: 0, bestStreak: 0 });
     expect(row.winRate).toBe("0%");
   });
 });

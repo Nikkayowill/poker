@@ -60,7 +60,7 @@ describe("recordDuelResult", () => {
 
     const board = await getGameLeaderboard("chess", 10);
     const rowA = board.find((row) => row.profileId === a.id)!;
-    expect(rowA.stats).toEqual({ wins: 0, losses: 0, draws: 3, metricSum: 0, metricCount: 0, currentStreak: 0, bestStreak: 0 });
+    expect(rowA.stats).toEqual({ wins: 0, losses: 0, draws: 3, currentStreak: 0, bestStreak: 0 });
   });
 
   it("tracks a live streak that resets on a loss, and remembers the best one", async () => {
@@ -92,7 +92,7 @@ describe("recordMultiWayResult", () => {
     const board = await getGameLeaderboard("cribbage", 10);
     const winner = board.find((row) => row.profileId === ids[2])!;
     const runnerUp = board.find((row) => row.profileId === ids[0])!;
-    expect(winner.stats).toEqual({ wins: 2, losses: 1, draws: 0, metricSum: 0, metricCount: 0, currentStreak: -1, bestStreak: 2 });
+    expect(winner.stats).toEqual({ wins: 2, losses: 1, draws: 0, currentStreak: -1, bestStreak: 2 });
     expect(runnerUp.stats.wins).toBe(1);
     expect(runnerUp.stats.losses).toBe(2);
   });

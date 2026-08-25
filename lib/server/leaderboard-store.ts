@@ -20,18 +20,17 @@ import { adminClient } from "./supabase-admin";
  * supabase/migrations/20260820120000_game_leaderboard_stats.sql; local/dev/
  * test runs against an in-process approximation of the same math.
  *
- * The three record* functions below never throw -- the same contract
+ * The two record* functions below never throw -- the same contract
  * applyMissionEvent and applyAchievementEvent keep, called as a sibling of
  * those two at each settlement call site rather than through a shared
  * DomainEvent (see lib/domain-events.ts's own header for why the union stays
- * minimal: this module needs a loser id, every cribbage seat, and a raw
- * metric, payload the mission/achievement consumers don't want).
+ * minimal: this module needs a loser id and every cribbage seat, payload the
+ * mission/achievement consumers don't want).
  *
- * The two of them that carry named opponents also fan the same result out to
- * head-to-head-store.ts (the friends board) from in here, rather than from a
- * second call beside each settlement. One settled match is one event, and
- * two call sites is how the world board and the friends board end up
- * disagreeing about the same game.
+ * Both of them fan the same result out to head-to-head-store.ts (the friends
+ * board) from in here, rather than from a second call beside each
+ * settlement. One settled match is one event, and two call sites is how the
+ * world board and the friends board end up disagreeing about the same game.
  */
 
 export interface LeaderboardEntry {
@@ -79,7 +78,7 @@ export interface GlobalLeaderboardEntry {
 }
 
 const emptyStats = (): LeaderboardStats => ({
-  wins: 0, losses: 0, draws: 0, metricSum: 0, metricCount: 0, currentStreak: 0, bestStreak: 0,
+  wins: 0, losses: 0, draws: 0, currentStreak: 0, bestStreak: 0,
 });
 
 // ---- memory-mode mirror ----------------------------------------------------
@@ -107,8 +106,6 @@ function applyMemory(
   profileId: string,
   gameId: string,
   outcome: { win: boolean; loss: boolean; draw: boolean },
-  metricDelta: number,
-  metricCountDelta: number,
 ): void {
   const key = statsKey(profileId, gameId);
   const current = memoryStats.get(key) ?? emptyStats();
@@ -123,8 +120,6 @@ function applyMemory(
     wins: current.wins + (outcome.win ? 1 : 0),
     losses: current.losses + (outcome.loss ? 1 : 0),
     draws: current.draws + (outcome.draw ? 1 : 0),
-    metricSum: current.metricSum + metricDelta,
-    metricCount: current.metricCount + metricCountDelta,
     currentStreak: nextStreak,
     bestStreak: outcome.win ? Math.max(current.bestStreak, nextStreak) : current.bestStreak,
   });
@@ -134,22 +129,21 @@ async function applyResult(
   profileId: string,
   gameId: string,
   outcome: { win: boolean; loss: boolean; draw: boolean },
-  metricDelta = 0,
-  metricCountDelta = 0,
 ): Promise<void> {
   const supabase = adminClient();
   if (!supabase) {
-    applyMemory(profileId, gameId, outcome, metricDelta, metricCountDelta);
+    applyMemory(profileId, gameId, outcome);
     return;
   }
+  // p_metric_delta/p_metric_count_delta are omitted, not passed as 0: the RPC
+  // defaults both, and nothing has ranked on a raw metric since Memory
+  // Match's board was dropped.
   const { error } = await supabase.rpc("apply_leaderboard_result", {
     p_profile_id: profileId,
     p_game_id: gameId,
     p_win: outcome.win,
     p_loss: outcome.loss,
     p_draw: outcome.draw,
-    p_metric_delta: metricDelta,
-    p_metric_count_delta: metricCountDelta,
   });
   if (error) throw new Error(`Could not record ${gameId} leaderboard result: ${error.message}`);
 }
@@ -210,15 +204,6 @@ export async function recordMultiWayResult(
   await recordHeadToHeadTable(gameId, participantIds, winnerId);
 }
 
-/** A metric-only result (Memory Match's turn count). No win/loss/draw. Never throws. */
-export async function recordMetricResult(gameId: string, profileId: string, metricDelta: number): Promise<void> {
-  try {
-    await applyResult(profileId, gameId, { win: false, loss: false, draw: false }, metricDelta, 1);
-  } catch (error) {
-    console.error("leaderboard.record_metric_result_failed", { gameId, profileId, metricDelta, error });
-  }
-}
-
 // ---- per-game reads -----------------------------------------------------
 
 interface ScoredRow {
@@ -227,28 +212,25 @@ interface ScoredRow {
   score: number;
 }
 
+/** Decided games played, which is the sample every registered game qualifies on. */
+function sampleOf(stats: LeaderboardStats): number {
+  return stats.wins + stats.losses + stats.draws;
+}
+
 function qualifies(gameId: string, stats: LeaderboardStats): boolean {
   const contract = leaderboardGame(gameId);
   if (!contract) return false;
-  const sample = contract.kind === "average_metric" ? stats.metricCount : stats.wins + stats.losses + stats.draws;
-  return sample >= contract.minSample;
+  return sampleOf(stats) >= contract.minSample;
 }
 
-function scoreOf(gameId: string, stats: LeaderboardStats): number {
-  const contract = leaderboardGame(gameId);
-  if (!contract) return 0;
-  if (contract.kind === "average_metric") {
-    return stats.metricCount > 0 ? stats.metricSum / stats.metricCount : 0;
-  }
-  const total = stats.wins + stats.losses + stats.draws;
+function scoreOf(stats: LeaderboardStats): number {
+  const total = sampleOf(stats);
   return total > 0 ? stats.wins / total : 0;
 }
 
-/** Best score first: direction-aware, so a lower_better game (Memory Match) sorts ascending. */
-function sortDescendingByGoodness(gameId: string, rows: ScoredRow[]): ScoredRow[] {
-  const contract = leaderboardGame(gameId);
-  const ascending = contract?.direction === "lower_better";
-  return [...rows].sort((a, b) => (ascending ? a.score - b.score : b.score - a.score));
+/** Best win rate first. */
+function sortDescendingByGoodness(rows: ScoredRow[]): ScoredRow[] {
+  return [...rows].sort((a, b) => b.score - a.score);
 }
 
 /** Every stored row for a game, qualified or not -- allGameRows filters this, getGameQualifyProgress needs what it filters out. */
@@ -263,7 +245,7 @@ async function rawGameRows(gameId: string): Promise<{ profileId: string; stats: 
 
   const { data, error } = await supabase
     .from("game_leaderboard_stats")
-    .select("profile_id, wins, losses, draws, metric_sum, metric_count, current_streak, best_streak")
+    .select("profile_id, wins, losses, draws, current_streak, best_streak")
     .eq("game_id", gameId);
   if (error) throw new Error(`Could not load the ${gameId} leaderboard: ${error.message}`);
   return (data ?? []).map((row) => ({
@@ -272,8 +254,6 @@ async function rawGameRows(gameId: string): Promise<{ profileId: string; stats: 
       wins: Number(row.wins),
       losses: Number(row.losses),
       draws: Number(row.draws),
-      metricSum: Number(row.metric_sum),
-      metricCount: Number(row.metric_count),
       currentStreak: Number(row.current_streak),
       bestStreak: Number(row.best_streak),
     },
@@ -284,7 +264,7 @@ async function allGameRows(gameId: string): Promise<ScoredRow[]> {
   const rows = await rawGameRows(gameId);
   return rows
     .filter((row) => qualifies(gameId, row.stats))
-    .map((row) => ({ ...row, score: scoreOf(gameId, row.stats) }));
+    .map((row) => ({ ...row, score: scoreOf(row.stats) }));
 }
 
 async function decorateGameRows(gameId: string, rows: ScoredRow[]): Promise<LeaderboardEntry[]> {
@@ -308,7 +288,7 @@ async function decorateGameRows(gameId: string, rows: ScoredRow[]): Promise<Lead
 /** Top `limit` for one game, qualifying players only. Empty for an unknown game id. */
 export async function getGameLeaderboard(gameId: string, limit = 10): Promise<LeaderboardEntry[]> {
   if (!leaderboardGame(gameId)) return [];
-  const sorted = sortDescendingByGoodness(gameId, await allGameRows(gameId));
+  const sorted = sortDescendingByGoodness(await allGameRows(gameId));
   return decorateGameRows(gameId, sorted.slice(0, limit));
 }
 
@@ -318,7 +298,7 @@ export async function getGameStanding(
   profileId: string,
 ): Promise<LeaderboardEntry | null> {
   if (!leaderboardGame(gameId)) return null;
-  const sorted = sortDescendingByGoodness(gameId, await allGameRows(gameId));
+  const sorted = sortDescendingByGoodness(await allGameRows(gameId));
   const index = sorted.findIndex((row) => row.profileId === profileId);
   if (index === -1) return null;
   const [decorated] = await decorateGameRows(gameId, [sorted[index]]);
@@ -348,9 +328,7 @@ export async function getGameQualifyProgress(
   if (!contract) return null;
   const row = (await rawGameRows(gameId)).find((entry) => entry.profileId === profileId);
   if (!row) return null;
-  const sample = contract.kind === "average_metric"
-    ? row.stats.metricCount
-    : row.stats.wins + row.stats.losses + row.stats.draws;
+  const sample = sampleOf(row.stats);
   if (sample <= 0 || sample >= contract.minSample) return null;
   return { sample, minSample: contract.minSample };
 }
@@ -461,12 +439,11 @@ async function memoryPooledScores(): Promise<PooledScore[]> {
     if (!qualifies(gameId, stats)) continue;
     const contract = leaderboardGame(gameId);
     if (!contract) continue;
-    pooled.push({
-      profileId,
-      gameId,
-      score: scoreOf(gameId, stats),
-      higherBetter: contract.direction === "higher_better",
-    });
+    // higherBetter is true for every registered game -- they all rank on win
+    // rate. Kept as a field rather than assumed, mirroring the SQL's own
+    // higher_better column, so the next game that ranks low-to-high sets it
+    // here and needs nothing else changed.
+    pooled.push({ profileId, gameId, score: scoreOf(stats), higherBetter: true });
   }
 
   return pooled;

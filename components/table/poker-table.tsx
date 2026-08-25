@@ -11,6 +11,7 @@ import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
 import { betFlightKind, type BetFlight } from "@/lib/scene/chips/bet-flight";
 import type { ChipMoveKind } from "@/lib/scene/chips/chip-motion";
 import { DEALER_ART_SRC, dealerSlotBox } from "@/lib/scene/table-dealer";
+import { DEALER_BOX } from "@/lib/scene/dealer-art.generated";
 import {
   BOARD_CARD_FLOP_OVERLAP_FRACTION,
   BOARD_CARD_REVEAL_GAP_FRACTION,
@@ -1286,19 +1287,42 @@ export function PokerTable({
               3, below the seats' own 4-and-up) because she is the furthest
               thing at the table, and behind the board for the same reason. */}
           {isRacetrack && racetrackLayout && (
-            /* A plain <img>, not next/image: the box is solved per frame from
-               the live camera, so there is no build-time width or height for
-               the optimiser to work from, and this is one small already-sized
-               file rather than user content needing a CDN. */
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              className="racetrack-dealer"
-              src={DEALER_ART_SRC}
-              alt=""
-              aria-hidden="true"
-              draggable={false}
-              style={dealerStyle(racetrackLayout.dealer)}
-            />
+            <>
+              {/* A plain <img>, not next/image: the box is solved per frame from
+                 the live camera, so there is no build-time width or height for
+                 the optimiser to work from, and this is one small already-sized
+                 file rather than user content needing a CDN. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                className="racetrack-dealer"
+                src={DEALER_ART_SRC}
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+                style={dealerStyle(racetrackLayout.dealer)}
+              />
+              {(() => {
+                const box = dealerSlotBox(racetrackLayout.dealer);
+                const height = box.width * (DEALER_BOX.height / DEALER_BOX.width);
+                const labelOffset = Math.max(32, height * 0.15); // Responsive offset based on dealer size
+                // Clamp the label's top so it never goes above the visible stage, matching the
+                // winner-badge pattern in 42-racetrack-table.css. On tight landscape mobile, the
+                // dealer's crown sits near the frame edge; the label must not vanish above it.
+                const topPosition = Math.max(4, box.top - labelOffset);
+                return (
+                  <div
+                    className="dealer-label"
+                    style={{
+                      left: `${box.left + box.width / 2}px`,
+                      top: `${topPosition}px`,
+                    } as React.CSSProperties}
+                    aria-hidden="true"
+                  >
+                    Dealer
+                  </div>
+                );
+              })()}
+            </>
           )}
           {/* Opponent portraits used to render here, as siblings of
               `.poker-table-wrap` below. They moved to be each seat's own

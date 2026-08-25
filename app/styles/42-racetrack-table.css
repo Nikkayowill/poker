@@ -369,6 +369,10 @@
 
   .scene-room-racetrack .center-pot-amount span { font-size: 8px; }
   .scene-room-racetrack .center-pot-amount strong { font-size: 11px; }
+
+  .dealer-label {
+    font-size: 11px;
+  }
 }
 
 /* A seat's bet-amount pill, aimed at where its chips actually rest.
@@ -531,6 +535,22 @@
      rather than as a sticker on it, and hides the seam. It matters most around
      the hair, where the silhouette is finest. */
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .55));
+}
+
+/* Dealer label, positioned above the dealer's head. */
+.dealer-label {
+  position: absolute;
+  z-index: 3;
+  color: #ffffff;
+  font: 700 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  transform: translateX(-50%);
+  -webkit-font-smoothing: antialiased;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.8),
+    0 0 4px rgba(0, 0, 0, 0.6);
 }
 
 /* Opponent seat art -- lib/scene/seat-art.ts computes width/height and a

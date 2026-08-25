@@ -629,6 +629,13 @@ export function PokerTable({
         "--seat-art-dx": `${(artBox ? artBox.left + artBox.width / 2 - placed.x : 0).toFixed(1)}px`,
         "--seat-art-crown-dy": `${(artBox ? artBox.top - placed.y : 0).toFixed(1)}px`,
         "--seat-art-hands-dy": `${(artBox ? artBox.top + artBox.height - placed.y : 0).toFixed(1)}px`,
+        // The portrait's own rendered size, for effects that have to sit
+        // behind it and scale with it (the winner aura glow below) rather
+        // than with the seat's own small `--seat-width` box -- the art is
+        // drawn many times that size (seatArtBox), so a percentage of the
+        // seat box would not track the character at all.
+        "--seat-art-w": `${(artBox ? artBox.width : 0).toFixed(1)}px`,
+        "--seat-art-h": `${(artBox ? artBox.height : 0).toFixed(1)}px`,
         /* Per seat here, where the classic table sets one width on the wrap
            for all of them. It has to be: the crowd is clustered on the far
            arc, so a near flank has visibly more elbow room than a chair beside
@@ -1305,9 +1312,9 @@ export function PokerTable({
                 const box = dealerSlotBox(racetrackLayout.dealer);
                 const height = box.width * (DEALER_BOX.height / DEALER_BOX.width);
                 const labelOffset = Math.max(32, height * 0.15); // Responsive offset based on dealer size
-                // Clamp the label's top so it never goes above the visible stage, matching the
-                // winner-badge pattern in 42-racetrack-table.css. On tight landscape mobile, the
-                // dealer's crown sits near the frame edge; the label must not vanish above it.
+                // Clamp the label's top so it never goes above the visible stage. On tight
+                // landscape mobile, the dealer's crown sits near the frame edge; the label
+                // must not vanish above it.
                 const topPosition = Math.max(4, box.top - labelOffset);
                 return (
                   <div

@@ -105,7 +105,6 @@ describe("stylesheets", () => {
       "winning-card-lift",
       "spent-card-fade",
       "hand-result-in",
-      "winner-badge-enter",
       "winning-cards-glow",
       "stack-win-pulse",
       "win-amount-rise",

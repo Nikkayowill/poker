@@ -396,8 +396,11 @@ export const PlayerSeat = memo(function PlayerSeat({
   // 06-table.css. What the seat still says for itself, it says without
   // prose: folded seats are dimmed via .seat-muted, a departed bot goes
   // further via .seat-away (see isBotAway above) with a fixed short label
-  // in the stack row rather than a floating pill, the winner gets its
-  // badge, and the turn clock burns around whoever is on it.
+  // in the stack row rather than a floating pill, and the turn clock burns
+  // around whoever is on it. A winner is marked by their own cards/stack
+  // glowing gold (.seat-winner, 08-seat.css) plus the floating win amount
+  // below -- no separate badge. The racetrack table also lights up the
+  // character's own aura behind them (42-racetrack-table.css).
 
   return (
     <article
@@ -416,11 +419,6 @@ export const PlayerSeat = memo(function PlayerSeat({
       )}
       style={{ "--seat-accent": seat.accent, ...seatStyle } as React.CSSProperties}
     >
-      {isWinner && (
-        <span className="winner-badge" aria-label={`${seat.name} won the hand`}>
-          <span aria-hidden="true">♛</span> Winner
-        </span>
-      )}
       {/* One tree for every seat, including yours.
           There used to be a second, two-column layout for the local player,
           who was drawn below the felt rather than at it: portrait in one

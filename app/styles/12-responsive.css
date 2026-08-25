@@ -258,12 +258,6 @@
   }
   .hand-result-amount { font-size: 19px; }
   .hand-result-line i { font-size: 14px; letter-spacing: .02em; }
-  .winner-badge {
-    top: -27px;
-    padding: 5px 11px 5px 9px;
-    font-size: 11px;
-  }
-  .winner-badge > span { font-size: 19px; }
   .win-amount-float { font-size: 20px; top: -12px; }
   /* The winner's revealed hole cards, and only theirs. Opponent cards are
      sized off their seat so they stay in proportion to the figure holding

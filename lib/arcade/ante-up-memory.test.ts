@@ -8,6 +8,7 @@ import {
   resignAnteUpMemory,
   startAnteUpMemory,
   toAnteUpMemorySnapshot,
+  wagerMultiplierForTurns,
   type AnteUpMemoryAttempt,
 } from "./ante-up-memory";
 import {
@@ -154,6 +155,23 @@ describe("anteUpMemoryPayout", () => {
 
   it("rounds to a whole Gold amount", () => {
     expect(anteUpMemoryPayout({ wager: 333, board: fakeSolvedBoard(13) })).toBe(Math.round(333 * 2.5));
+  });
+});
+
+describe("wagerMultiplierForTurns", () => {
+  // Exported so the board can show a live "cash out ~X now" figure while
+  // playing -- attempt.payout itself is 0 for the whole game (see
+  // anteUpMemoryPayout above), so the client needs this same formula
+  // callable against the in-progress turn count. Pins the same ladder
+  // anteUpMemoryPayout's own test exercises through a solved board, this
+  // time directly against turns so a change to one cannot silently drift
+  // from the other.
+  it("matches the tier ladder anteUpMemoryPayout pays out on a win", () => {
+    expect(wagerMultiplierForTurns(MEMORY_PAIRS)).toBe(6);
+    expect(wagerMultiplierForTurns(10)).toBe(4);
+    expect(wagerMultiplierForTurns(13)).toBe(2.5);
+    expect(wagerMultiplierForTurns(16)).toBe(1.5);
+    expect(wagerMultiplierForTurns(20)).toBe(1.2);
   });
 });
 

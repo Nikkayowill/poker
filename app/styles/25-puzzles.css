@@ -228,8 +228,13 @@
   word-break: break-word;
   cursor: pointer;
 }
+/* Purple, not --felt: a merely-selected, not-yet-submitted tile must not
+   read as "correct" -- and green is already claimed twice over on this same
+   board (Word Stack's own tiles use it for a verified-correct letter, and
+   .cx-level-1 two rules down is a real solved-group colour). Reusing the
+   poker table's felt green here said "right" before a guess was even sent. */
 .cx-tile-on {
-  background: var(--felt);
+  background: color-mix(in srgb, var(--brand-purple) 32%, var(--brand-ink));
   border-color: var(--gold);
   color: #fff;
 }

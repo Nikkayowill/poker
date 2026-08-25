@@ -176,6 +176,12 @@ describe("character avatars (the seat-art roster, sold in the store)", () => {
       "character33",
       "character34",
       "character35",
+      "character36",
+      "character37",
+      "character38",
+      "character39",
+      "character40",
+      "character41",
     ];
     const prices = paidIds.map((id) => characterAvatarCosmetics.find((entry) => entry.id === id)?.price as number);
     expect(prices.every((price) => typeof price === "number" && price > 0)).toBe(true);

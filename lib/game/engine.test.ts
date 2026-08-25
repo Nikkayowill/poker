@@ -674,6 +674,21 @@ describe("bot identity", () => {
     expect(new Set(game.seats.slice(1).map((seat) => seat.avatarPreset)).size).toBe(5);
   });
 
+  it("never seats two bots wearing the same character, over many tables", () => {
+    // Not one table: `pickBotIdentity` is seeded off the table id, so a single
+    // sample passes ~85% of the time even when faces do collide. The pool of
+    // tags is deliberately larger than the character roster and `botAvatarFor`
+    // wraps modulo the roster, so some tags share a face -- picking around
+    // that is the seat-art half of the same uniqueness rule the preset check
+    // above covers. Grew the roster to 26 in 2026-08-25 and this started
+    // firing on the assertion above's own single sample.
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const table = createGame(crypto.randomUUID(), "Host");
+      const bots = table.seats.slice(1);
+      expect(new Set(bots.map((seat) => seat.avatarCosmetic)).size).toBe(bots.length);
+    }
+  });
+
   it("bases decisions on estimated equity without reading opponents' cards", () => {
     const game = createGame(crypto.randomUUID(), "Host");
     game.seats.forEach((seat, index) => {

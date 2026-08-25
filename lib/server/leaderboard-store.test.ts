@@ -12,7 +12,6 @@ import {
   getGlobalLeaderboard,
   getGlobalStanding,
   recordDuelResult,
-  recordMetricResult,
   recordMultiWayResult,
 } from "./leaderboard-store";
 import { ensureProfile } from "./profile-store";
@@ -99,21 +98,6 @@ describe("recordMultiWayResult", () => {
   });
 });
 
-describe("recordMetricResult", () => {
-  it("accumulates sum and count for a read-time average, never storing the average itself", async () => {
-    const a = await newPlayer("A");
-    await recordMetricResult("memory-match", a.id, 8);
-    await recordMetricResult("memory-match", a.id, 12);
-    await recordMetricResult("memory-match", a.id, 10);
-
-    const board = await getGameLeaderboard("memory-match", 10);
-    const row = board.find((entry) => entry.profileId === a.id)!;
-    expect(row.stats.metricSum).toBe(30);
-    expect(row.stats.metricCount).toBe(3);
-    expect(row.cells.avgTurns).toBe("10.0");
-  });
-});
-
 describe("getGameLeaderboard / getGameStanding", () => {
   it("gates a player out until they clear the game's minSample", async () => {
     const a = await newPlayer("A");
@@ -147,19 +131,18 @@ describe("getGameLeaderboard / getGameStanding", () => {
     expect(board[0].cells.winRate).toBe("100%");
   });
 
-  it("ranks a lower_better game ascending -- fewer average turns is better", async () => {
-    const fast = await newPlayer("Fast");
-    const slow = await newPlayer("Slow");
-    for (let i = 0; i < 3; i += 1) await recordMetricResult("memory-match", fast.id, 8);
-    for (let i = 0; i < 3; i += 1) await recordMetricResult("memory-match", slow.id, 20);
-
-    const board = await getGameLeaderboard("memory-match", 10);
-    expect(board.map((row) => row.profileId)).toEqual([fast.id, slow.id]);
-  });
-
   it("returns nothing for an unregistered game id rather than throwing", async () => {
     expect(await getGameLeaderboard("solitaire", 10)).toEqual([]);
     expect(await getGameStanding("solitaire", "whoever")).toBeNull();
+  });
+
+  it("returns nothing for a solo game, which is unregistered by design", async () => {
+    // Memory Match had a board until 2026-08-24. Solo games don't get one --
+    // an id that used to resolve now has to read as unknown, not as an empty
+    // board that might fill up later.
+    expect(await getGameLeaderboard("memory-match", 10)).toEqual([]);
+    expect(await getGameStanding("memory-match", "whoever")).toBeNull();
+    expect(await getGameQualifyProgress("memory-match", "whoever")).toBeNull();
   });
 });
 
@@ -195,13 +178,16 @@ describe("getGameQualifyProgress", () => {
 });
 
 describe("getGlobalLeaderboard / getGlobalStanding", () => {
-  it("blends a win/loss game and an average-metric game into one comparable rank", async () => {
+  it("blends two separate games into one comparable rank", async () => {
     const ace = await newPlayer("Ace"); // best at both
     const middling = await newPlayer("Middling");
 
     for (let i = 0; i < 3; i += 1) await recordDuelResult("chess", [ace.id, middling.id], 0); // ace 3-0
-    for (let i = 0; i < 3; i += 1) await recordMetricResult("memory-match", ace.id, 8); // ace: fast
-    for (let i = 0; i < 3; i += 1) await recordMetricResult("memory-match", middling.id, 20); // middling: slow
+    // A second, unrelated game: the point is that a percentile in one game is
+    // comparable to a percentile in another, whatever each is scored on.
+    for (let i = 0; i < 3; i += 1) {
+      await recordMultiWayResult("cribbage", [ace.id, middling.id], ace.id);
+    }
 
     const board = await getGlobalLeaderboard(10);
     expect(board[0].profileId).toBe(ace.id);
@@ -303,12 +289,10 @@ describe("getFriendsBoard", () => {
     expect(await getFriendsBoard(me.id)).toEqual([]);
   });
 
-  it("never counts poker or a metric-only game, which have no named opponent", async () => {
+  it("never counts poker, which has no named opponent", async () => {
     const me = await newPlayer("Me");
     const friend = await newPlayer("Friend");
     await befriend(me.id, friend.id);
-
-    await recordMetricResult("memory-match", me.id, 12);
 
     // A real poker hand, won at a table -- poker is never head-to-head: one
     // pot at a six-handed table is not a result between two named players.

@@ -1,6 +1,12 @@
 /**
  * The per-game leaderboard registry.
  *
+ * Who gets a board, settled with Kayo 2026-08-24: every PvP game, poker
+ * (through its own richer stats -- hands won, biggest pot, not just W/L), and
+ * no Ante Up solo game. A solo score board has to pick a difficulty to rank
+ * on, and per-difficulty tabs were rejected outright -- the tab row is
+ * already nine wide on a phone. So a new solo game adds nothing here.
+ *
  * Pure and dependency-free, same reasoning as lib/pvp/registry.ts and
  * lib/arcade/games.ts -- vitest.config.ts collects only lib/ and app/, and
  * this is what a future game's leaderboard entry has to agree with. Not a DB
@@ -39,7 +45,7 @@ export interface LeaderboardStats {
 }
 
 export interface LeaderboardGameContract {
-  /** Matches lib/pvp DUEL_GAMES' id, or "cribbage", or "memory-match". */
+  /** Matches lib/pvp DUEL_GAMES' id, or "cribbage". */
   gameId: string;
   label: string;
   kind: LeaderboardMetricKind;
@@ -119,21 +125,6 @@ export const LEADERBOARD_GAMES: Readonly<Record<string, LeaderboardGameContract>
   trivia: winLossRecordContract("trivia", "Trivia Showdown"),
   "word-race": winLossRecordContract("word-race", "Word Race"),
   cribbage: winLossRecordContract("cribbage", "Cribbage"),
-  "memory-match": {
-    gameId: "memory-match",
-    label: "Memory Match",
-    kind: "average_metric",
-    direction: "lower_better",
-    minSample: 3,
-    columns: [
-      { key: "avgTurns", label: "Avg turns" },
-      { key: "rounds", label: "Rounds" },
-    ],
-    formatRow: (stats) => ({
-      avgTurns: stats.metricCount > 0 ? (stats.metricSum / stats.metricCount).toFixed(1) : "—",
-      rounds: String(stats.metricCount),
-    }),
-  },
 };
 
 export type LeaderboardGameId = keyof typeof LEADERBOARD_GAMES;

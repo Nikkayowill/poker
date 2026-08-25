@@ -50,6 +50,7 @@ export type ArcadeGameId =
   | "connections"
   | "daily-sudoku"
   | "memory-match"
+  | "minesweeper"
   | "chess-duel"
   | "checkers-duel"
   | "trivia-showdown"
@@ -202,6 +203,15 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     entryCost: 0,
     status: "live",
     href: "/games/memory",
+  },
+  {
+    id: "minesweeper",
+    name: "Minesweeper",
+    blurb: "Wager Gold, or play free — any time",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/minesweeper",
   },
   // ---- Duels: skill/social games staked against another PLAYER, not the
   // house. Winner takes the pot both players anted -- see lib/pvp/. Priced at

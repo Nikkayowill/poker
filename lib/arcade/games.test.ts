@@ -30,6 +30,7 @@ describe("arcade catalogue", () => {
       "Connections",
       "Sudoku",
       "Memory Match",
+      "Minesweeper",
       "Chess",
       "Checkers",
       "Trivia Showdown",
@@ -38,12 +39,13 @@ describe("arcade catalogue", () => {
     ]);
   });
 
-  it("keeps all four brain games as wager rows, not a separate free section", () => {
+  it("keeps every brain game as a wager row, not a separate free section", () => {
     // 2026-08-21: Word Stack/Connections/Sudoku/Memory Match moved from
     // kind "puzzle" to kind "wager". Word Stack/Connections still lead with
     // a free daily play (the wager now gates that one attempt); Sudoku/
     // Memory Match have no daily gate left at all. Both shapes are still
-    // `kind: "wager"` -- see lib/arcade/games.ts's own note.
+    // `kind: "wager"` -- see lib/arcade/games.ts's own note. Minesweeper
+    // (2026-08-24) joins the second, unlimited shape.
     const floor = splitArcadeFloor();
     expect(floor.free).toHaveLength(0);
     expect(floor.wagers.map((entry) => entry.id)).toEqual([
@@ -51,6 +53,7 @@ describe("arcade catalogue", () => {
       "connections",
       "daily-sudoku",
       "memory-match",
+      "minesweeper",
     ]);
   });
 

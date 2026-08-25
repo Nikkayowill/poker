@@ -142,11 +142,21 @@ it was removed rather than kept alongside the timer: two ways to start a hand
 means a button that is usually a no-op by the time it is pressed, and clutter
 in the one strip that has to stay legible. Nothing forces a deal by hand any
 more — the busted player's "Close seat", which was the same action wearing a
-different decision, is gone too; a busted seat offers Rebuy (reachable any
-time, not just between hands — there is no window to miss), and the header's
-persistent "Leave table" is the exit. The cost is that a table which *cannot*
-deal again has no button to offer, so ActionBar reads `nextHandAt` and offers
-"Return to lobby" instead of an empty control row.
+different decision, is gone too; a busted seat offers Rebuy any time, not
+just between hands, and the header's persistent "Leave table" is the exit.
+The cost is that a table which *cannot* deal again has no button to offer,
+so ActionBar reads `nextHandAt` and offers "Return to lobby" instead of an
+empty control row.
+
+One real exception to "any time": a seat that lost its last chips going
+all-in stays "live" (status `all-in`, not `out`) until the hand it busted in
+actually finishes deciding it — `isSeatRebuyEligible` (`lib/game/rebuy.ts`)
+is the one predicate the engine, the `/actions` route, and ActionBar all
+share for this, so the button itself doesn't appear until the server would
+actually accept it. It briefly disagreed with the server instead: the
+button showed at `stack === 0` alone, the server 409'd until the hand
+resolved, and nothing retried — the fix that made this file's "no window to
+miss" claim true rather than aspirational.
 
 **A persistent Node worker.** Code for one used to exist under
 `lib/server/table-manager/`, together with a `cash_game_sessions` ledger in

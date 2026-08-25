@@ -21,6 +21,7 @@ import {
 } from "@/lib/cosmetics/catalog";
 import { CHEAPEST_TIER, clampBuyIn, isStakesTier, TIER_CONFIG, type StakesTier } from "./tiers";
 import { DECK_TEMPLATE, makeDeck } from "./deck";
+import { isSeatRebuyEligible } from "./rebuy";
 
 const streetOrder: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
 type TurnAction = Exclude<
@@ -1920,12 +1921,13 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
     // many hands as it takes, same as any other unfunded seat, so there is no
     // reason to make the player wait for a lull before they can even submit
     // this. The one thing still guarded against is rebuying a seat that is
-    // *currently* live in a hand in progress -- reachable only by calling the
-    // API directly, since the client never offers Rebuy except when `status`
-    // already reads "out" -- which would let a stack that lost its last chip
-    // this same hand un-lose it before the hand has even finished being
-    // decided.
-    if (state.status === "playing" && seat.status !== "out") {
+    // *currently* live in a hand in progress -- a stack that lost its last
+    // chip this same hand reads status "all-in", not "out", until that hand
+    // finishes deciding it, and rebuying it early would un-lose it mid-deal.
+    // isSeatRebuyEligible is shared with action-bar.tsx, which now uses the
+    // same check to decide whether to even show the button -- see its own
+    // comment for the bug this used to be when the two copies disagreed.
+    if (!isSeatRebuyEligible(state.status, seat.status)) {
       throw new Error("Wait for this hand to finish deciding your seat.");
     }
     seat.stack = clampBuyIn(state.tier, action.amount);

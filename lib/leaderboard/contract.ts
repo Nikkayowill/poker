@@ -1,6 +1,12 @@
 /**
  * The per-game leaderboard registry.
  *
+ * Who gets a board, settled with Kayo 2026-08-24: every PvP game, poker
+ * (through its own richer stats -- hands won, biggest pot, not just W/L), and
+ * no Ante Up solo game. A solo score board has to pick a difficulty to rank
+ * on, and per-difficulty tabs were rejected outright -- the tab row is
+ * already nine wide on a phone. So a new solo game adds nothing here.
+ *
  * Pure and dependency-free, same reasoning as lib/pvp/registry.ts and
  * lib/arcade/games.ts -- vitest.config.ts collects only lib/ and app/, and
  * this is what a future game's leaderboard entry has to agree with. Not a DB
@@ -20,36 +26,36 @@
  * hand-in-sync -- that migration's own comment points back at this file.
  */
 
-export type LeaderboardMetricKind = "win_loss_record" | "average_metric";
-
 export interface LeaderboardColumn {
   key: string;
   label: string;
 }
 
-/** The raw accumulators one game_leaderboard_stats row carries. */
+/**
+ * The accumulators one game_leaderboard_stats row carries.
+ *
+ * The table also has metric_sum/metric_count, from when Memory Match ranked
+ * on average turns. Nothing reads or writes them any more (see this file's
+ * header for why a solo game has no board) and they are absent here on
+ * purpose -- the RPC defaults them to 0. The columns themselves stay:
+ * migrations here are append-only.
+ */
 export interface LeaderboardStats {
   wins: number;
   losses: number;
   draws: number;
-  metricSum: number;
-  metricCount: number;
   currentStreak: number;
   bestStreak: number;
 }
 
 export interface LeaderboardGameContract {
-  /** Matches lib/pvp DUEL_GAMES' id, or "cribbage", or "memory-match". */
+  /** Matches lib/pvp DUEL_GAMES' id, or "cribbage". */
   gameId: string;
   label: string;
-  kind: LeaderboardMetricKind;
-  /** "average_metric" games only -- ignored for win_loss_record, which is always higher-is-better. */
-  direction: "higher_better" | "lower_better";
   /**
    * The qualifying sample size before a player enters the Global blend --
-   * gates a 1-0 record or a two-turn Memory clear from posting a perfect
-   * percentile off almost no data. Must match the threshold baked into
-   * global_leaderboard_entries()'s SQL.
+   * gates a 1-0 record from posting a perfect percentile off almost no data.
+   * Must match the threshold baked into global_leaderboard_entries()'s SQL.
    */
   minSample: number;
   /** Rendered after rank/avatar/name on this game's own leaderboard tab. */
@@ -92,13 +98,18 @@ function streakLabel(stats: LeaderboardStats): string {
   return formatStreak(stats.currentStreak);
 }
 
-/** Shared by every win/loss-record duel -- only the label and gameId differ. */
+/**
+ * Every registered game's contract -- only the label and gameId differ.
+ *
+ * There is one shape here rather than a `kind` discriminator because every
+ * game that gets a board is won or lost against a named opponent. Memory
+ * Match's average-turns ranking was the only other shape and went with the
+ * board itself; git has it if a game ever ranks on a raw number again.
+ */
 function winLossRecordContract(gameId: string, label: string): LeaderboardGameContract {
   return {
     gameId,
     label,
-    kind: "win_loss_record",
-    direction: "higher_better",
     minSample: 3,
     columns: [
       { key: "record", label: "W-L" },
@@ -119,21 +130,6 @@ export const LEADERBOARD_GAMES: Readonly<Record<string, LeaderboardGameContract>
   trivia: winLossRecordContract("trivia", "Trivia Showdown"),
   "word-race": winLossRecordContract("word-race", "Word Race"),
   cribbage: winLossRecordContract("cribbage", "Cribbage"),
-  "memory-match": {
-    gameId: "memory-match",
-    label: "Memory Match",
-    kind: "average_metric",
-    direction: "lower_better",
-    minSample: 3,
-    columns: [
-      { key: "avgTurns", label: "Avg turns" },
-      { key: "rounds", label: "Rounds" },
-    ],
-    formatRow: (stats) => ({
-      avgTurns: stats.metricCount > 0 ? (stats.metricSum / stats.metricCount).toFixed(1) : "—",
-      rounds: String(stats.metricCount),
-    }),
-  },
 };
 
 export type LeaderboardGameId = keyof typeof LEADERBOARD_GAMES;
@@ -150,13 +146,16 @@ export function isLeaderboardGameId(value: unknown): value is LeaderboardGameId 
  * Whether a game can hold a record between two named players, which is what
  * the friends board is built from (see lib/server/head-to-head-store.ts).
  *
- * Derived from the game's own kind rather than a second hand-written list:
- * an average-metric game (Memory Match) has no opponent to have a record
- * against, and every win/loss game does. A future duel joins the friends
- * board on the same one-registry-entry terms it joins the leaderboard on.
+ * Registry membership IS the answer rather than a second hand-written list:
+ * a game only gets a board by being played against a named opponent, so the
+ * two questions have the same members. A future duel joins the friends board
+ * on the same one-registry-entry terms it joins the leaderboard on. Poker is
+ * the one game that answers no while still having a board -- it isn't in
+ * here at all, ranking off player_stats instead, because one pot at a
+ * six-handed table is not a result between two named players.
  */
 export function isHeadToHeadGame(gameId: string): boolean {
-  return leaderboardGame(gameId)?.kind === "win_loss_record";
+  return leaderboardGame(gameId) !== null;
 }
 
 /**

@@ -14,13 +14,21 @@ describe("registry completeness", () => {
   it("has a leaderboard entry for every duel lib/pvp offers", () => {
     for (const gameId of Object.keys(DUEL_GAMES)) {
       expect(LEADERBOARD_GAMES[gameId], `missing leaderboard contract for duel "${gameId}"`).toBeDefined();
-      expect(LEADERBOARD_GAMES[gameId].kind).toBe("win_loss_record");
+      expect(LEADERBOARD_GAMES[gameId].columns.map((column) => column.key)).toEqual(["record", "winRate", "streak"]);
     }
   });
 
-  it("also covers cribbage and memory-match, which have no lib/pvp entry", () => {
+  it("also covers cribbage, which has no lib/pvp entry", () => {
     expect(LEADERBOARD_GAMES.cribbage).toBeDefined();
-    expect(LEADERBOARD_GAMES["memory-match"]).toBeDefined();
+  });
+
+  it("registers no solo Ante Up game", () => {
+    // The rule this file's header states. Named one by one rather than
+    // derived from the arcade catalog, so adding a solo game there can never
+    // quietly re-satisfy this test by changing what it checks.
+    for (const soloGame of ["memory-match", "daily-sudoku", "minesweeper", "daily-word-stack", "connections"]) {
+      expect(LEADERBOARD_GAMES[soloGame], `"${soloGame}" is solo and must not have a leaderboard`).toBeUndefined();
+    }
   });
 
   it("keys every entry's gameId to match its own registry key", () => {
@@ -49,14 +57,15 @@ describe("leaderboardTabs", () => {
 });
 
 describe("isHeadToHeadGame", () => {
-  it("covers every win/loss game and no average-metric one", () => {
+  it("covers every registered game and nothing else", () => {
     expect(isHeadToHeadGame("chess")).toBe(true);
     expect(isHeadToHeadGame("cribbage")).toBe(true);
-    // No opponent to hold a record against.
-    expect(isHeadToHeadGame("memory-match")).toBe(false);
     // Never written head-to-head: one pot at a six-handed table is not a
     // result between two named players.
     expect(isHeadToHeadGame("poker")).toBe(false);
+    // A solo game has no opponent to hold a record against, and is kept out
+    // by having no registry entry at all rather than by a second list here.
+    expect(isHeadToHeadGame("memory-match")).toBe(false);
     expect(isHeadToHeadGame("solitaire")).toBe(false);
   });
 });
@@ -89,7 +98,7 @@ describe("formatRow", () => {
   it("formats a win/loss record with a percentage and a readable streak", () => {
     const chess = LEADERBOARD_GAMES.chess;
     const row = chess.formatRow({
-      wins: 7, losses: 3, draws: 0, metricSum: 0, metricCount: 0, currentStreak: 3, bestStreak: 5,
+      wins: 7, losses: 3, draws: 0, currentStreak: 3, bestStreak: 5,
     });
     expect(row.record).toBe("7-3");
     expect(row.winRate).toBe("70%");
@@ -98,24 +107,13 @@ describe("formatRow", () => {
 
   it("reads a negative streak as a loss streak, and zero as a dash", () => {
     const chess = LEADERBOARD_GAMES.chess;
-    expect(chess.formatRow({ wins: 1, losses: 4, draws: 0, metricSum: 0, metricCount: 0, currentStreak: -2, bestStreak: 1 }).streak).toBe("L2");
-    expect(chess.formatRow({ wins: 0, losses: 0, draws: 1, metricSum: 0, metricCount: 0, currentStreak: 0, bestStreak: 0 }).streak).toBe("—");
+    expect(chess.formatRow({ wins: 1, losses: 4, draws: 0, currentStreak: -2, bestStreak: 1 }).streak).toBe("L2");
+    expect(chess.formatRow({ wins: 0, losses: 0, draws: 1, currentStreak: 0, bestStreak: 0 }).streak).toBe("—");
   });
 
   it("never divides by zero when nobody has played yet", () => {
     const chess = LEADERBOARD_GAMES.chess;
-    const row = chess.formatRow({ wins: 0, losses: 0, draws: 0, metricSum: 0, metricCount: 0, currentStreak: 0, bestStreak: 0 });
+    const row = chess.formatRow({ wins: 0, losses: 0, draws: 0, currentStreak: 0, bestStreak: 0 });
     expect(row.winRate).toBe("0%");
-  });
-
-  it("averages Memory Match's turns, lower being better, and shows a dash with no rounds", () => {
-    const memory = LEADERBOARD_GAMES["memory-match"];
-    expect(memory.direction).toBe("lower_better");
-    const row = memory.formatRow({ wins: 0, losses: 0, draws: 0, metricSum: 32, metricCount: 4, currentStreak: 0, bestStreak: 0 });
-    expect(row.avgTurns).toBe("8.0");
-    expect(row.rounds).toBe("4");
-
-    const empty = memory.formatRow({ wins: 0, losses: 0, draws: 0, metricSum: 0, metricCount: 0, currentStreak: 0, bestStreak: 0 });
-    expect(empty.avgTurns).toBe("—");
   });
 });

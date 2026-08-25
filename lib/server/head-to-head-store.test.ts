@@ -62,8 +62,8 @@ describe("recordHeadToHeadDuel", () => {
 
   it("ignores a game that has no opponent to hold a record against", async () => {
     const [a, b] = [await newPlayer("A"), await newPlayer("B")];
-    // Memory Match is an average-metric game; poker is never head-to-head at
-    // all. Neither may open a record.
+    // Memory Match is solo, so it has no registry entry; poker has its own
+    // board off player_stats rather than one here. Neither may open a record.
     await recordHeadToHeadDuel("memory-match", [a, b], 0);
     await recordHeadToHeadDuel("poker", [a, b], 0);
     expect((await getHeadToHeadRecords(a, [b])).size).toBe(0);

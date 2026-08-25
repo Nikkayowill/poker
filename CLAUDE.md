@@ -44,6 +44,45 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### Leaderboards are PvP-only: Memory Match's board is gone (2026-08-24)
+- The rule, settled with Kayo while Minesweeper was being built and restated three times: **every PvP
+  game gets a leaderboard, poker keeps its own richer one (hands won, biggest pot, not just W/L), and
+  Ante Up SOLO games get none.** It came up because a first pass gave solo Minesweeper a board and
+  then had to pick which of three difficulties to rank on. Kayo rejected per-difficulty boards as
+  "too much" — the cost is screen, not compute (`game_leaderboard_stats` is one small row per player
+  per game, but the tab row is already nine wide on a phone, and ten solo games x3 difficulties would
+  be thirty tabs). So a new solo Ante Up game adds no `LEADERBOARD_GAMES` entry and makes no
+  leaderboard write; `lib/leaderboard/contract.ts`'s header now states this and a test names the solo
+  ids one by one so a future entry can't slip in.
+- Memory Match predated the rule and was the only game contradicting it. Branch
+  `chore/drop-solo-memory-leaderboard` off origin/main.
+- **This needed a migration, which is exactly why it wasn't a one-line deletion.**
+  `global_leaderboard_entries()` names `'memory-match'` in its own SQL as its only lower-is-better
+  pool, so dropping the registry entry alone would have taken away the tab and the writes while the
+  Global blend kept folding a hidden board's percentiles into everyone's global score — a board
+  nobody can open and nobody can be shown their standing on.
+- Existing `game_leaderboard_stats` rows for the game are **left in place, not deleted**. Nothing
+  reads that table except by an id the registry knows, so they are inert, and they are the only
+  record of those clears. Same call as the retired casino games' orphaned `arcade_rounds` rows.
+- Second commit, separable on purpose: with that game gone the whole **average-metric ranking path
+  had no member and no caller**, so `recordMetricResult`, the `average_metric` kind, the
+  `lower_better` direction, the metric branches in qualifying/scoring/sorting, and
+  `metricSum`/`metricCount` on `LeaderboardStats` are all deleted. The `metric_sum`/`metric_count`
+  COLUMNS stay (migrations are append-only) and `apply_leaderboard_result` already defaults both
+  params, so the writes simply stop passing them.
+- The SQL's `higher_better` flag and its mirror in the memory branch **stay**, even though every
+  surviving row sets it true — that is the pool's generic scoring rule in three words, not a branch
+  belonging to the deleted game, and the next game that ranks low-to-high sets it and needs nothing
+  else. The line between that and the deleted TS machinery is member-count vs. subsystem-weight.
+- `isHeadToHeadGame` is now registry membership rather than `kind === "win_loss_record"`: every game
+  that gets a board is played against a named opponent, so the two questions have the same members.
+  Poker is the one game that answers no while still having a board — it was never in this registry,
+  ranking off `player_stats` instead.
+- Verified: `npx vitest run` 2371/2371 green, clean lint, clean production build, `tsc` clean apart
+  from the pre-existing `safe-area.spec.ts` failure. The migration is **unapplied** — see
+  `[[reference_stackchips_migrations_not_auto_applied]]`; merging the PR ships code only, and until
+  it is applied the Global blend keeps scoring a board the app no longer shows.
+
 ### Web Push re-engagement notifications (2026-08-24)
 - Kayo: "I need to notify users to come back somehow now that I have a solid PWA," with PlayPokerGO's
   own push copy as the reference ("Case of the Mondays?... tap to play now"). Scoped down via two

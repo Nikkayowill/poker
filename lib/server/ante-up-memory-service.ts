@@ -24,7 +24,6 @@ import {
 } from "./ante-up-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
-import { recordMetricResult } from "./leaderboard-store";
 import { applyMissionEvent } from "./mission-store";
 import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
 import { awardWager } from "./progression-store";
@@ -166,11 +165,10 @@ export async function flipAnteUpMemory(
   }
 
   if (stored.state.status === "won") {
-    // The turn count IS the score (see lib/server/memory-service.ts's header,
-    // which used to be the only source of this) -- lower is better, wager or
-    // free, so every clear feeds the leaderboard the same way the old daily
-    // board's did.
-    await recordMetricResult(GAME, profile.id, stored.state.board.turns);
+    // No leaderboard write here, deliberately: solo Ante Up games don't get a
+    // board (see lib/leaderboard/contract.ts's header for the rule). A clear
+    // still feeds missions, achievements and the payout below -- it just
+    // isn't ranked against anyone.
     await payOutWin(profile.id, stored.state);
   }
 

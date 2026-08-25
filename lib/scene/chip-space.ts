@@ -1,19 +1,13 @@
 /**
- * The four places a chip can be, on whichever table is being drawn.
+ * The four places a chip can be, on the racetrack table.
  *
  * `ChipScene` (lib/scene/chips/chip-scene.ts) animates chips between a pot, a
  * bet spot, a tray and a payout landing. It has never cared what shape the
  * table is -- it asks for those four points and moves chips along them --
- * but the chip system it replaced used to reach for them directly, through
- * module imports from `seat-ring.ts`, which quietly made the classic room's
- * ellipse the only table it could ever animate on.
+ * naming that dependency is the whole of this file.
  *
- * Naming that dependency is the whole of this file. The animation, stagger,
- * spring, pile layout, sweep and funnel are one implementation serving both
- * rooms; only these four anchors and the height of the cloth differ.
- *
- * EVERY SPACE SPEAKS THE CLASSIC ROOM'S WORLD UNITS, INCLUDING THE
- * RACETRACK'S, AND THAT IS THE LOAD-BEARING DECISION HERE.
+ * EVERY SPACE SPEAKS THE CHIP LAYER'S OWN WORLD UNITS, AND THAT IS THE
+ * LOAD-BEARING DECISION HERE.
  *
  * The racetrack's geometry (`table-anchors.ts`) is in real metres, and the
  * obvious move is to hand the layer metres and scale its constants to suit.
@@ -34,14 +28,7 @@
  * says how big a unit is in its own room.
  */
 
-import { CHIP_RADIUS, FELT, type Vec3 } from "./scene-config";
-import {
-  NEAR_SEAT_BET_INSET,
-  potPosition,
-  ringPoint,
-  seatBetOrigin,
-  seatTrayOrigin,
-} from "./seat-ring";
+import { CHIP_RADIUS, type Vec3 } from "./scene-config";
 import {
   CHIP_RADIUS_M,
   chipAnchor,
@@ -54,11 +41,9 @@ export interface ChipSpace {
   /** The height of the cloth in world units -- what a resting chip sits on. */
   readonly feltY: number;
   /**
-   * How many of this room's own length units one world unit is worth.
-   *
-   * 1 for the classic room, whose units are already the layer's. For the
-   * racetrack it is metres per world unit, and the projection multiplies by
-   * it on the way to pixels. Solved rather than picked -- see
+   * How many of this room's own length units one world unit is worth. For
+   * the racetrack, metres per world unit -- the projection multiplies by it
+   * on the way to pixels. Solved rather than picked -- see
    * `METRES_PER_WORLD_UNIT`.
    */
   readonly roomUnitsPerWorldUnit: number;
@@ -70,33 +55,6 @@ export interface ChipSpace {
   tray(slot: number, count: number): Vec3;
   /** Where a winner's share of the pot lands. */
   payout(slot: number, count: number): Vec3;
-}
-
-/**
- * The classic room's ellipse.
- *
- * Takes the two things that make it per-fit rather than constant: the felt's
- * solved plan depth (see `SceneView.radiusZ` -- a portrait phone's table is a
- * different shape from a desktop's) and the near seat's bet inset, which
- * switches at the breakpoint where the local player's own figure stops being
- * drawn. Both used to live on the old chip system as mutable fields threaded
- * into every anchor call; here they are captured once and `ChipScene`
- * rebuilds its space when either changes.
- */
-export function classicChipSpace(
-  radiusZ: number = FELT.radiusZ,
-  nearSeatInset: number = NEAR_SEAT_BET_INSET,
-): ChipSpace {
-  return {
-    feltY: FELT.y,
-    roomUnitsPerWorldUnit: 1,
-    pot: () => potPosition(radiusZ),
-    betSpot: (slot, count) => seatBetOrigin(slot, count, radiusZ, nearSeatInset),
-    tray: (slot, count) => seatTrayOrigin(slot, count, radiusZ),
-    // 0.92 of the seat ring: just inside the player, so a payout reads as
-    // chips pushed to them rather than as a second pot forming.
-    payout: (slot, count) => ringPoint(slot, count, 0.92, FELT.y, radiusZ),
-  };
 }
 
 /**

@@ -456,12 +456,7 @@
 .buyin-footer { margin-top: 26px; }
 .buyin-footer .primary-action { width: 100%; }
 
-@media (max-width: 1020px) {
-  .poker-table-wrap { width: min(940px, calc(100% - 32px), var(--table-height-cap)); }
-}
-
 @media (max-width: 800px) {
   .lobby { grid-template-columns: 1fr; padding-top: 50px; }
-  .poker-table-wrap { width: min(calc(100% - 24px), var(--table-height-cap)); }
   .history-drawer { width: min(320px, 100%); }
 }

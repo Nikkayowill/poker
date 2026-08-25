@@ -35,7 +35,6 @@ import {
 import { roomThemeLabel, type RoomThemeId } from "@/lib/game3d/room-theme";
 import { useWebglSupport } from "./use-webgl-support";
 import { useDesktopViewport } from "@/components/use-desktop-viewport";
-import { useFeltArtReady } from "./use-felt-art-ready";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   radiiForTable,
@@ -88,30 +87,6 @@ export type ConnectionState = "connected" | "reconnecting" | "offline";
    where the figures were too small to read. The height fraction rises with it
    so a short landscape table does not suddenly become the binding case. */
 /**
- * The WebGL room, split out of the main bundle.
- *
- * `three` is around 350KB gzipped -- comfortably the largest thing this app
- * ships -- and none of it is needed until somebody actually sits at a table.
- * Imported statically it lands in the same chunk as the lobby, the store and
- * the landing page, all of which would then pay for a renderer they never
- * construct. This is the difference between a mobile PWA that opens quickly
- * and one that does not.
- *
- * `ssr: false` because the whole module is a canvas and a GPU context: there
- * is nothing for the server to render, and importing `three` into the server
- * bundle would slow every table request down for output that is thrown away.
- *
- * No loading placeholder, deliberately. The DOM table is complete on its own
- * -- the felt and rail keep painting until `onReady` says the room exists --
- * so the scene arriving a moment later is a table that gets lit, not a table
- * with a hole in it.
- */
-const TableScene = dynamic(
-  () => import("./scene/table-scene").then((module) => module.TableScene),
-  { ssr: false },
-);
-
-/**
  * The WebGL room, split out the same way and for the same reasons — more so.
  * `three` plus the R3F/drei surface is by a distance the largest thing this
  * app can ship, and a player who never chooses this renderer must never
@@ -128,8 +103,7 @@ const TableScene3D = dynamic(
  * The racetrack room, split out for the same reason as the other two: a
  * player who never chooses it should not download its painter. Cheap next to
  * the 3D room -- it is Canvas 2D and shares the chip layer already in the
- * table chunk -- but the table's own table-anchors geometry and room painter
- * are dead weight for everyone on the classic renderer.
+ * table chunk.
  */
 import type { RacetrackLayout } from "./scene/racetrack-scene";
 
@@ -164,8 +138,8 @@ export const SEAT_HEIGHT_RATIO = 0.30;
  * The floor is the nameplate's own minimum: `lib/game/table-geometry.ts`
  * measured it at 86px while solving the landscape ring, and a seat narrower
  * than its plate simply overflows. The ceiling is roughly what a desktop
- * plate gives the classic table, so a near flank cannot balloon past the
- * seats it sits beside.
+ * plate gave the old orthographic room, so a near flank cannot balloon past
+ * the seats it sits beside.
  */
 const RACETRACK_SEAT_MIN_PX = 86;
 const RACETRACK_SEAT_MAX_PX = 132;
@@ -179,11 +153,10 @@ const RACETRACK_SEAT_MAX_PX = 132;
  * than the ceiling: `12-responsive.css`'s own `.playing-card { width:
  * clamp(44px, ...) }` is this app's proven-shipped legibility floor for a
  * bare card, so 44 is not a stylistic guess here either. The ceiling is set
- * well under the classic room's own 76px (`06-table.css`'s desktop
- * `.community-cards .playing-card` clamp, which this camera was inheriting
- * unmodified until now) -- reads big on the cloth like a real dealt hand
- * instead of flattened UI chrome, sized off the camera instead of a
- * breakpoint. Between the two, `clampBoardCardWidth`
+ * well under the old orthographic room's own 76px desktop clamp (this camera
+ * used to inherit that rule unmodified) -- reads big on the cloth like a
+ * real dealt hand instead of flattened UI chrome, sized off the camera
+ * instead of a breakpoint. Between the two, `clampBoardCardWidth`
  * (lib/scene/board-clearance.ts) shrinks further still, every frame, until
  * the row actually clears the pot -- see its own header for why a static
  * clamp alone can't guarantee that. */
@@ -277,8 +250,9 @@ export function PokerTable({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   // False on the server and on the first client paint, so a player who prefers
-  // the 3D room sees the classic table for one frame rather than a canvas that
-  // might not work. See use-webgl-support.ts for why this is not an effect.
+  // the 3D room sees the racetrack table for one frame rather than a canvas
+  // that might not work. See use-webgl-support.ts for why this is not an
+  // effect.
   const webglAvailable = useWebglSupport();
   const activeRenderer = resolveTableRenderer(tableRenderer, webglAvailable, landscape);
   // Which of lib/scene/seat-art.ts's two hand-tuned tables applies to seat
@@ -597,9 +571,11 @@ export function PokerTable({
   /**
    * Where each seat actually goes.
    *
-   * The ellipse for the classic and 3D rooms; the projected anchors for the
-   * racetrack. Same shape of answer either way -- a style object per seat --
-   * so nothing downstream branches on which table is underneath.
+   * The CSS ellipse for the 3D room's own DOM cutouts, and for the racetrack
+   * before its camera has produced a layout on the first frame; the
+   * projected anchors for the racetrack once it has. Same shape of answer
+   * either way -- a style object per seat -- so nothing downstream branches
+   * on which table is underneath.
    */
   const seatStyles = useMemo(() => {
     if (!isRacetrack || !racetrackLayout) return ringGeometry;
@@ -636,13 +612,13 @@ export function PokerTable({
         // seat box would not track the character at all.
         "--seat-art-w": `${(artBox ? artBox.width : 0).toFixed(1)}px`,
         "--seat-art-h": `${(artBox ? artBox.height : 0).toFixed(1)}px`,
-        /* Per seat here, where the classic table sets one width on the wrap
-           for all of them. It has to be: the crowd is clustered on the far
-           arc, so a near flank has visibly more elbow room than a chair beside
-           the dealer, and one width for both either overlaps the middle of the
-           arc or wastes the ends. Clamped to the same floor and ceiling the
-           classic table's own seat sizing uses, so a very tight arc still
-           leaves a legible nameplate. */
+        /* Per seat here, where the old orthographic room set one width on
+           the wrap for all of them. It has to be: the crowd is clustered on
+           the far arc, so a near flank has visibly more elbow room than a
+           chair beside the dealer, and one width for both either overlaps
+           the middle of the arc or wastes the ends. Clamped to the same
+           floor and ceiling that room's own seat sizing used, so a very
+           tight arc still leaves a legible nameplate. */
         "--seat-width": `${Math.round(Math.min(RACETRACK_SEAT_MAX_PX, Math.max(RACETRACK_SEAT_MIN_PX, placed.shoulderPx)))}px`,
         "--seat-near": placed.near.toFixed(3),
         "--seat-z": seatZ(placed.near),
@@ -756,7 +732,7 @@ export function PokerTable({
    * trajectory and removed itself through `onDone` when its CSS animation
    * ended. The chips are meshes now and the scene owns their motion, so all
    * this has to do is hand each new bet across exactly once and then stop
-   * growing -- `TableScene` dedupes by id, so clearing the whole list at once
+   * growing -- `ChipScene` dedupes by id, so clearing the whole list at once
    * cannot replay anything. The timer restarts whenever another bet arrives,
    * which is why a whole street of betting still only sweeps up once.
    */
@@ -773,7 +749,7 @@ export function PokerTable({
    * a working canvas looking at an unpainted table.
    */
   // Readiness belongs to one specific room mount, not just to a renderer
-  // name. During 3D -> Classic -> 3D, the first 3D room's passive cleanup can
+  // name. During 3D -> 2.5D -> 3D, the first 3D room's passive cleanup can
   // report false after the second 3D room has already reported true. A name
   // tag cannot distinguish them; this token can. Old callbacks retain their
   // old token and therefore cannot un-light the room that replaced them.
@@ -785,26 +761,14 @@ export function PokerTable({
     ));
   }, [sceneToken]);
 
-  // TableScene's own onReady fires the instant its canvas exists -- it says
-  // nothing about the CSS background-image felt/rail plate underneath it,
-  // which loads over the network like any other image (see
-  // use-felt-art-ready.ts). The classic table is only genuinely "there" once
-  // both have happened, the same bar the 3D room already holds itself to
-  // (every seated avatar mounted, not just a WebGL context existing). Unlike
-  // 3D, there's no staggered/async child here to race a remount against --
-  // TableScene's mount effect is one synchronous shot -- so this skips the
-  // token machinery below and derives straight from render-time state.
+  // RacetrackScene's own onReady fires the instant its canvas exists -- there
+  // is no staggered/async child here to race a remount against, unlike 3D, so
+  // this skips the token machinery above and derives straight from
+  // render-time state.
   const [canvas2DMounted, setCanvas2DMounted] = useState(false);
-  const feltArtReady = useFeltArtReady();
   const sceneReady = activeRenderer === "webgl_3d"
     ? readySceneToken === sceneToken
-    // The racetrack paints its own table, so it waits on its canvas alone.
-    // Holding it to `feltArtReady` as well would gate it on the classic
-    // table's CSS plate downloading -- artwork it never draws, and which this
-    // renderer then immediately hides.
-    : activeRenderer === "racetrack_2d5"
-      ? canvas2DMounted
-      : canvas2DMounted && feltArtReady;
+    : canvas2DMounted;
 
   // Ring slots, not engine seat positions. The scene rings its table from the
   // local player's chair exactly as the DOM does, so a bet has to be handed
@@ -838,8 +802,8 @@ export function PokerTable({
   // What the centre pile is actually showing -- pot minus whatever is still
   // standing at a seat -- so its label agrees with the chips the scene draws
   // there by construction rather than restating the pot number the standing
-  // bets haven't reached yet. See TableScene's own identical subtraction
-  // (components/table/scene/table-scene.tsx) for the invariant this mirrors.
+  // bets haven't reached yet. See RacetrackScene's own identical subtraction
+  // (components/table/scene/racetrack-scene.tsx) for the invariant this mirrors.
   const centerPotAmount = useMemo(
     () => Math.max(0, game.pot - orderedSeats.reduce((sum, seat) => sum + seat.streetBet, 0)),
     [game.pot, orderedSeats],
@@ -1044,11 +1008,11 @@ export function PokerTable({
 
      Nothing paints until the renderer choice is genuinely known. The stored
      preference arrives a tick after the first commit (the deferred set in
-     use-stored-preference.ts), and DEFAULT_TABLE_RENDERER is `webgl_3d` --
-     so without this a player who chose the classic table watched the 3D room
-     mount, acquire a GL context, paint, and get torn down again on the very
-     next commit. A blank hold is cheaper than a discarded room and reads as
-     a load rather than as a glitch.
+     use-stored-preference.ts), so without this a player whose stored choice
+     hasn't loaded yet would briefly mount whatever DEFAULT_TABLE_RENDERER is
+     -- acquire a canvas context, paint, and get torn down again the very
+     next commit once the real preference arrives. A blank hold is cheaper
+     than a discarded room and reads as a load rather than as a glitch.
 
      BELOW THE HOOKS, NOT AT THE TOP OF THE COMPONENT, and that is not a
      stylistic choice. Returning before the ~30 hooks above would give this
@@ -1166,7 +1130,7 @@ export function PokerTable({
               onLayout={onRacetrackLayout}
               foregroundHostRef={racetrackForegroundRef}
             />
-          ) : activeRenderer === "webgl_3d" ? (
+          ) : (
             <TableScene3D
               game={game}
               betFlights={betFlights}
@@ -1174,29 +1138,15 @@ export function PokerTable({
               profile={profile}
               roomThemeId={roomThemeId}
             />
-          ) : (
-            <TableScene
-              seats={orderedSeats}
-              pot={game.pot}
-              bigBlind={game.bigBlind}
-              streetBets={sceneStreetBets}
-              street={game.street}
-              paying={showFunnel}
-              winners={sceneWinners}
-              handNumber={game.handNumber}
-              betFlights={betFlights}
-              betStyle={betStyle}
-              onReady={setCanvas2DMounted}
-            />
           )}
           <TableLoadingSplash active={!sceneReady} />
-          {/* Desktop-only on the classic table, but shown at every width on
-              the racetrack -- see 42-racetrack-table.css's own note on why
-              that table needs the corner HUD on mobile too (its local seat
-              has no figure to fall back on at any width). Never on the 3D
-              room: it mounts its own equivalent
-              (game3d/hud/player-hud-corner.tsx) inside TableScene3D above,
-              so rendering this one too would be the same avatar twice. */}
+          {/* Shown at every width on the racetrack -- see
+              42-racetrack-table.css's own note on why that table needs the
+              corner HUD on mobile too (its local seat has no figure to fall
+              back on at any width). Never on the 3D room: it mounts its own
+              equivalent (game3d/hud/player-hud-corner.tsx) inside
+              TableScene3D above, so rendering this one too would be the same
+              avatar twice. */}
           {activeRenderer !== "webgl_3d" && mySeat && (
             <LocalPlayerHud
               name={mySeat.name}
@@ -1388,16 +1338,6 @@ export function PokerTable({
             <div className="racetrack-chip-foreground" ref={racetrackForegroundRef} aria-hidden="true" />
             <div className="poker-rail">
               <div className="poker-felt">
-                {/* The felt's own faint watermark -- was literal CSS text
-                    ("STACKCHIPS · NO LIMIT HOLD'EM" via ::after), now the
-                    real vector mark so it can never render out of the wrong
-                    glyphs at a weird weight the way baked type can. See
-                    .felt-mark in 06-table.css for the position/opacity this
-                    inherited unchanged from the old rule. */}
-                <span className="felt-mark" aria-hidden="true">
-                  <StackChipsMark size={14} />
-                  <i>NO LIMIT HOLD&rsquo;EM</i>
-                </span>
                 {/* Where the chips go, now that the number that counts them
                     lives outside the table. Three separate effects measure
                     this element's centre -- chips flying in from a seat, the
@@ -1565,7 +1505,7 @@ export function PokerTable({
             onLeave={onLeave}
             profile={profile}
             onClaimBackstop={onClaimBackstop}
-            variant={sceneReady && activeRenderer === "webgl_3d" ? "3d" : "classic"}
+            variant={sceneReady && activeRenderer === "webgl_3d" ? "3d" : "flat"}
           />
         </div>
       </section>

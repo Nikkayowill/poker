@@ -82,7 +82,7 @@ export function ActionBar({
   onLeave,
   profile,
   onClaimBackstop,
-  variant = "classic",
+  variant = "flat",
 }: {
   game: GameSnapshot;
   pending: boolean;
@@ -98,7 +98,7 @@ export function ActionBar({
    */
   onClaimBackstop: () => void;
   /** The 3D room keeps the same server intents but presents its own control console. */
-  variant?: "classic" | "3d";
+  variant?: "flat" | "3d";
 }) {
   const legal = game.legalActions;
   const mySeat = game.seats.find((seat) => seat.isMine);

@@ -28,12 +28,12 @@ const ACCENTS = ["#db9c0b", "#983fe0", "#dc1413", "#2f9a63", "#5b82c0", "#c96f1d
  * files as data URIs.
  */
 export const FIXTURE_AVATARS = [
-  "character16",
-  "character17",
-  "character18",
-  "character19",
-  "character20",
-  "character21",
+  "character4",
+  "character5",
+  "character6",
+  "character7",
+  "character8",
+  "character9",
 ] as const;
 
 export function makePublicSeat(overrides: Partial<PublicSeat> = {}): PublicSeat {

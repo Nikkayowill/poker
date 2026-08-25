@@ -51,14 +51,14 @@ describe("cosmetic catalog", () => {
   });
 
   it("keeps independent 2D and 3D equipment slots", () => {
-    expect(defaultEquipped.avatar2d).toBe("character16");
+    expect(defaultEquipped.avatar2d).toBe("character4");
     expect(character3DCosmetics.map((item) => item.id)).toContain(defaultEquipped.avatar3d);
     expect(normalizeEquipped({ avatar: "marcus" })).toMatchObject({
-      avatar2d: "character16",
+      avatar2d: "character4",
       avatar3d: "marcus",
     });
-    expect(normalizeEquipped({ avatar2d: "character21", avatar3d: "victor" })).toMatchObject({
-      avatar2d: "character21",
+    expect(normalizeEquipped({ avatar2d: "character9", avatar3d: "victor" })).toMatchObject({
+      avatar2d: "character9",
       avatar3d: "victor",
     });
   });
@@ -66,14 +66,12 @@ describe("cosmetic catalog", () => {
   it("gives away the starter roster and exactly one card back", () => {
     // A new player has to arrive wearing something, and the default has to be
     // among the free choices every time or the default equipment cannot be
-    // relied upon. Two starters, not one -- a man and a woman, since
-    // character1-12's deletion (2026-08-22) took the old five-strong roster
-    // with it.
+    // relied upon. Two starters, not one -- a man and a woman.
     const free = cosmetics.filter((item) => item.price === 0);
     const freeAvatars = free.filter((item) => item.slot === "avatar" && item.renderMode !== "3d");
     const freeCardBacks = free.filter((item) => item.slot === "cardBack");
     expect(freeAvatars.map((item) => item.id)).toContain(DEFAULT_AVATAR_COSMETIC);
-    expect(freeAvatars.map((item) => item.id).sort()).toEqual(["character16", "character21"]);
+    expect(freeAvatars.map((item) => item.id).sort()).toEqual(["character4", "character9"]);
     expect(freeCardBacks.map((item) => item.id)).toEqual([DEFAULT_CARD_BACK]);
   });
 
@@ -147,8 +145,8 @@ describe("character avatars (the seat-art roster, sold in the store)", () => {
     );
   });
 
-  it("gives character16 and character21 away free and prices every rare character as one ascending Gold ladder", () => {
-    const starters = ["character16", "character21"];
+  it("gives character4 and character9 away free and prices every rare character as one ascending Gold ladder", () => {
+    const starters = ["character4", "character9"];
     for (const id of starters) {
       const item = characterAvatarCosmetics.find((entry) => entry.id === id);
       expect(item?.price).toBe(0);
@@ -156,27 +154,28 @@ describe("character avatars (the seat-art roster, sold in the store)", () => {
     }
 
     const paidIds = [
+      "character5",
+      "character6",
+      "character7",
+      "character8",
+      // The earned tier (character1-3) interrupts the id run, not the
+      // ladder -- survivors pick the pricing back up above character8.
+      "character10",
+      "character11",
+      "character12",
+      "character13",
+      "character14",
+      "character15",
+      "character16",
       "character17",
       "character18",
       "character19",
       "character20",
-      // The earned tier (character13-15) interrupts the id run, not the
-      // ladder -- survivors pick the pricing back up above character20.
+      "character21",
       "character22",
       "character23",
       "character24",
       "character25",
-      "character26",
-      "character27",
-      "character28",
-      "character30",
-      "character35",
-      "character36",
-      "character37",
-      "character38",
-      "character39",
-      "character40",
-      "character41",
     ];
     const prices = paidIds.map((id) => characterAvatarCosmetics.find((entry) => entry.id === id)?.price as number);
     expect(prices.every((price) => typeof price === "number" && price > 0)).toBe(true);
@@ -189,11 +188,11 @@ describe("character avatars (the seat-art roster, sold in the store)", () => {
     }
   });
 
-  it("earns character13-15 on an ascending hands-won ladder instead of selling them", () => {
+  it("earns character1-3 on an ascending hands-won ladder instead of selling them", () => {
     // The tier only means anything while it stays unbuyable, so this pins the
     // absent price as hard as it pins the threshold -- putting a Gold price on
     // one of these is the failure mode, not forgetting a rung.
-    const earnedIds = ["character13", "character14", "character15"];
+    const earnedIds = ["character1", "character2", "character3"];
     const earned = earnedIds.map((id) => characterAvatarCosmetics.find((entry) => entry.id === id));
     for (const item of earned) {
       expect(item?.price).toBeNull();

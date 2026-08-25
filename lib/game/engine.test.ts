@@ -1281,8 +1281,8 @@ describe("legacy state normalization", () => {
 
   it("leaves an avatar that is already present untouched", () => {
     const game = createGame(crypto.randomUUID(), "Host");
-    game.seats[0].avatarCosmetic = "character17";
-    expect(normalizeGameState(game).seats[0].avatarCosmetic).toBe("character17");
+    game.seats[0].avatarCosmetic = "character5";
+    expect(normalizeGameState(game).seats[0].avatarCosmetic).toBe("character5");
   });
 
   it("backfills card backs on tables dealt before they reached the felt", () => {

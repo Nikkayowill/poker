@@ -264,8 +264,8 @@ export interface SeatArtBox {
  * own override (2026-08-22, when it still forced the character's 40deg
  * plate -- see `SeatArtOverride.angle`'s own note for why that's gone now;
  * seat 1's scale/offsetY push is unchanged and was still the hardest case
- * on the roster): character16 and character34 both used to submerge their
- * hand into the rail there; neither does after this change.
+ * on the roster): two characters since renumbered/deleted used to submerge
+ * their hand into the rail there; neither does after this change.
  *
  * MIRRORING HAPPENS AFTER POSITIONING, NOT BY MOVING THE BOX. The box below
  * is placed at its un-mirrored position (`left`); the caller applies

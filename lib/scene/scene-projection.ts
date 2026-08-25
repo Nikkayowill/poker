@@ -1,56 +1,39 @@
 /**
- * World to pixels, for either of the two 2D rooms.
- *
- * There are two cameras in `lib/scene/` now and they are genuinely different
- * kinds of camera, not two settings of one. The classic room is an
- * orthographic tilt (`projection.ts`): near and far project identically, so
- * `scale` is a single number for the whole scene and the fit is closed-form.
- * The racetrack room is a real pinhole camera (`table-anchors.ts`): size
- * falls off with depth, which is the entire point of it -- an orthographic
- * tilt cannot produce depth at any angle.
+ * World to pixels, for the racetrack's chip painter.
  *
  * WHAT THIS INTERFACE EXISTS FOR IS THE CHIP PAINTER, and it is worth being
  * precise about why, because "abstract the camera" is otherwise the kind of
  * indirection that costs more than it saves. `paint.ts` is ~200 lines of
  * layered chip drawing -- bevel, inserts, groove, inlay, stamped
- * denomination, decoupled ground shadow -- tuned over three renderers. The
- * racetrack needs every one of those pixels and none of that tuning is about
- * the camera. Duplicating it would give the two rooms chips that drift apart
- * the first time either is touched; parameterising the three things the
- * painter actually asks a camera for lets one painter serve both.
+ * denomination, decoupled ground shadow -- tuned over several renderers
+ * before the racetrack was the only one left. Parameterising the three
+ * things the painter actually asks a camera for keeps that tuning alive
+ * without the painter itself needing to know what kind of camera it is.
  *
  * Those three things, and nothing else:
  *
  *   project     -- a world point as canvas-local CSS pixels, plus the
  *                  depth-sort key the painter's algorithm needs.
- *   scaleAt     -- CSS pixels per world unit AT A POINT. The `At` is the
- *                  whole difference between the two cameras: constant under
- *                  orthography, and a function of depth under perspective.
- *                  A painter that cached one number would draw every far
- *                  chip at near-chip size.
+ *   scaleAt     -- CSS pixels per world unit AT A POINT. Under a real
+ *                  pinhole camera this falls off with depth -- a painter
+ *                  that cached one number would draw every far chip at
+ *                  near-chip size.
  *   groundSquash-- the minor/major ratio of a disc lying flat on the felt.
  *                  A chip is a cylinder seen from above, so this is what
  *                  turns its circular face into the ellipse that reads as
  *                  lying on cloth rather than standing up facing the camera.
- *
- * Both cameras happen to give `groundSquash` the same closed form -- the
- * sine of the elevation -- which is not a coincidence: it falls out of the
- * ground plane's angle to the view direction either way, and only the
- * perspective one also varies its scale with depth.
  */
 
 import { CAMERA_ELEVATION_DEG, type Camera, project as projectPerspective } from "./table-anchors";
-import { project as projectOrthographic, type SceneView } from "./projection";
-import { TILT_SIN, type Vec3 } from "./scene-config";
+import { type Vec3 } from "./scene-config";
 
 export interface ProjectedPoint {
   x: number;
   y: number;
   /**
-   * Distance in front of the camera under perspective; world Z under
-   * orthography. Only ever compared against other depths from the same
-   * projection, as a painter's-algorithm sort key -- both orderings are
-   * "further from the viewer first", which is all the sort needs.
+   * Distance in front of the camera. Only ever compared against other
+   * depths from the same projection, as a painter's-algorithm sort key --
+   * "further from the viewer first" is all the sort needs.
    */
   depth: number;
 }
@@ -61,18 +44,6 @@ export interface SceneProjection {
   scaleAt(point: Vec3): number;
   /** Minor/major ratio of a disc lying on the felt. */
   readonly groundSquash: number;
-}
-
-/** The classic room's orthographic tilt, as a projection. */
-export function orthographicProjection(view: SceneView): SceneProjection {
-  return {
-    project: (point) => projectOrthographic(view, point),
-    // Constant, and deliberately still a function: a caller that reached for
-    // a bare `scale` field would work here and silently mis-size every chip
-    // on the perspective camera.
-    scaleAt: () => view.scale,
-    groundSquash: TILT_SIN,
-  };
 }
 
 const PERSPECTIVE_GROUND_SQUASH = Math.sin((CAMERA_ELEVATION_DEG * Math.PI) / 180);

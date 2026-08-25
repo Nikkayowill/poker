@@ -1,36 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { orthographicProjection, perspectiveProjection, scaledProjection } from "./scene-projection";
-import { project as projectOrthographic, type SceneView } from "./projection";
+import { perspectiveProjection, scaledProjection } from "./scene-projection";
 import { CAMERA_ELEVATION_DEG, FELT_TOP_Y, fitCamera } from "./table-anchors";
-import { FELT, TILT_SIN } from "./scene-config";
 
-const VIEW: SceneView = { cx: 400, cy: 300, scale: 22, radiusZ: FELT.radiusZ };
 const FRAME = { width: 1440, height: 832, hudFraction: 0.12 };
-
-describe("the orthographic room, as a projection", () => {
-  it("projects exactly as the classic room always did", () => {
-    for (const point of [
-      { x: 0, y: FELT.y, z: 0 },
-      { x: 5, y: FELT.y, z: -3 },
-      { x: -2.5, y: FELT.y + 1, z: 4 },
-    ]) {
-      expect(orthographicProjection(VIEW).project(point)).toEqual(projectOrthographic(VIEW, point));
-    }
-  });
-
-  /* The `At` in `scaleAt` exists for the perspective camera; under orthography
-     it has to be genuinely constant or the classic room's chips would start
-     changing size with depth. */
-  it("scales the same everywhere, near or far", () => {
-    const projection = orthographicProjection(VIEW);
-    expect(projection.scaleAt({ x: 0, y: FELT.y, z: -5 })).toBe(VIEW.scale);
-    expect(projection.scaleAt({ x: 0, y: FELT.y, z: 5 })).toBe(VIEW.scale);
-  });
-
-  it("squashes a disc on the felt by the tilt", () => {
-    expect(orthographicProjection(VIEW).groundSquash).toBeCloseTo(TILT_SIN, 12);
-  });
-});
 
 describe("the racetrack room, as a projection", () => {
   const camera = fitCamera(FRAME);

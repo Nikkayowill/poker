@@ -182,52 +182,19 @@
   isolation: isolate;
 }
 
-/* A soft contact shadow grounding the table on the page behind it, distinct
-   from .poker-rail's own drop shadow -- purely decorative, stays behind
-   every seat/table layer. */
-.poker-table-wrap::after {
-  content: "";
-  position: absolute;
-  left: 6%;
-  right: 6%;
-  bottom: -16px;
-  height: 32px;
-  z-index: -1;
-  background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,.38), transparent 72%);
-  pointer-events: none;
-}
-
-/* Layer 1 of the isolated table scene. Felt content lives inside this shell;
-   avatar, card, and plate layers are defined explicitly in 08-seat.css. */
-/* The table artwork carries its own rail, felt, trim line and betting
-   positions (public/pokertable/), so this element no longer draws a table --
-   it only places the art and supplies the camera tilt the seat ellipse in
-   lib/game/table-geometry.ts is already drawn for.
-
-   The shadow is a filter rather than a box-shadow because the art is a
-   transparent oval inside a rectangular box: box-shadow would trace the box
-   and print a rectangle of shadow around a round table. A filter follows the
-   alpha channel, so the shadow takes the table's actual shape. Safe here
-   because .poker-rail is a *sibling* of the seats (both are children of
-   .poker-table-wrap) -- the stacking context it creates contains only the
-   felt content, never a seat, so nothing in 08-seat.css's depth ordering is
-   trapped by it. */
-/* The inset is the seat ring's living space, not padding.
-   The table used to fill almost the whole wrap (7% 3% 4%), which left nowhere
-   for a player to stand: the ring had to be drawn *inside* the felt, so about
-   four fifths of every figure sat on the cloth and the top seat ran off the
-   top of the box entirely (measured y:-2%, clipped by .table-area's
-   overflow). Pulling the table in gives the ring a band to occupy, so figures
-   meet the rail from outside the way a person at a table actually does. */
+/* Layer 1 of the isolated table scene. Both live rooms (the racetrack, the
+   3D room) paint their own table and suppress this element outright (see
+   .scene-lit / .scene-room-racetrack / .scene-room-3d in 99-scene.css), so
+   nothing here is ever actually painted -- but the box stays. Its inset is
+   still the seat ring's living space: `lib/game/table-geometry.ts`'s CSS
+   ellipse (the 3D room's own DOM cutouts, and the racetrack's pre-layout
+   first frame -- see poker-table.tsx's `ringGeometry`) is solved against
+   this element's box, not a fresh one. */
 .poker-rail {
   z-index: 1;
   position: absolute;
   inset: 15% 4% 8%;
   padding: 16px;
-  background: url("/pokertable/table-desktop.webp") center / 100% 100% no-repeat;
-  filter: drop-shadow(0 34px 44px rgba(0,0,0,.55));
-  transform: perspective(1050px) rotateX(10deg);
-  transform-origin: 50% 64%;
 }
 
 /* Transparent: the felt is painted by the artwork behind it. This element
@@ -258,32 +225,6 @@
      the community-card row's own centre so the deck reads as behind the
      board rather than under it. */
   --deck-y: 33%;
-}
-
-/* The same spot the old CSS-text watermark held (left:50%, bottom:27%), now
-   the app's real vector mark instead of typed-out letters -- crisp at any
-   zoom and impossible to misspell, unlike a font rendering a wordmark out of
-   glyphs. A real element rather than a pseudo-element specifically so it can
-   hold a component (StackChipsMark, rendered in poker-table.tsx); ::after
-   cannot contain JSX. */
-.felt-mark {
-  position: absolute;
-  left: 50%;
-  bottom: 27%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  opacity: .14;
-  pointer-events: none;
-}
-
-.felt-mark i {
-  color: #e4ede5;
-  font: 600 clamp(7px, .8vw, 10px) Georgia, serif;
-  letter-spacing: .28em;
-  white-space: nowrap;
-  font-style: normal;
 }
 
 /* The chip-flight target, left behind on the felt when the pot readout moved
@@ -546,20 +487,6 @@
   gap: clamp(6px, .9vw, 12px);
 }
 
-/* Desktop's felt has real width to spend and the board is what every street
-   turns on, but not so much that the five-card row dwarfs everything else
-   on the felt -- the pot label and the seats' own bet chips are both sized
-   off the same clamp scale, and a board bigger than clamp(70px, 5.6vw, 94px)
-   read as out of proportion next to them. Scoped to the community row
-   specifically rather than raising the shared `.playing-card` clamp
-   (07-cards.css), which would also inflate opponents' revealed showdown
-   hands (.seat-cards :not(.own-cards):has(...)) and the felt-mark
-   watermark's neighbours -- this only ever touches the five board cards. */
-@media (min-width: 901px) {
-  .community-cards .playing-card {
-    width: clamp(56px, 4.4vw, 76px);
-  }
-}
 
 .community-card-shell {
   position: relative;

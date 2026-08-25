@@ -38,7 +38,7 @@
  */
 
 import { CHIP_RADIUS, type Vec3 } from "../scene-config";
-import { classicChipSpace, type ChipSpace } from "../chip-space";
+import { racetrackChipSpace, type ChipSpace } from "../chip-space";
 import { seatAngle } from "../seat-ring";
 import { betStyleMotion, DEFAULT_BET_STYLE, type BetAnimationStyle } from "../bet-style";
 import {
@@ -240,7 +240,7 @@ export class ChipScene {
   private readonly bets = new Map<string, PermanentChip>();
   private readonly flights: Flight[] = [];
   private paying = false;
-  private space: ChipSpace = classicChipSpace();
+  private space: ChipSpace = racetrackChipSpace();
   private betStyle: BetAnimationStyle = DEFAULT_BET_STYLE;
   /**
    * The chip radius this fit draws at, in world units.

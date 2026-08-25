@@ -113,13 +113,6 @@
   perspective: none;
 }
 
-/* Both are the classic table's own furniture: a contact shadow under a plate
-   that is no longer there, and a watermark on a cloth that is now painted. */
-.scene-room-racetrack .poker-table-wrap::after,
-.scene-room-racetrack .felt-mark {
-  display: none;
-}
-
 /* The board and the pot, on the cloth where the camera puts them.
    -------------------------------------------------------------------------
    Both are percentage-positioned against the felt in the classic room, which

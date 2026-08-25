@@ -74,11 +74,11 @@ describe("pickSeatArt angle contracts", () => {
   // caller who does pass one still reaches a third plate the magnitude-based
   // default would never select on its own.
   it("keeps the normal 20-degree tier separate from an explicitly forced 40-degree plate", () => {
-    const character = SEAT_ART_CHARACTERS.find((entry) => entry.id === "character17");
+    const character = SEAT_ART_CHARACTERS.find((entry) => entry.id === "character5");
     expect(character).toBeDefined();
 
-    expect(pickSeatArt(character!, 25).src).toBe(seatArtSrc("character17", 20));
-    expect(pickSeatArt(character!, 25, 40).src).toBe(seatArtSrc("character17", 40));
+    expect(pickSeatArt(character!, 25).src).toBe(seatArtSrc("character5", 20));
+    expect(pickSeatArt(character!, 25, 40).src).toBe(seatArtSrc("character5", 40));
   });
 });
 
@@ -88,7 +88,7 @@ describe("seatArtBox", () => {
   // prepare-seat-art.py). Any scale that grows the box from the head down
   // instead of the hands up pushes that flush edge past the felt/rail line,
   // which read as an arm sinking into the table (seat1's forced-40deg
-  // override, 2026-08-22 -- character16 and character34 both did this).
+  // override, 2026-08-22 -- two characters since renumbered/deleted did this).
   const head = { x: 100, y: 50 };
   const hands = { x: 100, y: 250 };
   const slot = { scale: 1, crown: 0.02, offsetX: 0, offsetY: 0 };

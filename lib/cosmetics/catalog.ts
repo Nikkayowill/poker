@@ -33,11 +33,12 @@ export interface Cosmetic {
   /** Gold price. Null means it cannot be bought at any price -- see below. */
   price: number | null;
   /**
-   * Card backs are drawn from two colours and a pattern; avatars are supplied
-   * artwork. Exactly one of these is set per item, which is what lets a single
-   * ownership and purchase path serve both.
+   * Card backs are drawn from two colours -- a stock and an ink -- through
+   * one shared ornate template (see components/card-back-art.tsx); avatars
+   * are supplied artwork. Exactly one of these is set per item, which is
+   * what lets a single ownership and purchase path serve both.
    */
-  art?: { base: string; ink: string; pattern: "lattice" | "chevron" | "rings" | "pinstripe" | "crest" };
+  art?: { base: string; ink: string };
   /**
    * Avatar-only progress unlock, checked against lifetime PlayerStats after
    * every hand (lib/server/avatar-unlocks.ts) instead of a Gold purchase.
@@ -103,52 +104,52 @@ const cardBackCosmetics: Cosmetic[] = [
     description: "The room's own deck. Every table starts here.",
     rarity: "standard",
     price: 0,
-    art: { base: "#1d4636", ink: "#8fbfa6", pattern: "lattice" },
+    art: { base: "#1d4636", ink: "#8fbfa6" },
   },
   {
     id: "back-oxblood",
     slot: "cardBack",
     name: "Oxblood",
-    description: "Deep red stock with a tight chevron weave.",
+    description: "Deep red stock, engraved.",
     rarity: "standard",
     price: 25000,
-    art: { base: "#5a1f22", ink: "#d9a2a0", pattern: "chevron" },
+    art: { base: "#5a1f22", ink: "#d9a2a0" },
   },
   {
     id: "back-slate",
     slot: "cardBack",
     name: "Slate",
-    description: "Cool grey, pinstriped like a good suit.",
+    description: "Cool grey stock, engraved.",
     rarity: "standard",
     price: 25000,
-    art: { base: "#2b3138", ink: "#9aa7b2", pattern: "pinstripe" },
+    art: { base: "#2b3138", ink: "#9aa7b2" },
   },
   {
     id: "back-brass",
     slot: "cardBack",
     name: "Brass",
-    description: "Warm metal rings under the lamp.",
+    description: "Warm metal ink under the lamp.",
     rarity: "premium",
     price: 250000,
-    art: { base: "#4a3a1c", ink: "#d9b85d", pattern: "rings" },
+    art: { base: "#4a3a1c", ink: "#d9b85d" },
   },
   {
     id: "back-midnight",
     slot: "cardBack",
     name: "Midnight",
-    description: "Near-black with a quiet lattice you only catch up close.",
+    description: "Near-black stock, the engraving only catches up close.",
     rarity: "premium",
     price: 250000,
-    art: { base: "#141a22", ink: "#6f7f96", pattern: "lattice" },
+    art: { base: "#141a22", ink: "#6f7f96" },
   },
   {
     id: "back-ivory",
     slot: "cardBack",
     name: "Ivory Crest",
-    description: "Bone stock, engraved crest. Rare enough to notice.",
+    description: "Bone stock, engraved in bronze. Rare enough to notice.",
     rarity: "rare",
     price: 400000,
-    art: { base: "#ded6c2", ink: "#8a6a22", pattern: "crest" },
+    art: { base: "#ded6c2", ink: "#8a6a22" },
   },
   {
     id: "back-riverwood",
@@ -157,7 +158,7 @@ const cardBackCosmetics: Cosmetic[] = [
     description: "Awarded for playing a thousand hands in this room.",
     rarity: "signature",
     price: null,
-    art: { base: "#23301f", ink: "#c9a25e", pattern: "crest" },
+    art: { base: "#23301f", ink: "#c9a25e" },
   },
 ];
 

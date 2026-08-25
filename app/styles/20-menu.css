@@ -120,6 +120,27 @@
   .app-menu-item { padding: var(--space-6, 12px); font-size: 14px; }
 }
 
+/* A phone in landscape is short, not narrow -- the max-width breakpoint above
+   never fires (844x390 is well over 600px wide), yet 12-responsive.css turns
+   .header-actions/.game-header-actions into the same clipping horizontal
+   scroller in landscape as it does on narrow portrait. Without this the panel
+   stays position: absolute inside that scroller and opens clipped to a 46vw
+   strip -- invisible, which reads as the trigger not responding at all.
+   The available height is tight here too (this fix doesn't apply on portrait,
+   where a whole menu fitting was never in doubt), so this caps the panel's
+   own height and scrolls internally rather than assuming every row fits. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .app-menu-panel {
+    position: fixed;
+    top: calc(var(--safe-top) + var(--menu-header-height, var(--lobby-header-h, 42px)) + var(--space-4, 8px));
+    right: max(0px, calc(0px - var(--safe-right)));
+    min-width: min(240px, calc(100vw - 24px));
+    max-height: calc(100dvh - var(--safe-top) - var(--menu-header-height, var(--lobby-header-h, 42px)) - var(--space-4, 8px) - max(var(--safe-bottom), 8px));
+    overflow-y: auto;
+  }
+  .app-menu-item { padding: var(--space-4, 8px) var(--space-6, 12px); font-size: 13px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .app-menu-panel { animation: none; }
 }

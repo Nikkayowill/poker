@@ -1146,17 +1146,22 @@ decided here. Also applied `20260819090000_missing_fk_indexes.sql` (six missing 
 Supabase performance advisor; `cash_game_sessions`' own finding was skipped — that table's store was
 already deleted in the 2026-08-06 repo-quality pass).
 
-### 3D table: scrap under consideration, not decided (2026-08-19)
+### 3D table: scrap under consideration, not decided (2026-08-19, restated 2026-08-25)
 Kayo is weighing dropping the WebGL 3D table outright — "too much work, don't want to waste time on
 it" — floated, not committed. If a future pass sees `components/game3d`/`lib/game3d` deleted and the
-`webgl_3d` renderer option gone, treat it as decided; otherwise this is still open. Measured same day:
+`webgl_3d` renderer option gone, treat it as decided; otherwise this is still open. Measured 2026-08-19:
 `components/game3d/` + `lib/game3d/` is 101 files / ~18,400 lines, and 23 e2e specs touch the 3D room.
 That matches the churn already logged above (eight geometry-rebuild rounds, arm-IK, the hand/finger
 rig, the nameplate collision fix, a camera that structurally never sees a horizon, a meshopt pass, an
 abandoned local character-gen effort) for one of three table renderers. The 2.5D racetrack table is
 the one actually converging with real polish and already shares the seat-art/avatar system with the
-rest of the app; `canvas_2d` stays as the no-WebGL fallback regardless of what happens to 3D, so
-removing it wouldn't remove a fallback path. If this lands, M17 above (parked "until the 3D sim is
-finished") needs Kayo's explicit re-decision, not a silent default.
+rest of the app. If this lands, M17 above (parked "until the 3D sim is finished") needs Kayo's
+explicit re-decision, not a silent default.
+
+**`canvas_2d` no longer exists to fall back to** — see the entry above this one: the classic table was
+deleted outright 2026-08-25, and Kayo reconfirmed in the same breath that the 3D room should stay in
+the codebase, disabled, "I may bring that back eventually once I learn render." That is a restatement
+of the status quo (kept, not scrapped, not un-parked), not a resolution of the scrap question above —
+still treat this section as open until `components/game3d`/`lib/game3d` are actually deleted.
 
 Update this section when scope changes; keep `CLAUDE.md` synchronized.

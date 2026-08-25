@@ -161,7 +161,7 @@ describe("character avatars (the seat-art roster, sold in the store)", () => {
       "character19",
       "character20",
       // The earned tier (character13-15) interrupts the id run, not the
-      // ladder -- character22-31 pick the pricing back up above character20.
+      // ladder -- survivors pick the pricing back up above character20.
       "character22",
       "character23",
       "character24",
@@ -169,12 +169,7 @@ describe("character avatars (the seat-art roster, sold in the store)", () => {
       "character26",
       "character27",
       "character28",
-      "character29",
       "character30",
-      "character31",
-      "character32",
-      "character33",
-      "character34",
       "character35",
       "character36",
       "character37",

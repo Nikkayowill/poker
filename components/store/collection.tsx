@@ -35,6 +35,25 @@ const SLOTS: { slot: CosmeticSlot; title: string; blurb: string }[] = [
   { slot: "cardBack", title: "Card backs", blurb: "Seen by the whole table, on every hidden hand." },
 ];
 
+type AcquisitionGroup = "default" | "earned" | "bought";
+
+// Avatars split three ways by how you get them -- rarity already lines up
+// 1:1 with this for characters (standard = default, signature = earned,
+// rare = bought), it's just never been the axis the page grouped on. Card
+// backs have no earned tier today, so they stay one flat grid rather than
+// forcing a two-way split that would just restate the rarity tag.
+const ACQUISITION_GROUPS: { key: AcquisitionGroup; title: string; blurb: string }[] = [
+  { key: "default", title: "Default", blurb: "Every account starts with these." },
+  { key: "earned", title: "Earned", blurb: "Unlocked by playing -- no Gold spent." },
+  { key: "bought", title: "Bought", blurb: "Purchased with Gold." },
+];
+
+function acquisitionGroup(item: Cosmetic): AcquisitionGroup {
+  if (item.unlock) return "earned";
+  if (typeof item.price === "number" && item.price > 0) return "bought";
+  return "default";
+}
+
 /**
  * Artwork for one item. Avatars are supplied images; card backs are drawn.
  * A missing image file falls back rather than showing a broken icon, so
@@ -309,12 +328,28 @@ export function Collection() {
           // rarity order rather than reshuffling within owned/unowned.
           .sort((a, b) => Number(ownedSet.has(b.id)) - Number(ownedSet.has(a.id)));
         if (items.length === 0) return null;
+
+        const groups: { key: string; title: string | null; blurb: string | null; items: Cosmetic[] }[] =
+          slot === "avatar"
+            ? ACQUISITION_GROUPS
+                .map((group) => ({ ...group, items: items.filter((item) => acquisitionGroup(item) === group.key) }))
+                .filter((group) => group.items.length > 0)
+            : [{ key: slot, title: null, blurb: null, items }];
+
         return (
           <section key={slot} className="collection-section">
             <h2>{title}</h2>
             <p className="collection-blurb">{blurb}</p>
-            <div className="cosmetic-grid">
-              {items.map((item) => {
+            {groups.map((group) => (
+              <div key={group.key} className={group.title ? "collection-subsection" : undefined}>
+                {group.title && (
+                  <h3 className="collection-subsection-head">
+                    {group.title}
+                    <span className="collection-subsection-blurb">{group.blurb}</span>
+                  </h3>
+                )}
+                <div className="cosmetic-grid">
+                  {group.items.map((item) => {
                 const isOwned = owned.includes(item.id);
                 const equipmentKey = item.slot === "avatar"
                   ? item.renderMode === "3d" ? "avatar3d" : "avatar2d"
@@ -389,8 +424,10 @@ export function Collection() {
                         })()}
                   </article>
                 );
-              })}
-            </div>
+                  })}
+                </div>
+              </div>
+            ))}
           </section>
         );
       })}

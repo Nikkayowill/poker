@@ -190,8 +190,8 @@ const cardBackCosmetics: Cosmetic[] = [
  *    moment a profile exists -- one man, one woman, picked as the cheapest
  *    clear-gender survivors when character1-12 were deleted (2026-08-22, see
  *    below). Was character1-5 (five, all standard tier) before that.
- *  - rare (character17-20, character22-35): Gold-purchasable, one ascending
- *    ladder, 80,000 up to 2,060,000 -- rebuilt from scratch the 2026-08-22
+ *  - rare (character17-20, character22-41): Gold-purchasable, one ascending
+ *    ladder, 80,000 up to 3,680,000 -- rebuilt from scratch the 2026-08-22
  *    repricing pass, decelerating from ~50% a rung down to ~9% by the top.
  *    character1-12's deletion took the entire old free tier and the first
  *    (400,000-7,500,000) rare rung with it, so there was nothing left to
@@ -200,7 +200,7 @@ const cardBackCosmetics: Cosmetic[] = [
  *    gone, still an unreasonable floor on Kayo's asked-for cheaper Gold
  *    pricing (see stripe.ts's GOLD_TIERS), so the whole ladder starts over
  *    rather than just sliding the survivors down by a fixed amount.
- *    character32-35 just continue the same ladder at its existing ~9-12%
+ *    character32-41 just continue the same ladder at its existing ~9-12%
  *    step rather than opening a new block.
  *  - signature (character13-15): earned only, on a lifetime hands-won ladder
  *    checked by `lib/server/avatar-unlocks.ts` after every hand. `price` is
@@ -245,6 +245,23 @@ const cardBackCosmetics: Cosmetic[] = [
  * the script's automatic column split refused it; that one panel pair was
  * split by hand at its column-count minimum (not a full re-render) and keyed
  * with the same flood-fill the script uses.
+ *
+ * character36-41 (2026-08-25) are the first characters carrying only 0deg and
+ * 20deg plates -- Kayo's call, "only use 0 and 20 angles", so the 40deg
+ * profile panel on each sheet was sliced and then dropped rather than shipped.
+ * Nothing needed changing for that: `pickSeatArt` already takes the two
+ * flattest angles a character actually has (built when character6-11 had a
+ * 0deg plate and nothing else), and `seatArtCharacterForSlot` already keeps a
+ * character out of a seat whose override forces an angle it lacks. Their sheet
+ * turned screen-right like every generated sheet before them, so all six went
+ * through slice-seat-sheet.py --mirror. Two things about character36's sheet
+ * pushed the slicer to handle a batch rather than a one-off: it arrived on a
+ * WHITE plate where every earlier sheet was black (the script now reads plate
+ * direction off the border ring, the way prepare-dealer.py already did), and
+ * its three panels touched with no gutter at all (the script now cuts the
+ * widest run at its darkest interior column, which is exactly what was done by
+ * hand for character33). It also carried two 20deg panels, a "three-quarter"
+ * and a "unique view"; the plain three-quarter is the one that shipped.
  *
  * character1-12 deleted the same day (2026-08-22), Kayo's direct call --
  * every original standard-tier character (1-5) and the first rare rung
@@ -298,6 +315,12 @@ const characterAvatarOffers: Record<
   character33: { name: "Dahlia Cross", description: "Bluffs like it's a dare. Usually wins the dare.", price: 1_720_000 },
   character34: { name: "Vivienne Ashworth", description: "Dressed for a gala, playing like it's rent money.", price: 1_890_000 },
   character35: { name: "Malik Devon", description: "Too young to drink at this table. Never too young to win it.", price: 2_060_000 },
+  character36: { name: "Andre Boone", description: "Reads the whole table through those shades. Never takes them off.", price: 2_270_000 },
+  character37: { name: "Simone Hart", description: "Arms folded, cards down, waiting you out. It usually works.", price: 2_500_000 },
+  character38: { name: "Rory Quinn", description: "Quiet through four streets, then loud on the river.", price: 2_750_000 },
+  character39: { name: "Kenji Sato", description: "Learned this game from his uncle. Beats him at it now.", price: 3_030_000 },
+  character40: { name: "Roy Castellan", description: "Card-dead for an hour and still hasn't folded a hand wrong.", price: 3_340_000 },
+  character41: { name: "Declan Byrne", description: "Smiles when he's bluffing. Smiles the rest of the time too.", price: 3_680_000 },
 };
 
 export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((character) => {

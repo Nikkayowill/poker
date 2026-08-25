@@ -217,6 +217,45 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   reproduce it appears in any payload (the generator is deterministic, so the seed is as sensitive as
   the mines — there is a test pinning this too).
 
+### Seat-art roster grown to 41, first two-angle characters, duplicate bot faces fixed (2026-08-25)
+- Six more Kayo-supplied sheets (`character36`-`41`), all turning screen-right like every generated
+  sheet so far, so all six went through `slice-seat-sheet.py --mirror` (verified against
+  `character16`/`17` first, per the note below — not eyeballed in isolation). Priced onto the same
+  rare ladder, 2,270,000-3,680,000, continuing its ~10% step. Plain character names, not gamer tags.
+- **These are the first characters shipping with only `0` and `20` plates** — Kayo's explicit call,
+  "only use 0 and 20 angles", so each sheet's 40deg profile panel was sliced and then dropped. No code
+  changed for that: `pickSeatArt` already takes the two flattest angles a character actually has
+  (built when `character6`-`11` had a 0deg plate and nothing else) and `seatArtCharacterForSlot`
+  already keeps a character out of a seat whose override forces an angle it lacks.
+- `slice-seat-sheet.py` gained two things, both because `character36`'s sheet needed them and both
+  general rather than one-off:
+  - **It reads plate polarity off the border ring** (`prepare-dealer.py` already did) — that sheet
+    arrived on a WHITE plate where every earlier one was black. A white plate floods at luma >= 200,
+    the same measured number `prepare-dealer.py` uses, and a white sheet's sticker-style outline gets
+    flooded away with the plate, leaving the cut on the illustration's own dark outline.
+  - **It splits panels that touch with no gutter**, by cutting the widest run at its darkest interior
+    column and repeating until the panel count matches the angle count. That is exactly what was done
+    BY HAND for `character33` on 2026-08-22; this is the second occurrence, so it's automatic now.
+    The search ignores 20% at each end of a run, or the "seam" lands on the run's own edge where the
+    figure has already thinned out.
+  - That sheet also carried two 20deg panels ("three-quarter" and "unique view"); the plain
+    three-quarter shipped.
+- **Growing the roster exposed a real bug: two bots could sit at one table wearing the same face.**
+  `botAvatarFor` indexes the character roster modulo its length, and the bot tag pool (30) is larger
+  than the roster, so some tags alias onto one character — 30 over 26 aliases four of them.
+  `pickBotIdentity` already enforced table-wide uniqueness by tag AND by `avatarPreset`, but never by
+  the seat-art face, which is the one actually drawn on the racetrack table. Added `takenFaces` to
+  that same filter, leaving both existing fallbacks intact. Measured: 15% of fresh tables had a
+  duplicate face at 26 characters (2.8% at 20 — pre-existing, just rarer), 0/500 after.
+  `engine.test.ts`'s existing single-table assertion is what started flaking; the new test seats 200
+  tables, because one sample passes ~85% of the time even when faces genuinely do collide. **Do not
+  size the tag pool against the roster to fix this** — deriving the cast from the catalog is the
+  point, and the check is what lets the two grow independently.
+- Verified: `npx vitest run` 2374/2374 green, clean `npm run lint`, clean production `npm run build`,
+  `tsc` clean apart from the pre-existing `safe-area.spec.ts` failure. `web-push` was declared in
+  `package.json` but missing from `node_modules` on this machine (left over from the push branch); a
+  plain `npm install` fixed it, no manifest change.
+
 ### Seat-art roster grown to 35; character22-31 caught facing the wrong way (2026-08-22)
 - Four more Kayo-supplied turnaround sheets (`character32`-`35`), same
   `slice-seat-sheet.py` pipeline, all `--mirror`ed (they turn screen-right

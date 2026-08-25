@@ -169,13 +169,22 @@ function identityHash(seed: string): number {
 
 /**
  * An identity for a seat that is turning over, unique among the bots currently
- * sitting at this table -- both by tag (no two seats wearing the same name)
- * and by avatarPreset (no two seats drawing the same icon, since the preset
- * cycles every 6 pool entries and would otherwise repeat well before the tag
- * does). Uniqueness is checked table-wide rather than per seat: drawing
- * independently per seat is what seats the same tag or icon twice, which is
- * the exact thing rotation is meant to stop. Walking forward from the seeded
- * offset rather than re-drawing keeps it deterministic and bounded.
+ * sitting at this table -- by tag (no two seats wearing the same name), by
+ * avatarPreset (no two seats drawing the same icon, since the preset cycles
+ * every 6 pool entries and would otherwise repeat well before the tag does),
+ * and by seat-art FACE, which is the one a player actually looks at on the
+ * racetrack table. `botAvatarFor` indexes the character roster modulo its
+ * length, so any time the pool is larger than the roster some identities
+ * alias onto the same character -- 30 tags over 26 characters aliases four of
+ * them -- and two bots turn up at one table wearing the same face. Checking
+ * the face here rather than sizing one list against the other is what keeps
+ * the two free to grow independently, which is the whole point of deriving
+ * the cast from the catalog.
+ *
+ * Uniqueness is checked table-wide rather than per seat: drawing independently
+ * per seat is what seats the same tag or icon twice, which is the exact thing
+ * rotation is meant to stop. Walking forward from the seeded offset rather
+ * than re-drawing keeps it deterministic and bounded.
  */
 function pickBotIdentity(state: GameState, position: number): number {
   const others = state.seats.filter(
@@ -183,13 +192,21 @@ function pickBotIdentity(state: GameState, position: number): number {
   );
   const taken = new Set(others.map((seat) => seat.botIdentity));
   const takenPresets = new Set(others.map((seat) => botProfileFor(seat.botIdentity!).avatarPreset));
+  const takenFaces = new Set(others.map((seat) => botAvatarFor(seat.botIdentity!)));
   const offset = identityHash(`${state.id}:${state.handNumber}:${position}`);
   for (let step = 0; step < botProfiles.length; step += 1) {
     const candidate = (offset + step) % botProfiles.length;
-    if (!taken.has(candidate) && !takenPresets.has(botProfiles[candidate].avatarPreset)) return candidate;
+    if (
+      !taken.has(candidate)
+      && !takenPresets.has(botProfiles[candidate].avatarPreset)
+      && !takenFaces.has(botAvatarFor(candidate))
+    ) {
+      return candidate;
+    }
   }
-  // Every preset already taken (a full table with fewer distinct presets than
-  // seats) -- fall back to tag-uniqueness only, same as before this existed.
+  // Every preset or face already taken (a full table with fewer distinct ones
+  // than seats) -- fall back to tag-uniqueness only, same as before this
+  // existed.
   for (let step = 0; step < botProfiles.length; step += 1) {
     const candidate = (offset + step) % botProfiles.length;
     if (!taken.has(candidate)) return candidate;

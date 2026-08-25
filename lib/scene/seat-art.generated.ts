@@ -40,4 +40,10 @@ export const SEAT_ART_CHARACTERS: readonly SeatArtCharacter[] = [
   { id: "character33", angles: [0, 20, 40] as const, box: { width: 434, height: 670 } },
   { id: "character34", angles: [0, 20, 40] as const, box: { width: 440, height: 639 } },
   { id: "character35", angles: [0, 20, 40] as const, box: { width: 352, height: 510 } },
+  { id: "character36", angles: [0, 20] as const, box: { width: 350, height: 491 } },
+  { id: "character37", angles: [0, 20] as const, box: { width: 316, height: 529 } },
+  { id: "character38", angles: [0, 20] as const, box: { width: 318, height: 519 } },
+  { id: "character39", angles: [0, 20] as const, box: { width: 322, height: 519 } },
+  { id: "character40", angles: [0, 20] as const, box: { width: 330, height: 519 } },
+  { id: "character41", angles: [0, 20] as const, box: { width: 320, height: 515 } },
 ] as const;

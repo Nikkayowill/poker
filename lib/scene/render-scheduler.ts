@@ -2,7 +2,7 @@
  * When the canvas is allowed to draw.
  *
  * A poker table is static almost all of the time. Between a player acting and
- * the next player acting there is nothing moving on the felt at all -- and a
+ * the next player acting there is nothing moving on the felt at all, and a
  * `requestAnimationFrame` loop that redraws a lit, shadowed 3D scene sixty
  * times a second through those gaps costs a phone its battery and its thermal
  * headroom for no frames anyone can tell apart. So the loop sleeps, and
@@ -44,9 +44,9 @@ export const SLEEPING: SchedulerState = { awake: false, lastMotionMs: null };
  * Mark the scene dirty.
  *
  * Called by everything that changes the picture: a chip entering flight, a
- * seat changing, the pot growing, a resize, a texture finishing loading. It
- * is deliberately cheap and idempotent -- callers should never have to ask
- * whether the loop is already running before telling it something happened.
+ * seat changing, the pot growing, a resize, a texture finishing loading. It's
+ * cheap and idempotent, so callers never have to ask whether the loop is
+ * already running before telling it something happened.
  */
 export function markDirty(state: SchedulerState, nowMs: number): SchedulerState {
   if (state.awake && state.lastMotionMs === nowMs) return state;
@@ -79,7 +79,7 @@ export function isAwake(state: SchedulerState): boolean {
  * A tab that has been backgrounded, or a phone that has been locked, hands
  * back a first delta of anything up to several minutes. Passed straight into
  * a friction slide that closes a fraction of the remaining gap per elapsed
- * frame, that single delta closes *all* of it -- every chip in the room
+ * frame, that single delta closes *all* of it: every chip in the room
  * teleports onto its target on the frame the tab wakes up. Capping at ~4
  * reference frames means the worst a stall can do is make one frame look
  * slightly fast.

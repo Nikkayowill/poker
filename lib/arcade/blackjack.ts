@@ -5,7 +5,7 @@
  * and returns the next one, nothing here reads a clock, a store or a request.
  * That is what makes the whole rule set reachable from `npm test`, and it is
  * what let the server route (app/api/arcade/blackjack) take ownership of the
- * round without rewriting any of it -- see the note on settlement at the
+ * round without rewriting any of it; see the note on settlement at the
  * bottom of this file.
  *
  * House rules, fixed and deliberately few (this is the fast arcade game, not
@@ -36,7 +36,7 @@ export type BlackjackOutcome =
 export interface HandTotal {
   /** The best total that is not a bust, or the hard total once it busts. */
   total: number;
-  /** True when an ace is still counted as 11 -- the hand cannot bust on the next card. */
+  /** True when an ace is still counted as 11; the hand cannot bust on the next card. */
   soft: boolean;
   busted: boolean;
 }
@@ -48,7 +48,7 @@ export interface BlackjackRound {
   dealerHand: Card[];
   /** What the player opened for. Kept separate so the UI can show "500 doubled to 1,000". */
   baseStake: number;
-  /** What is actually at risk now -- twice baseStake after a double. */
+  /** What is actually at risk now: twice baseStake after a double. */
   stake: number;
   doubled: boolean;
   phase: BlackjackPhase;
@@ -104,8 +104,8 @@ export function isNatural(cards: readonly Card[]): boolean {
 
 function draw(round: BlackjackRound): Card {
   const card = round.deck.pop();
-  // One deck against one player tops out around twenty cards, so this is a
-  // guard against a caller reusing a spent round, not a real deal path.
+  // One deck against one player tops out around twenty cards, so this guards
+  // against a caller reusing a spent round rather than being a real deal path.
   if (!card) throw new Error("The deck ran out of cards.");
   return card;
 }
@@ -127,7 +127,7 @@ function settle(round: BlackjackRound, outcome: BlackjackOutcome): BlackjackRoun
       case "dealer-win":
         // `|| 0` rather than the bare negation: a practice loss negates a
         // stake of 0, and JS's -0 fails a strict `=== 0`/`toBe(0)` check
-        // even though it is the same number -- `-0 || 0` is the one-line fix
+        // even though it is the same number. `-0 || 0` is the one-line fix
         // that keeps the loss branch a plain negation for every real stake.
         return -round.stake || 0;
       case "push":
@@ -139,7 +139,7 @@ function settle(round: BlackjackRound, outcome: BlackjackOutcome): BlackjackRoun
 
 /**
  * The dealer's whole turn, played out in one call. There is no decision to
- * surface -- S17 is deterministic -- so exposing it a card at a time would be
+ * surface (S17 is deterministic), so exposing it a card at a time would be
  * a state machine that exists only for the animation, which the view can pace
  * from the finished hand instead.
  */
@@ -165,7 +165,7 @@ function playDealer(round: BlackjackRound): BlackjackRound {
  * player's first card.
  */
 export function startRound({ stake, deck }: { stake: number; deck: Card[] }): BlackjackRound {
-  // A stake of exactly 0 is legal -- it is Blackjack's own practice mode (see
+  // A stake of exactly 0 is legal: it is Blackjack's own practice mode (see
   // lib/server/blackjack-service.ts). Every payout below scales off `stake`,
   // so a practice hand settles with netGold 0 on every outcome for free;
   // nothing negative or non-finite is ever a real stake.
@@ -183,7 +183,7 @@ export function startRound({ stake, deck }: { stake: number; deck: Card[] }): Bl
     netGold: 0,
   };
 
-  // Alternating, player first -- the order a real table deals in, and the
+  // Alternating, player first: the order a real table deals in, and the
   // order the view animates.
   round.playerHand.push(draw(round));
   round.dealerHand.push(draw(round));
@@ -207,10 +207,11 @@ export function hit(round: BlackjackRound): BlackjackRound {
   if (round.phase !== "player-turn") return round;
   const next: BlackjackRound = { ...round, deck: [...round.deck], playerHand: [...round.playerHand] };
   next.playerHand.push(draw(next));
-  if (handTotal(next.playerHand).busted) return settle(next, "player-bust");
+  const total = handTotal(next.playerHand);
+  if (total.busted) return settle(next, "player-bust");
   // Standing for them on a drawn 21 saves a click that has exactly one sane
-  // answer, and cannot cost anything: there is no card that improves 21.
-  if (handTotal(next.playerHand).total === BLACKJACK) return playDealer(next);
+  // answer, and costs nothing: there is no card that improves 21.
+  if (total.total === BLACKJACK) return playDealer(next);
   return next;
 }
 
@@ -221,7 +222,7 @@ export function stand(round: BlackjackRound): BlackjackRound {
 
 /**
  * Double down: twice the wager, exactly one card, turn over. Busting on that
- * card settles at the doubled stake -- which is the risk being taken, and is
+ * card settles at the doubled stake, which is the risk being taken, and is
  * why the caller has to check the wallet covers it before offering it.
  */
 export function doubleDown(round: BlackjackRound): BlackjackRound {
@@ -250,7 +251,7 @@ export function legalBlackjackActions(round: BlackjackRound): LegalBlackjackActi
 
 /**
  * What the dealer is showing. The hole card is the second one dealt, and it
- * stays hidden until the dealer's turn -- so the view renders from this rather
+ * stays hidden until the dealer's turn, so the view renders from this rather
  * than from dealerHand, and a player poking at the client state during their
  * own turn finds a hand that genuinely does not contain the hole card yet.
  */
@@ -269,8 +270,8 @@ export function dealerUpCards(round: BlackjackRound): Card[] {
  * than re-switching on the outcome means the payout cannot drift away from
  * the number the felt just showed the player.
  *
- * A practice hand (stake 0) settles to exactly 0 here on every outcome --
- * win, loss or push -- since both terms it sums are 0. That is what lets
+ * A practice hand (stake 0) settles to exactly 0 here on every outcome, win,
+ * loss or push, since both terms it sums are 0. That is what lets
  * lib/server/blackjack-service.ts's payOut skip crediting a practice round
  * without a separate practice check of its own: `payout <= 0` is already
  * true for every practice outcome.
@@ -284,10 +285,10 @@ export function settlementPayout(round: BlackjackRound): number {
  * The round as the browser is allowed to see it.
  *
  * Two things are removed, and both matter now that Gold is real: `deck` (the
- * undealt cards -- handing those over would let a player see every card
- * before deciding whether to hit) and, while it is still the player's turn,
- * the dealer's hole card. `dealerHand` here is `dealerUpCards`, so the hidden
- * card is genuinely absent from the payload rather than merely unrendered --
+ * undealt cards; handing those over would let a player see every card before
+ * deciding whether to hit) and, while it is still the player's turn, the
+ * dealer's hole card. `dealerHand` here is `dealerUpCards`, so the hidden
+ * card is genuinely absent from the payload rather than merely unrendered,
  * the same redaction contract lib/game/snapshot.ts holds for hole cards at
  * the poker table.
  *
@@ -354,7 +355,7 @@ export function outcomeLabel(outcome: BlackjackOutcome): string {
  * double on top of it.
  *
  * This is a *display* predicate, and it stays one. Nothing here debits
- * anyone -- netGold is a number a settled round reports, not one it applies.
+ * anyone; netGold is a number a settled round reports, not one it applies.
  * The Gold is moved by app/api/arcade/blackjack, which owns the deck and
  * re-checks the balance itself through spendGold; this only decides which
  * stake buttons are offered and whether Double is worth showing. A client

@@ -15,21 +15,21 @@ const querySchema = z.object({
 });
 
 /**
- * Top 10, and the caller's own standing even when they are well outside it
- * -- "you are #482" is still the number a player came here to check.
+ * Top 10, and the caller's own standing even when they are well outside it:
+ * "you are #482" is still the number a player came here to check.
  *
- * `game=poker` (the default) is the original poker leaderboard, byte-for-
- * byte unchanged, `scope` meaningful only here. `game=global` is the
- * percentile blend across every game a player qualifies in. `game=friends`
- * is the caller's own head-to-head record against each of their friends --
- * the one board with no top 10 and no `mine`, since every row is already
- * about them. Any other known id (see lib/leaderboard/contract.ts's
- * registry) is that game's own win/loss or average-metric board, with
- * pre-formatted `cells` a client renders without knowing the game's shape --
- * this is what lets a future game join with no UI change. That board also
- * carries `mineProgress` (sample vs. the game's qualifying minSample) for a
- * caller who has played but not yet qualified -- otherwise a real first
- * result is indistinguishable from having never played this game at all.
+ * `game=poker` (the default) is the original poker leaderboard, unchanged;
+ * `scope` is only meaningful here. `game=global` is the percentile blend
+ * across every game a player qualifies in. `game=friends` is the caller's own
+ * head-to-head record against each of their friends, the one board with no
+ * top 10 and no `mine` since every row is already about them. Any other known
+ * id (see lib/leaderboard/contract.ts's registry) is that game's own win/loss
+ * or average-metric board, with pre-formatted `cells` a client renders
+ * without knowing the game's shape, which lets a future game join with no UI
+ * change. That board also carries `mineProgress` (sample vs. the game's
+ * qualifying minSample) for a caller who has played but not yet qualified,
+ * so a real first result isn't indistinguishable from never having played
+ * this game at all.
  */
 export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request, "leaderboard:read", 60, 60 * 1000);

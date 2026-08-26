@@ -7,15 +7,15 @@ import { adminClient } from "./supabase-admin";
 /**
  * Persistence for server-owned Blackjack rounds.
  *
- * The stored `round` is the full BlackjackRound including the undealt deck --
- * that is the whole reason the server holds it rather than the browser. What
+ * The stored `round` is the full BlackjackRound including the undealt deck,
+ * which is the whole reason the server holds it rather than the browser. What
  * reaches a client is toBlackjackSnapshot()'s redacted view, built in the
  * route; nothing in this file is safe to hand over as-is.
  *
  * Supabase when configured, an in-process Map otherwise, the same split every
  * other store here uses. The memory branch is not a lesser implementation to
  * be tolerated: it is what `npm test` and a no-env dev server run on, so it
- * has to enforce the same two invariants the table's constraints do -- one
+ * has to enforce the same two invariants the table's constraints do: one
  * active round per profile, and a version that only advances from the value
  * the caller last saw.
  */
@@ -24,7 +24,7 @@ export type BlackjackRoundStatus = "active" | "settled";
 
 /**
  * "practice" is Blackjack's own free mode (lib/server/blackjack-service.ts),
- * not a rung on the shared stakes ladder -- it is layered on here rather than
+ * not a rung on the shared stakes ladder. It's layered on here rather than
  * added to lib/game/tiers.ts, which the real-money poker lobby also reads.
  */
 export type BlackjackRoundTier = StakesTier | "practice";
@@ -165,11 +165,10 @@ export async function createBlackjackRound(input: {
 /**
  * Applies the next round state, but only if nobody else already did.
  *
- * Returns null on a lost race -- a stale version, a replayed request, or a
+ * Returns null on a lost race: a stale version, a replayed request, or a
  * double-clicked Stand. The caller must treat null as "this action did not
- * happen" and, critically, must not pay out on it: the guard is what makes a
- * settlement happen exactly once, since only one UPDATE can match a given
- * version.
+ * happen" and must not pay out on it: the guard is what makes a settlement
+ * happen exactly once, since only one UPDATE can match a given version.
  */
 export async function advanceBlackjackRound(
   current: StoredBlackjackRound,

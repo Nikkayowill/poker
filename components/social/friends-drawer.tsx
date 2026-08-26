@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation";
 import { Check, Copy, RotateCw, Send, Spade, UserMinus, UserPlus, X } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
+import { useClipboardCopy } from "@/components/use-clipboard-copy";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import type { GameSnapshot, PublicSeat } from "@/lib/game/types";
 import { formatRecord } from "@/lib/leaderboard/contract";
@@ -28,8 +29,8 @@ import type {
 const EMPTY: FriendsOverview = { friends: [], incoming: [], outgoing: [], recentOpponents: [] };
 
 /**
- * The two ways this feature says no, which are different problems with
- * different buttons -- the same split lib/server/api-auth.ts makes.
+ * The two ways this feature says no. They're different problems with
+ * different buttons, the same split lib/server/api-auth.ts makes.
  *
  * 401 is no session at all; 403 is a real guest session that is simply not a
  * registered account. Collapsing either into the generic error would tell a
@@ -61,9 +62,9 @@ function expiresIn(expiresAt: string, now: number): string {
 
 /**
  * The prefilled wager offered against one specific friend: the floor, raised
- * 500 Gold for every time you've beaten them. Only ever a starting point --
- * the duel lobby's stake input stays editable down to MIN_DUEL_STAKE -- so
- * this can be generous without needing to be exact.
+ * 500 Gold for every time you've beaten them. Only ever a starting point,
+ * since the duel lobby's stake input stays editable down to MIN_DUEL_STAKE,
+ * so this can be generous without needing to be exact.
  */
 function suggestedWager(record: FriendSummary["duelRecord"]): number {
   return MIN_DUEL_STAKE + 500 * (record?.wins ?? 0);
@@ -88,8 +89,8 @@ function DuelRecordBadge({ record }: { record: NonNullable<FriendSummary["duelRe
 /**
  * Reuses the table/profile avatar rather than drawing another circle.
  *
- * `avatarCosmetic` is empty because the friends payload carries no cosmetics
- * -- FriendSummary is a deliberately narrow projection, not a profile. An
+ * `avatarCosmetic` is empty because the friends payload carries no
+ * cosmetics: FriendSummary is a narrow projection, not a profile. An
  * unrecognised id makes ProfileAvatar fall through to the monogram on the
  * player's accent, which is the correct rendering for a list that never
  * fetched an equipped avatar, not a fallback for a failure.
@@ -114,7 +115,7 @@ interface TableSeatPerson {
 }
 
 /**
- * One row in "Recently played" -- the shortcut this whole feature exists
+ * One row in "Recently played", the shortcut this whole feature exists
  * for: someone you settled a duel or cribbage table against who is no
  * longer seated with you, findable again instead of gone the moment the
  * table ended.
@@ -160,8 +161,8 @@ export interface FriendsDrawerProps {
   /**
    * Where an accepted invite lands.
    *
-   * Accepting is a join -- the route redeems the room code into a seat and
-   * returns the snapshot -- so the drawer has a live table on its hands and no
+   * Accepting is a join: the route redeems the room code into a seat and
+   * returns the snapshot, so the drawer has a live table on its hands and no
    * business rendering one. Optional because the drawer is also opened from
    * places that have nowhere to put a table; where it is absent, Join is not
    * offered rather than being offered and doing nothing.
@@ -170,7 +171,7 @@ export interface FriendsDrawerProps {
   /**
    * The table's current seats, when the drawer was opened from one.
    *
-   * This is what turns a stranger at your table into an "Add friend" row --
+   * This is what turns a stranger at your table into an "Add friend" row:
    * Seat.profileId exists specifically for this (see its own doc comment).
    * Bots, open seats, and guests carry no profileId and are filtered out
    * before this ever reaches the drawer's own dedupe against known people.
@@ -185,8 +186,8 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
   /**
    * Friends already invited to this table in this session.
    *
-   * The server is the authority -- a second invite comes back
-   * `already_pending` from the partial unique index -- but the *sender* has no
+   * The server is the authority (a second invite comes back
+   * `already_pending` from the partial unique index), but the *sender* has no
    * feed of their own outgoing invites to read, so without this the button
    * they just pressed would look untouched.
    */
@@ -195,13 +196,12 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
   const [now, setNow] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  /** A confirmation that isn't an error -- "Friend added", not a failure -- so it can't be styled or read like one. */
+  /** A confirmation that isn't an error: "Friend added", not a failure, so it can't be styled or read like one. */
   const [notice, setNotice] = useState<string | null>(null);
   const [gate, setGate] = useState<Gate>("none");
   /** This player's own reusable "add me" code, fetched alongside the overview. Null until it has loaded. */
   const [inviteCode, setInviteCode] = useState<string | null>(null);
-  /** Swaps the copy icon to a checkmark for a moment, same 1800ms as room-created-modal's own copy button. */
-  const [codeCopied, setCodeCopied] = useState(false);
+  const { copiedValue: copiedInviteUrl, copy: copyInviteUrl } = useClipboardCopy();
   /** The "have a code?" field, and whether a redeem is in flight. */
   const [redeemValue, setRedeemValue] = useState("");
   const [redeeming, setRedeeming] = useState(false);
@@ -212,7 +212,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
   /**
    * Guards every setState after an await. The drawer is unmounted by closing
    * it, which is the single most likely thing to happen while a request is in
-   * flight -- and a mutation that resolves afterwards would otherwise be a
+   * flight, and a mutation that resolves afterwards would otherwise be a
    * state update on a dead component.
    */
   const mounted = useRef(true);
@@ -222,16 +222,16 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
    * Loads overlap in ordinary use: every mutation refetches, so accepting two
    * requests quickly puts two GETs in flight, and nothing guarantees they
    * resolve in order. Without this, the older response lands last and the
-   * drawer shows the list as it was *before* the second accept -- a row that
+   * drawer shows the list as it was *before* the second accept: a row that
    * reappears after the player watched it go.
    */
   const loadSeq = useRef(0);
 
   /**
-   * Deliberately sets no loading flag of its own.
+   * Sets no loading flag of its own.
    *
    * `loading` starts true, so the first call has nothing to announce, and a
-   * refetch after a mutation must not blank the list back to a spinner -- the
+   * refetch after a mutation must not blank the list back to a spinner: the
    * row that triggered it is already disabled through `busy`, which is the
    * feedback that belongs there.
    */
@@ -267,9 +267,9 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
   /**
    * Reads the invite list, and never reports its own failure.
    *
-   * Separate from `load` on purpose: this one polls, and a transient failure on
-   * a background poll must not replace the friends list the player is reading
-   * with an error banner. The gate is `load`'s to decide -- both routes make
+   * Separate from `load`: this one polls, and a transient failure on a
+   * background poll must not replace the friends list the player is reading
+   * with an error banner. The gate is `load`'s to decide; both routes make
    * the same 401/403 split, so a signed-out visitor is already being told.
    */
   const loadInvites = useCallback(async () => {
@@ -333,7 +333,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
   }, [load, loadInvites, loadInviteCode]);
 
   useEffect(() => {
-    // Whatever opened the drawer -- the lobby's Friends tile in practice.
+    // Whatever opened the drawer, the lobby's Friends tile in practice.
     // Captured rather than selected by class so focus returns to the real
     // trigger even if something else ever opens this.
     const opener = document.activeElement as HTMLElement | null;
@@ -349,7 +349,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
       }
       if (event.key !== "Tab") return;
       // Without this, Tab walks straight out of an aria-modal dialog into the
-      // lobby behind it -- the hub tiles stay in the tab order, so a keyboard
+      // lobby behind it: the hub tiles stay in the tab order, so a keyboard
       // user ends up operating controls they cannot see.
       const focusable = drawerRef.current?.querySelectorAll<HTMLElement>(
         'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -373,7 +373,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       // Only if focus is still ours to move. Something else may legitimately
-      // have taken it -- the sign-in flow, say -- and yanking it back to the
+      // have taken it (the sign-in flow, say), and yanking it back to the
       // tile then would be the bug rather than the fix.
       if (!drawer || drawer.contains(document.activeElement)) {
         opener?.focus?.();
@@ -386,7 +386,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
    *
    * Refetch rather than patching local state: accepting a request moves a row
    * from `incoming` to `friends`, and the server is the only thing that knows
-   * whether it actually did -- the other party may have cancelled first. A
+   * whether it actually did (the other party may have cancelled first). A
    * list this short costs one cheap GET to be certain instead of guessing.
    */
   const mutate = useCallback(async (key: string, request: () => Promise<Response>, failure: string) => {
@@ -478,10 +478,10 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
    * Not routed through `mutate`: that helper only ever reports one failure
    * string, and `sendFriendRequest`'s ordinary outcomes (`already_pending`,
    * `already_friends`) are successes from here just like `invite`'s
-   * `already_pending` is -- the request now exists, whether or not this call
-   * is the one that created it. Only `blocked` is worth a distinct message,
-   * and stays undirected for the reason the route gives: naming who blocked
-   * whom undoes the block.
+   * `already_pending` is, since the request now exists whether or not this
+   * call is the one that created it. Only `blocked` is worth a distinct
+   * message, and stays undirected for the reason the route gives: naming who
+   * blocked whom undoes the block.
    */
   const addFriend = useCallback(async (profileId: string) => {
     setBusy((current) => new Set(current).add(profileId));
@@ -503,7 +503,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
       }
       setError(null);
       // The row that triggered this drops out of `atTable` once `overview`
-      // includes it as pending -- there is no local set to maintain the way
+      // includes it as pending. There is no local set to maintain the way
       // `invited` maintains one for table invites, because this list is
       // recomputed from `overview` on every render rather than patched.
       await load();
@@ -519,22 +519,17 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
     }
   }, [load]);
 
-  /** Copies the invite link to the clipboard. Same try/catch-and-reset shape as room-created-modal's own copy button. */
-  const copyInviteLink = useCallback(async () => {
-    if (!inviteCode) return;
-    const url = `${window.location.origin}/?friend=${inviteCode}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      setCodeCopied(true);
-      window.setTimeout(() => setCodeCopied(false), 1800);
-    } catch {
-      // Clipboard permission can be silently refused. The code itself stays
-      // visible and selectable in the widget, so this is a lost convenience,
-      // not a dead end.
-    }
-  }, [inviteCode]);
+  const inviteUrl = inviteCode && typeof window !== "undefined"
+    ? `${window.location.origin}/?friend=${inviteCode}`
+    : null;
+  const codeCopied = inviteUrl !== null && copiedInviteUrl === inviteUrl;
 
-  /** Retires the current code and issues a new one -- for a link shared somewhere it shouldn't have been. */
+  /** Copies the invite link to the clipboard. */
+  const copyInviteLink = useCallback(() => {
+    if (inviteUrl) void copyInviteUrl(inviteUrl);
+  }, [inviteUrl, copyInviteUrl]);
+
+  /** Retires the current code and issues a new one, for a link shared somewhere it shouldn't have been. */
   const regenerateInviteCode = useCallback(async () => {
     setBusy((current) => new Set(current).add("invite-code"));
     try {
@@ -593,7 +588,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
         case "self":
           setError("That's your own invite code.");
           break;
-        // Undirected on purpose, same reasoning as addFriend's own `blocked`.
+        // Undirected, same reasoning as addFriend's own `blocked`.
         case "blocked":
           setError("That player can't be friended right now.");
           break;
@@ -655,8 +650,8 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
   /**
    * Seated strangers worth offering an "Add friend" row.
    *
-   * Excludes anyone already a friend or already in either request direction
-   * -- `overview` is the truth for that, not a locally-tracked set, so a
+   * Excludes anyone already a friend or already in either request direction.
+   * `overview` is the truth for that, not a locally-tracked set, so a
    * friend request sent from the seat menu on a different device still
    * removes this row here on the next `load()`. `isMine` stands in for a
    * profile-id equality check against the viewer's own id, which this drawer
@@ -839,7 +834,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                   </div>
                   <div className="friend-actions">
                     {/* Join is offered only where there is somewhere to land.
-                        Accepting redeems the invite -- it is spent whether or
+                        Accepting redeems the invite: it is spent whether or
                         not this drawer can render the table it just joined. */}
                     {onJoinedTable && (
                       <button
@@ -939,9 +934,9 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                         control answers "which game" without a second layer of
                         open/close state or an outside-click handler to get
                         wrong. Navigating rather than opening the challenge
-                        from here -- the stake tier and the board both belong
-                        to that game's own page, which already owns opening an
-                        untargeted one the same way. */}
+                        from here, since the stake tier and the board both
+                        belong to that game's own page, which already owns
+                        opening an untargeted one the same way. */}
                     <select
                       className="friend-challenge"
                       value=""
@@ -954,9 +949,9 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                         const params = new URLSearchParams({
                           challenge: person.profileId,
                           name: person.displayName,
-                          // A prefill only -- the wager step on the other end
+                          // A prefill only: the wager step on the other end
                           // stays freely editable down to MIN_DUEL_STAKE. Scaled
-                          // by wins against THIS friend specifically, so beating
+                          // by wins against this friend specifically, so beating
                           // someone repeatedly is what raises the suggested ante
                           // against them, not against everyone.
                           suggested: String(suggestedWager(person.duelRecord)),

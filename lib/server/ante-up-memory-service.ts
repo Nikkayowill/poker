@@ -32,10 +32,10 @@ import { awardWager } from "./progression-store";
  * Everything between an Ante Up: Memory Match request and the wallet.
  *
  * Same shape, same three ordering rules, same "the payout is settled, not
- * stored" note as ante-up-word-stack-service.ts -- see that file's header.
+ * stored" note as ante-up-word-stack-service.ts; see that file's header.
  * The one thing unique to this service: a flip that exceeds
  * ANTE_UP_MEMORY_MAX_TURNS (lib/arcade/ante-up-memory.ts) settles as a loss,
- * not a win -- Memory has no natural loss condition otherwise, so that cap is
+ * not a win. Memory has no natural loss condition otherwise, so that cap is
  * the entire reason wagering on it is possible at all.
  */
 
@@ -43,7 +43,7 @@ export class AnteUpMemoryRequestError extends ArcadeRequestError<AnteUpMemorySna
   readonly name = "AnteUpMemoryRequestError";
 }
 
-/** This game's id in ante_up_attempts -- see lib/server/ante-up-store.ts. */
+/** This game's id in ante_up_attempts; see lib/server/ante-up-store.ts. */
 const GAME = "memory-match";
 
 /** How many wagered attempts a player may open in a rolling day, at this game. Free practice is uncapped. */
@@ -53,7 +53,7 @@ function snapshot(stored: StoredAnteUpAttempt<AnteUpMemoryAttempt>): AnteUpMemor
   return toAnteUpMemorySnapshot(stored.state, { id: stored.id, version: stored.version });
 }
 
-/** Never throws -- see ante-up-service.ts's payOutWin for why. */
+/** Never throws; see ante-up-service.ts's payOutWin for why. */
 async function payOutWin(profileId: string, attempt: Pick<AnteUpMemoryAttempt, "wager" | "board">): Promise<void> {
   const payout = anteUpMemoryPayout(attempt);
   if (payout <= 0) return;
@@ -120,7 +120,7 @@ export async function openAnteUpMemory(
       game: GAME,
       tier: null,
       wager: wagerInput,
-      multiplier: 1, // placeholder -- the real payout is skill-scored at settlement, see this file's header.
+      multiplier: 1, // placeholder; the real payout is skill-scored at settlement, see this file's header.
       state,
     });
   } catch (error) {
@@ -165,17 +165,17 @@ export async function flipAnteUpMemory(
   }
 
   if (stored.state.status === "won") {
-    // No leaderboard write here, deliberately: solo Ante Up games don't get a
-    // board (see lib/leaderboard/contract.ts's header for the rule). A clear
-    // still feeds missions, achievements and the payout below -- it just
-    // isn't ranked against anyone.
+    // No leaderboard write here: solo Ante Up games don't get a board (see
+    // lib/leaderboard/contract.ts's header for the rule). A clear still feeds
+    // missions, achievements and the payout below; it just isn't ranked
+    // against anyone.
     await payOutWin(profile.id, stored.state);
   }
 
   return { attempt: snapshot(stored), profile };
 }
 
-/** Gives up early. The wager is already spent -- see the ordering rules above. */
+/** Gives up early. The wager is already spent; see the ordering rules above. */
 export async function resignAnteUpMemoryAttempt(
   token: string,
 ): Promise<{ attempt: AnteUpMemorySnapshot | null; profile: PlayerProfile }> {

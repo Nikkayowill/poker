@@ -7,23 +7,20 @@ import { StackChipsMark } from "@/components/brand/stackchips-mark";
 /**
  * The full-screen "entering the room" beat, shared by both table renderers.
  *
- * Started as 3D-only: PokerScene's `onReady` used to fire on WebGL-context
- * creation alone -- essentially instant -- while each seated character kept
- * loading independently behind its own Suspense boundary. That let the room
- * present itself as finished and then have avatars pop in seat by seat,
- * which read as "falling out of the sky." poker-scene.tsx now gates
- * `sceneReady` on every seated character actually being mounted (see
- * lib/game3d/avatar-load-gate.ts); this is what covers that wait instead of
- * leaving the player looking at the flat DOM felt while it happens.
+ * `sceneReady` gates on every seated character actually mounting (see
+ * lib/game3d/avatar-load-gate.ts) rather than on WebGL context creation
+ * alone, which used to let the room present itself as finished while
+ * avatars popped in seat by seat, reading as "falling out of the sky." This
+ * component covers that wait instead of leaving the player looking at flat
+ * DOM felt while it happens.
  *
- * The 2D table earned the same problem once its felt/rail art stopped being
- * canvas-painted (instant) and became a real image loaded over the network
- * (see use-felt-art-ready.ts): the table shell/seats/HUD would already be
- * interactive while the felt was still mid-fetch, then pop in -- the same
- * "entering the room" gap, just for a different reason. `sceneReady` from
- * poker-table.tsx now reflects readiness for whichever renderer is active,
- * so `active={!sceneReady}` covers both; this component owns none of that
- * decision, only the presentation of it.
+ * The 2D table has the same gap for a different reason: its felt/rail art
+ * is a real image loaded over the network rather than canvas-painted (see
+ * use-felt-art-ready.ts), so the shell/seats/HUD would be interactive
+ * before the felt finished loading. `sceneReady` from poker-table.tsx
+ * reflects readiness for whichever renderer is active, so
+ * `active={!sceneReady}` covers both; this component only presents that
+ * state, it doesn't own the decision.
  */
 
 const FLAVOR_LINES = [
@@ -71,7 +68,7 @@ export function TableLoadingSplash({ active }: { active: boolean }) {
     }
   }
 
-  // The fade-out's own duration -- a genuine timer, not derived state.
+  // The fade-out's own duration: a genuine timer, not derived state.
   useEffect(() => {
     if (phase !== "hiding") return;
     const timer = setTimeout(() => setPhase("hidden"), FADE_MS);

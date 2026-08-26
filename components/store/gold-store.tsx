@@ -22,9 +22,9 @@ function formatPrice(unitAmount: number, currency: string): string {
 
 /**
  * Buy Gold: two one-time tiers, any time. Reuses SupportPanel's CSS classes
- * (.support-panel-*) on purpose -- the layout is identical (header, legal
- * gate, tier cards, buy buttons) and this saves a parallel stylesheet for no
- * visual gain. Distinct component and route from SupportPanel/`/store`
+ * (.support-panel-*): the layout is identical (header, legal gate, tier
+ * cards, buy buttons), so a parallel stylesheet would add nothing but
+ * upkeep. Distinct component and route from SupportPanel/`/store`
  * (`/store/gold`) so a Gold-purchase regression can never take the already-
  * shipped support flow down with it.
  */
@@ -66,7 +66,7 @@ export function GoldStore({ gameId }: { gameId?: string }) {
 
   // Payment recovery: a player landing back here from Stripe's hosted page.
   // Shares the same server-side idempotent fulfillment the webhook uses, so
-  // a refresh of this exact URL is always safe -- see the route's own
+  // a refresh of this exact URL is always safe; see the route's own
   // comment for why.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -124,7 +124,7 @@ export function GoldStore({ gameId }: { gameId?: string }) {
       const data = await response.json();
       if (!response.ok) {
         // 412 means the accept step above did not actually clear server-side
-        // (a second tab, a stale page) -- send them back through it rather
+        // (a second tab, a stale page); send them back through it rather
         // than showing a bare error for something they thought they did.
         if (response.status === 412 && data.pendingAcceptances) {
           await load();
@@ -168,10 +168,10 @@ export function GoldStore({ gameId }: { gameId?: string }) {
           {pendingDocuments.map((doc) => (
             <div className="support-panel-legal-doc" key={doc.slug}>
               <h3>{doc.title}</h3>
-              {/* One line up front, the rest tucked behind a toggle -- this
-                  used to print all four documents' full paragraphs on the
-                  page every time, which is the "wall of text" a first-time
-                  buyer had to scroll past before they could see a price. */}
+              {/* One line up front, the rest tucked behind a toggle. Printing
+                  all four documents' full paragraphs every time was the
+                  "wall of text" a first-time buyer had to scroll past
+                  before they could see a price. */}
               <p className="support-panel-legal-summary">{doc.body[0]}</p>
               {doc.body.length > 1 && (
                 <details className="support-panel-legal-details">

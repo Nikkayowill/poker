@@ -5,15 +5,15 @@
  * many CSS pixels is a world unit" from its own fit, because an orthographic
  * projection has exactly one scale and `projection.ts` solved it in closed
  * form. A perspective camera has neither property: a world unit near the
- * viewer covers more pixels than the same unit at the far rail, so there is
+ * viewer covers more pixels than the same unit at the far rail, so there's
  * no single number to report and no formula to report it from.
  *
  * So the seam measures instead of deriving. Everything here works on points
- * that three.js has already projected, which keeps the reasoning -- what a
+ * that three.js has already projected, which keeps the reasoning (what a
  * "scale" even means under perspective, how an ellipse's on-screen size is
- * defined once it is no longer an ellipse -- in `lib/` where `npm test` can
+ * defined once it's no longer an ellipse) in `lib/` where `npm test` can
  * reach it, rather than in a component behind a WebGL context that
- * `vitest.config.ts` does not collect and CI has no GPU for.
+ * `vitest.config.ts` doesn't collect and CI has no GPU for.
  */
 
 export interface Point2 {
@@ -58,8 +58,8 @@ export function ndcToViewport(ndc: Point2, rect: ViewportRect): Point2 {
  * This is what "the felt's on-screen size" has to mean under perspective.
  * The table is an ellipse on the ground plane, and a perspective camera
  * looking down at it projects that ellipse to a shape whose near edge is
- * wider than its far edge -- not an ellipse, and with no single width. The
- * bounding box is the honest reduction, and it is the one a test comparing
+ * wider than its far edge: not an ellipse, and with no single width. The
+ * bounding box is the honest reduction, and it's the one a test comparing
  * the room against a DOM element's rect actually wants.
  */
 export function screenExtent(points: readonly Point2[]): { width: number; height: number } {
@@ -80,11 +80,11 @@ export function screenExtent(points: readonly Point2[]): { width: number; height
 /**
  * Evenly spaced points around an ellipse lying flat on the ground plane.
  *
- * Sampled rather than solved because the projection is not analytic here:
+ * Sampled rather than solved because the projection isn't analytic here:
  * the caller pushes each of these through the real camera and takes the
  * extent of what comes back. `count` therefore sets the accuracy of that
- * extent -- the sampled hull is inscribed, so it can only ever understate
- * the true silhouette, and it understates it by less as `count` rises.
+ * extent: the sampled hull is inscribed, so it can only ever understate the
+ * true silhouette, and it understates it by less as `count` rises.
  */
 export function ellipseRimSamples(
   radiusX: number,
@@ -120,24 +120,22 @@ export function scaleBetween(a: Point2, b: Point2, worldDistance: number): numbe
 }
 
 /*
- * WHY THERE IS NO `isLoopAwake(lastFrameAt, now)` HERE.
+ * There's no `isLoopAwake(lastFrameAt, now)` here on purpose. The first cut
+ * of the seam answered `awake()` from how recently a frame had been drawn: a
+ * 50ms window, three frames at 60Hz. It's the obvious reading of "is the
+ * loop running", and it was wrong in a way only a real run showed: driven
+ * headlessly, the room rendered about two frames a second, because a
+ * shadow-mapped scene under SwiftShader takes ~450ms a frame. Every sample
+ * fell outside the window, so a room with eight chips visibly in the air
+ * reported itself asleep, across 1,141 consecutive samples.
  *
- * The first cut of the seam answered `awake()` from how recently a frame had
- * been drawn -- a 50ms window, three frames at 60Hz. It is the obvious
- * reading of "is the loop running", and it was wrong in a way only a real
- * run showed: driven headlessly, the room rendered about **two frames a
- * second**, because a shadow-mapped scene under SwiftShader takes ~450ms a
- * frame. Every sample fell outside the window, so a room with eight chips
- * visibly in the air reported itself asleep, across 1,141 consecutive
- * samples.
- *
- * Frame recency cannot tell "nothing left to draw" apart from "still drawing
+ * Frame recency can't tell "nothing left to draw" apart from "still drawing
  * the last thing, slowly", and those are opposite answers. A window wide
  * enough for software rendering is far too wide to prove a loop settled.
  *
- * So `awake()` reports whether there is animation in progress, published by
- * the layer that drives the loop -- see `animating` in ./scene-registry.ts.
- * That is also what the Canvas-2D room's `isAwake(scheduler)` has always
+ * So `awake()` reports whether there's animation in progress, published by
+ * the layer that drives the loop (see `animating` in ./scene-registry.ts).
+ * That's also what the Canvas-2D room's `isAwake(scheduler)` has always
  * meant: pending work, not recent paint. `framesRendered()` remains the
  * independent evidence that the loop actually stopped.
  */

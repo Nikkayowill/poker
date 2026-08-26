@@ -3,24 +3,25 @@ import "server-only";
 /**
  * Every word Daily Word Stack will accept as a guess.
  *
- * `server-only`, and that import is load-bearing rather than decorative: this
- * list is the shape of the answer space, and a browser holding it could filter
- * it against the tiles it has already been shown and solve any board in two
- * guesses. Nothing under lib/arcade/puzzles imports this except the service.
+ * `server-only`, and that import is load-bearing rather than decorative:
+ * this list is the shape of the answer space, and a browser holding it
+ * could filter it against the tiles already shown and solve any board in
+ * two guesses. Nothing under lib/arcade/puzzles imports this except the
+ * service.
  *
  * Derived from the system word list (/usr/share/dict/words), keeping only
- * entries that are five letters and lowercase *in the source* -- a capitalised
- * entry there is a proper noun, which is not a legal guess. That leaves 15012
+ * entries that are five letters and lowercase in the source (a capitalised
+ * entry there is a proper noun, not a legal guess). That leaves 15012
  * words, in the same range as the game this is modelled on (~13k), which
  * matters for feel: too small a dictionary rejects real words a player has
  * every right to try, and a rejection reads as a bug rather than a rule.
  *
- * Guesses are wide on purpose; ANSWERS (word-stack-answers.ts) is narrow and
- * hand-picked. A player may guess an obscure word, but must never be *asked*
+ * Guesses are wide; ANSWERS (word-stack-answers.ts) is narrow and
+ * hand-picked. A player may guess an obscure word but must never be asked
  * for one.
  *
  * A short blocklist of slurs and crude terms is filtered out at generation
- * time. It is not exhaustive and cannot be -- treat it as a floor, not a
+ * time. It isn't exhaustive and can't be: treat it as a floor, not a
  * guarantee, and extend it if something gets through.
  */
 

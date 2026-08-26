@@ -3,23 +3,23 @@
 /**
  * The phone lobby: three panes on one horizontal track, a tab bar underneath.
  *
- * WHY IT IS NOT THREE ROUTES. Ante Up (`/games`) and the leaderboard
+ * It is not three routes because Ante Up (`/games`) and the leaderboard
  * (`/leaderboard`) are real routes, and every one of them unmounts PokerApp on
- * the way in -- which is what makes the desktop hub flash the sign-in screen on
+ * the way in, which is what makes the desktop hub flash the sign-in screen on
  * a back-navigation and refetch the profile each time. A tab bar built on those
  * routes would inherit all of it and could not be swiped between at all. So the
  * panes render inline, inside the component that already holds the session, and
  * the routes stay exactly where they are for deep links and desktop.
  *
  * Consequences worth knowing before editing:
- *   - `ArcadeFloor` and `Leaderboard` are the SAME components the routes mount,
+ *   - `ArcadeFloor` and `Leaderboard` are the same components the routes mount,
  *     given `embedded` so they drop their own `<main>` and back-link. They are
  *     not reimplemented here, and must not be.
  *   - `ArcadeFloor` takes `profile` from us rather than fetching its own, or
  *     the shell would hold two diverging copies of the wallet and a buy-in
  *     would update only one of them.
  *   - Everything here is under PokerApp, so `tapSound`/`selectSound` may be
- *     called directly -- see the note at the top of lobby.tsx.
+ *     called directly; see the note at the top of lobby.tsx.
  *
  * The gesture maths lives in lib/ui/swipe-pager.ts, pure and tested. This file
  * only owns the pointer plumbing and what the panes contain.
@@ -88,8 +88,8 @@ const PAGE_ICONS: readonly LucideIcon[] = [Spade, Gamepad2, User];
  * Which pane the player was last on, so leaving the shell and coming back
  * lands where they left rather than back on Play.
  *
- * Half of this shell's doors -- Collection, Achievements, Rewards, Buy Gold,
- * Challenges, every tile on Ante Up -- are real routes that unmount PokerApp,
+ * Half of this shell's doors (Collection, Achievements, Rewards, Buy Gold,
+ * Challenges, every tile on Ante Up) are real routes that unmount PokerApp,
  * so returning from one rebuilt the shell from scratch. Tab bars do not behave
  * that way anywhere else, and the tell was landing two panes away from the
  * link you had just pressed.
@@ -112,7 +112,7 @@ function readStoredPage(): number {
 }
 
 /**
- * Anything that scrolls sideways inside a pane -- the stakes ladder today.
+ * Anything that scrolls sideways inside a pane; the stakes ladder today.
  * A drag that starts in one belongs to it, not to the pager, or picking a
  * stake would throw the player onto the next tab.
  */
@@ -181,8 +181,8 @@ export function MobileShell({
   onGetFreeGold: () => void;
   onEditProfile: () => void;
 }) {
-  // Lazy, and safe to touch storage in: `usePhoneViewport` reports false on the
-  // server, so this component only ever mounts on the client.
+  // Lazy, and safe to touch storage in: `usePhoneViewport` reports false on
+  // the server, so this component only ever mounts on the client.
   const [page, setPage] = useState(readStoredPage);
   /** Live drag distance in px. Null whenever no horizontal drag is in flight. */
   const [drag, setDrag] = useState<number | null>(null);
@@ -198,10 +198,10 @@ export function MobileShell({
 
   /*
    * Which panes have been looked at, or are one gesture away from being looked
-   * at. All three are mounted from the start -- that is what makes the slide a
-   * slide -- but a mounted pane runs its effects, and the leaderboard's effect
-   * is a fetch. So the shell used to spend a request on a board nobody had
-   * swiped to, racing the profile fetch the visible pane was waiting on.
+   * at. All three are mounted from the start, which is what makes the slide a
+   * slide, but a mounted pane runs its effects, and the leaderboard's effect
+   * is a fetch. Without this a pane nobody had swiped to would spend a
+   * request racing the profile fetch the visible pane was waiting on.
    *
    * Reached rather than current, and never unset: a pane keeps its content
    * once it has had any, so going back to it is instant. Neighbours count as
@@ -247,15 +247,15 @@ export function MobileShell({
     if (!gesture) return;
     const move = trackSwipe(gesture, event.clientX, event.clientY, page, PAGE_COUNT);
     /*
-     * Capture on the axis lock, NOT on press.
+     * Capture on the axis lock, not on press.
      *
-     * Capture is still needed -- without it the drag dies the moment the
+     * Capture is still needed: without it the drag dies the moment the
      * pointer crosses out of the element, which on a full-width pane happens
      * constantly at the edges. But a captured pointer also redirects the
      * `click` that follows it to the capture target, so capturing every press
      * meant the click never reached whatever was actually pressed. Touch
      * happens to survive that (the browser retargets it back), which is why
-     * this was invisible on a phone -- with a mouse, every link and button
+     * this was invisible on a phone; with a mouse, every link and button
      * inside the panes was simply dead: Collection, Achievements, Rewards,
      * Buy Gold, Challenges, every tile on the Ante Up pane, the whole footer.
      *
@@ -297,7 +297,7 @@ export function MobileShell({
           className={`mshell-track${drag === null ? " mshell-track-settling" : ""}`}
           style={{ transform: `translateX(calc(${-page * 100}% + ${Math.round(offset)}px))` }}
         >
-          {/* Panes off-screen are still in the document, so they are still in
+          {/* Panes off-screen stay in the document, so they'd still be in
               the tab order and still read out. `inert` is what actually takes
               them out of both; hiding them would break the slide. */}
           <section className="mshell-pane" aria-label="Play" inert={page !== 0}>
@@ -323,7 +323,7 @@ export function MobileShell({
           </section>
 
           <section className="mshell-pane" aria-label="Ante Up" inert={page !== 1}>
-            {/* The route's own component, not a copy of it. */}
+            {/* The route's own component, not a copy of it */}
             <ArcadeFloor profile={profile} embedded />
           </section>
 
@@ -481,7 +481,7 @@ function PlayPane({
       {/* The real table plate from public/pokertable, the same art the desktop
           hero tile carries, dissolved into the card rather than sat on top of
           it. The card itself stays on the chrome's own ground, so the felt
-          reads as a photograph of the table and not as a green panel. */}
+          reads as a photograph of the table rather than a green panel. */}
       <div className="mshell-hero">
         <div className="mshell-hero-art" aria-hidden="true" />
         <div className="mshell-hero-body">
@@ -510,7 +510,7 @@ function PlayPane({
       </div>
 
       {/* Every tier is a fixed buy-in (minBuyIn === maxBuyIn), so picking the
-          stake is also picking the amount. That is why the phone goes straight
+          stake is also picking the amount. That's why the phone goes straight
           to a seat instead of opening the buy-in modal the desktop hub uses.
           Hosting still opens it, because that flow also names the room. */}
       <div className="mshell-section">
@@ -615,7 +615,7 @@ function YouPane({
   onToggleMenuMusic: () => void;
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
-  /** False until this pane is one gesture away -- see `reached` in MobileShell. */
+  /** False until this pane is one gesture away; see `reached` in MobileShell. */
   showLeaderboard: boolean;
 }) {
   const dailyReady = dailyGold === "ready";
@@ -623,7 +623,7 @@ function YouPane({
 
   return (
     <>
-      {/* This pane is why the phone header carries no avatar: your name, your
+      {/* This pane is why the phone header carries no avatar; your name, your
           level and everything you can do to your account are here. */}
       <div className="mshell-card mshell-me">
         <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
@@ -680,7 +680,7 @@ function YouPane({
 
       {/* The route's own leaderboard, embedded. Its game tabs, season toggle,
           kicker and fetch all come with it, so this pane adds no header above
-          it -- and the fetch is why it waits for `showLeaderboard` rather than
+          it, and the fetch is why it waits for `showLeaderboard` rather than
           mounting with the shell. */}
       {showLeaderboard && <Leaderboard embedded />}
 
@@ -688,7 +688,7 @@ function YouPane({
         <span className="lobby-kicker">Settings</span>
         <div className="mshell-card">
           {/* Cycle-on-tap rows labelled with their current value, matching the
-              table menu's own convention -- these are the same preferences, and
+              table menu's own convention: these are the same preferences, and
               the table menu keeps its copies for use mid-hand. */}
           <button type="button" className="mshell-row" onClick={() => { selectSound(); onToggleSound(); }}>
             {soundEnabled ? <Volume2 size={19} strokeWidth={1.8} aria-hidden="true" /> : <VolumeX size={19} strokeWidth={1.8} aria-hidden="true" />}
@@ -708,8 +708,8 @@ function YouPane({
             <span className="mshell-setting-value">{betStyleLabel(betStyle).replace(/^Chip style: /, "")}</span>
           </button>
           <div className="mshell-rule" />
-          {/* A guest has no account to sign out of, so the same slot offers the
-              one thing that keeps their Gold: making one. */}
+          {/* A guest has no account to sign out of, so the same slot offers
+              the one thing that keeps their Gold: making one. */}
           <button type="button" className="mshell-row" onClick={() => { tapSound(); onSignOut(); }}>
             {profile.isRegistered
               ? <LogOut size={19} strokeWidth={1.8} aria-hidden="true" />

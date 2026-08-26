@@ -17,7 +17,7 @@ const MIN_PASSWORD_LENGTH = 8;
 /**
  * Google's mark, inline.
  *
- * Every other icon here comes from lucide, which has no Google glyph -- and
+ * Every other icon here comes from lucide, which has no Google glyph, and
  * a generic mail/key icon on the Google button is the tell that a sign-in
  * page was assembled rather than designed. Four paths, official colours.
  */
@@ -33,27 +33,27 @@ function GoogleMark() {
 }
 
 /**
- * The signed-out entry surface -- now the *whole* signed-out page.
+ * The signed-out entry surface: now the *whole* signed-out page.
  *
  * The marketing sections that used to run underneath this (a game grid, nine
  * feature cards, an offer line, a CTA and a four-column footer) are gone, and
  * so is the card this sat inside: the screen is the form, standing on the
  * room's own light. What is left below the controls is the two things a
- * sign-in page is expected to carry -- how to install the app, and the legal
- * line about play money -- and nothing else.
+ * sign-in page is expected to carry (how to install the app, and the legal
+ * line about play money) and nothing else.
  *
  * Three things about the shape here are load-bearing rather than aesthetic and
  * should survive the next redesign of it:
  *
  * 1. `.account-entry-page` (the wrapper, in lobby.tsx) and the accessible name
- *    "Play as guest" are both asserted by the e2e suite -- ten specs open the
+ *    "Play as guest" are both asserted by the e2e suite: ten specs open the
  *    app by clicking that exact button. Restyle freely; rename neither.
  * 2. One stable surface stays mounted for every auth state. A remembered
  *    session restoring must not flash a different layout before replacing it,
  *    which is why `ready` swaps the *controls* in place rather than swapping
  *    the component out.
  * 3. `.account-entry-card` keeps its class name even though it is no longer a
- *    card -- it is the labelled landmark, and 04-lobby.css hangs the whole
+ *    card: it is the labelled landmark, and 04-lobby.css hangs the whole
  *    form's typography off it.
  *
  * The email form leads and Google follows, rather than the other way round:
@@ -102,8 +102,8 @@ export function AccountEntryCard({
     event.preventDefault();
     setFormError(null);
     if (password.length < MIN_PASSWORD_LENGTH) {
-      // No sound on the rejected submit. The error message is the answer, and
-      // a confirming click under it would say the opposite.
+      // No sound on the rejected submit: the error message is the answer,
+      // and a confirming click under it would say the opposite.
       setFormError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
@@ -121,10 +121,10 @@ export function AccountEntryCard({
       onEmailSignIn(email.trim(), password, token);
     } else {
       // Notification permission is asked right here, as part of creating
-      // the account, per Kayo's call -- not a soft prompt later, not a
-      // settings toggle nobody finds. Fire-and-forget: requestPermission
-      // shows its own browser dialog and never fails the account creation
-      // it's riding along with, whichever way the player answers it.
+      // the account: not a soft prompt later, not a settings toggle nobody
+      // finds. Fire-and-forget: requestPermission shows its own browser
+      // dialog and never fails the account creation it's riding along with,
+      // whichever way the player answers it.
       void requestPushPermissionAndSubscribe();
       onEmailSignUp(email.trim(), password, token);
     }
@@ -147,17 +147,17 @@ export function AccountEntryCard({
             avatar, and collection are ready.
           </p>
         ) : (
-          // One sentence, and it stays. The second half used to explain the
-          // two buttons directly underneath it -- "sign in to keep it on
-          // every device, or walk in as a guest" -- which is a paragraph
-          // describing controls a player can already see and read in less
-          // time. What is left is the only line on the page that says what
-          // the product is, now that the sections below it are gone.
+          // One sentence, and it stays. A longer version used to explain the
+          // two buttons directly underneath it ("sign in to keep it on every
+          // device, or walk in as a guest"), which is a paragraph describing
+          // controls a player can already see and read in less time. What is
+          // left is the only line on the page that says what the product is,
+          // now that the sections below it are gone.
           //
           // It costs ~55px, and the page has no room to spare: the form is
           // measured against an 818px viewport at 1440x900 and scrolls the
           // moment it passes ~760px. The type sizes around it in 04-lobby.css
-          // are set to buy this line its room -- if you enlarge them, this is
+          // are set to buy this line its room; enlarge them and this is
           // what falls off the bottom.
           <p>
             Poker, blackjack, duels and the daily puzzles — one wallet across
@@ -289,7 +289,7 @@ export function AccountEntryCard({
                     selectSound();
                     // This button serves both "sign in" and "create account"
                     // (Google gives no way to tell which before the redirect
-                    // completes) -- see the note above submitEmailForm.
+                    // completes); see the note above submitEmailForm.
                     // Asking here too is harmless for a returning player:
                     // once permission is granted or denied, the browser
                     // answers instantly with no dialog on every later call.

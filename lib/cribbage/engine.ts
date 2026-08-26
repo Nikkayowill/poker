@@ -1,5 +1,5 @@
 /**
- * Cribbage, as a 3-4 player free-for-all pot -- deal, discard to the crib,
+ * Cribbage, as a 3-4 player free-for-all pot: deal, discard to the crib,
  * peg, count, first to 121 takes it all.
  *
  * Pure and synchronous, like lib/pvp/checkers.ts: every function takes a
@@ -9,33 +9,34 @@
  *
  * ## No separate counting phase
  *
- * Counting has no player decisions in it -- once pegging ends there is
- * nothing left to choose, only arithmetic. So there is no "counting" entry in
- * CribbagePhase and no move a player sends to make it happen: the instant the
- * last card is pegged, `concludeHand` runs the whole count (each non-dealer's
- * hand in turn order, then the dealer's hand, then the dealer's crib, each
- * one checked against the shared starter) and either ends the match or deals
- * straight into the next hand's discard phase. `lastHandSummary` on the state
- * is the reveal a client renders for the deal that just finished -- it holds
- * every hand and the crib in full, which is fine to make public because the
- * deal it belongs to is already over.
+ * Counting has no player decisions in it: once pegging ends there is
+ * nothing left to choose, only arithmetic. So there is no "counting" entry
+ * in CribbagePhase and no move a player sends to make it happen. The
+ * instant the last card is pegged, `concludeHand` runs the whole count
+ * (each non-dealer's hand in turn order, then the dealer's hand, then the
+ * dealer's crib, each one checked against the shared starter) and either
+ * ends the match or deals straight into the next hand's discard phase.
+ * `lastHandSummary` on the state is the reveal a client renders for the
+ * deal that just finished; it holds every hand and the crib in full, which
+ * is fine to make public since that deal is already over.
  *
  * ## Randomness across an unbounded number of deals
  *
- * A cribbage match plays as many deals as it takes to reach 121, unlike Word
- * Race's fixed five rounds -- so the state cannot pre-generate every deal at
- * createState() the way that engine does. Instead `rngState` carries the
- * mulberry32 accumulator itself, advanced one shuffle at a time by
- * lib/cribbage/deck.ts's stepRandom -- see that file's header. Every card
- * dealt in the whole match, including which card gets burned into a 3-handed
- * crib and which gets cut as the starter, comes from that one carried
- * accumulator: nothing here ever calls Math.random().
+ * A cribbage match plays as many deals as it takes to reach 121, unlike
+ * Word Race's fixed five rounds, so the state cannot pre-generate every
+ * deal at createState() the way that engine does. Instead `rngState`
+ * carries the mulberry32 accumulator itself, advanced one shuffle at a
+ * time by lib/cribbage/deck.ts's stepRandom (see that file's header).
+ * Every card dealt in the whole match, including which card gets burned
+ * into a 3-handed crib and which gets cut as the starter, comes from that
+ * one carried accumulator: nothing here ever calls Math.random().
  *
  * ## Seats
  *
- * `playerCount` (3 or 4) is fixed for the life of a match. The dealer rotates
- * one seat clockwise every hand; pegging always leads from the seat to the
- * dealer's left and the dealer pegs last, same as a real table.
+ * `playerCount` (3 or 4) is fixed for the life of a match. The dealer
+ * rotates one seat clockwise every hand; pegging always leads from the
+ * seat to the dealer's left and the dealer pegs last, same as a real
+ * table.
  */
 
 import {
@@ -69,7 +70,7 @@ export interface CribbageState {
   /** 0-indexed, incremented every time a new hand is dealt. */
   handNumber: number;
   phase: CribbagePhase;
-  /** The mulberry32 accumulator -- see the header. Advances on every shuffle. */
+  /** The mulberry32 accumulator; see the header. Advances on every shuffle. */
   rngState: number;
 
   /** Cards each seat still holds. Shrinks to empty over the pegging phase. */
@@ -116,7 +117,7 @@ export type CribbageMoveResult = GenericMoveResult<CribbageState>;
 function orderFromLeftOfDealer(dealerSeat: CribbageSeat, playerCount: number): CribbageSeat[] {
   const order: CribbageSeat[] = [];
   for (let i = 1; i <= playerCount; i += 1) order.push((dealerSeat + i) % playerCount);
-  return order; // the last entry is always dealerSeat itself -- the dealer pegs and counts last.
+  return order; // the last entry is always dealerSeat itself: the dealer pegs and counts last.
 }
 
 /** A fresh, fully-shuffled deal: 5 cards to every seat, the rest held back for the cut. */
@@ -213,8 +214,8 @@ function applyDiscard(state: CribbageState, seat: CribbageSeat, card: Card, now:
 }
 
 /**
- * Discarding is done for everyone: sends the crib off to the dealer (with a
- * burn card for a 3-handed table, since 3 discards of 1 each is only 3 --
+ * Discarding is done for everyone: sends the crib off to the dealer (with
+ * a burn card for a 3-handed table, since 3 discards of 1 each is only 3;
  * see the header), cuts the starter, and scores heels.
  */
 function beginPegging(state: CribbageState, _now: number): CribbageState {
@@ -255,17 +256,17 @@ function beginPegging(state: CribbageState, _now: number): CribbageState {
     lastToPlaySeat: null,
   };
 
-  // Heels is scored at the cut, before a card is pegged -- honor the same
+  // Heels is scored at the cut, before a card is pegged. Honor the same
   // "check every scoring event" rule even here, in case the dealer was
   // already one Jack away from 121.
   const won = maybeWin(next, state.dealerSeat);
   if (!won) return next;
 
-  // maybeWin only sets phase/winner/winReason -- it has no way to know this
-  // particular win came from heels rather than a pegging play or a count, so
-  // lastHandSummary here would otherwise still be whatever the PREVIOUS deal
-  // left behind. Without this, a match that ends on the cut shows the wrong
-  // hand's reveal for how it actually ended.
+  // maybeWin only sets phase/winner/winReason: it has no way to know this
+  // particular win came from heels rather than a pegging play or a count,
+  // so lastHandSummary here would otherwise still be whatever the previous
+  // deal left behind. Without this, a match that ends on the cut shows the
+  // wrong hand's reveal for how it actually ended.
   return {
     ...won,
     lastHandSummary: {
@@ -299,7 +300,7 @@ function firstEligibleAfter(state: CribbageState, afterSeat: CribbageSeat): Crib
     const seat = order[(startIndex + step) % order.length];
     if (state.hands[seat].length > 0) return seat;
   }
-  // Unreachable in practice -- the only caller has already confirmed someone
+  // Unreachable in practice: the only caller has already confirmed someone
   // still holds cards before asking who goes next.
   return order[0];
 }
@@ -331,7 +332,7 @@ function finishCycleAndContinue(
 
   // A 31 was already scored on the play itself (see scorePeggingPlay) and
   // already win-checked by the caller before this ever runs, so there is
-  // nothing new to check for that case -- only a just-awarded go point can
+  // nothing new to check for that case; only a just-awarded go point can
   // freshly cross WIN_SCORE here.
   if (awardGoPoint) {
     const won = maybeWin(next, resetRecipient);
@@ -348,8 +349,8 @@ function finishCycleAndContinue(
  * What happens after `seat` legally plays a card, once it has already been
  * scored (including any 31 bonus) and win-checked.
  *
- * 31 resets the count IMMEDIATELY, whether or not anyone else still holds a
- * card that would have fit -- unlike a go, which only resets once EVERY
+ * 31 resets the count immediately, whether or not anyone else still holds
+ * a card that would have fit, unlike a go, which only resets once every
  * remaining seat is stuck. Conflating the two was a real bug: it let play
  * continue past 31 as if the count were still live.
  */
@@ -361,14 +362,15 @@ function advanceAfterPeg(state: CribbageState, seat: CribbageSeat, now: number):
 }
 
 /**
- * What happens after `seat` says go. The point (if any) goes to whoever last
- * actually played -- and so does the lead for the fresh count once a full
- * reset happens: `lastToPlaySeat`, not `seat` (whoever's go call happened to
- * be the one that found nobody left). Real cribbage's rule is "the player
- * who played the last card leads the new count", and `lastToPlaySeat` is
- * that player by definition; `seat` here is merely whichever seat's search
- * ran empty, which needn't be the seat right before them if some other seat
- * further round the table is the one still holding a now-legal card.
+ * What happens after `seat` says go. The point (if any) goes to whoever
+ * last actually played, and so does the lead for the fresh count once a
+ * full reset happens: `lastToPlaySeat`, not `seat` (whoever's go call
+ * happened to be the one that found nobody left). Real cribbage's rule is
+ * "the player who played the last card leads the new count", and
+ * `lastToPlaySeat` is that player by definition; `seat` here is merely
+ * whichever seat's search ran empty, which needn't be the seat right
+ * before them if some other seat further round the table is the one still
+ * holding a now-legal card.
  */
 function advanceAfterGo(state: CribbageState, seat: CribbageSeat, now: number): CribbageState {
   const candidate = nextEligibleSeat(state, seat);
@@ -424,11 +426,11 @@ function applyGo(state: CribbageState, seat: CribbageSeat, now: number): Cribbag
 
 /**
  * Pegging just emptied every hand: score every hand and the crib, in the
- * order a table actually counts them in -- each non-dealer starting left of
- * the dealer, then the dealer's own hand, then the dealer's crib last (the
- * crib is always the dealer's, whoever discarded into it). Stops the instant
- * anyone crosses WIN_SCORE, even mid-count, and otherwise deals straight into
- * the next hand.
+ * order a table actually counts them in (each non-dealer starting left of
+ * the dealer, then the dealer's own hand, then the dealer's crib last,
+ * since the crib is always the dealer's, whoever discarded into it). Stops
+ * the instant anyone crosses WIN_SCORE, even mid-count, and otherwise
+ * deals straight into the next hand.
  */
 function concludeHand(state: CribbageState, _now: number): CribbageState {
   void _now; // kept for a consistent (state, now) shape across every state-transition helper here
@@ -487,7 +489,7 @@ function isCard(value: unknown): value is Card {
   );
 }
 
-/** Reads an untrusted payload as a move, or null. Every card claim is re-checked against the real hand below -- this only confirms the shape. */
+/** Reads an untrusted payload as a move, or null. Every card claim is re-checked against the real hand below; this only confirms the shape. */
 function parseMove(move: unknown): { type: "discard" | "peg"; card: Card } | { type: "go" } | null {
   if (typeof move !== "object" || move === null) return null;
   const claim = move as { type?: unknown; card?: unknown };
@@ -515,7 +517,7 @@ export function applyCribbageMove(
 }
 
 /**
- * Cribbage has no real-time clock -- nothing here times out on its own the
+ * Cribbage has no real-time clock; nothing here times out on its own the
  * way a chess flag or a trivia question does, so this always returns null.
  * Kept as an explicit function rather than omitted so a future turn-timer
  * feature has an obvious seam, and so its contract (null means "nothing
@@ -533,12 +535,12 @@ export function cribbageResult(state: CribbageState): CribbageOutcome | null {
 }
 
 /**
- * Resigning ends the WHOLE match immediately -- not just for the resigning
- * seat -- and hands the pot to whoever else currently has the higher score.
+ * Resigning ends the whole match immediately, not just for the resigning
+ * seat, and hands the pot to whoever else currently has the higher score.
  * Cribbage has no clean "the rest keep playing" case the way poker folding
  * does: pegging turn order and hand-counting order both depend on every
  * seat, so removing one mid-hand has no well-defined continuation. A tie
- * among the remaining seats breaks toward the lowest seat index -- rare (it
+ * among the remaining seats breaks toward the lowest seat index, rare (it
  * needs an exact score tie at the moment somebody quits) and arbitrary by
  * necessity, since cribbage's contract has no draw outcome to fall back on.
  */
@@ -603,7 +605,7 @@ export interface CribbageSnapshot {
  * What this viewer may see.
  *
  * `seat` is null for a spectator or an unauthenticated read, which is the
- * MOST restrictive view here -- no own hand, no own-discarded flag -- rather
+ * most restrictive view here (no own hand, no own-discarded flag) rather
  * than the most permissive one. Every other seat's hand is a count only,
  * exactly like every seat's own current hand is exposed only to itself.
  */
@@ -614,9 +616,9 @@ export function cribbageSnapshot(
 ): CribbageSnapshot {
   void _now; // kept for parity with the table-contract's snapshot(state, seat, now) shape
   // Defense in depth: a seat outside 0..playerCount-1 should be unreachable
-  // (the service looks it up from the actual seat rows), but treating one as
-  // "unknown viewer" here -- the same most-restrictive default the header
-  // above already applies to `null` -- turns a would-be crash on
+  // (the service looks it up from the actual seat rows), but treating one
+  // as "unknown viewer" here (the same most-restrictive default the header
+  // above already applies to `null`) turns a would-be crash on
   // `state.hands[seat]` into a safely empty view instead.
   const seat = rawSeat !== null && rawSeat >= 0 && rawSeat < state.playerCount ? rawSeat : null;
   const opponents: CribbageOpponentView[] = [];

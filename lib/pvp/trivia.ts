@@ -1,40 +1,39 @@
 import { defineDuelGame, otherSeat, type DuelOutcome, type DuelSeat } from "./match-contract";
 import { TRIVIA_QUESTIONS, type TriviaQuestion } from "./trivia-questions";
+import { mulberry32 } from "@/lib/seeded-random";
 
 /**
- * Trivia Showdown -- seven questions, both players, one clock.
+ * Trivia Showdown: seven questions, both players, one clock.
  *
  * Simultaneous, not turn-based. The contract says the engine owns turn order,
  * and this one has none: either seat may answer the open question at any
  * moment, and the question closes when both have answered or when its timer
- * runs out, whichever happens first. That is the whole game -- a quiz where
+ * runs out, whichever happens first. That is the whole game; a quiz where
  * you wait for the other player is a quiz, not a race.
  *
- * ## The redaction is the game
- *
- * `snapshot` is the only thing standing between a player and the answer key.
- * The stored state holds seven question ids; the snapshot holds ONE question,
- * with no `answerIndex` key on it at all until that question's reveal window
- * opens. Absent, not null and not merely unrendered: a null tells a reader
- * that the field exists and is worth watching, and a field the UI ignores is
- * a field the network tab does not. lib/pvp/trivia-questions.ts is
- * `server-only` for the other half of the same argument -- hiding the index
- * buys nothing if the client is also holding the table it indexes into.
+ * The redaction is the game. `snapshot` is the only thing standing between a
+ * player and the answer key. The stored state holds seven question ids; the
+ * snapshot holds one question, with no `answerIndex` key on it at all until
+ * that question's reveal window opens. Absent, not null and not merely
+ * unrendered: a null tells a reader that the field exists and is worth
+ * watching, and a field the UI ignores is a field the network tab does not.
+ * lib/pvp/trivia-questions.ts is `server-only` for the other half of the
+ * same argument, since hiding the index buys nothing if the client is also
+ * holding the table it indexes into.
  *
  * The opponent's chosen answer is redacted on the same schedule. That they
- * have answered is published, deliberately: it leaks no information about
- * WHAT they answered, and watching the other lamp light while you are still
+ * have answered is published on purpose: it leaks no information about what
+ * they answered, and watching the other lamp light while you are still
  * reading is most of what makes this tense.
  *
- * ## Why the state is timestamps rather than timers
- *
- * Nothing here runs on a clock of its own. A question opens at an instant and
- * closes at a computed one, so the same state fed the same `now` always yields
- * the same answer -- which is what lets `tick` be idempotent, lets a match
- * survive being read by two servers, and lets the whole thing be tested
- * without faking timers. Everything derived (which question is open, how long
- * is left, whether the match is over) is computed from those instants rather
- * than stored beside them, so there is no second copy to fall out of step.
+ * The state is timestamps rather than timers because nothing here runs on a
+ * clock of its own. A question opens at an instant and closes at a computed
+ * one, so the same state fed the same `now` always yields the same answer,
+ * which is what lets `tick` be idempotent, lets a match survive being read
+ * by two servers, and lets the whole thing be tested without faking timers.
+ * Everything derived (which question is open, how long is left, whether the
+ * match is over) is computed from those instants rather than stored beside
+ * them, so there is no second copy to fall out of step.
  */
 
 /* --------------------------------------------------------------- constants */
@@ -43,7 +42,7 @@ import { TRIVIA_QUESTIONS, type TriviaQuestion } from "./trivia-questions";
  * Questions per match.
  *
  * Odd, so a match decided purely on how many each player got right always has
- * a decider -- with an even count the most common good match is a tie, and a
+ * a decider. With an even count the most common good match is a tie, and a
  * tie refunds both stakes, which reads as "nothing happened" after seven
  * questions of tension.
  */
@@ -56,7 +55,8 @@ export const TRIVIA_QUESTION_MS = 12_000;
  * The pause after a question closes, before the next one opens.
  *
  * The only moment the answer may be disclosed, and the only moment either
- * player learns what the other picked. Short: it is a beat, not a scoreboard.
+ * player learns what the other picked. Short, because it is a beat, not a
+ * scoreboard.
  */
 export const TRIVIA_REVEAL_MS = 2_500;
 
@@ -64,12 +64,12 @@ export const TRIVIA_REVEAL_MS = 2_500;
  * What a correct answer is worth before speed, and the most speed can add.
  *
  * The ratio is the whole scoring design, not a taste call. Seven questions
- * times a 140-point speed bonus is 980, which is less than one correct answer
- * -- so a player who knows one more answer than their opponent CANNOT be
- * overtaken on speed alone, however fast the other one taps. Speed decides
- * between two players who know the same number, which is what the lobby copy
- * promises ("most right answers takes the pot") and what a race should feel
- * like. Raising TRIVIA_SPEED_BONUS above TRIVIA_CORRECT_POINTS /
+ * times a 140-point speed bonus is 980, which is less than one correct
+ * answer, so a player who knows one more answer than their opponent cannot
+ * be overtaken on speed alone, however fast the other one taps. Speed
+ * decides between two players who know the same number, which is what the
+ * lobby copy promises ("most right answers takes the pot") and what a race
+ * should feel like. Raising TRIVIA_SPEED_BONUS above TRIVIA_CORRECT_POINTS /
  * TRIVIA_QUESTION_COUNT breaks that guarantee silently; a test pins it.
  */
 export const TRIVIA_CORRECT_POINTS = 1000;
@@ -97,7 +97,7 @@ export interface TriviaAnswerRecord {
 /**
  * Everything the match is.
  *
- * JSON-serializable throughout -- plain arrays, numbers, strings and null. It
+ * JSON-serializable throughout: plain arrays, numbers, strings and null. It
  * round-trips through a jsonb column and through structuredClone, so a Map, a
  * Set or an `undefined` here would come back as something else, or not at all.
  */
@@ -134,7 +134,7 @@ export interface TriviaMove {
 /**
  * The open question as a viewer may see it.
  *
- * `answerIndex` is OPTIONAL and is genuinely absent while the question is
+ * `answerIndex` is optional and is genuinely absent while the question is
  * live. See the header for why absent rather than null.
  */
 export interface TriviaQuestionView {
@@ -180,25 +180,12 @@ export interface TriviaSnapshot {
 
 /* ------------------------------------------------------------------- rng */
 
-/**
- * mulberry32 -- a tiny, well-behaved 32-bit PRNG.
- *
- * The whole reason `createState` takes a seed. Math.random() would make a
- * match impossible to reproduce in a test and, worse, would put the question
- * order outside anything the server can vouch for. Not cryptographic and does
- * not need to be: the server draws the seed from node:crypto and never sends
- * it, so a client has nothing to run this on.
- */
-function mulberry32(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// mulberry32 (imported from lib/seeded-random) is the whole reason
+// `createState` takes a seed. Math.random() would make a match impossible to
+// reproduce in a test and, worse, would put the question order outside
+// anything the server can vouch for. Not cryptographic and does not need to
+// be: the server draws the seed from node:crypto and never sends it, so a
+// client has nothing to run this on.
 
 /** Fisher-Yates over a copy, drawing from `random`. */
 function shuffled<T>(items: readonly T[], random: () => number): T[] {
@@ -226,7 +213,7 @@ const BY_ID = new Map(TRIVIA_QUESTIONS.map((question) => [question.id, question]
  * Null rather than a throw, for the reason `duelGame` returns null for a
  * retired game: a live match holding an id that has since been edited out is a
  * real state somebody has staked Gold on, and it must render and settle rather
- * than 500. A missing question is unanswerable for BOTH players, so it costs
+ * than 500. A missing question is unanswerable for both players, so it costs
  * neither of them anything relative to the other.
  */
 function questionAt(state: TriviaState, index: number): TriviaQuestion | null {
@@ -267,8 +254,8 @@ export function triviaPhase(state: TriviaState): TriviaPhase {
  * would bump the stored version on every poll from both players and livelock
  * the optimistic concurrency guard against itself.
  *
- * It loops because a poll can arrive long after several deadlines have passed
- * -- both players closing the tab for a minute must not leave the match parked
+ * It loops because a poll can arrive long after several deadlines have passed:
+ * both players closing the tab for a minute must not leave the match parked
  * on question two. Deadlines are computed from the state's own instants, never
  * from `now`, so catching up thirty seconds late produces exactly the state a
  * caller who had ticked on time would hold.
@@ -372,7 +359,7 @@ export const TRIVIA_DUEL = defineDuelGame<TriviaState, unknown, TriviaSnapshot>(
     );
 
     // Both in? The question closes now rather than burning the rest of its
-    // window -- nobody is left to answer, and waiting out a dead clock is the
+    // window: nobody is left to answer, and waiting out a dead clock is the
     // slowest part of every quiz game ever built.
     const bothAnswered = nextRow.length === 2 && nextRow.every((entry) => entry !== null);
 
@@ -399,7 +386,7 @@ export const TRIVIA_DUEL = defineDuelGame<TriviaState, unknown, TriviaSnapshot>(
     const first = state.scores[0] ?? 0;
     const second = state.scores[1] ?? 0;
     // A scoreline, which is the contract's own example of an acceptable
-    // reason -- winner first, so the card reads the same way round as the
+    // reason. Winner first, so the card reads the same way round as the
     // "You win" above it.
     if (first === second) return { winner: null, reason: `${first} - ${second}` };
     const winner: DuelSeat = first > second ? 0 : 1;
@@ -425,12 +412,12 @@ export const TRIVIA_DUEL = defineDuelGame<TriviaState, unknown, TriviaSnapshot>(
       const answer = row[index] ?? null;
       const view: TriviaSeatView = {
         score: current.scores[index] ?? 0,
-        // Public for both seats on purpose: it says THAT they answered, never
-        // what, and the lamp lighting up across the table is the tension.
+        // Public for both seats: it says that they answered, never what, and
+        // the lamp lighting up across the table is the tension.
         answered: answer !== null,
       };
       // The viewer's own answer is theirs to see immediately. The other seat's
-      // waits for the reveal -- and a spectator (`seat === null`) matches
+      // waits for the reveal, and a spectator (`seat === null`) matches
       // neither branch, so an unknown viewer is the most restricted, not the
       // least.
       if (answer && (revealing || index === seat)) {
@@ -469,8 +456,8 @@ export const TRIVIA_DUEL = defineDuelGame<TriviaState, unknown, TriviaSnapshot>(
       remainingMs,
       phaseMs: phase === "done" ? 0 : revealing ? TRIVIA_REVEAL_MS : TRIVIA_QUESTION_MS,
       seats,
-      // Only questions already played out. The open one is deliberately not
-      // here, or the reveal would have leaked a question early.
+      // Only questions already played out. The open one is not here, or the
+      // reveal would have leaked a question early.
       history: current.answers
         .slice(0, current.index)
         .map((entry) => [entry[0]?.correct ?? false, entry[1]?.correct ?? false]),

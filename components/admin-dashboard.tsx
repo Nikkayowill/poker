@@ -3,6 +3,7 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { AdminProfileSummary } from "@/lib/server/profile-store";
+import { useClipboardCopy } from "@/components/use-clipboard-copy";
 
 interface TableStats {
   publicTables: number;
@@ -67,7 +68,7 @@ export function AdminDashboard() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [query, setQuery] = useState("");
   const [accountFilter, setAccountFilter] = useState<"all" | "registered" | "guest">("all");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const { copiedValue: copiedId, copy: copyId } = useClipboardCopy(1500);
 
   const lock = async () => {
     await fetch("/api/admin/session", { method: "DELETE" }).catch(() => null);
@@ -245,16 +246,6 @@ export function AdminDashboard() {
     }
   };
 
-  const copyId = async (id: string) => {
-    try {
-      await navigator.clipboard.writeText(id);
-      setCopiedId(id);
-      window.setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 1500);
-    } catch {
-      // Clipboard access can be denied by browser policy; the id is still visible to copy by hand.
-    }
-  };
-
   const stats = useMemo(() => {
     if (!profiles) return null;
     const now = new Date();
@@ -271,7 +262,7 @@ export function AdminDashboard() {
   }, [profiles]);
 
   // Admin-only signal for spotting multiple accounts played from the same
-  // address (collusion/chip dumping) -- purely a client-side grouping over
+  // address (collusion/chip dumping): purely a client-side grouping over
   // data already fetched, no separate detection service.
   const ipCounts = useMemo(() => {
     const counts = new Map<string, number>();

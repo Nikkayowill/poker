@@ -22,19 +22,19 @@ export const runtime = "nodejs";
  * which is what stops a request naming an engine that is not offered. A fifth
  * duel is a registry entry and a page, not another route.
  *
- * GET answers "where do I stand" in one call -- the live match if there is
- * one, the open challenges if there is not -- because the lobby renders both
- * at once and two fetches would let it show a challenge list to somebody who
- * is already mid-game.
+ * GET answers "where do I stand" in one call: the live match if there is one,
+ * the open challenges if there is not. The lobby renders both at once, and two
+ * fetches would let it show a challenge list to somebody who is already
+ * mid-game.
  *
- * POST opens a challenge, which DEBITS the caller. The stake is escrowed until
+ * POST opens a challenge, which debits the caller. The stake is escrowed until
  * somebody accepts, the challenger cancels, or it expires; see the ordering
  * rules in lib/server/pvp-match-service.ts.
  */
 
 const openSchema = z.object({
   stake: z.number().int().min(MIN_DUEL_STAKE),
-  /** Null/absent is an open challenge -- anyone may take it. */
+  /** Null/absent is an open challenge, which anyone may take. */
   opponentId: z.string().uuid().nullish(),
 });
 
@@ -66,8 +66,9 @@ export async function GET(
       NextResponse.json({
         match: match.match,
         challenges: challenges.challenges,
-        // The wallet from the match read: both calls return one, and taking
-        // the later-resolving one would be a coin toss over which is fresher.
+        // The wallet comes from the match read: both calls return one, and
+        // taking the later-resolving one would be a coin toss over which is
+        // fresher.
         profile: match.profile,
       }),
       token,
@@ -82,7 +83,7 @@ export async function POST(
   context: { params: Promise<{ game: string }> },
 ) {
   // Every accepted call here escrows Gold, so this is tight: a scripted loop
-  // would lock a wallet up in offers rather than merely making noise.
+  // would lock a wallet up in offers rather than just making noise.
   const limited = enforceRateLimit(request, "pvp:challenge", 30, 60 * 1000);
   if (limited) return limited;
 

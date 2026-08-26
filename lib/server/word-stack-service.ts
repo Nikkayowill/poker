@@ -30,45 +30,39 @@ import { awardWager } from "./progression-store";
 /**
  * Everything between a Word Stack request and the board.
  *
- * The rule that always applied still does, restated rather than weakened:
+ * The answer never leaves this file. The word is read from a `server-only`
+ * list, put straight into the stored round, and every path out to the
+ * browser goes through toWordStackSnapshot, which nulls it until the round
+ * is over. That's less about defending against a determined attacker than
+ * against the first thing a curious player does, which is open the network
+ * tab. A daily puzzle that can be read out of a response isn't a puzzle,
+ * and the damage isn't measurable in Gold the way a mispriced casino table's
+ * would be: the share grid stops meaning anything, for everyone, which is
+ * the only thing the feature is for.
  *
- *   **The answer never leaves this file.**
+ * One board per player per UTC day, enforced by the store's unique index
+ * rather than by a check here (see daily-puzzle-store.ts for why finishing
+ * must block a new attempt just as firmly as playing does). A wager does
+ * not relax this, and that's deliberate: Word Stack keeps its once-a-day
+ * limit no matter how it's played, unlike Sudoku/Memory Match, which lost
+ * their daily gate entirely. A wager just attaches to that one attempt
+ * instead of unlocking a second, separately-repeatable game.
  *
- * The word is read from a `server-only` list, put straight into the stored
- * round, and every path out to the browser goes through toWordStackSnapshot,
- * which nulls it until the round is over. That is not defence in depth against
- * a determined attacker -- it is defence against the first thing a curious
- * player does, which is open the network tab. A daily puzzle that can be read
- * out of a response is not a puzzle, and unlike a mispriced casino table the
- * damage is not measurable in Gold: it is that the share grid stops meaning
- * anything, for everyone, which is the only thing the feature is for.
- *
- * The second rule is the day. One board per player per UTC day, enforced by
- * the store's unique index rather than by a check here -- see
- * daily-puzzle-store.ts for why finishing must block a new attempt just as
- * firmly as playing does. **A wager does not relax this** -- Kayo's explicit
- * call (2026-08-21) was that Word Stack keeps its once-a-day limit no matter
- * how it is played, unlike Sudoku/Memory Match which lost their daily gate
- * entirely the same day. A wager just attaches to that one attempt instead of
- * unlocking a second, separately-repeatable game.
- *
- * ## Money now moves here, and the ordering rules apply
- *
- * A wager is optional -- the player picks it before opening today's board, 0
- * meaning the free daily play this game has always been. When wagered:
+ * Money moves here too, and the same ordering rules apply. A wager is
+ * optional: the player picks it before opening today's board, 0 meaning
+ * the free daily play this game has always been. When wagered:
  *
  *   1. The wager leaves the wallet before the board's row exists
  *      (startWordStackPuzzle below); a row that fails to persist refunds it.
  *   2. A payout is credited only after the version-guarded settle write
- *      (advancePuzzleRound) is confirmed -- a lost race must never pay.
+ *      (advancePuzzleRound) is confirmed; a lost race must never pay.
  *   3. Settlement is a single credit, never a second debit: a win pays
- *      wager * multiplier (anteUpWordStackPayout), a loss pays nothing because
- *      the wager is already spent.
+ *      wager * multiplier (anteUpWordStackPayout), a loss pays nothing
+ *      because the wager is already spent.
  *
- * **A wager replaces the free path's daily completion bonus, it does not stack
- * with it** -- Kayo's explicit call. Free play still earns creditDailyBonus
- * exactly as it always has; a wagered attempt earns the wager's own payout
- * instead.
+ * A wager replaces the free path's daily completion bonus rather than
+ * stacking with it. Free play still earns creditDailyBonus exactly as it
+ * always has; a wagered attempt earns the wager's own payout instead.
  */
 
 export const WORD_STACK_GAME = "word-stack";
@@ -107,7 +101,7 @@ function today(now = new Date()) {
   return { day, number: puzzleNumber(day), msUntilNext: msUntilNextPuzzle(now) };
 }
 
-/** The base redacted snapshot, no wager/payout -- what error payloads carry. */
+/** The base redacted snapshot, no wager/payout: what error payloads carry. */
 function snapshot(stored: StoredWordStack): WordStackSnapshot {
   return toWordStackSnapshot(stored.round, {
     day: stored.day,
@@ -155,12 +149,12 @@ export async function readWordStackPuzzle(token: string): Promise<WordStackView>
  * Opens today's board at a wager (0 for the free play this has always been),
  * or hands back the one already in progress.
  *
- * A refresh, a second tab or a back-button is a resume, not a new board --
- * and here that is stricter than the casino games' version of the same rule:
+ * A refresh, a second tab or a back-button is a resume, not a new board,
+ * and here that's stricter than the casino games' version of the same rule:
  * a finished attempt resumes too. The player gets their completed grid back,
- * not a fresh word. Replaying a word you have already been shown would make
- * the share grid a lie. **The wager chosen on a resume is ignored** -- the
- * one that opened the row is the one that is live; a second open cannot
+ * not a fresh word, since replaying a word they've already been shown would
+ * make the share grid a lie. The wager chosen on a resume is ignored: the
+ * one that opened the row is the one that's live, and a second open can't
  * change what is already staked.
  *
  * Rule 1 of the money-ordering rules restated at the top of this file: the
@@ -187,7 +181,7 @@ export async function startWordStackPuzzle(
     );
   }
 
-  // Rule 1: the wager leaves first. Null is "cannot afford", not an error --
+  // Rule 1: the wager leaves first. Null is "cannot afford", not an error;
   // spendGoldByProfile is the authority.
   const debited = wagerInput > 0 ? await spendGoldByProfile(profile.id, wagerInput) : profile;
   if (!debited) {
@@ -195,7 +189,7 @@ export async function startWordStackPuzzle(
   }
 
   // The answer is chosen here and nowhere else. pickDaily walks the pool, so
-  // every player asking on the same UTC day gets the same word -- which is the
+  // every player asking on the same UTC day gets the same word, which is the
   // entire premise of a shareable result. Every player's wager is their own;
   // the word itself never depends on it.
   const round: StoredWordStackRound = {
@@ -223,8 +217,8 @@ export async function startWordStackPuzzle(
     throw error;
   }
 
-  // Only a real wager earns XP -- nothing was risked on a free attempt, same
-  // reasoning ante-up-service.ts's openAnteUpAttempt gives.
+  // Only a real wager earns XP; nothing was risked on a free attempt, the
+  // same reasoning ante-up-service.ts's openAnteUpAttempt gives.
   if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, new Date()).catch(() => null);
 
   return { ...view(stored, profile, clock), resumed: false };
@@ -234,7 +228,7 @@ export async function startWordStackPuzzle(
  * Plays one guess.
  *
  * `day` and `version` are both required and both checked. The day catches a
- * board that rolled over while the player was staring at it -- at 00:00 UTC
+ * board that rolled over while the player was staring at it: at 00:00 UTC
  * their tab is holding yesterday's puzzle, and applying a guess to today's
  * word would burn a guess on a board they have not seen. The version pins the
  * guess to the exact state they were looking at, so a double-fired submit
@@ -274,7 +268,7 @@ export async function playWordStackGuess(
   }
 
   // The dictionary check is here rather than in the engine because the word
-  // list is server-only -- shipping it to the browser would hand over the
+  // list is server-only; shipping it to the browser would hand over the
   // shape of every future answer. A non-word is ordinary play, not a fault:
   // it costs no guess and the board is returned untouched.
   if (!isAllowedWordStackGuess(input.guess)) {
@@ -297,18 +291,18 @@ export async function playWordStackGuess(
     });
   }
 
-  // Win or lose, the attempt is finished -- "complete one brain game" is
-  // about playing, not winning. Awaited: the route responds with this
-  // function's own return value, so a fire-and-forget call here could be
-  // dropped by a frozen serverless invocation right after the response goes
-  // out. applyMissionEvent never throws, so this only costs latency.
+  // Win or lose, the attempt is finished; "complete one brain game" is about
+  // playing, not winning. Awaited: the route responds with this function's
+  // own return value, so a fire-and-forget call here could be dropped by a
+  // frozen serverless invocation right after the response goes out.
+  // applyMissionEvent never throws, so this only costs latency.
   if (complete) await applyMissionEvent(profile.id, { kind: "puzzle_completed" });
   if (complete) await applyAchievementEvent(profile.id, { kind: "puzzle_completed" });
 
-  // A wager REPLACES the daily completion bonus, it does not stack with it --
-  // Kayo's explicit call. Rule 2/3: a win credits wager * multiplier only
-  // after the settle write above is confirmed; a loss credits nothing, the
-  // wager already having left the wallet when the board was opened.
+  // A wager replaces the daily completion bonus rather than stacking with
+  // it. Rule 2/3: a win credits wager * multiplier only after the settle
+  // write above is confirmed; a loss credits nothing, since the wager
+  // already left the wallet when the board was opened.
   if (complete && current.round.wager > 0) {
     const payout = anteUpWordStackPayout({ wager: current.round.wager, word: next });
     if (payout > 0) {
@@ -317,9 +311,9 @@ export async function playWordStackGuess(
       });
     }
   } else if (complete) {
-    // The per-game daily bonus -- replaces the retired flat "daily_brain_game"
-    // mission, see lib/server/daily-puzzle-bonus.ts. Pays even on a loss, at
-    // the floor multiplier. Only the FREE path earns this.
+    // The per-game daily bonus, replacing the retired flat "daily_brain_game"
+    // mission (see lib/server/daily-puzzle-bonus.ts). Pays even on a loss, at
+    // the floor multiplier. Only the free path earns this.
     await creditDailyBonus(profile.id, wordStackDailyBonusMultiplier(next));
   }
 

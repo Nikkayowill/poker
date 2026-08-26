@@ -1,5 +1,6 @@
 import "server-only";
 import {
+  cosmetics,
   cosmeticById,
   isFreeCosmetic,
   isPurchasable,
@@ -23,9 +24,7 @@ globalThis.__riverRoomCosmetics = memoryOwned;
  * table only ever holds things that were actually earned or bought.
  */
 export async function listOwnedCosmetics(profileId: string): Promise<string[]> {
-  const free = (await import("@/lib/cosmetics/catalog")).cosmetics
-    .filter(isFreeCosmetic)
-    .map((item) => item.id);
+  const free = cosmetics.filter(isFreeCosmetic).map((item) => item.id);
 
   const supabase = adminClient();
   if (!supabase) {

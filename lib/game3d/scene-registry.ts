@@ -4,20 +4,20 @@
  *
  * `window.__stackchipsScene` has to answer for chips that no React state
  * holds: `chip-instanced-layer.tsx` writes InstancedMesh matrices straight
- * from a per-frame `write()` pass, deliberately, because pushing sixty
- * matrix updates a second through the reconciler is the thing that file
- * exists to avoid. Those positions are therefore real, on screen, and
- * invisible to every ordinary React path a seam component could read.
+ * from a per-frame `write()` pass, because pushing sixty matrix updates a
+ * second through the reconciler is what that file exists to avoid. Those
+ * positions are real, on screen, and invisible to every ordinary React path
+ * a seam component could read.
  *
  * So the writer publishes here and the seam reads here. Module scope rather
- * than a context for two reasons: the writer is inside a `useFrame` callback
- * where a context read would be a re-render per frame, and exactly one room
- * is ever mounted -- the renderer is chosen by a single ternary in
- * `poker-table.tsx`, so there is no second scene to collide with.
+ * than a context, for two reasons: the writer is inside a `useFrame`
+ * callback where a context read would be a re-render per frame, and exactly
+ * one room is ever mounted (the renderer is chosen by a single ternary in
+ * `poker-table.tsx`), so there is no second scene to collide with.
  *
- * Everything is stored in WORLD space. Projection belongs to the seam, which
- * is the only piece that has a camera; keeping it out of here is what lets
- * this module be plain data with no three.js import, and so reachable by
+ * Everything is stored in world space. Projection belongs to the seam,
+ * which is the only piece with a camera; keeping it out of here is what
+ * lets this module be plain data with no three.js import, reachable by
  * `npm test`.
  */
 
@@ -32,14 +32,13 @@ export interface SceneRegistrySnapshot {
   lastFunnel: readonly number[];
   /**
    * Whether the room still has animation to show, and therefore whether the
-   * demand loop is being kept awake.
+   * demand loop stays awake.
    *
-   * This is pending work, not recent paint -- the same thing the Canvas-2D
+   * This is pending work, not recent paint, the same thing the Canvas-2D
    * room's scheduler flag means. See the note at the foot of
-   * ./scene-projection.ts for the run that ruled out the frame-recency
-   * version: under software rendering the room drew twice a second, and
-   * every recency window narrow enough to prove a loop had settled reported
-   * a visibly animating room as asleep.
+   * ./scene-projection.ts: under software rendering the room drew twice a
+   * second, so a frame-recency check narrow enough to prove a loop had
+   * settled reported a visibly animating room as asleep.
    */
   animating: boolean;
 }
@@ -85,9 +84,9 @@ export function readSceneRegistry(): SceneRegistrySnapshot {
  *
  * The seam calls this on unmount. Without it a torn-down room leaves its
  * last frame's chips readable through a `window` object that outlives it,
- * and a test that raced the teardown would assert against a room that is no
- * longer on screen -- which fails in the one direction that wastes the most
- * time, by passing.
+ * and a test that raced the teardown would assert against a room no longer
+ * on screen. That fails in the one direction that wastes the most time: by
+ * passing.
  */
 export function resetSceneRegistry(): void {
   state = EMPTY;

@@ -18,17 +18,16 @@ import { gameOnSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "./use-arcade-sound";
 
 /**
- * Small counts as words, because both call sites are sentences.
+ * Small counts as words, because both call sites are sentences: "10 more
+ * ways in." reads as a spec line, "Ten more ways in." reads as a person
+ * saying it. Capped at twelve, falling back to digits above that; the
+ * catalogue is ten games, so this never needs a real number-to-words
+ * library. The words are capitalised here (both call sites start a
+ * sentence) rather than via a text-transform that would shout the whole
+ * line to fix one word.
  *
- * "10 more ways in." reads as a spec line; "Ten more ways in." reads as a
- * person saying it. Only up to twelve, falling back to digits above that
- * rather than growing a number-to-words library -- the catalogue is ten games
- * and the copy reading this is two sentences long. Both entries start their
- * sentence, so the words are capitalised here rather than by a
- * text-transform, which would have had to shout a whole line to fix one word.
- *
- * Index 0 is "No", so an empty catalogue reads "No more ways in." -- which is
- * at least a sentence, rather than the "0 more ways in." a bare number gives.
+ * Index 0 is "No", so an empty catalogue reads "No more ways in." instead
+ * of the "0 more ways in." a bare number would give.
  */
 const WORDS = [
   "No", "One", "Two", "Three", "Four", "Five",
@@ -41,35 +40,35 @@ function spell(count: number): string {
 /**
  * The arcade floor: every game that is not Hold'em, on its own route.
  *
- * This is the page the hub tile used to try to be. Ten rows of name + stake +
- * button do not belong in a grid cell, and the six games below the fold were
- * reachable only by scrolling inside a card on a page that also scrolled.
+ * This is the page the hub tile used to try to be. Ten rows of name, stake
+ * and button don't belong in a grid cell, and the six games below the fold
+ * used to be reachable only by scrolling inside a card on a page that also
+ * scrolled.
  *
- * Two sections, not one list, and the split is the point rather than a
- * grouping convenience: the free dailies and the Gold rounds are different
- * propositions. A daily costs nothing, is the same board for everybody, and
- * expires -- so it gets a card with room for its blurb and a button that is
- * never gated. A staked round costs real Gold from the same wallet as the
- * tables -- so it gets a dense row that states its price next to its name,
- * because the price is the decision. Rendering both the same way would be
- * tidier and would hide the only thing a player needs to tell them apart.
+ * Two sections rather than one list, because the free dailies and the Gold
+ * rounds are different propositions. A daily costs nothing, is the same
+ * board for everybody, and expires, so it gets a card with room for its
+ * blurb and a button that's never gated. A staked round costs real Gold
+ * from the same wallet as the tables, so it gets a dense row that states
+ * its price next to its name, since the price is the decision a player is
+ * actually making. Rendering both the same way would hide the one thing
+ * that tells them apart.
  *
- * The wallet is fetched here rather than passed in: this route does not mount
- * PokerApp, so there is no profile in scope -- the same reason each arcade
- * machine fetches its own.
+ * The wallet is fetched here rather than passed in, since this route
+ * doesn't mount PokerApp and has no profile in scope, same as each arcade
+ * machine fetching its own.
  *
- * EMBEDDED. The phone lobby renders this same component as one of its swipe
- * panes (components/lobby/mobile-shell.tsx) rather than reimplementing the
- * floor, so two props exist for that case and only that case:
- *   - `profile` hands it the wallet PokerApp already holds. Without it the pane
- *     would keep a second copy that a buy-in or a claim never updates, and the
- *     two would visibly disagree.
- *   - `embedded` drops the page furniture: the `<main>` (it would nest inside
- *     PokerApp's) and the `.floor-bar` header, whose "← The floor" link would
- *     navigate away from the shell the player is already standing in and whose
- *     wallet readout duplicates the real one in the header above it.
- * Both default to the route's behaviour, so `app/(lobby)/games/page.tsx` is
- * unchanged.
+ * Two props exist only because the phone lobby renders this same component
+ * as one of its swipe panes (components/lobby/mobile-shell.tsx) instead of
+ * reimplementing the floor:
+ *   - `profile` hands it the wallet PokerApp already holds. Without it the
+ *     pane would keep a second copy that a buy-in or a claim never updates.
+ *   - `embedded` drops the page furniture: the `<main>` (it would nest
+ *     inside PokerApp's) and the `.floor-bar` header, whose "← The floor"
+ *     link would navigate away from the shell the player is already
+ *     standing in, and whose wallet readout duplicates the one above it.
+ * Both default to the route's normal behaviour, so
+ * `app/(lobby)/games/page.tsx` is unchanged.
  */
 export function ArcadeFloor({
   profile: suppliedProfile,
@@ -78,18 +77,17 @@ export function ArcadeFloor({
   profile?: PlayerProfile | null;
   embedded?: boolean;
 } = {}) {
-  // Load-bearing, not decorative: this is what applies the player's stored
-  // mute on a route where PokerApp is not mounted. The module-level flag it
-  // sets is global, which is what lets the cards below call tapSound and
-  // gameOnSound directly instead of threading a play() callback through three
-  // components. Delete it and the whole floor goes loud for a muted player.
-  // See lib/audio/ui-sounds.ts.
+  // Applies the player's stored mute on a route where PokerApp isn't
+  // mounted. The module-level flag it sets is global, which is what lets
+  // the cards below call tapSound and gameOnSound directly instead of
+  // threading a play() callback through three components. Remove it and
+  // the whole floor goes loud for a muted player. See lib/audio/ui-sounds.ts.
   useArcadeSound();
   const [fetchedProfile, setFetchedProfile] = useState<PlayerProfile | null>(null);
   const [fetched, setFetched] = useState(false);
   const mounted = useRef(true);
-  // A supplied wallet is already loaded by definition -- PokerApp does not hand
-  // one down until it has one.
+  // PokerApp only hands down a profile once it has one, so a supplied
+  // wallet is already loaded.
   const supplied = suppliedProfile !== undefined;
   const profile = supplied ? suppliedProfile : fetchedProfile;
   const loaded = supplied ? true : fetched;
@@ -133,11 +131,11 @@ export function ArcadeFloor({
       <header className="floor-bar">
         <Link className="floor-back" href="/" onClick={tapSound}>← The floor</Link>
         {/* .gold-balance is the navbar badge's own coin+amount layout
-            (03-profile.css), reused rather than restated -- the number a player
-            checks before picking a stake should look the same everywhere it
-            appears. An em dash until the fetch lands: an unloaded wallet is
-            empty, which is correct for gating and must not be *worded* as a
-            verdict before it is known. */}
+            (03-profile.css), reused rather than restated: the number a
+            player checks before picking a stake should look the same
+            everywhere it appears. An em dash shows until the fetch lands,
+            since an unloaded wallet is empty (correct for gating) and
+            shouldn't be worded as a verdict before it's known. */}
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
           <strong>
@@ -149,11 +147,11 @@ export function ArcadeFloor({
 
       <div className="floor-head">
         <div className="lobby-kicker">Ante Up</div>
-        {/* Both numbers are counted off the catalogue, never written down --
-            the same rule lib/arcade/games.ts states about prices and blurbs,
-            which has been broken there three times. Spelled as words because
-            these are sentences: "10 more ways in." reads as a spec line and
-            "Ten more ways in." reads as a person saying it. */}
+        {/* Both numbers are counted off the catalogue, never hardcoded,
+            the same rule lib/arcade/games.ts states about prices and blurbs
+            and has broken before. Spelled as words because these are
+            sentences: "10 more ways in." reads as a spec line, "Ten more
+            ways in." reads as a person saying it. */}
         <h1>{spell(duels.length + wagers.length + staked.length)} more ways in.</h1>
         <p>
           Every Ante Up game starts free — wager Gold from the same wallet as the
@@ -175,13 +173,13 @@ export function ArcadeFloor({
       {duels.length > 0 && (
         <section className="floor-section" aria-labelledby="floor-duels">
           {/* Its own section, above the house games, because a duel is a
-              different proposition again: the Gold goes to the other
-              PLAYER(S), not to the house, and nobody is playing against fixed
-              odds. That is the whole reason these exist, so it gets said in
-              the header rather than left for the player to infer from a
-              blurb. Worded for "however many are seated" rather than "both"
-              since Cribbage joined this section as a 3-4 player table, not a
-              1v1 -- see its own catalog entry. */}
+              different proposition: the Gold goes to the other player(s),
+              not the house, and nobody is playing against fixed odds.
+              That's worth saying in the header rather than leaving the
+              player to infer it from a blurb. Worded for "however many are
+              seated" rather than "both" since Cribbage joined this section
+              as a 3-4 player table, not a 1v1 (see its own catalog
+              entry). */}
           <h2 className="floor-section-head" id="floor-duels">Player vs. player</h2>
           <p className="floor-section-note">
             Everyone seated antes in. Winner takes the pot — the house takes nothing.
@@ -196,13 +194,13 @@ export function ArcadeFloor({
 
       {wagers.length > 0 && (
         <section className="floor-section" aria-labelledby="floor-wagers">
-          {/* Also its own section, for the mirror-image reason the duels get
-              one: here the Gold you stake goes to YOU if you beat the
-              challenge, or nowhere at all if you don't -- there is no house
-              edge and no opponent, only your own performance. Every row here
-              is a brain game -- see lib/arcade/games.ts's own note for the
-              two sub-shapes ("keeps a daily puzzle" vs. "no daily gate at
-              all") this one line has to cover for both. */}
+          {/* Its own section too, for the mirror-image reason the duels get
+              one: the Gold you stake here goes to you if you beat the
+              challenge, or nowhere if you don't. No house edge, no
+              opponent, only your own performance. Every row is a brain
+              game; see lib/arcade/games.ts's own note on the two sub-shapes
+              ("keeps a daily puzzle" vs. "no daily gate at all") this one
+              line covers. */}
           <h2 className="floor-section-head" id="floor-wagers">Ante up</h2>
           <p className="floor-section-note">
             Choose a wager, or play free — miss it and the wager is gone, but there&apos;s never a cost to trying.
@@ -230,8 +228,8 @@ export function ArcadeFloor({
 }
 
 /**
- * A free daily. Never gated, so it is always a link -- a puzzle that costs
- * nothing has no state in which its button should be dead.
+ * A free daily. Never gated, so it's always a link: a puzzle that costs
+ * nothing has no state where its button should be dead.
  */
 function FreeCard({ game }: { game: ArcadeGame }) {
   return (
@@ -245,17 +243,16 @@ function FreeCard({ game }: { game: ArcadeGame }) {
 
 /**
  * A duel or a solo skill wager. Card-shaped like a daily rather than
- * row-shaped like a house game, because the decision here is "who/what do I
- * want to play", not "what does it cost" -- the stake is picked inside, on
- * the challenge or the wager step, the same way a table buy-in is.
+ * row-shaped like a house game, because the decision here is "who/what do
+ * I want to play", not "what does it cost". The stake is picked inside, on
+ * the challenge or wager step, the same way a table buy-in is.
  *
- * `stakeLabel` carries the one difference between the two callers: a duel's
- * catalogue entryCost is a floor across up to eight stakes ("from 1,000
- * Gold"), never the price -- quoting one number for a game that offers eight
- * is the same class of lie as the placeholder prices lib/arcade/games.ts's
- * header records getting wrong three times. A wager's `arcadeEntryLabel`
- * already returns a full phrase ("Free to play") for this kind, so it is
- * passed as-is rather than wrapped in "from … Gold".
+ * `stakeLabel` carries the one difference between the two callers: a
+ * duel's catalogue entryCost is a floor across up to eight stakes ("from
+ * 1,000 Gold"), never the price, since quoting one number for a game that
+ * offers eight would misstate it. A wager's `arcadeEntryLabel` already
+ * returns a full phrase ("Free to play") for this kind, so it's passed
+ * through as-is rather than wrapped in "from … Gold".
  */
 function GameCard({ game, wallet, stakeLabel }: { game: ArcadeGame; wallet: ArcadeWallet; stakeLabel: string }) {
   const blocked = arcadeBlockedReason(game, wallet);
@@ -289,10 +286,10 @@ function StakedRow({ game, wallet }: { game: ArcadeGame; wallet: ArcadeWallet })
         <small>{game.blurb}</small>
       </span>
       <span className="floor-row-stake">{arcadeEntryLabel(game)}</span>
-      {/* A playable row is a link, not a button with an onClick -- it
-          navigates, so it should middle-click and open in a new tab like every
-          other route. The blocked states stay buttons: there is nowhere to
-          go. */}
+      {/* A playable row is a link, not a button with an onClick, since it
+          navigates and should middle-click and open in a new tab like
+          every other route. The blocked states stay buttons: there's
+          nowhere to go. */}
       {blocked === null && game.href ? (
         <Link className="floor-play" href={game.href} onClick={gameOnSound}>{arcadeActionLabel(game, wallet)}</Link>
       ) : (

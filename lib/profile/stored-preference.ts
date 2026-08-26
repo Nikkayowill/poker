@@ -1,12 +1,12 @@
 /**
- * Reading and writing the small client-side preferences -- sound, menu music,
+ * Reading and writing the small client-side preferences: sound, menu music,
  * chip animation style.
  *
- * This is pure and takes its storage as an argument, which is the whole point:
- * the logic used to live inline in three near-identical `useEffect`s inside
+ * This is pure and takes its storage as an argument, which is the whole point.
+ * The logic used to live inline in three near-identical `useEffect`s inside
  * components/poker-app.tsx, and `vitest.config.ts` only collects `lib/` and
  * `app/`, so none of it was reachable by `npm test`. That mattered, because one
- * of those blocks encodes a real incident -- see `readStoredPreference` below.
+ * of those blocks encodes a real incident; see `readStoredPreference` below.
  *
  * The hook that drives React from these lives at
  * components/use-stored-preference.ts. Nothing here touches `window`.
@@ -36,7 +36,7 @@ export function parseEnabledFlag(raw: string | null): boolean {
  * `legacyKey` exists because of a specific bug worth not repeating. The
  * StackChips rename (f7a7cbb) moved `river-room:sound-enabled` to
  * `stackchips:sound-enabled` without carrying the value over. Combined with the
- * default above -- on unless exactly "false" -- that silently un-muted every
+ * default above (on unless exactly "false"), that silently un-muted every
  * player who had muted the app, with nothing on screen to explain it. A rename
  * of a persisted key is a data migration, not a find-and-replace.
  *
@@ -46,7 +46,7 @@ export function parseEnabledFlag(raw: string | null): boolean {
  * gets whatever `parse` makes of `null`.
  *
  * `storage` is nullable so a server render, or a browser refusing storage
- * access, is an ordinary case rather than a thrown exception -- both fall
+ * access, is an ordinary case rather than a thrown exception. Both fall
  * through to the parsed default.
  */
 export function readStoredPreference<T>(

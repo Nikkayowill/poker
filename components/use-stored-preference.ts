@@ -14,26 +14,25 @@ import {
  * sound, menu music and chip animation style. They agreed on a subtle idiom
  * that is easy to get wrong when copying, so it is stated here once.
  *
- * THE DEFERRED SET
- *
- * The stored value is applied to the *module* synchronously and to React state
- * a tick later, via a `setTimeout(..., 0)`. That asymmetry is deliberate. The
+ * The stored value is applied to the *module* synchronously and to React
+ * state a tick later, via a `setTimeout(..., 0)`. That asymmetry matters: the
  * server renders the default, so setting React state during the first commit
  * would swap the markup underneath a hydration that is still in progress;
- * deferring by a tick puts the change in a later commit where it is an ordinary
- * update. The module-level side effect has no such constraint and must not
- * wait -- muting has to take hold before the first sound can play, not after.
+ * deferring by a tick puts the change in a later commit where it is an
+ * ordinary update. The module-level side effect has no such constraint and
+ * must not wait, since muting has to take hold before the first sound can
+ * play, not after.
  *
  * `apply` is where `setSoundEnabled` / `setMenuMusicEnabled` hang. It runs for
  * the restored value on mount and for every change afterwards, and it is told
- * which of the two it is -- because some side effects only make sense for a
- * deliberate change. Enabling sound plays a click to confirm it; doing that for
+ * which of the two it is, because some side effects only make sense for a
+ * real change. Enabling sound plays a click to confirm it; doing that for
  * the restored value would mean the app greeted every page load with a noise
  * nobody asked for.
  *
- * On a change, `apply` runs inside the state updater and before the write, so a
- * handler can rely on the module being in the new state by the time `apply`
- * returns -- which is what lets the sound preference play its click through the
+ * On a change, `apply` runs inside the state updater and before the write, so
+ * a handler can rely on the module being in the new state by the time `apply`
+ * returns. That's what lets the sound preference play its click through the
  * channel it has just unmuted.
  */
 export type PreferenceChangeCause = "restore" | "change";
@@ -54,21 +53,21 @@ export function useStoredPreference<T>(options: {
    * Has the stored value landed in React state yet?
    *
    * A third tuple member rather than a new options field, so the three
-   * existing call sites that destructure `[value, set]` are untouched --
+   * existing call sites that destructure `[value, set]` are untouched:
    * array destructuring ignores a trailing element.
    *
-   * It exists because THE DEFERRED SET ABOVE IS OBSERVABLE. Between the first
-   * commit and the tick that restores the stored value, `value` is the
+   * It exists because the deferred set above is observable. Between the
+   * first commit and the tick that restores the stored value, `value` is the
    * fallback, and a caller cannot tell "the player chose the default" from
-   * "the choice has not arrived". For a mute that gap is invisible -- the
-   * module was already muted synchronously, and nothing renders differently.
-   * For a preference that decides which of two renderers to MOUNT it is a
-   * whole subtree built, painted and thrown away: a player who picked the
-   * classic table gets the 3D room for a frame first, because
+   * "the choice has not arrived". For a mute that gap is invisible, since the
+   * module was already muted synchronously and nothing renders differently.
+   * For a preference that decides which of two renderers to mount, though,
+   * it's a whole subtree built, painted and thrown away: a player who picked
+   * the classic table gets the 3D room for a frame first, because
    * DEFAULT_TABLE_RENDERER is `webgl_3d`.
    *
-   * True on the server and in the same first commit is exactly wrong, so it
-   * starts false; a consumer that does not care simply never reads it.
+   * True on the server and in the same first commit would be exactly wrong,
+   * so it starts false; a consumer that does not care simply never reads it.
    */
   const [settled, setSettled] = useState(false);
 

@@ -7,26 +7,23 @@
  * `lib/game/seat-presence.ts` do: `vitest.config.ts`'s `include` only collects
  * `lib/` and `app/`, so nothing under `components/` is reachable by
  * `npm test`. The retirement rule below is exactly the kind of thing that must
- * be testable -- an onboarding strip that fails to retire is a permanent
- * banner on the home screen of a game somebody has been playing for a month.
+ * be testable: an onboarding strip that fails to retire is a permanent banner
+ * on the home screen of a game somebody has been playing for a month.
  *
- * WHY ONE STRIP AND NOT A TOUR
- *
- * The hub answers "pick your game" for a returning player and "what is this?"
- * for a new one, and those want opposite amounts of chrome. A modal tour
- * blocks the first group to serve the second. A numbered strip at the top of
- * the scroll is skippable by scrolling, costs one row, and -- because it
- * retires itself -- is not a permanent tax on the ninety-nine percent of
- * sessions that are not somebody's first.
- *
- * WHY EACH STEP GOES SOMEWHERE REAL
+ * One strip rather than a tour, because the hub answers "pick your game" for
+ * a returning player and "what is this?" for a new one, and those want
+ * opposite amounts of chrome. A modal tour blocks the first group to serve
+ * the second. A numbered strip at the top of the scroll is skippable by
+ * scrolling, costs one row, and, because it retires itself, is not a
+ * permanent tax on the ninety-nine percent of sessions that are not
+ * somebody's first.
  *
  * Every step's primary action navigates or opens something the player could
  * have found on their own. None of them are "next" for its own sake, and none
- * describe a feature the app does not have -- the same rule
- * `lib/arcade/games.ts` states about hub blurbs, which has been broken three
- * times there. A step whose action is a no-op is worse than no step: it
- * teaches that the guidance is decoration.
+ * describe a feature the app does not have, the same rule `lib/arcade/games.ts`
+ * states about hub blurbs, which has been broken three times there. A step
+ * whose action is a no-op is worse than no step: it teaches that the guidance
+ * is decoration.
  */
 
 import { ARCADE_GAMES } from "@/lib/arcade/games";
@@ -38,7 +35,7 @@ import { ARCADE_GAMES } from "@/lib/arcade/games";
  * true until Blackjack shipped and then quietly became a lie. Onboarding copy
  * is the worst possible place for that failure: a strip that opens by
  * miscounting the free games is the first sentence a new player reads. This
- * imports pure data -- `lib/arcade/games.ts` has no server dependencies, which
+ * imports pure data; `lib/arcade/games.ts` has no server dependencies, which
  * is why the panel can read it too.
  */
 export const FREE_DAILY_COUNT = ARCADE_GAMES.filter(
@@ -47,7 +44,7 @@ export const FREE_DAILY_COUNT = ARCADE_GAMES.filter(
 
 /** What a step's primary button does. The component maps these to handlers. */
 export type FirstRunAction =
-  /** Open the buy-in modal for a Hold'em seat -- the same control the hero tile drives. */
+  /** Open the buy-in modal for a Hold'em seat: the same control the hero tile drives. */
   | { kind: "seat" }
   /** Navigate somewhere in the app. */
   | { kind: "link"; href: string };
@@ -60,13 +57,13 @@ export interface FirstRunStep {
   /** The primary button's label. A verb, in the player's voice. */
   actionLabel: string;
   action: FirstRunAction;
-  /** The secondary button's label -- always the way onward, never a dead "dismiss". */
+  /** The secondary button's label: always the way onward, never a dead "dismiss". */
   nextLabel: string;
 }
 
 /**
  * Three steps, in the order a new player's questions actually arrive: where do
- * I play, what else is there, and what does it cost. Three and not five --
+ * I play, what else is there, and what does it cost. Three and not five, since
  * past about three a numbered strip stops reading as orientation and starts
  * reading as a form to complete.
  */
@@ -102,7 +99,7 @@ export const FIRST_RUN_STEPS: readonly FirstRunStep[] = [
  * which is right for a mute and wrong for this: the safe default there is *on*,
  * and the safe default here is "not yet retired". Storing the retirement as a
  * present/absent key rather than a true/false value means a corrupted or
- * truncated value reads as "still learning" -- which shows a strip to somebody
+ * truncated value reads as "still learning", which shows a strip to somebody
  * who did not need it, rather than hiding it from somebody who did.
  */
 export const FIRST_RUN_STORAGE_KEY = "stackchips:first-run-done";
@@ -113,17 +110,18 @@ export const FIRST_RUN_DONE = "done";
 /**
  * Has the strip retired?
  *
- * One signal, and it is deliberately not two. The strip retires when the flag
- * is present, and exactly two things write it:
+ * One signal, not two. The strip retires when the flag is present, and
+ * exactly two things write it:
  *
  * 1. The player reached the end of the strip. They read it; they are done.
- * 2. THE PLAYER REACHED A TABLE. This is the one that carries the feature.
- *    Somebody who ignores the strip entirely and taps the Texas Hold'em tile
- *    has answered "what do I do?" more convincingly than finishing three steps
- *    ever could, and a strip still explaining how to sit down to a player who
- *    is sitting down is the exact failure mode onboarding is mocked for. The
- *    write happens in components/poker-app.tsx the moment a table snapshot
- *    exists -- it cannot happen in the component, which by then is unmounted.
+ * 2. The player reached a table. This is the one that actually carries the
+ *    feature: somebody who ignores the strip entirely and taps the Texas
+ *    Hold'em tile has answered "what do I do?" more convincingly than
+ *    finishing three steps ever could, and a strip still explaining how to
+ *    sit down to a player who is sitting down is the exact failure mode
+ *    onboarding is mocked for. The write happens in components/poker-app.tsx
+ *    the moment a table snapshot exists; it cannot happen in the component,
+ *    which by then is unmounted.
  *
  * Routing both through the stored flag rather than giving the component a
  * second `seated` prop is what makes the retirement survive a reload, a second

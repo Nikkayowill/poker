@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(HISTORY_PAGE_SIZE),
-  // An opaque keyset cursor produced by the store -- bounded here, and
+  // An opaque keyset cursor produced by the store, bounded here and
   // parsed (or rejected) there. See its decodeCursor.
   cursor: z.string().max(200).nullable().default(null),
 });
@@ -16,10 +16,10 @@ const querySchema = z.object({
 /**
  * The caller's own recent hands, newest first.
  *
- * Registered accounts only. A guest's hands are still archived -- they may
- * link an account later and it would be strange for their history to start
- * the day they signed up -- but reviewing history is durable, cross-session
- * progress, which this app only promises to a real account.
+ * Registered accounts only. A guest's hands are still archived, since they
+ * may link an account later and it would be strange for their history to
+ * start the day they signed up, but reviewing history is durable,
+ * cross-session progress, which this app only promises to a real account.
  */
 export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request, "history:list", 60, 60 * 1000);

@@ -13,16 +13,16 @@ import type { CribbageBoardProps } from "./cribbage-shell";
  * Purely presentational, same split as every other duel board: everything on
  * screen comes out of `state` (the server's redacted, per-viewer snapshot),
  * and a click only ever emits an intent through `onMove`. There is no
- * separate "counting" UI to build -- lib/cribbage/engine.ts's header explains
- * why counting has no player decisions in it at all; `lastHandSummary` is
- * simply the reveal of what already happened, rendered here as a panel
- * rather than acted on.
+ * separate "counting" UI to build; lib/cribbage/engine.ts's header explains
+ * why counting has no player decisions in it at all. `lastHandSummary` is
+ * just the reveal of what already happened, rendered here as a panel rather
+ * than acted on.
  *
  * Card art is components/table/playing-card.tsx's, the same component the
- * poker table uses -- cribbage keeps its own {rank:1-13, suit:"S"|"H"|"D"|"C"}
+ * poker table uses. Cribbage keeps its own {rank:1-13, suit:"S"|"H"|"D"|"C"}
  * shape in the engine (rank arithmetic is most of what scoring.ts does), so
- * `toDisplayCard` is a purely cosmetic adapter to the table's own card type,
- * never touched by game logic.
+ * `toDisplayCard` is a cosmetic adapter to the table's own card type, never
+ * touched by game logic.
  */
 
 const SUITS: Record<CribCard["suit"], PokerCard["suit"]> = {

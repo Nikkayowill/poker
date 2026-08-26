@@ -12,8 +12,8 @@ const COUNT_UP_MS = 450;
  * Eases a balance from its previous value to its next one instead of
  * snapping, so a payout or a purchase reads as something happening rather
  * than a number that was simply replaced. Deterministic given (from, to,
- * duration) -- a plain rAF tween, not randomness -- consistent with this
- * app's rule against presentation code that can't be reasoned about.
+ * duration): a plain rAF tween, not randomness, consistent with this app's
+ * rule against presentation code that can't be reasoned about.
  *
  * Skips the tween (jumps straight to the target) for an unlimited profile,
  * which never has a real balance to animate toward, and under
@@ -33,7 +33,7 @@ function useCountUp(target: number, skip: boolean): number {
 
   // React's own pattern for "adjust state when a prop changes": decided
   // during render, not synced from an effect. Whether to snap or animate is
-  // known immediately -- there is nothing here that needs to wait a tick.
+  // known immediately; nothing here needs to wait a tick.
   if (target !== state.target) {
     const from = state.displayed;
     const reduceMotion =
@@ -48,7 +48,7 @@ function useCountUp(target: number, skip: boolean): number {
   }
 
   // Runs the rAF tween. Every setState call in here happens inside the
-  // `tick` callback, not synchronously in the effect body -- the effect
+  // `tick` callback, not synchronously in the effect body; the effect
   // itself only decides whether a tween was requested and, if so, starts
   // and tears down the frame loop for it.
   useEffect(() => {
@@ -58,7 +58,7 @@ function useCountUp(target: number, skip: boolean): number {
     const start = performance.now();
     const tick = (now: number) => {
       const elapsed = Math.min(1, (now - start) / COUNT_UP_MS);
-      // ease-out cubic -- fast start, settles into the landing value rather
+      // ease-out cubic: fast start, settles into the landing value rather
       // than arriving at a constant rate and stopping abruptly.
       const eased = 1 - (1 - elapsed) ** 3;
       const done = elapsed >= 1;
@@ -83,15 +83,15 @@ function useCountUp(target: number, skip: boolean): number {
  *
  * It used to carry the daily-claim button beside the balance, which meant the
  * header's right-hand side was a number, a yellow button reading "Claim daily
- * Gold" / "Claimed today" / "Save to claim", and an avatar. Two of those three
- * labels were a control that could not do anything -- "Save to claim" in
- * particular was a disabled button whose entire job was to advertise a signup,
- * next to a player menu that already offers "Save progress" in words.
+ * Gold" / "Claimed today" / "Save to claim", and an avatar. Two of those
+ * three labels were a control that couldn't do anything: "Save to claim" in
+ * particular was a disabled button whose entire job was to advertise a
+ * signup, next to a player menu that already offers "Save progress" in words.
  *
- * The claim moved into that menu (see components/poker-app.tsx), where it is a
+ * The claim moved into that menu (see components/poker-app.tsx), where it's a
  * labelled row rather than a permanent fixture, and what stays here is a dot:
  * the balance is the thing worth reading at a glance, and a dot is enough to
- * say there is more of it waiting.
+ * say there's more of it waiting.
  */
 export function GoldBadge({
   profile,
@@ -107,7 +107,7 @@ export function GoldBadge({
   const displayedBalance = useCountUp(profile.goldBalance ?? 0, profile.unlimitedGold);
 
   // An unlimited profile is never charged and never credited, so a running
-  // total would be a number that never means anything.
+  // total would be a number that doesn't mean anything.
   const balance = profile.unlimitedGold
     ? <strong title="This profile plays for free">Unlimited</strong>
     : <strong>{displayedBalance.toLocaleString()}</strong>;

@@ -2,8 +2,8 @@
    lib/game/reaction-channel.ts. Client state: lib/game/use-table-reactions.ts.
    Picker UI: components/table/table-reactions.tsx. The bubble itself renders
    inside the seat (components/table/player-seat.tsx), reusing --seat-out-x/-y
-   and --seat-width the same way .table-bet and .winner-badge already do
-   (08-seat.css) instead of a second measured overlay.
+   and --seat-width the same way .table-bet already does (08-seat.css)
+   instead of a second measured overlay.
 
    Last in the cascade before 99-scene.css, so nothing here has to fight the
    seat/responsive sheets for the properties it touches. */
@@ -215,13 +215,12 @@
    THE BUBBLE BESIDE A SEAT
    ------------------------------------------------------------------------ */
 
-/* Anchored above the figure like .winner-badge (08-seat.css) -- that spot is
-   already proven clear of the nameplate and cards at every seat and
-   breakpoint -- with extra headroom (-30px/.34 against its -16px/.26) so the
-   two don't collide if a reaction lands right as a hand resolves. The
-   outward nudge along --seat-out-x is what keeps a bubble from always
-   sitting dead centre above the avatar: that vector already points a
-   different way at each of the six ring positions, so this is "the nearest
+/* Anchored above the figure, clear of the nameplate and cards at every seat
+   and breakpoint, with generous headroom (-30px/.34 of --seat-width) so it
+   never collides with the revealed winning hand if a reaction lands right as
+   a hand resolves. The outward nudge along --seat-out-x is what keeps a bubble
+   from always sitting dead centre above the avatar: that vector already
+   points a different way at each of the six ring positions, so this is "the nearest
    clear felt for this seat" without a per-seat special case. It's 0 for the
    near/local seat, which is also right -- pushing outward there would aim
    straight at the hole cards and action bar. */

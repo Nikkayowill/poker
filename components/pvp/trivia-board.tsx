@@ -11,7 +11,7 @@ import type { TriviaSnapshot } from "@/lib/pvp/trivia";
  * `import type` and nothing else from lib/pvp/trivia: that module imports the
  * question bank, which is `server-only`, so a value import here would ship the
  * answer key to the browser and fail the build on the way. The type import is
- * erased by the compiler and costs nothing at runtime -- see the header of
+ * erased by the compiler and costs nothing at runtime; see the header of
  * lib/pvp/trivia-questions.ts.
  *
  * Everything on screen is drawn from the snapshot the server built for this
@@ -24,14 +24,14 @@ import type { TriviaSnapshot } from "@/lib/pvp/trivia";
  *
  * The snapshot only refreshes on the shell's two-second poll, so a countdown
  * driven from it would tick in two-second lurches; and pushing a 60 Hz
- * animation through React state would re-render the whole board -- which is
- * the exact stutter components/table/use-fuse.ts was written to remove. So the
- * bar is a CSS animation given its remaining time as a custom property, and
- * the digit is written straight into one span through a ref.
+ * animation through React state would re-render the whole board, the exact
+ * stutter components/table/use-fuse.ts was written to remove. So the bar is
+ * a CSS animation given its remaining time as a custom property, and the
+ * digit is written straight into one span through a ref.
  *
- * `remainingMs` is a duration rather than a deadline on purpose: the server's
- * clock and the player's are not the same clock, and a phone that is four
- * minutes fast would otherwise show every question as already over.
+ * `remainingMs` is a duration rather than a deadline: the server's clock and
+ * the player's are not the same clock, and a phone that's four minutes fast
+ * would otherwise show every question as already over.
  */
 function useQuestionClock(phaseKey: string, remainingMs: number, phaseMs: number) {
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -54,8 +54,8 @@ function useQuestionClock(phaseKey: string, remainingMs: number, phaseMs: number
     if (bar) {
       bar.style.setProperty("--trivia-remaining", `${left}ms`);
       // Where the bar starts. A board that mounts halfway through a question
-      // -- a reload, a reconnect -- picks the sweep up part way rather than
-      // promising a full window it does not have.
+      // (a reload, a reconnect) picks the sweep up part way rather than
+      // promising a full window it doesn't have.
       bar.style.setProperty("--trivia-from", String(span > 0 ? left / span : 0));
     }
 
@@ -133,8 +133,8 @@ export function TriviaBoard({ state, yourSeat, busy, onMove }: DuelBoardProps<Tr
       </div>
 
       {/* Keyed on the phase so the element is replaced when the question
-          changes, which is what restarts the CSS sweep -- a property change
-          alone does not. */}
+          changes, which restarts the CSS sweep; a property change alone
+          doesn't. */}
       <div className="trivia-clock" key={phaseKey}>
         <div
           className={clsx("trivia-clock-bar", revealing && "trivia-clock-bar-reveal")}
@@ -187,7 +187,7 @@ export function TriviaBoard({ state, yourSeat, busy, onMove }: DuelBoardProps<Tr
 
       <div className="trivia-status">
         {/* Whether they have answered is published by the engine and leaks
-            nothing about what they picked -- it is the tension. */}
+            nothing about what they picked; that's the tension. */}
         <span className={clsx("trivia-lamp", them?.answered && "trivia-lamp-on")}>
           <i aria-hidden="true" />
           {done ? "Match over" : them?.answered ? "They have answered" : "They are still reading"}

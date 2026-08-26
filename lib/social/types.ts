@@ -17,11 +17,11 @@ import type { HeadToHeadRecord } from "@/lib/server/head-to-head-store";
 /**
  * A friend as the client sees one.
  *
- * Deliberately not PlayerProfile. That type carries goldBalance,
- * unlimitedGold and lastDailyClaimAt, which are fine to show an owner about
- * themselves and wrong to show about anyone else. Keeping this shape explicit
- * means adding a field to PlayerProfile can never silently widen what a
- * friend learns about you.
+ * Not PlayerProfile: that type carries goldBalance, unlimitedGold and
+ * lastDailyClaimAt, which are fine to show an owner about themselves and
+ * wrong to show about anyone else. Keeping this shape explicit means adding
+ * a field to PlayerProfile can never silently widen what a friend learns
+ * about you.
  */
 export interface FriendSummary {
   profileId: string;
@@ -36,20 +36,20 @@ export interface FriendSummary {
    * Wins/losses/draws against this friend across every game that has two
    * named players (the duels and cribbage), or null if the two of you have
    * never finished one. Read from head_to_head_records, which is written at
-   * settlement -- so this can lag a match that settled in the last few
+   * settlement, so this can lag a match that settled in the last few
    * seconds by at most one poll, same as everything else in the drawer.
    *
    * The leaderboard's Friends tab shows the same numbers split per game.
-   * Both read the same store on purpose: a drawer badge and a board that
-   * disagreed about one player's record would be worse than either being
-   * slightly stale.
+   * Both read the same store: a drawer badge and a board that disagreed
+   * about one player's record would be worse than either being slightly
+   * stale.
    */
   duelRecord: HeadToHeadRecord | null;
 }
 
 export interface PendingRequest {
   id: string;
-  /** The other party -- the requester on an incoming row, the addressee on an outgoing one. */
+  /** The other party: the requester on an incoming row, the addressee on an outgoing one. */
   profileId: string;
   displayName: string;
   initials: string;
@@ -63,11 +63,11 @@ export interface PendingRequest {
  * Someone you've settled a duel or cribbage result against, who isn't
  * already a friend, a pending request in either direction, or blocked.
  *
- * The shortcut this exists for: a friendship's only entry point used to be
- * "you're both seated at the same table right now," which disappears the
- * moment either of you leaves. This is that same person, findable again
- * after the fact -- `duelRecord` is never null here, unlike FriendSummary's,
- * because membership in this list already means the two of you played.
+ * The shortcut this exists for: a friendship's only entry point was "you're
+ * both seated at the same table right now," which disappears the moment
+ * either of you leaves. This is that same person, findable again after the
+ * fact. `duelRecord` is never null here, unlike FriendSummary's, because
+ * membership in this list already means the two of you played.
  */
 export interface RecentOpponent {
   profileId: string;
@@ -93,15 +93,15 @@ export interface FriendsOverview {
  * other party, plus the row", and nesting one and flattening the other would
  * make the drawer read two shapes for the same idea.
  *
- * There is deliberately no room code here. The invite row carries the private
- * table's code so that accepting can join without either party ever seeing it
- * -- see the column comment in 20260804120000_friends_and_table_invites.sql.
+ * There is no room code here. The invite row carries the private table's
+ * code so that accepting can join without either party ever seeing it (see
+ * the column comment in 20260804120000_friends_and_table_invites.sql).
  * Putting it in this payload would hand every invitee a code they could pass
  * on, which is the one thing the server-side carry exists to prevent.
  */
 export interface PendingTableInvite {
   id: string;
-  /** The other party -- always the inviter, since these are inbound only. */
+  /** The other party: always the inviter, since these are inbound only. */
   profileId: string;
   displayName: string;
   initials: string;

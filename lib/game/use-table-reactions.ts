@@ -27,7 +27,7 @@ let nextReactionKey = 1;
 /**
  * Owns everything about table reactions on the client: the incoming
  * broadcast subscription, per-seat bubble state (each one clears itself
- * after its animation ends), and sending -- including the cooldown, applied
+ * after its animation ends), and sending, including the cooldown, applied
  * locally first so a tap feels instant instead of waiting on a round trip.
  * See app/api/games/[id]/reactions/route.ts for the send side.
  */
@@ -46,7 +46,7 @@ export function useTableReactions(gameId: string | null, mySeatId: string | null
       delete expiryTimers.current[seatId];
       setReactions((current) => {
         // If a newer reaction already replaced this one, its own timer owns
-        // the clear -- don't let this stale timer wipe it out early.
+        // the clear; don't let this stale timer wipe it out early.
         if (current[seatId]?.key !== key) return current;
         const next = { ...current };
         delete next[seatId];
@@ -89,7 +89,7 @@ export function useTableReactions(gameId: string | null, mySeatId: string | null
       cooldownTimer.current = null;
       setOnCooldown(false);
     }, REACTION_COOLDOWN_MS);
-    // Show it immediately rather than waiting on the request -- cosmetic
+    // Show it immediately rather than waiting on the request. It's cosmetic
     // only, so there's nothing to roll back if the send itself fails.
     showReaction(mySeatId, reactionId);
     void fetch(`/api/games/${gameId}/reactions`, {

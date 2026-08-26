@@ -8,11 +8,11 @@
  *
  *  1. **Whether the player is through the entry gate.** `entryComplete` starts
  *     `false`, so the signed-out card painted on every single arrival at `/`
- *     until `GET /api/profile` came back -- a login screen flashed at a player
+ *     until `GET /api/profile` came back: a login screen flashed at a player
  *     who had been playing for an hour, once per navigation.
  *  2. **Whether this account has already been greeted.** `linkedAccountIdRef`
  *     is a ref, so the idempotent safety-net `POST /api/auth/link` re-ran on
- *     every mount and re-announced "Welcome back -- your Gold, profile, and
+ *     every mount and re-announced "Welcome back, your Gold, profile, and
  *     collection are ready." The link itself is harmless and worth keeping;
  *     saying it out loud for the fourth time in a minute is not.
  *
@@ -20,7 +20,7 @@
  * than `localStorage` is the load-bearing choice. This is a *continuity* hint,
  * not a preference: it is only ever allowed to claim something that is still
  * true, and its correctness rests on being scoped to exactly one tab's
- * lifetime -- the same lifetime a guest's session cookie has. Persist any of
+ * lifetime, the same lifetime a guest's session cookie has. Persist any of
  * this to `localStorage` and a browser restart, a cleared cookie or an expired
  * session would leave the app asserting an entry that no longer exists, which
  * silently skips the gate and can mint a *new* guest profile over somebody who
@@ -52,11 +52,11 @@ export const SESSION_GREETED_KEY = "stackchips:session-greeted";
  * A friend invite code clicked while signed out, waiting for a real account
  * to redeem it against.
  *
- * Same sessionStorage-not-localStorage reasoning as the rest of this file,
- * for the same reason: a code left over from a *previous* tab's session
- * would silently friend whoever happens to sign in next on this browser,
- * which is exactly the identity-confusion failure mode this file exists to
- * avoid. clearSessionContinuity drops it on sign-out for the same reason.
+ * Same sessionStorage-not-localStorage reasoning as the rest of this file:
+ * a code left over from a *previous* tab's session would silently friend
+ * whoever happens to sign in next on this browser, which is exactly the
+ * identity-confusion failure mode this file exists to avoid.
+ * clearSessionContinuity drops it on sign-out for the same reason.
  */
 export const PENDING_FRIEND_INVITE_KEY = "stackchips:pending-friend-invite";
 
@@ -74,11 +74,11 @@ export function browserSessionStorage(): PreferenceStorage | null {
  * Narrows unknown JSON to a profile, checking only the fields the hub renders
  * before its own fetch lands.
  *
- * Deliberately a shape check and not a cast. The value comes back from storage
+ * A shape check and not a cast, on purpose: the value comes back from storage
  * a build or two after it was written, so a field that has since been renamed
  * arrives as `undefined` and would render "NaN Gold" or crash `toLocaleString`
  * on the home screen. Anything that fails this is discarded and the app falls
- * back to the ordinary "no cached profile" path, which is always correct --
+ * back to the ordinary "no cached profile" path, which is always correct,
  * just slower by one round trip.
  */
 function isCachedProfile(value: unknown): value is PlayerProfile {
@@ -96,8 +96,8 @@ function isCachedProfile(value: unknown): value is PlayerProfile {
 /**
  * The profile this tab last saw, or null.
  *
- * Null is the ordinary case -- a first visit, a browser refusing storage, a
- * payload written by an older build -- and never an error: every caller's
+ * Null is the ordinary case (a first visit, a browser refusing storage, a
+ * payload written by an older build) and never an error: every caller's
  * fallback is the fetch it was going to make anyway.
  */
 export function readCachedProfile(storage: PreferenceStorage | null): PlayerProfile | null {
@@ -136,12 +136,12 @@ export function writeCachedProfile(
 }
 
 /*
- * THE `useSyncExternalStore` SIDE
+ * The `useSyncExternalStore` side.
  *
- * The cached profile has to reach the first client render *synchronously* --
- * that is the entire point, since a value delivered by an effect arrives one
+ * The cached profile has to reach the first client render *synchronously*,
+ * which is the entire point, since a value delivered by an effect arrives one
  * paint too late and the wrong screen has already flashed. `useStoredPreference`
- * deliberately defers instead, which is right for a mute and wrong here, and
+ * defers instead, which is right for a mute and wrong here, and
  * `first-run-strip.tsx` records the same reasoning for the same trade.
  *
  * Two things `useSyncExternalStore` requires that a bare `readCachedProfile`
@@ -151,8 +151,8 @@ export function writeCachedProfile(
  *    fresh object every call; React compares snapshots by identity and would
  *    re-render forever. `sessionProfileSnapshot` memoizes on the raw *string*,
  *    so the reference only changes when the stored text does.
- *  - **A subscription.** Unlike the first-run flag -- which nothing mutates
- *    once read, so that file can pass a no-op subscribe -- this key is written
+ *  - **A subscription.** Unlike the first-run flag (which nothing mutates
+ *    once read, so that file can pass a no-op subscribe), this key is written
  *    on every profile update and cleared on sign-out. Without a notification a
  *    signed-out tab would keep rendering the departed player's balance from a
  *    snapshot React had no reason to re-read.
@@ -206,7 +206,7 @@ export function serverProfileSnapshot(): PlayerProfile | null {
  * `PokerApp` runs on every mount, which is the repeat the player was seeing.
  *
  * Keyed on the account id rather than a bare boolean so signing out and into a
- * *different* account in the same tab is still announced -- that one is a real
+ * *different* account in the same tab is still announced: that one is a real
  * identity change and staying silent about it would be the opposite bug.
  */
 export function shouldAnnounceAccountLink(
@@ -234,7 +234,7 @@ export function markAccountLinkAnnounced(
   }
 }
 
-/** The pending invite code, or null. Never validated here -- redeeming it is the server's job. */
+/** The pending invite code, or null. Never validated here; redeeming it is the server's job. */
 export function readPendingFriendInvite(storage: PreferenceStorage | null): string | null {
   if (!storage) return null;
   try {
@@ -251,7 +251,7 @@ export function writePendingFriendInvite(storage: PreferenceStorage | null, code
     storage.setItem(PENDING_FRIEND_INVITE_KEY, code);
   } catch {
     // A code that fails to persist just means the drawer's own "enter a
-    // code" field is the fallback -- not worth throwing out of a click.
+    // code" field is the fallback; not worth throwing out of a click.
   }
 }
 

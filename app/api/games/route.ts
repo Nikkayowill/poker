@@ -3,9 +3,10 @@ import { z } from "zod";
 import { createGame, toSnapshot } from "@/lib/game/engine";
 import { CHEAPEST_TIER, clampBuyIn, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { createStoredGame, persistenceMode } from "@/lib/server/game-store";
-import { creditGold, ensureProfile, isBanned, recordSeenIp, spendGold, updateProfile } from "@/lib/server/profile-store";
-import { enforceRateLimit, getClientIp } from "@/lib/server/rate-limit";
-import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
+import { creditGold, spendGold } from "@/lib/server/profile-store";
+import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { withRequestSessionCookie } from "@/lib/server/session";
+import { resolvePlayerForTableEntry } from "@/lib/server/table-entry";
 
 export const runtime = "nodejs";
 
@@ -27,22 +28,10 @@ export async function POST(request: NextRequest) {
     }
     const tier: StakesTier = parsed.data.tier ?? CHEAPEST_TIER;
     const config = TIER_CONFIG[tier];
-    const hostToken = readOrCreateSessionToken(request);
-    let profile = await ensureProfile(hostToken, parsed.data.name);
-    if (parsed.data.name && parsed.data.name !== profile.displayName) {
-      profile = await updateProfile(hostToken, {
-        displayName: parsed.data.name,
-        avatarPreset: profile.avatarPreset,
-        accent: profile.accent,
-      });
-    }
-    if (await isBanned(hostToken)) {
-      return withRequestSessionCookie(request,
-        NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),
-        hostToken,
-      );
-    }
-    void recordSeenIp(hostToken, getClientIp(request)).catch(() => {});
+    const resolved = await resolvePlayerForTableEntry(request, parsed.data.name);
+    if (resolved instanceof NextResponse) return resolved;
+    const { token: hostToken } = resolved;
+    let profile = resolved.profile;
     if (!profile.unlimitedGold && profile.goldBalance < config.minBuyIn) {
       return withRequestSessionCookie(request,
         NextResponse.json(

@@ -32,34 +32,32 @@ import { awardWager } from "./progression-store";
 /**
  * Everything between a cribbage table request and the wallet.
  *
- * ## The ordering rules
- *
- * A table is winner-take-all with NO HOUSE, generalized from pvp-match-
- * service.ts's own rules to N (3-4) payers instead of 2: every seated player
- * antes the same stake, the sole winner takes the whole pot. Gold is
- * conserved across a table -- the sum of every stake in equals the single
- * payout out -- and every rule below exists to keep that true under
- * retries, double-clicks, and several players acting at once.
+ * A table is winner-take-all with no house, generalized from
+ * pvp-match-service.ts's own rules to N (3-4) payers instead of 2: every
+ * seated player antes the same stake and the sole winner takes the whole
+ * pot. Gold is conserved across a table (the sum of every stake in equals
+ * the single payout out), and every rule below exists to keep that true
+ * under retries, double-clicks, and several players acting at once.
  *
  *   1. **A stake leaves a wallet before the seat it pays for exists**, and
- *      anything that fails afterwards refunds it. Opening a table debits the
- *      host before the table row exists; joining debits the joiner before
- *      their seat row exists.
+ *      anything that fails afterwards refunds it. Opening a table debits
+ *      the host before the table row exists; joining debits the joiner
+ *      before their seat row exists.
  *   2. **The pot is credited only after the version-guarded write that
  *      settles the table is confirmed.** advanceCribbageTable returns null
  *      when it loses that race, and null must never pay.
  *   3. **Settlement is a single credit, never a second debit.** Every stake
- *      already left in rule 1; cribbage has no draw, so a win always credits
- *      `stake * seatedCount` to exactly one profile.
- *   4. **A pre-start leave refunds exactly once**, via a status-guarded write
- *      (leave_cribbage_table) that returns the removed seat at most once.
+ *      already left in rule 1; cribbage has no draw, so a win always
+ *      credits `stake * seatedCount` to exactly one profile.
+ *   4. **A pre-start leave refunds exactly once**, via a status-guarded
+ *      write (leave_cribbage_table) that returns the removed seat at most
+ *      once.
  *
- * ## One code path deals a table
- *
- * Whether a table starts because its 4th seat just filled or because its
- * host started it early at 3, both routes through `dealTableIfReady`, which
- * is the only place `dealCribbageTable` is called. See that store function's
- * own header for why two such paths would be a real hazard.
+ * One code path deals a table: whether it starts because the 4th seat just
+ * filled or because the host started it early at 3, both routes go through
+ * `dealTableIfReady`, the only place `dealCribbageTable` is called. See
+ * that store function's own header for why two such paths would be a real
+ * hazard.
  */
 
 export class CribbageRequestError extends ArcadeRequestError<never> {
@@ -160,10 +158,10 @@ async function tableView(
 }
 
 /**
- * Pays a completed table out. Never throws -- the table is already durably
- * settled by the time this runs, so a credit failure here must not turn a
- * finished game into an error response. Logged loudly instead, matching
- * pvp-match-service.ts's payOutMatch.
+ * Pays a completed table out. Never throws, since the table is already
+ * durably settled by the time this runs and a credit failure here must
+ * not turn a finished game into an error response. Logged loudly instead,
+ * matching pvp-match-service.ts's payOutMatch.
  */
 async function payOutTable(table: StoredCribbageTable, seats: CribbageSeatRow[]): Promise<void> {
   if (!table.winnerId) return;
@@ -174,10 +172,10 @@ async function payOutTable(table: StoredCribbageTable, seats: CribbageSeatRow[])
     console.error("cribbage.payout_credit_failed", { tableId: table.id, winnerId: table.winnerId, pot, error });
   }
 
-  // Awaited, not fired-and-forgotten -- a serverless invocation can be frozen
-  // right after this function's caller responds, and an un-awaited call
-  // could simply never run. Neither call throws, so this adds no new
-  // failure mode of its own.
+  // Awaited rather than fired-and-forgotten: a serverless invocation can
+  // be frozen right after this function's caller responds, and an
+  // un-awaited call could simply never run. Neither call throws, so this
+  // adds no new failure mode.
   await applyMissionEvent(table.winnerId, { kind: "cribbage_won" });
   await applyAchievementEvent(table.winnerId, { kind: "cribbage_won" });
   // Every seated player, not just the winner: a leaderboard record needs a
@@ -208,12 +206,12 @@ async function settleIfFinished(
 }
 
 /**
- * Deals the table if -- and only if -- the guard actually allows it right
- * now: the caller is joining and just filled the 4th seat, or the caller is
- * the host starting early with at least 3 seated. Every other join simply
+ * Deals the table only if the guard actually allows it right now: the
+ * caller is joining and just filled the 4th seat, or the caller is the
+ * host starting early with at least 3 seated. Every other join simply
  * returns the table as-is, still waiting.
  *
- * This is the ONE place `dealCribbageTable` is called. See the store's own
+ * This is the one place `dealCribbageTable` is called. See the store's own
  * header for why that matters.
  */
 async function dealTableIfReady(
@@ -226,19 +224,21 @@ async function dealTableIfReady(
   if (seats.length < minSeats) return null;
 
   const state = CRIBBAGE_GAME.createState(randomInt(0, 2 ** 31 - 1), Date.now(), seats.length);
-  // `expectedSeats` is exactly what `state` was built for, not merely "at
-  // least minSeats" -- the guarded write requires an exact match, so a seat
-  // that joins or leaves in the gap between the read above and this call
-  // fails the deal cleanly instead of persisting a state that does not
-  // account for every seated (and already-debited) player. See dealCribbageTable's own header.
+  // `expectedSeats` is exactly what `state` was built for, not "at least
+  // minSeats": the guarded write requires an exact match, so a seat that
+  // joins or leaves in the gap between the read above and this call fails
+  // the deal cleanly instead of persisting a state that doesn't account for
+  // every seated (and already-debited) player. See dealCribbageTable's own
+  // header.
   const dealt = await dealCribbageTable({ tableId, actorId, requireHost, expectedSeats: seats.length, state });
   if (!dealt) return null;
 
   // Every seated player wagered, so every seated player earns XP at the
-  // ordinary rate -- same parity argument pvp-match-service.ts's
+  // ordinary rate, the same parity argument pvp-match-service.ts's
   // acceptDuelChallenge makes. `null` throughout: only the caller who
-  // triggered the deal has a live session token here, and the Gold-crediting
-  // path awardWager takes `token` for is keyed just as well by profile id.
+  // triggered the deal has a live session token here, and the
+  // Gold-crediting path awardWager takes `token` for is keyed just as well
+  // by profile id.
   await Promise.all(seats.map((seat) => awardWager(seat.playerId, null, dealt.stake).catch(() => null)));
 
   return dealt;
@@ -274,7 +274,7 @@ export async function openCribbageTable(
   } catch (error) {
     await creditGoldByProfile(profile.id, stake).catch(() => null);
     // The table row itself may have persisted even though seating the host
-    // in it failed right after -- a host-less, permanently-empty 'waiting'
+    // in it failed right after. A host-less, permanently-empty 'waiting'
     // row would otherwise sit in the open-table list forever, since nobody
     // (including its own "host") is ever actually seated in it to start or
     // leave it. Best-effort: the stake is already refunded either way, so a
@@ -288,7 +288,7 @@ export async function openCribbageTable(
   return { table: await tableView(table, seats, profile.id, Date.now()), profile: debited };
 }
 
-/** Open (waiting) tables, across every stake -- the lobby list. */
+/** Open (waiting) tables, across every stake: the lobby list. */
 export async function listOpenCribbageTables(
   token: string,
 ): Promise<{ tables: CribbageOpenTableView[]; profile: PlayerProfile }> {
@@ -323,10 +323,10 @@ export async function readMyCribbageTable(
   const profile = await ensureProfile(token);
   const table = await getActiveCribbageTableFor(profile.id);
   if (!table) {
-    // No live table -- but it may have just completed without this player's
-    // own request being the one that settled it (someone else's move crossed
-    // 121, or someone else resigned). Same fallback readDuelMatch's own
-    // comment explains, generalized to N seats.
+    // No live table, but it may have just completed without this player's
+    // own request being the one that settled it (someone else's move
+    // crossed 121, or someone else resigned). Same fallback readDuelMatch's
+    // own comment explains, generalized to N seats.
     const recent = await getRecentlyCompletedCribbageTableFor(profile.id);
     if (!recent) return { table: null, profile };
     const recentSeats = await getCribbageSeats(recent.id);
@@ -390,7 +390,7 @@ export async function joinCribbageTable(
   return { table: await tableView(current, seats, profile.id, Date.now()), profile: debited };
 }
 
-/** The host starting the table early, once at least 3 are seated. No new debit -- the host already paid at creation. */
+/** The host starting the table early, once at least 3 are seated. No new debit: the host already paid at creation. */
 export async function startCribbageTableAsHost(
   token: string,
   tableId: string,
@@ -404,7 +404,7 @@ export async function startCribbageTableAsHost(
   // Covers two distinct causes with one honest message: genuinely fewer
   // than 3 seated, or the exact-match deal guard losing a race against a
   // seat that joined or left in the gap between the read above and the
-  // guarded write (see dealCribbageTable's header) -- both are "try again",
+  // guarded write (see dealCribbageTable's header). Both are "try again",
   // not "you did something wrong".
   const dealt = await dealTableIfReady(tableId, profile.id, true, MIN_SEATS_TO_START);
   if (!dealt) throw new CribbageRequestError("Not enough players are seated yet — try again.", 409);
@@ -483,7 +483,7 @@ export async function playCribbageMove(
 }
 
 /**
- * Resigning ends the WHOLE table, not just the resigning seat -- see
+ * Resigning ends the whole table, not just the resigning seat. See
  * lib/cribbage/engine.ts's resignCribbage for why cribbage has no partial
  * "the rest keep playing" continuation.
  */

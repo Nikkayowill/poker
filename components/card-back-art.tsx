@@ -2,14 +2,14 @@ import { cardBackArt, type CardBackArtwork } from "@/lib/cosmetics/catalog";
 
 /**
  * Card-back artwork, drawn rather than shipped as files: the patterns are
- * simple enough that an SVG stays crisper at every size than a PNG would,
- * and the whole set is a few hundred bytes.
+ * simple enough that an SVG stays crisper at every size than a PNG, and the
+ * whole set is a few hundred bytes.
  *
  * Lives here, above both callers, rather than under components/store where it
  * started. The store's preview and the card on the felt have to be the same
- * drawing -- two implementations of "the Brass back" is two things to keep in
- * step, and the one that drifts is the one nobody is looking at, which would
- * mean a player buying a swatch that is not what lands on the table.
+ * drawing, since two implementations of "the Brass back" are two things to
+ * keep in step, and the one that drifts is the one nobody is looking at, so a
+ * player could buy a swatch that isn't what lands on the table.
  */
 export function CardBackArt({ art, className }: { art: CardBackArtwork; className?: string }) {
   const { base, ink, pattern } = art;
@@ -45,8 +45,8 @@ export function CardBackArt({ art, className }: { art: CardBackArtwork; classNam
 }
 
 /**
- * The same drawing, addressed by cosmetic id instead of by artwork -- what
- * every caller on the table actually has, since a seat carries an id.
+ * The same drawing, addressed by cosmetic id instead of by artwork, since
+ * that's what every caller on the table actually has: a seat carries an id.
  */
 export function CardBackFor({ id, className }: { id: string | null | undefined; className?: string }) {
   return <CardBackArt art={cardBackArt(id)} className={className} />;

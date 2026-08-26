@@ -15,8 +15,8 @@ function formatPrice(unitAmount: number, currency: string): string {
 /**
  * Voluntary support: one-time or monthly, any tier, any time. No tier here
  * ever grants Gold, a gameplay advantage, or anything with in-game economic
- * effect -- see lib/legal/documents.ts's support_disclosure, which this
- * panel's copy is written to match exactly, not just gesture at.
+ * effect. See lib/legal/documents.ts's support_disclosure, which this
+ * panel's copy is written to match exactly.
  */
 export function SupportPanel({ gameId }: { gameId?: string }) {
   const [options, setOptions] = useState<ResolvedSupportTier[]>([]);
@@ -111,7 +111,7 @@ export function SupportPanel({ gameId }: { gameId?: string }) {
       const data = await response.json();
       if (!response.ok) {
         // 412 means the accept step above did not actually clear server-side
-        // (a second tab, a stale page) -- send them back through it rather
+        // (a second tab, a stale page). Send them back through it rather
         // than showing a bare error for something they thought they did.
         if (response.status === 412 && data.pendingAcceptances) {
           await load();
@@ -165,7 +165,7 @@ export function SupportPanel({ gameId }: { gameId?: string }) {
           {pendingDocuments.map((doc) => (
             <div className="support-panel-legal-doc" key={doc.slug}>
               <h3>{doc.title}</h3>
-              {/* One line up front, the rest tucked behind a toggle -- see
+              {/* One line up front, the rest tucked behind a toggle; see
                   GoldStore's identical block for why. */}
               <p className="support-panel-legal-summary">{doc.body[0]}</p>
               {doc.body.length > 1 && (

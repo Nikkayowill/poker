@@ -1,15 +1,15 @@
 /**
  * Terms of Service and the other player-facing disclosures, in code rather
- * than the database -- same reasoning as the cosmetics catalog: a new
- * version is a number bump and new body text here, with no migration and no
- * admin CMS. Only *acceptance* (who agreed to which version, when) is
+ * than the database, same reasoning as the cosmetics catalog: a new
+ * version is a number bump and new body text here, with no migration and
+ * no admin CMS. Only *acceptance* (who agreed to which version, when) is
  * dynamic enough to belong in Postgres.
  *
  * The version number is the whole enforcement mechanism. A player's
  * acceptance is recorded against a specific version (see
  * lib/server/legal-store.ts); bump the number here and every existing
  * acceptance stops counting as current, so editing this file is how a real
- * legal change gets re-consented rather than silently grandfathering
+ * legal change gets re-consented instead of silently grandfathering
  * everyone in under old language they never saw.
  */
 
@@ -21,13 +21,14 @@ export type LegalDocumentSlug =
   | "app_disclaimer";
 
 /**
- * Every slug that needs accepting, in prompt order. A caller with no profile
- * yet has accepted none of them, so this doubles as the "nothing accepted"
- * answer -- worth sharing rather than restating the list per call site.
+ * Every slug that needs accepting, in prompt order. A caller with no
+ * profile yet has accepted none of them, so this doubles as the "nothing
+ * accepted" answer, worth sharing rather than restating the list per call
+ * site.
  *
  * gold_disclosure is in this global list rather than gated only on the Buy
- * Gold panel, same as support_disclosure -- a support-only buyer sees one
- * extra checkbox they'll never act on, which costs nothing; scoping
+ * Gold panel, same as support_disclosure: a support-only buyer sees one
+ * extra checkbox they'll never act on, which costs nothing. Scoping
  * pendingAcceptances per-flow would need threading a required-slugs param
  * through every call site for a UX nicety that isn't worth it here.
  */
@@ -42,7 +43,7 @@ export interface LegalDocument {
   slug: LegalDocumentSlug;
   version: number;
   title: string;
-  /** Plain paragraphs, rendered as-is -- no markdown, so there is nothing to sanitize wrong. */
+  /** Plain paragraphs, rendered as-is. No markdown, so there is nothing to sanitize wrong. */
   body: string[];
 }
 
@@ -51,14 +52,14 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
     slug: "terms_of_service",
     // Bumped to 3 to add the dispute-resolution section below (informal
     // resolution first, Nova Scotia governing law/venue, individual-claims
-    // only). Deliberately does NOT include a binding-arbitration clause --
+    // only). It leaves out a binding-arbitration clause on purpose:
     // Canadian courts have struck those down as unconscionable against
     // individual consumers in ways US courts generally do not (Uber
     // Technologies Inc v Heller, 2020 SCC 16), so a boilerplate US-style
     // arbitration clause here would read as enforceable without reliably
     // being so. This section has not been reviewed by Nova Scotia counsel;
-    // treat it as a first draft to take to a real lawyer, not a final
-    // opinion, before leaning on it in an actual dispute.
+    // treat it as a first draft for a real lawyer, not a final opinion,
+    // before leaning on it in an actual dispute.
     version: 3,
     title: "Terms of Service",
     body: [
@@ -74,14 +75,14 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
   },
   privacy_policy: {
     slug: "privacy_policy",
-    // Bumped to 2 when Gold purchases were replaced by voluntary support --
+    // Bumped to 2 when Gold purchases were replaced by voluntary support:
     // the payment-data paragraph below described crediting a Gold balance,
     // which is no longer true and would misdescribe what a support payment
     // does with a player's data.
-    // Bumped to 3 for the push-notification paragraph below (2026-08-24) --
-    // a new category of data (the browser's push subscription endpoint and
-    // keys) that a player creating an account now grants alongside every
-    // sign-up. Nothing else on this version changed.
+    // Bumped to 3 for the push-notification paragraph below: a new category
+    // of data (the browser's push subscription endpoint and keys) that a
+    // player creating an account now grants alongside every sign-up.
+    // Nothing else on this version changed.
     version: 3,
     title: "Privacy Policy",
     body: [
@@ -99,19 +100,19 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
   },
   gold_disclosure: {
     slug: "gold_disclosure",
-    // Reinstated 2026-08-15: Gold-for-money was pulled on 2026-08-13 over
-    // the Big Fish Casino gambling-law fact pattern (real money -> virtual
-    // currency -> spent in a chance-based game; see git history around
-    // support_disclosure below and CLAUDE.md). Kayo made an informed call to
-    // bring it back after that risk was explained -- the litigation theory
-    // is real but has mostly succeeded under Washington State's unusually
-    // broad "thing of value" gambling statute, so the one mitigation applied
-    // is blocking Washington billing addresses at checkout (see
-    // lib/server/stripe.ts's enforceGoldBillingRestriction) rather than
-    // geoblocking everywhere or dropping the feature again. This does not
-    // eliminate the risk elsewhere, which Kayo has explicitly accepted.
-    // Don't silently re-remove this without asking -- it's a deliberate,
-    // informed business decision, not an oversight to "clean up."
+    // Gold-for-money purchases were pulled once and reinstated after Kayo
+    // weighed the risk and accepted it: the Big Fish Casino gambling-law
+    // fact pattern (real money -> virtual currency -> spent in a
+    // chance-based game; see git history around support_disclosure below
+    // and CLAUDE.md). The litigation theory is real but has mostly
+    // succeeded under Washington State's unusually broad "thing of value"
+    // gambling statute, so the mitigation applied is blocking Washington
+    // billing addresses at checkout (see lib/server/stripe.ts's
+    // enforceGoldBillingRestriction) rather than geoblocking everywhere or
+    // dropping the feature again. This does not eliminate the risk
+    // elsewhere, which Kayo has accepted. Don't silently re-remove this
+    // without asking: it's an informed business decision, not an oversight
+    // to clean up.
     version: 1,
     title: "Gold Purchase Disclosure",
     body: [

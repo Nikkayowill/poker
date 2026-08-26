@@ -25,26 +25,24 @@ import { MobileShell } from "./mobile-shell";
 
 /**
  * `--tile-index` for the entrance stagger (see `@keyframes hub-tile-in` in
- * 04-lobby.css) -- one shared helper so the numbers stay in DOM order
- * without being repeated as magic literals at every tile. Not a `.map()`
- * over a list: the tiles are individually authored JSX for their own
- * reasons (see the comments at each one), so the index is assigned by hand
- * in source order instead.
+ * 04-lobby.css): one shared helper so the numbers stay in DOM order without
+ * being repeated as magic literals at every tile. Not a `.map()` over a
+ * list; the tiles are individually authored JSX for their own reasons (see
+ * the comments at each one), so the index is assigned by hand in source
+ * order instead.
  */
 function tileIndexStyle(index: number): CSSProperties {
   return { "--tile-index": index } as CSSProperties;
 }
 
 /*
- * The tap and select cues now live in lib/audio/ui-sounds.ts, which is where
- * the rest of the chrome reaches for them -- this file had the only copy for
- * a while and every other panel either inlined `playSound("ui")` or stayed
- * silent. The reasoning that used to sit here still holds and has moved with
- * them: Lobby is only ever mounted under poker-app.tsx, which keeps
- * sound-effects.ts's enabled flag in sync with the player's mute, so these
- * may call playSound directly rather than reaching for the arcade route's
- * useArcadeSound. Tap-only, never on hover -- a chime on every pointer pass
- * would be noisy and does nothing for touch, which is most of this traffic.
+ * The tap and select cues live in lib/audio/ui-sounds.ts, which is where the
+ * rest of the chrome reaches for them. Lobby is only ever mounted under
+ * poker-app.tsx, which keeps sound-effects.ts's enabled flag in sync with
+ * the player's mute, so these call playSound directly rather than reaching
+ * for the arcade route's useArcadeSound. Tap-only, never on hover: a chime
+ * on every pointer pass would be noisy and does nothing for touch, which is
+ * most of this traffic.
  */
 
 export function Lobby({
@@ -115,15 +113,15 @@ export function Lobby({
   onContinueAccount: () => void;
   onContinueAsGuest: () => void;
   onSignOut: () => void;
-  /** The table-view choice, surfaced in the buy-in modal -- see BuyInModal's
+  /** The table-view choice, surfaced in the buy-in modal. See BuyInModal's
    * own header for why it belongs there and not only in the in-game menu. */
   tableRenderer: TableRenderer;
   webglAvailable: boolean;
   landscape: boolean;
   onTableRendererChange: (renderer: TableRenderer) => void;
-  /* The phone shell's third pane is where these live on a phone. They stay in
-   * the in-game table menu too -- that copy is the one reachable mid-hand,
-   * which is when a player actually reaches for the mute. */
+  /* The phone shell's third pane is where these live on a phone. They stay
+   * in the in-game table menu too, since that copy is the one reachable
+   * mid-hand, which is when a player actually reaches for the mute. */
   soundEnabled: boolean;
   onToggleSound: () => void;
   musicEnabled: boolean;
@@ -146,10 +144,10 @@ export function Lobby({
    * Derived rather than seeded, because seeding is what forced the remount.
    * `useState(profile?.displayName)` only reads the prop once, so the only way
    * to pick up a renamed or newly-arrived profile was for poker-app.tsx to key
-   * this whole component on `profile.updatedAt` -- rebuilding the entire hub
-   * on every gold change to keep one text input honest. Holding the *override*
-   * instead means the default tracks the profile for free, and a name being
-   * typed survives a profile update rather than being wiped by it.
+   * this whole component on `profile.updatedAt`, rebuilding the entire hub on
+   * every gold change just to keep one text input honest. Holding the
+   * *override* instead means the default tracks the profile for free, and a
+   * name being typed survives a profile update rather than being wiped by it.
    */
   const [nameOverride, setNameOverride] = useState<string | null>(null);
   const name = nameOverride ?? profile?.displayName ?? "";
@@ -159,10 +157,10 @@ export function Lobby({
   // this, and the drawer owns its own fetch, so there is no shared state for
   // the parent to hold.
   const [friendsOpen, setFriendsOpen] = useState(false);
-  /* Phone widths get the swipeable shell instead of the hub grid. False through
-   * the server render and hydration, then the real measurement -- see the hook
-   * for why that is the honest default and how 45-mobile-shell.css covers the
-   * gap. Must stay above the early returns below: it is a hook. */
+  /* Phone widths get the swipeable shell instead of the hub grid. False
+   * through the server render and hydration, then the real measurement; see
+   * the hook for why that is the honest default and how 45-mobile-shell.css
+   * covers the gap. Must stay above the early returns below: it is a hook. */
   const phone = usePhoneViewport();
   const submitJoin = (event: FormEvent) => {
     event.preventDefault();
@@ -173,14 +171,14 @@ export function Lobby({
     onJoinCode(name.trim() || "You", joinCode.trim());
   };
   // Below the cheapest buy-in there is no seat in the house they can take,
-  // so offer the recovery grant rather than letting them hit a dead end --
-  // but only while it is actually claimable. This used to key off goldBalance
-  // alone, so a player who topped up and then busted back below the
-  // threshold within claimBackstopGold's cooldown saw the banner reappear
-  // and a "you've already had a top-up recently" error on the very button it
-  // showed them. backstopState knows the cooldown too.
+  // so offer the recovery grant rather than letting them hit a dead end,
+  // but only while it is actually claimable. Keying this off goldBalance
+  // alone let a player who topped up and then busted back below the
+  // threshold, within claimBackstopGold's cooldown, see the banner reappear
+  // with a "you've already had a top-up recently" error on the very button
+  // it showed them; backstopState knows the cooldown too.
   const needsTopUp = backstopState(profile, new Date(), TIER_CONFIG[CHEAPEST_TIER].minBuyIn) === "ready";
-  // Only nudge a guest once they have actually played -- a profile still
+  // Only nudge a guest once they have actually played. A profile still
   // sitting on its untouched starting balance has nothing worth saving yet,
   // and prompting then is asking for a signup with no reason behind it.
   const showSavePrompt = Boolean(
@@ -210,19 +208,13 @@ export function Lobby({
     );
   }
 
-  // Everything below reads a balance, a name or an avatar off the profile, so
-  // there is genuinely nothing to render until one exists.
+  // Everything below reads a balance, a name or an avatar off the profile,
+  // so there is genuinely nothing to render until one exists.
   //
-  // This used to be load-bearing for a second reason -- the hub was keyed on
-  // `profile.updatedAt` where it is rendered, so mounting it a moment early
-  // meant React tore the whole thing down and rebuilt it when the profile
-  // landed, closing the buy-in modal mid-flow. That key is gone (see the note
-  // at the <Lobby> call site), so this is now only what it says it is.
-  //
-  // It is also reached far less often than it used to be: poker-app.tsx carries
-  // this tab's last profile across a remount, so returning from the arcade
-  // paints the hub directly. A first-time visitor waiting on one POST is the
-  // case that still lands here, which is the honest thing to show them.
+  // This is reached rarely: poker-app.tsx carries this tab's last profile
+  // across a remount, so returning from the arcade paints the hub directly.
+  // A first-time visitor waiting on one POST is the case that still lands
+  // here, which is the honest thing to show them.
   if (!profile) {
     return (
       <main className="lobby lobby-hub">
@@ -257,9 +249,9 @@ export function Lobby({
             onClaimBackstop={onClaimBackstop}
             /* Straight to a seat, no modal: every tier is a fixed buy-in
                (minBuyIn === maxBuyIn in lib/game/tiers.ts), so the stake the
-               player picked in the pane already IS the amount, and the modal
-               would only ask it again. Hosting still opens it -- that flow
-               also carries the table name. */
+               player picked in the pane is already the amount, and the modal
+               would only ask it again. Hosting still opens it, since that
+               flow also carries the table name. */
             onQuickPlay={(tier) => onQuickPlay(name.trim() || "You", tier, TIER_CONFIG[tier].minBuyIn)}
             onHostPrivate={() => setBuyInMode("host")}
             onJoinCode={(code) => onJoinCode(name.trim() || "You", code)}
@@ -366,35 +358,32 @@ export function Lobby({
           </div>
         )}
         <InstallPrompt />
-        {/* The same pairing the landing page's sections use: a micro-label at
-            10px/.25em tracking over a large light serif line. The hub used to
-            state itself in a 34-52px serif under a "StackChips · 6-max"
-            kicker, which was close but not the same type, so signing in
-            stepped down a size and changed the label's voice. */}
-        {/* Two lines and nothing else. The player-name field used to sit right
-            here, which made an empty text input the first thing on a screen
-            whose whole job is "pick your game" -- and it was the third control
-            in the app that set the same name. It lives in the buy-in modal
-            now, beside the decision it belongs to; the profile modal's
-            "Display name" is still where it is changed for good. */}
+        {/* The same pairing the landing page's sections use: a micro-label
+            at 10px/.25em tracking over a large light serif line. */}
+        {/* Two lines and nothing else. A player-name field doesn't belong
+            here: it would be an empty text input as the first thing on a
+            screen whose whole job is "pick your game", and it was already
+            the third control in the app setting the same name. It lives in
+            the buy-in modal instead, beside the decision it belongs to; the
+            profile modal's "Display name" is where it's changed for good. */}
         <div className="hub-head">
           <div className="lobby-kicker">{profile.displayName}</div>
           <h1>Pick your game</h1>
           {error && <p className="form-error"><X size={14} /> {error}</p>}
         </div>
 
-        {/* Above the grid, never in it: .hub-grid's spans are arithmetic and a
-            fifth small tile reopens the empty cell the arcade panel was added
-            to close. Both render nothing until they have something to say --
-            the first-run strip once it retires, the rank strip until its fetch
-            lands -- so neither can push the tiles down and then pull them back
-            either. */}
+        {/* Above the grid, never in it: .hub-grid's spans are arithmetic and
+            a fifth small tile reopens the empty cell the arcade panel was
+            added to close. Both render nothing until they have something to
+            say (the first-run strip once it retires, the rank strip until
+            its fetch lands), so neither can push the tiles down and then
+            pull them back either. */}
         <FirstRunStrip profile={profile} onTakeSeat={() => setBuyInMode("join")} />
         <RankStrip />
         <MissionsPanel />
 
-        {/* Tiles carry the real artwork -- the same table plate the game
-            renders and the chip/avatar art from public/ -- rather than a flat
+        {/* Tiles carry the real artwork, the same table plate the game
+            renders and the chip/avatar art from public/, rather than a flat
             card with an icon dropped in it. */}
         <div className="hub-grid">
           {/* Named for the game, not for the verb.
@@ -422,9 +411,9 @@ export function Lobby({
               </small>
             </span>
             {/* No arrow. The hero's felt plate already occupies the right of
-                the tile, and a gold chevron floated over it was one more thing
-                in a corner that is doing work -- the whole tile is the target,
-                which is what the artwork says. */}
+                the tile, and a gold chevron floated over it was one more
+                thing in a corner that is doing work. The whole tile is the
+                target, which is what the artwork says. */}
           </button>
 
           <button

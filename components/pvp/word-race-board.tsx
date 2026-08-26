@@ -14,23 +14,21 @@ import type { WordRaceMove, WordRaceSnapshot } from "@/lib/pvp/word-race";
 /**
  * The Word Race board: the tiles, the clock and the input.
  *
- * Everything on screen comes out of the snapshot, which is the redacted view --
- * this component could not show the answer early if it tried, because the field
- * is not there until the round ends. That is deliberate and worth stating here
- * as well as in the engine: a board that had the word and merely declined to
- * paint it would put the whole game one devtools breakpoint away.
+ * Everything on screen comes out of the snapshot, which is the redacted view.
+ * This component couldn't show the answer early if it tried, because the
+ * field isn't there until the round ends. That's worth stating here as well
+ * as in the engine: a board that had the word and merely declined to paint
+ * it would put the whole game one devtools breakpoint away.
  *
- * ## The clock does not run through React
- *
- * The shell re-reads the match every two seconds, so `round.remainingMs` is a
- * value that arrives fifteen times in a thirty-second round. Animating from it
- * with state would either judder at 2 Hz or cost sixty renders a second of the
- * whole board. Instead the arrival is turned into a deadline once, and from
- * there the browser runs the countdown itself: the bar is a CSS animation given
- * a duration and a negative delay, and the digit is written straight into one
- * element's textContent from a requestAnimationFrame loop. Both are lifted
- * from components/table/use-fuse.ts, which is the house pattern for exactly
- * this and explains the reasoning at length.
+ * The clock doesn't run through React. The shell re-reads the match every
+ * two seconds, so `round.remainingMs` is a value that arrives fifteen times
+ * in a thirty-second round. Animating from it with state would either judder
+ * at 2 Hz or cost sixty renders a second of the whole board. Instead the
+ * arrival is turned into a deadline once, and from there the browser runs
+ * the countdown itself: the bar is a CSS animation given a duration and a
+ * negative delay, and the digit is written straight into one element's
+ * textContent from a requestAnimationFrame loop. Both are lifted from
+ * components/table/use-fuse.ts, the house pattern for exactly this.
  */
 export function WordRaceBoard({
   state,
@@ -51,10 +49,10 @@ export function WordRaceBoard({
   /**
    * Re-syncs the deadline on every poll.
    *
-   * Declared before the animation effect on purpose -- effects run in order, so
-   * a new round's deadline is already stored by the time the effect below reads
-   * it. Later polls land here and nowhere else, which is what keeps the server
-   * the authority on the clock without re-rendering anything.
+   * Declared before the animation effect since effects run in order, so a
+   * new round's deadline is already stored by the time the effect below
+   * reads it. Later polls land here and nowhere else, which keeps the
+   * server the authority on the clock without re-rendering anything.
    */
   useEffect(() => {
     deadlineRef.current = Date.now() + round.remainingMs;
@@ -65,7 +63,7 @@ export function WordRaceBoard({
     const bar = barRef.current;
     if (bar) {
       // Negative elapsed, so a player who joined the match part-way through a
-      // round -- accepting a challenge, reloading -- picks the bar up where it
+      // round (accepting a challenge, reloading) picks the bar up where it
       // actually is rather than restarting it full.
       const elapsed = Math.max(0, Math.min(total, total - (deadlineRef.current - Date.now())));
       bar.style.setProperty("--wr-duration", `${total}ms`);
@@ -80,16 +78,16 @@ export function WordRaceBoard({
         shown = seconds;
         if (digitRef.current) digitRef.current.textContent = String(seconds);
       }
-      // Deliberately keeps running at zero: the next poll may push the deadline
-      // back out (a round that ends, a reveal that opens the next one), and a
-      // loop that stopped would leave the digit stuck on 0 until a re-render.
+      // Keeps running at zero: the next poll may push the deadline back out
+      // (a round that ends, a reveal that opens the next one), and a loop
+      // that stopped would leave the digit stuck on 0 until a re-render.
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [round.number, round.phase, revealing]);
 
-  /** Focus the box the moment a round opens -- this is a speed game. */
+  /** Focus the box the moment a round opens; this is a speed game. */
   useEffect(() => {
     if (revealing) return;
     const input = inputRef.current;
@@ -103,10 +101,10 @@ export function WordRaceBoard({
    *
    * `yourLockoutMs` is only as fresh as the last read, so trusting it alone
    * would leave the box dead for up to two seconds after a 1.5s penalty. A
-   * timer fixes that, and the state it sets is a token rather than a boolean so
-   * nothing has to be reset on the way in -- which is what keeps setState out
-   * of the effect body, where react-hooks/set-state-in-effect rightly rejects
-   * it. The token includes the round, since guess counts restart each round and
+   * timer fixes that, and the state it sets is a token rather than a boolean
+   * so nothing has to be reset on the way in, keeping setState out of the
+   * effect body, where react-hooks/set-state-in-effect rightly rejects it.
+   * The token includes the round, since guess counts restart each round and
    * "one guess into round three" must not inherit round two's expiry.
    */
   const lockToken = `${round.number}:${yourGuesses.length}`;
@@ -241,8 +239,8 @@ export function WordRaceBoard({
         )}
       </div>
 
-      {/* The series so far. Only rounds that have finished appear -- the
-          snapshot has nothing else to draw from, which is the point. */}
+      {/* The series so far. Only rounds that have finished appear, since the
+          snapshot has nothing else to draw from. */}
       <ol className="wr-series" aria-label="Rounds so far">
         {Array.from({ length: totalRounds }, (_, index) => {
           const played = history.find((entry) => entry.number === index + 1);

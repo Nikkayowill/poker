@@ -21,7 +21,7 @@ import type { ConnectionsPuzzle } from "./connections";
  * Levels run 0 (yellow, the category you see immediately) to 3 (purple,
  * usually wordplay or a shared hidden second meaning). That ramp is what makes
  * the shared emoji grid readable as a story rather than a scorecard, so it is
- * worth honouring when adding a set -- a puzzle whose purple is easier than
+ * worth honouring when adding a set: a puzzle whose purple is easier than
  * its yellow produces share text that reads as luck.
  *
  * ## House style
@@ -29,7 +29,7 @@ import type { ConnectionsPuzzle } from "./connections";
  * Tiles are single words where possible and never longer than about ten
  * characters: the board is four across on a phone, and a long tile either
  * shrinks the type until it is unreadable or wraps and breaks the grid.
- * Labels are short for the same reason -- they sit on one solved row.
+ * Labels are short for the same reason: they sit on one solved row.
  *
  * Adding a set is this array and nothing else. dailyIndex (daily.ts) walks the
  * pool, so the cycle length is exactly the number of entries here, and a new

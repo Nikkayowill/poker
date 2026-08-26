@@ -10,17 +10,17 @@ import { tapSound } from "@/lib/audio/ui-sounds";
 /**
  * The hub's arcade tile: what is behind /games, in one row.
  *
- * It used to be the whole catalogue -- ten scrolling rows of name, stake and
- * Play, inside a 2x2 grid cell with a deliberately half-cut fifth row as the
- * only hint that it scrolled. That was the right shape when the arcade was
- * four rows and a promise; at ten live games it is a list competing with the
- * hub's own tiles for the same job, in a box a third their size, with the last
- * six games reachable only by scrolling inside a card on a page that also
+ * It used to be the whole catalogue: ten scrolling rows of name, stake and
+ * Play, inside a 2x2 grid cell with a half-cut fifth row as the only hint
+ * that it scrolled. That was the right shape when the arcade was four rows
+ * and a promise; at ten live games it's a list competing with the hub's own
+ * tiles for the same job, in a box a third their size, with the last six
+ * games reachable only by scrolling inside a card on a page that also
  * scrolls. The catalogue has its own route now (app/(lobby)/games/page.tsx),
  * and this is a door to it.
  *
- * The wallet predicates moved with the list. Nothing here is gated, because
- * nothing here is a purchase -- "See all" always works, and affordability is
+ * The wallet predicates moved with the list. Nothing here is gated, since
+ * nothing here is a purchase: "See all" always works, and affordability is
  * decided per row on the floor itself, which is also the only place it can be
  * shown honestly.
  */
@@ -29,14 +29,14 @@ export function ArcadePanel({
   style,
 }: {
   profile: PlayerProfile | null;
-  /** Carries `--tile-index` from lobby.tsx -- this section shares
+  /** Carries `--tile-index` from lobby.tsx. This section shares
    * `.hub-tile`'s entrance stagger, so it needs the same custom property
    * every other tile sets inline. */
   style?: CSSProperties;
 }) {
   // Counted, not written down. The header used to read "10 games in the
   // works", which was true when none of them were and quietly became a lie
-  // the day Blackjack shipped -- a hub blurb must not misdescribe what is
+  // the day Blackjack shipped. A hub blurb must not misdescribe what's
   // behind it (see lib/arcade/games.ts's own header for the rule this broke
   // once, on a game that has since been deleted).
   const summary = arcadeFloorSummary(ARCADE_GAMES);

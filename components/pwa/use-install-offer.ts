@@ -12,7 +12,7 @@ import { installPlatform, type InstallPlatform } from "@/lib/pwa/platform";
  * (in which case neither should render anything at all), which platform's
  * instructions apply, and whether a replayable `beforeinstallprompt` was
  * captured. The event fires once, on window, at a moment neither component
- * controls -- so both must be listening from mount, and both must agree.
+ * controls, so both must be listening from mount and both must agree.
  */
 
 type BeforeInstallPromptEvent = Event & {
@@ -24,7 +24,7 @@ export interface InstallOffer {
   /** Null until the platform has actually been read, so nothing renders on a
    *  guess during the first paint. */
   platform: InstallPlatform | null;
-  /** True once running from the home screen -- there is nothing left to
+  /** True once running from the home screen: there is nothing left to
    *  offer, and an install banner inside an installed app is a bug. */
   installed: boolean;
   /** Whether a real, pressable install exists right now. */
@@ -47,9 +47,9 @@ export function useInstallOffer(): InstallOffer {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
-    // Deferred a tick rather than set in the effect body -- the same idiom
-    // poker-app.tsx uses for its mount-time localStorage reads, which exists
-    // to avoid the cascading-render lint rule on setState-in-effect.
+    // Deferred a tick rather than set in the effect body, the same idiom
+    // poker-app.tsx uses for its mount-time localStorage reads, to avoid the
+    // cascading-render lint rule on setState-in-effect.
     const timer = window.setTimeout(() => {
       setInstalled(isStandalone());
       setPlatform(installPlatform(window.navigator.userAgent, window.navigator.maxTouchPoints));

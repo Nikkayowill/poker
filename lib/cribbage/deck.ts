@@ -2,13 +2,13 @@
  * The deck and the one seeded RNG that deals every hand of a match.
  *
  * A cribbage match runs an unbounded number of deals (however many it takes
- * to reach 121), unlike Word Race's fixed five rounds -- so the state cannot
- * pre-generate every deal up front the way createState(seed, now) does there.
- * Instead the mulberry32 accumulator itself (`rngState` on CribbageState) is
- * carried in the state and advanced one step at a time, which keeps the same
- * promise the contract makes: nothing here ever calls Math.random(), a match
- * can be replayed from its stored row, and the client is handed no way to
- * predict what is coming.
+ * to reach 121), unlike Word Race's fixed five rounds, so the state can't
+ * pre-generate every deal up front the way createState(seed, now) does
+ * there. Instead the mulberry32 accumulator itself (`rngState` on
+ * CribbageState) is carried in the state and advanced one step at a time,
+ * keeping the same promise the contract makes: nothing here ever calls
+ * Math.random(), a match can be replayed from its stored row, and the
+ * client is handed no way to predict what is coming.
  */
 
 import type { Card, Rank, Suit } from "./types";
@@ -27,8 +27,8 @@ export function standardDeck(): Card[] {
 /**
  * One mulberry32 step: the accumulator in, the next accumulator and a float
  * in [0, 1) out. A local copy rather than a shared util, matching
- * lib/pvp/trivia.ts's own precedent -- there is no shared RNG module in this
- * codebase yet and one PRNG is not worth introducing one for.
+ * lib/pvp/trivia.ts's own precedent: there's no shared RNG module in this
+ * codebase yet, and one PRNG isn't worth introducing one for.
  */
 export function stepRandom(state: number): [number, number] {
   const a = (state + 0x6d2b79f5) >>> 0;

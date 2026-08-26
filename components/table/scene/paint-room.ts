@@ -2,31 +2,31 @@
  * The racetrack room: the table's own body, rail and cloth, from the live
  * camera, plus its contact shadow on a floor this file no longer paints.
  *
- * The classic 2D table is a photograph -- `.poker-rail`'s CSS background art,
+ * The classic 2D table is a photograph: `.poker-rail`'s CSS background art,
  * cut at one fixed perspective (`public/pokertable/`). That works precisely
  * because nothing about it moves. This room's table is drawn from
  * `lib/scene/table-anchors.ts` through whatever camera `fitCamera` solved for
  * the frame it was handed, so it is the same table at every aspect instead of
  * one image stretched to several.
  *
- * WHAT IS DELIBERATELY NOT HERE. No betting line, no felt logo, no wood
+ * What's deliberately not here: no betting line, no felt logo, no wood
  * grain, no rail stitching. The composition was signed off with a plain
- * gradient cloth, and detailing it is a separate decision that was explicitly
- * left open rather than one to slip in alongside the wiring -- a table that
- * arrives in the game looking different from the render that was approved is
- * a table nobody actually approved.
+ * gradient cloth, and detailing it is a separate decision left open rather
+ * than one to slip in alongside the wiring. A table that arrives in the game
+ * looking different from the render that was approved is a table nobody
+ * actually approved.
  *
- * The palette is the render's own. It is intentionally NOT the brand chrome
- * palette: `CLAUDE.md`'s styling contract scopes that to everything except
- * the table, and says the felt and its gold are out of scope for chrome work.
+ * The palette is the render's own, not the brand chrome palette:
+ * `CLAUDE.md`'s styling contract scopes that to everything except the table,
+ * and says the felt and its gold are out of scope for chrome work.
  *
- * DRAW ORDER IS THE DEPTH MODEL. There is no z-buffer here and none is
+ * Draw order is the depth model. There is no z-buffer here and none is
  * wanted: the scene is a handful of nested convex shells seen from a fixed
  * elevation, so painting floor, then pedestal, then slab, then rail, then
  * cloth is both correct and cheaper than sorting anything. The one ordering
- * that is not obvious -- people before the table, so the rail paints over
- * their chests -- is the caller's business, because in the live room the
- * players are DOM cut-outs layered above this canvas rather than paint.
+ * that is not obvious, people before the table so the rail paints over their
+ * chests, is the caller's business: in the live room the players are DOM
+ * cut-outs layered above this canvas rather than paint.
  */
 
 import {
@@ -65,10 +65,10 @@ function tracePlan(ctx: CanvasRenderingContext2D, camera: Camera, plan: PlanPoin
 }
 
 /**
- * The band between one outline at two heights -- a solid's side wall.
+ * The band between one outline at two heights: a solid's side wall.
  *
  * Needs no face culling, and the reason is a property of this camera rather
- * than luck: lowering a point always moves it DOWN the screen from any
+ * than luck: lowering a point always moves it down the screen from any
  * elevation above the plane, so the lower outline can never cross above the
  * upper one. Tracing the top forward and the bottom back therefore always
  * yields a simple closed ring covering the wall and the top face together;
@@ -115,16 +115,16 @@ export interface RoomFrame {
 }
 
 /**
- * The floor -- or rather, the absence of one.
+ * The floor, or rather, the absence of one.
  *
- * The floor IS the background, but that background is not this canvas's to
+ * The floor is the background, but that background is not this canvas's to
  * paint any more: `.game-shell` already carries the app's own lounge photo
  * and its warm floor-pool glow (05-game-header.css), the same backdrop the
  * classic table sits on, and `.table-scene` is `background: transparent`
  * specifically so it shows through (99-scene.css). Painting a second, flatly
  * neutral floor here just occluded that photo with a slab that read as
- * generic grey next to the rest of the app's branding. Clearing -- not
- * filling -- is what lets it through.
+ * generic grey next to the rest of the app's branding. Clearing, not filling,
+ * is what lets it through.
  *
  * At this elevation the camera's horizon sits above the top of the frame at
  * every shipped aspect, so no ray leaves the ground; there is no wall or sky
@@ -164,7 +164,7 @@ function paintTable(ctx: CanvasRenderingContext2D, camera: Camera): void {
   ctx.fillStyle = "#0d0e12";
   ctx.fill();
 
-  // The slab's side wall -- the table's girth, and the single thing that
+  // The slab's side wall: the table's girth, and the single thing that
   // makes it read as an object standing on a floor rather than a shape
   // painted onto the background.
   traceSideWall(ctx, camera, outer, FELT_TOP_Y + RAIL_LIP_HEIGHT, SLAB_BOTTOM_Y);
@@ -208,9 +208,9 @@ function paintTable(ctx: CanvasRenderingContext2D, camera: Camera): void {
  * The whole room, in one call, back to front.
  *
  * Transparent: this clears the frame itself rather than expecting the caller
- * to, so a resized or re-fit table never leaves a stale frame behind -- but
- * the clear is to nothing, deliberately, so the DOM's own room photograph
- * shows through underneath the table this paints.
+ * to, so a resized or re-fit table never leaves a stale frame behind. The
+ * clear is to nothing on purpose, so the DOM's own room photograph shows
+ * through underneath the table this paints.
  */
 export function paintRoom(ctx: CanvasRenderingContext2D, camera: Camera, frame: RoomFrame): void {
   paintFloor(ctx, frame);

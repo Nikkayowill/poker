@@ -20,8 +20,8 @@ const sessionSchema = z.string().min(10).max(200);
 
 /**
  * The success-page recovery path: called when a player lands back on
- * ?payment=success, in case the webhook has not landed yet (or at all --
- * this is also the only fulfillment path in local/dev environments with no
+ * ?payment=success, in case the webhook hasn't landed yet (or at all: this
+ * is also the only fulfillment path in local/dev environments with no
  * public URL for Stripe to reach). Shares fulfillStripePayment/
  * syncSubscriptionState with the webhook, which is what makes a refresh here
  * safe: for a one-time payment the database's unique session id is the
@@ -29,8 +29,8 @@ const sessionSchema = z.string().min(10).max(200);
  * is (a redundant sync here never regresses a status the webhook already
  * moved past).
  *
- * Live and test sessions live in separate Stripe namespaces -- a live secret
- * key cannot retrieve a cs_test_ session or vice versa -- so Stripe's own
+ * Live and test sessions live in separate Stripe namespaces: a live secret
+ * key cannot retrieve a cs_test_ session or vice versa. Stripe's own
  * `cs_live_`/`cs_test_` id prefix is what picks the client here, the same
  * way the webhook route picks a mode from which secret verifies a body.
  */
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     let membership = null;
     if (peek.mode === "subscription") {
       if (typeof peek.subscription !== "string") {
-        // Not yet attached to a subscription -- treat as not paid rather
+        // Not yet attached to a subscription: treat as not paid rather
         // than throw; the webhook (or a later refresh) will catch up.
         paid = false;
       } else {

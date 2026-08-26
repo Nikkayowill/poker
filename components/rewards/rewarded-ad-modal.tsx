@@ -20,19 +20,16 @@ import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
  * unit is mounted and a countdown runs), `claiming` (the POST is in flight),
  * and `done`. There is no path that skips `watching`.
  *
- * THE COUNTDOWN IS NOT THE RULE
+ * The number on screen is a readout, not the rule. The server issued the
+ * grant, wrote the moment it did so, and re-derives the elapsed time from
+ * its own clock when the claim arrives, so a player who edits this countdown
+ * to zero simply gets a 409 with the real remaining seconds in it, which is
+ * why the error branch below renders the server's message verbatim rather
+ * than a generic one. See lib/server/rewarded-ad-service.ts for what that
+ * guard can and cannot establish.
  *
- * The number on screen is a readout. The server issued the grant, wrote the
- * moment it did so, and re-derives the elapsed time from its own clock when
- * the claim arrives -- so a player who edits this countdown to zero simply
- * gets a 409 with the real remaining seconds in it, which is why the error
- * branch below renders the server's message verbatim rather than a generic
- * one. See lib/server/rewarded-ad-service.ts for what that guard can and
- * cannot establish.
- *
- * THE REWARD IS NOT CONDITIONAL ON THE AD RENDERING
- *
- * Deliberate. The unit sits in a sandboxed iframe with no same-origin access
+ * The reward is also not conditional on the ad actually rendering. The unit
+ * sits in a sandboxed iframe with no same-origin access
  * (components/ads/adsterra-slot.tsx), so this document has no way to observe
  * whether it painted, and an ad blocker, a CSP block or a vendor outage would
  * otherwise strand a player behind a wait they completed. They did the thirty
@@ -48,7 +45,7 @@ interface GrantResponse {
   remainingToday: number;
 }
 
-/** "4:32" once the wait is a minute or more, "45 seconds" below that -- same convention as the puzzle countdowns. */
+/** "4:32" once the wait is a minute or more, "45 seconds" below that; same convention as the puzzle countdowns. */
 function formatCountdown(seconds: number): string {
   if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
   const minutes = Math.floor(seconds / 60);
@@ -60,7 +57,7 @@ export interface RewardedAdModalProps {
   onClose: () => void;
   /**
    * Handed the credited profile so the navbar balance updates without a
-   * re-fetch, plus how many claims the server says are left today -- a caller
+   * re-fetch, plus how many claims the server says are left today. A caller
    * offering this outside an achievement (the lobby menu's "Free Gold" row)
    * uses that to stop offering it once the daily cap is actually reached,
    * rather than only once the balance climbs back over the threshold.
@@ -180,7 +177,7 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress, 
       role="presentation"
       onMouseDown={(event) => {
         // No click-outside dismissal while an ad is running or a claim is in
-        // flight -- losing a completed wait to a misplaced click is the worst
+        // flight: losing a completed wait to a misplaced click is the worst
         // thing this modal could do.
         if (event.currentTarget === event.target && phase !== "watching" && phase !== "claiming") onClose();
       }}

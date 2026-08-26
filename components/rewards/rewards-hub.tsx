@@ -12,10 +12,10 @@ import { CHEAPEST_TIER, TIER_CONFIG } from "@/lib/game/tiers";
 import { tapSound } from "@/lib/audio/ui-sounds";
 
 /**
- * "Ways to earn Gold", on one page -- the PlayPokerGO-style promotions/VIP
+ * "Ways to earn Gold", on one page: the PlayPokerGO-style promotions/VIP
  * tab StackChips didn't have. Every source it lists (missions, the daily
  * grant, rewarded ads, the recovery top-up, buying Gold) already exists and
- * is claimed elsewhere -- the lobby's player menu, the lobby's own banner,
+ * is claimed elsewhere, in the lobby's player menu, the lobby's own banner,
  * /challenges, /store/gold. This page is wayfinding and honest state, not a
  * second claim surface: duplicating claimDailyGold/rewarded-ad-service's
  * money-moving calls here would be a second place for the money-ordering
@@ -23,7 +23,7 @@ import { tapSound } from "@/lib/audio/ui-sounds";
  * the lobby."
  *
  * Achievements/badges (milestone 2 of the economy/retention redesign) link
- * to /achievements the same way missions link to /challenges -- a live page,
+ * to /achievements the same way missions link to /challenges: a live page,
  * not a claim surface here, for the same reason the rest of this section
  * routes back to where each mechanism actually lives.
  *
@@ -45,7 +45,7 @@ export function RewardsHub() {
         if (response.ok) setProfile(((await response.json()) as { profile: PlayerProfile }).profile);
       } catch {
         // An unreachable profile just leaves every card in its unloaded
-        // state -- the page still explains every source.
+        // state; the page still explains every source.
       } finally {
         if (mounted.current) setLoaded(true);
       }

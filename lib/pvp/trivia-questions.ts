@@ -4,32 +4,28 @@ import "server-only";
  * The questions Trivia Showdown actually asks, and the answers to them.
  *
  * `server-only`, for exactly the reason lib/arcade/puzzles/word-stack-answers.ts
- * is: a browser holding this file has not cheated one question, it has cheated
+ * is: a browser holding this file hasn't cheated one question, it's cheated
  * every match it will ever play, and this one settles real Gold. The snapshot
- * that reaches a client carries a prompt and four choices with no answerIndex
- * -- which is worth nothing if the client also has the table that maps the one
+ * that reaches a client carries a prompt and four choices with no answerIndex,
+ * which is worth nothing if the client also has the table that maps the one
  * to the other.
  *
- * That is a constraint on the import graph, not just on this file. Nothing
+ * That's a constraint on the import graph, not just on this file. Nothing
  * under components/ may value-import lib/pvp/trivia.ts either, since it
  * imports this; boards take their types from it with `import type`, which the
  * compiler erases. A stray value import fails the build loudly, which is the
- * behaviour we want -- silence is what makes a leak expensive.
+ * behaviour we want: silence is what makes a leak expensive.
  *
- * ## What belongs here
+ * What belongs here is facts that do not rot. No current office-holders, no
+ * "largest/tallest/fastest ever", no records, nothing whose truth has a date
+ * attached: a question bank is written once and read for years, and a stale
+ * answer marked correct is worse than a missing question, because the player
+ * who knew better is the one it punishes.
  *
- * Facts that do not rot. No current office-holders, no "largest/tallest/
- * fastest ever", no records, no anything whose truth has a date attached: a
- * question bank is written once and read for years, and a stale answer marked
- * correct is worse than a missing question, because the player who knew better
- * is the one it punishes.
- *
- * ## Why answerIndex is spread rather than always 0
- *
- * Choices are presented in the order they are written -- there is no per-match
- * permutation -- so a bank that habitually put the answer first would teach a
+ * Choices are presented in the order they are written (no per-match
+ * permutation), so a bank that habitually put the answer first would teach a
  * player to tap the first button and win. trivia.test.ts asserts every
- * position carries a real share of the bank, because "vary it" is the kind of
+ * position carries a real share of the bank, since "vary it" is the kind of
  * discipline that decays the moment someone appends ten questions in a hurry.
  */
 

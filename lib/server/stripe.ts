@@ -5,7 +5,7 @@ import Stripe from "stripe";
  * Live and test share one webhook endpoint (Stripe supports registering both
  * against the same URL, each with its own signing secret). Which mode a
  * request is in is decided once, in the webhook route, by which secret
- * verifies the raw-body signature -- never by anything the browser sends.
+ * verifies the raw-body signature, never by anything the browser sends.
  * Every function below that resolves a Price or verifies a session takes
  * that already-decided mode as a parameter; nothing here re-derives it.
  */
@@ -45,7 +45,7 @@ export function stripeTestWebhookSecret(): string | null {
 
 /**
  * Which profiles may ever attempt a Stripe test-mode purchase. Server-only
- * and never derived from anything the browser sends -- a request for a test
+ * and never derived from anything the browser sends: a request for a test
  * profile not on this list is rejected the same way an ordinary player's
  * would be.
  */
@@ -58,14 +58,14 @@ export function isTestPurchaseAllowed(profileId: string): boolean {
     .includes(profileId);
 }
 
-// ---- Gold purchase (reinstated 2026-08-15) ------------------------------
+// ---- Gold purchase --------------------------------------------------------
 //
-// See lib/legal/documents.ts's gold_disclosure for why this exists again
-// after being pulled: an informed, accepted risk decision, not an
-// oversight. Three tiers, all one-time, each a live Stripe Price read
-// at request time the same way the support tiers below are -- a Price's
-// amount can only be changed by creating a new Price, never edited in
-// place, so what Stripe returns is authoritative over anything cached here.
+// See lib/legal/documents.ts's gold_disclosure for why this exists: an
+// informed, accepted risk decision, not an oversight. Three tiers, all
+// one-time, each a live Stripe Price read at request time the same way the
+// support tiers below are. A Price's amount can only be changed by creating
+// a new Price, never edited in place, so what Stripe returns is
+// authoritative over anything cached here.
 
 export interface GoldTierDef {
   key: string;
@@ -79,18 +79,12 @@ export interface GoldTierDef {
 }
 
 /**
- * Repriced cheaper 2026-08-22, Kayo's direct call. STRIPE_REBUY_PRICE_ID now
- * points at a new $1.99 CAD Price (prod_V4ps93p85SZfo0 /
- * price_1U7FarHrjHRpeZPRKf3Nw2gz, 20k Gold) on the same Starter Pack
- * Product the old $2.99/50k Price lived on -- that old Price
- * (price_1U4gD5HrjHRpeZPReMjQYirb) is deactivated, not deleted, so it stays
- * on the account's own history. STRIPE_PRICE_VALUE is untouched -- the
- * $9.99/500k High Roller Price already matched what Kayo asked for, so no
- * new Price was needed there. The new middle rung is a brand new Product
- * ("Value Pack", prod_V7Ua9qvg7XR3on) since nothing sat between Starter and
- * High Roller before -- its env var (STRIPE_PRICE_VALUE_PACK) is new and
- * needs setting in Vercel before this tier actually appears (listGoldTiers
- * skips any tier whose env var is unset, same as every tier already did).
+ * STRIPE_REBUY_PRICE_ID names the Starter Pack's price env var; the tier's
+ * amount is whatever Stripe Price it currently points at, read live rather
+ * than assumed from the var's name. A retired Price for this Product stays
+ * deactivated rather than deleted, so it remains on the account's history.
+ * listGoldTiers skips any tier whose env var is unset, so a new tier needs
+ * its Price env var set in Vercel before it appears.
  */
 export const GOLD_TIERS: GoldTierDef[] = [
   {
@@ -137,7 +131,7 @@ const resolvedGoldTierCache = new Map<string, Promise<ResolvedGoldTier>>();
 
 /**
  * Reads a tier's Price from Stripe rather than trusting anything stored
- * locally -- same validation shape as resolveSupportPrice below. Cached per
+ * locally, same validation shape as resolveSupportPrice below. Cached per
  * mode+tier key so a burst of checkout requests does not hit the Stripe API
  * once per request.
  */
@@ -183,7 +177,7 @@ export function resolveGoldTier(key: string, mode: StripeMode = "live"): Promise
 }
 
 /**
- * Every Gold tier that has a Price configured, resolved and validated -- a
+ * Every Gold tier that has a Price configured, resolved and validated. A
  * tier whose env var is unset simply does not appear. Always live: the
  * public storefront never sells a test-mode pack.
  */
@@ -228,8 +222,8 @@ export async function verifiedGoldSession(sessionId: string, expectedProfileId?:
  * US states where selling a chance-game-usable virtual currency for real
  * money is a live litigation risk (Kater v. Churchill Downs / Big Fish
  * Casino, decided under Washington's unusually broad "thing of value"
- * gambling statute -- see lib/legal/documents.ts's gold_disclosure). This is
- * the one mitigation applied; it is not a claim that buying Gold is risk-free
+ * gambling statute; see lib/legal/documents.ts's gold_disclosure). This is
+ * the one mitigation applied, not a claim that buying Gold is risk-free
  * everywhere else.
  */
 const RESTRICTED_GOLD_BILLING_STATES: Record<string, ReadonlySet<string>> = {
@@ -248,7 +242,7 @@ function isRestrictedGoldBillingAddress(address: Stripe.Address | null | undefin
  * restricted state, and reports whether it did. Checkout collects the
  * address in the same step as payment (see billing_address_collection:
  * "required" at session creation), so this runs after the charge exists
- * rather than blocking it beforehand -- the charge is refunded immediately,
+ * rather than blocking it beforehand. The charge is refunded immediately,
  * before any Gold is credited, never the other way around.
  */
 export async function enforceGoldBillingRestriction(session: Stripe.Checkout.Session, mode: StripeMode): Promise<boolean> {
@@ -261,20 +255,20 @@ export async function enforceGoldBillingRestriction(session: Stripe.Checkout.Ses
   return true;
 }
 
-// ---- Voluntary support (one-time and monthly) --------------------------
+// ---- Voluntary support (one-time and monthly) ------------------------------
 //
-// No tier here ever grants Gold or anything with in-game economic effect --
+// No tier here ever grants Gold or anything with in-game economic effect;
 // see lib/legal/documents.ts's support_disclosure, which this module exists
 // to match. Each tier is two independent Stripe Prices (one-time and
 // monthly), each read live from Stripe rather than trusted from anything
-// cached locally -- the same defense the old Gold storefront relied on (a
-// Price's amount can only be changed by creating a new Price, never edited
-// in place).
+// cached locally, the same defense the Gold tiers above rely on (a Price's
+// amount can only be changed by creating a new Price, never edited in
+// place).
 
 export type SupportBilling = "one_time" | "monthly";
 
 export interface SupportTierDef {
-  /** Stable once shipped -- becomes a DB check-constraint value and Stripe subscription metadata. */
+  /** Stable once shipped: becomes a DB check-constraint value and Stripe subscription metadata. */
   key: string;
   label: string;
   description: string;
@@ -328,7 +322,7 @@ export interface ResolvedSupportTier {
   key: string;
   label: string;
   description: string;
-  /** Null when that billing option's env var is unset or its Price failed validation -- the button for it just doesn't render. */
+  /** Null when that billing option's env var is unset or its Price failed validation, so the button for it just doesn't render. */
   oneTime: ResolvedSupportPrice | null;
   monthly: ResolvedSupportPrice | null;
 }
@@ -337,7 +331,7 @@ const resolvedPriceCache = new Map<string, Promise<ResolvedSupportPrice>>();
 
 /**
  * Reads one tier+billing combination's Price from Stripe and validates its
- * shape matches what it claims to be -- a one-time tier must be a fixed
+ * shape matches what it claims to be: a one-time tier must be a fixed
  * one_time Price, a monthly tier must be a recurring monthly Price. Cached
  * per mode+billing+tier so a burst of requests does not hit the Stripe API
  * once per request.
@@ -380,7 +374,7 @@ function resolveSupportPrice(envVar: string, billing: SupportBilling, tierKey: s
 }
 
 /**
- * Every support tier, both billing options resolved independently -- a tier
+ * Every support tier, both billing options resolved independently. A tier
  * whose monthly Price isn't configured yet still shows its one-time button,
  * and vice versa, rather than one missing env var hiding the whole tier.
  * Always live: the public panel never sells a test-mode option.
@@ -406,12 +400,11 @@ export async function listSupportTiers(mode: StripeMode = "live"): Promise<Resol
 
 /**
  * Verifies a completed one-time support Checkout Session against Stripe's
- * own record of it -- the payment-mode counterpart to the old
- * verifiedTierSession. There is no subscription equivalent of this
- * function: a subscription's state is synced from the live Subscription
- * object (see lib/server/stripe-store.ts's syncSubscriptionState), never
- * re-validated against a cached per-session amount, since a subscription
- * isn't a fixed one-shot amount the way a one-time payment is.
+ * own record of it. There is no subscription equivalent of this function: a
+ * subscription's state is synced from the live Subscription object (see
+ * lib/server/stripe-store.ts's syncSubscriptionState), never re-validated
+ * against a cached per-session amount, since a subscription isn't a fixed
+ * one-shot amount the way a one-time payment is.
  */
 export async function verifiedSupportSession(
   sessionId: string,
@@ -453,7 +446,7 @@ export async function verifiedSupportSession(
 
 /**
  * A Stripe-hosted Customer Portal session URL, for the "Manage membership"
- * button -- cancellation, payment-method updates, and receipts all happen
+ * button. Cancellation, payment-method updates, and receipts all happen
  * inside Stripe's own UI rather than a custom in-app flow. Always live: the
  * public support panel never manages a test-mode subscription this way.
  */

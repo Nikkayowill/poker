@@ -21,13 +21,13 @@ import {
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
- * Ante Up: Sudoku -- the solo half of Ante Up.
+ * Ante Up: Sudoku, the solo half of Ante Up.
  *
  * Same request shape as the daily Sudoku board (a fill is a request, the
  * server says whether it was right, the solution never crosses the wire) and
  * the same wager step lib/pvp's duel lobby uses (a quick-pick row plus a
  * custom field, floored at MIN_ANTE_UP_WAGER). Reuses both stylesheets'
- * classes rather than a third copy of either -- see 43-ante-up.css's header.
+ * classes rather than a third copy of either; see 43-ante-up.css's header.
  */
 
 const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000] as const;
@@ -39,7 +39,7 @@ interface AnteUpResponse {
   error?: string;
 }
 
-/** How often the shell re-reads a live attempt -- catches the clock running out even with no fill sent. */
+/** How often the shell re-reads a live attempt, so the clock still settles even with no fill sent. */
 const POLL_MS = 3000;
 
 export function AnteUpSudoku() {
@@ -53,7 +53,7 @@ export function AnteUpSudoku() {
   const [selected, setSelected] = useState<number | null>(null);
   const [rejected, setRejected] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  // Pencil marks -- purely a client-side memory aid, never sent to the server:
+  // Pencil marks are a client-side memory aid only, never sent to the server:
   // the engine only ever stores a cell's committed digit (lib/arcade/puzzles/
   // sudoku.ts's `entries`), and a candidate note doesn't change what's correct
   // or move any Gold, so there's nothing here for the server to referee.
@@ -67,8 +67,7 @@ export function AnteUpSudoku() {
   // Same guard duel-shell.tsx keeps: true while the player's own action is in
   // flight, so a background poll landing in the middle of it cannot paint the
   // pre-action state back over what the action's own response is about to
-  // paint forward -- a flicker, and on this board, briefly showing a digit
-  // vanish and reappear.
+  // paint forward. Without it a digit briefly vanishes and reappears.
   const sending = useRef(false);
   const mounted = useRef(true);
   useEffect(() => () => { mounted.current = false; }, []);
@@ -87,7 +86,7 @@ export function AnteUpSudoku() {
       if (!mounted.current || sending.current) return;
       if (response.ok) applyResponse(data);
     } catch {
-      // A dropped poll is not worth a banner -- the next one is a few seconds away.
+      // A dropped poll is not worth a banner; the next one is a few seconds away.
     } finally {
       if (mounted.current) setLoaded(true);
     }
@@ -108,7 +107,7 @@ export function AnteUpSudoku() {
       const data = (await response.json()) as Partial<AnteUpResponse> & { round?: AnteUpSnapshot };
       if (!mounted.current) return { wrong: false };
       if (!response.ok) {
-        // A wrong digit is ordinary play -- the board takes the updated state
+        // A wrong digit is ordinary play: the board takes the updated state
         // (the mistake counter moved) and shrugs, same treatment Sudoku's own
         // board gives it. Anything else is a real refusal.
         const wrong = !!data.round && data.round.status === "active";
@@ -127,9 +126,9 @@ export function AnteUpSudoku() {
     }
   }, [applyResponse]);
 
-  // Initial read, deferred a tick -- the idiom every arcade table and the duel
-  // shell share: a fetch fired straight from an effect body sets state during
-  // the same commit.
+  // Initial read, deferred a tick: the idiom every arcade table and the duel
+  // shell share, since a fetch fired straight from an effect body sets state
+  // during the same commit.
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(timer);
@@ -174,7 +173,7 @@ export function AnteUpSudoku() {
       play("ui");
       // A committed digit answers this cell (drop its own notes entirely) and
       // rules itself out as a candidate everywhere it now shares a row,
-      // column or box -- the same bookkeeping a solver does by hand once a
+      // column or box: the same bookkeeping a solver does by hand once a
       // number lands.
       setNotes((prev) => {
         let changed = false;
@@ -200,7 +199,7 @@ export function AnteUpSudoku() {
     }
   };
 
-  /** Toggles one candidate digit in the selected cell -- notes mode's version of `fill`. */
+  /** Toggles one candidate digit in the selected cell, notes mode's version of `fill`. */
   const toggleNote = (digit: number) => {
     if (!attempt || selected === null) return;
     if (attempt.puzzle[selected] !== 0 || attempt.entries[selected] !== 0) return;

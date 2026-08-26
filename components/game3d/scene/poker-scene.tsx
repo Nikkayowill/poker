@@ -165,7 +165,7 @@ function Lights({ theme }: { theme: RoomTheme }) {
           above is head-on, and a silhouette lit from both of those is
           flattest exactly where its outline is — which is why the table read
           as a shape cut out of the dark rather than an object standing in
-          it. Deliberately the only light in the rig that comes from -Z.
+          it. It's the only light in the rig that comes from -Z.
           Position and castShadow are the fixed rig (RIM_RIG); colour/
           intensity are the theme's.
 
@@ -337,9 +337,9 @@ function SceneContents({
       {dealerSlot !== null ? <DealerButton slot={dealerSlot} /> : null}
       <ChipField model={model} resumeBetFlights={resumeBetFlights} />
       {/* Each player's own chips at the rail — the modelled props, sized by
-          each seat's live stack. Deliberately mounted alongside ChipField
-          rather than inside it: bets and the pot are engine quantities that
-          have to fly, bankrolls are scenery that never moves. See
+          each seat's live stack. Mounted alongside ChipField rather than
+          inside it: bets and the pot are engine quantities that have to
+          fly, bankrolls are scenery that never moves. See
           props/seat-bankrolls.tsx. */}
       <SeatBankrolls model={model} />
     </>
@@ -354,7 +354,7 @@ export function PokerScene({
 }: PokerSceneProps) {
   const theme = useMemo(() => roomThemeById(roomThemeId), [roomThemeId]);
   // Held in a ref so the Canvas's own props never change identity because a
-  // parent re-rendered with a fresh callback -- remounting a Canvas rebuilds
+  // parent re-rendered with a fresh callback. Remounting a Canvas rebuilds
   // the GL context, which is the one thing this component must not do
   // casually (see CLAUDE.md on forceContextLoss).
   const onReadyRef = useRef(onReady);
@@ -365,14 +365,12 @@ export function PokerScene({
     onReadyRef.current = onReady;
   }, [onReady]);
 
-  // `sceneReady` used to mean "the GL context exists," which is essentially
-  // immediate and says nothing about whether anyone is actually seated yet.
-  // It now means "the context exists AND every currently-modelled seat's
-  // .glb has mounted" -- see lib/game3d/avatar-load-gate.ts for the pure
-  // predicate. `readyLatchedRef` makes this a one-shot gate for the initial
-  // load: once true, a later seat/avatar swap (a reseat, a bot rotating in)
-  // never revokes it, so only the first entry into the room pays for the
-  // full wait.
+  // `sceneReady` means the GL context exists and every currently-modelled
+  // seat's .glb has mounted — see lib/game3d/avatar-load-gate.ts for the
+  // pure predicate. `readyLatchedRef` makes this a one-shot gate for the
+  // initial load: once true, a later seat/avatar swap (a reseat, a bot
+  // rotating in) never revokes it, so only the first entry into the room
+  // pays for the full wait.
   const glCreatedRef = useRef(false);
   const loadedSlotsRef = useRef<Set<number>>(new Set());
   const readyLatchedRef = useRef(false);
@@ -394,7 +392,7 @@ export function PokerScene({
   }, [clearLoadTimeout]);
 
   // Keeps the expected-seat set current as the game snapshot changes, and
-  // re-checks the gate every time -- harmless once latched, since
+  // re-checks the gate every time. Harmless once latched, since
   // maybeReportReady no-ops immediately in that case.
   useEffect(() => {
     expectedSlotsRef.current = model.seats.map((seat) => seat.slot);
@@ -418,7 +416,7 @@ export function PokerScene({
       onReadyRef.current?.(false);
     };
     const restored = () => {
-      // A restored context re-runs the same gate a first mount does -- the
+      // A restored context re-runs the same gate a first mount does. The
       // avatars' three.js objects survive a context loss, but their GPU
       // resources do not, so treating this as anything less than a fresh
       // "not ready" would risk showing a room whose textures never re-upload.

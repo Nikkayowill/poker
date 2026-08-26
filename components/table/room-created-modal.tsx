@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Check, Copy, Share2, X } from "lucide-react";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { useClipboardCopy } from "@/components/use-clipboard-copy";
 
 /**
  * Shown once, immediately after hosting a private table.
@@ -14,7 +15,8 @@ import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
  * whoever asks late.
  */
 export function RoomCreatedModal({ code, onClose }: { code: string; onClose: () => void }) {
-  const [copied, setCopied] = useState(false);
+  const { copiedValue, copy } = useClipboardCopy();
+  const copied = copiedValue === code;
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const shareUrl = typeof window === "undefined"
     ? ""
@@ -28,17 +30,6 @@ export function RoomCreatedModal({ code, onClose }: { code: string; onClose: () 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
-
-  const copy = async (value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      // Clipboard permission can be refused; the code is displayed in full
-      // above, so it stays readable and typeable either way.
-    }
-  };
 
   // navigator.share exists on phones and almost nowhere else, so the button
   // is only offered where it will actually do something rather than being

@@ -18,7 +18,7 @@ export const runtime = "nodejs";
 /**
  * One table: read it, join it, start it early, leave it, move in it, or
  * resign it. One route file discriminated on `action`, same shape
- * app/api/pvp/matches/[id]/route.ts uses for move/resign -- join/start/leave
+ * app/api/pvp/matches/[id]/route.ts uses for move/resign. join/start/leave
  * all act on this same table id, so a separate route segment per action
  * would just be the same id parsed four more times.
  *
@@ -65,7 +65,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  // Generous compared with opening a table -- nothing here except a move
+  // Generous compared with opening a table: nothing here except a move
   // that ends the table moves Gold, and the version guard already makes
   // that idempotent.
   const limited = enforceRateLimit(request, "cribbage:act", 600, 60 * 1000);
@@ -84,7 +84,7 @@ export async function POST(
     }
 
     // Leaving and resigning are both ways of walking away from your own
-    // stake -- a suspended account must still be able to do that. Joining,
+    // stake, and a suspended account must still be able to do that. Joining,
     // starting, or continuing to play (any of which could win a payout) is
     // what's gated, same posture the pvp routes take.
     const gated = parsed.data.action === "join" || parsed.data.action === "start" || parsed.data.action === "move";

@@ -8,7 +8,7 @@ let enabled = true;
 let player: HTMLAudioElement | null = null;
 let fadeHandle: number | null = null;
 // Set only when a play() call was blocked by the browser's autoplay policy
-// rather than by the playlist being empty -- the next real gesture on the
+// rather than by the playlist being empty. The next real gesture on the
 // page retries it once, the same way the caller originally asked.
 let pendingStart = false;
 
@@ -28,9 +28,9 @@ const FADE_STEPS = 14;
  *
  * Exported for the tests, which pass a fixed sequence in place of
  * Math.random: a shuffle nobody can pin down is a shuffle nobody can prove
- * plays every track exactly once per cycle. Note this is presentation rather
- * than game state, so unlike lib/scene it is genuinely allowed to be random --
- * it just is not allowed to be untestable.
+ * plays every track exactly once per cycle. This is presentation rather than
+ * game state, so unlike lib/scene it's genuinely allowed to be random. It
+ * just isn't allowed to be untestable.
  */
 export function shuffleIndices(
   count: number,
@@ -68,9 +68,9 @@ function ensurePlayer(): HTMLAudioElement | null {
   // never fires and the first track is the only one anybody ever hears.
   audio.loop = MENU_MUSIC_TRACKS.length === 1;
   // "none", not "auto". The tracks are 2-3.5MB each, and autoplay policy means
-  // the first one usually cannot play until the player touches something
-  // anyway -- so "auto" spent a phone's whole connection on a file that was
-  // not going to be heard yet, while the lobby was still loading around it.
+  // the first one usually can't play until the player touches something
+  // anyway, so "auto" would spend a phone's whole connection on a file that
+  // isn't going to be heard yet, while the lobby is still loading around it.
   // play() streams it when there is actually something to hear.
   audio.preload = "none";
   audio.volume = 0;
@@ -86,12 +86,12 @@ function ensurePlayer(): HTMLAudioElement | null {
  * Without this the phone prints "Untitled" (see MENU_MUSIC_METADATA). Without
  * the handlers, the OS pause button would pause the element behind this
  * module's back, and the next lobby render's idempotent startMenuMusic() would
- * override the player -- so pause is routed through stopMenuMusic, which is the
- * one path that also fades.
+ * override the player, so pause is routed through stopMenuMusic, the one path
+ * that also fades.
  *
  * Every branch is feature-detected: MediaSession is absent on desktop Safari
- * and in every test environment, and its absence is not an error -- it just
- * means nothing outside the page was going to show a label anyway.
+ * and in every test environment, and its absence isn't an error, just a sign
+ * nothing outside the page was going to show a label anyway.
  */
 function publishMediaSession(state: "playing" | "paused") {
   if (typeof navigator === "undefined") return;
@@ -177,7 +177,7 @@ export function setMenuMusicEnabled(value: boolean) {
 export function startMenuMusic() {
   if (!enabled) return;
   const audio = ensurePlayer();
-  if (!audio) return; // empty playlist -- silent by design
+  if (!audio) return; // empty playlist, silent by design
   if (!audio.paused) return;
   pendingStart = false;
   audio.play()

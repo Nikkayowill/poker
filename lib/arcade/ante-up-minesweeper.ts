@@ -1,24 +1,22 @@
 /**
- * Minesweeper -- a solo skill wager, or free practice, any time.
+ * Minesweeper: a solo skill wager, or free practice, any time.
  *
  * Wager Gold, clear a fresh board inside the tier's clock, cash out a multiple
  * of the wager. Same shape as lib/arcade/ante-up.ts (Sudoku): the multiplier is
  * fixed per difficulty and copied onto the attempt when it opens, so a player
  * knows exactly what they are playing for before the Gold leaves.
  *
- * ## Why there is a clock at all
+ * There is a clock because lib/arcade/puzzles/minesweeper.ts guarantees every
+ * board can be finished by logic alone, no coin flips. That is the right call
+ * for a game staking real Gold, but it also means a careful player never *has*
+ * to hit a mine, so the natural loss condition alone is a weak risk: the only
+ * way to lose is a careless click, and unlimited time removes even that
+ * pressure. The per-tier clock is what keeps a wagered attempt a real bet, the
+ * same job ANTE_UP_MEMORY_MAX_TURNS does for Memory Match, and it also stops
+ * an abandoned attempt from holding the player's one active slot forever.
  *
- * lib/arcade/puzzles/minesweeper.ts guarantees every board can be finished by
- * logic alone -- no coin flips. That is the right call for a game staking real
- * Gold, but it also means a careful player never *has* to hit a mine, so the
- * natural loss condition alone is a weak risk: the only way to lose is a
- * careless click, and unlimited time removes even that pressure. The per-tier
- * clock is what keeps a wagered attempt a real bet, the same job
- * ANTE_UP_MEMORY_MAX_TURNS does for Memory Match, and it also stops an
- * abandoned attempt from holding the player's one active slot forever.
- *
- * The limits are deliberately generous against real solve times (a competent
- * player clears expert in well under half of it) -- the clock is a backstop
+ * The limits are generous against real solve times on purpose (a competent
+ * player clears expert in well under half of it); the clock is a backstop
  * against walking away, not the challenge itself. The challenge is the board.
  */
 
@@ -39,11 +37,11 @@ import {
   type MinesweeperView,
 } from "./puzzles/minesweeper";
 
-/** The floor for a wager. Restated per game -- see ante-up-memory.ts's MIN_ANTE_UP_WAGER for why. */
+/** The floor for a wager. Restated per game; see ante-up-memory.ts's MIN_ANTE_UP_WAGER for why. */
 export const MIN_ANTE_UP_WAGER = 500;
 
 export interface AnteUpMinesweeperTier {
-  /** Measured from the FIRST CLICK, not from opening the attempt -- see the round's own clock. */
+  /** Measured from the first click, not from opening the attempt; see the round's own clock. */
   readonly timeLimitMs: number;
   readonly multiplier: number;
 }
@@ -60,7 +58,7 @@ export type AnteUpMinesweeperStatus = "active" | "won" | "lost" | "timed-out";
 
 export interface AnteUpMinesweeperAttempt {
   difficulty: MinesweeperDifficulty;
-  /** Already debited by the time an attempt exists -- see the service. */
+  /** Already debited by the time an attempt exists; see the service. */
   wager: number;
   /** Copied from the tier at open, never re-read at settlement. */
   multiplier: number;
@@ -192,7 +190,7 @@ export function chordAnteUpMinesweeperCell(
   return afterMove(attempt, chordMinesweeperCell(attempt.board, index, now));
 }
 
-/** Gives up early. The wager is already spent -- this only records how it ended. */
+/** Gives up early. The wager is already spent; this only records how it ended. */
 export function resignAnteUpMinesweeper(
   attempt: AnteUpMinesweeperAttempt,
   now: Date,
@@ -201,7 +199,7 @@ export function resignAnteUpMinesweeper(
   return { ...attempt, board: resignMinesweeperRound(attempt.board, now), status: "lost" };
 }
 
-/** What a WAGER win pays. Zero on anything else -- a loss or a timeout forfeits the wager. */
+/** What a wager win pays. Zero on anything else; a loss or a timeout forfeits the wager. */
 export function anteUpMinesweeperPayout(
   attempt: Pick<AnteUpMinesweeperAttempt, "wager" | "multiplier" | "status">,
 ): number {
@@ -216,7 +214,7 @@ export interface AnteUpMinesweeperSnapshot {
   wager: number;
   multiplier: number;
   status: AnteUpMinesweeperStatus;
-  /** Redacted -- carries no mine position while the round is live. */
+  /** Redacted; carries no mine position while the round is live. */
   board: MinesweeperView;
   /**
    * When the clock runs out, or null until the first click starts it. Absolute

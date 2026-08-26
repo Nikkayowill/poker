@@ -8,7 +8,7 @@
  * enough to judge whether the crowd sits where it should without pretending
  * to be art. Pass `seatArt` (a character id from `seat-art.generated.ts`) to
  * swap those placeholders for the real cutouts instead, at every seat that
- * character has a plate for -- that's the other half of this tool's job:
+ * character has a plate for. That's the other half of this tool's job:
  * judging where the art actually lands before anything ships wired to it.
  */
 
@@ -62,7 +62,7 @@ function tracePlan(ctx: CanvasRenderingContext2D, camera: Camera, plan: PlanPoin
 }
 
 /**
- * The band between the same outline at two heights -- a solid's side wall.
+ * The band between the same outline at two heights: a solid's side wall.
  *
  * Works without any face culling because lowering a point always moves it
  * *down* the screen under this camera, so the lower outline never crosses
@@ -110,8 +110,8 @@ function drawFloor(ctx: CanvasRenderingContext2D, camera: Camera, frame: Frame) 
   ctx.fillRect(0, 0, frame.width, frame.height);
 
   // A pool of light on the floor around the table. The camera's horizon
-  // sits above the top of the frame at this elevation, so the floor IS the
-  // background -- there is no wall to light instead.
+  // sits above the top of the frame at this elevation, so the floor is the
+  // background; there is no wall to light instead.
   const table = screenBounds(camera, tableOutline(), FLOOR_Y);
   const centreX = (table.minX + table.maxX) / 2;
   const centreY = (table.minY + table.maxY) / 2;
@@ -146,7 +146,7 @@ function drawContactShadow(ctx: CanvasRenderingContext2D, camera: Camera) {
 function drawTable(ctx: CanvasRenderingContext2D, camera: Camera) {
   const outer = tableOutline();
 
-  // Pedestal first -- the slab overlaps it, so no clipping needed.
+  // Pedestal first; the slab overlaps it, so no clipping needed.
   traceSideWall(ctx, camera, pedestalOutline(), SLAB_BOTTOM_Y, FLOOR_Y);
   ctx.fillStyle = "#0d0e12";
   ctx.fill();
@@ -190,20 +190,20 @@ function drawTable(ctx: CanvasRenderingContext2D, camera: Camera) {
 }
 
 /** How much of its available elbow room a placeholder figure takes up.
- * Under 1 so neighbours never touch -- real art should leave a gap too. */
+ * Under 1 so neighbours never touch; real art should leave a gap too. */
 const FIGURE_WIDTH_RATIO = 0.72;
 
 /**
  * A seated player as a blank body block and a head disc.
  *
- * Deliberately featureless -- this is not character art and must not be
- * mistaken for it. But it does occupy the real volume a figure will, and
- * that is the point: a thin stick makes any arrangement look like heads
- * floating over an empty table, so there is no way to judge whether the
- * crowd sits at the right height or whether six of them even fit.
+ * This has to stay featureless, not character art, but it occupies the
+ * real volume a figure will. A thin stick makes any arrangement look like
+ * heads floating over an empty table, so there'd be no way to judge
+ * whether the crowd sits at the right height or whether six of them even
+ * fit.
  *
- * `head` is the CROWN, so the disc hangs below it rather than being centred
- * on it -- see SEATED_HEAD_Y.
+ * `head` is the crown, so the disc hangs below it rather than being
+ * centred on it (see SEATED_HEAD_Y).
  */
 function drawSeatedMarker(
   ctx: CanvasRenderingContext2D,
@@ -312,9 +312,9 @@ function drawHudLine(ctx: CanvasRenderingContext2D, frame: Frame) {
 /** Cross-request cache so a resize (a second `TableAnchorsDebug` on the same
  *  page, or a re-fit) never re-fetches a plate it already has. Keyed on the
  *  URL, which is the only identity a plate has. Every caller waiting on a
- *  still-loading plate registers its own listener -- a lone `onload` would
- *  only ever wake the component that happened to start the fetch, and this
- *  page always has at least two (desktop and mobile) sharing one plate. */
+ *  still-loading plate registers its own listener: a lone `onload` would
+ *  only wake the component that happened to start the fetch, and this page
+ *  always has at least two (desktop and mobile) sharing one plate. */
 const seatArtImages = new Map<string, { image: HTMLImageElement; listeners: Set<() => void> }>();
 
 function loadSeatArt(src: string, onReady: () => void): HTMLImageElement | null {
@@ -345,18 +345,18 @@ function drawSeatArt(
   const crown = project(camera, head);
   const grip = project(camera, hands);
   if (crown.depth <= 0 || grip.depth <= 0) return false;
-  // The pixel gap between this seat's own crown and its own tray anchor --
-  // different for every seat, which is the whole point. At scale 1 the art's
-  // hands land exactly on `grip`; see SEAT_ART_SLOT's own note for why this
-  // replaced a single ratio applied to every seat alike.
+  // The pixel gap between this seat's own crown and its own tray anchor,
+  // different for every seat, which is the whole point. At scale 1 the
+  // art's hands land exactly on `grip`; see SEAT_ART_SLOT's own note for
+  // why this replaced a single ratio applied to every seat alike.
   const fit = grip.y - crown.y;
   if (fit <= 0) return false;
   const height = (fit / (1 - slot.crown)) * slot.scale;
   const width = height * aspect;
-  // Anchored at the hands (grip), not the crown -- see seatArtBox's own note
+  // Anchored at the hands (grip), not the crown; see seatArtBox's own note
   // in lib/scene/seat-art.ts, which this has to match exactly. Growing the
   // box from a fixed head anchor pushed a scaled-up seat's hands down past
-  // `grip` by fit * (scale - 1); growing it from a fixed hands anchor keeps
+  // `grip` by fit * (scale - 1). Growing it from a fixed hands anchor keeps
   // every character's hands on the felt at any scale.
   const bottom = grip.y + slot.offsetY;
   const top = bottom - height;
@@ -379,21 +379,19 @@ function drawSeatArt(
 export interface TableAnchorsDebugProps {
   frame: Frame;
   label?: string;
-  /** A character id from `seat-art.generated.ts` -- draws its cutouts at
+  /** A character id from `seat-art.generated.ts`: draws its cutouts at
    *  every seat it has a plate for instead of the placeholder markers.
-   *  Sizing/position come from `seatArtSlotFor` in `lib/scene/seat-art.ts` --
+   *  Sizing/position come from `seatArtSlotFor` in `lib/scene/seat-art.ts`;
    *  edit `SEAT_ART_SLOT` (shared) or `SEAT_ART_OVERRIDES` (per seat) there
-   *  and save; this page hot-reloads. No live props for it any more -- that
-   *  was this page's first cut, replaced once per-seat tuning needed a
-   *  degree of freedom (an X/Y nudge) a slider never had. */
+   *  and save, this page hot-reloads. */
   seatArt?: string;
 }
 
 export function TableAnchorsDebug({ frame, label, seatArt }: TableAnchorsDebugProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // Bumped whenever a plate this frame is waiting on finishes loading, so
-  // the draw effect below re-runs and paints it in -- images decode
-  // asynchronously and the first pass through the seats will usually miss.
+  // the draw effect below re-runs and paints it in. Images decode
+  // asynchronously, so the first pass through the seats will usually miss.
   const [artVersion, setArtVersion] = useState(0);
 
   useEffect(() => {
@@ -438,7 +436,7 @@ export function TableAnchorsDebug({ frame, label, seatArt }: TableAnchorsDebugPr
     });
     seated.sort((a, b) => a.floor.z - b.floor.z);
 
-    // This canvas's own frame decides desktop vs. mobile overrides -- NOT
+    // This canvas's own frame decides desktop vs. mobile overrides, not
     // the browser window, which both frames share on this page. See
     // `getActiveOverrides` in seat-art.ts for why that distinction matters.
     const isDesktop = frame.width >= DESKTOP_BREAKPOINT_PX;
@@ -455,24 +453,24 @@ export function TableAnchorsDebug({ frame, label, seatArt }: TableAnchorsDebugPr
       return { person, slot: person.slot, art: null };
     });
 
-    // Placeholder markers BEFORE the table. These intentionally read as
-    // "sunk behind" the rail -- the table paints over their chests, which is
-    // what makes a bare stick-and-disc marker look seated at the table
-    // rather than floating in front of it (there's no art here to show
-    // hands on the felt with, so there's nothing lost by occluding them).
+    // Placeholder markers before the table. These read as "sunk behind"
+    // the rail, since the table paints over their chests, which is what
+    // makes a bare stick-and-disc marker look seated at the table rather
+    // than floating in front of it (there's no art here to show hands on
+    // the felt with, so nothing is lost by occluding them).
     for (const { person, art } of plans) {
       if (!art) drawSeatedMarker(ctx, camera, person.floor, person.head, person.shoulders, person.color, person.label);
     }
 
     drawTable(ctx, camera);
 
-    // Character art AFTER the table -- the same treatment the dealer's own
-    // art gets in the real game: drawn OVER the cloth, not behind the rail,
-    // because the whole composition is a pair of hands (and cards) resting
-    // ON the felt. Occluding that the way the placeholder markers are
-    // occluded would clip away exactly the part the pose exists to show.
-    // Same furthest-first order as the marker pass, so a nearer neighbour
-    // still overlaps a further one among the art itself.
+    // Character art after the table, the same treatment the dealer's own
+    // art gets in the real game: drawn over the cloth, not behind the
+    // rail, because the whole composition is a pair of hands (and cards)
+    // resting on the felt. Occluding that the way the placeholder markers
+    // are occluded would clip away exactly the part the pose exists to
+    // show. Same furthest-first order as the marker pass, so a nearer
+    // neighbour still overlaps a further one among the art itself.
     for (const { person, slot, art } of plans) {
       if (art && slot !== null) {
         drawSeatArt(

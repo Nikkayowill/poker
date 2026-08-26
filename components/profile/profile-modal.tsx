@@ -8,6 +8,7 @@ import { profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 import { ProfileAvatar, type AvatarView } from "./profile-avatar";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { useClipboardCopy } from "@/components/use-clipboard-copy";
 
 export function ProfileModal({
   profile,
@@ -28,7 +29,8 @@ export function ProfileModal({
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [idCopied, setIdCopied] = useState(false);
+  const { copiedValue: copiedPlayerId, copy: copyToClipboard } = useClipboardCopy();
+  const idCopied = copiedPlayerId === profile.id;
   const [badges, setBadges] = useState<ProfileBadge[] | null>(null);
 
   // Fetched separately from the profile prop, same reasoning as
@@ -51,15 +53,7 @@ export function ProfileModal({
     return () => { cancelled = true; };
   }, [profile.id]);
 
-  const copyPlayerId = async () => {
-    try {
-      await navigator.clipboard.writeText(profile.id);
-      setIdCopied(true);
-      window.setTimeout(() => setIdCopied(false), 1800);
-    } catch {
-      // Clipboard access can be denied by browser policy; the id is still visible to copy by hand.
-    }
-  };
+  const copyPlayerId = () => void copyToClipboard(profile.id);
 
   const preview: AvatarView = {
     displayName: displayName || "Player",

@@ -17,7 +17,7 @@ export type { PendingTableInvite };
  * Five minutes because an invite is an offer to sit down at a table that is
  * running *right now*: past that the seat is gone, the hand you were invited
  * into is over, and tapping it produces a worse experience than never having
- * seen it. This is the only definition of the window -- `expires_at` is
+ * seen it. This is the only definition of the window: `expires_at` is
  * written from it at creation, and the read filters on that column, so
  * changing this number changes newly created invites and nothing else.
  */
@@ -30,13 +30,13 @@ export const PENDING_INVITE_LIMIT = 20;
  * How often one process will bother marking timed-out rows `expired`.
  *
  * The sweep is housekeeping, not correctness: the read below filters on
- * `expires_at` regardless, so a sweep that never runs changes nothing a player
- * can see. Without this throttle a polling endpoint would issue one UPDATE per
- * client per poll to reclaim the same handful of rows.
+ * `expires_at` regardless, so a sweep that never runs changes nothing a
+ * player can see. Without this throttle a polling endpoint would issue one
+ * UPDATE per client per poll to reclaim the same handful of rows.
  */
 const SWEEP_INTERVAL_MS = 60 * 1000;
 
-/** Postgres' unique_violation -- here, table_invites_one_pending_per_target. */
+/** Postgres' unique_violation, here table_invites_one_pending_per_target. */
 const UNIQUE_VIOLATION = "23505";
 
 /** The expiry stamp for an invite created now. Mirrors the not-null `expires_at` column. */
@@ -52,7 +52,7 @@ export type RespondInviteAction = "accept" | "decline";
  * `accepted` is the only branch carrying the room code, and it goes to the
  * route rather than to the client: the route redeems it into a seat and
  * serialises the snapshot, never the code. Everything the caller may not act
- * on -- a lapsed invite, someone else's, one already settled -- collapses into
+ * on (a lapsed invite, someone else's, one already settled) collapses into
  * `not_found`, the same way respondToFriendRequest refuses to distinguish
  * "does not exist" from "not yours".
  */
@@ -114,8 +114,8 @@ interface InviteTable {
 /**
  * Stakes for the tables behind a set of invites, keyed by game id.
  *
- * Absent from the map means "not a table anyone can still join" -- finished or
- * reaped -- and the caller drops those invites rather than offering a seat
+ * Absent from the map means "not a table anyone can still join" (finished or
+ * reaped), and the caller drops those invites rather than offering a seat
  * that is not there. table_invites has no FK to games on purpose (the schema
  * comment explains why), so this is the only thing standing between a reaped
  * table and a notification that goes nowhere.
@@ -161,7 +161,7 @@ async function loadInviteTables(gameIds: string[]): Promise<Map<string, InviteTa
  * route has something to log. Nothing depends on it having run: this exists so
  * the table does not accumulate rows that are pending forever and so
  * `table_invites_one_pending_per_target` stops blocking a re-invite the moment
- * the old one lapses -- that index is partial on `status = 'pending'`, so a
+ * the old one lapses; that index is partial on `status = 'pending'`, so a
  * timed-out row that is still *marked* pending would keep holding the slot.
  */
 export async function expireStaleTableInvites(now: Date = new Date()): Promise<number> {
@@ -271,10 +271,11 @@ export async function getPendingTableInvites(profileId: string): Promise<Pending
   const [profiles, tables, blocked] = await Promise.all([
     getPublicProfilesByIds(inviterIds),
     loadInviteTables(rows.map((row) => row.gameId)),
-    // Blocking after an invite was sent has to silence it, and the sender is
-    // not the one who has to notice. One call per distinct inviter rather than
-    // a bulk query: PENDING_INVITE_LIMIT caps this at twenty and reusing the
-    // tested predicate beats a second hand-rolled block query.
+    // Blocking after an invite was sent has to silence it, and the sender
+    // is not the one who has to notice. One call per distinct inviter
+    // rather than a bulk query: PENDING_INVITE_LIMIT caps this at twenty
+    // and reusing the tested predicate beats a second hand-rolled block
+    // query.
     Promise.all(inviterIds.map(async (id) => ((await isBlockedEitherWay(me, id)) ? id : null))),
   ]);
   const blockedIds = new Set(blocked.filter((id): id is string => id !== null));
@@ -310,7 +311,7 @@ export async function getPendingTableInvites(profileId: string): Promise<Pending
  *
  * The checks here are the store's own: the target exists, neither has blocked
  * the other, the table is live and private. Whether the *inviter* has any
- * business inviting to this table -- that they are seated at it -- is the
+ * business inviting to this table (that they are seated at it) is the
  * route's to enforce, and that route is the next slice; nothing calls this yet
  * but the tests.
  *
@@ -396,7 +397,7 @@ export async function createTableInvite(
  * The table a live invite points at, without settling it.
  *
  * Exists so the accept route can tell a player "that table filled up" or "you
- * need more Gold" *before* it consumes their one-shot invite -- see the
+ * need more Gold" *before* it consumes their one-shot invite; see the
  * ordering note on that route. Returns the game id only: `room_code` is not
  * selected here for the same reason getPendingTableInvites does not select it,
  * and a caller that wants to redeem the invite has respondToTableInvite.
@@ -448,11 +449,11 @@ export async function findPendingTableInvite(
  * Accept, a retried request or two tabs must update one row between them, so
  * the compare-and-set and the read of `room_code` are one statement rather
  * than a check followed by a select. Same shape as blackjack_rounds' version
- * guard, and the same rule applies: a lost race must not pay out -- here,
- * must not seat twice.
+ * guard, and the same rule applies: a lost race must not pay out; here, must
+ * not seat twice.
  *
  * Expiry is a predicate on the row, not a consequence of the sweep, exactly as
- * in getPendingTableInvites -- accepting one second after the window closes has
+ * in getPendingTableInvites: accepting one second after the window closes has
  * to fail even when nothing has marked the row `expired` yet.
  */
 export async function respondToTableInvite(

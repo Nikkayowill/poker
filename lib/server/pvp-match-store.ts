@@ -6,15 +6,15 @@ import { adminClient } from "./supabase-admin";
 /**
  * Persistence for live and finished duels.
  *
- * The same twin-branch shape as arcade-round-store.ts -- Supabase when
- * configured, an in-process Map otherwise -- and the memory branch enforces
- * the same two invariants the table's constraints do, because `npm test` and a
+ * The same twin-branch shape as blackjack-store.ts: Supabase when
+ * configured, an in-process Map otherwise. The memory branch enforces the
+ * same two invariants the table's constraints do, because `npm test` and a
  * no-env dev server both run on it: one active match per (player, game) for
- * BOTH seats, and a version that only ever advances from the value the caller
+ * both seats, and a version that only ever advances from the value the caller
  * last saw.
  *
- * The stored `state` is the game's whole state INCLUDING what a client must
- * not see -- a trivia question's correct answer, a word race's solution.
+ * The stored `state` is the game's whole state, including what a client must
+ * not see: a trivia question's correct answer, a word race's solution.
  * Nothing here is safe to hand to a browser; the service redacts through each
  * game's own `snapshot`, per viewer.
  */
@@ -24,7 +24,7 @@ export type PvpMatchStatus = "active" | "settled";
 export interface StoredPvpMatch<TState = unknown> {
   id: string;
   game: string;
-  /** Indexed by seat: [seat 0, seat 1]. Ordered, never sorted -- the seat is part of the game. */
+  /** Indexed by seat: [seat 0, seat 1]. Ordered, never sorted; the seat is part of the game. */
   players: [string, string];
   tier: string;
   /** Per player. The pot is stake * 2. */
@@ -131,7 +131,7 @@ export async function getActivePvpMatch<TState>(
 /**
  * How long after a match settles it still counts as "recently settled" for
  * getRecentlySettledPvpMatch. Only needs to comfortably outlast one poll
- * cycle (duel-shell.tsx polls every 2s) with room for jitter -- once a
+ * cycle (duel-shell.tsx polls every 2s) with room for jitter. Once a
  * player's client has picked the result up once, it holds onto it locally
  * until they dismiss it, so this window is not how long the result stays on
  * screen, only how long a passive player has to catch it at all.
@@ -155,8 +155,8 @@ function memoryRecentlySettledFor(profileId: string, game: string): StoredPvpMat
 /**
  * A match of this game that settled moments ago and still names this player.
  *
- * getActivePvpMatch stops returning a match the instant it settles -- correct
- * for the "can I open a new one" gate, but it means the player who did NOT
+ * getActivePvpMatch stops returning a match the instant it settles, correct
+ * for the "can I open a new one" gate, but it means the player who did not
  * make the settling move (their opponent resigned, flagged, or was the one
  * whose poll happened to observe the win condition first) has no other way to
  * find out: their own next poll would otherwise return nothing and drop them
@@ -275,15 +275,15 @@ export async function createPvpMatch<TState>(input: {
 /**
  * Writes the next state, but only if nobody else already did.
  *
- * Returns null on a lost race -- a stale version, a replayed request, both
+ * Returns null on a lost race: a stale version, a replayed request, both
  * players' clients settling the same match in the same instant. The caller
  * must treat null as "this did not happen" and, critically, must not pay out
  * on it: only one UPDATE can match a given version, so this guard is the
  * entire reason a pot is credited exactly once.
  *
  * `winnerSeat` is only meaningful when settling. A settled write with a null
- * winner is a DRAW, which is why the two are passed together rather than the
- * winner being inferred from the state -- the store must not have to know how
+ * winner is a draw, which is why the two are passed together rather than the
+ * winner being inferred from the state; the store must not have to know how
  * to read a game.
  */
 export async function advancePvpMatch<TState>(

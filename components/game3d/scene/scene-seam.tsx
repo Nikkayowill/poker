@@ -3,11 +3,11 @@
 /**
  * `window.__stackchipsScene` for the R3F room.
  *
- * The contract is `lib/scene/seam-contract.ts` and it is deliberately the
- * same one the Canvas-2D room answers, so the specs that check where a
- * payout lands or whether the loop sleeps run against whichever renderer the
- * preference happens to have mounted. What changes here is not the questions
- * but how they can be answered at all, and two of them stop being derivable:
+ * The contract is `lib/scene/seam-contract.ts`, the same one the Canvas-2D
+ * room answers, so the specs that check where a payout lands or whether the
+ * loop sleeps run against whichever renderer the preference happens to have
+ * mounted. What changes here is not the questions but how they can be
+ * answered at all, and two of them stop being derivable:
  *
  * - **There is no single scale.** Orthography gave the 2D room one number
  *   for CSS-pixels-per-world-unit, solved in closed form. A perspective
@@ -16,14 +16,14 @@
  *   only means anything there.
  * - **The felt is not an ellipse on screen.** Projected, its near edge is
  *   wider than its far edge. `roomFelt` samples the rim, projects every
- *   sample, and reports the bounding box -- the honest reduction, and the
+ *   sample, and reports the bounding box, the honest reduction and the
  *   one a test comparing against a DOM rect wants.
  *
  * Mounted inside `<Canvas>` because that is the only place `useThree` can
  * reach the live camera. It renders nothing.
  *
- * SHIPPED IN PRODUCTION, not dev-gated, matching the 2D room's own decision:
- * everything it exposes -- projected chip positions, a frame counter -- is
+ * Shipped in production, not dev-gated, matching the 2D room's own decision:
+ * everything it exposes, projected chip positions, a frame counter, is
  * already on screen for anyone looking at it.
  */
 
@@ -53,8 +53,8 @@ import {
  *
  * The sampled hull is inscribed, so it can only understate the silhouette.
  * At 64 the worst-case understatement is under a tenth of a percent of the
- * radius -- comfortably inside the pixel that any consumer rounds to --
- * while still being a single cheap loop on a call nobody makes per frame.
+ * radius, comfortably inside the pixel that any consumer rounds to, while
+ * still being a single cheap loop on a call nobody makes per frame.
  */
 const RIM_SAMPLES = 64;
 
@@ -100,7 +100,7 @@ export function SceneSeam() {
       roomScale: () => {
         // Measured across the felt's centre, on the felt plane. Under
         // perspective this is a reading at one depth, not a property of the
-        // scene -- see the contract.
+        // scene; see the contract.
         const rect = canvasRect();
         const left = toViewport({ x: -SCALE_PROBE, y: FELT_TOP_Y, z: 0 }, rect);
         const right = toViewport({ x: SCALE_PROBE, y: FELT_TOP_Y, z: 0 }, rect);
@@ -127,9 +127,9 @@ export function SceneSeam() {
     return () => {
       // Only tear down what this mount installed. If a second mount has
       // already published its own seam, clearing here would leave the live
-      // room with no seam and an emptied registry -- which reads exactly
-      // like a room that never arrived, and is a far more confusing failure
-      // than the leak it would be guarding against.
+      // room with no seam and an emptied registry, which reads exactly like
+      // a room that never arrived and is a far more confusing failure than
+      // the leak it would be guarding against.
       if (window.__stackchipsScene !== seam) return;
       delete window.__stackchipsScene;
       resetSceneRegistry();

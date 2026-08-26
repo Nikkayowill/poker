@@ -21,7 +21,7 @@ interface UnlockStats {
   totalChipsWon: number;
 }
 
-/** How close a player is to a progress-gated avatar, for display only -- the server is the only place this is enforced. */
+/** How close a player is to a progress-gated avatar, for display only. The server is the only place this is enforced. */
 function unlockProgress(item: Cosmetic, stats: UnlockStats | null): { current: number; goal: number; label: string } | null {
   if (!item.unlock || !stats) return null;
   if ("handsWon" in item.unlock) {
@@ -40,10 +40,10 @@ const SLOTS: { slot: CosmeticSlot; title: string; blurb: string }[] = [
  * A missing image file falls back rather than showing a broken icon, so
  * catalog entries can ship before their artwork.
  *
- * `angle` is only meaningful for an avatar backed by the seat-art roster --
- * the preview dialog passes the angle its own switcher has selected so a
- * buyer can see the character turned before spending Gold on it; the grid
- * card never passes one and always shows the 0deg plate.
+ * `angle` only matters for an avatar backed by the seat-art roster: the
+ * preview dialog passes the angle its own switcher has selected so a buyer
+ * can see the character turned before spending Gold on it. The grid card
+ * never passes one and always shows the 0deg plate.
  */
 function CosmeticArt({ item, angle }: { item: Cosmetic; angle?: number }) {
   const [failed, setFailed] = useState(false);
@@ -56,7 +56,7 @@ function CosmeticArt({ item, angle }: { item: Cosmetic; angle?: number }) {
 
   if (item.slot === "avatar" && !failed) {
     // The same plate the seat-art bucket draws at the table, not a
-    // separately-sized "figure" derivative -- this is the card someone
+    // separately-sized "figure" derivative. This is the card someone
     // decides to spend Gold on, and what they are buying is the exact
     // character who'll sit at their seat.
     return (
@@ -149,7 +149,7 @@ export function Collection() {
     <main className="collection-shell">
       <header className="collection-header">
         <div>
-          {/* .lobby-kicker is the chrome's one micro-label (10px, .25em) --
+          {/* .lobby-kicker is the chrome's one micro-label (10px, .25em),
               the same class the hub head and the landing eyebrow use. Its
               name is from where it first appeared, not from where it is
               allowed to appear. */}
@@ -217,7 +217,7 @@ export function Collection() {
               // Only avatars backed by the seat-art roster have more than one
               // angle to switch between; a single-angle character (today,
               // every one of character6-11) gets no row at all rather than a
-              // button with nothing to switch to -- it grows in on its own
+              // button with nothing to switch to. It grows in on its own
               // the moment a wider turn ships, no code change here needed.
               if (previewing.slot !== "avatar") return null;
               const angles = seatArtCharacter(previewing.id)?.angles;

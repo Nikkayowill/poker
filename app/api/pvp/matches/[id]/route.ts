@@ -21,10 +21,10 @@ export const runtime = "nodejs";
  * service re-reads the match by id and checks the caller is one of its two
  * players, so an id here cannot address anybody else's game.
  *
- * `move` is deliberately untyped at this layer -- `unknown` passed through to
- * the engine, which is the only thing that knows what a legal move looks like
- * for its own game. The shape check that matters is the engine's `applyMove`,
- * which must treat whatever arrives as a claim rather than an instruction.
+ * `move` stays untyped at this layer: `unknown` passed through to the engine,
+ * which is the only thing that knows what a legal move looks like for its own
+ * game. The shape check that matters is the engine's `applyMove`, which must
+ * treat whatever arrives as a claim rather than an instruction.
  */
 const moveSchema = z.object({
   action: z.literal("move"),
@@ -61,7 +61,7 @@ export async function POST(
 ) {
   // Generous compared with the challenge limits: a blitz game is a lot of
   // legitimate moves, and nothing here moves Gold except the one move that
-  // ends the match -- which the version guard already makes idempotent.
+  // ends the match, which the version guard already makes idempotent.
   const limited = enforceRateLimit(request, "pvp:match:act", 600, 60 * 1000);
   if (limited) return limited;
 
@@ -77,7 +77,7 @@ export async function POST(
       );
     }
 
-    // Resigning is forfeiting your own match -- a suspended account must
+    // Resigning is forfeiting your own match, and a suspended account must
     // still be able to do that. Continuing to play (and potentially win a
     // payout) is what's gated, same posture as challenge accept vs. cancel.
     if (parsed.data.action === "move" && (await isBanned(token))) {

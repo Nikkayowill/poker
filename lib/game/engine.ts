@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from "crypto";
-import { bestFiveCards, compareScores, describeHand, evaluateHand, type HandScore } from "./evaluator";
+import { compareScores, describeHand, evaluateHand, evaluateHandDetailed, type HandScore } from "./evaluator";
 import type {
   BotPersonality,
   Card,
@@ -34,38 +34,37 @@ export const SEAT_COUNT = 6;
 /**
  * The cast a table draws its bots from.
  *
- * GAMER TAGS, NOT FIRST NAMES (Kayo's call, 2026-08-21 -- this pool used to
- * read Jax/Maya/Theo). A table of tidy single first names reads as a cast of
- * NPCs; what a real online table looks like is a column of handles somebody
- * typed for themselves, so the pool is written in the shapes people actually
- * pick -- a nickname with a word stuck on it, a name with a number, an
- * underscore, a tag someone clearly carried over from another game. Varied on
- * purpose: one visible formula ("name_word", every entry) gives the generated
- * feel straight back. Keep new entries at 14 characters or fewer -- a human's
- * own name is capped at 18 (see `joinTable`) and a bot sits in the same
- * nameplate, but the small-phone plate crowds well before that.
+ * Gamer tags, not first names. A table of tidy single first names reads as
+ * a cast of NPCs; a real online table looks like a column of handles
+ * somebody typed for themselves, so the pool is written in the shapes
+ * people actually pick: a nickname with a word stuck on it, a name with a
+ * number, an underscore, a tag carried over from another game. Varied
+ * rather than one visible formula repeated, which would give the generated
+ * feel straight back. Keep new entries at 14 characters or fewer: a
+ * human's own name is capped at 18 (see `joinTable`) and a bot shares the
+ * same nameplate, but the small-phone plate crowds well before that.
  *
- * Longer than SEAT_COUNT on purpose: a seat that turns over picks an identity
- * that nobody at the table is currently wearing, so a player who sits for an
- * hour does not watch the same six names cycle back around. The first
- * SEAT_COUNT entries are the original cast and are deliberately left in their
- * original ORDER -- identity indices are persisted on seats, and every live
- * table backfills its bots from `position`, so reordering these would swap the
- * players at every table in flight. Renaming an entry in place is safe (a seat
- * shows its new tag on the next read) and appending is safe; moving one is not.
+ * Longer than SEAT_COUNT so a seat that turns over can pick an identity
+ * nobody at the table is currently wearing; a player who sits for an hour
+ * doesn't watch the same six names cycle back around. The first SEAT_COUNT
+ * entries are the original cast and stay in their original order: identity
+ * indices are persisted on seats, and every live table backfills its bots
+ * from `position`, so reordering these would swap the players at every
+ * table in flight. Renaming an entry in place is safe, and so is
+ * appending; moving one is not.
  *
- * `initials` is left exactly as it was through the rename and is NOT the tag's
- * first two letters (JX for `jaxdidthat`, RV for `riverrat_rj`) -- it is
- * shorthand for the nickname inside the tag, which is what the avatar circle
- * wants to show and what a player already associates with that seat. Deriving
- * it mechanically would turn RV into RI for no reader-facing gain.
+ * `initials` is not the tag's first two letters (JX for `jaxdidthat`, RV
+ * for `riverrat_rj`). It's shorthand for the nickname inside the tag, which
+ * is what the avatar circle shows and what a player already associates
+ * with that seat. Deriving it mechanically would turn RV into RI for no
+ * reader-facing gain.
  *
- * Identity (name/face) and personality (how it plays) are deliberately
- * separate axes -- see `pickBotPersonality` below for the latter. This pool
- * is only ever the former. Nothing ties a tag to the FACE a bot wears either
- * (`botAvatarFor` indexes the character roster independently) -- the catalog's
- * own character names are tags too, but they are the store's labels for a
- * face, not a claim about who is sitting in the chair.
+ * Identity (name/face) and personality (how it plays) are separate axes;
+ * see `pickBotPersonality` below for the latter. This pool is only ever
+ * the former. Nothing ties a tag to the face a bot wears either
+ * (`botAvatarFor` indexes the character roster independently): the
+ * catalog's own character names are tags too, but they're the store's
+ * labels for a face, not a claim about who's sitting in the chair.
  */
 const botProfiles: Array<{
   name: string;
@@ -92,10 +91,9 @@ const botProfiles: Array<{
   { name: "lena_limitless", initials: "LE", accent: "#96bfe8", avatarUrl: null, avatarPreset: "river" },
   { name: "turbotobias", initials: "TB", accent: "#6fcfa8", avatarUrl: null, avatarPreset: "ace" },
   { name: "yara_yolo", initials: "YA", accent: "#eb9db4", avatarUrl: null, avatarPreset: "crown" },
-  // Appended 2026-08-21 with the rename. Twelve more handles means a seat that
-  // turns over is far less likely to hand back a tag the player just watched
-  // leave, which is the whole illusion: a room with people coming and going in
-  // it, not six chairs cycling the same short list.
+  // Twelve more handles means a seat that turns over is far less likely to
+  // hand back a tag the player just watched leave. The whole illusion is a
+  // room with people coming and going, not six chairs cycling a short list.
   { name: "bluffcity_dre", initials: "BD", accent: "#8fd6a8", avatarUrl: null, avatarPreset: "lucky" },
   { name: "notyourlucky", initials: "NY", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond" },
   { name: "smallballsteve", initials: "SB", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt" },
@@ -121,25 +119,24 @@ function botProfileFor(identity: number): (typeof botProfiles)[number] {
 
 /**
  * How a bot plays, rolled independently of which name/face (`botIdentity`)
- * it happens to be wearing -- unlike identity, personality is not required to
- * be unique at a table; a real cash game has more than one loose-passive
- * player in it at once.
+ * it happens to be wearing. Unlike identity, personality doesn't need to be
+ * unique at a table; a real cash game has more than one loose-passive player
+ * in it at once.
  *
  * The three that exist are the three worth having, and the names are
  * compatibility IDs rather than labels (`personalityProfiles` and the
  * preflop chart are both keyed on them):
  *
- *  - `MANIAC` -- "Loose Cannon": very aggressive, plays a wide range, shoves
+ *  - `MANIAC` ("Loose Cannon"): very aggressive, plays a wide range, shoves
  *    with merely-good equity rather than only the nuts.
- *  - `ROCK` -- "Table Captain": balanced-aggressive, plays a tighter range
+ *  - `ROCK` ("Table Captain"): balanced-aggressive, plays a tighter range
  *    well and punishes limpers.
- *  - `CALLING_STATION` -- "Whale": very loose, very passive, wants to see
+ *  - `CALLING_STATION` ("Whale"): very loose, very passive, wants to see
  *    almost every flop and rarely raises without a monster.
  *
- * Weighted 35/45/20 (Loose Cannon/Table Captain/Whale) rather than the even
- * split the pool identities used to imply, and rolled with `randomInt` (not
- * `Math.random`) to match every other source of table randomness in this
- * file.
+ * Weighted 35/45/20 (Loose Cannon/Table Captain/Whale), rolled with
+ * `randomInt` (not `Math.random`) to match every other source of table
+ * randomness in this file.
  */
 function pickBotPersonality(): BotPersonality {
   const roll = randomInt(100);
@@ -151,12 +148,12 @@ function pickBotPersonality(): BotPersonality {
 /**
  * A stable 32-bit hash (FNV-1a) of the string that identifies one replacement.
  *
- * Deliberately not Math.random. Two writers reach a seat replacement for the
- * same hand -- a human's action route and the server-timed advance -- and only
- * one of them wins the version check. With a random draw the loser would
- * recompute a different name and the seat would appear to change identity
- * again on retry; seeded on state that both writers already agree about, they
- * compute the same answer and a retry is a no-op.
+ * Not Math.random. Two writers can reach a seat replacement for the same
+ * hand (a human's action route and the server-timed advance), and only one
+ * wins the version check. With a random draw the loser would recompute a
+ * different name and the seat would appear to change identity again on
+ * retry. Seeded on state both writers already agree about, they compute the
+ * same answer and a retry is a no-op.
  */
 function identityHash(seed: string): number {
   let hash = 0x811c9dc5;
@@ -168,23 +165,23 @@ function identityHash(seed: string): number {
 }
 
 /**
- * An identity for a seat that is turning over, unique among the bots currently
- * sitting at this table -- by tag (no two seats wearing the same name), by
- * avatarPreset (no two seats drawing the same icon, since the preset cycles
- * every 6 pool entries and would otherwise repeat well before the tag does),
- * and by seat-art FACE, which is the one a player actually looks at on the
- * racetrack table. `botAvatarFor` indexes the character roster modulo its
- * length, so any time the pool is larger than the roster some identities
- * alias onto the same character -- 30 tags over 26 characters aliases four of
- * them -- and two bots turn up at one table wearing the same face. Checking
- * the face here rather than sizing one list against the other is what keeps
- * the two free to grow independently, which is the whole point of deriving
- * the cast from the catalog.
+ * An identity for a seat that is turning over, unique among the bots
+ * currently sitting at this table: by tag (no two seats wearing the same
+ * name), by avatarPreset (no two seats drawing the same icon, since the
+ * preset cycles every 6 pool entries and would otherwise repeat well before
+ * the tag does), and by seat-art face, which is the one a player actually
+ * looks at on the racetrack table. `botAvatarFor` indexes the character
+ * roster modulo its length, so whenever the pool is larger than the roster
+ * some identities alias onto the same character (30 tags over 26 characters
+ * aliases four of them), and two bots can turn up at one table wearing the
+ * same face. Checking the face here rather than sizing one list against the
+ * other keeps the two free to grow independently, the whole point of
+ * deriving the cast from the catalog.
  *
- * Uniqueness is checked table-wide rather than per seat: drawing independently
- * per seat is what seats the same tag or icon twice, which is the exact thing
- * rotation is meant to stop. Walking forward from the seeded offset rather
- * than re-drawing keeps it deterministic and bounded.
+ * Uniqueness is checked table-wide rather than per seat, since drawing
+ * independently per seat is what seats the same tag or icon twice, the
+ * exact thing rotation is meant to stop. Walking forward from the seeded
+ * offset rather than re-drawing keeps it deterministic and bounded.
  */
 function pickBotIdentity(state: GameState, position: number): number {
   const others = state.seats.filter(
@@ -204,9 +201,8 @@ function pickBotIdentity(state: GameState, position: number): number {
       return candidate;
     }
   }
-  // Every preset or face already taken (a full table with fewer distinct ones
-  // than seats) -- fall back to tag-uniqueness only, same as before this
-  // existed.
+  // Every preset or face already taken (a full table with fewer distinct
+  // ones than seats): fall back to tag-uniqueness only.
   for (let step = 0; step < botProfiles.length; step += 1) {
     const candidate = (offset + step) % botProfiles.length;
     if (!taken.has(candidate)) return candidate;
@@ -226,10 +222,11 @@ function pickBotIdentity(state: GameState, position: number): number {
  * brings its own face with it instead of inheriting the chair's.
  */
 function botAvatarFor(identity: number): string {
-  // The 2D character roster only, never avatarCosmetics' combined list --
+  // The 2D character roster only, never avatarCosmetics' combined list:
   // that also holds the 3D-only roster, and landing a bot on a 3D id here
-  // would give it a face the racetrack's seat-art lookup can't resolve. Minus
-  // the earned tier, same reasoning as botCardBackFor -- see botAvatarCosmetics.
+  // would give it a face the racetrack's seat-art lookup can't resolve.
+  // Minus the earned tier, same reasoning as botCardBackFor; see
+  // botAvatarCosmetics.
   if (botAvatarCosmetics.length === 0) return DEFAULT_AVATAR_COSMETIC;
   return botAvatarCosmetics[identity % botAvatarCosmetics.length].id;
 }
@@ -238,28 +235,28 @@ function botAvatarFor(identity: number): string {
 // Bot deadlines are also persisted so polling/realtime can pace decisions
 // without trusting a browser timer.
 //
-// Overridable for tests only, and it defaults to exactly the value it has
-// always had. tests/e2e/multiplayer.spec.ts drives six human seats through a
-// hand over HTTP, and all of that has to finish inside one clock that starts
-// when the hand is dealt -- so as the suite grew it began losing the race and
-// the server auto-folded the first actor out from under it. Timeout behaviour
-// itself is covered deterministically by the unit tests, which inject time
-// rather than waiting for it; there is nothing to be gained by also making
-// the browser suite race a wall clock.
+// Overridable for tests only. tests/e2e/multiplayer.spec.ts drives six human
+// seats through a hand over HTTP, and all of that has to finish inside one
+// clock that starts when the hand is dealt, so as the suite grew it began
+// losing the race and the server auto-folded the first actor out from under
+// it. Timeout behaviour itself is covered deterministically by the unit
+// tests, which inject time rather than waiting for it, so there's nothing to
+// gain by also making the browser suite race a wall clock.
 export const TURN_TIMEOUT_MS = Number(process.env.RIVER_TURN_TIMEOUT_MS) || 15_000;
 
 /**
  * How long a finished hand stays on screen before the next one is dealt.
  *
- * Derived from the celebration rather than chosen: the longest animation on a
- * finished table is win-amount-rise, 1.4s from a .78s offset, so everything is
- * over at 2.18s and this leaves a beat after it. app/styles/stylesheets.test.ts
- * reads the stylesheets and fails if any celebration animation grows past this,
- * which is the only way the two can be kept honest -- nothing else in the
- * toolchain reads both a TypeScript constant and a CSS keyframe.
+ * Derived from the celebration rather than chosen: the longest animation on
+ * a finished table is win-amount-rise, 1.4s from a .78s offset, so
+ * everything is over at 2.18s and this leaves a beat after it.
+ * app/styles/stylesheets.test.ts reads the stylesheets and fails if any
+ * celebration animation grows past this, the only way to keep the two
+ * honest since nothing else in the toolchain reads both a TypeScript
+ * constant and a CSS keyframe.
  *
- * Was 4s. Shortened once the deal became automatic: with no button to press,
- * the wait is dead air rather than a chance to act.
+ * Shortened once the deal became automatic: with no button to press, the
+ * wait is dead air rather than a chance to act.
  */
 export const NEXT_HAND_DELAY_MS = 2_800;
 
@@ -267,32 +264,31 @@ export const NEXT_HAND_DELAY_MS = 2_800;
  * Consecutive expired clocks before a seat is given back to the table.
  *
  * Three, because two is a bad connection and three is a person who has gone.
- * At a 15s clock that is roughly 45 seconds of a seat folding itself while
- * five other players wait for it, which is about as long as a table should
- * carry someone -- and it is deliberately not a wall-clock timer: a player
- * who is present but slow is never counted, because acting resets it.
+ * At a 15s clock that's roughly 45 seconds of a seat folding itself while
+ * five other players wait for it, about as long as a table should carry
+ * someone. Not a wall-clock timer: a player who is present but slow is never
+ * counted, since acting resets it.
  */
 export const MAX_MISSED_TURNS = 3;
 
 /**
  * How many funded seats the table tops itself back up to.
  *
- * Six -- the whole table. Used to be four, deliberately: a busted bot that
- * refilled instantly, forever, read as bot stacks becoming a renewable chip
- * source, and this was the blunt cap on that. It's a worse trade than it
- * looks: to a real player two seats sitting empty indefinitely reads as a
- * shrinking tournament, not a cash table they can walk back into. The actual
- * guardrail now lives in *when* a seat refills, not *whether* it's allowed
- * to: a bot that busts from losing its stack still refills the same hand it
- * always has, but a healthy bot's voluntary departure
- * (`BOT_VOLUNTARY_LEAVE_CHANCE` below) is staggered by
- * `BOT_REENTRY_DELAY_MIN_MS`/`MAX_MS` rather than instant -- which is also
- * what keeps the table from just pinning at six occupied seats all the time.
+ * Six: the whole table. A lower floor read as a worse trade than it looks:
+ * a busted bot that refilled instantly, forever, made bot stacks read as a
+ * renewable chip source, but two seats sitting empty indefinitely reads to
+ * a real player as a shrinking tournament, not a cash table they can walk
+ * back into. The actual guardrail lives in *when* a seat refills, not
+ * *whether* it's allowed to: a bot that busts from losing its stack still
+ * refills the same hand it always has, but a healthy bot's voluntary
+ * departure (`BOT_VOLUNTARY_LEAVE_CHANCE` below) is staggered by
+ * `BOT_REENTRY_DELAY_MIN_MS`/`MAX_MS` rather than instant, which is also
+ * what keeps the table from pinning at six occupied seats all the time.
  *
- * Read through fundedFloor() rather than directly, and overridable by env for
- * the same reason TURN_TIMEOUT_MS is: the blind rules for a table that has
- * shrunk below the floor are still real rules worth testing, and the tests
- * that cover them need to be able to produce that table.
+ * Read through fundedFloor() rather than directly, and overridable by env
+ * for the same reason TURN_TIMEOUT_MS is: the blind rules for a table that
+ * has shrunk below the floor are still real rules worth testing, and the
+ * tests that cover them need to be able to produce that table.
  */
 export const TABLE_FUNDED_FLOOR = 6;
 
@@ -303,16 +299,16 @@ function fundedFloor(): number {
 
 /**
  * Chance, per hand boundary, that a currently-funded bot seat decides it's
- * done and stands up on its own -- what makes a table feel like real
- * traffic instead of a fixed cast that only ever turns over by losing.
+ * done and stands up on its own: what makes a table feel like real traffic
+ * instead of a fixed cast that only ever turns over by losing.
  *
  * Zero whenever `process.env.VITEST` is set (the same guard `logTurn` in
  * `lib/server/game-store.ts` already uses), regardless of the env override
  * below. This rolls inside `releaseBustedSeats`, which hundreds of existing
  * tests reach directly or indirectly through `setupHand`/`dealNextHandIfDue`,
  * and none of them expect a seat count to change out from under a
- * deterministic assertion -- so production gets real randomness and the test
- * suite gets none, by default, unless a test explicitly opts in.
+ * deterministic assertion, so production gets real randomness and the test
+ * suite gets none by default, unless a test explicitly opts in.
  *
  * `RIVER_BOT_LEAVE_CHANCE` is read manually rather than through the `|| `
  * idiom used elsewhere in this file: `Number("0") || 0.05` would silently
@@ -330,13 +326,13 @@ function botVoluntaryLeaveChance(): number {
 
 /**
  * How long a bot seat that voluntarily left stays empty before it's eligible
- * to be refilled -- the staggered "weird timing" a real table's traffic has,
+ * to be refilled: the staggered "weird timing" a real table's traffic has,
  * versus an empty chair refilling itself the instant it empties. A seat
  * busted from losing its stack never sets this; only a voluntary departure
  * (see `releaseBustedSeats`) does.
  *
- * Functions, not top-level constants, for the same reason `fundedFloor()` is:
- * a plain `export const` reads its env override exactly once, at module
+ * Functions, not top-level constants, for the same reason `fundedFloor()`
+ * is: a plain `export const` reads its env override exactly once, at module
  * import, before any test's `vi.stubEnv` has run.
  */
 function botReentryDelayMinMs(): number {
@@ -409,10 +405,10 @@ function canAct(seat: Seat) {
 /**
  * Puts a bot in the seat, wearing `identity` from the pool.
  *
- * Callers pass an identity from pickBotIdentity so the replacement is somebody
- * new. It defaults to the seat's position -- the identity that chair has worn
- * since the table was created -- which is what the normalize path wants when
- * it is backfilling a table written before rotation existed.
+ * Callers pass an identity from pickBotIdentity so the replacement is
+ * somebody new. It defaults to the seat's position, the identity that chair
+ * has worn since the table was created, which is what the normalize path
+ * wants when backfilling a table written before rotation existed.
  */
 function restoreBotControl(seat: Seat, identity: number = seat.position) {
   const fallback = botProfileFor(identity);
@@ -423,8 +419,8 @@ function restoreBotControl(seat: Seat, identity: number = seat.position) {
   seat.profileId = null;
   seat.botIdentity = identity;
   // Rolled fresh on every reseat, not carried over from whoever wore this
-  // identity last -- the bot that sits back down needn't play like the one
-  // that left, and it decouples "which name/face" from "how it plays".
+  // identity last: the bot that sits back down needn't play like the one
+  // that left, and this decouples "which name/face" from "how it plays".
   seat.personality = pickBotPersonality();
   seat.name = fallback.name;
   seat.initials = fallback.initials;
@@ -432,8 +428,8 @@ function restoreBotControl(seat: Seat, identity: number = seat.position) {
   seat.avatarUrl = fallback.avatarUrl;
   seat.avatarPreset = fallback.avatarPreset;
   seat.avatarCosmetic = botAvatarFor(identity);
-  // The deck goes back with the seat. A player who leaves -- or is released
-  // for missing three turns -- must not leave a 400,000 Gold card back behind
+  // The deck goes back with the seat. A player who leaves, or is released
+  // for missing three turns, must not leave a 400,000 Gold card back behind
   // for a bot to keep playing with.
   seat.cardBackCosmetic = botCardBackFor(identity);
   seat.missedTurns = 0;
@@ -447,10 +443,10 @@ function restoreBotControl(seat: Seat, identity: number = seat.position) {
  * How many seats will hold chips once releaseBustedSeats has run.
  *
  * The mirror of that function, and it has to stay one: a busted human keeps
- * their seat but not a stack, so they never count here -- only busted bots do,
- * topped up as far as the floor. Kept next to scheduleNextHand because that is
- * the only caller and the only reason it exists -- the deadline is written
- * before the release happens.
+ * their seat but not a stack, so they never count here. Only busted bots do,
+ * topped up as far as the floor. Kept next to scheduleNextHand, its only
+ * caller and the only reason it exists: the deadline is written before the
+ * release happens.
  */
 function fundedSeatsAfterRelease(state: GameState): number {
   const funded = state.seats.filter((seat) => seat.stack > 0).length;
@@ -468,11 +464,11 @@ function fundedSeatsAfterRelease(state: GameState): number {
  */
 export function scheduleNextHand(state: GameState, now = Date.now()) {
   // Counts seats that will be funded when the next hand is actually set up,
-  // not seats funded right now. The two differ because releaseBustedSeats runs
-  // at the head of setupHand -- so a table whose bots have been ground down
-  // below the floor is about to refill and deal, and reading only current
-  // stacks here would null the deadline, stall the table, and never reach the
-  // refill that was going to fix it.
+  // not seats funded right now. The two differ because releaseBustedSeats
+  // runs at the head of setupHand, so a table whose bots have been ground
+  // down below the floor is about to refill and deal; reading only current
+  // stacks here would null the deadline, stall the table, and never reach
+  // the refill that was going to fix it.
   const canContinue = fundedSeatsAfterRelease(state) >= 2;
   if (!canContinue) {
     state.nextHandAt = null;
@@ -480,7 +476,7 @@ export function scheduleNextHand(state: GameState, now = Date.now()) {
   }
   // The same beat regardless of who busted or how many did. One player
   // running out of chips is never a reason for the table to make everyone
-  // else wait -- their own seat just sits out (see releaseBustedSeats) while
+  // else wait; their own seat just sits out (see releaseBustedSeats) while
   // play continues at the normal pace around them.
   state.nextHandAt = new Date(now + NEXT_HAND_DELAY_MS).toISOString();
 }
@@ -488,19 +484,19 @@ export function scheduleNextHand(state: GameState, now = Date.now()) {
 /**
  * Puts a freshly-identified, funded bot in a seat that was empty.
  *
- * Only ever called for a *bot* seat now -- a busted human keeps their own
- * seat and simply sits out (see releaseBustedSeats) rather than being handed
- * to a replacement, real chips having no bot equivalent to mint. Minting the
+ * Only ever called for a *bot* seat: a busted human keeps their own seat and
+ * simply sits out (see releaseBustedSeats) rather than being handed to a
+ * replacement, since real chips have no bot equivalent to mint. Minting the
  * bot's stack is not a conservation break: bot chips are not backed by Gold,
- * and the invariant that matters -- a human's chips and their Gold are the
- * same chips -- never applies to this path.
+ * and the invariant that matters, that a human's chips and their Gold are
+ * the same chips, never applies to this path.
  *
  * Status is set here rather than left to `setupHand`'s own recompute, even
  * though the only caller runs that recompute a few lines later: `setupHand`
- * bails out early when fewer than two seats are funded, and that branch returns
- * before the recompute, which would strand this seat on last hand's `"folded"`
- * while holding a fresh stack. `"out"` -- what this line used to say -- now
- * contradicts a funded seat either way.
+ * bails out early when fewer than two seats are funded, and that branch
+ * returns before the recompute, which would strand this seat on last hand's
+ * `"folded"` status while holding a fresh stack. `"out"` would contradict a
+ * funded seat either way.
  */
 function reseat(state: GameState, seat: Seat) {
   restoreBotControl(seat, pickBotIdentity(state, seat.position));
@@ -509,24 +505,24 @@ function reseat(state: GameState, seat: Seat) {
 }
 
 /**
- * Hands every busted *bot* seat back to a freshly-identified, funded one, and
- * logs a busted human's seat once without touching it.
+ * Hands every busted *bot* seat back to a freshly-identified, funded one,
+ * and logs a busted human's seat once without touching it.
  *
- * A human who runs out of chips keeps their seat -- no grace period, no bot
+ * A human who runs out of chips keeps their seat: no grace period, no bot
  * standing in for them, exactly like walking away from a real table broke.
  * `setupHand`'s own per-seat pass a few lines after this call already reads
  * their zero stack and sits them out for the next hand same as any other
  * unfunded seat, so there is nothing left for this function to do for them
- * beyond the log line, and that only once: `seat.status === "out"` is true on
- * every call after the first, since the per-seat pass set it there and
+ * beyond the log line, and that only once: `seat.status === "out"` is true
+ * on every call after the first, since the per-seat pass set it there and
  * nothing refills it until they rebuy.
  *
- * Busted *bots* are a different problem and this is the fix for it: a bot
- * that lost its last chip to a hot player used to be marked `"out"` and stay
- * there, so a table left running long enough emptied itself down to
- * "Not enough players with chips to continue". They refill up to the floor,
- * and this runs at the head of `setupHand` -- before funded seats are counted
- * and before any card is dealt -- which is what makes "the seats are refilled
+ * Busted *bots* are a different problem: without a refill, a bot that lost
+ * its last chip to a hot player would stay marked `"out"` forever, so a
+ * table left running long enough would empty itself down to "Not enough
+ * players with chips to continue." They refill up to the floor instead, and
+ * this runs at the head of `setupHand`, before funded seats are counted and
+ * before any card is dealt, which is what makes "the seats are refilled
  * before the next hand" a property of the deal rather than a race with it.
  */
 function releaseBustedSeats(state: GameState, now: number = Date.now()) {
@@ -535,11 +531,11 @@ function releaseBustedSeats(state: GameState, now: number = Date.now()) {
     addLog(state, `${seat.name} is out of chips and sits out until they rebuy`);
   });
 
-  // A healthy bot occasionally decides it's done and stands up on its own --
-  // this, not busting, is now the main way a table's cast turns over, since
-  // busted bots refill the same hand they always have (below). Never below
-  // three funded seats (itself plus at least two others), so this can never
-  // be what strands a table for want of players.
+  // A healthy bot occasionally decides it's done and stands up on its own,
+  // the main way a table's cast turns over now, since busted bots refill
+  // the same hand they always have (below). Never below three funded seats
+  // (itself plus at least two others), so this can never be what strands a
+  // table for want of players.
   const leaveChance = botVoluntaryLeaveChance();
   if (leaveChance > 0) {
     for (const seat of state.seats) {
@@ -550,7 +546,7 @@ function releaseBustedSeats(state: GameState, now: number = Date.now()) {
       seat.status = "out";
       seat.stack = 0;
       // The one place this ever gets set. A seat that busts from losing its
-      // stack (below) leaves it null and refills immediately, same as today.
+      // stack (below) leaves it null and refills immediately.
       seat.reseatEligibleAt = new Date(
         now + randomInt(botReentryDelayMinMs(), botReentryDelayMaxMs() + 1),
       ).toISOString();
@@ -558,14 +554,14 @@ function releaseBustedSeats(state: GameState, now: number = Date.now()) {
     }
   }
 
-  // Busted bots -- from losing their stack, or from voluntarily leaving just
-  // above -- refill up to the floor, skipping any seat still waiting out its
+  // Busted bots, from losing their stack or from voluntarily leaving just
+  // above, refill up to the floor, skipping any seat still waiting out its
   // own stagger. Refilling every one of them on the spot would pin the table
   // at six funded seats forever, which costs two things worth keeping:
-  // short-handed play stops existing, and the bot stacks -- minted, not
-  // backed by Gold -- become a renewable source of chips that a winning
-  // player converts to Gold on cash-out. The floor (now six, see
-  // TABLE_FUNDED_FLOOR) plus the stagger above are what bound that instead.
+  // short-handed play stops existing, and the bot stacks (minted, not
+  // backed by Gold) become a renewable source of chips that a winning
+  // player converts to Gold on cash-out. The floor (see TABLE_FUNDED_FLOOR)
+  // plus the stagger above are what bound that instead.
   const floor = fundedFloor();
   for (const seat of state.seats) {
     if (seat.isHuman || seat.stack > 0) continue;
@@ -580,7 +576,7 @@ function releaseBustedSeats(state: GameState, now: number = Date.now()) {
 function blindPositions(state: GameState) {
   if (state.seats.filter(inHand).length === 2) {
     // Heads-up: the button also posts the small blind and acts first
-    // preflop — the standard heads-up convention, and the reverse of what
+    // preflop, the standard heads-up convention and the reverse of what
     // the general n-player rule below would produce with only two players.
     const small = state.buttonPosition;
     const big = nextSeat(state, small, inHand);
@@ -611,8 +607,8 @@ function dealToCommunity(state: GameState, count: number) {
 
 function setupHand(state: GameState, firstHand = false, now: number = Date.now()) {
   if (!firstHand) releaseBustedSeats(state, now);
-  // Cleared before the funded check, so the dead-table branch below leaves it
-  // null rather than inheriting the deadline that brought us here -- which
+  // Cleared before the funded check, so the dead-table branch below leaves
+  // it null rather than inheriting the deadline that brought us here, which
   // would have every browser retry an advance that can never succeed.
   state.nextHandAt = null;
   const funded = state.seats.filter((seat) => seat.stack > 0);
@@ -681,13 +677,13 @@ function setupHand(state: GameState, firstHand = false, now: number = Date.now()
  * How deep a bot's starting stack can run, as a multiple of the table's
  * fixed buy-in.
  *
- * TIER_CONFIG's minBuyIn === maxBuyIn deliberately -- a human always buys in
- * for exactly the tier's number, see tiers.ts. That invariant is about what a
- * player pays, not what a bot happens to be carrying when the table is first
- * drawn, so giving the six bot chairs a spread of stacks does not touch it: a
- * fresh table reading as new money sitting at 1x next to a grinder up to 3x is
- * what a table that has actually been running looks like, and a row of six
- * identical stacks is the tell that it has not.
+ * TIER_CONFIG's minBuyIn === maxBuyIn: a human always buys in for exactly
+ * the tier's number, see tiers.ts. That invariant is about what a player
+ * pays, not what a bot happens to be carrying when the table is first
+ * drawn, so giving the six bot chairs a spread of stacks doesn't touch it.
+ * A fresh table reading as new money sitting at 1x next to a grinder up to
+ * 3x is what a table that has actually been running looks like; a row of
+ * six identical stacks is the tell that it hasn't.
  */
 const BOT_STACK_DEEP_MULTIPLE = 3;
 
@@ -717,9 +713,9 @@ export function createGame(
   const tier = options?.tier ?? CHEAPEST_TIER;
   const config = TIER_CONFIG[tier];
   // Defaults to 1000 (not the tier's own range) so every existing caller
-  // that doesn't pass a buyIn -- every test, and any not-yet-updated route --
+  // that doesn't pass a buyIn, every test and any not-yet-updated route,
   // keeps getting exactly the stack size the app has always started with.
-  // A real buy-in choice (the new lobby/quick-play flow) always passes one
+  // A real buy-in choice (the lobby/quick-play flow) always passes one
   // explicitly and gets clamped into the tier's actual bounds.
   const buyIn = options?.buyIn === undefined ? 1000 : clampBuyIn(tier, options.buyIn);
   const seats: Seat[] = [
@@ -736,8 +732,8 @@ export function createGame(
       position: 0,
       isHuman: true,
       ownerToken: hostToken,
-      // Guests get null, so the host seat of a guest-created table carries no
-      // durable identity -- see Seat.profileId.
+      // Guests get null, so the host seat of a guest-created table carries
+      // no durable identity; see Seat.profileId.
       profileId: appearance?.isRegistered ? appearance.id : null,
       botIdentity: null,
       personality: null,
@@ -753,8 +749,8 @@ export function createGame(
       vpip: false,
       reseatEligibleAt: null,
     },
-    // Bounded by SEAT_COUNT, not by the pool: the pool is deliberately longer
-    // than the table so rotation has somewhere to draw from, and slicing it
+    // Bounded by SEAT_COUNT, not by the pool: the pool is longer than the
+    // table so rotation has somewhere to draw from, and slicing it
     // open-ended would seat one player per identity.
     ...botProfiles.slice(1, SEAT_COUNT).map((bot, index): Seat => ({
       id: randomUUID(),
@@ -813,13 +809,13 @@ export function createGame(
     updatedAt: now,
   };
   // Rotate the starting cast per table instead of always seating the same
-  // first SEAT_COUNT-1 pool entries in the same order -- the seats above are
-  // built from a fixed slice of botProfiles, so every fresh table used to
-  // open on the identical five bots (maya_ontilt, theo_wit_it, riverrat_rj,
-  // priyapushes, wrenzo_44), which is why "priya" and "river" showed up at
-  // every table a player loaded into. pickBotIdentity is seeded off
-  // state.id, so reusing it here varies the opening lineup per table the
-  // same way a mid-game reseat already varies who sits back down.
+  // first SEAT_COUNT-1 pool entries in the same order. The seats above are
+  // built from a fixed slice of botProfiles, so without this every fresh
+  // table would open on the identical five bots (maya_ontilt, theo_wit_it,
+  // riverrat_rj, priyapushes, wrenzo_44), which is why "priya" and "river"
+  // used to show up at every table a player loaded into. pickBotIdentity is
+  // seeded off state.id, so reusing it here varies the opening lineup per
+  // table the same way a mid-game reseat already varies who sits back down.
   for (const seat of state.seats) {
     if (!seat.isHuman) restoreBotControl(seat, pickBotIdentity(state, seat.position));
   }
@@ -857,13 +853,13 @@ export function claimSeat(
   if (seat.committed > paidBuyIn) {
     throw new Error("Choose a buy-in that covers this seat's committed chips.");
   }
-  // The bot in this seat can be mid-hand -- dealt in, maybe already acted or
-  // folded -- the instant a human claims it. Those hole cards and that
-  // position were never this player's to inherit: without this, they took
-  // over the bot's actual hand, which could hand them a live turn (or even an
-  // uncontested win) on cards they never saw dealt. `status !== "out"`
+  // The bot in this seat can be mid-hand (dealt in, maybe already acted or
+  // folded) the instant a human claims it. Those hole cards and that
+  // position were never this player's to inherit: without this, they'd take
+  // over the bot's actual hand, which could hand them a live turn (or even
+  // an uncontested win) on cards they never saw dealt. `status !== "out"`
   // excludes the seat that was already sitting out this hand for want of
-  // funding at the table floor -- there is nothing to neutralize there.
+  // funding at the table floor; there's nothing to neutralize there.
   const takingOverLiveHand = state.status === "playing" && seat.status !== "out";
   const wasCurrentTurn = state.currentPlayer === seatIndex;
 
@@ -896,11 +892,11 @@ export function claimSeat(
   seat.holeCards = [];
 
   if (takingOverLiveHand) {
-    // Sat out for the rest of this hand -- the same status setupHand already
+    // Sat out for the rest of this hand: the same status setupHand already
     // gives a seat with no stake in the current hand, and the one it will
     // overwrite back to "active" at the very next deal. The seat keeps
-    // whatever it already committed to this pot; that is now contested chips,
-    // exactly as when any other seat leaves mid-hand.
+    // whatever it already committed to this pot; that's now contested
+    // chips, exactly as when any other seat leaves mid-hand.
     seat.status = "out";
     seat.acted = false;
     seat.actedAtBet = null;
@@ -929,13 +925,14 @@ export function claimSeat(
 /**
  * Gives up a seat, handing control back to a bot under the seat's original
  * identity. If it happens to be this seat's turn right now, the following
- * autoPlayBots() call resolves it automatically, since the seat is no longer
- * human-controlled — no separate "resolve their pending turn" step needed.
+ * autoPlayBots() call resolves it automatically, since the seat is no
+ * longer human-controlled: no separate "resolve their pending turn" step
+ * needed.
  *
  * Returns the chips the departing player still had in front of them, which
- * the caller cashes back out to Gold. Chips already committed to the current
- * pot are deliberately excluded: once they are in the middle they are
- * contested, exactly as at a real table.
+ * the caller cashes back out to Gold. Chips already committed to the
+ * current pot are excluded: once they're in the middle they're contested,
+ * exactly as at a real table.
  */
 export function vacateSeat(state: GameState, token: string): { state: GameState; cashedOut: number } {
   const seatIndex = state.seats.findIndex((seat) => seat.ownerToken === token);
@@ -945,8 +942,8 @@ export function vacateSeat(state: GameState, token: string): { state: GameState;
   const cashedOut = seat.stack;
   restoreBotControl(seat, pickBotIdentity(state, seat.position));
   // Those chips leave the table with the player, so the seat must not keep
-  // them too -- otherwise every departure would mint the stack a second time.
-  // The replacement bot sits down fresh for the table minimum.
+  // them too, or every departure would mint the stack a second time. The
+  // replacement bot sits down fresh for the table minimum.
   seat.stack = TIER_CONFIG[state.tier].minBuyIn;
   if (state.currentPlayer === seatIndex) setCurrentPlayer(state, seatIndex);
 
@@ -1003,14 +1000,14 @@ function remaining(state: GameState) {
  * seat would otherwise mint Gold from nothing; rake is the counterweight.
  *
  * Two things hold rake off a pot. The minimum-pot floor keeps the house out
- * of small pots at all. Separately, and regardless of size, nothing is taken
- * from a hand that never saw a flop -- the standard "no flop, no drop" rule,
- * enforced in deductRake below.
+ * of small pots entirely. Separately, and regardless of size, nothing is
+ * taken from a hand that never saw a flop, the standard "no flop, no drop"
+ * rule, enforced in deductRake below.
  *
- * The floor alone used to be described as covering that, on the reasoning
- * that a preflop steal of the blinds never clears ten big blinds. True of a
- * steal, but not of the hand it was standing in for: at 5/10 an open to 30
- * and a three-bet to 100 leaves a 135 pot, which cleared the floor and got
+ * The floor alone isn't enough to cover that: it's tempting to reason that a
+ * preflop steal of the blinds never clears ten big blinds, but that's true
+ * only of a steal, not of the hand it stands in for. At 5/10 an open to 30
+ * and a three-bet to 100 leaves a 135 pot, which clears the floor and gets
  * raked. Raising, taking it down uncontested, and still losing chips to the
  * house is the single worst-feeling outcome a poker client can produce.
  */
@@ -1032,8 +1029,8 @@ function rakeFor(pot: number, bigBlind: number): number {
 function deductRake(state: GameState, winnings: Map<string, number>): number {
   // No flop, no drop. Only reachable from awardUncontested: showdown() runs
   // the board out to five cards before it rakes, so a hand that got all-in
-  // preflop and was dealt a run-out is still raked -- a flop was dealt, and
-  // the house did provide the pot. This guard is for the hand that ended
+  // preflop and was dealt a run-out is still raked (a flop was dealt, and
+  // the house did provide the pot). This guard is for the hand that ended
   // before any board existed at all.
   if (state.community.length === 0) return 0;
   const total = [...winnings.values()].reduce((sum, amount) => sum + amount, 0);
@@ -1092,9 +1089,14 @@ function showdown(state: GameState) {
     dealToCommunity(state, state.community.length === 0 ? 3 : 1);
   }
   const contenders = remaining(state);
-  const scores = new Map(
-    contenders.map((seat) => [seat.id, evaluateHand([...seat.holeCards, ...state.community])]),
+  // One pass per contender captures both the score (for comparing hands) and
+  // the winning five-card combination (for the win message): evaluateHand
+  // and bestFiveCards each run the same C(7,5) search independently, so
+  // calling both back to back would search the same cards twice.
+  const evaluations = new Map(
+    contenders.map((seat) => [seat.id, evaluateHandDetailed([...seat.holeCards, ...state.community])]),
   );
+  const scores = new Map([...evaluations].map(([seatId, evaluation]) => [seatId, evaluation.score]));
   const levels = [...new Set(state.seats.map((seat) => seat.committed).filter(Boolean))].sort((a, b) => a - b);
   let previous = 0;
   const winnings = new Map<string, number>();
@@ -1132,9 +1134,10 @@ function showdown(state: GameState) {
       amount,
       hand: scores.get(seatId)!.name,
       // Safe here and only here: this is the showdown path, so these hole
-      // cards are already revealed to everyone by toSnapshot. awardUncontested
-      // deliberately leaves this null -- see the field's comment in types.ts.
-      bestFive: bestFiveCards([...seat.holeCards, ...state.community]),
+      // cards are already revealed to everyone by toSnapshot.
+      // awardUncontested leaves this null; see the field's comment in
+      // types.ts.
+      bestFive: evaluations.get(seatId)!.cards,
     };
   });
   state.winners = winners.sort((a, b) => b.amount - a.amount);
@@ -1196,7 +1199,7 @@ function applyTurnAction(state: GameState, action: TurnAction) {
   const toCall = legal.toCall;
 
   // VPIP: every path below except fold and check commits chips, and a check
-  // preflop only exists when toCall is 0 (nobody raised) -- so "not fold, not
+  // preflop only exists when toCall is 0 (nobody raised), so "not fold, not
   // check, preflop" already means "chose to put money in beyond the blind."
   if (state.street === "preflop" && action.type !== "fold" && action.type !== "check") {
     seat.vpip = true;
@@ -1283,9 +1286,9 @@ const personalityProfiles: Record<
     postflopBetSizes: number[];
     /**
      * Chance to ignore the tier chart's hard preflop fold on a "trash" hand
-     * and fall through to the normal call/raise/fold cascade instead, same as
-     * the personality-independent `BOT_BLUFF_FREQUENCY` gate already does at
-     * 5% -- this is the actual VPIP knob per personality; everything else
+     * and fall through to the normal call/raise/fold cascade instead, same
+     * as the personality-independent `BOT_BLUFF_FREQUENCY` gate already does
+     * at 5%. This is the actual VPIP knob per personality; everything else
      * here only shapes what happens once a hand is already being played.
      */
     trashContinueChance: number;
@@ -1304,7 +1307,7 @@ const personalityProfiles: Record<
     limperPunishBonus: number;
   }
 > = {
-  // "Loose Cannon" -- very aggressive, wide range, shoves early.
+  // "Loose Cannon": very aggressive, wide range, shoves early.
   MANIAC: {
     aggression: 0.72,
     callTolerance: 0.08,
@@ -1315,7 +1318,7 @@ const personalityProfiles: Record<
     shoveEquityDiscount: 0.08,
     limperPunishBonus: 0,
   },
-  // "Table Captain" -- balanced-aggressive, plays a tighter range well.
+  // "Table Captain": balanced-aggressive, plays a tighter range well.
   ROCK: {
     aggression: 0.5,
     callTolerance: 0,
@@ -1326,7 +1329,7 @@ const personalityProfiles: Record<
     shoveEquityDiscount: 0,
     limperPunishBonus: 0.18,
   },
-  // "Whale" -- very loose, very passive, wants to see almost every flop.
+  // "Whale": very loose, very passive, wants to see almost every flop.
   CALLING_STATION: {
     aggression: 0.14,
     callTolerance: 0.18,
@@ -1407,7 +1410,7 @@ function drawUnknownCard(pool: Card[], random: BotRandom): Card {
 /**
  * Estimates showdown equity using only information the bot is entitled to:
  * its own cards, the public board, and the number of live opponents. Actual
- * opponent cards and the server's remaining deck are deliberately ignored.
+ * opponent cards and the server's remaining deck are ignored.
  */
 export function estimateBotEquity(
   state: GameState,
@@ -1470,6 +1473,19 @@ function positionAdvantage(state: GameState, seatIndex: number): number {
   return position < 0 || order.length < 2 ? 0.5 : position / (order.length - 1);
 }
 
+// Normal bot bets stop at one pot and leave at least one big blind behind.
+// Committing the stack is a separate, tightly gated decision; a rounded
+// raise must never accidentally turn into another shove. Shared by
+// botRaiseTarget (what to raise to) and chooseBotAction (whether raising at
+// all is even legal within that ceiling) so the two caps can't drift.
+function botRaiseCaps(state: GameState, legal: LegalActions): { potSizedCap: number; nonAllInCap: number } {
+  const potSizedCap = state.currentBet === 0
+    ? Math.max(state.bigBlind, state.pot)
+    : state.currentBet + state.pot + legal.toCall;
+  const nonAllInCap = legal.maxRaiseTo - Math.min(state.bigBlind, legal.maxRaiseTo);
+  return { potSizedCap, nonAllInCap };
+}
+
 function botRaiseTarget(
   state: GameState,
   legal: LegalActions,
@@ -1497,13 +1513,7 @@ function botRaiseTarget(
     legal.minRaiseTo,
     Math.round(target / state.bigBlind) * state.bigBlind,
   );
-  // Normal bets stop at one pot and deliberately leave at least one big
-  // blind behind. Committing the stack is a separate, tightly gated decision
-  // below; a rounded raise must never accidentally turn into another shove.
-  const potSizedCap = state.currentBet === 0
-    ? Math.max(state.bigBlind, state.pot)
-    : state.currentBet + state.pot + legal.toCall;
-  const nonAllInCap = legal.maxRaiseTo - Math.min(state.bigBlind, legal.maxRaiseTo);
+  const { potSizedCap, nonAllInCap } = botRaiseCaps(state, legal);
   return Math.min(potSizedCap, nonAllInCap, rounded);
 }
 
@@ -1560,16 +1570,14 @@ export function chooseBotAction(
     && decisionRoll < BOT_BLUFF_FREQUENCY;
   // The actual VPIP knob: a personality-specific chance to play a "trash"
   // hand anyway rather than being blocked from ever trying, on the same
-  // `decisionRoll` the bluff gate above already reads -- no extra random()
-  // call, so this doesn't shift any downstream draw a seeded test depends on.
+  // `decisionRoll` the bluff gate above already reads. No extra random()
+  // call, so this doesn't shift any downstream draw a seeded test depends
+  // on.
   const trashContinueRoll = decisionRoll < style.trashContinueChance;
   const preflopLimpers = state.street === "preflop"
     ? state.seats.filter((candidate) => candidate.vpip && candidate.streetBet === state.currentBet).length
     : 0;
-  const potSizedCap = state.currentBet === 0
-    ? Math.max(state.bigBlind, state.pot)
-    : state.currentBet + state.pot + legal.toCall;
-  const nonAllInCap = legal.maxRaiseTo - Math.min(state.bigBlind, legal.maxRaiseTo);
+  const { potSizedCap, nonAllInCap } = botRaiseCaps(state, legal);
   const shouldRaise = legal.canRaise
     && (hasValueRaise || bluffWindow)
     && legal.minRaiseTo <= Math.min(potSizedCap, nonAllInCap)
@@ -1582,7 +1590,7 @@ export function chooseBotAction(
 
   if (legal.toCall > 0) {
     // Weak offsuit holdings mostly do not drift into multiway pots because a
-    // Monte Carlo roll happened to land high -- the bluff gate and the
+    // Monte Carlo roll happened to land high. The bluff gate and the
     // personality's own looseness are the two ways in.
     if (
       state.street === "preflop"
@@ -1671,8 +1679,8 @@ export function autoPlayBots(state: GameState): GameState {
 export function normalizeGameState(state: GameState): GameState {
   if (!isStakesTier(state.tier)) {
     // Games created before stakes tiers existed (stale in-memory dev state,
-    // or Supabase rows persisted before this field was added) have no tier
-    // -- fall back to the cheapest tier rather than letting
+    // or Supabase rows persisted before this field was added) have no tier.
+    // Fall back to the cheapest tier rather than letting
     // TIER_CONFIG[undefined] crash every reader downstream.
     state.tier = CHEAPEST_TIER;
   }
@@ -1682,43 +1690,44 @@ export function normalizeGameState(state: GameState): GameState {
   // is the safe reading: the table waits for someone to press Deal, exactly
   // as it did when that row was written.
   if (typeof state.nextHandAt !== "string") state.nextHandAt = null;
-  // Seats persisted before inactivity was tracked have missed nothing that
-  // anyone recorded, so they start from zero rather than from undefined --
-  // which would make every comparison below NaN and release nobody, silently.
+  // One pass backfilling every field below: they're independent migrations
+  // with no ordering requirement between them, just each seat visited once
+  // rather than three times.
   state.seats.forEach((seat) => {
+    // Seats persisted before inactivity was tracked have missed nothing
+    // that anyone recorded, so they start from zero rather than from
+    // undefined, which would make every comparison below NaN and release
+    // nobody, silently.
     if (!Number.isInteger(seat.missedTurns) || seat.missedTurns < 0) seat.missedTurns = 0;
-  });
-  // Tables persisted before staggered bot re-entry existed carry no
-  // eligibility timestamp at all -- null reads as "immediately eligible",
-  // which is exactly how every seat already behaved before this existed.
-  state.seats.forEach((seat) => {
+    // Tables persisted before staggered bot re-entry existed carry no
+    // eligibility timestamp at all. Null reads as "immediately eligible,"
+    // which is exactly how every seat already behaved before this existed.
     if (typeof seat.reseatEligibleAt !== "string") seat.reseatEligibleAt = null;
-  });
-  state.seats.forEach((seat) => {
     // Which identity this bot is wearing, for tables persisted before seats
     // carried one. `position` is the right backfill and not merely a safe
     // one: it is the identity that seat has been showing all along, so a
     // table in flight keeps its cast across the deploy instead of renaming
     // every bot at once under its players.
     //
-    // Reading a persisted value here rather than recomputing from position is
-    // the whole mechanism. This block used to derive the face from the chair
-    // on every load, which meant a rotated bot reverted to the old identity on
-    // the very next snapshot -- the rotation was real in memory and invisible
-    // in production.
+    // Reading a persisted value here rather than recomputing from position
+    // is the whole mechanism. Deriving the face from the chair on every
+    // load instead would mean a rotated bot reverts to the old identity on
+    // the very next snapshot: the rotation would be real in memory and
+    // invisible in production.
     if (seat.isHuman) {
       seat.botIdentity = null;
     } else if (!Number.isInteger(seat.botIdentity)) {
       seat.botIdentity = seat.position;
     }
-    // Seats persisted before profile ids existed carry undefined, which would
-    // reach the client as a missing key and read as "no id" anyway -- but only
-    // by accident. Null is the same answer said deliberately.
+    // Seats persisted before profile ids existed carry undefined, which
+    // would reach the client as a missing key and read as "no id" anyway,
+    // but only by accident. Null is the same answer said on purpose.
     //
-    // Forcing non-humans to null is the load-bearing half. Unlike botIdentity
-    // this is never re-derived, so the only way a bot seat could hold an id is
-    // if a release path failed to clear one; pinning it here means a stale id
-    // cannot survive a single round trip through the store.
+    // Forcing non-humans to null is the load-bearing half. Unlike
+    // botIdentity this is never re-derived, so the only way a bot seat
+    // could hold an id is if a release path failed to clear one; pinning it
+    // here means a stale id cannot survive a single round trip through the
+    // store.
     if (!seat.isHuman || typeof seat.profileId !== "string") {
       seat.profileId = null;
     }
@@ -1743,11 +1752,11 @@ export function normalizeGameState(state: GameState): GameState {
     // Hands in flight before VPIP existed have no opinion either way; treat
     // as false rather than let `undefined` leak into a stats comparison.
     seat.vpip = Boolean(seat.vpip);
+    // Covers both a stored NaN and forward compatibility for hands persisted
+    // before betting-reopening tracked the amount each player had already
+    // faced (actedAtBet undefined). A legitimate `null` (no bet faced yet
+    // this street) is left alone by the `!== null` guard.
     if (seat.actedAtBet !== null && !Number.isFinite(seat.actedAtBet)) {
-      seat.actedAtBet = seat.acted ? seat.streetBet : null;
-    } else if (seat.actedAtBet === undefined) {
-      // Forward compatibility for persisted hands created before betting
-      // reopening tracked the amount each player had already faced.
       seat.actedAtBet = seat.acted ? seat.streetBet : null;
     }
   });
@@ -1786,13 +1795,13 @@ export interface TimedTurnAdvance {
 /**
  * Replaces a finished hand with the next one, once its deadline has passed.
  *
- * The whole of continuous play. Deliberately separate from advanceTimedTurn
- * rather than folded into it: that function's contract is "an action and an
- * actor, or nothing happened", and its caller in game-store.ts stops on a
- * null action without persisting anything. A hand dealt inside it would be
- * dealt in memory and thrown away -- which is exactly what happened when it
- * was written that way, and the browser sat on a finished table forever
- * because every advance re-dealt a hand nobody ever saved.
+ * The whole of continuous play. Kept separate from advanceTimedTurn rather
+ * than folded into it: that function's contract is "an action and an actor,
+ * or nothing happened," and its caller in game-store.ts stops on a null
+ * action without persisting anything. A hand dealt inside it would be dealt
+ * in memory and thrown away, exactly what happened when it was written that
+ * way: the browser sat on a finished table forever because every advance
+ * re-dealt a hand nobody ever saved.
  */
 /** A seat handed back to the table, and what its occupant is owed for it. */
 export interface ReleasedSeat {
@@ -1805,13 +1814,13 @@ export interface ReleasedSeat {
 /**
  * Hands back every seat whose occupant has stopped acting.
  *
- * Returns what it released rather than settling it, because settling is not
+ * Returns what it released rather than settling it, because settling isn't
  * something the engine can do: chips become Gold through creditGold, which
- * talks to the profile store. vacateSeat has always had the same split -- it
- * returns `cashedOut` and the actions route pays it -- and this is the same
- * contract for the path where nobody pressed anything.
+ * talks to the profile store. vacateSeat has the same split (it returns
+ * `cashedOut` and the actions route pays it), and this is the same contract
+ * for the path where nobody pressed anything.
  *
- * Getting that wrong would be quiet and expensive. restoreBotControl leaves
+ * Getting that wrong would be quiet and expensive: restoreBotControl leaves
  * the stack where it is, so releasing a seat without reporting the balance
  * would simply hand a player's chips to the bot that replaced them.
  *
@@ -1916,23 +1925,23 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
   } else if (action.type === "rebuy") {
     const seat = state.seats[seatIndex];
     if (seat.stack > 0) throw new Error("Your seat still has chips.");
-    // No "between hands" restriction any more: a busted seat sits out for as
-    // many hands as it takes, same as any other unfunded seat, so there is no
+    // No "between hands" restriction: a busted seat sits out for as many
+    // hands as it takes, same as any other unfunded seat, so there's no
     // reason to make the player wait for a lull before they can even submit
-    // this. The one thing still guarded against is rebuying a seat that is
-    // *currently* live in a hand in progress -- reachable only by calling the
-    // API directly, since the client never offers Rebuy except when `status`
-    // already reads "out" -- which would let a stack that lost its last chip
-    // this same hand un-lose it before the hand has even finished being
-    // decided.
+    // this. The one thing still guarded against is rebuying a seat that's
+    // *currently* live in a hand in progress, reachable only by calling the
+    // API directly since the client never offers Rebuy except when `status`
+    // already reads "out." Without the guard, a stack that lost its last
+    // chip this same hand could un-lose it before the hand has even
+    // finished being decided.
     if (state.status === "playing" && seat.status !== "out") {
       throw new Error("Wait for this hand to finish deciding your seat.");
     }
     seat.stack = clampBuyIn(state.tier, action.amount);
     if (state.status === "complete") {
-      // Refill and immediately deal, in one action -- refilling first means
-      // setupHand's own per-seat funding check leaves this seat alone rather
-      // than sitting it out again.
+      // Refill and immediately deal, in one action: refilling first means
+      // setupHand's own per-seat funding check leaves this seat alone
+      // rather than sitting it out again.
       seat.status = "active";
       setupHand(state);
     } else {
@@ -1959,8 +1968,8 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
  * 2+ players actually got there.
  *
  * An uncontested win (everyone else folded) lets the winner muck without
- * showing, exactly like a real showdown never happened -- and for anyone who
- * folded earlier, their cards stay hidden from other seats forever.
+ * showing, exactly like a real showdown never happened. Anyone who folded
+ * earlier keeps their cards hidden from other seats forever.
  */
 export function handReachedShowdown(state: GameState): boolean {
   return state.street === "showdown" && remaining(state).length > 1;
@@ -1970,14 +1979,14 @@ export function handReachedShowdown(state: GameState): boolean {
  * Whether a seat's hole cards became public knowledge at the table.
  *
  * The one place this rule is written down. `toSnapshot` reads it for the
- * live table and lib/server/hand-archive-store.ts reads it when persisting a
- * finished hand, because a second copy of the rule is a second place for it
- * to drift -- and the drift is silent in the direction that matters, since
+ * live table and lib/server/hand-archive-store.ts reads it when persisting
+ * a finished hand, because a second copy of the rule is a second place for
+ * it to drift, and the drift is silent in the direction that matters, since
  * replaying a hand with an opponent's mucked cards visible looks like a
  * feature rather than a leak.
  *
- * Note this is about the table, not about any one viewer: a player always
- * sees their own cards, which is the caller's business to add, not this
+ * This is about the table, not about any one viewer: a player always sees
+ * their own cards, which is the caller's business to add, not this
  * function's.
  */
 export function seatCardsWereShown(state: GameState, seat: Seat): boolean {
@@ -1986,9 +1995,8 @@ export function seatCardsWereShown(state: GameState, seat: Seat): boolean {
 
 export function toSnapshot(state: GameState, callerToken: string): GameSnapshot {
   const mySeatIndex = state.seats.findIndex((seat) => seat.ownerToken === callerToken);
-  const publicState = Object.fromEntries(
-    Object.entries(state).filter(([key]) => key !== "deck" && key !== "hostToken" && key !== "seats"),
-  ) as Omit<GameState, "deck" | "hostToken" | "seats">;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropping the three private fields
+  const { deck, hostToken, seats, ...publicState } = state;
   const { small, big } = blindPositions(state);
   return {
     ...publicState,
@@ -1996,23 +2004,22 @@ export function toSnapshot(state: GameState, callerToken: string): GameSnapshot 
     seats: state.seats.map((seat, index) => {
       const isMine = index === mySeatIndex;
       const revealed = isMine || seatCardsWereShown(state, seat);
-      const publicSeat = Object.fromEntries(
-        Object.entries(seat).filter(([key]) => key !== "ownerToken"),
-      ) as Omit<Seat, "ownerToken">;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropping ownerToken, never sent to clients
+      const { ownerToken, ...publicSeat } = seat;
       return {
         ...publicSeat,
         holeCards: seat.holeCards.map((card) => (revealed ? card : null)),
         /**
-         * Gated on `revealed`, the same flag the cards themselves use, and
-         * deliberately not on a rule of its own.
+         * Gated on `revealed`, the same flag the cards themselves use, not
+         * on a rule of its own.
          *
          * A made-hand label is a lossy description of exactly the cards
          * beside it, so tying the two together makes it impossible for the
          * label to say more than the hand already shows: mid-hand you get
-         * your own, and at a genuine showdown everyone still in gets theirs.
-         * Any separate condition here would be a second place for the
-         * redaction rule to drift out of step with the first -- and the
-         * failure mode is silent, because "Full house" next to two face-down
+         * your own, and at a genuine showdown everyone still in gets
+         * theirs. Any separate condition here would be a second place for
+         * the redaction rule to drift out of step with the first, and the
+         * failure mode is silent, since "Full house" next to two face-down
          * cards looks like a feature rather than a leak.
          */
         handLabel: revealed && seat.holeCards.length > 0

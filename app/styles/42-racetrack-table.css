@@ -429,22 +429,6 @@
   margin-top: 0;
 }
 
-/* The winner badge is intentionally lifted above its player's crown in the
-   shared seat skin. On this projected room the far seats can sit only a few
-   pixels below `.table-area`'s top edge, so that lift crossed the stage's
-   `overflow: hidden` boundary and was cut at the transparent game navbar.
-   Transparency does not change clipping or stacking: the header still paints
-   above the table. Keep the badge's normal lift where there is room, but clamp
-   its top edge to the racetrack stage using the projected seat y coordinate.
-   This is scoped to the 2.5D room; the classic and 3D layouts have different
-   seat geometry and their existing winner placement is deliberate. */
-.scene-room-racetrack .player-seat.seat-racetrack .winner-badge {
-  top: max(
-    calc(-16px - var(--seat-width) * .26),
-    calc(-1 * var(--seat-y, 0px) + 4px)
-  );
-}
-
 /* The local player is not at this table.
    -------------------------------------------------------------------------
    The camera is sitting in slot 0's chair, so that seat's own anchor projects
@@ -584,6 +568,91 @@
   pointer-events: none;
   user-select: none;
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .55));
+}
+
+/* The winner's own aura, lit up behind their portrait -- this room's
+   replacement for the old floating crown badge (see 08-seat.css; that
+   badge is gone everywhere, not just here).
+
+   Two layers, not one: a single flat radial-gradient behind the art read
+   as a stamped-on coloured blob, not light. `::before` is a soft, blurred
+   outer bloom; `::after` is a brighter, tighter core -- the same
+   relationship a real backlight has between its spill and its source.
+   Pure warm gold (--gold/--gold-light, the same tokens the rest of the
+   app already uses for "premium" chrome), not the player's own
+   --seat-accent -- that colour already means "whose turn," and blending
+   it in here muddied the "you won" signal instead of reinforcing it.
+
+   Positioned like the art itself (`--seat-art-dx`/`--seat-art-crown-dy`,
+   poker-table.tsx), sized off its own real box (`--seat-art-w`/`-h`, same
+   file) rather than a percentage of the seat's small `--seat-width`. One
+   step behind the art's own `--seat-z`, same offset `.seat-figure-active
+   ::before`'s "pool of light" uses for the same reason: a glow painted in
+   front of the person it's lighting isn't a glow, it's a sticker.
+
+   Motion is two stages, not one blinking blob: a one-shot ignite (dark
+   and small to full bloom) plays once and hands off into a slow breathing
+   loop -- "light up," not "flash." The two layers run out of phase with
+   each other (different durations, one reversed) so they never pulse in
+   lockstep, which is what actually reads as light rather than a shape
+   animating.
+
+   `:not(.seat-mine)` because the local seat never gets this art at all
+   (racetrackArtBySeat skips it) -- nothing here would have anything to
+   sit behind. */
+.scene-room-racetrack .player-seat.seat-racetrack.seat-winner:not(.seat-mine)::before {
+  content: "";
+  position: absolute;
+  left: calc(50% + var(--seat-art-dx, 0px));
+  top: calc(var(--seat-art-crown-dy, 0px) + var(--seat-art-h, 0px) * .46);
+  z-index: calc(var(--seat-z, 4) - 1);
+  width: calc(var(--seat-art-w, 100px) * 1.9);
+  height: calc(var(--seat-art-h, 100px) * 1.35);
+  translate: -50% -50%;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--gold-light), transparent 15%) 0%,
+    color-mix(in srgb, var(--gold), transparent 55%) 45%,
+    transparent 75%
+  );
+  filter: blur(7px);
+  animation:
+    racetrack-winner-aura-ignite .9s cubic-bezier(.16, .84, .44, 1) .15s both,
+    racetrack-winner-aura-breathe 3.6s ease-in-out 1.05s infinite;
+  pointer-events: none;
+}
+
+.scene-room-racetrack .player-seat.seat-racetrack.seat-winner:not(.seat-mine)::after {
+  content: "";
+  position: absolute;
+  left: calc(50% + var(--seat-art-dx, 0px));
+  top: calc(var(--seat-art-crown-dy, 0px) + var(--seat-art-h, 0px) * .48);
+  z-index: calc(var(--seat-z, 4) - 1);
+  width: calc(var(--seat-art-w, 100px) * 1.05);
+  height: calc(var(--seat-art-h, 100px) * .82);
+  translate: -50% -50%;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, #fff8e2, transparent 10%) 0%,
+    color-mix(in srgb, var(--gold-light), transparent 30%) 55%,
+    transparent 78%
+  );
+  filter: blur(2px);
+  animation:
+    racetrack-winner-aura-ignite .7s cubic-bezier(.16, .84, .44, 1) .1s both,
+    racetrack-winner-aura-breathe 2.8s ease-in-out .85s infinite reverse;
+  pointer-events: none;
+}
+
+@keyframes racetrack-winner-aura-ignite {
+  0% { opacity: 0; scale: .55; }
+  65% { opacity: 1; scale: 1.1; }
+  100% { opacity: .82; scale: 1; }
+}
+
+@keyframes racetrack-winner-aura-breathe {
+  0%, 100% { opacity: .82; scale: 1; }
+  50% { opacity: 1; scale: 1.07; }
 }
 
 /* .seat-figure's own circular avatar is replaced by .racetrack-seat-art
@@ -834,10 +903,9 @@
        crown has room for before running into `.table-area`'s own
        `overflow: hidden` (its top edge is this stage's origin, `--seat-y`'s
        own zero) -- the far seats' natural clearance is only ~26px, and two
-       lines need more than that. Same clamp `.winner-badge` already uses a
-       few rules below: reach for real headroom above the hair, but never
-       past the stage's own top edge, where the top line would be sheared
-       off rather than just cramped. */
+       lines need more than that. Clamped so this reaches for real headroom
+       above the hair, but never past the stage's own top edge, where the
+       top line would be sheared off rather than just cramped. */
     top: max(
       calc(var(--seat-art-crown-dy, 0px) - 36px),
       calc(-1 * var(--seat-y, 0px) + 2px)

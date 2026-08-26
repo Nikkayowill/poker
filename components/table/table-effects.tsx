@@ -5,13 +5,13 @@
  * the muck. It self-removes via `onDone` when its animation finishes, so no
  * node or timer outlives it.
  *
- * The two chip sprays that used to live here as well -- PotFunnel, the pot
- * going out to its winners, and ChipFlight, a bet going in -- are meshes now
- * (components/table/scene/chips.ts). This one stays CSS on purpose rather
- * than for lack of time: it is a *card*, and every other card at this table
- * is a DOM node carrying the player's own purchased card back. Moving it to
- * the scene would mean uploading each cosmetic back as a texture to animate
- * one element for half a second.
+ * Two chip sprays used to live here as well: PotFunnel, the pot going out to
+ * its winners, and ChipFlight, a bet going in. Both are meshes now
+ * (components/table/scene/chips.ts). This one stays CSS, not for lack of
+ * time but because it's a *card*, and every other card at this table is a
+ * DOM node carrying the player's own purchased card back. Moving it to the
+ * scene would mean uploading each cosmetic back as a texture to animate one
+ * element for half a second.
  */
 
 import { useEffect, useState } from "react";
@@ -23,9 +23,9 @@ import { PlayingCard } from "./playing-card";
  * folds, so the disappearance (PlayerSeat stops rendering them once
  * `folded`) reads as the cards actually leaving rather than an instant cut.
  * Renders whatever the seat's own `holeCards` already were at the moment of
- * folding -- real cards for the local player (whose own hand always stays
+ * folding: real cards for the local player (whose own hand always stays
  * visible to them, fold or not), already-masked nulls/card-backs for any
- * other seat -- so it can never surface hidden information itself.
+ * other seat, so it can never surface hidden information itself.
  */
 export function MuckDrift({
   id,

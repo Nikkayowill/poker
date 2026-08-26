@@ -9,13 +9,13 @@ import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
  * The one dropdown in the app.
  *
  * M4 strips the table HUD down to logo / Leave Table / avatar, which means
- * everything else -- the room code, sound, hand history, Collection, the Gold
- * store, sign out -- has to live somewhere. This is that somewhere, so it is
+ * everything else, the room code, sound, hand history, Collection, the Gold
+ * store, sign out, has to live somewhere. This is that somewhere, so it is
  * built once, properly, rather than as a div that happens to appear on click.
  *
- * Deliberately dependency-free: this codebase carries no UI library and the
+ * Dependency-free by choice: this codebase carries no UI library and the
  * menu pattern is small enough that adding one would cost more than it saves.
- * What it does owe the player is the behaviour a native menu has -- Escape,
+ * What it does owe the player is the behaviour a native menu has: Escape,
  * click-away, arrow keys, and focus that goes back where it came from. A menu
  * you can open with a keyboard but not close with one is worse than no menu.
  */
@@ -79,7 +79,7 @@ export function Menu({
    * Escape is bound to the document, not to the panel.
    *
    * Opening with a mouse leaves focus on the trigger, which is outside the
-   * panel -- so a handler that only sits on the panel never sees the key, and
+   * panel, so a handler that only sits on the panel never sees the key, and
    * Escape silently does nothing for anyone who clicked rather than tabbed.
    * Caught by tests/e2e/nav-menu.spec.ts; it is invisible in a screenshot,
    * because a menu that will not close still looks entirely correct.
@@ -261,7 +261,7 @@ export function Menu({
                   // and announces itself, but a confirming click on a press
                   // that does nothing is the menu lying about having worked.
                   if (item.disabled) return;
-                  // `select`, not `tap`: every action row changes something --
+                  // `select`, not `tap`: every action row changes something,
                   // a toggle flips, a modal opens, a claim is taken. The link
                   // rows above are the ones that merely go somewhere.
                   selectSound();

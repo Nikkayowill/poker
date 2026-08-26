@@ -28,33 +28,29 @@ import type { PlayerProfile } from "@/lib/profile/types";
  *
  * The groups live on the server and this file never learns them: the snapshot
  * carries the words still on the board and the groups already solved, and
- * nothing else. A wrong guess comes back as "one away" or plain wrong -- never
+ * nothing else. A wrong guess comes back as "one away" or plain wrong, never
  * as per-word colours, which would turn four mistakes into a free solution.
  *
  * Same one-snapshot contract as the other arcade tables: every guess is a
  * request and the response replaces the board wholesale.
  *
- * ## Shuffle is local, and that is correct
+ * Shuffle is local: the button reorders `words` in component state without
+ * touching the server. Tile order carries no information (it's scrambled per
+ * player at deal time), so a round trip would spend a request to rearrange
+ * something the server doesn't care about, and would cost the player their
+ * selection for the length of it.
  *
- * The shuffle button reorders `words` in component state without touching the
- * server. Tile order carries no information -- it is scrambled per player at
- * deal time -- so a round trip would spend a request to rearrange something
- * the server does not care about, and would cost the player their selection
- * for the length of it.
- *
- * The *first* press for a given selection seats those tiles together on the
+ * The first press for a given selection seats those tiles together on the
  * top row (alignSelectionInline) instead of scattering them; pressing again
  * without changing the picks scrambles the whole board as before. Lining a
  * candidate group up is how you look at four words together before spending a
  * mistake on them, so it earns the first press; making it every press would
  * take the plain shuffle away. Changing the selection re-arms it.
  *
- * ## The wager, and why it gates opening rather than trailing it
- *
- * Same change, same day, as word-stack-board.tsx: `round === null` after the
- * initial read no longer auto-opens today's board -- it renders a wager step
- * (Free is always a choice) that opens it on the player's own click. See
- * startBoard.
+ * The wager gates opening rather than trailing it, matching word-stack-board.tsx:
+ * `round === null` after the initial read no longer auto-opens today's board.
+ * It renders a wager step (Free is always a choice) that opens it on the
+ * player's own click. See startBoard.
  */
 
 interface ConnectionsResponse {
@@ -113,11 +109,11 @@ export function ConnectionsBoard() {
    * order has not seen yet (only ever the first load).
    *
    * Derived during render rather than synchronised by an effect. `order` holds
-   * *only* what the shuffle button chose, so there is nothing to keep in step
-   * -- and the filtering has to be a projection rather than a replacement,
-   * because assigning `round.words` wholesale would re-sort the survivors into
-   * server order every time a group fell, which reads as the board jumping
-   * under the player's hand.
+   * only what the shuffle button chose, so there is nothing to keep in step,
+   * and the filtering has to be a projection rather than a replacement:
+   * assigning `round.words` wholesale would re-sort the survivors into server
+   * order every time a group fell, which reads as the board jumping under the
+   * player's hand.
    */
   const displayed = useMemo(() => {
     if (!round) return [];
@@ -169,7 +165,7 @@ export function ConnectionsBoard() {
 
         setRound(data.round ?? null);
         // The board is returned so the caller can react to what its own
-        // request produced -- "one away" belongs to the guess that earned it,
+        // request produced: "one away" belongs to the guess that earned it,
         // not to an effect watching state change afterwards.
         return data.round ?? null;
       } catch {
@@ -183,7 +179,7 @@ export function ConnectionsBoard() {
     [flash],
   );
 
-  // Read-only GET first -- visiting the page must not consume the day's
+  // Read-only GET first: visiting the page must not consume the day's
   // attempt. If today's board already exists (any status), it loads
   // straight in; if not, the wager step below opens one, on the player's
   // own click.
@@ -239,8 +235,9 @@ export function ConnectionsBoard() {
         version: round.version,
         selection: guess,
       });
-      // Cleared only on an accepted guess. A rejected selection -- a repeat --
-      // stays put so the player can adjust one tile rather than rebuild it.
+      // Cleared only on an accepted guess. A rejected selection, like a
+      // repeat, stays put so the player can adjust one tile rather than
+      // rebuild it.
       if (!next) return;
       setSelection([]);
       // The one hint a wrong guess is allowed to give, announced by the guess

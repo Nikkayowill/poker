@@ -5,9 +5,9 @@ import { useEffect, useRef } from "react";
 /**
  * Drives a turn clock from CSS rather than from React.
  *
- * Both fuses -- the ring around a seat and the bar under the action controls
- * -- used to be animated by a `setInterval` that called `setState` four times
- * a second. For the ring that re-rendered one memoised seat; for the bar the
+ * Both fuses, the ring around a seat and the bar under the action controls,
+ * used to be animated by a `setInterval` that called `setState` four times a
+ * second. For the ring that re-rendered one memoised seat; for the bar the
  * state lived in PokerTable, the root of the table tree, so every seat, every
  * card and every plate re-rendered 4Hz for the whole of every turn. That is
  * what the stutter was: not a slow animation, but a fast one competing with a
@@ -63,8 +63,8 @@ export function useFuse(startedAt: string | null, deadlineAt: string | null) {
  *
  * Separate from useFuse because it is the one part of a turn clock that CSS
  * cannot express: `content` cannot count, and animating a registered numeric
- * property still cannot render itself as text. So this ticks -- but it ticks
- * outside React, writing through a ref and only when the whole second it would
+ * property still cannot render itself as text. So this ticks, but outside
+ * React, writing through a ref and only when the whole second it would
  * display actually changes, which is at most once a second and never a render.
  *
  * requestAnimationFrame rather than an interval so it stops while the tab is
@@ -87,7 +87,7 @@ export function useFuseDigit(startedAt: string | null, deadlineAt: string | null
         const element = ref.current;
         if (element) {
           element.textContent = String(seconds);
-          // The label is the accessible value here -- the digit itself is
+          // The label is the accessible value here; the digit itself is
           // aria-hidden, since a bare number read out of context is noise.
           element.parentElement?.setAttribute("aria-label", `${seconds} seconds to act`);
         }

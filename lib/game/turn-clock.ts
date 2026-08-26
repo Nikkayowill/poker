@@ -12,8 +12,8 @@
  *    an overdue deadline is still overdue 200ms later, so it rescheduled
  *    itself indefinitely.
  *
- *  - Too little. Both paths elected a single browser -- the lowest-position
- *    human -- to run the clock. When that player closed their tab, nothing
+ *  - Too little. Both paths elected a single browser (the lowest-position
+ *    human) to run the clock. When that player closed their tab, nothing
  *    advanced the table at all. Observed live: three abandoned seats ahead of
  *    a real player, a bot showing "AI THINKING 0s", and zero requests. The
  *    polling was hiding it, so removing the polling exposed a stall.
@@ -22,8 +22,8 @@
  * The browser whose clock it actually is goes at the deadline; everyone else
  * waits an extra beat per place in line. A successful advance changes the
  * version, which re-plans every other browser and cancels their pending
- * attempt -- so in the ordinary case exactly one request is made, and in the
- * case where that browser is gone, the next one covers for it.
+ * attempt, so in the ordinary case exactly one request is made, and if that
+ * browser is gone, the next one covers for it.
  */
 
 /** How long each backup waits behind the browser in front of it. */
@@ -38,10 +38,10 @@ export interface TurnClockInput {
    * ISO deadline for replacing a finished hand, if the table has one.
    *
    * This is what makes play continuous. A completed hand has no turn and so
-   * no turn deadline, which is why the table used to rest here until somebody
-   * pressed Deal. Both deadlines are resolved by the same request to the same
-   * route, so the queue, the stagger and the optimistic write all carry over
-   * without a second mechanism.
+   * no turn deadline; without this the table would just sit there until
+   * somebody pressed Deal. Both deadlines are resolved by the same request to
+   * the same route, so the queue, the stagger and the optimistic write all
+   * carry over without a second mechanism.
    */
   nextHandAt: string | null;
   /** Whether the seat currently on turn is a human. */
@@ -62,7 +62,7 @@ export type TurnClockPlan =
 /**
  * How many places back in the queue this browser sits for the current turn.
  *
- * When a human is on the clock it is their own browser's job first -- they
+ * When a human is on the clock it is their own browser's job first: they
  * are the one who might still act, and the request that resolves their
  * expired clock should come from them. Otherwise the queue is simply seat
  * order, which every browser computes identically from the same snapshot.

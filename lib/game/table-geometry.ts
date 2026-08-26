@@ -3,9 +3,9 @@
  *
  * The seats ring a round table. A circle viewed from a tilted camera
  * projects to an ellipse whose horizontal radius is unchanged and whose
- * vertical radius is foreshortened by sin(camera tilt) -- so placing seats
- * on an ellipse is not a stylistic choice, it is what a real round table
- * looks like from a player's chair.
+ * vertical radius is foreshortened by sin(camera tilt), so placing seats on
+ * an ellipse isn't a stylistic choice; it's what a real round table looks
+ * like from a player's chair.
  *
  * Depth determines overlap order while avatar size stays constant. The table
  * plane itself supplies the perspective cue; changing people's size made them
@@ -18,29 +18,24 @@ const NEAR_ANGLE_DEG = 90;
 /**
  * Ellipse radii as a percentage of the table's bounding box.
  *
- * Sized so a seat's centre lands on the rail itself, which is where the figure
- * meets its own drawn rail -- the player then reads as sitting at this table
- * rather than hovering outside it. The rail is inset 8% of the box, so these
- * track that inset rather than reaching for the corners the way they did when
- * a seat was a small floating card.
+ * Sized so a seat's centre lands on the rail itself, which is where the
+ * figure meets its own drawn rail, so the player reads as sitting at this
+ * table rather than hovering outside it. The rail is inset 8% of the box, so
+ * these track that inset rather than reaching for the corners the way they
+ * did when a seat was a small floating card.
  */
 const RADIUS_X = 46;
-/* Pull the vertical arc inward without shrinking the figures. At 44%, the
-   opposite seat was anchored at y=6%; subtracting half its layout height put
-   the top of the avatar outside the scene. A 34% radius leaves a real 16%
-   safe area above the far seat while preserving the wide table silhouette.
-   Was 38: .poker-rail's inset gives the ring a band outside the felt to sit
-   in, so the arc follows the rail while its shifted centre keeps the far seat
-   inside the box.
-
-   32 now. The room backdrop behind the rail carries real detail now (the
-   STACKCHIPS wordmark, neon signage) where it used to be a plain dark
-   gradient -- so the far seat's own upward lift into that band, which was
-   always there and always harmless against a flat background, now reads as
-   the avatar floating over the room's signage rather than sitting at the
-   table. Only this seat moves meaningfully: sin(theta) is largest at the far
-   seat and roughly half that at the side seats, so pulling ry in mostly
-   affects the one seat this was about. */
+/* Pulls the vertical arc inward without shrinking the figures. At 44%, the
+   far seat was anchored at y=6%, and subtracting half its layout height put
+   the top of the avatar outside the scene; .poker-rail's inset gives the
+   ring a band outside the felt to sit in, so the arc can follow the rail
+   while its shifted centre keeps the far seat inside the box. 32 pulls that
+   in further: the room backdrop behind the rail carries real detail (the
+   STACKCHIPS wordmark, neon signage), so the far seat's own upward lift
+   into that band reads as the avatar floating over the room's signage
+   rather than sitting at the table. Only this seat moves meaningfully:
+   sin(theta) is largest at the far seat and roughly half that at the side
+   seats, so pulling ry in mostly affects the one seat this was about. */
 const RADIUS_Y = 32;
 
 /**
@@ -68,59 +63,50 @@ const NARROW_BREAKPOINT_PX = 620;
  * as far from centre vertically as horizontally once the box is taller than
  * it is wide.
  */
-/* Not equal, and rx is the smaller of the two on purpose. A nameplate is at
-   least 86px wide whatever the table does, so on a ~376px portrait plate an
-   rx of 43 hung the side plates off both edges of the screen -- the same
-   trap NARROW_RADIUS_X exists to avoid. ry can stay generous because a tall
+/* Not equal: rx is the smaller of the two. A nameplate is at least 86px
+   wide whatever the table does, so on a ~376px portrait plate an rx of 43
+   hung the side plates off both edges of the screen, the same trap
+   NARROW_RADIUS_X exists to avoid. ry can stay generous because a tall
    plate is where the vertical room actually is. */
 const PORTRAIT_RADIUS_X = 37;
-/* Was 44, which puts the far seat's anchor at cy - ry = 6% of the wrap's own
-   height -- the seat box's own upward lift then lands its TOP just 6px below
-   .game-header's bottom edge, measured live at 390x844 (header bottom 56,
-   seat top 62). That is before any safe-area inset eats into the header on a
-   real notched phone, where it would touch or clip outright. Was 39, which
-   moved the far seat's anchor to 11%, ~30px lower, verified against a real
-   render rather than reasoned from the ellipse alone -- the two side pairs
-   (slot 2/4, slot 1/5) shift a few percent with it but both already had
-   generous clearance from the header and the action bar respectively, so
-   neither trade costs anything.
-
-   33 now, for the same reason the desktop RADIUS_Y moved: the far seat's
-   own upward lift puts its avatar above the rail whatever ry is, and that
-   band used to be a plain dark gradient. It carries the same room backdrop
-   as desktop now (.game-shell's background, shared across breakpoints), so
-   the far seat was floating over real signage instead of the empty space it
-   was tuned against. Re-verified live that header clearance still holds at
-   the smaller radius -- it only grows with a smaller ry, since the anchor
-   moves toward cy=50, further from the header either way. */
+/* The far seat's anchor sits at cy - ry, and that has to clear
+   .game-header's bottom edge (verified live at 390x844) with margin for a
+   notched phone's safe-area inset. It also has to clear the room backdrop:
+   this band carries the same detail as desktop's (.game-shell's
+   background, shared across breakpoints), so the far seat's own upward
+   lift into it reads as floating over real signage rather than the empty
+   space it was tuned against, the same reason RADIUS_Y above moved. A
+   smaller ry only helps both constraints, since the anchor moves toward
+   cy=50, further from the header either way; 33 was re-verified live
+   rather than reasoned from the ellipse alone. */
 const PORTRAIT_RADIUS_Y = 33;
 
 /**
  * The landscape-phone ring: seats pushed out to the glass rather than packed
  * around a squeezed oval.
  *
- * A sideways phone is the one plate where the default ring reads as cramped —
- * `--table-aspect` is 3 there, so the felt is a long shallow band and the
- * seats were orbiting well inside the rail with dead margin either side of
- * them. These radii put the outermost pair of seats on the box's own left and
- * right edges, which is what the layout brief asked for.
+ * A sideways phone is the one plate where the default ring reads as
+ * cramped. `--table-aspect` is 3 there, so the felt is a long shallow band
+ * and the seats were orbiting well inside the rail with dead margin either
+ * side of them. These radii put the outermost pair of seats on the box's
+ * own left and right edges, which is what the layout brief asked for.
  *
- * THE NUMBERS ARE SOLVED, NOT PICKED, and they are solved against the ring
- * this file already draws rather than written as per-seat offsets.
+ * The numbers below are solved against the ring this file already draws,
+ * not picked or written as per-seat offsets.
  *
- * On a six-seat ring nothing sits at cos(theta) = ±1: with slot 0 at the near
- * edge the outermost chairs are slots 1 and 2 to the left and 4 and 5 to the
- * right, all four at |cos| = 0.866.
+ * On a six-seat ring nothing sits at cos(theta) = ±1: with slot 0 at the
+ * near edge the outermost chairs are slots 1 and 2 to the left and 4 and 5
+ * to the right, all four at |cos| = 0.866.
  *
- * THE 4% IS THE SEAT BOX'S EDGE, NOT THE ELLIPSE POINT, and getting that
- * wrong is a whole seat off the screen rather than a near miss. `left: 4%`
- * in CSS positions an element's left edge, but this ellipse yields the point
- * a seat is *centred* on, and `.seat-ring` (08-seat.css) then pulls the box
- * back by half its own width plus an outward `--seat-outset`. Solving
- * `50 - 0.866 * rx = 4` therefore puts the box's edge at minus half a seat:
- * measured at 844x390, the left flank landed at x = -8.8 with its nameplate
- * cut off by the viewport. The correction is that overhang, in percent of
- * the plate:
+ * The 4% below is the seat box's edge, not the ellipse point, and getting
+ * that wrong puts a whole seat off the screen rather than a near miss.
+ * `left: 4%` in CSS positions an element's left edge, but this ellipse
+ * yields the point a seat is *centred* on, and `.seat-ring` (08-seat.css)
+ * then pulls the box back by half its own width plus an outward
+ * `--seat-outset`. Solving `50 - 0.866 * rx = 4` therefore puts the box's
+ * edge at minus half a seat: measured at 844x390, the left flank landed at
+ * x = -8.8 with its nameplate cut off by the viewport. The correction is
+ * that overhang, in percent of the plate:
  *
  *     0.866 * rx = 46 - 100 * (seatWidth / 2 + outset) / plateWidth
  *                = 46 - 100 * (52 + 14) / 793          (at 844x390)
@@ -128,41 +114,42 @@ const PORTRAIT_RADIUS_Y = 33;
  *
  * It generalises across handsets because `seatWidthFor` (poker-table.tsx)
  * derives the seat box from the plate's own width, so that ratio is near
- * constant; it is still checked on a render at three widths rather than
+ * constant; it's still checked on a render at three widths rather than
  * trusted.
  *
  * Per-seat `left: 4%` declarations would have reached the same two points
  * and silently detached the other four seats from the ellipse the canvas
- * ring is derived from — see the note on `.poker-rail` below.
+ * ring is derived from (see the note on `.poker-rail` below).
  *
- * KEEPING THE CANVAS IN STEP COSTS NOTHING HERE, BY DESIGN. The chip room
- * measures `.poker-rail`'s real box (`fitView` in table-scene.tsx) and solves
- * its own plan shape from it, so bet spots follow the rail automatically. What
- * that buys is also what it demands: the landscape rail inset in
- * 12-responsive.css and `LANDSCAPE_CENTER_Y` are one decision written twice
- * and must move together — the rail is inset 14% top and 4% bottom there so
- * its centre is this ellipse's `cy`, and a ring centred anywhere else would
- * orbit a point the felt is not at.
+ * Keeping the canvas in step costs nothing here, by design: the chip room
+ * measures `.poker-rail`'s real box (`fitView` in table-scene.tsx) and
+ * solves its own plan shape from it, so bet spots follow the rail
+ * automatically. What that buys is also what it demands: the landscape
+ * rail inset in 12-responsive.css and `LANDSCAPE_CENTER_Y` are one decision
+ * written twice and must move together. The rail is inset 14% top and 4%
+ * bottom there so its centre is this ellipse's `cy`, and a ring centred
+ * anywhere else would orbit a point the felt is not at.
  *
- * The flank seats sit *on the cloth* here rather than at the rail's edge, and
- * that is the plate's doing rather than a slip. A landscape seat box is a
- * fifth of the plate's width, so a ring wide enough to put its centres on the
- * rail is the one measured above that hangs them off the screen. The desktop
- * relationship RADIUS_X documents — a figure meeting the rail from outside —
- * needs margin either side of the ring that this stage does not have.
+ * The flank seats sit *on the cloth* here rather than at the rail's edge,
+ * and that's the plate's doing rather than a slip. A landscape seat box is
+ * a fifth of the plate's width, so a ring wide enough to put its centres on
+ * the rail is the one measured above that hangs them off the screen. The
+ * desktop relationship RADIUS_X documents, a figure meeting the rail from
+ * outside, needs margin either side of the ring that this stage does not
+ * have.
  *
- * A flank is a PAIR of seats, not one, so `LANDSCAPE_CENTER_Y` is the line
+ * A flank is a pair of seats, not one, so `LANDSCAPE_CENTER_Y` is the line
  * they straddle (45% ± ry/2) rather than the top of either. There is no ry
- * that puts two seats at the same height without collapsing the ellipse into
- * a horizontal line and stacking the near and far chairs on the board.
+ * that puts two seats at the same height without collapsing the ellipse
+ * into a horizontal line and stacking the near and far chairs on the board.
  */
 const LANDSCAPE_RADIUS_X = 43.5;
 /**
  * The vertical pair, solved together against the two things that bound them.
  *
  * A landscape seat box is 104px tall in a plate only ~346px deep, and
- * `.seat-ring` lifts each box by `(seatWidth + plateHeight) / 2` — about 85px
- * for the far chair — so the ring cannot simply be centred and given a
+ * `.seat-ring` lifts each box by `(seatWidth + plateHeight) / 2`, about 85px
+ * for the far chair, so the ring cannot simply be centred and given a
  * generous radius. Two constraints, in plate percent, with H the plate's
  * height in px:
  *
@@ -173,46 +160,47 @@ const LANDSCAPE_RADIUS_X = 43.5;
  * sitting on the boundary. cy is then anywhere in [52.6, 58.2]; 55 is the
  * middle of that window.
  *
- * THE FIRST CUT WAS ry = 34, cy = 45, AND IT PUT THE FAR PLAYER'S HEAD UNDER
- * THE HEADER — box top at y = -3, measured, with the crown cut off by the
- * viewport. It satisfied neither constraint above because neither had been
- * written down; both came out of reading a render. The near chair is absent
- * from this arithmetic on purpose: 17-landscape.css takes slot 0 off the
- * ellipse entirely and anchors it to the stage's bottom edge, so cy is free
- * to move down without dragging the local player off the screen with it.
+ * An earlier cut used ry = 34, cy = 45, which put the far player's head
+ * under the header (box top at y = -3, measured, with the crown cut off by
+ * the viewport) because neither constraint above had been written down
+ * yet; both came out of reading a render. The near chair is left out of
+ * this arithmetic because 17-landscape.css takes slot 0 off the ellipse
+ * entirely and anchors it to the stage's bottom edge, so cy is free to move
+ * down without dragging the local player off the screen with it.
  */
 const LANDSCAPE_RADIUS_Y = 28;
-/* Also the landscape rail's own centre -- inset 14% at the top and 4% at the
+/* Also the landscape rail's own centre: inset 14% at the top and 4% at the
    bottom gives (14 + 96) / 2 = 55. The two are one decision; a ring centred
    anywhere but the felt's centre orbits a point the table is not at. The
    asymmetry is the far seat's headroom: it hangs ~85px above its own ellipse
    point, so the space it needs is all at the top. */
 const LANDSCAPE_CENTER_Y = 55;
 /**
- * The viewport this ring switches on — the same condition, to the pixel, as
+ * The viewport this ring switches on, the same condition, to the pixel, as
  * the `@media (max-height: 500px) and (orientation: landscape)` block in
  * 12-responsive.css that widens the rail to meet it.
  *
- * KEYED ON THE VIEWPORT, WHICH IS AN EXCEPTION TO THIS FILE'S OWN RULE, and
- * the exception was forced by a render rather than chosen. `radiiForTable`
- * otherwise measures the table's box on the principle that only the plate
- * knows what shape it ended up, and the first cut of this ring followed that:
- * it read the landscape plate off an aspect ratio, since `--table-aspect` is
- * 3 there against 1.84 on a desktop.
+ * Keying this on the viewport is an exception to this file's own rule of
+ * measuring the table's box, and the exception was forced by a render
+ * rather than chosen. `radiiForTable` otherwise measures the table's box on
+ * the principle that only the plate knows what shape it ended up, and the
+ * first cut of this ring followed that: it read the landscape plate off an
+ * aspect ratio, since `--table-aspect` is 3 there against 1.84 on a desktop.
  *
- * That is true of the plate the CSS *asks* for and not of the box that
- * results. The landscape rules above make the wrap fill its area, which
- * overrides `aspect-ratio` outright — both dimensions are then definite — so
- * the measured box is whatever the letterbox left over. At 844x390 that is
- * 793x346, an aspect of 2.29; on a 667x375 handset it is 627x333, or 1.88,
+ * That's true of the plate the CSS *asks* for, not of the box that results.
+ * The landscape rules above make the wrap fill its area, which overrides
+ * `aspect-ratio` outright (both dimensions are then definite), so the
+ * measured box is whatever the letterbox left over. At 844x390 that's
+ * 793x346, an aspect of 2.29; on a 667x375 handset it's 627x333, or 1.88,
  * which is within 0.04 of the desktop oval. There is no threshold that
- * separates them. The ring silently kept its desktop radii and the seats
- * stayed bunched — measured, not reasoned: the leftmost pair sat at x = 8.4%
- * of the wrap where this ellipse puts them at 4%.
+ * separates them, so the ring silently kept its desktop radii and the
+ * seats stayed bunched, measured rather than reasoned: the leftmost pair
+ * sat at x = 8.4% of the wrap where this ellipse puts them at 4%.
  *
- * Matching the media query exactly is also the stronger guarantee. The rail
- * inset and these radii are one decision; keyed on the same condition they
- * cannot switch on different viewports and leave the seats off the rail.
+ * Matching the media query exactly is also the stronger guarantee: the
+ * rail inset and these radii are one decision, and keyed on the same
+ * condition they cannot switch on different viewports and leave the seats
+ * off the rail.
  */
 const LANDSCAPE_MAX_HEIGHT_PX = 500;
 
@@ -220,7 +208,7 @@ const LANDSCAPE_MAX_HEIGHT_PX = 500;
  * Radii for the table's actual measured box, not the viewport.
  *
  * Keyed off the table rather than the window because the table is capped by
- * leftover height as well as by width -- the same viewport can hold a wide
+ * leftover height as well as by width: the same viewport can hold a wide
  * plate or a tall one depending on how much room the header and action bar
  * took, and only the box itself knows which happened.
  */
@@ -242,7 +230,7 @@ export function radiiForTable(
 ): SeatEllipse {
   /* Before the portrait and narrow checks, not after. A landscape phone is
      short *and* narrow enough to trip `isNarrow`, and NARROW_RADIUS_X (38)
-     pulls the ring inward -- the exact opposite of what this plate needs.
+     pulls the ring inward, the exact opposite of what this plate needs.
      Ordering these the other way round fails silently: the seats stay
      bunched and nothing reports that the landscape ellipse was computed and
      then discarded. */
@@ -263,7 +251,7 @@ export function isPortrait(table: { width: number; height: number }): boolean {
 /**
  * True on a phone held sideways: short, and wider than it is tall.
  *
- * Takes the *viewport*, not the table — see `LANDSCAPE_MAX_HEIGHT_PX`. The
+ * Takes the *viewport*, not the table (see `LANDSCAPE_MAX_HEIGHT_PX`). The
  * two clauses are the two halves of the media query it mirrors, and both are
  * needed: height alone would catch a short desktop window, and orientation
  * alone would catch every desktop there is.
@@ -289,8 +277,8 @@ export function isNarrow(viewportWidth: number): boolean {
  * their cards to the felt and the far seat lost its nameplate entirely.
  *
  * Nothing is given up by dropping it, because the artwork already carries a
- * rail with the player's elbows resting on it. The depth cue that survives --
- * perspective scale and distance haze -- is the part that was doing the work
+ * rail with the player's elbows resting on it. The depth cue that survives,
+ * perspective scale and distance haze, is the part that was doing the work
  * anyway, and the ordering here still keeps near figures over far ones where
  * two seats overlap.
  */
@@ -311,18 +299,18 @@ export interface SeatGeometry {
   z: number;
   /**
    * Direction from the seat toward the middle of the table, for the things
-   * that belong between a player and the pot -- their posted bet above all.
-   * Derived rather than enumerated: a wager slides toward the centre no matter
-   * how many seats are in play, where a per-position rule has to be rewritten
-   * every time the ring changes size.
+   * that belong between a player and the pot, their posted bet above all.
+   * Derived rather than enumerated: a wager slides toward the centre no
+   * matter how many seats are in play, where a per-position rule has to be
+   * rewritten every time the ring changes size.
    *
-   * Normalised so the larger component is exactly 1 -- a box norm, not the
-   * usual Euclidean one. That is deliberate. A seat is a rectangle, and
-   * scaling a Euclidean unit vector by half the box lands on the rectangle's
-   * *inscribed ellipse*, which is inside it everywhere except the four edge
-   * midpoints. A seat on a diagonal would put its bet chip in the corner
-   * region, on top of the player's own name. Dividing by the larger component
-   * instead puts the dominant axis exactly on its edge.
+   * Normalised so the larger component is exactly 1, a box norm rather than
+   * the usual Euclidean one. A seat is a rectangle, and scaling a Euclidean
+   * unit vector by half the box lands on the rectangle's *inscribed
+   * ellipse*, which is inside it everywhere except the four edge midpoints,
+   * so a seat on a diagonal would put its bet chip in the corner region, on
+   * top of the player's own name. Dividing by the larger component instead
+   * puts the dominant axis exactly on its edge.
    */
   towardPot: { x: number; y: number };
 }
@@ -351,7 +339,7 @@ export function seatGeometry(
   const depth = (Math.sin(theta) + 1) / 2;
 
   // Toward (50, 50). The components are in percentage space, so a very wide
-  // table skews the direction slightly -- harmless at the short distances a
+  // table skews the direction slightly, harmless at the short distances a
   // bet chip travels, and not worth threading the pixel size in to correct.
   const inwardX = 50 - x;
   const inwardY = centerY - y;

@@ -7,14 +7,14 @@ import { adminClient } from "./supabase-admin";
  * games (Sudoku, Word Stack, Connections, Memory Match).
  *
  * Generic over `TState` the same way lib/server/daily-puzzle-store.ts is
- * generic over `TRound` -- one table, one store, many games, each service
+ * generic over `TRound`: one table, one store, many games, each service
  * casting `state` back to its own attempt type. `game` is metadata alongside
  * the polymorphic state, not folded into it, so this file never needs to know
  * what any game's state actually looks like beyond carrying a `status` field.
  *
- * Same twin-branch shape as pvp-match-store.ts -- Supabase when configured,
- * an in-process Map otherwise -- and the same invariants: one active attempt
- * per player PER GAME (a global "one attempt, period" rule was correct when
+ * Same twin-branch shape as pvp-match-store.ts (Supabase when configured, an
+ * in-process Map otherwise), and the same invariants: one active attempt per
+ * player per game (a global "one attempt, period" rule was correct when
  * Sudoku was the only game here; four games sharing this mechanism concurrently
  * must not collide on that), and a version that only ever advances from the
  * value the caller last saw.
@@ -139,12 +139,12 @@ export async function getAnteUpAttemptById<TState>(id: string): Promise<StoredAn
 
 /**
  * Opens an attempt. Throws ActiveAnteUpAttemptExists when the player already
- * has one live at this game -- caught from the partial unique index (23505)
+ * has one live at this game, caught from the partial unique index (23505)
  * rather than a read-first check, for the same race reason pvp-match-store.ts
  * gives.
  *
  * `tier`/`wager`/`multiplier` are passed explicitly rather than read off
- * `state` -- this store does not know the shape of any game's state, only
+ * `state`; this store does not know the shape of any game's state, only
  * that it carries a `status`.
  */
 export async function createAnteUpAttempt<TState extends HasStatus>(input: {
@@ -197,7 +197,7 @@ export async function createAnteUpAttempt<TState extends HasStatus>(input: {
 
 /**
  * Writes the next state, but only if nobody else already did. Returns null on
- * a lost race -- a stale version, a replayed request -- and the caller must
+ * a lost race (a stale version, a replayed request), and the caller must
  * not pay out on null. Same contract as pvp-match-store.ts's advancePvpMatch.
  */
 export async function advanceAnteUpAttempt<TState extends HasStatus>(
@@ -242,10 +242,9 @@ export async function advanceAnteUpAttempt<TState extends HasStatus>(
 
 /**
  * How many wagered attempts (wager > 0) this player opened at this game since
- * `since`. Free practice attempts do not count -- see each game's own daily
+ * `since`. Free practice attempts do not count; see each game's own daily
  * wager-limit constant for why the cap exists at all. Per-game, not a pool
- * shared across all four -- confirmed with the product owner when this store
- * was generalized (2026-08-21): preserves what Sudoku Ante Up players already
+ * shared across all four: this preserves what Sudoku Ante Up players already
  * had rather than quietly cutting their ceiling the day three more games
  * start sharing the same counter.
  */

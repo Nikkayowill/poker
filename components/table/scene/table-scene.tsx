@@ -19,7 +19,7 @@ import {
   seatBetOrigin,
 } from "@/lib/scene/seat-ring";
 // Type-only, but it is what installs the `Window.__stackchipsScene`
-// augmentation for this file. The shape is shared with the R3F room -- see
+// augmentation for this file. The shape is shared with the R3F room; see
 // that module's header for why it is one declaration and not two.
 import type { StackchipsSceneSeam } from "@/lib/scene/seam-contract";
 import {
@@ -37,7 +37,7 @@ import { paintChip, paintChipShadow } from "./chip-painter";
  *
  * The felt, rail and room are real art now (`public/pokertable/`,
  * `app/styles/06-table.css`/`05-game-header.css`), painted as ordinary CSS
- * the same way every other piece of chrome in this app is — this canvas
+ * the same way every other piece of chrome in this app is. This canvas
  * exists only for the chips, which move every frame and have no DOM
  * equivalent that could keep up. Everything with words in it stays in the
  * DOM on top, exactly as before: a player's name, their stack, the pot and
@@ -45,21 +45,21 @@ import { paintChip, paintChipShadow } from "./chip-painter";
  * addressable and pixel-crisp at any zoom, and a painted pixel is none of
  * those things.
  *
- * MOUNTING. The canvas fills `.table-area` and sits at the bottom of its
- * stacking order (`app/styles/99-scene.css`), so every existing DOM layer
- * draws over it with no z-index changes anywhere. It is
- * `pointer-events: none` and `aria-hidden`, so it cannot intercept a tap
- * meant for a button or add a single node to the accessibility tree.
+ * The canvas fills `.table-area` and sits at the bottom of its stacking
+ * order (`app/styles/99-scene.css`), so every existing DOM layer draws over
+ * it with no z-index changes anywhere. It is `pointer-events: none` and
+ * `aria-hidden`, so it cannot intercept a tap meant for a button or add a
+ * single node to the accessibility tree.
  *
- * FAILING SOFT. If a 2D context cannot be created, this mounts nothing and
- * the table is exactly the DOM table it was before: `.scene-lit` is never
- * applied, so the CSS felt and rail keep painting themselves. The pot's
- * value is always legible in `.center-pot-amount` regardless of whether a
- * single chip ever renders.
+ * If a 2D context cannot be created, this mounts nothing and the table is
+ * exactly the DOM table it was before: `.scene-lit` is never applied, so
+ * the CSS felt and rail keep painting themselves. The pot's value is always
+ * legible in `.center-pot-amount` regardless of whether a single chip ever
+ * renders.
  */
 
 /**
- * Matches `16-first-person.css`'s own `min-width: 901px` — the breakpoint
+ * Matches `16-first-person.css`'s own `min-width: 901px`, the breakpoint
  * that hides `.seat-mine .seat-figure` and switches the near seat's bet
  * reach from the figure-avoiding corridor to the ordinary seat inset (see
  * `NEAR_SEAT_BET_INSET_DESKTOP`). Written here rather than imported: this
@@ -83,27 +83,27 @@ export interface TableSceneProps {
   streetBets: Array<{ slot: number; amount: number }>;
   /**
    * The current street. When it changes within a hand, the standing bets
-   * sweep into the middle — the dealer pulling the action in before the
+   * sweep into the middle, the dealer pulling the action in before the
    * next card.
    */
   street: string;
   /** The hand is over and the pot is on its way to the winners. */
   paying: boolean;
   /**
-   * The winning seats, as ring slots, each with the amount it actually won
-   * — the funnel flies each winner's own payout as chips.
+   * The winning seats, as ring slots, each with the amount it actually won.
+   * The funnel flies each winner's own payout as chips.
    */
   winners: Array<{ slot: number; amount: number }>;
   /** Changes once per hand, so the funnel fires exactly once. */
   handNumber: number;
   /**
    * Bets to fly in, as detected by the parent, each carrying the amount the
-   * seat actually committed — the spray is that number as chips. Consumed
+   * seat actually committed; the spray is that number as chips. Consumed
    * by id.
    */
   betFlights: BetFlight[];
   /**
-   * How a bet's chips travel — the player's own preference. Applied to
+   * How a bet's chips travel, the player's own preference. Applied to
    * future sprays only; a chip already in flight finishes the journey it
    * left on.
    */
@@ -146,9 +146,9 @@ export function TableScene({
    */
   const pumpRef = useRef<(() => void) | null>(null);
   /**
-   * Everything the render loop touches, in one ref. Not state, deliberately:
-   * none of it should ever cause a React render. This component renders
-   * exactly once and then the loop owns the canvas.
+   * Everything the render loop touches, in one ref. Not state: none of it
+   * should ever cause a React render. This component renders exactly once
+   * and then the loop owns the canvas.
    */
   const engineRef = useRef<{
     canvas: HTMLCanvasElement;
@@ -163,7 +163,7 @@ export function TableScene({
     lastFrameMs: number;
     frames: number;
     reducedMotion: boolean;
-    /** Mirrors `NEAR_SEAT_DESKTOP_MIN_WIDTH_PX` — see `onDesktopChange`. */
+    /** Mirrors `NEAR_SEAT_DESKTOP_MIN_WIDTH_PX`; see `onDesktopChange`. */
     nearSeatDesktop: boolean;
     seatCount: number;
     handledFlights: Set<string>;
@@ -182,7 +182,7 @@ export function TableScene({
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     if (!ctx) {
-      // No 2D context — vanishingly rare, but the failure mode must be the
+      // No 2D context: vanishingly rare, but the failure mode must be the
       // painted DOM table, not an unpainted one.
       onReadyRef.current?.(false);
       return;
@@ -233,15 +233,15 @@ export function TableScene({
      * Closed-form, not a solver: under orthography the projected radii are
      * exactly `radius * scale`, so fitting the painted rail to a measured
      * box is two divisions (`fitView`). The DPI handling sizes the backing
-     * store to CSS pixels x devicePixelRatio (capped — a phone reporting 3
-     * or 4 would shade up to sixteen times the pixels for soft gradients)
-     * and folds the ratio into one setTransform, so every draw call works in
-     * CSS pixels.
+     * store to CSS pixels x devicePixelRatio (capped, since a phone
+     * reporting 3 or 4 would shade up to sixteen times the pixels for soft
+     * gradients) and folds the ratio into one setTransform, so every draw
+     * call works in CSS pixels.
      *
      * `.poker-rail` is the box, not `.poker-table-wrap`. The rail is the
      * table's outer edge and carries the per-breakpoint insets the artwork
      * was cut to, so measuring it is what makes the painted table land where
-     * the drawn one did on every plate — including the tall portrait one,
+     * the drawn one did on every plate, including the tall portrait one,
      * where fitting the wrap's width alone painted a horizontal oval across
      * a vertical table. Its measured rect includes the CSS perspective tilt
      * it still carries, which is correct: the board and the pot anchor are
@@ -273,13 +273,13 @@ export function TableScene({
         : { left: hostBox.width * 0.09, top: hostBox.height * 0.2, width: hostBox.width * 0.82, height: hostBox.height * 0.6 };
       engine.view = fitView(rail);
       // The chips ring the same table the room paints, so they need the plan
-      // shape this fit solved for -- otherwise a resize moves the felt and
-      // leaves every future bet spot on the old ellipse.
+      // shape this fit solved for, or a resize moves the felt and leaves
+      // every future bet spot on the old ellipse.
       applySpace();
       markChanged();
     };
-    /* Applied through one helper by all three callers -- mount, resize and
-       the near-seat breakpoint -- so the layer and the painter can never end
+    /* Applied through one helper by all three callers (mount, resize and
+       the near-seat breakpoint), so the layer and the painter can never end
        up looking at two different tables. */
     const applySpace = () => {
       const engine = engineRef.current;
@@ -309,8 +309,8 @@ export function TableScene({
     motionQuery.addEventListener("change", onMotionChange);
 
     // The near seat's own figure appears/disappears at this same breakpoint
-    // (16-first-person.css) — a resize across it has to retarget any bet not
-    // already in flight, the same way a felt resize retargets one.
+    // (16-first-person.css), so a resize across it has to retarget any bet
+    // not already in flight, the same way a felt resize retargets one.
     const onDesktopChange = () => {
       const engine = engineRef.current;
       if (!engine) return;
@@ -385,12 +385,11 @@ export function TableScene({
      * The test seam.
      *
      * A DOM chip could be measured with `getBoundingClientRect`; a painted
-     * one cannot, so without this `tests/e2e/chip-flights.spec.ts` — which
+     * one cannot, so without this `tests/e2e/chip-flights.spec.ts` (which
      * exists because the pot once landed fifty pixels short of every winner
-     * and nothing failed — would quietly stop asserting anything at all.
-     * Shipped in production rather than dev-gated on purpose: it exposes
-     * projected chip coordinates and a frame counter, all of which are
-     * already on screen.
+     * and nothing failed) would quietly stop asserting anything at all.
+     * Shipped in production rather than dev-gated: it exposes projected chip
+     * coordinates and a frame counter, all of which are already on screen.
      */
     {
       const toViewport = (point: { x: number; y: number }) => {
@@ -475,7 +474,7 @@ export function TableScene({
   /* ------------------------------------------------------------------ *
    * The street turning over: sweep the standing bets in before anything
    * else about the new street renders. Keyed on the street *within* a
-   * hand — a new hand starting on preflop is not a sweep, it is a clear
+   * hand: a new hand starting on preflop is not a sweep, it is a clear
    * (handled below), and an all-in runout that jumps several streets at
    * once still sweeps exactly once.
    * ------------------------------------------------------------------ */
@@ -488,7 +487,7 @@ export function TableScene({
     if (!previous) return;
     if (previous.handNumber !== handNumber) {
       // A hand boundary, handled here rather than in its own effect so it
-      // runs BEFORE the sync effect below on the same commit — a trailing
+      // runs before the sync effect below on the same commit: a trailing
       // effect would clear the new hand's just-synced blinds. Nothing from
       // the old hand stays in the air, and no stale standing bet sweeps
       // across the boundary; the new blinds re-sync as their own piles.
@@ -503,7 +502,7 @@ export function TableScene({
   }, [street, handNumber]);
 
   /* ------------------------------------------------------------------ *
-   * The pot, as a pile — minus what is still standing in front of the
+   * The pot, as a pile, minus what is still standing in front of the
    * bettors, so the felt's chips always sum to the pot the HUD states.
    * The standing bets themselves sync through the same keyed discipline
    * the pile uses. During the payout both are cleared: the pot flying
@@ -514,11 +513,10 @@ export function TableScene({
     if (!engine) return;
     const standing = streetBets.reduce((sum, bet) => sum + bet.amount, 0);
     engine.chips.syncPile(Math.max(0, pot - standing), bigBlind, paying);
-    // Deliberately no `clearBets()` on the paying branch. The chips standing
-    // in front of the callers are part of the pot that was just won, and
-    // `payOut` sends them to the winner from where they stand; deleting them
-    // here is what used to make a caller's bet blink out of existence the
-    // moment the hand ended.
+    // No `clearBets()` on the paying branch: the chips standing in front of
+    // the callers are part of the pot that was just won, and `payOut` sends
+    // them to the winner from where they stand. Deleting them here would
+    // make a caller's bet blink out of existence the moment the hand ended.
     if (!paying) engine.chips.syncBets(streetBets, engine.seatCount, bigBlind);
     pumpRef.current?.();
   }, [pot, bigBlind, paying, streetBets]);

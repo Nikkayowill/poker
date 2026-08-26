@@ -7,7 +7,7 @@ import { adminClient } from "./supabase-admin";
 
 /**
  * Missions: daily and weekly objectives, auto-credited the instant they
- * complete -- there is no claim step, unlike the daily Gold grant. A player
+ * complete. There is no claim step, unlike the daily Gold grant. A player
  * has already done the work (played the hand, won the duel) by the time a
  * mission completes, and gating a reward they already earned behind a second
  * tap would add friction the feature exists to remove. See the migration
@@ -25,18 +25,18 @@ import { adminClient } from "./supabase-admin";
 // Real Postgres reads its own mission_definitions table, which is what makes
 // the catalog admin-tunable without a deploy; this is the memory-mode
 // fallback and what tests seed against, kept in step with the migration by
-// hand -- the same duplication every memory-mode store here carries against
+// hand, the same duplication every memory-mode store here carries against
 // its own table's defaults.
 
-// Reward amounts bumped roughly 3x on 2026-08-20 (supabase/migrations/
-// 20260820130000_mission_achievement_reward_bumps.sql) -- play-driven Gold
+// Reward amounts bumped roughly 3x in supabase/migrations/
+// 20260820130000_mission_achievement_reward_bumps.sql, for play-driven Gold
 // income specifically, so an active player can climb the stakes ladder
 // without ever buying Gold. Keep this array's numbers matching that
 // migration's UPDATE statements exactly.
 //
 // `daily_brain_game` (300 Gold, once/day across any one puzzle) was retired
-// 2026-08-21 (supabase/migrations/20260821130000_ante_up_unify_brain_games.sql)
-// -- replaced by a per-game skill-scored daily bonus, see
+// in supabase/migrations/20260821130000_ante_up_unify_brain_games.sql,
+// replaced by a per-game skill-scored daily bonus. See
 // lib/server/daily-puzzle-bonus.ts. Left out of this array entirely rather
 // than kept-but-disabled: this array is the memory-mode/test mirror of the
 // live catalog, which already excludes it via `enabled = false`.
@@ -245,8 +245,8 @@ async function applyOne(
       p_event_day: eventDay,
     })
     // maybeSingle, not single: the RPC does a bare `return;` (zero rows) when
-    // the mission is unknown, disabled, or outside its active window -- a
-    // deliberate no-op, not an error. .single() would throw on that zero-row
+    // the mission is unknown, disabled, or outside its active window, a
+    // no-op rather than an error. .single() would throw on that zero-row
     // case, turning a mission the catalog cache hasn't caught up on yet into
     // a swallowed error instead of the silent no-op it's meant to be.
     .maybeSingle();
@@ -262,7 +262,7 @@ async function grantOne(profileId: string, definition: MissionDefinition, now: D
   if (!supabase) {
     const key = `mission:${definition.code}:${profileId}:${period}`;
     if (memoryGrants.has(key)) return;
-    // Mark granted only after the credit succeeds -- marking it first and
+    // Mark granted only after the credit succeeds; marking it first and
     // crediting second would lose the reward for good if creditGoldByProfile
     // throws, since a retry would then see the key already claimed.
     await creditGoldByProfile(profileId, definition.rewardGold);
@@ -285,8 +285,8 @@ async function grantOne(profileId: string, definition: MissionDefinition, now: D
  *
  * Never throws, the same contract awardWager keeps: a mission bug must not
  * turn a completed hand, duel or puzzle into a failed request. The reward is
- * lost in that case, which is the same trade-off awardWager makes -- a
- * player would rather keep the result than keep the mission credit.
+ * lost in that case, which is the same trade-off awardWager makes: a player
+ * would rather keep the result than keep the mission credit.
  */
 export async function applyMissionEvent(
   profileId: string,

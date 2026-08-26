@@ -3,9 +3,10 @@ import { z } from "zod";
 import { claimSeat, toSnapshot } from "@/lib/game/engine";
 import { clampBuyIn, TIER_CONFIG } from "@/lib/game/tiers";
 import { findGameByRoomCode, getStoredGame, persistenceMode, persistSeatClaim } from "@/lib/server/game-store";
-import { creditGold, ensureProfile, isBanned, recordSeenIp, spendGold, updateProfile } from "@/lib/server/profile-store";
-import { enforceRateLimit, getClientIp } from "@/lib/server/rate-limit";
-import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
+import { creditGold, spendGold } from "@/lib/server/profile-store";
+import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { withRequestSessionCookie } from "@/lib/server/session";
+import { resolvePlayerForTableEntry } from "@/lib/server/table-entry";
 
 export const runtime = "nodejs";
 
@@ -32,22 +33,10 @@ export async function POST(request: NextRequest) {
     const loaded = await getStoredGame(gameId);
     if (!loaded) return NextResponse.json({ error: "That room code doesn't match a table." }, { status: 404 });
 
-    const token = readOrCreateSessionToken(request);
-    let profile = await ensureProfile(token, parsed.data.name);
-    if (parsed.data.name && parsed.data.name !== profile.displayName) {
-      profile = await updateProfile(token, {
-        displayName: parsed.data.name,
-        avatarPreset: profile.avatarPreset,
-        accent: profile.accent,
-      });
-    }
-    if (await isBanned(token)) {
-      return withRequestSessionCookie(request,
-        NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),
-        token,
-      );
-    }
-    void recordSeenIp(token, getClientIp(request)).catch(() => {});
+    const resolved = await resolvePlayerForTableEntry(request, parsed.data.name);
+    if (resolved instanceof NextResponse) return resolved;
+    const { token } = resolved;
+    let profile = resolved.profile;
 
     const config = TIER_CONFIG[loaded.tier];
     const alreadySeated = loaded.seats.some((seat) => seat.ownerToken === token);

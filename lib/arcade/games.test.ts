@@ -36,7 +36,6 @@ describe("arcade catalogue", () => {
       "Trivia Showdown",
       "Word Race",
       "Cribbage",
-      "Sit & Go",
     ]);
   });
 

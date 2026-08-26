@@ -4,7 +4,6 @@ import { FormEvent, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { Check, Cloud, Coins, ShieldCheck, Users, X } from "lucide-react";
 import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
-import type { TableRenderer } from "@/lib/scene/table-renderer";
 import type { BetAnimationStyle } from "@/lib/scene/bet-style";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type { DailyGoldState } from "@/lib/profile/daily-gold";
@@ -71,9 +70,6 @@ export function Lobby({
   onContinueAccount,
   onContinueAsGuest,
   onSignOut,
-  tableRenderer,
-  landscape,
-  onTableRendererChange,
   soundEnabled,
   onToggleSound,
   musicEnabled,
@@ -112,11 +108,6 @@ export function Lobby({
   onContinueAccount: () => void;
   onContinueAsGuest: () => void;
   onSignOut: () => void;
-  /** The table-view choice, surfaced in the buy-in modal. See BuyInModal's
-   * own header for why it belongs there and not only in the in-game menu. */
-  tableRenderer: TableRenderer;
-  landscape: boolean;
-  onTableRendererChange: (renderer: TableRenderer) => void;
   /* The phone shell's third pane is where these live on a phone. They stay
    * in the in-game table menu too, since that copy is the one reachable
    * mid-hand, which is when a player actually reaches for the mute. */
@@ -286,9 +277,7 @@ export function Lobby({
             onClose={() => setBuyInMode(null)}
             playerName={name}
             onPlayerNameChange={setNameOverride}
-            tableRenderer={tableRenderer}
-            landscape={landscape}
-            onTableRendererChange={onTableRendererChange}
+            allowFormats={buyInMode === "join"}
             onConfirm={(tier, buyIn) => {
               if (buyInMode === "host") onHostPrivate(name.trim() || "You", tier, buyIn);
               else onQuickPlay(name.trim() || "You", tier, buyIn);
@@ -506,9 +495,7 @@ export function Lobby({
           onClose={() => setBuyInMode(null)}
           playerName={name}
           onPlayerNameChange={setNameOverride}
-          tableRenderer={tableRenderer}
-          landscape={landscape}
-          onTableRendererChange={onTableRendererChange}
+          allowFormats={buyInMode === "join"}
           onConfirm={(tier, buyIn) => {
             if (buyInMode === "host") onHostPrivate(name.trim() || "You", tier, buyIn);
             else onQuickPlay(name.trim() || "You", tier, buyIn);

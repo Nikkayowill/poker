@@ -131,19 +131,35 @@ export interface Seat {
 }
 
 /**
- * Present only on a Sit & Go table; null for every ordinary cash table.
+ * Present only on a table that ends when the field is down to one funded
+ * seat, rather than playing forever with bot backfill; null for every
+ * ordinary cash table. Its presence, not a separate mode enum, is what
+ * every tournament-aware branch in engine.ts checks.
  *
- * Its presence, not a separate mode enum, is what every tournament-aware
- * branch in engine.ts checks -- a cash table's `tournament` is always null,
- * so those branches cost it nothing.
+ * Two formats share this one shape: a 6-max Sit & Go (escalating blinds,
+ * winner takes entryFee * 6) and a heads-up match (fixed blinds, no bots at
+ * either seat, winner takes entryFee * 2). `format` is what tells them
+ * apart -- setupHand only escalates blinds for `"sit_and_go"`, and both
+ * `createTournamentGame`/`createHeadsUpGame` set every other field the same
+ * way.
+ *
+ * Every tournament seat gets a real `profileId` unconditionally, guest or
+ * not -- see createTournamentGame/createHeadsUpGame's own seat construction.
+ * That's a deliberate exception to Seat.profileId's normal "guests are
+ * excluded" rule (see that field's own comment): a guest can win either
+ * format same as a registered player, and settlement has to be able to
+ * credit them regardless.
  */
 export interface TournamentState {
+  format: "sit_and_go" | "heads_up";
   /** The Gold entry fee every seat paid; also this table's prize pool contribution per seat. */
   entryFee: number;
-  /** Every seat's fixed starting stack -- always equal to entryFee for a Sit & Go, kept separate since they answer different questions. */
+  /** Every seat's fixed starting stack -- always equal to entryFee, kept separate since they answer different questions. */
   startingStack: number;
   /**
-   * Which BLIND_LEVELS entry is active right now.
+   * Which BLIND_LEVELS entry is active right now. Only meaningful for
+   * `"sit_and_go"` -- a heads-up match's blinds never escalate, so this
+   * stays 0 for the whole match.
    *
    * Recomputed from handNumber at the top of every setupHand, never
    * incremented on its own, so it can never drift out of sync with the hand
@@ -220,7 +236,7 @@ export interface GameState {
   message: string;
   createdAt: string;
   updatedAt: string;
-  /** Non-null exactly for a Sit & Go table; see TournamentState. */
+  /** Non-null exactly for a Sit & Go or heads-up table; see TournamentState. */
   tournament: TournamentState | null;
 }
 

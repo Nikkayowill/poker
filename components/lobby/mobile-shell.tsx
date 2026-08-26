@@ -34,6 +34,7 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Check,
@@ -61,6 +62,7 @@ import {
 } from "lucide-react";
 
 import { CHEAPEST_TIER, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
+import { TABLE_FORMATS, type TableFormat } from "./table-format";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type { DailyGoldState } from "@/lib/profile/daily-gold";
@@ -410,7 +412,9 @@ function PlayPane({
   onJoinCode: (code: string) => void;
   onOpenFriends: () => void;
 }) {
+  const router = useRouter();
   const [tier, setTier] = useState<StakesTier>(CHEAPEST_TIER);
+  const [format, setFormat] = useState<TableFormat>("cash");
   const [joinCode, setJoinCode] = useState("");
   const config = TIER_CONFIG[tier];
   const affordable = profile.unlimitedGold || profile.goldBalance >= config.minBuyIn;
@@ -420,6 +424,19 @@ function PlayPane({
     if (joinCode.trim().length !== 6) return;
     selectSound();
     onJoinCode(joinCode.trim());
+  };
+
+  // Cash seats directly through onQuickPlay; heads-up/tournament each
+  // already have their own matchmaking/registration lobby, so picking
+  // either just hands the chosen tier off to it -- same split BuyInModal's
+  // own confirm button makes on desktop.
+  const play = () => {
+    selectSound();
+    if (format === "cash") {
+      onQuickPlay(tier);
+    } else {
+      router.push(`/games/${format === "heads-up" ? "heads-up" : "sit-and-go"}?tier=${tier}`);
+    }
   };
 
   return (
@@ -485,25 +502,46 @@ function PlayPane({
       <div className="mshell-hero">
         <div className="mshell-hero-art" aria-hidden="true" />
         <div className="mshell-hero-body">
-          <span className="lobby-kicker mshell-hero-kicker">Six-max cash game</span>
-          <strong className="mshell-hero-name">Texas Hold&rsquo;em</strong>
+          <span className="lobby-kicker mshell-hero-kicker">
+            {TABLE_FORMATS.find((candidate) => candidate.id === format)?.blurb}
+          </span>
+          <strong className="mshell-hero-name">
+            {TABLE_FORMATS.find((candidate) => candidate.id === format)?.label}
+          </strong>
           <span className="mshell-hero-meta">
             {config.label} to sit down. Blinds {config.smallBlind} and {config.bigBlind}.
           </span>
+
+          {/* Same three-way choice BuyInModal offers on desktop -- "choose
+              blinds, then choose Texas Hold'em / Heads-Up / Tournament" in
+              one flow, not scattered across separate tiles. */}
+          <div className="mshell-format entry-segment" role="group" aria-label="Format">
+            {TABLE_FORMATS.map((candidate) => (
+              <button
+                key={candidate.id}
+                type="button"
+                className={format === candidate.id ? "is-active" : undefined}
+                aria-pressed={format === candidate.id}
+                onClick={() => { selectSound(); setFormat(candidate.id); }}
+              >
+                {candidate.label}
+              </button>
+            ))}
+          </div>
 
           <button
             type="button"
             className="mshell-primary"
             disabled={loading || !sessionReady || !affordable}
-            onClick={() => { selectSound(); onQuickPlay(tier); }}
+            onClick={play}
           >
             {!sessionReady
               ? "Getting your seat ready"
               : loading
                 ? "Finding you a table"
-                : affordable
-                  ? "Take a seat"
-                  : `You need ${config.minBuyIn.toLocaleString()} Gold`}
+                : !affordable
+                  ? `You need ${config.minBuyIn.toLocaleString()} Gold`
+                  : format === "cash" ? "Take a seat" : `Go to ${TABLE_FORMATS.find((candidate) => candidate.id === format)?.label}`}
             {!loading && sessionReady && affordable && <ArrowRight size={18} aria-hidden="true" />}
           </button>
         </div>

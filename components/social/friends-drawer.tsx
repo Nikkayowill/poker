@@ -964,6 +964,26 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                         <option key={duel.id} value={duel.id}>{duel.label}</option>
                       ))}
                     </select>
+                    {/* Not folded into the Challenge select above: heads-up
+                        poker isn't a lib/pvp/ duel (CHALLENGEABLE_DUELS'
+                        own header explains why that list is scoped to just
+                        the four), and it's the one game here staked by
+                        tier rather than a freely-editable wager, so it
+                        needs its own prefill shape (?invite=, not
+                        ?challenge=) on the other end. */}
+                    <button
+                      type="button"
+                      className="friend-invite"
+                      disabled={busy.has(person.profileId)}
+                      aria-label={`Invite ${person.displayName} to heads-up poker`}
+                      onClick={() => {
+                        selectSound();
+                        const params = new URLSearchParams({ invite: person.profileId, name: person.displayName });
+                        router.push(`/games/heads-up?${params.toString()}`);
+                      }}
+                    >
+                      <Spade size={13} aria-hidden="true" />Heads-Up
+                    </button>
                     <button
                       type="button"
                       className="friend-remove"

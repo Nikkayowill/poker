@@ -94,6 +94,7 @@ function makeState(seats: Seat[]): GameState {
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     tournament: {
+      format: "sit_and_go",
       entryFee: 1000,
       startingStack: 1000,
       blindLevel: 0,

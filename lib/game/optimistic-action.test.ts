@@ -82,9 +82,9 @@ function game(overrides: Partial<GameSnapshot> = {}): GameSnapshot {
     message: "",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    tournament: null,
     legalActions: legalActions(),
     isSeated: true,
-    tournament: null,
     ...overrides,
   };
 }

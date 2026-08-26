@@ -661,6 +661,27 @@ export async function getPublicProfilesByIds(ids: string[]): Promise<Map<string,
   return new Map((data ?? []).map((row) => [String(row.id), otherPlayerSummary(fromRow(row))]));
 }
 
+/**
+ * A full profile by id rather than session token -- every other read in this
+ * file is token-keyed, since the caller and the profile were always the same
+ * person, but dealing a heads-up match (lib/server/heads-up-service.ts) needs
+ * BOTH seated players' cosmetics (equipped avatar/card back, accent,
+ * avatarPreset) to build their poker Seat, and only the caller who is
+ * actually making the request has a live session token on hand -- the other
+ * player is known only by the profile id their own earlier join recorded.
+ * Same "id, not token" reasoning as spendGoldByProfile/creditGoldByProfile.
+ */
+export async function getProfileById(profileId: string): Promise<PlayerProfile | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const found = [...memoryProfiles.values()].find((profile) => profile.id === profileId);
+    return found ? publicProfile(found) : null;
+  }
+  const { data, error } = await supabase.from("profiles").select("*").eq("id", profileId).maybeSingle();
+  if (error) throw new Error(`Could not load profile: ${error.message}`);
+  return data ? publicProfile(fromRow(data)) : null;
+}
+
 const LIST_PROFILES_PAGE_SIZE = 1000;
 // A safety backstop on the internal drain loop below, not a visibility cap:
 // at 1000/page this is 500k profiles before the loop gives up and returns

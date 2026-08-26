@@ -554,6 +554,10 @@ function reseat(state: GameState, seat: Seat) {
 function releaseBustedSeats(state: GameState, now: number = Date.now()) {
   state.seats.forEach((seat) => {
     if (!seat.isHuman || seat.stack > 0 || seat.status === "out") return;
+    // A tournament seat never rebuys -- the funded-seat check a few lines
+    // into setupHand ends the match (Sit & Go or heads-up alike) on this
+    // same call, so this log line is this bust's only mention on its own
+    // terms.
     addLog(
       state,
       state.tournament
@@ -656,16 +660,18 @@ export function setupHand(state: GameState, firstHand = false, now: number = Dat
     state.message = "Not enough players with chips to continue.";
     // Chip conservation guarantees at most one seat has a positive stack the
     // moment this branch fires, so this is the tournament's actual end
-    // condition, not a separate check: whichever seat still has chips has
-    // just won the whole table. Guarded on winnerProfileId so a stray extra
-    // call (e.g. a second advance racing in) never overwrites a result
-    // that's already decided.
+    // condition (Sit & Go or heads-up alike), not a separate check:
+    // whichever seat still has chips has just won the whole table. Guarded
+    // on winnerProfileId so a stray extra call (e.g. a second advance racing
+    // in) never overwrites a result that's already decided.
     if (state.tournament && !state.tournament.winnerProfileId) {
       const survivor = funded[0];
       if (survivor?.profileId) {
         state.tournament.winnerProfileId = survivor.profileId;
         state.tournament.finishedAtHand = state.handNumber;
-        state.message = `${survivor.name} wins the Sit & Go!`;
+        state.message = state.tournament.format === "heads_up"
+          ? `${survivor.name} wins the match!`
+          : `${survivor.name} wins the Sit & Go!`;
       }
     }
     return;
@@ -675,7 +681,10 @@ export function setupHand(state: GameState, firstHand = false, now: number = Dat
     state.buttonPosition = nextSeat(state, state.buttonPosition, (seat) => seat.stack > 0) ?? 0;
     state.handNumber += 1;
   }
-  if (state.tournament) {
+  // Only a Sit & Go's blinds escalate. A heads-up match's stay exactly what
+  // createHeadsUpGame fixed them at for the whole match -- a real cash-style
+  // heads-up battle, not a turbo format.
+  if (state.tournament?.format === "sit_and_go") {
     const level = blindLevelForHand(state.handNumber, TIER_CONFIG[state.tier]);
     state.smallBlind = level.smallBlind;
     state.bigBlind = level.bigBlind;
@@ -880,6 +889,117 @@ export function createGame(
   return state;
 }
 
+/** A heads-up match is always exactly two human seats, never bot-fillable. */
+export const HEADS_UP_SEAT_COUNT = 2;
+
+/**
+ * Builds a fresh heads-up match: two human seats, no bots, fixed blinds for
+ * the tier, and a `tournament` record that ends the table the instant one
+ * seat runs out of chips (see `setupHand`'s funded-seat check). Both
+ * entrants buy in for exactly the tier's stack -- there is no separate
+ * buy-in choice the way the cash lobby offers one, since the entry fee and
+ * the eventual winner-take-all payout both have to agree on a single fixed
+ * number (see `TournamentState`'s own comment on why the payout is computed
+ * from `entryFee`, not read off the live stack).
+ */
+export function createHeadsUpGame(
+  entrants: Array<{
+    token: string;
+    profile: Pick<
+      PlayerProfile,
+      "id" | "isRegistered" | "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped"
+    >;
+  }>,
+  tier: StakesTier,
+): GameState {
+  if (entrants.length !== HEADS_UP_SEAT_COUNT) {
+    throw new Error(`A heads-up match needs exactly ${HEADS_UP_SEAT_COUNT} entrants.`);
+  }
+  const now = new Date().toISOString();
+  const config = TIER_CONFIG[tier];
+  const startingStack = config.minBuyIn;
+
+  const seats: Seat[] = entrants.map((entrant, index) => ({
+    id: randomUUID(),
+    name: entrant.profile.displayName.slice(0, 18) || "Player",
+    initials: entrant.profile.initials,
+    accent: entrant.profile.accent,
+    avatarUrl: entrant.profile.avatarUrl,
+    avatarPreset: entrant.profile.avatarPreset,
+    avatarCosmetic: entrant.profile.equipped?.avatar2d ?? DEFAULT_AVATAR_COSMETIC,
+    cardBackCosmetic: entrant.profile.equipped?.cardBack ?? DEFAULT_CARD_BACK,
+    position: index,
+    isHuman: true,
+    ownerToken: entrant.token,
+    // Unconditionally, guest or not -- a deliberate exception to the normal
+    // "guests get null" rule (see Seat.profileId's own comment), the same
+    // one createTournamentGame makes for a Sit & Go: a guest can win a
+    // heads-up match too, and settlement has to be able to credit them.
+    profileId: entrant.profile.id,
+    botIdentity: null,
+    personality: null,
+    stack: startingStack,
+    status: "active",
+    holeCards: [],
+    streetBet: 0,
+    committed: 0,
+    acted: false,
+    actedAtBet: null,
+    lastAction: null,
+    missedTurns: 0,
+    vpip: false,
+    reseatEligibleAt: null,
+  }));
+
+  const state: GameState = {
+    id: randomUUID(),
+    // Auditing only, same contract as createGame's hostToken -- never an
+    // authorization check. There is no single "host" in a matched heads-up
+    // table, so this is just whichever entrant was listed first.
+    hostToken: entrants[0].token,
+    // Never surfaced by findOpenPublicGame's cash-table matchmaking; heads-up
+    // has its own quick-play/invite matchmaking that never reads this flag.
+    isPrivate: true,
+    roomCode: null,
+    tier,
+    version: 1,
+    status: "playing",
+    street: "preflop",
+    handNumber: 1,
+    buttonPosition: 0,
+    smallBlind: config.smallBlind,
+    bigBlind: config.bigBlind,
+    currentPlayer: null,
+    turnStartedAt: null,
+    turnDeadlineAt: null,
+    nextHandAt: null,
+    currentBet: 0,
+    minRaise: config.bigBlind,
+    pot: 0,
+    rake: 0,
+    deck: [],
+    community: [],
+    seats,
+    winners: [],
+    log: [],
+    message: "",
+    createdAt: now,
+    updatedAt: now,
+    tournament: {
+      format: "heads_up",
+      entryFee: startingStack,
+      startingStack,
+      // Unused for heads-up -- see TournamentState's own comment. Zero
+      // rather than omitted, since every tournament shares the one shape.
+      blindLevel: 0,
+      finishedAtHand: null,
+      winnerProfileId: null,
+    },
+  };
+  setupHand(state, true);
+  return state;
+}
+
 /**
  * Builds a fresh Sit & Go table: exactly SEAT_COUNT human seats, every one
  * funded at the tier's own buy-in, and deals hand 1 immediately -- the
@@ -973,6 +1093,7 @@ export function createTournamentGame(
     createdAt: now,
     updatedAt: now,
     tournament: {
+      format: "sit_and_go",
       entryFee: startingStack,
       startingStack,
       blindLevel: 0,
@@ -1191,14 +1312,19 @@ function rakeFor(pot: number, bigBlind: number): number {
  * last winner absorbs the rounding remainder so the books always balance.
  */
 function deductRake(state: GameState, winnings: Map<string, number>): number {
-  // No flop, no drop. Only reachable from awardUncontested: showdown() runs
+  // Neither tournament format is raked. A Sit & Go's prize pool is a fixed
+  // entryFee * seat count with no house edge to skim from; a heads-up
+  // match's settlement pays the winner exactly entryFee * 2 on the
+  // assumption that nothing ever left the two stacks along the way -- both
+  // are PvP between funded humans, not a bot-populated cash table, and the
+  // "winner-take-all, no rake" rule already holds for every other PvP
+  // format (duels, cribbage). No flop, no drop applies only to the cash
+  // path below: only reachable from awardUncontested, since showdown() runs
   // the board out to five cards before it rakes, so a hand that got all-in
   // preflop and was dealt a run-out is still raked (a flop was dealt, and
-  // the house did provide the pot). This guard is for the hand that ended
-  // before any board existed at all. A Sit & Go's prize pool is a fixed
-  // entryFee * seat count with no house edge to skim from -- rake would just
-  // silently shrink the chips that decide the eventual winner's payout.
-  if (state.community.length === 0 || state.tournament) return 0;
+  // the house did provide the pot) -- this guard is for the hand that ended
+  // before any board existed at all.
+  if (state.tournament || state.community.length === 0) return 0;
   const total = [...winnings.values()].reduce((sum, amount) => sum + amount, 0);
   const rake = rakeFor(total, state.bigBlind);
   if (rake <= 0) return 0;
@@ -2104,7 +2230,13 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
       // already committed with no one left to act for it -- the same reason
       // a cash seat can't be reclaimed by a bot mid-hand either. Between
       // hands, forfeit rather than vacateSeat: no bot takeover, no credit.
-      if (state.status === "playing") throw new Error("Finish this hand before leaving a Sit & Go table.");
+      if (state.status === "playing") {
+        throw new Error(
+          state.tournament.format === "heads_up"
+            ? "Finish this hand before leaving a heads-up match."
+            : "Finish this hand before leaving a Sit & Go table.",
+        );
+      }
       forfeitTournamentSeat(state, seatIndex);
     } else {
       vacateSeat(state, callerToken);
@@ -2113,7 +2245,13 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
     if (state.status !== "complete") throw new Error("Finish the current hand first.");
     setupHand(state);
   } else if (action.type === "rebuy") {
-    if (state.tournament) throw new Error("This is a Sit & Go -- there's no rebuy.");
+    if (state.tournament) {
+      throw new Error(
+        state.tournament.format === "heads_up"
+          ? "There are no rebuys in a heads-up match."
+          : "This is a Sit & Go -- there's no rebuy.",
+      );
+    }
     const seat = state.seats[seatIndex];
     if (seat.stack > 0) throw new Error("Your seat still has chips.");
     // No "between hands" restriction: a busted seat sits out for as many

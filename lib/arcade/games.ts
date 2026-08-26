@@ -32,7 +32,6 @@
  */
 
 import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
-import { CHEAPEST_TIER, TIER_CONFIG } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 export type ArcadeGameId =
@@ -46,8 +45,7 @@ export type ArcadeGameId =
   | "checkers-duel"
   | "trivia-showdown"
   | "word-race"
-  | "cribbage-table"
-  | "sit-and-go";
+  | "cribbage-table";
 
 /**
  * `casino` stakes Gold against the house on a chance outcome. `duel` stakes
@@ -248,21 +246,17 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     status: "live",
     href: "/games/cribbage",
   },
-  // A real poker tournament, not another duel -- but the same "opens a
-  // lobby rather than dealing" shape cribbage's own entry already carries,
-  // so it fits `kind: "duel"` for the same reason. entryCost is a "starting
-  // at": the actual entry fee is the tier chosen at registration, same
-  // relationship a cash table buy-in has to its own STAKES_TIERS picker.
-  {
-    id: "sit-and-go",
-    name: "Sit & Go",
-    blurb: "6-max, winner takes the pot",
-    kind: "duel",
-    entryCost: TIER_CONFIG[CHEAPEST_TIER].minBuyIn,
-    status: "live",
-    href: "/games/sit-and-go",
-  },
 ];
+// Sit & Go and heads-up poker are deliberately NOT catalog rows here.
+// Both are real poker (lib/game/engine.ts's createTournamentGame /
+// createHeadsUpGame), not arcade side-games, and now live as two of the
+// three formats offered directly in the main buy-in flow
+// (components/lobby/buy-in-modal.tsx) alongside the ordinary 6-max cash
+// game -- Kayo's explicit call after Sit & Go first shipped tucked into
+// Ante Up: "dont hide the tournaments in the ante up." Their own
+// /games/sit-and-go and /games/heads-up pages/routes stay mounted (a
+// stale link, a direct visit, or the waiting-room deep link still needs
+// them), just not advertised as an Ante Up tile any more.
 
 /**
  * A missing profile is a wallet with nothing in it, not an unlimited one:
@@ -395,10 +389,13 @@ export function arcadeActionLabel(game: ArcadeGame, wallet: ArcadeWallet): strin
     default:
       // A duel is not dealt on the click, it opens a challenge lobby, and
       // the button should say so rather than implying a round starts.
-      // Cribbage and Sit & Go are `kind: "duel"` too (see their own catalog
-      // entries) but each opens a joinable table list, not a 1:1 challenge,
-      // so "Challenge" would name an action the button does not actually offer.
-      const opensATableList = game.id === "cribbage-table" || game.id === "sit-and-go";
+      // Cribbage is `kind: "duel"` too (see its own catalog entry) but opens
+      // a joinable table list, not a 1:1 challenge, so "Challenge" would
+      // name an action the button does not actually offer. Sit & Go and
+      // heads-up poker used to need the same exception here -- both are
+      // gone from this catalog now (see ARCADE_GAMES' own note on why), so
+      // cribbage is the only member left.
+      const opensATableList = game.id === "cribbage-table";
       return game.kind === "duel" && !opensATableList ? "Challenge" : "Play";
   }
 }

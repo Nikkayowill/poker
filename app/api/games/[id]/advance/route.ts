@@ -6,6 +6,7 @@ import {
   getStoredGame,
   persistenceMode,
 } from "@/lib/server/game-store";
+import { settleHeadsUpIfFinished } from "@/lib/server/heads-up-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { settleSitAndGoIfFinished } from "@/lib/server/sit-and-go-service";
@@ -50,11 +51,18 @@ export async function POST(
     // Awaited, same reasoning as the actions route: this credits real Gold,
     // via the ONE other path (besides an explicit action) a tournament's
     // final hand can resolve through -- a human's expired clock, or the
-    // auto-fold/auto-check that follows it. Never throws.
+    // auto-fold/auto-check that follows it. Neither settle function ever
+    // throws. Format-dispatched the same way the actions route is.
     if (advanced.tournament?.winnerProfileId && !wasAlreadyFinished) {
-      await settleSitAndGoIfFinished(advanced).catch((error) => {
-        console.error("sit_and_go.settle_failed", { gameId: advanced.id, error });
-      });
+      if (advanced.tournament.format === "sit_and_go") {
+        await settleSitAndGoIfFinished(advanced).catch((error) => {
+          console.error("sit_and_go.settle_failed", { gameId: advanced.id, error });
+        });
+      } else {
+        await settleHeadsUpIfFinished(advanced).catch((error) => {
+          console.error("heads_up.settle_failed", { gameId: advanced.id, error });
+        });
+      }
     }
     const deadline = Date.parse(advanced.turnDeadlineAt ?? "");
     const retryAfterMs = Number.isFinite(deadline)

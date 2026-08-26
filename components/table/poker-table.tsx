@@ -16,6 +16,7 @@ import {
   BOARD_CARD_FLOP_OVERLAP_FRACTION,
   BOARD_CARD_REVEAL_GAP_FRACTION,
   DEALER_ANGLE_DEG,
+  SEAT_COUNT,
   seatAngleDeg,
 } from "@/lib/scene/table-anchors";
 import { clampBoardCardWidth } from "@/lib/scene/board-clearance";
@@ -168,6 +169,26 @@ function dealerStyle(dealer: { x: number; y: number; shoulderPx: number }): Reac
   };
 }
 
+/**
+ * Which real six-max anchor slot a heads-up match's one opponent sits in.
+ *
+ * Deliberately NOT a bespoke 2-seat geometry: the ring itself never resizes
+ * (see racetrack-scene.tsx's own `slots` prop), so the opponent always
+ * lands on one of the five already-tuned six-max opponent positions
+ * (1 through 5) -- picked at random rather than a fixed one, so a heads-up
+ * match doesn't always seat its one opponent in the same chair. Hashed off
+ * `gameId` alone, not `handNumber`: the seat has to hold still for the
+ * whole match, or the opponent would visibly teleport between hands.
+ */
+function headsUpOpponentSlot(gameId: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < gameId.length; i += 1) {
+    hash ^= gameId.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return 1 + ((hash >>> 0) % 5);
+}
+
 export function seatWidthFor(table: { width: number; height: number }, count = 6): number {
   const base = Math.min(table.width * SEAT_WIDTH_RATIO, table.height * SEAT_HEIGHT_RATIO);
   const spacingScale = count <= 6 ? 1 : Math.sin(Math.PI / count) / Math.sin(Math.PI / 6);
@@ -312,6 +333,19 @@ export function PokerTable({
       ? game.seats
       : game.seats.map((_, index) => game.seats[(mySeatIndex + index) % game.seats.length])),
     [game.seats, mySeatIndex],
+  );
+  // Which real racetrack anchor each entry of orderedSeats draws at. Identity
+  // for an ordinary table (always all six, in order); a heads-up table's
+  // single opponent (orderedSeats[1], since [0] is always the hero -- see
+  // orderedSeats' own comment) instead lands on one randomly-chosen six-max
+  // slot, so it reuses the ring's existing tuned positions rather than a
+  // bespoke 2-seat geometry. See headsUpOpponentSlot and
+  // racetrack-scene.tsx's own `slots` prop.
+  const seatSlots = useMemo(
+    () => (game.tournament
+      ? orderedSeats.map((_, index) => (index === 0 ? 0 : headsUpOpponentSlot(game.id)))
+      : orderedSeats.map((_, index) => index)),
+    [game.tournament, game.id, orderedSeats],
   );
   const potRef = useRef<HTMLDivElement | null>(null);
   const seatRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -541,7 +575,11 @@ export function PokerTable({
       const character = seatArtCharacter(seat.avatarCosmetic)
         ?? seatArtCharacterForSlot(game.id, game.handNumber, placed.slot);
       if (!character) return;
-      const offset = seatAngleDeg(placed.slot) - DEALER_ANGLE_DEG;
+      // placed.slot is always a real six-max ring position (0-5), regardless
+      // of how many seats this table actually has -- see seatSlots' own
+      // comment and racetrack-scene.tsx's `slots` prop. SEAT_COUNT is the
+      // ring this angle is measured against, not this table's own headcount.
+      const offset = seatAngleDeg(placed.slot, SEAT_COUNT) - DEALER_ANGLE_DEG;
       const pick = pickSeatArtForSlot(character, placed.slot, offset, isDesktopViewport);
       const slot = seatArtSlotFor(placed.slot, isDesktopViewport);
       const box = seatArtBox(placed, placed.hands, pick.aspect, pick.mirror, slot);
@@ -741,12 +779,16 @@ export function PokerTable({
   // Ring slots, not engine seat positions. The scene rings its table from the
   // local player's chair exactly as the DOM does, so a bet has to be handed
   // over as "slot 2" rather than "seat abc" or it flies in from the wrong
-  // side of the table for everyone who is not in seat 1.
+  // side of the table for everyone who is not in seat 1. This is seatSlots'
+  // own real ring position, not the seat's plain array index -- for a
+  // heads-up table those two differ (the opponent's true slot is randomly
+  // chosen, see seatSlots), and a chip animating to array-index 1 instead of
+  // the actual assigned slot would land beside the wrong chair.
   const slotOf = useMemo(() => {
     const slots = new Map<string, number>();
-    orderedSeats.forEach((seat, index) => slots.set(seat.id, index));
+    orderedSeats.forEach((seat, index) => slots.set(seat.id, seatSlots[index]));
     return slots;
-  }, [orderedSeats]);
+  }, [orderedSeats, seatSlots]);
   const betFlights = useMemo<BetFlight[]>(
     () => chipFlights
       .map((flight) => ({
@@ -1049,6 +1091,7 @@ export function PokerTable({
               ordinary DOM and needed no z-index changes to land on top. */}
           <RacetrackScene
             seats={orderedSeats}
+            slots={seatSlots}
             pot={game.pot}
             bigBlind={game.bigBlind}
             streetBets={sceneStreetBets}

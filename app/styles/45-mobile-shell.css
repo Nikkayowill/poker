@@ -336,6 +336,18 @@
     line-height: 1.45;
   }
 
+  /* Same control BuyInModal's own .buyin-format uses on desktop (11-panels.css),
+     restated at phone width rather than shared: this card's own grid/spacing
+     is all hand-tuned against .mshell-hero's own padding, not the modal's. */
+  .mshell-format {
+    grid-template-columns: repeat(3, 1fr);
+    margin-bottom: 14px;
+  }
+  .mshell-format button {
+    font-size: 12.5px;
+    padding: 0 2px;
+  }
+
   /* ---- the one saturated action --------------------------------------- */
 
   .mshell-primary {

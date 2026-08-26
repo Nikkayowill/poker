@@ -1673,9 +1673,6 @@ export function PokerApp() {
             onContinueAccount={() => void continueWithAccount()}
             onContinueAsGuest={continueAsGuest}
             onSignOut={() => void signOut()}
-            tableRenderer={tableRenderer}
-            landscape={landscape}
-            onTableRendererChange={setTableRendererState}
             soundEnabled={soundEnabled}
             onToggleSound={toggleSound}
             musicEnabled={musicEnabled}

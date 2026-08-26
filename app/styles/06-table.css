@@ -320,8 +320,11 @@
    variable-length string into a fixed slot under an absolutely-positioned
    seat and ran out from under the table; this has a column of its own and can
    afford the type. Sized in clamp() off the viewport rather than at a fixed
-   px so the same rule serves a phone and a desktop -- the mobile override in
-   12-responsive.css now only trims the line count, not the legibility. */
+   px so the same rule serves a phone and a desktop. At the tight
+   mobile-landscape tier this element renders in the header instead (see
+   .game-header-feed, 05-game-header.css) rather than here at all -- these
+   base rules are what it inherits before that override strips the plate
+   styling back down to plain text. */
 .table-feed {
   display: flex;
   flex-direction: column-reverse;

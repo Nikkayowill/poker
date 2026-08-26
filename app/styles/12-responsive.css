@@ -405,30 +405,19 @@
 
   /* Measured at 844x390 there are 18px between the top of .table-area and the
      highest seat, so the band itself is only good for one short pill. The
-     feed used to be dropped entirely here; with the seat pills gone that
-     left a landscape phone with nowhere at all to read what just happened.
-
-     So it comes back as an overlay rather than a band member: one line,
-     absolutely placed into the top-left corner over the black margin beside
-     the 3:1 oval, where nothing else is drawn. The band keeps its stakes
+     feed used to overlay this corner as a one-line absolute-positioned
+     plate; it now moves into the header instead, beside the logo (see
+     .game-header-feed, 05-game-header.css, and poker-table.tsx's
+     tightLandscape branch) -- there was nowhere over the felt for it that
+     didn't collide with the seat or the stakes pill, and the header had an
+     empty column going to waste right next to it. The band keeps its stakes
      pill and its own height, untouched. */
   .table-hud { gap: 10px; padding: 2px 8px 0; }
-  /* Pushed to the right edge, because the feed below leaves the flex flow
-     here (position: absolute, top-left corner) and the blinds are then the
-     band's only remaining child -- so space-between put them at the start,
-     directly underneath the overlay. Two readouts printed over each other,
-     measured on a 844x390 render. margin-left:auto restores the two-ends
-     layout the band has at every other width. */
+  /* The feed no longer renders down here at this tier, so .table-hud-left is
+     empty and space-between would otherwise leave the blinds pinned to the
+     left, directly under the header's own feed. margin-left:auto restores
+     the two-ends layout the band has at every other width. */
   .table-hud .blind-structure { padding: 2px 7px; font-size: 9px; margin-left: auto; }
-  .table-feed {
-    position: absolute;
-    top: 2px;
-    left: max(6px, var(--safe-left));
-    font-size: 11px;
-    max-width: 40vw;
-    padding: 3px 7px;
-  }
-  .table-feed li:nth-child(n + 2) { display: none; }
   .card-large { width: clamp(32px, 7.5vw, 42px); }
 
   /* FLOATING HUD CONTROLS.

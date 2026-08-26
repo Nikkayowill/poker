@@ -87,6 +87,26 @@
   justify-self: end;
 }
 
+/* The live feed, only ever rendered in here at the tight mobile-landscape
+   tier (poker-table.tsx's tightLandscape branch) -- lands in the header's
+   otherwise-empty middle column by plain grid auto-placement, since it sits
+   between the wordmark and .game-header-actions in DOM order. Strips the
+   felt-overlay plate styling .table-feed carries everywhere else (background,
+   blur, padding): inside the chrome bar it just needs to read as one line of
+   text, not a second panel floating beside the logo. */
+.game-header-feed {
+  grid-column: 2;
+  align-self: center;
+  justify-self: start;
+  background: none;
+  backdrop-filter: none;
+  padding: 0;
+  margin: 0;
+  max-width: 100%;
+  font-size: 11px;
+}
+.game-header-feed li:nth-child(n + 2) { display: none; }
+
 .leave-button {
   border: 1px solid var(--line);
   color: #86948c;

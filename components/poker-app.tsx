@@ -73,6 +73,7 @@ import { GoldBadge } from "@/components/profile/gold-badge";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RoomCreatedModal } from "@/components/table/room-created-modal";
 import { useLandscape } from "@/components/use-landscape";
+import { useTightLandscape } from "@/components/use-tight-landscape";
 import { usePhoneViewport } from "@/components/use-phone-viewport";
 import { RewardedAdModal } from "@/components/rewards/rewarded-ad-modal";
 import { REWARDED_AD_ELIGIBLE_BELOW } from "@/lib/rewards/config";
@@ -265,6 +266,7 @@ export function PokerApp() {
   // rather than in each consumer so the lobby's preselect and the table itself
   // can never disagree about which way up the device is.
   const landscape = useLandscape();
+  const tightLandscape = useTightLandscape();
   // Not used to render anything here: it is a dependency of the scroll-listener
   // effect below, which has to re-bind when the lobby swaps between the hub's
   // single scroller and the phone shell's three panes.
@@ -1628,6 +1630,7 @@ export function PokerApp() {
             onCycleBetStyle={cycleBetStyle}
             tableRendererSettled={tableRendererSettled}
             landscape={landscape}
+            tightLandscape={tightLandscape}
             onCycleTableRenderer={cycleTableRenderer}
             onSignIn={() => void signIn()}
             onSignOut={() => void signOut()}

@@ -146,6 +146,13 @@
 }
 .seat-far .seat-plate { margin-top: -4%; }
 
+/* The far-left seat's plate sits right under the table feed (.table-feed,
+   06-table.css) in the corner -- the blanket -4% above brings every far
+   seat's plate close to its own figure, but on this one seat that same pull
+   was enough to clip into the feed above it. Nudge it back down a little,
+   scoped to this seat alone so the rest of the far row is untouched. */
+.seat-far-left .seat-plate { margin-top: 2%; }
+
 /* The nameplate: flat, solid, one weight of type. It overlaps the base of the
    figure so the two read as one object rather than a label parked underneath. */
 /* A name and a stack, not a card with a name in it.

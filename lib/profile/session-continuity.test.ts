@@ -48,7 +48,7 @@ const profile: PlayerProfile = {
   initials: "K",
   avatarUrl: null,
   avatarPreset: "ace",
-  equipped: { cardBack: "house", avatar2d: "ace", avatar3d: "gloria" },
+  equipped: { cardBack: "house", avatar2d: "ace" },
   accent: "#e7c66a",
   createdAt: "2026-08-01T00:00:00.000Z",
   updatedAt: "2026-08-12T00:00:00.000Z",

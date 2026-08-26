@@ -5,9 +5,7 @@ import {
   avatarCosmetics,
   avatarFace,
   avatarFigure,
-  character3DCosmetics,
   characterAvatarCosmetics,
-  characterThumbnail,
   cosmetics,
   DEFAULT_AVATAR_COSMETIC,
   DEFAULT_CARD_BACK,
@@ -31,17 +29,10 @@ describe("cosmetic catalog", () => {
     // without running the prepare script -- or with a source file named a
     // little differently -- lists in the store and then renders as a monogram
     // for everyone who buys it. This is the only place that catches that.
-    const missing = avatarCosmetics.filter((item) => item.renderMode !== "3d").flatMap((item) => [
+    const missing = avatarCosmetics.flatMap((item) => [
       ...(onDisk(avatarFigure(item.id)) ? [] : [`${item.id}: figure`]),
       ...(onDisk(avatarFace(item.id)) ? [] : [`${item.id}: face`]),
     ]);
-    expect(missing).toEqual([]);
-  });
-
-  it("ships a captured thumbnail for every 3D character", () => {
-    const missing = character3DCosmetics
-      .filter((item) => !onDisk(characterThumbnail(item.id)))
-      .map((item) => item.id);
     expect(missing).toEqual([]);
   });
 
@@ -50,17 +41,15 @@ describe("cosmetic catalog", () => {
     expect(cosmeticById(DEFAULT_CARD_BACK)?.slot).toBe("cardBack");
   });
 
-  it("keeps independent 2D and 3D equipment slots", () => {
+  it("resolves equipment from a stored value, the legacy `avatar` key, or neither", () => {
     expect(defaultEquipped.avatar2d).toBe("character4");
-    expect(character3DCosmetics.map((item) => item.id)).toContain(defaultEquipped.avatar3d);
-    expect(normalizeEquipped({ avatar: "marcus" })).toMatchObject({
-      avatar2d: "character4",
-      avatar3d: "marcus",
-    });
-    expect(normalizeEquipped({ avatar2d: "character9", avatar3d: "victor" })).toMatchObject({
+    expect(normalizeEquipped({ avatar: "character9" })).toMatchObject({
       avatar2d: "character9",
-      avatar3d: "victor",
     });
+    expect(normalizeEquipped({ avatar2d: "character9" })).toMatchObject({
+      avatar2d: "character9",
+    });
+    expect(normalizeEquipped({})).toMatchObject({ avatar2d: DEFAULT_AVATAR_COSMETIC });
   });
 
   it("gives away the starter roster and exactly one card back", () => {
@@ -68,40 +57,11 @@ describe("cosmetic catalog", () => {
     // among the free choices every time or the default equipment cannot be
     // relied upon. Two starters, not one -- a man and a woman.
     const free = cosmetics.filter((item) => item.price === 0);
-    const freeAvatars = free.filter((item) => item.slot === "avatar" && item.renderMode !== "3d");
+    const freeAvatars = free.filter((item) => item.slot === "avatar");
     const freeCardBacks = free.filter((item) => item.slot === "cardBack");
     expect(freeAvatars.map((item) => item.id)).toContain(DEFAULT_AVATAR_COSMETIC);
     expect(freeAvatars.map((item) => item.id).sort()).toEqual(["character4", "character9"]);
     expect(freeCardBacks.map((item) => item.id)).toEqual([DEFAULT_CARD_BACK]);
-  });
-
-  it("locks every customer-pack 3D character behind a win reward or premium price", () => {
-    const starter3D = character3DCosmetics.filter((item) => item.price === 0);
-    const earned3D = character3DCosmetics.filter((item) => item.unlock);
-    const paid3D = character3DCosmetics.filter((item) => typeof item.price === "number" && item.price > 0);
-
-    expect(starter3D.map((item) => item.id)).toEqual([
-      "gloria", "michael", "pablo", "james", "daniel", "dora",
-    ]);
-    expect(earned3D.map((item) => item.id)).toEqual(["donni", "jimmy", "kenji"]);
-    expect(earned3D.map((item) => item.unlock)).toEqual([
-      { handsWon: 50 },
-      { handsWon: 150 },
-      { handsWon: 500 },
-    ]);
-    expect(earned3D.every((item) => item.price === null)).toBe(true);
-    expect(paid3D.map((item) => [item.id, item.price])).toEqual([
-      ["claira", 7_000_000],
-      ["marcus", 6_000_000],
-      ["oscar", 2_000_000],
-      ["derek", 1_000_000],
-      ["victor", 4_000_000],
-    ]);
-    const claira = character3DCosmetics.find((item) => item.id === "claira");
-    expect(claira?.description).toBe(
-      "gf of owner. She is an AET and soon to be civil engineer, relatively new to poker but dont underestimate her",
-    );
-    expect(claira?.price).toBeGreaterThan(Math.max(...paid3D.filter((item) => item.id !== "claira").map((item) => item.price as number)));
   });
 
   it("never prices a signature item", () => {
@@ -133,7 +93,6 @@ describe("cosmetic catalog", () => {
       // Card backs are drawn from `art`; avatars are supplied images keyed by
       // id. An entry with both, or neither, renders as nothing at all.
       expect(Boolean(item.art)).toBe(item.slot === "cardBack");
-      if (item.renderMode === "3d") expect(item.slot).toBe("avatar");
     }
   });
 });

@@ -82,25 +82,23 @@ describe("cosmetic ownership (memory mode)", () => {
     await expect(equipCosmetic(token, owner, "back-ivory")).rejects.toThrow("don't own");
   });
 
-  it("does not let a new profile equip a locked 3D character", async () => {
+  it("does not let a new profile equip a locked rare avatar", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
 
-    expect(await listOwnedCosmetics(profile.id)).not.toContain("marcus");
-    expect(await listOwnedCosmetics(profile.id)).not.toContain("claira");
-    await expect(equipCosmetic(token, profile, "marcus")).rejects.toThrow("don't own");
-    await expect(equipCosmetic(token, profile, "claira")).rejects.toThrow("don't own");
+    expect(await listOwnedCosmetics(profile.id)).not.toContain("character5");
+    await expect(equipCosmetic(token, profile, "character5")).rejects.toThrow("don't own");
   });
 
-  it("sells and equips a premium 3D character at its server catalog price", async () => {
+  it("sells and equips a rare avatar at its server catalog price", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
-    await adjustGold(profile.id, 1_000_000);
+    await adjustGold(profile.id, 80_000);
     const funded = await ensureProfile(token);
-    const purchase = await purchaseCosmetic(token, funded, "derek");
+    const purchase = await purchaseCosmetic(token, funded, "character5");
 
     expect(purchase.profile.goldBalance).toBe(2000);
-    expect(purchase.owned).toContain("derek");
-    expect((await equipCosmetic(token, purchase.profile, "derek")).avatar3d).toBe("derek");
+    expect(purchase.owned).toContain("character5");
+    expect((await equipCosmetic(token, purchase.profile, "character5")).avatar2d).toBe("character5");
   });
 });

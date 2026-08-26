@@ -4,7 +4,6 @@ import {
   RACETRACK_RENDERER,
   TABLE_RENDERERS,
   TABLE_RENDERER_STORAGE_KEY,
-  canRenderWebGL,
   nextTableRenderer,
   normalizeTableRenderer,
   resolveTableRenderer,
@@ -26,35 +25,11 @@ describe("the table renderer", () => {
   });
 
   it("keeps the renderer cycle on 2.5D", () => {
-    expect(nextTableRenderer("webgl_3d", false, false)).toBe(RACETRACK_RENDERER);
-    expect(nextTableRenderer(RACETRACK_RENDERER, true, true)).toBe(RACETRACK_RENDERER);
-    expect(resolveTableRenderer("webgl_3d", true, true)).toBe(RACETRACK_RENDERER);
-    expect(resolveTableRenderer(RACETRACK_RENDERER, true, false)).toBe(RACETRACK_RENDERER);
+    expect(nextTableRenderer()).toBe(RACETRACK_RENDERER);
+    expect(resolveTableRenderer(RACETRACK_RENDERER)).toBe(RACETRACK_RENDERER);
   });
 
   it("keeps the preference in the stackchips namespace", () => {
     expect(TABLE_RENDERER_STORAGE_KEY.startsWith("stackchips:")).toBe(true);
-  });
-});
-
-describe("canRenderWebGL", () => {
-  const canvasReturning = (context: unknown) =>
-    ({ getContext: () => context }) as unknown as HTMLCanvasElement;
-
-  it("is true when a context comes back", () => {
-    expect(canRenderWebGL(() => canvasReturning({}))).toBe(true);
-  });
-
-  it("is false when getContext returns null", () => {
-    expect(canRenderWebGL(() => canvasReturning(null))).toBe(false);
-  });
-
-  it("is false rather than throwing when getContext raises", () => {
-    const hostile = {
-      getContext() {
-        throw new Error("blocked");
-      },
-    } as unknown as HTMLCanvasElement;
-    expect(canRenderWebGL(() => hostile)).toBe(false);
   });
 });

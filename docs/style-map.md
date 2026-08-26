@@ -98,22 +98,20 @@ here. Search for the selector you just edited — there's likely a
   the table). Don't reach for a `--brand-*` token inside 05–09, 16, 17, or 99
   — those files are the game.
 
-## The three table renderers
+## The table renderer
 
-There isn't one table drawing — there are three, picked by player
-preference (`lib/scene/table-renderer.ts`), and cards/seats/HUD are the
-*same DOM* laid over whichever one is underneath:
-1. **Flat CSS table** — just the files above, a painted felt image.
-2. **2.5D canvas** — `lib/scene/scene-config.ts`, `lib/scene/seat-ring.ts`,
-   `lib/scene/projection.ts` draw a tilted-camera room on `<canvas>` behind
-   the same DOM seats/cards. If you're chasing a number for this renderer
-   specifically, it's in `lib/scene/`, not `app/styles/`.
-3. **3D room** — `components/game3d/`, `lib/game3d/` — full rigged
-   character models. Much more involved to hand-edit (avatar rigging, arm
-   IK, camera framing); not really a "change a CSS number" surface.
+There is one table renderer, the 2.5D racetrack (`lib/scene/table-renderer.ts`
+names it, though the type only has one member left) — a tilted-camera room
+painted on `<canvas>` (`lib/scene/scene-config.ts`, `lib/scene/seat-ring.ts`)
+behind the same DOM seats/cards/HUD every other file on this page describes.
+If you're chasing a number for the room itself rather than for a seat/card/HUD
+number, it's in `lib/scene/`, not `app/styles/`.
 
-If you only ever play with the default flat/2.5D look, you can ignore
-`lib/game3d/` entirely.
+Two earlier renderers are gone outright, not just disabled: a flat CSS-only
+table (the original `canvas_2d` room), and a full WebGL 3D room
+(`components/game3d/`, `lib/game3d/`, full rigged character models) — both
+recoverable from git history/the `archive/webgl-3d-table` tag if either is
+ever wanted back, but nothing in the live tree references them any more.
 
 ## Quick cheatsheet
 

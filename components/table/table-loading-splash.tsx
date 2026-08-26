@@ -5,22 +5,21 @@ import clsx from "clsx";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 
 /**
- * The full-screen "entering the room" beat, shared by both table renderers.
+ * The full-screen "entering the room" beat over the racetrack table.
  *
- * `sceneReady` gates on every seated character actually mounting (see
- * lib/game3d/avatar-load-gate.ts) rather than on WebGL context creation
- * alone, which used to let the room present itself as finished while
- * avatars popped in seat by seat, reading as "falling out of the sky." This
- * component covers that wait instead of leaving the player looking at flat
- * DOM felt while it happens.
+ * Started life covering two renderers -- this one and the now-deleted WebGL
+ * 3D room (recoverable from the `archive/webgl-3d-table` git tag), whose own
+ * `onReady` used to fire on context creation alone, essentially instant,
+ * while each seated character kept loading independently behind its own
+ * Suspense boundary. That let the room present itself as finished and then
+ * have avatars pop in seat by seat, which read as "falling out of the sky."
  *
- * The 2D table has the same gap for a different reason: its felt/rail art
- * is a real image loaded over the network rather than canvas-painted (see
- * use-felt-art-ready.ts), so the shell/seats/HUD would be interactive
- * before the felt finished loading. `sceneReady` from poker-table.tsx
- * reflects readiness for whichever renderer is active, so
- * `active={!sceneReady}` covers both; this component only presents that
- * state, it doesn't own the decision.
+ * The racetrack table earns the same kind of gap for a different reason: its
+ * canvas needs a frame to mount before `RacetrackScene`'s own `onReady`
+ * fires, so without this the table shell/seats/HUD would already be
+ * interactive for that one frame before the room painted in behind them.
+ * `sceneReady` from poker-table.tsx reflects that readiness; this component
+ * owns none of the decision, only the presentation of it.
  */
 
 const FLAVOR_LINES = [

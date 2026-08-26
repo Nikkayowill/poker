@@ -571,13 +571,10 @@
    land beside a seat without covering something that already carries
    information -- it either rides up onto a neighbour's plate or sits over
    the felt art with no seat anchor nearby to read it against. `visibility`
-   rather than `display: none`, matching the one other place this element is
-   already hidden this way (`.scene-room-3d .dealer-puck` in 99-scene.css):
-   poker-table.tsx's own measureDealer runs unconditionally every hand
-   regardless of viewport, and it measures the seat and the table wrap, not
-   this element, so nothing here needs it kept in layout -- this is about
-   staying consistent with the sheet's existing hide, not a measurement
-   dependency. */
+   rather than `display: none`: poker-table.tsx's own measureDealer runs
+   unconditionally every hand regardless of viewport, and it measures the
+   seat and the table wrap, not this element, so nothing here needs it kept
+   in layout. */
 @media (max-width: 900px) {
   .dealer-puck { visibility: hidden; }
 }
@@ -895,10 +892,7 @@
    shapes share -- the full plate and the compact opponent HUD
    (player-seat.tsx's SeatNameplate) -- so it needs no separate placement
    for either, and no override in 42-racetrack-table.css: that room reuses
-   the same full plate for every opponent. Not offered on the 3D room: its
-   nameplates are deliberately panel-free (see the "No panel here on
-   purpose" note in game3d.module.css) and its SeatModel carries no
-   profileId to challenge against yet. */
+   the same full plate for every opponent. */
 .seat-challenge-trigger {
   position: absolute;
   top: -7px;

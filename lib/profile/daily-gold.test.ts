@@ -9,7 +9,7 @@ function profileWith(overrides: Partial<PlayerProfile>): PlayerProfile {
     initials: "PL",
     avatarUrl: null,
     avatarPreset: "ace",
-    equipped: { avatar2d: "character4", avatar3d: "gloria", cardBack: "back-house" },
+    equipped: { avatar2d: "character4", cardBack: "back-house" },
     accent: "#e7c66a",
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-01T00:00:00.000Z",

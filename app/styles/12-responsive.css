@@ -398,26 +398,6 @@
     overflow: hidden;
   }
 
-  /* The wrap fills the stage rather than being capped by leftover height.
-     `--table-height-cap` exists to stop the table overflowing a viewport it
-     cannot measure; inside a stage of known, fixed shape there is nothing
-     left to guess, and leaving the cap in place left the band floating in
-     the middle of the letterbox with margin the seats had been pushed out
-     into. Naming the cap rather than replacing the whole min() is the rule
-     this file's Defect D1 note sets out -- kept, because the aspect below
-     still needs its width term.
-
-     Both this and `--table-aspect` are for the 3D room alone now: the
-     racetrack unconditionally overrides both `.poker-table-wrap` and
-     `.poker-rail` regardless of breakpoint (`.scene-room-racetrack`,
-     42-racetrack-table.css), so nothing here reaches it. */
-  .poker-table-wrap {
-    --table-aspect: 3;
-    --table-height-cap: 100%;
-    width: 100%;
-    height: 100%;
-    max-width: none;
-  }
   /* Measured at 844x390 there are 18px between the top of .table-area and the
      highest seat, so the band itself is only good for one short pill. The
      feed used to be dropped entirely here; with the seat pills gone that

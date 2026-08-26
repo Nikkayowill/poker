@@ -53,13 +53,6 @@ import {
   normalizeTableRenderer,
   type TableRenderer,
 } from "@/lib/scene/table-renderer";
-import {
-  DEFAULT_ROOM_THEME_ID,
-  ROOM_THEME_STORAGE_KEY,
-  nextRoomThemeId,
-  normalizeRoomThemeId,
-  type RoomThemeId,
-} from "@/lib/game3d/room-theme";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
 import { Bell, BellOff, Coins, Gift, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
@@ -79,7 +72,6 @@ import { AuthButton } from "@/components/profile/auth-button";
 import { GoldBadge } from "@/components/profile/gold-badge";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RoomCreatedModal } from "@/components/table/room-created-modal";
-import { useWebglSupport } from "@/components/table/use-webgl-support";
 import { useLandscape } from "@/components/use-landscape";
 import { usePhoneViewport } from "@/components/use-phone-viewport";
 import { RewardedAdModal } from "@/components/rewards/rewarded-ad-modal";
@@ -255,33 +247,21 @@ export function PokerApp() {
     fallback: DEFAULT_BET_STYLE,
     parse: normalizeBetStyle,
   });
-  // Same shape as betStyle above, with no `apply`: the consumer is a prop on
-  // <PokerTable>, not a module singleton, so there is nothing to push the
-  // value into outside React.
-  // The third member is the anti-flicker signal, and this is the one
-  // preference in the app that needs it: it decides which of two renderers to
-  // mount, so acting on the fallback for a tick means building and discarding
-  // a whole room. See the note on `settled` in use-stored-preference.ts.
+  // Same shape as betStyle above, and deliberately with no `apply`: the
+  // consumer is a prop on <PokerTable>, not a module singleton, so there is
+  // nothing to push the value into outside React.
+  // The third member is the anti-flicker signal, kept from when this decided
+  // which of several renderers to MOUNT (acting on the fallback for a tick
+  // meant building and discarding a whole room) -- with one renderer left it
+  // never actually disagrees with the default, but the signal costs nothing
+  // to keep. See the note on `settled` in use-stored-preference.ts.
   const [tableRenderer, setTableRendererState, tableRendererSettled] =
     useStoredPreference<TableRenderer>({
       key: TABLE_RENDERER_STORAGE_KEY,
       fallback: DEFAULT_TABLE_RENDERER,
       parse: normalizeTableRenderer,
     });
-  // Same shape again, and no `settled` needed this time: unlike the renderer
-  // above, a theme change never remounts anything. It's just colour/light
-  // props flowing into the already-mounted 3D room, so a one-tick flicker to
-  // the default before the stored value arrives is harmless.
-  const [roomThemeId, setRoomThemeIdState] = useStoredPreference<RoomThemeId>({
-    key: ROOM_THEME_STORAGE_KEY,
-    fallback: DEFAULT_ROOM_THEME_ID,
-    parse: normalizeRoomThemeId,
-  });
-  // Same probe poker-table.tsx uses to decide what the menu can offer;
-  // asked here too now that the buy-in modal offers the same choice before
-  // any table exists to mount it into.
-  const webglAvailable = useWebglSupport();
-  // The 2.5D table is landscape-only; see `resolveTableRenderer`. Owned here
+  // The 2.5D table is landscape-only -- see `resolveTableRenderer`. Owned here
   // rather than in each consumer so the lobby's preselect and the table itself
   // can never disagree about which way up the device is.
   const landscape = useLandscape();
@@ -407,23 +387,16 @@ export function PokerApp() {
   }, [setBetStyleState]);
 
   /**
-   * Steps from the renderer that is actually mounted, which the table passes
-   * in, rather than from the stored preference.
-   *
-   * They differ whenever a preference has been resolved away, the only
-   * remaining case is the 3D room on a device without WebGL, and stepping
-   * from the stored value in that state produces a menu entry that visibly
-   * does nothing: stored 3D, no WebGL, so the racetrack table is what's
-   * mounted; stepping from the stored preference would step past the
-   * racetrack and land back on 3D, which the device still can't render.
+   * Steps the stored table-renderer preference. With only one renderer left
+   * (`nextTableRenderer` always answers `racetrack_2d5`) this never visibly
+   * changes anything -- kept, along with the menu entry that calls it, so a
+   * renderer added back later has a preference to step between without new
+   * plumbing threaded back through here and PokerTable.
    */
   const cycleTableRenderer = useCallback((mounted: TableRenderer) => {
-    setTableRendererState(nextTableRenderer(mounted, webglAvailable, landscape));
-  }, [setTableRendererState, webglAvailable, landscape]);
-
-  const cycleRoomTheme = useCallback(() => {
-    setRoomThemeIdState(nextRoomThemeId);
-  }, [setRoomThemeIdState]);
+    void mounted;
+    setTableRendererState(nextTableRenderer());
+  }, [setTableRendererState]);
 
   /**
    * The daily claim, moved off the navbar.
@@ -1657,8 +1630,6 @@ export function PokerApp() {
             tableRendererSettled={tableRendererSettled}
             landscape={landscape}
             onCycleTableRenderer={cycleTableRenderer}
-            roomThemeId={roomThemeId}
-            onCycleRoomTheme={cycleRoomTheme}
             onSignIn={() => void signIn()}
             onSignOut={() => void signOut()}
             reactions={reactions}
@@ -1703,7 +1674,6 @@ export function PokerApp() {
             onContinueAsGuest={continueAsGuest}
             onSignOut={() => void signOut()}
             tableRenderer={tableRenderer}
-            webglAvailable={webglAvailable}
             landscape={landscape}
             onTableRendererChange={setTableRendererState}
             soundEnabled={soundEnabled}

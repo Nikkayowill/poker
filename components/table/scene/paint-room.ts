@@ -128,8 +128,10 @@ export interface RoomFrame {
  *
  * At this elevation the camera's horizon sits above the top of the frame at
  * every shipped aspect, so no ray leaves the ground; there is no wall or sky
- * this canvas could paint instead even if it wanted to. The 3D room reached
- * the same conclusion the hard way (`lib/game3d/floor-environment.ts`).
+ * this canvas could paint instead even if it wanted to. The deleted WebGL 3D
+ * room reached the same conclusion the hard way, in its own now-gone
+ * `floor-environment.ts` (recoverable from the `archive/webgl-3d-table` git
+ * tag).
  */
 function paintFloor(ctx: CanvasRenderingContext2D, frame: RoomFrame): void {
   ctx.clearRect(0, 0, frame.width, frame.height);

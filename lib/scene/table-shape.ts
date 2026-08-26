@@ -3,19 +3,22 @@
  * outline — two straight edges joined by semicircular ends, the shape every
  * real oval poker table is actually cut to.
  *
- * `table-3d.tsx` used to approximate the table as a pure ellipse: circular
- * three.js primitives (torus/cylinder/ring) non-uniformly scaled on X/Z.
- * That has two real defects past just "wrong shape" — an ellipse has no
- * straight run at all (the sides bow continuously), and non-uniformly
- * scaling a torus also scales its tube cross-section, so the rail cushion
- * came out visibly fatter along the long sides than at the ends. A stadium
- * built from a real 2D outline has a uniform-width rail everywhere and a
- * true straight edge along the sides, matching a real table's cut.
+ * Originally written for the WebGL 3D room's own table mesh, which used to
+ * approximate the table as a pure ellipse: circular three.js primitives
+ * (torus/cylinder/ring) non-uniformly scaled on X/Z. That has two real
+ * defects past just "wrong shape" — an ellipse has no straight run at all
+ * (the sides bow continuously), and non-uniformly scaling a torus also
+ * scales its tube cross-section, so the rail cushion came out visibly
+ * fatter along the long sides than at the ends. A stadium built from a real
+ * 2D outline has a uniform-width rail everywhere and a true straight edge
+ * along the sides, matching a real table's cut.
  *
- * Pure math, no three.js import, so `npm test` reaches it — the geometry
- * construction that turns this outline into a THREE.Shape/ExtrudeGeometry
- * lives in components/game3d/scene/table-geometry.ts instead, next to the
- * other three.js-dependent presentation code in that directory.
+ * The 3D room was deleted outright (recoverable from the
+ * `archive/webgl-3d-table` git tag, not from this tree) but this module
+ * moved to `lib/scene/` rather than going with it: `lib/scene/table-anchors.ts`
+ * -- the live racetrack table's own anchor math -- depends on it too. Pure
+ * math, no three.js import, so `npm test` reaches it regardless of which
+ * renderer is calling in.
  */
 
 export interface StadiumPoint {

@@ -10,7 +10,6 @@
  * anyone wants to spend Gold at all.
  */
 
-import { CHARACTERS_3D } from "@/lib/game3d/characters";
 import { SEAT_ART_CHARACTERS, seatArtSrc } from "@/lib/scene/seat-art";
 
 export type Rarity = "standard" | "premium" | "rare" | "signature";
@@ -48,8 +47,6 @@ export interface Cosmetic {
    * rule as the signature tier below just gated on a lower bar.
    */
   unlock?: { handsWon: number } | { chipsWon: number };
-  /** Avatar renderer used by the Collection and the 3D room. */
-  renderMode?: "2d" | "3d";
 }
 
 /**
@@ -84,11 +81,6 @@ export function avatarFigure(id: string): string {
 /** Same file as `avatarFigure`; see that function's own comment for why. */
 export function avatarFace(id: string): string {
   return seatArtSrc(id, 0);
-}
-
-/** Browser-captured thumbnail of a rigged character for the Collection grid. */
-export function characterThumbnail(id: string): string {
-  return `/collection/${id}.png`;
 }
 
 /**
@@ -190,8 +182,7 @@ const cardBackCosmetics: Cosmetic[] = [
  *    (250/750/1,500 hands) checked by `lib/server/avatar-unlocks.ts` after
  *    every hand. `price` is null on these and must stay null: Gold buying
  *    a shortcut past the threshold is exactly what would make the tier mean
- *    nothing, the same rule `back-riverwood` and the 3D roster's earned
- *    characters follow.
+ *    nothing, the same rule `back-riverwood` follows.
  *
  * Renumbered 2026-08-25 (Kayo's explicit call, having accepted the one real
  * cost: a player's equipped avatar is stored by this exact id string, so
@@ -280,83 +271,15 @@ export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((cha
 });
 
 /**
- * Acquisition rules for the eight customer-pack characters. Keeping this
- * beside the cosmetic catalog makes the price and unlock threshold part of
- * the same server-owned record used by purchase/equip; the browser never
- * gets to decide whether one of these characters is free.
- *
- * The original six remain the starter roster. Three of the new characters
- * are lifetime hand-win rewards and five are expensive Gold items. No
- * customer-pack character may fall through to the starter `price: 0`
- * default below.
+ * There used to be a second, entirely separate character roster here for the
+ * WebGL 3D room (`character3DCosmetics`, backed by `CHARACTERS_3D` and its
+ * own `premiumCharacter3DOffers` acquisition table) with its own equipment
+ * slot (`avatar3d`) and Collection tab. It was deleted along with the 3D
+ * room itself -- recoverable from the `archive/webgl-3d-table` git tag, not
+ * from this file. `characterAvatarCosmetics` above is the entire avatar
+ * catalog now, not one half of it.
  */
-const premiumCharacter3DOffers: Record<string, Pick<Cosmetic, "description" | "price" | "unlock">> = {
-  claira: {
-    description:
-      "gf of owner. She is an AET and soon to be civil engineer, relatively new to poker but dont underestimate her",
-    price: 7_000_000,
-  },
-  donni: {
-    description: "A fully rigged table character. Earned by winning 50 hands.",
-    price: null,
-    unlock: { handsWon: 50 },
-  },
-  jimmy: {
-    description: "A fully rigged table character. Earned by winning 150 hands.",
-    price: null,
-    unlock: { handsWon: 150 },
-  },
-  kenji: {
-    description: "A fully rigged table character. Earned by winning 500 hands.",
-    price: null,
-    unlock: { handsWon: 500 },
-  },
-  derek: {
-    description: "A premium fully rigged character for the 3D room.",
-    price: 1_000_000,
-  },
-  oscar: {
-    description: "A premium fully rigged character for the 3D room.",
-    price: 2_000_000,
-  },
-  victor: {
-    description: "A premium fully rigged character for the 3D room.",
-    price: 4_000_000,
-  },
-  marcus: {
-    description: "A premium fully rigged character for the 3D room.",
-    price: 6_000_000,
-  },
-};
-
-/**
- * Rigged characters share ownership infrastructure with illustrated avatars,
- * but keep an independent equipment slot and Collection grid. Starter entries
- * are implicitly owned; every premium roster entry must have an offer above.
- */
-export const character3DCosmetics: Cosmetic[] = CHARACTERS_3D.map((character) => {
-  const offer = premiumCharacter3DOffers[character.id];
-  if (character.tier === "premium" && !offer) {
-    throw new Error(`Premium 3D character ${character.id} has no acquisition rule.`);
-  }
-  return {
-    id: character.id,
-    slot: "avatar",
-    name: character.name,
-    description: offer?.description ?? "A starter character for the 3D room.",
-    rarity: character.tier === "premium" ? "premium" : "standard",
-    // `null` is meaningful: earned-only. Nullish coalescing would turn it
-    // back into zero and silently grant every progress reward to everyone.
-    price: offer ? offer.price : 0,
-    ...(offer?.unlock ? { unlock: offer.unlock } : {}),
-    renderMode: "3d",
-  };
-});
-
-export const avatarCosmetics: Cosmetic[] = [
-  ...characterAvatarCosmetics,
-  ...character3DCosmetics,
-];
+export const avatarCosmetics: Cosmetic[] = characterAvatarCosmetics;
 
 /** What a brand-new profile has, and falls back to if anything goes missing. */
 export const DEFAULT_CARD_BACK = "back-house";
@@ -429,19 +352,22 @@ export function isPurchasable(item: Cosmetic): boolean {
   return typeof item.price === "number" && item.price > 0;
 }
 
-/** A player's equipped choices, with independent 2D and 3D avatar slots. */
+/**
+ * A player's equipped choices. `avatar2d` kept its name rather than becoming
+ * plain `avatar` when its `avatar3d` sibling (the WebGL 3D room's own
+ * equipment slot) was deleted -- the id space and the field both stay ready
+ * for a second avatar-rendering surface to reuse the "2d"/"3d" split without
+ * a rename, the same reasoning `TableRenderer` follows in
+ * `lib/scene/table-renderer.ts`.
+ */
 export interface EquippedCosmetics {
   cardBack: string;
   avatar2d: string;
-  avatar3d: string;
 }
-
-export const DEFAULT_3D_AVATAR = CHARACTERS_3D[0]?.id ?? "gloria";
 
 export const defaultEquipped: EquippedCosmetics = {
   cardBack: DEFAULT_CARD_BACK,
   avatar2d: DEFAULT_AVATAR_COSMETIC,
-  avatar3d: DEFAULT_3D_AVATAR,
 };
 
 /**
@@ -450,18 +376,18 @@ export const defaultEquipped: EquippedCosmetics = {
  */
 export function normalizeEquipped(raw: unknown): EquippedCosmetics {
   const input = (raw ?? {}) as Record<string, unknown>;
-  const pick = (value: unknown, renderMode: "2d" | "3d", fallback: string) => {
+  const pick = (value: unknown, fallback: string) => {
     const item = typeof value === "string" ? cosmeticById(value) : null;
-    return item && item.slot === "avatar" && (item.renderMode ?? "2d") === renderMode
-      ? item.id
-      : fallback;
+    return item && item.slot === "avatar" ? item.id : fallback;
   };
+  // `avatar` is what this field was called before the now-deleted 3D room
+  // needed its own slot and this one picked up its "2d" suffix; a profile
+  // stored under the old name still resolves correctly.
   const legacyAvatar = input.avatar;
   return {
     cardBack: cosmeticById(String(input.cardBack ?? ""))?.slot === "cardBack"
       ? String(input.cardBack)
       : DEFAULT_CARD_BACK,
-    avatar2d: pick(input.avatar2d ?? (typeof legacyAvatar === "string" && (cosmeticById(legacyAvatar)?.renderMode ?? "2d") === "2d" ? legacyAvatar : undefined), "2d", DEFAULT_AVATAR_COSMETIC),
-    avatar3d: pick(input.avatar3d ?? (typeof legacyAvatar === "string" && cosmeticById(legacyAvatar)?.renderMode === "3d" ? legacyAvatar : undefined), "3d", DEFAULT_3D_AVATAR),
+    avatar2d: pick(input.avatar2d ?? legacyAvatar, DEFAULT_AVATAR_COSMETIC),
   };
 }

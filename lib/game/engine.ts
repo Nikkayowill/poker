@@ -1081,6 +1081,19 @@ function awardUncontested(state: GameState, seat: Seat) {
   state.winners = [{ seatId: seat.id, name: seat.name, amount, hand: "Uncontested", bestFive: null }];
   state.street = "showdown";
   state.status = "complete";
+  // advanceStreet clears every seat's streetBet when a street turns over --
+  // that's what tells the frontend a standing bet has been swept to the pot
+  // (optimistic-action.ts's pot - Σ streetBet invariant) and lets the
+  // .table-bet pill (player-seat.tsx) disappear. An uncontested win never
+  // goes through advanceStreet's normal path, so without this the last
+  // street's bettors kept a stale nonzero streetBet after the chips had
+  // already been paid out -- a bet-amount pill floating on empty felt with
+  // no pile under it.
+  state.seats.forEach((candidate) => {
+    candidate.streetBet = 0;
+    candidate.acted = false;
+    candidate.actedAtBet = null;
+  });
   setCurrentPlayer(state, null);
   scheduleNextHand(state);
   state.message = `${seat.name} wins ${amount}`;
@@ -1164,6 +1177,17 @@ function showdown(state: GameState) {
   state.pot = state.seats.reduce((sum, seat) => sum + seat.committed, 0);
   state.street = "showdown";
   state.status = "complete";
+  // Same reset advanceStreet does on every other street turn, and for the
+  // same reason -- see the matching comment in awardUncontested. Reaching
+  // showdown from the river skips advanceStreet's own reset entirely (its
+  // "next === showdown" branch calls straight into this function), so
+  // river bettors otherwise keep a stale streetBet after their chips have
+  // already been paid out at the table.
+  state.seats.forEach((candidate) => {
+    candidate.streetBet = 0;
+    candidate.acted = false;
+    candidate.actedAtBet = null;
+  });
   setCurrentPlayer(state, null);
   scheduleNextHand(state);
   state.message = winners.map((winner) => `${winner.name} wins ${winner.amount} · ${winner.hand}`).join(" / ");

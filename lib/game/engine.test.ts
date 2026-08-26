@@ -1469,6 +1469,17 @@ describe("rake", () => {
     expect(complete.winners[0].amount).toBe(300);
   });
 
+  it("clears every seat's standing streetBet once an uncontested win pays out", () => {
+    // Seat 0 still shows streetBet: 150 the instant awardUncontested runs --
+    // that's the bet the rest of the table just folded to. Leaving it in
+    // place would float a stale bet pill over a seat whose chips already
+    // moved into the stack.
+    const { game, tokens } = preflopUncontested(150);
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    expect(complete.status).toBe("complete");
+    complete.seats.forEach((seat) => expect(seat.streetBet).toBe(0));
+  });
+
   it("still rakes an uncontested pot once a flop is out", () => {
     // Same shape, but a board exists -- the house dealt a flop, so it takes
     // its cut even though nobody reached showdown.
@@ -1478,6 +1489,20 @@ describe("rake", () => {
     const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
     expect(complete.rake).toBe(12);
     expect(complete.winners[0].amount).toBe(288);
+  });
+
+  it("clears every seat's standing streetBet once the river reaches showdown", () => {
+    // The last river action closes the round straight into showdown() --
+    // advanceStreet's own per-street reset never runs for that transition,
+    // so a lingering streetBet from the river's own betting has to be
+    // showdown's job to clear, not something it can rely on upstream.
+    const { game, tokens } = riverShowdown(150);
+    game.currentBet = 60;
+    game.seats[0].streetBet = 60;
+    game.seats[1].streetBet = 60;
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    expect(complete.street).toBe("showdown");
+    complete.seats.forEach((seat) => expect(seat.streetBet).toBe(0));
   });
 
   it("rakes an all-in pot that was run out from preflop", () => {

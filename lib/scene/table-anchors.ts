@@ -477,7 +477,7 @@ export function chipAnchor(slot: number, count: number = SEAT_COUNT): Vec3 {
  * rather than from the rail. `offsetStadium` moves the whole boundary out
  * by one distance, which is what "on the rail" means.
  */
-export const TRAY_OFFSET = RAIL_WIDTH * 0.5;
+const TRAY_OFFSET = RAIL_WIDTH * 0.5;
 const TRAY_RING = offsetStadium(FELT.halfLength, FELT.halfWidth, TRAY_OFFSET);
 export function seatTrayAnchor(slot: number, count: number = SEAT_COUNT): Vec3 {
   const { x, z } = stadiumRayPoint(seatAngleDeg(slot, count), TRAY_RING);

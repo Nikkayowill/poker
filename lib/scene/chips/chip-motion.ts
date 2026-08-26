@@ -153,23 +153,6 @@ export const SQUASH_AMOUNT = 0.04;
 export const STRETCH_AMOUNT = 0.02;
 const STRETCH_FRACTION = 0.12;
 
-/**
- * How long the landing squash has to play out and recover, for a flight of
- * `durationMs`.
- *
- * DERIVED FROM THE FLIGHT RATHER THAN FIXED, and the first draft got this
- * wrong in a way worth recording. A fixed 110ms squash is longer than the
- * post-landing window of every flight in the timing table — a call lands with
- * 56ms of clock left — so the terminal snap chopped the recovery off partway
- * through and every chip arrived still visibly squashed. Tying it to the
- * window means it always completes exactly as the chip parks, and it scales
- * with the gesture: a shove's impact lasts three times a call's, which is what
- * the extra weight should buy.
- */
-export function squashWindowMs(durationMs: number): number {
-  return Math.max(0, durationMs) * (1 - ARC_FRACTION);
-}
-
 export interface Deformation {
   scaleX: number;
   scaleY: number;

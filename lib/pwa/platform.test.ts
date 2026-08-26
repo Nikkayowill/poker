@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { installHeadline, installPlatform, installShortStep, manualInstallSteps } from "./platform";
+import { installPlatform, installShortStep } from "./platform";
 
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
 const IPAD_LEGACY = "Mozilla/5.0 (iPad; CPU OS 12_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1 Mobile/15E148 Safari/604.1";
@@ -46,45 +46,16 @@ describe("installPlatform", () => {
   });
 });
 
-describe("manualInstallSteps", () => {
-  it.each(["ios", "android", "other"] as const)("gives %s three steps", (platform) => {
-    expect(manualInstallSteps(platform)).toHaveLength(3);
-  });
-
-  it("tells iOS to use Share, which is the only path Safari has", () => {
-    expect(manualInstallSteps("ios")[0]).toContain("Share");
-  });
-
+describe("installShortStep", () => {
   it("never hands the same wording to two different platforms", () => {
     // A generic set of steps would be worse than none: following the Android
     // menu path on iOS finds nothing.
-    const ios = manualInstallSteps("ios").join("|");
-    const android = manualInstallSteps("android").join("|");
-    const other = manualInstallSteps("other").join("|");
-    expect(new Set([ios, android, other]).size).toBe(3);
-  });
-});
-
-describe("installHeadline", () => {
-  it("promises an install only where there is one", () => {
-    expect(installHeadline("ios")).toBe("Install the app");
-    expect(installHeadline("android")).toBe("Install the app");
-    expect(installHeadline("other")).not.toBe("Install the app");
-  });
-});
-
-describe("installShortStep", () => {
-  it("never hands the same wording to two different platforms", () => {
-    // Same reasoning as manualInstallSteps: following the Android menu path
-    // on iOS finds nothing, so a generic line is worse than none.
     const lines = ["ios", "android", "other"] as const;
     expect(new Set(lines.map(installShortStep)).size).toBe(3);
   });
 
-  it("names the same control the long form does", () => {
-    // The two live side by side and must not describe different taps.
+  it("tells iOS to use Share, which is the only path Safari has", () => {
     expect(installShortStep("ios")).toContain("Share");
-    expect(manualInstallSteps("ios")[0]).toContain("Share");
   });
 
   it("stays one line on a phone", () => {

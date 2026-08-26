@@ -37,12 +37,6 @@ const MS_PER_DAY = 86_400_000;
 /** A calendar day as `YYYY-MM-DD`, always UTC. This string is the storage key. */
 export type PuzzleDay = string;
 
-const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-export function isPuzzleDay(value: string): boolean {
-  return DAY_PATTERN.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
-}
-
 /** The UTC calendar day an instant falls on. */
 export function puzzleDay(now: Date): PuzzleDay {
   return now.toISOString().slice(0, 10);

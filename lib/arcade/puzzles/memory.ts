@@ -164,14 +164,6 @@ export function memoryElapsedMs(round: Pick<MemoryRound, "startedAt" | "finished
  */
 export const PERFECT_TURNS = MEMORY_PAIRS;
 
-export function memoryOutcomeLabel(round: Pick<MemoryRound, "status" | "turns" | "matched">): string {
-  if (round.status !== "solved") {
-    const pairs = round.matched.length / 2;
-    return pairs === 0 ? "Turn two cards" : `${pairs} of ${MEMORY_PAIRS} paired`;
-  }
-  return round.turns === PERFECT_TURNS ? "Perfect board" : `Cleared in ${round.turns}`;
-}
-
 /**
  * The board as the browser may see it.
  *

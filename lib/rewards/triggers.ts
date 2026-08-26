@@ -9,14 +9,16 @@
  * (components/rewards/use-game-achievements.ts) are gone; the modal now opens
  * only from the lobby's "Get Free Gold" row (components/poker-app.tsx), which
  * is lobby-only and gated on the same below-cheapest-buy-in check "low-gold"
- * used to describe. `kind` is kept as a field, not collapsed away, because the
- * modal still reads it for bookkeeping and a narrower type here would ripple
- * into components/rewards/rewarded-ad-modal.tsx for no benefit.
+ * used to describe.
+ *
+ * `kind` is set by that one call site and read by nothing -- neither
+ * `rewarded-ad-modal.tsx` nor anywhere else. It stays as a field rather than
+ * being deleted because `components/poker-app.tsx`'s `FREE_GOLD_TRIGGER`
+ * constructs it as a typed object literal; narrowing this type would need
+ * that call site edited in the same pass, not left dangling.
  */
-export type RewardTriggerKind = "low-gold";
-
 export interface RewardTrigger {
-  kind: RewardTriggerKind;
+  kind: "low-gold";
   /** The line above the offer. Fixed strings, never interpolated prose. */
   headline: string;
   /** One sentence of why this appeared. */

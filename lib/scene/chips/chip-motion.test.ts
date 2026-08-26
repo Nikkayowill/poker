@@ -12,7 +12,6 @@ import {
   MOTION,
   SQUASH_AMOUNT,
   springCurve,
-  squashWindowMs,
   sprayDurationMs,
   type ChipMoveKind,
 } from "./chip-motion";
@@ -158,11 +157,8 @@ describe("squash and stretch", () => {
   it("finishes recovering exactly as the chip parks", () => {
     // A fixed-millisecond squash was longer than the post-landing window of
     // every flight in the table, so the terminal snap chopped the recovery off
-    // and chips arrived still visibly squashed. Tying it to the window is what
-    // fixed that -- and the window has to be real time, not zero.
-    for (const kind of ["call", "raise", "all_in"] as const) {
-      expect(squashWindowMs(MOTION[kind].durationMs)).toBeGreaterThan(40);
-    }
+    // and chips arrived still visibly squashed. Deriving the squash from `t`
+    // itself (rather than a fixed duration) is what fixed that.
     expect(deformation(0.999).scaleX).toBeCloseTo(1, 3);
   });
 });

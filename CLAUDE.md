@@ -48,6 +48,16 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   compressed like this to stay under budget (2026-08-26 pass cut it ~101KB → current size) — when
   redoing this, cut narrative/verification boilerplate, never a fact or an open gap.
 
+### Seat-art roster grown to character29; the 2026-08-25 renumbering wasn't recorded here (2026-08-26)
+Four new characters added (`character26`-`29`, all rare-tier, continuing the Gold ladder's constant
+second-difference sequence — delta grows by 10,000 each rung — up to 3,530,000). Also surfacing a gap:
+the roster was renumbered from a gappy `character13-41` set down to a clean `character1-25` on
+2026-08-25 (same day as the "roster to 41" entry below), closing a pricing discontinuity the
+`character29`/`31`-`34` deletions had left — but that renumbering was never logged as its own entry in
+this file, only in `catalog.ts`'s own comment block. **Any reference below this point to
+`character##` above 25 refers to the old, now-dead numbering** — resolve a specific character by name,
+not by id, when reading older entries. The live top of the roster is `character29`, not `character41`.
+
 ### Sit & Go: a 6-max poker tournament, StackChips' first (2026-08-26)
 Single-table Sit & Go, not a scheduled multi-table event — every staked PvP format here is deliberately
 human-only, and a 6-max table just waits for real registrants rather than risking an MTT field that

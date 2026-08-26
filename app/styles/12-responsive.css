@@ -284,7 +284,12 @@
      radii aren't proportional to the canvas one's -- see its own note).
      This portrait tier's ellipse was not part of that regression and has
      not been re-measured per-axis, so both keep the old flat 106px rather
-     than silently changing behaviour nobody has verified here. */
+     than silently changing behaviour nobody has verified here.
+
+     Doubly a fallback now: the racetrack room (the only live table) is
+     landscape-only and gates portrait behind a rotate prompt, so this
+     breakpoint never actually shows a table. Left as-is rather than
+     deleted -- see app/styles/CLAUDE.md's positioning map. */
   .table-bet { --bet-reach-x: 106px; --bet-reach-y: 106px; }
       .action-layer { padding: 0 4px 6px; padding-left: max(4px, var(--safe-left)); padding-right: max(4px, var(--safe-right)); }
   .profile-overlay { padding: 0; align-items: end; }

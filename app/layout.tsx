@@ -65,6 +65,19 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <head>
         {/*
+         * Next's appleWebApp.capable metadata only emits the unprefixed
+         * "mobile-web-app-capable" meta tag (see node_modules/next/dist/lib/
+         * metadata/metadata.js) -- it dropped "apple-mobile-web-app-capable"
+         * at some point. WebKit still keys standalone launch mode (no Safari
+         * chrome) off the apple-prefixed tag specifically; without it, "Add
+         * to Home Screen" opens a normal Safari tab instead of a standalone
+         * app, and apple-touch-startup-image below is never consulted at
+         * all -- which is exactly why the splash silently stopped appearing
+         * even for players who removed and re-added the icon. Metadata.icons
+         * has no override for this, hence a plain <meta> here.
+         */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        {/*
          * iOS has no equivalent of Android/Chrome's automatic manifest-driven
          * splash (icon + background_color painted the instant the icon is
          * tapped) -- an installed StackChips just sits on a blank white

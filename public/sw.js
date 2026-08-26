@@ -34,7 +34,12 @@
 // as v6/v7, a launch-time asset is one a returning player never re-fetches
 // on their own, so a stale cache would keep serving the blank-launch gap
 // these exist to fix.
-const CACHE_NAME = "stackchips-shell-v9";
+// v10: "/" itself changed (apple-mobile-web-app-capable meta tag added --
+// see app/layout.tsx) and the navigate handler below never rewrites the
+// cached "/" on a live fetch, only reads it as an offline fallback. Without
+// this bump, a device that's ever gone offline once would keep the offline
+// fallback frozen on the pre-fix HTML indefinitely.
+const CACHE_NAME = "stackchips-shell-v10";
 const SHELL = [
   "/",
   "/manifest.webmanifest",

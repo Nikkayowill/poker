@@ -30,7 +30,11 @@
 // v8: push/notificationclick/pushsubscriptionchange handlers added below --
 // no SHELL change, so the cache name is untouched; the browser's normal
 // byte-diff update check is what picks this file up.
-const CACHE_NAME = "stackchips-shell-v7";
+// v9: the iOS splash screens (public/splash/*) join SHELL -- same reasoning
+// as v6/v7, a launch-time asset is one a returning player never re-fetches
+// on their own, so a stale cache would keep serving the blank-launch gap
+// these exist to fix.
+const CACHE_NAME = "stackchips-shell-v9";
 const SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -39,6 +43,18 @@ const SHELL = [
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/icon-512-maskable.png",
+  "/splash/apple-splash-640x1136.png",
+  "/splash/apple-splash-750x1334.png",
+  "/splash/apple-splash-1242x2208.png",
+  "/splash/apple-splash-1125x2436.png",
+  "/splash/apple-splash-828x1792.png",
+  "/splash/apple-splash-1242x2688.png",
+  "/splash/apple-splash-1170x2532.png",
+  "/splash/apple-splash-1284x2778.png",
+  "/splash/apple-splash-1179x2556.png",
+  "/splash/apple-splash-1290x2796.png",
+  "/splash/apple-splash-1206x2622.png",
+  "/splash/apple-splash-1320x2868.png",
 ];
 
 self.addEventListener("install", (event) => {

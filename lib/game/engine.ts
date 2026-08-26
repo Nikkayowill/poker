@@ -349,8 +349,8 @@ function botReentryDelayMaxMs(): number {
   return Number(process.env.RIVER_BOT_REENTRY_DELAY_MAX_MS) || 180_000;
 }
 
-export const BOT_DECISION_MIN_MS = 1_200;
-export const BOT_DECISION_MAX_MS = 5_200;
+export const BOT_DECISION_MIN_MS = 600;
+export const BOT_DECISION_MAX_MS = 5_000;
 
 // Excludes visually ambiguous characters (0/O, 1/I/L) from shareable room codes.
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -384,6 +384,22 @@ function inHand(seat: Seat) {
   return seat.status !== "out";
 }
 
+/**
+ * A cheap, state-only stand-in for "is this an easy decision or a real one" —
+ * NOT a peek at chooseBotAction's own fold/call/raise pick, which is stochastic
+ * (Monte Carlo equity + a decision roll) and would draw different random
+ * numbers if sampled twice for the same turn. Checking with nothing to call is
+ * always a snap decision; facing a bet gets slower the more of the pot or the
+ * bot's own stack that bet represents, same as a real player weighing pot odds.
+ */
+function botDecisionComplexity(state: GameState, seat: Seat): number {
+  const toCall = Math.max(0, state.currentBet - seat.streetBet);
+  if (toCall === 0) return 0.6;
+  const potPressure = Math.min(1, toCall / Math.max(1, state.pot));
+  const stackPressure = Math.min(1, toCall / Math.max(1, seat.stack));
+  return 0.75 + 0.55 * Math.max(potPressure, stackPressure);
+}
+
 function setCurrentPlayer(state: GameState, index: number | null, now = Date.now()) {
   state.currentPlayer = index;
   if (index === null) {
@@ -393,15 +409,18 @@ function setCurrentPlayer(state: GameState, index: number | null, now = Date.now
   }
   state.turnStartedAt = new Date(now).toISOString();
   const seat = state.seats[index];
+  // Ranges are per-personality (a maniac snaps, a rock stews) so a table never
+  // settles into one shared cadence; botDecisionComplexity then stretches or
+  // compresses that roll around how real the decision actually is.
   const botThinkRanges: Record<BotPersonality, [number, number]> = {
-    MANIAC: [BOT_DECISION_MIN_MS, 3_600],
-    ROCK: [2_100, BOT_DECISION_MAX_MS],
-    CALLING_STATION: [1_600, 4_400],
+    MANIAC: [BOT_DECISION_MIN_MS, 2_600],
+    ROCK: [1_400, BOT_DECISION_MAX_MS],
+    CALLING_STATION: [1_000, 3_800],
   };
   const [minimum, maximum] = botThinkRanges[seat.personality ?? "ROCK"];
   const duration = seat.isHuman
     ? TURN_TIMEOUT_MS
-    : randomInt(minimum, maximum + 1);
+    : Math.max(400, Math.round(randomInt(minimum, maximum + 1) * botDecisionComplexity(state, seat)));
   state.turnDeadlineAt = new Date(now + duration).toISOString();
 }
 

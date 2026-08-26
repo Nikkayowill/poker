@@ -39,1169 +39,240 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 ## Active milestone
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
-- Full narrative history of each pass (what was tried, reverted, measured) has been pruned from this
-  file to stay under the memory budget — recover it from `git log` on the commits/PRs named below if
-  the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
-  relearned or silently broken.
+- History below is a dense changelog, not the discovery narrative — one paragraph per pass covering
+  what shipped and what's still load-bearing or still open. Full reasoning for any decision is
+  recoverable from `git log`/PRs on the branch each entry names. Every pass listed was verified with
+  the full `npx vitest run` + `npm run lint` + `npm run build` (`tsc` clean) before landing; recurring
+  pre-existing failures are `safe-area.spec.ts` and (until fixed 2026-08-26) two
+  `multiplayer.spec.ts`/`table-scene.spec.ts` reds — see Known open items. This file periodically gets
+  compressed like this to stay under budget (2026-08-26 pass cut it ~101KB → current size) — when
+  redoing this, cut narrative/verification boilerplate, never a fact or an open gap.
 
 ### Sit & Go: a 6-max poker tournament, StackChips' first (2026-08-26)
-- Kayo asked whether tournaments are worth building on a play-money platform; scoped down to a single-
-  table Sit & Go rather than a scheduled multi-table event, since every staked PvP format here (duels,
-  cribbage) is deliberately human-only — a bot must never win a share of a real Gold pot — and a big
-  MTT risks a field that never fills at this app's population, where a 6-max table just waits for real
-  registrants. Branch `feat/sit-and-go-tournaments` (worktree `.claude/worktrees/sit-and-go`), off a
-  fresh `origin/main`. Four numbers confirmed with Kayo before building: 6-max; entry fee and starting
-  stack both equal an existing `STAKES_TIERS` tier's fixed buy-in (no new currency); blinds escalate on
-  a hand-count schedule at turbo pace; winner-take-all, no runner-up prize.
-- **Reuses the poker engine directly rather than forking it.** `GameState` gained one new optional
-  field, `tournament: TournamentState | null` (`lib/game/types.ts`), and `lib/game/engine.ts` grew five
-  small `if (state.tournament)` branches off it: `setupHand` recomputes blinds from
-  `lib/game/tournament.ts`'s `blindLevelForHand(handNumber, tierBlinds)` instead of leaving them static,
-  and its existing `funded.length < 2` early-return (unchanged, already fired exactly at one seat
-  standing) now also records `tournament.winnerProfileId`; `releaseBustedSeats` skips every bit of bot
-  refill/voluntary-leave machinery entirely (a Sit & Go has no bot fill, ever) and logs "eliminated"
-  instead of "sits out until they rebuy"; `applyPlayerAction`'s `rebuy` branch throws outright; its
-  `leave-seat` branch calls a new `forfeitTournamentSeat` (zeroes the stack, no bot handoff, no Gold
-  credited — leaving early forfeits the rest of a paid-in tournament) instead of `vacateSeat`;
-  `releaseInactiveSeats` (the AFK-after-3-missed-turns path) short-circuits to `[]` so an idle tournament
-  seat keeps auto-folding forever rather than ever being handed to a bot; `deductRake`'s existing
-  no-flop-no-drop guard gained `|| state.tournament`, since a fixed `entryFee * 6` prize pool has no
-  house edge to skim. A new `createTournamentGame` (in `engine.ts`, not `tournament.ts` — a deliberate
-  deviation from the first-drafted plan, made to avoid a circular import between the two modules) builds
-  six human seats with a real, non-null `profileId` each (unlike `claimSeat`, which leaves a guest's
-  null) and deals hand 1 through the same `setupHand` every other table uses, so there is no
-  special-cased "hand 1" blind logic anywhere.
-- **Two verification-run corrections to the first-drafted plan, both real:** `releaseBustedSeats` isn't
-  one wrappable bot-only block as first assumed — its first few lines log a busted-*human* message
-  unconditionally, which needed its own tournament-specific wording ("busts out and is eliminated"),
-  not suppression, since "sits out until they rebuy" is actively wrong with no rebuy to wait for. And
-  the settlement hook in the poker routes is **awaited**, not fired-and-forgotten the way
-  `onHandCompleted`'s stats recording is in the same routes — that pattern is fine for stats a
-  serverless invocation is allowed to lose, but this credits real Gold, and an un-awaited promise isn't
-  guaranteed to keep running after the response is sent.
-- **Registration/lobby is its own store+service pair** (`lib/server/sit-and-go-store.ts`,
-  `sit-and-go-service.ts`), shaped closely after cribbage's (`cribbage-table-store.ts`,
-  `cribbage-service.ts` — the one existing precedent for "an open, joinable, auto-starting table for N
-  humans"), with three deliberate deviations: entry fee is a `tier` column, not a client-chosen `stake`
-  integer, since it's always `TIER_CONFIG[tier].minBuyIn` and the two can never disagree; each seat row
-  also carries the registrant's session `token` (a new column, alongside `player_id`), since the poker
-  engine authorizes actions by token, not profile id, unlike cribbage's own engine; and dealing is two
-  guarded steps, not cribbage's one, because this game's "state" is a second row in the existing
-  `games`/`game_state_private` tables rather than an inline `jsonb` column on the same row — writing
-  that GameState speculatively before the deal guard succeeds would risk an orphaned `games` row on a
-  lost race, so `deal_sit_and_go_table` (flips the table active, no state payload) and
-  `set_sit_and_go_game_id` (records the built game, guarded on `game_id is null` so a post-crash retry
-  can't overwrite it) are separate RPCs. No host-early-start path exists at all, unlike cribbage's
-  start-at-3-of-4: a Sit & Go has no bot fill to cover a short-handed table, so there is exactly one way
-  to fill it — wait for all 6 — and exactly one caller of the deal RPCs.
-- **A real, distinct exploit path that cribbage never had to think about**: `lib/server/game-store.ts`'s
-  `archiveStaleGames` refunds every abandoned human seat's *current* stack as Gold, which is correct for
-  a cash table but would let two colluding tournament seats push chips to one via soft play, then both
-  go idle, and walk away with more Gold than either staked — no elimination, no single-winner guard ever
-  ran. Closed with a new `cancel_stale_sit_and_go_table` RPC (version-guarded `active` → `cancelled`,
-  never `completed`, never a winner) and a `refundAbandonedSitAndGo` helper that looks the game id up in
-  the Sit & Go store directly (not `state.tournament`, the "ask the store, not the blob" posture the
-  rest of that sweep already takes) and refunds each seat's *original* `entryFee` instead of its live
-  stack whenever a game id turns out to belong to one.
-- Settlement (`settleSitAndGoIfFinished`) is called from both `app/api/games/[id]/actions/route.ts` and
-  `.../advance/route.ts` — the ordinary poker routes, not a dedicated Sit & Go endpoint, since actual
-  hands are played entirely through them once a table deals. `lib/domain-events.ts` gained
-  `sit_and_go_won` (kept separate from `cribbage_won`/`duel_won` for the same "different shipped copy,
-  different structural shape" reason cribbage's own kind is separate), and `recordMultiWayResult`
-  (already cribbage's own plumbing — an N-player table, one winner, no draws) needed no new
-  leaderboard-store function, just a new `LEADERBOARD_GAMES` registry entry and a migration patching
-  `global_leaderboard_entries()`'s `game_id in (...)` list to match.
-- **UI turned out much smaller than first planned**, because `components/poker-app.tsx` already has a
-  generic `?table=<id>` deep-link bootstrap (built for a shared-table-link/room-code join) that loads
-  *any* existing game by id into the fully-wired `PokerTable` — sound, bet style, table renderer,
-  backstop, the works. The first-drafted plan called for a bespoke "table frame" wrapper reimplementing
-  a slice of that; once `PokerTable`'s real prop surface turned out to be ~20 props deep, reusing the
-  existing bootstrap outright (`sit-and-go-shell.tsx` just calls `router.push('/?table=' + gameId)` the
-  instant its poll reports the table active) was the smaller, safer, better-tested path — no new
-  "table frame" component exists. `components/sit-and-go/sit-and-go-shell.tsx` (lobby + waiting room
-  only, no match frame) mirrors `cribbage-shell.tsx`'s structure; `action-bar.tsx` gained a tournament
-  branch ahead of the ordinary cash-table busted view ("Eliminated" / "Return to lobby", never a rebuy
-  prompt, since the engine now throws on one unconditionally for a tournament seat).
-- Verified: full `npx vitest run` 2449/2449 green (~40 new tests across `tournament.test.ts`,
-  `engine.test.ts`'s new `describe("tournament mode", ...)` block, `sit-and-go-store.test.ts`,
-  `sit-and-go-service.test.ts`, and one new `game-store.test.ts` case pinning the stale-archive refund
-  fix), clean lint, clean production build with `/games/sit-and-go`, `/api/sit-and-go`, and
-  `/api/sit-and-go/[id]` all present, `tsc` clean apart from the pre-existing `safe-area.spec.ts`
-  failure. One pre-existing flaky test (`game-store.test.ts`'s "does not prefer a populated table whose
-  only human seat has gone quiet") reproduced identically with zero code changes between two runs,
-  confirmed unrelated. Not committed — see `[[feedback_stackchips_no_unrequested_commits]]`. Migration
-  is unapplied, per `[[reference_stackchips_migrations_not_auto_applied]]`.
-- **A `/code-review` pass caught two severe, real bugs the test suite structurally could not**: both new
-  CHECK constraints (`sit_and_go_tables_game_id_matches_status`, `..._prize_pool_matches_status`) were
-  written before the RPCs that violate them and never reconciled against those RPCs' real behavior --
-  `deal_sit_and_go_table` deliberately leaves `game_id` null while flipping `status` to `'active'` (the
-  whole point of the two-step deal), and `cancel_stale_sit_and_go_table` leaves `prize_pool` set while
-  flipping to `'cancelled'`, and neither constraint tolerated it. Both are hard `FALSE` on every attempt
-  in real Postgres — the feature could not deal a single table or cleanly recover an abandoned one
-  against a real Supabase-backed deploy, and memory-mode tests never exercise a SQL CHECK constraint at
-  all, so `npx vitest run` stayed green throughout. Fixed by narrowing both constraints to only require
-  what's actually invariant (`'waiting'`→null, `'completed'`→not-null; `'active'`/`'cancelled'` are
-  deliberately unconstrained on each column, for different, documented reasons per column).
-- The same pass found a real, independent product bug: a busted seat's `sit_and_go_table_players` row
-  is never deleted or updated (there is no mid-tournament equivalent of `leave_sit_and_go_table`, which
-  is pre-deal only by design), so an eliminated player read as "still registered" at that table for as
-  long as the other five seats took to decide a winner — blocking them from opening or joining anything
-  else, and `SitAndGoShell`'s own redirect effect bounced them straight back into the game they already
-  lost on every visit to the lobby. Fixed with a new `isEliminatedFrom`/`activeRegistrationFor` pair in
-  `sit-and-go-service.ts` that checks the caller's actual seat status in the dealt `GameState` (not just
-  table-level status) before treating them as still registered; pinned by two new tests in
-  `sit-and-go-service.test.ts`. Also fixed: `advanceTimedTurn`'s own AFK log line claimed "forfeits the
-  seat" for a tournament player past `MAX_MISSED_TURNS` even though `releaseInactiveSeats` is a no-op for
-  one (no bot fill, ever) — the seat just keeps auto-folding, so the claim was false and would repeat
-  every hand. `archiveStaleGames`'s new tournament branch also got a real N+1 fix (a new
-  `getSitAndGoTablesByGameIds`, batched the same way `getSeatCountsForSitAndGoTables` already is) since
-  the original per-candidate lookup meant one extra query per stale game swept, ordinary cash tables
-  included. Re-verified after all of the above: `npx vitest run` 2451/2452 green (2452/2452 on a clean
-  rerun — the one red result was the SAME pre-existing `game-store.test.ts` flake noted above, plus a
-  second, independently-flaky, unseeded-randomness simulation test in `engine.test.ts` also reproduced
-  and confirmed unrelated), clean lint, clean production build. **The two constraint fixes are the one
-  thing this review could not exercise directly** (no real Postgres in this environment) — verified by
-  hand-tracing the boolean logic against the RPCs' actual writes, not by a passing test; worth a real
-  `apply_migration` + live deal/cancel smoke test before this ships, not just another `npx vitest run`.
-- **A follow-up optimize pass found two real, measurable costs, both from this format's own numbers
-  (6 seats, every connected browser polling every 2s) rather than anything cribbage-scale ever hit.**
-  First: `GET /api/sit-and-go` called `readMySitAndGoTable` then, only for a caller with no active
-  table, `listOpenSitAndGoTables` — the exact shape `app/api/cribbage/route.ts` already uses — and each
-  independently calls `ensureProfile(token)`, which is never a cheap read: it unconditionally upserts
-  `player_sessions.last_seen_at` plus a `profiles` select on every single call, real writes, not just on
-  first creation. For the common case (browsing the open-table lobby, not yet registered), that's two
-  full resolves — at least 4 Supabase round trips — every 2s, for every idle browser sitting in the
-  lobby. Fixed with a new `readSitAndGoLobby(token)` that resolves the profile once and threads it into
-  new `myActiveTableFor(profile)`/`openTablesFor(profile)` helpers, used only by the route; the original
-  `readMySitAndGoTable`/`listOpenSitAndGoTables` are untouched (still independently tested, still resolve
-  their own profile) since other callers and their own tests genuinely need the token-in shape.
-  **Cribbage's route has the identical redundant-resolve shape and was deliberately left alone** — out
-  of scope for a Sit & Go optimize pass, flagged here rather than silently also fixed.
-- Second: `lib/server/head-to-head-store.ts`'s `recordHeadToHeadTable` (shared with cribbage, not new
-  this feature) looped its winner-vs-each-opponent RPC calls with a sequential `for...of` + `await` —
-  fine at cribbage's 4-max (at most 3 sequential round trips), but a Sit & Go's 6-max turns that into 5
-  sequential `apply_head_to_head_result` calls sitting on the settlement path a poker action/advance
-  response is held on (`payOutSitAndGo` is awaited, not fired-and-forgotten — see this section's own
-  note above on why). Changed to `Promise.all` — the opponents are independent pairs against the same
-  winner, so there was nothing for the sequential order to protect; verified the memory-mode branch's
-  per-pair streak bookkeeping is keyed independently per (profile, opponent) and has no shared state a
-  concurrent fan-out could race, and that `head-to-head-store.test.ts`'s existing assertions don't depend
-  on call order (they don't — every `applyResult` call in the memory branch runs synchronously to
-  completion before its wrapping promise resolves, so `array.map` invokes them in the same order a
-  `for` loop would; only real I/O timing changes on the Supabase branch).
-- Deliberately not changed: `sit_and_go_tables` has no index on `game_id` (queried by
-  `getSitAndGoTableByGameId`/the batched `getSitAndGoTablesByGameIds`), but the table holds one row per
-  Sit & Go ever played — a tiny, slow-growing table at this app's scale — so a sequential scan there
-  costs nothing worth a migration edit for. Revisit only if this table's row count ever gets large.
-  `payOutSitAndGo`'s own three awaited calls (Gold credit, mission event, achievement event) stayed
-  sequential rather than `Promise.all`'d — that shape is copy-identical to cribbage's `payOutTable`
-  (restated as "same discipline" in both files' own comments), and diverging it here would leave the one
-  N-player payout path in the app inconsistent with its own precedent for a smaller win than the two
-  fixes above; flagged as a shared, low-priority opportunity rather than done unilaterally.
-- Re-verified after both fixes: full `npx vitest run` 2454/2454 green (two new tests, covering
-  `readSitAndGoLobby`'s both branches), clean lint, clean production build with every Sit & Go route
-  still present, `tsc` clean apart from the pre-existing `safe-area.spec.ts` failure.
+Single-table Sit & Go, not a scheduled multi-table event — every staked PvP format here is deliberately
+human-only, and a 6-max table just waits for real registrants rather than risking an MTT field that
+never fills. Entry fee and starting stack both equal an existing `STAKES_TIERS` tier's buy-in; blinds
+escalate on a hand-count schedule at turbo pace; winner-take-all. Reuses the poker engine directly
+(`GameState.tournament`) rather than forking it — busting throws on rebuy, forfeits the seat instead of
+handing it to a bot, and an idle tournament seat auto-folds forever rather than ever going to bot fill.
+A `/code-review` pass caught two severe bugs the test suite structurally couldn't (memory-mode tests
+never exercise a real SQL CHECK constraint): both new CHECK constraints were written before the RPCs
+that violate them and made every deal/cancel attempt hard-`FALSE` against a real Postgres — fixed by
+narrowing both to what's actually invariant. Also fixed: an eliminated player's table-row was never
+cleaned up, so they read as "still registered" and got bounced back into the game they'd already lost.
+A follow-up optimize pass fixed a redundant double-profile-resolve on the open-table lobby poll and
+serialized-should-be-parallel head-to-head writes on settlement (cribbage's route has the identical
+redundant-resolve shape, deliberately left alone as out of scope). PR merged into main alongside the
+3D-table deletion below; migration unapplied — see `[[reference_stackchips_migrations_not_auto_applied]]`.
 
-### The classic portrait-capable table is deleted outright; landscape-only, racetrack-only (2026-08-25)
-- Kayo's call, stated directly: sticking with landscape, the 2.5D racetrack is the main (only) table,
-  keep the 3D room around since he may return to it once he's learned more rendering, and "players
-  will just have to turn their phones to play" — which is how most poker apps already work. The
-  racetrack becoming the sole selectable renderer and portrait being gated behind a rotate prompt had
-  already shipped 2026-08-17 (`lib/scene/table-renderer.ts`'s `resolveTableRenderer` already forced
-  `racetrack_2d5` regardless of preference); what was still outstanding was the dead classic renderer
-  CODE itself, kept around "so it can be restored later." This pass deletes that code, on
-  `chore/delete-classic-portrait-table` off a fresh `origin/main` (a throwaway worktree, since several
-  other sessions were active on unrelated card-back/seat-art branches at the same time) — Kayo's own
-  reasoning for going further than the 2026-08-17 disable: "I want it gone so in the future I dont
-  need to get mixed up and specify which table to work on."
-- Deleted outright: `components/table/scene/table-scene.tsx` (the classic `TableScene` component),
-  `lib/scene/projection.ts` (the orthographic camera), `lib/scene/felt-art.ts` +
-  `components/table/use-felt-art-ready.ts` (the classic felt/rail image preload gate — the actual
-  `.poker-rail` background-image CSS rule this fed goes too, but the underlying `table-desktop.webp`
-  asset does not: it's also the lobby's own hero-tile art via `--tile-art` in 04-lobby.css, caught by
-  grepping every reference before deleting anything under `public/`), the classic-only dev chip bench
-  (`components/table/scene/chip-lab.tsx`, `app/dev/chips/`), and `tests/e2e/near-seat-bet.spec.ts`
-  (asserted classic-only geometry and was likely already silently broken, since `normalizeTableRenderer`
-  has coerced away from `canvas_2d` since the 2026-08-17 disable).
-- **Trimmed rather than deleted, because several "classic-looking" files turned out to still be load-
-  bearing for what's left.** `lib/game/table-geometry.ts` (the CSS-ellipse seat ring) is untouched in
-  full: it's the racetrack's own pre-layout first-frame fallback AND the kept 3D room's DOM seat
-  cutouts, not classic leftovers, despite every comment in the file reading like classic-CSS tuning.
-  `lib/scene/seat-ring.ts` lost every export except `seatAngle`, which `lib/scene/chips/chip-scene.ts`
-  still reads to place a pile on the racetrack's own arc. `chip-space.ts` lost `classicChipSpace`;
-  `scene-projection.ts` lost `orthographicProjection`. A real bug this surfaced: `ChipScene`'s own
-  `private space` field defaulted to `classicChipSpace()` as a constructor placeholder, always
-  overwritten by `racetrack-scene.tsx`'s immediate `setSpace()` call in practice but a real dangling
-  reference the moment `classicChipSpace` was deleted — repointed to `racetrackChipSpace()`. Full test
-  suite (2421 tests, up from 2374) stayed green throughout, which is what caught this precisely
-  because nothing broke silently.
-- The `TableRenderer` union type itself narrowed from `"canvas_2d" | "webgl_3d" | "racetrack_2d5"` to
-  `"webgl_3d" | "racetrack_2d5"` — `webgl_3d` stays, per Kayo's explicit "keep 3d." `ActionBar`'s
-  `variant` prop was renamed `"classic" | "3d"` → `"flat" | "3d"` for the same reason as the code
-  deletion itself: a variant named after a table that no longer exists is exactly the kind of thing
-  that causes the confusion Kayo asked to have removed.
-- CSS: deleted the classic felt/rail background art, the canvas-vs-DOM z-index raise that existed
-  only to let the classic chip layer climb over classic DOM artwork (~80 lines of now-moot reasoning
-  in `99-scene.css`), the felt watermark (`.felt-mark`, CSS and JSX and its racetrack suppression rule
-  together, in that order — deleting the suppression rule before the JSX would have made the
-  watermark reappear on the live table), a desktop community-card width clamp fully shadowed by the
-  racetrack's own inline camera-derived sizing, and a few `.poker-table-wrap` width/aspect overrides
-  in `11-panels.css`/`12-responsive.css` that the racetrack's own unconditional `.scene-room-racetrack`
-  override always wins over regardless of viewport.
-- **Deliberately NOT touched: `12-responsive.css`'s `@media (max-width: 600px)` block.** It contains
-  the classic table's real portrait sizing (`.poker-table-wrap`'s `--table-aspect: 0.62`,
-  `.poker-rail`'s `table-mobile.webp` background) — genuinely dead today, since the table never
-  renders in portrait at all — but that one media query is also where the LOBBY's own portrait rules
-  live (`.hub-grid`, `.hub-tile-*`, `.account-entry-page`, `.profile-modal`, `.history-drawer`), and
-  the lobby has no orientation gate. Untangling which of ~15 interleaved rules are truly table-only
-  without risking a real lobby regression was judged not worth it for CSS that already has zero
-  effect; flagged as a real but low-value cleanup opportunity if ever revisited, not an oversight.
-  `.dealer-puck`'s JS measurement code (`measureDealer`/`dealerVector` in poker-table.tsx) is the same
-  kind of already-invisible dead weight under both live rooms, predates this pass, and was left alone
-  for the same reason — out of this pass's actual scope (removing the classic table), not a gap in it.
-- `lib/scene/CLAUDE.md` was rewritten outright — it still described `lib/scene/` as "the Canvas 2D
-  room, not WebGL" with "`three` is uninstalled on `main`," both stale since the racetrack/3D-room
-  work that came after it was written. Exactly the kind of stale doc that would have caused the next
-  session the same "which table" confusion Kayo asked to eliminate.
-- Verified: `npx vitest run` 2421/2421 green (up from 2374), clean lint, clean production build with
-  `/game3d` still mounted and `/dev/chips` gone, `tsc` clean apart from the pre-existing
-  `safe-area.spec.ts` failure. Not yet pushed/PR'd — this branch's work is separable from the
-  seat-art-characters-36-41 branch it was started alongside and should land as its own PR.
+### The WebGL 3D table is deleted outright (2026-08-26)
+Resolves the "scrap under consideration" question that had been open since 2026-08-19 — Kayo's call,
+stated directly: "kill it... scrap all of it," with one carve-out: keep the 2D seat-art roster
+(`character1`-`41`, never 3D-room code) exactly as-is. Nothing was left half-copied in the live tree —
+the whole subsystem was snapshotted under a pushed tag, `archive/webgl-3d-table`, before deletion;
+recover any file from there rather than re-deriving it. Deleted: `lib/game3d/` (63 files),
+`components/game3d/` (36 files), `app/game3d/`, the 3D bridge component, every GLB asset, four
+asset-pipeline scripts, and the `three`/`@react-three/*` npm dependencies — plus a second, fully
+separate 3D-only cosmetics slot (`CHARACTERS_3D`, `character3DCosmetics`, `avatar3d` on
+`EquippedCosmetics`) that existed only for the 3D room's own characters. Two files under a
+`game3d`-named path were moved rather than deleted because the racetrack table depends on them too:
+`table-shape.ts` (stadium-curve geometry math) → `lib/scene/`, `table-loading-splash.tsx` →
+`components/table/`. **M17 (chip cosmetics), parked "until the 3D sim is finished," needs Kayo's own
+re-decision now that there is no 3D sim left to finish** — not resolved by this deletion.
 
-### Leaderboards are PvP-only: Memory Match's board is gone (2026-08-24)
-- The rule, settled with Kayo while Minesweeper was being built and restated three times: **every PvP
-  game gets a leaderboard, poker keeps its own richer one (hands won, biggest pot, not just W/L), and
-  Ante Up SOLO games get none.** It came up because a first pass gave solo Minesweeper a board and
-  then had to pick which of three difficulties to rank on. Kayo rejected per-difficulty boards as
-  "too much" — the cost is screen, not compute (`game_leaderboard_stats` is one small row per player
-  per game, but the tab row is already nine wide on a phone, and ten solo games x3 difficulties would
-  be thirty tabs). So a new solo Ante Up game adds no `LEADERBOARD_GAMES` entry and makes no
-  leaderboard write; `lib/leaderboard/contract.ts`'s header now states this and a test names the solo
-  ids one by one so a future entry can't slip in.
-- Memory Match predated the rule and was the only game contradicting it. Branch
-  `chore/drop-solo-memory-leaderboard` off origin/main.
-- **This needed a migration, which is exactly why it wasn't a one-line deletion.**
-  `global_leaderboard_entries()` names `'memory-match'` in its own SQL as its only lower-is-better
-  pool, so dropping the registry entry alone would have taken away the tab and the writes while the
-  Global blend kept folding a hidden board's percentiles into everyone's global score — a board
-  nobody can open and nobody can be shown their standing on.
-- Existing `game_leaderboard_stats` rows for the game are **left in place, not deleted**. Nothing
-  reads that table except by an id the registry knows, so they are inert, and they are the only
-  record of those clears. Same call as the retired casino games' orphaned `arcade_rounds` rows.
-- Second commit, separable on purpose: with that game gone the whole **average-metric ranking path
-  had no member and no caller**, so `recordMetricResult`, the `average_metric` kind, the
-  `lower_better` direction, the metric branches in qualifying/scoring/sorting, and
-  `metricSum`/`metricCount` on `LeaderboardStats` are all deleted. The `metric_sum`/`metric_count`
-  COLUMNS stay (migrations are append-only) and `apply_leaderboard_result` already defaults both
-  params, so the writes simply stop passing them.
-- The SQL's `higher_better` flag and its mirror in the memory branch **stay**, even though every
-  surviving row sets it true — that is the pool's generic scoring rule in three words, not a branch
-  belonging to the deleted game, and the next game that ranks low-to-high sets it and needs nothing
-  else. The line between that and the deleted TS machinery is member-count vs. subsystem-weight.
-- `isHeadToHeadGame` is now registry membership rather than `kind === "win_loss_record"`: every game
-  that gets a board is played against a named opponent, so the two questions have the same members.
-  Poker is the one game that answers no while still having a board — it was never in this registry,
-  ranking off `player_stats` instead.
-- Verified: `npx vitest run` 2371/2371 green, clean lint, clean production build, `tsc` clean apart
-  from the pre-existing `safe-area.spec.ts` failure. The migration is **unapplied** — see
-  `[[reference_stackchips_migrations_not_auto_applied]]`; merging the PR ships code only, and until
-  it is applied the Global blend keeps scoring a board the app no longer shows.
+### Classic portrait table deleted outright; racetrack is the only table (2026-08-25)
+Kayo's call: the 2.5D racetrack is the sole table, the 3D room stays around disabled for later,
+"players will just have to turn their phones." Deletes the dead `canvas_2d` code itself (it was
+already unselectable since 2026-08-17): `table-scene.tsx`, `projection.ts`, `felt-art.ts`, the classic
+dev chip bench, `near-seat-bet.spec.ts`. `TableRenderer` narrows to `"webgl_3d" | "racetrack_2d5"`;
+`ActionBar`'s variant renamed `"classic"|"3d"` → `"flat"|"3d"`. Trimmed rather than deleted where
+classic-looking code is still load-bearing: `table-geometry.ts` (racetrack's own fallback + the 3D
+room's DOM seat cutouts), `seat-ring.ts` (kept `seatAngle` only) — surfaced a real dangling-default
+bug in `ChipScene`'s constructor, fixed. `12-responsive.css`'s portrait media query was deliberately
+NOT split apart — it interleaves dead classic-table CSS with live lobby portrait rules and untangling
+it wasn't worth the regression risk for CSS that already has zero effect. `lib/scene/CLAUDE.md`
+rewritten (it still described pre-racetrack reality).
+
+### Leaderboards are PvP-only; Memory Match's board removed (2026-08-24)
+Rule, restated three times by Kayo: every PvP game gets a leaderboard, poker keeps its own (hands
+won/biggest pot), Ante Up SOLO games get none — per-difficulty boards rejected as "too much" screen
+cost. Memory Match predated the rule; fixed to match via migration: `recordMetricResult`/
+`average_metric`/`lower_better` and the `metric_sum`/`metric_count` scoring machinery are deleted
+entirely (the columns stay, migrations are append-only); `global_leaderboard_entries()`'s SQL no
+longer special-cases `'memory-match'`. `isHeadToHeadGame` is now registry membership, not
+`kind === "win_loss_record"`. Old `game_leaderboard_stats` rows for memory-match are left in place,
+inert.
+
+### Ante Up: Minesweeper, first of a 12-game solo+PvP expansion (2026-08-24)
+Kayo's ask: 10 more solo games + PvP versions, one game at a time, fully built before the next starts
+— see `[[project_stackchips_ante_up_catalog_expansion]]`. Minesweeper shipped: every board is
+guaranteed solvable with no forced guess (mines placed after the first reveal, board re-rolled through
+a logic solver) — this is why there's a per-tier clock, since a no-guess board has no natural risk
+otherwise. A mine and a resignation both settle as attempt status `lost` (don't add a `resigned`
+status — the DB CHECK constraint doesn't have one); the UI tells them apart via `board.explodedAt`. No
+leaderboard, no migration needed (the `game` column on `ante_up_attempts` is already free-form text) —
+same rule applies to the remaining nine games.
 
 ### Web Push re-engagement notifications (2026-08-24)
-- Kayo: "I need to notify users to come back somehow now that I have a solid PWA," with PlayPokerGO's
-  own push copy as the reference ("Case of the Mondays?... tap to play now"). Scoped down via two
-  direct answers: v1 trigger is only "come claim your daily Gold" (not turn-based/social pushes yet),
-  and permission is asked **as part of creating an account**, not a later soft prompt or a
-  settings-only toggle. On `feat/push-notifications` (worktree `.claude/worktrees/push-notifications`),
-  committed, not pushed/PR'd. There was zero push infrastructure anywhere in the app before this pass
-  — no VAPID keys, no subscription table, no `push`/`notificationclick` handlers in `public/sw.js`.
-- New `push_subscriptions` table (service-role only, same shape as `ante_up_attempts` — RLS enabled,
-  `revoke all from anon, authenticated`), `lib/server/push-subscription-store.ts` (twin memory/Supabase
-  branch), `lib/server/push-service.ts` wrapping the `web-push` package. Off by default: unset VAPID
-  env vars mean `requestPushPermissionAndSubscribe` never prompts and the cron sender no-ops, same
-  "empty key, feature quietly off" pattern as `TURNSTILE_SITE_KEY`.
-- Permission is requested inside `submitEmailForm`'s "Create account" branch and the "Continue with
-  Google" button's `onClick` (`components/auth/account-entry-card.tsx`) — both are real user gestures,
-  which is what lets `Notification.requestPermission()` show its dialog at all. Google's button is
-  asked every time (sign-in and sign-up both, since OAuth gives no way to tell which before the
-  redirect) — safe, because a browser that has already decided answers instantly with no dialog on
-  every later call, so a returning Google player is never re-prompted, just silently re-checked.
-- **The daily cron (`/api/cron/notify-inactive-players`, `0 22 * * *` in `vercel.json`) is a single
-  fixed UTC time with no per-player timezone** — this app has never stored one (registration is
-  email/Google, not a profile field). 22:00 UTC lands in the US afternoon/evening, which is a
-  compromise, not a fix; a real fix needs timezone capture at sign-up, flagged as a gap, not built
-  here. The query itself (`pushSubscriptionsForInactivePlayers`) joins subscriptions to
-  `profiles.last_daily_claim_at`, matching `isSameUtcDay`'s existing UTC-midnight boundary — a
-  `last_notified_at` column on each subscription is belt-and-suspenders against a Vercel cron retry
-  double-sending the same day.
-- `lib/push/copy.ts` holds a rotating pool of PlayPokerGO-style lines (`pickComeBackPushCopy`, seeded
-  off profile id + day so a re-run doesn't reshuffle who gets which line) rather than one fixed
-  string — Kayo's own reference example was specifically about that playful, varied register, not a
-  generic "You have a notification."
-- Player menu gained a "Notifications" toggle (`components/poker-app.tsx`), registered-profiles only.
-  It tracks TWO separate things, not one: `Notification.permission` (a browser can never let JS revoke
-  this once granted — only the OS/browser settings can) and whether this device currently holds a live
-  `PushSubscription` (what `disablePushOnThisDevice` actually unsubscribes) — collapsing them into one
-  boolean would have the toggle claim "On" forever after a player turns it off.
-- Wiring the permission-refresh effect around `react-hooks/set-state-in-effect` needed the same
-  `window.setTimeout(..., 0)` deferral `loadProfile`'s own effect already uses a few hundred lines up
-  — the linter still flags a `setState` reachable from an async function awaited directly inside an
-  effect, awaiting first is not enough on its own; wrapping the call in a deferred macrotask is what
-  the codebase already does and what actually satisfies it.
-- Real VAPID key pair generated this pass and handed to Kayo directly (not committed) — needs adding
-  as `NEXT_PUBLIC_VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` in Vercel env and `.env.local`
-  before anything here does anything. `supabase/migrations/20260824130000_push_subscriptions.sql` is
-  unapplied to production, per `[[reference_stackchips_migrations_not_auto_applied]]` — merging the PR
-  ships code only.
-- Privacy Policy bumped to version 3 for the new push-subscription data category (one new paragraph,
-  `lib/legal/documents.ts`) — this only re-triggers consent for players who open the store, per how
-  `pendingAcceptances` is actually gated; it does not touch the sign-up flow itself.
-- A real bug caught by the store's own tests before this ever shipped: the memory-mode branch of
-  `savePushSubscription` called `randomUUID()` twice per upsert (once for the Map key, once for the
-  row's own `id` field) — a resubscribe on the same device landed under a fresh map key while the old
-  row stayed put under its original one, so every re-subscribe silently duplicated the row instead of
-  updating it. Fixed by generating the id once and reusing it for both.
-- Not done this pass: turn/social triggers (someone's turn, a friend challenge) were explicitly cut to
-  v1 scope by Kayo's own answer — `lib/push/copy.ts`'s doc comment notes the pool is reusable for a
-  second trigger later. No per-player timezone (see the cron note above). No route-level tests for
-  `/api/push/subscribe`/`/unsubscribe` — coverage lives at the store/service level, matching this
-  repo's existing convention (4 of 74 API routes have dedicated route tests; the rest lean on their
-  service layer, and this follows suit).
-- Verified: full `npx vitest run` (2370/2370, up from 2356) green, `npx tsc --noEmit` clean apart from
-  the pre-existing `safe-area.spec.ts` failure, clean `npm run lint`, clean production `npm run build`
-  with `/api/push/subscribe`, `/api/push/unsubscribe`, and `/api/cron/notify-inactive-players` all
-  present. Grepped `.next/static` for the VAPID private key string, same reasoning as Word Race's
-  answer-bank leak (2026-08-12) — clean, nothing server-only reached the client bundle.
-### Ante Up: Minesweeper, and the start of a 12-game catalog expansion (2026-08-24)
-- Kayo asked for ten more solo Ante Up games (Minesweeper, 2048, Nonogram, Mastermind, Word Search,
-  Block Puzzle, Lights Out, Pattern Memory, Spot the Difference, Logic Grid) plus PvP versions of
-  each, plus two PvP-first ones (Typing Race, Reaction Duel) that also need solo modes — roughly 24
-  modes. Kayo's explicit call on pacing: **one game at a time**, fully built and played before the
-  next starts, rather than a batch of shallow ones. Minesweeper picked first. Branch
-  `feat/ante-up-minesweeper` (worktree `.claude/worktrees/minesweeper`), off origin/main.
-- **No migration was needed and none should be written for the next nine.** `ante_up_attempts.game`
-  is free-form text with only a length bound and both its indexes are already generic over `game`, so
-  a new solo game is `const GAME = "<id>"` in its own service and nothing else. Confirmed by reading
-  `20260821130000_ante_up_unify_brain_games.sql`, not assumed.
-- Built as the established two-layer split: `lib/arcade/puzzles/minesweeper.ts` (board rules only) +
-  `lib/arcade/ante-up-minesweeper.ts` (wager/clock/payout wrapper), mirroring Sudoku's
-  `puzzles/sudoku.ts` + `ante-up.ts`. Service, two API routes, page and component all mirror the
-  Sudoku vertical slice; CSS is `46-minesweeper.css`, reusing `.duel-*`/`.ante-*` rather than a third
-  copy of either.
-- **Every board is guaranteed solvable by logic alone.** Mines are laid on the FIRST reveal (so the
-  opening click is always safe) and the layout is re-rolled until a solver — single-cell rules, the
-  subset rule for 1-2-1 walls, and the global mine-count rule — finishes it with no guess. A board
-  that ends in a coin flip is a slot machine, and this one settles real Gold. Measured at 3.9ms/board
-  for expert, converging in a handful of attempts, not the 400-attempt ceiling. `isNoGuessBoard` is
-  exported so the tests pin the guarantee directly instead of inferring it from timing.
-- **That guarantee is exactly why there is a clock.** With no forced guesses a careful player never
-  *has* to hit a mine, so the natural loss alone is weak — the per-tier limit (5/12/25 min, measured
-  from the first click, not from opening the attempt) is what keeps a wager a real bet, the same job
-  `ANTE_UP_MEMORY_MAX_TURNS` does for Memory. The limits are generous against real solve times on
-  purpose: the challenge is the board, the clock only stops someone walking away with the slot held.
-- Difficulty is capped at 10 columns (beginner 9x9/10, intermediate 9x14/22, expert 10x18/38),
-  tracking the classic *densities* rather than the classic grid sizes — the real 30-column expert
-  board is unplayable on a phone. Verified at 390x844: the 10x18 board plus toolbar and "Give up" fit
-  with no page scroll, because the grid's width is derived from the height the viewport can spare and
-  converted through the board's own aspect ratio (a width-only cap, which is all Sudoku needs, runs
-  expert off the bottom of every phone).
-- **A mine and a resignation both settle as status `lost`, and that must not be "fixed" with a new
-  status value.** `ante_up_attempts.status` is a CHECK over exactly
-  ('active','won','lost','timed-out'), so a `resigned` status would pass every memory-mode test and
-  then fail against the real table. The UI tells them apart from `board.explodedAt`, which the view
-  now carries; a test pins both halves. Caught in a real browser — the result panel said "Gave up"
-  after a player was blown up.
-- **No leaderboard, and that is now a general rule: leaderboards are for PvP only, not solo play.**
-  Kayo's call, made when a first pass shipped a solo Minesweeper board and had to pick a difficulty
-  for it (an average clear time across three board sizes ranks whoever plays the easiest one). The
-  answer was that the premise was wrong, not the tie-break. `lib/server/ante-up-minesweeper-service.ts`
-  makes no `recordMetricResult` call and there is no `LEADERBOARD_GAMES` entry; a clear feeds missions
-  and achievements and nothing else. Apply this to the nine solo games still to come.
-- The rule in full, after Kayo restated it three times: **PvP games each get a leaderboard, poker
-  keeps its own richer one (hands won, biggest pot — not just W/L), and Ante Up solo games get none.**
-  Per-difficulty boards were considered and rejected by Kayo as "too much" — worth knowing that the
-  cost is screen, not compute: `game_leaderboard_stats` is one small row per player per game, but the
-  tab row is already 9 wide on a phone and ten solo games x3 difficulties would be 30 tabs.
-- **`memory-match` still contradicts the rule and is the next piece of work.** It is a solo game with
-  a live `LEADERBOARD_GAMES` entry (average turns) and a `recordMetricResult` call in
-  `ante-up-memory-service.ts`, both predating the rule. Deliberately NOT removed in the Minesweeper
-  pass, because it is not a one-line deletion: `global_leaderboard_entries()` hardcodes
-  `game_id = 'memory-match'` as its only `average_metric` branch, so a code-only removal would drop
-  the tab while Global kept blending it — it needs a migration too. And once it goes, `average_metric`
-  and `recordMetricResult` have no production caller left (park them like `lib/arcade/retired.ts`, or
-  delete). `lib/server/leaderboard-store.test.ts` uses memory-match as its fixture for that whole
-  path. Do it as its own branch.
-- Input is where most of the feel is: long-press to flag (350ms), a sticky Flag-mode toggle for
-  players who would rather not hold, right-click on desktop, and tapping an open number chords it.
-  Verified in a browser that a long press flags *without* also opening the square.
-- Verified: full `npx vitest run` 2428/2428 green, clean lint, clean production build with
-  `/games/minesweeper` and both API routes mounted, `tsc` clean apart from the pre-existing
-  `safe-area.spec.ts` failure. Also driven by hand against a memory-mode server: cascade, flag,
-  chord refusal, stale-version 409, and a check that neither the mine list nor the seed that would
-  reproduce it appears in any payload (the generator is deterministic, so the seed is as sensitive as
-  the mines — there is a test pinning this too).
+Built from scratch (no push infra existed): `push_subscriptions` table, VAPID keys (real pair
+generated and handed to Kayo directly, not committed — nothing works until they're in env),
+`lib/push/copy.ts`'s rotating PlayPokerGO-style copy pool. v1 trigger is only "come claim daily Gold,"
+asked as part of account creation (a real user gesture), not a later prompt. Daily cron fires at one
+fixed UTC hour with no per-player timezone — a known gap, not a fix. See
+`[[project_stackchips_push_notifications]]`.
 
-### Seat-art roster grown to 41, first two-angle characters, duplicate bot faces fixed (2026-08-25)
-- Six more Kayo-supplied sheets (`character36`-`41`), all turning screen-right like every generated
-  sheet so far, so all six went through `slice-seat-sheet.py --mirror` (verified against
-  `character16`/`17` first, per the note below — not eyeballed in isolation). Priced onto the same
-  rare ladder, 2,270,000-3,680,000, continuing its ~10% step. Plain character names, not gamer tags.
-- **These are the first characters shipping with only `0` and `20` plates** — Kayo's explicit call,
-  "only use 0 and 20 angles", so each sheet's 40deg profile panel was sliced and then dropped. No code
-  changed for that: `pickSeatArt` already takes the two flattest angles a character actually has
-  (built when `character6`-`11` had a 0deg plate and nothing else) and `seatArtCharacterForSlot`
-  already keeps a character out of a seat whose override forces an angle it lacks.
-- `slice-seat-sheet.py` gained two things, both because `character36`'s sheet needed them and both
-  general rather than one-off:
-  - **It reads plate polarity off the border ring** (`prepare-dealer.py` already did) — that sheet
-    arrived on a WHITE plate where every earlier one was black. A white plate floods at luma >= 200,
-    the same measured number `prepare-dealer.py` uses, and a white sheet's sticker-style outline gets
-    flooded away with the plate, leaving the cut on the illustration's own dark outline.
-  - **It splits panels that touch with no gutter**, by cutting the widest run at its darkest interior
-    column and repeating until the panel count matches the angle count. That is exactly what was done
-    BY HAND for `character33` on 2026-08-22; this is the second occurrence, so it's automatic now.
-    The search ignores 20% at each end of a run, or the "seam" lands on the run's own edge where the
-    figure has already thinned out.
-  - That sheet also carried two 20deg panels ("three-quarter" and "unique view"); the plain
-    three-quarter shipped.
-- **Growing the roster exposed a real bug: two bots could sit at one table wearing the same face.**
-  `botAvatarFor` indexes the character roster modulo its length, and the bot tag pool (30) is larger
-  than the roster, so some tags alias onto one character — 30 over 26 aliases four of them.
-  `pickBotIdentity` already enforced table-wide uniqueness by tag AND by `avatarPreset`, but never by
-  the seat-art face, which is the one actually drawn on the racetrack table. Added `takenFaces` to
-  that same filter, leaving both existing fallbacks intact. Measured: 15% of fresh tables had a
-  duplicate face at 26 characters (2.8% at 20 — pre-existing, just rarer), 0/500 after.
-  `engine.test.ts`'s existing single-table assertion is what started flaking; the new test seats 200
-  tables, because one sample passes ~85% of the time even when faces genuinely do collide. **Do not
-  size the tag pool against the roster to fix this** — deriving the cast from the catalog is the
-  point, and the check is what lets the two grow independently.
-- Verified: `npx vitest run` 2374/2374 green, clean `npm run lint`, clean production `npm run build`,
-  `tsc` clean apart from the pre-existing `safe-area.spec.ts` failure. `web-push` was declared in
-  `package.json` but missing from `node_modules` on this machine (left over from the push branch); a
-  plain `npm install` fixed it, no manifest change.
+### Seat-art roster to 41; first two-angle characters; duplicate bot faces fixed (2026-08-25)
+`character36`-`41` added (rare tier, 0/20deg only per Kayo's call — no 40deg plate for these).
+`slice-seat-sheet.py` gained plate-polarity auto-detection and automatic no-gutter panel splitting.
+Real bug found and fixed: bots could duplicate a seat-art face table-wide because uniqueness was only
+enforced on tag/avatarPreset, not the resolved seat-art character — added `takenFaces` to
+`pickBotIdentity`'s filter. Don't fix this by sizing the bot tag pool to the roster — they're meant to
+grow independently.
 
-### Seat-art roster grown to 35; character22-31 caught facing the wrong way (2026-08-22)
-- Four more Kayo-supplied turnaround sheets (`character32`-`35`), same
-  `slice-seat-sheet.py` pipeline, all `--mirror`ed (they turn screen-right
-  like every generated sheet has so far). `character33`'s sheet had two
-  panels touching with no gutter — the automatic column splitter refused it,
-  so that one pair was split by hand at the column-count minimum and keyed
-  with the script's own flood-fill, not a full re-render. Priced onto the
-  existing rare-tier ladder (1,550,000-2,060,000, continuing its ~9-12% step
-  rather than opening a new block); named as plain character names, not
-  gamer tags — Kayo's mid-task clarification: the underscored register
-  (`jaxdidthat`, `zay_brooks`, ...) is for the in-game bot pool only, so a
-  seated opponent reads as a real player's handle, and is a *separate* axis
-  from a store card's name, which is a normal name for the character on it.
-- **`character22`-`31` (yesterday's ten-character batch) were actually
-  facing screen-RIGHT, not screen-left as that pass's commit and catalog
-  comment both claimed.** Caught while eyeball-checking today's four new
-  sheets against the established convention: `character16`/`17` (long
-  verified) face screen-left at 40deg the way `lib/scene/seat-art.ts`'s
-  un-mirrored-plate contract requires; `character22` through `character31`
-  all faced screen-right instead — the exact mistake `character13`-`21`
-  needed fixing for on 2026-08-21, recurring because the "already turned
-  screen-left, none needed --mirror" call was eyeballed wrong a second time,
-  not because the pipeline changed. Fixed by flipping the nine already-cut
-  `art/seats/character22-31/*.png` plates in place (no re-slicing) and
-  rebuilding through `prepare-seat-art.py`. **There is still no automated
-  facing check** (see `slice-seat-sheet.py`'s own note on why one heuristic
-  tried and rejected false-positived on three good characters) — verify a
-  new batch's widest panel against `character16`/`17` specifically before
-  trusting a "no mirror needed" call, don't just eyeball the sheet in
-  isolation.
-- Verified: `npx vitest run` 2328/2328 green (catalog's ladder test extended
-  to cover `character32`-`35`), clean lint, clean production build with
-  every route present.
+### Seat-art roster to 35; character22-31 caught facing the wrong way (2026-08-22)
+`character32`-`35` added. Also caught: `character22`-`31` (added the day before) were facing
+screen-right, the wrong direction per `seat-art.ts`'s un-mirrored-plate contract — fixed by flipping
+the 9 already-cut plates and rebuilding, not by branching the app. There is still no automated facing
+check (a torso/centroid heuristic false-positived on 3 known-good characters) — verify a new batch's
+widest panel against `character16`/`17` by eye, every time; see
+`[[reference_stackchips_seat_sheet_slicing]]`.
 
-### Ante Up split back in two: Sudoku/Memory unlimited, Word Stack/Connections keep the daily gate (2026-08-21)
-- Same-day follow-up to the section directly below this one. Kayo's report after that shipped: "still
-  not how I want it... choose a wager before the game even starts... no more daily limits EXCEPT for
-  daily word stack and connections." Nothing about that day's merge was wrong on its own terms -- it
-  just solved a different problem than the one being asked now, on branch
-  `feat/wager-before-game-start` off origin/main (a separate worktree; the branch this was built on had
-  no idea the section below existed until `git log` turned it up mid-conversation -- see
-  `[[reference_stackchips_concurrent_sessions]]`, this is exactly the trap that memory exists for).
-- **Sudoku and Memory Match lost their daily gate entirely.** `/games/sudoku` and `/games/memory` now
-  render what `/games/ante-up-sudoku` and `/games/ante-up-memory` already rendered (lib/arcade/ante-up.ts,
-  ante-up-memory.ts, and their services/components) directly -- wager-or-Free chosen up front, replayable
-  any time, no bonus, no cap. The old free-only daily boards (`lib/server/sudoku-service.ts`,
-  `memory-service.ts`, their routes, `sudoku-board.tsx`/`memory-board.tsx`) are deleted, not retired.
-  `/games/ante-up-sudoku` and `/games/ante-up-memory` are now thin redirects to the primary routes, kept
-  only for stale links. Memory's turn-count leaderboard hook (`recordMetricResult`, previously only on
-  the deleted daily path) moved into `ante-up-memory-service.ts`'s win handler so it keeps feeding on
-  every clear, wagered or free, rather than going silent.
-- **Word Stack and Connections keep their once-a-day shared puzzle -- that was never in question.** What
-  changed is where the wager sits: instead of a free daily play followed by a link to a second,
-  separately-repeatable "Ante Up" sibling on a fresh (non-shared) board, the wager-or-Free step now
-  gates *opening that one daily attempt*. The repeatable siblings (`ante-up-word-stack-service.ts`,
-  `ante-up-connections-service.ts`, their routes, `ante-up-word-stack.tsx`/`ante-up-connections.tsx`
-  components) are deleted outright -- Kayo's explicit call was that these two stay capped at one
-  attempt a day no matter how it's played, which is structurally incompatible with a second unlimited
-  mode existing at all. Their payout-scoring math survives, trimmed down to pure functions
-  (`anteUpWordStackPayout`, `anteUpConnectionsPayout`, the `*DailyBonusMultiplier` pair) in
-  `lib/arcade/ante-up-word-stack.ts`/`ante-up-connections.ts`, now called directly by
-  `word-stack-service.ts`/`connections-service.ts` against the SAME stored round instead of a second one.
-  The stored round gained a `wager: number` field embedded in its own JSON state (`StoredWordStackRound`/
-  `StoredConnectionsRound`) rather than a new migration column -- `daily-puzzle-store.ts` is generic over
-  the round shape by design, so this needed no schema change.
-- **A wager replaces the free path's daily completion bonus, it does not stack with it** -- confirmed
-  with Kayo rather than assumed, since this app has a history of every faucet-sizing decision like this
-  one being an explicit call, not a default. Free (wager 0) play is byte-for-byte the same behavior as
-  before: `creditDailyBonus` on completion, win or lose. A wagered attempt earns the wager's own
-  win-only payout instead, following the same three money-ordering rules every other staked game in
-  this file restates: debit before the row exists (refund on a failed insert), credit only after the
-  version-guarded settle write is confirmed, one credit, never a second debit.
-- `lib/server/daily-puzzle-bonus.ts`'s `claimSudokuDailyBonus` (the once-per-day-total idempotency gate
-  across Sudoku's four difficulties) is deleted along with the daily mode it existed for; the flat
-  retired "Complete one brain game" mission stays disabled exactly as the section below left it.
-- Catalog (`lib/arcade/games.ts`): all four rows stay `kind: "wager"` -- the mechanic didn't change,
-  only where the daily line sits. `daily-sudoku`'s display name is now plain "Sudoku"; its id string is
-  untouched (internal, not user-facing, and renaming it would ripple into every place that keys off it
-  for no reader-facing benefit). `arcadeEntryLabel` now reads two different sentences for the same
-  `kind: "wager"` zero-cost row, keyed off which sub-shape a game is in ("Free daily · or wager it" for
-  Word Stack/Connections, "Free, or wager Gold" for Sudoku/Memory Match) -- collapsing them into one
-  sentence was exactly what the section below got right (bare "Free to play" reading as "nothing is
-  wagered here") and exactly what would go wrong again if a shared sentence tried to describe two now-
-  different mechanics.
-- Blackjack gained a "Practice hand (Free)" toggle the same pass, kept deliberately separate from the
-  shared `STAKES_TIERS` ladder (also used by the real-money poker lobby buy-in flow) -- see
-  `lib/server/blackjack-service.ts` and the new migration loosening `blackjack_rounds.base_stake`'s
-  check to `>= 0`.
-- Verified: full `npx vitest run` (2330/2330) green, `npx tsc --noEmit` clean (only the pre-existing,
-  already-documented `safe-area.spec.ts` failure), clean `npm run lint`, clean production `npm run
-  build` with every route present. Not yet applied: the Blackjack migration (`apply_migration` is a
-  deploy-time step, not part of this pass) -- see `[[reference_stackchips_migrations_not_auto_applied]]`.
+### Ante Up split: Sudoku/Memory unlimited, Word Stack/Connections keep the daily gate (2026-08-21)
+Same-day correction to the entry below: Kayo wanted a wager chosen before the game starts, with no
+more daily limits *except* on Word Stack/Connections. Sudoku and Memory Match lost their daily gate
+entirely — `/games/sudoku` and `/games/memory` now are what `/games/ante-up-sudoku|memory` already
+were (unlimited wager-or-free replay). Word Stack/Connections keep exactly one gated attempt/day, but
+the wager choice now gates *opening* that attempt instead of unlocking a second unlimited sibling —
+their old separately-repeatable Ante Up routes are deleted. A wager replaces (does not stack with) the
+free path's daily completion bonus.
 
-### Ante Up unified: one section, four brain games, daily bonus + repeatable wager (2026-08-21)
-- Kayo's report: "I still see free to play section in the ante up tab... it still only shows ante
-  up for sudoku." Nothing was reverted — PR #88 (2026-08-16) built the solo-wager mechanic but
-  scoped it to Sudoku only, and never got extended. On branch `feat/ante-up-unify-brain-games`
-  (worktree `.claude/worktrees/ante-up-unify`), committed, not yet pushed/PR'd.
-- One merged "Ante Up" section now holds Word Stack, Connections, Sudoku and Memory Match — the old
-  "Free today"/"Ante up" split is gone (`lib/arcade/games.ts`: all four flipped from `kind: "puzzle"`
-  to `kind: "wager"`, the standalone `ante-up-sudoku` catalog row deleted). Per game, per day: the
-  first play is the existing shared daily puzzle (same puzzle for everyone, Word Stack's share grid
-  intact) — completing it pays a skill-scored Gold bonus via new `lib/server/daily-puzzle-bonus.ts`
-  (`DAILY_BONUS_BASE = 300`, matching the flat mission it replaces; a LOSS still pays the floor
-  multiplier, confirmed with Kayo). After that, unlimited free replay on freshly-seeded rounds (no
-  reward), or repeatable Gold wagers on freshly-seeded rounds — generalizing Sudoku's existing Ante
-  Up mechanic to all three other games for the first time.
-- The retired flat "Complete one brain game" mission (300 Gold, once/day, ANY one of the four) is
-  disabled via migration (`mission_definitions.enabled = false` for `daily_brain_game`), not deleted
-  — `player_mission_progress` keeps its history, the catalog already filters on `enabled`. The new
-  bonus pays per game, per day (up to 4x what the old mission ever paid in a day if all four are
-  played) — a deliberate faucet increase, confirmed with Kayo, not an oversight.
-- Schema: `ante_up_attempts` generalized from Sudoku-only to all four games (migration
-  `20260821130000_ante_up_unify_brain_games.sql`) — added a `game` column, renamed
-  Sudoku-specific `difficulty` to a nullable generic `tier`, and the "one active attempt" unique
-  index moved from `(profile_id)` to `(profile_id, game)` so the four games don't collide. The daily
-  wagered-attempt cap (`ANTE_UP_..._DAILY_WAGERED_LIMIT = 10`) is per-game per-service, not one pool
-  shared across all four — confirmed with Kayo, preserves what Sudoku ante-up players already had.
-  `lib/server/ante-up-store.ts` is now generic (`StoredAnteUpAttempt<TState>`), mirroring
-  `daily-puzzle-store.ts`'s existing "one table, many games" shape.
-- Word Stack and Connections already had a natural loss condition (six guesses / four mistakes) to
-  hang a wager's forfeit on, so their Ante Up engines (`lib/arcade/ante-up-word-stack.ts`,
-  `ante-up-connections.ts`) need no clock — payout is skill-scored at settlement (guesses/mistakes
-  used), not fixed at open the way Sudoku's difficulty-tier multiplier is. **Memory Match has no
-  loss condition at all** (the board always eventually clears) — wagering on it as shipped would be
-  risk-free, so `lib/arcade/ante-up-memory.ts` invents one: `ANTE_UP_MEMORY_MAX_TURNS = 20`, a turn
-  cap (not a clock) that forfeits a wagered attempt that runs past it; free/daily play stays
-  untimed and uncapped, matching Kayo's explicit choice of a turn-based cap over a timer.
-- Each of the three new games got its own route+component (`/games/ante-up-word-stack`,
-  `-connections`, `-memory`), mirroring `ante-up-sudoku.tsx`/its API routes, reusing each daily
-  board's existing CSS classes rather than inventing new styling. The daily page stays the one
-  catalog link target; it's expected to surface an "Ante Up" call-to-action once that day's puzzle
-  is done (not yet wired into the daily board components themselves — flagged as the one remaining
-  UI gap, see below).
-- Fixed the actual root of Kayo's complaint: `arcadeEntryLabel()`'s bare `"Free to play"` on a
-  zero-cost wager row read as "nothing is wagered here," backwards for a card that leads with a free
-  daily play and then offers a real wager. Now reads `"Free daily · wager after"`.
-- Not done this pass: the daily board components (`word-stack-board.tsx`, `connections-board.tsx`,
-  `memory-board.tsx`, the Sudoku daily board) don't yet link to their new Ante Up sibling once the
-  day's puzzle is complete — the wager routes exist and work standalone, but nothing on the daily
-  page surfaces them yet. A real gap, not an oversight; next concrete step if picked up.
-- Verified: 2376 tests passing (up from 2296), clean lint, clean production build with all six new
-  routes present. Two pre-existing failures unrelated to this work (`memory-service.test.ts`'s
-  `tsc` type-narrowing warning, `safe-area.spec.ts` — both red on `origin/main` too, confirmed by
-  diffing against it before writing this note).
-### The phone lobby's tab bar (2026-08-21)
-- Kayo: the mobile nav "is too high up", and should look like every other app's. Two causes, both
-  fixed on `feat/mobile-nav-polish`. The bar carried a row of page dots on top of it (24px of chrome
-  no other app's tab bar has), and its own row was 58px, so on an iPhone the block stood 116px off
-  the bottom edge. It is now a 50px row on the safe-area strip -- 84px on a notched phone, which is
-  what a native tab bar measures -- and the dots are **deleted**, not hidden: the bar itself is the
-  position indicator, the same as every swipeable tab bar on either platform. Don't re-add them.
-- `.lobby.lobby-shell` is sized in `dvh` where `.lobby` uses `svh`. `svh` is the height with every
-  browser toolbar showing, so a browser that retracts one leaves the bar floating above a strip of
-  bare room. Nothing scrolls at that level (each pane scrolls on its own), so the usual reason to
-  avoid `dvh` cannot bite here.
-- `padding-bottom` on the bar is `max(var(--safe-bottom), 6px)`: devices reporting no inset (Android
-  browsers, a narrow desktop window) would otherwise get a 50px bar sitting on the screen edge.
+### Ante Up unified: one section, four brain games (2026-08-21)
+Word Stack, Connections, Sudoku, Memory Match merged into one "Ante Up" section (all `kind: "wager"`)
+— first play/day is the shared daily puzzle (pays a skill-scored bonus via `daily-puzzle-bonus.ts`,
+replacing the old flat "Complete one brain game" mission, which is disabled via migration not deleted),
+then unlimited free replay or repeatable Gold wagers on fresh rounds. `ante_up_attempts` generalized to
+all four games (added a `game` column; `tier` replaces Sudoku-only `difficulty`). Memory Match had no
+loss condition to hang a wager on, so `ANTE_UP_MEMORY_MAX_TURNS = 20` invents a turn cap for wagered
+play only. Superseded same-day by the entry above for Word Stack/Connections' daily gate.
+
+### One dealer on the 2.5D table: Claira (2026-08-21)
+Kayo's girlfriend, replacing the 3-dealer rotation outright (not reduced to a roster of one —
+`dealerForHand`/`HANDS_PER_DOWN`/`DEALER_IDS` deleted). Blackjack's dealers (Loki & Finn, the dogs) are
+untouched — two different dealer identities on two surfaces, a deliberate split. `prepare-dealer.py`
+now auto-detects plate polarity and never upscales past the source image's own resolution. The name
+badge in the shipped art reads "ELENA" — flagged for Kayo, nothing in code keys off it.
+
+### Seat-art roster to 15 then 21; sheets are now sliced by script (2026-08-21)
+Kayo switched to supplying one labelled 3-up JPEG turnaround sheet per character instead of pre-cropped
+files; `slice-seat-sheet.py` cuts and keys them (floods at luma<=6, not `prepare-seat-art.py`'s <=1,
+since JPEG ringing defeats the stricter threshold). `character13`-15 shipped as a new EARNED tier
+(`price: null`, unlock at 250/750/1,500 lifetime hands won) — bots are excluded from this tier.
+`character16`-21 followed on the Gold ladder instead of growing the earned tier (Kayo: keep the earned
+tier at exactly 3 rungs). One supplied sheet was rejected outright — boxed-scene panels with no plate
+to key against.
+
+### Nine characters were facing the wrong way; the cast now uses gamer tags (2026-08-21)
+`character13`-21 all turned screen-right, the wrong convention; fixed by flipping the source art (not
+branching the code) and adding `slice-seat-sheet.py --mirror` for future sheets. Separately, Kayo:
+every seat (bots included) should read like a real player's gamer tag now, not a first name —
+`botProfiles` renamed in place (never reordered — identity indices are persisted per seat) and grown
+18→30 entries. `characterAvatarOffers` (the store catalog) uses tags too but is a deliberately
+separate list from the bot pool — nothing maps a store character to a bot identity. Blackjack's
+dealers stay real names (they're staff, not opponents). See
+`[[feedback_stackchips_gamer_tag_register]]`.
 
 ### Friends leaderboard: a head-to-head record per opponent (2026-08-20)
-- On `feat/global-leaderboard`, on top of the same day's per-game leaderboard. Kayo's ask: "if I play
-  against my girl and lose 5 times it should track." That is a different fact from anything the
-  leaderboard held -- `game_leaderboard_stats` totals you against the world, and nothing anywhere
-  stored "me vs her".
-- New `head_to_head_records` (profile, opponent, game) + `apply_head_to_head_result`, plus
-  `lib/server/head-to-head-store.ts`. Rows are **directed and written in mirrored pairs by one RPC**:
-  A's row and B's row land in one statement, so "my record vs my friends" is one primary-key-prefix
-  read with no `or()` and no flipping anyone's wins into losses at read time. The mirror is an
-  invariant (A.wins vs B == B.losses vs A), which is why an N-way cribbage table records only
-  winner-vs-each-loser -- two players who both lost get nothing against each other, since recording a
-  loss on both sides would have each holding a loss to the other.
-- **No new settlement call sites.** `recordDuelResult`/`recordMultiWayResult` (leaderboard-store) fan
-  the same result out to the head-to-head store themselves. One settled match is one event; two call
-  sites is how the world board and the friends board end up disagreeing. Membership is
-  `isHeadToHeadGame` = the game's own `kind === "win_loss_record"`, so a future duel joins both boards
-  on the same single registry entry. Memory Match (no opponent) and poker (a pot at a six-handed table
-  is not a result between two named players) are never written.
-- The migration **backfills** from settled `pvp_matches` and completed `cribbage_tables`, streaks
-  included (run-length off the latest result, gaps-and-islands for the best one) -- history that
-  already happened shows up the day it deploys instead of everyone starting 0-0. Verified against a
-  throwaway Postgres 17 container with stub tables, not just eyeballed: 1-5 with L5, mirrors exact,
-  active matches excluded.
-- The friends drawer's own W-L badge was repointed off `getDuelRecordsAgainst` (derived by scanning
-  the last 500 matches, duels only) onto this store, and that function is deleted. One source now
-  feeds both, and `formatRecord`/`formatStreak` are shared out of the leaderboard contract so the
-  badge and the board can't spell the same record two ways.
-- A per-friend **overall** streak is only reported when a single game accounts for every result. The
-  ordering across games isn't recoverable from per-game counters, so the row leaves it blank and the
-  expanded per-game rows carry the streaks instead -- deliberate, not an oversight.
-- UI: a third cross-game tab ("Friends", after Poker/Global), rows expanding into the per-game split.
-  Friends you have never played stay on the board as "No games yet" (that's the thing it exists to
-  fix). Watch the base `.leaderboard-row` mobile rule -- it hides children 5 and 6, which on this row
-  are the streak and the chevron; `.leaderboard-row-friend` has to `display: revert` them back.
+New `head_to_head_records` (profile, opponent, game), written in mirrored pairs by one RPC so a "me
+vs. them" read never needs to flip anyone's win into a loss. Fed by the same settlement call that
+writes the world leaderboard — no second call site. Migration backfills history from existing
+`pvp_matches`/`cribbage_tables`. Membership is `isHeadToHeadGame`; poker and Memory Match are never
+written (no single named opponent). See `[[project_stackchips_friends_head_to_head]]`.
 
-### The five retired casino games are gone, not just retired (2026-08-20)
-- On branch `chore/delete-retired-casino-games` off main. Roulette, Video Poker, Coin Flip, Baccarat
-  and Hi-Lo were retired 2026-08-12 (blocked from play, code and routes left mounted, per the
-  reasoning `lib/arcade/retired.ts`'s guard existed for) — Kayo's explicit follow-up call: "hi lo
-  shouldve been deleted from my repo and all reference files a while ago," extended to the whole
-  retired family, not just Hi-Lo. Deleted outright: each game's engine, service, API routes, page and
-  table component (38 files), plus their five per-game CSS sheets.
-- Cascaded one level further than the five games themselves: `lib/server/casino-round-service.ts`
-  (the shared wallet path for Roulette/Video Poker/Coin Flip/Baccarat — Blackjack and Hi-Lo were
-  always on their own independent copies, never migrated onto it) had zero real callers left once its
-  four consumers were deleted, so it went too, along with the client-side counterpart nothing had
-  actually adopted either (`components/arcade/{use-casino-machine.ts,arcade-hud.tsx}`,
-  `lib/arcade/hud.ts`, `28-arcade-hud.css`) — confirmed dead by grepping for real importers before
-  deleting, not inferred from the games list.
-- `lib/arcade/retired.ts`'s guard mechanism stays — deliberately not deleted. It's the documented,
-  reusable way to retire a *future* game without a same-day code deletion; `RETIRED_ARCADE_GAMES` is
-  just `[]` now. Don't re-delete it if it looks unused; unused-with-nothing-currently-retired is its
-  normal resting state.
-- Every comment citing one of the five as a naming-convention example (there were ~20, across
-  services, components, CSS headers and two lines of user-facing copy on the sign-in page and the
-  first-run onboarding step) got reworded to a still-live example or a self-contained explanation,
-  not left dangling. `lib/progression/rank.ts`'s "stay under the house's edge" framing was rewritten
-  more substantively than a name-swap: there is no house edge left anywhere in this economy at all
-  (every staked game is winner-take-all PvP with no rake), so the real constraint is now stated as
-  "don't undermine what a real-money Gold purchase is worth" instead of citing a specific retired
-  game's payout table.
-- Supabase migrations mentioning these games in their own header prose were left untouched —
-  migrations are append-only, same precedent as the Word Stack rebrand's Wordle-naming migrations.
-  No dedicated table existed for any of the five (all shared `arcade_rounds`); their historical rows
-  there are orphaned, not deleted, which is the accepted cost of that table's own append-only design.
+### The five retired casino games are deleted outright, not just blocked (2026-08-20)
+Roulette/Video Poker/Coin Flip/Baccarat/Hi-Lo (retired 2026-08-12, code left mounted) fully deleted per
+Kayo's explicit follow-up — engines, services, routes, components, CSS (38 files).
+`casino-round-service.ts` (their shared wallet path) went too, confirmed dead by grepping importers
+first. `lib/arcade/retired.ts`'s guard mechanism stays as the documented way to retire a *future* game
+without a same-day deletion — an empty `RETIRED_ARCADE_GAMES = []` is its normal resting state, don't
+assume it's unused-and-safe-to-delete.
 
 ### Daily Wordle renamed to Word Stack (2026-08-19)
-- Trademark cleanup, on branch `feat/word-stack-rebrand` off main (a separate worktree, uncommitted):
-  the daily 5-letter puzzle no longer carries Wordle's name anywhere -- catalog id `daily-word-stack`,
-  route `/games/word-stack`, API at `/api/arcade/word-stack`, every internal identifier/CSS class/test
-  renamed to match (`lib/arcade/puzzles/word-stack.ts`, `word-stack-answers.ts`,
-  `word-stack-dictionary.ts`, `lib/server/word-stack-service.ts`,
-  `components/arcade/word-stack-board.tsx`). A new migration
-  (`20260819100000_rename_wordle_mission_copy.sql`) updates the one live-DB row the old name had
-  leaked into (the `daily_brain_game` mission's description); the two migrations that shipped the
-  original feature keep saying "Wordle" in their own historical prose, since migrations are
-  append-only and that text is internal, not user-facing.
-- Tile colors: correct stays green and present stays gold (`#2f7d4f`/`#b8952f` -- the app was already
-  off Wordle's yellow before this pass). Only `absent` changed, from a greenish-grey
-  (`#39443f`/`#232b28`) to a real blue-grey (`#3d4656`/`#262e3a`) matching `--brand-ink-lift-2`'s
-  chrome tone. The share-sheet emoji grid swapped its yellow present block (🟨) for orange (🟧) to
-  match -- there is no "gold" square emoji, and 🟦 was rejected since Connections already uses it for
-  one of its own four tiers and reusing it here would read as that game's color, not this one's.
-- Answer pool grown 751 → 1,119: candidates were hand-authored common 5-letter words, then
-  mechanically verified against the existing guess dictionary (word-stack-dictionary.ts's ~15k-word
-  allow-list) and deduped against the existing pool and each other -- not hand-verified one by one.
-  Plurals and two words that turned out non-standard on a second look (`dawdy`, `calor`) were dropped
-  even though both were technically dictionary-legal, per the file's own "never ask for an obscure
-  word" rule.
+Trademark cleanup — every identifier/route/CSS class renamed (`daily-word-stack`,
+`/games/word-stack`). Tile colors: correct/present stayed green/gold, `absent` recolored from
+greenish-grey to blue-grey. Answer pool grown 751→1,119, mechanically verified against the existing
+guess dictionary. See `[[project_stackchips_word_stack_rebrand]]`.
+
+### Public-launch readiness pass (2026-08-19)
+Corrected a stale claim in `docs/launch-checklist.md` (and repeated once in this file before being
+caught): real Supabase Auth with cross-device account recovery already ships — verify auth/session
+claims against `lib/server/link-account.ts`, not that doc. Real remaining gaps, in priority order:
+rate limiting is process-local (in-memory Map, called from 77 routes) and needs a shared-store
+refactor — deliberately left undone, it's a large payment-adjacent change that wants live review, not
+an unsupervised pass; Realtime is capped at ~3,000 concurrent subscribers before needing Broadcast;
+Supabase's "leaked password protection" advisor is off and now matters (toggle in Dashboard, no MCP
+tool for it). Added OG/Twitter card metadata, `robots.ts`/`sitemap.ts`. A full marketing landing page
+was deliberately not built — reversing the bare-sign-in-form is Kayo's call, not an inference. See
+`[[project_stackchips_launch_readiness_assessment]]`.
 
 ### Cribbage: a 3-4 player free-for-all table (2026-08-18)
-- Kayo's brother plays cribbage with a group, not 1v1 — this is a new N-seat (3 or 4), Gold-wagered,
-  winner-take-all table, not a fifth `lib/pvp/` duel. `pvp-match-service.ts`/`pvp_matches` are
-  2-player at every layer (`DuelSeat = 0|1`, `player0_id`/`player1_id` fixed columns, a trigger
-  written for exactly two ordered columns), confirmed by reading it before building anything —
-  cribbage gets its own parallel contract/store/service instead: `lib/cribbage/table-contract.ts`
-  (no registry — one N-seat game doesn't justify one), `lib/server/cribbage-table-store.ts` +
-  `cribbage-service.ts`, `cribbage_tables`/`cribbage_table_players` (a join table, mirroring
-  `game_seats` — the one existing precedent for "N humans at one row" — not a `players uuid[]`
-  column). Full standard rules: deal 5, discard 1 each to the crib (3-handed burns one extra card
-  from the deck so the crib is still exactly 4; 4-handed's 4×1 already is), pegging to 31, hand+crib
-  counting, race to 121. Counting has no player decisions in it, so there is no "counting" phase or
-  move — the instant pegging empties every hand, `lib/cribbage/engine.ts`'s `concludeHand` scores
-  everything automatically (non-dealers in turn order, then the dealer, then the dealer's crib,
-  stopping mid-count the instant someone crosses 121) and deals straight into the next hand.
-- A table caps at 4 and auto-starts the instant the 4th seat fills; once 3 are seated the host gets
-  a manual "Start now" button instead of waiting. Both routes through the SAME status-guarded
-  Postgres function (`deal_cribbage_table`) — one code path that can deal a hand into existence, per
-  the same reasoning `advancePvpMatch`'s version guard exists for. Human-only, like the duels — no
-  bot fill, unlike poker's continuous tables (an explicit call, not an oversight: a bot winning a
-  share of a real Gold pot was judged worse than a table someone has to wait on).
-- New `DomainEvent` kind `cribbage_won`, not folded into `duel_won` — that event's own catalog copy
-  says "PvP duels" ("Win 10 PvP duels"), and silently counting a 3-4 player table against it would
-  misword shipped text and dilute a metric that means something structurally different (always 1v1).
-  `cribbage_hands_won` mission/achievement plumbing is wired (`lib/missions/events.ts`,
-  `lib/achievements/events.ts`) with **no catalog rows yet** — `apply_achievement_counter` accumulates
-  with no catalog row required, so tiers can land in a later migration without touching code again.
-- Discovery is an open-table list (create/join, closer to poker's quick-play), not the friends
-  drawer's single-target `?challenge=<id>` picker — that flow has nowhere to carry 2-3 extra invitees.
-  Inviting specific friends to a cribbage table is a real gap, same class as the existing "no
-  pick-a-friend-and-invite flow for duels either" gap this file already tracked. Also not done this
-  pass: blocking a blocked/blocking relationship from joining someone's open table (the duel flow
-  checks this for a direct challenge; an open table has no single target to check against without
-  scanning every seated player, and it was cut for scope, not forgotten).
-- Resigning ends the WHOLE table immediately (pot to whichever remaining seat has the higher score)
-  rather than letting the rest keep playing — cribbage's pegging/counting order depends on every
-  seat, so there is no well-defined "the other 2-3 keep going" the way a poker fold has. A genuine
-  judgment call, flagged as one in `lib/cribbage/engine.ts`'s `resignCribbage`.
-- Stake reuses `MIN_DUEL_STAKE` (the same floor Chess/Checkers/etc. use), not a new tier ladder.
-- Caught by `engine.test.ts` before it ever touched money: hitting exactly 31 during pegging has to
-  reset the count IMMEDIATELY, even while another seat still holds a card that would have fit — a
-  first draft only reset once *everyone* was stuck (conflating 31 with a "go"), which let pegging
-  continue past 31 as if the count were still live.
+New parallel N-seat contract (`lib/cribbage/`) rather than a fifth 2-player duel — `pvp_matches` is
+hardwired to exactly two seats at every layer. Full standard rules (deal 5, crib, pegging to 31, race
+to 121); counting has no player decisions so it resolves automatically the instant pegging empties
+every hand. Human-only, no bot fill (a bot winning a share of a real Gold pot was judged worse than a
+table someone waits on). Resigning ends the whole table immediately, pot to the higher score — there's
+no well-defined "the rest keep playing" the way a poker fold has.
+
+### The avatar collection and the seat-art roster became one system (2026-08-17)
+The 11-character seat-art roster replaced the old 20-entry illustrated avatar catalog outright, art
+and catalog both — one id space now sells/equips a character, supplies every avatar image app-wide,
+and is what's drawn at a seated opponent's own seat (`seat.avatarCosmetic` read directly instead of
+always hashing). `botAvatarFor` repointed to the character-only cosmetic list so a bot can't land a
+3D-only id in its 2D seat. An earlier same-day attempt at this got fully reverted mid-conversation for
+landing uncommitted and half-finished — this is the real, complete version, confirmed with Kayo piece
+by piece. See `[[project_stackchips_illustrated_avatars_retired]]`.
 
 ### Site footer + info pages (2026-08-16)
-- Kayo wanted the lobby to feel like "a genuine web gaming platform" (PlayPokerGO's menu was the
-  reference) rather than a single-purpose app. Root problem: five `/legal/*` pages already existed
-  (terms, privacy, gold-disclosure, support-disclosure, disclaimer) with nothing anywhere in the app
-  linking to any of them.
-- Added a lobby-only `SiteFooter` (`components/nav/site-footer.tsx`, mounted at the bottom of
-  `components/lobby/lobby.tsx`'s `.hub`) plus four new pages it and it alone points at: `/about`,
-  `/help` (FAQ + contact), `/how-to-play` (hand rankings, hand structure, duel summary), and
-  `/rewards` (every Gold source in one place). Deliberately **not** in `components/nav/menu.tsx`'s
-  dropdown or on the table — the menu is account actions opened on demand, the footer is a trust
-  surface that should be visible without opening anything, and none of it belongs mid-hand.
-- `/rewards` is wayfinding, not a second claim surface: it fetches `/api/profile` (same deferred-timer
-  shape as `arcade-floor.tsx`) to show a live Gold balance and each source's claim state, but every
-  "claim" link routes back to where the action already lives (the lobby's player menu, `/challenges`,
-  `/store/gold`) rather than re-implementing `claimDailyGold`/rewarded-ad/backstop calls a second
-  place for the money-ordering rules to be gotten wrong in.
-- `/about`, `/help`, `/how-to-play` reuse the `/legal` shell (`.legal-page`) rather than a new layout;
-  `/rewards` reuses the arcade floor's `.floor-shell`/`.floor-card` shell. New CSS is
-  `43-site-info.css` — only the footer itself plus the list/FAQ styling those two shells never
-  needed before.
-- `middleware.ts`'s matcher gained `about|help|how-to-play` alongside the existing
-  `legal/|store|leaderboard|collection` static-page exclusions (pure content, no server-session
-  read). `/rewards` was deliberately left in the auth-refreshing set, matching `/games` and
-  `/challenges` — it does read a profile.
-
-### In progress (2026-08-12)
-- Three click sounds (`lib/audio/ui-sounds.ts`: `tapSound()`/`selectSound()`/`gameOnSound()`) replaced
-  the old single `ui` cue with three call sites; wiring is centralized in `components/nav/menu.tsx`
-  (the one dropdown behind both the lobby and table menus). `gameOnSound` is **edge-triggered** off
-  `game` going null→truthy in `poker-app.tsx` (its own `wasSeatedRef`) — it must stay edge-triggered,
-  since `game` changes identity every poll/tick/action. `select` plays a **trimmed** 0.25s cut
-  (`Select_Tap.mp3`); the untrimmed source holds two taps and reads as a double-click.
-- Fixed three remount bugs caused by `/games/*` (arcade, Collection, leaderboard) being separate
-  routes that fully unmount `PokerApp`: a login-screen flash on return to the lobby (fixed via
-  `lib/profile/session-continuity.ts` — **sessionStorage only, never localStorage**, since a stale
-  hint there could wave a guest through past an expired real session), a duplicate "Welcome back"
-  toast (a ref that emptied on remount, now keyed off the account id instead), and
-  `key={profile.updatedAt}` on `<Lobby>` rebuilding the whole hub grid on every profile write
-  (removed; the one thing that needed it — the buy-in name field seeding from `displayName` — is now
-  a derived override instead of remount-seeded state).
-- House gambling games (roulette/video-poker/coin-flip/baccarat/hi-lo) retired; PvP duels added
-  (Chess/Checkers/Trivia Showdown/Word Race, 1v1 winner-take-all, `/games/{chess,checkers,trivia,word-race}`).
-  Retiring a game is a **server guard** (`lib/arcade/retired.ts`, enforced on each service's deal
-  path), not just a catalogue/link removal — the POST route stays mounted. Duel safety is
-  balance **conservation** (`pvp-match-service.ts` — sum of both players' balances is invariant),
-  not a house edge; escrow on an open challenge must release **exactly once**, via a status-guarded
-  write that returns the row at most once — paying out on a null return turns a double-tapped Cancel
-  into free Gold. New `spend_gold_by_profile`/`credit_gold_by_profile` RPCs move Gold to/from a
-  profile that isn't the requester (a duel's settler is often the loser, or neither player on a
-  timeout) — every prior Gold RPC keyed on `session_token`, which assumed mover === moved-to.
-  **`tick()` on every duel engine must return null when nothing changed**, or it livelocks both
-  players' optimistic-concurrency guard against the shell's 2s poll; every engine has a test pinning
-  this. Puzzle-answer banks (`trivia-questions.ts`, `word-race-words.ts`) are `server-only` — Word
-  Race's wasn't at first and its 478-word bank shipped into the client bundle, a one-line anagram
-  lookup away from cheating a game that settles real Gold; verify with a probe-string grep of
-  `.next/static` after a real build, not by reading imports.
-- 3D room now gates its "ready" state on every seated avatar's `.glb` actually mounting
-  (`lib/game3d/avatar-load-gate.ts`), not on "the WebGL context exists" — fixed avatars popping in
-  seat-by-seat after the room announced itself done. Gesture playback is a pure transition machine
-  (`lib/game3d/avatar-playback.ts`), addressed by gesture epoch and driven in scene-clock seconds —
-  fixed a one-shot gesture (e.g. a bet) getting trapped on its last frame forever when a new hand
-  started mid-animation and the deferred hand-back's own effect re-ran and cancelled itself. Avatar
-  roster is meshopt-compressed (18MB→7.9MB); `useGLTF(url, false, true)` supplies the decoder — drop
-  that third argument and every avatar silently breaks at runtime while tsc/build stay green.
-- 3D room got a real modelled backdrop (`public/environments/stackchips-room-surround.glb`,
-  `components/game3d/scene/room-surround.tsx`) — only its short balustrade ring is mounted (checked
-  against the real camera frustum at every shipped aspect); its taller walls stay off-frame at every
-  angle, and a second supplied full-scene GLB was left uninstalled since it duplicates the app's own
-  table. Not routed through `buildInstancedProp` — that helper's metalness clamp is tuned for the
-  chip roster and would dull this asset's brass trim, and nothing here repeats to instance.
+Kayo wanted the lobby to feel like "a genuine web platform." Added a lobby-only footer plus `/about`,
+`/help`, `/how-to-play`, `/rewards` — the five existing `/legal/*` pages had nothing anywhere linking
+to them. `/rewards` is wayfinding only (every "claim" link routes back to where the action already
+lives) rather than a second claim surface, so money-ordering rules can't be duplicated wrong in a
+second place. See `[[project_stackchips_site_footer_info_pages]]`.
 
 ### Economy/retention redesign, milestone 1: missions (2026-08-14)
-- Kayo's directive: redesign the economy around progression/collection/achievement, not
-  monetization (Gold is no longer sold for cash — see below). Sequenced one milestone at a time;
-  missions shipped first. Remaining, not yet planned: achievements/badges, streak recovery,
-  cosmetic categories beyond avatar/card-back, a "brain games" identity, non-win celebrations.
-- Daily/weekly objectives, auto-credited on completion — no claim button, unlike the daily Gold
-  grant. New `mission_definitions`/`player_mission_progress`/`mission_reward_grants` tables plus
-  `apply_mission_progress`/`grant_mission_reward` RPCs, same row-locked shape as
-  `award_progression_xp`. `lib/missions/events.ts` is the one place a domain event fans out to every
-  mission it feeds (poker hand played, duel won, puzzle completed, level gained) — hooks land beside
-  the *existing* `awardWager` call sites, not new ones, plus one addition inside `payOutMatch` for
-  duel wins (which `awardWager` never covered — XP there is earned once at accept time, not on the
-  outcome). `lib/server/mission-store.ts` never throws, same contract as `awardWager`.
-- `profile_badges` (populated by season rollover) and four cosmetic catalog entries
-  (`back-riverwood`, `avatar-housename`, `avatar-finaltable`, `avatar-ace`) already have
-  achievement-shaped descriptions but nothing grants them — surfaced for the next milestone, not
-  touched by this one.
-- Milestone 2 (achievements/badges) has since shipped (PR #100/#102). Remaining, not yet planned:
-  streak recovery, cosmetic categories beyond avatar/card-back, a "brain games" identity, non-win
-  celebrations.
+Kayo's directive: redesign the economy around progression/collection/achievement, not monetization.
+Missions shipped first (auto-credited, no claim button) via `lib/missions/events.ts` fanning a domain
+event out to every mission it feeds. Milestone 2 (achievements/badges) has since shipped too. See
+`[[project_stackchips_economy_retention_redesign]]`.
 
 ### Voluntary support payments replace Buy-Gold (2026-08-13)
-- The Gold storefront (`components/store/gold-store.tsx`, the general tier ladder, and the legacy
-  one-click rebuy Checkout Session) is gone, replaced by `components/store/support-panel.tsx` at the
-  same `/store` route. Every support tier — one-time or monthly, three price points — grants nothing:
-  no Gold, no gameplay effect, matching `lib/legal/documents.ts`'s `support_disclosure` exactly. Don't
-  add a Gold reward or gameplay perk to a tier without updating that disclosure first; a purely
-  cosmetic, gameplay-neutral perk (a name badge) would be fine and would just need a version bump.
-- `fulfill_stripe_payment` no longer assumes every payment credits Gold — crediting is now
-  conditional on `kind`, and `support_one_time` inserts its `stripe_payments` ledger row (audit +
-  idempotency) without ever reaching the `profiles` UPDATE. `gold_amount` is nullable now.
-- Monthly support is real Stripe Billing (`mode: "subscription"` Checkout Sessions), not repeated
-  one-time charges. New `stripe_subscriptions` table mirrors Stripe's own subscription state — a
-  mutable row upserted per lifecycle event via `upsert_stripe_subscription`, recency-guarded on the
-  originating event's own `created` timestamp (never `Date.now()`) so a redelivered/out-of-order
-  webhook can never regress a newer status. This is a different idempotency shape from every other
-  money RPC in this file: `stripe_payments`/duel escrow are settle-once ledgers where "someone already
-  did this, return false/null" is the terminal answer; a subscription is a live status mirror, so a
-  guard failure still returns the current row rather than nothing.
-- Cancellation goes through the Stripe Customer Portal (`/api/stripe/portal-session`) — no custom
-  in-app cancel flow. Two Stripe SDK landmines worth knowing before touching this code again:
-  `current_period_start`/`current_period_end` live on `subscription.items.data[0]`, not the
-  `Subscription` root; `invoice.subscription` doesn't exist — it's
-  `invoice.parent?.subscription_details?.subscription`. Both are silently `undefined` if read the
-  obvious way.
-- The busted-mid-table "Buy Gold to rebuy" button (skipped straight to Stripe Checkout) is gone —
-  there is no purchase escape valve left anywhere. `action-bar.tsx`'s busted state now offers the
-  backstop top-up inline (`onClaimBackstop`, same mechanism as the lobby's own banner) when eligible,
-  falling back to "Return to lobby" (where every faucet lives) otherwise. See "Bot / economy behavior"
-  above for why no faucet number needed to change.
+The Gold storefront was removed; every support tier (one-time or monthly Stripe) grants nothing — no
+Gold, no gameplay effect, matching the support disclosure exactly. Don't add a Gold/gameplay reward to
+a tier without updating that disclosure first. Gold purchases were later reinstated (see
+`[[project_stackchips_gold_purchase_reinstated]]`) — support payments run alongside them, not instead.
 
 ### The 2.5D racetrack table (2026-08-13)
-- Third table renderer, `racetrack_2d5` / "Table: 2.5D", alongside `canvas_2d` and
-  `webgl_3d`. A third entry rather than a replacement for `canvas_2d` on purpose:
-  the classic table is what `resolveTableRenderer` falls back to when a browser has
-  no WebGL context, so it has to keep working. Promote it once it has been judged in
-  real hands.
-- **It is camera-led where every other table is CSS-led, and that inversion is the
-  whole design.** The classic room has `.poker-rail` carrying the felt as background
-  art with seats on a hand-tuned CSS ellipse, and the canvas measures that rail to
-  place chips inside it. Here `fitCamera` solves a perspective camera from the frame,
-  the canvas paints the entire table from it, and the DOM follows anchors the scene
-  projects and reports through `onLayout`. A perspective ring and a CSS ellipse are
-  not the same kind of curve and cannot be tuned into agreement — one has to be
-  derived from the other. `42-racetrack-table.css` collapses `.poker-table-wrap` onto
-  `.table-area` so canvas pixels and wrap pixels are the same number.
-- Shared with the classic room through three seams rather than forked: `SceneProjection`
-  (one chip painter for both cameras — `scaleAt()` is the entire difference, constant
-  under orthography and depth-dependent under perspective), `ChipSpace` (ChipLayer no
-  longer imports the classic ellipse directly), and `seatAnglesDeg()` (the measured
-  six-handed arc generalised to 2-6 players, reproducing the 3/2 split exactly at six).
-  **Both spaces speak the chip layer's world units**; the racetrack's metres convert
-  once, at the projection. Converting the layer to metres means rescaling a dozen
-  tuned motion constants and missing one yields a chip that never settles, not an error.
-- `99-scene.css`'s canvas raise is scoped away from this room as well as the 3D one.
-  Unscoped, the canvas paints over every seat, nameplate, card and the board — and the
-  symptom is a correct but *empty* table, which reads as "the players failed to load".
-- `ringPoint` traces the **inscribed ellipse**, not the stadium boundary, and is inside
-  it by up to 23mm on this 2:1 table. Any anchor that must be a known distance *outside*
-  the felt needs `offsetStadium` plus `stadiumRayPoint`; scaling radii is only exact on
-  a real ellipse. This shipped a bet tray 29mm inside the cloth before it was caught.
-- **Landscape-only.** A 2:1 table has no portrait framing — at 390×844 the felt is ~58px
-  deep with the nameplates on the cloth — so `resolveTableRenderer` sends the preference
-  to `canvas_2d` in portrait. A quiet fallback, never a rotate-to-play gate: an overlay a
-  player cannot act through times their turn out and folds them, which is too high a
-  price for a cosmetic preference. Nothing rewrites the stored choice, so rotating brings
-  it straight back — `useLandscape` (`components/use-landscape.ts`) is a live `matchMedia`
-  subscription built like `useWebglSupport`, not a snapshot taken at mount, and
-  `racetrack-landscape.spec.ts` pins the rotation because a subscription that never fires
-  is indistinguishable from one that does until the device is turned.
-- The table menu cycles from the renderer **actually mounted**, not the stored preference.
-  They differ exactly when a preference has been resolved away (3D without WebGL, 2.5D in
-  portrait), and stepping from the stored value there produces an entry that visibly does
-  nothing — it lands on what is already on screen.
-- Offered in the buy-in preselect as a third `.entry-segment` button, disabled in portrait
-  rather than hidden (same treatment the 3D room gets without WebGL). `.entry-segment` is
-  a two-way control by construction, so the three-up grid is overridden under
-  `.buyin-renderer` rather than generalised.
-- **The dealer** sits at far centre, drawn OVER the cloth rather than behind the rail —
-  the art puts hands on the table and painting it under removes exactly that. z-index 3:
-  above the canvas, below every seat. See the single-dealer entry dated 2026-08-21 below
-  for who she is and what replaced the rotation that used to live here.
-- **Redrawing the dealer must never need a number.** Drop a plate in `art/dealers/`, run
-  `scripts/prepare-dealer.py`; it keys, normalises and regenerates
-  `public/table2d5/dealer.webp` plus `lib/scene/dealer-art.generated.ts`. Normalising is
-  what lets the app hold ONE placement (`DEALER_SLOT`) instead of per-plate landmarks: the
-  plate is scaled so its crown-to-hands height fills a known box and centred on the
-  alpha-weighted middle of its head band. The plate must be framed head-to-hands running
-  off the bottom edge — that framing IS the contract, and an offset appearing in
-  `table-dealer.ts` means the plate is wrong, not the code.
-- Placement anchors to the top of the HAIR, not the measured skull — `fitCamera` reserves
-  its top margin against head points and hair is what occupies it; anchoring the skull
-  clips a ponytail or a pair of ears and lands the hands on the rail instead of the cloth.
-  The slot's size comes from the projected gap between the two chairs flanking the dealer,
-  so it grows with the table like everything else rather than being pinned in pixels.
-- Every plate so far arrived RGB-on-a-black-plate with a black shirt, and Loki is a black
-  dog: the cutout floods **inward from the border at luma ≤ 1**. Any colour key — or one
-  step more generous than 1 — escapes through the clothing and eats the figure (see
-  `[[reference_stackchips_avatar_assets]]` for the full recipe).
-- Known and deliberately unresolved (a design call, not a defect): a ~140px band of floor
-  below the near rail near 16:9 — taking it up by lowering the camera was tried and
-  reverted because it wrecks every taller frame.
-- `.poker-table-wrap` has `isolation: isolate` (for 99-scene.css's canvas-raise trick) but no
-  z-index of its own — normally harmless, but it means the whole felt (board, every seat) sits
-  in the CSS stacking "level 0" bucket, which **always loses to any sibling with an explicit
-  positive z-index** — `.racetrack-dealer` (z-index 3) — no matter how high a *descendant's*
-  own z-index is raised; isolation traps it. Only fix is an explicit z-index on
-  `.poker-table-wrap` itself (now 4, matching the far seats' own floor). Found via the pot
-  label (2026-08-14): raising `.poker-rail` to 20 had zero visible effect, confirmed a real
-  paint bug (not test tooling) by sampling actual pixels — `document.elementsFromPoint` is
-  useless here since most of this subtree is `pointer-events: none`.
-- The board itself was still unsized (2026-08-14): `.community-cards` had no racetrack override at
-  all, so it was inheriting the classic room's breakpoint clamp (`clamp(56px, 4.4vw, 76px)` on
-  desktop, plus its pill padding/border) — a 429px-wide row at the ceiling, on a felt whose real
-  63mm-card math (`BOARD_CARD_WIDTH_M`, table-anchors.ts) says a card should read as ~6% of the
-  cloth. `.board-stack` also carried the classic room's `z-index: 7`, above every seat (4–6) — so
-  that oversized row could paint over a seat's own cards/plate wherever the two overlapped on
-  screen, not just the pot. Fixed three ways: the row is now sized from the same camera projection
-  as everything else on this table (`RACETRACK_BOARD_CARD_MIN/MAX_PX`, 44–52px, floor matches
-  `12-responsive.css`'s own proven card-legibility floor); the flop's three cards overlap each
-  other 20% (a laid fan) while the turn/river keep the normal reveal gap, which is most of the
-  footprint reduction; `.board-stack` gets an explicit `z-index: 2` for this room (above the canvas,
-  below the dealer and every seat, same "furthest person still wins" rule the dealer already
-  follows). `lib/scene/board-clearance.ts`'s `clampBoardCardWidth` shrinks the row further still,
-  every frame, until its real rendered footprint clears the live screen-space gap to the pot —
-  a fixed CSS margin can't do that job because the gap between the board and pot anchors changes
-  with every camera fit, not just with screen width.
-### One dealer on the 2.5D table: Claira (2026-08-21)
-- Kayo supplied a portrait of his girlfriend holding both dogs and asked for her as "the sole
-  dealer person," with the rotation "cut out completely." Scoped mid-pass to **the 2.5D table
-  only** — Blackjack's own dealers (`lib/arcade/dealer.ts`, `dealer-scene.ts`, `dealer-stage.tsx`,
-  `public/dealer/{loki,finn}.webp`) are deliberately untouched, so the app currently has two
-  different dealer identities on two different surfaces. That is a known, chosen split, not drift.
-  Extending her to Blackjack is the obvious next step if it is ever wanted.
-- The rotation is **deleted, not reduced to a roster of one**: `dealerForHand`, `HANDS_PER_DOWN`,
-  `DEALER_IDS` and the table-id hash are gone, along with `lib/scene/dealer-roster.ts` itself
-  (now `lib/scene/table-dealer.ts`, holding only `DEALER_SLOT`/`dealerSlotBox` and re-exporting
-  the generated `DEALER_ART_SRC`). A rotation that never rotates is machinery a reader has to
-  disprove. `poker-table.tsx` lost its `key={dealerId}` remount trick with it — there is no
-  outgoing bitmap to cross-fade any more.
-- `HANDS_PER_DOWN` had a **second consumer**: `seat-art.ts` rotated the opponent seats' cast on
-  the dealer's own cadence, deliberately, so the whole table changed together. That rotation is
-  about players, not the dealer, so it stays — the constant moved into `seat-art.ts` as
-  `HANDS_PER_CAST` (same value, 8). Deleting it outright would have silently frozen every
-  opponent seat's character for the life of a table.
-- `scripts/prepare-dealers.py` → `scripts/prepare-dealer.py`, one plate in, one file out
-  (`public/table2d5/dealer.webp`). Its keying **auto-detects plate polarity** from the border
-  ring's median luma, because this plate arrived white-on-JPEG where all three previous ones were
-  RGB-on-black. Dark plates still flood at luma ≤ 1 (unchanged, and still not a knob); a light
-  plate floods at luma ≥ 200, measured rather than guessed — between 245 and 200 the kept-pixel
-  count moves 0.17%, because the illustration carries a hard dark outline all the way round, so
-  the looser threshold puts the cut on the outline instead of on a rim of near-white JPEG ringing.
-  Interior highlights (eye whites, teeth) survive because a border flood can never reach them.
-- **Two plates were supplied in the same session and the second replaced the first.** The first was
-  her holding both dogs, on a white JPEG plate, 752×1005 of figure. The second — the one that
-  shipped — is a labelled "ANGLE SHEET / front" on a black JPEG plate: her alone in house uniform,
-  no dogs. Both go through the same script; between them they exercise every branch of it, which is
-  why the light-plate path is still tested by hand against the old file before a change lands.
-- Three things the second plate forced into `prepare-dealer.py`, all of them general rather than
-  one-off:
-  - **A dark JPEG plate cannot key at luma ≤ 1.** At that threshold the flood dies in the ringing
-    and the whole sheet comes out opaque. The threshold is now picked by FILE FORMAT, not just
-    polarity: lossless dark stays at ≤ 1 (the old hard-won rule, protecting a black shirt with
-    literal (0,0,0) in it), lossy dark goes to ≤ 6. Same number and same reason as
-    `slice-seat-sheet.py`. Measured: the cut bbox is identical at 4, 6 and 10, so 6 is mid-plateau.
-  - **A labelled sheet is now a valid plate.** The figure is isolated first as the tallest run of
-    non-background rows, so a boxed title above and a caption block below are out-grown rather than
-    located. Without this the alpha bounds span the whole sheet and the dealer ships as a stamp in
-    the middle of a mostly-empty box. No-op on a plain plate.
-  - **It never upscales.** `BOX_HEIGHT` became `BOX_MAX_HEIGHT`, a ceiling. This plate's figure is
-    only 303×478, and blowing it up to the old fixed 794 would ship a bigger, blurrier file with no
-    more detail in it. `DEALER_BOX` is now 306×478.
-- **Resolution is marginal on a large hi-DPI desktop, and that is the art, not the pipeline.**
-  Measured from the running app at DPR 2: 1920×1080 draws her 553 device px tall against a 478px
-  source (0.86× — a slight browser upscale), 1440×900 gives 1.13×, landscape phone 2.09×. If she
-  ever needs to be crisp on a big display, the fix is a sheet whose figure fills more of the frame
-  (or a 2048 render), not a change here.
-- The name badge in the artwork reads **ELENA**, not Claira. Illegible at the size she actually
-  draws (the badge is ~2px there), but it is in the file. Flagged for Kayo, not silently renamed —
-  nothing in code keys off her name, it appears only in comments.
-- Verified in a real browser at 1920×1080, 1440×900 and 844×390 (landscape phone): she sits behind
-  the rail with her hands on the cloth, scale matches the flanking seats, cutout clean against the
-  room.
-- `public/table2d5/dealer.png` — the pre-rotation single-dealer file that commit 21219be
-  un-deleted and explicitly left for "whoever lands that work" — is finally deleted here, since
-  going back to one dealer is exactly that.
-- Verified: `npx vitest run` 2324/2324 green, clean lint, clean production build, `tsc` clean
-  apart from the pre-existing `safe-area.spec.ts` failure.
+Third table renderer, camera-led where the (now-deleted) classic table was CSS-led — `fitCamera`
+solves a real perspective camera and the DOM follows anchors the scene projects, rather than a
+hand-tuned CSS ellipse. Landscape-only by design (a 2:1 table has no usable portrait framing) — falls
+back quietly, never blocks play. See `[[project_stackchips_racetrack_table_rebuild]]` for the full
+geometry/dealer/board history.
 
-### The avatar collection and the racetrack seat-art roster became one system (2026-08-17)
-- Seat-art roster grown to 11 characters. `character6`–`character11` joined `character1`–`character5`
-  in `lib/scene/seat-art.ts`'s bucket, built from a single 6-up grid sheet per angle
-  (`scripts/prepare-seat-art.py` takes one character per source directory, not a sheet — each sheet is
-  pre-cropped by hand into six `art/seats/characterN/<angle>.png` files first). `character6`-`character11`
-  currently only have a `0deg` plate; `pickSeatArt`'s `forceAngle` used to assume every character had
-  whatever angle a seat override named and would request a file that doesn't exist for a single-angle
-  character — fixed (`seatArtCharacterForSlot`'s `forcedAnglesForSlot` filter, plus `pickSeatArt`
-  itself) to keep a character out of a seat whose override forces an angle it doesn't have, and to
-  fall back to the normal magnitude-based pick rather than requesting a missing file.
-- Same day, the same 11-character roster became the *entire* `avatar` cosmetic slot, replacing the old
-  20-entry illustrated catalog (`avatar-regular`…`avatar-ace`) outright — art and catalog both. An
-  earlier pass at exactly this same deletion, same day, got fully reverted mid-conversation because it
-  landed uncommitted, unauthorized, and half-finished (empty `/collection`, no purchase path, no
-  per-player wiring); this is the real, complete version, confirmed piece by piece with Kayo before
-  landing. **One id space now does three jobs**: `characterAvatarCosmetics`
-  (`lib/cosmetics/catalog.ts`) sells/equips `character1`-`character11` through the existing generic
-  purchase/equip path (character1-5 free, character6-11 a Gold ladder, same RPC everything else
-  already used — no new migration); `avatarFigure`/`avatarFace` both resolve to the character's own
-  `seatArtSrc(id, 0)` plate (one image now serves the store card and every small-circle avatar,
-  header/lobby/profile/HUD, since a seat-art plate is already framed head-to-hands); and
-  `poker-table.tsx`'s racetrack seat renderer reads `seat.avatarCosmetic` directly
-  (`seatArtCharacter(seat.avatarCosmetic) ?? seatArtCharacterForSlot(...)`) instead of always hashing —
-  a seated player's actual equipped character is what's drawn at their opponent seat now, the hash
-  pick only survives as the fallback for an unresolvable id. `botAvatarFor` (`lib/game/engine.ts`) had
-  to be repointed from the combined `avatarCosmetics` (2D+3D, would occasionally hand a bot a 3D-only
-  id in its 2D slot) to `characterAvatarCosmetics` alone, or that per-player wiring would silently
-  fall back to the hash pick for whichever bots landed on a 3D id.
-- `/collection`'s preview dialog gained an angle switcher (`previewAngle` state, buttons per
-  `seatArtCharacter(id)?.angles`) — a buyer can turn a character before spending Gold on it. Only
-  renders when a character has more than one angle, so character6-11 show nothing extra today and
-  gain the row automatically the moment wider turns ship — no code change needed for that later.
-- `art/avatars/`, `public/avatars/`, `scripts/prepare-avatars.sh` are deleted, not just their catalog
-  entries — `art/seats/`/`scripts/prepare-seat-art.py` is the only avatar art pipeline left.
-  `biggest_pot_50k`'s `avatar-housename` cosmetic reward repointed to Gold-only again (same fix as the
-  reverted attempt), same for its not-yet-deployed migration (confirmed absent via
-  `list_migrations` before editing directly).
-
-### Seat-art roster grown to 15, then 21, and a slicer for the sheets (2026-08-21)
-- `character13`-`character15` added. Kayo now supplies a character as ONE labelled 3-up JPEG
-  turnaround sheet (0/20/40 side by side, captions above and below each panel), not as pre-cropped
-  per-angle files, so `scripts/slice-seat-sheet.py <sheet> <id>` does the cutting before
-  `prepare-seat-art.py` runs. It finds the figure band as the tallest run of non-black rows (captions
-  are short bands, so they never have to be located, only out-grown), splits on the gutters, and keys
-  each panel by flooding in from its border.
-- **It floods at luma <= 6, not `prepare-seat-art.py`'s <= 1, and that is the entire reason it
-  exists**: these sheets arrive as JPEG and the "black" plate carries ringing up around 6, so the
-  stricter flood stops at the noise and the plate comes out a solid opaque rectangle. It writes real
-  alpha, which `prepare-seat-art.py` detects and passes through instead of re-keying. Connectivity is
-  still the key, not colour — a colour key at any threshold eats the dark hair and the black chair.
-  Stray islands (ringing across a gutter) are dropped, or they widen the character's normalised box
-  for nothing.
-- Every roster entry needs a `characterAvatarOffers` entry in `lib/cosmetics/catalog.ts` —
-  `characterAvatarCosmetics` throws for one without, deliberately, rather than falling through to the
-  free-starter default. Names and copy are first-draft, written from the art; nothing keys off a name.
-- **These three are EARNED, not sold** (Kayo's call, same day, right after they landed): a third tier
-  under the existing standard/rare ones — `price: null` plus `unlock: { handsWon }` at 250/750/1,500
-  lifetime hands won, rarity `signature`. No new machinery: `lib/server/avatar-unlocks.ts` already
-  sweeps every `avatarCosmetics` entry carrying an `unlock` after each hand, `purchaseCosmetic`
-  already refuses a null price, `equipCosmetic` already demands ownership, and the Collection already
-  renders the progress bar. The only real code change was the tier derivation —
-  `price > 0 ? "rare" : "standard"` puts a null-priced item in the FREE bucket, so an earned character
-  would have shipped as a starter giveaway.
-- Bots no longer draw from the whole character roster: `botAvatarCosmetics` excludes the earned tier
-  (`botAvatarFor`, `lib/game/engine.ts`). Same reasoning `botCardBacks` already stopped bots at
-  standard-tier decks — a bot wearing a face a player is 1,500 won hands away from says the threshold
-  buys nothing anyone can see. Gold-priced characters stay in the bot pool on purpose; those
-  advertise the store rather than making a claim about history at this table.
-- Six more the same day, `character16`-`character21`, from six more 3-up sheets through the same
-  slicer with no script change. Kayo's call on the tier: **extend the Gold ladder, not the earned
-  one** — the signature tier stays exactly the three rungs it was set at, 250/750/1,500 hands, rather
-  than growing to nine and diluting what it means.
-- The new rungs step by ~20% each (9,000,000 up to 17,000,000) where `character6`-`character12` step
-  by ~60%. That is a deliberate break, not a slip: the original ladder was already decelerating
-  (×1.75 down to ×1.50 by its last rung), and holding ~60% past `character12` would land the top at
-  about 85,000,000 — an order of magnitude past every other item in this catalog and past anything
-  the faucet stack pays out. The catalog's own comment carries this reasoning; the ladder test now
-  spans both blocks as one ascending sequence, since the earned tier interrupts the id run but not
-  the pricing.
-- **A seventh sheet was rejected and is not in the roster.** Its three panels are boxed scenes — a
-  tufted chair filling the frame and a brown desk under the figure's hands — rather than a figure on
-  a black plate, so there is nothing for the border flood to remove: `key_panel` keeps the whole
-  rectangle and the "cutout" is an opaque box. Two of its panels also touch with no gutter, so the
-  band splits into 2 instead of 3 and the slicer refuses outright. Both symptoms are the same root
-  cause, and no threshold fixes either — the chair's charcoal and the suit's charcoal are the same
-  luma. The framing contract in `prepare-seat-art.py`'s docstring (black plate, head-to-hands,
-  running off the bottom edge) is what a sheet has to satisfy; a sheet that doesn't needs
-  re-rendering, not a looser key.
-
-### Nine characters turned the wrong way, and the roster took real names (2026-08-21)
-- Kayo: "some are facing the wrong way." `character13`-`character21` — every character that arrived
-  through `slice-seat-sheet.py` — turn toward screen-RIGHT as the angle rises; `character1`-`character12`
-  turn screen-LEFT, which is the convention `prepare-seat-art.py`'s docstring pins and the entire seat
-  system assumes (`pickSeatArt` mirrors only for a seat on the dealer's left, so an un-mirrored plate
-  has to look screen-left). Nine characters were therefore looking AWAY from the pot at every seat.
-- Fixed by normalising the ART, not by branching the app: the 27 source plates in
-  `art/seats/character13`-`21` were flipped horizontally and `prepare-seat-art.py` re-run (whole bucket
-  per character, so a mirrored 0deg plate keeps hair part/watch consistent with its own 20/40). Verified
-  the script is deterministic first — a no-op run before the flip rewrote nothing — so the rebuild's
-  diff is exactly those nine characters, plus ~2px box-width shifts from the head-centre re-rounding.
-  A per-character `facing` flag in `seat-art.generated.ts` was the alternative and was rejected: the
-  script can't detect facing, so the flag would be hand-maintained and silently wrong for the next
-  sheet, and it would teach the app two conventions to serve art that can just be flipped once.
-- `slice-seat-sheet.py` gained `--mirror` (flips each panel AFTER slicing — mirroring the whole sheet
-  would also reverse panel order and file 40deg's plate as 0deg) so the next wrong-turning sheet is
-  normalised on the way in. Both scripts' docstrings now say which way to check and what it looks like.
-- **No automated facing check exists, deliberately.** The obvious heuristic (torso/chair alpha centroid
-  sitting to the right of the head centre on the widest plate) was measured across all 21 and comes out
-  negative for `character3`, `character12` and `character16`, all of which are correct — it would fail
-  three good characters to catch a bad one. Eyeball the widest panel instead: chair back on the right,
-  profile looking left.
-- Same pass, Kayo's second ask: **everyone at the table is named with a gamer tag now, bots included.**
-  First read as "real names" and shipped that way for one round (The Hustler → Andre Cole); Kayo's
-  correction was "real peoples gamer tags... simulate the bots rotating seats to having realistic gamer
-  tags so it feels like theyre playing real people," with their own two handles as the reference. So:
-  - `lib/game/engine.ts`'s `botProfiles` — the pool a seat actually shows — moved off single first
-    names (Jax/Maya/Theo, which read as a cast of NPCs) onto handles: `jaxdidthat`, `maya_ontilt`,
-    `riverrat_rj`, `slowroll_sam`. Renamed IN PLACE and then appended to, never reordered — identity
-    indices are persisted on seats and every live table backfills bots from `position`, so moving an
-    entry would swap the players at every table in flight. Pool grown 18 → 30 the same pass, so a
-    rotating seat is less likely to hand back a tag the player just watched leave.
-  - `initials` was deliberately left alone and is NOT the tag's first two letters (JX for
-    `jaxdidthat`, RV for `riverrat_rj`). It is shorthand for the nickname inside the tag, which is
-    what the avatar circle wants and what a player already associates with that seat.
-  - `characterAvatarOffers` (`lib/cosmetics/catalog.ts`) is tags too, a SEPARATE list — `deewavy`,
-    `malik_23`, `ttv_danpark`. Nothing maps a character to a bot: the catalog names a FACE for the
-    store, the bot pool names who is in the chair, and a player wearing character7 still shows their
-    own name. Tying the two axes was considered and left alone; the engine's own comment calls them
-    deliberately separate and identity indices are persisted.
-  - Blackjack's dealers stay Loki & Finn, real names (`lib/arcade/dealer.test.ts` pins the shape).
-    They're Kayo's dogs dealing the game — staff, not someone you're playing against — and a handle
-    over the dealer's chair would make them one more seat.
-  - Four tests in `engine.test.ts` pin the register: tag shape, ≤14 chars (a human's name is capped at
-    18 and shares the nameplate; the plate crowds before that on a phone), no duplicates, and a MIX of
-    shapes. That last one is the point of the whole ask — one visible formula across every entry
-    ("name_word", 30 times) hands the generated feel straight back however good each tag is.
-- Verified: `npx vitest run` 2334/2334, clean lint, clean production build, `tsc` clean apart from the
-  pre-existing `safe-area.spec.ts` failure.
+### PvP duels replace the retired house-gambling games; misc fixes (2026-08-12)
+Roulette/Video Poker/Coin Flip/Baccarat/Hi-Lo retired (server-guarded, not just delinked);
+Chess/Checkers/Trivia Showdown/Word Race added as 1v1 winner-take-all duels with balance-conservation
+as the safety invariant (no house edge). Every duel engine's `tick()` must return null when nothing
+changed or it livelocks the optimistic-concurrency poll. Puzzle-answer banks must be `server-only` —
+Word Race's wasn't at first and leaked its answer bank into the client bundle. Also this pass: three
+distinct click sounds replacing one generic cue, three remount bugs fixed from `/games/*` routes
+unmounting the whole app, and 3D-room avatar-load-gate/gesture-playback fixes.
 
 ### Rewarded-ad faucet (2026-08-11)
-- Wait moved 30s→5min (`REWARDED_AD_DURATION_MS`), grant TTL 10→20min to compensate. New direct
-  "Free Gold" row in the lobby player menu (same eligibility threshold as the existing busted-hand
-  trigger, registered accounts only). Adsterra zone is `pl30614359` now (was `...360`).
+Wait moved 30s→5min, grant TTL 10→20min to compensate. Adsterra zone rotated.
 
 ### Repo-quality pass (2026-08-06)
-- Deleted the dead `lib/server/table-manager/` worker (2,563 lines, never had an entry point) and
-  `cash-game-session-store.ts` — the DB table/migration stay (migrations are append-only).
-  `STAKES_TIERS` is a single readonly tuple now instead of three hand-written copies that had already
-  drifted.
+Deleted the dead `lib/server/table-manager/` worker (2,563 lines, no entry point) and
+`cash-game-session-store.ts`. `STAKES_TIERS` collapsed from three drifted hand-written copies to one
+tuple.
 
 ### Money-ordering rules (every staked game — Blackjack, PvP duels, Cribbage, Ante Up)
 1. Debit the stake before the thing it pays for exists; a failed creation refunds.
@@ -1210,13 +281,10 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 4. (PvP only) Escrow releases exactly once, via a status-guarded write returning the row at most once.
 Each service restates these at the top of its own file on purpose — breaking one is a silent money
 bug. `pvp-match-service.ts` centralizes them for every duel and `cribbage-service.ts` generalizes the
-same shape to N players; Blackjack keeps an independent copy deliberately (live, moving real Gold,
-not worth restacking). `lib/server/casino-round-service.ts` used to centralize this for four other
-casino games (Roulette/Video Poker/Coin Flip/Baccarat) — deleted 2026-08-20 along with those games
-and Hi-Lo (see that date's entry); Blackjack was never migrated onto it, so nothing else depended on
-it once its four real callers were gone. Version columns double as the settlement idempotency key —
-a lost race must return null, and null must never pay out (this is what makes a double-clicked
-action, a retry, or two tabs settle once).
+same shape to N players; Blackjack keeps an independent copy deliberately (live, moving real Gold, not
+worth restacking). Version columns double as the settlement idempotency key — a lost race must return
+null, and null must never pay out (this is what makes a double-clicked action, a retry, or two tabs
+settle once).
 
 ### Bot / economy behavior
 - Bots leave/return voluntarily between hands (`BOT_VOLUNTARY_LEAVE_CHANCE`, never below 3 funded
@@ -1227,141 +295,34 @@ action, a retry, or two tabs settle once).
   varies preflop looseness (VPIP ~45%/26%/64%).
 - `creditGold`/`spendGold` go through row-locking RPCs (`credit_gold`, `spend_gold`), never a plain
   read-then-write — `adjustGold` is a deliberate exception, documented as admin-only for that reason.
-- **There is no purchase path to Gold any more (2026-08-13).** Buy-Gold was removed; see "Voluntary
-  support" below. Level rewards (every 5th level) and daily-streak multipliers (capped ×2.5 at 7
-  days) are still deliberately small, but the *reason* changed: they used to be bounded against a
-  Stripe sale price (protect revenue, ~1% of turnover vs. the arcade's ~3% edge), and that premise is
-  gone. They're kept small now for progression pacing — a reward that felt free would stop feeling
-  like an achievement — not to protect a sale. `[[project_stackchips_gold_economy]]`'s
-  revenue-protection framing is superseded, not still binding; don't cite it as the reason for a
-  faucet number going forward.
-- The only way back into Blackjack/duels/poker after busting to 0 Gold is the faucet stack:
-  `claimBackstopGold` (`lib/profile/backstop.ts`, 1,000 Gold, open to guests, no wait on a first
-  claim — only a 12h cooldown on repeat claims), the daily grant (`DAILY_GOLD_GRANT` × streak
-  multiplier, independent UTC-day clock), and rewarded ads for registered players
-  (`REWARDED_AD_GOLD` × up to 6/day). All three are already sized off `TIER_CONFIG[CHEAPEST_TIER]
-  .minBuyIn` (1,000, the floor for every staked surface in the app), not off a Stripe price — removing
-  Buy-Gold didn't touch any of their numbers. Verified 2026-08-13 when Buy-Gold was removed: worst
-  case for anyone is bounded by the shorter of "12h since the last backstop claim" or "next UTC day,"
-  never indefinite.
+- Gold purchases exist again (reinstated after Buy-Gold's 2026-08-13 removal — see
+  `[[project_stackchips_gold_purchase_reinstated]]`). Level rewards (every 5th level) and
+  daily-streak multipliers (capped ×2.5 at 7 days) are kept small for progression pacing, not to
+  protect a sale price — `[[project_stackchips_gold_economy]]`'s revenue-protection framing is
+  superseded, don't cite it for a faucet number going forward.
+- The faucet stack for reaching 0 Gold: `claimBackstopGold` (1,000 Gold, open to guests, 12h cooldown
+  on repeat claims), the daily grant (`DAILY_GOLD_GRANT` × streak multiplier), and rewarded ads for
+  registered players (`REWARDED_AD_GOLD` × up to 6/day). All three are sized off
+  `TIER_CONFIG[CHEAPEST_TIER].minBuyIn` (1,000, the floor for every staked surface), not off a Stripe
+  price.
 
 ### Known open items / gaps
-- M17 (chip cosmetics) is deliberately parked until the 3D sim is finished.
-- Challenging a specific opponent shipped for table seats (`components/table/challenge-seat-control.tsx`,
-  PR #111, 2026-08-19) — a seated player can now be challenged to a duel directly. Picking a friend to
-  invite to an empty seat (M16 table invites) is still open; that's a different flow (no seated
-  opponent to challenge).
+- M17 (chip cosmetics) was parked until the 3D sim was finished — the 3D table is now deleted (see
+  above), so this needs Kayo's own re-decision rather than staying silently parked.
+- Challenging a specific opponent shipped for table seats (PR #111, 2026-08-19). Picking a friend to
+  invite to an empty seat (M16 table invites) is still open — a different flow, no seated opponent to
+  challenge.
 - PvP duel sync is a 2s poll, not Realtime.
-- Blackjack's Supabase persistence branch has never been exercised by a real hand in production
-  (only type-checked, plus the memory-mode branch under test).
+- Blackjack's Supabase persistence branch has never been exercised by a real hand in production (only
+  type-checked, plus the memory-mode branch under test).
 - `multiplayer.spec.ts`'s six-player test and two `safe-area.spec.ts` table tests fail identically at
   a pristine HEAD worktree, unrelated to recent work — reconfirm against a fresh worktree before
   treating a red run here as a regression (see `[[reference_stackchips_e2e_traps]]`).
+- Several migrations named in the history above may or may not be applied to production yet — merging
+  a PR ships code only. Verify current DB state by querying, never by trusting a historical note here
+  or matching version stamps; see `[[reference_stackchips_migrations_not_auto_applied]]`.
+- Rate limiting is process-local and needs a shared-store refactor across 77 call sites (see the
+  2026-08-19 public-launch-readiness entry above) — a real gap, deliberately left for a live-reviewed
+  pass rather than done unsupervised.
 
-### Public-launch readiness pass (2026-08-19)
-Play-money platform: Gold has no cash value and nothing here is real-money wagering. "Make money"
-means Gold purchases + voluntary support (`lib/legal/documents.ts`'s existing disclosures), both
-already live Stripe integrations — this pass is production/scale hardening, not a new business model.
-
-**Correction to `docs/launch-checklist.md`'s own text**: it still reads "session identity is an
-HttpOnly random cookie rather than a verified email/social login," and an earlier pass in this file
-repeated that as the single biggest gap. Both are stale. Real Supabase Auth already ships — email/
-password (`signInWithEmail`/`signUpWithEmail` in `components/poker-app.tsx`) and Google OAuth
-(`app/auth/callback/route.ts`), with cross-device account recovery: `lib/server/link-account.ts`'s
-`linkAuthenticatedUser` restores an existing profile by Supabase user id on a new device, or links a
-guest's current Gold/avatar to a newly-created account. Checked by reading the actual code, not the
-doc, after almost repeating the doc's stale claim into this file a second time — verify an
-auth/session claim against `lib/server/link-account.ts` and `components/poker-app.tsx`, not
-`docs/launch-checklist.md`, which needs its own edit to stop asserting this.
-
-Real remaining gaps, in order:
-- **Rate limiting is genuinely process-local** (`lib/server/rate-limit.ts`, an in-memory Map) and is
-  called from 77 different API routes via `enforceRateLimit`/`checkRateLimit`, most of them
-  money-adjacent (Stripe, Gold, cosmetics purchases). A correct fix means making that function async
-  and backing it with a shared store (Postgres-RPC or Upstash Redis) — a real, valuable change, but a
-  77-call-site refactor across every payment-adjacent route is exactly the kind of change that needs
-  a human reviewing it live, not one running unsupervised overnight. Deliberately left undone this
-  pass; next concrete step if picked up: a `rate_limit_buckets` table + row-locked RPC (no new
-  external credential needed, matches every other money RPC's shape), then a scripted `await` add
-  across the 77 call sites, verified by the existing test suite before merging.
-- Realtime still runs on one small `game_signals` channel, capped by the checklist itself at ~3,000
-  concurrent subscribers before a migration to Realtime Broadcast is needed — a real scale trigger,
-  not an immediate blocker.
-- Supabase Auth's "leaked password protection" advisor (`auth_leaked_password_protection`, WARN) is
-  off. It matters now that real password sign-up exists — it didn't when the checklist was written.
-  No MCP tool exposes this; toggle it at Dashboard → Authentication → Policies → Password Security.
-- The checklist's 15-minute live multi-browser production soak after any gameplay/persistence change
-  should be reconfirmed given how much shipped recently (cribbage, achievements, mid-hand rebuy).
-
-Shipped this pass (branch `feat/production-launch-readiness`): OG/Twitter card metadata + a generated
-`opengraph-image.tsx` (there was no share-link preview at all before — a shared stackchips.app link
-fell back to a bare text card), `robots.ts`/`sitemap.ts`, and `middleware.ts`'s exclusion list
-extended to cover them (same "no session to refresh" reasoning as the existing legal/about/help
-exclusions). A full marketing landing page was deliberately **not** built — Kayo explicitly stripped
-`app/page.tsx` down to the bare sign-in form on 2026-08-09 ("less chrome, less copy"), and reversing
-that is a real product call, not an inference to make unsupervised; flagged for Kayo's decision, not
-decided here. Also applied `20260819090000_missing_fk_indexes.sql` (six missing indexes from the
-Supabase performance advisor; `cash_game_sessions`' own finding was skipped — that table's store was
-already deleted in the 2026-08-06 repo-quality pass).
-
-### The WebGL 3D table is deleted outright (2026-08-26)
-Resolves the "scrap under consideration" question restated twice below (2026-08-19, 2026-08-25) —
-Kayo's call, stated directly this time: "kill it... scrap all of it," with one explicit carve-out —
-keep the chip physics and styles for later reference, but not the characters (the 2D seat-art roster,
-`character1`-`character41`, stays exactly as-is; it was never 3D-room code to begin with). Done on
-`chore/delete-3d-table` off a fresh `origin/main`.
-
-**Nothing was kept in the live tree.** Before deleting anything, the whole subsystem was snapshotted
-under a pushed git tag, `archive/webgl-3d-table` — recover any file with
-`git show archive/webgl-3d-table:<path>`, or the whole thing with
-`git checkout archive/webgl-3d-table -- lib/game3d components/game3d`. Same precedent as the classic
-`canvas_2d` table's own removal note two sections down: "recover it from git history rather than
-re-deriving it." A tag is a complete, permanent copy — there was no reason to also leave a half-copy
-of the chip/style code sitting in the working tree where it would rot, need its own type-checking, or
-get mistaken for live code.
-
-**Deleted: `lib/game3d/` (63 files), `components/game3d/` (36 files), `app/game3d/`**, the 3D bridge
-component (`components/table/scene3d/table-scene-3d.tsx`), `use-webgl-support.ts`, the 3D-only e2e
-spec (`table-scene.spec.ts`), every GLB asset (14 avatar meshes, the room-surround environment, 5 chip/
-card prop meshes), four 3D asset-pipeline scripts, and the `three`/`@react-three/fiber`/
-`@react-three/drei`/`@types/three` npm dependencies. Two more files went the same way as a byproduct,
-not because the brief named them: `components/store/character-3d-canvas.tsx` and
-`character-3d-preview.tsx` had zero remaining consumers even before this pass (Collection never
-actually mounted the 3D preview) — genuinely dead code this pass's grep exposed, not new breakage.
-
-**Two files that live under a `game3d`-named path turned out to be shared, and moved instead of
-dying with the rest.** `lib/game3d/table-shape.ts` (`offsetStadium`, `stadiumOutline`,
-`stadiumRayPoint`) is real geometry math the *racetrack's own* `lib/scene/table-anchors.ts` depends
-on — every comment in the file reads like 3D-room tuning, but the math itself is renderer-agnostic
-stadium-curve arithmetic. Moved to `lib/scene/table-shape.ts`, import repointed. Same story for
-`components/table/scene3d/table-loading-splash.tsx`, whose own doc comment already said "shared by
-both table renderers" — moved to `components/table/table-loading-splash.tsx` rather than deleted,
-which would have broken the racetrack's own loading screen.
-
-**A second, separate 3D-only cosmetics slot came out with it.** `CHARACTERS_3D`
-(`lib/game3d/characters.ts`), `character3DCosmetics`, `premiumCharacter3DOffers`, `DEFAULT_3D_AVATAR`,
-and the `avatar3d` field on `EquippedCosmetics` were a whole parallel roster/purchase axis for the 3D
-room's own characters, entirely distinct from the 2D `characterAvatarCosmetics` roster that stays.
-`profiles.equipped` is a JSONB column, not a fixed schema, so dropping `avatar3d` from the TS type was
-enough — no migration, an old row's stray key is just inert JSON, same as `metric_sum`/`metric_count`
-being left inert after Memory Match's board was dropped. `ActionBar`'s `variant` prop (`"flat" | "3d"`)
-had exactly one remaining caller passing one value once `TableScene3D` was gone, so it was deleted
-outright rather than left as a permanently-single-valued prop.
-
-**CSS was tangled, not layered** — `.scene-room-3d` and the racetrack's own rules shared selectors via
-`:has()`/`:not(:has())` (e.g. `06-table.css`'s `.game-content:not(:has(.scene-room-3d)) .action-layer`).
-Blocks that were entirely 3D-only were deleted; blocks with a now-always-true qualifier had the
-qualifier stripped rather than the whole rule deleted — that rule's styling still belongs to the
-racetrack. Numbered file order preserved.
-
-**Two test files were quietly wrong and this pass caught it**: `avatar-unlocks.test.ts` and
-`hand-completion.test.ts` hardcoded the deleted 3D roster's earned-character id (`donni`, 50 hands)
-instead of the real 2D earned tier (`character1`, 250 hands) — fixed against the tier that actually
-ships, not a pre-existing bug this pass introduced.
-
-**M17 (chip cosmetics), parked "until the 3D sim is finished," needs Kayo's own re-decision now that
-there is no 3D sim left to finish** — restated from the section this replaces, not resolved here.
-
-Verified: `npx vitest run` 2013/2013 (down from the pre-deletion count by exactly the deleted test
-files), clean `tsc` apart from the pre-existing `safe-area.spec.ts` failure, clean lint, clean
-production build with `/game3d` absent from the route list and every other route intact.
+Update this section when scope changes; keep `CLAUDE.md` synchronized.

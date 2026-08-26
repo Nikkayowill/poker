@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { claimSeat, toSnapshot } from "@/lib/game/engine";
-import { clampBuyIn, TIER_CONFIG } from "@/lib/game/tiers";
 import { findGameByRoomCode, getStoredGame, persistenceMode, persistSeatClaim } from "@/lib/server/game-store";
 import { creditGold, spendGold } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { withRequestSessionCookie } from "@/lib/server/session";
 import { resolvePlayerForTableEntry } from "@/lib/server/table-entry";
+import { resolveTierEntry } from "@/lib/server/tier-entry";
 
 export const runtime = "nodejs";
 
@@ -38,22 +38,22 @@ export async function POST(request: NextRequest) {
     const { token } = resolved;
     let profile = resolved.profile;
 
-    const config = TIER_CONFIG[loaded.tier];
     const alreadySeated = loaded.seats.some((seat) => seat.ownerToken === token);
     // As in quick-play, every seat claim is a real buy-in: chips are
     // redeemable for Gold on cash-out, so a free seat would be a faucet.
-    if (!alreadySeated && !profile.unlimitedGold && profile.goldBalance < config.minBuyIn) {
-      return withRequestSessionCookie(request,
-        NextResponse.json(
-          { error: `You need at least ${config.minBuyIn.toLocaleString()} Gold to join this table.` },
-          { status: 400 },
-        ),
-        token,
-      );
-    }
-    // Defaults to 1000 (matching the lobby's current "1K buy-in" label)
-    // until the buy-in picker UI lands and sends a real chosen amount.
-    const buyIn = clampBuyIn(loaded.tier, parsed.data.buyIn ?? 1000);
+    // An already-seated player isn't buying a new one, so they skip the
+    // eligibility check but still get a clamped buy-in.
+    const tierEntry = resolveTierEntry(
+      request,
+      token,
+      loaded.tier,
+      profile,
+      parsed.data.buyIn,
+      (config) => `You need at least ${config.minBuyIn.toLocaleString()} Gold to join this table.`,
+      alreadySeated,
+    );
+    if (tierEntry instanceof NextResponse) return tierEntry;
+    const { buyIn } = tierEntry;
     if (!alreadySeated) profile = await spendGold(token, buyIn);
 
     let state;

@@ -5,28 +5,27 @@ import type { BlackjackOutcome, BlackjackPhase } from "./blackjack";
  *
  * Loki and Finn, two dogs in dress shirts and black bow ties, who deal
  * Blackjack together. This file is everything about them that can be wrong in
- * WORDS or in COLOUR: their names, their breeds, their coats, the house
+ * words or in colour: their names, their breeds, their coats, the house
  * uniform, and what they say. The drawings are
  * components/arcade/dealer-stage.tsx (the layered scene on the felt) and
  * components/arcade/dealer-avatar.tsx (the 34px crop beside the hand), and both
- * read their colours from here rather than typing hex values in twice -- two
- * drawings of the same two dogs that disagree about what colour they are is
- * the exact drift that makes a mascot look like clip art.
+ * read their colours from here rather than typing hex values in twice, since
+ * two drawings of the same two dogs that disagree about what colour they are
+ * is the exact drift that makes a mascot look like clip art.
  *
- * The house used to be one human croupier called Vera.
- *
- * WHAT USED TO BE HERE. This file absorbed lib/arcade/dealer-rig.ts, which
- * held the proportions, seat positions, idle cycles and closed-form camera fit
- * for a three.js scene that built both dogs out of spheres, capsules and
- * cones. That scene is gone -- it read as two balloon animals, which is not
- * something a number in a rig can fix -- and the geometry went with it rather
- * than being left behind as a module nothing imports. Recover it with
- * `git checkout 7d80251 -- lib/arcade/dealer-rig.ts lib/arcade/dealer-rig.test.ts
+ * The house used to be one human croupier called Vera. This file also
+ * absorbed lib/arcade/dealer-rig.ts, which held the proportions, seat
+ * positions, idle cycles and closed-form camera fit for a three.js scene
+ * that built both dogs out of spheres, capsules and cones. That scene is
+ * gone (it read as two balloon animals, which is not something a number in
+ * a rig can fix), and the geometry went with it rather than being left
+ * behind as a module nothing imports. Recover it with `git checkout 7d80251
+ * -- lib/arcade/dealer-rig.ts lib/arcade/dealer-rig.test.ts
  * components/arcade/dealer-stage.tsx` if a real rigged model is ever sourced.
  * What survived is below: identity, which the flat crop and the 2D scene both
  * still need.
  *
- * The copy never uses a pronoun for the dealer -- they/them for a pair needs
+ * The copy never uses a pronoun for the dealer: they/them for a pair needs
  * no establishing, and a croupier does not need one to say "push".
  */
 
@@ -36,9 +35,9 @@ export type DogId = "loki" | "finn";
 export interface DogCoat {
   /** The main coat. */
   base: string;
-  /** The shadowed curls -- under the ears, beneath the jaw, over the crown. */
+  /** The shadowed curls: under the ears, beneath the jaw, over the crown. */
   saddle: string;
-  /** Muzzle, chest and shirt front -- the light markings that give a face a centre. */
+  /** Muzzle, chest and shirt front: the light markings that give a face a centre. */
   cream: string;
   /** Nose leather. */
   nose: string;
@@ -51,23 +50,24 @@ export interface DogCoat {
 /**
  * The house uniform: an ivory dress shirt, a black waistcoat and a black bow
  * tie. Sampled from the portraits in `public/dealer/`, not chosen, for the same
- * reason the brand palette was pulled off the logo PNG with ImageMagick -- a
+ * reason the brand palette was pulled off the logo PNG with ImageMagick: a
  * hex typed by eye beside a photograph drifts from it, and this file exists to
  * stop the flat crop and the real art disagreeing.
  *
- * IT USED TO BE A GREEN CROUPIER'S VISOR AND A GOLD BOW TIE, and that was
- * wrong: no such visor exists in the art and the tie is black. It went
- * unnoticed because the only drawing reading these values was the placeholder,
- * which stops rendering the moment real art lands -- so the drift was invisible
- * on Blackjack and live on every other arcade game, all five of which still
- * draw the flat crop. Two drawings of the same two dogs disagreeing about what
- * they are wearing is the exact failure this file is here to prevent.
+ * An earlier version had a green croupier's visor and a gold bow tie, and
+ * that was wrong: no such visor exists in the art and the tie is black. It
+ * went unnoticed because the only drawing reading these values was the
+ * placeholder, which stops rendering the moment real art lands, so the
+ * drift was invisible on Blackjack and live on every other arcade game, all
+ * five of which still draw the flat crop. Two drawings of the same two dogs
+ * disagreeing about what they are wearing is the exact failure this file is
+ * here to prevent.
  */
 export interface DogUniform {
   /**
    * The dress shirt, and the collar the bow tie sits on.
    *
-   * NOT DECORATION. The tie is near-black and the avatar's disc is dark green,
+   * Not decoration: the tie is near-black and the avatar's disc is dark green,
    * so without the shirt behind it the one piece of uniform in that drawing is
    * invisible at any size. The art solves it the same way, which is why this is
    * a field rather than a shape hard-coded in the component.
@@ -100,8 +100,8 @@ export interface DealerDog {
  * Loki: the apricot one, on the left.
  *
  * The coats below are the pair as they actually look, taken from the owner's
- * own reference sheet. An earlier version of this file had Loki as a BLUE
- * MERLE with blue eyes and Finn as a tall golden -- both wrong, and wrong in a
+ * own reference sheet. An earlier version of this file had Loki as a blue
+ * merle with blue eyes and Finn as a tall golden, both wrong, and wrong in a
  * way no test could catch, because a coat colour is only checkable against the
  * animal. Do not retune these by eye against a render; check them against a
  * photograph.
@@ -129,10 +129,10 @@ const LOKI: DealerDog = {
 /**
  * Finn: the black one, on the right.
  *
- * `base` is deliberately not #000. Finn is a black dog rendered against a dark
- * casino and an almost-black page, and a true black coat has no silhouette at
- * all in that picture -- what reads as "black dog" on screen is a very dark
- * warm grey with the curls picked out lighter still.
+ * `base` is not #000. Finn is a black dog rendered against a dark casino and
+ * an almost-black page, and a true black coat has no silhouette at all in
+ * that picture: what reads as "black dog" on screen is a very dark warm grey
+ * with the curls picked out lighter still.
  */
 const FINN: DealerDog = {
   id: "finn",
@@ -167,8 +167,8 @@ export const DEALER_NAME = DEALER_DOGS.map((dog) => dog.name).join(" & ");
 /**
  * What the dogs want.
  *
- * Rendered in a speech bubble over the pair. This used to be flavour with an
- * explicit note saying it must never become a button -- a control that takes
+ * Rendered in a speech bubble over the pair. This line was once just flavour,
+ * with a note that it must never become a button, since a control that takes
  * Gold and does nothing is a defect dressed as a joke. Tipping is a real
  * mechanic now (lib/arcade/tipping.ts), so the line is still the ask and the
  * button beside it does something; the note stands for anything else that
@@ -180,7 +180,7 @@ export const TIP_LINE = "Tip the dealer!";
  * What the dealer says, given where the round is.
  *
  * Terse on purpose. This sits beside a verdict chip that already names the
- * outcome and the amount, so a line that restated either would be noise --
+ * outcome and the amount, so a line that restated either would be noise:
  * the dealer's job here is tone, not information. Every string is a constant,
  * so it cannot grow to the length that made the old per-seat status pills clip
  * under the poker table (see the note on `.status-pill` in CLAUDE.md).

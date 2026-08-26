@@ -10,7 +10,7 @@ import { adminClient } from "./supabase-admin";
  * Per-game leaderboard stats for every game besides poker, plus the Global
  * leaderboard that blends poker in alongside them.
  *
- * Poker itself is never written here -- player_stats/season_stats
+ * Poker itself is never written here. player_stats/season_stats
  * (stats-store.ts) stay the source of truth for poker, proven and already
  * idempotent. This module only ever reads poker's numbers, as one more score
  * source for the Global blend (see getGlobalLeaderboard).
@@ -20,7 +20,7 @@ import { adminClient } from "./supabase-admin";
  * supabase/migrations/20260820120000_game_leaderboard_stats.sql; local/dev/
  * test runs against an in-process approximation of the same math.
  *
- * The two record* functions below never throw -- the same contract
+ * The two record* functions below never throw, the same contract
  * applyMissionEvent and applyAchievementEvent keep, called as a sibling of
  * those two at each settlement call site rather than through a shared
  * DomainEvent (see lib/domain-events.ts's own header for why the union stays
@@ -48,9 +48,9 @@ export interface LeaderboardEntry {
  * against the world.
  *
  * The only board here whose rows differ per viewer, which is also why it has
- * no rank -- there is no ordering of your friends that means anything the
- * way "#3 by Gold won" does. Sorted by how much you have actually played
- * each other instead.
+ * no rank: there is no ordering of your friends that means anything the way
+ * "#3 by Gold won" does. Sorted by how much you have actually played each
+ * other instead.
  */
 export interface FriendBoardEntry {
   profileId: string;
@@ -60,7 +60,7 @@ export interface FriendBoardEntry {
   wins: number;
   losses: number;
   draws: number;
-  /** Signed, and only meaningful when a single game accounts for every result -- see getHeadToHeadSummaries. */
+  /** Signed, and only meaningful when a single game accounts for every result. See getHeadToHeadSummaries. */
   currentStreak: number;
   bestStreak: number;
   /** Per game, most played first. Empty for a friend you have never finished a game against. */
@@ -136,8 +136,7 @@ async function applyResult(
     return;
   }
   // p_metric_delta/p_metric_count_delta are omitted, not passed as 0: the RPC
-  // defaults both, and nothing has ranked on a raw metric since Memory
-  // Match's board was dropped.
+  // defaults both, and nothing ranks on a raw metric any more.
   const { error } = await supabase.rpc("apply_leaderboard_result", {
     p_profile_id: profileId,
     p_game_id: gameId,
@@ -150,7 +149,7 @@ async function applyResult(
 
 // ---- writes -----------------------------------------------------------
 
-/** A 2-player duel's result, on both the world board and the two players' head-to-head record. `winnerSeat` null is a draw -- both players get one. Never throws. */
+/** A 2-player duel's result, on both the world board and the two players' head-to-head record. `winnerSeat` null is a draw: both players get one. Never throws. */
 export async function recordDuelResult(
   gameId: string,
   players: [string, string],
@@ -176,9 +175,9 @@ export async function recordDuelResult(
   } catch (error) {
     console.error("leaderboard.record_duel_result_failed", { gameId, players, winnerSeat, error });
   }
-  // Outside the try on purpose: this one keeps its own contract of never
-  // throwing, and a world-board failure above must not swallow the friends
-  // board's copy of the same result.
+  // Outside the try: this one keeps its own contract of never throwing, and
+  // a world-board failure above must not swallow the friends board's copy
+  // of the same result.
   await recordHeadToHeadDuel(gameId, players, winnerSeat);
 }
 
@@ -233,7 +232,7 @@ function sortDescendingByGoodness(rows: ScoredRow[]): ScoredRow[] {
   return [...rows].sort((a, b) => b.score - a.score);
 }
 
-/** Every stored row for a game, qualified or not -- allGameRows filters this, getGameQualifyProgress needs what it filters out. */
+/** Every stored row for a game, qualified or not. allGameRows filters this; getGameQualifyProgress needs what it filters out. */
 async function rawGameRows(gameId: string): Promise<{ profileId: string; stats: LeaderboardStats }[]> {
   const supabase = adminClient();
 
@@ -267,9 +266,24 @@ async function allGameRows(gameId: string): Promise<ScoredRow[]> {
     .map((row) => ({ ...row, score: scoreOf(row.stats) }));
 }
 
-async function decorateGameRows(gameId: string, rows: ScoredRow[]): Promise<LeaderboardEntry[]> {
-  const contract = leaderboardGame(gameId);
-  if (!contract) return [];
+/**
+ * Attaches rank and public-profile identity (name, avatar, accent, with the
+ * same "Player" / null / gold fallbacks every board uses) to an already-
+ * sorted row list. Shared by decorateGameRows and decorateGlobalRows, so the
+ * two can't drift on the fallback values by building the same shape twice.
+ */
+type RankedIdentity = {
+  profileId: string;
+  rank: number;
+  displayName: string;
+  avatarUrl: string | null;
+  accent: string;
+};
+
+async function decorateRankedRows<Row extends { profileId: string }, Extra>(
+  rows: Row[],
+  extra: (row: Row) => Extra,
+): Promise<(RankedIdentity & Extra)[]> {
   const profiles = await getPublicProfilesByIds(rows.map((row) => row.profileId));
   return rows.map((row, index) => {
     const profile = profiles.get(row.profileId);
@@ -279,10 +293,15 @@ async function decorateGameRows(gameId: string, rows: ScoredRow[]): Promise<Lead
       displayName: profile?.displayName ?? "Player",
       avatarUrl: profile?.avatarUrl ?? null,
       accent: profile?.accent ?? "#e7c66a",
-      stats: row.stats,
-      cells: contract.formatRow(row.stats),
+      ...extra(row),
     };
   });
+}
+
+async function decorateGameRows(gameId: string, rows: ScoredRow[]): Promise<LeaderboardEntry[]> {
+  const contract = leaderboardGame(gameId);
+  if (!contract) return [];
+  return decorateRankedRows(rows, (row) => ({ stats: row.stats, cells: contract.formatRow(row.stats) }));
 }
 
 /** Top `limit` for one game, qualifying players only. Empty for an unknown game id. */
@@ -314,7 +333,7 @@ export interface LeaderboardQualifyProgress {
 
 /**
  * How close a not-yet-qualified player is to appearing on their own game's
- * board -- getGameStanding returns a flat null for them, which reads to a
+ * board. getGameStanding returns a flat null for them, which reads to a
  * player who just played their first match as "you don't exist here,"
  * indistinguishable from having never played. Null here too, but only when
  * there is truly nothing to report: unknown game, zero games played, or
@@ -355,7 +374,7 @@ export async function getFriendsBoard(profileId: string): Promise<FriendBoardEnt
   const entries = friendIds.flatMap((friendId) => {
     const profile = profiles.get(friendId);
     // Same reasoning as the friends drawer's own hydrate(): a row whose
-    // profile has vanished mid-deletion is dropped, not rendered blank.
+    // profile has vanished mid-deletion is dropped rather than rendered blank.
     if (!profile) return [];
     const summary = summaries.get(friendId);
     return [{
@@ -385,12 +404,12 @@ export async function getFriendsBoard(profileId: string): Promise<FriendBoardEnt
 
 // ---- global read --------------------------------------------------------
 //
-// A read-time percentile blend, not a stored column -- a denormalized
-// "global score" would need recomputing on every OTHER player's write in
-// the same game, since percentiles shift even when you didn't play
-// yourself. See the migration's own comment for the full reasoning. The
-// memory branch below reimplements Postgres's percent_rank() exactly:
-// (rank - 1) / (n - 1), RANK()-style ties, 0 for a lone qualifier.
+// A read-time percentile blend, not a stored column: a denormalized "global
+// score" would need recomputing on every OTHER player's write in the same
+// game, since percentiles shift even when you didn't play yourself. See the
+// migration's own comment for the full reasoning. The memory branch below
+// reimplements Postgres's percent_rank() exactly: (rank - 1) / (n - 1),
+// RANK()-style ties, 0 for a lone qualifier.
 
 /** Minimum poker hands played before a player's poker score counts toward the Global blend. */
 const POKER_MIN_HANDS = 20;
@@ -411,7 +430,7 @@ function percentileMap(rows: PooledScore[]): Map<string, number> {
     return result;
   }
   const higherBetter = rows[0].higherBetter;
-  // higher_better: percent_rank() over (order by score asc) -- the best
+  // higher_better: percent_rank() over (order by score asc), so the best
   // score sorts last and earns the top percentile. lower_better inverts.
   const sorted = [...rows].sort((a, b) => (higherBetter ? a.score - b.score : b.score - a.score));
   let i = 0;
@@ -439,7 +458,7 @@ async function memoryPooledScores(): Promise<PooledScore[]> {
     if (!qualifies(gameId, stats)) continue;
     const contract = leaderboardGame(gameId);
     if (!contract) continue;
-    // higherBetter is true for every registered game -- they all rank on win
+    // higherBetter is true for every registered game; they all rank on win
     // rate. Kept as a field rather than assumed, mirroring the SQL's own
     // higher_better column, so the next game that ranks low-to-high sets it
     // here and needs nothing else changed.
@@ -456,7 +475,7 @@ async function globalScores(): Promise<Map<string, { score: number; gamesCounted
   if (!supabase) {
     const pooled = await memoryPooledScores();
     // Percentiles are computed per game (one partition per gameId), then
-    // averaged per profile -- exactly get_global_leaderboard()'s two-step
+    // averaged per profile: exactly get_global_leaderboard()'s two-step
     // shape, just done in JS instead of SQL.
     const byGame = new Map<string, PooledScore[]>();
     for (const row of pooled) {
@@ -493,19 +512,7 @@ async function globalScores(): Promise<Map<string, { score: number; gamesCounted
 async function decorateGlobalRows(
   rows: { profileId: string; score: number; gamesCounted: number }[],
 ): Promise<GlobalLeaderboardEntry[]> {
-  const profiles = await getPublicProfilesByIds(rows.map((row) => row.profileId));
-  return rows.map((row, index) => {
-    const profile = profiles.get(row.profileId);
-    return {
-      profileId: row.profileId,
-      rank: index + 1,
-      displayName: profile?.displayName ?? "Player",
-      avatarUrl: profile?.avatarUrl ?? null,
-      accent: profile?.accent ?? "#e7c66a",
-      globalScore: row.score,
-      gamesCounted: row.gamesCounted,
-    };
-  });
+  return decorateRankedRows(rows, (row) => ({ globalScore: row.score, gamesCounted: row.gamesCounted }));
 }
 
 /** Top `limit` by the Global blend across every game a player qualifies in. */

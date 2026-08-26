@@ -23,13 +23,13 @@ export function ReactionEmote({ reactionId }: { reactionId: ReactionId }) {
  *
  * One component, not three, even though the spec wants a floating panel on
  * desktop, a bottom sheet on mobile portrait, and a compact popover on
- * mobile landscape -- all three are the same eight buttons, just laid out
+ * mobile landscape. All three are the same eight buttons, just laid out
  * differently, so 41-table-reactions.css reflows one `.reaction-panel` per
  * breakpoint instead.
  *
  * The open/close behaviour (click-away, Escape, close on rotate) mirrors
  * components/nav/menu.tsx, the app's other dropdown, but isn't built on top
- * of it directly -- Menu's items are a vertical list of labelled rows, and
+ * of it directly: Menu's items are a vertical list of labelled rows, and
  * this is a fixed emoji grid with its own bottom-sheet layout.
  */
 export function ReactionButton({
@@ -39,7 +39,7 @@ export function ReactionButton({
   activeReaction,
 }: {
   onSend: (reactionId: ReactionId) => void;
-  /** True while on cooldown -- see lib/game/use-table-reactions.ts. */
+  /** True while on cooldown; see lib/game/use-table-reactions.ts. */
   disabled: boolean;
   /** Optional custom trigger, used by the 2.5D HUD's profile avatar. */
   trigger?: ReactNode;
@@ -106,7 +106,7 @@ export function ReactionButton({
       </button>
       {open && (
         <>
-          {/* Mobile portrait only (see the CSS) -- tapping outside a bottom
+          {/* Mobile portrait only (see the CSS): tapping outside a bottom
               sheet dismisses it via the same scrim every sheet in the app
               uses. Desktop/landscape have no scrim; the pointerdown listener
               above already covers those. */}

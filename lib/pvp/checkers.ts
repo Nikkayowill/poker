@@ -11,20 +11,20 @@
  *
  * Pure and synchronous, like lib/arcade/blackjack.ts: every function takes a
  * state and returns the next one, nothing here reads a clock, a store or a
- * request. `now` is always an argument -- an engine that called Date.now()
+ * request. `now` is always an argument: an engine that called Date.now()
  * could not be tested and would let a client's clock decide a real payout.
  *
  * ## The rule everybody gets wrong
  *
- * Capturing is MANDATORY, and that is enforced in MOVE GENERATION rather than
+ * Capturing is mandatory, and that's enforced in move generation rather than
  * checked afterwards: if any piece of the side to move can jump, the generator
  * returns jumps and nothing else. There is therefore no path through this file
- * where a quiet move is "legal but discouraged" -- it is simply absent from
+ * where a quiet move is "legal but discouraged"; it is simply absent from
  * the list, so `applyMove`, the snapshot's highlight list and the draw rules
  * all agree about what may be played.
  *
- * A jump chain continues while the same piece can jump again, so ONE MOVE IS A
- * WHOLE TURN: `{ from, path: [landing, landing, ...] }`. Modelling a partial
+ * A jump chain continues while the same piece can jump again, so one move is a
+ * whole turn: `{ from, path: [landing, landing, ...] }`. Modelling a partial
  * jump as a state would put a half-finished turn in a jsonb column, where a
  * disconnect or a flag fall leaves a position no rule set describes. A chain
  * that stops early is not a move at all, and is rejected as such.
@@ -51,9 +51,10 @@ import {
  * One square of the board.
  *
  * A single character per square, so the whole position is a 64-character
- * string: JSON-friendly with no nesting, and -- the reason it is a string
- * rather than an array -- directly usable as the repetition key, which is what
- * makes threefold detection a dictionary lookup instead of a board compare.
+ * string: JSON-friendly with no nesting, and directly usable as the
+ * repetition key (the reason it's a string rather than an array), which is
+ * what makes threefold detection a dictionary lookup instead of a board
+ * compare.
  */
 export type CheckersCell = "." | "r" | "R" | "b" | "B";
 
@@ -87,7 +88,7 @@ export interface CheckersState {
   turnStartedAt: number;
   /**
    * Each seat's banked remaining ms as of `turnStartedAt`. The side to move is
-   * spending from theirs right now -- see `remainingMs`, which is the only
+   * spending from theirs right now; see `remainingMs`, which is the only
    * thing that should ever read this pair directly.
    */
   clocks: [number, number];
@@ -103,12 +104,12 @@ export interface CheckersSnapshot {
   board: string;
   turn: DuelSeat;
   /**
-   * What the VIEWER may play right now, empty for anyone who is not the seat
+   * What the viewer may play right now, empty for anyone who is not the seat
    * to move. Checkers is perfect information, so this is not a redaction of
-   * anything secret -- it is there so the board can highlight legal
-   * destinations and, crucially, so a forced jump is visible rather than
-   * mysterious. A player whose quiet move was refused with no explanation
-   * concludes the game is broken.
+   * anything secret. It is there so the board can highlight legal
+   * destinations and so a forced jump is visible rather than mysterious. A
+   * player whose quiet move was refused with no explanation concludes the
+   * game is broken.
    */
   legalMoves: LegalCheckersMove[];
   /** True when the side to move has a jump available, so every legal move is one. */
@@ -130,8 +131,8 @@ export const BOARD_SQUARES = BOARD_SIDE * BOARD_SIDE;
  * Five minutes each with a three-second increment.
  *
  * Long enough that a thought-out endgame is playable, short enough that an
- * opponent who wandered off costs you five minutes and not an afternoon --
- * a staked match that can never end holds both players' Gold hostage. The
+ * opponent who wandered off costs you five minutes and not an afternoon.
+ * A staked match that can never end holds both players' Gold hostage. The
  * increment is what stops a won position being lost to the twenty moves it
  * takes to convert it.
  */
@@ -141,7 +142,7 @@ export const CHECKERS_INCREMENT_MS = 3 * 1000;
 /**
  * 40 moves by each side with no capture and no man moved is a draw.
  *
- * Counted in plies -- one player's turn -- because that is the unit this
+ * Counted in plies, one player's turn, because that is the unit this
  * engine actually advances in. Only a man moving or a piece being taken can
  * make progress toward an ending; kings shuffling cannot, and two kings that
  * cannot catch each other would otherwise hold a staked pot open forever.
@@ -191,7 +192,7 @@ function onBoard(row: number, col: number): boolean {
   return row >= 0 && row < BOARD_SIDE && col >= 0 && col < BOARD_SIDE;
 }
 
-/** Play happens on the dark squares only -- the light half is never occupied. */
+/** Play happens on the dark squares only; the light half is never occupied. */
 export function isPlayableSquare(square: number): boolean {
   return (rowOf(square) + colOf(square)) % 2 === 1;
 }
@@ -222,7 +223,7 @@ function toCells(board: string): CheckersCell[] {
 
 /**
  * Where a piece may step. A man only ever moves toward the far side; a king
- * takes all four diagonals but still exactly one square -- see the header.
+ * takes all four diagonals but still exactly one square, as described above.
  */
 function directionsFor(cell: CheckersCell, seat: DuelSeat): ReadonlyArray<readonly [number, number]> {
   if (isKingCell(cell)) return DIAGONALS;
@@ -255,7 +256,7 @@ export function openingBoard(): string {
  *   - The moving piece is lifted from `origin` for the duration of the search,
  *     which is what lets a long chain legitimately finish back where it began.
  *
- * A leaf -- a square from which this piece can jump no further -- is a
+ * A leaf, a square from which this piece can jump no further, is a
  * complete turn. Any leaf will do: English draughts does not require taking
  * the longest chain, only that a chain once begun is played out.
  */
@@ -289,8 +290,8 @@ function collectJumps(
     path.push(land);
     captures.push(mid);
 
-    // Crowning ends the turn on the spot -- the piece becomes a king, and a
-    // king it only becomes at the END of the move cannot use its new
+    // Crowning ends the turn on the spot: the piece becomes a king, but since
+    // it only becomes one at the end of the move, it can't use the new
     // directions during that same move.
     if (!isKingCell(piece) && landRow === crownRow(seat)) {
       out.push({ from: origin, path: [...path], captures: [...captures] });
@@ -376,7 +377,7 @@ function countPieces(board: string, seat: DuelSeat): number {
 /**
  * What a seat has left at `now`.
  *
- * Only the side to move is spending, and only while the match is live -- once
+ * Only the side to move is spending, and only while the match is live. Once
  * an outcome is recorded every clock is frozen at whatever the ending banked,
  * so a settled match cannot keep counting down under a result card. `elapsed`
  * is floored at zero because `now` is supplied by the caller and a clock that
@@ -424,7 +425,7 @@ function positionKey(board: string, turn: DuelSeat): string {
 /**
  * Reads an untrusted payload as a move, or null if it is not one.
  *
- * The route validates that a `move` field exists and nothing else -- it is
+ * The route validates that a `move` field exists and nothing else; it is
  * `z.unknown()` by design, because only the engine knows what a move is here.
  * Everything below therefore runs on values that may be any shape at all, and
  * a wrong shape must come back as a rejection rather than a thrown 500.
@@ -465,7 +466,7 @@ function isStrictPrefix(prefix: number[], path: number[]): boolean {
  * correct implementation: the match must be live, the claim must be a move at
  * all, it must be this seat's turn, the mover's flag must not have fallen, and
  * only then is the move looked up in the generated list. Looking it up is the
- * legality check -- there is no second pass that asks whether a capture was
+ * legality check; there is no second pass that asks whether a capture was
  * available, because a quiet move is not in the list when one was.
  */
 export function applyCheckersMove(
@@ -491,7 +492,7 @@ export function applyCheckersMove(
   );
 
   if (!played) {
-    // Say WHY, specifically. These two are the rules a player is most likely
+    // Say why, specifically. These two are the rules a player is most likely
     // to be surprised by, and an unexplained refusal reads as a broken game.
     if (legal.some((candidate) => candidate.from === claim.from && isStrictPrefix(claim.path, candidate.path))) {
       return { reject: "Finish the jump -- that piece has to keep taking." };
@@ -507,8 +508,8 @@ export function applyCheckersMove(
   const next = otherSeat(seat);
 
   // Only a capture or a man moving can make progress toward an ending, and
-  // either makes every earlier position unreachable -- so the repetition
-  // record is cleared at the same moment the idle counter resets, which also
+  // either makes every earlier position unreachable, so the repetition
+  // record is cleared at the same moment the idle counter resets. That also
   // keeps that dictionary from growing across a whole game.
   const irreversible = played.captures.length > 0 || !isKingCell(toCells(state.board)[played.from]);
   const idlePlies = irreversible ? 0 : state.idlePlies + 1;
@@ -559,7 +560,7 @@ function flagFallen(state: CheckersState, now: number): CheckersState {
 /**
  * The only thing that happens without a move: a flag falling.
  *
- * Returns null in every other case, which is nearly every call -- the shell
+ * Returns null in every other case, which is nearly every call. The shell
  * polls this every two seconds per player, and a tick that handed back a fresh
  * object each time would bump the stored version on every poll and livelock
  * both players against the optimistic concurrency guard. Nothing here is
@@ -595,7 +596,7 @@ export function resignCheckers(state: CheckersState, seat: DuelSeat, now: number
 /**
  * What a viewer sees.
  *
- * Both seats see the same board -- checkers is perfect information and the
+ * Both seats see the same board: checkers is perfect information, and the
  * contract names it as one of the two symmetric games. The only per-viewer
  * part is the legal-move list, which goes to the seat that is actually to move
  * and to nobody else: a spectator or an unauthenticated read (`seat === null`)

@@ -29,7 +29,7 @@ interface GenericEntry {
   cells: Record<string, string>;
 }
 
-/** How close the viewer is to qualifying for a game's own board -- see mineProgress on GET /api/leaderboard. */
+/** How close the viewer is to qualifying for a game's own board. See mineProgress on GET /api/leaderboard. */
 interface QualifyProgress {
   sample: number;
   minSample: number;
@@ -78,7 +78,7 @@ function daysRemaining(endsAt: string): number {
   return Math.max(0, Math.ceil((Date.parse(endsAt) - Date.now()) / 86_400_000));
 }
 
-/** "Play 2 more games to qualify for this board." -- the gap between a played-once row and appearing on it. */
+/** "Play 2 more games to qualify for this board." The gap between a played-once row and appearing on it. */
 function qualifyHint(progress: QualifyProgress): string {
   const remaining = progress.minSample - progress.sample;
   return `Play ${remaining} more game${remaining === 1 ? "" : "s"} to qualify for this board.`;
@@ -203,7 +203,7 @@ function PokerRow({ entry, mine, scope }: { entry: PokerEntry; mine: boolean; sc
 }
 
 /**
- * Renders whatever columns a game's contract named -- this, plus the API
+ * Renders whatever columns a game's contract named. This, plus the API
  * pre-formatting each cell server-side via the contract's own formatRow, is
  * what lets a future game join the leaderboard with no new UI code.
  */
@@ -233,7 +233,7 @@ function GlobalRow({ entry, mine }: { entry: GlobalEntry; mine: boolean }) {
 }
 
 /**
- * Public rankings. Entertainment-only, same as the Gold it's built from --
+ * Public rankings. Entertainment-only, same as the Gold it's built from:
  * this is the social-proof loop, not a money one.
  *
  * `embedded` is for the phone lobby's third pane
@@ -320,8 +320,9 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
         <div>
           <div className="lobby-kicker">Standings</div>
           <Heading>The leaderboard.</Heading>
-          {/* An em dash, not the codebase's `--` comment idiom: this string is
-              rendered prose, and a double hyphen prints as a double hyphen. */}
+          {/* Em dash here, not the double-hyphen comment idiom: this is
+              rendered prose, and a literal double hyphen would print as
+              a double hyphen. */}
           <p>
             {game === "poker"
               ? (scope === "lifetime"

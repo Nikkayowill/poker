@@ -13,15 +13,15 @@ const DISMISS_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000;
 /**
  * A non-intrusive "install to home screen" nudge for the lobby hub.
  *
- * The platform detection and the captured `beforeinstallprompt` now come from
- * useInstallOffer, shared with the landing page's install panel -- the two
+ * The platform detection and the captured `beforeinstallprompt` come from
+ * useInstallOffer, shared with the landing page's install panel: the two
  * surfaces must agree about whether the app is already installed, and two
  * copies of that check is how they stop agreeing.
  *
- * What stays local to this component is what makes it a *nudge* rather than a
- * destination: the dismissal cooldown, and the rule that Android/desktop show
- * nothing until Chromium actually offers an install. The landing panel
- * deliberately does not follow that second rule; see its own header for why.
+ * What stays local to this component is what makes it a nudge rather than a
+ * destination: the dismissal cooldown, and the rule that Android/desktop
+ * show nothing until Chromium actually offers an install. The landing panel
+ * does not follow that second rule; see its own header for why.
  */
 export function InstallPrompt() {
   const { platform, installed, canPrompt, promptInstall } = useInstallOffer();
@@ -32,7 +32,7 @@ export function InstallPrompt() {
 
   useEffect(() => {
     // Deferred a tick for the same reason useInstallOffer defers its own
-    // reads -- see the note there.
+    // reads, see the note there.
     const timer = window.setTimeout(() => {
       const dismissedAt = Number(window.localStorage.getItem(DISMISS_STORAGE_KEY) ?? 0);
       setWithinCooldown(Boolean(dismissedAt) && Date.now() - dismissedAt < DISMISS_COOLDOWN_MS);
@@ -53,8 +53,8 @@ export function InstallPrompt() {
   if (installed || withinCooldown || platform === null) return null;
   const ios = platform === "ios";
   // Android/desktop Chrome: nothing to show until the browser actually
-  // offers an install, which it withholds until its own engagement heuristics
-  // are met -- there's no earlier moment to jump the gun from.
+  // offers an install, which it withholds until its own engagement
+  // heuristics are met. There's no earlier moment to jump the gun from.
   if (!ios && !canPrompt) return null;
 
   // One line, pinned to the viewport's bottom edge: an icon, a sentence, and

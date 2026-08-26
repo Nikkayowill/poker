@@ -9,9 +9,9 @@ import type { DuelBoardProps } from "./duel-shell";
  * The chess board: eight ranks of buttons, and nothing that decides a rule.
  *
  * Every legal destination on screen comes from `state.legalMoves`, which the
- * engine computed server-side for the seat to move -- the board never asks
+ * engine computed server-side for the seat to move. The board never asks
  * whether a move is legal, it asks which moves the server already said were.
- * That is the same split the poker table holds and it is what stops a second
+ * That's the same split the poker table holds, and it's what stops a second
  * copy of the rules drifting from the one that owns the Gold.
  *
  * Interaction is click-a-piece then click-a-square. Drag would need pointer
@@ -38,7 +38,7 @@ const PIECE_NAMES: Record<string, string> = {
 
 const PROMOTION_CHOICES = ["q", "r", "b", "n"] as const;
 
-/** A clock is worth reading at a glance, so it is mm:ss and rounds up -- "0:00" must mean flagged. */
+/** A clock is worth reading at a glance, so it's mm:ss and rounds up: "0:00" must mean flagged. */
 function formatClock(ms: number): string {
   const seconds = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -57,14 +57,14 @@ export function ChessBoard({ state, yourSeat, status, busy, onMove }: DuelBoardP
 
   const moves: ChessMove[] = state.legalMoves ?? [];
   // `legalMoves` is null for the seat that is not to move, so it doubles as the
-  // turn test -- there is no second source of truth about whose turn it is.
+  // turn test; there is no second source of truth about whose turn it is.
   const yourTurn = state.legalMoves !== null;
   const live = status === "active" && state.over === null;
   const interactive = live && yourTurn && !busy;
 
   const opponentSeat = yourSeat === 0 ? 1 : 0;
   const flipped = yourSeat === 1;
-  // Seat 0 is always white (lib/pvp/chess.ts's seatColor) -- restated here only
+  // Seat 0 is always white (lib/pvp/chess.ts's seatColor), restated here only
   // for the clock labels below, not as a second copy of the rule.
   const yourColor = yourSeat === 0 ? "White" : "Black";
   const opponentColor = yourSeat === 0 ? "Black" : "White";
@@ -99,7 +99,7 @@ export function ChessBoard({ state, yourSeat, status, busy, onMove }: DuelBoardP
   };
 
   // Seat 1 plays black and reads the board from the other end, so the flip is
-  // in the index arithmetic and nowhere else -- rotating the grid with CSS
+  // in the index arithmetic and nowhere else; rotating the grid with CSS
   // would rotate every glyph with it.
   const squares = Array.from({ length: 64 }, (_unused, cell) => {
     const rank = flipped ? (cell / 8) | 0 : 7 - ((cell / 8) | 0);
@@ -223,9 +223,9 @@ export function ChessBoard({ state, yourSeat, status, busy, onMove }: DuelBoardP
  * The value arrives from the server every poll, two seconds apart, which would
  * make a blitz clock jump in two-second steps. So it counts down locally from
  * whatever the last poll said, and the parent re-keys this component whenever
- * that value changes -- a remount re-reads the wall clock in a lazy state
+ * that value changes; a remount re-reads the wall clock in a lazy state
  * initialiser, which is both the simplest way to re-anchor and the one that
- * does not set state from inside an effect. The server remains the only
+ * doesn't set state from inside an effect. The server remains the only
  * authority: nothing here is ever sent anywhere.
  */
 function ChessClock({ ms, running, label }: { ms: number; running: boolean; label: string }) {

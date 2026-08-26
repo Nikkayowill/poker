@@ -4,6 +4,7 @@ import { avatarPresets, profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile, ProfileUpdate, PublicProfileSummary } from "@/lib/profile/types";
 import { defaultEquipped, normalizeEquipped, type EquippedCosmetics } from "@/lib/cosmetics/catalog";
 import { BACKSTOP_COOLDOWN_MS, BACKSTOP_GRANT } from "@/lib/profile/backstop";
+import { isSameUtcDay } from "@/lib/profile/daily-gold";
 import { adminClient } from "./supabase-admin";
 
 // isRegistered is omitted and derived from userId in publicProfile, so the
@@ -15,12 +16,12 @@ interface StoredProfile extends Omit<PlayerProfile, "isRegistered"> {
   lastBackstopAt: string | null;
   /** Owning auth account, or null while this is still a guest profile. */
   userId: string | null;
-  /** Admin-only moderation fields -- never leave publicProfile()'s shape. */
+  /** Admin-only moderation fields, never present in publicProfile()'s shape. */
   banned: boolean;
   lastSeenIp: string | null;
 }
 
-/** The admin dashboard's view of a profile -- adds the moderation fields that publicProfile() deliberately omits from every player-facing response. */
+/** The admin dashboard's view of a profile: adds the moderation fields publicProfile() omits from every player-facing response. */
 export type AdminProfileSummary = PlayerProfile & {
   banned: boolean;
   lastSeenIp: string | null;
@@ -49,18 +50,18 @@ function initials(displayName: string) {
 
 /**
  * A guest's starting balance. Registering (linking a real account) tops a
- * profile up to SIGNUP_GOLD_TARGET instead -- see linkProfileToUser -- so
- * the free-guest number and the signup number are deliberately different.
+ * profile up to SIGNUP_GOLD_TARGET instead, see linkProfileToUser, so the
+ * free-guest number and the signup number differ.
  */
 const STARTING_GOLD = 2000;
 const SIGNUP_GOLD_TARGET = 10000;
 /**
  * The base daily grant, before any streak multiplier.
  *
- * Exported because the streak lives outside this module -- claimDailyGold takes
+ * Exported because the streak lives outside this module: claimDailyGold takes
  * the already-multiplied amount, and lib/progression/streak.ts' dailyGrantFor
- * needs the base to multiply. Keeping the number here means the base is still
- * defined once, beside the profile it credits.
+ * needs the base to multiply. Keeping the number here means it's defined once,
+ * beside the profile it credits.
  */
 export const DAILY_GOLD_GRANT = 1000;
 
@@ -83,7 +84,7 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
   };
 }
 
-/** The subset of publicProfile() that's safe to show about someone *else*. See PublicProfileSummary. */
+/** The subset of publicProfile() safe to show about someone *else*. See PublicProfileSummary. */
 function otherPlayerSummary(profile: StoredProfile): PublicProfileSummary {
   return {
     id: profile.id,
@@ -151,12 +152,6 @@ export function setEquippedInMemory(token: string, equipped: EquippedCosmetics, 
   memoryProfiles.set(token, { ...current, equipped, updatedAt: now });
 }
 
-/** UTC calendar-day comparison -- "daily" resets at midnight UTC, not per-user local time. */
-function isSameUtcDay(a: Date, b: Date) {
-  return a.getUTCFullYear() === b.getUTCFullYear()
-    && a.getUTCMonth() === b.getUTCMonth()
-    && a.getUTCDate() === b.getUTCDate();
-}
 
 export async function ensureProfile(token: string, preferredName?: string): Promise<PlayerProfile> {
   const supabase = adminClient();
@@ -198,20 +193,20 @@ export async function ensureProfile(token: string, preferredName?: string): Prom
   if (error) {
     // 23505 on profiles_session_token_key: somebody else created this
     // session's profile between the read above and this insert. The read is a
-    // check-then-insert and cannot be made safe by checking harder -- the
-    // whole window is between the two statements -- so the loser of the race
-    // reads the winner's row instead of failing. Same shape the blackjack
-    // rounds, friend requests and the challenge escrow already use: detect the
+    // check-then-insert and can't be made safe by checking harder, since the
+    // race lives in the gap between the two statements, so the loser reads
+    // the winner's row instead of failing. Same shape the blackjack rounds,
+    // friend requests and the challenge escrow already use: detect the
     // duplicate from the 23505, never by looking first.
     //
-    // This is not a theoretical race. A single cookieless GET of a duel lobby
-    // reproduces it on production: app/api/pvp/[game]/route.ts fans
+    // Not a theoretical race: a single cookieless GET of a duel lobby
+    // reproduces it in production. app/api/pvp/[game]/route.ts fans
     // readDuelMatch and listDuelChallenges out through Promise.all and both
     // call ensureProfile with the same brand-new token, so a first-time
     // visitor to /games/chess had a coin-toss chance of a 500 that said
     // "Could not create profile". Fixed here rather than by serialising that
-    // route, because the same collision is reachable any time two requests
-    // carrying one new cookie land together -- two tabs, a page issuing
+    // route, since the same collision is reachable any time two requests
+    // carrying one new cookie land together: two tabs, a page issuing
     // parallel fetches, a retry overlapping its original.
     if (error.code === "23505") {
       const { data: raced, error: racedError } = await supabase
@@ -397,14 +392,12 @@ export async function spendGold(token: string, amount: number): Promise<PlayerPr
  *
  * The Supabase path uses the `credit_gold` RPC (a guarded read-lock-then-
  * write, mirroring `spend_gold`) rather than a read-then-write, for the same
- * reason `spendGold` does: two concurrent credits to the same token -- a
- * rebuy refund racing a cash-out credit, or two browser tabs -- could
- * otherwise both read the same stale balance, and the second write would
- * silently drop the first. This used to be a plain read-then-write on the
- * reasoning that a slight race here would only ever over-refund; in fact the
- * race under-credits (a lost update), and bot seats now carry deeper,
- * randomized stacks (see `randomBotStack` in `lib/game/engine.ts`), so the
- * amount a dropped credit could cost is no longer small.
+ * reason `spendGold` does: two concurrent credits to the same token (a rebuy
+ * refund racing a cash-out credit, or two browser tabs) could otherwise both
+ * read the same stale balance and have the second write silently drop the
+ * first. A lost update under-credits the player, and bot seats carry deep
+ * randomized stacks (see `randomBotStack` in `lib/game/engine.ts`), so a
+ * dropped credit is not a small amount.
  *
  * Mirrors spendGold's unlimited-Gold handling exactly, and must keep doing
  * so: an unlimited profile is never charged a buy-in, so paying its stack
@@ -503,7 +496,7 @@ export async function claimDailyGold(
 /**
  * Attaches an authenticated account to the profile behind a session, turning
  * a guest into a registered player without disturbing their Gold, avatar or
- * history -- the session cookie stays the gameplay identity either way.
+ * history. The session cookie stays the gameplay identity either way.
  *
  * Idempotent for the same account, and refuses to re-point a profile at a
  * different account, which would silently transfer one player's balance to
@@ -520,7 +513,7 @@ export async function linkProfileToUser(token: string, userId: string): Promise<
       throw new Error("This profile already belongs to another account.");
     }
     // The signup bonus fires exactly once, on the transition from guest
-    // (userId null) to registered -- re-linking the same account later never
+    // (userId null) to registered. Re-linking the same account later never
     // tops up again, and a profile that already earned or bought past
     // SIGNUP_GOLD_TARGET is never reduced.
     const isFirstLink = current.userId === null;
@@ -639,10 +632,10 @@ export async function claimBackstopGold(token: string, threshold: number): Promi
 }
 
 /**
- * Every profile, newest first -- the closest thing this authless app has to
- * a "signups" list, since a profile is created the moment a new visitor's
- * session cookie is first seen (see ensureProfile). Used only by the
- * admin dashboard, so a flat cap replaces real pagination.
+ * Every profile, newest first: the closest thing this authless app has to a
+ * "signups" list, since a profile is created the moment a new visitor's
+ * session cookie is first seen (see ensureProfile). Used only by the admin
+ * dashboard, so a flat cap replaces real pagination.
  */
 /**
  * Public profile fields for a batch of ids, keyed by id. Used to decorate a
@@ -669,7 +662,7 @@ export async function getPublicProfilesByIds(ids: string[]): Promise<Map<string,
 }
 
 const LIST_PROFILES_PAGE_SIZE = 1000;
-// A safety backstop on the internal drain loop below, not a visibility cap --
+// A safety backstop on the internal drain loop below, not a visibility cap:
 // at 1000/page this is 500k profiles before the loop gives up and returns
 // what it has, far past anything this app has seen.
 const LIST_PROFILES_MAX_PAGES = 500;
@@ -682,16 +675,14 @@ export async function listProfiles(): Promise<AdminProfileSummary[]> {
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   }
 
-  // Was a flat `.limit(1000)` -- past 1000 signups the admin dashboard
-  // silently couldn't see anyone older than that, with no way to page
-  // further. This drains the whole table internally via a keyset cursor
-  // (created_at, id) instead, so the dashboard's own "load everything, then
-  // search/filter client-side" behavior keeps working unchanged. A plain
-  // OFFSET-based page walk would do here too, except profiles are inserted
-  // continuously (every new visitor mints one) -- paging by offset while
-  // rows keep landing at the front shifts everything underneath the walk and
-  // skips or repeats a row at each page boundary; a keyset cursor is what
-  // the same problem was already solved with in hand-archive-store.ts.
+  // Drains the whole table internally via a keyset cursor (created_at, id),
+  // so the dashboard's own "load everything, then search/filter client-side"
+  // behavior can see past 1000 signups instead of silently stopping there. A
+  // plain OFFSET-based page walk won't do: profiles are inserted continuously
+  // (every new visitor mints one), so paging by offset while rows keep
+  // landing at the front shifts everything underneath the walk and skips or
+  // repeats a row at each page boundary. Same keyset approach as
+  // hand-archive-store.ts.
   const all: AdminProfileSummary[] = [];
   let cursor: { createdAt: string; id: string } | null = null;
   for (let page = 0; page < LIST_PROFILES_MAX_PAGES; page += 1) {
@@ -717,7 +708,7 @@ export async function listProfiles(): Promise<AdminProfileSummary[]> {
   return all;
 }
 
-/** Cheap ban check -- called by every join-flow route and the actions route before letting a token do anything. */
+/** Cheap ban check, called by every join-flow route and the actions route before letting a token do anything. */
 export async function isBanned(token: string): Promise<boolean> {
   const supabase = adminClient();
   if (!supabase) return memoryProfiles.get(token)?.banned ?? false;
@@ -730,7 +721,7 @@ export async function isBanned(token: string): Promise<boolean> {
   return Boolean(data?.banned);
 }
 
-/** Flags (or unflags) a profile so it can't join a table or act at one -- for blocking toxic players. */
+/** Flags (or unflags) a profile so it can't join a table or act at one, for blocking toxic players. */
 export async function banProfile(profileId: string, banned: boolean): Promise<void> {
   const supabase = adminClient();
   const now = new Date().toISOString();
@@ -805,7 +796,7 @@ export async function deleteProfile(profileId: string): Promise<void> {
 }
 
 /**
- * Stamps the IP a token most recently joined/hosted a table from -- an
+ * Stamps the IP a token most recently joined/hosted a table from. An
  * admin-only signal for spotting multiple accounts played from the same
  * address (collusion/chip dumping), never surfaced to players. Best-effort:
  * callers swallow failures rather than let this block real play.
@@ -828,7 +819,7 @@ export async function recordSeenIp(token: string, ip: string): Promise<void> {
 /**
  * Admin override: adds (or, with a negative delta, subtracts) Gold directly
  * by profile id, clamped at 0. Bypasses spendGold's unlimited-Gold/
- * insufficient-funds guard entirely -- this is a manual correction tool (bug
+ * insufficient-funds guard entirely; this is a manual correction tool (bug
  * fixes, tournament prizes), not a purchase.
  */
 export async function adjustGold(profileId: string, delta: number): Promise<PlayerProfile> {
@@ -864,19 +855,17 @@ export async function adjustGold(profileId: string, delta: number): Promise<Play
  * Debits a player identified by profile id, with the same row-lock guard as
  * `spendGold`. Returns null when the balance will not cover it.
  *
- * ## Why this exists alongside spendGold
- *
- * Every other Gold path here keys on the session token, because the mover and
+ * Every other Gold path here keys on the session token, since the mover and
  * the moved-to were always the same person and a cookie is a better key than
  * an id the request supplied. Player-versus-player settlement (lib/pvp/) is
  * the first case where they differ: a duel's pot has to reach the *winner*,
- * and the request that ends the match came from whoever moved last -- the
- * loser about half the time, and neither player on a timeout sweep.
+ * and the request that ends the match came from whoever moved last, the loser
+ * about half the time, and neither player on a timeout sweep.
  *
- * Deliberately NOT `adjustGold`, which also takes a profile id: that one is a
- * plain read-then-write with no lock, documented as an admin correction tool
- * for exactly that reason. Two clients settling the same match at once is a
- * real race here, not a theoretical one, so this goes through the guarded RPC.
+ * Not `adjustGold`, which also takes a profile id but is a plain
+ * read-then-write with no lock, documented as an admin correction tool for
+ * that reason. Two clients settling the same match at once is a real race
+ * here, so this goes through the guarded RPC instead.
  *
  * Returns null rather than throwing on an insufficient balance because the
  * caller has to distinguish "they cannot afford the ante" (an ordinary answer
@@ -963,7 +952,7 @@ export async function creditGoldByProfile(
   return publicProfile(fromRow(row));
 }
 
-/** Flags (or unflags) a profile so spendGold never actually deducts from it -- for gifting a specific person free play. */
+/** Flags (or unflags) a profile so spendGold never actually deducts from it, for gifting a specific person free play. */
 export async function setUnlimitedGold(profileId: string, unlimited: boolean): Promise<void> {
   const supabase = adminClient();
   const now = new Date().toISOString();

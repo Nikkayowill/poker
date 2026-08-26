@@ -21,7 +21,7 @@ export const profileAccents = [
 export type AvatarPreset = (typeof avatarPresets)[number]["id"];
 
 export interface PlayerProfile {
-  /** Stable, safe-to-share identifier -- distinct from the HttpOnly session token, which never reaches JavaScript. */
+  /** Stable, safe-to-share identifier, distinct from the HttpOnly session token, which never reaches JavaScript. */
   id: string;
   displayName: string;
   initials: string;
@@ -34,26 +34,26 @@ export interface PlayerProfile {
   updatedAt: string;
   /** Persistent currency spent on table buy-ins; 1 Gold = 1 chip. */
   goldBalance: number;
-  /** When true, spendGold is a no-op for this profile -- used to gift a specific person free play. */
+  /** When true, spendGold is a no-op for this profile, used to gift a specific person free play. */
   unlimitedGold: boolean;
   /** ISO timestamp of the last successful daily-Gold claim, or null if never claimed. */
   lastDailyClaimAt: string | null;
   /** ISO timestamp of the last broke-player recovery top-up, or null if never claimed. See lib/profile/backstop.ts. */
   lastBackstopAt: string | null;
   /**
-   * Whether this profile is backed by a real account. Deliberately a boolean
-   * rather than the account id: the client only needs to know if progress is
-   * safe and which rewards are unlocked, never who the account is.
+   * Whether this profile is backed by a real account. A boolean rather than
+   * the account id: the client only needs to know if progress is safe and
+   * which rewards are unlocked, never who the account is.
    */
   isRegistered: boolean;
 }
 
 /**
- * What one player may know about *another* player -- friends, leaderboard
- * entries, invite/duel-challenge senders. Deliberately excludes goldBalance,
- * unlimitedGold, and the claim timestamps: those are wallet-adjacent and
- * belong only in a profile's own PlayerProfile view. Keeping this as its own
- * narrower type (rather than trusting every call site of
+ * What one player may know about *another* player: friends, leaderboard
+ * entries, invite/duel-challenge senders. Excludes goldBalance,
+ * unlimitedGold, and the claim timestamps, since those are wallet-adjacent
+ * and belong only in a profile's own PlayerProfile view. Keeping this as its
+ * own narrower type (rather than trusting every call site of
  * getPublicProfilesByIds to destructure carefully) means a future call site
  * can't accidentally hand another player's balance to the client just by
  * spreading the object.

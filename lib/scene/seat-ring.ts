@@ -12,7 +12,7 @@
 /**
  * Slot 0 faces the viewer. Screen-space Y grows downward and world-space Z
  * grows *toward* the viewer, so where table-geometry.ts takes sin(theta) as
- * "further down the screen", this takes it as "nearer" — the same 90-degree
+ * "further down the screen", this takes it as "nearer": the same 90-degree
  * offset, read in the axis this scene actually has.
  */
 const NEAR_ANGLE_DEG = 90;

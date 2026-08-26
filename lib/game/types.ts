@@ -15,8 +15,8 @@ export type SeatStatus = "active" | "folded" | "all-in" | "out";
 /**
  * "complete" is a *between-hands* rest state, not a close: dealNextHandIfDue
  * deals the next hand the moment it sees one. "archived" is the only status
- * that is actually terminal -- lib/server/game-store.ts's archiveStaleGames
- * is the one writer -- and every place that gates an action on the table
+ * that is actually terminal (lib/server/game-store.ts's archiveStaleGames
+ * is the one writer), and every place that gates an action on the table
  * being live checks `=== "playing"` positively rather than `!== "complete"`,
  * which is what lets archived slot in as a third status with no change to
  * those guards.
@@ -53,11 +53,11 @@ export interface Seat {
    * The profile id of a *registered* human in this seat, and the only piece of
    * durable identity that leaves the server with a seat.
    *
-   * Exists so one player can act on another -- adding a friend is the first
-   * caller -- without the client ever holding `ownerToken`, which is the
+   * Exists so one player can act on another (adding a friend is the first
+   * caller) without the client ever holding `ownerToken`, which is the
    * session itself and would be a full account takeover if it shipped.
    *
-   * Null for bots, open seats, and guests. Guests are excluded deliberately
+   * Null for bots, open seats, and guests. Guests are excluded on purpose
    * rather than incidentally: a guest profile dies with its cookie, so a
    * friend request addressed to one creates a row nobody can ever accept.
    * That mirrors the registered-only gate on `/api/friends`.
@@ -76,8 +76,8 @@ export interface Seat {
    *
    * Null on a human seat. Persisted rather than derived, which is the whole
    * point: a bot's face used to be recomputed from `position` on every load,
-   * so a rotated identity was silently reverted by the next normalizeGameState
-   * -- the seat would show a new player for one request and then change back.
+   * so a rotated identity was silently reverted by the next normalizeGameState;
+   * the seat would show a new player for one request and then change back.
    * Tables written before rotation existed carry no value here and are
    * backfilled from `position`, which is the identity they were already
    * showing, so no live table changes its cast on deploy.
@@ -101,16 +101,16 @@ export interface Seat {
   /**
    * Turns in a row this seat let the clock resolve for it.
    *
-   * Counts only a human's expired clock, and only consecutively: any
-   * deliberate action resets it to zero, because a player who is acting is
-   * present by definition. Persisted across hands on purpose -- somebody who
-   * has walked away misses one turn per hand, so a per-hand counter would
-   * never reach a threshold no matter how long they were gone.
+   * Counts only a human's expired clock, and only consecutively: any real
+   * action resets it to zero, because a player who is acting is present by
+   * definition. Persisted across hands on purpose, since somebody who has
+   * walked away misses one turn per hand, so a per-hand counter would never
+   * reach a threshold no matter how long they were gone.
    */
   missedTurns: number;
   /**
    * Voluntarily Put In Pot: true once this seat calls, raises or goes all-in
-   * preflop of its own choice. Posting a blind does not set it -- that's the
+   * preflop of its own choice. Posting a blind does not set it; that's the
    * whole reason VPIP is worth tracking, since it separates a hand a player
    * chose to play from one they only had chips in because they were the
    * blind. Reset at the start of every hand; read once, at showdown/award,
@@ -122,7 +122,7 @@ export interface Seat {
    * must not be refilled; `null` means immediately eligible.
    *
    * Only ever set by a *healthy* bot voluntarily standing up between hands
-   * (see `releaseBustedSeats` in `lib/game/engine.ts`) -- a bot that busts
+   * (see `releaseBustedSeats` in `lib/game/engine.ts`). A bot that busts
    * from losing its stack is refilled the same hand it always was, exactly
    * as a real seat with no bankroll left is removed immediately. This is
    * what staggers a fresh bot's entry rather than an empty seat refilling
@@ -142,7 +142,7 @@ export interface Winner {
    *
    * Null unless the hand reached a genuine showdown. An uncontested pot is
    * won without showing anything, and publishing the winner's best five there
-   * would expose hole cards that every other player folded without seeing --
+   * would expose hole cards that every other player folded without seeing,
    * the same rule the handLabel on a seat follows.
    */
   bestFive: Card[] | null;
@@ -180,7 +180,7 @@ export interface GameState {
   turnDeadlineAt: string | null;
   /**
    * When a completed hand should be replaced by the next one. Null while a
-   * hand is in play, and null on a table that cannot continue -- the two
+   * hand is in play, and null on a table that cannot continue: the two
    * cases where nothing should be scheduled at all. Written by the engine
    * and honoured by the same seated-browser clock that resolves turns.
    */

@@ -1,30 +1,30 @@
 /**
  * Player rank: the progression spine.
  *
- * Pure and closed-form on purpose. This lives in lib/ rather than beside the
- * component that draws the bar because vitest.config.ts collects only lib/ and
- * app/ -- the same reason lib/arcade/games.ts and lib/profile/daily-gold.ts are
- * where they are. Nothing here reads a clock, a database or a random number, so
- * the whole curve is reachable from `npm test`.
+ * Pure and closed-form. This lives in lib/ rather than beside the component
+ * that draws the bar because vitest.config.ts collects only lib/ and app/,
+ * the same reason lib/arcade/games.ts and lib/profile/daily-gold.ts are
+ * where they are. Nothing here reads a clock, a database or a random number,
+ * so the whole curve is reachable from `npm test`.
  *
- * The economics worth stating up front, because they constrain every constant
- * below. Gold is bought with real money and granted as progression; chips are
- * gameplay. A level-up reward is therefore a *faucet*, and there is no house
- * edge anywhere in this economy to weigh it against any more -- every staked
- * game left is winner-take-all PvP with no rake. So the constraint is more
- * direct than "stay under the house's cut": a faucet that hands out too much
- * undermines what a real-money Gold purchase is actually worth. The rewards
- * here are deliberately small in Gold and large in standing instead: rank
- * names, badges and milestone unlocks cost the economy nothing and are what
- * actually make a player feel like they have been somewhere.
+ * The economics are worth stating up front, because they constrain every
+ * constant below. Gold is bought with real money and granted as progression;
+ * chips are gameplay. A level-up reward is therefore a *faucet*, and there's
+ * no house edge anywhere in this economy to weigh it against any more, since
+ * every staked game left is winner-take-all PvP with no rake. So the
+ * constraint is more direct than "stay under the house's cut": a faucet that
+ * hands out too much undermines what a real-money Gold purchase is actually
+ * worth. The rewards here stay small in Gold and large in standing instead:
+ * rank names, badges and milestone unlocks cost the economy nothing and are
+ * what actually make a player feel like they've been somewhere.
  */
 
 /**
  * Gold wagered per point of XP.
  *
  * Wagered, not won or lost: rewarding *volume* is what makes a losing session
- * still count for something, and it is the only measure a player cannot game by
- * choosing when to stop. Ten is the whole conversion -- a 250 Gold arcade round
+ * still count for something, and it's the only measure a player can't game by
+ * choosing when to stop. Ten is the whole conversion: a 250 Gold arcade round
  * is 25 XP, a 5,000 Gold one is 500.
  */
 export const GOLD_PER_XP = 10;
@@ -97,14 +97,14 @@ export interface RankProgress {
 /**
  * The rank ladder.
  *
- * Bands rather than a name per level: a title that changes every time is not a
+ * Bands rather than a name per level: a title that changes every time isn't a
  * title. Each entry is the level at which its name starts, and the table is
- * ordered so a linear scan from the end finds the current band -- eight names
- * do not justify a binary search.
+ * ordered so a linear scan from the end finds the current band; eight names
+ * don't justify a binary search.
  *
  * Readonly tuple for the reason STAKES_TIERS is one in lib/game/tiers.ts: the
  * names are derived from the data instead of restated beside it, so a ninth
- * band cannot exist in one place and be missing from another.
+ * band can't exist in one place and be missing from another.
  */
 export const RANK_BANDS = [
   { from: 1, title: "Rail Bird" },
@@ -153,19 +153,19 @@ export function rankProgress(xp: number): RankProgress {
  * How often a level pays Gold, and the size of that payment.
  *
  * Every fifth level only. A trickle on every level-up is both a bigger faucet
- * and a smaller event -- the point of a reward is that arriving at it is worth
- * noticing. MILESTONE_GOLD is per milestone *number*, so level 5 pays 1,500 and
- * level 50 pays 15,000: the ramp tracks the rising stakes a player at that level
- * is actually playing, without ever approaching the turnover it took to get
- * there (level 50 costs ~3M Gold wagered and has paid ~82,500 Gold back across
- * every milestone below it -- see rank.test.ts's guard on that ratio for the
- * margin this still leaves).
+ * and a smaller event; the point of a reward is that arriving at it is worth
+ * noticing. MILESTONE_GOLD is per milestone *number*, so level 5 pays 1,500
+ * and level 50 pays 15,000: the ramp tracks the rising stakes a player at
+ * that level is actually playing, without ever approaching the turnover it
+ * took to get there (level 50 costs ~3M Gold wagered and has paid ~82,500
+ * Gold back across every milestone below it; see rank.test.ts's guard on
+ * that ratio for the margin this still leaves).
  *
- * Raised from 500 on 2026-08-20 as part of growing play-driven Gold income
+ * This was raised from 500 as part of growing play-driven Gold income
  * (missions, achievements, level milestones) so an active player can climb
- * the stakes ladder without buying Gold. That pushed the ratio rank.test.ts
- * guards from ~0.85% to ~2.55% of turnover -- a real, deliberate widening of
- * that test's threshold, not an incidental one.
+ * the stakes ladder without buying Gold, which pushed the ratio rank.test.ts
+ * guards from ~0.85% to ~2.55% of turnover: a real widening of that test's
+ * threshold, not an incidental one.
  */
 export const MILESTONE_EVERY = 5;
 export const MILESTONE_GOLD = 1500;

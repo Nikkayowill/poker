@@ -17,12 +17,12 @@ const STAKE_QUICK_PICKS = [MIN_DUEL_STAKE, 1000, 5000, 10_000, 25_000] as const;
  * The client half of every duel: the lobby, the poll, and the match frame.
  *
  * A duel page is this shell plus one board component. The shell owns
- * everything that is the same for all four games -- staking, challenging,
- * accepting, polling for the other player, the result card, resigning -- and
+ * everything that's the same for all four games (staking, challenging,
+ * accepting, polling for the other player, the result card, resigning), and
  * the board owns only how its own game is drawn and what a move looks like.
- * That split is what let four games be built in parallel against one contract,
- * and it is the same argument components/arcade/arcade-hud.tsx makes about the
- * machine cabinet.
+ * That split is what let four games get built in parallel against one
+ * contract, the same argument components/arcade/arcade-hud.tsx makes about
+ * the machine cabinet.
  *
  * The server is the authority for all of it. Nothing here decides a legal
  * move, an outcome or a payout; a board renders `state` and sends intents,
@@ -62,10 +62,10 @@ export interface DuelChallenge {
 }
 
 /**
- * What a board component receives. The whole contract between this shell and
- * the four games.
+ * What a board component receives, and the whole contract between this shell
+ * and the four games.
  *
- * `onMove` takes whatever that game's engine accepts as a move -- the shell
+ * `onMove` takes whatever that game's engine accepts as a move; the shell
  * never inspects it, and stamps the version itself so no board can forget the
  * concurrency guard. `busy` is true while a move is in flight, and a board
  * must use it to disable its own controls: without that, a fast double-click
@@ -83,11 +83,11 @@ export interface DuelBoardProps<TSnapshot = unknown> {
 /**
  * How often the shell re-reads a live match.
  *
- * Polling rather than Realtime, deliberately: lib/game/table-channel.ts's
- * broadcast envelope carries table invalidations and is wired to the poker
- * game store, and threading duels through it is a bigger change than these
- * games need. Two seconds is fast enough that a turn-based game feels live and
- * slow enough that two players cost four requests a second between them.
+ * Polling rather than Realtime: lib/game/table-channel.ts's broadcast
+ * envelope carries table invalidations and is wired to the poker game store,
+ * and threading duels through it is a bigger change than these games need.
+ * Two seconds is fast enough that a turn-based game feels live and slow
+ * enough that two players cost four requests a second between them.
  */
 const POLL_MS = 2000;
 
@@ -104,7 +104,7 @@ export function DuelShell<TSnapshot>({
   rules,
   Board,
 }: {
-  /** The registry key -- "chess", "checkers", "trivia", "word-race". */
+  /** The registry key: "chess", "checkers", "trivia", "word-race". */
   game: string;
   title: string;
   /** One or two lines under the heading. How the game is won, in the player's words. */
@@ -123,10 +123,10 @@ export function DuelShell<TSnapshot>({
    * picker as `?challenge=<profileId>&name=<displayName>&suggested=<gold>`.
    *
    * Read from `window.location.search` in an effect rather than
-   * `useSearchParams()`: that hook forces every one of the four /games/*
-   * pages into a Suspense boundary to avoid a build-time deopt warning, for a
-   * value this component only ever needs once, on the mount that already
-   * happens client-side.
+   * `useSearchParams()`, since that hook would force every one of the four
+   * /games/* pages into a Suspense boundary to avoid a build-time deopt
+   * warning, for a value this component only ever needs once, on the mount
+   * that already happens client-side.
    */
   const [challengeTarget, setChallengeTarget] = useState<string | null>(null);
   const [challengeName, setChallengeName] = useState<string | null>(null);
@@ -136,7 +136,7 @@ export function DuelShell<TSnapshot>({
    *
    * A poll that lands while the player's own move is in flight would paint the
    * pre-move state back over the board, and the move's own response would then
-   * paint it forward again -- a visible flicker, and worse, a board briefly
+   * paint it forward again: a visible flicker, and worse, a board briefly
    * showing a piece back where it was. The flag is a ref rather than state
    * because the poll reads it from a timer, where a stale closure over a state
    * value would defeat the point.
@@ -150,13 +150,12 @@ export function DuelShell<TSnapshot>({
     if (data.challenges) setChallenges(data.challenges);
     if (data.match !== undefined) {
       setMatch((current) => {
-        // Once a match settles, the server correctly stops listing it as an
-        // "active" match once the settled-match grace window passes -- but
-        // the player still needs to see the result card until they
-        // explicitly move on (Play again). Without this, a poll landing
-        // after that window would return `null` and wipe the result screen
-        // out from under someone still reading it. Same guard
-        // cribbage-shell.tsx already carries for its own match frame.
+        // The server stops listing a match once its settled-match grace
+        // window passes, but the player still needs to see the result card
+        // until they explicitly move on (Play again). Without this, a poll
+        // landing after that window would return `null` and wipe the result
+        // screen out from under someone still reading it. Same guard
+        // cribbage-shell.tsx carries for its own match frame.
         if (!data.match && current?.status === "settled") return current;
         return (data.match as DuelMatch<TSnapshot>) ?? null;
       });
@@ -172,7 +171,7 @@ export function DuelShell<TSnapshot>({
       if (!mounted.current || sending.current) return;
       if (response.ok) applyResponse(data);
     } catch {
-      // A dropped poll is not worth a banner -- the next one is two seconds
+      // A dropped poll isn't worth a banner: the next one is two seconds
       // away, and the player is looking at a board that is still correct.
     } finally {
       if (mounted.current) setLoaded(true);
@@ -184,8 +183,8 @@ export function DuelShell<TSnapshot>({
    *
    * A failed request still applies its payload: a 409 carries the real state,
    * so a client that fell behind resyncs from the error rather than staying
-   * stuck. That is the same contract useCasinoMachine holds, and the reason
-   * the error and the state are set from the same object.
+   * stuck. That's the same contract useCasinoMachine holds, and the reason the
+   * error and the state are set from the same object.
    */
   const send = useCallback(
     async (url: string, body: unknown) => {
@@ -206,8 +205,8 @@ export function DuelShell<TSnapshot>({
         if (data.profile) setProfile(data.profile);
         if (!response.ok) {
           setError(data.error ?? "That did not go through.");
-          // The service sends the true match under `round`, which is the field
-          // name the shared arcade error shape already uses.
+          // The service sends the true match under `round`, the field name
+          // the shared arcade error shape already uses.
           if (data.round) setMatch(data.round);
           return;
         }
@@ -216,8 +215,8 @@ export function DuelShell<TSnapshot>({
         if (data.match !== undefined) setMatch((data.match as DuelMatch<TSnapshot>) ?? null);
         if (data.challenges) setChallenges(data.challenges);
         // A cancel returns only a profile, so the challenge list has to be
-        // re-read rather than patched -- the row that vanished was not the
-        // only thing that may have changed.
+        // re-read rather than patched: the row that vanished wasn't the only
+        // thing that may have changed.
         if (data.match === undefined && !data.challenges) void refresh();
       } catch {
         if (mounted.current) setError("Could not reach the table. Check your connection.");
@@ -246,7 +245,7 @@ export function DuelShell<TSnapshot>({
   useEffect(() => {
     mounted.current = true;
     // A hidden tab (backgrounded window, switched tab) has no opponent to
-    // watch move -- skip the round-trip rather than polling a screen nobody
+    // watch move, so skip the round-trip rather than polling a screen nobody
     // is looking at, same reasoning poker-app.tsx's menu-music sync applies
     // to document.hidden.
     const poll = () => {
@@ -256,9 +255,9 @@ export function DuelShell<TSnapshot>({
     // suspended render, matching every arcade machine.
     const first = window.setTimeout(poll, 0);
     const timer = window.setInterval(poll, POLL_MS);
-    // The interval above still fires while hidden, just skipping the fetch --
-    // it can still miss a move made and settled entirely while the tab was
-    // away. Resync the instant the tab is looked at again, same pattern
+    // The interval above still fires while hidden, just skipping the fetch,
+    // so it can still miss a move made and settled entirely while the tab
+    // was away. Resync the instant the tab is looked at again, same pattern
     // poker-app.tsx's resyncOnReturn uses for the table itself.
     const resyncOnReturn = () => {
       if (!document.hidden) void refresh();
@@ -275,12 +274,12 @@ export function DuelShell<TSnapshot>({
   /**
    * Sends a move, stamped with the version of the match it was made on.
    *
-   * The match is a PARAMETER rather than something read back out of state, and
-   * that is the point -- the same shape useCasinoMachine's `act` uses, for the
-   * same reason. A board only renders controls when it has a live match in
-   * hand, so the frame can pass the exact one the player acted on. The two
-   * alternatives are both wrong here: reading it inside a `setMatch` updater
-   * makes the send a side effect in a function React may invoke twice under
+   * The match is a parameter rather than something read back out of state,
+   * the same shape useCasinoMachine's `act` uses and for the same reason: a
+   * board only renders controls when it has a live match in hand, so the
+   * frame can pass the exact one the player acted on. The two alternatives
+   * are both wrong here: reading it inside a `setMatch` updater makes the
+   * send a side effect in a function React may invoke twice under
    * StrictMode, and reading it from a ref in a click handler is the pattern
    * `react-hooks/refs` flags.
    *
@@ -399,9 +398,9 @@ function DuelLobby({
       <section className="duel-panel">
         <h2 className="floor-section-head">Your stake</h2>
         {/* Set only by the friends drawer's Challenge picker, and only until
-            a challenge exists: once `mine` is real, mine.opponentId (not this
+            a challenge exists. Once `mine` is real, mine.opponentId (not this
             transient URL value) is what tells the pending note it was
-            targeted, so that note survives a refresh where this does not. */}
+            targeted, so that note survives a refresh where this doesn't. */}
         {challengeName && !mine && (
           <p className="duel-challenge-note">Challenging <strong>{challengeName}</strong></p>
         )}
@@ -496,9 +495,9 @@ function DuelLobby({
         {/* Named rather than left implicit: the whole reason these games
             replaced the house games is that nobody is playing against the
             room, and a player has no way to know that unless it is said.
-            The display title, not the registry id -- "word-race" read as a
-            raw slug here where every other id happened to already be a
-            plain word. */}
+            Uses the display title, not the registry id, since "word-race"
+            read as a raw slug here where every other id happened to already
+            be a plain word. */}
         No house cut. Every Gold staked at {title} goes to the other player.
       </p>
     </div>
@@ -530,7 +529,7 @@ function DuelMatchFrame<TSnapshot>({
   const won = settled && match.winnerSeat === match.yourSeat;
   const drew = settled && match.winnerSeat === null;
 
-  // Fires once per match, on the edge of it actually settling -- not on every
+  // Fires once per match, on the edge of it actually settling, not on every
   // poll that still reports the same settled match. "lose" has no asset
   // behind it (manifest.ts's own call: silence, not a synthesized stand-in),
   // so only a win makes a sound; a loss or a draw stays quiet.
@@ -558,7 +557,7 @@ function DuelMatchFrame<TSnapshot>({
           yourSeat={match.yourSeat}
           status={match.status}
           // A settled match must not accept input even though the board is
-          // still on screen -- the result card sits over it, and a board that
+          // still on screen: the result card sits over it, and a board that
           // stayed live would send moves the server can only reject.
           busy={busy || settled}
           onMove={onMove}

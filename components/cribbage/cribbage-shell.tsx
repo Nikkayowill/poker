@@ -15,8 +15,8 @@ import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
  * The client half of cribbage: the open-table lobby, the waiting room, the
  * poll, and the match frame.
  *
- * NOT components/pvp/duel-shell.tsx -- that shell's whole lobby model is
- * "your one open challenge vs. everyone else's" and its match frame is built
+ * Not components/pvp/duel-shell.tsx: that shell's whole lobby model is "your
+ * one open challenge vs. everyone else's" and its match frame is built
  * around a fixed [player, player] pair. Cribbage's lobby is a joinable table
  * list, and a table has a waiting room (N of 4 seated, a host-start button)
  * that a 1v1 duel never needs. Same underlying discipline as that shell
@@ -65,7 +65,7 @@ export interface CribbageOpenTable {
 }
 
 /**
- * What a board receives. `onMove` never carries a version -- this shell
+ * What a board receives. `onMove` never carries a version; this shell
  * stamps it, the same reason duel-shell.tsx's onMove does, so no board can
  * forget the concurrency guard.
  */
@@ -103,7 +103,7 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
     if (data.table !== undefined) {
       setTable((current) => {
         // Once a table completes, getActiveCribbageTableFor correctly stops
-        // listing it as the caller's "active" table -- but the player still
+        // listing it as the caller's "active" table, but the player still
         // needs to see the result card until they explicitly move on
         // (Play again), which is what actually clears it below. Without
         // this, the very next poll (at most 2s later) would return `null`
@@ -123,13 +123,13 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
       if (!mounted.current || sending.current) return;
       if (response.ok) applyResponse(data);
     } catch {
-      // A dropped poll is not worth a banner -- the next one is two seconds away.
+      // A dropped poll is not worth a banner; the next one is two seconds away.
     } finally {
       if (mounted.current) setLoaded(true);
     }
   }, [applyResponse]);
 
-  /** Sends an intent and takes whatever comes back as the new truth, same "a 409 still resyncs" contract duel-shell.tsx keeps. */
+  /** Sends an intent and takes whatever comes back as the new truth, the same "a 409 still resyncs" contract duel-shell.tsx keeps. */
   const send = useCallback(async (url: string, body: unknown) => {
     sending.current = true;
     setBusy(true);
@@ -215,12 +215,12 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
             play={play}
             onMove={(move) => onMove(table, move)}
             onResign={() => void send(`/api/cribbage/${table.id}`, { action: "resign" })}
-            // Clears the finished table from the client only -- it is
-            // already settled and paid; there is nothing left to tell the
-            // server. Directly, rather than through the next poll: the
-            // server has already stopped listing a completed table as
-            // "active" (that's what settling means), so waiting on a poll
-            // to clear this would never actually happen on its own.
+            // Clears the finished table from the client only; it's already
+            // settled and paid, so there's nothing left to tell the server.
+            // Directly, rather than through the next poll: the server has
+            // already stopped listing a completed table as "active" (that's
+            // what settling means), so waiting on a poll to clear this would
+            // never actually happen on its own.
             onLeave={() => setTable(null)}
           />
         )
@@ -404,7 +404,7 @@ function CribbageMatchFrame({
   // Same edge-triggered announcement duel-shell.tsx's own match frame makes:
   // once per table, on the edge of it actually completing, not on every poll
   // that still reports the same completed table. Silence on a loss is
-  // deliberate -- "lose" has no asset behind it (manifest.ts's own call).
+  // intentional: "lose" has no asset behind it (manifest.ts's own call).
   const announcedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!completed || announcedRef.current === table.id) return;

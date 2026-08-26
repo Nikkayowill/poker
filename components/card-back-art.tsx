@@ -6,25 +6,25 @@ import { cardBackArt, type CardBackArtwork } from "@/lib/cosmetics/catalog";
  * at every size a card renders at (26px on a crowded opponent seat up to
  * 116px on your own hole cards), and the whole set is still only a few KB.
  *
- * This is the ornate register real card backs actually use -- a dot-stipple
+ * This is the ornate register real card backs actually use, a dot-stipple
  * engraved field, a scrollwork border, corner rosettes, and a tall medallion
  * split by true 180-degree rotational symmetry (a real deck's back has to
  * read the same either way up, so the bottom half IS the top half rotated,
  * not a separately-drawn mirror). It replaces an earlier pass that used
- * simpler geometric patterns (crossed lines, chevrons, rings) -- those are
+ * simpler geometric patterns (crossed lines, chevrons, rings); those are
  * gone, not kept as a fallback; every catalog entry now goes through this
  * one system, told apart only by its own `base`/`ink` colour pair, the same
  * way a real deck's blue and red backs are the same engraving in two inks.
  *
- * The medallion's emblem -- a spade rising off a stippled ground, wings
- * swept from its shoulders -- is original. It is NOT a redraw of the
+ * The medallion's emblem, a spade rising off a stippled ground, wings
+ * swept from its shoulders, is original. It is NOT a redraw of the
  * Bicycle Rider Back's cherub-and-Pegasus medallion, which is USPCC's own
  * trademarked illustration; this only borrows the register (engraving
  * density, scrollwork, a split symmetric medallion), not the artwork.
  *
  * All the shape math (the wavy vine, the rosette, the wing feathers) is
  * colour-independent, so every `d` string here is built ONCE at module
- * load and reused by every instance -- only the `stroke`/`fill`/`color`
+ * load and reused by every instance; only the `stroke`/`fill`/`color`
  * attributes vary per card. `useId()` still backs the one thing that IS
  * per-instance state, the stipple `<pattern>`'s id: five or six opponents
  * can hold this same back on screen at once, and a hardcoded id would have
@@ -33,9 +33,9 @@ import { cardBackArt, type CardBackArtwork } from "@/lib/cosmetics/catalog";
  *
  * Lives here, above both callers, rather than under components/store where it
  * started. The store's preview and the card on the felt have to be the same
- * drawing -- two implementations of "the Brass back" is two things to keep in
- * step, and the one that drifts is the one nobody is looking at, which would
- * mean a player buying a swatch that is not what lands on the table.
+ * drawing, since two implementations of "the Brass back" are two things to
+ * keep in step, and the one that drifts is the one nobody is looking at, so a
+ * player could buy a swatch that isn't what lands on the table.
  */
 
 const W = 300;
@@ -270,8 +270,8 @@ export function CardBackArt({ art, className }: { art: CardBackArtwork; classNam
 }
 
 /**
- * The same drawing, addressed by cosmetic id instead of by artwork -- what
- * every caller on the table actually has, since a seat carries an id.
+ * The same drawing, addressed by cosmetic id instead of by artwork, since
+ * that's what every caller on the table actually has: a seat carries an id.
  */
 export function CardBackFor({ id, className }: { id: string | null | undefined; className?: string }) {
   return <CardBackArt art={cardBackArt(id)} className={className} />;

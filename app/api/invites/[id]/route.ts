@@ -20,7 +20,7 @@ const bodySchema = z.object({
 const GUEST_MESSAGE = "Create an account to get table invites.";
 
 /**
- * Settles an invite, and -- on accept -- redeems it into a seat.
+ * Settles an invite, and on accept redeems it into a seat.
  *
  * Accepting is a join, not an acknowledgement: the room code never leaves the
  * server, so there is no second request the client could make with it. That is
@@ -31,14 +31,14 @@ const GUEST_MESSAGE = "Create an account to get table invites.";
  *
  * Ordering, which is the part worth getting right:
  *
- *  1. Pre-flight the things a player can plainly see and fix -- the table is
- *     gone, it is full, they cannot afford the buy-in -- *before* the invite is
+ *  1. Pre-flight the things a player can plainly see and fix (the table is
+ *     gone, it is full, they cannot afford the buy-in) *before* the invite is
  *     consumed. Burning a one-shot invite to say "you need more Gold" would
  *     make the fixable case unrecoverable without the inviter re-sending.
  *  2. Consume the invite. `respondToTableInvite`'s status-guarded write is what
  *     makes a double-tapped Accept seat once and buy in once; the pre-flight
  *     above is not a guard and is not treated as one.
- *  3. Debit, then seat, refunding if the claim throws -- the same order and the
+ *  3. Debit, then seat, refunding if the claim throws, the same order and the
  *     same refund join/route.ts uses. Between 2 and 3 a genuine race can still
  *     take the last seat; that spends the invite, which is the honest cost of
  *     never letting one be redeemed twice.
@@ -73,8 +73,8 @@ export async function POST(
     // ---- 1. pre-flight ------------------------------------------------------
     //
     // Peeking at the invite costs a read the accept below repeats, and buys the
-    // player a failure they can act on. It is deliberately not a guard: every
-    // one of these is re-decided under the status predicate a moment later.
+    // player a failure they can act on. It is not a guard: every one of these
+    // is re-decided under the status predicate a moment later.
     const pending = await findPendingTableInvite(auth.profile.id, parsedParams.data.id);
     if (!pending) {
       return NextResponse.json({ error: "That invite is no longer open." }, { status: 404 });

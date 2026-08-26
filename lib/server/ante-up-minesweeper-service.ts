@@ -45,16 +45,16 @@ import { awardWager } from "./progression-store";
  * Same three ordering rules every staked game in this app restates, because
  * breaking one is a silent money bug:
  *
- * 1. The wager leaves the wallet BEFORE the attempt row exists; a row that
+ * 1. The wager leaves the wallet before the attempt row exists; a row that
  *    fails to persist refunds it.
  * 2. A payout is credited only after the version-guarded settlement write comes
  *    back non-null. Null means somebody else already settled (and paid) this
- *    attempt -- paying on null is how a double-tap becomes free Gold.
+ *    attempt; paying on null is how a double-tap becomes free Gold.
  * 3. Settlement is a single credit. The wager was already spent at step 1, so a
  *    loss credits nothing rather than debiting a second time.
  *
  * Like Sudoku's service this one carries a clock, so every read and every move
- * settles an expired attempt first -- see settleIfExpired and
+ * settles an expired attempt first; see settleIfExpired and
  * lib/arcade/ante-up-minesweeper.ts's header for why a clock exists here.
  */
 
@@ -65,16 +65,16 @@ export class AnteUpMinesweeperRequestError extends ArcadeRequestError<
   readonly name = "AnteUpMinesweeperRequestError";
 }
 
-/** This game's id in ante_up_attempts -- see lib/server/ante-up-store.ts. */
+/** This game's id in ante_up_attempts; see lib/server/ante-up-store.ts. */
 const GAME = "minesweeper";
 
 /** How many wagered attempts a player may open in a rolling day, at this game. Free practice is uncapped. */
 export const ANTE_UP_MINESWEEPER_DAILY_WAGERED_LIMIT = 10;
 
 /**
- * No leaderboard hook here on purpose: Kayo's call (2026-08-24) is that
- * leaderboards are for PvP only, not solo play. A clear feeds missions and
- * achievements through payOutWin and nothing else.
+ * No leaderboard hook here on purpose: leaderboards are for PvP only, not
+ * solo play. A clear feeds missions and achievements through payOutWin and
+ * nothing else.
  */
 
 function parseDifficulty(value: string): MinesweeperDifficulty {
@@ -92,9 +92,9 @@ function snapshot(
 }
 
 /**
- * Never throws. A payout that fails must not also fail the request -- the
- * attempt is already settled, and throwing here would show the player a loss on
- * a board they won. Logged loudly instead, same reasoning as payOutMatch.
+ * Never throws. A payout that fails must not also fail the request: the
+ * attempt is already settled, and throwing here would show the player a loss
+ * on a board they won. Logged loudly instead, same reasoning as payOutMatch.
  */
 async function payOutWin(profileId: string, attempt: AnteUpMinesweeperAttempt): Promise<void> {
   const payout = anteUpMinesweeperPayout(attempt);
@@ -118,7 +118,7 @@ async function settleIfExpired(
   if (ticked === null) return stored;
 
   const advanced = await advanceAnteUpAttempt(stored, ticked);
-  // Rule 2: a lost race did not happen -- another read already settled this.
+  // Rule 2: a lost race did not happen; another read already settled this.
   return advanced ?? (await getAnteUpAttemptById<AnteUpMinesweeperAttempt>(stored.id)) ?? stored;
 }
 
@@ -196,7 +196,7 @@ export async function openAnteUpMinesweeper(
     throw error;
   }
 
-  // Only a real wager earns XP -- nothing was risked on a free attempt.
+  // Only a real wager earns XP; nothing was risked on a free attempt.
   if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, now).catch(() => null);
 
   return { attempt: snapshot(stored, now), profile: debited };
@@ -262,7 +262,7 @@ export async function playAnteUpMinesweeper(
 
   const ticked = tickAnteUpMinesweeper(current.state, now);
   if (ticked !== null) {
-    // The clock already ran out -- settle that before refusing the move, so the
+    // The clock already ran out; settle that before refusing the move, so the
     // response carries the true (timed-out) state rather than a stale "active"
     // one the player could mistake for still-playable.
     const settled =
@@ -300,7 +300,7 @@ export async function playAnteUpMinesweeper(
   return { attempt: snapshot(stored, now), profile };
 }
 
-/** Gives up early. The wager is already spent -- see the ordering rules above. */
+/** Gives up early. The wager is already spent; see the ordering rules above. */
 export async function resignAnteUpMinesweeperAttempt(
   token: string,
   now = new Date(),

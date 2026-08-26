@@ -7,7 +7,7 @@ import { adminClient } from "./supabase-admin";
  * Badges: read-only access to profile_badges, the public flair table season
  * rollover and achievement grants already write to (see
  * 20260728195100_leaderboards_and_seasons.sql and
- * 20260817120000_achievements.sql). This module never writes it -- both
+ * 20260817120000_achievements.sql). This module never writes it: both
  * writers already exist, and adding a third path to the same table is how
  * that kind of thing drifts.
  */
@@ -23,7 +23,7 @@ interface BadgeRow {
 
 /** Turns a raw badge id into what a player actually reads. Falls back to the
  * raw id for anything that doesn't match a known shape, rather than hiding
- * it -- a badge earned by a future grant path should still show up as
+ * it: a badge earned by a future grant path should still show up as
  * *something* here. */
 async function labelFor(badge: string): Promise<string> {
   const seasonMatch = badge.match(SEASON_BADGE_PATTERN);
@@ -42,7 +42,7 @@ async function labelFor(badge: string): Promise<string> {
 async function readRows(profileId: string): Promise<BadgeRow[]> {
   const supabase = adminClient();
   if (!supabase) {
-    // Memory mode never populates profile_badges directly -- season rollover
+    // Memory mode never populates profile_badges directly. Season rollover
     // says as much in stats-store.ts, and an achievement grant records to
     // achievement-store's own memory map instead. Rebuild the achievement
     // half from that map; the season half stays a known gap, same as it is

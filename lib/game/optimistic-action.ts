@@ -1,20 +1,20 @@
 import type { GameSnapshot, PlayerAction, PublicSeat } from "./types";
 
 /**
- * A narrow, client-only prediction of the acting player's own action -- not
- * a client-side copy of the engine, and never treated as authoritative. It
- * only ever touches the caller's own seat (streetBet/committed/stack) and
- * the pot total those numbers must stay consistent with (poker-table.tsx
- * renders the centre pile as `pot - Σ streetBet`, so the two have to move
- * together or that pile visibly jumps). The amounts it uses --
- * `legal.callAmount`, a raise's own target -- are exactly what the
- * ActionBar already shows the player before they click; this doesn't add
- * any new betting logic, it just applies that same arithmetic one round
- * trip earlier so the chip layer's streetBet-delta animation
- * (poker-table.tsx) starts on the tap instead of on the response.
+ * A narrow, client-only prediction of the acting player's own action, not a
+ * client-side copy of the engine and never treated as authoritative. It only
+ * ever touches the caller's own seat (streetBet/committed/stack) and the pot
+ * total those numbers must stay consistent with (poker-table.tsx renders the
+ * centre pile as `pot - Σ streetBet`, so the two have to move together or
+ * that pile visibly jumps). The amounts it uses, `legal.callAmount` and a
+ * raise's own target, are exactly what the ActionBar already shows the
+ * player before they click; this doesn't add any new betting logic, it just
+ * applies that same arithmetic one round trip earlier so the chip layer's
+ * streetBet-delta animation (poker-table.tsx) starts on the tap instead of
+ * on the response.
  *
- * Everything else -- whose turn is next, the street, other seats, showdown
- * -- is left exactly as the last confirmed snapshot; those only ever change
+ * Everything else (whose turn is next, the street, other seats, showdown)
+ * is left exactly as the last confirmed snapshot; those only ever change
  * once the real response arrives. Callers must apply this through
  * useOptimistic inside a transition, never through setState directly: React
  * discards the prediction the moment the underlying game state actually
@@ -61,10 +61,10 @@ export function applyOptimisticAction(
       paid = legal.maxRaiseTo - mySeat.streetBet;
       nextSeat = commit(paid);
       break;
-    // "check" moves no chips -- nothing to predict. Everything else
-    // (rebuy, leave-seat, next-hand) either isn't the acting-on-your-turn
-    // family this exists for, or has effects (Gold spend, profile updates)
-    // not worth guessing at.
+    // "check" moves no chips, so there's nothing to predict. Everything
+    // else (rebuy, leave-seat, next-hand) either isn't the
+    // acting-on-your-turn family this exists for, or has effects (Gold
+    // spend, profile updates) not worth guessing at.
     default:
       return game;
   }

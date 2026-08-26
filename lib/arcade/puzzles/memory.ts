@@ -1,32 +1,30 @@
 /**
- * Memory Match -- pair the card backs against the clock.
+ * Memory Match: pair the card backs against the clock.
  *
  * Sixteen cards face down in a four-by-four grid, eight matching ranks. Turn
  * two: a pair stays up, anything else goes back over. Pure and clock-free like
- * the rest of lib/arcade/puzzles -- the shuffle comes in as a `randomInt` and
+ * the rest of lib/arcade/puzzles: the shuffle comes in as a `randomInt` and
  * the time comes in as a `Date`.
  *
- * ## The layout is dealt per player, not per day
- *
- * Every other daily here gives everybody the same board, and that is the point
- * of them: "Word Stack 128 4/6" only means something because word 128 was the same
- * word for everyone. Memory is the one puzzle where a shared board would
- * destroy the game rather than make it. The whole test is whether *you*
- * remember where a card was, so a layout anyone could be told in advance is
- * not a harder or easier puzzle -- it is no puzzle at all, and a single
- * screenshot in a group chat would end it for everybody.
+ * The layout is dealt per player, not per day. Every other daily here gives
+ * everybody the same board, and that is the point of them: "Word Stack 128
+ * 4/6" only means something because word 128 was the same word for everyone.
+ * Memory is the one puzzle where a shared board would destroy the game
+ * rather than make it. The whole test is whether *you* remember where a card
+ * was, so a layout anyone could be told in advance is not a harder or easier
+ * puzzle, it is no puzzle at all, and a single screenshot in a group chat
+ * would end it for everybody.
  *
  * So the board is shuffled per attempt and what is compared is the score:
  * everyone gets the same size grid, the same eight ranks and one attempt a
  * day, and posts their time and their turn count. That is a fair contest over
  * a fair board, which is what the shared-daily rule was actually protecting.
  *
- * ## The face-down cards are genuinely face down
- *
- * `toMemorySnapshot` sends `null` for every tile that is neither matched nor
- * currently turned over. Not a card marked hidden -- no card at all. A client
- * that held the layout could win in eight turns every time, and the score is
- * the only thing this game produces.
+ * The face-down cards are genuinely face down: `toMemorySnapshot` sends
+ * `null` for every tile that is neither matched nor currently turned over.
+ * Not a card marked hidden, no card at all. A client that held the layout
+ * could win in eight turns every time, and the score is the only thing this
+ * game produces.
  */
 
 import type { RandomInt } from "@/lib/game/deck";
@@ -39,7 +37,7 @@ export const MEMORY_COLUMNS = 4;
 
 /**
  * The ranks in play. High cards, because they are the ones a player can tell
- * apart at a glance -- a grid of 2s through 9s is legible but not memorable,
+ * apart at a glance: a grid of 2s through 9s is legible but not memorable,
  * and this game is entirely about what sticks.
  */
 export const MEMORY_RANKS: readonly Rank[] = ["A", "K", "Q", "J", "10", "9", "8", "7"];
@@ -51,7 +49,7 @@ export interface MemoryRound {
   tiles: Card[];
   /** Tile indices already paired off. Stays face up for the rest of the game. */
   matched: number[];
-  /** Tile indices currently turned over -- at most two, and cleared by the next turn. */
+  /** Tile indices currently turned over. At most two, and cleared by the next turn. */
   revealed: number[];
   /** Completed turns: one per pair of cards turned over. The score. */
   turns: number;
@@ -64,7 +62,7 @@ export interface MemoryRound {
  * A shuffled board.
  *
  * The two copies of a rank are dealt in different suits so the grid is
- * pleasant to look at; matching is by RANK, never by suit, which is what makes
+ * pleasant to look at; matching is by rank, never by suit, which is what makes
  * the pair findable rather than a spot-the-difference.
  */
 export function dealMemoryTiles(randomInt: RandomInt): Card[] {
@@ -72,7 +70,7 @@ export function dealMemoryTiles(randomInt: RandomInt): Card[] {
     { rank, suit: "spades" as const },
     { rank, suit: "hearts" as const },
   ]);
-  // Fisher-Yates, the same shuffle lib/game/deck.ts uses, over the sixteen.
+  // Fisher-Yates, the same shuffle lib/game/deck.ts uses, over the sixteen tiles.
   for (let index = tiles.length - 1; index > 0; index -= 1) {
     const swapWith = randomInt(index + 1);
     [tiles[index], tiles[swapWith]] = [tiles[swapWith], tiles[index]];
@@ -93,7 +91,7 @@ export function startMemoryRound(tiles: Card[], now: Date): MemoryRound {
   };
 }
 
-/** A fresh, shuffled board. `makeDeck` is not used -- this needs eight ranks twice, not fifty-two once. */
+/** A fresh, shuffled board. `makeDeck` is not used: this needs eight ranks twice, not fifty-two once. */
 export function dealMemoryRound(randomInt: RandomInt, now: Date): MemoryRound {
   return startMemoryRound(dealMemoryTiles(randomInt), now);
 }
@@ -105,8 +103,8 @@ export function memoryFlipProblem(round: MemoryRound, index: number): MemoryFlip
   if (round.status !== "playing") return "finished";
   if (!Number.isInteger(index) || index < 0 || index >= MEMORY_TILES) return "out-of-range";
   if (round.matched.includes(index)) return "already-matched";
-  // Turning the same card back over to "look again" would be a free peek that
-  // costs no turn, which is the one way to cheat a memory game.
+  // Turning the same card back over to "look again" would be a free peek
+  // that costs no turn: the one way to cheat a memory game.
   if (round.revealed.includes(index)) return "already-up";
   return null;
 }
@@ -115,12 +113,12 @@ export function memoryFlipProblem(round: MemoryRound, index: number): MemoryFlip
  * Turns a tile over.
  *
  * A pair of non-matching cards is left face up when the turn ends, so the
- * player can actually see what they got -- and is swept away by the *next*
+ * player can actually see what they got, and is swept away by the *next*
  * flip rather than by a timer. That matters: a timer would race a slow
  * connection and take the cards away before they had been rendered, which is
  * the difference between a memory game and a reflex test.
  *
- * Inert on an illegal flip rather than throwing -- the service checks first.
+ * Inert on an illegal flip rather than throwing; the service checks first.
  */
 export function flipMemoryTile(round: MemoryRound, index: number, now: Date): MemoryRound {
   if (memoryFlipProblem(round, index)) return round;
@@ -136,7 +134,7 @@ export function flipMemoryTile(round: MemoryRound, index: number, now: Date): Me
   const turns = round.turns + 1;
 
   if (round.tiles[first].rank !== round.tiles[second].rank) {
-    // Left up on purpose. The next flip clears them.
+    // Left face up; the next flip clears them.
     return { ...round, revealed, turns };
   }
 
@@ -161,7 +159,7 @@ export function memoryElapsedMs(round: Pick<MemoryRound, "startedAt" | "finished
 /**
  * The fewest turns the board can be finished in from a cold start.
  *
- * Eight -- one per pair -- and it is unreachable without luck, which is the
+ * Eight, one per pair, and it is unreachable without luck, which is the
  * point of showing it: it is what a perfect run would look like, not a target.
  */
 export const PERFECT_TURNS = MEMORY_PAIRS;
@@ -177,7 +175,7 @@ export function memoryOutcomeLabel(round: Pick<MemoryRound, "status" | "turns" |
 /**
  * The board as the browser may see it.
  *
- * `board` holds a card only where one is genuinely face up -- matched, or
+ * `board` holds a card only where one is genuinely face up: matched, or
  * turned over this turn. Everywhere else it is `null`, and `tiles` is absent
  * from the type entirely. A client with the layout wins in eight turns every
  * time, and the score is the only thing this game produces.
@@ -186,7 +184,7 @@ export interface MemorySnapshot {
   day: string;
   puzzleNumber: number;
   version: number;
-  /** Null for a face-down tile. Not a hidden card -- no card. */
+  /** Null for a face-down tile. Not a hidden card, no card. */
   board: (Card | null)[];
   matched: number[];
   revealed: number[];

@@ -35,6 +35,7 @@ import {
 import { roomThemeLabel, type RoomThemeId } from "@/lib/game3d/room-theme";
 import { useWebglSupport } from "./use-webgl-support";
 import { useDesktopViewport } from "@/components/use-desktop-viewport";
+import { useClipboardCopy } from "@/components/use-clipboard-copy";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   radiiForTable,
@@ -62,8 +63,8 @@ import { MAX_MISSED_TURNS } from "@/lib/game/engine";
 
 /**
  * A seat's width, as a fraction of the table's width and of its height.
- * Everything about a seat is measured from this -- the figure, where its cards
- * sit at the hands, how far a bet travels -- so the whole ring scales with the
+ * Everything about a seat is measured from this: the figure, where its cards
+ * sit at the hands, how far a bet travels, so the whole ring scales with the
  * table instead of each piece needing its own breakpoint.
  *
  * Both bounds are needed. A figure is square, so on a landscape phone, where
@@ -74,7 +75,7 @@ import { MAX_MISSED_TURNS } from "@/lib/game/engine";
 export type ConnectionState = "connected" | "reconnecting" | "offline";
 
 /* Trimmed from 0.17/0.3. A figure that was 30% of the table's height could not
-   ring the table without lying across it -- half of every player ended up on
+   ring the table without lying across it, half of every player ended up on
    the cloth. Smaller figures plus the rail inset in 06-table.css put them
    around the perimeter instead of on the board. */
 /* Raised twice, for two different reasons.
@@ -87,7 +88,7 @@ export type ConnectionState = "connected" | "reconnecting" | "offline";
    where the figures were too small to read. The height fraction rises with it
    so a short landscape table does not suddenly become the binding case. */
 /**
- * The WebGL room, split out the same way and for the same reasons — more so.
+ * The WebGL room, split out the same way and for the same reasons, more so.
  * `three` plus the R3F/drei surface is by a distance the largest thing this
  * app can ship, and a player who never chooses this renderer must never
  * download it. Kept as a second dynamic import rather than a branch inside
@@ -102,7 +103,7 @@ const TableScene3D = dynamic(
 /**
  * The racetrack room, split out for the same reason as the other two: a
  * player who never chooses it should not download its painter. Cheap next to
- * the 3D room -- it is Canvas 2D and shares the chip layer already in the
+ * the 3D room: it is Canvas 2D and shares the chip layer already in the
  * table chunk.
  */
 import type { RacetrackLayout } from "./scene/racetrack-scene";
@@ -123,7 +124,7 @@ export const SEAT_HEIGHT_RATIO = 0.30;
  * themselves changing. On a desktop plate there is room to absorb that; on the
  * narrow plate the measured clearance between neighbours falls to about 4px,
  * which is touching. Scaling the box by the ratio of the two spacings keeps
- * the same clearance at any count -- and leaves six-max, which is what ships
+ * the same clearance at any count, and leaves six-max, which is what ships
  * today, at exactly the size it has always been.
  */
 /**
@@ -131,7 +132,7 @@ export const SEAT_HEIGHT_RATIO = 0.30;
  *
  * Its seats are sized per chair from the projected elbow room between
  * neighbours rather than once from the table's width, so unlike
- * `seatWidthFor` there is no plate to keep them sane -- a tight far arc on a
+ * `seatWidthFor` there is no plate to keep them sane: a tight far arc on a
  * small landscape phone can project a shoulder budget of a few dozen pixels,
  * which is narrower than a nameplate can be and still be read.
  *
@@ -145,7 +146,7 @@ const RACETRACK_SEAT_MIN_PX = 86;
 const RACETRACK_SEAT_MAX_PX = 132;
 
 /**
- * The board's own bounds, in CSS pixels -- same reasoning as the seat pair
+ * The board's own bounds, in CSS pixels, same reasoning as the seat pair
  * above, applied to a card instead of a chair.
  *
  * `BOARD_CARD_WIDTH_M` run through the live camera is the real 63mm card at
@@ -154,11 +155,11 @@ const RACETRACK_SEAT_MAX_PX = 132;
  * clamp(44px, ...) }` is this app's proven-shipped legibility floor for a
  * bare card, so 44 is not a stylistic guess here either. The ceiling is set
  * well under the old orthographic room's own 76px desktop clamp (this camera
- * used to inherit that rule unmodified) -- reads big on the cloth like a
+ * used to inherit that rule unmodified): it reads big on the cloth like a
  * real dealt hand instead of flattened UI chrome, sized off the camera
  * instead of a breakpoint. Between the two, `clampBoardCardWidth`
  * (lib/scene/board-clearance.ts) shrinks further still, every frame, until
- * the row actually clears the pot -- see its own header for why a static
+ * the row actually clears the pot; see its own header for why a static
  * clamp alone can't guarantee that. */
 const RACETRACK_BOARD_CARD_MIN_PX = 44;
 const RACETRACK_BOARD_CARD_MAX_PX = 72;
@@ -166,9 +167,9 @@ const RACETRACK_BOARD_CARD_MAX_PX = 72;
 /**
  * Place the dealer's artwork in the slot the scene projected for it.
  *
- * ONE PLACE, ONE DEALER, AND NO NUMBERS ABOUT HER: the art is normalised onto
- * a known box before it ever gets here, so a redraw changes nothing in this
- * file. `lib/scene/table-dealer.ts` owns the slot.
+ * One place, one dealer, and no numbers about her here: the art is
+ * normalised onto a known box before it ever gets here, so a redraw changes
+ * nothing in this file. `lib/scene/table-dealer.ts` owns the slot.
  *
  * Absolute pixels rather than CSS `calc()`, because the box is solved from the
  * live camera and the numbers behind it live in that module, not in a
@@ -223,7 +224,7 @@ export function PokerTable({
   onLeave: () => void;
   onLeaveSeat: () => void;
   profile: PlayerProfile | null;
-  /** The broke-player recovery top-up -- see components/table/action-bar.tsx. */
+  /** The broke-player recovery top-up; see components/table/action-bar.tsx. */
   onClaimBackstop: () => void;
   onCustomize: () => void;
   connectionState: ConnectionState;
@@ -236,13 +237,13 @@ export function PokerTable({
   tableRendererSettled: boolean;
   /** Is the viewport wider than it is tall? The 2.5D table is landscape-only. */
   landscape: boolean;
-  /** Called with the renderer currently mounted -- see poker-app.tsx. */
+  /** Called with the renderer currently mounted; see poker-app.tsx. */
   onCycleTableRenderer: (mounted: TableRenderer) => void;
   roomThemeId: RoomThemeId;
   onCycleRoomTheme: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
-  /** This hand's active reactions, keyed by seat id -- see use-table-reactions.ts. */
+  /** This hand's active reactions, keyed by seat id; see use-table-reactions.ts. */
   reactions: Record<string, SeatReaction>;
   onSendReaction: (reactionId: ReactionId) => void;
   reactionCooldown: boolean;
@@ -256,7 +257,7 @@ export function PokerTable({
   const webglAvailable = useWebglSupport();
   const activeRenderer = resolveTableRenderer(tableRenderer, webglAvailable, landscape);
   // Which of lib/scene/seat-art.ts's two hand-tuned tables applies to seat
-  // art on the racetrack table -- see useDesktopViewport's own note for why
+  // art on the racetrack table; see useDesktopViewport's own note for why
   // this has to be a real subscription and not a `window.matchMedia` read
   // buried inside the picker functions themselves.
   const isDesktopViewport = useDesktopViewport();
@@ -267,8 +268,8 @@ export function PokerTable({
   }, []);
   // A seat is sized off the table, not the window. The table is capped by the
   // height left over as well as by width, so a short landscape phone can shrink
-  // it to a third of its desktop width while the viewport is still wide --
-  // seats measured against the viewport stayed huge and buried the board.
+  // it to a third of its desktop width while the viewport is still wide.
+  // Seats measured against the viewport stayed huge and buried the board.
   const [tableSize, setTableSize] = useState({ width: 850, height: 494 });
   // --foreground-drop is gone with the foreground seat that consumed it. It
   // existed to hang the local player a measured distance below the felt; on
@@ -278,8 +279,8 @@ export function PokerTable({
   // The window, alongside the table's own box. The plate is still what sizes
   // the seats; this answers the one question the plate stopped being able to
   // answer once the landscape rules made the wrap fill its area, which is
-  // whether this IS the landscape plate -- see LANDSCAPE_MAX_HEIGHT_PX in
-  // lib/game/table-geometry.ts. Null until mounted so the server render and
+  // whether this is the landscape plate (see LANDSCAPE_MAX_HEIGHT_PX in
+  // lib/game/table-geometry.ts). Null until mounted so the server render and
   // the first commit agree, both falling back to the plate-derived ellipse.
   const [viewport, setViewport] = useState<{ width: number; height: number } | null>(null);
   useEffect(() => {
@@ -308,35 +309,42 @@ export function PokerTable({
     };
   }, []);
 
-  // No clock state here any more, deliberately.
+  // No clock state here any more.
   //
-  // There used to be a `clockNow` that a 250ms interval advanced for the whole
-  // of every turn, purely so the action bar could be handed a remaining
-  // fraction. It sat at the root of the table, so each of those ticks
-  // re-rendered every seat, every card and every plate -- four times a second,
-  // all turn, to move one bar. Both fuses now take the server's two timestamps
-  // and animate in CSS (components/table/use-fuse.ts), which leaves this
-  // component re-rendering only when the game state actually changes.
+  // A `clockNow` used to advance every 250ms for the whole of every turn, so
+  // the action bar could be handed a remaining fraction. It sat at the root
+  // of the table, so each tick re-rendered every seat, every card and every
+  // plate, four times a second for the whole turn, to move one bar. Both
+  // fuses now take the server's two timestamps and animate in CSS
+  // (components/table/use-fuse.ts), so this component only re-renders when
+  // the game state actually changes.
   const mySeatIndex = game.seats.findIndex((seat) => seat.isMine);
   // The deck the board is dealt from, drawn as your own back.
   //
   // Every other face-down card at this table belongs to a seat and carries
   // that seat's back. The board belongs to the room, so it needs an answer of
-  // its own -- and yours is the right one, because it is otherwise the single
+  // its own, and yours is the right one, because it is otherwise the single
   // thing a buyer never gets to look at. Your hole cards are face up to you;
   // your back is shown to everyone except you. Half a second of it on each
   // board card is the only time you see what you paid for.
   const myCardBack = mySeatIndex >= 0 ? game.seats[mySeatIndex].cardBackCosmetic : undefined;
-  const orderedSeats = mySeatIndex <= 0
-    ? game.seats
-    : game.seats.map((_, index) => game.seats[(mySeatIndex + index) % game.seats.length]);
+  // Memoized because five other useMemos below key off this array's identity
+  // (slotOf, racetrackArtBySeat, seatStyles, sceneStreetBets, centerPotAmount);
+  // without this, every one of them recomputes on any re-render, not just
+  // the ones where game.seats actually changed.
+  const orderedSeats = useMemo(
+    () => (mySeatIndex <= 0
+      ? game.seats
+      : game.seats.map((_, index) => game.seats[(mySeatIndex + index) % game.seats.length])),
+    [game.seats, mySeatIndex],
+  );
   const potRef = useRef<HTMLDivElement | null>(null);
   const seatRefs = useRef<Record<string, HTMLElement | null>>({});
   const tableWrapRef = useRef<HTMLDivElement | null>(null);
   const racetrackForegroundRef = useRef<HTMLDivElement | null>(null);
   const showFunnel = game.status === "complete" && game.winners.length > 0;
   // What beat you, stated in as many words. handLabel is only non-null once
-  // a hand is revealed (won, or shown at a real showdown -- see
+  // a hand is revealed (won, or shown at a real showdown; see
   // seatCardsWereShown in engine.ts), so a truthy value here already means
   // "I did not fold and this was a genuine comparison," not just "I lost."
   // An uncontested win reaches nobody's handLabel but the winner's, so this
@@ -365,14 +373,14 @@ export function PokerTable({
     const seatRect = seatEl.getBoundingClientRect();
     // The seat's own toward-pot unit vector (--seat-dx/-dy, set inline by
     // ringGeometry) reused rather than re-derived, same source .table-bet's
-    // reach already trusts. A flat pull inward off the seat's own centre --
-    // not all the way to the pot -- so the button lands on visible felt
+    // reach already trusts. A flat pull inward off the seat's own centre,
+    // not all the way to the pot, so the button lands on visible felt
     // beside the player instead of stamped on their avatar.
     const seatStyle = getComputedStyle(seatEl);
     const towardX = Number.parseFloat(seatStyle.getPropertyValue("--seat-dx")) || 0;
     const towardY = Number.parseFloat(seatStyle.getPropertyValue("--seat-dy")) || 0;
     // A flat 46px pull inward cleared a desktop-sized avatar by only a few
-    // pixels -- and stamped the puck across it outright the moment a seat
+    // pixels, and stamped the puck across it outright the moment a seat
     // rendered smaller than that, which a short-but-wide viewport does
     // (--table-height-cap in 06-table.css shrinks the whole table, seats
     // included, well before it shrinks the puck's own fixed offset). Mirrors
@@ -385,7 +393,7 @@ export function PokerTable({
     const AVATAR_WIDTH_RATIO = 0.72;
     const DEALER_PUCK_RADIUS = 12; // half of .dealer-puck's own 24px (08-seat.css)
     // 8px used to leave the puck sitting in the rail's own padded cushion for
-    // any seat close to the felt's edge -- worst on the seat across from the
+    // any seat close to the felt's edge, worst on the seat across from the
     // viewer, whose whole avatar already overhangs .poker-rail's inset (see
     // the comment on .poker-rail in 06-table.css). 24px pulls it far enough
     // inward that it clears the cushion and reads as sitting on the felt.
@@ -398,10 +406,10 @@ export function PokerTable({
     const targetX = seatRect.left + seatRect.width / 2 + towardX * DEALER_PUCK_INSET;
     const targetY = seatRect.top + seatRect.height / 2 + towardY * DEALER_PUCK_INSET;
     // The offset is now an absolute pixel delta off the wrap's own top-left
-    // corner -- not a delta off .pot-anchor added to a `left:50%; top:19%`
+    // corner, not a delta off .pot-anchor added to a `left:50%; top:19%`
     // guess (08-seat.css's old rule). That guess was a flat percentage of
     // .poker-table-wrap, while .pot-anchor sits inset and re-tilted inside
-    // .poker-rail's own perspective transform -- two coordinate spaces that
+    // .poker-rail's own perspective transform: two coordinate spaces that
     // were never actually the same point, which is why the puck used to
     // settle somewhere in the middle of the felt instead of by any seat.
     // Anchoring the CSS side at the wrap's literal (0, 0) removes the second
@@ -414,7 +422,7 @@ export function PokerTable({
     if (!dealerMeasuredOnceRef.current) {
       dealerMeasuredOnceRef.current = true;
       // Skip the glide transition for this first placement (mount, refresh,
-      // reconnect) -- only actual dealer-seat changes between hands should
+      // reconnect); only actual dealer-seat changes between hands should
       // animate. Arming on the next frame keeps this snap-into-place paint
       // free of a transition rather than racing the style application.
       window.requestAnimationFrame(() => setDealerAnimated(true));
@@ -426,13 +434,13 @@ export function PokerTable({
   // than derived from the seat ellipse, for two reasons. The ellipse is in
   // percentages of the table box and knows nothing about how far .seat-cards
   // hangs below a seat's anchor, and the local player is not on the ellipse
-  // at all -- they are in the foreground at a distance that is itself
+  // at all: they are in the foreground at a distance that is itself
   // measured (foregroundDrop). One measurement covers both, at every
   // breakpoint, with no arithmetic to keep in step with the stylesheets.
   //
   // The old value was a flat --deal-y: 120px on .seat-ring, so every card
-  // rose from directly beneath its own seat, and the local player -- whose
-  // .seat-first-person never declared the variables at all -- got an
+  // rose from directly beneath its own seat, and the local player, whose
+  // .seat-first-person never declared the variables at all, got an
   // invalid transform and no movement whatsoever.
   const [dealVectors, setDealVectors] = useState<Record<string, { dx: number; dy: number }>>({});
   const measureDealVectors = useCallback(() => {
@@ -467,7 +475,7 @@ export function PokerTable({
   // Every seat rings the table on the CSS ellipse, the local player
   // included: slot 0 is the near edge, nearest the viewer, which is exactly
   // where the person holding it is sitting. The ellipse is the one layout
-  // authority -- the canvas room fits its painted table inside this ring
+  // authority; the canvas room fits its painted table inside this ring
   // rather than projecting a competing one back onto it.
   const ringGeometry = useMemo(
     () => orderedSeats.map((_, index) => {
@@ -488,7 +496,7 @@ export function PokerTable({
         "--seat-z": seatZ(geometry.depth),
         // The direction from this seat toward the pot, as a bare unit vector.
         // Anything that hangs off a seat picks its own distance in CSS and
-        // multiplies -- bets travel inward, the turn timer outward -- which
+        // multiplies (bets travel inward, the turn timer outward), which
         // keeps the per-breakpoint distances alongside every other breakpoint
         // rule rather than stranded in here.
         "--seat-dx": geometry.towardPot.x.toFixed(3),
@@ -499,7 +507,7 @@ export function PokerTable({
         "--seat-out-y": (-geometry.towardPot.y).toFixed(3),
       } as React.CSSProperties;
     }),
-    // The measured box decides the plate's shape -- the same viewport can
+    // The measured box decides the plate's shape: the same viewport can
     // hold a wide plate or a tall one depending on how much room the header
     // and action bar left behind, and only the box knows which. The window is
     // here for the one thing the box cannot report, which is whether this is
@@ -510,38 +518,38 @@ export function PokerTable({
   /* The racetrack room reports where its camera put everything; until it
      does, there is nothing to position from. Null until the first fit, which
      is also why the seat styles below fall back to the ellipse rather than to
-     zeros -- a seat at (0, 0) for one frame is a visible jump. */
+     zeros: a seat at (0, 0) for one frame is a visible jump. */
   const isRacetrack = activeRenderer === "racetrack_2d5";
   const [racetrackLayout, setRacetrackLayout] = useState<RacetrackLayout | null>(null);
   const onRacetrackLayout = useCallback((layout: RacetrackLayout) => {
     setRacetrackLayout(layout);
   }, []);
-  /* Deliberately NOT cleared when the renderer changes. A stale layout is
-     inert: every rule that reads it is scoped to `.scene-room-racetrack`, and
-     the two consumers below both gate on `isRacetrack` as well, so the only
-     thing keeping it buys is one less state write on a preference toggle. */
+  /* Not cleared when the renderer changes. A stale layout is inert: every
+     rule that reads it is scoped to `.scene-room-racetrack`, and the two
+     consumers below both gate on `isRacetrack` as well, so the only thing
+     keeping it buys is one less state write on a preference toggle. */
 
   /**
-   * Character art for each opponent seat on the racetrack table -- the
-   * dealer's own sibling, one step further settled now that the avatar
+   * Character art for each opponent seat on the racetrack table, the
+   * dealer's own sibling and one step further settled now that the avatar
    * catalog and the seat-art roster are the same id space: a seat draws the
    * character its own occupant actually bought/equipped (`avatarCosmetic`,
-   * already on every `PublicSeat` -- humans via their equipped avatar, bots
+   * already on every `PublicSeat`; humans via their equipped avatar, bots
    * via `botAvatarFor`), a real per-PLAYER pick rather than the old
    * per-SEAT hash. `seatArtCharacterForSlot`'s hash pick survives as the
    * fallback for a seat whose `avatarCosmetic` doesn't resolve to a roster
-   * character (a stale/legacy id) -- everyone at the table still agrees,
+   * character (a stale/legacy id); everyone at the table still agrees,
    * since `avatarCosmetic` is already part of the snapshot every client has.
    *
    * Keyed by seat rather than a flat list, and rendered as each seat's own
    * child (see `<PlayerSeat racetrackArt=...>`) rather than as siblings of
    * `.poker-table-wrap`, which is where this used to render. It has to be:
    * `.poker-table-wrap` carries `isolation: isolate` (for the dealer's own
-   * z-index escape -- see that rule's own long comment), which makes the
-   * whole wrap ONE atomic layer from the outside. A sibling image can be
-   * ordered in front of or behind that entire layer, never in between two of
-   * its descendants -- so cards drawn behind this art and a nameplate drawn
-   * in front of it could never both be true while the art lived outside the
+   * z-index escape, see that rule's own long comment), which makes the whole
+   * wrap one atomic layer from the outside. A sibling image can be ordered
+   * in front of or behind that entire layer, never in between two of its
+   * descendants, so cards drawn behind this art and a nameplate drawn in
+   * front of it could never both be true while the art lived outside the
    * wrap. Nested inside the seat itself, the three are ordinary siblings in
    * one stacking context and a plain `z-index` finally does what it says.
    *
@@ -574,7 +582,7 @@ export function PokerTable({
    * The CSS ellipse for the 3D room's own DOM cutouts, and for the racetrack
    * before its camera has produced a layout on the first frame; the
    * projected anchors for the racetrack once it has. Same shape of answer
-   * either way -- a style object per seat -- so nothing downstream branches
+   * either way, a style object per seat, so nothing downstream branches
    * on which table is underneath.
    */
   const seatStyles = useMemo(() => {
@@ -588,7 +596,7 @@ export function PokerTable({
          The seat box is centred on that anchor; the drawn character is not.
          `seatArtBox` shifts it by the slot's hand-tuned `offsetX`, hangs its
          bottom edge at the hands anchor plus `offsetY`, and grows it upward
-         from there by `scale` -- so at a scaled seat the art's real crown is
+         from there by `scale`, so at a scaled seat the art's real crown is
          several pixels above the anchor and its hands several below. Anything
          that has to line up with the PERSON rather than with the anchor (the
          nameplate, the hole cards) needs the box, not the anchor.
@@ -607,7 +615,7 @@ export function PokerTable({
         "--seat-art-hands-dy": `${(artBox ? artBox.top + artBox.height - placed.y : 0).toFixed(1)}px`,
         // The portrait's own rendered size, for effects that have to sit
         // behind it and scale with it (the winner aura glow below) rather
-        // than with the seat's own small `--seat-width` box -- the art is
+        // than with the seat's own small `--seat-width` box, since the art is
         // drawn many times that size (seatArtBox), so a percentage of the
         // seat box would not track the character at all.
         "--seat-art-w": `${(artBox ? artBox.width : 0).toFixed(1)}px`,
@@ -627,14 +635,14 @@ export function PokerTable({
         "--seat-out-x": (-placed.toward.x).toFixed(3),
         "--seat-out-y": (-placed.toward.y).toFixed(3),
         // Where the bet-amount label belongs, as an offset from this seat's
-        // own crown -- not a reach constant. `.table-bet` (08-seat.css) is
+        // own crown, not a reach constant. `.table-bet` (08-seat.css) is
         // positioned relative to the seat's own box, so a page-space point
         // has to arrive as a delta from that box's origin (the crown) rather
         // than as `left`/`top` directly. See 42-racetrack-table.css.
         "--bet-dx-px": `${(placed.bet.x - placed.x).toFixed(1)}px`,
         "--bet-dy-px": `${(placed.bet.y - placed.y).toFixed(1)}px`,
         // The same bet position, but relative to the STAGE rather than this
-        // seat's own crown -- for `.seat-mine` alone, whose box is not on the
+        // seat's own crown, for `.seat-mine` alone, whose box is not on the
         // projection at all (anchored to the stage's bottom edge instead, see
         // 42-racetrack-table.css). Only that one override reads these.
         "--bet-x-rel-px": `${(placed.bet.x - racetrackLayout.width / 2).toFixed(1)}px`,
@@ -644,8 +652,8 @@ export function PokerTable({
   }, [isRacetrack, racetrackLayout, orderedSeats, ringGeometry, racetrackArtBySeat]);
 
   const seatOrderKey = orderedSeats.map((seat) => seat.id).join(",");
-  // Both vectors answer the same question -- where is this seat, relative to
-  // the middle of the table -- so they are measured together and on exactly
+  // Both vectors answer the same question (where is this seat, relative to
+  // the middle of the table), so they are measured together and on exactly
   // the same triggers. Splitting them would mean two sets of observers that
   // could disagree about the layout after a resize.
   const measureTableVectors = useCallback(() => {
@@ -672,8 +680,8 @@ export function PokerTable({
   // same hand/street. Comparing against an empty baseline whenever the hand
   // or street changes (rather than the stale prior-street value) means a
   // street reset never reads as a contribution, while a freshly posted
-  // blind still does. A null baseline -- true on mount and forced on any
-  // disconnect -- skips flight generation entirely for that one snapshot,
+  // blind still does. A null baseline, true on mount and forced on any
+  // disconnect, skips flight generation entirely for that one snapshot,
   // so neither initial hydration nor a reconnect ever replays history.
   const streetBetsRef = useRef<{ handNumber: number; street: string; bets: Record<string, number> } | null>(null);
   const [chipFlights, setChipFlights] = useState<
@@ -691,7 +699,7 @@ export function PokerTable({
     if (prev !== null) {
       // What the table was already facing when these chips left. Read off the
       // same baseline the arrivals are, so it is the state *before* the action
-      // rather than after it -- comparing a raise against its own new high bet
+      // rather than after it: comparing a raise against its own new high bet
       // would classify every aggression as a call.
       const previousHighBet = game.seats.reduce(
         (high, seat) => Math.max(high, baseline[seat.id] ?? 0),
@@ -703,7 +711,7 @@ export function PokerTable({
           id: `${game.handNumber}-${game.street}-${seat.id}-${seat.streetBet}`,
           seatId: seat.id,
           // The spray is this number as chips: what this seat just put in,
-          // not its whole street -- a raise to 200 from a seat that already
+          // not its whole street. A raise to 200 from a seat that already
           // had 50 committed flies the 150, exactly as a dealer cuts it out.
           amount: seat.streetBet - (baseline[seat.id] ?? 0),
           // Which gesture this is, and therefore how fast the chips move: a
@@ -732,7 +740,7 @@ export function PokerTable({
    * trajectory and removed itself through `onDone` when its CSS animation
    * ended. The chips are meshes now and the scene owns their motion, so all
    * this has to do is hand each new bet across exactly once and then stop
-   * growing -- `ChipScene` dedupes by id, so clearing the whole list at once
+   * growing. `ChipScene` dedupes by id, so clearing the whole list at once
    * cannot replay anything. The timer restarts whenever another bet arrives,
    * which is why a whole street of betting still only sweeps up once.
    */
@@ -744,8 +752,8 @@ export function PokerTable({
 
   /**
    * The scene reports whether it actually got a context. Until it says yes,
-   * the DOM felt and rail keep painting themselves -- see `.scene-lit` in
-   * app/styles/99-scene.css. Assuming success would leave a device without
+   * the DOM felt and rail keep painting themselves (see `.scene-lit` in
+   * app/styles/99-scene.css). Assuming success would leave a device without
    * a working canvas looking at an unpainted table.
    */
   // Readiness belongs to one specific room mount, not just to a renderer
@@ -761,7 +769,7 @@ export function PokerTable({
     ));
   }, [sceneToken]);
 
-  // RacetrackScene's own onReady fires the instant its canvas exists -- there
+  // RacetrackScene's own onReady fires the instant its canvas exists; there
   // is no staggered/async child here to race a remount against, unlike 3D, so
   // this skips the token machinery above and derives straight from
   // render-time state.
@@ -799,8 +807,8 @@ export function PokerTable({
       .filter((bet) => bet.amount > 0),
     [orderedSeats],
   );
-  // What the centre pile is actually showing -- pot minus whatever is still
-  // standing at a seat -- so its label agrees with the chips the scene draws
+  // What the centre pile is actually showing (pot minus whatever is still
+  // standing at a seat), so its label agrees with the chips the scene draws
   // there by construction rather than restating the pot number the standing
   // bets haven't reached yet. See RacetrackScene's own identical subtraction
   // (components/table/scene/racetrack-scene.tsx) for the invariant this mirrors.
@@ -886,18 +894,11 @@ export function PokerTable({
     return () => window.clearTimeout(timer);
   }, [timeoutFlash]);
 
-  const [roomCodeCopied, setRoomCodeCopied] = useState(false);
-  const copyRoomCode = useCallback(async () => {
-    if (!game.roomCode) return;
-    try {
-      await navigator.clipboard.writeText(game.roomCode);
-      setRoomCodeCopied(true);
-      window.setTimeout(() => setRoomCodeCopied(false), 1800);
-    } catch {
-      // Clipboard access can be denied by policy; the code is still readable
-      // in the menu, so there is nothing useful to recover here.
-    }
-  }, [game.roomCode]);
+  const { copiedValue: copiedRoomCode, copy: copyToClipboard } = useClipboardCopy();
+  const roomCodeCopied = game.roomCode !== null && copiedRoomCode === game.roomCode;
+  const copyRoomCode = useCallback(() => {
+    if (game.roomCode) void copyToClipboard(game.roomCode);
+  }, [game.roomCode, copyToClipboard]);
 
   const menuItems = useMemo((): MenuItem[] => {
     const items: MenuItem[] = [
@@ -927,8 +928,8 @@ export function PokerTable({
       },
       // Same gating as the renderer entry above, plus a second condition: a
       // room theme is a 3D-room concept (there is no floor/fog in the 2D
-      // canvas), so it's meaningless -- not merely unavailable -- unless the
-      // 3D room is what's actually mounted right now.
+      // canvas), so it's meaningless, not merely unavailable, unless the 3D
+      // room is what's actually mounted right now.
       ...(webglAvailable && activeRenderer === "webgl_3d"
         ? [
             {
@@ -970,7 +971,7 @@ export function PokerTable({
     items.push(
       { kind: "separator" },
       { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
-      // Was missing here entirely -- the lobby's hub tile says "Buy Gold" but
+      // Was missing here entirely: the lobby's hub tile says "Buy Gold" but
       // this in-game menu only offered "Support StackChips", so a player who
       // opened it mid-session saw a donate link where they expected the
       // store. Donating now lives in the header instead (DonateButton).
@@ -1004,23 +1005,22 @@ export function PokerTable({
     onSignOut, onLeaveSeat,
   ]);
 
-  /* ENGINE RENDER GATE.
+  /* Render gate: nothing paints until the renderer choice is genuinely
+     known. The stored preference arrives a tick after the first commit (the
+     deferred set in use-stored-preference.ts), so without this a player
+     whose stored choice hasn't loaded yet would briefly mount whatever
+     DEFAULT_TABLE_RENDERER is, acquire a canvas context, paint, and get torn
+     down again the very next commit once the real preference arrives. A
+     blank hold is cheaper than a discarded room and reads as a load rather
+     than as a glitch.
 
-     Nothing paints until the renderer choice is genuinely known. The stored
-     preference arrives a tick after the first commit (the deferred set in
-     use-stored-preference.ts), so without this a player whose stored choice
-     hasn't loaded yet would briefly mount whatever DEFAULT_TABLE_RENDERER is
-     -- acquire a canvas context, paint, and get torn down again the very
-     next commit once the real preference arrives. A blank hold is cheaper
-     than a discarded room and reads as a load rather than as a glitch.
-
-     BELOW THE HOOKS, NOT AT THE TOP OF THE COMPONENT, and that is not a
-     stylistic choice. Returning before the ~30 hooks above would give this
-     component two different hook sequences depending on a boolean that flips
-     on the second commit, which is precisely the case React's rules of hooks
-     forbid; it would throw on the transition rather than fix a flicker. The
-     hooks all run, find their refs null, and no layout node is created --
-     which is what was actually asked for.
+     This sits below the hooks, not at the top of the component, and that is
+     not a stylistic choice. Returning before the ~30 hooks above would give
+     this component two different hook sequences depending on a boolean that
+     flips on the second commit, which is precisely what React's rules of
+     hooks forbid; it would throw on the transition rather than fix a
+     flicker. The hooks all run, find their refs null, and no layout node is
+     created, which is what was actually asked for.
 
      100dvh, not 100vh: on mobile browsers `vh` is the tallest the viewport
      ever gets, chrome included, so a 100vh hold is visibly taller than the
@@ -1047,13 +1047,13 @@ export function PokerTable({
 
   return (
     <main className="game-shell">
-      {/* Gameplay only. The spec puts three things in the table HUD -- logo,
-          Leave Table, avatar -- so everything that is not one of those moved
+      {/* Gameplay only. The spec puts three things in the table HUD (logo,
+          Leave Table, avatar), so everything that is not one of those moved
           into the avatar's menu. Leave Table stays a first-class button
           rather than a menu entry: it is the one control a player may want
           in a hurry, and burying it two taps deep to satisfy a rule about
           tidiness would be the wrong trade. The donate heart is the one
-          addition to that rule -- same reasoning as the lobby header's own
+          addition to that rule, same reasoning as the lobby header's own
           copy of it (components/poker-app.tsx): a single persistent icon,
           not a menu row, so it costs nothing to keep visible. */}
       <header className={clsx(
@@ -1066,7 +1066,7 @@ export function PokerTable({
         <button className="wordmark wordmark-mark-only" onClick={() => { tapSound(); onLeave(); }} aria-label="Leave table">
           <span className="wordmark-mark"><StackChipsMark size={32} /></span>
         </button>
-        {/* No pot readout here any more -- the felt already carries it
+        {/* No pot readout here any more: the felt already carries it
             (.center-pot-amount, in .board-stack below) directly over the
             chips it counts, which is a strictly better answer to "how much
             is in the pot" than a second number in the chrome above the
@@ -1099,20 +1099,20 @@ export function PokerTable({
             // class stops the DOM felt and rail painting.
             sceneReady && "scene-lit",
             // The 3D room seats its own figures in its own chairs, so the DOM
-            // cut-outs would be a second set of players at the same table --
+            // cut-outs would be a second set of players at the same table,
             // the mistake the Blackjack stage made with Loki and Finn. Gated
             // on sceneReady too: if the room never arrives, the cut-outs are
             // the only players there are.
             sceneReady && activeRenderer === "webgl_3d" && "scene-room-3d",
             // Same contract as .scene-room-3d: the canvas is drawing the real
             // table, so the DOM's flat plate has to stop. Unlike the 3D room
-            // this one does NOT seat its own figures, so the cut-outs stay --
+            // this one does not seat its own figures, so the cut-outs stay:
             // they are the only players at this table.
             sceneReady && isRacetrack && "scene-room-racetrack",
           )}
         >
           {/* The room, underneath everything. First child so it is first in
-              paint order as well as lowest in z-index -- the HUD over it is
+              paint order as well as lowest in z-index; the HUD over it is
               ordinary DOM and needed no z-index changes to land on top. */}
           {isRacetrack ? (
             <RacetrackScene
@@ -1140,7 +1140,7 @@ export function PokerTable({
             />
           )}
           <TableLoadingSplash active={!sceneReady} />
-          {/* Shown at every width on the racetrack -- see
+          {/* Shown at every width on the racetrack; see
               42-racetrack-table.css's own note on why that table needs the
               corner HUD on mobile too (its local seat has no figure to fall
               back on at any width). Never on the 3D room: it mounts its own
@@ -1166,11 +1166,11 @@ export function PokerTable({
 
               A sibling of .poker-table-wrap and absolutely positioned, so it
               takes part in no layout the table depends on: the wrap's size
-              still comes from --table-height-cap alone, which is what keeps
-              this milestone's geometry separate from the dealing work. */}
+              still comes from --table-height-cap alone, which keeps this
+              geometry separate from the dealing work. */}
           <div className="table-hud">
             {/* The table talking, in the black space that was doing nothing.
-                Who just folded, who raised and by how much -- the activity
+                Who just folded, who raised and by how much: the activity
                 drawer has always held this, two taps away, which is not
                 where anyone looks mid-hand.
 
@@ -1217,7 +1217,7 @@ export function PokerTable({
                 {/* The comparison a loss actually needs: the winner's line
                     above already says what beat you, this says what you lost
                     with. Both are on screen already (this seat's own cards,
-                    the winner's revealed ones) -- this just states the
+                    the winner's revealed ones); this just states the
                     losing half in the same sentence shape as the winning
                     one, instead of leaving it to be pieced together from two
                     different corners of the felt. */}
@@ -1239,7 +1239,7 @@ export function PokerTable({
             </span>
           </div>
           {/* The dealer, at far centre, over the cloth rather than behind the
-              rail -- her art puts her hands ON the table, and painting them
+              rail: her art puts her hands ON the table, and painting them
               under it would take exactly that away. Behind every seat (z-index
               3, below the seats' own 4-and-up) because she is the furthest
               thing at the table, and behind the board for the same reason. */}
@@ -1283,7 +1283,7 @@ export function PokerTable({
           )}
           {/* Opponent portraits used to render here, as siblings of
               `.poker-table-wrap` below. They moved to be each seat's own
-              child instead (`<PlayerSeat racetrackArt=...>`) -- see
+              child instead (`<PlayerSeat racetrackArt=...>`); see
               `racetrackArtBySeat`'s own comment for why the isolated wrap
               made that the only place cards could ever draw behind this
               art while the nameplate stayed in front of it. */}
@@ -1302,7 +1302,7 @@ export function PokerTable({
                   // The real 63mm-card projection, clamped to this table's
                   // own [min, max] and then shrunk further, if it must,
                   // until the row's rendered footprint actually clears the
-                  // pot at THIS frame's camera fit -- see
+                  // pot at THIS frame's camera fit; see
                   // RACETRACK_BOARD_CARD_MIN/MAX_PX and board-clearance.ts.
                   "--board-card-width": `${Math.round(clampBoardCardWidth(
                     racetrackLayout.board.cardWidthPx,
@@ -1324,7 +1324,7 @@ export function PokerTable({
                   "--pot-y": `${racetrackLayout.pot.y.toFixed(1)}px`,
                   // The pot's projected position, as a signed delta from
                   // .board-stack's own centre (--board-y) rather than from
-                  // any edge of it -- `.board-stack` only ever exposes its
+                  // any edge of it: `.board-stack` only ever exposes its
                   // centre by construction (`transform: translate(-50%,
                   // -50%)`), and measuring from an edge instead is what
                   // previously put the label a stack's-height too high (see
@@ -1340,9 +1340,9 @@ export function PokerTable({
               <div className="poker-felt">
                 {/* Where the chips go, now that the number that counts them
                     lives outside the table. Three separate effects measure
-                    this element's centre -- chips flying in from a seat, the
+                    this element's centre (chips flying in from a seat, the
                     pot funnelling out to the winners, and folded cards
-                    drifting to the muck -- and all three have to converge on
+                    drifting to the muck), and all three have to converge on
                     the cloth, not on a readout in the margin. Sized to the
                     box .pot-display used to occupy here (45x35 at every
                     breakpoint, because its two font sizes are fixed), so the
@@ -1350,7 +1350,7 @@ export function PokerTable({
                 {/* Empty now, and still load-bearing. The pile that used to
                     be drawn in here is a stack of meshes on the felt; what
                     this box still is, is the point three separate DOM
-                    measurements agree on -- folded cards drift here, every
+                    measurements agree on: folded cards drift here, every
                     hole card is dealt from here, and an e2e test asserts its
                     45x35 never moves. Removing it would drag both remaining
                     trajectories with it and nothing would visibly break. */}
@@ -1360,12 +1360,12 @@ export function PokerTable({
                     directly answering "how much is that stack of chips in
                     front of me." Paired with the community cards in one
                     .board-stack column, sharing that single centred
-                    coordinate, rather than the amount sitting off on its own
-                    -- it used to be a flat 30px beside .pot-anchor, which put
+                    coordinate, rather than the amount sitting off on its own.
+                    It used to be a flat 30px beside .pot-anchor, which put
                     real distance between the number and the pile it was
                     counting on anything wider than a phone. Hidden at zero
-                    rather than printing "$0" over an empty spot on the felt
-                    -- there is nothing standing centre-table until the first
+                    rather than printing "$0" over an empty spot on the felt:
+                    there is nothing standing centre-table until the first
                     street closes and bets sweep in. */}
                 <div className="board-stack">
                   {centerPotAmount > 0 && (
@@ -1413,7 +1413,7 @@ export function PokerTable({
                       sitting alone at a fixed felt percentage (tuned for the
                       classic ellipse, not this camera's board position) and
                       the blinds sitting in the black space above the table.
-                      Replaces .street-label/.blind-structure for this room --
+                      Replaces .street-label/.blind-structure for this room;
                       see their display:none in 42-racetrack-table.css. */}
                   {isRacetrack && (
                     <div className="board-caption" aria-hidden="true">
@@ -1467,7 +1467,7 @@ export function PokerTable({
                 // registered and chip flights, the muck drift and the dealer
                 // puck keep measuring the right spot.
                 // Slot 0 of the ellipse is the near edge, and it has always
-                // been where the local player sits -- it was simply left
+                // been where the local player sits; it was simply left
                 // empty while they were drawn separately below the felt.
                 placement={isRacetrack ? "seat-racetrack" : "seat-ring"}
                 seatStyle={seatStyles[index]}
@@ -1527,7 +1527,7 @@ export function PokerTable({
       )}
 
       {/* No onJoinedTable: this player is already at a table, so the drawer
-          offers no Join. Opened from here it is the *sending* surface -- each
+          offers no Join. Opened from here it is the *sending* surface: each
           friend row gains an Invite for this room, and the current seats
           surface an "Add friend" row for whoever else is sitting here. */}
       {friendsOpen && (

@@ -5,35 +5,31 @@ import { adminClient } from "./supabase-admin";
 /**
  * Persistence for the daily puzzles.
  *
- * ## Why this is not arcade_rounds
+ * This is not arcade_rounds. blackjack-store.ts's shape is right for a casino
+ * round and wrong for a daily puzzle, in one way that matters and two that
+ * are merely awkward.
  *
- * arcade-round-store.ts is the right shape for a casino round and the wrong
- * shape for a daily puzzle, in one way that matters and two that are merely
- * awkward.
- *
- * The one that matters: its unique index is partial on `status = 'active'`, so
- * a *settled* round never blocks a new one -- which is correct for a casino
+ * The one that matters: its unique index is partial on `status = 'active'`,
+ * so a settled round never blocks a new one, which is correct for a casino
  * game like Blackjack, where dealing again is the whole point, and
- * catastrophic here. Everyone
- * shares one board per day. If finishing today's Word Stack let you open another,
- * the second attempt would be the same word you had just been shown, and the
- * share grid -- the only thing this feature exists to produce -- would be a
- * claim nobody could trust. The index below is therefore unconditional on
- * (profile, game, day): one attempt, finished or not, per player per day.
+ * catastrophic here. Everyone shares one board per day. If finishing today's
+ * Word Stack let you open another, the second attempt would be the same word
+ * you had just been shown, and the share grid, the only thing this feature
+ * exists to produce, would be a claim nobody could trust. The index below is
+ * therefore unconditional on (profile, game, day): one attempt, finished or
+ * not, per player per day.
  *
  * The awkward two: `base_stake integer not null check (base_stake > 0)` and a
  * `tier` have no meaning for a free puzzle, and bending them (stake 0, tier
  * 'none') would leave two columns lying in every row.
  *
- * ## What is kept from it
+ * What's kept from it is everything else: the same jsonb `state` holding
+ * secrets the client must never see, the same version column as concurrency
+ * guard, the same Supabase-or-memory split, the same "null means you lost the
+ * race" rule on the guarded update. This is a sibling of that file, not a
+ * departure from it, and a reader who knows one knows this one.
  *
- * Everything else, deliberately: the same jsonb `state` holding secrets the
- * client must never see, the same version column as concurrency guard, the
- * same Supabase-or-memory split, the same "null means you lost the race" rule
- * on the guarded update. This is a sibling of that file, not a departure from
- * it, and a reader who knows one knows this one.
- *
- * The version guard does less work here than it does in the casino stores --
+ * The version guard does less work here than it does in the casino stores:
  * there is no payout to fire exactly once, so a lost race costs a guess rather
  * than money. It is still the thing that stops a double-fired submit from
  * spending two of a player's six guesses on one word.
@@ -57,7 +53,7 @@ export interface StoredPuzzleRound<TRound> {
  *
  * Not an error the player ever sees: every caller resolves it by reading the
  * existing attempt and returning that instead. It exists because the check has
- * to be the database's, not the route's -- see createPuzzleRound.
+ * to be the database's, not the route's; see createPuzzleRound.
  */
 export class DailyPuzzleAlreadyStarted extends Error {
   constructor(game: string, day: string) {
@@ -117,10 +113,10 @@ function clone<TRound>(stored: StoredPuzzleRound<TRound>): StoredPuzzleRound<TRo
 /**
  * The player's attempt at one day's puzzle, finished or not.
  *
- * Deliberately not filtered by status -- unlike getActiveArcadeRound. Reading
- * only active attempts is exactly the bug this store exists to prevent: it
- * would report "no attempt" for a puzzle already played and the caller would
- * happily deal it again.
+ * Not filtered by status, unlike getActiveArcadeRound. Reading only active
+ * attempts is exactly the bug this store exists to prevent: it would report
+ * "no attempt" for a puzzle already played and the caller would happily deal
+ * it again.
  */
 export async function getPuzzleRound<TRound>(
   profileId: string,
@@ -149,9 +145,9 @@ export async function getPuzzleRound<TRound>(
  *
  * Throws DailyPuzzleAlreadyStarted when one exists. Caught from the unique
  * index (23505) rather than by reading first and then inserting: two
- * concurrent opens -- two tabs, a double-tap, a retried request -- both pass a
- * read-first check, and the loser would otherwise overwrite a board the player
- * has already made guesses on.
+ * concurrent opens (two tabs, a double-tap, a retried request) would all pass
+ * a read-first check, and the loser would otherwise overwrite a board the
+ * player has already made guesses on.
  */
 export async function createPuzzleRound<TRound>(input: {
   profileId: string;
@@ -202,7 +198,7 @@ export async function createPuzzleRound<TRound>(input: {
 /**
  * Applies the next state, but only if nobody else already did.
  *
- * Returns null on a lost race -- a stale version, a replayed submit, a
+ * Returns null on a lost race: a stale version, a replayed submit, a
  * double-fired key handler. The caller must treat null as "this guess did not
  * happen": a player has six, and spending two of them on one word because a
  * request was retried is the failure this guard exists for.

@@ -96,16 +96,16 @@ import {
 /**
  * The table, fetched only when there is one to show.
  *
- * It is the heaviest thing in the app -- three renderers, the chip scene, the
- * seat-art roster, the evaluator -- and it was imported straight into this
- * file, which is the lobby. So a phone downloaded and parsed the whole table
- * before it could paint a single tab, on a screen with no table on it. That
- * parse is most of the gap between the lobby's first paint and the lobby
- * actually appearing.
+ * It is the heaviest thing in the app: three renderers, the chip scene, the
+ * seat-art roster, the evaluator. Imported straight into this file, which is
+ * the lobby, it meant a phone downloaded and parsed the whole table before it
+ * could paint a single tab, on a screen with no table on it. That parse is
+ * most of the gap between the lobby's first paint and the lobby actually
+ * appearing.
  *
  * `ssr: false` costs nothing: `game` is null until a client fetch says
  * otherwise, so the server never had a table to render either. The warm-up in
- * `useEffect` below is what keeps sitting down as fast as it was -- see there.
+ * `useEffect` below is what keeps sitting down as fast as it was; see there.
  */
 const PokerTable = dynamic(
   () => import("@/components/table/poker-table").then((module) => module.PokerTable),
@@ -115,12 +115,10 @@ const PokerTable = dynamic(
 /**
  * How long a lobby notice stays up before it retires itself.
  *
- * These are confirmations -- "cashed out 4,200", "signed out" -- not decisions,
- * and a confirmation that waits to be acknowledged is a confirmation the player
- * has to clean up after. They used to sit at the top of the hub until the ×
- * was clicked, so a session accumulated a stack of banners about things that
- * had already happened. Long enough to read twice, and the × is still there
- * for anyone who wants it gone sooner.
+ * These are confirmations ("cashed out 4,200", "signed out"), not decisions,
+ * and a confirmation that waits to be acknowledged is a confirmation the
+ * player has to clean up after. Long enough to read twice, and the × is
+ * still there for anyone who wants it gone sooner.
  */
 const NOTICE_VISIBLE_MS = 6_000;
 
@@ -131,15 +129,15 @@ const REFRESH_RETRY_MAX_MS = 2_000;
 /**
  * The trigger shown when the player opens "Free Gold" from the lobby menu.
  *
- * This is the *only* way into RewardedAdModal now -- there used to also be an
- * automatic popup that watched for in-game moments (first win of the session,
- * a big pot, a win streak) and offered the same modal uninvited, mid-hand.
- * That surprised players too often and too often mid-game, so it is gone
- * (lib/rewards/triggers.ts's advanceRewardWatch and its call site); the
- * "Get Free Gold" row below -- lobby-only (see the `{!game && ...}` it lives
- * inside) and gated on `freeGoldEligible`'s below-cheapest-buy-in check -- is
- * what remains. `kind: "low-gold"` is the honest label; the modal never reads
- * `kind` for anything but bookkeeping this manual path doesn't use.
+ * This is the only way into RewardedAdModal. An earlier automatic popup
+ * watched for in-game moments (first win of the session, a big pot, a win
+ * streak) and offered the same modal uninvited, mid-hand; that surprised
+ * players too often, so it's gone (lib/rewards/triggers.ts's
+ * advanceRewardWatch and its call site). The "Get Free Gold" row below,
+ * lobby-only (see the `{!game && ...}` it lives inside) and gated on
+ * `freeGoldEligible`'s below-cheapest-buy-in check, is what remains.
+ * `kind: "low-gold"` is the honest label; the modal never reads `kind` for
+ * anything but bookkeeping this manual path doesn't use.
  */
 const FREE_GOLD_TRIGGER: RewardTrigger = {
   kind: "low-gold",
@@ -150,7 +148,7 @@ const FREE_GOLD_TRIGGER: RewardTrigger = {
 export function PokerApp() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
   // A predicted view of `game` for the caller's own fold/call/raise/all-in,
-  // so the felt reacts on the tap instead of on the round trip -- see
+  // so the felt reacts on the tap instead of on the round trip; see
   // lib/game/optimistic-action.ts. Only ever rendered from, never treated
   // as truth: React reverts to `game` itself once the transition that
   // queued a prediction settles, whether or not the request succeeded.
@@ -167,28 +165,27 @@ export function PokerApp() {
   const [authReady, setAuthReady] = useState(!accountsEnabled());
 
   /*
-   * WHY THE PROFILE AND THE ENTRY GATE ARE DERIVED RATHER THAN PLAIN STATE
-   *
-   * The arcade, Collection and the leaderboard are their own routes, so "Back
+   * Why the profile and the entry gate are derived rather than plain state:
+   * the arcade, Collection and the leaderboard are their own routes, so "Back
    * to the lobby" unmounts this component and mounts a fresh one. Everything
-   * below used to start empty on each of those arrivals, and the player watched
-   * the app rediscover facts it already knew: the signed-out card painted for
-   * the length of one `GET /api/profile`, then the hub's own "Preparing your
-   * seat..." for the rest of it, then finally the hub. A login screen flashing
-   * at somebody an hour into a session, once per navigation.
+   * below used to start empty on each arrival, and the player watched the app
+   * rediscover facts it already knew: the signed-out card painted for the
+   * length of one `GET /api/profile`, then the hub's own "Preparing your
+   * seat..." for the rest of it, then finally the hub. A login screen
+   * flashing at somebody an hour into a session, once per navigation.
    *
    * `cachedProfile` is this tab's copy of the last profile the server sent
    * (see lib/profile/session-continuity.ts for why it is sessionStorage and
    * never localStorage). It reaches the first render synchronously through
-   * `useSyncExternalStore`, which is the whole point -- `useStoredPreference`
-   * defers by a tick, and a value that arrives after the first paint has
-   * already let the wrong screen show. Same trade `first-run-strip.tsx` makes.
+   * `useSyncExternalStore`, which is the point: `useStoredPreference` defers
+   * by a tick, and a value that arrives after the first paint has already let
+   * the wrong screen show. Same trade `first-run-strip.tsx` makes.
    *
    * It is a bridge, not an authority, and `profileLoading` is what keeps that
    * honest: the moment the real fetch settles, `loadedProfile` is the answer
-   * even when the answer is null. That ordering is load-bearing -- read the
-   * cache after the load settles and a player whose session has expired keeps
-   * seeing their old balance and stays waved through the gate.
+   * even when the answer is null. That ordering matters: read the cache after
+   * the load settles and a player whose session has expired keeps seeing
+   * their old balance and stays waved through the gate.
    */
   const readSessionProfile = useCallback(
     () => sessionProfileSnapshot(browserSessionStorage()),
@@ -203,10 +200,10 @@ export function PokerApp() {
 
   /**
    * Entry is opened by choosing an account or Continue as guest, and is
-   * *evidenced* by holding a profile at all -- the session cookie is the
-   * durable record of having been through the gate, and a profile only comes
-   * back when one exists. Deriving it rather than mirroring it into state is
-   * what stops a remount asking the question again.
+   * evidenced by holding a profile at all: the session cookie is the durable
+   * record of having been through the gate, and a profile only comes back
+   * when one exists. Deriving it rather than mirroring it into state is what
+   * stops a remount asking the question again.
    */
   const [entryOpened, setEntryOpened] = useState(false);
   const entryComplete = entryOpened || profile !== null;
@@ -242,8 +239,8 @@ export function PokerApp() {
     parse: parseEnabledFlag,
     apply: (enabled, cause) => {
       setSoundEnabled(enabled);
-      // Only ever as confirmation of a deliberate unmute, and only after the
-      // line above has actually unmuted the channel it plays through.
+      // Plays only as confirmation of an actual unmute, and only after the
+      // line above has unmuted the channel it plays through.
       if (enabled && cause === "change") playSound("ui");
     },
   });
@@ -258,12 +255,12 @@ export function PokerApp() {
     fallback: DEFAULT_BET_STYLE,
     parse: normalizeBetStyle,
   });
-  // Same shape as betStyle above, and deliberately with no `apply`: the
-  // consumer is a prop on <PokerTable>, not a module singleton, so there is
-  // nothing to push the value into outside React.
+  // Same shape as betStyle above, with no `apply`: the consumer is a prop on
+  // <PokerTable>, not a module singleton, so there is nothing to push the
+  // value into outside React.
   // The third member is the anti-flicker signal, and this is the one
   // preference in the app that needs it: it decides which of two renderers to
-  // MOUNT, so acting on the fallback for a tick means building and discarding
+  // mount, so acting on the fallback for a tick means building and discarding
   // a whole room. See the note on `settled` in use-stored-preference.ts.
   const [tableRenderer, setTableRendererState, tableRendererSettled] =
     useStoredPreference<TableRenderer>({
@@ -272,9 +269,9 @@ export function PokerApp() {
       parse: normalizeTableRenderer,
     });
   // Same shape again, and no `settled` needed this time: unlike the renderer
-  // above, a theme change never remounts anything -- it's just colour/light
-  // props flowing into the already-mounted 3D room -- so a one-tick flicker
-  // to the default before the stored value arrives is harmless.
+  // above, a theme change never remounts anything. It's just colour/light
+  // props flowing into the already-mounted 3D room, so a one-tick flicker to
+  // the default before the stored value arrives is harmless.
   const [roomThemeId, setRoomThemeIdState] = useStoredPreference<RoomThemeId>({
     key: ROOM_THEME_STORAGE_KEY,
     fallback: DEFAULT_ROOM_THEME_ID,
@@ -284,11 +281,11 @@ export function PokerApp() {
   // asked here too now that the buy-in modal offers the same choice before
   // any table exists to mount it into.
   const webglAvailable = useWebglSupport();
-  // The 2.5D table is landscape-only -- see `resolveTableRenderer`. Owned here
+  // The 2.5D table is landscape-only; see `resolveTableRenderer`. Owned here
   // rather than in each consumer so the lobby's preselect and the table itself
   // can never disagree about which way up the device is.
   const landscape = useLandscape();
-  // Not used to render anything here -- it is a dependency of the scroll-listener
+  // Not used to render anything here: it is a dependency of the scroll-listener
   // effect below, which has to re-bind when the lobby swaps between the hub's
   // single scroller and the phone shell's three panes.
   const phoneViewport = usePhoneViewport();
@@ -301,9 +298,9 @@ export function PokerApp() {
     // `.mshell-pane` is the phone shell's per-pane scroller: there the lobby
     // itself no longer scrolls (the tab bar has to stay put), so listening only
     // for `.lobby-hub` would leave the header frozen on every phone. All of
-    // them, each remembering its own last position -- otherwise swiping from a
-    // scrolled pane to a fresh one reads as a big upward scroll and flashes the
-    // header on.
+    // them, each remembering its own last position, or swiping from a
+    // scrolled pane to a fresh one would read as a big upward scroll and
+    // flash the header on.
     const scrollers = Array.from(
       document.querySelectorAll<HTMLElement>('.account-entry-page, .lobby-hub, .mshell-pane'),
     );
@@ -328,7 +325,7 @@ export function PokerApp() {
   }, [entryComplete, game, phoneViewport]);
   const [claimingGold, setClaimingGold] = useState(false);
   const [goldFlash, setGoldFlash] = useState(false);
-  // The lobby menu's own "Free Gold" entry -- the only way this modal opens.
+  // The lobby menu's own "Free Gold" entry, the only way this modal opens.
   // Reopenable any time the row is eligible, up to the server's daily cap.
   const [freeGoldOpen, setFreeGoldOpen] = useState(false);
   // Learned from the server, not assumed: null means "hasn't been told
@@ -342,25 +339,24 @@ export function PokerApp() {
   // Both start at the safe "off" default on the server render and the
   // client's first render (Notification.permission/PushManager are
   // unreachable during SSR), then this effect corrects them post-mount and
-  // again whenever the profile changes -- covering the sign-up flow
-  // granting permission a render or two before this menu is next opened.
-  // Permission and an active subscription are tracked separately because a
-  // browser never lets JS revoke permission once granted -- see
+  // again whenever the profile changes, covering the sign-up flow granting
+  // permission a render or two before this menu is next opened. Permission
+  // and an active subscription are tracked separately because a browser
+  // never lets JS revoke permission once granted; see
   // isSubscribedOnThisDevice's own comment.
   const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">("unsupported");
   const [pushSubscribed, setPushSubscribed] = useState(false);
-  // Both setState calls sit after the await on purpose -- calling either one
-  // synchronously the instant this runs (loadProfile above is the same
-  // shape) is the cascading-render pattern react-hooks/set-state-in-effect
-  // exists to catch, even from inside an async function invoked by the
-  // effect.
+  // Both setState calls sit after the await: calling either one synchronously
+  // the instant this runs (loadProfile above is the same shape) is the
+  // cascading-render pattern react-hooks/set-state-in-effect exists to catch,
+  // even from inside an async function invoked by the effect.
   const refreshPushState = useCallback(async () => {
     const subscribed = await isSubscribedOnThisDevice();
     setPushSubscribed(subscribed);
     setPushPermission(pushPermissionState());
   }, []);
   useEffect(() => {
-    // Deferred a tick, same as the loadProfile effect above -- the linter
+    // Deferred a tick, same as the loadProfile effect above: the linter
     // treats a setTimeout callback as opaque rather than tracing into it,
     // which is what actually satisfies react-hooks/set-state-in-effect here
     // (an awaited async call alone still gets flagged as reachable).
@@ -377,20 +373,20 @@ export function PokerApp() {
     useTableReactions(gameId ?? null, mySeatId);
   const gameVersionRef = useRef(game?.version ?? 0);
   const previousGameRef = useRef<GameSnapshot | null>(null);
-  // Deliberately its own ref rather than reading previousGameRef, which the
-  // tableSounds effect below owns and overwrites. Sharing it would make the
-  // "game on" cue depend on which of the two effects React declared first.
+  // Its own ref rather than reading previousGameRef, which the tableSounds
+  // effect below owns and overwrites. Sharing it would make the "game on"
+  // cue depend on which of the two effects React declared first.
   const wasSeatedRef = useRef(false);
   const linkedAccountIdRef = useRef<string | null>(null);
   const accountLinkPromiseRef = useRef<Promise<boolean> | null>(null);
   // The id of the table `leave()` last cleared `game` for, if any. Requests
   // for that table already in flight when the player left (a poll, a pending
-  // action, the turn clock) still resolve afterward -- without this, their
+  // action, the turn clock) still resolve afterward; without this, their
   // stale snapshot would repopulate `game` and the player would reappear at
   // a table they just walked away from, frozen on whatever that snapshot
   // showed. Explicit joins (quickPlay/hostPrivate/joinByCode/the deep-link
-  // bootstrap) bypass it deliberately: rejoining is a real decision, not a
-  // stale response, even if it lands on the same table id.
+  // bootstrap) bypass it: rejoining is a real decision, not a stale
+  // response, even if it lands on the same table id.
   const leftGameIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -411,11 +407,11 @@ export function PokerApp() {
   }, [setBetStyleState]);
 
   /**
-   * Steps from the renderer that is actually MOUNTED, which the table passes
+   * Steps from the renderer that is actually mounted, which the table passes
    * in, rather than from the stored preference.
    *
-   * They differ whenever a preference has been resolved away -- the only
-   * remaining case is the 3D room on a device without WebGL -- and stepping
+   * They differ whenever a preference has been resolved away, the only
+   * remaining case is the 3D room on a device without WebGL, and stepping
    * from the stored value in that state produces a menu entry that visibly
    * does nothing: stored 3D, no WebGL, so the racetrack table is what's
    * mounted; stepping from the stored preference would step past the
@@ -464,9 +460,9 @@ export function PokerApp() {
     // /collection, /leaderboard and /store are separate routes that unmount
     // this whole component. Without a cleanup here, navigating to any of
     // them left the singleton <audio> element in lib/audio/menu-music.ts
-    // playing behind a page that never asked for it -- nothing under those
-    // routes imports stopMenuMusic. The cleanup below is what actually fixes
-    // that: it fires on every unmount, which is every such navigation.
+    // playing behind a page that never asked for it, since nothing under
+    // those routes imports stopMenuMusic. The cleanup below fixes that: it
+    // fires on every unmount, which is every such navigation.
     //
     // Tab visibility is the other half: a hidden tab (backgrounded window,
     // switched tab) has no in-app "leave" to hook, so it's read directly via
@@ -516,7 +512,7 @@ export function PokerApp() {
   }, [game]);
 
   /**
-   * "Game on" -- the one cue that says you are actually at a table.
+   * "Game on": the one cue that says you are actually at a table.
    *
    * Edge-triggered, and it has to be. `game` changes identity on every poll,
    * every server tick and every action, so the level-triggered shape the menu
@@ -527,13 +523,13 @@ export function PokerApp() {
    * It lives here rather than in the four handlers that can seat a player
    * (quickPlay, hostPrivate, joinByCode, and the ?table= deep link) because
    * three of those four used to call playSound("deal") and the fourth was
-   * silent -- the deep link shares `refresh` with the poll loop, so nobody
-   * ever added it. One edge covers all four, and covers the friend-invite
+   * silent (the deep link shares `refresh` with the poll loop, so nobody
+   * ever added it). One edge covers all four, and covers the friend-invite
    * accept path for free the day onJoinedTable is finally wired up.
    *
-   * tableSounds is deliberately silent on entry (it returns [] when there is
-   * no previous snapshot to have changed from), so this does not collide with
-   * it -- see the note at the top of lib/audio/table-sounds.ts.
+   * tableSounds stays silent on entry (it returns [] when there is no
+   * previous snapshot to have changed from), so this does not collide with
+   * it; see the note at the top of lib/audio/table-sounds.ts.
    */
   useEffect(() => {
     const seated = Boolean(game);
@@ -543,7 +539,7 @@ export function PokerApp() {
     gameOnSound();
     // The same edge is where the hand's own sounds become reachable, so it is
     // where they are fetched. Before this they were pulled by the first tap
-    // anywhere, lobby included -- see primeTableSounds.
+    // anywhere, lobby included; see primeTableSounds.
     primeTableSounds();
   }, [game]);
   useEffect(() => {
@@ -552,16 +548,16 @@ export function PokerApp() {
 
   // Reaching a table retires the first-run strip, and this is written here
   // rather than inside the strip because the strip is not mounted at the
-  // moment it happens -- Lobby is replaced by PokerTable, so FirstRunStrip is
+  // moment it happens: Lobby is replaced by PokerTable, so FirstRunStrip is
   // gone. A player who ignored the guidance entirely and just tapped the hero
   // tile has answered its question better than finishing three steps would;
   // see the note on isFirstRunRetired in lib/lobby/first-run.ts.
   //
-  // No React state here on purpose. Writing the flag is a side effect on an
-  // external system (localStorage), which is exactly what an effect is for;
-  // mirroring it into state as well would be the cascading-render shape
-  // react-hooks/set-state-in-effect exists to stop, and it would buy nothing
-  // -- the same swap that unmounts the strip is what makes it re-read the flag
+  // No React state here. Writing the flag is a side effect on an external
+  // system (localStorage), which is what an effect is for; mirroring it into
+  // state as well would be the cascading-render shape
+  // react-hooks/set-state-in-effect exists to stop, and it would buy nothing:
+  // the same swap that unmounts the strip is what makes it re-read the flag
   // when the player comes back to the lobby.
   useEffect(() => {
     if (game) retireFirstRunStrip();
@@ -573,10 +569,10 @@ export function PokerApp() {
     if (!response.ok) throw new Error(data.error ?? "Could not load your profile.");
     setProfile(data.profile);
     // A profile came back, so this browser holds a session cookie and has been
-    // through the entry gate before -- which `entryComplete` now reads off the
-    // profile directly rather than mirroring into state, so there is nothing
-    // to set here. No profile is the other half of that: the session is gone,
-    // so this tab's cached copy is stale and must not be shown to whoever
+    // through the entry gate before. `entryComplete` reads off the profile
+    // directly rather than mirroring into state, so there is nothing to set
+    // here. No profile is the other half of that: the session is gone, so
+    // this tab's cached copy is stale and must not be shown to whoever
     // arrives next.
     if (!data.profile) clearSessionContinuity(browserSessionStorage());
   }, []);
@@ -596,10 +592,10 @@ export function PokerApp() {
     if (data.profile) setProfile(data.profile);
   }, []);
 
-  // `force` is for the one caller that represents a deliberate join rather
-  // than a background poll -- the ?table= deep-link bootstrap, which must
-  // apply even if this id happens to match a table the player left earlier
-  // in this same tab's life.
+  // `force` is for the one caller that represents a real join rather than a
+  // background poll: the ?table= deep-link bootstrap, which must apply even
+  // if this id happens to match a table the player left earlier in this
+  // same tab's life.
   const refresh = useCallback(async (id: string, opts?: { force?: boolean }) => {
     const response = await fetch(`/api/games/${id}`, { cache: "no-store" });
     const data = await response.json();
@@ -639,8 +635,8 @@ export function PokerApp() {
       }
     };
     // A backgrounded tab's setTimeout (the turn clock) and its Realtime
-    // socket are both fair game for the browser to throttle or suspend --
-    // observed worst case, a table sat between hands while the player who'd
+    // socket are both fair game for the browser to throttle or suspend.
+    // Observed worst case: a table sat between hands while the player who'd
     // just busted had switched away, and nothing forced a check on return.
     // Rejoining the queue's own schedule fixes it eventually, but "eventually"
     // is exactly the frozen feeling this closes: a resync the instant the tab
@@ -679,8 +675,8 @@ export function PokerApp() {
   }, [entryComplete, refresh, joinByCode]);
 
   /**
-   * Redeems a friend invite code and reports the outcome as an auth notice
-   * -- the same toast used for "Welcome back"/"Progress secured", so an
+   * Redeems a friend invite code and reports the outcome as an auth notice,
+   * the same toast used for "Welcome back"/"Progress secured", so an
    * invite landing feels like the rest of this file's one-line confirmations
    * rather than a separate kind of message.
    */
@@ -692,7 +688,7 @@ export function PokerApp() {
         body: JSON.stringify({ code }),
       });
       const data = (await response.json().catch(() => null)) as { status?: string; error?: string } | null;
-      // Cleared on any resolved attempt, success or failure -- a bad or
+      // Cleared on any resolved attempt, success or failure: a bad or
       // already-spent code should not be retried forever on every future
       // sign-in in this tab.
       clearPendingFriendInvite(browserSessionStorage());
@@ -717,13 +713,13 @@ export function PokerApp() {
   }, []);
 
   /**
-   * `?friend=<code>` on the URL -- someone opened a shared invite link.
+   * `?friend=<code>` on the URL: someone opened a shared invite link.
    * Handled the same way as the `table`/`code` params just above: consumed
    * once entry is through the gate, then stripped so a refresh can't repeat
    * it.
    *
    * A guest has no account for a friendship to attach to, so a guest's code
-   * is stashed rather than redeemed or dropped -- the effect below this one
+   * is stashed rather than redeemed or dropped. The effect below this one
    * picks it up the moment this tab has a registered profile, whether that
    * happens by signing in right now or on some later visit.
    */
@@ -747,11 +743,11 @@ export function PokerApp() {
   }, [entryComplete, profileLoading, profile?.isRegistered, redeemFriendInvite]);
 
   /**
-   * The stashed code from the effect above, redeemed the moment this tab
-   * has a registered profile -- covers both signing in right now (this
-   * component keeps its state) and the Google OAuth round trip (a full
-   * reload mints a fresh mount, so this fires on the profile fetch that
-   * follows it instead of a state transition it would otherwise miss).
+   * The stashed code from the effect above, redeemed the moment this tab has
+   * a registered profile. Covers both signing in right now (this component
+   * keeps its state) and the Google OAuth round trip (a full reload mints a
+   * fresh mount, so this fires on the profile fetch that follows it instead
+   * of a state transition it would otherwise miss).
    */
   useEffect(() => {
     if (!profile?.isRegistered) return;
@@ -801,20 +797,20 @@ export function PokerApp() {
   /**
    * Gives a first-time visitor an actual profile once they enter the lobby.
    *
-   * The load above deliberately creates nothing -- 3bbc117 stopped read-only
-   * routes minting a player per request -- and the session token itself is
-   * not minted until POST /api/auth/session-preference, the first call
-   * either entry path makes. So a brand-new browser reaches the lobby
-   * holding a fresh cookie with nothing behind it: profile null, 0 Gold,
-   * every stakes tier reading "Need N Gold", and the buy-in modal's confirm
-   * disabled with no way to ever enable it.
+   * The load above creates nothing on its own (read-only routes stopped
+   * minting a player per request), and the session token itself is not
+   * minted until POST /api/auth/session-preference, the first call either
+   * entry path makes. So a brand-new browser reaches the lobby holding a
+   * fresh cookie with nothing behind it: profile null, 0 Gold, every stakes
+   * tier reading "Need N Gold", and the buy-in modal's confirm disabled with
+   * no way to ever enable it.
    *
-   * Deliberately its own effect rather than an await inside continueAsGuest.
-   * Awaiting there fixes this path too, but it puts setEntryOpened behind
-   * a network round trip and so changes when the ?table= effect below runs
-   * -- and that effect is what puts you back at a table you were already
-   * sitting at. Creating the profile alongside it instead leaves that timing
-   * byte-for-byte unchanged and needs no edit to either entry handler.
+   * This is its own effect rather than an await inside continueAsGuest.
+   * Awaiting there fixes this path too, but it puts setEntryOpened behind a
+   * network round trip and so changes when the ?table= effect below runs,
+   * which is what puts you back at a table you were already sitting at.
+   * Creating the profile alongside it instead leaves that timing unchanged
+   * and needs no edit to either entry handler.
    *
    * POST /api/profile is the only route that both mints the token and calls
    * ensureProfile, and it is idempotent per token, so arriving here with a
@@ -968,7 +964,7 @@ export function PokerApp() {
   //  - the persistent path scheduled its timeout with Math.max(200, ...) and
   //    listed `game.seats` in its dependencies. `seats` is a fresh array on
   //    every snapshot, so every refresh rebuilt the timer, and an already-
-  //    overdue deadline floored the delay to 200ms -- each advance changed
+  //    overdue deadline floored the delay to 200ms; each advance changed
   //    `version`, which re-ran the effect, which scheduled another 200ms.
   //
   // The primitives below are all that decision needs, so the effect re-runs
@@ -1089,9 +1085,9 @@ export function PokerApp() {
     setLoading(true);
     setError(null);
     // addOptimisticAction must fire inside the same transition as the
-    // request it's predicting -- that's what makes React hold the
-    // prediction until this settles and then always defer to whatever
-    // ingest() actually writes, success or failure.
+    // request it's predicting: that's what makes React hold the prediction
+    // until this settles and then always defer to whatever ingest() actually
+    // writes, success or failure.
     startActionTransition(async () => {
       addOptimisticAction(action);
       await sendAction(action);
@@ -1112,7 +1108,7 @@ export function PokerApp() {
       const data = await response.json();
       if (response.status === 409 && data?.stale && data?.game) {
         // Already applied. Adopt the server's state; this is not an error the
-        // player needs to see. Unless the player left in the meantime -- see
+        // player needs to see. Unless the player left in the meantime, see
         // leftGameIdRef.
         if (data.game.id !== leftGameIdRef.current) ingest(data);
         return;
@@ -1139,7 +1135,7 @@ export function PokerApp() {
     setLoading(true);
     // Drop the table view up front rather than after the round trip: the
     // player has already decided to go, and it stops the refresh poll from
-    // racing the seat release -- once they are no longer seated, a poll
+    // racing the seat release. Once they are no longer seated, a poll
     // against a private table is correctly rejected.
     leave();
     try {
@@ -1192,10 +1188,10 @@ export function PokerApp() {
   // already did server-side before redirecting here; linkAuthenticatedUser
   // is idempotent, so a duplicate call just restores the same profile.
   //
-  // The *call* being idempotent is why it is safe to re-run and why it must
+  // The call being idempotent is why it is safe to re-run and why it must
   // not re-announce. `linkedAccountIdRef` below is a ref, so it empties on
-  // every mount -- and this component remounts on every return from the
-  // arcade -- which had this greeting the player again for the fourth time in
+  // every mount, and this component remounts on every return from the
+  // arcade, which had this greeting the player again for the fourth time in
   // a minute. Whether to speak is therefore asked of the tab (which survives
   // those remounts) and not of the ref: a real sign-in and a switch to a
   // different account still announce, a re-link says nothing.
@@ -1273,7 +1269,7 @@ export function PokerApp() {
 
   /**
    * An authorization code landing here rather than /auth/callback means the
-   * flow recorded a bare origin as its destination -- something this code
+   * flow recorded a bare origin as its destination, something this code
    * never asks for, so the flow was begun by a stale bundle or an older
    * deployment. detectSessionInUrl still redeems it when the verifier belongs
    * to this origin, so the only job here is to report it and, when it cannot
@@ -1307,7 +1303,7 @@ export function PokerApp() {
    * The OAuth callback route handler redirects here with this flag when the
    * code exchange itself failed server-side (an expired or already-used
    * code, a Supabase outage). It already reported the specific reason to
-   * Sentry -- this only has to surface that something went wrong and clean
+   * Sentry; this only has to surface that something went wrong and clean
    * the marker out of the address bar.
    */
   useEffect(() => {
@@ -1352,7 +1348,7 @@ export function PokerApp() {
   };
 
   /**
-   * Email/password sign-in and sign-up. Both end the same way Google does --
+   * Email/password sign-in and sign-up. Both end the same way Google does:
    * a Supabase session appears, the onAuthStateChange listener above notices
    * it, and linkAccount attaches it to whatever profile this browser is
    * already using. Neither function links anything itself.
@@ -1390,8 +1386,8 @@ export function PokerApp() {
       });
       if (signUpError) throw signUpError;
       // A Supabase project with email confirmation turned on returns a user
-      // but no session here -- onAuthStateChange never fires, so this is the
-      // only place that outcome is visible.
+      // but no session here, so onAuthStateChange never fires and this is
+      // the only place that outcome is visible.
       if (!data.session) {
         setSignInPending(false);
         setAuthNotice("Check your email to confirm your account, then sign in.");
@@ -1440,7 +1436,7 @@ export function PokerApp() {
     // Both halves, together and before the reload below. `entryComplete` is
     // derived from holding a profile now, so leaving either the loaded copy or
     // this tab's cached one in place would keep the departing player's name and
-    // balance on screen -- and waved through the gate -- until the refetch
+    // balance on screen, and waved through the gate, until the refetch
     // landed. Clearing the tab also re-arms the greeting for the next account.
     setProfile(null);
     clearSessionContinuity(browserSessionStorage());
@@ -1453,10 +1449,10 @@ export function PokerApp() {
     setSignInPending(true);
     try {
       await applySessionPreference();
-      // Nothing is awaited between minting the session and opening the lobby,
-      // on purpose. The profile a first-time guest needs is created by the
+      // Nothing is awaited between minting the session and opening the
+      // lobby. The profile a first-time guest needs is created by the
       // effect near loadProfile above, which runs off `entryComplete` rather
-      // than blocking it -- so the `?table=` effect below still fires on the
+      // than blocking it, so the `?table=` effect below still fires on the
       // same tick it always did and resuming a table you were seated at is
       // untouched. Adding an await here is what breaks that.
       setEntryOpened(true);
@@ -1480,8 +1476,8 @@ export function PokerApp() {
    * a claim that credits the wallet past the threshold makes this row
    * disappear on that same render with no extra plumbing; the daily cap
    * cannot be read that way (the profile does not carry claims-today), so
-   * `freeGoldRemainingToday` -- learned from the server the first time it
-   * says so -- covers the one case balance alone can't.
+   * `freeGoldRemainingToday`, learned from the server the first time it
+   * says so, covers the one case balance alone can't.
    */
   const freeGoldEligible = profile !== null
     && profile.isRegistered
@@ -1491,8 +1487,8 @@ export function PokerApp() {
 
   /**
    * When to offer a rewarded ad: only when the lobby's "Get Free Gold" row is
-   * clicked. `!game` here is belt-and-suspenders -- the row itself only
-   * renders inside the lobby's `{!game && ...}` block below -- but the point
+   * clicked. `!game` here is belt-and-suspenders (the row itself only
+   * renders inside the lobby's `{!game && ...}` block below), but the point
    * of this feature is "never mid-hand", so the modal's own gate says that
    * directly rather than trusting the menu not to change shape later.
    */
@@ -1506,10 +1502,10 @@ export function PokerApp() {
     // button moved rather than removed.
     ...(dailyGold === "ready" || dailyGold === "claimed" || freeGoldEligible
       ? [
-        // Above the daily claim, on purpose: it is the row a player under a
-        // buy-in actually needs first, and it is the one that can be used
-        // more than once. Under the cheapest buy-in only -- see
-        // freeGoldEligible. Opens the same RewardedAdModal an in-game moment
+        // Above the daily claim: it is the row a player under a buy-in
+        // actually needs first, and it is the one that can be used more
+        // than once. Under the cheapest buy-in only, see freeGoldEligible.
+        // Opens the same RewardedAdModal an in-game moment
         // would, just requested instead of noticed, and it can be reopened
         // as many times as the daily cap allows rather than once per
         // session.
@@ -1536,7 +1532,7 @@ export function PokerApp() {
       ]
       : []),
     { kind: "link", label: "Collection", href: "/collection", icon: <Layers size={15} /> },
-    // The main store entry -- Support StackChips used to sit right below this
+    // The main store entry. Support StackChips used to sit right below this
     // as an equal-weight row, which read as two competing stores in one
     // dropdown. It now lives as the small heart button in the header instead
     // (DonateButton, below), so this is the only purchase path left here.
@@ -1550,7 +1546,7 @@ export function PokerApp() {
       icon: <Music2 size={15} />,
     },
     { kind: "separator" },
-    // Registered only, same reasoning as "Claim daily Gold" above -- a
+    // Registered only, same reasoning as "Claim daily Gold" above: a
     // guest has never been asked (the prompt rides account creation, see
     // AccountEntryCard) and the cron sender only ever targets registered
     // profiles, so a guest's row would just be dead. Hidden rather than
@@ -1597,13 +1593,13 @@ export function PokerApp() {
       {!game && (
         <header className={`lobby-header${navShowing ? " is-scrolling-up" : ""}`}>
           {/* The mark alone. The typeset name that used to sit beside it is
-              gone from both headers -- the mark carries the brand and the two
+              gone from both headers: the mark carries the brand, and the two
               together were saying the same thing twice in a 44px row.
               Still the simplified mark rather than the full badge: at the
               ~50px this row allows, the badge's own banner type collapses
               into a smudge (checked on a real render), and with the wordmark
               removed there is no more vertical room, not less.
-              The SVG is aria-hidden, so the label lives on the wrapper --
+              The SVG is aria-hidden, so the label lives on the wrapper,
               otherwise the header's only content is invisible to a screen
               reader. */}
           <div className="wordmark wordmark-mark-only">
@@ -1615,7 +1611,7 @@ export function PokerApp() {
               repeating them here was three chances to tap the same thing.
               Gold stays visible because it is the number a player checks
               before choosing stakes. The heart is the one persistent nav
-              fixture Support StackChips gets now -- see DonateButton. */}
+              fixture Support StackChips gets now; see DonateButton. */}
           <div className="header-actions">
             {entryComplete && profile && (
               <GoldBadge profile={profile} claimable={dailyGold === "ready"} justClaimed={goldFlash} />
@@ -1671,15 +1667,15 @@ export function PokerApp() {
           />
         )
         : (
-          /* Deliberately unkeyed. It used to carry `key={profile.updatedAt}`,
-             which made every profile write -- every buy-in, every cash-out,
-             every daily claim -- tear the whole hub down and rebuild it: the
-             rank strip vanished and refetched, the grid jumped up and back as
-             it returned, open drawers closed, and a half-typed name was lost.
-             The one thing that needed the remount was the buy-in name field
-             seeding itself from `profile.displayName`, which Lobby now derives
-             instead. A key is for telling two different things apart, not for
-             pushing a new prop into stale state. */
+          /* Unkeyed. It used to carry `key={profile.updatedAt}`, which made
+             every profile write, every buy-in, cash-out, and daily claim,
+             tear the whole hub down and rebuild it: the rank strip vanished
+             and refetched, the grid jumped up and back as it returned, open
+             drawers closed, and a half-typed name was lost. The one thing
+             that needed the remount was the buy-in name field seeding itself
+             from `profile.displayName`, which Lobby now derives instead. A
+             key is for telling two different things apart, not for pushing
+             a new prop into stale state. */
           <Lobby
             profile={profile}
             onQuickPlay={quickPlay}

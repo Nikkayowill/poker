@@ -14,7 +14,7 @@ export type { FriendSummary, FriendsOverview, PendingRequest, RecentOpponent };
 /**
  * How many recently-played opponents the drawer offers as one-tap adds.
  *
- * A shortlist, not a history -- the point is "the person you just played",
+ * A shortlist, not a history: the point is "the person you just played",
  * not an exhaustive log of everyone you've ever faced.
  */
 export const RECENT_OPPONENTS_LIMIT = 8;
@@ -56,9 +56,9 @@ export type RespondResult =
 
 /**
  * Postgres' unique_violation. The two partial unique indexes on
- * friend_requests are how a duplicate pending request is detected -- checking
+ * friend_requests are how a duplicate pending request is detected: checking
  * first and inserting second is a race, and the crossed-pair case (A asks B
- * while B asks A) cannot be checked for at all without a lock. Insert, and
+ * while B asks A) can't be checked for at all without a lock. Insert, and
  * let the index answer.
  */
 const UNIQUE_VIOLATION = "23505";
@@ -101,7 +101,7 @@ interface MemoryFriendship {
 }
 
 interface MemoryFriendsDb {
-  /** Keyed `${blockerId}:${blockedId}` -- directional, both directions may exist. */
+  /** Keyed `${blockerId}:${blockedId}`, directional; both directions may exist. */
   blocks: Set<string>;
   requests: Map<string, MemoryRequest>;
   /** Keyed by canonical `${profileA}:${profileB}`. */
@@ -168,7 +168,7 @@ async function hydrate<T extends { profileId: string }>(
       avatarPreset: profile.avatarPreset,
       accent: profile.accent,
       // Filled in for the `friends` list only, by getFriendsOverview after
-      // this returns -- a pending request is not an opponent yet. Set here
+      // this returns; a pending request is not an opponent yet. Set here
       // just to satisfy the shared shape every hydrate() caller returns.
       duelRecord: null,
     }];
@@ -242,8 +242,8 @@ async function friendRowsFor(profileId: string): Promise<{ profileId: string; si
     })),
   ]
     // Each side was limited independently, so the merge has to be re-sorted
-    // and re-capped -- otherwise a player with many of both gets a list
-    // ordered by which column matched rather than by recency.
+    // and re-capped, or a player with many of both gets a list ordered by
+    // which column matched rather than by recency.
     .sort((a, b) => b.since.localeCompare(a.since))
     .slice(0, FRIENDS_PAGE_SIZE);
 }
@@ -259,7 +259,7 @@ export async function listFriendIds(profileId: string): Promise<string[]> {
  * or blocked.
  *
  * `known` is everyone the caller already computed for the friends/pending
- * lists -- passed in rather than re-derived so this can never disagree with
+ * lists, passed in rather than re-derived so this can never disagree with
  * what the drawer is about to render beside it.
  */
 async function recentOpponentsFor(profileId: string, known: ReadonlySet<string>): Promise<RecentOpponent[]> {
@@ -282,8 +282,8 @@ async function recentOpponentsFor(profileId: string, known: ReadonlySet<string>)
   return hydrated
     // hydrate() drops a profile that has since vanished; getHeadToHeadRecords
     // only carries an entry for an opponent with at least one played game,
-    // which every id here already has -- but a row can settle between the
-    // two calls, so this stays a filter rather than a non-null assertion.
+    // which every id here already has. But a row can settle between the two
+    // calls, so this stays a filter rather than a non-null assertion.
     .flatMap((person) => {
       const duelRecord = records.get(person.profileId);
       return duelRecord ? [{ ...person, duelRecord }] : [];
@@ -330,8 +330,8 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
     return withRecentOpponents(me, { friends, incoming, outgoing });
   }
 
-  // Still one round of parallel queries, the same as before the friendship
-  // half moved into friendRowsFor: the drawer opens on all of this at once.
+  // Still one round of parallel queries: the drawer opens on all of this
+  // at once.
   const [friendRows, requests] = await Promise.all([
     friendRowsFor(me),
     supabase
@@ -366,7 +366,7 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
   return withRecentOpponents(me, { friends, incoming, outgoing });
 }
 
-/** Whether either party has blocked the other. Directionless on purpose: a block stops traffic both ways. */
+/** Whether either party has blocked the other. Directionless: a block stops traffic both ways. */
 export async function isBlockedEitherWay(x: string, y: string): Promise<boolean> {
   const [a, b] = [x.toLowerCase(), y.toLowerCase()];
   const supabase = adminClient();
@@ -386,7 +386,7 @@ export async function isBlockedEitherWay(x: string, y: string): Promise<boolean>
  * set of the *other* party's id.
  *
  * A batch counterpart to isBlockedEitherWay, for filtering a list (recent
- * opponents) rather than checking one pair -- one query instead of one per
+ * opponents) rather than checking one pair: one query instead of one per
  * candidate.
  */
 async function blockedCounterparts(profileId: string): Promise<Set<string>> {
@@ -481,7 +481,7 @@ export async function sendFriendRequest(
     .single();
 
   if (error) {
-    // Either partial unique index -- same pair, or the crossed-pair one where
+    // Either partial unique index: same pair, or the crossed-pair one where
     // they asked us first. Both mean "there is already a live request between
     // you two", which is one state to the player.
     if (error.code === UNIQUE_VIOLATION) return { status: "already_pending" };
@@ -495,7 +495,7 @@ export async function sendFriendRequest(
  *
  * Direction is authorization: only the addressee may accept or decline, only
  * the requester may cancel. A caller who is neither gets `not_found` rather
- * than a distinct error -- whether a request id exists is not theirs to learn.
+ * than a distinct error; whether a request id exists is not theirs to learn.
  */
 export async function respondToFriendRequest(
   profileId: string,
@@ -632,7 +632,7 @@ export async function blockProfile(blockerId: string, blockedId: string): Promis
   return true;
 }
 
-/** Lifts a block. Does not restore the friendship it tore down -- that has to be asked for again. */
+/** Lifts a block. Does not restore the friendship it tore down; that has to be asked for again. */
 export async function unblockProfile(blockerId: string, blockedId: string): Promise<boolean> {
   const blocker = blockerId.toLowerCase();
   const blocked = blockedId.toLowerCase();
@@ -653,12 +653,12 @@ export async function unblockProfile(blockerId: string, blockedId: string): Prom
 // ---- invite codes -----------------------------------------------------
 //
 // A reusable "add me" code, for the person you just played who is no longer
-// at the same table -- see the migration's own comment for why this skips
-// the request/accept step entirely.
+// at the same table; see the migration's own comment for why this skips the
+// request/accept step entirely.
 
 /**
  * The alphabet generateRoomCode() (lib/game/engine.ts) already uses for
- * shareable codes -- excludes 0/O/1/I/L, which get misread aloud or
+ * shareable codes. Excludes 0/O/1/I/L, which get misread aloud or
  * mistyped. Duplicated rather than imported: that module is the poker
  * engine, and pulling it into the social layer for one constant is a worse
  * coupling than repeating six characters here.
@@ -683,7 +683,7 @@ export interface FriendInviteCode {
 /**
  * Generates and stores a fresh code for `profileId`, retrying on the
  * astronomically unlikely chance it collides with someone else's. Used for
- * both first creation and regeneration -- `onConflict: "profile_id"` makes
+ * both first creation and regeneration: `onConflict: "profile_id"` makes
  * the upsert replace whatever code the caller already had, so there is
  * nothing left for a "does one already exist" branch to do.
  */
@@ -701,8 +701,8 @@ async function insertFreshInviteCode(supabase: SupabaseClient, profileId: string
       .single();
     if (!error) return { code: String(data.code), createdAt: String(data.created_at) };
     // profile_id is the upsert's conflict target, so the only constraint
-    // left to fail is the code column's own unique index -- try again with
-    // a new random code. Anything else is a real error.
+    // left to fail is the code column's own unique index. Try again with
+    // a new random code; anything else is a real error.
     if (error.code !== UNIQUE_VIOLATION) {
       throw new Error(`Could not create your invite code: ${error.message}`);
     }
@@ -736,7 +736,7 @@ export async function getOrCreateFriendInviteCode(profileId: string): Promise<Fr
 
 /**
  * Replaces the caller's invite code with a new one. Whoever still has the
- * old one is left holding a dead code -- there is no history of retired
+ * old one is left holding a dead code; there is no history of retired
  * codes, matching the table's own comment.
  */
 export async function regenerateFriendInviteCode(profileId: string): Promise<FriendInviteCode> {
@@ -760,7 +760,7 @@ export type RedeemInviteCodeResult =
   | { status: "invalid_code" };
 
 /**
- * Turns someone else's invite code into a friendship, directly -- no
+ * Turns someone else's invite code into a friendship, directly: no
  * request, no accept step. Possessing the code already means its owner
  * chose to share it, which is the consent an accept step would otherwise be
  * collecting; see the migration's own comment.
@@ -799,8 +799,8 @@ export async function redeemFriendInviteCode(
 
   const [a, b] = canonicalPair(me, owner);
   const { error: insertError } = await supabase.from("friendships").insert({ profile_a: a, profile_b: b });
-  // A unique violation here means a race -- a second redeem, or a friend
-  // request accepted in the gap between the check above and this insert --
+  // A unique violation here means a race (a second redeem, or a friend
+  // request accepted in the gap between the check above and this insert)
   // landed the same pair first. Either way the friendship now exists, which
   // is exactly what this call promises, so it is not reported as a failure.
   if (insertError && insertError.code !== UNIQUE_VIOLATION) {

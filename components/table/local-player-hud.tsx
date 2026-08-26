@@ -1,25 +1,25 @@
 "use client";
 
 /**
- * The local player's own corner HUD on the classic 2D and racetrack tables --
+ * The local player's own corner HUD on the classic 2D and racetrack tables:
  * bottom-left, a direct port of the 3D room's <PlayerHudCorner> (see
  * components/game3d/hud/player-hud-corner.tsx, which this mirrors call for
  * call rather than reinventing).
  *
- * WHY THIS EXISTS. .seat-mine used to carry its own avatar figure at the
- * near edge (see 16-first-person.css's own header for that layout's
- * history), which meant the one thing every player asks first -- "which
- * cards are mine" -- had to share the near-field band with a face crop that
- * added nothing a nameplate didn't already say. Hiding that figure on
- * desktop (16-first-person.css, `min-width: 901px`) and putting the avatar
- * here instead is what frees the near-field band for the cards alone.
+ * `.seat-mine` used to carry its own avatar figure at the near edge (see
+ * 16-first-person.css's own header for that layout's history), which meant
+ * the one thing every player asks first, "which cards are mine", had to
+ * share the near-field band with a face crop that added nothing a nameplate
+ * didn't already say. Hiding that figure on desktop (16-first-person.css,
+ * `min-width: 901px`) and putting the avatar here instead is what frees the
+ * near-field band for the cards alone.
  *
- * Classic-table mobile keeps the figure instead of this HUD -- a phone's
+ * Classic-table mobile keeps the figure instead of this HUD: a phone's
  * near-field band has no spare corner to plant a second HUD in without
  * crowding the action bar underneath it. The racetrack table is the one
- * exception: its local seat never has a figure at any width (the camera
- * sits in that chair), so it shows this HUD at every width instead of only
- * past 901px -- see 42-racetrack-table.css's own note.
+ * exception, since its local seat never has a figure at any width (the
+ * camera sits in that chair), so it shows this HUD at every width instead
+ * of only past 901px; see 42-racetrack-table.css's own note.
  */
 
 import { useProgression } from "@/components/profile/use-progression";
@@ -28,7 +28,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import type { ReactionId } from "@/lib/game/reaction-channel";
 import { ReactionButton } from "./table-reactions";
 
-/** A poker chip, not a coin -- this reads the table stack, not the Gold
+/** A poker chip, not a coin: this reads the table stack, not the Gold
  * wallet the navbar's Coins icon already means. Identical glyph to the 3D
  * HUD's (player-hud-corner.tsx) so the same icon means the same thing on
  * both tables. */
@@ -63,7 +63,7 @@ export function LocalPlayerHud({
   reactionCooldown,
   activeReaction,
 }: {
-  /** The seat's name, not the profile's -- a bot-turned-human mid-hand or a
+  /** The seat's name, not the profile's: a bot-turned-human mid-hand or a
    * guest's session name is what the felt actually calls this seat. */
   name: string;
   stack: number;

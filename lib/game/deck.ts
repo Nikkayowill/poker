@@ -20,12 +20,12 @@ export const RANKS: readonly Rank[] = [
   "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A",
 ];
 
-/** Every card exactly once, in a fixed order. Never deal from this directly -- copy it. */
+/** Every card exactly once, in a fixed order. Never deal from this directly; copy it. */
 export const DECK_TEMPLATE: readonly Card[] = SUITS.flatMap(
   (suit) => RANKS.map((rank) => ({ rank, suit })),
 );
 
-/** `(maxExclusive) => integer in [0, maxExclusive)` -- the shape of node:crypto's randomInt. */
+/** `(maxExclusive) => integer in [0, maxExclusive)`: the shape of node:crypto's randomInt. */
 export type RandomInt = (maxExclusive: number) => number;
 
 /** A fresh, shuffled 52-card deck. Cards are copies, so a caller can never mutate the template. */
@@ -34,10 +34,10 @@ export function makeDeck(randomInt: RandomInt): Card[] {
 }
 
 /**
- * A shuffled shoe of `decks` packs combined into one -- the way a real
+ * A shuffled shoe of `decks` packs combined into one, the way a real
  * multi-deck casino game deals from a shoe rather than a single deck.
  *
- * One Fisher-Yates over the whole shoe, not `decks` shuffled packs stacked --
+ * One Fisher-Yates over the whole shoe, not `decks` shuffled packs stacked:
  * those are different distributions, and the stacked one cannot put two copies
  * of the same card near each other, which is precisely what a multi-deck shoe
  * is for. `makeDeck` is this with `decks = 1`, so there is one shuffle in the

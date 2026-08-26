@@ -19,7 +19,7 @@ import { adminClient } from "./supabase-admin";
  * Player progression: XP, rank, lifetime wagered, daily streak.
  *
  * The curve itself is not here. lib/progression/rank.ts owns it, is pure, and
- * is the only definition -- this module reads xp out of a row and asks that
+ * is the only definition; this module reads xp out of a row and asks that
  * module what it means. The table stores no level for the same reason (see the
  * migration's header).
  *
@@ -139,14 +139,14 @@ export async function getProgression(
  *
  * It is NULLABLE for the one caller that genuinely does not have it: a duel
  * stakes both players (lib/server/pvp-match-service.ts), and the request that
- * opens a match carries only the acceptor's cookie -- the challenger has no
+ * opens a match carries only the acceptor's cookie; the challenger has no
  * session in scope. Null routes the milestone credit through
  * creditGoldByProfile instead, which is the same row-locked RPC keyed on the
  * id this function already has. Passing a token when you have one is still
  * preferred: it is the identity the rest of the wallet is keyed on.
  *
  * Never throws into its caller's request. A settled arcade round or a completed
- * poker hand must not become a failed request because the XP write failed --
+ * poker hand must not become a failed request because the XP write failed,
  * the same contract onHandCompleted states for stats and archives. The award is
  * lost in that case, which is the right trade: a player would rather keep the
  * hand than keep the XP.
@@ -195,14 +195,14 @@ export async function awardWager(
     // funnel every wager-driven level-up passes through (poker, blackjack,
     // tips, PvP accept), so this is where it's detected rather than at each
     // of those call sites again. applyMissionEvent never throws, so awaiting
-    // it costs latency, not reliability -- and most of those callers await
+    // it costs latency, not reliability, and most of those callers await
     // awardWager itself before responding, where a fire-and-forget call can
     // simply never run if the serverless invocation freezes right after.
     await applyMissionEvent(profileId, { kind: "level_gained", levels: levelUps.length });
     if (levelUps.length > 0) {
       // Its own try/catch even though this whole function already sits
       // inside one (the outer catch below discards the entire WagerAward,
-      // level-up display included, on any error) -- an achievement-check bug
+      // level-up display included, on any error): an achievement-check bug
       // must not cost the level-up result on top of nothing.
       try {
         await checkAchievements([profileId]);
@@ -216,7 +216,7 @@ export async function awardWager(
     if (owed > 0) {
       // Rule 1: the XP write above already happened, so this pays at most once
       // per crossing. A failure here loses the milestone Gold rather than
-      // risking paying it twice on a retry -- and unlike the XP, it is visible,
+      // risking paying it twice on a retry, and unlike the XP, it is visible,
       // because the level-up still shows.
       //
       // Both branches are the same guarded RPC on the same row, differing only
@@ -241,7 +241,7 @@ export async function awardWager(
  * streakAfterClaim returns the streak unchanged when today has already been
  * recorded: the claim's own UTC-day guard inside claim_daily_gold is what
  * decides whether Gold moves, and both are keyed on the same day boundary. The
- * reverse order would have to read the streak, credit, then write -- and a
+ * reverse order would have to read the streak, credit, then write, and a
  * process that died in the middle would pay the multiplier without recording
  * the day that earned it.
  */

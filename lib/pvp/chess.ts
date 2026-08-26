@@ -6,7 +6,7 @@
  * file has to be reachable by `npm test` anyway (vitest.config.ts collects
  * lib/ and app/), which is where a rules engine's bugs are actually caught.
  * The same argument lib/arcade/blackjack.ts makes about being pure and
- * synchronous applies with more force here -- castling through check and en
+ * synchronous applies with more force here: castling through check and en
  * passant are exactly the cases nobody exercises by hand.
  *
  * Pure and synchronous throughout. Nothing reads Date.now(); every time-aware
@@ -15,15 +15,15 @@
  *
  * ## Board representation
  *
- * A flat 64-entry array of FEN-style characters -- uppercase white, lowercase
- * black, "" empty -- indexed a1=0, b1=1 ... h8=63, so `file = i % 8` and
+ * A flat 64-entry array of FEN-style characters (uppercase white, lowercase
+ * black, "" empty), indexed a1=0, b1=1 ... h8=63, so `file = i % 8` and
  * `rank = i >> 3` and a white pawn steps +8. Strings and numbers only, because
  * the state round-trips through a jsonb column and structuredClone: no Map,
  * no Set, no class instance, no undefined.
  *
  * ## Seats and colour
  *
- * Seat 0 is WHITE and moves first, which the framework guarantees (the
+ * Seat 0 is white and moves first, which the framework guarantees (the
  * challenger is seat 0). That mapping is stated once, in `seatColor`, so
  * nothing else in the file has to remember which way round it goes.
  */
@@ -46,7 +46,7 @@ export interface ChessMove {
   to: number;
   /**
    * Only meaningful on a pawn reaching the last rank, and only ever a
-   * suggestion -- an absent or nonsense value promotes to a queen rather than
+   * suggestion: an absent or nonsense value promotes to a queen rather than
    * refusing the move, since a promotion the client forgot to name is still a
    * move the player unambiguously made.
    */
@@ -71,7 +71,7 @@ export interface ChessState {
    * Set only when an enemy pawn is actually standing beside the double-pushed
    * pawn. That is not an optimisation: the repetition key includes this field,
    * and FIDE only counts an en passant square as part of the position when the
-   * capture is genuinely available -- recording it unconditionally would make
+   * capture is genuinely available. Recording it unconditionally would make
    * two identical positions hash differently and silently lose a threefold
    * claim.
    */
@@ -83,7 +83,7 @@ export interface ChessState {
    * How many times each position has been reached, keyed by `positionKey`.
    *
    * Cleared whenever `halfmoveClock` resets, because a position before a
-   * capture or a pawn move can never occur again -- which keeps this object
+   * capture or a pawn move can never occur again, which keeps this object
    * bounded rather than growing for the whole game inside a jsonb column.
    */
   repetition: Record<string, number>;
@@ -101,7 +101,7 @@ export interface ChessState {
  * What a viewer is shown.
  *
  * Chess is a game of perfect information, so both seats see the same board and
- * there is nothing to redact about the position -- the contract's header names
+ * there is nothing to redact about the position; the contract's header names
  * chess as a game that is symmetric by nature. `legalMoves` is the one asymmetry
  * and it is a convenience, not a secret: it is sent only to the seat to move so
  * the board can highlight without reimplementing the rules, and a spectator
@@ -125,7 +125,7 @@ export interface ChessSnapshot {
 /* -------------------------------------------------------------- constants */
 
 /**
- * Five minutes each with a three-second increment -- standard blitz.
+ * Five minutes each with a three-second increment, standard blitz.
  *
  * Long enough that a real game happens and short enough that a duel holding
  * two players' Gold in escrow resolves in one sitting; the increment exists so
@@ -141,7 +141,7 @@ export const REPETITION_LIMIT = 3;
 
 const PROMOTION_PIECES: readonly PromotionPiece[] = ["q", "r", "b", "n"];
 
-/** Reasons, as constants -- the contract asks for a short fixed line, not composed prose. */
+/** Reasons, as constants: the contract asks for a short fixed line, not composed prose. */
 const REASON = {
   checkmate: "Checkmate",
   stalemate: "Stalemate",
@@ -200,7 +200,7 @@ function pieceFor(color: PieceColor, letter: PieceLetter): ChessPiece {
   return (color === "w" ? letter : letter.toLowerCase()) as ChessPiece;
 }
 
-/** 0 or 1 -- which colour a square is. Only insufficient-material needs it. */
+/** 0 or 1, which colour a square is. Only insufficient-material needs it. */
 function squareShade(square: number): number {
   return (fileOf(square) + rankOf(square)) % 2;
 }
@@ -233,7 +233,7 @@ export interface ChessPosition {
 /**
  * The identity of a position for repetition purposes.
  *
- * Placement, side to move, castling rights and the en passant square -- the
+ * Placement, side to move, castling rights and the en passant square: the
  * four things FIDE counts. Empty squares become "." rather than "" so the
  * placement string cannot be ambiguous: joining "" for empty would make a
  * lone rook and two adjacent rooks the same string.
@@ -253,7 +253,7 @@ export function positionKey(position: ChessPosition): string {
 /**
  * Whether `color` attacks `target`.
  *
- * Scans OUTWARD from the target rather than over every enemy piece: the work
+ * Scans outward from the target rather than over every enemy piece: the work
  * is bounded by the eight rays and the knight ring instead of by how much
  * material is on the board, and it is the same routine used for check, for
  * castling through check, and for the legality filter.
@@ -262,7 +262,7 @@ export function isAttacked(board: readonly ChessSquare[], target: number, color:
   const file = fileOf(target);
   const rank = rankOf(target);
 
-  // A pawn of `color` attacks this square from one rank BEHIND it, which is
+  // A pawn of `color` attacks this square from one rank behind it, which is
   // why the sign is inverted from the direction pawns move.
   const pawn = pieceFor(color, "P");
   const pawnRank = color === "w" ? rank - 1 : rank + 1;
@@ -343,8 +343,8 @@ function addPawnMoves(position: ChessPosition, from: number, color: PieceColor, 
   const oneUp = squareAt(file, rank + forward);
   if (oneUp >= 0 && board[oneUp] === "") {
     push(oneUp);
-    // The two-square push is only legal from the pawn's own start rank AND
-    // only when the square it passes over is also empty -- a pawn does not
+    // The two-square push is only legal from the pawn's own start rank, and
+    // only when the square it passes over is also empty: a pawn does not
     // jump a piece.
     const twoUp = squareAt(file, rank + forward * 2);
     if (rank === startRank && twoUp >= 0 && board[twoUp] === "") out.push({ from, to: twoUp });
@@ -369,7 +369,7 @@ function addCastlingMoves(position: ChessPosition, color: PieceColor, out: Chess
   const rook = pieceFor(color, "R");
   if (board[home.king] !== king) return;
   // Castling out of check is forbidden, and it is checked once here rather
-  // than per side -- the king's own square is the same either way.
+  // than per side: the king's own square is the same either way.
   if (isAttacked(board, home.king, enemy)) return;
 
   const kingSideRight = color === "w" ? castling.whiteKing : castling.blackKing;
@@ -378,9 +378,9 @@ function addCastlingMoves(position: ChessPosition, color: PieceColor, out: Chess
   if (kingSideRight && board[home.kingRook] === rook) {
     const through = home.king + 1;
     const landing = home.king + 2;
-    // Empty between, and the king may not pass THROUGH an attacked square. The
-    // landing square's own safety is caught by the legality filter as well,
-    // but stating it here keeps the rule in one readable place.
+    // Empty between, and the king may not pass through an attacked square.
+    // The landing square's own safety is caught by the legality filter as
+    // well, but stating it here keeps the rule in one readable place.
     if (
       board[through] === "" &&
       board[landing] === "" &&
@@ -394,8 +394,8 @@ function addCastlingMoves(position: ChessPosition, color: PieceColor, out: Chess
   if (queenSideRight && board[home.queenRook] === rook) {
     const through = home.king - 1;
     const landing = home.king - 2;
-    // b1/b8 must be empty too, even though the king never stands on it -- the
-    // ROOK passes over it. It does not have to be safe, only vacant.
+    // b1/b8 must be empty too, even though the king never stands on it: the
+    // rook passes over it. It does not have to be safe, only vacant.
     const rookPath = home.king - 3;
     if (
       board[through] === "" &&
@@ -467,18 +467,18 @@ export function pseudoLegalMoves(position: ChessPosition, color: PieceColor): Ch
  *
  * Only ever called on a move this file generated, so it may assume the piece
  * is there and the geometry is sound; that is what lets `applyMove` below
- * validate by MATCHING an untrusted claim against the generated set rather
+ * validate by matching an untrusted claim against the generated set rather
  * than by re-deriving each rule a second time in a different order.
  *
  * Exported so the tests can walk a move tree (perft) without paying for the
  * clock and turn bookkeeping on every one of a hundred thousand nodes. It is
- * NOT a safe entry point for a caller holding an untrusted move -- that is
+ * not a safe entry point for a caller holding an untrusted move; that is
  * `applyMove` on the game itself, which validates first.
  */
 export function applyLegalMove(position: ChessPosition, move: ChessMove): ChessPosition {
   const board = [...position.board];
   // Only ever called on a move this file generated, so the origin square is
-  // occupied by construction -- see the note above.
+  // occupied by construction; see the note above.
   const piece = board[move.from] as ChessPiece;
   const color = pieceColor(piece);
   const letter = pieceLetter(piece);
@@ -522,7 +522,7 @@ export function applyLegalMove(position: ChessPosition, move: ChessMove): ChessP
     }
   }
   // A rook leaving its corner kills that right, and so does a rook being
-  // captured IN its corner -- the second case is the one hand-written
+  // captured in its corner. The second case is the one hand-written
   // implementations forget, and it shows up as a player castling with a rook
   // that is no longer there.
   for (const square of [move.from, move.to]) {
@@ -551,7 +551,7 @@ export function applyLegalMove(position: ChessPosition, move: ChessMove): ChessP
     castling,
     enPassant,
     halfmoveClock: irreversible ? 0 : position.halfmoveClock + 1,
-    // Incremented after BLACK moves, which is the move number a scoresheet shows.
+    // Incremented after black moves, which is the move number a scoresheet shows.
     fullmoveNumber: position.turn === 1 ? position.fullmoveNumber + 1 : position.fullmoveNumber,
   };
 }
@@ -590,7 +590,7 @@ function countMaterial(board: readonly ChessSquare[], color: PieceColor): Materi
 /**
  * Whether `color` could deliver mate at all, even with the opponent helping.
  *
- * This is the FIDE timeout question, which is NOT "can this side force mate":
+ * This is the FIDE timeout question, which is not "can this side force mate":
  * two knights cannot force mate but can certainly be mated into, so a flag
  * fall against K+N+N is a loss and not a draw. One minor piece against a bare
  * king genuinely cannot mate by any series of legal moves, so that is a draw.
@@ -603,7 +603,7 @@ export function canMate(board: readonly ChessSquare[], color: PieceColor): boole
 
 /**
  * The dead positions FIDE draws immediately: K v K, K+minor v K, and bishops
- * of the SAME square colour on both sides -- which can never touch each other
+ * of the same square colour on both sides, which can never touch each other
  * and so can never force anything.
  */
 export function insufficientMaterial(board: readonly ChessSquare[]): boolean {
@@ -633,7 +633,7 @@ export function insufficientMaterial(board: readonly ChessSquare[]): boolean {
  * How much of `seat`'s budget is left at `now`.
  *
  * Only the side to move is burning time, and a `now` that lands before
- * `turnStartedAt` -- a clock skewed backwards between two writes -- is clamped
+ * `turnStartedAt` (a clock skewed backwards between two writes) is clamped
  * to zero elapsed rather than being allowed to hand somebody time back.
  */
 export function remainingClock(state: ChessState, seat: DuelSeat, now: number): number {
@@ -647,8 +647,8 @@ export function remainingClock(state: ChessState, seat: DuelSeat, now: number): 
  * The state after `seat`'s flag has fallen.
  *
  * A flag is a loss unless the player who still has time could not mate with
- * what is on the board, in which case it is a draw -- the same rule an
- * over-the-board arbiter applies, and the reason the reason line here is
+ * what is on the board, in which case it is a draw, the same rule an
+ * over-the-board arbiter applies, and why the reason line here reads
  * "Insufficient material" rather than "Timeout".
  */
 function flagFallen(state: ChessState, seat: DuelSeat, now: number): ChessState {
@@ -671,7 +671,7 @@ function flagFallen(state: ChessState, seat: DuelSeat, now: number): ChessState 
  * Whether the position that has just been reached ends the match.
  *
  * Order matters: mate and stalemate are checked first because they are
- * absolute, and the fifty-move and repetition draws come after -- a position
+ * absolute, and the fifty-move and repetition draws come after. A position
  * that is both checkmate and the hundredth quiet ply is checkmate.
  */
 function conclude(position: ChessPosition, repetitionCount: number): DuelOutcome | null {
@@ -696,10 +696,9 @@ function isSquareIndex(value: unknown): value is number {
 /**
  * A move claim, narrowed, or null.
  *
- * The route hands this through as `z.unknown()` on purpose -- only the engine
- * knows what a chess move looks like -- so every shape check is here, and a
- * wrong shape becomes a rejection rather than a throw that would 500 the
- * route.
+ * The route hands this through as `z.unknown()`, since only the engine knows
+ * what a chess move looks like, so every shape check is here, and a wrong
+ * shape becomes a rejection rather than a throw that would 500 the route.
  */
 function parseMove(claim: unknown): ChessMove | null {
   if (typeof claim !== "object" || claim === null) return null;
@@ -721,7 +720,7 @@ function parseMove(claim: unknown): ChessMove | null {
  *
  * Matching against the generated set is the whole validation: a claim that is
  * not in the list is illegal for whatever reason, including the one nobody
- * writes a branch for -- that it leaves the mover's own king in check.
+ * writes a branch for, that it leaves the mover's own king in check.
  * Promotion is resolved leniently because four moves share one from/to pair
  * and a client that named none of them still made an unambiguous move.
  */
@@ -744,7 +743,7 @@ export const CHESS_DUEL = defineDuelGame<ChessState, ChessMove, ChessSnapshot>({
   /**
    * `seed` is ignored: chess has no random setup, both players start from the
    * same position every time, and the contract explicitly names chess as a
-   * game that may ignore it. `now` is not ignored -- white's clock starts the
+   * game that may ignore it. `now` is not ignored; white's clock starts the
    * instant the match row exists.
    */
   createState: (_seed, now) => {
@@ -779,7 +778,7 @@ export const CHESS_DUEL = defineDuelGame<ChessState, ChessMove, ChessSnapshot>({
     if (legal === null) return { reject: "That move is not legal." };
 
     // The clock is charged before the move is recorded, and a flag that had
-    // already fallen SETTLES the match rather than rejecting: the service
+    // already fallen settles the match rather than rejecting it: the service
     // ticks before calling this, so the only way to arrive here out of time is
     // a direct call, and answering with a rejection would leave a decided
     // match sitting unfinished waiting for a poll.
@@ -816,7 +815,7 @@ export const CHESS_DUEL = defineDuelGame<ChessState, ChessMove, ChessSnapshot>({
    * The shell polls every two seconds and the service calls this on every
    * read, so returning a fresh object for anything less than a real state
    * change would bump the version on each poll and livelock both players'
-   * optimistic concurrency guard -- the contract says so, and it is the one
+   * optimistic concurrency guard. The contract says so, and it is the one
    * way this file could break a game it has no rules bug in.
    */
   tick: (state, now) => {

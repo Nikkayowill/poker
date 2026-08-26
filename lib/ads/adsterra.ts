@@ -5,13 +5,11 @@
  * is: vitest.config.ts collects only lib/ and app/, so a slot key written next
  * to the markup is a slot key no test can check. The one test that matters here
  * is that every unit's loader host is a host next.config.ts's CSP actually
- * allows -- a mismatch is invisible until a real browser blocks the script, and
+ * allows; a mismatch is invisible until a real browser blocks the script, and
  * this vendor's hosts have already drifted once.
  *
- * ON THE HOSTS DRIFTING
- *
  * Adsterra moves publishers between delivery domains without notice, and a
- * loader on a host the CSP does not name simply never executes -- no error the
+ * loader on a host the CSP does not name simply never executes: no error the
  * app can see, just an empty box. The allow-list therefore names each
  * registrable domain with a wildcard on the subdomain, because the creative
  * comes from sibling subdomains of the loader's, not from one fixed host.
@@ -29,9 +27,9 @@ export interface AdsterraUnit {
 /**
  * Every delivery domain the CSP allows, without the scheme or wildcard.
  *
- * Kept here, in testable code, and mirrored by next.config.ts -- which cannot
- * import this file, because a next.config.ts import would drag it into the
- * build config's module graph. The test asserts they agree instead.
+ * Kept here, in testable code, and mirrored by next.config.ts, which cannot
+ * import this file because that would drag it into the build config's
+ * module graph. The test asserts the two agree instead.
  */
 export const ADSTERRA_DELIVERY_DOMAINS = [
   "effectivecpmnetwork.com",
@@ -42,7 +40,7 @@ export const ADSTERRA_DELIVERY_DOMAINS = [
 /**
  * The unit shown inside the rewarded-ad modal.
  *
- * 300x250 because that is what the existing account is configured for -- the
+ * 300x250 because that is what the existing account is configured for. The
  * key and the dimensions are one setting on Adsterra's side, and a mismatch
  * serves nothing rather than serving a resized banner.
  *

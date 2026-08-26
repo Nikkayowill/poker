@@ -1,5 +1,5 @@
 /**
- * Connections -- sixteen words, four hidden groups of four.
+ * Connections: sixteen words, four hidden groups of four.
  *
  * Pure and synchronous, and like word-stack.ts it takes the puzzle as *data*
  * rather than importing one. This module is client-imported (the board renders
@@ -7,29 +7,25 @@
  * set imported here would ship every future answer to every browser. The sets
  * live in connections-puzzles.ts behind `server-only`.
  *
- * ## What a guess is allowed to teach you
- *
- * The interesting redaction in this game is not the answer, it is the
- * *feedback*. Internally a guess is scored by looking up each selected word's
- * group, so the server knows -- and must not say -- which of your four words
- * came from where. Reporting per-word colours on a wrong guess would turn four
- * mistakes into a free complete solution: guess any four words, read off their
- * groups, done. So a wrong guess reports exactly one bit beyond "wrong": `one
- * away`, when three of the four share a group. That is the same information
- * the real game gives, and it is the most that can be given without handing
- * over the board.
+ * What a guess is allowed to teach you: the interesting redaction in this
+ * game is not the answer, it is the *feedback*. Internally a guess is scored
+ * by looking up each selected word's group, so the server knows, and must
+ * not say, which of your four words came from where. Reporting per-word
+ * colours on a wrong guess would turn four mistakes into a free complete
+ * solution: guess any four words, read off their groups, done. So a wrong
+ * guess reports exactly one bit beyond "wrong": `one away`, when three of
+ * the four share a group. That is the same information the real game gives,
+ * and it is the most that can be given without handing over the board.
  *
  * The per-word colour matrix the share text is built from is therefore only
- * released once the round is over -- see toConnectionsSnapshot. By then every
+ * released once the round is over; see toConnectionsSnapshot. By then every
  * group is revealed anyway, so it costs nothing.
  *
- * ## Difficulty is the colour
- *
- * `level` 0..3 runs easiest to hardest and maps to yellow / green / blue /
- * purple, which is why the share grid reads as a difficulty story rather than
- * a list of ticks: a row of purple first says something a row of yellow does
- * not. Storing the level rather than a colour name keeps the ordering
- * meaningful and leaves the palette to the renderer.
+ * Difficulty is the colour: `level` 0..3 runs easiest to hardest and maps to
+ * yellow / green / blue / purple, which is why the share grid reads as a
+ * difficulty story rather than a list of ticks: a row of purple first says
+ * something a row of yellow does not. Storing the level rather than a colour
+ * name keeps the ordering meaningful and leaves the palette to the renderer.
  */
 
 import type { RandomInt } from "@/lib/game/deck";
@@ -43,7 +39,7 @@ export const CONNECTIONS_MAX_MISTAKES = 4;
 
 export interface ConnectionsGroup {
   level: ConnectionsLevel;
-  /** The category, shown once the group is found. Short -- it sits on one row of the board. */
+  /** The category, shown once the group is found. Short, since it sits on one row of the board. */
   label: string;
   /** Exactly CONNECTIONS_GROUP_SIZE words. */
   members: string[];
@@ -66,7 +62,7 @@ export interface ConnectionsRound {
   order: string[];
   /** Levels the player has solved, in the order they found them. */
   solvedLevels: ConnectionsLevel[];
-  /** Every selection played, oldest first. Words, not levels -- this is what detects a repeat. */
+  /** Every selection played, oldest first. Words, not levels: this is what detects a repeat. */
   attempts: string[][];
   mistakes: number;
   status: ConnectionsStatus;
@@ -134,7 +130,7 @@ export function connectionsGuessProblem(
   if (words.some((word) => solved.has(index.get(word) as ConnectionsLevel))) return "solved-word";
 
   // A repeat costs nothing, the same way it does not in the game this is
-  // modelled on -- charging a mistake for a mis-click the player already paid
+  // modelled on: charging a mistake for a mis-click the player already paid
   // for reads as the game cheating.
   const key = [...words].sort().join("|");
   if (round.attempts.some((attempt) => [...attempt].sort().join("|") === key)) return "repeat";
@@ -150,7 +146,7 @@ export function startConnectionsRound(puzzle: ConnectionsPuzzle, randomInt: Rand
   }));
 
   const order = groups.flatMap((group) => group.members);
-  // Fisher-Yates with injected randomness, exactly as makeDeck does it -- the
+  // Fisher-Yates with injected randomness, exactly as makeDeck does it: the
   // board must not open with the four yellows sitting in a row.
   for (let index = order.length - 1; index > 0; index -= 1) {
     const swapWith = randomInt(index + 1);
@@ -163,7 +159,7 @@ export function startConnectionsRound(puzzle: ConnectionsPuzzle, randomInt: Rand
 /**
  * Plays one selection of four words.
  *
- * Inert on a selection the round cannot accept -- same convention as
+ * Inert on a selection the round cannot accept, same convention as
  * submitWordStackGuess: the service re-checks and answers 409, and a
  * throw here would surface as a 500.
  */
@@ -188,7 +184,7 @@ export function submitConnectionsGuess(round: ConnectionsRound, selection: strin
     };
   }
 
-  // "One away" is three of one group plus a stray -- the only extra bit a
+  // "One away" is three of one group plus a stray, the only extra bit a
   // wrong guess is allowed to reveal. See the note at the top of this file.
   const counts = new Map<ConnectionsLevel, number>();
   levels.forEach((level) => counts.set(level, (counts.get(level) ?? 0) + 1));
@@ -205,7 +201,7 @@ export function submitConnectionsGuess(round: ConnectionsRound, selection: strin
 }
 
 /**
- * Every guess as a row of difficulty levels -- the share matrix's input.
+ * Every guess as a row of difficulty levels: the share matrix's input.
  *
  * Derived rather than stored: the attempts and the groups are already the
  * truth, and a second copy that could disagree with them is a bug waiting for
@@ -237,7 +233,7 @@ export interface ConnectionsSnapshot {
   guessCount: number;
   lastVerdict: ConnectionsVerdict | null;
   status: ConnectionsStatus;
-  /** Null while the round is live -- releasing it early would hand over the board. */
+  /** Null while the round is live; releasing it early would hand over the board. */
   guessRows: ConnectionsLevel[][] | null;
   groupSize: number;
 }

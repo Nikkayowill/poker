@@ -32,12 +32,11 @@ import { awardWager } from "./progression-store";
  *
  * The shape is word-stack-service.ts's, and the rules that govern both are
  * restated rather than referenced because breaking one silently ruins the
- * feature for everyone rather than for one player:
- *
- *   **The groups never leave this file.**
+ * feature for everyone rather than for one player. The core rule: **the
+ * groups never leave this file.**
  *
  * Here that rule has a second edge the Word Stack service does not need. The
- * answer is not only the four groups -- it is also *which group each word is
+ * answer is not only the four groups, it is also *which group each word is
  * in*, which the server necessarily computes on every guess. Reporting those
  * per-word would turn four wrong guesses into a complete solution, so a wrong
  * guess reports "one away" or nothing at all, and the per-word colour matrix
@@ -47,9 +46,9 @@ import { awardWager } from "./progression-store";
  *
  * The day rule: one board per player per UTC day, enforced by the store's
  * unique index rather than by a check here. **A wager does not relax this**,
- * same explicit call as Word Stack's (2026-08-21, see word-stack-service.ts's
- * header for the full reasoning) -- Connections keeps its once-a-day limit no
- * matter how it is played; a wager attaches to that one attempt.
+ * same call as Word Stack's (see word-stack-service.ts's header for the full
+ * reasoning): Connections keeps its once-a-day limit no matter how it is
+ * played, and a wager attaches to that one attempt.
  *
  * Money now moves here when wagered, following the same three rules
  * word-stack-service.ts restates: debit before the row exists (refund on a
@@ -74,7 +73,7 @@ export interface ConnectionsView {
   msUntilNextPuzzle: number;
 }
 
-/** `repeat` is ordinary play -- a selection already tried, refused without charging a mistake. */
+/** `repeat` is ordinary play: a selection already tried, refused without charging a mistake. */
 export class ConnectionsRequestError extends ArcadeRequestError<
   ConnectionsSnapshot,
   "repeat" | "rolled-over" | "stale"
@@ -89,7 +88,7 @@ function today(now = new Date()) {
   return { day, number: puzzleNumber(day), msUntilNext: msUntilNextPuzzle(now) };
 }
 
-/** The base redacted snapshot, no wager/payout -- what error payloads carry. */
+/** The base redacted snapshot, no wager/payout: what error payloads carry. */
 function snapshot(stored: StoredConnections): ConnectionsSnapshot {
   return toConnectionsSnapshot(stored.round, {
     day: stored.day,
@@ -118,7 +117,7 @@ function view(
   };
 }
 
-/** Today's board as it stands, or null if it has not been opened. Read-only -- opening is POST. */
+/** Today's board as it stands, or null if it has not been opened. Read-only; opening is POST. */
 export async function readConnectionsPuzzle(token: string): Promise<ConnectionsView> {
   const profile = await ensureProfile(token);
   const clock = today();
@@ -128,10 +127,10 @@ export async function readConnectionsPuzzle(token: string): Promise<ConnectionsV
 
 /**
  * Opens today's board at a wager (0 for the free play this has always been),
- * or hands back the one already in progress -- including a finished one. A
+ * or hands back the one already in progress, including a finished one. A
  * completed attempt resumes rather than re-deals, for the same reason it does
  * at Word Stack: replaying a board you have already solved would make the
- * shared grid a lie, and the wager chosen on a resume is ignored -- the one
+ * shared grid a lie, and the wager chosen on a resume is ignored; the one
  * that opened the row is the one that is live.
  *
  * Rule 1: the wager leaves before the row exists, and a row that fails to
@@ -157,7 +156,7 @@ export async function startConnectionsPuzzle(
     );
   }
 
-  // Rule 1: the wager leaves first. Null is "cannot afford", not an error --
+  // Rule 1: the wager leaves first. Null is "cannot afford", not an error;
   // spendGoldByProfile is the authority.
   const debited = wagerInput > 0 ? await spendGoldByProfile(profile.id, wagerInput) : profile;
   if (!debited) {
@@ -165,7 +164,7 @@ export async function startConnectionsPuzzle(
   }
 
   // Same puzzle for everyone on the day (pickDaily), different tile order for
-  // each player (randomInt) -- the board is shared, the shuffle is not, and
+  // each player (randomInt): the board is shared, the shuffle is not, and
   // node:crypto's randomInt is used rather than Math.random for the same
   // reason the deck uses it: this is the only randomness the server owns here.
   const puzzle = pickDaily(CONNECTIONS_PUZZLES, clock.day, CONNECTIONS_GAME);
@@ -260,17 +259,17 @@ export async function playConnectionsGuess(
     });
   }
 
-  // Awaited: the route responds with this function's own return value, so a
-  // fire-and-forget call here could be dropped by a frozen serverless
+  // Awaited because the route responds with this function's own return value,
+  // so a fire-and-forget call here could be dropped by a frozen serverless
   // invocation right after the response goes out. applyMissionEvent never
   // throws, so this only costs latency, not reliability.
   if (complete) await applyMissionEvent(profile.id, { kind: "puzzle_completed" });
   if (complete) await applyAchievementEvent(profile.id, { kind: "puzzle_completed" });
 
-  // A wager REPLACES the daily completion bonus, it does not stack with it --
-  // same explicit call as Word Stack's. A win credits wager * multiplier only
-  // after the settle write above is confirmed; a loss credits nothing, the
-  // wager already having left the wallet when the board was opened.
+  // A wager replaces the daily completion bonus, it does not stack with it,
+  // same call as Word Stack's. A win credits wager * multiplier only after
+  // the settle write above is confirmed; a loss credits nothing, the wager
+  // already having left the wallet when the board was opened.
   if (complete && current.round.wager > 0) {
     const payout = anteUpConnectionsPayout({ wager: current.round.wager, puzzle: next });
     if (payout > 0) {
@@ -279,9 +278,9 @@ export async function playConnectionsGuess(
       });
     }
   } else if (complete) {
-    // The per-game daily bonus -- replaces the retired flat "daily_brain_game"
-    // mission, see lib/server/daily-puzzle-bonus.ts. Pays even on a loss, at
-    // the floor multiplier. Only the FREE path earns this.
+    // The per-game daily bonus, replacing the retired flat "daily_brain_game"
+    // mission; see lib/server/daily-puzzle-bonus.ts. Pays even on a loss, at
+    // the floor multiplier. Only the free path earns this.
     await creditDailyBonus(profile.id, connectionsDailyBonusMultiplier(next));
   }
 

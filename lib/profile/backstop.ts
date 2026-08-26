@@ -6,12 +6,12 @@ import type { PlayerProfile } from "./types";
  * Same split as lib/profile/daily-gold.ts: lib/server/profile-store.ts's
  * claimBackstopGold is the authority and re-checks the same cooldown before
  * crediting anything (it imports BACKSTOP_COOLDOWN_MS from here rather than
- * defining its own copy). What lives here is the *display* half, so the
+ * defining its own copy). What lives here is the display half, so the
  * lobby's "Claim a top-up" banner can agree with the server about when the
  * offer is real.
  *
  * Before this file existed, the banner (components/lobby/lobby.tsx's
- * `needsTopUp`) had no display half at all -- it keyed off goldBalance alone,
+ * `needsTopUp`) had no display half at all: it keyed off goldBalance alone,
  * because `lastBackstopAt` was never even part of the client-facing
  * PlayerProfile the server sent down. A player who topped up and then busted
  * back below the threshold within the cooldown saw the banner reappear and a
@@ -24,8 +24,8 @@ import type { PlayerProfile } from "./types";
  */
 
 /**
- * The broke-player recovery grant. Deliberately small -- exactly one seat at
- * the cheapest table, not a farmable income -- because a player who cannot
+ * The broke-player recovery grant. Kept small, exactly one seat at the
+ * cheapest table rather than a farmable income, because a player who cannot
  * afford the cheapest seat has no way back into the game, and a stranded
  * player is a lost one. lib/server/profile-store.ts imports this rather than
  * defining its own.
@@ -36,10 +36,10 @@ export const BACKSTOP_GRANT = 1000;
 export const BACKSTOP_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 /**
- * - `ready`      -- below the threshold and the cooldown has passed; offer the top-up.
- * - `cooldown`   -- below the threshold, but already claimed within BACKSTOP_COOLDOWN_MS.
- * - `not-needed` -- balance already covers the threshold.
- * - `unlimited`  -- crediting a profile that is never charged means nothing.
+ * - `ready`: below the threshold and the cooldown has passed; offer the top-up.
+ * - `cooldown`: below the threshold, but already claimed within BACKSTOP_COOLDOWN_MS.
+ * - `not-needed`: balance already covers the threshold.
+ * - `unlimited`: crediting a profile that is never charged means nothing.
  */
 export type BackstopState = "ready" | "cooldown" | "not-needed" | "unlimited";
 

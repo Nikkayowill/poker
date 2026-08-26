@@ -26,28 +26,24 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * The rules live in lib/arcade/puzzles/word-stack.ts and the answer lives on the
  * server. This file holds one snapshot and replaces it wholesale with whatever
  * the API returns, because every guess is a request and the response is the
- * new truth -- the same contract blackjack-table.tsx uses.
+ * new truth, the same contract blackjack-table.tsx uses.
  *
  * The client cannot score a guess and does not try: `snapshot.answer` is null
  * until the board is over, so the tiles come back coloured from the server or
- * not at all. That is the whole reason this is not a static page.
+ * not at all. That's the whole reason this isn't a static page.
  *
- * ## The wager, and why it gates opening rather than trailing it
+ * The board still opens once and stays open for the day (one shared word,
+ * one shareable grid). The wager choice sits before the board opens rather
+ * than as a link offered only after it's finished: `round === null` after
+ * the initial read is the "not opened yet" state, and it renders a wager
+ * step (Free is always a choice) instead of auto-opening; see startBoard.
  *
- * Today's board still opens once and stays open for the day (one shared word,
- * one shareable grid) -- that part never changed. What changed 2026-08-21 is
- * where the wager choice sits: before the board opens, not as a link offered
- * only after it is finished. `round === null` after the initial read is the
- * "not opened yet" state, and it now renders a wager step (Free is always a
- * choice) instead of auto-opening -- see startBoard.
- *
- * ## The on-screen keyboard is not decoration
- *
- * A phone will not raise its keyboard for a page with no focused input, and
- * making the board a real <input> means the OS keyboard covering the grid,
- * autocorrect rewriting guesses and a caret to fight with. So letters are
- * buttons, and a physical keyboard is handled separately with a window
- * listener. Both paths funnel into the same three actions.
+ * The on-screen keyboard is not decoration. A phone will not raise its
+ * keyboard for a page with no focused input, and making the board a real
+ * <input> means the OS keyboard covering the grid, autocorrect rewriting
+ * guesses and a caret to fight with. So letters are buttons, and a physical
+ * keyboard is handled separately with a window listener. Both paths funnel
+ * into the same three actions.
  */
 
 const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
@@ -147,7 +143,7 @@ export function WordStackBoard() {
     [flash],
   );
 
-  // Read-only first -- visiting a page must not consume the day's attempt.
+  // Read-only first: visiting a page must not consume the day's attempt.
   // If today's board already exists (any status), it loads straight in; if
   // not, the wager step below is what actually opens one, on the player's
   // own click.
@@ -234,8 +230,8 @@ export function WordStackBoard() {
 
   /**
    * The six rows: guesses already scored, then the row being typed, then
-   * empties. Built here rather than in the markup so the row index -- which
-   * decides the reveal animation and the shake -- is unambiguous.
+   * empties. Built here rather than in the markup so the row index, which
+   * decides the reveal animation and the shake, is unambiguous.
    */
   const rows = useMemo(() => {
     const played = (round?.guesses ?? []).map((guess, index) => ({
@@ -425,11 +421,9 @@ export function WordStackBoard() {
 }
 
 /**
- * The link appended to a shared result.
- *
- * Read off the running origin rather than hardcoded, so a share from a Preview
- * deployment points at that deployment instead of sending a reviewer to
- * production.
+ * The link appended to a shared result. Read off the running origin rather
+ * than hardcoded, so a share from a Preview deployment points at that
+ * deployment instead of sending a reviewer to production.
  */
 function shareLink(): string | undefined {
   if (typeof window === "undefined") return undefined;

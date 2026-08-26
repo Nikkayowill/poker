@@ -1,5 +1,5 @@
 /**
- * Cribbage scoring, isolated from turn order and pegging state on purpose --
+ * Cribbage scoring, isolated from turn order and pegging state on purpose:
  * this is the one place a wrong number costs a player real Gold, so it is
  * tested exhaustively in complete isolation (scoring.test.ts) before anything
  * that moves money can reach it.
@@ -37,7 +37,7 @@ export function countFifteens(cards: Card[]): number {
 
 /**
  * Pairs, scored as combinations: among k cards of the same rank there are
- * k*(k-1)/2 distinct pairs, each worth 2 -- so a rank appearing k times is
+ * k*(k-1)/2 distinct pairs, each worth 2, so a rank appearing k times is
  * worth k*(k-1) points outright (2 for a pair, 6 for three of a kind, 12 for
  * all four).
  */
@@ -55,13 +55,13 @@ export function countPairs(cards: Card[]): number {
  * The longest run(s) of three or more consecutive ranks, scored over the
  * whole set (hand + starter, or crib + starter).
  *
- * A "double run" -- a duplicated rank inside an otherwise-consecutive block,
- * e.g. 3-3-4-5-6 -- is worth the run's length once for every combination the
+ * A "double run" (a duplicated rank inside an otherwise-consecutive block,
+ * e.g. 3-3-4-5-6) is worth the run's length once for every combination the
  * duplicate produces, which is exactly the product of how many times each
- * rank in the block appears. Five cards cannot hold two SEPARATE qualifying
+ * rank in the block appears. Five cards cannot hold two separate qualifying
  * runs (that needs six distinct ranks at minimum), so finding the single
  * longest consecutive block of distinct ranks and multiplying by that
- * product is the whole algorithm -- there is no second block to find.
+ * product is the whole algorithm; there is no second block to find.
  */
 export function scoreRuns(cards: Card[]): number {
   const counts = new Map<number, number>();
@@ -89,7 +89,7 @@ export function scoreRuns(cards: Card[]): number {
 
 /**
  * 4 if the four dealt cards share a suit and the starter does not also match,
- * 5 if it does. A crib's flush is 5-or-nothing -- it never scores for 4, the
+ * 5 if it does. A crib's flush is 5-or-nothing: it never scores for 4, the
  * one real rule difference between a hand's flush and a crib's.
  */
 export function scoreFlush(hand: Card[], starter: Card, isCrib: boolean): number {
@@ -150,15 +150,16 @@ export function scoreHand(
 
 /**
  * What playing `card` onto `pile` (the cards played since the count last
- * reset, oldest first, NOT including `card`) is worth, given the running
+ * reset, oldest first, not including `card`) is worth, given the running
  * count after this play.
  *
- * Pairs during pegging are the TRAILING run of identical ranks in play order
- * -- 5-5-6 scores nothing for the 6, but 5-5-5 scores 6 (a triple) on the
- * third five. Runs are the longest TRAILING window whose ranks, sorted, are
- * consecutive and distinct -- a duplicate rank inside the window breaks it,
- * which is the one real difference from a hand's runs: pegging has no double
- * runs, because a repeated value can never sort into a gap-free sequence.
+ * Pairs during pegging are the trailing run of identical ranks in play
+ * order: 5-5-6 scores nothing for the 6, but 5-5-5 scores 6 (a triple) on
+ * the third five. Runs are the longest trailing window whose ranks, sorted,
+ * are consecutive and distinct; a duplicate rank inside the window breaks
+ * it, which is the one real difference from a hand's runs: pegging has no
+ * double runs, because a repeated value can never sort into a gap-free
+ * sequence.
  */
 export function scorePeggingPlay(pile: Card[], card: Card, count: number): { total: number; breakdown: ScoreEntry[] } {
   const played = [...pile, card];
@@ -174,7 +175,7 @@ export function scorePeggingPlay(pile: Card[], card: Card, count: number): { tot
   // A trailing pair (pairRun >= 2) and a trailing run can never both fire on
   // the same play: any window long enough to check for a run would have to
   // include those two equal ranks, which fails the distinctness check below
-  // on its own. No special-casing needed -- the two loops are naturally
+  // on its own. No special-casing needed; the two loops are naturally
   // exclusive, so both can run unconditionally.
   let runLength = 0;
   for (let length = played.length; length >= 3; length -= 1) {

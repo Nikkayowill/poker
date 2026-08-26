@@ -13,10 +13,10 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 function safeTextEqual(first: string, second: string): boolean {
   // Hash both to a fixed length first: timingSafeEqual throws on a length
   // mismatch, and comparing raw attacker-controlled strings would make that
-  // throw itself an oracle. Duplicated from admin-auth.ts's helper on
-  // purpose, same reasoning CLAUDE.md gives for not sharing the Gold RPCs'
-  // bodies -- this is a live security primitive, not something to couple two
-  // modules over saving four lines.
+  // throw itself an oracle. Duplicated from admin-auth.ts's helper, same
+  // reasoning CLAUDE.md gives for not sharing the Gold RPCs' bodies: this is
+  // a live security primitive, not something to couple two modules over
+  // saving four lines.
   const firstHash = createHash("sha256").update(first).digest();
   const secondHash = createHash("sha256").update(second).digest();
   return timingSafeEqual(firstHash, secondHash);
@@ -30,13 +30,13 @@ function sessionSignature(uuid: string, secret: string): string {
  * Signs a bearer session token against SESSION_SECRET, so a client-supplied
  * cookie value can round-trip a previously server-issued identity but never
  * mint one. Optional: unset, every function here behaves exactly as it
- * always has (a bare UUID, unsigned) -- this is additive hardening against a
+ * always has (a bare UUID, unsigned). This is additive hardening against a
  * future injection primitive (nothing today reflects request input into a
  * Set-Cookie header, so there is currently no way to plant a chosen value in
- * a victim's cookie jar), not a fix for a reachable exploit, and it must
- * never become a second way for guest play to go dark the way credit_gold's
- * missing migration did (see CLAUDE.md's deploy checklist) -- an unset
- * secret has to mean "no signing," never "no session."
+ * a victim's cookie jar), not a fix for a reachable exploit. It must never
+ * become a second way for guest play to go dark the way credit_gold's
+ * missing migration did (see CLAUDE.md's deploy checklist): an unset secret
+ * has to mean "no signing," never "no session."
  */
 function signToken(uuid: string): string {
   const secret = process.env.SESSION_SECRET;
@@ -47,15 +47,16 @@ function signToken(uuid: string): string {
 /**
  * Verifies a raw cookie value and returns the bare UUID identity it names,
  * or null. Accepts three shapes: a correctly-signed token; a bare UUID with
- * no SESSION_SECRET configured (signing is off); and -- for as long as any
- * session minted before signing shipped is still alive -- a bare UUID with
- * no signature even though a secret IS configured now. Rejecting that last
+ * no SESSION_SECRET configured (signing is off); and, for as long as any
+ * session minted before signing shipped is still alive, a bare UUID with no
+ * signature even though a secret is configured now. Rejecting that last
  * shape the moment signing turns on would sign out, and for a guest orphan
  * the Gold balance of, every existing session in one deploy; accepting it
  * costs nothing signing itself was meant to close, since it is exactly
  * today's behavior for that one shape. New cookies are always signed (see
- * withSessionCookie) -- this transition window closes itself as old cookies
- * expire or get overwritten, same as the __Host- cookie-name migration above.
+ * withSessionCookie), so this transition window closes itself as old
+ * cookies expire or get overwritten, same as the __Host- cookie-name
+ * migration above.
  */
 function verifyToken(value: string): string | null {
   if (UUID_PATTERN.test(value)) return value;
@@ -117,7 +118,7 @@ export function withSessionCookie<T extends NextResponse>(
   options: { persistent?: boolean } = {},
 ): T {
   const persistent = options.persistent ?? true;
-  // `token` is always the bare identity UUID -- every other caller in the
+  // `token` is always the bare identity UUID; every other caller in the
   // app (game-store, profile-store, ...) reads/writes that value directly
   // and none of it changes. Only the cookie's stored bytes gain a signature.
   response.cookies.set(sessionCookieName(), signToken(token), cookieOptions(persistent));

@@ -19,7 +19,7 @@ import { adminClient } from "./supabase-admin";
  * duel joins this board on the same one-registry-entry terms it joins the
  * leaderboard on.
  *
- * The record* writers never throw -- same contract as applyMissionEvent,
+ * The record* writers never throw, same contract as applyMissionEvent,
  * applyAchievementEvent and the leaderboard's own writers. A settlement that
  * moved real Gold must not be reported as failed because a stats row didn't
  * update.
@@ -59,7 +59,7 @@ function inverse(outcome: Outcome): Outcome {
 declare global {
   var __riverRoomHeadToHead: Map<string, HeadToHeadRecord> | undefined;
   // Separate from memoryRecords because HeadToHeadRecord carries no
-  // timestamp -- the real table's last_result_at exists precisely so
+  // timestamp; the real table's last_result_at exists precisely so
   // listRecentOpponentIds can order by it, and the memory mirror needs its
   // own copy of that fact to answer the same question in tests/dev.
   var __riverRoomHeadToHeadRecency: Map<string, number> | undefined;
@@ -100,7 +100,7 @@ function applyMemory(profileId: string, opponentId: string, gameId: string, outc
     currentStreak: nextStreak,
     bestStreak: outcome === "win" ? Math.max(current.bestStreak, nextStreak) : current.bestStreak,
   });
-  // Keyed on (profileId, opponentId) alone, not per game -- "recently played"
+  // Keyed on (profileId, opponentId) alone, not per game: "recently played"
   // means the pair's most recent activity across whatever games they share.
   memoryRecency.set(recencyKey(profileId, opponentId), Date.now());
 }
@@ -165,7 +165,7 @@ export async function recordHeadToHeadDuel(
 /**
  * An N-player table (cribbage): the winner beats every other seat.
  *
- * Two players who both lost get nothing against each other -- neither beat
+ * Two players who both lost get nothing against each other: neither beat
  * the other, and recording a loss on both sides would leave A holding a loss
  * against B while B holds one against A, which is the one thing the mirrored
  * rows must never say. Never throws.
@@ -196,7 +196,7 @@ interface StoredRow {
 }
 
 async function rowsFor(profileId: string, opponentIds: string[]): Promise<StoredRow[]> {
-  // An empty opponent list means "nobody to look up", not "everybody" --
+  // An empty opponent list means "nobody to look up", not "everybody":
   // return before `.in("...", [])` ever reaches Postgres.
   if (opponentIds.length === 0) return [];
   const wanted = new Set(opponentIds);
@@ -240,7 +240,7 @@ function played(record: HeadToHeadRecord): number {
  * recently played first.
  *
  * This is the raw ingredient for a "people you just played" friend
- * shortcut -- see friends-store.ts's recentOpponentsFor, which is the one
+ * shortcut; see friends-store.ts's recentOpponentsFor, which is the one
  * that actually excludes friends/blocks/pending requests before showing
  * anything. This function only answers "who have I played and when";
  * filtering who that's worth surfacing to is a friends concern, not a
@@ -259,7 +259,7 @@ export async function listRecentOpponentIds(profileId: string, limit: number): P
 
   // A player can hold rows against the same opponent in more than one game
   // (chess AND cribbage, say), so this over-fetches and dedupes in JS rather
-  // than asking PostgREST for something like GROUP BY -- the number of
+  // than asking PostgREST for something like GROUP BY: the number of
   // opponents behind any one profile is small enough that this is cheap,
   // and it lets last_result_at (not aggregated) drive the ordering directly.
   const { data, error } = await supabase
@@ -286,17 +286,17 @@ export async function listRecentOpponentIds(profileId: string, limit: number): P
  * The caller's record against each of `opponentIds`, totalled across games
  * and split per game.
  *
- * Opponents with no shared history are simply absent from the map -- a
+ * Opponents with no shared history are simply absent from the map: a
  * friend you have never played is not an 0-0 record, it is no record. The
  * friends board fills that in as "No games yet"; the drawer's badge just
  * doesn't draw.
  *
- * The overall `currentStreak` is deliberately NOT the sum or the max of the
- * per-game streaks: "you have lost 5 straight to her" has to mean five
- * results in a row across whatever you played, and that ordering is not
- * recoverable from per-game counters. It is only reported when a single game
- * accounts for every result the two of you have -- otherwise it is 0 and the
- * per-game rows carry the streaks, which is the honest answer rather than a
+ * The overall `currentStreak` is not the sum or the max of the per-game
+ * streaks: "you have lost 5 straight to her" has to mean five results in a
+ * row across whatever you played, and that ordering is not recoverable from
+ * per-game counters. It is only reported when a single game accounts for
+ * every result the two of you have; otherwise it is 0 and the per-game rows
+ * carry the streaks, which is the honest answer rather than a
  * plausible-looking wrong one.
  */
 export async function getHeadToHeadSummaries(

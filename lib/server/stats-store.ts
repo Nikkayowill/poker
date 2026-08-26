@@ -12,7 +12,7 @@ export interface PlayerStats {
   netProfit: number;
   biggestPotWon: number;
   /**
-   * Gold won across every hand ever won, lifetime scope only -- unlike
+   * Gold won across every hand ever won, lifetime scope only. Unlike
    * netProfit this never nets out a loss, which is what makes it usable as
    * avatar-unlock progress: a losing streak can't make it go backwards.
    * Not tracked per-season, so this is 0 outside the "lifetime" scope.
@@ -102,8 +102,8 @@ interface HandOutcome {
 /**
  * Records every human seat's result for a hand that has just finished.
  *
- * Idempotent per (game, hand, profile) at the database layer -- see the
- * record_hand_result migration -- so it is safe to call from more than one
+ * Idempotent per (game, hand, profile) at the database layer (see the
+ * record_hand_result migration), so it is safe to call from more than one
  * code path without a shared "have I already recorded this" flag here. That
  * matters because a hand can complete via either a human's own action or a
  * server-timed bot/timeout resolution, and both call sites call this.
@@ -171,18 +171,22 @@ export async function recordHandStats(state: GameState): Promise<string[]> {
     return outcomes.map((outcome) => outcome.profileId);
   }
 
-  for (const outcome of outcomes) {
-    const { error } = await supabase.rpc("record_hand_result", {
-      p_game_id: state.id,
-      p_hand_number: state.handNumber,
-      p_profile_id: outcome.profileId,
-      p_won: outcome.won,
-      p_amount_won: outcome.amountWon,
-      p_net_profit: outcome.netProfit,
-      p_vpip: outcome.vpip,
-    });
-    if (error) throw new Error(`Could not record hand result: ${error.message}`);
-  }
+  // Each outcome writes a different profile's row, no ordering requirement
+  // between them, so they run concurrently instead of one round-trip per seat.
+  await Promise.all(
+    outcomes.map(async (outcome) => {
+      const { error } = await supabase.rpc("record_hand_result", {
+        p_game_id: state.id,
+        p_hand_number: state.handNumber,
+        p_profile_id: outcome.profileId,
+        p_won: outcome.won,
+        p_amount_won: outcome.amountWon,
+        p_net_profit: outcome.netProfit,
+        p_vpip: outcome.vpip,
+      });
+      if (error) throw new Error(`Could not record hand result: ${error.message}`);
+    }),
+  );
   return outcomes.map((outcome) => outcome.profileId);
 }
 
@@ -221,7 +225,7 @@ export async function getLeaderboard(scope: LeaderboardScope, limit = 10): Promi
   const supabase = adminClient();
   if (!supabase) {
     if (scope === "lifetime") {
-      // Lifetime is ranked by Gold won (totalChipsWon), not net profit -- the
+      // Lifetime is ranked by Gold won (totalChipsWon), not net profit. The
       // "season by season" board resets every 30 days and rewards a hot
       // streak, but the all-time leader is whoever has won the most Gold
       // across every hand they've ever played, win or lose since. Net profit
@@ -243,7 +247,7 @@ export async function getLeaderboard(scope: LeaderboardScope, limit = 10): Promi
         vpipHands: row.vpipHands,
         netProfit: row.netProfit,
         biggestPotWon: row.biggestPotWon,
-        // Season stats don't track this -- unlock progress is lifetime-only.
+        // Season stats don't track this; unlock progress is lifetime-only.
         totalChipsWon: 0,
       }));
     return decorate(rows);
@@ -281,7 +285,7 @@ function rowToPlayerStats(row: Record<string, unknown>): PlayerStats {
     vpipHands: Number(row.vpip_hands ?? 0),
     netProfit: Number(row.net_profit),
     biggestPotWon: Number(row.biggest_pot_won),
-    // season_stats has no total_chips_won column -- unlock progress is
+    // season_stats has no total_chips_won column; unlock progress is
     // lifetime-only, so this is 0 for any season-scoped row.
     totalChipsWon: Number(row.total_chips_won ?? 0),
   };
@@ -290,7 +294,7 @@ function rowToPlayerStats(row: Record<string, unknown>): PlayerStats {
 /**
  * Every lifetime player_stats row with at least `minHands` played, for the
  * Global leaderboard's percentile blend (lib/server/leaderboard-store.ts) in
- * memory mode only -- production computes the same filter directly in SQL,
+ * memory mode only. Production computes the same filter directly in SQL,
  * inside get_global_leaderboard() (supabase/migrations/
  * 20260820120000_game_leaderboard_stats.sql). Exported rather than read off
  * this module's private global directly, to keep that global an
@@ -302,7 +306,7 @@ export function __memoryPlayerStatsForGlobalBlend(minHands: number): PlayerStats
 
 /**
  * A profile's own stats and rank, even when they are well outside the top of
- * the board -- "you are #482" is still worth showing on their own profile.
+ * the board: "you are #482" is still worth showing on their own profile.
  */
 export async function getPlayerStanding(
   profileId: string,
@@ -388,7 +392,7 @@ export async function rolloverSeasonIfDue(): Promise<string | null> {
     void rows;
     // Mirrors rollover_season()'s prune: a closed season is never read again
     // (every query above filters to the active season), so its rows would
-    // otherwise sit in this Map forever -- the memory-mode version of the
+    // otherwise sit in this Map forever, the memory-mode version of the
     // same unbounded-growth problem the DB migration fixes.
     for (const [key, row] of memorySeasonStats) {
       if (row.seasonId === due.id) memorySeasonStats.delete(key);

@@ -3,49 +3,46 @@ import "server-only";
 /**
  * The Word Race bank: the words a match may draw, and a clue for each.
  *
- * ## Why this is server-only
+ * It might look like a player is shown the scrambled letters anyway, so the
+ * bank tells them nothing they can't already see. That's wrong, and the
+ * difference is the whole game: unscrambling is work, and this is a race. A
+ * player holding the bank doesn't solve the anagram, they look it up (one
+ * console line asking which of 478 entries is a permutation of what's on
+ * screen) and win every round of every match, for Gold.
  *
- * This file used to argue the opposite -- that a player is shown the scrambled
- * letters anyway, so the bank tells them nothing they cannot already see. That
- * is wrong, and the difference is the whole game: unscrambling is WORK, and
- * this is a race. A player holding the bank does not solve the anagram, they
- * look it up -- one console line asking which of 478 entries is a permutation
- * of what is on screen -- and wins every round of every match, for Gold.
- *
- * A dictionary is a web search away, so this does not make cheating
+ * A dictionary is a web search away, so this doesn't make cheating
  * impossible; it makes it something a player has to go and build rather than
- * something already sitting in the page they are playing on. Against a game
+ * something already sitting in the page they're playing on. Against a game
  * that settles real currency, that gap is worth the constraint.
  *
  * The constraint is on the import graph, not just this file: nothing under
  * components/ may value-import lib/pvp/word-race.ts either, since it imports
  * this. The two clock constants a board genuinely needs live in
- * lib/pvp/word-race-timing.ts precisely so the board never has to. A stray
- * value import fails the build loudly, which is the point -- silence is what
- * makes a leak expensive.
+ * lib/pvp/word-race-timing.ts so the board never has to. A stray value
+ * import fails the build loudly, which is the point: silence is what makes a
+ * leak expensive.
  *
- * ## The rules every entry obeys, and why each one is a rule
- *
+ * Rules every entry obeys:
  * - 4-8 letters, lowercase a-z. Shorter than four and the scramble is solved
  *   at a glance; longer than eight and a phone's tile row wraps.
  * - Common and unambiguous. A word a player has to argue with is a word that
  *   cost them real Gold, and there is no appeal.
- * - ONE spelling. Anything that splits British/American (colour, theatre,
- *   yoghurt, aluminium, pyjamas) is left out entirely rather than picked --
- *   the guess check is an exact string match, so the loser of a spelling
- *   argument is whoever learned English somewhere else.
- * - No well-known anagram partner. LISTEN/SILENT, TOWER/WROTE, DIARY/DAIRY,
- *   PRESENT/SERPENT and about twenty more were dropped for this: the engine
- *   has no dictionary and cannot accept an alternate, so a scramble that
- *   happens to spell another real word is a round the player can only lose by
- *   being right. It is a 1-in-n! coincidence per round rather than a
- *   certainty, which is exactly why it would be impossible to reproduce as a
+ * - One spelling. Anything that splits British/American (colour, theatre,
+ *   yoghurt, aluminium, pyjamas) is left out entirely rather than picked,
+ *   since the guess check is an exact string match, so the loser of a
+ *   spelling argument is whoever learned English somewhere else.
+ * - No well-known anagram partner. Listen/silent, tower/wrote, diary/dairy,
+ *   present/serpent and about twenty more were dropped for this: the engine
+ *   has no dictionary and can't accept an alternate, so a scramble that
+ *   happens to spell another real word is a round the player can only lose
+ *   by being right. It's a 1-in-n! coincidence per round rather than a
+ *   certainty, which is why it would be near-impossible to reproduce as a
  *   bug report.
  * - No proper nouns and nothing offensive.
  *
  * Roughly 300 entries. Thin banks repeat: at five rounds a match, a 40-word
- * bank would have a regular player recognising the letters instead of solving
- * them, and recognition is not the game.
+ * bank would have a regular player recognising the letters instead of
+ * solving them, and recognition is not the game.
  */
 
 export interface WordRaceWord {
@@ -54,11 +51,12 @@ export interface WordRaceWord {
   /**
    * One short nudge, shown alongside the tiles.
    *
-   * Deliberately vague rather than a definition -- the clue is there to stop a
-   * round stalling out into two players staring at the same seven letters, not
-   * to hand it to whoever reads fastest. Kept to one short line for the reason
-   * lib/arcade/dealer.ts caps its dealer lines: variable-length prose on a
-   * fixed card clips, and this one sits under a tile row on a 390px phone.
+   * Vague rather than a definition: the clue is there to stop a round
+   * stalling out into two players staring at the same seven letters, not to
+   * hand it to whoever reads fastest. Kept to one short line for the same
+   * reason lib/arcade/dealer.ts caps its dealer lines: variable-length prose
+   * on a fixed card clips, and this one sits under a tile row on a 390px
+   * phone.
    */
   readonly hint: string;
 }

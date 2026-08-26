@@ -14,13 +14,13 @@ import { BuyInModal } from "@/components/lobby/buy-in-modal";
 /**
  * The bar under the controls, burning down on the same clock as the seat ring.
  *
- * Took a `remainingFraction` number until this milestone, which sounds
- * harmless and was not: nothing on this table can compute that fraction
- * without a ticking clock, so the state that produced it lived in PokerTable
- * -- the root of the whole table tree -- and updated four times a second for
- * the length of every turn. Every seat, card and plate re-rendered with it,
- * to move one bar. Taking the two timestamps instead moves the animation into
- * CSS and takes that state out of the tree entirely.
+ * Used to take a `remainingFraction` number, which sounds harmless and was
+ * not: nothing on this table can compute that fraction without a ticking
+ * clock, so the state that produced it lived in PokerTable, the root of the
+ * whole table tree, and updated four times a second for the length of every
+ * turn. Every seat, card and plate re-rendered with it, to move one bar.
+ * Taking the two timestamps instead moves the animation into CSS and takes
+ * that state out of the tree entirely.
  *
  * scaleX rather than width, unchanged: transform is the one property here that
  * the compositor can animate without laying the bar out again on every frame.
@@ -44,8 +44,8 @@ export function TurnProgressBar({
  * Live seconds until `deadlineAt`, ticking in the kicker line.
  *
  * Between-hand pauses (the normal 2.8s beat, the 20s bust-rebuy grace) used
- * to render as a static label with no clock on it -- indistinguishable from
- * a stall, since nothing on screen said the wait was bounded or moving.
+ * to render as a static label with no clock on it, indistinguishable from
+ * a stall since nothing on screen said the wait was bounded or moving.
  * Reuses useFuseDigit rather than a second timer: it already ticks off
  * rAF (so it stops in a backgrounded tab and resyncs on return, instead of
  * drifting), the same behavior this needed.
@@ -58,22 +58,22 @@ function NextHandCountdown({ deadlineAt }: { deadlineAt: string }) {
 /**
  * The controls, in one shape that never changes.
  *
- * What this replaces: every button was conditionally rendered, so the bar was
- * a different arrangement on almost every turn. Facing a bet you got
- * Fold/Call; checked to, you got Fold/Check -- and Call and Check occupied the
- * same spot on screen. Whichever one you had learned to reach for, the other
- * was under your thumb half the time. That is the opposite of muscle memory,
- * and on a phone it is how you fold a hand you meant to call.
+ * Every button used to be conditionally rendered, so the bar was a different
+ * arrangement on almost every turn. Facing a bet you got Fold/Call; checked
+ * to, you got Fold/Check, and Call and Check occupied the same spot on
+ * screen. Whichever one you had learned to reach for, the other was under
+ * your thumb half the time. That is the opposite of muscle memory, and on a
+ * phone it is how you fold a hand you meant to call.
  *
- * So the three decisions now own three permanent slots -- fold, the passive
- * action, the aggressive one -- and an unavailable action is disabled in
+ * So the three decisions now own three permanent slots (fold, the passive
+ * action, the aggressive one), and an unavailable action is disabled in
  * place rather than removed. Check and Call share a slot because they are
  * mutually exclusive by the rules: you are never offered both.
  *
  * The raise controls open *over* the felt rather than inside the bar. Adding
- * a row would push the three buttons down exactly when a player is mid-
- * decision, which is the one moment movement is least forgivable -- and it
- * would change the bar's height, which the table's own sizing now depends on.
+ * a row would push the three buttons down exactly when a player is
+ * mid-decision, the one moment movement is least forgivable, and it would
+ * change the bar's height, which the table's own sizing now depends on.
  */
 export function ActionBar({
   game,
@@ -91,8 +91,8 @@ export function ActionBar({
   profile: PlayerProfile | null;
   /**
    * The broke-player recovery top-up (lib/profile/backstop.ts), owned by
-   * PokerApp rather than by this component -- same function the lobby's own
-   * "Claim a top-up" banner calls. There is no purchase path back into a
+   * PokerApp rather than by this component: the same function the lobby's
+   * own "Claim a top-up" banner calls. There is no purchase path back into a
    * busted seat any more; this and "Return to lobby" (below) are the two
    * ways out.
    */
@@ -118,7 +118,7 @@ export function ActionBar({
     return Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, target));
   };
 
-  // Purely a visual beat -- the real action always dispatches synchronously,
+  // Purely a visual beat: the real action always dispatches synchronously,
   // right here, on click. This only guarantees the pressed look is visible
   // for a minimum stretch so a fast round trip doesn't make the button feel
   // like it never registered the tap.
@@ -130,7 +130,7 @@ export function ActionBar({
   };
 
   // Stack at zero, still seated. Checked ahead of everything else below,
-  // because it no longer keys off `game.status` -- there is no grace period
+  // because it no longer keys off `game.status`: there is no grace period
   // any more, so a bust just leaves this seat sitting out, exactly like any
   // other unfunded seat, through as many hands as it takes until they rebuy
   // or leave. This can be true while the table reads "playing" (someone
@@ -166,7 +166,7 @@ export function ActionBar({
     // otherwise it takes this table's minimum buy-in.
     const canRebuyWithGold = Boolean(profile?.unlimitedGold)
       || (profile?.goldBalance ?? 0) >= TIER_CONFIG[game.tier].minBuyIn;
-    // There is no purchase escape valve any more -- the backstop grant
+    // There is no purchase escape valve any more. The backstop grant
     // (lib/profile/backstop.ts, same mechanism the lobby's own "Claim a
     // top-up" banner uses) is the fast path when it's eligible; otherwise
     // the lobby (where every faucet lives: backstop, daily Gold, rewarded
@@ -183,11 +183,11 @@ export function ActionBar({
           </strong>
         </div>
         <div className="action-slot-controls">
-          {/* No "close seat" control here on purpose: the header's Leave
-              table button already calls leave-seat for a seated player (see
-              leaveTable in poker-app.tsx), which is the one exit a busted
-              player needs -- a second, seat-scoped exit button was redundant
-              with it. Rebuy is the only slot-controls action while busted, so
+          {/* No "close seat" control here: the header's Leave table button
+              already calls leave-seat for a seated player (see leaveTable
+              in poker-app.tsx), which is the one exit a busted player needs,
+              so a second, seat-scoped exit button would be redundant.
+              Rebuy is the only slot-controls action while busted, so
               it is already the full-width gold primary-action rather than
               sharing the row with a fold-styled sibling. Three cases now
               instead of two: enough Gold opens the rebuy modal as always;
@@ -234,12 +234,12 @@ export function ActionBar({
 
   if (game.status === "complete") {
     // Someone else at the table busted, not me. Their seat just sits out,
-    // same as any other unfunded seat -- the table was never actually
-    // waiting on them -- but a bare "Hand complete" reads exactly like it's
+    // same as any other unfunded seat, and the table was never actually
+    // waiting on them, but a bare "Hand complete" reads exactly like it's
     // blocked on them. Named here so it visibly isn't.
     const otherBustedSeat = game.seats.find((seat) => seat.isHuman && !seat.isMine && seat.stack === 0) ?? null;
     // A finished hand carries a deadline for the next one unless the table
-    // cannot deal another -- fewer than two seats with chips left. The Deal
+    // cannot deal another (fewer than two seats with chips left). The Deal
     // button used to be the way out of that; with the deal automatic there is
     // no button, so without this the controls are simply empty and the only
     // exit is the header. Reading the deadline rather than counting stacks
@@ -275,7 +275,7 @@ export function ActionBar({
     );
   }
 
-  // A seat can be claimed mid-hand -- the new occupant sits out the hand
+  // A seat can be claimed mid-hand: the new occupant sits out the hand
   // already in progress (see claimSeat in lib/game/engine.ts) rather than
   // inheriting whatever the bot she replaced was holding. Busted is handled
   // above and always returns first, so a seat reading "out" here is always
@@ -311,7 +311,7 @@ export function ActionBar({
 
       {/* No countdown here any more: the fuse burning around the seat on the
           clock carries it, right where the player is already looking. There
-          used to be a time-card column here too (+20s, three per seat) --
+          used to be a time-card column here too (+20s, three per seat),
           gone along with the rest of the file's time-bank plumbing, since
           nothing in this app has real money on the line and the column was
           costing width the three decisions could use instead. */}
@@ -350,7 +350,7 @@ export function ActionBar({
               lives in the drawer, once, so there are never two gold buttons
               both reading "Raise to 20" and only one of them spending chips.
               Shoving also used to fire the instant this was touched when
-              raising was unavailable -- the largest decision in poker, on a
+              raising was unavailable: the largest decision in poker, on a
               single tap, with nothing between. */}
           {raiseOpen ? "Cancel" : legal?.canRaise ? "Bet / Raise" : "All in"}
         </button>

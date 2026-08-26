@@ -1,25 +1,24 @@
 /**
- * Daily Word Stack -- the rules, and nothing else.
+ * Daily Word Stack: the rules, and nothing else.
  *
  * Pure and synchronous like the rest of lib/arcade/puzzles/: every function takes a round
- * and returns the next one. Crucially it also takes the *answer* as data --
- * there is no word list in this file. That is not tidiness, it is the security
- * boundary: this module is imported by the browser (the board renders from its
- * types and the share grid is built from its tiles), so anything it imports
- * ships to the client. The answer list lives in word-stack-answers.ts behind
+ * and returns the next one. It also takes the *answer* as data; there is no
+ * word list in this file. That's the security boundary, not tidiness: this
+ * module is imported by the browser (the board renders from its types and
+ * the share grid is built from its tiles), so anything it imports ships to
+ * the client. The answer list lives in word-stack-answers.ts behind
  * `server-only`, and only the service ever touches it.
  *
- * ## Scoring is two passes, and one pass is a bug
- *
- * The whole subtlety of this kind of word puzzle is repeated letters. Marking each tile
- * independently -- "is this letter anywhere in the answer?" -- gets every
+ * Scoring is two passes, because one pass is a bug. The whole subtlety of
+ * this kind of word puzzle is repeated letters. Marking each tile
+ * independently, "is this letter anywhere in the answer?", gets every
  * single-letter case right and quietly lies about the rest: guess CRANE
  * against ABBEY and the naive rule paints both Es, when only one E exists to
  * be found. The fix is to treat the answer as a pool of letters that greens
  * consume first and yellows draw from second, so a letter is never reported
  * more times than it actually occurs. `scoreWordStackGuess` is that, and the
  * duplicate cases are pinned in the tests because this is the one function
- * here that is easy to get subtly, unfalsifiably wrong.
+ * here that's easy to get subtly, unfalsifiably wrong.
  */
 
 export const WORD_STACK_WORD_LENGTH = 5;
@@ -31,7 +30,7 @@ export type WordStackTile = "correct" | "present" | "absent";
 export type WordStackStatus = "active" | "won" | "lost";
 
 export interface WordStackRound {
-  /** Lowercase. Secret until the round ends -- see toWordStackSnapshot. */
+  /** Lowercase. Secret until the round ends; see toWordStackSnapshot. */
   answer: string;
   /** Lowercase, oldest first. */
   guesses: string[];
@@ -43,8 +42,8 @@ export interface WordStackRound {
 /**
  * Why a guess cannot be played, or null if it can.
  *
- * `unknown-word` is deliberately absent: this module has no dictionary, so it
- * cannot answer that question and does not pretend to. The service checks it
+ * `unknown-word` is absent: this module has no dictionary, so it can't
+ * answer that question and doesn't pretend to. The service checks it
  * against the server-only word list and rejects there.
  */
 export type WordStackGuessProblem = "finished" | "length" | "letters";
@@ -109,7 +108,7 @@ export function startWordStackRound(answer: string): WordStackRound {
 /**
  * Plays a guess.
  *
- * Inert on a guess the round cannot accept, rather than throwing -- the
+ * Inert on a guess the round can't accept, rather than throwing: the
  * service re-checks first and turns a rejection into a 4xx, and a throw here
  * would be a 500 where a 409 belongs. Same convention connections.ts's
  * submitConnectionsGuess uses.
@@ -145,11 +144,11 @@ export function wordStackKeyboardState(round: WordStackRound): Record<string, Wo
 /**
  * The round as the browser may see it.
  *
- * `answer` is null while the round is live. That is the entire reason the
- * round lives on the server: a five-letter string in the payload is a
- * one-guess win for anyone with a network tab open, which is not an exotic
- * attack -- it is the first thing a curious player tries. It is filled in once
- * the round is over, because a player who lost is owed the word.
+ * `answer` is null while the round is live. That's the reason the round
+ * lives on the server: a five-letter string in the payload is a one-guess
+ * win for anyone with a network tab open, which isn't an exotic attack, it's
+ * the first thing a curious player tries. It's filled in once the round is
+ * over, because a player who lost is owed the word.
  */
 export interface WordStackSnapshot {
   day: string;

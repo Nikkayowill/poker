@@ -1,5 +1,5 @@
 /**
- * Word Race -- the same scrambled word to both players, first to solve it wins
+ * Word Race: the same scrambled word to both players, first to solve it wins
  * the round.
  *
  * Simultaneous, not turn-based: `applyMove` accepts a guess from either seat at
@@ -13,14 +13,14 @@
  * drawing them lazily would mean the seed alone no longer determines the match
  * and a resumed row could not be replayed. Everything below therefore hangs off
  * one rule: `snapshot` is the only thing a browser ever sees, and it emits a
- * round's `word` only once that round has ENDED. Not blanked, not nulled --
- * absent, so a network tab shows no key to be curious about. Rounds that have
- * not started yet do not appear in a snapshot at all, in any form, since a
- * player who knew round four's word would spend round three practising it.
+ * round's `word` only once that round has ended. Not blanked, not nulled,
+ * but absent, so a network tab shows no key to be curious about. Rounds that
+ * have not started yet do not appear in a snapshot at all, in any form, since
+ * a player who knew round four's word would spend round three practising it.
  *
  * That is the same boundary lib/arcade/puzzles/word-stack.ts draws around its
  * answer, and for the same reason: a solution in the payload is not an exotic
- * attack, it is the first thing a curious player tries -- and this one decides
+ * attack, it is the first thing a curious player tries, and this one decides
  * a real Gold payout rather than a share grid.
  *
  * ## The clock
@@ -28,8 +28,8 @@
  * `tick` owns every deadline. Two players who are both stuck must not stall the
  * match, and two players who have both closed the tab must not leave a row
  * live forever, so a round times out into a push and the series continues on
- * its own. It returns null -- meaning nothing changed -- on every call that
- * does not cross a deadline, which is nearly all of them: the shell polls every
+ * its own. It returns null (meaning nothing changed) on every call that does
+ * not cross a deadline, which is nearly all of them: the shell polls every
  * two seconds, and a tick that returned a fresh object each time would bump the
  * stored version on every poll and livelock both players' concurrency guard.
  */
@@ -37,11 +37,12 @@
 import { defineDuelGame, otherSeat, type DuelOutcome, type DuelSeat } from "./match-contract";
 import { WORD_RACE_WORDS } from "./word-race-words";
 import { WORD_RACE_REVEAL_MS, WORD_RACE_ROUND_MS } from "./word-race-timing";
+import { mulberry32 } from "@/lib/seeded-random";
 
 /* ------------------------------------------------------------- constants */
 
 /**
- * Rounds in the series. Odd on purpose: an even count draws far too often for a
+ * Rounds in the series. Kept odd: an even count draws far too often for a
  * game whose whole appeal is that one of you was faster, and a draw refunds
  * both players rather than settling anything. Five is long enough that one
  * lucky read does not decide it and short enough to finish inside a couple of
@@ -53,11 +54,10 @@ export const WORD_RACE_ROUNDS = 5;
  * The two clock constants live in ./word-race-timing and are re-exported here
  * so the engine and its tests keep one import.
  *
- * They are NOT declared in this file because the board needs them and this
- * file imports the (server-only) bank -- pulling it in to read a number would
- * ship all 478 words to the browser, which is a lookup table for the game.
- * See that module's header. A board must import them from there, never from
- * here.
+ * They are not declared in this file because this file imports the
+ * (server-only) word bank, and pulling it in just to read a number would ship
+ * all 478 words to the browser, which is a lookup table for the game. See
+ * that module's header. A board must import them from there, never from here.
  */
 export { WORD_RACE_REVEAL_MS, WORD_RACE_ROUND_MS } from "./word-race-timing";
 
@@ -68,7 +68,7 @@ export { WORD_RACE_REVEAL_MS, WORD_RACE_ROUND_MS } from "./word-race-timing";
  * a five-letter scramble has 120 arrangements, which a script exhausts in under
  * a second, and typing the answer would then be strictly worse than not
  * reading it. A second and a half is short enough to be a hesitation for a
- * human who mistyped and long enough that brute force cannot outrun thought --
+ * human who mistyped and long enough that brute force cannot outrun thought:
  * 30 seconds buys at most twenty attempts.
  */
 export const WORD_RACE_LOCKOUT_MS = 1_500;
@@ -90,7 +90,7 @@ export const WORD_RACE_LOCKOUT_MS = 1_500;
  * One round. `word` is the secret; everything else here is public once the
  * round has opened.
  *
- * Plain numbers and strings throughout -- the whole state round-trips through a
+ * Plain numbers and strings throughout: the whole state round-trips through a
  * jsonb column and structuredClone, so a Map, a Set or an undefined would
  * either fail to store or come back as something subtly different.
  */
@@ -104,17 +104,17 @@ export interface WordRaceRound {
   startedAt: number;
   /** Who solved it, or null for a push. */
   solvedBy: DuelSeat | null;
-  /** When it ended -- solved or timed out. Null while it is live. */
+  /** When it ended, solved or timed out. Null while it is live. */
   endedAt: number | null;
 }
 
 export interface WordRaceState {
   /** All five rounds, drawn from the seed when the match was created. */
   rounds: WordRaceRound[];
-  /** Which round is on screen. Never runs past the last one -- see advance(). */
+  /** Which round is on screen. Never runs past the last one; see advance(). */
   index: number;
   /**
-   * Each seat's guesses THIS round, oldest first, indexed by seat.
+   * Each seat's guesses this round, oldest first, indexed by seat.
    *
    * Bounded without a cap: a seat cannot guess again until its lockout expires,
    * so a 30-second round admits about twenty entries per player.
@@ -137,25 +137,13 @@ export interface WordRaceMove {
 /* ------------------------------------------------------------------- rng */
 
 /**
- * mulberry32 -- a small seeded PRNG.
- *
- * The point is not statistical quality, it is that nothing here calls
- * Math.random(). The contract's determinism note applies with full force to
- * this game: the words AND their scrambles both come out of the seed, so a
- * match can be replayed from its stored row, a test can pin an exact board, and
- * -- the part that matters for money -- the client is handed no way to work out
- * what is coming.
+ * Randomness here (imported from lib/seeded-random) is never Math.random().
+ * The contract's determinism note applies with full force to this game: the
+ * words and their scrambles both come out of the seed, so a match can be
+ * replayed from its stored row, a test can pin an exact board, and, the part
+ * that matters for money, the client is handed no way to work out what is
+ * coming.
  */
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 /**
  * Shuffles a word's letters.
@@ -164,7 +152,7 @@ function mulberry32(seed: number): () => number {
  * itself, and showing a player the answer already spelled out is not a round.
  * The rescue swaps the first letter with the first one that differs from it,
  * which is guaranteed to produce a different string for any word with at least
- * two distinct letters -- and the bank has no word without.
+ * two distinct letters, and the bank has no word without.
  */
 export function scrambleWord(word: string, random: () => number): string {
   const letters = word.split("");
@@ -195,7 +183,7 @@ export function normalizeWordRaceGuess(guess: string): string {
 
 /* ------------------------------------------------------------ the clock */
 
-/** The round on screen. Always a real round -- `index` never runs off the end. */
+/** The round on screen. Always a real round; `index` never runs off the end. */
 function currentRound(state: WordRaceState): WordRaceRound {
   return state.rounds[state.index];
 }
@@ -209,7 +197,7 @@ function roundsPlayed(state: WordRaceState): number {
  * Whether the series can still change hands.
  *
  * The lead being bigger than the number of rounds left is what ends a match at
- * 3-0 rather than playing two rounds nobody can win -- the same courtesy a
+ * 3-0 rather than playing two rounds nobody can win, the same courtesy a
  * best-of-five is normally played with, and cheap to get right because both
  * halves are already counted.
  */
@@ -243,7 +231,7 @@ function cloneState(state: WordRaceState): WordRaceState {
 function advance(state: WordRaceState, now: number): WordRaceState | null {
   let next: WordRaceState | null = null;
   // Every pass either times a round out or opens the next one, and there are
-  // only so many of each -- the bound is belt and braces against a clock that
+  // only so many of each; the bound is belt and braces against a clock that
   // goes backwards.
   for (let pass = 0; pass < state.rounds.length * 2 + 2; pass += 1) {
     const working = next ?? state;
@@ -282,14 +270,14 @@ export interface WordRaceRoundView {
   length: number;
   /** "playing" while the clock runs, "reveal" once the round has ended. */
   phase: "playing" | "reveal";
-  /** Milliseconds left in the CURRENT phase, derived from `now`. */
+  /** Milliseconds left in the current phase, derived from `now`. */
   remainingMs: number;
   solvedBy: DuelSeat | null;
   /**
    * The answer.
    *
-   * Optional in the type and genuinely ABSENT from the object while the round
-   * is live -- not null, not empty. A key that is always present and sometimes
+   * Optional in the type and genuinely absent from the object while the round
+   * is live, not null, not empty. A key that is always present and sometimes
    * filled is an invitation to check whether it is ever filled early; a key
    * that is not there says there is nothing to find.
    */
@@ -302,14 +290,14 @@ export interface WordRaceSnapshot {
   wins: [number, number];
   round: WordRaceRoundView;
   /**
-   * The viewer's OWN guesses this round, oldest first. Empty for a spectator,
-   * who has no own.
+   * The viewer's own guesses this round, oldest first. Empty for a spectator,
+   * who has none of their own.
    */
   yourGuesses: string[];
   /** Milliseconds until the viewer may guess again; 0 when free. */
   yourLockoutMs: number;
   /**
-   * How many guesses the opponent has spent this round -- and nothing about
+   * How many guesses the opponent has spent this round, and nothing about
    * what they were. The count is real tension and leaks nothing: it says
    * somebody is close, not what they typed.
    */
@@ -376,13 +364,13 @@ export const WORD_RACE_DUEL = defineDuelGame<WordRaceState, WordRaceMove, WordRa
     if (now < current.lockedUntil[seat]) return { reject: "Wait a moment before guessing again." };
 
     // Typed as a string and shape-checked by the route, but re-checked here
-    // because this is where a claim becomes a state change -- the contract's
+    // because this is where a claim becomes a state change, the contract's
     // words, and the reason the engine is the last line rather than the first.
     const guess = normalizeWordRaceGuess(typeof move?.guess === "string" ? move.guess : "");
-    // Rejected rather than counted as wrong, and deliberately without a
-    // lockout: an empty box or a stray keystroke carries no information about
-    // the answer, so charging a second and a half for it would punish a slip
-    // rather than brute force.
+    // Rejected rather than counted as wrong, and without a lockout: an empty
+    // box or a stray keystroke carries no information about the answer, so
+    // charging a second and a half for it would punish a slip rather than
+    // brute force.
     if (!/^[a-z]+$/.test(guess)) return { reject: "Letters only." };
 
     const next = cloneState(current);
@@ -395,7 +383,7 @@ export const WORD_RACE_DUEL = defineDuelGame<WordRaceState, WordRaceMove, WordRa
       return { next };
     }
 
-    // Wrong, and that is all it is -- the round stays open and they may try
+    // Wrong, and that is all it is: the round stays open and they may try
     // again. A rearrangement that happens to be another real word is simply
     // wrong too: this engine has no dictionary and inventing one to accept
     // alternates would be a rule nobody could check.
@@ -426,7 +414,7 @@ export const WORD_RACE_DUEL = defineDuelGame<WordRaceState, WordRaceMove, WordRa
     const round = currentRound(current);
     const finished = wordRaceDecided(current);
     // The word is disclosed once the round it belongs to has ended, and also
-    // once the match is over however it ended -- a resignation freezes a live
+    // once the match is over however it ended: a resignation freezes a live
     // round, and there is nothing left to protect in a match nobody can play.
     const revealed = round.endedAt !== null || finished;
     const phase: "playing" | "reveal" = round.endedAt === null ? "playing" : "reveal";
@@ -435,9 +423,9 @@ export const WORD_RACE_DUEL = defineDuelGame<WordRaceState, WordRaceMove, WordRa
         ? Math.max(0, round.startedAt + WORD_RACE_ROUND_MS - now)
         : Math.max(0, round.endedAt + WORD_RACE_REVEAL_MS - now);
 
-    // A spectator or an unauthenticated read is the MOST restrictive view, not
-    // the most permissive: they have no "own" guesses and are told nothing
-    // about either player's, which is strictly less than a player sees.
+    // A spectator or an unauthenticated read gets the most restrictive view,
+    // not the most permissive: they have no "own" guesses and are told
+    // nothing about either player's, which is strictly less than a player sees.
     const other = seat === null ? null : otherSeat(seat);
 
     return {
@@ -462,9 +450,9 @@ export const WORD_RACE_DUEL = defineDuelGame<WordRaceState, WordRaceMove, WordRa
       opponentGuesses: other === null ? 0 : current.guesses[other].length,
       opponentLocked: other === null ? false : current.lockedUntil[other] > now,
       history: current.rounds
-        // Finished rounds only. A round that has not opened is not merely
-        // hidden here, it is not in the array at all -- which is the whole
-        // reason future words cannot leak through this field.
+        // Finished rounds only. A round that has not opened isn't in the
+        // array at all, which is the whole reason future words cannot leak
+        // through this field.
         .map((entry, position) => ({ entry, position }))
         .filter(({ entry }) => entry.endedAt !== null)
         .map(({ entry, position }) => ({

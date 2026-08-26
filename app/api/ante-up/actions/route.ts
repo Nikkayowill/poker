@@ -13,7 +13,7 @@ import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server
 export const runtime = "nodejs";
 
 /**
- * Acts on the caller's own live Ante Up attempt -- there is at most one, so
+ * Acts on the caller's own live Ante Up attempt. There is at most one, so
  * unlike a duel match this needs no id in the URL. `fill` writes one digit;
  * `resign` gives up early. Same split as app/api/pvp/matches/[id]/route.ts.
  */
@@ -29,7 +29,7 @@ const resignSchema = z.object({ action: z.literal("resign") });
 const bodySchema = z.discriminatedUnion("action", [fillSchema, resignSchema]);
 
 export async function POST(request: NextRequest) {
-  // Generous, matching pvp:match:act -- a fast solver fires several of these
+  // Generous, matching pvp:match:act: a fast solver fires several of these
   // a second, and nothing here moves Gold except the fill that wins, which
   // the version guard already makes idempotent.
   const limited = enforceRateLimit(request, "ante-up:act", 600, 60 * 1000);
@@ -46,9 +46,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Resigning forfeits your own attempt -- a suspended account must still
-    // be able to do that. Continuing to fill (and potentially win a payout)
-    // is what's gated, same posture as the duel match route.
+    // Resigning forfeits your own attempt, and a suspended account must
+    // still be able to do that. Continuing to fill (and potentially win a
+    // payout) is what's gated, same posture as the duel match route.
     if (parsed.data.action === "fill" && (await isBanned(token))) {
       return withRequestSessionCookie(
         request,

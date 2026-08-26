@@ -8,28 +8,28 @@ import { selectSound } from "@/lib/audio/ui-sounds";
 /**
  * "Share with friends" for a finished daily puzzle.
  *
- * Native share sheet first, clipboard second. On a phone -- which is where a
- * result actually gets posted -- `navigator.share` opens the OS drawer, so the
+ * Native share sheet first, clipboard second. On a phone, which is where a
+ * result actually gets posted, `navigator.share` opens the OS drawer, so the
  * grid goes straight into iMessage, WhatsApp or wherever the player's group
  * chat lives. On a desktop browser without the API it falls back to copying,
  * which is what a player would have done by hand anyway.
  *
- * ## Three details that are easy to get wrong
+ * Three details that are easy to get wrong:
  *
  * **The API must be called inside the gesture.** Safari on iOS rejects
- * `navigator.share` if the promise chain awaits anything first -- the user
- * activation is spent by then. So the click handler calls it directly rather
- * than, say, fetching a fresh snapshot and sharing that. The text is prepared
- * before the click, not during it.
+ * `navigator.share` if the promise chain awaits anything first, since the
+ * user activation is spent by then. So the click handler calls it directly
+ * rather than, say, fetching a fresh snapshot and sharing that. The text is
+ * prepared before the click, not during it.
  *
- * **A cancelled share is not a failure.** Dismissing the sheet rejects with an
- * AbortError, and treating that as "native share did not work, fall back to
- * clipboard" would silently write to the clipboard of a player who had just
- * decided not to share. Aborts return quietly and change nothing.
+ * **A cancelled share is not a failure.** Dismissing the sheet rejects with
+ * an AbortError, and treating that as "native share didn't work, fall back
+ * to clipboard" would silently write to the clipboard of a player who had
+ * just decided not to share. Aborts return quietly and change nothing.
  *
  * **The link goes in the text, not in `url`.** Several share targets, given
- * both, keep the URL and drop the text -- which posts a bare link where the
- * emoji grid should be, losing the entire point. One text field, link on its
+ * both, keep the URL and drop the text, posting a bare link where the emoji
+ * grid should be and losing the entire point. One text field, link on its
  * own last line, is what survives the most targets intact.
  */
 
@@ -72,7 +72,7 @@ export function ShareResultButton({
         announce("shared");
         return;
       } catch (error) {
-        // The player dismissed the sheet. That is a decision, not a fault --
+        // The player dismissed the sheet. That's a decision, not a fault;
         // falling through to the clipboard here would write behind their back.
         if (error instanceof Error && error.name === "AbortError") return;
         // Anything else (no compatible target, a policy block) is worth
@@ -84,8 +84,9 @@ export function ShareResultButton({
       await navigator.clipboard.writeText(text);
       announce("copied");
     } catch {
-      // Clipboard access can be denied by browser policy, and there is nowhere
-      // left to go -- the grid is on screen, so say so rather than pretending.
+      // Clipboard access can be denied by browser policy, and there is
+      // nowhere left to go. The grid is on screen, so say so rather than
+      // pretending.
       announce("failed");
     }
   }, [announce, text, title]);

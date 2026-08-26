@@ -1,22 +1,25 @@
 /**
- * Minesweeper -- the board rules on their own, no wager and no storage.
+ * Minesweeper: the board rules on their own, no wager and no storage.
  *
  * Two things here are load-bearing and easy to undo by accident:
  *
- * 1. **Mines are laid on the first reveal, not when the round is dealt.** That is
- *    what makes the opening click safe -- you cannot lose before you have seen a
- *    single number -- and it is why `mines` is null on a fresh round. The clock
- *    starts on that same first click, the way the real game's does.
+ * 1. **Mines are laid on the first reveal, not when the round is dealt.** That
+ *    is what makes the opening click safe (you cannot lose before you have
+ *    seen a single number), and it is why `mines` is null on a fresh round.
+ *    The clock starts on that same first click, the way the real game's does.
  *
- * 2. **The layout retries until the board is solvable by logic alone.** A board
- *    that ends in a 50/50 coin flip is a slot machine, and lib/arcade/ante-up-
- *    minesweeper.ts stakes real Gold on this. See `isNoGuessBoard`.
+ * 2. **The layout retries until the board is solvable by logic alone.** A
+ *    board that ends in a 50/50 coin flip is a slot machine, and
+ *    lib/arcade/ante-up-minesweeper.ts stakes real Gold on this. See
+ *    `isNoGuessBoard`.
  *
- * Mine positions must never reach the browser while a round is live --
- * `minesweeperView` is the only shape that may cross the wire. Same rule, same
- * reason as lib/pvp/word-race-words.ts being server-only: a client holding the
- * answer wins every time.
+ * Mine positions must never reach the browser while a round is live;
+ * `minesweeperView` is the only shape that may cross the wire. Same rule,
+ * same reason as lib/pvp/word-race-words.ts being server-only: a client
+ * holding the answer wins every time.
  */
+
+import { mulberry32 } from "@/lib/seeded-random";
 
 export type MinesweeperDifficulty = "beginner" | "intermediate" | "expert";
 
@@ -51,7 +54,7 @@ export const MINESWEEPER_DIFFICULTIES: readonly MinesweeperDifficultyConfig[] = 
   { id: "expert", label: "Expert", cols: 10, rows: 18, mines: 38 },
 ];
 
-/** The largest board any difficulty deals -- the outer bound a request may name a cell within. */
+/** The largest board any difficulty deals; the outer bound a request may name a cell within. */
 export const MINESWEEPER_MAX_CELLS = MINESWEEPER_DIFFICULTIES.reduce(
   (most, entry) => Math.max(most, entry.cols * entry.rows),
   0,
@@ -81,7 +84,7 @@ export interface MinesweeperRound {
   status: MinesweeperRoundStatus;
   /** The mine that ended it, or null. */
   explodedAt: number | null;
-  /** Reveals, flags and chords -- what the player actually did. */
+  /** Reveals, flags and chords: what the player actually did. */
   moves: number;
   /** Null until the first reveal; the clock starts on the first click. */
   startedAt: string | null;
@@ -93,17 +96,6 @@ export const CELL_HIDDEN = -1;
 export const CELL_MINE = 9;
 export const CELL_EXPLODED = 10;
 export const CELL_WRONG_FLAG = 11;
-
-/** mulberry32 -- a small seeded PRNG, the same one the other puzzle engines carry. */
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 export function startMinesweeperRound(
   difficulty: MinesweeperDifficulty,
@@ -176,9 +168,9 @@ function layMines(
 /**
  * Can this board be finished by logic alone, opening from `start`?
  *
- * Runs the three rules a person actually uses -- a satisfied number frees its
+ * Runs the three rules a person actually uses: a satisfied number frees its
  * neighbours, a number with only as many hidden cells as missing mines fills
- * them, and the subset rule that cracks 1-2-1 walls -- plus the global
+ * them, and the subset rule that cracks 1-2-1 walls, plus the global
  * mine-count check that resolves most endgames. If it stalls with safe cells
  * still hidden, the board needs a guess and the caller lays another one.
  *
@@ -242,8 +234,8 @@ export function isNoGuessBoard(
     }
     if (progressed) continue;
 
-    // Subset rule: when one constraint's cells sit wholly inside another's, the
-    // difference between them is a constraint of its own.
+    // Subset rule: when one constraint's cells sit wholly inside another's,
+    // the difference between them is a constraint of its own.
     for (const a of constraints) {
       for (const b of constraints) {
         if (a === b || a.cells.length >= b.cells.length) continue;
@@ -264,7 +256,7 @@ export function isNoGuessBoard(
     }
     if (progressed) continue;
 
-    // Global count: every mine is accounted for, so whatever is left is safe --
+    // Global count: every mine is accounted for, so whatever is left is safe,
     // and the mirror case, where every remaining hidden cell has to be a mine.
     const hiddenLeft: number[] = [];
     for (let i = 0; i < total; i += 1) {
@@ -286,10 +278,10 @@ export function isNoGuessBoard(
 }
 
 /**
- * How many layouts to try before settling for one that needs a guess. At expert
- * density most random layouts are guessy, so this is deliberately generous; the
- * solver is cheap enough (a few hundred microseconds on a 180-cell board) that
- * the whole search stays well inside a single request.
+ * How many layouts to try before settling for one that needs a guess. At
+ * expert density most random layouts are guessy, so this is generous on
+ * purpose; the solver is cheap enough (a few hundred microseconds on a
+ * 180-cell board) that the whole search stays well inside a single request.
  */
 const MAX_LAYOUT_ATTEMPTS = 400;
 
@@ -431,7 +423,7 @@ export function toggleMinesweeperFlag(round: MinesweeperRound, index: number): M
 
 /**
  * Chord: tap a satisfied number to open everything still hidden around it.
- * A wrong flag makes this lose, exactly as in the real game -- that risk is the
+ * A wrong flag makes this lose, exactly as in the real game; that risk is the
  * price of the speed, and removing it would make chording strictly free.
  */
 export function chordMinesweeperCell(
@@ -485,12 +477,13 @@ export interface MinesweeperView {
   /** Mines minus flags placed. Goes negative if you over-flag, as the real game's does. */
   minesLeft: number;
   /**
-   * The mine that ended it, or null -- which is also how a caller tells a board
-   * that was blown up from one that was given up on or timed out. Both of those
-   * settle as the same stored status, and `ante_up_attempts.status` is a CHECK
-   * over exactly ('active','won','lost','timed-out'), so splitting them into a
-   * new status value would pass every memory-mode test and then fail against
-   * the real table. This is already public once the round is over.
+   * The mine that ended it, or null. This is also how a caller tells a board
+   * that was blown up from one that was given up on or timed out: both of
+   * those settle as the same stored status, and `ante_up_attempts.status` is
+   * a CHECK over exactly ('active','won','lost','timed-out'), so splitting
+   * them into a new status value would pass every memory-mode test and then
+   * fail against the real table. This is already public once the round is
+   * over.
    */
   explodedAt: number | null;
   moves: number;
@@ -499,9 +492,10 @@ export interface MinesweeperView {
 }
 
 /**
- * The only shape the browser may see. While a round is active this carries the
- * counts under opened cells and nothing else -- every hidden cell reads the
- * same whether or not a mine is under it. Mines appear only once it is over.
+ * The only shape the browser may see. While a round is active this carries
+ * the counts under opened cells and nothing else; every hidden cell reads
+ * the same whether or not a mine is under it. Mines appear only once it is
+ * over.
  */
 export function minesweeperView(round: MinesweeperRound): MinesweeperView {
   const total = round.cols * round.rows;

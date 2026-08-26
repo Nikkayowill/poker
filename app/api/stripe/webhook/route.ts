@@ -16,22 +16,22 @@ import { fulfillStripePayment, syncSubscriptionState } from "@/lib/server/stripe
 export const runtime = "nodejs";
 
 /**
- * One endpoint for every payment shape -- Gold purchases, one-time support,
- * and the full monthly-subscription lifecycle -- distinguished by event
+ * One endpoint for every payment shape (Gold purchases, one-time support,
+ * and the full monthly-subscription lifecycle), distinguished by event
  * type, and for checkout.session.completed, by `metadata.kind`/
  * `session.mode` set at Checkout creation time (see
  * app/api/stripe/checkout-session/route.ts).
  *
  * It is also one endpoint for both live and test mode: Stripe supports
  * registering the same URL twice, once per mode, each with its own signing
- * secret. Raw-body signature verification happens first, unconditionally --
+ * secret. Raw-body signature verification happens first, unconditionally;
  * every other line only runs once one of the two secrets has verified the
- * body, and *which* secret verified it is the only thing that decides live
+ * body, and which secret verified it is the only thing that decides live
  * vs test for the rest of the request. A live-signed body cannot verify
  * against the test secret or vice versa (different HMAC keys), so trying
  * both in turn is safe and never ambiguous. event.livemode is then checked
- * against that same conclusion as a sanity cross-check, not as a second
- * source of truth -- nothing here ever lets the request itself pick a mode.
+ * against that same conclusion as a sanity cross-check, not a second source
+ * of truth: nothing here ever lets the request itself pick a mode.
  */
 export async function POST(request: NextRequest) {
   const liveSecret = stripeWebhookSecret();
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       event = liveStripe.webhooks.constructEvent(rawBody, signature, liveSecret);
       mode = "live";
     } catch {
-      // Not signed with the live secret -- fall through to try test.
+      // Not signed with the live secret; fall through to try test.
     }
   }
   const testStripe = stripeTestClient();
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
 
   const ack = () => NextResponse.json({ received: true });
   const stripe = mode === "live" ? liveStripe! : testStripe!;
-  // Stripe's own event ordering, not our arrival order -- retries and
+  // Stripe's own event ordering, not our arrival order: retries and
   // redeliveries can arrive out of order, and syncSubscriptionState's
   // recency guard compares against this, never Date.now().
   const eventCreatedAt = new Date(event.created * 1000);
@@ -82,8 +82,8 @@ export async function POST(request: NextRequest) {
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded": {
         // async_payment_succeeded only fires for delayed methods (bank
-        // debits, vouchers) if such a payment_method_type were ever enabled
-        // -- this app only offers "card", which never takes that path, but
+        // debits, vouchers) if such a payment_method_type were ever enabled.
+        // This app only offers "card", which never takes that path, but
         // the handler costs nothing to keep in place against a future
         // payment method change.
         const session = event.data.object as Stripe.Checkout.Session;
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
           if (verified.payment_status !== "paid") return ack();
           if (mode === "test" && !isTestPurchaseAllowed(profileId)) return ack();
           // Refunded (never fulfilled) if the collected billing address is
-          // in a restricted state -- see enforceGoldBillingRestriction.
+          // in a restricted state; see enforceGoldBillingRestriction.
           if (await enforceGoldBillingRestriction(verified, mode)) return ack();
           await fulfillStripePayment(verified.id, profileId, tier.goldAmount, {
             kind: "gold_purchase",
@@ -115,8 +115,8 @@ export async function POST(request: NextRequest) {
         const { session: verified, tier, profileId } = await verifiedSupportSession(session.id, undefined, mode);
         if (verified.payment_status !== "paid") return ack();
         // A test-mode event for a profile not on the allowlist is
-        // acknowledged (so Stripe stops retrying) but never fulfilled --
-        // ordinary players are never on this list, so this only ever blocks
+        // acknowledged (so Stripe stops retrying) but never fulfilled.
+        // Ordinary players are never on this list, so this only ever blocks
         // a stray test event.
         if (mode === "test" && !isTestPurchaseAllowed(profileId)) return ack();
         await fulfillStripePayment(verified.id, profileId, null, {

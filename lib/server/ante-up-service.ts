@@ -34,21 +34,19 @@ import { awardWager } from "./progression-store";
 /**
  * Everything between an Ante Up request and the wallet.
  *
- * ## The ordering rules
- *
- * A solo wager has no counterparty to conserve Gold against -- a win pays
- * more than was staked, out of the same faucet a level-up or a streak grant
- * already draws from, not off another player's loss. The discipline that
- * matters here is the same discipline every other staked service in this app
- * restates at its own top, because breaking it is a silent money bug either
- * way:
+ * The ordering rules: a solo wager has no counterparty to conserve Gold
+ * against. A win pays more than was staked, out of the same faucet a
+ * level-up or a streak grant already draws from, not off another player's
+ * loss. The discipline that matters here is the same discipline every other
+ * staked service in this app restates at its own top, because breaking it
+ * is a silent money bug either way:
  *
  *   1. **The wager leaves the wallet before the attempt exists.** A row that
  *      fails to persist refunds. The reverse order would let a player start
  *      an attempt that never charged them.
  *   2. **A payout is credited only after the version-guarded settle write is
  *      confirmed.** `advanceAnteUpAttempt` returns null when it loses that
- *      race, and null must never pay -- the writer that wins the race is the
+ *      race, and null must never pay: the writer that wins the race is the
  *      one that pays.
  *   3. **Settlement is a single credit of the payout, never a second debit.**
  *      The wager already left in rule 1; a win credits `wager * multiplier`
@@ -56,7 +54,7 @@ import { awardWager } from "./progression-store";
  *      spent.
  *
  * There is no rule 4 (escrow released exactly once) the way the duel
- * challenge store needs one -- there is no second party who might never show
+ * challenge store needs one: there is no second party who might never show
  * up to accept a stake held on their behalf.
  */
 
@@ -67,16 +65,16 @@ export class AnteUpRequestError extends ArcadeRequestError<AnteUpSnapshot, never
 
 /**
  * How many wagered attempts a player may open in a rolling day, at Sudoku
- * specifically -- each of the four Ante Up games has its own pool of this
+ * specifically; each of the four Ante Up games has its own pool of this
  * size (lib/server/ante-up-store.ts's countWageredAttemptsSince is per-game).
  *
  * Free (wager 0) practice is uncapped. This exists because a player skilled
  * enough to reliably beat Expert inside five minutes could otherwise farm
- * 10x off the house indefinitely -- a starting number, easy to retune here.
+ * 10x off the house indefinitely. A starting number, easy to retune here.
  */
 export const ANTE_UP_DAILY_WAGERED_LIMIT = 10;
 
-/** This game's id in ante_up_attempts -- see lib/server/ante-up-store.ts. */
+/** This game's id in ante_up_attempts; see lib/server/ante-up-store.ts. */
 const GAME = "sudoku";
 
 function parseDifficulty(value: string): SudokuDifficulty {
@@ -89,7 +87,7 @@ function snapshot(stored: StoredAnteUpAttempt<AnteUpAttempt>, now: Date): AnteUp
 }
 
 /**
- * Pays out a win. Never throws -- the attempt is already durably settled by
+ * Pays out a win. Never throws: the attempt is already durably settled by
  * the time this runs, so a credit failure must not turn a finished attempt
  * into an error response and cost a player their result on top of their
  * Gold. Logged loudly instead, same reasoning as pvp-match-service.ts's
@@ -109,7 +107,6 @@ async function payOutWin(profileId: string, attempt: Pick<AnteUpAttempt, "wager"
 
 /** Settles an attempt whose clock has run out, and reads back the truth either way. */
 async function settleIfExpired(
-  profile: PlayerProfile,
   stored: StoredAnteUpAttempt<AnteUpAttempt>,
   now: Date,
 ): Promise<StoredAnteUpAttempt<AnteUpAttempt>> {
@@ -117,7 +114,7 @@ async function settleIfExpired(
   if (ticked === null) return stored;
 
   const advanced = await advanceAnteUpAttempt(stored, ticked);
-  // Rule 2: a lost race did not happen -- somebody else's read already
+  // Rule 2: a lost race did not happen; somebody else's read already
   // settled (and, on a win, paid) this same attempt.
   return advanced ?? (await getAnteUpAttemptById<AnteUpAttempt>(stored.id)) ?? stored;
 }
@@ -131,7 +128,7 @@ export async function readAnteUpAttempt(
   const stored = await getActiveAnteUpAttempt<AnteUpAttempt>(profile.id, GAME);
   if (!stored) return { attempt: null, profile };
 
-  const settled = await settleIfExpired(profile, stored, now);
+  const settled = await settleIfExpired(stored, now);
   return { attempt: snapshot(settled, now), profile };
 }
 
@@ -227,7 +224,7 @@ export async function fillAnteUpAttempt(
 
   const ticked = tickAnteUpAttempt(current.state, now);
   if (ticked !== null) {
-    // The clock already ran out -- settle that before refusing the fill, so
+    // The clock already ran out; settle that before refusing the fill, so
     // the response carries the true (timed-out) state rather than a stale
     // "active" one the player could mistake for still-playable.
     const settled =
@@ -259,7 +256,7 @@ export async function fillAnteUpAttempt(
   if (stored.state.status === "won") await payOutWin(profile.id, stored.state);
 
   if (!correct) {
-    // The mistake IS persisted above -- this rejects the digit, not the
+    // The mistake is persisted above; this rejects the digit, not the
     // request, and carries the updated board so the counter moves.
     throw new AnteUpRequestError("Not that one.", 409, { round: snapshot(stored, now) });
   }
@@ -267,7 +264,7 @@ export async function fillAnteUpAttempt(
   return { attempt: snapshot(stored, now), profile };
 }
 
-/** Gives up early. The wager is already spent -- see the ordering rules above. */
+/** Gives up early. The wager is already spent; see the ordering rules above. */
 export async function resignAnteUp(
   token: string,
   now = new Date(),

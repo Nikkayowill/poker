@@ -9,9 +9,10 @@ import {
   persistenceMode,
   persistSeatClaim,
 } from "@/lib/server/game-store";
-import { creditGold, ensureProfile, isBanned, recordSeenIp, spendGold, updateProfile } from "@/lib/server/profile-store";
-import { enforceRateLimit, getClientIp } from "@/lib/server/rate-limit";
-import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
+import { creditGold, spendGold } from "@/lib/server/profile-store";
+import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { withRequestSessionCookie } from "@/lib/server/session";
+import { resolvePlayerForTableEntry } from "@/lib/server/table-entry";
 
 export const runtime = "nodejs";
 
@@ -36,22 +37,10 @@ export async function POST(request: NextRequest) {
     }
     const tier: StakesTier = parsed.data.tier ?? CHEAPEST_TIER;
     const config = TIER_CONFIG[tier];
-    const token = readOrCreateSessionToken(request);
-    let profile = await ensureProfile(token, parsed.data.name);
-    if (parsed.data.name && parsed.data.name !== profile.displayName) {
-      profile = await updateProfile(token, {
-        displayName: parsed.data.name,
-        avatarPreset: profile.avatarPreset,
-        accent: profile.accent,
-      });
-    }
-    if (await isBanned(token)) {
-      return withRequestSessionCookie(request,
-        NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),
-        token,
-      );
-    }
-    void recordSeenIp(token, getClientIp(request)).catch(() => {});
+    const resolved = await resolvePlayerForTableEntry(request, parsed.data.name);
+    if (resolved instanceof NextResponse) return resolved;
+    const { token } = resolved;
+    let profile = resolved.profile;
     if (!profile.unlimitedGold && profile.goldBalance < config.minBuyIn) {
       return withRequestSessionCookie(request,
         NextResponse.json(

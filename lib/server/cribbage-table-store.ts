@@ -4,19 +4,18 @@ import type { CribbageSeat, CribbageState } from "@/lib/cribbage/engine";
 import { adminClient } from "./supabase-admin";
 
 /**
- * Persistence for cribbage tables -- the join-table shape lib/server/
- * pvp-match-store.ts cannot use (it is fixed at 2 players). Twin-branch, same
- * as every other store here: Supabase when configured, an in-process Map
- * otherwise, and the memory branch replicates the same guards the migration's
- * constraints and RPCs enforce, because `npm test` and a no-env dev server
- * both run on it.
+ * Persistence for cribbage tables: the join-table shape lib/server/
+ * pvp-match-store.ts can't use, since it's fixed at 2 players. Twin-branch,
+ * same as every other store here: Supabase when configured, an in-process
+ * Map otherwise, and the memory branch replicates the same guards the
+ * migration's constraints and RPCs enforce, because `npm test` and a no-env
+ * dev server both run on it.
  *
- * Dealing a table into existence is ONE code path regardless of what
- * triggered it -- a 4th join filling the table, or the host starting early
- * once 3 are seated -- both go through `dealCribbageTable`. That is a
- * deliberate design constraint, not an accident of how this file happened to
- * be organized: two separate paths that can each write `status = 'active'`
- * would be two places a race could deal the same table twice.
+ * Dealing a table into existence is one code path regardless of what
+ * triggered it: a 4th join filling the table, or the host starting early
+ * once 3 are seated, both go through `dealCribbageTable`. Two separate paths
+ * that could each write `status = 'active'` would be two places a race
+ * could deal the same table twice.
  */
 
 export type CribbageTableStatus = "waiting" | "active" | "completed" | "cancelled";
@@ -40,7 +39,7 @@ export interface CribbageSeatRow {
   joinedAt: string;
 }
 
-/** A guard genuinely failed (table full, already started, not the host, too few players) -- an ordinary outcome, not a fault. */
+/** A guard genuinely failed (table full, already started, not the host, too few players): an ordinary outcome, not a fault. */
 export class CribbageTableNotJoinable extends Error {
   constructor(message: string) {
     super(message);
@@ -58,7 +57,7 @@ globalThis.__riverRoomCribbageTables = memoryTables;
 const memorySeats = globalThis.__riverRoomCribbageSeats ?? new Map<string, CribbageSeatRow[]>();
 globalThis.__riverRoomCribbageSeats = memorySeats;
 
-/** Test seam only: the memory branch is process-global, so suites must not leak tables into each other. */
+/** Test seam only: the memory branch is process-global, so suites must not let tables leak into each other. */
 export function __resetCribbageTablesForTest(): void {
   memoryTables.clear();
   memorySeats.clear();
@@ -115,7 +114,7 @@ export async function getCribbageTableById(id: string): Promise<StoredCribbageTa
   return data ? fromRow(data as TableRow) : null;
 }
 
-/** Every seat at a table, ordered by seat number -- this IS the pegging/dealer turn order. */
+/** Every seat at a table, ordered by seat number; this is the pegging/dealer turn order. */
 export async function getCribbageSeats(tableId: string): Promise<CribbageSeatRow[]> {
   const supabase = adminClient();
   if (!supabase) {
@@ -135,11 +134,11 @@ export async function getCribbageSeats(tableId: string): Promise<CribbageSeatRow
 }
 
 /**
- * How many are seated at each of these tables, in one round trip -- the
- * lobby list's own read, which every connected browser polls every 2s. One
- * query grouped in JS rather than one `getCribbageSeats` call per table:
- * the latter scales DB load linearly with how many open tables there are,
- * on a path that is already hit at a fixed cadence regardless of load.
+ * How many are seated at each of these tables, in one round trip. Feeds the
+ * lobby list, which every connected browser polls every 2s. One query
+ * grouped in JS rather than one `getCribbageSeats` call per table, since the
+ * latter scales DB load linearly with how many open tables there are, on a
+ * path that's already hit at a fixed cadence regardless of load.
  */
 export async function getSeatCountsForTables(tableIds: string[]): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
@@ -163,7 +162,7 @@ export async function getSeatCountsForTables(tableIds: string[]): Promise<Map<st
   return counts;
 }
 
-/** Open (waiting) tables at this stake, newest first -- the lobby list. */
+/** Open (waiting) tables at this stake, newest first: the lobby list. */
 export async function getOpenCribbageTables(stake?: number): Promise<StoredCribbageTable[]> {
   const supabase = adminClient();
   if (!supabase) {
@@ -182,11 +181,11 @@ export async function getOpenCribbageTables(stake?: number): Promise<StoredCribb
 /**
  * The caller's own live (waiting or active) table, if any.
  *
- * Narrowest-first tie-break (most recent) rather than an error on more than
- * one row: see cribbage_table_players_player_idx's comment in the migration
- * -- "one live table per player" is an application-level guard here, not a
- * hard constraint, so this must degrade gracefully rather than assume at
- * most one row can exist.
+ * Picks the most recent rather than erroring on more than one row: see
+ * cribbage_table_players_player_idx's comment in the migration. "One live
+ * table per player" is an application-level guard here, not a hard
+ * constraint, so this has to degrade gracefully rather than assume at most
+ * one row can exist.
  */
 export async function getActiveCribbageTableFor(playerId: string): Promise<StoredCribbageTable | null> {
   const supabase = adminClient();
@@ -223,7 +222,7 @@ export async function getActiveCribbageTableFor(playerId: string): Promise<Store
 /**
  * How long after a table completes it still counts as "recently completed"
  * for getRecentlyCompletedCribbageTableFor. Same reasoning as pvp-match-
- * store.ts's SETTLED_MATCH_GRACE_MS: only needs to outlast one poll cycle
+ * store.ts's SETTLED_MATCH_GRACE_MS: it only needs to outlast one poll cycle
  * with room for jitter, since a client that has already picked the result up
  * once holds onto it locally until the player dismisses it.
  */
@@ -232,11 +231,12 @@ const COMPLETED_TABLE_GRACE_MS = 20_000;
 /**
  * A table this player was seated at that completed moments ago.
  *
- * getActiveCribbageTableFor stops returning a table the instant it completes
- * -- correct for the "are you already at a table" gate, but it means a seated
- * player whose OWN request didn't do the settling (someone else's move
- * crossed 121, or someone else resigned) has no other way to find out: their
- * next poll would return nothing and silently drop them back to the lobby.
+ * getActiveCribbageTableFor stops returning a table the instant it
+ * completes, which is correct for the "are you already at a table" gate,
+ * but it means a seated player whose own request didn't do the settling
+ * (someone else's move crossed 121, or someone else resigned) has no other
+ * way to find out: their next poll would return nothing and silently drop
+ * them back to the lobby.
  */
 export async function getRecentlyCompletedCribbageTableFor(playerId: string): Promise<StoredCribbageTable | null> {
   const supabase = adminClient();
@@ -281,7 +281,7 @@ export async function getRecentlyCompletedCribbageTableFor(playerId: string): Pr
 
 // ---- writes -------------------------------------------------------------
 
-/** Opens a bare table, host not yet seated -- the caller seats them with claimCribbageSeat right after. */
+/** Opens a bare table, host not yet seated; the caller seats them with claimCribbageSeat right after. */
 export async function createCribbageTableRow(hostId: string, stake: number): Promise<StoredCribbageTable> {
   const supabase = adminClient();
   const now = new Date().toISOString();
@@ -316,8 +316,8 @@ export async function createCribbageTableRow(hostId: string, stake: number): Pro
 /**
  * Assigns the next open seat (0-3) to `playerId`. Throws
  * CribbageTableNotJoinable for every ordinary reason this can fail (full,
- * already started, gone) -- the caller (the service) turns that into a
- * player-facing message; anything else is a real fault.
+ * already started, gone); the caller (the service) turns that into a
+ * player-facing message. Anything else is a real fault.
  */
 export async function claimCribbageSeat(
   tableId: string,
@@ -334,11 +334,11 @@ export async function claimCribbageSeat(
       throw new CribbageTableNotJoinable("You are already seated at that table.");
     }
     if (seats.length >= 4) throw new CribbageTableNotJoinable("That table is full.");
-    // The lowest OPEN seat, not the seated count -- a seat vacated by an
-    // earlier leave is a real gap. Assigning `seats.length` there collides
-    // with whoever already holds the highest seat number and permanently
-    // strands the vacated seat, matching the exact race the migration's
-    // claim_cribbage_seat RPC closes on the Supabase branch.
+    // The lowest open seat, not the seated count: a seat vacated by an
+    // earlier leave is a real gap. Assigning `seats.length` there would
+    // collide with whoever already holds the highest seat number and
+    // permanently strand the vacated seat, matching the exact race the
+    // migration's claim_cribbage_seat RPC closes on the Supabase branch.
     const taken = new Set(seats.map((s) => s.seat));
     let seat = 0;
     while (taken.has(seat)) seat += 1;
@@ -363,12 +363,12 @@ export async function claimCribbageSeat(
  * The one transition out of 'waiting'. Returns null when the guard failed
  * (the seated count no longer matches what `state` was built for, table
  * already started, caller is not the host for an early start) rather than
- * throwing -- an ordinary race outcome the caller treats the same way a lost
+ * throwing. It's an ordinary race outcome, treated the same way a lost
  * optimistic-concurrency write is treated elsewhere: nothing happened, and
  * in particular nothing was paid.
  *
- * `expectedSeats` must match the seated count EXACTLY, not merely satisfy a
- * floor -- see the migration's own header on deal_cribbage_table for why a
+ * `expectedSeats` must match the seated count exactly, not merely satisfy a
+ * floor: see the migration's own header on deal_cribbage_table for why a
  * ">=" guard here is a real money bug (a join racing a host's early start
  * can strand a seated, debited player's Gold for good).
  */
@@ -416,8 +416,8 @@ export async function dealCribbageTable(input: {
 }
 
 /**
- * Unwinds a table whose host could not be seated right after creation --
- * guarded (still 'waiting', genuinely zero seats) so it can never touch a
+ * Unwinds a table whose host could not be seated right after creation.
+ * Guarded (still 'waiting', genuinely zero seats) so it can never touch a
  * table anyone has actually joined. Returns whether it actually cancelled
  * one, so the caller does not report success for a table that was somehow
  * already gone.
@@ -475,13 +475,13 @@ export async function leaveCribbageTable(
 }
 
 /**
- * Writes the next state, but only if nobody else already did -- identical
+ * Writes the next state, but only if nobody else already did: identical
  * contract to lib/server/pvp-match-store.ts's advancePvpMatch, generalized
- * from a winner SEAT to a winner PROFILE ID since cribbage has no fixed
+ * from a winner seat to a winner profile id since cribbage has no fixed
  * seat-to-profile mapping the way a 2-tuple duel does.
  *
- * Returns null on a lost race. The caller must not pay out on a null return
- * -- this guard is the entire reason a pot is credited exactly once.
+ * Returns null on a lost race. The caller must not pay out on a null
+ * return; this guard is the entire reason a pot is credited exactly once.
  */
 export async function advanceCribbageTable(
   current: StoredCribbageTable,

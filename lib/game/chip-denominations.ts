@@ -2,27 +2,26 @@
  * A bet, as a stack of physical chips: which colours, how many of each.
  *
  * This is the one place that answers "what does this number look like on the
- * cloth". Before it there were three greedy breakdowns in the tree --
- * `potChipStacks` (big blinds, four colours, for the 2D room),
- * `chipBreakdown` (absolute Gold, six colours, for the R3F room) and
- * `sprayDenominations` (a flattening of the first) -- and two colour tables
- * that had already drifted apart by a few hex points on every shared
- * denomination. Two drawings of the same chip disagreeing about its colour is
- * exactly the drift a shared constant exists to prevent, and it is invisible
- * until the two rooms are put side by side.
+ * cloth". Before it there were three greedy breakdowns in the tree
+ * (`potChipStacks` for big blinds/four colours in the 2D room, `chipBreakdown`
+ * for absolute Gold/six colours in the R3F room, and `sprayDenominations`, a
+ * flattening of the first) and two colour tables that had already drifted
+ * apart by a few hex points on every shared denomination. Two drawings of the
+ * same chip disagreeing about its colour is exactly the drift a shared
+ * constant exists to prevent, and it stays invisible until the two rooms are
+ * put side by side.
  *
- * WHAT IS SHARED AND WHAT IS NOT. The *ladder* and the *greedy* are shared:
- * `potChipStacks` is still the algorithm, called through rather than copied,
- * because it is the one with the tests and the display cap already reasoned
- * out. What this module adds is the colour, the flattening into individual
- * chips in the order they should physically leave a rail, and a unit-agnostic
- * front door so a caller working in Gold does not have to pretend to be
- * working in big blinds.
+ * The ladder and the greedy are shared: `potChipStacks` is still the
+ * algorithm, called through rather than copied, since it's the one with the
+ * tests and the display cap already reasoned out. What this module adds is
+ * the colour, the flattening into individual chips in the order they should
+ * physically leave a rail, and a unit-agnostic front door so a caller working
+ * in Gold doesn't have to pretend to be working in big blinds.
  *
- * WHY BIG BLINDS ARE STILL THE DEFAULT. A chip count means nothing on its own
- * -- 500 is a huge pot at 5/10 and a limp at 500/1000 -- so the felt has
- * always broken a pot down in big blinds and it must keep doing so, or a pile
- * stops meaning the same thing at every tier. `calculateChipDenominations`
+ * Big blinds stay the default unit because a chip count means nothing on its
+ * own (500 is a huge pot at 5/10 and a limp at 500/1000), so the felt has
+ * always broken a pot down in big blinds and needs to keep doing so, or a
+ * pile stops meaning the same thing at every tier. `calculateChipDenominations`
  * takes the unit as a parameter rather than choosing for the caller.
  *
  * Pure, no rendering, no `three`, no DOM. In `lib/game/` beside `pot-chips.ts`
@@ -62,11 +61,11 @@ export interface ChipColour {
  * The house's chips.
  *
  * The four values a pot breaks into in big blinds are the four the 2D room
- * has always painted, at exactly the hexes it has always painted them --
- * these are lifted from its `CHIP_PALETTE` unchanged, deliberately, because
- * that palette is what every player is looking at today and this refactor is
- * not the place to restyle it. 500 and 1000 come from the R3F room's own
- * catalogue, which needs rungs above 100 because it counts in Gold.
+ * has always painted, at exactly the hexes it has always painted them: these
+ * are lifted from its `CHIP_PALETTE` unchanged, because that palette is what
+ * every player is looking at today and this refactor is not the place to
+ * restyle it. 500 and 1000 come from the R3F room's own catalogue, which
+ * needs rungs above 100 because it counts in Gold.
  *
  * Casino convention, and worth not "tidying": white is the smallest, then
  * red, green, black, purple, gold. A player who has sat at a real table reads
@@ -119,7 +118,7 @@ export interface ChipBucket {
 
 export interface ChipDenominationOptions {
   /**
-   * The big blind, when the breakdown should be expressed in big blinds --
+   * The big blind, when the breakdown should be expressed in big blinds,
    * which is what the felt wants, so a pile means the same thing at 5/10 and
    * at 500/1000. Omit it (or pass 0) to break the amount down in absolute
    * Gold instead, which is what a wallet-facing surface wants.
@@ -128,7 +127,7 @@ export interface ChipDenominationOptions {
   /**
    * The tallest column to draw. Past this the next chip is simply not drawn:
    * nobody counts the eighth chip in a stack, and the exact value is always
-   * readable as a number elsewhere. A visual cap, never an arithmetic one --
+   * readable as a number elsewhere. A visual cap, never an arithmetic one;
    * `capped` records that it bit.
    */
   maxPerColumn?: number;
@@ -145,7 +144,7 @@ export interface ChipDenominationOptions {
  *
  * Returns `[]` for anything that is not a positive, finite amount. A caller
  * that wants a chip on the cloth regardless of the arithmetic should say so
- * explicitly rather than have this invent one -- except in the one case
+ * explicitly rather than have this invent one, except in the one case
  * `potChipStacks` already owns, where a pot under one big blind still shows a
  * single chip because something really is in the middle.
  */
@@ -188,7 +187,7 @@ function goldChipStacks(amount: number, maxPerColumn: number): PotChipStack[] {
       capped: wanted > maxPerColumn,
     });
     // The uncapped `wanted`, so a swallowed chip does not leak its value down
-    // into a tower of ones -- the same subtraction `potChipStacks` makes.
+    // into a tower of ones; the same subtraction `potChipStacks` makes.
     remaining -= wanted * denomination;
   }
   return stacks;
@@ -210,14 +209,14 @@ export interface ChipSpec {
 /**
  * A breakdown flattened into individual chips, smallest denomination first.
  *
- * Smallest first is how a dealer's hand actually leaves a rail -- the change
- * goes out ahead of the big ones -- and it is what makes a truncated spray
- * read correctly: the flight is capped at `limit`, so dropping the tail has
- * to drop the *cheap* chips and keep the black hundreds, which is the signal
- * a player reads the bet's size from.
+ * Smallest first is how a dealer's hand actually leaves a rail: the change
+ * goes out ahead of the big ones, and it's what makes a truncated spray read
+ * correctly. The flight is capped at `limit`, so dropping the tail has to
+ * drop the cheap chips and keep the black hundreds, which is the signal a
+ * player reads the bet's size from.
  *
- * Note the order is the reverse of the columns a pile is *stacked* in, and
- * deliberately so: a resting stack reads largest at the bottom.
+ * The order is the reverse of the columns a pile is stacked in: a resting
+ * stack reads largest at the bottom.
  */
 export function flattenChipBuckets(buckets: ChipBucket[], limit = Infinity): ChipSpec[] {
   const chips: ChipSpec[] = [];
@@ -229,7 +228,7 @@ export function flattenChipBuckets(buckets: ChipBucket[], limit = Infinity): Chi
   const kept = Number.isFinite(limit) && limit >= 0
     // Slice before reversing, never after. `buckets` arrives largest-first,
     // so the head of this list is the black hundreds and the tail is the
-    // small change -- truncating the head would throw away exactly the chips
+    // small change; truncating the head would throw away exactly the chips
     // that carry the bet's size and leave a shove looking like a limp.
     ? chips.slice(0, Math.floor(limit))
     : chips;

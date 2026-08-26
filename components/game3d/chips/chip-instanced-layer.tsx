@@ -2,27 +2,27 @@
 
 /**
  * Every chip on the felt, drawn in exactly CHIP_DENOMINATIONS.length (6)
- * draw calls — one InstancedMesh per denomination tier — no matter how many
+ * draw calls, one InstancedMesh per denomination tier, no matter how many
  * piles or flights are on screen. This is the rendering half of the pure
  * math in lib/game3d/chip-instance-model.ts: this file owns the GPU buffers
- * and the one write pass that fills them; the math file only ever answers
- * "where is this chip right now".
+ * and the one write pass that fills them, and the math file only ever
+ * answers "where is this chip right now".
  *
- * WHY ONE COMPONENT OWNS EVERY CHIP, RATHER THAN EACH PILE/FLIGHT OWNING
- * ITS OWN. An InstancedMesh's buffer is shared, imperative GPU state — a
+ * One component owns every chip rather than each pile/flight owning its
+ * own because an InstancedMesh's buffer is shared, imperative GPU state: a
  * denomination's mesh has to contain every $5 chip on the table (spread
- * across six seats' piles, the pot, and any mid-air flight) in ONE array,
- * written in ONE pass. Two separate React components each calling
+ * across six seats' piles, the pot, and any mid-air flight) in one array,
+ * written in one pass. Two separate React components each calling
  * `setMatrixAt` on the same mesh in their own `useFrame` would race on
- * write order with no ordering guarantee between them — three.js does not
- * serialize that, React doesn't either. So chip-field.tsx keeps owning
- * *which* piles and flights exist (the choreography state machine, and its
- * hard-won hand-boundary/sweep/award contract, is untouched); this file is
- * the single writer that turns "here is the current set of piles and
- * flights" into six meshes' worth of matrices, once per frame.
+ * write order with no ordering guarantee between them; neither three.js
+ * nor React serializes that. So chip-field.tsx keeps owning which piles and
+ * flights exist (the choreography state machine, with its hand-boundary/
+ * sweep/award contract, is untouched); this file is the single writer that
+ * turns "here is the current set of piles and flights" into six meshes'
+ * worth of matrices, once per frame.
  *
- * Chips here render shadow-free on purpose — see fake-shadows.tsx for what
- * grounds them instead of a per-chip shadow-map draw.
+ * Chips render shadow-free here; see fake-shadows.tsx for what grounds
+ * them instead of a per-chip shadow-map draw.
  */
 
 import { useEffect, useLayoutEffect, useRef } from "react";
@@ -60,16 +60,16 @@ const MAX_INSTANCES_PER_DENOMINATION = 128;
 /** Scratch object reused for every `setMatrixAt` call across every mesh.
  * Written and immediately read back (`updateMatrix()` then `toArray` inside
  * three's own `setMatrixAt`) within the same synchronous pass, so one
- * shared instance is safe — the same "one shared X, never per-chip
+ * shared instance is safe: the same "one shared X, never per-chip
  * allocation" contract chipGeometry and chipMaterials already keep. */
 const dummy = new THREE.Object3D();
 
 /**
  * The centre pile's key. Exported so `chip-field.tsx` names it and the
  * `write()` pass below recognises it from one definition rather than two
- * copies of the string "pile-pot" that only agree by luck -- the seam's
- * `pileSize()` counts this pile specifically, and a rename on one side alone
- * would make it silently report zero.
+ * copies of the string "pile-pot" that only agree by luck. The seam's
+ * `pileSize()` counts this pile specifically, and a rename on one side
+ * alone would make it silently report zero.
  */
 export const POT_PILE_KEY = "pile-pot";
 
@@ -84,7 +84,7 @@ export interface ChipFlightInput {
   key: string;
   chips: ChipDenomination[];
   /** Per-chip source and destination, index-aligned with `chips`. Explicit
-   * rather than a single `to` point with scatter around it — see
+   * rather than a single `to` point with scatter around it; see
    * chip-instance-model.ts's header for what that scatter cost. */
   legs: ChipPushLeg[];
   style: PushStyle;
@@ -109,24 +109,22 @@ function pushPose(byDenom: Map<number, ChipPose[]>, pose: ChipPose) {
 export function ChipInstancedLayer({ piles, flights, onFlightDone }: ChipInstancedLayerProps) {
   const meshesRef = useRef(new Map<number, THREE.InstancedMesh>());
   const launchedAtRef = useRef(new Map<string, number>());
-  // The Canvas's own clock, selected once — the object reference is stable
+  // The Canvas's own clock, selected once. The object reference is stable
   // for the Canvas's whole lifetime (R3F creates it once in the store), so
-  // this selector never itself triggers a re-render; it exists purely to
-  // read `.elapsedTime` from the layout effect below without a second,
-  // mismatched time source. See the fix note on the effect for why a second
-  // source (this used to read `performance.now()` here) is a real bug, not
-  // a style choice: `performance.now()` counts from page navigation, while
-  // `state.clock.elapsedTime` (which useDemandFrame's tick uses) counts
-  // from whenever the Canvas mounted — two different epochs feeding the
-  // same `launchedAtRef` map means a flight's elapsed time is computed
-  // against the WRONG origin the instant this effect wins the race to
-  // stamp it first, and it can only read as staying negative forever,
-  // which is exactly the "chip hovers, holding the render loop awake"
-  // failure this file's own header says the design prevents.
+  // this selector never triggers a re-render on its own; it exists purely
+  // to read `.elapsedTime` from the layout effect below without a second,
+  // mismatched time source. Reading `performance.now()` here instead would
+  // be a real bug, not a style choice: it counts from page navigation,
+  // while `state.clock.elapsedTime` (what useDemandFrame's tick uses)
+  // counts from whenever the Canvas mounted. Two different epochs feeding
+  // the same `launchedAtRef` map means a flight's elapsed time gets
+  // computed against the wrong origin, staying negative forever, which is
+  // exactly the "chip hovers, holding the render loop awake" failure this
+  // file's design is meant to prevent.
   const clock = useThree((state) => state.clock);
   // Refs, not closures: `write` below is recreated every render (it closes
   // over this render's `piles`/`flights`/`onFlightDone`), but useDemandFrame
-  // itself decides *when* to call it, driven by `flights.length > 0` — the
+  // itself decides when to call it, driven by `flights.length > 0`. The
   // launch-time bookkeeping has to survive across renders regardless of how
   // often the callback identity changes, so it lives in a ref, not state.
   const onFlightDoneRef = useRef(onFlightDone);
@@ -137,7 +135,7 @@ export function ChipInstancedLayer({ piles, flights, onFlightDone }: ChipInstanc
   // A ref, not state: `write()` reads it inside a frame callback, and a
   // preference that changes mid-session must not re-render the whole chip
   // layer to take effect. Read once at mount and kept current by the media
-  // query — the same shape components/table/scene/table-scene.tsx uses for
+  // query, the same shape components/table/scene/table-scene.tsx uses for
   // the 2D room, so both renderers honour the OS setting identically.
   const reducedMotionRef = useRef(false);
   useEffect(() => {
@@ -184,7 +182,7 @@ export function ChipInstancedLayer({ piles, flights, onFlightDone }: ChipInstanc
       for (const pose of poses) pushPose(byDenom, pose);
       // A settled flight's chips are at their destination and this pile is
       // about to own them, so they stop counting as in flight the same frame
-      // they arrive -- matching what the 2D room's `moving` set does.
+      // they arrive, matching what the 2D room's `moving` set does.
       if (!done) {
         for (const pose of poses) airborne.push({ x: pose.x, y: pose.y, z: pose.z });
       }
@@ -217,31 +215,31 @@ export function ChipInstancedLayer({ piles, flights, onFlightDone }: ChipInstanc
   };
 
   // Resting-pile changes arrive as ordinary React props (a new bet landed,
-  // a hand boundary cleared the felt) — that alone already invalidates the
+  // a hand boundary cleared the felt); that alone already invalidates the
   // demand loop for one frame (see demand-loop.ts's header), so an effect
   // is enough to keep the buffers in step with piles that aren't currently
   // airborne. Layout-timed, not a plain effect: every InstancedMesh starts
   // life with `count` at its full constructor arg and every instance
-  // matrix at identity (three.js's own InstancedMesh constructor), which
-  // reads as a phantom stack of chips sitting at the world origin — a
-  // plain `useEffect` runs after paint, so demand mode's own auto-
-  // invalidate-on-mount would have drawn that garbage frame before this
-  // ever ran. `useLayoutEffect` clears it before the browser ever paints.
+  // matrix at identity (three.js's own constructor), which reads as a
+  // phantom stack of chips sitting at the world origin. A plain
+  // `useEffect` runs after paint, so demand mode's own auto-invalidate-on-
+  // mount would draw that garbage frame before this ever ran;
+  // `useLayoutEffect` clears it before the browser paints.
   // `write` is intentionally omitted from the deps array below: it is
   // recreated fresh every render (closing over that render's piles/
   // flights), so listing it would make this effect run on every render
-  // regardless of whether `piles` itself changed — exactly what depending
+  // regardless of whether `piles` itself changed, exactly what depending
   // only on `[piles]` is meant to avoid.
   //
   // `clock.elapsedTime` here, not a fresh read of "now" some other way, and
-  // it is safe specifically because of WHERE a new flight can originate:
-  // chip-field.tsx only ever launches one from inside its own `useFrame`
-  // (deliberately — see that file's comment on why), which only runs
-  // during an actual rendered tick, i.e. exactly when R3F has just
-  // recomputed `clock.elapsedTime` for "now". The `setFlights` that
-  // follows commits synchronously before the next tick, so this layout
-  // effect's read of `clock.elapsedTime` is still that same tick's fresh
-  // value — not a stale one frozen from whenever the demand loop last slept.
+  // it's safe because of where a new flight can originate: chip-field.tsx
+  // only ever launches one from inside its own `useFrame` (see that file's
+  // comment on why), which only runs during an actual rendered tick, i.e.
+  // exactly when R3F has just recomputed `clock.elapsedTime` for "now". The
+  // `setFlights` that follows commits synchronously before the next tick,
+  // so this layout effect's read of `clock.elapsedTime` is still that same
+  // tick's fresh value, not a stale one frozen from whenever the demand
+  // loop last slept.
   useLayoutEffect(() => {
     write(clock.elapsedTime * 1000);
   }, [piles]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -254,10 +252,10 @@ export function ChipInstancedLayer({ piles, flights, onFlightDone }: ChipInstanc
   );
 
   // The seam's `awake()`. Published from the very flag that decides whether
-  // the demand loop is kept alive above, so the two cannot disagree -- an
-  // effect rather than a render-body call because this is an external store,
-  // and keyed on the boolean so it also fires on the falling edge, when
-  // `write()` may never run again to report the room has settled.
+  // the demand loop is kept alive above, so the two cannot disagree. An
+  // effect rather than a render-body call because this is an external
+  // store, and keyed on the boolean so it also fires on the falling edge,
+  // when `write()` may never run again to report the room has settled.
   useEffect(() => {
     publishAnimating(animating);
   }, [animating]);
@@ -273,16 +271,16 @@ export function ChipInstancedLayer({ piles, flights, onFlightDone }: ChipInstanc
           }}
           args={[chipGeometry, undefined, MAX_INSTANCES_PER_DENOMINATION]}
           material={chipMaterials(denom)}
-          // `count` is deliberately NOT a declarative prop here: `write()`
-          // owns it imperatively every pass, and a JSX prop would fight
-          // that on every re-render (three's InstancedMesh has no dirty-
-          // check against "did this prop actually change", so a literal
+          // `count` is not a declarative prop here: `write()` owns it
+          // imperatively every pass, and a JSX prop would fight that on
+          // every re-render (three's InstancedMesh has no dirty-check
+          // against "did this prop actually change", so a literal
           // `count={0}` would zero it straight back out the next time this
           // component re-renders with new `piles`/`flights`, independent
           // of what write() just set).
           // The working volume (felt + the chip flight arcs above it) sits
           // fully inside the fixed camera framing at every viewport this
-          // room supports — there is nothing to cull. Skipping three's
+          // room supports, so there is nothing to cull. Skipping three's
           // automatic bounding-sphere recompute (which setMatrixAt would
           // otherwise require after every write) is a real cost saved, not
           // just a risk avoided.

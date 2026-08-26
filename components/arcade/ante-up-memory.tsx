@@ -17,12 +17,12 @@ import {
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
- * Ante Up: Memory Match -- the solo half of Ante Up, on the daily's own board.
+ * Ante Up: Memory Match, the solo half of Ante Up, on the daily's own board.
  *
  * Same request shape as the daily Memory board (a flip is a request, the
  * server turns the card, a face-down tile is genuinely absent from the
  * payload) and the same wager step ante-up-sudoku.tsx uses. There is no
- * server-driven clock here -- the forfeit condition is turns, not time, and a
+ * server-driven clock here: the forfeit condition is turns, not time, and a
  * flip response is authoritative the instant it lands, so this needs no
  * polling loop the way Sudoku's countdown does. See 43-ante-up.css's header
  * for why this reuses the duel/ante classes rather than inventing new ones,
@@ -69,7 +69,7 @@ export function AnteUpMemory() {
       if (!mounted.current || sending.current) return;
       if (response.ok) applyResponse(data);
     } catch {
-      // A dropped read is not worth a banner -- the player can just try an action.
+      // A dropped read is not worth a banner; the player can just try an action.
     } finally {
       if (mounted.current) setLoaded(true);
     }
@@ -144,12 +144,12 @@ export function AnteUpMemory() {
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
   const canAfford = wager === 0 || (wager >= MIN_ANTE_UP_WAGER && balance >= wager);
   const turnsLeft = attempt ? Math.max(0, attempt.maxTurns - attempt.turns) : ANTE_UP_MEMORY_MAX_TURNS;
-  // A forfeit can only come from the turn cap or a resignation -- the turn
+  // A forfeit can only come from the turn cap or a resignation; the turn
   // count is what tells them apart, since both settle as "lost".
   const ranOutOfTurns = attempt !== null && attempt.status === "lost" && attempt.turns > attempt.maxTurns;
-  // attempt.payout is 0 for the entire game -- it only becomes real once the
-  // board is solved (anteUpMemoryPayout's own rule) -- so the scoreline shows
-  // this instead while active: what a win pays at the CURRENT turn count,
+  // attempt.payout is 0 for the entire game; it only becomes real once the
+  // board is solved (anteUpMemoryPayout's own rule), so the scoreline shows
+  // this instead while active: what a win pays at the current turn count,
   // the live version of the lobby's own "the fewer turns it takes, the more
   // it pays" promise. Once settled, attempt.payout is the true, final number.
   const projectedPayout = attempt && active
@@ -241,7 +241,7 @@ export function AnteUpMemory() {
                   onClick={() => { tapSound(); flip(index); }}
                 >
                   {/* Face-down draws the player's own equipped back. `card` really
-                      is null until the server turns it over -- same contract the
+                      is null until the server turns it over, same contract the
                       daily Memory board's tiles carry. */}
                   <PlayingCard card={card} back={profile?.equipped.cardBack} />
                 </button>

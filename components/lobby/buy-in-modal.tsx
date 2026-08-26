@@ -9,7 +9,7 @@ import { RACETRACK_RENDERER, TABLE_RENDERER_3D_ENABLED, type TableRenderer } fro
 
 /**
  * Picks a stakes tier (unless locked, e.g. rebuying at an already-seated
- * table) and a buy-in amount within that tier's range -- reused for
+ * table) and a buy-in amount within that tier's range. Reused for
  * quick-play, hosting a private table, and rebuying after busting.
  * Resolves to (tier, buyIn); the caller decides what request that becomes.
  */
@@ -39,7 +39,7 @@ export function BuyInModal({
   pending: boolean;
   /**
    * The name to sit down under. Optional because the rebuy caller opens this
-   * with a locked tier at a table the player is already named at -- asking
+   * with a locked tier at a table the player is already named at; asking
    * them to re-confirm who they are mid-hand would be absurd.
    */
   playerName?: string;
@@ -48,10 +48,10 @@ export function BuyInModal({
    * The table-view choice, surfaced here rather than left to the in-game
    * menu. All three are optional and only rendered together, for the same
    * reason `playerName` is optional above: the rebuy caller opens this at an
-   * already-mounted table, where the renderer is no longer a decision --
+   * already-mounted table, where the renderer is no longer a decision, since
    * changing it mid-hand is exactly the mount/discard flicker
    * `tableRendererSettled` in poker-table.tsx exists to prevent. Deciding it
-   * HERE, before that room is ever created, is what removes the flicker for
+   * here, before that room is ever created, is what removes the flicker for
    * the normal join path instead of just hiding it behind a loading hold.
    */
   tableRenderer?: TableRenderer;
@@ -94,8 +94,8 @@ export function BuyInModal({
           <p className="buyin-description">{description}</p>
 
           {/* Moved here from the hub head, where it was an empty text input
-              sitting above the game tiles asking a question nobody had. It is
-              the same control with the same accessible name -- taking a seat
+              sitting above the game tiles asking a question nobody had. It's
+              the same control with the same accessible name: taking a seat
               is when the name is actually used, and this is the one dialog
               that leads to one. */}
           {onPlayerNameChange && (
@@ -168,7 +168,7 @@ export function BuyInModal({
           </div>
 
           {/* Choosing the room here, before it exists, is what actually fixes
-              the mount-then-swap flicker -- picking it after the table has
+              the mount-then-swap flicker: picking it after the table has
               already rendered (the old in-game menu toggle, still there for
               mid-session changes) is what glitched. Same `.entry-segment`
               control the sign-in page uses for its two-way choice. */}
@@ -177,7 +177,7 @@ export function BuyInModal({
               <span>Table view</span>
               <div className="entry-segment" role="group" aria-label="Table view">
                 {/* 3D room temporarily disabled (TABLE_RENDERER_3D_ENABLED) while
-                    it's being reworked -- hidden rather than disabled, since this
+                    it's being reworked, hidden rather than disabled, since this
                     isn't a per-browser capability gap like WebGL/portrait below. */}
                 {TABLE_RENDERER_3D_ENABLED && (
                   <button
@@ -214,7 +214,7 @@ export function BuyInModal({
               type="button"
               disabled={pending || !affordableNow}
               // The press that asks for a seat, so it answers like every
-              // other choice. Arriving is the game-on cue's job -- firing that
+              // other choice. Arriving is the game-on cue's job; firing that
               // here would celebrate a request that can still be refused.
               onClick={() => { selectSound(); onConfirm(tier, buyIn); }}
             >

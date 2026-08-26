@@ -94,11 +94,10 @@ export async function createStoredGame(state: GameState): Promise<void> {
   });
 }
 
-/** Finds the oldest public, still-playable table with an open (bot) seat. */
 /**
- * Finds an open public table at a specific stakes tier. Filters by the
+ * Finds an open public table at a specific stakes tier, filtering by the
  * tier's blinds (small_blind/big_blind are already dedicated, indexed
- * columns on `games`) rather than adding a new `tier` column -- blinds
+ * columns on `games`) rather than adding a new `tier` column, since blinds
  * uniquely determine tier in this app's fixed 3-tier config.
  */
 /**
@@ -116,24 +115,22 @@ const MATCHMAKING_CANDIDATES = 20;
  * stops counting as "populated" for matchmaking, and becomes eligible to be
  * archived outright.
  *
- * The two jobs deliberately share one threshold. `/api/games/[id]/advance`
- * -- the only thing that ever forces a stalled turn along -- can only be
- * called by a seat still at the table (see that route's own check), so once
- * every human seat has been this quiet, nobody can ever advance the table
- * again either: the same fact that should stop matchmaking from preferring
- * it is the fact that makes it worth retiring.
+ * The two jobs share one threshold: `/api/games/[id]/advance` (the only
+ * thing that forces a stalled turn along) can only be called by a seat
+ * still at the table, so once every human seat has gone this quiet, nobody
+ * can advance the table either. The same fact that stops matchmaking from
+ * preferring it is what makes it worth retiring.
  *
  * Not the 15s turn clock: that fires only when *another* seated human's
  * client is still around to notice the deadline passed. This is the much
- * longer "is anyone plausibly still at this table at all" signal, read off
- * `player_sessions.last_seen_at`, which is bumped by ordinary app traffic
- * app-wide, not by this table specifically.
+ * longer "is anyone plausibly still at this table" signal, read off
+ * `player_sessions.last_seen_at`, which is bumped by ordinary app traffic,
+ * not by this table specifically.
  *
- * A function, not a frozen constant, and read fresh on every call rather
- * than once at import -- the same reason `botVoluntaryLeaveChance` in
+ * A function, not a frozen constant, read fresh on every call rather than
+ * once at import, for the same reason `botVoluntaryLeaveChance` in
  * engine.ts is one: a test that sets the override after this module has
- * already loaded needs it to take effect, not the value that was live at
- * import time.
+ * already loaded needs it to take effect, not the value live at import time.
  */
 function staleTableMs(): number {
   const override = Number(process.env.RIVER_STALE_TABLE_MS);
@@ -143,8 +140,8 @@ function staleTableMs(): number {
 /**
  * Bound on one archive sweep. `archiveStaleGames` runs as a side effect of
  * ordinary matchmaking traffic rather than off its own schedule (there is no
- * cron here), so it stays a small, cheap pass -- the oldest-touched
- * candidates first -- and drains the backlog over many calls rather than
+ * cron here), so it stays a small, cheap pass over the oldest-touched
+ * candidates first, draining the backlog over many calls rather than
  * scanning every `playing` row on each one.
  */
 const STALE_SWEEP_LIMIT = 25;
@@ -155,23 +152,23 @@ const STALE_SWEEP_LIMIT = 25;
  * A table every human has abandoned has no path back to life: nothing
  * server-side runs on a schedule, and the one route that can force a stalled
  * turn along requires a caller who is themselves seated there. A table with
- * no human seat at all (every occupant a bot) is included for the identical
- * reason -- it is exactly as stuck, and seats nobody.
+ * no human seat at all (every occupant a bot) is included too, since it's
+ * exactly as stuck.
  *
  * Sets `status: "archived"`, never `"complete"`. `"complete"` is this
- * engine's *between-hands* rest state -- `dealNextHandIfDue` deals the next
- * hand the moment it sees one -- so writing it here would just relaunch the
- * same dead table into another hand nobody will ever finish either.
- * `"archived"` is the status nothing in the engine treats as anything but
- * terminal, because every actionable guard checks `=== "playing"`
- * positively (see `GameStatus`'s own comment) rather than `!== "complete"`.
+ * engine's between-hands rest state (`dealNextHandIfDue` deals the next hand
+ * the moment it sees one), so writing it here would just relaunch the same
+ * dead table into another hand nobody will finish. `"archived"` is the
+ * status nothing in the engine treats as anything but terminal, because
+ * every actionable guard checks `=== "playing"` positively (see
+ * `GameStatus`'s own comment) rather than `!== "complete"`.
  *
  * Refunds each abandoned human seat's stack before the table closes,
- * best-effort and logged per seat rather than all-or-nothing -- the same
- * shape `resolveTimedAdvance`'s inactive-release credit already uses above,
- * and for the same reason: a missing profile (most often a deleted guest
- * account) must not block the sweep, but a real balance must not simply
- * vanish because the table that held it got cleaned up.
+ * best-effort and logged per seat rather than all-or-nothing, the same
+ * shape `resolveTimedAdvance`'s inactive-release credit uses above and for
+ * the same reason: a missing profile (usually a deleted guest account) must
+ * not block the sweep, but a real balance must not vanish because the table
+ * that held it got cleaned up.
  *
  * Guarded on `status = "playing"` in the same write that sets `"archived"`,
  * so a table someone genuinely returns to mid-sweep is left alone rather
@@ -206,7 +203,7 @@ export async function archiveStaleGames(limit = STALE_SWEEP_LIMIT): Promise<numb
   // table can be nudged (e.g. by a poll that finds nothing due) without any
   // human genuinely being present, so updated_at alone would under-count
   // staleness. The real check below, against player_sessions, is what
-  // decides -- this first query only picks which candidates to check.
+  // decides; this first query only picks which candidates to check.
   const { data: candidates, error: candidateError } = await supabase
     .from("games")
     .select("id")
@@ -270,26 +267,23 @@ export async function archiveStaleGames(limit = STALE_SWEEP_LIMIT): Promise<numb
 }
 
 /**
- * An open seat at a public table of this tier, preferring one that already has
- * a person at it who is plausibly still around.
+ * An open seat at a public table of this tier, preferring one that already
+ * has a person at it who is plausibly still around.
  *
- * The preference is the point. Quick-play has always joined an existing table
- * before creating one, but it took the *oldest* open table, and every table is
- * created full of bots -- so two players arriving a minute apart were reliably
- * sent to two different tables, each to sit with six bots, and the game looked
- * unplayed even when it was not. Ranking a populated table first is what makes
- * two people who press Play at the same time end up in the same hand.
+ * Quick-play joins an existing table before creating one, and ranking a
+ * populated table first, rather than just the oldest open one, is what makes
+ * two people who press Play around the same time land in the same hand
+ * instead of each getting six bots.
  *
- * "Populated" alone was not enough, and staying with it silently routed new
- * players into tables three abandoned sessions had left mid-hand hours or
- * days earlier -- occupied on paper, unplayable in fact (see
+ * "Occupied" alone isn't enough: a table can be occupied on paper by seats
+ * abandoned hours or days earlier and unplayable in fact (see
  * `archiveStaleGames`'s comment for why nothing rescues those on its own).
  * A seat only counts toward this preference if `staleTableMs()` has not
  * passed since its owner's session was last seen anywhere in the app.
  *
  * Falls back to the oldest open table, and then to nothing, which the caller
- * reads as "create one". A table with only bots -- or only quiet humans --
- * is still a perfectly good answer, just the second-best one.
+ * reads as "create one". A table with only bots, or only quiet humans, is
+ * still a fine answer, just the second-best one.
  */
 export async function findOpenPublicGame(tier: StakesTier): Promise<string | null> {
   const config = TIER_CONFIG[tier];
@@ -305,7 +299,7 @@ export async function findOpenPublicGame(tier: StakesTier): Promise<string | nul
       // two of the same kind, the older one still wins, so tables fill up
       // rather than all filling one seat each. Memory mode has no separate
       // session-recency signal, so the table's own updatedAt stands in for
-      // it -- reasonable for a single-process dev/test store where "quiet"
+      // it, reasonable for a single-process dev/test store where "quiet"
       // and "abandoned" are the same fact, unlike the persisted Supabase case.
       const staleCutoff = new Date(Date.now() - staleTableMs()).toISOString();
       const hasHuman = state.seats.some((seat) => seat.ownerToken !== null) && state.updatedAt >= staleCutoff;
@@ -320,7 +314,7 @@ export async function findOpenPublicGame(tier: StakesTier): Promise<string | nul
   try {
     await archiveStaleGames();
   } catch (error) {
-    // A failed sweep is not a failed match -- see the ranking fallback below
+    // A failed sweep is not a failed match; see the ranking fallback below
     // for the same principle applied one step further down.
     console.error("table.stale_sweep_failed", { error });
   }
@@ -336,9 +330,9 @@ export async function findOpenPublicGame(tier: StakesTier): Promise<string | nul
     .eq("games.big_blind", config.bigBlind)
     .order("created_at", { referencedTable: "games", ascending: true })
     // Rows, not tables. Every open seat is its own row, so a freshly created
-    // table contributes up to SEAT_COUNT of them -- limiting to
-    // MATCHMAKING_CANDIDATES here would have capped the field at four or five
-    // distinct games, not twenty, and silently dropped every eligible table
+    // table contributes up to SEAT_COUNT of them; limiting to
+    // MATCHMAKING_CANDIDATES here would cap the field at four or five
+    // distinct games, not twenty, silently dropping every eligible table
     // after them. The de-duplication below is what applies the real cap.
     .limit(MATCHMAKING_CANDIDATES * SEAT_COUNT);
   if (error) throw new Error(`Could not search for an open table: ${error.message}`);
@@ -365,7 +359,7 @@ export async function findOpenPublicGame(tier: StakesTier): Promise<string | nul
   if (occupiedError) return candidateIds[0];
   const occupiedRows = occupied ?? [];
 
-  // "Occupied" alone is not "populated" -- see this function's own comment.
+  // "Occupied" alone is not "populated"; see this function's own comment.
   // A seat only counts if its owner's session has been seen anywhere in the
   // app within staleTableMs(); a failure here degrades to the old, coarser
   // "any owner_token" behaviour rather than failing the match entirely, for
@@ -391,10 +385,9 @@ export async function findOpenPublicGame(tier: StakesTier): Promise<string | nul
 }
 
 /**
- * Tables actually still live, split by public/private -- a completed or
- * archived game is history, not a running table, so those statuses are
- * deliberately excluded rather than counting every row the store has ever
- * seen.
+ * Tables still live, split by public/private. A completed or archived game
+ * is history, not a running table, so those statuses are excluded rather
+ * than counting every row the store has ever seen.
  */
 export async function countActiveGames(): Promise<{ publicTables: number; privateTables: number }> {
   const supabase = adminClient();
@@ -437,7 +430,7 @@ const GAME_ACTIONS_PRUNE_MAX_BATCHES = 20;
 /**
  * Deletes game_actions rows older than the retention window, in bounded
  * batches. Nothing reads this table back today (see the migration's own
- * comment) -- it exists purely as a future dispute/replay trail, so a rolling
+ * comment); it exists purely as a future dispute/replay trail, so a rolling
  * window is enough. No-op in memory mode: game_actions is a Supabase-only
  * table, never populated by the in-memory dev store.
  */
@@ -480,7 +473,7 @@ export async function findGameByRoomCode(code: string): Promise<string | null> {
 /**
  * Loads a table and advances one due server-authoritative turn before
  * returning it: an expired human clock or one paced bot decision. Mutation
- * routes use this helper; snapshot GETs deliberately call getStoredGame.
+ * routes use this helper; snapshot GETs call getStoredGame instead.
  */
 export async function loadGameWithTimeouts(id: string): Promise<GameState | null> {
   const state = await getStoredGame(id);
@@ -512,23 +505,23 @@ export async function advanceStoredGameWithTimeouts(state: GameState): Promise<G
  *
  * A bound, not a target. Each turn the engine resolves writes the next seat a
  * fresh think deadline in the future, so in normal play this loop runs exactly
- * once and stops -- the pacing between bots is preserved. It only iterates
- * when several deadlines are already in the past, which happens when nobody
- * was awake to advance them: a backgrounded tab, a dropped connection, a
- * server that just came up. Catching those up in one request is the whole
- * reason the browser no longer needs to poll.
+ * once and stops, preserving the pacing between bots. It only iterates when
+ * several deadlines are already in the past, which happens when nobody was
+ * awake to advance them: a backgrounded tab, a dropped connection, a server
+ * that just came up. Catching those up in one request is why the browser
+ * doesn't need to poll.
  */
 const MAX_ADVANCE_STEPS = 12;
 
 async function resolveTimedAdvance(state: GameState): Promise<GameState> {
   let current = state;
 
-  // A finished hand whose time is up becomes the next one, before the turn
-  // loop below runs -- so a single request both deals and gets the first bot
-  // thinking, the same way one request already resolves a run of overdue
-  // turns. Persisted through the same optimistic write as every other
-  // deadline, so several browsers waking together still produce one deal:
-  // the losers read back the winner's state instead of dealing again.
+  // A finished hand whose time is up becomes the next one before the turn
+  // loop below runs, so a single request both deals and gets the first bot
+  // thinking, the same way one request resolves a run of overdue turns.
+  // Persisted through the same optimistic write as every other deadline, so
+  // several browsers waking together still produce one deal: the losers
+  // read back the winner's state instead of dealing again.
   const opening = dealNextHandIfDue(current);
   if (opening.dealt) {
     const persisted = await persistTimedTurn(opening.state, null, { type: "next-hand" });
@@ -540,13 +533,13 @@ async function resolveTimedAdvance(state: GameState): Promise<GameState> {
     logAdvance(current, 0, "dealt the next hand");
 
     // Only after the release is durably stored. Crediting first would pay a
-    // player whose seat had not actually been given up if the write then lost
-    // its race -- the same ordering the actions route uses for a deliberate
-    // departure, and for the same reason.
+    // player whose seat hadn't actually been given up if the write then lost
+    // its race, the same ordering the actions route uses when a player
+    // leaves the table themselves.
     //
     // Awaited rather than fired and forgotten: this is somebody's balance,
     // and the request is already returning a state that says they left the
-    // table with it. A failure here is logged loudly because it is the one
+    // table with it. A failure here is logged loudly because it's the one
     // way this feature can cost a player chips.
     for (const seat of opening.released) {
       try {
@@ -564,21 +557,20 @@ async function resolveTimedAdvance(state: GameState): Promise<GameState> {
   }
 
   for (let step = 0; step < MAX_ADVANCE_STEPS; step += 1) {
-    // Captured as a primitive, before the call below -- not `current.status`
-    // read afterward. advanceTimedTurn mutates its input in place (it calls
-    // applyTurnAction(state, action), which sets fields directly on the same
-    // object), so `current` and `advanced.state` are the same reference by
-    // the time both are readable. A comparison written as
+    // Captured as a primitive before the call below, not read from
+    // `current.status` afterward. advanceTimedTurn mutates its input in
+    // place (applyTurnAction sets fields directly on the same object), so
+    // `current` and `advanced.state` are the same reference by the time both
+    // are readable. Writing this as
     // `current.status !== "complete" && advanced.state.status === "complete"`
-    // is really comparing that object's status to itself: once a hand
-    // actually completes, both sides read the post-mutation value and the
-    // condition is false forever. This is why a bot action closing a hand
-    // never recorded a stat, while a human's own action did -- the /actions
-    // route captures its "was it already complete" flag as a boolean before
-    // calling applyPlayerAction, which is immune to this exact trap. Found by
-    // running an end-to-end test repeatedly: it worked whenever *my* action
-    // closed the hand and silently failed whenever a bot's did, which is
-    // exactly the signature of comparing a mutated object to itself.
+    // would really compare that object's status to itself: once a hand
+    // completes, both sides read the post-mutation value and the condition
+    // is false forever. That's why a bot action closing a hand would never
+    // record a stat while a human's own action did (the /actions route
+    // captures its "was it already complete" flag as a boolean before
+    // calling applyPlayerAction, which sidesteps this trap). The tell is a
+    // test that passes whenever the player's own action closes the hand and
+    // fails silently whenever a bot's does.
     const wasPlaying = current.status === "playing";
     const advanced = advanceTimedTurn(current);
     // Nothing was due: either it is a human's turn and their clock is still
@@ -598,8 +590,8 @@ async function resolveTimedAdvance(state: GameState): Promise<GameState> {
     }
 
     // A bot's action or a human's expired clock (auto-check/auto-fold) just
-    // closed the hand. This is the other place that can happen -- the direct
-    // human-action path is hooked in the /actions route -- and it is the one
+    // closed the hand. This is the other place that can happen (the direct
+    // human-action path is hooked in the /actions route), and it's the one
     // this function exists to reach on its own, without anyone polling for
     // it. Best-effort: a stats failure must never surface as a broken table.
     if (wasPlaying && advanced.state.status === "complete") {
@@ -737,13 +729,14 @@ export async function persistSeatClaim(state: GameState, seatId: string): Promis
   }
 }
 
-/** Persists one due bot action or human timeout produced by advanceTimedTurn. */
 /**
+ * Persists one due bot action or human timeout produced by advanceTimedTurn.
+ *
  * `actorSeatId` is nullable because one deadline has no actor: the one that
- * replaces a finished hand. game_actions.actor_seat_id has always been
- * nullable and `next_hand` has always been in the action_type enum -- the
- * human-driven Deal button writes exactly this row -- so nothing about the
- * schema changes to let the clock write it too.
+ * replaces a finished hand. `game_actions.actor_seat_id` is already nullable
+ * and `next_hand` is already in the action_type enum (the human-driven Deal
+ * button writes exactly this row), so nothing about the schema needs to
+ * change for the clock to write it too.
  */
 async function persistTimedTurn(
   state: GameState,

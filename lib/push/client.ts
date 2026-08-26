@@ -6,8 +6,8 @@ import { VAPID_PUBLIC_KEY } from "./vapid";
  * Browser-side half of Web Push: ask permission, subscribe through the
  * service worker, hand the subscription to the server.
  *
- * Called once, at the moment Kayo wants it -- account creation (see
- * AccountEntryCard) -- but written to be safe to call more than once:
+ * Called once, at account creation (see AccountEntryCard), but written to
+ * be safe to call more than once:
  * Notification.requestPermission() is a no-op returning the cached answer
  * the moment a player has already granted or denied it, so wiring this into
  * both "Create account" and "Continue with Google" (which also serves
@@ -26,7 +26,7 @@ function isPushSupported(): boolean {
  * VAPID keys arrive base64url; PushManager wants a raw Uint8Array backed by
  * a real ArrayBuffer. `Uint8Array.from` types its result as
  * `Uint8Array<ArrayBufferLike>`, which also covers SharedArrayBuffer and so
- * doesn't satisfy applicationServerKey's BufferSource -- constructing with a
+ * doesn't satisfy applicationServerKey's BufferSource; constructing with a
  * known length first avoids that.
  */
 function urlBase64ToUint8Array(base64Url: string): Uint8Array<ArrayBuffer> {
@@ -55,7 +55,7 @@ async function postSubscription(subscription: PushSubscription): Promise<void> {
 /**
  * Asks for notification permission and, if granted, subscribes this device
  * and saves it server-side. Silently does nothing when push isn't
- * configured/supported or permission is denied -- there is no error path a
+ * configured/supported or permission is denied; there is no error path a
  * caller needs to handle, this is a background nicety, never a blocker on
  * the sign-up flow it's called from.
  */
@@ -74,7 +74,7 @@ export async function requestPushPermissionAndSubscribe(): Promise<void> {
     await postSubscription(subscription);
   } catch {
     // Permission dialogs can be dismissed, subscribe() can reject (e.g. iOS
-    // Safari outside an installed PWA) -- none of it should surface as an
+    // Safari outside an installed PWA), none of it should surface as an
     // error on the form the player just submitted.
   }
 }
@@ -94,24 +94,24 @@ export async function disablePushOnThisDevice(): Promise<void> {
       body: JSON.stringify({ endpoint }),
     }).catch(() => {});
   } catch {
-    // Same reasoning as above -- a toggle that can't reach the service
+    // Same reasoning as above: a toggle that can't reach the service
     // worker should look like "off" rather than throw.
   }
 }
 
-/** Current permission state, for the player-menu row -- "default" means never asked/decided. */
+/** Current permission state, for the player-menu row. "default" means never asked/decided. */
 export function pushPermissionState(): NotificationPermission | "unsupported" {
   if (!isPushSupported()) return "unsupported";
   return Notification.permission;
 }
 
 /**
- * Whether THIS device currently holds a live push subscription.
+ * Whether this device currently holds a live push subscription.
  *
- * Deliberately separate from pushPermissionState(): a browser never lets JS
+ * Kept separate from pushPermissionState(): a browser never lets JS
  * revoke Notification.permission once granted, so after
  * disablePushOnThisDevice() unsubscribes, permission still reads "granted"
- * forever -- checking the subscription itself is the only way the
+ * forever; checking the subscription itself is the only way the
  * player-menu toggle can show "off" after the player turns it off.
  */
 export async function isSubscribedOnThisDevice(): Promise<boolean> {

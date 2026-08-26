@@ -86,7 +86,7 @@ export function compareScores(a: HandScore, b: HandScore): number {
  * The same exhaustive search, carrying the winning combination out with the
  * score instead of discarding it.
  *
- * Scoring is untouched -- scoreFive and compareScores decide, exactly as
+ * Scoring is untouched: scoreFive and compareScores decide, exactly as
  * before, and evaluateHand still returns precisely what it always returned.
  * The only new thing is that the five cards which produced the best score are
  * no longer thrown away, so a showdown can point at them.
@@ -123,12 +123,22 @@ export function evaluateHand(cards: Card[]): HandScore {
 /**
  * The exact five cards that make the best hand out of `cards`.
  *
- * Used to show a player *why* they won rather than only that they did. Callers
- * must be sure the cards are legitimately visible first -- at a genuine
- * showdown -- because this is derived from hole cards.
+ * Used to show a player *why* they won rather than only that they did.
+ * Callers must be sure the cards are legitimately visible first, at a
+ * genuine showdown, because this is derived from hole cards.
  */
 export function bestFiveCards(cards: Card[]): Card[] {
   return searchBestFive(cards).cards;
+}
+
+/**
+ * Both `evaluateHand` and `bestFiveCards` in one pass, for a caller (showdown)
+ * that needs the winning five cards for the same hand it already scored:
+ * calling both separately would run the C(7,5) search over the same cards
+ * twice.
+ */
+export function evaluateHandDetailed(cards: Card[]): { score: HandScore; cards: Card[] } {
+  return searchBestFive(cards);
 }
 
 /**

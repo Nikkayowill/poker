@@ -3,28 +3,27 @@ import "server-only";
 /**
  * The answers Daily Word Stack actually asks for.
  *
- * `server-only`. Everyone shares one board, so a browser holding this list has
- * not just cheated its own puzzle -- it can print the next year of them.
+ * `server-only`. Everyone shares one board, so a browser holding this list
+ * has not just cheated its own puzzle, it can print the next year of them.
  *
- * ## Narrow on purpose
+ * The guess dictionary (word-stack-dictionary.ts) is ~15,000 words; this is
+ * 1,119. The asymmetry is the design: a player may try an obscure word, but
+ * must never be asked for one. An answer nobody has heard of is not a hard
+ * puzzle, it is an unfair one, and the whole point of a shared daily board
+ * is that the difficulty is the same for everybody.
  *
- * The guess dictionary (word-stack-dictionary.ts) is ~15,000 words; this is 1,119.
- * The asymmetry is the design: a player may *try* an obscure word, but must
- * never be *asked* for one. An answer nobody has heard of is not a hard
- * puzzle, it is an unfair one, and the whole point of a shared daily board is
- * that the difficulty was the same for everybody.
+ * Every entry here is also in the guess dictionary, which a test asserts
+ * rather than leaving to hand-maintenance. An answer the game would refuse
+ * to accept as a guess is unwinnable, and it would only surface on the one
+ * day that word came up.
  *
- * Every entry here is also in the guess dictionary, which is not a coincidence
- * to be maintained by hand -- a test asserts it. An answer the game would
- * refuse to accept as a guess is unwinnable, and it would only surface on the
- * one day that word came up.
+ * At 1,119 words and one a day, the cycle runs about three years before
+ * repeating (dailyIndex walks the pool rather than sampling it, see
+ * daily.ts).
  *
- * At 1,119 words and one a day, the cycle runs about three years before repeating
- * (dailyIndex walks the pool rather than sampling it -- see daily.ts).
- *
- * Plurals ending in -s, past tenses in -ed and any word that reads as a proper
- * noun are deliberately absent: they are guessable but they make for cheap
- * boards, and the source dictionary is full of them.
+ * Plurals ending in -s, past tenses in -ed, and any word that reads as a
+ * proper noun are absent: they're guessable but make for cheap boards, and
+ * the source dictionary is full of them.
  */
 
 const ANSWERS = `

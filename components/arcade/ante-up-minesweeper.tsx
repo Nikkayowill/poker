@@ -24,19 +24,17 @@ import { formatDuration } from "@/lib/arcade/puzzles/sudoku";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
- * Ante Up: Minesweeper -- the solo half of Ante Up.
+ * Ante Up: Minesweeper, the solo half of Ante Up.
  *
  * Same request shape as Ante Up: Sudoku (every move is a request, the server
  * says what happened, the mine layout never crosses the wire) and the same
  * wager step lib/pvp's duel lobby uses. Reuses `.duel-*` and `.ante-*` classes
- * rather than a third copy of either -- see 46-minesweeper.css's header.
- *
- * ## Input, which is most of what makes this game feel right
+ * rather than a third copy of either; see 46-minesweeper.css's header.
  *
  * A phone has no right mouse button, so flagging needs two ways in: a
  * long-press on a square, and a sticky Flag-mode toggle for players who would
- * rather not hold. Desktop gets right-click as well. Tapping a number that is
- * already open chords it -- opens everything around it, once its flags match --
+ * rather not hold. Desktop gets right-click as well. Tapping a number that's
+ * already open chords it, opening everything around it once its flags match,
  * which is the move that makes a big board playable at all.
  */
 
@@ -45,7 +43,7 @@ const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000] as const;
 /** How long a press has to hold before it counts as a flag rather than a tap. */
 const LONG_PRESS_MS = 350;
 
-/** How often the shell re-reads a live attempt -- catches the clock running out with nothing clicked. */
+/** How often the shell re-reads a live attempt: catches the clock running out with nothing clicked. */
 const POLL_MS = 3000;
 
 interface AnteUpMinesweeperResponse {
@@ -99,7 +97,7 @@ export function AnteUpMinesweeper() {
       if (!mounted.current || sending.current) return;
       if (response.ok) applyResponse(data);
     } catch {
-      // A dropped poll is not worth a banner -- the next one is seconds away.
+      // A dropped poll is not worth a banner; the next one is seconds away.
     } finally {
       if (mounted.current) setLoaded(true);
     }
@@ -122,7 +120,7 @@ export function AnteUpMinesweeper() {
       };
       if (!mounted.current) return;
       if (!response.ok) {
-        // A refused move still carries the true board -- paint it, and only
+        // A refused move still carries the true board; paint it, and only
         // raise a banner when the refusal is something the player should see
         // (a real error rather than "that square is already open").
         if (data.round) setAttempt(data.round);
@@ -138,7 +136,7 @@ export function AnteUpMinesweeper() {
     }
   }, [applyResponse]);
 
-  // Initial read, deferred a tick -- the idiom every arcade table shares.
+  // Initial read, deferred a tick: the idiom every arcade table shares.
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(timer);
@@ -397,7 +395,7 @@ export function AnteUpMinesweeper() {
                     ? "Time's up"
                     : attempt.board.explodedAt !== null
                       // A mine and a resignation both settle as "lost", so the
-                      // board is what tells them apart -- see the view's own note.
+                      // board is what tells them apart; see the view's own note.
                       ? "Boom"
                       : "Gave up"}
               </strong>

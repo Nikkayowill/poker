@@ -6,15 +6,15 @@ import { adminClient } from "./supabase-admin";
  * Persistence for rewarded-ad grants.
  *
  * A grant is a server-issued ticket: created when a player starts watching,
- * redeemed once when they finish. It exists at all because the alternative --
- * the browser saying "I watched it, pay me" -- has nothing in it the server
- * can check. What the server *can* own is when the offer was issued and
+ * redeemed once when they finish. It exists at all because the alternative,
+ * the browser saying "I watched it, pay me", has nothing in it the server
+ * can check. What the server can own is when the offer was issued and
  * whether it has already been paid, and both of those live here.
  *
  * Supabase when configured, an in-process Map otherwise, the same split every
  * other store in this directory uses. The memory branch is not a lesser
  * implementation: `npm test` and a no-env dev server both run on it, so it
- * enforces the same two invariants the table's constraints do -- one pending
+ * enforces the same two invariants the table's constraints do: one pending
  * grant per profile, and a redemption that can only succeed once.
  */
 
@@ -73,14 +73,15 @@ function fromRow(row: GrantRow): RewardedAdGrant {
 /**
  * Issues a grant, or refuses because one is already in flight.
  *
- * `issuedAt` is passed in rather than defaulted to the database's now() on
- * purpose: the elapsed-time check is a comparison against Node's clock, and
- * mixing two clocks in one inequality is how a REWARDED_AD_DURATION_MS rule
+ * `issuedAt` is passed in rather than defaulted to the database's now():
+ * the elapsed-time check is a comparison against Node's clock, and mixing
+ * two clocks in one inequality is how a REWARDED_AD_DURATION_MS rule
  * quietly becomes a shorter one on a server whose Postgres is a moment ahead.
  *
- * The one-at-a-time rule is enforced by the partial unique index, caught from
- * the 23505, rather than by a read-then-insert -- two concurrent starts both
- * pass a read-first check, and each grant is worth REWARDED_AD_GOLD.
+ * The one-at-a-time rule is enforced by the partial unique index, caught
+ * from the 23505, rather than by a read-then-insert: two concurrent starts
+ * would both pass a read-first check, and each grant is worth
+ * REWARDED_AD_GOLD.
  */
 export async function createRewardedAdGrant(
   profileId: string,
@@ -129,7 +130,7 @@ export async function createRewardedAdGrant(
  * Both ends, because both are rules: `notBefore` is the expiry (a grant left
  * open all afternoon is not a view), `notAfter` is the wait (issued too
  * recently to have finished). Expressed as a window rather than as two checks
- * so they can travel into the one statement below together -- a rule checked
+ * so they can travel into the one statement below together: a rule checked
  * outside the guarded UPDATE is a rule two concurrent callers can both pass.
  */
 export interface RedemptionWindow {
@@ -144,15 +145,15 @@ export interface RedemptionWindow {
  *
  * This is the whole idempotency argument, and it is the same shape as
  * blackjack_rounds' version guard: a single conditional UPDATE whose WHERE
- * clause carries *every* rule -- right owner, still pending, old enough, not
- * yet expired. Only one caller's UPDATE can match, so a double-clicked Claim,
+ * clause carries every rule (right owner, still pending, old enough, not
+ * yet expired). Only one caller's UPDATE can match, so a double-clicked Claim,
  * a retried request and two open tabs settle exactly once, and no rule can be
  * satisfied by a check that happened a moment before somebody else's write.
  *
- * Null means the update matched nothing. Null must never pay out. Note that
- * null does not distinguish "already claimed" from "too early" from "expired"
- * from "not yours"; the service re-reads to tell the player which, and that
- * re-read is for the message only -- never for the decision.
+ * Null means the update matched nothing, and null must never pay out. It
+ * doesn't distinguish "already claimed" from "too early" from "expired" from
+ * "not yours"; the service re-reads to tell the player which, and that
+ * re-read is for the message only, never for the decision.
  */
 export async function redeemRewardedAdGrant(
   grantId: string,
@@ -195,8 +196,8 @@ export async function redeemRewardedAdGrant(
  * Best-effort compensation, not a transaction: the redemption above and the
  * wallet credit are two writes and this app has no way to make them one. If
  * this itself fails the player has lost a grant, which costs them a slot in
- * the daily cap and nothing from their balance -- the failure this ordering
- * refuses to allow is the opposite one, paying without a redemption.
+ * the daily cap and nothing from their balance. The failure this ordering
+ * refuses to allow is the opposite one: paying without a redemption.
  */
 export async function releaseRewardedAdGrant(grantId: string): Promise<void> {
   const supabase = adminClient();

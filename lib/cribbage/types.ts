@@ -22,7 +22,7 @@ export type CribbageSeat = number;
 
 /**
  * A card's point value for 15s/pegging: face cards are worth 10, everything
- * else is its own rank. Never used for identifying a card -- pairs and runs
+ * else is its own rank. Never used for identifying a card: pairs and runs
  * compare `rank` itself, where a Jack and a Queen are different ranks worth
  * the same 10 points.
  */
@@ -31,12 +31,12 @@ export function pointValue(rank: Rank): number {
 }
 
 /**
- * "discard" -- everyone has cards, nobody has sent a card to the crib yet.
- * "pegging" -- the crib is set, the starter is cut, cards go down one at a
+ * "discard": everyone has cards, nobody has sent a card to the crib yet.
+ * "pegging": the crib is set, the starter is cut, cards go down one at a
  * time. There is no separate "counting" phase: counting has no player
  * decisions in it, so it happens automatically the instant pegging ends (see
  * engine.ts's concludeHand) rather than waiting on a move nobody would send.
- * "done" -- the match is over. `result()` is just this field.
+ * "done": the match is over. `result()` is just this field.
  */
 export type CribbagePhase = "discard" | "pegging" | "done";
 
@@ -48,7 +48,7 @@ export interface ScoreEntry {
 
 /** What one hand/crib was worth, for the reveal after a deal concludes. */
 export interface CribbageHandEntry {
-  /** Whose points these are. "crib" still credits the dealer -- see engine.ts. */
+  /** Whose points these are. "crib" still credits the dealer, see engine.ts. */
   subject: CribbageSeat | "crib";
   owner: CribbageSeat;
   cards: Card[];
@@ -58,7 +58,7 @@ export interface CribbageHandEntry {
   runningScoreAfter: number;
 }
 
-/** The full reveal of one completed deal -- public the instant it happens. */
+/** The full reveal of one completed deal, public the instant it happens. */
 export interface CribbageHandSummary {
   handNumber: number;
   dealerSeat: CribbageSeat;

@@ -9,33 +9,31 @@ import { awardWager } from "./progression-store";
 /**
  * Tipping Loki and Finn.
  *
- * The arcade's only pure SINK. Every other money path here has two sides -- a
+ * The arcade's only pure sink. Every other money path here has two sides, a
  * stake goes out and a settlement comes back, and the ordering rules exist
- * because getting the sequence wrong pays somebody twice or nothing. A tip has
- * one side: the Gold leaves and does not return. That makes this the simplest
- * money path in the app and it is worth saying why the usual three rules
- * mostly do not apply, rather than leaving the next reader to wonder whether
- * they were forgotten.
+ * because getting the sequence wrong pays somebody twice or nothing. A tip
+ * has one side: the Gold leaves and does not return. That makes this the
+ * simplest money path in the app, worth spelling out since the usual three
+ * rules mostly don't apply here:
  *
- *   1. The debit still comes FIRST, and everything after it is a consequence
+ *   1. The debit still comes first, and everything after it is a consequence
  *      rather than a precondition. There is nothing to refund on failure
- *      because there is nothing to deal -- the player asked to give Gold away
+ *      because there is nothing to deal; the player asked to give Gold away
  *      and the Gold went away.
  *   2. There is no settlement, so there is no version guard and nothing that
  *      must pay exactly once. The corresponding hazard for a sink is the
- *      opposite one -- CHARGING twice -- and it is handled at the edges: the
+ *      opposite one, charging twice, and it's handled at the edges: the
  *      route rate-limits, and the button disables in flight. A tip that is
  *      genuinely clicked twice charges twice, which is what the player asked
  *      for; the house is never at risk here, only the player's patience.
  *   3. spendGold is the authority on affordability. The check below is a
- *      courtesy that produces a better message; it is not a gate, and a stale
+ *      courtesy that produces a better message, not a gate, and a stale
  *      read cannot let an unaffordable tip through because spendGold's own
  *      guard is what actually refuses.
  *
- * The XP award is deliberately last and deliberately non-fatal. awardWager
- * swallows its own errors by contract, so a progression outage cannot turn a
- * completed tip into an error response -- the player would then have paid and
- * been told it failed, which is the one outcome worth engineering against.
+ * The XP award goes last and swallows its own errors, per awardWager's own
+ * contract, so a progression outage can't turn a completed tip into an error
+ * response and tell the player they paid and it failed.
  */
 
 export interface TipView {

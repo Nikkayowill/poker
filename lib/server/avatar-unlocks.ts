@@ -18,9 +18,12 @@ const unlockable = avatarCosmetics.filter((item) => item.unlock);
  */
 export async function checkAvatarUnlocks(profileIds: string[]): Promise<void> {
   if (unlockable.length === 0) return;
-  for (const profileId of profileIds) {
+  // Same fan-out shape as achievement-store.ts's checkAchievements, which
+  // mirrors this exactly: every profile's reads and grants are independent
+  // of every other profile's, so there is nothing to serialize between them.
+  await Promise.all(profileIds.map(async (profileId) => {
     const standing = await getPlayerStanding(profileId, "lifetime");
-    if (!standing) continue;
+    if (!standing) return;
     const owned = await listOwnedCosmetics(profileId);
     for (const item of unlockable) {
       if (owned.includes(item.id)) continue;
@@ -30,5 +33,5 @@ export async function checkAvatarUnlocks(profileIds: string[]): Promise<void> {
         : standing.stats.totalChipsWon >= unlock.chipsWon;
       if (met) await awardCosmetic(profileId, item.id);
     }
-  }
+  }));
 }

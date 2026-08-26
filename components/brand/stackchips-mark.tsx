@@ -3,15 +3,14 @@
  *
  * The full badge (StackChipsLogo / public/brand/stackchips-logo.png) carries a
  * four-card fan, a banner and two lines of type. Rendered at the ~50px a
- * header row allows, all of that collapses into a smudge -- verified against
- * a real 1440x900 render, not guessed from the artwork. So the header gets
- * this instead, and the wordmark beside it supplies the name the badge would
- * have been trying to spell.
+ * header row allows, all of that collapses into a smudge (verified against a
+ * real 1440x900 render). So the header gets this instead, and the wordmark
+ * beside it supplies the name the badge would have been trying to spell.
  *
- * Same art as app/icon.svg, for the same reason; keep the two in step. Inline
- * SVG rather than a shipped asset, on the components/card-back-art.tsx
- * precedent -- it is a handful of paths and it inherits nothing from the
- * cascade that could surprise it.
+ * Same art as app/icon.svg, for the same reason, so keep the two in step.
+ * Inline SVG rather than a shipped asset, same call as
+ * components/card-back-art.tsx: it's a handful of paths and inherits nothing
+ * from the cascade that could surprise it.
  */
 export function StackChipsMark({ size = 40 }: { size?: number }) {
   return (

@@ -4,10 +4,10 @@
  * no migration and no admin CMS, and the compiler catches every reference.
  * Only *ownership* is dynamic enough to belong in Postgres.
  *
- * Card backs come first deliberately. They have the highest visibility score
- * in the product -- a large surface, shown on every hidden hand, seen by the
- * whole table -- so they are the item most worth owning and the fairest test
- * of whether anyone wants to spend Gold at all.
+ * Card backs come first: they have the highest visibility in the product
+ * (a large surface, shown on every hidden hand, seen by the whole table),
+ * so they're the item most worth owning and the fairest test of whether
+ * anyone wants to spend Gold at all.
  */
 
 import { CHARACTERS_3D } from "@/lib/game3d/characters";
@@ -30,7 +30,7 @@ export interface Cosmetic {
   name: string;
   description: string;
   rarity: Rarity;
-  /** Gold price. Null means it cannot be bought at any price -- see below. */
+  /** Gold price. Null means it cannot be bought at any price; see below. */
   price: number | null;
   /**
    * Card backs are drawn from two colours -- a stock and an ink -- through
@@ -42,7 +42,7 @@ export interface Cosmetic {
   /**
    * Avatar-only progress unlock, checked against lifetime PlayerStats after
    * every hand (lib/server/avatar-unlocks.ts) instead of a Gold purchase.
-   * Exactly one of the two is set per unlockable item -- never both, so a
+   * Exactly one of the two is set per unlockable item, never both, so a
    * player is never stuck needing two separate kinds of progress to earn one
    * avatar. price stays null on these: they are earned, not for sale, same
    * rule as the signature tier below just gated on a lower bar.
@@ -54,33 +54,34 @@ export interface Cosmetic {
 
 /**
  * An avatar's artwork is the seat-art roster's own 0deg plate
- * (`art/seats/<id>/0.png`, built by `scripts/prepare-seat-art.py` -- see
+ * (`art/seats/<id>/0.png`, built by `scripts/prepare-seat-art.py`; see
  * `lib/scene/seat-art.ts`). One character-shaped id space now serves the
  * store card, the small circular avatar, and the character actually drawn
  * at that player's own racetrack seat, which is what makes "buy a
  * character" and "that's who you are at the table" the same claim.
  *
- * `avatarFigure`/`avatarFace` used to be two different derivative images (a
- * full figure and a separate head crop) off a retired `art/avatars/`
- * convention. A seat-art plate is already framed head-to-hands -- the same
- * shot works at both sizes -- so both functions resolve to the same file
- * now; they stay separate functions because their call sites (store card vs.
- * small circle) are conceptually different and may want to diverge again.
+ * `avatarFigure`/`avatarFace` used to resolve to two different derivative
+ * images (a full figure and a separate head crop) off a retired
+ * `art/avatars/` convention. A seat-art plate is already framed
+ * head-to-hands, so the same shot works at both sizes and both functions
+ * resolve to the same file now; they stay separate functions because their
+ * call sites (store card vs. small circle) are conceptually different and
+ * may want to diverge again.
  *
- * No cache-busting version on this path, deliberately. Ids are stable so
- * ownership survives an art change, which leaves the URL stable too -- but
- * both the raw file and the optimised one are served `max-age=0,
- * must-revalidate`, so a browser asks every time and replaced artwork appears
- * immediately. The only cache that does hold the old file is Next's own
- * server-side optimiser cache, which a deploy rebuilds. A `?v=` query was
- * tried and reverted: next/image rejects query strings on local sources
- * unless they are enumerated in images.localPatterns.
+ * No cache-busting version on this path. Ids are stable so ownership
+ * survives an art change, which leaves the URL stable too, but both the
+ * raw file and the optimised one are served `max-age=0, must-revalidate`,
+ * so a browser asks every time and replaced artwork appears immediately.
+ * The only cache that does hold the old file is Next's own server-side
+ * optimiser cache, which a deploy rebuilds. A `?v=` query was tried and
+ * reverted: next/image rejects query strings on local sources unless they
+ * are enumerated in images.localPatterns.
  */
 export function avatarFigure(id: string): string {
   return seatArtSrc(id, 0);
 }
 
-/** Same file as `avatarFigure` -- see that function's own comment for why. */
+/** Same file as `avatarFigure`; see that function's own comment for why. */
 export function avatarFace(id: string): string {
   return seatArtSrc(id, 0);
 }
@@ -91,10 +92,10 @@ export function characterThumbnail(id: string): string {
 }
 
 /**
- * Signature items are deliberately unpriced. Nothing about the most
- * impressive thing at the table should be purchasable -- that rule is what
- * keeps status meaningful and is the main defence against the product
- * reading as pay-to-flex. They are granted by achievement instead.
+ * Signature items are unpriced. Nothing about the most impressive thing at
+ * the table should be purchasable: that rule is what keeps status
+ * meaningful and is the main defence against the product reading as
+ * pay-to-flex. They are granted by achievement instead.
  */
 const cardBackCosmetics: Cosmetic[] = [
   {
@@ -165,14 +166,14 @@ const cardBackCosmetics: Cosmetic[] = [
 /**
  * Avatars. The same 25-character roster the racetrack table draws opponent
  * seats from (`lib/scene/seat-art.ts`'s `SEAT_ART_CHARACTERS`) is what's for
- * sale here -- one id space, so "buy a character" and "that's who's drawn at
+ * sale here: one id space, so "buy a character" and "that's who's drawn at
  * my seat" are the same claim instead of two systems that happen to agree.
  *
- * Every roster entry needs an offer below; a character added to the seat-art
- * bucket with no matching entry here throws rather than silently landing on
- * the free-starter default (see `characterAvatarCosmetics`).
+ * Every roster entry needs an offer below; a character added to the
+ * seat-art bucket with no matching entry here throws rather than silently
+ * landing on the free-starter default (see `characterAvatarCosmetics`).
  *
- * Names are plain character names, not gamer tags -- that convention was
+ * Names are plain character names, not gamer tags; that convention was
  * tried first (2026-08-21) and reversed the same week: a seated opponent
  * should read as a real player's own handle, which is what
  * `lib/game/engine.ts`'s SEPARATE bot-tag pool is for, while a store card
@@ -181,28 +182,28 @@ const cardBackCosmetics: Cosmetic[] = [
  *
  * Three tiers, in order:
  *  - standard (character4, character9): the starter roster. Free from the
- *    moment a profile exists -- one man, one woman.
+ *    moment a profile exists, one man, one woman.
  *  - rare (character5-8, character10-25): Gold-purchasable, one ascending
  *    ladder, 80,000 up to 2,550,000, decelerating from ~50% a rung down to
  *    ~9% by the top.
  *  - signature (character1-3): earned only, on a lifetime hands-won ladder
  *    (250/750/1,500 hands) checked by `lib/server/avatar-unlocks.ts` after
- *    every hand. `price` is null on these and must stay null -- Gold buying
+ *    every hand. `price` is null on these and must stay null: Gold buying
  *    a shortcut past the threshold is exactly what would make the tier mean
  *    nothing, the same rule `back-riverwood` and the 3D roster's earned
  *    characters follow.
  *
- * RENUMBERED 2026-08-25 (Kayo's explicit call, having accepted the one real
+ * Renumbered 2026-08-25 (Kayo's explicit call, having accepted the one real
  * cost: a player's equipped avatar is stored by this exact id string, so
  * anyone who had already bought/equipped one of the old ids would fall back
- * to the default -- judged low-risk this soon after the ids in question went
+ * to the default, judged low-risk this soon after the ids in question went
  * live). The roster had accumulated gaps from several same-day deletions
  * (character29, 31-34 removed, leaving 13-28/30/35-41) and read as a mess of
  * arbitrary numbers; ids are now a clean character1-24, tier boundaries
  * preserved exactly, plus a new character25. The Gold ladder was repriced in
  * the same pass to close a discontinuity the deletions had left in it
  * (removing four mid-ladder characters without repricing the survivors above
- * them had produced an ~86% jump between two adjacent rungs) -- it's now one
+ * them had produced an ~86% jump between two adjacent rungs); it's now one
  * smooth decelerating sequence start to finish. Old gamer-tag-style names on
  * the earlier characters (`amaraa_04`, `ttv_danpark`, `nico_noscope`, ...)
  * were fixed to real names in the same pass, closing out the one convention
@@ -210,7 +211,7 @@ const cardBackCosmetics: Cosmetic[] = [
  *
  * Full narrative history of how each individual character's art arrived
  * (sheet quirks, facing fixes, slicer changes) has been pruned along with
- * the old ids it was anchored to -- recover it from `git log` on this file
+ * the old ids it was anchored to; recover it from `git log` on this file
  * if needed; what's kept here is the standing rules, not the play-by-play.
  */
 const characterAvatarOffers: Record<
@@ -281,12 +282,12 @@ export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((cha
 /**
  * Acquisition rules for the eight customer-pack characters. Keeping this
  * beside the cosmetic catalog makes the price and unlock threshold part of
- * the same server-owned record used by purchase/equip; the browser never gets
- * to decide whether one of these characters is free.
+ * the same server-owned record used by purchase/equip; the browser never
+ * gets to decide whether one of these characters is free.
  *
- * The original six remain the starter roster. Three of the new characters are
- * lifetime hand-win rewards and five are deliberately expensive Gold items.
- * No customer-pack character may fall through to the starter `price: 0`
+ * The original six remain the starter roster. Three of the new characters
+ * are lifetime hand-win rewards and five are expensive Gold items. No
+ * customer-pack character may fall through to the starter `price: 0`
  * default below.
  */
 const premiumCharacter3DOffers: Record<string, Pick<Cosmetic, "description" | "price" | "unlock">> = {
@@ -372,13 +373,14 @@ export type CardBackArtwork = NonNullable<Cosmetic["art"]>;
 /**
  * The three values a card back is drawn from, for any id.
  *
- * Total rather than nullable, and that is the point: this is called for every
- * face-down card on the table, several times per seat per hand. A seat
- * carrying an id from a since-renamed item, a table dealt before card backs
- * reached the felt, a bot with nothing equipped -- each resolves to the house
- * deck instead of putting `undefined` into a fill attribute and blanking the
- * card. The store's own preview goes through here too, so what a player is
- * shown before buying is drawn by the same code as what they get.
+ * Total rather than nullable, and that's the point: this is called for
+ * every face-down card on the table, several times per seat per hand. A
+ * seat carrying an id from a since-renamed item, a table dealt before card
+ * backs reached the felt, a bot with nothing equipped: each resolves to
+ * the house deck instead of putting `undefined` into a fill attribute and
+ * blanking the card. The store's own preview goes through here too, so
+ * what a player is shown before buying is drawn by the same code as what
+ * they get.
  */
 export function cardBackArt(id: string | null | undefined): CardBackArtwork {
   const item = typeof id === "string" ? cosmeticById(id) : null;
@@ -391,13 +393,13 @@ export function cardBackArt(id: string | null | undefined): CardBackArtwork {
  *
  * Standard tier only. Bots cycle the character avatar roster minus its
  * earned tier (botAvatarFor, `botAvatarCosmetics` below) because a face is
- * mostly just a face, but a card back is something a player is
- * asked to spend 400,000 Gold on, and a table where the bots are holding the
- * rare items devalues the only thing this catalog sells. Restricting them to
- * the free and cheap tier keeps a real player's back the most interesting one
- * at the table, while still showing the feature exists to someone playing
- * their first hand against five bots -- who would otherwise see six identical
- * house decks and no reason to visit the store.
+ * mostly just a face, but a card back is something a player is asked to
+ * spend 400,000 Gold on, and a table where the bots are holding the rare
+ * items devalues the only thing this catalog sells. Restricting them to
+ * the free and cheap tier keeps a real player's back the most interesting
+ * one at the table, while still showing the feature exists to someone
+ * playing their first hand against five bots, who would otherwise see six
+ * identical house decks and no reason to visit the store.
  */
 const botCardBacks = cardBackCosmetics.filter((item) => item.rarity === "standard");
 
@@ -407,14 +409,14 @@ export function botCardBackFor(position: number): string {
 }
 
 /**
- * The faces a bot may wear. The whole character roster except the earned
- * tier -- for the same reason `botCardBacks` stops at standard, one step
- * further along. A bot showing up in a character a player is 1,500 won hands
- * away from is the avatar version of bots holding the rare card backs: it
- * says the threshold buys you nothing anyone can see. Gold-priced characters
- * stay in, deliberately -- a bot wearing one advertises the store, and it is
- * a thing a player can go and get today rather than a claim about their
- * history at this table.
+ * The faces a bot may wear: the whole character roster except the earned
+ * tier, for the same reason `botCardBacks` stops at standard, one step
+ * further along. A bot showing up in a character a player is 1,500 won
+ * hands away from is the avatar version of bots holding the rare card
+ * backs: it says the threshold buys you nothing anyone can see. Gold-priced
+ * characters stay in on purpose: a bot wearing one advertises the store,
+ * and it's a thing a player can go and get today rather than a claim about
+ * their history at this table.
  */
 export const botAvatarCosmetics: Cosmetic[] = characterAvatarCosmetics.filter((item) => !item.unlock);
 

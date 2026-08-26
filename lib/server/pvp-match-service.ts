@@ -43,10 +43,10 @@ import { awardWager } from "./progression-store";
  *
  * ## The ordering rules
  *
- * A duel is winner-take-all with NO HOUSE: both players ante the same stake,
+ * A duel is winner-take-all with no house: both players ante the same stake,
  * the winner takes both, a draw returns each their own. That makes Gold
- * conserved across a match -- the two balances sum to the same number before
- * and after -- and every rule below exists to keep that true under retries,
+ * conserved across a match (the two balances sum to the same number before
+ * and after), and every rule below exists to keep that true under retries,
  * double-clicks, two tabs and both players acting at once.
  *
  *   1. **A stake leaves a wallet before the thing it pays for exists**, and
@@ -63,13 +63,13 @@ import { awardWager } from "./progression-store";
  *      player and nothing to the other; a draw credits `stake` to each. A
  *      "net" settlement here would charge the loser twice.
  *   4. **Escrow is released exactly once.** An open challenge holds real Gold.
- *      Every path that ends one -- cancel, expire, a failed accept -- goes
+ *      Every path that ends one (cancel, expire, a failed accept) goes
  *      through a status-guarded write that returns the row at most once, and
  *      only a returned row is refunded. Refunding on a null return is what
  *      would turn a double-tapped Cancel into free Gold.
  *
- * Rule 4 is the one with no equivalent in the casino services, because nothing
- * there held a stake for a counterparty who might never arrive.
+ * Rule 4 has no equivalent in the casino services: nothing there held a
+ * stake for a counterparty who might never arrive.
  */
 
 /** Refuses a duel request in a way the player can act on. */
@@ -152,7 +152,7 @@ async function playerViews(ids: [string, string]): Promise<[DuelPlayerView, Duel
  * Builds what a specific reader may see.
  *
  * The reader's seat is passed to the engine's `snapshot`, which is the
- * redaction boundary -- a trivia answer or a word race solution is dropped
+ * redaction boundary: a trivia answer or a word race solution is dropped
  * there, per viewer. Anyone who is not one of the two players gets a 403
  * before reaching this, so `seat` is never guessed.
  */
@@ -182,24 +182,24 @@ async function matchView(
  *
  * The match is already durably settled by the time this runs, so letting a
  * credit failure bubble would turn a finished game into an error response and
- * cost a player their result on top of their Gold. Logged loudly instead --
- * this is the one way a duel can quietly cost real currency, and it is exactly
- * the failure the credit_gold migration incident produced in production.
+ * cost a player their result on top of their Gold. Logged loudly instead:
+ * this is the one place a duel can quietly cost real currency.
  *
  * Rule 3: a win is one credit of the whole pot, a draw is one credit of their
- * own stake to each. Never a debit -- both stakes left in rule 1.
+ * own stake to each, never a debit (both stakes already left in rule 1).
  */
 async function payOutMatch(match: StoredPvpMatch): Promise<void> {
   const pot = match.stake * 2;
   const credits: [string, number][] =
     match.winnerSeat === null
-      // A draw returns each player their own ante. Deliberately `stake` twice
-      // rather than `pot / 2`: a division is how an odd pot silently loses a
-      // Gold, and the two halves are what was actually taken.
+      // A draw returns each player their own ante: `stake` twice rather than
+      // `pot / 2`, since a division is how an odd pot silently loses a Gold,
+      // and the two halves are what was actually taken.
       ? [[match.players[0], match.stake], [match.players[1], match.stake]]
       : [[match.players[match.winnerSeat], pot]];
 
-  for (const [profileId, amount] of credits) {
+  // Independent profiles, no ordering between them, so run concurrently.
+  await Promise.all(credits.map(async ([profileId, amount]) => {
     try {
       await creditGoldByProfile(profileId, amount);
     } catch (error) {
@@ -211,19 +211,19 @@ async function payOutMatch(match: StoredPvpMatch): Promise<void> {
         error,
       });
     }
-  }
+  }));
 
-  // Leaderboard stats record unconditionally -- unlike the mission/
-  // achievement calls below, a draw is a real result on a per-game record
-  // and must show up on both players' rows, not just a decided match's
-  // winner. recordDuelResult never throws, same contract as the two calls
-  // it sits beside.
+  // Leaderboard stats record unconditionally, unlike the mission/achievement
+  // calls below: a draw is a real result on a per-game record and must show
+  // up on both players' rows, not just a decided match's winner.
+  // recordDuelResult never throws, same contract as the two calls it sits
+  // beside.
   await recordDuelResult(match.game, match.players, match.winnerSeat);
 
   // A draw is not a win: only a decided match feeds the "win a duel" missions
   // and achievements. Awaited, not fired-and-forgotten: every caller of
   // payOutMatch awaits it before its own route responds, and a serverless
-  // invocation can be frozen right after the response is sent -- an
+  // invocation can be frozen right after the response is sent, so an
   // un-awaited call here could simply never run. Neither call ever throws,
   // so this adds no new failure.
   if (match.winnerSeat !== null) {
@@ -236,8 +236,8 @@ async function payOutMatch(match: StoredPvpMatch): Promise<void> {
 /**
  * Settles a match if the game says it is over, and pays it.
  *
- * The result is read off the state that has ALREADY been written, never off
- * one just computed -- rule 2. A settle that loses the version race returns
+ * The result is read off the state that has already been written, never off
+ * one just computed (rule 2). A settle that loses the version race returns
  * without paying, because the winning writer is the one that will pay.
  */
 async function settleIfFinished(
@@ -264,7 +264,8 @@ async function settleIfFinished(
  * two requests sweep at the same moment.
  */
 async function refundExpired(expired: StoredPvpChallenge[]): Promise<void> {
-  for (const challenge of expired) {
+  // Independent challengers, no ordering between them, so run concurrently.
+  await Promise.all(expired.map(async (challenge) => {
     try {
       await creditGoldByProfile(challenge.challengerId, challenge.stake);
     } catch (error) {
@@ -275,7 +276,7 @@ async function refundExpired(expired: StoredPvpChallenge[]): Promise<void> {
         error,
       });
     }
-  }
+  }));
 }
 
 // ---- challenges ------------------------------------------------------------
@@ -315,8 +316,9 @@ export async function openDuelChallenge(
     }
   }
 
-  // Rule 1: the stake leaves first. Null is "cannot afford", not an error --
-  // spendGoldByProfile is the authority; any balance read before it is stale.
+  // Rule 1: the stake leaves first. Null is "cannot afford", not an error;
+  // spendGoldByProfile is the authority, and any balance read before it is
+  // stale.
   const debited = await spendGoldByProfile(profile.id, stake);
   if (!debited) {
     throw new DuelRequestError(
@@ -331,7 +333,7 @@ export async function openDuelChallenge(
       game: game.id,
       challengerId: profile.id,
       opponentId,
-      // Retained as a stored column, not a chosen ladder rung any more -- see
+      // Retained as a stored column, not a chosen ladder rung any more; see
       // MIN_DUEL_STAKE's doc comment. Nothing reads this back for meaning.
       tier: "custom",
       stake,
@@ -370,8 +372,8 @@ export async function listDuelChallenges(
   const profile = await ensureProfile(token);
 
   // Swept on the read, and every reclaimed row refunded. Correctness does not
-  // depend on it having run -- listOpenChallenges filters on expires_at
-  // regardless -- but a challenger's escrow coming back does.
+  // depend on it having run, since listOpenChallenges filters on expires_at
+  // regardless, but a challenger's escrow coming back does.
   await refundExpired(await expireStaleChallenges());
 
   const rows = await listOpenChallenges(profile.id, game.id);
@@ -427,7 +429,7 @@ export async function cancelDuelChallenge(
 /**
  * Accepts a challenge: debits the acceptor and opens the match.
  *
- * The order is claim, then pay, then build -- and every failure after the
+ * The order is claim, then pay, then build, and every failure after the
  * claim unwinds everything before it:
  *
  *   - The **claim** is a status-guarded UPDATE, so exactly one acceptor can
@@ -437,7 +439,7 @@ export async function cancelDuelChallenge(
  *     is reopened so the challenger's escrow goes back into the pool rather
  *     than being stranded in an accepted row that never became a match.
  *   - The **match** is built last. If it will not persist, the acceptor is
- *     refunded and the challenge reopened -- neither player has paid for a
+ *     refunded and the challenge reopened; neither player has paid for a
  *     game that does not exist.
  */
 export async function acceptDuelChallenge(
@@ -448,7 +450,7 @@ export async function acceptDuelChallenge(
 
   const claimed = await claimChallenge(challengeId, profile.id);
   if (!claimed) {
-    // Covers every way this can fail at once -- taken, expired, withdrawn,
+    // Covers every way this can fail at once: taken, expired, withdrawn,
     // addressed to someone else, or their own. All of them are "not yours to
     // accept", and distinguishing them would leak who is challenging whom.
     throw new DuelRequestError("That challenge is no longer available.", 409);
@@ -477,10 +479,10 @@ export async function acceptDuelChallenge(
 
   let match: StoredPvpMatch;
   try {
-    // The challenger is seat 0 -- they moved first by challenging, and at
-    // chess that means white. node:crypto's randomInt, not Math.random: the
-    // seed decides a trivia set and a word race's word, and both decide real
-    // Gold, so it must not be reachable or predictable from a browser.
+    // The challenger is seat 0: they moved first by challenging, and at
+    // chess that means white. node:crypto's randomInt, not Math.random, since
+    // the seed decides a trivia set and a word race's word, and both decide
+    // real Gold, so it must not be reachable or predictable from a browser.
     const state = game.createState(randomInt(0, 2 ** 31 - 1), Date.now());
     match = await createPvpMatch({
       game: claimed.game,
@@ -502,10 +504,10 @@ export async function acceptDuelChallenge(
 
   await attachMatchToChallenge(claimed.id, match.id);
 
-  // Both players wagered, so both earn XP at the ordinary rate -- the parity
-  // argument hand-completion.ts makes about chips and Gold. Non-fatal by
-  // contract: a progression outage must not fail a match both players paid
-  // for.
+  // Both players wagered, so both earn XP at the ordinary rate, the same
+  // parity argument hand-completion.ts makes about chips and Gold. Non-fatal
+  // by contract: a progression outage must not fail a match both players
+  // paid for.
   await Promise.all([
     awardWager(claimed.challengerId, null, claimed.stake).catch(() => null),
     awardWager(profile.id, token, claimed.stake).catch(() => null),
@@ -533,7 +535,7 @@ export async function readDuelMatch(
 
   let match = await getActivePvpMatch(profile.id, game.id);
   if (!match) {
-    // No live match -- but it may have JUST settled without this player being
+    // No live match, but it may have just settled without this player being
     // the one whose request settled it (their opponent resigned, flagged, or
     // was the one whose own poll happened to observe the win condition
     // first). Without this fallback that player's next poll would find
@@ -575,7 +577,7 @@ export async function readDuelMatchById(
   const seat = seatOf(match, profile.id);
   // Not 404: they asked about a real match. But the state holds hidden
   // information, so a stranger gets no view of it at all rather than a
-  // redacted one -- an unknown viewer must be the most restrictive case.
+  // redacted one; an unknown viewer must be the most restrictive case.
   if (seat === null) throw new DuelRequestError("That is not your match.", 403);
 
   const game = requireGame(match.game);
@@ -589,10 +591,10 @@ export async function readDuelMatchById(
  * player was looking at, so a replayed or double-fired request cannot move
  * twice or answer one trivia question with two submissions.
  *
- * Whose turn it is, is deliberately NOT checked here. The engine owns turn
- * order -- chess rejects a move from the seat that is not to act, while trivia
- * accepts either seat at any moment -- so a check at this layer would have to
- * be wrong for one of the two.
+ * Whose turn it is is not checked here. The engine owns turn order: chess
+ * rejects a move from the seat that is not to act, while trivia accepts
+ * either seat at any moment, so a check at this layer would have to be
+ * wrong for one of the two.
  */
 export async function playDuelMove(
   token: string,
@@ -654,8 +656,8 @@ export async function playDuelMove(
  * Concedes the match, paying the pot to the other player.
  *
  * Routed through the engine's `resign` rather than settled here, so a game
- * that does not treat quitting as a plain loss can say so -- and so the final
- * state a player sees says how it ended, rather than a board that just stops.
+ * that does not treat quitting as a plain loss can say so, and the final
+ * state a player sees says how it ended rather than a board that just stops.
  */
 export async function resignDuelMatch(
   token: string,

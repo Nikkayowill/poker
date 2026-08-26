@@ -1,13 +1,13 @@
 /**
- * The contract cribbage's own table service knows about -- the N-seat
+ * The contract cribbage's own table service knows about: the N-seat
  * counterpart to lib/pvp/match-contract.ts's DuelGame.
  *
  * Not a generalization of DuelGame: that interface's DuelSeat = 0 | 1 and
  * `otherSeat()` are baked in at every layer below it (the store, the
  * migration, the money service), and cribbage is the only game so far that
  * needs more than two seats. Genericizing the working four games under time
- * pressure risks them for a hypothetical future game; this is a small,
- * parallel contract instead. If a second N-seat game ever ships, that is the
+ * pressure risks them for a hypothetical future game, so this is a small,
+ * parallel contract instead. If a second N-seat game ever ships, that's the
  * moment to look at extracting one shared shape.
  *
  * The same determinism and redaction rules from DuelGame's header apply here
@@ -17,7 +17,7 @@
 
 import type { CribbageSeat } from "./types";
 
-/** Cribbage is always decisive -- first to 121 -- so there is no draw case. */
+/** Cribbage is always decisive, first to 121, so there is no draw case. */
 export interface CribbageOutcome {
   winner: CribbageSeat;
   reason: string;
@@ -30,10 +30,10 @@ export type CribbageMoveResult<TState> =
 export interface CribbageGame<TState, TMove, TSnapshot> {
   id: string;
   label: string;
-  /** `playerCount` is fixed for the whole match -- 3 or 4, decided when the table starts. */
+  /** `playerCount` is fixed for the whole match, 3 or 4, decided when the table starts. */
   createState(seed: number, now: number, playerCount: number): TState;
   applyMove(state: TState, seat: CribbageSeat, move: TMove, now: number): CribbageMoveResult<TState>;
-  /** No real-time clock in cribbage -- see engine.ts's tick for why this stays a documented no-op. */
+  /** No real-time clock in cribbage; see engine.ts's tick for why this stays a documented no-op. */
   tick?(state: TState, now: number): TState | null;
   result(state: TState): CribbageOutcome | null;
   snapshot(state: TState, seat: CribbageSeat | null, now: number): TSnapshot;
@@ -41,9 +41,9 @@ export interface CribbageGame<TState, TMove, TSnapshot> {
 }
 
 /**
- * Checks an engine against the real generic interface once, at the point it
- * is written -- the same reason defineDuelGame exists in match-contract.ts.
- * Cribbage has only one engine, so there is no registry to erase its types
+ * Checks an engine against the real generic interface once, at the point
+ * it's written, the same reason defineDuelGame exists in match-contract.ts.
+ * Cribbage has only one engine, so there's no registry to erase its types
  * into; this is purely a compile-time check that CRIBBAGE_GAME's methods
  * actually line up, so a typo'd or reshaped method is a build error here
  * rather than a runtime surprise in the money layer.

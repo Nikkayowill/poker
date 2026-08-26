@@ -1,31 +1,30 @@
 /**
  * What "today's puzzle" means.
  *
- * Pure and clock-free: every function takes the instant it should read, so the
- * whole calendar is reachable from `npm test` and a route is the only thing
- * that ever calls `new Date()`. Same shape as the rest of lib/arcade -- the
- * engines take their randomness and their answers as arguments rather than
- * reaching for them.
+ * Pure and clock-free: every function takes the instant it should read, so
+ * the whole calendar is reachable from `npm test` and a route is the only
+ * thing that ever calls `new Date()`. Same shape as the rest of lib/arcade:
+ * the engines take their randomness and their answers as arguments rather
+ * than reaching for them.
  *
- * ## The day boundary is UTC, and that is the point
+ * The day boundary is UTC everywhere. A local-timezone rollover would be
+ * friendlier to a player in Auckland and would destroy the game: the whole
+ * value of a daily puzzle is that everyone had the same one. "Word Stack 128
+ * 4/6" is a brag only if the person reading it knows which word 128 was.
+ * Roll over locally and two friends in different zones are comparing scores
+ * on different words, a share button that quietly lies. So the UI states
+ * UTC rather than letting a player discover it at 7pm.
  *
- * A local-timezone rollover would be friendlier to a player in Auckland and
- * would destroy the game. The entire value of a daily puzzle is that everyone
- * had the *same* one: "Word Stack 128 4/6" is a brag only if the person reading it
- * knows which word 128 was. Roll over locally and two friends in different
- * zones are comparing scores on different words, which is worse than useless
- * -- it is a share button that quietly lies. So the day is UTC everywhere, and
- * the UI says so rather than letting a player discover it at 7pm.
- *
- * ## Selection walks the pool, it does not sample it
- *
- * `dailyIndex` is a stride through the pool, not a hash of the date modulo its
- * size. A hash is the obvious thing and it is wrong: collisions are birthday-
- * paradox frequent, so a 300-word list would repeat an answer inside a month
- * while three hundred other words sat unused. A stride coprime to the pool
- * size visits every entry exactly once before repeating any, and still does
- * not walk the list in order the way `puzzleNumber % size` would.
+ * `dailyIndex` walks the pool with a stride rather than hashing the date
+ * modulo its size. A hash is the obvious thing and it's wrong: collisions
+ * are birthday-paradox frequent, so a 300-word list would repeat an answer
+ * inside a month while three hundred other words sat unused. A stride
+ * coprime to the pool size visits every entry once before repeating any,
+ * and still doesn't walk the list in order the way `puzzleNumber % size`
+ * would.
  */
+
+import { hashString } from "@/lib/seeded-random";
 
 /**
  * Day zero. Fixed forever: the puzzle number is a public, shareable label, so
@@ -56,8 +55,8 @@ function dayStartMs(day: PuzzleDay): number {
 }
 
 /**
- * The number a player sees and shares. Days since the epoch, +1 so the first
- * puzzle is #1 rather than #0 -- nobody brags about puzzle zero.
+ * The number a player sees and shares. Days since the epoch, +1 so the
+ * first puzzle is #1 rather than #0. Nobody brags about puzzle zero.
  */
 export function puzzleNumber(day: PuzzleDay): number {
   return Math.round((dayStartMs(day) - dayStartMs(PUZZLE_EPOCH_DAY)) / MS_PER_DAY) + 1;
@@ -73,26 +72,16 @@ function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b);
 }
 
-/** FNV-1a. Any stable string hash would do; this one is short and has no dependencies. */
-function hashString(value: string): number {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash >>> 0;
-}
-
 /**
  * Which entry of a pool today's puzzle draws.
  *
- * `salt` separates the games: Word Stack and Connections must not advance in
- * lockstep, or a player who works out one list's order has learned something
- * about the other's.
+ * `salt` separates the games: Word Stack and Connections must not advance
+ * in lockstep, or a player who works out one list's order has learned
+ * something about the other's.
  *
- * The stride is derived from the salt and then nudged up until it is coprime
- * to the pool size, which is what makes the walk a full cycle: every entry is
- * used once before any is used twice. Deliberately *not* a hash of the day --
+ * The stride is derived from the salt and then nudged up until it is
+ * coprime to the pool size, which is what makes the walk a full cycle:
+ * every entry is used once before any is used twice. Not a hash of the day;
  * see the note at the top of this file for why that repeats far sooner than
  * it looks like it should.
  */

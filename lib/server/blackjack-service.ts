@@ -38,22 +38,22 @@ import { awardWager } from "./progression-store";
  * The ordering rules here are the whole safety argument, so they are stated
  * once, up front:
  *
- *   1. The stake is debited BEFORE the round exists. A deal that fails to
+ *   1. The stake is debited before the round exists. A deal that fails to
  *      persist refunds; a debit that fails never deals. The reverse order
  *      hands out a hand nobody paid for.
  *   2. A payout is credited only after the version-guarded write that settles
  *      the round has been confirmed. advanceBlackjackRound returns null when
- *      it loses that race, and null must never pay -- that guard is what makes
+ *      it loses that race, and null must never pay: that guard is what makes
  *      settlement happen exactly once under a double-click, a retry, or two
  *      tabs.
  *   3. The stake having already left the wallet is why settlement is a single
  *      credit of stake + netGold (see settlementPayout) rather than a second
  *      debit on a loss.
  *
- * Practice hands (stake 0) are the one deliberate exception to rule 1: there
- * is nothing to debit, and spendGold/creditGold both throw on a non-positive
- * amount by design (lib/server/profile-store.ts), so every practice code path
- * below skips them entirely rather than calling either with 0.
+ * Practice hands (stake 0) are the one exception to rule 1: there is nothing
+ * to debit, and spendGold/creditGold both throw on a non-positive amount by
+ * design (lib/server/profile-store.ts), so every practice code path below
+ * skips them entirely rather than calling either with 0.
  */
 
 export interface BlackjackView {
@@ -83,7 +83,7 @@ function view(stored: StoredBlackjackRound | null, profile: PlayerProfile): Blac
  * Pays a settled round out. Never throws: the round is already durably
  * settled by the time this runs, so letting a credit failure bubble up would
  * turn a completed hand into an error response and lose the player their
- * result as well as their Gold. Logged loudly instead -- this is the one way
+ * result as well as their Gold. Logged loudly instead; this is the one way
  * the arcade can cost somebody real currency, and it needs to be greppable.
  */
 async function payOut(
@@ -123,10 +123,10 @@ export async function readBlackjackRound(token: string): Promise<BlackjackView> 
  *
  * Practice is Blackjack's own free mode: a $0 hand with nothing at risk, for
  * a player who wants to see how a hand plays before staking real Gold on the
- * tier ladder. It is a Blackjack-only concept on purpose -- lib/game/tiers.ts
- * stays untouched because the poker lobby's real-money buy-in flow reads the
- * same STAKES_TIERS tuple, and a $0 rung there would leak a free buy-in into
- * table selection.
+ * tier ladder. It is a Blackjack-only concept: lib/game/tiers.ts stays
+ * untouched because the poker lobby's real-money buy-in flow reads the same
+ * STAKES_TIERS tuple, and a $0 rung there would leak a free buy-in into table
+ * selection.
  */
 export async function dealBlackjackRound(
   token: string,
@@ -154,7 +154,7 @@ export async function dealBlackjackRound(
     );
   }
 
-  // Rule 1: the stake leaves first -- when there is one. A practice hand has
+  // Rule 1: the stake leaves first, when there is one. A practice hand has
   // nothing to debit, so it skips spendGold entirely (see the note on the
   // money-ordering rules at the top of this file).
   if (stake > 0) profile = await spendGold(token, stake);
@@ -183,15 +183,15 @@ export async function dealBlackjackRound(
   // A natural settles inside dealRound, so the round can be over before the
   // player has done anything. The insert is the once-only event that guards
   // this credit, the way the version bump guards the others. payOut already
-  // skips crediting when settlementPayout is <= 0 -- which every practice
+  // skips crediting when settlementPayout is <= 0, which every practice
   // outcome is, since a $0 stake settles to netGold 0 on a win, a loss or a
-  // push alike (see settlementPayout's own note) -- so there is no separate
+  // push alike (see settlementPayout's own note), so there is no separate
   // practice check to add here.
   if (stored.status === "settled") profile = await payOut(token, stored, profile);
 
   // Progression is keyed to the wager, and the wager is real from here on: the
   // insert above succeeded, so this cannot credit XP for a hand that was rolled
-  // back. Only a real wager earns XP -- nothing was risked on a practice hand.
+  // back. Only a real wager earns XP; nothing was risked on a practice hand.
   // Awaited rather than fired and forgotten so a milestone payout is in the
   // balance this response carries; awardWager swallows its own failures, so a
   // progression outage cannot fail a dealt hand.
@@ -239,9 +239,9 @@ export async function actOnBlackjackRound(
   }
 
   // Doubling stakes the opening wager a second time, so it is charged before
-  // the card is drawn -- and it is legal only on the opening two cards, which
+  // the card is drawn, and it is legal only on the opening two cards, which
   // is why the extra is exactly baseStake and not some fraction of `stake`.
-  // A practice hand's baseStake is 0, so there is nothing to charge -- same
+  // A practice hand's baseStake is 0, so there is nothing to charge; same
   // "skip spendGold rather than call it with 0" guard dealBlackjackRound uses.
   let doubleCharge = 0;
   if (input.action === "double" && current.baseStake > 0) {

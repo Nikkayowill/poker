@@ -13,13 +13,13 @@ let enabled = true;
 /**
  * Keyed by effect, not by file.
  *
- * It was by file, which was correct while every sound played at volume 1.0
- * and two effects sharing an asset were genuinely interchangeable. They are
- * not interchangeable now: `raise` and `all-in` are the same recording at
- * -29 and -26 dBFS, and one shared element means whichever played last leaves
- * its gain behind for the other. An all-in would announce itself at raise
- * volume, or a raise would shout. One element per effect costs four extra
- * <audio> objects for the whole app and makes the mix mean what it says.
+ * Keying by file works only while every sound plays at volume 1.0 and two
+ * effects sharing an asset are genuinely interchangeable. They aren't:
+ * `raise` and `all-in` are the same recording at -29 and -26 dBFS, and one
+ * shared element means whichever played last leaves its gain behind for the
+ * other, so an all-in would announce itself at raise volume, or a raise
+ * would shout. One element per effect costs four extra <audio> objects for
+ * the whole app and makes the mix mean what it says.
  */
 const players = new Map<SoundEffect, HTMLAudioElement>();
 let primed = false;
@@ -43,14 +43,13 @@ function playerFor(effect: SoundEffect): HTMLAudioElement | null {
  * Instantiates (and starts loading) a set of sounds once. Browsers block audio
  * playback before any user gesture, so there is nothing to gain by loading
  * earlier, and building the <audio> elements up front means later playSound
- * calls only ever reuse an existing element -- never create one mid-game.
+ * calls only ever reuse an existing element, never create one mid-game.
  *
- * WHAT gets primed WHEN is the part that matters. This used to be every
- * audible effect on the first gesture anywhere, which meant the first tap on
+ * Priming everything on the first gesture anywhere meant the first tap on
  * the lobby pulled the entire table sound set down the wire on a screen with
- * no table on it -- ~450KB competing with the lobby's own first load, on the
- * one connection a phone has. The set is split instead: the chrome cues on
- * first gesture (they are the only ones the lobby can make), the table's own
+ * no table on it: ~450KB competing with the lobby's own first load, on the
+ * one connection a phone has. The set is split instead: the chrome cues load
+ * on first gesture (the only ones the lobby can make), the table's own load
  * on the way into a game. Both are idempotent, so the second caller is free.
  */
 function prime(effects: readonly SoundEffect[]) {
@@ -65,9 +64,9 @@ function primeChromeOnce() {
 }
 
 /**
- * Loads the cues a hand makes. Called on the edge of arriving at a game --
- * poker-app.tsx, and the arcade tables through use-arcade-sound -- so the deal
- * finds its elements already built rather than fetching mid-hand.
+ * Loads the cues a hand makes. Called on the edge of arriving at a game
+ * (poker-app.tsx, and the arcade tables through use-arcade-sound) so the
+ * deal finds its elements already built rather than fetching mid-hand.
  */
 export function primeTableSounds() {
   prime(AUDIBLE_EFFECTS);
@@ -96,8 +95,8 @@ export function playSound(effect: SoundEffect) {
   if (!audio) return;
   fire(audio);
 
-  // A handful of effects are a real gesture repeated -- a double knock on
-  // the felt for `check` -- rather than one longer recording. Timed replays
+  // A handful of effects are a real gesture repeated (a double knock on
+  // the felt for `check`) rather than one longer recording. Timed replays
   // of the same element, not two overlapping calls to play() in the same
   // tick, which would just restart it once.
   const repeat = SOUND_REPEAT[effect];

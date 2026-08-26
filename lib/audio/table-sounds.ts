@@ -7,8 +7,8 @@ import { soundForSeatAction } from "./seat-action-sound";
  *
  * In big blinds, not chips, so it scales across every tier without a table
  * of thresholds: every tier in `TIER_CONFIG` buys in for exactly 100 big
- * blinds, so this is "the winner took a full starting stack or more" --
- * someone got properly stacked -- at the 1k table same as the 500k one.
+ * blinds, so this is "the winner took a full starting stack or more,"
+ * someone got properly stacked, at the 1k table same as the 500k one.
  */
 export const HUGE_POT_BIG_BLINDS = 100;
 
@@ -16,11 +16,10 @@ export const HUGE_POT_BIG_BLINDS = 100;
  * What the table sounds like between two snapshots.
  *
  * A pure function over (previous, current) rather than a chain of playSound
- * calls inside an effect, which is what this was. The behaviour is unchanged;
- * what changes is that it can be tested. This is six intertwined rules --
- * which of them fire together, which suppress each other, which are edge
- * triggered -- and none of them had a test, in a milestone whose entire
- * subject is those rules.
+ * calls inside an effect, which is what this used to be: testable now, with
+ * the same behaviour. Six intertwined rules live here (which fire together,
+ * which suppress each other, which are edge triggered), and none of them
+ * had a test before this.
  *
  * Returns effects in the order they should be played. They all start in the
  * same tick regardless, so the order is documentation of intent rather than
@@ -30,8 +29,8 @@ export function tableSounds(
   previous: GameSnapshot | null,
   current: GameSnapshot | null,
 ): SoundEffect[] {
-  // The same table, moving forward. A snapshot that repeats a version -- a
-  // realtime echo arriving just behind the fetch that already applied it --
+  // The same table, moving forward. A snapshot that repeats a version (a
+  // realtime echo arriving just behind the fetch that already applied it)
   // must be silent, or every sound in the hand plays twice. Sitting down at a
   // table is silent too: there is no "previous" to have changed from, and
   // announcing a hand already in progress as though it just happened is the
@@ -52,11 +51,11 @@ export function tableSounds(
 
     // Whether the local seat's own streetBet moving this snapshot is an echo
     // of something act() already announced on tap (a call, a raise, an
-    // all-in) rather than a stack change nothing else voiced -- a posted
+    // all-in) rather than a stack change nothing else voiced: a posted
     // blind, which has no seatSound of its own (see soundForSeatAction).
-    // Without this, a bet you just made hits twice: the optimistic sound
-    // on tap, then this "chips" sound again, later, when the server confirms
-    // it -- two sounds, out of sync, for one action.
+    // Without this, a bet you just made hits twice, the optimistic sound
+    // on tap, then this "chips" sound again when the server confirms it,
+    // two sounds out of sync for one action.
     const mine = current.seats.find((seat) => seat.isMine);
     const mineBefore = mine && seatBefore(mine.id);
     const mineAlreadySounded =
@@ -76,9 +75,9 @@ export function tableSounds(
     // check, call and raise fired only from the local player's own act(),
     // so five other players could be doing all of it in silence.
     //
-    // Own seat skipped because act() has already played it on tap -- that
-    // one is deliberately optimistic so a decision feels immediate rather
-    // than waiting on a round trip.
+    // Own seat skipped because act() has already played it on tap; that one
+    // is optimistic on purpose, so a decision feels immediate rather than
+    // waiting on a round trip.
     //
     // One sound per snapshot, not one per seat. A catch-up advance can
     // resolve several overdue turns in a single response, and playing all
@@ -92,16 +91,16 @@ export function tableSounds(
     if (seatSound) sounds.push(seatSound);
   }
 
-  // It is on you now -- the one thing at this table you cannot afford to
+  // It is on you now: the one thing at this table you cannot afford to
   // miss, and the only event here that has to reach a player who is not
   // looking at the screen. The clock is 15 seconds and three missed turns
-  // now hands your seat back (M14a), so a table that announced every other
+  // hands your seat back (M14a), so a table that announced every other
   // player's fold and said nothing about your own turn had the priority
   // exactly backwards.
   //
   // Edge-triggered on the seat *becoming* current rather than being current:
-  // snapshots keep arriving while you decide -- a reconnect, a realtime echo,
-  // another seat's timer -- and every one of them would sound the cue again
+  // snapshots keep arriving while you decide (a reconnect, a realtime echo,
+  // another seat's timer), and every one of them would sound the cue again
   // over the top of you thinking.
   const mine = current.seats.find((seat) => seat.isMine);
   if (mine?.isCurrent && !seatBefore(mine.id)?.isCurrent) sounds.push("your-turn");
@@ -111,7 +110,7 @@ export function tableSounds(
     // has no file behind it, so the old branch meant most hands at a
     // six-handed table ended in silence.
     //
-    // Only a genuinely huge pot gets the crowd cheer -- a table roaring for
+    // Only a genuinely huge pot gets the crowd cheer. A table roaring for
     // every walked blind and min-raised pot, hand after hand, stopped
     // reading as excitement and started reading as noise. Ordinary pots get
     // the quieter cue instead.

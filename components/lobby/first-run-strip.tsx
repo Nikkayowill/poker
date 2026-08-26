@@ -35,30 +35,29 @@ function readRetirementFlag(): string | null {
 /**
  * The one numbered strip at the top of the hub, and the app's only onboarding.
  *
- * All of the rules -- what the steps are, what retires it, how the counter
- * reads -- are in `lib/lobby/first-run.ts` where `npm test` can see them. This
+ * All of the rules (what the steps are, what retires it, how the counter
+ * reads) are in `lib/lobby/first-run.ts` where `npm test` can see them. This
  * file is the markup and the two pieces of browser state: which step is
  * showing, and whether the strip has retired.
  *
- * WHY useSyncExternalStore AND NOT useStoredPreference
+ * This uses useSyncExternalStore rather than useStoredPreference, which the
+ * app's other localStorage values go through. useStoredPreference defers the
+ * restored value by a tick so the server's markup isn't swapped underneath a
+ * hydration in progress; that's right for a mute (one frame at the wrong
+ * volume is nothing) and wrong here, since a deferred read means every
+ * returning player watches an onboarding strip appear and then vanish on
+ * every single load of the hub, a worse impression than the strip itself
+ * ever makes.
  *
- * The app's other localStorage values go through `useStoredPreference`, which
- * deliberately *defers* the restored value by a tick so the server's markup is
- * not swapped underneath a hydration in progress. That is right for a mute --
- * one frame at the wrong volume is nothing -- and wrong here: a deferred read
- * means every returning player watches an onboarding strip appear and then
- * vanish on every single load of the hub, which is a worse impression than the
- * strip itself ever makes.
- *
- * `useSyncExternalStore` is the shape that fits: it renders the *server*
- * snapshot (null -- no storage exists there, so no strip) and then the client
- * snapshot in the same commit as hydration, with no effect, no deferred
- * setState, and no mismatch to reconcile. Nothing outside this tab writes the
- * key, so the subscribe callback has nothing to listen to; retirement inside
- * the tab is held in ordinary state beside it.
+ * `useSyncExternalStore` is the shape that fits: it renders the server
+ * snapshot (null, since no storage exists there, so no strip) and then the
+ * client snapshot in the same commit as hydration, with no effect, no
+ * deferred setState, and no mismatch to reconcile. Nothing outside this tab
+ * writes the key, so the subscribe callback has nothing to listen to;
+ * retirement inside the tab is held in ordinary state beside it.
  */
 export function FirstRunStrip({
-  /** Opens the buy-in modal -- the same handler the Texas Hold'em tile drives. */
+  /** Opens the buy-in modal, the same handler the Texas Hold'em tile drives. */
   onTakeSeat,
   profile,
 }: {
@@ -136,11 +135,11 @@ export function FirstRunStrip({
 }
 
 /**
- * Retires the strip from outside it -- called when a player reaches a table.
+ * Retires the strip from outside it: called when a player reaches a table.
  *
  * Exported rather than duplicated in components/poker-app.tsx so the key and
  * the value are written in exactly one place. The strip is unmounted at the
- * moment this fires -- Lobby has been replaced by PokerTable -- so the flag,
+ * moment this fires (Lobby has been replaced by PokerTable), so the flag,
  * not a prop, is what makes the retirement stick when the player stands up
  * and comes back.
  */

@@ -11,10 +11,10 @@ import { useMissions } from "./use-missions";
 /**
  * The challenges floor: the daily/weekly missions catalogue, on its own route.
  *
- * This is the page the lobby's missions strip used to try to be -- eight rows
- * of title/description/progress bar do not belong stacked above the hub grid,
- * the same reasoning arcade-floor.tsx's header gives for /games. The lobby
- * keeps a compact "3/4 today" door (missions-panel.tsx); this is what it opens.
+ * Eight rows of title/description/progress bar don't belong stacked above
+ * the hub grid, the same reasoning arcade-floor.tsx's header gives for
+ * /games. The lobby keeps a compact "3/4 today" door (missions-panel.tsx);
+ * this is what it opens.
  *
  * Fetches its own missions rather than taking them as a prop, matching
  * arcade-floor.tsx's wallet fetch: this route does not mount PokerApp, so
@@ -66,7 +66,7 @@ export function ChallengesFloor() {
   );
 }
 
-/** "in 6h" / "in 3d" -- coarse on purpose, this is a period boundary, not a countdown. */
+/** "in 6h" / "in 3d", coarse: this is a period boundary, not a countdown. */
 function resetLabel(periodEndIso: string): string {
   const ms = new Date(periodEndIso).getTime() - Date.now();
   if (!Number.isFinite(ms) || ms <= 0) return "soon";

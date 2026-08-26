@@ -10,18 +10,18 @@
  * mislabelled "no copyright", so it needs a visible credit line; and FreePD,
  * which was the best CC0 answer, shut down in 2025.
  *
- * ENCODING. The delivered masters were 256 kbps stereo totalling 40 MB, and
- * they were re-encoded in place to 128 kbps with an EBU R128 pass
+ * The delivered masters were 256 kbps stereo totalling 40 MB, and they were
+ * re-encoded in place to 128 kbps with an EBU R128 pass
  * (`loudnorm=I=-18:TP=-1.5:LRA=11`) and their metadata stripped. That halved
  * the payload to 20 MB and, more importantly, pulled the track-to-track spread
- * from 6.9 dB down to 3.0 dB -- on shuffle, an unnormalised set steps up and
+ * from 6.9 dB down to 3.0 dB: on shuffle, an unnormalised set steps up and
  * down in volume every few minutes, which is far more noticeable than any
  * bitrate difference at the gain below. The masters are kept at
  * assets-src/audio-master/, which is gitignored; the originals are also still
  * in this repo's history, since they were committed before being re-encoded.
  *
- * An empty array here is the silent-by-design path -- the same convention
- * `lose` uses in ./manifest.ts -- and ./menu-music.ts builds no player at all
+ * An empty array here is the silent-by-design path, the same convention
+ * `lose` uses in ./manifest.ts, and ./menu-music.ts builds no player at all
  * for it rather than 404ing mid-loop.
  */
 export const MENU_MUSIC_TRACKS: readonly string[] = [
@@ -38,13 +38,13 @@ export const MENU_MUSIC_TRACKS: readonly string[] = [
  * What the operating system calls this audio.
  *
  * A phone browser puts every playing <audio> element into the OS media
- * controls -- Chrome's notification shade on Android, Control Center and the
- * lock screen on iOS -- and that surface is not optional and cannot be
- * suppressed. What it prints is the Media Session metadata, falling back to the
- * file's own ID3 tags, falling back to the literal string "Untitled". The
- * loudnorm re-encode above strips tags by design and nothing here was setting a
- * Media Session, so the shipped app was labelling itself "Untitled" on every
- * phone that played a note.
+ * controls (Chrome's notification shade on Android, Control Center and the
+ * lock screen on iOS), and that surface is not optional and cannot be
+ * suppressed. What it prints is the Media Session metadata, falling back to
+ * the file's own ID3 tags, falling back to the literal string "Untitled". The
+ * loudnorm re-encode above strips tags by design and nothing here was setting
+ * a Media Session, so the shipped app was labelling itself "Untitled" on
+ * every phone that played a note.
  *
  * One identity for the whole playlist rather than seven: the tracks are the
  * owner's own untitled beds, so a per-track name would be invented rather than
@@ -62,13 +62,13 @@ export const MENU_MUSIC_METADATA = {
 } as const;
 
 /**
- * Target playback gain, 0..1. Menu music is a bed, not a cue -- it should sit
+ * Target playback gain, 0..1. Menu music is a bed, not a cue: it should sit
  * well under every effect's target in ./manifest.ts (the loudest of which,
  * `win`, lands at -24 dBFS) so table sound effects are never competing with it
  * once a hand actually starts.
  *
  * Against the -18 LUFS the tracks are normalised to, 0.35 is -9.1 dB, putting
- * the bed around -27 -- under the quietest of the betting cues. Unlike the SFX
+ * the bed around -27, under the quietest of the betting cues. Unlike the SFX
  * table this is one number rather than a per-file measurement, which is only
  * honest because the loudnorm pass above made the files agree with each other.
  */

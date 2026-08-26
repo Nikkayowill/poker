@@ -6,15 +6,16 @@ import { adminClient } from "./supabase-admin";
  * Open duel challenges: an offer with the challenger's Gold already escrowed.
  *
  * Every write here is one half of a money movement, so the shape to keep in
- * mind is: a row in `open` status means the challenger HAS BEEN DEBITED and
- * has not been paid back. Settling that row -- accepting, declining,
- * cancelling, expiring -- is what decides whether the Gold becomes a pot or a
- * refund, and it must happen exactly once. That is why every terminal write
- * below is a status-guarded UPDATE returning the row, never a read followed by
- * a write: the guard is what makes a double-tapped Decline refund once.
+ * mind is that a row in `open` status means the challenger has already been
+ * debited and has not been paid back. Settling that row (accepting,
+ * declining, cancelling, expiring) is what decides whether the Gold becomes a
+ * pot or a refund, and it must happen exactly once. That is why every
+ * terminal write below is a status-guarded UPDATE returning the row, never a
+ * read followed by a write: the guard is what makes a double-tapped Decline
+ * refund once.
  *
  * Freshness is a predicate on `expires_at`, never a consequence of the sweep
- * having run -- the same rule table-invite-store.ts states, and for the same
+ * having run, the same rule table-invite-store.ts states and for the same
  * reason: a challenge one second past its window must not be acceptable even
  * though nothing has marked it expired yet. Here it matters more, because
  * accepting one debits the acceptor.
@@ -33,7 +34,7 @@ export const DUEL_CHALLENGE_TTL_MS = 10 * 60 * 1000;
 /** How many open challenges one lobby read returns. */
 export const CHALLENGE_PAGE_SIZE = 25;
 
-/** Postgres' unique_violation -- here, pvp_challenges_one_open_per_challenger. */
+/** Postgres' unique_violation; here, pvp_challenges_one_open_per_challenger. */
 const UNIQUE_VIOLATION = "23505";
 
 export type PvpChallengeStatus = "open" | "accepted" | "cancelled" | "expired";
@@ -42,10 +43,10 @@ export interface StoredPvpChallenge {
   id: string;
   game: string;
   challengerId: string;
-  /** Null means open to anyone -- the matchmaking queue. */
+  /** Null means open to anyone: the matchmaking queue. */
   opponentId: string | null;
   tier: string;
-  /** What the challenger has ALREADY been debited. A refund pays back exactly this. */
+  /** What the challenger has already been debited. A refund pays back exactly this. */
   stake: number;
   status: PvpChallengeStatus;
   matchId: string | null;
@@ -112,10 +113,10 @@ export function challengeExpiry(from: Date = new Date()): string {
  * Settles every open challenge whose window has closed, and returns them.
  *
  * Returns the rows rather than a count, unlike expireStaleTableInvites, and
- * that difference is the whole point: each of these carries escrowed Gold that
- * has to be refunded. The caller pays them back. Because the UPDATE is guarded
- * on `status = 'open'`, a row can only be returned to one caller ever, so two
- * concurrent sweeps cannot both refund the same challenge.
+ * that difference is the whole point: each of these carries escrowed Gold
+ * that has to be refunded, and the caller pays them back. Because the UPDATE
+ * is guarded on `status = 'open'`, a row can only be returned to one caller
+ * ever, so two concurrent sweeps cannot both refund the same challenge.
  */
 export async function expireStaleChallenges(now: Date = new Date()): Promise<StoredPvpChallenge[]> {
   const stamp = now.toISOString();
@@ -142,7 +143,7 @@ export async function expireStaleChallenges(now: Date = new Date()): Promise<Sto
 }
 
 /**
- * Opens a challenge for a stake that has ALREADY been debited.
+ * Opens a challenge for a stake that has already been debited.
  *
  * Throws OpenChallengeExists when this player already has one open for this
  * game. Caught from the partial unique index rather than by a read-first
@@ -188,7 +189,7 @@ export async function createChallenge(input: {
   // A lapsed row still marked open would hold the partial unique index's slot
   // and turn a legitimate new challenge into OpenChallengeExists. Unconditional
   // rather than throttled: this is the one path whose correctness depends on
-  // the sweep having run. Its refunds are the caller's -- see the service.
+  // the sweep having run. Its refunds are the caller's; see the service.
   await expireStaleChallenges(now);
 
   const { data, error } = await supabase
@@ -264,11 +265,11 @@ export async function listOpenChallenges(
  * stake: the `status = 'open'` predicate means one UPDATE wins and the other
  * matches zero rows.
  *
- * Claiming does NOT create the match -- it marks the row `accepted` and hands
+ * Claiming does not create the match; it marks the row `accepted` and hands
  * the caller its terms. The service then debits the acceptor and builds the
- * match, attaching the id with `attachMatchToChallenge`. Split that way
- * because a claim that is instantly visible to everyone else is what stops the
- * race, and the match cannot exist before the acceptor has paid.
+ * match, attaching the id with `attachMatchToChallenge`. It's split that way
+ * because a claim that is instantly visible to everyone else is what stops
+ * the race, and the match cannot exist before the acceptor has paid.
  */
 export async function claimChallenge(
   challengeId: string,
@@ -295,8 +296,8 @@ export async function claimChallenge(
 
   // Every condition below is a predicate on the UPDATE rather than a check
   // before it, so the whole claim is one statement and cannot be raced.
-  // `neq(challenger_id)` is what stops a player accepting their own challenge
-  // and being debited twice to play themselves.
+  // `neq(challenger_id)` stops a player accepting their own challenge and
+  // being debited twice to play themselves.
   const { data, error } = await supabase
     .from("pvp_challenges")
     .update({ status: "accepted", responded_at: stamp })
@@ -317,7 +318,7 @@ export async function claimChallenge(
  *
  * Separate from claimChallenge because the match does not exist yet at claim
  * time. The row is already `accepted` and out of everyone else's reach by
- * then, so this needs no guard of its own -- and the schema's
+ * then, so this needs no guard of its own; the schema's
  * pvp_challenges_match_id_matches_status constraint is what keeps the pair
  * honest.
  */
@@ -343,9 +344,9 @@ export async function attachMatchToChallenge(
 /**
  * Withdraws a challenge and hands back its terms so the caller can refund it.
  *
- * Returns null when there was nothing to withdraw -- already accepted, already
- * cancelled, someone else's. Null must NOT be refunded: the guard returning a
- * row exactly once is what makes the refund happen exactly once, and paying
+ * Returns null when there was nothing to withdraw: already accepted, already
+ * cancelled, someone else's. Null must never be refunded: the guard returning
+ * a row exactly once is what makes the refund happen exactly once, and paying
  * out on null would turn a double-tapped Cancel into free Gold.
  *
  * `reason` separates a player pressing Cancel from the service unwinding a
@@ -391,7 +392,7 @@ export async function releaseChallenge(
  * The claim took the row out of the pool; if the acceptor then could not pay,
  * or the match would not persist, the challenger's escrow must not be left
  * stranded in an `accepted` row that never became a match. Guarded on
- * `status = 'accepted'` and a null match_id, so a challenge that DID become a
+ * `status = 'accepted'` and a null match_id, so a challenge that did become a
  * match can never be reopened underneath it.
  */
 export async function reopenClaimedChallenge(challengeId: string): Promise<void> {

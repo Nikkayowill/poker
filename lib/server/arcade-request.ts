@@ -22,7 +22,7 @@ import { NextResponse } from "next/server";
  *
  * `round` is the state of play at the moment of refusal. It is sent with the
  * error so a client that fell out of sync re-renders from truth instead of
- * guessing -- which is what makes a 409 recoverable rather than a dead end.
+ * guessing, which is what makes a 409 recoverable rather than a dead end.
  *
  * `reason` separates the rejections that are ordinary play from the ones that
  * are faults: a player typing a non-word at Word Stack, or re-trying a group at
@@ -55,7 +55,7 @@ export class ArcadeRequestError<TSnapshot, TReason extends string = never> exten
  * a route.ts, and a lib/server module may hand back a NextResponse.
  *
  * `fallbackMessage` is the only thing that varies between games, and it is only
- * ever reached by a non-Error throw -- "that hand", "that round", "that puzzle"
+ * ever reached by a non-Error throw: "that hand", "that round", "that puzzle"
  * is the whole difference.
  */
 export function toArcadeErrorResponse(error: unknown, fallbackMessage: string): NextResponse {
@@ -70,7 +70,7 @@ export function toArcadeErrorResponse(error: unknown, fallbackMessage: string): 
     );
   }
   // "Not enough Gold." comes back from spendGold's own guard, which is the
-  // authority -- any balance check before it is only ever a stale read. The
+  // authority; any balance check before it is only ever a stale read. The
   // free puzzles never spend, so for them this branch is unreachable rather
   // than wrong.
   const message = error instanceof Error ? error.message : fallbackMessage;

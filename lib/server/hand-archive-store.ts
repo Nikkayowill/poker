@@ -73,9 +73,9 @@ export interface HandHistoryPage {
  *
  * `ended_at` alone is not unique: two tables finishing a hand in the same
  * millisecond is ordinary, and a `< timestamp` cursor would then skip every
- * hand that tied with the last one on the page -- silently dropping hands
- * out of a player's history rather than failing visibly. The full sort key
- * is (ended_at desc, game_id, hand_number), so the cursor carries all three.
+ * hand that tied with the last one on the page, silently dropping hands out
+ * of a player's history rather than failing visibly. The full sort key is
+ * (ended_at desc, game_id, hand_number), so the cursor carries all three.
  */
 interface HistoryCursor {
   endedAt: string;
@@ -94,20 +94,20 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  *
  * Matched rather than re-serialized through Date: Postgres timestamptz keeps
  * microseconds and a JS Date does not, so round-tripping the value would
- * truncate the cursor below the row it points at -- which reads as "skip
- * every hand in that microsecond window", the exact silent data loss the
- * keyset cursor exists to prevent. Notably contains no comma or parenthesis,
- * which is what makes it safe to interpolate into a PostgREST filter.
+ * truncate the cursor below the row it points at, which reads as "skip every
+ * hand in that microsecond window", the exact silent data loss the keyset
+ * cursor exists to prevent. Notably contains no comma or parenthesis, which
+ * is what makes it safe to interpolate into a PostgREST filter.
  */
 const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}(:?\d{2})?)?$/;
 
 /**
  * Parses a cursor, or returns null to mean "start from the top".
  *
- * Strict on purpose. These three values are interpolated into a PostgREST
- * `or(...)` filter, whose grammar is commas and parentheses -- so a cursor
- * is attacker-controlled filter syntax unless every field is checked against
- * a shape that cannot contain any. A malformed cursor is treated as absent
+ * Strict, because these three values are interpolated into a PostgREST
+ * `or(...)` filter, whose grammar is commas and parentheses, so a cursor is
+ * attacker-controlled filter syntax unless every field is checked against a
+ * shape that cannot contain any. A malformed cursor is treated as absent
  * rather than as an error: the worst it costs is a first page.
  */
 function decodeCursor(cursor: string | null): HistoryCursor | null {
@@ -204,7 +204,7 @@ function buildArchiveRows(state: GameState, profileIdBySeatId: Map<string, strin
   };
 
   // Newest entries are the ones worth keeping if a pathological hand ever
-  // overruns the cap -- the end of a hand is what a replay is about.
+  // overruns the cap: the end of a hand is what a replay is about.
   const actions: ArchivedAction[] = state.log
     .slice(-MAX_ARCHIVED_ACTIONS)
     .map((entry) => ({ at: entry.at, text: entry.text, kind: entry.kind }));
@@ -216,7 +216,7 @@ function buildArchiveRows(state: GameState, profileIdBySeatId: Map<string, strin
  * Archives one completed hand. Idempotent per (game, hand): the two
  * hand-completion paths can race, and a retry must be a no-op.
  *
- * Best-effort in the same sense as the other post-hand siblings -- see
+ * Best-effort in the same sense as the other post-hand siblings; see
  * lib/server/hand-completion.ts. A hand that fails to archive is a hand the
  * player cannot review later, which is worth logging and not worth failing a
  * poker action over.
@@ -275,7 +275,7 @@ export async function archiveCompletedHand(state: GameState): Promise<void> {
  * The redaction gate, and the only place hole cards leave this module.
  *
  * A caller always gets their own cards back. Anyone else's are returned only
- * if the table genuinely saw them -- `cardsWereShown`, decided at archive
+ * if the table genuinely saw them: `cardsWereShown`, decided at archive
  * time by lib/game/engine.ts's seatCardsWereShown. Replay must never show
  * what the felt did not: a hand folded to a river bet keeps its secret
  * permanently, and "it was ages ago" is not a reason to unmuck it.
@@ -294,7 +294,7 @@ export async function listHandHistory(
   options: { limit?: number; cursor?: string | null } = {},
 ): Promise<HandHistoryPage> {
   // `??` catches undefined but not NaN, and NaN survives both Math.max and
-  // Math.min -- a non-finite limit would reach PostgREST as `limit=NaN`. The
+  // Math.min, so a non-finite limit would reach PostgREST as `limit=NaN`. The
   // route's zod schema rejects it first, but this function is exported and
   // the clamp is where the guarantee belongs.
   const requested = Number(options.limit);
@@ -337,7 +337,7 @@ export async function listHandHistory(
   // references its parent on a *composite* key, and relying on PostgREST to
   // detect and embed that relationship is a dependency on schema-cache
   // behaviour for something a keyed lookup does plainly. The page is bounded
-  // by `limit`, so this is two round trips, not N+1.
+  // by `limit`, so this stays two round trips, not N+1.
   let query = supabase
     .from("hand_archive_players")
     .select("game_id, hand_number, seat_id, amount_won, net_profit, ended_at")
@@ -365,8 +365,8 @@ export async function listHandHistory(
   const pageRows = rows.slice(0, limit);
   if (pageRows.length === 0) return { entries: [], nextCursor: null };
 
-  // Over-fetches slightly when a page spans several tables -- the cross
-  // product of the ids, not the pairs -- which for a page of at most 50 is
+  // Over-fetches slightly when a page spans several tables (the cross
+  // product of the ids, not the pairs), which for a page of at most 50 is
   // cheaper than building a 50-clause or(...).
   const { data: archiveData, error: archiveError } = await supabase
     .from("hand_archives")
@@ -384,8 +384,8 @@ export async function listHandHistory(
     const gameId = String(row.game_id);
     const handNumber = Number(row.hand_number);
     const archive = archivesByHand.get(`${gameId}:${handNumber}`);
-    // A seat row whose parent is gone should not happen -- the FK cascades
-    // -- but dropping it beats rendering a hand with no board or pot.
+    // A seat row whose parent is gone should not happen (the FK cascades),
+    // but dropping it beats rendering a hand with no board or pot.
     if (!archive) return [];
     return [{
       gameId,
@@ -465,8 +465,8 @@ export async function getArchivedHand(
     netProfit: Number(row.net_profit),
   }));
 
-  // Authorization, and it has to happen before any redaction: a caller who
-  // was not in this hand gets nothing, not a fully-mucked view of it.
+  // Authorization has to happen before any redaction: a caller who was not
+  // in this hand gets nothing, not a fully-mucked view of it.
   if (!players.some((player) => player.profileId === profileId)) return null;
 
   return {

@@ -1,19 +1,19 @@
 /**
- * Wire contract for table reactions -- cosmetic emoji a seated player can
- * send that show up beside their seat for everyone else for a couple of
- * seconds, then disappear. Never game state: no engine action, no version
- * bump, nothing durable written anywhere.
+ * Wire contract for table reactions: cosmetic emoji a seated player can send
+ * that show up beside their seat for everyone else for a couple of seconds,
+ * then disappear. Never game state: no engine action, no version bump,
+ * nothing durable written anywhere.
  *
  * This gets its own channel, `table:<gameId>:reactions`, rather than piggy-
  * backing on table-channel.ts's `table:<gameId>`. That channel says right in
  * its header comment that exactly one thing publishes to it (the
- * game_signals trigger) and its payload is deliberately just the version
- * counter. A reaction is neither of those things -- it's sent straight from
- * an API route with nothing durable behind it, and it's meant to be shown
- * as-is rather than treated as "go re-fetch." Same public/no-RLS reasoning
- * as that channel though: StackChips' main player is a cookie-authenticated
- * guest with no JWT, and the cost of that is the same here -- a table UUID
- * is 122 bits, so all a guesser gets is which seat sent which emoji.
+ * game_signals trigger) and its payload is just the version counter. A
+ * reaction is neither of those things: it's sent straight from an API route
+ * with nothing durable behind it, and it's meant to be shown as-is rather
+ * than treated as "go re-fetch." Same public/no-RLS reasoning as that
+ * channel though: StackChips' main player is a cookie-authenticated guest
+ * with no JWT, and the cost is the same here too, a table UUID is 122 bits,
+ * so all a guesser gets is which seat sent which emoji.
  */
 
 export const REACTIONS = [
@@ -46,8 +46,8 @@ export const PLAYER_REACTION = "PLAYER_REACTION";
 /**
  * The server's per-seat cooldown window (enforced in the route, not here).
  * Shared so the client button's own cooldown can never be shorter than what
- * the server will actually accept -- otherwise a second tap just silently
- * fails instead of doing anything.
+ * the server will actually accept, or a second tap would just silently
+ * fail instead of doing anything.
  */
 export const REACTION_COOLDOWN_MS = 2500;
 

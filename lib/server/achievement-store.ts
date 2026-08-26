@@ -16,9 +16,10 @@ import { adminClient } from "./supabase-admin";
 
 /**
  * Achievements: permanent, one-time Gold and cosmetic rewards for lifetime
- * milestones -- hands played, hands won, net profit, biggest pot, chips won,
- * duels won, brain games completed, rank reached. Unlike missions, nothing
- * here has a period: a tier crossed stays crossed, and there is no reset.
+ * milestones, covering hands played, hands won, net profit, biggest pot,
+ * chips won, duels won, brain games completed, and rank reached. Unlike
+ * missions, nothing here has a period: a tier crossed stays crossed, and
+ * there is no reset.
  *
  * This module is the only thing that calls apply_achievement_counter and
  * grant_achievement_reward, the same "one funnel" shape lib/server/
@@ -29,16 +30,15 @@ import { adminClient } from "./supabase-admin";
 //
 // Mirrors the seed insert in supabase/migrations/20260817120000_achievements.sql.
 // Real Postgres reads its own achievement_definitions table; this is the
-// memory-mode fallback, kept in step with the migration by hand -- the same
+// memory-mode fallback, kept in step with the migration by hand, the same
 // duplication every memory-mode store here carries against its own table's
 // defaults.
 
-// Tier-2/3 reward amounts roughly doubled on 2026-08-20 (supabase/
-// migrations/20260820130000_mission_achievement_reward_bumps.sql), tier 1
-// left as-is (already an onboarding-speed reward) -- same play-driven-income
-// direction as the mission bump above. Keep this array matching that
-// migration's UPDATE statements exactly. New lifetime ceiling across the
-// whole 24-achievement catalog is roughly 331,000 Gold (was ~167,000).
+// Tier-2/3 reward amounts were bumped in supabase/migrations/
+// 20260820130000_mission_achievement_reward_bumps.sql, tier 1 left as-is
+// since it's already an onboarding-speed reward. Keep this array matching
+// that migration's UPDATE statements exactly. Lifetime ceiling across the
+// whole 24-achievement catalog is roughly 331,000 Gold.
 const DEFAULT_DEFINITIONS: AchievementDefinition[] = [
   { code: "hands_played_100", category: "hands_played", tier: 1, sourceKind: "stat", metric: "hands_played", threshold: 100, rewardGold: 300, rewardCosmeticId: null, title: "Ante Up", description: "Play 100 hands.", sortOrder: 11 },
   { code: "hands_played_1000", category: "hands_played", tier: 2, sourceKind: "stat", metric: "hands_played", threshold: 1000, rewardGold: 3000, rewardCosmeticId: "back-riverwood", title: "Regular", description: "Play 1,000 hands in this room.", sortOrder: 12 },
@@ -54,7 +54,7 @@ const DEFAULT_DEFINITIONS: AchievementDefinition[] = [
 
   { code: "biggest_pot_10k", category: "biggest_pot_won", tier: 1, sourceKind: "stat", metric: "biggest_pot_won", threshold: 10000, rewardGold: 500, rewardCosmeticId: null, title: "Nice Pot", description: "Win a single pot of 10,000 chips or more.", sortOrder: 41 },
   // rewardCosmeticId was "avatar-housename" until the illustrated 2D avatar
-  // roster it named was retired in favor of the seat-art-backed catalog --
+  // roster it named was retired in favor of the seat-art-backed catalog.
   // Gold-only until a replacement cosmetic exists to name this tier after.
   { code: "biggest_pot_50k", category: "biggest_pot_won", tier: 2, sourceKind: "stat", metric: "biggest_pot_won", threshold: 50000, rewardGold: 6000, rewardCosmeticId: null, title: "House Name", description: "Win a single high-stakes pot of 50,000 chips or more.", sortOrder: 42 },
   { code: "biggest_pot_250k", category: "biggest_pot_won", tier: 3, sourceKind: "stat", metric: "biggest_pot_won", threshold: 250000, rewardGold: 50000, rewardCosmeticId: null, title: "The Big One", description: "Win a single pot of 250,000 chips or more.", sortOrder: 43 },
@@ -146,7 +146,7 @@ async function loadCatalog(now: number): Promise<AchievementDefinition[]> {
 
 /** The catalog title for one achievement code, or null if it doesn't (or no
  * longer does) exist. Reads through loadCatalog's cache rather than a second
- * copy of the titles -- used by badge-store.ts to label an
+ * copy of the titles; used by badge-store.ts to label an
  * 'achievement-<code>' profile_badges row. */
 export async function achievementTitle(code: string, now: Date = new Date()): Promise<string | null> {
   const catalog = await loadCatalog(now.getTime());
@@ -297,7 +297,7 @@ async function grantOne(profileId: string, definition: AchievementDefinition, no
   if (!supabase) {
     const key = grantKey(profileId, definition.code);
     if (memoryGrants.has(key)) return;
-    // Side effects first, mark granted only after they succeed -- marking it
+    // Side effects first, mark granted only after they succeed. Marking it
     // first and crediting/awarding second would lose the reward for good if
     // either throws, since a retry would then see the key already claimed.
     if (definition.rewardCosmeticId) await awardCosmetic(profileId, definition.rewardCosmeticId);
@@ -319,7 +319,7 @@ async function grantOne(profileId: string, definition: AchievementDefinition, no
  * Grants any achievement in the catalog these profiles have just crossed the
  * threshold for. Mirrors lib/server/avatar-unlocks.ts's checkAvatarUnlocks
  * exactly: no internal try/catch, callers isolate it the same way
- * hand-completion.ts isolates checkAvatarUnlocks -- an achievement bug must
+ * hand-completion.ts isolates checkAvatarUnlocks, so an achievement bug can
  * never surface as a broken poker action, duel or puzzle.
  */
 export async function checkAchievements(profileIds: string[], now: Date = new Date()): Promise<void> {
@@ -327,8 +327,8 @@ export async function checkAchievements(profileIds: string[], now: Date = new Da
   if (catalog.length === 0) return;
 
   // Same fan-out shape as hand-completion.ts's per-seat Promise.all: every
-  // profile's reads and grants are independent of every other profile's, so
-  // there is nothing to serialize between them.
+  // profile's reads and grants are independent of every other profile's,
+  // so there's nothing to serialize between them.
   await Promise.all(profileIds.map(async (profileId) => {
     const granted = await grantedCodes(profileId);
     const remaining = catalog.filter((definition) => !granted.has(definition.code));
@@ -348,14 +348,14 @@ export async function checkAchievements(profileIds: string[], now: Date = new Da
  *
  * Never throws, the same contract applyMissionEvent keeps: a duel win or a
  * completed puzzle must not become a failed request because an achievement
- * bug got in the way. The reward is lost in that case, which is the same
- * trade-off applyMissionEvent makes.
+ * bug got in the way. The reward is lost in that case, the same trade-off
+ * applyMissionEvent makes.
  *
- * Only wired at the duel_won and puzzle_completed call sites --
- * poker_hand_played and level_gained achievements are stat/live-sourced, so
- * their call sites (hand-completion.ts, progression-store.ts) call
- * checkAchievements directly instead, and achievementCountersForEvent
- * returns no signal for those two kinds here.
+ * Only wired at the duel_won and puzzle_completed call sites: poker_hand_played
+ * and level_gained achievements are stat/live-sourced, so their call sites
+ * (hand-completion.ts, progression-store.ts) call checkAchievements directly
+ * instead, and achievementCountersForEvent returns no signal for those two
+ * kinds here.
  */
 export async function applyAchievementEvent(
   profileId: string,

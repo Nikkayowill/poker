@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { adminClient } from "./supabase-admin";
 
 /**
- * Persistence for Web Push subscriptions -- one row per browser/device a
+ * Persistence for Web Push subscriptions: one row per browser/device a
  * player has granted notification permission on.
  *
  * Same twin-branch shape as every other store here: Supabase when
@@ -23,7 +23,7 @@ export interface StoredPushSubscription {
   lastNotifiedAt: string | null;
 }
 
-/** What the browser's PushSubscription.toJSON() hands back -- the shape POSTed to /api/push/subscribe. */
+/** What the browser's PushSubscription.toJSON() hands back: the shape POSTed to /api/push/subscribe. */
 export interface WebPushKeys {
   endpoint: string;
   p256dh: string;
@@ -68,7 +68,7 @@ function fromRow(row: SubscriptionRow): StoredPushSubscription {
   };
 }
 
-/** Save (or replace) a device's subscription. Upsert on endpoint -- a re-subscribe on the same device updates the row rather than duplicating it. */
+/** Save (or replace) a device's subscription. Upsert on endpoint: a re-subscribe on the same device updates the row rather than duplicating it. */
 export async function savePushSubscription(
   profileId: string,
   keys: WebPushKeys,
@@ -77,7 +77,7 @@ export async function savePushSubscription(
   const client = adminClient();
   if (!client) {
     const existing = [...memorySubscriptions.values()].find((row) => row.endpoint === keys.endpoint);
-    // One id, reused as both the map key and the row's own id -- computing
+    // One id, reused as both the map key and the row's own id. Computing
     // it twice (once per use) would hand a fresh, mismatched key to the
     // second call, leaving the first call's row stranded under its own key
     // and turning every "resubscribe" into a duplicate instead of an update.
@@ -109,7 +109,7 @@ export async function savePushSubscription(
   if (error) throw new Error(error.message);
 }
 
-/** Drop a subscription by endpoint -- called on unsubscribe, and by the sender when a push service reports the endpoint is gone (410/404). */
+/** Drop a subscription by endpoint. Called on unsubscribe, and by the sender when a push service reports the endpoint is gone (410/404). */
 export async function removePushSubscription(endpoint: string): Promise<void> {
   const client = adminClient();
   if (!client) {
@@ -121,7 +121,7 @@ export async function removePushSubscription(endpoint: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-/** Every subscription for one profile -- used to fan a single event out to all of a player's devices. */
+/** Every subscription for one profile: used to fan a single event out to all of a player's devices. */
 export async function pushSubscriptionsForProfile(profileId: string): Promise<StoredPushSubscription[]> {
   const client = adminClient();
   if (!client) {
@@ -137,7 +137,7 @@ export async function pushSubscriptionsForProfile(profileId: string): Promise<St
 
 /**
  * Every subscribed, registered profile that has not claimed today's daily
- * Gold yet, joined in one query -- the cron's whole candidate list.
+ * Gold yet, joined in one query: the cron's whole candidate list.
  * "Today" is passed in rather than computed here (the same UTC-midnight
  * boundary isSameUtcDay uses) so the caller's own `now` drives it and a
  * test can pin it. Memory mode has no profiles table to join against here
@@ -157,7 +157,7 @@ export async function pushSubscriptionsForInactivePlayers(utcDayStart: Date): Pr
   return (data ?? []).map((row) => fromRow(row as SubscriptionRow));
 }
 
-/** Marks a subscription notified now -- skips it on a same-day cron re-run. */
+/** Marks a subscription notified now; skips it on a same-day cron re-run. */
 export async function markPushSubscriptionNotified(id: string, when: Date): Promise<void> {
   const client = adminClient();
   if (!client) {

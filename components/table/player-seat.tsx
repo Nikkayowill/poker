@@ -76,11 +76,11 @@ export function SeatFigure({
           </>
         )}
       {/* Opponents' turn clock rings their own portrait rather than sitting as
-          a separate badge down in the nameplate -- a fuse that laps the face
+          a separate badge down in the nameplate: a fuse that laps the face
           it is timing, not a second circle competing with the stack number
           for the same row. The local player keeps the nameplate clock (see
-          SeatNameplate below): their own figure is hidden on desktop
-          entirely (16-first-person.css), so there is no portrait here left
+          SeatNameplate below), since their own figure is hidden on desktop
+          entirely (16-first-person.css), so there's no portrait here left
           to ring. */}
       {active && !seat.isMine && (
         <SeatTimer startedAt={turnStartedAt} deadlineAt={turnDeadlineAt} />
@@ -124,8 +124,7 @@ function SeatCards({
       // Left unset until the table has been measured, so 08-seat.css's
       // fallback applies for that first paint rather than a zero vector
       // freezing the cards in place. A hand dealt before the first
-      // measurement lands still animates -- just from below the seat, the
-      // way it always used to.
+      // measurement lands still animates, just from below the seat.
       style={dealVector
         ? ({ "--deal-x": `${dealVector.dx}px`, "--deal-y": `${dealVector.dy}px` } as React.CSSProperties)
         : undefined}
@@ -146,8 +145,8 @@ function SeatCards({
           style={{ animationDelay: `${dealDelayMs(dealSlot, index, dealSeatCount)}ms` }}
         >
           {/* This seat's own back, not the table's. Your opponents' hidden
-              cards are where a card back is actually seen, which is the
-              entire proposition the store sells them on. */}
+              cards are where a card back is actually seen, which is what
+              the store sells them on. */}
           <PlayingCard
             card={card}
             small={!seat.isMine}
@@ -183,7 +182,7 @@ function SeatNameplate({
       ? { abbreviation: "BB", name: "Big Blind", amount: bigBlind }
       : null;
   const away = isBotAway(seat);
-  // Rendered once, regardless of which plate shape below is used -- both
+  // Rendered once, regardless of which plate shape below is used: both
   // are a <div className="seat-plate ..."> and 08-seat.css anchors the
   // trigger to that shared wrapper.
   const challenge = isChallengeableSeat(seat) && seat.profileId
@@ -242,12 +241,12 @@ function SeatNameplate({
         )}
       </div>
       <div className="seat-stack-row">
-        {/* A departed bot's stack is 0 -- printing that as a chip count would
-            read as busted rather than away. A short, fixed-length label in
-            the same slot the chip count normally sits in, not a floating
-            pill: table-feed.spec.ts asserts no seat prints one of those any
-            more, and this can't reproduce that clipping bug because it never
-            varies in length or escapes .seat-plate's own box. */}
+        {/* A departed bot's stack is 0, and printing that as a chip count
+            would read as busted rather than away. A short, fixed-length
+            label sits in the same slot the chip count normally occupies,
+            not a floating pill: table-feed.spec.ts asserts no seat prints
+            one of those, and this can't reproduce that clipping bug since
+            it never varies in length or escapes .seat-plate's own box. */}
         {away
           ? <span className="seat-away-badge">Sitting out</span>
           : (
@@ -261,8 +260,8 @@ function SeatNameplate({
           )}
         {/* Only the seat on the clock carries one, so it doubles as the
             "whose turn is it" cue and there is never more than one burning.
-            Opponents' clocks moved onto their own portrait -- see SeatFigure
-            above -- so this is the local player's alone now: their figure is
+            Opponents' clocks moved onto their own portrait (see SeatFigure
+            above), so this is the local player's alone now: their figure is
             hidden on desktop, so the nameplate is the only place left for it
             to burn. */}
         {seat.isCurrent && seat.isMine && (
@@ -310,10 +309,10 @@ export const PlayerSeat = memo(function PlayerSeat({
   elementRef?: (el: HTMLElement | null) => void;
   /** Computed position and stacking order around the tilted table plane. */
   seatStyle?: React.CSSProperties;
-  /** This seat's current reaction bubble, if it has one -- see use-table-reactions.ts. */
+  /** This seat's current reaction bubble, if it has one; see use-table-reactions.ts. */
   reaction?: SeatReaction | null;
   /** The racetrack table's own full-height character portrait, drawn as this
-   *  seat's own child rather than as a page-space sibling -- see
+   *  seat's own child rather than as a page-space sibling; see
    *  `racetrackArtBySeat` (poker-table.tsx) for why it has to live here for
    *  the cards to be able to draw behind it and the nameplate in front. Only
    *  ever set for an opponent seat on the racetrack table. */
@@ -324,8 +323,8 @@ export const PlayerSeat = memo(function PlayerSeat({
   const isWinner = winAmount !== undefined;
   const seatNear = Number((seatStyle as Record<string, string | number> | undefined)?.["--seat-near"] ?? 1);
   /* Both ring placements report `--seat-near` on the same 0..1 scale (0 at
-     the far rail), so the far-seat treatment applies to either. The racetrack
-     needs it more, not less: its whole crowd sits on the far arc. */
+     the far rail), so the far-seat treatment applies to either. The
+     racetrack needs it more: its whole crowd sits on the far arc. */
   const onTableRing = placement === "seat-ring" || placement === "seat-racetrack";
   const isFarSeat = onTableRing && Number.isFinite(seatNear) && seatNear < 0.38;
   const cards = (
@@ -349,16 +348,17 @@ export const PlayerSeat = memo(function PlayerSeat({
       reaction={reaction}
     />
   );
-  // `left`/`top` are not set here -- both resolve from the same
+  // `left`/`top` are not set here; both resolve from the same
   // `--seat-art-dx`/`--seat-art-crown-dy` custom properties `seatStyle`
   // already carries for the nameplate and hole cards (poker-table.tsx),
   // inherited straight from this article's own inline style. `left: 50%`
   // on an absolutely-positioned child of this seat lands exactly on the
-  // projected crown -- the seat's own box is centred on it by construction
-  // (`.seat-racetrack`'s negative margin-left, 42-racetrack-table.css) -- so
-  // adding the delta and pulling back by the image's own half-width
-  // (`translateX(-50%)`) reproduces the art's real left edge without this
-  // component needing to know the seat's pixel width at all.
+  // projected crown, since the seat's own box is centred on it by
+  // construction (`.seat-racetrack`'s negative margin-left,
+  // 42-racetrack-table.css). Adding the delta and pulling back by the
+  // image's own half-width (`translateX(-50%)`) reproduces the art's real
+  // left edge without this component needing to know the seat's pixel
+  // width at all.
   const racetrackArtEl = racetrackArt ? (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -392,14 +392,14 @@ export const PlayerSeat = memo(function PlayerSeat({
   // string ("Fenwick raises to 2400") into a fixed, absolutely-positioned
   // slot, so the long end of that range ran out from under the seat and
   // under the table container. The table feed carries the same events, in
-  // one place, at a size that can be read -- see .table-feed in
+  // one place, at a size that can be read; see .table-feed in
   // 06-table.css. What the seat still says for itself, it says without
   // prose: folded seats are dimmed via .seat-muted, a departed bot goes
   // further via .seat-away (see isBotAway above) with a fixed short label
   // in the stack row rather than a floating pill, and the turn clock burns
   // around whoever is on it. A winner is marked by their own cards/stack
   // glowing gold (.seat-winner, 08-seat.css) plus the floating win amount
-  // below -- no separate badge. The racetrack table also lights up the
+  // below, no separate badge. The racetrack table also lights up the
   // character's own aura behind them (42-racetrack-table.css).
 
   return (
@@ -423,7 +423,7 @@ export const PlayerSeat = memo(function PlayerSeat({
           There used to be a second, two-column layout for the local player,
           who was drawn below the felt rather than at it: portrait in one
           column, cards and plate in the other. Sitting on the ring means the
-          same figure, cards and nameplate as everyone else -- what is
+          same figure, cards and nameplate as everyone else; what is
           different about your seat is only that your cards are face up,
           bigger, and set to one side, and that is CSS on .seat-mine rather
           than a separate arrangement of elements. */}
@@ -451,11 +451,10 @@ export const PlayerSeat = memo(function PlayerSeat({
   && previous.reaction?.key === next.reaction?.key
   // By value, not identity. The vector arrives from a measurement that runs
   // on every observed resize; comparing the object would re-render all six
-  // seats whenever the table was measured again to the same numbers. Leaving
-  // it out of the comparator entirely is the other trap -- a seat would keep
-  // the vector it was first rendered with and deal from the wrong place for
-  // the rest of the session, which is how the turn timer nearly shipped
-  // never mounting at all.
+  // seats whenever the table was measured again to the same numbers. The
+  // other trap is leaving it out of the comparator entirely: a seat would
+  // then keep the vector it was first rendered with and deal from the wrong
+  // place for the rest of the session.
   && previous.dealVector?.dx === next.dealVector?.dx
   && previous.dealVector?.dy === next.dealVector?.dy
   // A plain === because it is a string; see winning-cards.ts for why it is
@@ -463,8 +462,8 @@ export const PlayerSeat = memo(function PlayerSeat({
   && previous.winningKeys === next.winningKeys
   // By value, same reasoning as dealVector: racetrackArtBySeat (poker-table.tsx)
   // hands back a fresh object on every recompute even when nothing about this
-  // seat's own portrait actually changed. src/mirror is enough of a fingerprint
-  // -- the box's own pixel values only move together with `seatStyle` (both
+  // seat's own portrait actually changed. src/mirror is enough of a fingerprint,
+  // since the box's own pixel values only move together with `seatStyle` (both
   // come from the same camera fit), which is already compared above.
   && previous.racetrackArt?.src === next.racetrackArt?.src
   && previous.racetrackArt?.mirror === next.racetrackArt?.mirror

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The local player's own gaming HUD -- desktop only, bottom-left, mirroring
+ * The local player's own gaming HUD: desktop only, bottom-left, mirroring
  * the 3D room's action bar into the opposite corner (06-table.css floats
  * that bar bottom-right at the same `min-width: 901px`).
  *
@@ -12,11 +12,11 @@
  * instead of naming a corner of the screen. live-table-hud.tsx drops the
  * local seat from that projected layer on desktop and renders this instead.
  *
- * Deliberately styled like a corner health-bar HUD (portrait, level badge,
- * XP bar, resource counter) rather than another glass pill matching the
- * pot/turn readouts -- the ask this was built for was "look like a real
- * video game", and portrait-plus-bars in a screen corner is the genre's own
- * convention for "this is you."
+ * Styled like a corner health-bar HUD (portrait, level badge, XP bar,
+ * resource counter) rather than another glass pill matching the pot/turn
+ * readouts, since the ask was to "look like a real video game" — and
+ * portrait-plus-bars in a screen corner is the genre's own convention for
+ * "this is you."
  */
 
 import { useProgression } from "@/components/profile/use-progression";
@@ -24,7 +24,7 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import type { PlayerProfile } from "@/lib/profile/types";
 import styles from "../game3d.module.css";
 
-/** A poker chip, not a coin -- this reads the table stack, not the Gold
+/** A poker chip, not a coin: this reads the table stack, not the Gold
  * wallet the navbar's Coins icon already means. */
 function ChipGlyph() {
   return (
@@ -53,7 +53,7 @@ export function PlayerHudCorner({
   stack,
   profile,
 }: {
-  /** The seat's name, not the profile's -- a bot-turned-human mid-hand or a
+  /** The seat's name, not the profile's: a bot-turned-human mid-hand or a
    * guest's session name is what the felt actually calls this seat. */
   name: string;
   stack: number;

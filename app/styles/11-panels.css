@@ -417,8 +417,8 @@
 
 /* Same micro-label as .buyin-name above; the control itself is the sign-in
    page's .entry-segment (04-lobby.css), reused rather than restated. */
-.buyin-renderer { margin-top: 18px; }
-.buyin-renderer > span {
+.buyin-format { margin-top: 18px; }
+.buyin-format > span {
   display: block;
   margin-bottom: 7px;
   color: #7f8ba4;
@@ -427,30 +427,20 @@
   letter-spacing: .1em;
   text-transform: uppercase;
 }
-.buyin-renderer small { display: block; margin-top: 6px; color: #8f9d95; font-size: 11px; }
+.buyin-format small { display: block; margin-top: 6px; color: #8f9d95; font-size: 11px; }
 
-/* The classic table and the WebGL 3D room were both deleted outright
-   (recoverable from the `archive/webgl-3d-table` git tag, not from this
-   codebase). The pre-sit picker intentionally has one full-width choice, so
-   it does not imply that a second table option is missing. */
-.buyin-renderer .entry-segment {
-  grid-template-columns: 1fr;
+/* Three real choices (Texas Hold'em / Heads-Up / Tournament), unlike the
+   old table-view picker this replaced -- that one had a single button left
+   once the classic and WebGL-3D tables were deleted (recoverable from the
+   `archive/webgl-3d-table` git tag, not from this codebase) and forced
+   itself to one column so a lone button didn't imply a missing second
+   option. This picker has no such problem. */
+.buyin-format .entry-segment {
+  grid-template-columns: repeat(3, 1fr);
 }
-
-/* A choice that is not available here still needs a look, because the 2.5D
-   table is unavailable on every phone held upright, which is not rare, so
-   "you cannot pick this" needs to be visible in the control rather than only
-   in a line of text below it. Deliberately not just dimmed: a dimmed button
-   in a segmented control reads as the unselected state, which is what every
-   other button here is. */
-.buyin-renderer .entry-segment button:disabled {
-  cursor: not-allowed;
-  color: #5a6472;
-  background: repeating-linear-gradient(
-    -45deg,
-    transparent 0 6px,
-    rgba(147, 161, 187, .07) 6px 12px
-  );
+.buyin-format .entry-segment button {
+  font-size: 13px;
+  padding: 0 4px;
 }
 
 .buyin-footer { margin-top: 26px; }

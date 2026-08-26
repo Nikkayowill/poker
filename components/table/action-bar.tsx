@@ -180,6 +180,23 @@ export function ActionBar({
     );
   }
 
+  if (busted && game.tournament) {
+    // A heads-up seat never rebuys -- the server throws on it (see
+    // applyPlayerAction in engine.ts), and busting out here means the match
+    // is over, not "sat out until you rebuy" the way a cash table's bust is.
+    return (
+      <div className="action-bar">
+        <div className="action-slot-status">
+          <span className="action-kicker">Match lost</span>
+          <strong>You’re out of chips. Your opponent takes the pot.</strong>
+        </div>
+        <div className="action-slot-controls">
+          <button className="primary-action action-slot-wide" onClick={onLeave}>Return to lobby</button>
+        </div>
+      </div>
+    );
+  }
+
   if (busted) {
     // Whether a rebuy is reachable right now. Unlimited Gold always is;
     // otherwise it takes this table's minimum buy-in.
@@ -257,18 +274,25 @@ export function ActionBar({
     // waiting on them, but a bare "Hand complete" reads exactly like it's
     // blocked on them. Named here so it visibly isn't.
     const otherBustedSeat = game.seats.find((seat) => seat.isHuman && !seat.isMine && seat.stack === 0) ?? null;
+    // A heads-up opponent busting always ends the match -- there's no bot
+    // backfill and no next hand coming, unlike a normal cash table where
+    // someone else's bust just means their seat sits out. The server only
+    // flags tournament.winnerSeatPosition on the *next* setup pass (see
+    // engine.ts's setupHand), so this reads the bust itself rather than
+    // waiting on that to show the win immediately.
+    const tournamentWon = Boolean(game.tournament) && game.isSeated && otherBustedSeat !== null;
     // A finished hand carries a deadline for the next one unless the table
     // cannot deal another (fewer than two seats with chips left). The Deal
     // button used to be the way out of that; with the deal automatic there is
     // no button, so without this the controls are simply empty and the only
     // exit is the header. Reading the deadline rather than counting stacks
     // keeps this agreeing with scheduleNextHand by construction.
-    const tableIsDone = game.isSeated && !game.nextHandAt;
+    const tableIsDone = tournamentWon || (game.isSeated && !game.nextHandAt);
     return (
       <div className="action-bar">
         <div className="action-slot-status">
           <span className="action-kicker">
-            {!game.isSeated ? "Seat closed" : tableIsDone ? "Table finished" : "Hand complete"}
+            {!game.isSeated ? "Seat closed" : tournamentWon ? "Match won" : tableIsDone ? "Table finished" : "Hand complete"}
             {/* The clock itself: absent once the table is genuinely done
                 dealing (tableIsDone), present otherwise so the ordinary beat
                 between every hand never sits with no visible sign it's
@@ -280,9 +304,11 @@ export function ActionBar({
           <strong>
             {!game.isSeated
               ? "You’re out of chips. Start a fresh table when you’re ready."
-              : otherBustedSeat
-                ? `${otherBustedSeat.name} is sat out — the table deals on without them.`
-                : game.message}
+              : tournamentWon
+                ? "You won the match!"
+                : otherBustedSeat
+                  ? `${otherBustedSeat.name} is sat out — the table deals on without them.`
+                  : game.message}
           </strong>
         </div>
         <div className="action-slot-controls">

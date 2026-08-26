@@ -14,6 +14,7 @@ import {
   BOARD_CARD_WIDTH_M,
   DEALER_HEAD_Y,
   FELT_TOP_Y,
+  SEAT_COUNT,
   SEAT_SETBACK,
   TABLE_OUTER,
   communityCardsAnchor,
@@ -160,6 +161,20 @@ export interface RacetrackLayout {
 
 export interface RacetrackSceneProps {
   seats: PublicSeat[];
+  /**
+   * Which of the ring's SEAT_COUNT anchor positions to actually publish an
+   * anchor for, in the same order as `seats` -- `slots[i]` is where
+   * `seats[i]` is drawn. Defaults to the identity `[0, 1, ..., seats.length -
+   * 1]`, the ordinary case every cash table already uses (it always has all
+   * six). A heads-up table passes a shorter, non-contiguous list instead --
+   * `[0, 3]`, say -- so its one opponent occupies a real six-max anchor
+   * position (picked once per match, see poker-table.tsx's
+   * `headsUpOpponentSlot`) rather than a bespoke 2-seat geometry. The ring
+   * itself never resizes: SEAT_COUNT anchor positions exist and are solved
+   * for regardless of how many are actually populated, so a smaller table
+   * looks like fewer people sat down at the SAME table, not a different one.
+   */
+  slots?: number[];
   pot: number;
   bigBlind: number;
   streetBets: Array<{ slot: number; amount: number }>;
@@ -176,8 +191,11 @@ export interface RacetrackSceneProps {
   onLayout?: (layout: RacetrackLayout) => void;
 }
 
+const identitySlots = (count: number): number[] => Array.from({ length: count }, (_, i) => i);
+
 export function RacetrackScene({
   seats,
+  slots,
   pot,
   bigBlind,
   streetBets,
@@ -222,7 +240,14 @@ export function RacetrackScene({
     lastFrameMs: number;
     frames: number;
     reducedMotion: boolean;
+    /**
+     * Always SEAT_COUNT. This is the ring every anchor function solves
+     * against, not "how many seats this table happens to have" -- see the
+     * `slots` prop's own comment for why those are two different numbers.
+     */
     seatCount: number;
+    /** Which of the ring's SEAT_COUNT positions actually get an anchor published. See the `slots` prop. */
+    slots: number[];
     handledFlights: Set<string>;
     paidOutHand: number | null;
     lastPayoutSlots: number[];
@@ -282,7 +307,8 @@ export function RacetrackScene({
       lastFrameMs: performance.now(),
       frames: 0,
       reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-      seatCount: Math.max(1, seats.length),
+      seatCount: SEAT_COUNT,
+      slots: slots ?? identitySlots(seats.length),
       handledFlights: new Set(),
       paidOutHand: null,
       lastPayoutSlots: [],
@@ -343,18 +369,23 @@ export function RacetrackScene({
     /**
      * Hand the DOM the projected anchors.
      *
-     * Seats are reported at every slot the table has, not every slot the hand
-     * has, and the hero's own chair is included even though no figure is ever
-     * drawn there. The caller decides what to mount, and a layout that
-     * silently omitted a slot would be indistinguishable from a seat the
-     * caller forgot to position.
+     * Reports one anchor per entry in `engine.slots`, in that array's order
+     * (so `seatLayout[i]` lines up with whatever seat the caller's own
+     * `seats[i]` is, matching `engine.slots[i] === i` for the ordinary case).
+     * `engine.seatCount` is always the full six-position ring, regardless of
+     * how many of those positions `engine.slots` actually asks for -- a
+     * heads-up table's one opponent still lands on a real six-max anchor,
+     * just not necessarily slot 1. The hero's own chair is included even
+     * though no figure is ever drawn there. The caller decides what to
+     * mount, and a layout that silently omitted a slot would be
+     * indistinguishable from a seat the caller forgot to position.
      */
     const publishLayout = () => {
       const engine = engineRef.current;
       if (!engine || engine.disposed) return;
       const count = engine.seatCount;
       const seatLayout: RacetrackLayout["seats"] = [];
-      for (let slot = 0; slot < count; slot += 1) {
+      for (const slot of engine.slots) {
         const head = seatHead(slot, count);
         const crown = engine.room.project(head);
         const floor = seatAnchor(slot, count);
@@ -575,19 +606,21 @@ export function RacetrackScene({
   }, []);
 
   /* ------------------------------------------------------------------ *
-   * Seat count follows the table. Unlike the classic room this also moves
-   * every seat: the crowd is clustered on the far arc and re-spaced for
-   * the headcount (see `seatAnglesDeg`), so the DOM has to be told.
+   * Which anchors are occupied follows the table. The ring itself never
+   * resizes (engine.seatCount is always the full six), but a heads-up
+   * table's `slots` differs from the identity default, and if that ever
+   * changes underneath an already-mounted scene the DOM has to be told to
+   * re-fetch its anchors.
    * ------------------------------------------------------------------ */
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine) return;
-    const count = Math.max(1, seats.length);
-    if (count === engine.seatCount) return;
-    engine.seatCount = count;
+    const next = slots ?? identitySlots(seats.length);
+    if (next.length === engine.slots.length && next.every((slot, i) => slot === engine.slots[i])) return;
+    engine.slots = next;
     publishLayoutRef.current?.();
     pumpRef.current?.();
-  }, [seats]);
+  }, [seats, slots]);
 
   useEffect(() => {
     engineRef.current?.chips.setBetStyle(betStyle);

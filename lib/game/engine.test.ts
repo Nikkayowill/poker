@@ -1783,6 +1783,7 @@ describe("tournament mode", () => {
     // which rakes 30 off this exact pot on a cash table.
     const { game, tokens } = createHumanTable();
     game.tournament = {
+      format: "sit_and_go",
       entryFee: 1000,
       startingStack: 1000,
       blindLevel: 0,

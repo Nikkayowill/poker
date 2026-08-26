@@ -24,5 +24,11 @@ export type DomainEvent =
   // cribbage_won is: it's the same "PvP duels" copy problem, and a Sit & Go
   // is a 6-way table, not a 1v1, the same structural difference cribbage has.
   | { kind: "sit_and_go_won" }
+  // A heads-up poker match win. Kept distinct from duel_won for the same
+  // reason cribbage_won is: it's a different game with its own catalog copy,
+  // even though (unlike cribbage) it genuinely is 1v1 -- a future
+  // "win N heads-up matches" mission/achievement wants its own metric rather
+  // than silently inflating duel_won's "Win 10 PvP duels" count.
+  | { kind: "heads_up_won" }
   | { kind: "puzzle_completed" }
   | { kind: "level_gained"; levels: number };

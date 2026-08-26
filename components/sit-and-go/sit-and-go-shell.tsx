@@ -7,7 +7,7 @@ import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { selectSound } from "@/lib/audio/ui-sounds";
-import { STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
+import { isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
@@ -123,6 +123,20 @@ export function SitAndGoShell() {
       sending.current = false;
       if (mounted.current) setBusy(false);
     }
+  }, []);
+
+  // The tier picked one level up, in the main buy-in flow's own format
+  // picker (BuyInModal / MobileShell) -- `?tier=<id>`, carried straight
+  // through rather than asking again. A prefill only: the picker below stays
+  // freely changeable. Deferred a tick so setting state isn't done straight
+  // from the effect body (react-hooks/set-state-in-effect), same reasoning
+  // components/pvp/duel-shell.tsx's own `?challenge=` effect gives.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const requested = new URLSearchParams(window.location.search).get("tier");
+      if (isStakesTier(requested)) setTier(requested);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {

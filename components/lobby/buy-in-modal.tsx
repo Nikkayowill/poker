@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { X } from "lucide-react";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHEAPEST_TIER, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
-import { RACETRACK_RENDERER, type TableRenderer } from "@/lib/scene/table-renderer";
+import { TABLE_FORMATS, type TableFormat } from "./table-format";
 
 /**
  * Picks a stakes tier (unless locked, e.g. rebuying at an already-seated
@@ -23,9 +24,7 @@ export function BuyInModal({
   pending,
   playerName,
   onPlayerNameChange,
-  tableRenderer,
-  landscape = true,
-  onTableRendererChange,
+  allowFormats = false,
   onClose,
   onConfirm,
 }: {
@@ -44,23 +43,23 @@ export function BuyInModal({
   playerName?: string;
   onPlayerNameChange?: (name: string) => void;
   /**
-   * The table-view choice, surfaced here rather than left to the in-game
-   * menu. Optional for the same reason `playerName` is optional above: the
-   * rebuy caller opens this at an already-mounted table, where the renderer
-   * is no longer a decision -- changing it mid-hand is exactly the
-   * mount/discard flicker `tableRendererSettled` in poker-table.tsx exists to
-   * prevent. Deciding it HERE, before that room is ever created, is what
-   * removes the flicker for the normal join path instead of just hiding it
-   * behind a loading hold.
+   * Offers heads-up and tournament alongside the ordinary cash game --
+   * "choose blinds, then choose Texas Hold'em / Heads-Up / Tournament" in
+   * one flow, Kayo's own framing. Only the quick-play/join modal instance
+   * passes this: hosting a private table and rebuying at an already-seated
+   * table have no format to choose (private heads-up/tournament tables
+   * don't exist yet; a rebuy's format was decided when the table was
+   * created). Picking heads-up or tournament here navigates straight to
+   * that format's own lobby with the chosen tier carried along, rather than
+   * calling `onConfirm` -- see TableFormat's own header for why.
    */
-  tableRenderer?: TableRenderer;
-  /** Viewport wider than tall. The 2.5D table is landscape-only. */
-  landscape?: boolean;
-  onTableRendererChange?: (renderer: TableRenderer) => void;
+  allowFormats?: boolean;
   onClose: () => void;
   onConfirm: (tier: StakesTier, buyIn: number) => void;
 }) {
+  const router = useRouter();
   const [tier, setTier] = useState<StakesTier>(lockedTier ?? CHEAPEST_TIER);
+  const [format, setFormat] = useState<TableFormat>("cash");
   const config = TIER_CONFIG[tier];
   const affordableMax = unlimitedGold ? config.maxBuyIn : Math.min(config.maxBuyIn, goldBalance);
   const [buyIn, setBuyIn] = useState(() => Math.max(config.minBuyIn, Math.min(affordableMax, config.maxBuyIn)));
@@ -74,7 +73,10 @@ export function BuyInModal({
   };
 
   const canAfford = (candidate: StakesTier) => unlimitedGold || goldBalance >= TIER_CONFIG[candidate].minBuyIn;
-  const affordableNow = canAfford(tier) && buyIn <= affordableMax;
+  // Heads-up/tournament buy in for the tier's own fixed stake, not the
+  // slider's `buyIn` (not even rendered for either format -- see below), so
+  // only the tier itself needs to be affordable.
+  const affordableNow = format === "cash" ? canAfford(tier) && buyIn <= affordableMax : canAfford(tier);
 
   return (
     <div className="profile-overlay" role="presentation" onMouseDown={(event) => {
@@ -136,58 +138,59 @@ export function BuyInModal({
             </div>
           )}
 
-          <div className="buyin-amount">
-            <div className="range-row">
-              <span>Buy in for</span>
-              <strong>{buyIn.toLocaleString()} chips</strong>
-            </div>
-            {config.minBuyIn < config.maxBuyIn && (
-              <input
-                aria-label="Buy-in amount"
-                type="range"
-                min={config.minBuyIn}
-                max={Math.max(config.minBuyIn, affordableMax)}
-                step={config.bigBlind}
-                value={Math.min(buyIn, Math.max(config.minBuyIn, affordableMax))}
-                onChange={(event) => setBuyIn(Number(event.target.value))}
-                disabled={!canAfford(tier)}
-              />
-            )}
-            <div className="buyin-gold-row">
-              <span>Gold balance</span>
-              <strong>{unlimitedGold ? "Unlimited" : goldBalance.toLocaleString()}</strong>
-            </div>
-            {!unlimitedGold && (
+          {/* Heads-up and tournament both buy in for the tier's fixed stack
+              (same reasoning createHeadsUpGame/createTournamentGame give for
+              why neither offers a buy-in choice), so the amount slider below
+              is cash-only -- asking for an amount that format is just going
+              to ignore would be a control that lies about what it does. */}
+          {format === "cash" && (
+            <div className="buyin-amount">
+              <div className="range-row">
+                <span>Buy in for</span>
+                <strong>{buyIn.toLocaleString()} chips</strong>
+              </div>
+              {config.minBuyIn < config.maxBuyIn && (
+                <input
+                  aria-label="Buy-in amount"
+                  type="range"
+                  min={config.minBuyIn}
+                  max={Math.max(config.minBuyIn, affordableMax)}
+                  step={config.bigBlind}
+                  value={Math.min(buyIn, Math.max(config.minBuyIn, affordableMax))}
+                  onChange={(event) => setBuyIn(Number(event.target.value))}
+                  disabled={!canAfford(tier)}
+                />
+              )}
               <div className="buyin-gold-row">
-                <span>Remaining after buy-in</span>
-                <strong>{Math.max(0, goldBalance - buyIn).toLocaleString()}</strong>
+                <span>Gold balance</span>
+                <strong>{unlimitedGold ? "Unlimited" : goldBalance.toLocaleString()}</strong>
               </div>
-            )}
-          </div>
+              {!unlimitedGold && (
+                <div className="buyin-gold-row">
+                  <span>Remaining after buy-in</span>
+                  <strong>{Math.max(0, goldBalance - buyIn).toLocaleString()}</strong>
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Choosing the room here, before it exists, is what actually fixes
-              the mount-then-swap flicker: picking it after the table has
-              already rendered (the old in-game menu toggle, still there for
-              mid-session changes) is what glitched. Same `.entry-segment`
-              control the sign-in page uses for its two-way choice. */}
-          {tableRenderer && onTableRendererChange && (
-            <div className="buyin-renderer">
-              <span>Table view</span>
-              <div className="entry-segment" role="group" aria-label="Table view">
-                {/* The 2.5D room is the only table presentation. It remains
-                    landscape-oriented, so portrait users are prompted below
-                    to rotate rather than being offered a removed fallback. */}
-                <button
-                  type="button"
-                  className={tableRenderer === RACETRACK_RENDERER ? "is-active" : undefined}
-                  aria-pressed={tableRenderer === RACETRACK_RENDERER}
-                  disabled={!landscape}
-                  onClick={() => { selectSound(); onTableRendererChange(RACETRACK_RENDERER); }}
-                >
-                  2.5D
-                </button>
+          {allowFormats && (
+            <div className="buyin-format">
+              <span>Format</span>
+              <div className="entry-segment" role="group" aria-label="Format">
+                {TABLE_FORMATS.map((candidate) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    className={format === candidate.id ? "is-active" : undefined}
+                    aria-pressed={format === candidate.id}
+                    onClick={() => { selectSound(); setFormat(candidate.id); }}
+                  >
+                    {candidate.label}
+                  </button>
+                ))}
               </div>
-              {!landscape && <small>2.5D table needs a landscape screen &mdash; turn your phone sideways.</small>}
+              <small>{TABLE_FORMATS.find((candidate) => candidate.id === format)?.blurb}</small>
             </div>
           )}
 
@@ -199,9 +202,22 @@ export function BuyInModal({
               // The press that asks for a seat, so it answers like every
               // other choice. Arriving is the game-on cue's job; firing that
               // here would celebrate a request that can still be refused.
-              onClick={() => { selectSound(); onConfirm(tier, buyIn); }}
+              // Cash seats directly through onConfirm; heads-up/tournament
+              // each already have their own matchmaking/registration lobby,
+              // so picking either just hands the chosen tier off to it.
+              onClick={() => {
+                selectSound();
+                if (format === "cash") {
+                  onConfirm(tier, buyIn);
+                } else {
+                  onClose();
+                  router.push(`/games/${format === "heads-up" ? "heads-up" : "sit-and-go"}?tier=${tier}`);
+                }
+              }}
             >
-              {pending ? "Please wait…" : confirmLabel}
+              {pending
+                ? "Please wait…"
+                : format === "cash" ? confirmLabel : `Go to ${TABLE_FORMATS.find((candidate) => candidate.id === format)?.label}`}
             </button>
           </footer>
         </div>

@@ -134,6 +134,7 @@ export const LEADERBOARD_GAMES: Readonly<Record<string, LeaderboardGameContract>
   // head" sense cribbage's own 3-4 player table already reads as, since
   // isHeadToHeadGame below is just registry membership.
   "sit-and-go": winLossRecordContract("sit-and-go", "Sit & Go"),
+  "heads-up": winLossRecordContract("heads-up", "Heads-Up"),
 };
 
 export type LeaderboardGameId = keyof typeof LEADERBOARD_GAMES;

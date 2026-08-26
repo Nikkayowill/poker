@@ -8,6 +8,7 @@ import { creditGold, isBanned, spendGold } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { onHandCompleted } from "@/lib/server/hand-completion";
 import { settleSitAndGoIfFinished } from "@/lib/server/sit-and-go-service";
+import { settleHeadsUpIfFinished } from "@/lib/server/heads-up-service";
 import { readSessionToken } from "@/lib/server/session";
 import type { PlayerProfile } from "@/lib/profile/types";
 
@@ -85,16 +86,27 @@ export async function POST(
 
     // Chips a departing player still has in front of them convert back to
     // Gold. Read before applying, because vacateSeat clears the seat as part
-    // of handing it to a bot. A Sit & Go seat is never bot-handed and never
-    // credited for leaving -- forfeitTournamentSeat (engine.ts) is what
-    // applyPlayerAction actually calls for it, so this must stay zero.
+    // of handing it to a bot. Never for a tournament seat (Sit & Go or
+    // heads-up): leaving there is a forfeit, not a cash-out -- the whole
+    // escrowed pot goes to whoever's left through settleSitAndGoIfFinished/
+    // settleHeadsUpIfFinished below, and crediting the leaver's live stack
+    // here on top of that would pay out more Gold than was ever staked.
+    // forfeitTournamentSeat (engine.ts) is what applyPlayerAction actually
+    // calls for a tournament leave-seat, and it credits nothing itself.
     const cashOutAmount = action.type === "leave-seat" && !game.tournament
       ? game.seats.find((seat) => seat.ownerToken === ownerToken)?.stack ?? 0
       : 0;
 
     if (action.type === "rebuy") {
       if (game.tournament) {
-        return NextResponse.json({ error: "This is a Sit & Go -- there's no rebuy." }, { status: 409 });
+        return NextResponse.json(
+          {
+            error: game.tournament.format === "heads_up"
+              ? "There are no rebuys in a heads-up match."
+              : "This is a Sit & Go -- there's no rebuy.",
+          },
+          { status: 409 },
+        );
       }
       const seat = game.seats.find((candidate) => candidate.ownerToken === ownerToken);
       if (!seat) return NextResponse.json({ error: "You are not seated at this table." }, { status: 403 });
@@ -131,15 +143,23 @@ export async function POST(
       // serverless invocation is not guaranteed to keep running an
       // un-awaited promise after the response is sent -- unlike
       // onHandCompleted just below (pure stats, genuinely fine to lose).
-      // settleSitAndGoIfFinished never throws, so this cannot turn an
+      // Neither settle function ever throws, so this cannot turn an
       // ordinary poker action response into an error either way.
       // wasAlreadyFinished skips the guarded-write attempt entirely once a
       // table is already settled, rather than repeating it on every poll.
-      // No-ops for free on any cash table.
+      // No-ops for free on any cash table (format-dispatched, since a Sit &
+      // Go's game_id will never match a heads-up table lookup or vice versa,
+      // but there's no reason to pay for the wrong store's lookup either).
       if (updated.tournament?.winnerProfileId && !wasAlreadyFinished) {
-        await settleSitAndGoIfFinished(updated).catch((error) => {
-          console.error("sit_and_go.settle_failed", { gameId: updated.id, error });
-        });
+        if (updated.tournament.format === "sit_and_go") {
+          await settleSitAndGoIfFinished(updated).catch((error) => {
+            console.error("sit_and_go.settle_failed", { gameId: updated.id, error });
+          });
+        } else {
+          await settleHeadsUpIfFinished(updated).catch((error) => {
+            console.error("heads_up.settle_failed", { gameId: updated.id, error });
+          });
+        }
       }
       // A human action just closed the hand (e.g. the last call that ends
       // the river). Recording is idempotent and best-effort -- a stats write

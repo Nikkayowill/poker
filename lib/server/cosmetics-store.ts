@@ -8,6 +8,7 @@ import {
   type EquippedCosmetics,
 } from "@/lib/cosmetics/catalog";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { ensureProfile, setEquippedInMemory, spendGold } from "./profile-store";
 import { adminClient } from "./supabase-admin";
 
 declare global {
@@ -76,7 +77,6 @@ export async function purchaseCosmetic(
     if (!profile.unlimitedGold && profile.goldBalance < price) {
       throw new Error("Not enough Gold.");
     }
-    const { spendGold } = await import("./profile-store");
     const updated = profile.unlimitedGold ? profile : await spendGold(token, price);
     owned.add(cosmeticId);
     memoryOwned.set(profile.id, owned);
@@ -94,7 +94,6 @@ export async function purchaseCosmetic(
     throw new Error("Could not complete that purchase.");
   }
 
-  const { ensureProfile } = await import("./profile-store");
   return { profile: await ensureProfile(token), owned: await listOwnedCosmetics(profile.id) };
 }
 
@@ -119,7 +118,6 @@ export async function equipCosmetic(
 
   const supabase = adminClient();
   if (!supabase) {
-    const { setEquippedInMemory } = await import("./profile-store");
     setEquippedInMemory(token, next, now);
     return next;
   }

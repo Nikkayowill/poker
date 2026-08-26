@@ -1,5 +1,5 @@
 import "server-only";
-import { LEADERBOARD_GAMES, leaderboardGame, type LeaderboardStats } from "@/lib/leaderboard/contract";
+import { leaderboardGame, type LeaderboardStats } from "@/lib/leaderboard/contract";
 import { listFriendIds } from "./friends-store";
 import { getHeadToHeadSummaries, recordHeadToHeadDuel, recordHeadToHeadTable } from "./head-to-head-store";
 import { getPublicProfilesByIds } from "./profile-store";
@@ -533,5 +533,3 @@ export async function getGlobalStanding(profileId: string): Promise<GlobalLeader
   const [decorated] = await decorateGlobalRows([{ profileId, score: mine.score, gamesCounted: mine.gamesCounted }]);
   return decorated ? { ...decorated, rank } : null;
 }
-
-export { LEADERBOARD_GAMES };

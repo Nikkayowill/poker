@@ -65,8 +65,3 @@ export function potChipStacks(pot: number, bigBlind: number): PotChipStack[] {
   }
   return stacks;
 }
-
-/** Total chips drawn, which is what bounds the meshes the felt has to carry. */
-export function potChipCount(stacks: PotChipStack[]): number {
-  return stacks.reduce((total, stack) => total + stack.count, 0);
-}

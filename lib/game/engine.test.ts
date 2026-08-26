@@ -2,14 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   advanceTimedTurn,
   applyPlayerAction,
-  BOT_TAGS,
   claimSeat,
   chooseBotAction,
   createGame,
   createTournamentGame,
   dealNextHandIfDue,
   estimateBotEquity,
-  expireIdleTurn,
   MAX_MISSED_TURNS,
   normalizeGameState,
   preflopHandTier,
@@ -18,6 +16,7 @@ import {
   toSnapshot,
   vacateSeat,
 } from "./engine";
+import { BOT_TAGS } from "./bot-identities";
 import { compareScores, describeHand, evaluateHand } from "./evaluator";
 import { TIER_CONFIG } from "./tiers";
 import type { Card, GameState, PlayerAction } from "./types";
@@ -1114,8 +1113,8 @@ describe("idle turn timeout", () => {
     const token = crypto.randomUUID();
     const game = createGame(token, "Host");
     const before = game.version;
-    const { state, expiredSeatIds } = expireIdleTurn(game);
-    expect(expiredSeatIds).toHaveLength(0);
+    const { state, action } = advanceTimedTurn(game);
+    expect(action).toBeNull();
     expect(state.version).toBe(before);
   });
 
@@ -1128,8 +1127,9 @@ describe("idle turn timeout", () => {
     game.turnDeadlineAt = new Date(Date.now() - 1000).toISOString();
 
     const before = game.version;
-    const { state, expiredSeatIds } = expireIdleTurn(game);
-    expect(expiredSeatIds).toEqual([hostSeatId]);
+    const { state, actorSeatId, timedOut } = advanceTimedTurn(game);
+    expect(timedOut).toBe(true);
+    expect(actorSeatId).toBe(hostSeatId);
     expect(state.version).toBe(before + 1);
     // The host was seat 0 and is no longer the current player (either folded
     // out, or checked and action moved on).

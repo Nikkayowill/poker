@@ -24,7 +24,7 @@ export interface StoredPushSubscription {
 }
 
 /** What the browser's PushSubscription.toJSON() hands back: the shape POSTed to /api/push/subscribe. */
-export interface WebPushKeys {
+interface WebPushKeys {
   endpoint: string;
   p256dh: string;
   auth: string;

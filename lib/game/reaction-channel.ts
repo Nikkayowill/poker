@@ -17,12 +17,12 @@
  */
 
 export const REACTIONS = [
-  { id: "angry", emoji: "😤", label: "Angry" },
-  { id: "facepalm", emoji: "🤦", label: "SMH" },
-  { id: "tired", emoji: "😩", label: "Tired" },
-  { id: "confused", emoji: "😵", label: "Why is this happening?" },
-  { id: "nice_hand", emoji: "👏", label: "Nice hand" },
-  { id: "lucky", emoji: "🍀", label: "Got lucky" },
+  { id: "angry", label: "Angry" },
+  { id: "facepalm", label: "SMH" },
+  { id: "tired", label: "Tired" },
+  { id: "confused", label: "Why is this happening?" },
+  { id: "nice_hand", label: "Nice hand" },
+  { id: "lucky", label: "Got lucky" },
 ] as const;
 
 export type ReactionId = (typeof REACTIONS)[number]["id"];
@@ -31,10 +31,6 @@ const REACTION_IDS: ReadonlySet<string> = new Set(REACTIONS.map((reaction) => re
 
 export function isReactionId(value: unknown): value is ReactionId {
   return typeof value === "string" && REACTION_IDS.has(value);
-}
-
-export function reactionEmoji(id: ReactionId): string {
-  return REACTIONS.find((reaction) => reaction.id === id)?.emoji ?? "";
 }
 
 export function reactionLabel(id: ReactionId): string {

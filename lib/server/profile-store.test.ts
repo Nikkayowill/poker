@@ -6,7 +6,6 @@ import {
   claimBackstopGold,
   claimDailyGold,
   creditGold,
-  deleteProfile,
   deleteProfiles,
   ensureProfile,
   findSessionByUserId,
@@ -131,16 +130,12 @@ describe("Gold economy (memory mode)", () => {
   it("deletes a profile by id, so it no longer appears in listProfiles or isBanned lookups", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
-    await deleteProfile(profile.id);
+    await deleteProfiles([profile.id]);
     const profiles = await listProfiles();
     expect(profiles.some((entry) => entry.id === profile.id)).toBe(false);
     // ensureProfile treats the now-unknown token as a brand new signup.
     const recreated = await ensureProfile(token);
     expect(recreated.id).not.toBe(profile.id);
-  });
-
-  it("rejects deleteProfile for an unknown profile id", async () => {
-    await expect(deleteProfile(randomUUID())).rejects.toThrow("Profile not found.");
   });
 
   it("bulk deletes many profiles in one request and reports exactly what was removed", async () => {

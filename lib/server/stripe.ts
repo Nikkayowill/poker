@@ -35,6 +35,52 @@ export function stripeTestClient(): Stripe | null {
   return clientFor("test");
 }
 
+// ---- Checkout Session creation ---------------------------------------------
+//
+// Every purchase flow (Gold one-time, support one-time, support monthly, and
+// the admin test-mode equivalents of the two support ones) creates a
+// Checkout Session with the same underlying shape -- a mode, one card line
+// item, success/cancel URLs, client_reference_id, and its own metadata --
+// and used to build that object literal by hand at each of the five call
+// sites. What genuinely varies between them (mode, price, metadata, an
+// existing Customer to attach, the address-collection requirement, custom
+// submit text, subscription-level metadata) is exactly what this takes as
+// parameters; nothing here decides on a call site's behalf.
+
+export interface CheckoutSessionRequest {
+  mode: "payment" | "subscription";
+  priceId: string;
+  profileId: string;
+  successUrl: string;
+  cancelUrl: string;
+  metadata: Record<string, string>;
+  /** An existing Stripe Customer to attach, so a repeat supporter doesn't accumulate duplicates. */
+  customerId?: string;
+  billingAddressCollection?: "required";
+  customText?: Stripe.Checkout.SessionCreateParams.CustomText;
+  /** Copied onto the created Subscription itself, not just the Session -- only meaningful when mode is "subscription". */
+  subscriptionMetadata?: Record<string, string>;
+}
+
+/** Creates a Checkout Session for one of the five purchase call sites above. Throws if Stripe returns no URL, same as every call site already did inline. */
+export async function buildCheckoutSession(stripe: Stripe, request: CheckoutSessionRequest): Promise<Stripe.Checkout.Session> {
+  const session = await stripe.checkout.sessions.create({
+    mode: request.mode,
+    payment_method_types: ["card"],
+    line_items: [{ price: request.priceId, quantity: 1 }],
+    success_url: request.successUrl,
+    cancel_url: request.cancelUrl,
+    client_reference_id: request.profileId,
+    metadata: request.metadata,
+    ...(request.customerId ? { customer: request.customerId } : {}),
+    ...(request.billingAddressCollection ? { billing_address_collection: request.billingAddressCollection } : {}),
+    ...(request.customText ? { custom_text: request.customText } : {}),
+    ...(request.subscriptionMetadata ? { subscription_data: { metadata: request.subscriptionMetadata } } : {}),
+  });
+  if (!session.url) throw new Error("Stripe did not return a checkout URL.");
+  return session;
+}
+
 export function stripeWebhookSecret(): string | null {
   return process.env.STRIPE_WEBHOOK_SECRET?.trim() || null;
 }
@@ -113,7 +159,7 @@ export const GOLD_TIERS: GoldTierDef[] = [
   },
 ];
 
-export function goldTierByKey(key: string): GoldTierDef | null {
+function goldTierByKey(key: string): GoldTierDef | null {
   return GOLD_TIERS.find((tier) => tier.key === key) ?? null;
 }
 

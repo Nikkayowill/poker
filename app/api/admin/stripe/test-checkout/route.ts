@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAdminAuthorized } from "@/lib/server/admin-auth";
-import { isTestPurchaseAllowed, stripeTestClient, supportTierByKey } from "@/lib/server/stripe";
+import { buildCheckoutSession, isTestPurchaseAllowed, stripeTestClient, supportTierByKey } from "@/lib/server/stripe";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
@@ -50,32 +50,28 @@ export async function POST(request: NextRequest) {
     if (billing === "one_time") {
       const priceId = process.env[def.oneTimeTestEnvVar]?.trim();
       if (!priceId) return NextResponse.json({ error: "That test-mode price is not configured." }, { status: 503 });
-      const session = await stripe.checkout.sessions.create({
+      const session = await buildCheckoutSession(stripe, {
         mode: "payment",
-        payment_method_types: ["card"],
-        line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${origin}/?payment=cancelled`,
-        client_reference_id: profileId,
+        priceId,
+        profileId,
+        successUrl: `${origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${origin}/?payment=cancelled`,
         metadata: { kind: "support_one_time", tier_key: def.key, profile_id: profileId, billing: "one_time" },
       });
-      if (!session.url) throw new Error("Stripe did not return a checkout URL.");
       return NextResponse.json({ url: session.url, sessionId: session.id });
     }
 
     const priceId = process.env[def.monthlyTestEnvVar]?.trim();
     if (!priceId) return NextResponse.json({ error: "That test-mode price is not configured." }, { status: 503 });
-    const session = await stripe.checkout.sessions.create({
+    const session = await buildCheckoutSession(stripe, {
       mode: "subscription",
-      payment_method_types: ["card"],
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/?payment=cancelled`,
-      client_reference_id: profileId,
-      subscription_data: { metadata: { profile_id: profileId, tier_key: def.key } },
+      priceId,
+      profileId,
+      successUrl: `${origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${origin}/?payment=cancelled`,
+      subscriptionMetadata: { profile_id: profileId, tier_key: def.key },
       metadata: { kind: "support_subscription", tier_key: def.key, profile_id: profileId },
     });
-    if (!session.url) throw new Error("Stripe did not return a checkout URL.");
     return NextResponse.json({ url: session.url, sessionId: session.id });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not start a test checkout.";

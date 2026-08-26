@@ -82,10 +82,13 @@ The application rate limiter is process-local. That is acceptable for a small,
 trusted beta, but a public or promoted launch should add a shared edge/Redis
 limiter and load testing before opening registration broadly.
 
-The current session identity is an HttpOnly random cookie rather than a
-verified email/social login. It preserves seats across refreshes and duplicate
-tabs on the same browser profile, but account recovery and cross-device identity
-require Supabase Auth before a broad public launch.
+Session identity is real Supabase Auth: email/password (`signInWithEmail`/
+`signUpWithEmail` in `components/poker-app.tsx`) and Google OAuth
+(`app/auth/callback/route.ts`), both linking to the same profile across
+devices via `lib/server/link-account.ts`. A guest still gets an HttpOnly
+random-cookie session that preserves seats across refreshes/duplicate tabs on
+one browser profile, but has no cross-device recovery unless they link an
+account.
 
 ### Timed-action load guarantees
 

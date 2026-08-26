@@ -40,8 +40,6 @@
    file's box, so it must cascade later. */
 @import "./styles/27-dealer-stage.css";
 @import "./styles/33-sudoku.css";
-/* After 33: Memory reuses .sk-start and .sk-done from the Sudoku sheet rather
-   than restating them, so it must cascade later. */
 @import "./styles/34-memory.css";
 @import "./styles/35-legal.css";
 /* 36-40: the head-to-head duels. 36 is the shared shell -- the lobby, the
@@ -61,7 +59,6 @@
 /* After 33 and 36: narrows both the Sudoku grid's classes and the duel
    shell's wager/result classes, which it reuses rather than re-declares. */
 @import "./styles/43-ante-up.css";
-@import "./styles/43-site-info.css";
 /* After 36: narrows the duel shell's lobby/match/result classes the same way
    37-40 do for the four 1v1 games -- see that file's own header. */
 @import "./styles/44-cribbage.css";
@@ -72,6 +69,12 @@
 /* After 36 and 43: reuses the duel shell and Ante Up's difficulty tiles, and
    narrows both for a board that is not square. */
 @import "./styles/46-minesweeper.css";
+/* After 35: extends .legal-page-document's rules -- see that file's own
+   header. Numbered 47, not 43 -- it briefly shared 43 with 43-ante-up.css
+   (two unrelated sheets claiming the same prefix, working only by
+   alphabetical fallback rather than by the number); renumbered here since it
+   has no forward dependency pinning it to 43 the way ante-up does. */
+@import "./styles/47-site-info.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

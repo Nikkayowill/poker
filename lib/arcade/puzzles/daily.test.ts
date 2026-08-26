@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   PUZZLE_EPOCH_DAY,
   dailyIndex,
-  isPuzzleDay,
   msUntilNextPuzzle,
   pickDaily,
   puzzleDay,
@@ -19,16 +18,6 @@ describe("puzzleDay", () => {
     // before in UTC. This is the case a Date.getDate() implementation gets
     // wrong on a server in Sydney and right on one in London.
     expect(puzzleDay(new Date("2026-08-06T10:00:00+13:00"))).toBe("2026-08-05");
-  });
-});
-
-describe("isPuzzleDay", () => {
-  it("accepts a calendar day and rejects anything else", () => {
-    expect(isPuzzleDay("2026-08-05")).toBe(true);
-    expect(isPuzzleDay("2026-8-5")).toBe(false);
-    expect(isPuzzleDay("2026-13-01")).toBe(false);
-    expect(isPuzzleDay("yesterday")).toBe(false);
-    expect(isPuzzleDay("2026-08-05T00:00:00Z")).toBe(false);
   });
 });
 

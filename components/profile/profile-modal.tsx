@@ -3,7 +3,7 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { Award, Camera, Palette, Save, Upload, X } from "lucide-react";
-import type { ProfileBadge } from "@/lib/badges/types";
+import type { ProfileBadge, ProfileBadgesPayload } from "@/lib/badges/types";
 import { profileAccents } from "@/lib/profile/types";
 import type { AvatarPreset, PlayerProfile } from "@/lib/profile/types";
 import { ProfileAvatar, type AvatarView } from "./profile-avatar";
@@ -43,7 +43,7 @@ export function ProfileModal({
       try {
         const response = await fetch("/api/profile/badges", { cache: "no-store" });
         if (cancelled || !response.ok) return;
-        const data = (await response.json()) as { badges: ProfileBadge[] };
+        const data = (await response.json()) as ProfileBadgesPayload;
         setBadges(data.badges);
       } catch {
         // Silent, same contract as the achievements/missions hooks: a

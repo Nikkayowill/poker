@@ -1,12 +1,19 @@
 import type { EquippedCosmetics } from "@/lib/cosmetics/catalog";
 
+/**
+ * The valid `avatarPreset` ids. Only `.id` is load-bearing (validation and
+ * dedup in `lib/server/profile-store.ts`) -- this used to also carry a
+ * `label`/`symbol` per entry for a UI that read neither, since the avatar
+ * system has long since moved to the seat-art character roster
+ * (`lib/cosmetics/catalog.ts`) for anything actually drawn on screen.
+ */
 export const avatarPresets = [
-  { id: "ace", label: "The Ace", symbol: "A♠" },
-  { id: "crown", label: "High Roller", symbol: "♛" },
-  { id: "diamond", label: "Diamond", symbol: "♦" },
-  { id: "lucky", label: "Lucky Seven", symbol: "7" },
-  { id: "bolt", label: "Live Wire", symbol: "ϟ" },
-  { id: "river", label: "The River", symbol: "≋" },
+  { id: "ace" },
+  { id: "crown" },
+  { id: "diamond" },
+  { id: "lucky" },
+  { id: "bolt" },
+  { id: "river" },
 ] as const;
 
 export const profileAccents = [

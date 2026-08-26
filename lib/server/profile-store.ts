@@ -810,12 +810,6 @@ export async function deleteProfiles(profileIds: string[]): Promise<string[]> {
   return deletedIds;
 }
 
-/** Single-profile compatibility wrapper used outside the bulk admin route. */
-export async function deleteProfile(profileId: string): Promise<void> {
-  const deletedIds = await deleteProfiles([profileId]);
-  if (!deletedIds.includes(profileId)) throw new Error("Profile not found.");
-}
-
 /**
  * Stamps the IP a token most recently joined/hosted a table from. An
  * admin-only signal for spotting multiple accounts played from the same

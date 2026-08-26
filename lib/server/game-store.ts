@@ -11,9 +11,6 @@ import {
   type StoredSitAndGoTable,
 } from "./sit-and-go-store";
 
-// Re-exported for the many existing callers that import it from here.
-export { adminClient };
-
 declare global {
   var __riverRoomGames: Map<string, GameState> | undefined;
   var __riverRoomTimedAdvances: Map<string, Promise<GameState>> | undefined;

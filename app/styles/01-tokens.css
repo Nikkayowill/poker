@@ -42,19 +42,6 @@
   --brand-gold: #db9c0b;
   --brand-gold-light: #f6c94a;
 
-  /* The badge's arc, as a reusable fill. Purple -> gold -> red, left to
-     right, in the order the logo sweeps them.
-
-     RESERVED FOR THE MARK. This is the loudest thing in the palette, and the
-     moment a second element wears it the logo stops being the one place the
-     brand resolves -- three hues sweeping across a notice icon read as
-     decoration, not as identity. Exactly one rule may consume it:
-     .entry-aurora in 04-lobby.css, which blooms it *behind the logo* on the
-     sign-in card. Everything else that used to reach for it (the
-     save-progress icon in 13-status.css was the last) takes --accent-glow or
-     a flat brand colour instead. */
-  --brand-sweep: linear-gradient(100deg, var(--brand-purple) 0%, var(--brand-gold) 52%, var(--brand-red) 100%);
-
   /* Page and surface bases for the reskinned chrome.
    *
    * BLUE-GREY, not the matte obsidian this used to be. The neutral near-black

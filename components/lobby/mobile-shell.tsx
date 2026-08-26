@@ -37,7 +37,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
-  Check,
   ChevronRight,
   ClipboardList,
   Cloud,
@@ -52,7 +51,6 @@ import {
   Music2,
   Spade,
   Sparkles,
-  ShieldCheck,
   User,
   Users,
   Video,
@@ -81,6 +79,7 @@ import { SiteFooter } from "@/components/nav/site-footer";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
+import { LobbyNotices } from "./lobby-notices";
 
 const PAGES = ["Play", "Ante Up", "You"] as const;
 const PAGE_COUNT = PAGES.length;
@@ -441,56 +440,18 @@ function PlayPane({
 
   return (
     <>
-      {cashOutNotice !== null && (
-        <div className="cash-out-notice" role="status">
-          <Coins size={15} />
-          <span>Cashed out <strong>{cashOutNotice.toLocaleString()}</strong> Gold from the table.</span>
-          <button type="button" onClick={() => { tapSound(); onDismissCashOut(); }} aria-label="Dismiss">
-            <X size={14} />
-          </button>
-        </div>
-      )}
-      {authNotice && (
-        <div className="cash-out-notice" role="status">
-          <Check size={15} />
-          <span>{authNotice}</span>
-          <button type="button" onClick={() => { tapSound(); onDismissAuthNotice(); }} aria-label="Dismiss">
-            <X size={14} />
-          </button>
-        </div>
-      )}
-      {showSavePrompt && (
-        <div className="save-progress-notice" role="status" aria-label="Save guest progress">
-          <div className="save-progress-icon" aria-hidden="true"><Cloud size={18} /></div>
-          <div className="save-progress-copy">
-            <strong>Your run is worth keeping</strong>
-            <span>
-              This guest profile lives only in this browser. Save your Gold, avatar,
-              and collection to an account before they get left behind.
-            </span>
-            <small><ShieldCheck size={12} /> Google sign-in · No password to remember</small>
-          </div>
-          <div className="save-progress-actions">
-            <button type="button" className="save-progress-primary" onClick={() => { selectSound(); onSaveProgress(); }}>
-              Save progress
-            </button>
-            <button type="button" className="save-progress-later" onClick={() => { tapSound(); onDismissSaveProgress(); }}>
-              Maybe later
-            </button>
-          </div>
-        </div>
-      )}
-      {needsTopUp && (
-        <div className="broke-notice" role="status">
-          <span>
-            You&rsquo;re below the {TIER_CONFIG[CHEAPEST_TIER].minBuyIn.toLocaleString()} Gold minimum
-            for the cheapest seat.
-          </span>
-          <button type="button" className="secondary-action" disabled={loading} onClick={() => { selectSound(); onClaimBackstop(); }}>
-            Claim a top-up
-          </button>
-        </div>
-      )}
+      <LobbyNotices
+        loading={loading}
+        cashOutNotice={cashOutNotice}
+        onDismissCashOut={onDismissCashOut}
+        authNotice={authNotice}
+        onDismissAuthNotice={onDismissAuthNotice}
+        showSavePrompt={showSavePrompt}
+        onSaveProgress={onSaveProgress}
+        onDismissSaveProgress={onDismissSaveProgress}
+        needsTopUp={needsTopUp}
+        onClaimBackstop={onClaimBackstop}
+      />
       <InstallPrompt />
 
       {error && <p className="form-error"><X size={14} /> {error}</p>}

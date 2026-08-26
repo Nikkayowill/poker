@@ -2,7 +2,6 @@ import "server-only";
 import { randomInt } from "crypto";
 import { NextResponse } from "next/server";
 import {
-  ANTE_UP_MINESWEEPER_TIERS,
   MIN_ANTE_UP_WAGER,
   anteUpMinesweeperChordProblem,
   anteUpMinesweeperFlagProblem,
@@ -321,5 +320,3 @@ export async function resignAnteUpMinesweeperAttempt(
 export function toAnteUpMinesweeperErrorResponse(error: unknown): NextResponse {
   return toArcadeErrorResponse(error, "That attempt could not be played.");
 }
-
-export { ANTE_UP_MINESWEEPER_TIERS };

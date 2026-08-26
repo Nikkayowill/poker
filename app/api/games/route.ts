@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createGame, toSnapshot } from "@/lib/game/engine";
-import { CHEAPEST_TIER, clampBuyIn, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
+import { CHEAPEST_TIER, STAKES_TIERS, type StakesTier } from "@/lib/game/tiers";
 import { createStoredGame, persistenceMode } from "@/lib/server/game-store";
 import { creditGold, spendGold } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { withRequestSessionCookie } from "@/lib/server/session";
 import { resolvePlayerForTableEntry } from "@/lib/server/table-entry";
+import { resolveTierEntry } from "@/lib/server/tier-entry";
 
 export const runtime = "nodejs";
 
@@ -27,24 +28,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Enter a name between 1 and 18 characters." }, { status: 400 });
     }
     const tier: StakesTier = parsed.data.tier ?? CHEAPEST_TIER;
-    const config = TIER_CONFIG[tier];
     const resolved = await resolvePlayerForTableEntry(request, parsed.data.name);
     if (resolved instanceof NextResponse) return resolved;
     const { token: hostToken } = resolved;
     let profile = resolved.profile;
-    if (!profile.unlimitedGold && profile.goldBalance < config.minBuyIn) {
-      return withRequestSessionCookie(request,
-        NextResponse.json(
-          { error: `You need at least ${config.minBuyIn.toLocaleString()} Gold to play ${config.label} stakes.` },
-          { status: 400 },
-        ),
-        hostToken,
-      );
-    }
-    // Defaults to 1000 (matching the lobby's current "1K buy-in" label and
-    // createGame's own default) until the tier/buy-in picker UI lands and
-    // starts sending a real client-chosen amount.
-    const buyIn = clampBuyIn(tier, parsed.data.buyIn ?? 1000);
+    const tierEntry = resolveTierEntry(
+      request,
+      hostToken,
+      tier,
+      profile,
+      parsed.data.buyIn,
+      (config) => `You need at least ${config.minBuyIn.toLocaleString()} Gold to play ${config.label} stakes.`,
+    );
+    if (tierEntry instanceof NextResponse) return tierEntry;
+    const { buyIn } = tierEntry;
 
     profile = await spendGold(hostToken, buyIn);
     let game;

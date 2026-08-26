@@ -49,15 +49,16 @@ Realtime is invalidation only: clients receive a version signal, then refetch a 
 ## Active milestone
 
 - Track: `ui-redesign-foundation`
-- Active slice: M16 — friends and table invites. The friends half is landed end
-  to end: `lib/server/friends-store.ts`, the `/api/friends/*` routes, and the
-  drawer plus lobby tile in `components/social/friends-drawer.tsx`. The table
-  invite half is untouched — `table_invites` has a schema and nothing else.
+- M16 (friends and table invites) has since landed end to end, both halves:
+  `lib/server/friends-store.ts` + `/api/friends/*` + `components/social/friends-drawer.tsx`
+  for friends, and `lib/server/table-invite-store.ts` + `/api/invites/*` for
+  table invites. A seated, registered player can now add or challenge a
+  seated stranger from the table's own menu (no room code needed) — see
+  `components/table/poker-table.tsx` and `components/table/challenge-seat-control.tsx`.
 - State: M12–M15 landed. M15's server half (hand archives, `archive_hand` RPC,
   `/api/history` routes) is unchanged and still has no UI reading it.
-- No seat-based discovery yet: seats now carry `profileId` in the snapshot, but
-  nothing sends a friend request with it, so there is no in-app way to start
-  one. That is the next slice. See `CLAUDE.md` for the full M16 notes.
+- Many milestones have shipped past M16 since this section was last updated —
+  see `CLAUDE.md`'s "Active milestone" history for current ground truth.
 - Bot lifecycle: busted seats are released and reseated at the head of
   `setupHand` via `releaseBustedSeats` — busted *bots* used to stay busted, so
   a table walked 6 → 5 → 4 and stopped. Refill stops at `TABLE_FUNDED_FLOOR`
@@ -65,14 +66,14 @@ Realtime is invalidation only: clients receive a version signal, then refetch a 
   deletes short-handed play and makes unbacked bot chips a renewable source of
   Gold on cash-out. Override with `RIVER_TABLE_FUNDED_FLOOR` (tests only).
 - Bot identity rotates on every release path and is persisted as
-  `Seat.botIdentity`, an index into an 18-strong pool. It must stay persisted:
+  `Seat.botIdentity`, an index into a 30-strong pool. It must stay persisted:
   `normalizeGameState` used to re-derive a bot's face from `position` on every
   load, which silently reverted any rotation on the next snapshot. Identities
   are seeded from `id:handNumber:position`, never `Math.random()`, because two
   writers race the same seat and must compute the same answer.
-- The "AI" seat badge is gone from the felt. The disclosure now lives in the
-  Terms of Service, which is at version 2 — that bump re-prompts every existing
-  player, deliberately.
+- The "AI" seat badge is gone from the felt. The disclosure lives in the
+  Terms of Service, now at version 3 (bumped since for a dispute-resolution
+  section; each bump re-prompts every existing player, deliberately).
 - Turn clocks no longer tick through React. `components/table/use-fuse.ts`
   writes `--fuse-duration`/`--fuse-delay` once per turn and CSS animates both
   the seat ring and the action bar; `poker-table.tsx`'s 250ms `clockNow` state,
@@ -83,7 +84,9 @@ Realtime is invalidation only: clients receive a version signal, then refetch a 
   The feared 10:30-seat/`.table-feed` collision was measured and does not
   exist (D2 in `docs/known-defects.md` is withdrawn); a guard in
   `tests/e2e/table-feed.spec.ts` holds the clearance. The real blockers are
-  `SEAT_COUNT`, the `MAX_SEATS` assertion, and the DB seat_number constraint.
+  `SEAT_COUNT` and the DB seat_number constraint (the `MAX_SEATS` assertion
+  this used to also cite lived in `lib/server/table-manager/`, deleted
+  2026-08-06 as dead code).
 - M16 migration `20260804120000_friends_and_table_invites.sql` is written but
   has NOT been applied or verified against a live Postgres.
 - Update this section when scope changes; keep `CLAUDE.md` synchronized.

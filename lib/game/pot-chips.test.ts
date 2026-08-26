@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_CHIPS_PER_COLUMN,
   POT_CHIP_DENOMINATIONS_BB,
-  potChipCount,
   potChipStacks,
+  type PotChipStack,
 } from "./pot-chips";
 import { TIER_CONFIG } from "./tiers";
+
+/** Total chips drawn by a breakdown. Only ever needed here, for assertions. */
+function potChipCount(stacks: PotChipStack[]): number {
+  return stacks.reduce((total, stack) => total + stack.count, 0);
+}
 
 describe("potChipStacks", () => {
   it("shows nothing before anything is in the middle", () => {

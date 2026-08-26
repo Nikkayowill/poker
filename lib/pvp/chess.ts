@@ -28,7 +28,7 @@
  * nothing else in the file has to remember which way round it goes.
  */
 
-import { defineDuelGame, otherSeat, type DuelOutcome, type DuelSeat } from "./match-contract";
+import { defineDuelGame, otherSeat, remainingTime, type DuelOutcome, type DuelSeat } from "./match-contract";
 
 /* ------------------------------------------------------------------ types */
 
@@ -637,10 +637,7 @@ export function insufficientMaterial(board: readonly ChessSquare[]): boolean {
  * to zero elapsed rather than being allowed to hand somebody time back.
  */
 export function remainingClock(state: ChessState, seat: DuelSeat, now: number): number {
-  const stored = state.clock[seat];
-  if (state.over !== null || state.turn !== seat) return Math.max(0, stored);
-  const elapsed = Math.max(0, now - state.turnStartedAt);
-  return Math.max(0, stored - elapsed);
+  return remainingTime(state.clock[seat], seat, state.turn, state.turnStartedAt, now, state.over !== null);
 }
 
 /**

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureProfile } from "@/lib/server/profile-store";
 import {
+  buildCheckoutSession,
   resolveGoldTier,
   stripeClient,
   supportTierByKey,
@@ -75,15 +76,14 @@ export async function POST(request: NextRequest) {
       const { tierKey, gameId } = parsed.data;
       const tier = await resolveGoldTier(tierKey);
       const returnPath = gameId ? `/store/gold?table=${gameId}` : "/store/gold";
-      const session = await stripe.checkout.sessions.create({
+      const session = await buildCheckoutSession(stripe, {
         mode: "payment",
-        payment_method_types: ["card"],
-        billing_address_collection: "required",
-        line_items: [{ price: tier.priceId, quantity: 1 }],
-        success_url: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=success&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=cancelled`,
-        client_reference_id: profile.id,
-        custom_text: { submit: { message: noCashValueNotice } },
+        priceId: tier.priceId,
+        profileId: profile.id,
+        successUrl: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=cancelled`,
+        billingAddressCollection: "required",
+        customText: { submit: { message: noCashValueNotice } },
         metadata: {
           kind: "gold_purchase",
           tier_key: tier.key,
@@ -91,7 +91,6 @@ export async function POST(request: NextRequest) {
           gold_amount: String(tier.goldAmount),
         },
       });
-      if (!session.url) throw new Error("Stripe did not return a checkout URL.");
       return NextResponse.json({ url: session.url });
     }
 
@@ -108,14 +107,13 @@ export async function POST(request: NextRequest) {
     if (billing === "one_time") {
       const priceId = process.env[def.oneTimeEnvVar]?.trim();
       if (!priceId) return NextResponse.json({ error: "That option is not configured yet." }, { status: 503 });
-      const session = await stripe.checkout.sessions.create({
+      const session = await buildCheckoutSession(stripe, {
         mode: "payment",
-        payment_method_types: ["card"],
-        line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=success&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=cancelled`,
-        client_reference_id: profile.id,
-        ...(customerId ? { customer: customerId } : {}),
+        priceId,
+        profileId: profile.id,
+        successUrl: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=cancelled`,
+        customerId,
         metadata: {
           kind: "support_one_time",
           tier_key: def.key,
@@ -123,30 +121,25 @@ export async function POST(request: NextRequest) {
           billing: "one_time",
         },
       });
-      if (!session.url) throw new Error("Stripe did not return a checkout URL.");
       return NextResponse.json({ url: session.url });
     }
 
     const priceId = process.env[def.monthlyEnvVar]?.trim();
     if (!priceId) return NextResponse.json({ error: "That option is not configured yet." }, { status: 503 });
-    const session = await stripe.checkout.sessions.create({
+    const session = await buildCheckoutSession(stripe, {
       mode: "subscription",
-      payment_method_types: ["card"],
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=cancelled`,
-      client_reference_id: profile.id,
-      ...(customerId ? { customer: customerId } : {}),
-      subscription_data: {
-        metadata: { profile_id: profile.id, tier_key: def.key },
-      },
+      priceId,
+      profileId: profile.id,
+      successUrl: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${origin}${returnPath}${returnPath.includes("?") ? "&" : "?"}payment=cancelled`,
+      customerId,
+      subscriptionMetadata: { profile_id: profile.id, tier_key: def.key },
       metadata: {
         kind: "support_subscription",
         tier_key: def.key,
         profile_id: profile.id,
       },
     });
-    if (!session.url) throw new Error("Stripe did not return a checkout URL.");
     return NextResponse.json({ url: session.url });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not start Stripe checkout.";

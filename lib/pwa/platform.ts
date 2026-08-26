@@ -38,47 +38,13 @@ export function installPlatform(userAgent: string, maxTouchPoints = 0): InstallP
 }
 
 /**
- * The manual route, for platforms where there is no button to press.
- *
- * Returned as steps rather than a paragraph because that is how it renders --
- * an ordered list is scannable mid-task in a way a sentence is not, and the
- * iOS flow is genuinely three separate taps in three separate places.
- */
-export function manualInstallSteps(platform: InstallPlatform): readonly string[] {
-  if (platform === "ios") {
-    return [
-      "Tap the Share button in Safari’s toolbar",
-      "Scroll down and choose “Add to Home Screen”",
-      "Tap Add — StackChips opens full-screen from then on",
-    ];
-  }
-  if (platform === "android") {
-    return [
-      "Open your browser’s ⋮ menu",
-      "Choose “Add to Home screen” or “Install app”",
-      "Confirm — StackChips opens full-screen from then on",
-    ];
-  }
-  return [
-    "Open stackchips.app on your phone",
-    "Use your browser’s menu to add it to your home screen",
-    "It opens full-screen, with no address bar",
-  ];
-}
-
-/** Headline for the install offer. Kept short enough for a phone width. */
-export function installHeadline(platform: InstallPlatform): string {
-  return platform === "other" ? "Take Ante Up with you" : "Install the app";
-}
-
-/**
- * The same route as manualInstallSteps, compressed to one line.
+ * The install route, compressed to one line.
  *
  * The sign-in page is a form and nothing else now, so the install offer there
- * is a footnote rather than a section: an ordered list of three steps was the
- * right shape on a landing page a visitor had scrolled to, and is clutter
- * under a login form. Same facts, one sentence, and it stays here beside the
- * long form so the two can never describe different taps.
+ * is a footnote rather than a section: a one-sentence step is what fits
+ * beside a login form. An earlier ordered-list version (`manualInstallSteps`)
+ * and its headline (`installHeadline`) were built for a landing-page-style
+ * install panel that was deleted; this is the only rendering left.
  */
 export function installShortStep(platform: InstallPlatform): string {
   if (platform === "ios") return "Share → Add to Home Screen";

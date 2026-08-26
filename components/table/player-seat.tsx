@@ -18,9 +18,15 @@ import { SeatTimer } from "./seat-timer";
 import { ReactionEmote } from "./table-reactions";
 
 /**
- * A compact player marker for the classic 2D HUD. The room renderer owns the
- * full character figures; the 2D table needs a contained face crop so the
- * avatar does not consume the cards' and nameplate's working space.
+ * A seat's compact circular avatar. Two jobs today, not the classic-2D-vs-
+ * room-renderer split this docstring used to describe: it is the only
+ * portrait the local player's own seat ever gets, on mobile -- hidden past
+ * 901px, where local-player-hud.tsx's corner HUD takes over instead, see
+ * 16-first-person.css -- and it is what an opponent seat shows before the
+ * racetrack scene is lit. Once `.scene-room-racetrack` is live,
+ * 42-racetrack-table.css hides this outright for every opponent seat in
+ * favor of the racetrack's own full-height character portrait
+ * (`racetrackArt`/`racetrackArtEl` below).
  */
 export function SeatFigure({
   seat,
@@ -322,11 +328,10 @@ export const PlayerSeat = memo(function PlayerSeat({
   const away = isBotAway(seat);
   const isWinner = winAmount !== undefined;
   const seatNear = Number((seatStyle as Record<string, string | number> | undefined)?.["--seat-near"] ?? 1);
-  /* Both ring placements report `--seat-near` on the same 0..1 scale (0 at
-     the far rail), so the far-seat treatment applies to either. The
-     racetrack needs it more: its whole crowd sits on the far arc. */
-  const onTableRing = placement === "seat-ring" || placement === "seat-racetrack";
-  const isFarSeat = onTableRing && Number.isFinite(seatNear) && seatNear < 0.38;
+  /* `--seat-near` is on a 0..1 scale (0 at the far rail) for every seat this
+     component ever places -- the racetrack needs the far-seat treatment
+     most, since its whole crowd sits on the far arc. */
+  const isFarSeat = Number.isFinite(seatNear) && seatNear < 0.38;
   const cards = (
     <SeatCards
       seat={seat}

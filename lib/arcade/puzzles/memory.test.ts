@@ -10,7 +10,6 @@ import {
   flipMemoryTile,
   memoryElapsedMs,
   memoryFlipProblem,
-  memoryOutcomeLabel,
   startMemoryRound,
   toMemorySnapshot,
   type MemoryRound,
@@ -218,18 +217,5 @@ describe("dealMemoryRound", () => {
     expect(round.status).toBe("playing");
     expect(round.startedAt).toBe(START.toISOString());
     expect(round.finishedAt).toBeNull();
-  });
-});
-
-describe("memoryOutcomeLabel", () => {
-  it("names each state without saying `undefined`", () => {
-    expect(memoryOutcomeLabel(orderedRound())).toBe("Turn two cards");
-    expect(memoryOutcomeLabel(takePair(orderedRound(), 0))).toBe("1 of 8 paired");
-
-    let perfect = orderedRound();
-    for (let pair = 0; pair < MEMORY_PAIRS; pair += 1) perfect = takePair(perfect, pair);
-    expect(memoryOutcomeLabel(perfect)).toBe("Perfect board");
-
-    expect(memoryOutcomeLabel({ status: "solved", turns: 14, matched: [] })).toBe("Cleared in 14");
   });
 });

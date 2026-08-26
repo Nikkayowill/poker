@@ -178,3 +178,29 @@ export function defineDuelGame<TState, TMove, TSnapshot>(
 export function otherSeat(seat: DuelSeat): DuelSeat {
   return seat === 0 ? 1 : 0;
 }
+
+/**
+ * Remaining time on one seat's clock, right now, for a duel that spends a
+ * clock only while it is that seat's own turn to move (chess, checkers so
+ * far). The stored value is exact once the match is over or it is not this
+ * seat's turn -- nothing is being spent -- and ticks down live, clamped at
+ * zero, only for the seat currently on the clock.
+ *
+ * `Math.max(0, stored)` on the early-return branch is defensive rather than
+ * load-bearing today (every caller only ever writes a non-negative clock),
+ * but a negative stored value would otherwise read as extra time handed
+ * back for free, so both branches hold the floor rather than depending on
+ * that invariant never breaking elsewhere.
+ */
+export function remainingTime(
+  stored: number,
+  seat: DuelSeat,
+  turn: DuelSeat,
+  turnStartedAt: number,
+  now: number,
+  over: boolean,
+): number {
+  if (over || turn !== seat) return Math.max(0, stored);
+  const elapsed = Math.max(0, now - turnStartedAt);
+  return Math.max(0, stored - elapsed);
+}

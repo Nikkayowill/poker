@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { ProfileBadgesPayload } from "@/lib/badges/types";
 import { getProfileBadges } from "@/lib/server/badge-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -24,7 +25,8 @@ export async function GET(request: NextRequest) {
     const profile = await ensureProfile(token);
     const badges = await getProfileBadges(profile.id);
 
-    return NextResponse.json({ badges });
+    const payload: ProfileBadgesPayload = { badges };
+    return NextResponse.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not load your badges.";
     return NextResponse.json({ error: message }, { status: 500 });

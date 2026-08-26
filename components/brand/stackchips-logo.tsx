@@ -12,9 +12,13 @@ import Image from "next/image";
  * (genuinely black). So there is exactly one correct file to point at, and
  * this is the thing that points at it.
  *
- * `priority` is opt-in: the sign-in screen's copy is the largest contentful
- * paint on the signed-out page and shouldn't lazy-load, while the footer's
- * should.
+ * `priority` is opt-in, defaulting to lazy: the one caller today
+ * (components/auth/account-entry-card.tsx) sets it, since its copy is the
+ * largest contentful paint on the signed-out page. The footer does not
+ * render this badge at all -- components/nav/site-footer.tsx is plain
+ * text and links -- so the default stays lazy for whatever call site
+ * reaches for one next, rather than assuming every future one is as
+ * above-the-fold as the sign-in screen's.
  */
 export function StackChipsLogo({
   size = 132,

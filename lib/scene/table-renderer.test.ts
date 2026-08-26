@@ -26,7 +26,7 @@ describe("the table renderer", () => {
 
   it("keeps the renderer cycle on 2.5D", () => {
     expect(nextTableRenderer()).toBe(RACETRACK_RENDERER);
-    expect(resolveTableRenderer(RACETRACK_RENDERER)).toBe(RACETRACK_RENDERER);
+    expect(resolveTableRenderer()).toBe(RACETRACK_RENDERER);
   });
 
   it("keeps the preference in the stackchips namespace", () => {

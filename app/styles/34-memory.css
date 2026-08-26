@@ -1,9 +1,6 @@
 /* Memory Match.
  *
- * The shell is .bj-* from 23-blackjack.css, and .sk-start / .sk-done are
- * borrowed from 33-sudoku.css rather than restated -- the "not started yet"
- * and "you finished" blocks are the same shape on both daily puzzles, and two
- * copies would be two things to keep in step. This file is the grid of tiles.
+ * The shell is .bj-* from 23-blackjack.css. This file is the grid of tiles.
  */
 
 .mm-grid {
@@ -52,8 +49,6 @@
   border-radius: 6px;
 }
 .mm-tile-matched:hover:not(:disabled) { transform: none; }
-
-.mm-player-head { justify-content: center; }
 
 @media (max-width: 640px) {
   .mm-grid { width: min(100%, 260px); }

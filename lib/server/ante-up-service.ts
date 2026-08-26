@@ -2,7 +2,6 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import {
-  ANTE_UP_TIERS,
   MIN_ANTE_UP_WAGER,
   anteUpFillProblem,
   anteUpPayout,
@@ -283,5 +282,3 @@ export async function resignAnteUp(
 export function toAnteUpErrorResponse(error: unknown): NextResponse {
   return toArcadeErrorResponse(error, "That attempt could not be played.");
 }
-
-export { ANTE_UP_TIERS };

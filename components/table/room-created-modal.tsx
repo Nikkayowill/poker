@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import { Check, Copy, Share2, X } from "lucide-react";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useClipboardCopy } from "@/components/use-clipboard-copy";
+import { useModalDismiss } from "@/components/use-modal-dismiss";
 
 /**
  * Shown once, immediately after hosting a private table.
@@ -17,19 +17,10 @@ import { useClipboardCopy } from "@/components/use-clipboard-copy";
 export function RoomCreatedModal({ code, onClose }: { code: string; onClose: () => void }) {
   const { copiedValue, copy } = useClipboardCopy();
   const copied = copiedValue === code;
-  const closeRef = useRef<HTMLButtonElement | null>(null);
+  const { closeButtonRef: closeRef, onBackdropMouseDown } = useModalDismiss(onClose);
   const shareUrl = typeof window === "undefined"
     ? ""
     : `${window.location.origin}/?code=${encodeURIComponent(code)}`;
-
-  useEffect(() => {
-    closeRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
 
   // navigator.share exists on phones and almost nowhere else, so the button
   // is only offered where it will actually do something rather than being
@@ -37,9 +28,7 @@ export function RoomCreatedModal({ code, onClose }: { code: string; onClose: () 
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
   return (
-    <div className="profile-overlay" role="presentation" onMouseDown={(event) => {
-      if (event.currentTarget === event.target) onClose();
-    }}>
+    <div className="profile-overlay" role="presentation" onMouseDown={onBackdropMouseDown}>
       <section
         className="profile-modal room-created-modal"
         role="dialog"

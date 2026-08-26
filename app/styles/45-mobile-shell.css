@@ -206,32 +206,6 @@
     gap: 9px;
   }
 
-  .mshell-section-note {
-    margin: -3px 0 0;
-    color: #7f8ba4;
-    font-size: 11.5px;
-    line-height: 1.45;
-    text-wrap: pretty;
-  }
-
-  .mshell-title {
-    margin: 0;
-    color: #f3f6fb;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 27px;
-    font-weight: 400;
-    letter-spacing: -.03em;
-    line-height: 1.04;
-  }
-
-  .mshell-lede {
-    margin: 0;
-    color: #93a1bb;
-    font-size: 12.5px;
-    line-height: 1.5;
-    text-wrap: pretty;
-  }
-
   /* The hub tile recipe, kept identical so the shell and the desktop grid are
      visibly the same material. */
   .mshell-card {
@@ -463,24 +437,6 @@
     background: var(--rule);
   }
 
-  .mshell-badge {
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: 34px;
-    height: 34px;
-    border-radius: var(--radius-control);
-    background: rgba(219, 156, 11, .12);
-    color: var(--brand-gold-light);
-    font-size: 14px;
-    font-weight: 700;
-  }
-
-  .mshell-badge-free {
-    background: rgba(152, 63, 224, .14);
-    color: #c79cf0;
-  }
-
   .mshell-action {
     flex-shrink: 0;
     height: 34px;
@@ -497,11 +453,6 @@
     align-items: center;
     cursor: pointer;
     touch-action: manipulation;
-  }
-
-  .mshell-action-free {
-    background: #e8edf6;
-    color: var(--brand-ink);
   }
 
   .mshell-action[aria-disabled="true"] {
@@ -563,35 +514,6 @@
   .mshell-nav-item:focus-visible {
     outline: none;
     box-shadow: var(--brand-focus);
-  }
-
-  /* ---- pane 3 furniture ------------------------------------------------ */
-
-  .mshell-scope {
-    display: flex;
-    gap: 3px;
-    padding: 3px;
-    border-radius: var(--radius-pill);
-    background: var(--brand-surface);
-  }
-
-  .mshell-scope button {
-    height: 30px;
-    padding: 0 12px;
-    border: 0;
-    border-radius: var(--radius-pill);
-    background: transparent;
-    color: #9fadc5;
-    font: inherit;
-    font-size: 11.5px;
-    font-weight: 600;
-    cursor: pointer;
-    touch-action: manipulation;
-  }
-
-  .mshell-scope button[aria-pressed="true"] {
-    background: #e8edf6;
-    color: var(--brand-ink);
   }
 
   .mshell-setting-value {

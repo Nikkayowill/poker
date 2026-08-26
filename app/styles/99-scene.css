@@ -106,7 +106,6 @@
   border: 3px solid rgba(219, 156, 11, .22);
   border-top-color: var(--brand-gold-light);
   animation: account-entry-spin 800ms linear infinite;
-  /* Not --brand-sweep -- that token's one legal consumer is .entry-aurora. */
   box-shadow: var(--accent-glow-gold);
 }
 

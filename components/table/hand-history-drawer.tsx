@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import clsx from "clsx";
 import { X } from "lucide-react";
 import type { GameSnapshot } from "@/lib/game/types";
+import { useModalDismiss } from "@/components/use-modal-dismiss";
 
 export function HandHistoryDrawer({
   log,
@@ -14,23 +14,13 @@ export function HandHistoryDrawer({
   handNumber: number;
   onClose: () => void;
 }) {
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    closeButtonRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose);
 
   return (
     <div
       className="history-overlay"
       role="presentation"
-      onMouseDown={(event) => {
-        if (event.currentTarget === event.target) onClose();
-      }}
+      onMouseDown={onBackdropMouseDown}
     >
       <aside className="history-drawer" role="dialog" aria-modal="true" aria-label="Hand history">
         <div className="panel-heading">

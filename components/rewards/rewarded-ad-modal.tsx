@@ -12,6 +12,7 @@ import {
 import { REWARDED_AD_UNIT } from "@/lib/ads/adsterra";
 import { AdsterraSlot } from "@/components/ads/adsterra-slot";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { useModalDismiss } from "@/components/use-modal-dismiss";
 
 /**
  * The offer, the ad, and the claim.
@@ -76,23 +77,16 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress, 
   const [error, setError] = useState<string | null>(null);
   const [needsAccount, setNeedsAccount] = useState(false);
   const [awarded, setAwarded] = useState(0);
-  const closeRef = useRef<HTMLButtonElement | null>(null);
+  // Escape and backdrop-click close, but not mid-watch: a stray keypress or
+  // misplaced click should not throw away a wait in progress. The × is
+  // always there for a deliberate exit (its own onClick is unguarded, below).
+  const canDismiss = phase !== "watching" && phase !== "claiming";
+  const { closeButtonRef: closeRef, onBackdropMouseDown } = useModalDismiss(onClose, canDismiss);
   // Read by the unmount cleanup only. A grant the player walked away from has
   // to be released, or the one-pending-per-profile index blocks their next
   // offer until it ages out.
   const grantRef = useRef<GrantResponse | null>(null);
   const claimedRef = useRef(false);
-
-  useEffect(() => {
-    closeRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      // Escape closes, but not mid-watch: a stray keypress should not throw
-      // away a wait in progress. The × is always there for a deliberate exit.
-      if (event.key === "Escape" && phase !== "watching" && phase !== "claiming") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose, phase]);
 
   // Abandonment cleanup. keepalive so it survives the tab closing, which is
   // the single most likely way a grant is abandoned.
@@ -175,12 +169,7 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress, 
     <div
       className="profile-overlay rewarded-ad-overlay"
       role="presentation"
-      onMouseDown={(event) => {
-        // No click-outside dismissal while an ad is running or a claim is in
-        // flight: losing a completed wait to a misplaced click is the worst
-        // thing this modal could do.
-        if (event.currentTarget === event.target && phase !== "watching" && phase !== "claiming") onClose();
-      }}
+      onMouseDown={onBackdropMouseDown}
     >
       <section
         className="profile-modal rewarded-ad-modal"

@@ -29,7 +29,7 @@ const STAKE_QUICK_PICKS = [MIN_DUEL_STAKE, 1000, 5000, 10_000, 25_000] as const;
  * exactly like the poker table.
  */
 
-export interface DuelPlayer {
+interface DuelPlayer {
   profileId: string;
   displayName: string;
   initials: string;
@@ -37,7 +37,7 @@ export interface DuelPlayer {
   accent: string;
 }
 
-export interface DuelMatch<TSnapshot = unknown> {
+interface DuelMatch<TSnapshot = unknown> {
   id: string;
   game: string;
   version: number;
@@ -51,7 +51,7 @@ export interface DuelMatch<TSnapshot = unknown> {
   state: TSnapshot;
 }
 
-export interface DuelChallenge {
+interface DuelChallenge {
   id: string;
   game: string;
   challenger: DuelPlayer;

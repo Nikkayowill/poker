@@ -130,6 +130,32 @@ export interface Seat {
   reseatEligibleAt: string | null;
 }
 
+/**
+ * Present only on a Sit & Go table; null for every ordinary cash table.
+ *
+ * Its presence, not a separate mode enum, is what every tournament-aware
+ * branch in engine.ts checks -- a cash table's `tournament` is always null,
+ * so those branches cost it nothing.
+ */
+export interface TournamentState {
+  /** The Gold entry fee every seat paid; also this table's prize pool contribution per seat. */
+  entryFee: number;
+  /** Every seat's fixed starting stack -- always equal to entryFee for a Sit & Go, kept separate since they answer different questions. */
+  startingStack: number;
+  /**
+   * Which BLIND_LEVELS entry is active right now.
+   *
+   * Recomputed from handNumber at the top of every setupHand, never
+   * incremented on its own, so it can never drift out of sync with the hand
+   * it describes -- see lib/game/tournament.ts's blindLevelForHand.
+   */
+  blindLevel: number;
+  /** The hand number on which only one funded seat remained; null while the table is still live. */
+  finishedAtHand: number | null;
+  /** The winning seat's profile id, set in the same pass that detects finishedAtHand. Null until the table is decided. */
+  winnerProfileId: string | null;
+}
+
 export interface Winner {
   seatId: string;
   name: string;
@@ -194,6 +220,8 @@ export interface GameState {
   message: string;
   createdAt: string;
   updatedAt: string;
+  /** Non-null exactly for a Sit & Go table; see TournamentState. */
+  tournament: TournamentState | null;
 }
 
 export type PlayerAction =

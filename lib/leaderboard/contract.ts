@@ -130,6 +130,10 @@ export const LEADERBOARD_GAMES: Readonly<Record<string, LeaderboardGameContract>
   trivia: winLossRecordContract("trivia", "Trivia Showdown"),
   "word-race": winLossRecordContract("word-race", "Word Race"),
   cribbage: winLossRecordContract("cribbage", "Cribbage"),
+  // A 6-way winner-take-all table, not a literal 1v1 -- the same "head to
+  // head" sense cribbage's own 3-4 player table already reads as, since
+  // isHeadToHeadGame below is just registry membership.
+  "sit-and-go": winLossRecordContract("sit-and-go", "Sit & Go"),
 };
 
 export type LeaderboardGameId = keyof typeof LEADERBOARD_GAMES;

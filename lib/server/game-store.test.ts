@@ -4,6 +4,7 @@ import { createGame } from "@/lib/game/engine";
 import type { StakesTier } from "@/lib/game/tiers";
 import { getPlayerStanding } from "./stats-store";
 import { ensureProfile } from "./profile-store";
+import { joinSitAndGoTable, openSitAndGoTable, readSitAndGoTableById } from "./sit-and-go-service";
 import {
   advanceStoredGameWithTimeouts,
   archiveStaleGames,
@@ -265,6 +266,44 @@ describe("stale-table matchmaking and archival (memory mode)", () => {
 
     const after = await ensureProfile(token);
     expect(after.goldBalance).toBe(before.goldBalance + stake);
+  });
+
+  it("refunds an abandoned Sit & Go's ORIGINAL entry fee, not a live stack, and cancels rather than completes it", async () => {
+    const tokens = Array.from({ length: 6 }, () => randomUUID());
+    const before = await Promise.all(tokens.map((token) => ensureProfile(token)));
+
+    const { table: opened } = await openSitAndGoTable(tokens[0], "1k");
+    let dealt = opened;
+    for (let i = 1; i < 6; i += 1) {
+      dealt = (await joinSitAndGoTable(tokens[i], opened.id)).table;
+    }
+    expect(dealt.status).toBe("active");
+    const gameId = dealt.gameId!;
+
+    // Simulate chips pushed to seat 0 via soft play, then the whole table
+    // going idle -- exactly the exploit refunding a live stack here would
+    // open. Re-persisting directly (memory mode's createStoredGame is a
+    // plain overwrite) is the same shortcut engine.test.ts uses elsewhere
+    // to set up a scenario without playing real hands to reach it.
+    const game = (await getStoredGame(gameId))!;
+    game.seats[0].stack = 6000;
+    game.seats[1].stack = 0;
+    game.updatedAt = new Date(Date.now() - 60_000).toISOString();
+    await createStoredGame(game);
+
+    await archiveStaleGames();
+
+    expect((await getStoredGame(gameId))?.status).toBe("archived");
+    const { table: cancelled } = await readSitAndGoTableById(tokens[0], opened.id);
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.winnerId).toBeNull();
+
+    for (let i = 0; i < 6; i += 1) {
+      // Debited the entry fee at registration, refunded the same entry fee
+      // here: net zero. Seat 0's inflated 6000 stack must never have been
+      // credited.
+      expect(await ensureProfile(tokens[i]).then((p) => p.goldBalance)).toBe(before[i].goldBalance);
+    }
   });
 
   it("leaves a fresh table alone", async () => {

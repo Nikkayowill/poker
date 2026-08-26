@@ -84,6 +84,7 @@ function game(overrides: Partial<GameSnapshot> = {}): GameSnapshot {
     updatedAt: new Date().toISOString(),
     legalActions: legalActions(),
     isSeated: true,
+    tournament: null,
     ...overrides,
   };
 }

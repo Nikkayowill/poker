@@ -8,6 +8,7 @@ import {
 } from "@/lib/server/game-store";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { settleSitAndGoIfFinished } from "@/lib/server/sit-and-go-service";
 import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
@@ -44,7 +45,17 @@ export async function POST(
       );
     }
 
+    const wasAlreadyFinished = Boolean(game.tournament?.winnerProfileId);
     const advanced = await advanceStoredGameWithTimeouts(game);
+    // Awaited, same reasoning as the actions route: this credits real Gold,
+    // via the ONE other path (besides an explicit action) a tournament's
+    // final hand can resolve through -- a human's expired clock, or the
+    // auto-fold/auto-check that follows it. Never throws.
+    if (advanced.tournament?.winnerProfileId && !wasAlreadyFinished) {
+      await settleSitAndGoIfFinished(advanced).catch((error) => {
+        console.error("sit_and_go.settle_failed", { gameId: advanced.id, error });
+      });
+    }
     const deadline = Date.parse(advanced.turnDeadlineAt ?? "");
     const retryAfterMs = Number.isFinite(deadline)
       ? Math.max(0, deadline - Date.now())

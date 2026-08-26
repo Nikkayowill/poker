@@ -6,9 +6,11 @@ import {
   claimSeat,
   chooseBotAction,
   createGame,
+  createTournamentGame,
   dealNextHandIfDue,
   estimateBotEquity,
   expireIdleTurn,
+  MAX_MISSED_TURNS,
   normalizeGameState,
   preflopHandTier,
   SEAT_COUNT,
@@ -1665,5 +1667,174 @@ describe("the bot pool's tags", () => {
     expect(BOT_TAGS.filter((tag) => tag.includes("_")).length).toBeGreaterThan(3);
     expect(BOT_TAGS.filter((tag) => !tag.includes("_")).length).toBeGreaterThan(3);
     expect(BOT_TAGS.filter((tag) => /\d/.test(tag)).length).toBeGreaterThan(1);
+  });
+});
+
+describe("tournament mode", () => {
+  function createTournamentTable() {
+    const entrants = Array.from({ length: SEAT_COUNT }, (_, index) => ({
+      token: crypto.randomUUID(),
+      profile: testProfile(`Player ${index + 1}`),
+    }));
+    const game = createTournamentGame(entrants, "1k");
+    return { game, entrants };
+  }
+
+  it("seats exactly SEAT_COUNT humans, all at the tier's own starting stack, no bots", () => {
+    const { game } = createTournamentTable();
+    expect(game.seats).toHaveLength(SEAT_COUNT);
+    for (const seat of game.seats) {
+      expect(seat.isHuman).toBe(true);
+      // Hand 1 is already dealt (setupHand(state, true) runs inside
+      // createTournamentGame), so the two blind seats have already posted --
+      // what matters is every seat STARTED at the same fixed stack.
+      expect(seat.stack + seat.committed).toBe(TIER_CONFIG["1k"].minBuyIn);
+      expect(seat.profileId).not.toBeNull();
+    }
+    expect(game.tournament?.startingStack).toBe(TIER_CONFIG["1k"].minBuyIn);
+  });
+
+  it("refuses to build a table with the wrong number of entrants", () => {
+    expect(() => createTournamentGame([], "1k")).toThrow();
+  });
+
+  it("recomputes blinds from the schedule, not the tier's static blinds, as hands roll forward", () => {
+    let state = createTournamentTable().game;
+    for (let i = 0; i < 5; i += 1) {
+      state.status = "complete";
+      state.nextHandAt = new Date(0).toISOString();
+      state = dealNextHandIfDue(state, 1).state;
+    }
+    expect(state.handNumber).toBe(6);
+    expect(state.smallBlind).toBe(TIER_CONFIG["1k"].smallBlind * 2);
+    expect(state.bigBlind).toBe(TIER_CONFIG["1k"].bigBlind * 2);
+    expect(state.tournament?.blindLevel).toBe(1);
+  });
+
+  it("leaves a cash table's blinds untouched -- the branch only fires when tournament is set", () => {
+    const token = crypto.randomUUID();
+    let state = createGame(token, "Host", undefined, { tier: "1k", buyIn: 1000 });
+    state.status = "complete";
+    state.nextHandAt = new Date(0).toISOString();
+    state = dealNextHandIfDue(state, 1).state;
+    expect(state.smallBlind).toBe(TIER_CONFIG["1k"].smallBlind);
+    expect(state.bigBlind).toBe(TIER_CONFIG["1k"].bigBlind);
+  });
+
+  it("never bot-refills a busted seat, and logs elimination rather than a rebuy prompt", () => {
+    const { game } = createTournamentTable();
+    // "all-in", not "out": a seat that just lost its last chip this hand
+    // reads this way until the *next* setupHand relabels it -- the same
+    // status releaseBustedSeats' log check itself keys off, so this
+    // reproduces "just busted" rather than "already logged long ago".
+    game.seats[0].stack = 0;
+    game.seats[0].status = "all-in";
+    game.status = "complete";
+    game.nextHandAt = new Date(0).toISOString();
+    const { state } = dealNextHandIfDue(game, 1);
+    expect(state.seats[0].isHuman).toBe(true);
+    expect(state.seats[0].stack).toBe(0);
+    expect(state.log.some((entry) => entry.text.includes("is eliminated"))).toBe(true);
+    expect(state.log.some((entry) => entry.text.includes("sits out until they rebuy"))).toBe(false);
+  });
+
+  it("rejects a rebuy outright, even with a fully funded seat", () => {
+    const { game, entrants } = createTournamentTable();
+    expect(() =>
+      applyPlayerAction(game, { type: "rebuy", amount: 1000 }, entrants[0].token),
+    ).toThrow(/no rebuy/);
+  });
+
+  it("refuses to leave mid-hand, and forfeits with zero Gold movement between hands", () => {
+    const { game, entrants } = createTournamentTable();
+    expect(() =>
+      applyPlayerAction(game, { type: "leave-seat" }, entrants[0].token),
+    ).toThrow(/Finish this hand/);
+
+    game.status = "complete";
+    const left = applyPlayerAction(game, { type: "leave-seat" }, entrants[0].token);
+    expect(left.seats[0].stack).toBe(0);
+    expect(left.seats[0].status).toBe("out");
+    // No bot handoff, unlike a cash table's vacateSeat.
+    expect(left.seats[0].ownerToken).toBe(entrants[0].token);
+    expect(left.seats[0].isHuman).toBe(true);
+  });
+
+  it("declares a winner and stops scheduling hands the moment one seat is left standing", () => {
+    const { game } = createTournamentTable();
+    game.seats.forEach((seat, index) => {
+      seat.stack = index === 0 ? 6000 : 0;
+      seat.status = index === 0 ? "active" : "out";
+    });
+    game.status = "complete";
+    game.nextHandAt = new Date(0).toISOString();
+    const { state, dealt } = dealNextHandIfDue(game, 1);
+    expect(dealt).toBe(true);
+    expect(state.tournament?.winnerProfileId).toBe(game.seats[0].profileId);
+    expect(state.tournament?.finishedAtHand).toBe(state.handNumber);
+    expect(state.nextHandAt).toBeNull();
+    expect(state.status).toBe("complete");
+  });
+
+  it("never takes rake from a tournament pot, even one well above the cash-table floor", () => {
+    // A Sit & Go's prize pool is a fixed entryFee * seats with no house edge
+    // to skim -- rake would just shrink the chips deciding the payout. Same
+    // fixture shape as the "rake" describe block's own riverShowdown(5000),
+    // which rakes 30 off this exact pot on a cash table.
+    const { game, tokens } = createHumanTable();
+    game.tournament = {
+      entryFee: 1000,
+      startingStack: 1000,
+      blindLevel: 0,
+      finishedAtHand: null,
+      winnerProfileId: null,
+    };
+    game.status = "playing";
+    game.street = "river";
+    game.buttonPosition = 5;
+    game.community = cards("2c 3d 7h 8s 9c");
+    game.currentPlayer = 0;
+    game.currentBet = 0;
+    game.seats.forEach((seat) => {
+      seat.acted = true;
+      seat.streetBet = 0;
+      seat.committed = 0;
+      seat.stack = 1000;
+      seat.status = "folded";
+    });
+    Object.assign(game.seats[0], {
+      status: "active",
+      stack: 500,
+      committed: 5000,
+      acted: false,
+      holeCards: cards("As Ad"),
+    });
+    Object.assign(game.seats[1], {
+      status: "all-in",
+      stack: 0,
+      committed: 5000,
+      holeCards: cards("Ks Kd"),
+    });
+    const complete = applyPlayerAction(game, { type: "check" }, tokens[0]);
+    expect(complete.rake).toBe(0);
+    expect(complete.winners[0].amount).toBe(10000);
+  });
+
+  it("never claims to forfeit an AFK tournament seat -- there is no bot fill to hand it to", () => {
+    const { game } = createTournamentTable();
+    const seatIndex = game.currentPlayer!;
+    // One more missed turn crosses MAX_MISSED_TURNS -- on a cash table this
+    // is exactly the threshold releaseInactiveSeats hands the seat to a bot
+    // at, but that function is a no-op for a tournament (see engine.ts), so
+    // the log line describing this moment must not claim it happened.
+    game.seats[seatIndex].missedTurns = MAX_MISSED_TURNS - 1;
+    game.turnStartedAt = new Date(Date.now() - 60_000).toISOString();
+    game.turnDeadlineAt = new Date(Date.now() - 1000).toISOString();
+
+    const { state } = advanceTimedTurn(game, Date.now());
+    expect(state.seats[seatIndex].missedTurns).toBe(MAX_MISSED_TURNS);
+    const lastLog = state.log.at(-1)?.text ?? "";
+    expect(lastLog).not.toMatch(/forfeits the seat/);
+    expect(state.seats[seatIndex].isHuman).toBe(true);
   });
 });

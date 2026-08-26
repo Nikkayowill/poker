@@ -175,9 +175,11 @@ const cardBackCosmetics: Cosmetic[] = [
  * Three tiers, in order:
  *  - standard (character4, character9): the starter roster. Free from the
  *    moment a profile exists, one man, one woman.
- *  - rare (character5-8, character10-25): Gold-purchasable, one ascending
- *    ladder, 80,000 up to 2,550,000, decelerating from ~50% a rung down to
- *    ~9% by the top.
+ *  - rare (character5-8, character10-29): Gold-purchasable, one ascending
+ *    ladder, 80,000 up to 3,530,000, decelerating from ~50% a rung down to
+ *    ~7% by the top. character26-29 (added 2026-08-26) continue the same
+ *    constant-second-difference sequence (delta grows by 10,000 each rung)
+ *    rather than starting a new curve.
  *  - signature (character1-3): earned only, on a lifetime hands-won ladder
  *    (250/750/1,500 hands) checked by `lib/server/avatar-unlocks.ts` after
  *    every hand. `price` is null on these and must stay null: Gold buying
@@ -249,6 +251,10 @@ const characterAvatarOffers: Record<
   character23: { name: "Roy Castellan", description: "No cards, no problem. Makes every hand work.", price: 2_120_000 },
   character24: { name: "Declan Byrne", description: "Smiling bluff or genuine crush? Exactly the confusion he wants.", price: 2_330_000 },
   character25: { name: "Bodie Ferris", description: "Cap backwards, confidence forward.", price: 2_550_000 },
+  character26: { name: "Emory Vance", description: "Silver hair, steel nerve. Been folding you since the '80s.", price: 2_780_000 },
+  character27: { name: "Reggie Cross", description: "Doesn't blink. Doesn't bluff. Doesn't need to.", price: 3_020_000 },
+  character28: { name: "Wren Callahan", description: "Quiet at the felt. Loud on the leaderboard.", price: 3_270_000 },
+  character29: { name: "Haruto Kessler", description: "Three decades at the table. Still the one to watch.", price: 3_530_000 },
 };
 
 export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((character) => {

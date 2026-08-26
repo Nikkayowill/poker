@@ -1,10 +1,19 @@
 # StackChips: proposed M15-M19 architecture
 
-Planning handoff for Claude Code. Most of this is still proposal, with two exceptions:
+Planning handoff for Claude Code. Most of this document is now shipped, not proposal.
 M15's archive/history server half has landed (`hand_archives`, the `archive_hand` RPC,
-`lib/server/hand-archive-store.ts`, `/api/history/*`), and M16's friends half has landed
-across two migrations plus `/api/friends/*` and the friends drawer. Table invites, M17–M19,
-and every UI not named here remain proposals.
+`lib/server/hand-archive-store.ts`, `/api/history/*`) but still has no UI reading it.
+M16 (friends and table invites) has landed in full — both halves — across
+`/api/friends/*`/`/api/invites/*`, the friends drawer, and seat-level friend/duel
+discovery on the table itself. M18 (missions and achievements) has landed under its own
+migrations (`mission_definitions`/`player_mission_progress`/`mission_reward_grants`,
+`achievement_definitions`/`achievement_grants`). M19 (sit-and-go) has landed too, but in a
+reduced form: one 6-max human-only table, winner-take-all, no rebuys, no bot fill, no
+multi-table balancing — the schema (`sit_and_go_tables`/`sit_and_go_table_players`) is not
+the `tournaments`/`tournament_entries`/`tournament_tables` shape proposed below. **Only M17
+(table reactions/chat) remains an actual proposal** — no `table_messages` table or chat UI
+exists anywhere in the codebase. See `CLAUDE.md`'s "Active milestone" history for what has
+shipped since and in what shape; this file's own M-numbers have drifted from CLAUDE.md's.
 
 Implement in order; each milestone gets one or more append-only imperative migrations, a
 server store with a memory-mode mirror, API tests, and an E2E happy path. One migration per

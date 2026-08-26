@@ -124,7 +124,7 @@ ever wanted back, but nothing in the live tree references them any more.
 | Change a color everywhere at once | `app/styles/01-tokens.css` |
 | Fix something that's only wrong on phone | `app/styles/12-responsive.css` (search for the selector) |
 | Change the action bar buttons | `app/styles/09-action-bar.css` |
-| Change the 2.5D canvas room's camera/seat ring | `lib/scene/scene-config.ts`, `lib/scene/seat-ring.ts`, `lib/scene/projection.ts` |
+| Change the 2.5D canvas room's camera/seat ring | `lib/scene/scene-config.ts`, `lib/scene/seat-ring.ts`, `lib/scene/scene-projection.ts` |
 
 ## Two easy ways to break the whole stylesheet
 

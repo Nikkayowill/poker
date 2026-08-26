@@ -6,18 +6,6 @@
  * because the three-by-three boxes are how a solver actually parses the board.
  */
 
-.sk-difficulties { display: flex; gap: 7px; flex-wrap: wrap; }
-
-.sk-start {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: center;
-  padding: 20px 0;
-}
-.sk-start p { margin: 0; color: #9fb0a7; font-size: 12.5px; }
-.sk-start .bj-action { min-width: 190px; }
-
 /* ---- The grid ----
  *
  * Square, centred, and capped so it never outgrows a desktop viewport. The
@@ -235,28 +223,7 @@
 .sk-key:active:not(:disabled) { transform: translateY(1px); }
 .sk-key:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
 .sk-key:disabled { opacity: .35; cursor: not-allowed; }
-/* All nine of this digit are already on the board -- there is nowhere left to
-   put another one. Distinct from the plain disabled dim (no cell picked yet):
-   a faint success green instead of the gold key colour, so it reads as
-   "done", not just "unavailable right now". */
-.sk-key-complete {
-  color: #6fd6a4;
-  background: rgba(111,214,164,.08);
-  opacity: .55;
-}
 .sk-key-erase { color: #9fb0a7; display: flex; align-items: center; justify-content: center; }
-
-/* ---- Finished ---- */
-
-.sk-done {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: center;
-}
-.sk-done strong { color: var(--gold-light); font: 600 15px Georgia, serif; }
-
-.sk-player-head { justify-content: center; }
 
 @media (max-width: 640px) {
   /* 44px, not the old 38 -- this pad is the one control on the page a thumb

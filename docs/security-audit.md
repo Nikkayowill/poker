@@ -3,6 +3,25 @@
 Audited 2026-07-26 against the application migrations, server routes, runtime
 configuration, and the live Supabase project `gykxzlqwkraiflbfxtps`.
 
+**Stale — scoped to the seven original poker tables only.** Everything below
+describes the state as of the 2026-07-26 audit date and has not been redone
+since. A large amount of the app has shipped on top of that base and is not
+covered by this document at all, including several money-moving surfaces:
+Stripe (`stripe_payments`, `stripe_subscriptions` — one-time/monthly support
+and Gold purchase), PvP duel escrow (`pvp_challenges`, `pvp_matches`),
+cribbage tables (`cribbage_tables`, `cribbage_table_players`), Sit & Go
+tournaments (`sit_and_go_tables`, `sit_and_go_table_players`), Ante Up wagers
+(`ante_up_attempts`), the Blackjack/arcade/daily-puzzle round tables
+(`blackjack_rounds`, `arcade_rounds`, `daily_puzzle_rounds`), the Gold
+economy/progression tables (`player_cosmetics`, `player_progression`,
+`mission_*`, `achievement_*`, `rewarded_ad_grants`), leaderboards and
+head-to-head records, friends/table-invite/blocking (`friend_requests`,
+`friendships`, `profile_blocks`, `table_invites`, `friend_invite_codes`),
+hand archives, and Web Push subscriptions (`push_subscriptions`). Treat this
+file as historical background on the original seven-table design, not as a
+current security posture — verify RLS/privileges on any of the above by
+querying the live project directly, not by reading this document.
+
 ## Result
 
 The game is server-authoritative. Browser code receives the public Supabase URL

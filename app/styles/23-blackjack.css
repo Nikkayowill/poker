@@ -402,24 +402,17 @@
   }
   .bj-action { min-height: 46px; padding: 0 10px; font-size: 12.5px; }
 
-  /* Sudoku, Word Stack, Connections and Memory Match reuse .bj-shell but have no
-     docked .bj-controls bar -- only Blackjack does. The 126px reserved
-     above is real clearance for that fixed bar; on these four it was dead
-     space with nothing docked into it, and was most of why a daily puzzle's
-     grid+keypad forced the whole page to scroll on a phone. */
-  .sk-shell, .mm-shell, .puzzle-shell {
+  /* Word Stack and Connections reuse .bj-shell but have no docked
+     .bj-controls bar -- only Blackjack does. The 126px reserved above is
+     real clearance for that fixed bar; on these it was dead space with
+     nothing docked into it, and was most of why a daily puzzle's grid+keypad
+     forced the whole page to scroll on a phone. (Sudoku's and Memory
+     Match's own daily-board shells were deleted when those games dropped
+     their daily gate -- see CLAUDE.md's 2026-08-21 Ante Up entries -- and
+     took their .sk-shell/.mm-shell rules with them.) */
+  .puzzle-shell {
     gap: 10px;
     padding-bottom: calc(20px + var(--safe-bottom));
-  }
-
-  /* The explanatory paragraph above the grid -- true but not needed to play,
-     and on a short phone it was the difference between the keypad fitting
-     on screen and a player having to scroll mid-game to reach it. Word Stack
-     and Connections never had this paragraph (their .puzzle-notice is a thin,
-     often-empty status line, not a fixed block of copy). */
-  .sk-shell .bj-practice-note,
-  .mm-shell .bj-practice-note {
-    display: none;
   }
 }
 

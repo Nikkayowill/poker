@@ -40,6 +40,7 @@
 import {
   defineDuelGame,
   otherSeat,
+  remainingTime,
   type DuelMoveResult,
   type DuelOutcome,
   type DuelSeat,
@@ -384,9 +385,7 @@ function countPieces(board: string, seat: DuelSeat): number {
  * ran backwards would hand the mover free time.
  */
 export function remainingMs(state: CheckersState, seat: DuelSeat, now: number): number {
-  if (state.outcome !== null || seat !== state.turn) return state.clocks[seat];
-  const elapsed = Math.max(0, now - state.turnStartedAt);
-  return Math.max(0, state.clocks[seat] - elapsed);
+  return remainingTime(state.clocks[seat], seat, state.turn, state.turnStartedAt, now, state.outcome !== null);
 }
 
 /** The clock pair with the mover's spent time banked, for a state that is ending. */

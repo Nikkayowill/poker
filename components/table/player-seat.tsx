@@ -388,19 +388,19 @@ export const PlayerSeat = memo(function PlayerSeat({
   const handStrength = seat.isMine && seat.handLabel
     ? <span className="hand-strength" aria-live="polite">{seat.handLabel}</span>
     : null;
-  // No status pill under the seat. A variable-length string like "Fenwick
-  // raises to 2400" doesn't fit a fixed, absolutely-positioned slot; the
-  // long end of that range would run out from under the seat and under
-  // the table container. The table feed carries the same events in one
-  // place, at a size that can be read; see .table-feed in 06-table.css.
-  // What the seat still says for itself, it says without prose: folded
-  // seats are dimmed via .seat-muted, a departed bot goes further via
-  // .seat-away (see isBotAway above) with a fixed short label in the
-  // stack row rather than a floating pill, and the turn clock burns
+  // No status pill under the seat any more. It printed a variable-length
+  // string ("Fenwick raises to 2400") into a fixed, absolutely-positioned
+  // slot, so the long end of that range ran out from under the seat and
+  // under the table container. The table feed carries the same events, in
+  // one place, at a size that can be read; see .table-feed in
+  // 06-table.css. What the seat still says for itself, it says without
+  // prose: folded seats are dimmed via .seat-muted, a departed bot goes
+  // further via .seat-away (see isBotAway above) with a fixed short label
+  // in the stack row rather than a floating pill, and the turn clock burns
   // around whoever is on it. A winner is marked by their own cards/stack
-  // glowing gold (.seat-winner, 08-seat.css) plus the floating win amount,
-  // no separate badge. The racetrack table also lights up the character's
-  // own aura behind them (42-racetrack-table.css).
+  // glowing gold (.seat-winner, 08-seat.css) plus the floating win amount
+  // below, no separate badge. The racetrack table also lights up the
+  // character's own aura behind them (42-racetrack-table.css).
 
   return (
     <article
@@ -419,11 +419,14 @@ export const PlayerSeat = memo(function PlayerSeat({
       )}
       style={{ "--seat-accent": seat.accent, ...seatStyle } as React.CSSProperties}
     >
-      {/* One tree for every seat, including yours: the same figure, cards
-          and nameplate as everyone else. What's different about your seat
-          is only that your cards are face up, bigger, and set to one side,
-          and that's CSS on .seat-mine rather than a separate arrangement
-          of elements. */}
+      {/* One tree for every seat, including yours.
+          There used to be a second, two-column layout for the local player,
+          who was drawn below the felt rather than at it: portrait in one
+          column, cards and plate in the other. Sitting on the ring means the
+          same figure, cards and nameplate as everyone else; what is
+          different about your seat is only that your cards are face up,
+          bigger, and set to one side, and that is CSS on .seat-mine rather
+          than a separate arrangement of elements. */}
       {figure}
       {cards}
       {racetrackArtEl}

@@ -5,6 +5,7 @@ import { useFuse, useFuseDigit } from "./use-fuse";
 import clsx from "clsx";
 import { Check, FoldVertical } from "lucide-react";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
+import { isSeatRebuyEligible } from "@/lib/game/rebuy";
 import { TIER_CONFIG } from "@/lib/game/tiers";
 import { backstopState } from "@/lib/profile/backstop";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -81,7 +82,7 @@ export function ActionBar({
   onLeave,
   profile,
   onClaimBackstop,
-  variant = "classic",
+  variant = "flat",
 }: {
   game: GameSnapshot;
   pending: boolean;
@@ -97,7 +98,7 @@ export function ActionBar({
    */
   onClaimBackstop: () => void;
   /** The 3D room keeps the same server intents but presents its own control console. */
-  variant?: "classic" | "3d";
+  variant?: "flat" | "3d";
 }) {
   const legal = game.legalActions;
   const mySeat = game.seats.find((seat) => seat.isMine);
@@ -135,7 +136,30 @@ export function ActionBar({
   // or leave. This can be true while the table reads "playing" (someone
   // else's hand is running) just as easily as "complete" (between hands);
   // it never delays either one.
-  const busted = game.isSeated && mySeat?.stack === 0;
+  //
+  // But a zero stack does not mean this seat is done with its OWN hand --
+  // going all-in reads status "all-in", not "out", until the hand it was in
+  // finishes deciding it. isSeatRebuyEligible is the same predicate the
+  // server enforces, and this used to be the one place that didn't check
+  // it: the Rebuy button showed the instant `stack` hit zero, the server
+  // rejected it with a 409 until that hand resolved, and nothing retried --
+  // "have to perfectly time it." bustedWaiting is that gap, shown instead
+  // of a button that would just bounce.
+  const zeroStack = game.isSeated && mySeat?.stack === 0;
+  const rebuyEligible = !mySeat || isSeatRebuyEligible(game.status, mySeat.status);
+  const busted = zeroStack && rebuyEligible;
+  const bustedWaiting = zeroStack && !rebuyEligible;
+
+  if (bustedWaiting) {
+    return (
+      <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>
+        <div className="action-slot-status">
+          <span className="action-kicker">All in</span>
+          <strong>Your last chips are in -- the hand plays out before you can rebuy.</strong>
+        </div>
+      </div>
+    );
+  }
 
   if (busted) {
     // Whether a rebuy is reachable right now. Unlimited Gold always is;

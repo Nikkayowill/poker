@@ -33,11 +33,12 @@ export interface Cosmetic {
   /** Gold price. Null means it cannot be bought at any price; see below. */
   price: number | null;
   /**
-   * Card backs are drawn from two colours and a pattern; avatars are supplied
-   * artwork. Exactly one of these is set per item, which is what lets a single
-   * ownership and purchase path serve both.
+   * Card backs are drawn from two colours -- a stock and an ink -- through
+   * one shared ornate template (see components/card-back-art.tsx); avatars
+   * are supplied artwork. Exactly one of these is set per item, which is
+   * what lets a single ownership and purchase path serve both.
    */
-  art?: { base: string; ink: string; pattern: "lattice" | "chevron" | "rings" | "pinstripe" | "crest" };
+  art?: { base: string; ink: string };
   /**
    * Avatar-only progress unlock, checked against lifetime PlayerStats after
    * every hand (lib/server/avatar-unlocks.ts) instead of a Gold purchase.
@@ -104,52 +105,52 @@ const cardBackCosmetics: Cosmetic[] = [
     description: "The room's own deck. Every table starts here.",
     rarity: "standard",
     price: 0,
-    art: { base: "#1d4636", ink: "#8fbfa6", pattern: "lattice" },
+    art: { base: "#1d4636", ink: "#8fbfa6" },
   },
   {
     id: "back-oxblood",
     slot: "cardBack",
     name: "Oxblood",
-    description: "Deep red stock with a tight chevron weave.",
+    description: "Deep red stock, engraved.",
     rarity: "standard",
     price: 25000,
-    art: { base: "#5a1f22", ink: "#d9a2a0", pattern: "chevron" },
+    art: { base: "#5a1f22", ink: "#d9a2a0" },
   },
   {
     id: "back-slate",
     slot: "cardBack",
     name: "Slate",
-    description: "Cool grey, pinstriped like a good suit.",
+    description: "Cool grey stock, engraved.",
     rarity: "standard",
     price: 25000,
-    art: { base: "#2b3138", ink: "#9aa7b2", pattern: "pinstripe" },
+    art: { base: "#2b3138", ink: "#9aa7b2" },
   },
   {
     id: "back-brass",
     slot: "cardBack",
     name: "Brass",
-    description: "Warm metal rings under the lamp.",
+    description: "Warm metal ink under the lamp.",
     rarity: "premium",
     price: 250000,
-    art: { base: "#4a3a1c", ink: "#d9b85d", pattern: "rings" },
+    art: { base: "#4a3a1c", ink: "#d9b85d" },
   },
   {
     id: "back-midnight",
     slot: "cardBack",
     name: "Midnight",
-    description: "Near-black with a quiet lattice you only catch up close.",
+    description: "Near-black stock, the engraving only catches up close.",
     rarity: "premium",
     price: 250000,
-    art: { base: "#141a22", ink: "#6f7f96", pattern: "lattice" },
+    art: { base: "#141a22", ink: "#6f7f96" },
   },
   {
     id: "back-ivory",
     slot: "cardBack",
     name: "Ivory Crest",
-    description: "Bone stock, engraved crest. Rare enough to notice.",
+    description: "Bone stock, engraved in bronze. Rare enough to notice.",
     rarity: "rare",
     price: 400000,
-    art: { base: "#ded6c2", ink: "#8a6a22", pattern: "crest" },
+    art: { base: "#ded6c2", ink: "#8a6a22" },
   },
   {
     id: "back-riverwood",
@@ -158,12 +159,12 @@ const cardBackCosmetics: Cosmetic[] = [
     description: "Awarded for playing a thousand hands in this room.",
     rarity: "signature",
     price: null,
-    art: { base: "#23301f", ink: "#c9a25e", pattern: "crest" },
+    art: { base: "#23301f", ink: "#c9a25e" },
   },
 ];
 
 /**
- * Avatars. The same character roster the racetrack table draws opponent
+ * Avatars. The same 25-character roster the racetrack table draws opponent
  * seats from (`lib/scene/seat-art.ts`'s `SEAT_ART_CHARACTERS`) is what's for
  * sale here: one id space, so "buy a character" and "that's who's drawn at
  * my seat" are the same claim instead of two systems that happen to agree.
@@ -172,107 +173,91 @@ const cardBackCosmetics: Cosmetic[] = [
  * seat-art bucket with no matching entry here throws rather than silently
  * landing on the free-starter default (see `characterAvatarCosmetics`).
  *
- * Names are gamer tags: a character is a person somebody could be playing
- * against, and what a person at an online table has over their seat is a
- * handle they typed for themselves. So these are written the way real tags
- * are: lowercase, a nickname with something stuck to it, a number, an
- * underscore, occasionally a prefix carried over from another game. The
- * persona goes in the description; the name is just the handle.
- *
- * Same register as `lib/game/engine.ts`'s bot pool, but a separate list of
- * tags: nothing maps a character to a bot. These are the store's labels for
- * a face; the bot pool is who is sitting in the chair. A player wearing
- * character7 still shows their own name, never "terrelltilts".
+ * Names are plain character names, not gamer tags; that convention was
+ * tried first (2026-08-21) and reversed the same week: a seated opponent
+ * should read as a real player's own handle, which is what
+ * `lib/game/engine.ts`'s SEPARATE bot-tag pool is for, while a store card
+ * names the character on it the way a normal person is named. Nothing maps a
+ * character to a bot; a player wearing character7 still shows their own name.
  *
  * Three tiers, in order:
- *  - standard (character16, character21): the starter roster, free from
- *    the moment a profile exists. One man, one woman.
- *  - rare (character17-20, character22-41): Gold-purchasable, one
- *    ascending ladder from 80,000 up to 3,680,000, decelerating from
- *    ~50% a rung down to ~9-12% by the top.
- *  - signature (character13-15): earned only, on a lifetime hands-won
- *    ladder checked by `lib/server/avatar-unlocks.ts` after every hand.
- *    `price` is null on these and must stay null: Gold buying a shortcut
- *    past the threshold is exactly what would make the tier mean nothing,
- *    the same rule `back-riverwood` and the 3D roster's earned characters
- *    follow.
+ *  - standard (character4, character9): the starter roster. Free from the
+ *    moment a profile exists, one man, one woman.
+ *  - rare (character5-8, character10-25): Gold-purchasable, one ascending
+ *    ladder, 80,000 up to 2,550,000, decelerating from ~50% a rung down to
+ *    ~9% by the top.
+ *  - signature (character1-3): earned only, on a lifetime hands-won ladder
+ *    (250/750/1,500 hands) checked by `lib/server/avatar-unlocks.ts` after
+ *    every hand. `price` is null on these and must stay null: Gold buying
+ *    a shortcut past the threshold is exactly what would make the tier mean
+ *    nothing, the same rule `back-riverwood` and the 3D roster's earned
+ *    characters follow.
  *
- * Later batches (character22 onward) carry a character name rather than a
- * gamer tag, since the underscored handle register is reserved for the
- * in-game bot pool: a store card names the person, a bot's tag is how they
- * signed into the room.
+ * Renumbered 2026-08-25 (Kayo's explicit call, having accepted the one real
+ * cost: a player's equipped avatar is stored by this exact id string, so
+ * anyone who had already bought/equipped one of the old ids would fall back
+ * to the default, judged low-risk this soon after the ids in question went
+ * live). The roster had accumulated gaps from several same-day deletions
+ * (character29, 31-34 removed, leaving 13-28/30/35-41) and read as a mess of
+ * arbitrary numbers; ids are now a clean character1-24, tier boundaries
+ * preserved exactly, plus a new character25. The Gold ladder was repriced in
+ * the same pass to close a discontinuity the deletions had left in it
+ * (removing four mid-ladder characters without repricing the survivors above
+ * them had produced an ~86% jump between two adjacent rungs); it's now one
+ * smooth decelerating sequence start to finish. Old gamer-tag-style names on
+ * the earlier characters (`amaraa_04`, `ttv_danpark`, `nico_noscope`, ...)
+ * were fixed to real names in the same pass, closing out the one convention
+ * left over from before the 2026-08-21 reversal above.
  *
- * These characters arrive as Kayo-supplied turnaround sheets run through
- * `slice-seat-sheet.py`. There's no automated check that a sheet's figure
- * faces the right way, so eyeball the widest panel against a known-good
- * character (character16/17) before trusting a "no --mirror needed" call
- * on a new batch: a wrong call here has shipped characters facing away
- * from the pot before. A sheet whose panels touch with no gutter, or that
- * boxes caption text inside the figure band, needs the slicer's
- * manual-split path or a hand crop rather than the default column split.
- *
- * character36-41 are the first characters carrying only 0deg and 20deg
- * plates rather than the usual three: `pickSeatArt` already takes the two
- * flattest angles a character actually has, and `seatArtCharacterForSlot`
- * already keeps a character out of a seat whose override forces an angle
- * it lacks, so nothing needed to change for that.
- *
- * The original character1-12 (five standard-tier, seven rare) were deleted
- * outright, art and catalog both. `DEFAULT_AVATAR_COSMETIC` now points at
- * character16; `normalizeEquipped` already falls back to it for anyone
- * whose stored `avatar2d` no longer resolves (`cosmeticById` returns null
- * for a deleted id), so an existing profile that owned or had one of the
- * twelve equipped just lands on the new default next render. No migration
- * needed.
+ * Full narrative history of how each individual character's art arrived
+ * (sheet quirks, facing fixes, slicer changes) has been pruned along with
+ * the old ids it was anchored to; recover it from `git log` on this file
+ * if needed; what's kept here is the standing rules, not the play-by-play.
  */
 const characterAvatarOffers: Record<
   string,
   { name: string; description: string; price: number | null; unlock?: Cosmetic["unlock"] }
 > = {
-  character13: {
-    name: "amaraa_04",
-    description: "Youngest at the table, last one out of the hand. Earned by winning 250 hands.",
+  character1: {
+    name: "Amara Cole",
+    description: "Young. Fearless. Winning. Earned by winning 250 hands.",
     price: null,
     unlock: { handsWon: 250 },
   },
-  character14: {
-    name: "jesse_westside",
-    description: "Sun-bleached and unbothered, right up until he raises. Earned by winning 750 hands.",
+  character2: {
+    name: "Jesse West",
+    description: "Laid-back till the blinds hit. Earned by winning 750 hands.",
     price: null,
     unlock: { handsWon: 750 },
   },
-  character15: {
-    name: "wyatt_wanders",
-    description: "Rolled in off the highway with a flannel and a plan. Earned by winning 1,500 hands.",
+  character3: {
+    name: "Wyatt Morgan",
+    description: "Rode in with a plan. Hasn't folded it yet. Earned by winning 1,500 hands.",
     price: null,
     unlock: { handsWon: 1_500 },
   },
-  character16: { name: "ttv_danpark", description: "Nobody taught him this game. He just watched, and then he sat down.", price: 0 },
-  character17: { name: "zay_brooks", description: "Half your age, twice your patience.", price: 80_000 },
-  character18: { name: "nico_noscope", description: "Reads the whole table through a curtain of hair and misses nothing.", price: 120_000 },
-  character19: { name: "kohl_codes", description: "Ran the numbers before the flop and hasn't stopped since.", price: 170_000 },
-  character20: { name: "omar_theoracle", description: "You won't get a read. There's nothing there to read.", price: 230_000 },
-  character21: { name: "ellie_bee", description: "Polite, patient, and holding the nuts more often than she lets on.", price: 0 },
-  character22: { name: "Marcus Vale", description: "Wears the chip on his sleeve. Backs it up every time.", price: 300_000 },
-  character23: { name: "Milo Winters", description: "Collects more than cards. Reads people the same way.", price: 380_000 },
-  character24: { name: "Zoraq", description: "No tells, no eyelids, no chance you're getting a read.", price: 470_000 },
-  character25: { name: "Ari Locke", description: "Cracked the seed once, just to see if she could. Doesn't need to now.", price: 570_000 },
-  character26: { name: "Adelaide Sinclair", description: "Old money, older instincts. Never raises past what she already knows.", price: 680_000 },
-  character27: { name: "Kira Voss", description: "Never says a word behind those glasses. Doesn't have to.", price: 800_000 },
-  character28: { name: "Danny Marsh", description: "Plays every session like it's the last one that matters.", price: 930_000 },
-  character29: { name: "Sadie Rowan", description: "Followed the game across three states. Never folds first.", price: 1_070_000 },
-  character30: { name: "Gunner Zane", description: "Streams every session. Chat calls it a clinic.", price: 1_220_000 },
-  character31: { name: "Walt Ironhand", description: "Been playing longer than most of the table's been alive.", price: 1_380_000 },
-  character32: { name: "Margot Delaney", description: "Doesn't blink at a big bet. Barely blinks at all.", price: 1_550_000 },
-  character33: { name: "Dahlia Cross", description: "Bluffs like it's a dare. Usually wins the dare.", price: 1_720_000 },
-  character34: { name: "Vivienne Ashworth", description: "Dressed for a gala, playing like it's rent money.", price: 1_890_000 },
-  character35: { name: "Malik Devon", description: "Too young to drink at this table. Never too young to win it.", price: 2_060_000 },
-  character36: { name: "Andre Boone", description: "Reads the whole table through those shades. Never takes them off.", price: 2_270_000 },
-  character37: { name: "Simone Hart", description: "Arms folded, cards down, waiting you out. It usually works.", price: 2_500_000 },
-  character38: { name: "Rory Quinn", description: "Quiet through four streets, then loud on the river.", price: 2_750_000 },
-  character39: { name: "Kenji Sato", description: "Learned this game from his uncle. Beats him at it now.", price: 3_030_000 },
-  character40: { name: "Roy Castellan", description: "Card-dead for an hour and still hasn't folded a hand wrong.", price: 3_340_000 },
-  character41: { name: "Declan Byrne", description: "Smiles when he's bluffing. Smiles the rest of the time too.", price: 3_680_000 },
+  character4: { name: "Dan Park", description: "Self-taught. Self-made. Dangerous.", price: 0 },
+  character5: { name: "Zay Brooks", description: "Half your age, twice your stack.", price: 80_000 },
+  character6: { name: "Nico Nolan", description: "Reading chips like code. Sees what you don't.", price: 120_000 },
+  character7: { name: "Kohl Davis", description: "Numbers never lie. Neither does she.", price: 170_000 },
+  character8: { name: "Omar Salem", description: "Blank. Calculated. Unreadable.", price: 230_000 },
+  character9: { name: "Ella Bennett", description: "Sweet as honey. Sharp as a blade.", price: 0 },
+  character10: { name: "Marcus Vale", description: "All-in on his own game. Every hand.", price: 300_000 },
+  character11: { name: "Milo Winters", description: "Collects tells like cards. Knows your every move.", price: 380_000 },
+  character12: { name: "Zoraq", description: "No expression. No tells. No mercy.", price: 470_000 },
+  character13: { name: "Ari Locke", description: "Broke the algorithm once. Keeps doing it.", price: 570_000 },
+  character14: { name: "Adelaide Sinclair", description: "Old money plays tighter. She proves it every hand.", price: 680_000 },
+  character15: { name: "Kira Voss", description: "Speaks in folds. Listens in calls.", price: 800_000 },
+  character16: { name: "Danny Marsh", description: "Each hand like it's for everything. Because it is.", price: 930_000 },
+  character17: { name: "Gunner Zane", description: "Streamed his way to the top. Chat's his co-pilot.", price: 1_070_000 },
+  character18: { name: "Malik Devon", description: "Too young to doubt himself. Too good to care.", price: 1_220_000 },
+  character19: { name: "Andre Boone", description: "Hidden behind shades. Never lets you in.", price: 1_380_000 },
+  character20: { name: "Simone Hart", description: "Folds slowly. Wins fast.", price: 1_550_000 },
+  character21: { name: "Rory Quinn", description: "Silent predator. Then the river hits.", price: 1_730_000 },
+  character22: { name: "Kenji Sato", description: "Taught by legends. Teaches the table humility.", price: 1_920_000 },
+  character23: { name: "Roy Castellan", description: "No cards, no problem. Makes every hand work.", price: 2_120_000 },
+  character24: { name: "Declan Byrne", description: "Smiling bluff or genuine crush? Exactly the confusion he wants.", price: 2_330_000 },
+  character25: { name: "Bodie Ferris", description: "Cap backwards, confidence forward.", price: 2_550_000 },
 };
 
 export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((character) => {
@@ -375,7 +360,7 @@ export const avatarCosmetics: Cosmetic[] = [
 
 /** What a brand-new profile has, and falls back to if anything goes missing. */
 export const DEFAULT_CARD_BACK = "back-house";
-export const DEFAULT_AVATAR_COSMETIC = "character16";
+export const DEFAULT_AVATAR_COSMETIC = "character4";
 
 export const cosmetics: Cosmetic[] = [...cardBackCosmetics, ...avatarCosmetics];
 

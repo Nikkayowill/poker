@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { METRES_PER_WORLD_UNIT, classicChipSpace, racetrackChipSpace } from "./chip-space";
-import { CHIP_RADIUS, FELT } from "./scene-config";
+import { METRES_PER_WORLD_UNIT, racetrackChipSpace } from "./chip-space";
+import { CHIP_RADIUS } from "./scene-config";
 import { CHIP_RADIUS_M, FELT as RACETRACK_FELT, FELT_TOP_Y, SEAT_COUNT } from "./table-anchors";
-import { potPosition, seatBetOrigin } from "./seat-ring";
 
 /** Signed distance to a stadium's boundary: negative inside, positive out. */
 function stadiumSignedDistance(point: { x: number; z: number }, halfLength: number, halfWidth: number): number {
@@ -10,25 +9,6 @@ function stadiumSignedDistance(point: { x: number; z: number }, halfLength: numb
   const clampedX = Math.max(-straightHalf, Math.min(straightHalf, point.x));
   return Math.hypot(point.x - clampedX, point.z) - halfWidth;
 }
-
-describe("the classic space", () => {
-  it("is the same table the chip layer always animated on", () => {
-    const space = classicChipSpace();
-    expect(space.feltY).toBe(FELT.y);
-    expect(space.pot()).toEqual(potPosition(FELT.radiusZ));
-    expect(space.betSpot(2, 6)).toEqual(seatBetOrigin(2, 6, FELT.radiusZ));
-  });
-
-  it("carries the per-fit felt depth and near-seat reach it is given", () => {
-    const space = classicChipSpace(7.4, 0.48);
-    expect(space.pot()).toEqual(potPosition(7.4));
-    expect(space.betSpot(0, 6)).toEqual(seatBetOrigin(0, 6, 7.4, 0.48));
-  });
-
-  it("needs no unit conversion -- its units are the layer's", () => {
-    expect(classicChipSpace().roomUnitsPerWorldUnit).toBe(1);
-  });
-});
 
 describe("the racetrack space", () => {
   const space = racetrackChipSpace();

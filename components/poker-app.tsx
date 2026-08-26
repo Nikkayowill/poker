@@ -410,13 +410,12 @@ export function PokerApp() {
    * Steps from the renderer that is actually mounted, which the table passes
    * in, rather than from the stored preference.
    *
-   * They differ whenever a preference has been resolved away (the 3D room on
-   * a device without WebGL, or the 2.5D table in portrait), and stepping from
-   * the stored value in that state produces a menu entry that visibly does
-   * nothing. Concretely: stored 2.5D, held in portrait, so the classic table is
-   * mounted and the entry reads "Table: Classic"; stepping from the stored
-   * 2.5D lands on canvas_2d, which is what is already on screen, so the label
-   * does not change and the tap looks broken.
+   * They differ whenever a preference has been resolved away, the only
+   * remaining case is the 3D room on a device without WebGL, and stepping
+   * from the stored value in that state produces a menu entry that visibly
+   * does nothing: stored 3D, no WebGL, so the racetrack table is what's
+   * mounted; stepping from the stored preference would step past the
+   * racetrack and land back on 3D, which the device still can't render.
    */
   const cycleTableRenderer = useCallback((mounted: TableRenderer) => {
     setTableRendererState(nextTableRenderer(mounted, webglAvailable, landscape));

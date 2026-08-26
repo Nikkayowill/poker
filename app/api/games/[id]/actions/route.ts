@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { applyPlayerAction, toSnapshot } from "@/lib/game/engine";
+import { isSeatRebuyEligible } from "@/lib/game/rebuy";
 import { clampBuyIn } from "@/lib/game/tiers";
 import { loadGameWithTimeouts, logTurn, persistenceMode, updateStoredGame } from "@/lib/server/game-store";
 import { creditGold, isBanned, spendGold } from "@/lib/server/profile-store";
@@ -94,10 +95,13 @@ export async function POST(
       if (seat.stack > 0) {
         return NextResponse.json({ error: "Your seat still has chips." }, { status: 409 });
       }
-      // Mirrors applyPlayerAction's own guard: rebuy is allowed any time
-      // this seat itself isn't currently live in a hand in progress, not
-      // just between hands (see the bust-grace-period removal in engine.ts).
-      if (game.status === "playing" && seat.status !== "out") {
+      // Same predicate applyPlayerAction enforces (lib/game/rebuy.ts) --
+      // rebuy is allowed any time this seat itself isn't currently live in
+      // a hand in progress, not just between hands (see the bust-grace-
+      // period removal in engine.ts). action-bar.tsx checks this too before
+      // it even shows the button, so reaching this rejection from the real
+      // UI should no longer happen -- see that file's comment.
+      if (!isSeatRebuyEligible(game.status, seat.status)) {
         return NextResponse.json({ error: "Wait for this hand to finish deciding your seat." }, { status: 409 });
       }
       const clamped = clampBuyIn(game.tier, action.amount);

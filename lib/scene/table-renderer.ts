@@ -8,16 +8,21 @@
  * action bar, the feed, the turn-clock fuse, every sound) is DOM above the
  * canvas and does not know or care which room is underneath it.
  *
- * The 2.5D racetrack is the only selectable table. The legacy renderer values
- * remain in the type and implementation so they can be restored later, but
- * the client does not expose them or mount them for gameplay.
+ * The 2.5D racetrack is the only selectable table. `webgl_3d` remains in the
+ * type and implementation so the 3D room can be restored later, but the
+ * client does not expose it or mount it for gameplay. The classic canvas_2d
+ * room -- the one that supported a vertical/portrait layout -- is gone
+ * outright, not just disabled: the app is landscape-only now (see the
+ * orientation gate in poker-table.tsx), so there was no fallback left for it
+ * to serve. If it's ever wanted again, recover it from git history rather
+ * than re-deriving it.
  *
  * In `lib/` rather than beside either renderer, because `vitest.config.ts`
  * collects only `lib/` and `app/`; the same reason `bet-style.ts`, whose
  * shape this follows exactly, lives there.
  */
 
-export type TableRenderer = "canvas_2d" | "webgl_3d" | "racetrack_2d5";
+export type TableRenderer = "webgl_3d" | "racetrack_2d5";
 
 export const TABLE_RENDERERS: readonly TableRenderer[] = ["racetrack_2d5"];
 
@@ -30,17 +35,9 @@ export const TABLE_RENDERERS: readonly TableRenderer[] = ["racetrack_2d5"];
 export const TABLE_RENDERER_3D_ENABLED = false;
 
 /**
- * The 2.5D racetrack room: a third Canvas-2D table, drawn from a real
- * perspective camera instead of the classic room's orthographic tilt.
- *
- * A third entry rather than a replacement for `canvas_2d`, for now.
- * `canvas_2d` is not just a preference: it's what `resolveTableRenderer`
- * falls back to when a browser cannot give us a WebGL context, so it's the
- * table that has to work when nothing else does. Replacing it with a room
- * whose composition hasn't yet been judged in a live hand would mean a bug
- * at some untested breakpoint leaves those players with no working table at
- * all. Promote it once it has been seen in real hands, at which point this
- * becomes what `canvas_2d` draws and the entry goes away again.
+ * The 2.5D racetrack room: a Canvas-2D table drawn from a real perspective
+ * camera. The sole active renderer now that the classic orthographic room is
+ * gone.
  */
 export const RACETRACK_RENDERER: TableRenderer = "racetrack_2d5";
 
@@ -59,14 +56,8 @@ export function normalizeTableRenderer(value: unknown): TableRenderer {
 /**
  * The next renderer in the cycle, for a single menu entry that toggles through.
  *
- * Skips the 3D room where the browser cannot render it. Without that, a
- * device with no WebGL context has a menu entry that appears to do nothing
- * every third tap: the preference genuinely changes, and
- * `resolveTableRenderer` genuinely sends it straight back to the classic
- * table, so the label reads "Table: Classic" twice in a row. That case used
- * to be unreachable, since the entry was hidden outright without WebGL, but
- * it no longer is: the racetrack room needs only a 2D context, so there are
- * now two usable tables on such a device.
+ * Skips the 3D room where the browser cannot render it, so a device with no
+ * WebGL context never lands on a menu entry that appears to do nothing.
  *
  * The preference itself is never coerced here, only the step: a player who
  * chose the 3D room on one device still gets it on another that can render it.
@@ -85,8 +76,7 @@ export function nextTableRenderer(
 /** What the table menu prints for each renderer. */
 export function tableRendererLabel(renderer: TableRenderer): string {
   if (renderer === "webgl_3d") return "Table: 3D room";
-  if (renderer === "racetrack_2d5") return "Table: 2.5D";
-  return "Table: Classic";
+  return "Table: 2.5D";
 }
 
 /** True for the rooms that paint their own table rather than layering over
@@ -101,9 +91,8 @@ export function rendererPaintsTable(renderer: TableRenderer): boolean {
  *
  * Asked before mounting the 3D room rather than discovered inside it. A
  * `<Canvas>` that cannot acquire a context throws from a React render, and
- * the nearest boundary is the app shell, so without this check the failure
- * mode is a blank page rather than a fallback. Checking first turns "no
- * WebGL" into "the classic table", which is what the DOM felt already is.
+ * the nearest boundary is the app shell, so the failure mode without this
+ * check is a blank page, not a fallback.
  *
  * Takes a factory rather than reaching for `document` so it is testable, and
  * returns false on any throw: some privacy modes make `getContext` itself
@@ -140,9 +129,8 @@ export function resolveTableRenderer(
 ): TableRenderer {
   void preference;
   void webglAvailable;
-  // Portrait is blocked by PokerTable's orientation gate. Keep resolving to
-  // the one active room so the removed Classic renderer cannot appear through
-  // a viewport fallback.
+  // Portrait is blocked outright by PokerTable's orientation gate -- there is
+  // no fallback room left for a portrait viewport to resolve to.
   void landscape;
   return RACETRACK_RENDERER;
 }

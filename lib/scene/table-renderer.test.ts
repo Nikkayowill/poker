@@ -26,7 +26,7 @@ describe("the table renderer", () => {
   });
 
   it("keeps the renderer cycle on 2.5D", () => {
-    expect(nextTableRenderer("canvas_2d", false, false)).toBe(RACETRACK_RENDERER);
+    expect(nextTableRenderer("webgl_3d", false, false)).toBe(RACETRACK_RENDERER);
     expect(nextTableRenderer(RACETRACK_RENDERER, true, true)).toBe(RACETRACK_RENDERER);
     expect(resolveTableRenderer("webgl_3d", true, true)).toBe(RACETRACK_RENDERER);
     expect(resolveTableRenderer(RACETRACK_RENDERER, true, false)).toBe(RACETRACK_RENDERER);

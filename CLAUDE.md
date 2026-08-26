@@ -44,6 +44,72 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### The classic portrait-capable table is deleted outright; landscape-only, racetrack-only (2026-08-25)
+- Kayo's call, stated directly: sticking with landscape, the 2.5D racetrack is the main (only) table,
+  keep the 3D room around since he may return to it once he's learned more rendering, and "players
+  will just have to turn their phones to play" — which is how most poker apps already work. The
+  racetrack becoming the sole selectable renderer and portrait being gated behind a rotate prompt had
+  already shipped 2026-08-17 (`lib/scene/table-renderer.ts`'s `resolveTableRenderer` already forced
+  `racetrack_2d5` regardless of preference); what was still outstanding was the dead classic renderer
+  CODE itself, kept around "so it can be restored later." This pass deletes that code, on
+  `chore/delete-classic-portrait-table` off a fresh `origin/main` (a throwaway worktree, since several
+  other sessions were active on unrelated card-back/seat-art branches at the same time) — Kayo's own
+  reasoning for going further than the 2026-08-17 disable: "I want it gone so in the future I dont
+  need to get mixed up and specify which table to work on."
+- Deleted outright: `components/table/scene/table-scene.tsx` (the classic `TableScene` component),
+  `lib/scene/projection.ts` (the orthographic camera), `lib/scene/felt-art.ts` +
+  `components/table/use-felt-art-ready.ts` (the classic felt/rail image preload gate — the actual
+  `.poker-rail` background-image CSS rule this fed goes too, but the underlying `table-desktop.webp`
+  asset does not: it's also the lobby's own hero-tile art via `--tile-art` in 04-lobby.css, caught by
+  grepping every reference before deleting anything under `public/`), the classic-only dev chip bench
+  (`components/table/scene/chip-lab.tsx`, `app/dev/chips/`), and `tests/e2e/near-seat-bet.spec.ts`
+  (asserted classic-only geometry and was likely already silently broken, since `normalizeTableRenderer`
+  has coerced away from `canvas_2d` since the 2026-08-17 disable).
+- **Trimmed rather than deleted, because several "classic-looking" files turned out to still be load-
+  bearing for what's left.** `lib/game/table-geometry.ts` (the CSS-ellipse seat ring) is untouched in
+  full: it's the racetrack's own pre-layout first-frame fallback AND the kept 3D room's DOM seat
+  cutouts, not classic leftovers, despite every comment in the file reading like classic-CSS tuning.
+  `lib/scene/seat-ring.ts` lost every export except `seatAngle`, which `lib/scene/chips/chip-scene.ts`
+  still reads to place a pile on the racetrack's own arc. `chip-space.ts` lost `classicChipSpace`;
+  `scene-projection.ts` lost `orthographicProjection`. A real bug this surfaced: `ChipScene`'s own
+  `private space` field defaulted to `classicChipSpace()` as a constructor placeholder, always
+  overwritten by `racetrack-scene.tsx`'s immediate `setSpace()` call in practice but a real dangling
+  reference the moment `classicChipSpace` was deleted — repointed to `racetrackChipSpace()`. Full test
+  suite (2421 tests, up from 2374) stayed green throughout, which is what caught this precisely
+  because nothing broke silently.
+- The `TableRenderer` union type itself narrowed from `"canvas_2d" | "webgl_3d" | "racetrack_2d5"` to
+  `"webgl_3d" | "racetrack_2d5"` — `webgl_3d` stays, per Kayo's explicit "keep 3d." `ActionBar`'s
+  `variant` prop was renamed `"classic" | "3d"` → `"flat" | "3d"` for the same reason as the code
+  deletion itself: a variant named after a table that no longer exists is exactly the kind of thing
+  that causes the confusion Kayo asked to have removed.
+- CSS: deleted the classic felt/rail background art, the canvas-vs-DOM z-index raise that existed
+  only to let the classic chip layer climb over classic DOM artwork (~80 lines of now-moot reasoning
+  in `99-scene.css`), the felt watermark (`.felt-mark`, CSS and JSX and its racetrack suppression rule
+  together, in that order — deleting the suppression rule before the JSX would have made the
+  watermark reappear on the live table), a desktop community-card width clamp fully shadowed by the
+  racetrack's own inline camera-derived sizing, and a few `.poker-table-wrap` width/aspect overrides
+  in `11-panels.css`/`12-responsive.css` that the racetrack's own unconditional `.scene-room-racetrack`
+  override always wins over regardless of viewport.
+- **Deliberately NOT touched: `12-responsive.css`'s `@media (max-width: 600px)` block.** It contains
+  the classic table's real portrait sizing (`.poker-table-wrap`'s `--table-aspect: 0.62`,
+  `.poker-rail`'s `table-mobile.webp` background) — genuinely dead today, since the table never
+  renders in portrait at all — but that one media query is also where the LOBBY's own portrait rules
+  live (`.hub-grid`, `.hub-tile-*`, `.account-entry-page`, `.profile-modal`, `.history-drawer`), and
+  the lobby has no orientation gate. Untangling which of ~15 interleaved rules are truly table-only
+  without risking a real lobby regression was judged not worth it for CSS that already has zero
+  effect; flagged as a real but low-value cleanup opportunity if ever revisited, not an oversight.
+  `.dealer-puck`'s JS measurement code (`measureDealer`/`dealerVector` in poker-table.tsx) is the same
+  kind of already-invisible dead weight under both live rooms, predates this pass, and was left alone
+  for the same reason — out of this pass's actual scope (removing the classic table), not a gap in it.
+- `lib/scene/CLAUDE.md` was rewritten outright — it still described `lib/scene/` as "the Canvas 2D
+  room, not WebGL" with "`three` is uninstalled on `main`," both stale since the racetrack/3D-room
+  work that came after it was written. Exactly the kind of stale doc that would have caused the next
+  session the same "which table" confusion Kayo asked to eliminate.
+- Verified: `npx vitest run` 2421/2421 green (up from 2374), clean lint, clean production build with
+  `/game3d` still mounted and `/dev/chips` gone, `tsc` clean apart from the pre-existing
+  `safe-area.spec.ts` failure. Not yet pushed/PR'd — this branch's work is separable from the
+  seat-art-characters-36-41 branch it was started alongside and should land as its own PR.
+
 ### Leaderboards are PvP-only: Memory Match's board is gone (2026-08-24)
 - The rule, settled with Kayo while Minesweeper was being built and restated three times: **every PvP
   game gets a leaderboard, poker keeps its own richer one (hands won, biggest pot, not just W/L), and
@@ -1080,17 +1146,22 @@ decided here. Also applied `20260819090000_missing_fk_indexes.sql` (six missing 
 Supabase performance advisor; `cash_game_sessions`' own finding was skipped — that table's store was
 already deleted in the 2026-08-06 repo-quality pass).
 
-### 3D table: scrap under consideration, not decided (2026-08-19)
+### 3D table: scrap under consideration, not decided (2026-08-19, restated 2026-08-25)
 Kayo is weighing dropping the WebGL 3D table outright — "too much work, don't want to waste time on
 it" — floated, not committed. If a future pass sees `components/game3d`/`lib/game3d` deleted and the
-`webgl_3d` renderer option gone, treat it as decided; otherwise this is still open. Measured same day:
+`webgl_3d` renderer option gone, treat it as decided; otherwise this is still open. Measured 2026-08-19:
 `components/game3d/` + `lib/game3d/` is 101 files / ~18,400 lines, and 23 e2e specs touch the 3D room.
 That matches the churn already logged above (eight geometry-rebuild rounds, arm-IK, the hand/finger
 rig, the nameplate collision fix, a camera that structurally never sees a horizon, a meshopt pass, an
 abandoned local character-gen effort) for one of three table renderers. The 2.5D racetrack table is
 the one actually converging with real polish and already shares the seat-art/avatar system with the
-rest of the app; `canvas_2d` stays as the no-WebGL fallback regardless of what happens to 3D, so
-removing it wouldn't remove a fallback path. If this lands, M17 above (parked "until the 3D sim is
-finished") needs Kayo's explicit re-decision, not a silent default.
+rest of the app. If this lands, M17 above (parked "until the 3D sim is finished") needs Kayo's
+explicit re-decision, not a silent default.
+
+**`canvas_2d` no longer exists to fall back to** — see the entry above this one: the classic table was
+deleted outright 2026-08-25, and Kayo reconfirmed in the same breath that the 3D room should stay in
+the codebase, disabled, "I may bring that back eventually once I learn render." That is a restatement
+of the status quo (kept, not scrapped, not un-parked), not a resolution of the scrap question above —
+still treat this section as open until `components/game3d`/`lib/game3d` are actually deleted.
 
 Update this section when scope changes; keep `CLAUDE.md` synchronized.

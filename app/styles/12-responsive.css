@@ -398,35 +398,6 @@
     overflow: hidden;
   }
 
-  /* FULL-BLEED BACKDROP.
-
-     The rail is the table's outer edge and, crucially, the box the canvas
-     room measures to solve its own plan shape (`fitView` in
-     table-scene.tsx). Widening it here is therefore what carries the felt,
-     the pot and every bet spot outward with the seats -- the chip room needs
-     no landscape branch of its own and cannot fall out of step with this
-     one.
-
-     Top 14% / bottom 4% centres the rail on 55%, which is
-     `LANDSCAPE_CENTER_Y` in lib/game/table-geometry.ts -- the pair are one
-     decision and the comment there says so from the other side. The
-     asymmetry is the far seat's headroom: `.seat-ring` lifts a seat box
-     ~85px above its own point on the ellipse, so the room it needs is all
-     above the cloth. The near seat needs none, because 17-landscape.css
-     takes it off the ring and clips it against the stage's bottom edge.
-
-     `object-fit: cover` has no meaning on any of this and is not used. The
-     brief asks for it on the felt, but `.poker-felt` is a `<div>` painted
-     with CSS gradients and the artwork here is `.poker-rail`'s
-     `background-image` -- `object-fit` only applies to replaced elements
-     (img/video/canvas). The equivalent for a background is
-     `background-size: cover`, and it is deliberately NOT used either: the
-     rail art is a 2:1 plate and `cover` on a 3:1 band would crop its ends
-     off, which is the "vertical egg" failure in the other direction. The
-     existing `100% 100%` fills the box, and the box is now the right shape
-     because the ring and the rail were re-solved together. */
-  .poker-rail { inset: 14% 4% 4%; }
-
   /* The wrap fills the stage rather than being capped by leftover height.
      `--table-height-cap` exists to stop the table overflowing a viewport it
      cannot measure; inside a stage of known, fixed shape there is nothing
@@ -434,7 +405,12 @@
      the middle of the letterbox with margin the seats had been pushed out
      into. Naming the cap rather than replacing the whole min() is the rule
      this file's Defect D1 note sets out -- kept, because the aspect below
-     still needs its width term. */
+     still needs its width term.
+
+     Both this and `--table-aspect` are for the 3D room alone now: the
+     racetrack unconditionally overrides both `.poker-table-wrap` and
+     `.poker-rail` regardless of breakpoint (`.scene-room-racetrack`,
+     42-racetrack-table.css), so nothing here reaches it. */
   .poker-table-wrap {
     --table-aspect: 3;
     --table-height-cap: 100%;

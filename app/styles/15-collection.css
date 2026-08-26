@@ -82,6 +82,39 @@
 }
 .collection-blurb { margin: 0 0 22px; color: #8d84a3; font-size: 13px; }
 
+/* Avatars split further into default/earned/bought under the slot heading.
+   Same micro-label-over-a-fading-rule idiom as .floor-section-head (arcade
+   floor's category groups) -- a second heading weight, not a second h2. */
+.collection-subsection { margin-bottom: clamp(28px, 4vw, 40px); }
+.collection-subsection:last-child { margin-bottom: 0; }
+.collection-subsection-head {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  color: var(--brand-gold-light);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+}
+.collection-subsection-head::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 1px;
+  background: var(--rule);
+}
+.collection-subsection-blurb {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .collection-view-switch {
   display: inline-flex;
   gap: 4px;

@@ -248,19 +248,23 @@ export interface SeatArtBox {
  * those numbers wrong again the moment they hit a real seat.
  *
  * Anchored at the hands, not the head. `slot.scale` exists to draw a seat
- * bigger than its natural head-to-hands fit. A bigger box has to grow from
- * somewhere, and growing it from the bottom pushes the hands (and whatever
- * is resting in them) down past the felt/rail line by `fit * (scale - 1)`,
- * real screen pixels, not a rounding error: a character whose plate has no
- * transparent margin below their hand (built flush to the crop edge, same
- * as any other plate; see prepare-seat-art.py) visibly sinks an arm into
- * the table the moment scale departs from 1. Pinning the bottom at `hands`
- * and growing the box upward instead keeps every character's hands on the
- * felt at any scale; only their head/hair reaches higher. `offsetY` stays a
- * plain screen-space nudge on top of that anchor and no longer has to fight
- * a scale-proportional drift to do its job. Verified against seat 1's own
- * override, the hardest case on the roster: characters used to submerge a
- * hand into the rail there, and none do after this change.
+ * bigger than its natural head-to-hands fit: a bigger box has to grow
+ * from somewhere, and growing it from the bottom pushes the hands (and
+ * whatever's resting in them) down past the felt/rail line by
+ * `fit * (scale - 1)`, which is real screen pixels, not a rounding error:
+ * a character whose plate has no transparent margin below their hand (built
+ * flush to the crop edge, same as any other plate; see
+ * prepare-seat-art.py) visibly sinks an arm into the table the moment scale
+ * departs from 1. Pinning the bottom at `hands` and growing the box upward
+ * instead keeps every character's hands on the felt at any scale; only
+ * their head/hair reaches higher. `offsetY` stays a plain screen-space
+ * nudge on top of that anchor, same as it always was; it no longer has to
+ * fight a scale-proportional drift to do its job. Verified against seat 1's
+ * own override (2026-08-22, when it still forced the character's 40deg
+ * plate; see `SeatArtOverride.angle`'s own note for why that's gone now;
+ * seat 1's scale/offsetY push is unchanged and was still the hardest case
+ * on the roster): two characters since renumbered/deleted used to submerge
+ * their hand into the rail there; neither does after this change.
  *
  * Mirroring happens after positioning, not by moving the box. The box below
  * is placed at its un-mirrored position (`left`); the caller applies

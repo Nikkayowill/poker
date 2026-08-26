@@ -22,61 +22,9 @@
      between two DOM layers that were meant to be adjacent. */
   isolation: isolate;
   /* Chips only live here now (see paint.ts's header); the room behind them
-     is entirely the DOM's -- .game-shell's background photo, .poker-rail's
-     table art -- so the canvas clears to transparent every frame and never
-     paints its own floor at all. */
+     is entirely the DOM's -- .game-shell's background photo -- so the canvas
+     clears to transparent every frame and never paints its own floor at all. */
   background: transparent;
-}
-
-/* ...but z-index 0 is not low enough to be "underneath everything" any more,
-   and in the classic room it was the wrong side of the one layer that
-   matters. .poker-rail carries the real table artwork again (06-table.css),
-   and .poker-table-wrap is a LATER sibling of this canvas inside .table-area
-   with `isolation: isolate` -- so the whole table group composites as one
-   unit painted after z-index 0, and the felt art covered every chip the
-   canvas drew. Blinds, standing street bets, the pot, every flight: present,
-   animating, keeping the render loop awake, and invisible. Confirmed by
-   hiding .poker-rail on a live table and watching the two blind stacks appear
-   exactly where they belonged.
-
-   The isolation is why this is a raise rather than a lower: nothing inside
-   .poker-table-wrap can be pushed below this canvas from the outside, because
-   the group is atomic, and that isolation is load-bearing in its own right --
-   it contains .poker-table-wrap::after, the z-index -1 contact shadow.
-
-   Scoped away from the 3D room deliberately. There the canvas IS the table --
-   cloth, rail, chairs and figures -- so it has to stay beneath the DOM, and
-   99-scene.css already hides the flat seats, board and HUD that would
-   otherwise double it. Only the classic renderer has art to climb over.
-
-   Know what this actually buys, because it is not the ordering the numbers
-   suggest: .poker-table-wrap is z-index *auto*, so any positive value here
-   clears the entire group at once. The canvas is now above the seats,
-   nameplates, hole cards and the board as well as the felt -- 2 rather than 4
-   is not what keeps it under them, and nothing does. In practice the chip
-   positions already avoid those: bets sit at BET_INSET 0.74 inside the rail
-   where the figures are not, the local player's own bet was pulled to
-   NEAR_SEAT_BET_INSET 0.35 for exactly this reason, and potPosition puts the
-   pot POT_DEPTH_FRACTION away from the viewer, above the board rather than on
-   it. Verified only as far as the blinds: an all-in could not be driven to a
-   flop here because the hand does not progress on this branch (the same
-   pre-existing stall chip-flights.spec.ts and near-seat-bet.spec.ts hit), so
-   the pot funnel and a contested board are unconfirmed. If a chip is ever
-   seen over a card or a face, the fix is not a smaller number here -- it is
-   dropping .poker-table-wrap's `isolation: isolate` so the rail can sit below
-   this canvas while the seats stay above it, which also means rehoming the
-   z-index -1 contact shadow that isolation exists to contain.
-
-   The racetrack room is scoped out for the same reason as the 3D one, and
-   the symptom when it was not was total: its canvas IS the table -- floor,
-   body, rail and cloth -- so raising it above .poker-table-wrap covered every
-   seat, nameplate, hole card and the board with a painted tabletop. The
-   screenshot showed a correct, empty table and nothing else, which reads as
-   "the players failed to load" rather than as a stacking bug. Only the
-   classic renderer, which draws chips over DOM artwork, has anything to climb
-   over. */
-.table-area:not(.scene-room-3d):not(.scene-room-racetrack) .table-scene {
-  z-index: 2;
 }
 
 .table-scene canvas {

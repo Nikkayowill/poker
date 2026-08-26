@@ -40,7 +40,7 @@ export const TABLE_LENGTH_M = 2.13;
 export const TABLE_WIDTH_M = 1.07;
 
 /** Padded rail width. Real rails run 5-6 inches. */
-export const RAIL_WIDTH = 0.14;
+export const RAIL_WIDTH = 0.08;
 
 /** Height of the playing surface off the floor. */
 export const FELT_TOP_Y = 0.75;
@@ -251,10 +251,34 @@ export function seatAngleDeg(slot: number, count: number = SEAT_COUNT): number {
   return angles[Math.min(Math.max(slot, 0), angles.length - 1)];
 }
 
+/**
+ * Per-seat position offsets (in metres).
+ *
+ * IMPORTANT: this is 3D table space, not screen space.
+ * - x: left (-) / right (+) on the felt
+ * - y: height ABOVE the floor (-) below / (+) above. Leave at 0.
+ * - z: forward toward the camera (+) / back away from the camera (-). This
+ *   is the axis that reads as up/down on screen: negative z (away) moves
+ *   a seat up and further back on screen.
+ */
+export const SEAT_OFFSET_PER_SEAT: Vec3[] = [
+  { x: 0, y: 0, z: 0 }, // seat 0 (you, camera)
+  { x: 0, y: 0, z: 0 }, // seat 1 (far left)
+  { x: 0, y: 0, z: 0 }, // seat 2 (left of dealer) — moved back
+  { x: 0.02, y: 0, z: -0.0 }, // seat 3 (dealer's left)
+  { x: 0.0, y: 0, z: 0 }, // seat 4 (dealer's right)
+  { x: 0, y: 0, z: 0 }, // seat 5 (far right)
+];
+
 /** Where a player sits, at the floor -- the base of their chair. */
 export function seatAnchor(slot: number, count: number = SEAT_COUNT): Vec3 {
   const { x, z } = ringPoint(seatAngleDeg(slot, count), SEAT_RING);
-  return { x, y: FLOOR_Y, z };
+  const offset = SEAT_OFFSET_PER_SEAT[Math.min(Math.max(slot, 0), SEAT_OFFSET_PER_SEAT.length - 1)] ?? { x: 0, y: 0, z: 0 };
+  return {
+    x: x + offset.x,
+    y: FLOOR_Y + offset.y,
+    z: z + offset.z
+  };
 }
 
 /** The top of a seated player's head, for the camera fit. */
@@ -375,13 +399,59 @@ export function potAnchor(): Vec3 {
 }
 
 /** Where a seat's bet sits once it is out on the cloth. */
-export const CHIP_INSET_FRACTION = 0.7;
+export const CHIP_INSET_FRACTION = 0.88; // fallback default
+/**
+ * Per-seat chip inset fractions. Adjust each seat individually:
+ * - Lower values (e.g. 0.80) = chips closer to center
+ * - Higher values (e.g. 0.90) = chips further out on the curve
+ */
+export const CHIP_INSET_PER_SEAT = [
+  0.7, // seat 0 (near, you)
+  0.90, // seat 1 (far left)
+  0.88, // seat 2 (left of dealer)
+  0.88, // seat 3 (dealer's left)
+  0.88, // seat 4 (dealer's right)
+  0.88, // seat 5 (far right)
+];
+
+/**
+ * Per-seat chip position offsets (in metres).
+ *
+ * IMPORTANT: this is 3D table space, not screen space.
+ * - x: left (-) / right (+) on the felt — this is the only axis that reads
+ *   as pure left/right on screen.
+ * - y: height ABOVE the cloth (-) below / (+) above. Leave at 0. This does
+ *   NOT mean "screen down" — moving it changes how high the chip floats
+ *   over the felt, which looks wrong fast.
+ * - z: forward toward the camera (+) / back away from the camera (-). This
+ *   is the axis that reads as up/down on screen (since the table is seen
+ *   from an angle): negative z (away) moves a pile up and further; positive
+ *   z (toward) moves it down and closer.
+ *
+ * To move a seat's chips diagonally down-and-left on screen: negative x,
+ * positive z. Leave y at 0.
+ */
+export const CHIP_OFFSET_PER_SEAT: Vec3[] = [
+  { x: 0, y: 0, z: 0 }, // seat 0 (near, you)
+  { x: -0.10, y: -0.04, z: 0.12 }, // seat 1 (far left)
+  { x: -0.13, y: -0.04, z: 0 }, // seat 2 (left of left of dealer)
+  { x: -0.10, y: 0, z: 0 }, // seat 3 (dealer's left)
+  { x: 0.12, y: -0.03, z: 0 }, // seat 4 (dealer's right)
+  { x: 0.20, y: -0.09, z: 0.07 }, // seat 5 (far right)
+];
+
 export function chipAnchor(slot: number, count: number = SEAT_COUNT): Vec3 {
+  const inset = CHIP_INSET_PER_SEAT[Math.min(Math.max(slot, 0), CHIP_INSET_PER_SEAT.length - 1)] ?? CHIP_INSET_FRACTION;
+  const offset = CHIP_OFFSET_PER_SEAT[Math.min(Math.max(slot, 0), CHIP_OFFSET_PER_SEAT.length - 1)] ?? { x: 0, y: 0, z: 0 };
   const { x, z } = ringPoint(seatAngleDeg(slot, count), {
-    halfLength: FELT.halfLength * CHIP_INSET_FRACTION,
-    halfWidth: FELT.halfWidth * CHIP_INSET_FRACTION,
+    halfLength: FELT.halfLength * inset,
+    halfWidth: FELT.halfWidth * inset,
   });
-  return { x, y: FELT_TOP_Y, z };
+  return {
+    x: x + offset.x,
+    y: FELT_TOP_Y + offset.y,
+    z: z + offset.z
+  };
 }
 
 /**

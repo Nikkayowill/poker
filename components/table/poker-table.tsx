@@ -212,6 +212,7 @@ export function PokerTable({
   onCycleBetStyle,
   tableRendererSettled,
   landscape,
+  tightLandscape,
   onCycleTableRenderer,
   onSignIn,
   onSignOut,
@@ -238,6 +239,9 @@ export function PokerTable({
   tableRendererSettled: boolean;
   /** Is the viewport wider than it is tall? The 2.5D table is landscape-only. */
   landscape: boolean;
+  /** The tight mobile-landscape tier (see use-tight-landscape.ts) -- the live
+   *  feed moves into the header at this tier instead of overlaying the felt. */
+  tightLandscape: boolean;
   /** Called with the renderer currently mounted; see poker-app.tsx. */
   onCycleTableRenderer: (mounted: TableRenderer) => void;
   onSignIn: () => void;
@@ -1047,6 +1051,19 @@ export function PokerTable({
         <button className="wordmark wordmark-mark-only" onClick={() => { tapSound(); onLeave(); }} aria-label="Leave table">
           <span className="wordmark-mark"><StackChipsMark size={32} /></span>
         </button>
+        {/* At the tight mobile-landscape tier there's no room left over the
+            felt for the feed (see .table-hud's own note, 06-table.css) --
+            it moves in here instead, beside the logo, into the header's
+            otherwise-empty middle column. Same element, same aria-live
+            region, one render site rather than two: everywhere else it
+            stays down on the felt, at .table-hud-left below. */}
+        {tightLandscape && (
+          <ul className="table-feed game-header-feed" aria-live="polite">
+            {game.log.slice(0, 3).map((entry) => (
+              <li key={entry.id} className={`table-feed-${entry.kind}`}>{entry.text}</li>
+            ))}
+          </ul>
+        )}
         {/* No pot readout here any more: the felt already carries it
             (.center-pot-amount, in .board-stack below) directly over the
             chips it counts, which is a strictly better answer to "how much
@@ -1152,11 +1169,15 @@ export function PokerTable({
                 for, and opts back into pointer-events since .table-hud is
                 click-through decoration. */}
             <div className="table-hud-left">
-              <ul className="table-feed" aria-live="polite">
-                {game.log.slice(0, 3).map((entry) => (
-                  <li key={entry.id} className={`table-feed-${entry.kind}`}>{entry.text}</li>
-                ))}
-              </ul>
+              {/* Moved into the header at the tight mobile-landscape tier
+                  instead (game-header, above) -- see the note there. */}
+              {!tightLandscape && (
+                <ul className="table-feed" aria-live="polite">
+                  {game.log.slice(0, 3).map((entry) => (
+                    <li key={entry.id} className={`table-feed-${entry.kind}`}>{entry.text}</li>
+                  ))}
+                </ul>
+              )}
               {game.isSeated && !isRacetrack && (
                 <ReactionButton onSend={onSendReaction} disabled={reactionCooldown} />
               )}
@@ -1432,6 +1453,10 @@ export function PokerTable({
                 // empty while they were drawn separately below the felt.
                 placement={isRacetrack ? "seat-racetrack" : "seat-ring"}
                 seatStyle={seatStyles[index]}
+                // table-anchors.ts's ring slot 1 is the fixed "far left"
+                // anchor; its nameplate sits nearest the table feed in the
+                // top-left corner (see .seat-far-left, 08-seat.css).
+                isFarLeftSeat={isRacetrack && seatSlots[index] === 1}
                 racetrackArt={racetrackArtBySeat.get(seat.id) ?? null}
                 // The ring slot, not the engine's seat position: dealing runs
                 // round the table as it looks from this chair, which puts the

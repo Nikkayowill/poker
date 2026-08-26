@@ -295,6 +295,7 @@ export const PlayerSeat = memo(function PlayerSeat({
   winningKeys,
   reaction,
   racetrackArt,
+  isFarLeftSeat,
 }: {
   seat: PublicSeat;
   placement: string;
@@ -323,6 +324,12 @@ export const PlayerSeat = memo(function PlayerSeat({
    *  the cards to be able to draw behind it and the nameplate in front. Only
    *  ever set for an opponent seat on the racetrack table. */
   racetrackArt?: { src: string; mirror: boolean; box: SeatArtBox } | null;
+  /** The racetrack's fixed "far left" ring anchor (table-anchors.ts slot 1),
+   *  not merely a far seat -- its plate sits closest to the table feed
+   *  (.table-feed, 06-table.css) in the top-left corner, so it alone needs
+   *  a bit more clearance than the blanket .seat-far nudge gives every far
+   *  seat. See .seat-far-left in 08-seat.css. */
+  isFarLeftSeat?: boolean;
 }) {
   const folded = seat.status === "folded" || seat.status === "out";
   const away = isBotAway(seat);
@@ -421,6 +428,7 @@ export const PlayerSeat = memo(function PlayerSeat({
         away && "seat-away",
         isWinner && "seat-winner",
         isFarSeat && "seat-far",
+        isFarLeftSeat && "seat-far-left",
       )}
       style={{ "--seat-accent": seat.accent, ...seatStyle } as React.CSSProperties}
     >

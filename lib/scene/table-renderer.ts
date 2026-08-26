@@ -63,10 +63,9 @@ export function tableRendererLabel(renderer: TableRenderer): string {
  * The renderer to actually mount. Kept as a function -- rather than every
  * caller reading `RACETRACK_RENDERER` directly -- so a stored preference and
  * a browser capability can still be threaded through here if a second
- * renderer is ever added again; today both parameters are accepted and
- * ignored.
+ * renderer is ever added again; today there is nothing to thread, since
+ * there is only one renderer to resolve to.
  */
-export function resolveTableRenderer(preference: TableRenderer): TableRenderer {
-  void preference;
+export function resolveTableRenderer(): TableRenderer {
   return RACETRACK_RENDERER;
 }

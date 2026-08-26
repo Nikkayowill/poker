@@ -28,7 +28,7 @@ import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 const STAKE_QUICK_PICKS = [MIN_DUEL_STAKE, 1000, 5000, 10_000, 25_000] as const;
 const POLL_MS = 2000;
 
-export interface CribbagePlayer {
+interface CribbagePlayer {
   profileId: string;
   seat: CribbageSeat;
   displayName: string;
@@ -37,7 +37,7 @@ export interface CribbagePlayer {
   accent: string;
 }
 
-export interface CribbageTable {
+interface CribbageTable {
   id: string;
   status: "waiting" | "active" | "completed" | "cancelled";
   version: number;
@@ -54,7 +54,7 @@ export interface CribbageTable {
   state: CribbageSnapshot | null;
 }
 
-export interface CribbageOpenTable {
+interface CribbageOpenTable {
   id: string;
   hostName: string;
   stake: number;

@@ -264,8 +264,12 @@ export function RacetrackScene({
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     if (!ctx) {
-      // No 2D context. The caller keeps `.scene-lit` off, so the DOM felt
-      // and rail paint themselves and the table is the classic one.
+      // No 2D context. There is no other room to fall back to any more --
+      // the caller keeps `.scene-lit` off, so `.poker-rail`/`.poker-felt`
+      // never get their felt-lit treatment and sit unpainted (the classic
+      // room's own background art was deleted along with it). Effectively
+      // unplayable, but this is a browser with no 2D canvas support at all,
+      // which the app does not otherwise guard against.
       onReadyRef.current?.(false);
       return;
     }

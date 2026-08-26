@@ -6,7 +6,7 @@ import type { AchievementsPayload, AchievementView } from "@/lib/achievements/ty
 /** Same cadence as components/missions/use-missions.ts's POLL_MS. */
 const POLL_MS = 15_000;
 
-export interface AchievementsState {
+interface AchievementsState {
   data: AchievementsPayload | null;
   /** Achievements that flipped to unlocked since the last successful poll. */
   justUnlocked: AchievementView[];

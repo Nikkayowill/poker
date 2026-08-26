@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, Copy, RotateCw, Send, Spade, UserMinus, UserPlus, X } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { useClipboardCopy } from "@/components/use-clipboard-copy";
+import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import type { GameSnapshot, PublicSeat } from "@/lib/game/types";
 import { formatRecord } from "@/lib/leaderboard/contract";
@@ -207,7 +208,6 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
   const [redeeming, setRedeeming] = useState(false);
   /** Which profile/request ids have a mutation in flight, so their row can disable. */
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const drawerRef = useRef<HTMLElement | null>(null);
   /**
    * Guards every setState after an await. The drawer is unmounted by closing
@@ -335,18 +335,16 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
   useEffect(() => {
     // Whatever opened the drawer, the lobby's Friends tile in practice.
     // Captured rather than selected by class so focus returns to the real
-    // trigger even if something else ever opens this.
+    // trigger even if something else ever opens this. Captured in its own
+    // effect, declared before useModalDismiss's own call below, so this runs
+    // (and reads document.activeElement) before that hook's effect moves
+    // focus onto the close button.
     const opener = document.activeElement as HTMLElement | null;
     // Captured now because the cleanup below runs after React has already
     // detached the node, at which point drawerRef.current is null.
     const drawer = drawerRef.current;
-    closeButtonRef.current?.focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-        return;
-      }
       if (event.key !== "Tab") return;
       // Without this, Tab walks straight out of an aria-modal dialog into the
       // lobby behind it: the hub tiles stay in the tab order, so a keyboard
@@ -379,7 +377,13 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
         opener?.focus?.();
       }
     };
-  }, [onClose]);
+  }, []);
+
+  // Escape-to-close, focus-the-close-button-on-mount and
+  // close-on-backdrop-click, shared with the other three modal/drawer
+  // overlays; see the hook's own doc comment for why this call has to stay
+  // textually after the Tab-trap effect above.
+  const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose);
 
   /**
    * Runs one mutation and refetches.
@@ -677,9 +681,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
     <div
       className="history-overlay"
       role="presentation"
-      onMouseDown={(event) => {
-        if (event.currentTarget === event.target) onClose();
-      }}
+      onMouseDown={onBackdropMouseDown}
     >
       <aside
         ref={drawerRef}

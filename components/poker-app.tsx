@@ -255,7 +255,7 @@ export function PokerApp() {
   // meant building and discarding a whole room) -- with one renderer left it
   // never actually disagrees with the default, but the signal costs nothing
   // to keep. See the note on `settled` in use-stored-preference.ts.
-  const [tableRenderer, setTableRendererState, tableRendererSettled] =
+  const [, setTableRendererState, tableRendererSettled] =
     useStoredPreference<TableRenderer>({
       key: TABLE_RENDERER_STORAGE_KEY,
       fallback: DEFAULT_TABLE_RENDERER,
@@ -1626,7 +1626,6 @@ export function PokerApp() {
             onToggleSound={toggleSound}
             betStyle={betStyle}
             onCycleBetStyle={cycleBetStyle}
-            tableRenderer={tableRenderer}
             tableRendererSettled={tableRendererSettled}
             landscape={landscape}
             onCycleTableRenderer={cycleTableRenderer}

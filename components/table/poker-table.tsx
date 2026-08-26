@@ -210,7 +210,6 @@ export function PokerTable({
   onToggleSound,
   betStyle,
   onCycleBetStyle,
-  tableRenderer,
   tableRendererSettled,
   landscape,
   onCycleTableRenderer,
@@ -235,7 +234,6 @@ export function PokerTable({
   onToggleSound: () => void;
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
-  tableRenderer: TableRenderer;
   /** Has the stored renderer choice arrived? See the render gate below. */
   tableRendererSettled: boolean;
   /** Is the viewport wider than it is tall? The 2.5D table is landscape-only. */
@@ -251,7 +249,7 @@ export function PokerTable({
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
-  const activeRenderer = resolveTableRenderer(tableRenderer);
+  const activeRenderer = resolveTableRenderer();
   // Which of lib/scene/seat-art.ts's two hand-tuned tables applies to seat
   // art on the racetrack table; see useDesktopViewport's own note for why
   // this has to be a real subscription and not a `window.matchMedia` read
@@ -1115,10 +1113,10 @@ export function PokerTable({
               name={mySeat.name}
               stack={mySeat.stack}
               profile={profile}
-              handLabel={isRacetrack ? mySeat.handLabel : null}
-              onSendReaction={isRacetrack ? onSendReaction : undefined}
-              reactionCooldown={isRacetrack ? reactionCooldown : undefined}
-              activeReaction={isRacetrack ? reactions[mySeat.id]?.reactionId ?? null : null}
+              handLabel={mySeat.handLabel}
+              onSendReaction={onSendReaction}
+              reactionCooldown={reactionCooldown}
+              activeReaction={reactions[mySeat.id]?.reactionId ?? null}
             />
           )}
           {/* The pot and the stakes, in the black space around the table

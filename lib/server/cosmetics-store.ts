@@ -113,9 +113,7 @@ export async function equipCosmetic(
   const owned = await listOwnedCosmetics(profile.id);
   if (!owned.includes(cosmeticId)) throw new Error("You don't own that item yet.");
 
-  const equipmentKey = item.slot === "avatar"
-    ? item.renderMode === "3d" ? "avatar3d" : "avatar2d"
-    : item.slot;
+  const equipmentKey = item.slot === "avatar" ? "avatar2d" : item.slot;
   const next = normalizeEquipped({ ...profile.equipped, [equipmentKey]: cosmeticId });
   const now = new Date().toISOString();
 

@@ -25,7 +25,7 @@ import { expect, test, type Browser } from "@playwright/test";
  * A private table is not matchmade, so this player is seat 0 of a brand new
  * table and is dealt into hand 1. Nothing here was ever about matchmaking;
  * these assertions are about deal geometry. Same setup the specs that do not
- * flake already use (`table-scene.spec.ts`, `chip-flights.spec.ts`).
+ * flake already use (`chip-flights.spec.ts`).
  */
 async function seatAtTable(browser: Browser, viewport: { width: number; height: number }) {
   const context = await browser.newContext({ viewport });

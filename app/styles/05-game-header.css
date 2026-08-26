@@ -87,32 +87,6 @@
   justify-self: end;
 }
 
-/* The base rule's transparency is correct for 3D too -- the header should
-   read as open onto whatever room it sits on, not a bar drawn across it,
-   same as Classic. What was wrong is what THAT room is: .game-shell's photo
-   backdrop just below is authored for Classic specifically (green bounce off
-   a felt that is there, a lamp pool over a table that is there), and the 3D
-   canvas that replaces both does not extend up under the header's own screen
-   band to cover for it -- so a transparent header over 3D exposed the
-   Classic-tuned lounge photo instead, which is what read as the wrong scene
-   bleeding through the nav. Fixed at the source (.game-shell's own
-   background, below) rather than by opting the header back into an opaque
-   fill, which only hid the mismatch instead of removing it. */
-
-/* .game-shell's photographed lounge backdrop is Classic-specific -- see its
-   own comment. `:has()` reaches up to the shell from the header's class
-   rather than needing a second render-mode class threaded onto `.game-shell`
-   itself (poker-table.tsx only ever put one on the header), and every
-   browser this app supports has shipped :has() for a while; it is already
-   used elsewhere in this stylesheet. The flat tone is the exact literal
-   html/body already fall back to (01-tokens.css) -- the same "paint behind
-   every screen" ground, not a new colour invented for this one case, so a
-   transparent 3D header opens onto the app's own base tone instead of a
-   backdrop authored for a different room. */
-.game-shell:has(.game-header-3d) {
-  background: #12161f;
-}
-
 .leave-button {
   border: 1px solid var(--line);
   color: #86948c;

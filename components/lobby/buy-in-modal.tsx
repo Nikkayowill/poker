@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { X } from "lucide-react";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHEAPEST_TIER, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
-import { RACETRACK_RENDERER, TABLE_RENDERER_3D_ENABLED, type TableRenderer } from "@/lib/scene/table-renderer";
+import { RACETRACK_RENDERER, type TableRenderer } from "@/lib/scene/table-renderer";
 
 /**
  * Picks a stakes tier (unless locked, e.g. rebuying at an already-seated
@@ -24,7 +24,6 @@ export function BuyInModal({
   playerName,
   onPlayerNameChange,
   tableRenderer,
-  webglAvailable,
   landscape = true,
   onTableRendererChange,
   onClose,
@@ -46,16 +45,15 @@ export function BuyInModal({
   onPlayerNameChange?: (name: string) => void;
   /**
    * The table-view choice, surfaced here rather than left to the in-game
-   * menu. All three are optional and only rendered together, for the same
-   * reason `playerName` is optional above: the rebuy caller opens this at an
-   * already-mounted table, where the renderer is no longer a decision, since
-   * changing it mid-hand is exactly the mount/discard flicker
-   * `tableRendererSettled` in poker-table.tsx exists to prevent. Deciding it
-   * here, before that room is ever created, is what removes the flicker for
-   * the normal join path instead of just hiding it behind a loading hold.
+   * menu. Optional for the same reason `playerName` is optional above: the
+   * rebuy caller opens this at an already-mounted table, where the renderer
+   * is no longer a decision -- changing it mid-hand is exactly the
+   * mount/discard flicker `tableRendererSettled` in poker-table.tsx exists to
+   * prevent. Deciding it HERE, before that room is ever created, is what
+   * removes the flicker for the normal join path instead of just hiding it
+   * behind a loading hold.
    */
   tableRenderer?: TableRenderer;
-  webglAvailable?: boolean;
   /** Viewport wider than tall. The 2.5D table is landscape-only. */
   landscape?: boolean;
   onTableRendererChange?: (renderer: TableRenderer) => void;
@@ -176,20 +174,6 @@ export function BuyInModal({
             <div className="buyin-renderer">
               <span>Table view</span>
               <div className="entry-segment" role="group" aria-label="Table view">
-                {/* 3D room temporarily disabled (TABLE_RENDERER_3D_ENABLED) while
-                    it's being reworked, hidden rather than disabled, since this
-                    isn't a per-browser capability gap like WebGL/portrait below. */}
-                {TABLE_RENDERER_3D_ENABLED && (
-                  <button
-                    type="button"
-                    className={tableRenderer === "webgl_3d" ? "is-active" : undefined}
-                    aria-pressed={tableRenderer === "webgl_3d"}
-                    disabled={!webglAvailable}
-                    onClick={() => { selectSound(); onTableRendererChange("webgl_3d"); }}
-                  >
-                    3D room
-                  </button>
-                )}
                 {/* The 2.5D room is the only table presentation. It remains
                     landscape-oriented, so portrait users are prompted below
                     to rotate rather than being offered a removed fallback. */}
@@ -203,7 +187,6 @@ export function BuyInModal({
                   2.5D
                 </button>
               </div>
-              {TABLE_RENDERER_3D_ENABLED && !webglAvailable && <small>3D room needs a browser with WebGL.</small>}
               {!landscape && <small>2.5D table needs a landscape screen &mdash; turn your phone sideways.</small>}
             </div>
           )}

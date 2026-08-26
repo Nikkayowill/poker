@@ -9,7 +9,7 @@ import { SupportPanel } from "@/components/store/support-panel";
 // (not an awaited `searchParams` prop on the page) keeps app/store/page.tsx
 // a plain static shell instead of forcing per-request SSR for no
 // server-side reason. The Suspense boundary is required or the build opts
-// the whole route out of static rendering (same pattern as app/game3d/page.tsx).
+// the whole route out of static rendering.
 export function StorePageClient() {
   return (
     <Suspense fallback={null}>

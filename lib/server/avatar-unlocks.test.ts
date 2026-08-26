@@ -10,7 +10,7 @@ import { recordHandStats } from "./stats-store";
  * A minimal completed-hand GameState: real createGame() for a valid table,
  * then the two fields recordHandStats actually reads are set directly
  * rather than played out through the engine -- this is a stats-recording
- * test, not an engine test, and running 25+ real hands to cross a
+ * test, not an engine test, and running hundreds of real hands to cross a
  * hands-won threshold would make it both slow and about the wrong thing.
  */
 function wonHand(token: string, amountWon: number) {
@@ -24,43 +24,40 @@ function wonHand(token: string, amountWon: number) {
 }
 
 describe("checkAvatarUnlocks", () => {
-  it("awards the first earned 3D character on the fiftieth lifetime hand win", async () => {
+  it("awards the first earned character on its lifetime-hands-won bar (character1, 250)", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
     const gameId = randomUUID();
 
-    for (let handNumber = 1; handNumber <= 49; handNumber++) {
+    for (let handNumber = 1; handNumber <= 249; handNumber++) {
       const state = wonHand(token, 1000);
       state.id = gameId;
       state.handNumber = handNumber;
       await checkAvatarUnlocks(await recordHandStats(state));
     }
-    expect(await listOwnedCosmetics(profile.id)).not.toContain("donni");
+    expect(await listOwnedCosmetics(profile.id)).not.toContain("character1");
 
-    const fiftieth = wonHand(token, 1000);
-    fiftieth.id = gameId;
-    fiftieth.handNumber = 50;
-    await checkAvatarUnlocks(await recordHandStats(fiftieth));
+    const twoFiftieth = wonHand(token, 1000);
+    twoFiftieth.id = gameId;
+    twoFiftieth.handNumber = 250;
+    await checkAvatarUnlocks(await recordHandStats(twoFiftieth));
 
     const owned = await listOwnedCosmetics(profile.id);
-    expect(owned).toContain("donni");
-    // Crossing donni's bar must not award jimmy's 150.
-    expect(owned).not.toContain("jimmy");
-    // claira is a 7,000,000 Gold item with no `unlock` field, so no number
-    // of hand wins may ever grant her. This is the load-bearing half of
-    // this test now: the loop above walks straight past the 10-hand bar
-    // she used to carry, so a regression that re-derived an unlock for a
-    // priced character -- or let one fall through to a free default --
-    // would hand out the catalog's most expensive character for nothing.
-    expect(owned).not.toContain("claira");
-  });
+    expect(owned).toContain("character1");
+    // Crossing character1's bar must not award character2's 750.
+    expect(owned).not.toContain("character2");
+    // character5 is a Gold-priced item with no `unlock` field, so no number
+    // of hand wins may ever grant it. This is the load-bearing half of this
+    // test: a regression that re-derived an unlock for a priced character --
+    // or let one fall through to a free default -- would hand out a paid
+    // character for nothing.
+    expect(owned).not.toContain("character5");
+  }, 20_000);
 
-  // The 2D avatar catalog (character1-11, replacing the retired illustrated
-  // roster) has no chipsWon-gated entry any more than the old one's
-  // avatar-closer/avatar-veteran did -- every unlockable is handsWon-gated,
-  // so checkAvatarUnlocks's chipsWon branch has no live catalog entry to
+  // Every unlockable avatar today is handsWon-gated, not chipsWon-gated, so
+  // checkAvatarUnlocks's chipsWon branch has no live catalog entry to
   // exercise it against until a chipsWon avatar exists again. The two tests
-  // below cover what's real instead: crossing exactly one handsWon bar per
+  // here cover what's real instead: crossing exactly one handsWon bar per
   // hand recorded, and never twice.
 
   it("does not re-award an avatar the profile already owns", async () => {
@@ -68,21 +65,21 @@ describe("checkAvatarUnlocks", () => {
     const profile = await ensureProfile(token);
     const gameId = randomUUID();
 
-    for (let handNumber = 1; handNumber <= 50; handNumber++) {
+    for (let handNumber = 1; handNumber <= 250; handNumber++) {
       const state = wonHand(token, 1000);
       state.id = gameId;
       state.handNumber = handNumber;
       await checkAvatarUnlocks(await recordHandStats(state));
     }
-    expect(await listOwnedCosmetics(profile.id)).toContain("donni");
+    expect(await listOwnedCosmetics(profile.id)).toContain("character1");
 
-    // A 51st win must not grant a second copy of an avatar already owned.
+    // A 251st win must not grant a second copy of an avatar already owned.
     const again = wonHand(token, 1000);
     again.id = gameId;
-    again.handNumber = 51;
+    again.handNumber = 251;
     await checkAvatarUnlocks(await recordHandStats(again));
 
     const owned = await listOwnedCosmetics(profile.id);
-    expect(owned.filter((id) => id === "donni")).toHaveLength(1);
-  });
+    expect(owned.filter((id) => id === "character1")).toHaveLength(1);
+  }, 20_000);
 });

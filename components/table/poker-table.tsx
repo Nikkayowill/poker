@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
-  Box, Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Palette, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
+  Box, Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
@@ -32,8 +32,6 @@ import {
   tableRendererLabel,
   type TableRenderer,
 } from "@/lib/scene/table-renderer";
-import { roomThemeLabel, type RoomThemeId } from "@/lib/game3d/room-theme";
-import { useWebglSupport } from "./use-webgl-support";
 import { useDesktopViewport } from "@/components/use-desktop-viewport";
 import { useClipboardCopy } from "@/components/use-clipboard-copy";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -56,7 +54,7 @@ import { MuckDrift } from "./table-effects";
 import { HandHistoryDrawer } from "./hand-history-drawer";
 import { PlayerSeat } from "./player-seat";
 import { LocalPlayerHud } from "./local-player-hud";
-import { TableLoadingSplash } from "./scene3d/table-loading-splash";
+import { TableLoadingSplash } from "./table-loading-splash";
 import { PlayingCard } from "./playing-card";
 import { isWinningCard, winningCardKeys } from "@/lib/game/winning-cards";
 import { MAX_MISSED_TURNS } from "@/lib/game/engine";
@@ -88,23 +86,9 @@ export type ConnectionState = "connected" | "reconnecting" | "offline";
    where the figures were too small to read. The height fraction rises with it
    so a short landscape table does not suddenly become the binding case. */
 /**
- * The WebGL room, split out the same way and for the same reasons, more so.
- * `three` plus the R3F/drei surface is by a distance the largest thing this
- * app can ship, and a player who never chooses this renderer must never
- * download it. Kept as a second dynamic import rather than a branch inside
- * one module so that stays true: a static import here would put three.js in
- * the table chunk for everybody.
- */
-const TableScene3D = dynamic(
-  () => import("./scene3d/table-scene-3d").then((module) => module.TableScene3D),
-  { ssr: false },
-);
-
-/**
- * The racetrack room, split out for the same reason as the other two: a
- * player who never chooses it should not download its painter. Cheap next to
- * the 3D room: it is Canvas 2D and shares the chip layer already in the
- * table chunk.
+ * The racetrack room. `ssr: false` because it paints to a real `<canvas>`
+ * and measures the DOM to fit its camera -- there is no server-renderable
+ * version of it.
  */
 import type { RacetrackLayout } from "./scene/racetrack-scene";
 
@@ -209,8 +193,6 @@ export function PokerTable({
   tableRendererSettled,
   landscape,
   onCycleTableRenderer,
-  roomThemeId,
-  onCycleRoomTheme,
   onSignIn,
   onSignOut,
   reactions,
@@ -239,8 +221,6 @@ export function PokerTable({
   landscape: boolean;
   /** Called with the renderer currently mounted; see poker-app.tsx. */
   onCycleTableRenderer: (mounted: TableRenderer) => void;
-  roomThemeId: RoomThemeId;
-  onCycleRoomTheme: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
   /** This hand's active reactions, keyed by seat id; see use-table-reactions.ts. */
@@ -250,12 +230,7 @@ export function PokerTable({
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
-  // False on the server and on the first client paint, so a player who prefers
-  // the 3D room sees the racetrack table for one frame rather than a canvas
-  // that might not work. See use-webgl-support.ts for why this is not an
-  // effect.
-  const webglAvailable = useWebglSupport();
-  const activeRenderer = resolveTableRenderer(tableRenderer, webglAvailable, landscape);
+  const activeRenderer = resolveTableRenderer(tableRenderer);
   // Which of lib/scene/seat-art.ts's two hand-tuned tables applies to seat
   // art on the racetrack table; see useDesktopViewport's own note for why
   // this has to be a real subscription and not a `window.matchMedia` read
@@ -579,11 +554,10 @@ export function PokerTable({
   /**
    * Where each seat actually goes.
    *
-   * The CSS ellipse for the 3D room's own DOM cutouts, and for the racetrack
-   * before its camera has produced a layout on the first frame; the
-   * projected anchors for the racetrack once it has. Same shape of answer
-   * either way, a style object per seat, so nothing downstream branches
-   * on which table is underneath.
+   * The CSS ellipse (`ringGeometry`) for the racetrack before its camera has
+   * produced a layout on the first frame; the projected anchors once it has.
+   * Same shape of answer either way -- a style object per seat -- so nothing
+   * downstream branches on which one is live.
    */
   const seatStyles = useMemo(() => {
     if (!isRacetrack || !racetrackLayout) return ringGeometry;
@@ -755,28 +729,14 @@ export function PokerTable({
    * the DOM felt and rail keep painting themselves (see `.scene-lit` in
    * app/styles/99-scene.css). Assuming success would leave a device without
    * a working canvas looking at an unpainted table.
+   *
+   * RacetrackScene's own onReady fires the instant its canvas exists -- there
+   * is no staggered/async child to wait on, so this is plain render-time
+   * state with no token/identity machinery needed to tell one room's mount
+   * apart from another's.
    */
-  // Readiness belongs to one specific room mount, not just to a renderer
-  // name. During 3D -> 2.5D -> 3D, the first 3D room's passive cleanup can
-  // report false after the second 3D room has already reported true. A name
-  // tag cannot distinguish them; this token can. Old callbacks retain their
-  // old token and therefore cannot un-light the room that replaced them.
-  const sceneToken = useMemo(() => ({ renderer: activeRenderer }), [activeRenderer]);
-  const [readySceneToken, setReadySceneToken] = useState<typeof sceneToken | null>(null);
-  const reportSceneReady = useCallback((ready: boolean) => {
-    setReadySceneToken((current) => (
-      ready ? sceneToken : current === sceneToken ? null : current
-    ));
-  }, [sceneToken]);
-
-  // RacetrackScene's own onReady fires the instant its canvas exists; there
-  // is no staggered/async child here to race a remount against, unlike 3D, so
-  // this skips the token machinery above and derives straight from
-  // render-time state.
   const [canvas2DMounted, setCanvas2DMounted] = useState(false);
-  const sceneReady = activeRenderer === "webgl_3d"
-    ? readySceneToken === sceneToken
-    : canvas2DMounted;
+  const sceneReady = canvas2DMounted;
 
   // Ring slots, not engine seat positions. The scene rings its table from the
   // local player's chair exactly as the DOM does, so a bet has to be handed
@@ -914,32 +874,16 @@ export function PokerTable({
         onSelect: onCycleBetStyle,
         icon: <Sparkles size={15} />,
       },
-      // Always offered now. This used to be hidden outright without WebGL,
-      // because the only alternative to the classic table was the 3D room and
-      // an option that cannot do anything on this device is worse than no
-      // option. The racetrack room needs nothing but a 2D context, so such a
-      // device now has two tables to choose between and the entry earns its
-      // place; `nextTableRenderer` is what skips the room it cannot render.
+      // The only renderer left, so this never visibly changes anything --
+      // kept as a menu entry (see `nextTableRenderer`'s own comment) so a
+      // renderer added back later has a place to be chosen from without new
+      // menu plumbing.
       {
         kind: "action" as const,
         label: tableRendererLabel(activeRenderer),
         onSelect: () => onCycleTableRenderer(activeRenderer),
         icon: <Box size={15} />,
       },
-      // Same gating as the renderer entry above, plus a second condition: a
-      // room theme is a 3D-room concept (there is no floor/fog in the 2D
-      // canvas), so it's meaningless, not merely unavailable, unless the 3D
-      // room is what's actually mounted right now.
-      ...(webglAvailable && activeRenderer === "webgl_3d"
-        ? [
-            {
-              kind: "action" as const,
-              label: roomThemeLabel(roomThemeId),
-              onSelect: onCycleRoomTheme,
-              icon: <Palette size={15} />,
-            },
-          ]
-        : []),
       {
         kind: "action",
         label: "Hand history",
@@ -999,7 +943,7 @@ export function PokerTable({
     return items;
   }, [
     soundEnabled, onToggleSound, betStyle, onCycleBetStyle,
-    activeRenderer, onCycleTableRenderer, webglAvailable, roomThemeId, onCycleRoomTheme,
+    activeRenderer, onCycleTableRenderer,
     game.isPrivate, game.roomCode,
     game.id, game.isSeated, roomCodeCopied, copyRoomCode, profile, onCustomize, onSignIn,
     onSignOut, onLeaveSeat,
@@ -1056,10 +1000,7 @@ export function PokerTable({
           addition to that rule, same reasoning as the lobby header's own
           copy of it (components/poker-app.tsx): a single persistent icon,
           not a menu row, so it costs nothing to keep visible. */}
-      <header className={clsx(
-        "game-header",
-        sceneReady && activeRenderer === "webgl_3d" && "game-header-3d",
-      )}>
+      <header className="game-header">
         {/* Mark only, matching the lobby header. The button already carries
             its own accessible name, so the mark stays aria-hidden here rather
             than announcing the brand a second time inside it. */}
@@ -1072,9 +1013,8 @@ export function PokerTable({
             is in the pot" than a second number in the chrome above the
             table. This header used to run three columns so MAIN POT could
             sit on the viewport's true centre; with nothing left for that
-            middle column to hold, the header goes back to two, the same
-            shape .game-header-3d already used once its own camera HUD took
-            over the pot (see 05-game-header.css). */}
+            middle column to hold, the header goes back to two (see
+            05-game-header.css). */}
         <div className="game-header-actions">
           <button className="leave-button" onClick={() => { tapSound(); onLeave(); }}>Leave table</button>
           <DonateButton gameId={game.id} />
@@ -1096,58 +1036,38 @@ export function PokerTable({
           className={clsx(
             "table-area",
             // Only once the room is genuinely there to replace them: this
-            // class stops the DOM felt and rail painting.
+            // class stops the DOM felt and rail painting. The canvas does
+            // NOT seat its own figures the way the deleted WebGL room used
+            // to, so the DOM cut-outs stay -- they are the only players at
+            // this table.
             sceneReady && "scene-lit",
-            // The 3D room seats its own figures in its own chairs, so the DOM
-            // cut-outs would be a second set of players at the same table,
-            // the mistake the Blackjack stage made with Loki and Finn. Gated
-            // on sceneReady too: if the room never arrives, the cut-outs are
-            // the only players there are.
-            sceneReady && activeRenderer === "webgl_3d" && "scene-room-3d",
-            // Same contract as .scene-room-3d: the canvas is drawing the real
-            // table, so the DOM's flat plate has to stop. Unlike the 3D room
-            // this one does not seat its own figures, so the cut-outs stay:
-            // they are the only players at this table.
             sceneReady && isRacetrack && "scene-room-racetrack",
           )}
         >
           {/* The room, underneath everything. First child so it is first in
               paint order as well as lowest in z-index; the HUD over it is
               ordinary DOM and needed no z-index changes to land on top. */}
-          {isRacetrack ? (
-            <RacetrackScene
-              seats={orderedSeats}
-              pot={game.pot}
-              bigBlind={game.bigBlind}
-              streetBets={sceneStreetBets}
-              street={game.street}
-              paying={showFunnel}
-              winners={sceneWinners}
-              handNumber={game.handNumber}
-              betFlights={betFlights}
-              betStyle={betStyle}
-              onReady={setCanvas2DMounted}
-              onLayout={onRacetrackLayout}
-              foregroundHostRef={racetrackForegroundRef}
-            />
-          ) : (
-            <TableScene3D
-              game={game}
-              betFlights={betFlights}
-              onReady={reportSceneReady}
-              profile={profile}
-              roomThemeId={roomThemeId}
-            />
-          )}
+          <RacetrackScene
+            seats={orderedSeats}
+            pot={game.pot}
+            bigBlind={game.bigBlind}
+            streetBets={sceneStreetBets}
+            street={game.street}
+            paying={showFunnel}
+            winners={sceneWinners}
+            handNumber={game.handNumber}
+            betFlights={betFlights}
+            betStyle={betStyle}
+            onReady={setCanvas2DMounted}
+            onLayout={onRacetrackLayout}
+            foregroundHostRef={racetrackForegroundRef}
+          />
           <TableLoadingSplash active={!sceneReady} />
           {/* Shown at every width on the racetrack; see
               42-racetrack-table.css's own note on why that table needs the
               corner HUD on mobile too (its local seat has no figure to fall
-              back on at any width). Never on the 3D room: it mounts its own
-              equivalent (game3d/hud/player-hud-corner.tsx) inside
-              TableScene3D above, so rendering this one too would be the same
-              avatar twice. */}
-          {activeRenderer !== "webgl_3d" && mySeat && (
+              back on at any width). */}
+          {mySeat && (
             <LocalPlayerHud
               name={mySeat.name}
               stack={mySeat.stack}
@@ -1505,7 +1425,6 @@ export function PokerTable({
             onLeave={onLeave}
             profile={profile}
             onClaimBackstop={onClaimBackstop}
-            variant={sceneReady && activeRenderer === "webgl_3d" ? "3d" : "flat"}
           />
         </div>
       </section>

@@ -23,8 +23,8 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 - Product constraints: `docs/game-loop.md`, `docs/launch-checklist.md`, `docs/security-audit.md`
 
 Subsystem-specific gotchas moved out of this always-loaded file into where they load on demand:
-`components/game3d/CLAUDE.md` (3D room), `lib/scene/CLAUDE.md` (2D table), `lib/scene/chips/CLAUDE.md`
-(chip system), `app/styles/CLAUDE.md` (styling contract), and the `deploy-checklist` skill (pre-merge/deploy).
+`lib/scene/CLAUDE.md` (2D table), `lib/scene/chips/CLAUDE.md` (chip system), `app/styles/CLAUDE.md`
+(styling contract), and the `deploy-checklist` skill (pre-merge/deploy).
 
 ## Rules
 
@@ -1146,22 +1146,64 @@ decided here. Also applied `20260819090000_missing_fk_indexes.sql` (six missing 
 Supabase performance advisor; `cash_game_sessions`' own finding was skipped — that table's store was
 already deleted in the 2026-08-06 repo-quality pass).
 
-### 3D table: scrap under consideration, not decided (2026-08-19, restated 2026-08-25)
-Kayo is weighing dropping the WebGL 3D table outright — "too much work, don't want to waste time on
-it" — floated, not committed. If a future pass sees `components/game3d`/`lib/game3d` deleted and the
-`webgl_3d` renderer option gone, treat it as decided; otherwise this is still open. Measured 2026-08-19:
-`components/game3d/` + `lib/game3d/` is 101 files / ~18,400 lines, and 23 e2e specs touch the 3D room.
-That matches the churn already logged above (eight geometry-rebuild rounds, arm-IK, the hand/finger
-rig, the nameplate collision fix, a camera that structurally never sees a horizon, a meshopt pass, an
-abandoned local character-gen effort) for one of three table renderers. The 2.5D racetrack table is
-the one actually converging with real polish and already shares the seat-art/avatar system with the
-rest of the app. If this lands, M17 above (parked "until the 3D sim is finished") needs Kayo's
-explicit re-decision, not a silent default.
+### The WebGL 3D table is deleted outright (2026-08-26)
+Resolves the "scrap under consideration" question restated twice below (2026-08-19, 2026-08-25) —
+Kayo's call, stated directly this time: "kill it... scrap all of it," with one explicit carve-out —
+keep the chip physics and styles for later reference, but not the characters (the 2D seat-art roster,
+`character1`-`character41`, stays exactly as-is; it was never 3D-room code to begin with). Done on
+`chore/delete-3d-table` off a fresh `origin/main`.
 
-**`canvas_2d` no longer exists to fall back to** — see the entry above this one: the classic table was
-deleted outright 2026-08-25, and Kayo reconfirmed in the same breath that the 3D room should stay in
-the codebase, disabled, "I may bring that back eventually once I learn render." That is a restatement
-of the status quo (kept, not scrapped, not un-parked), not a resolution of the scrap question above —
-still treat this section as open until `components/game3d`/`lib/game3d` are actually deleted.
+**Nothing was kept in the live tree.** Before deleting anything, the whole subsystem was snapshotted
+under a pushed git tag, `archive/webgl-3d-table` — recover any file with
+`git show archive/webgl-3d-table:<path>`, or the whole thing with
+`git checkout archive/webgl-3d-table -- lib/game3d components/game3d`. Same precedent as the classic
+`canvas_2d` table's own removal note two sections down: "recover it from git history rather than
+re-deriving it." A tag is a complete, permanent copy — there was no reason to also leave a half-copy
+of the chip/style code sitting in the working tree where it would rot, need its own type-checking, or
+get mistaken for live code.
 
-Update this section when scope changes; keep `CLAUDE.md` synchronized.
+**Deleted: `lib/game3d/` (63 files), `components/game3d/` (36 files), `app/game3d/`**, the 3D bridge
+component (`components/table/scene3d/table-scene-3d.tsx`), `use-webgl-support.ts`, the 3D-only e2e
+spec (`table-scene.spec.ts`), every GLB asset (14 avatar meshes, the room-surround environment, 5 chip/
+card prop meshes), four 3D asset-pipeline scripts, and the `three`/`@react-three/fiber`/
+`@react-three/drei`/`@types/three` npm dependencies. Two more files went the same way as a byproduct,
+not because the brief named them: `components/store/character-3d-canvas.tsx` and
+`character-3d-preview.tsx` had zero remaining consumers even before this pass (Collection never
+actually mounted the 3D preview) — genuinely dead code this pass's grep exposed, not new breakage.
+
+**Two files that live under a `game3d`-named path turned out to be shared, and moved instead of
+dying with the rest.** `lib/game3d/table-shape.ts` (`offsetStadium`, `stadiumOutline`,
+`stadiumRayPoint`) is real geometry math the *racetrack's own* `lib/scene/table-anchors.ts` depends
+on — every comment in the file reads like 3D-room tuning, but the math itself is renderer-agnostic
+stadium-curve arithmetic. Moved to `lib/scene/table-shape.ts`, import repointed. Same story for
+`components/table/scene3d/table-loading-splash.tsx`, whose own doc comment already said "shared by
+both table renderers" — moved to `components/table/table-loading-splash.tsx` rather than deleted,
+which would have broken the racetrack's own loading screen.
+
+**A second, separate 3D-only cosmetics slot came out with it.** `CHARACTERS_3D`
+(`lib/game3d/characters.ts`), `character3DCosmetics`, `premiumCharacter3DOffers`, `DEFAULT_3D_AVATAR`,
+and the `avatar3d` field on `EquippedCosmetics` were a whole parallel roster/purchase axis for the 3D
+room's own characters, entirely distinct from the 2D `characterAvatarCosmetics` roster that stays.
+`profiles.equipped` is a JSONB column, not a fixed schema, so dropping `avatar3d` from the TS type was
+enough — no migration, an old row's stray key is just inert JSON, same as `metric_sum`/`metric_count`
+being left inert after Memory Match's board was dropped. `ActionBar`'s `variant` prop (`"flat" | "3d"`)
+had exactly one remaining caller passing one value once `TableScene3D` was gone, so it was deleted
+outright rather than left as a permanently-single-valued prop.
+
+**CSS was tangled, not layered** — `.scene-room-3d` and the racetrack's own rules shared selectors via
+`:has()`/`:not(:has())` (e.g. `06-table.css`'s `.game-content:not(:has(.scene-room-3d)) .action-layer`).
+Blocks that were entirely 3D-only were deleted; blocks with a now-always-true qualifier had the
+qualifier stripped rather than the whole rule deleted — that rule's styling still belongs to the
+racetrack. Numbered file order preserved.
+
+**Two test files were quietly wrong and this pass caught it**: `avatar-unlocks.test.ts` and
+`hand-completion.test.ts` hardcoded the deleted 3D roster's earned-character id (`donni`, 50 hands)
+instead of the real 2D earned tier (`character1`, 250 hands) — fixed against the tier that actually
+ships, not a pre-existing bug this pass introduced.
+
+**M17 (chip cosmetics), parked "until the 3D sim is finished," needs Kayo's own re-decision now that
+there is no 3D sim left to finish** — restated from the section this replaces, not resolved here.
+
+Verified: `npx vitest run` 2013/2013 (down from the pre-deletion count by exactly the deleted test
+files), clean `tsc` apart from the pre-existing `safe-area.spec.ts` failure, clean lint, clean
+production build with `/game3d` absent from the route list and every other route intact.

@@ -69,10 +69,6 @@ function CosmeticArt({ item, angle }: { item: Cosmetic; angle?: number }) {
 
   if (item.art) return <CardBackArt art={item.art} className="cosmetic-art" />;
 
-  if (item.renderMode === "3d") {
-    return null;
-  }
-
   if (item.slot === "avatar" && !failed) {
     // The same plate the seat-art bucket draws at the table, not a
     // separately-sized "figure" derivative. This is the card someone
@@ -279,9 +275,7 @@ export function Collection() {
                 Close
               </button>
               {owned.includes(previewing.id) && equipped?.[
-                previewing.slot === "avatar"
-                  ? previewing.renderMode === "3d" ? "avatar3d" : "avatar2d"
-                  : previewing.slot
+                previewing.slot === "avatar" ? "avatar2d" : previewing.slot
               ] !== previewing.id && (
                 <button
                   type="button"
@@ -316,13 +310,7 @@ export function Collection() {
 
       {SLOTS.map(({ slot, title, blurb }) => {
         const items = catalog
-          .filter((item) =>
-            item.slot === slot &&
-            // The Collection currently presents illustrated 2D characters only.
-            // Keep 3D cosmetics available to the table and server equipment
-            // paths without mounting their WebGL preview here.
-            (slot !== "avatar" || (item.renderMode ?? "2d") !== "3d"),
-          )
+          .filter((item) => item.slot === slot)
           // Owned items first so a player sees what's theirs before the
           // store pitch; a stable sort keeps each group in its original
           // rarity order rather than reshuffling within owned/unowned.
@@ -351,9 +339,7 @@ export function Collection() {
                 <div className="cosmetic-grid">
                   {group.items.map((item) => {
                 const isOwned = owned.includes(item.id);
-                const equipmentKey = item.slot === "avatar"
-                  ? item.renderMode === "3d" ? "avatar3d" : "avatar2d"
-                  : item.slot;
+                const equipmentKey = item.slot === "avatar" ? "avatar2d" : item.slot;
                 const isEquipped = equipped?.[equipmentKey] === item.id;
                 const forSale = typeof item.price === "number" && item.price > 0;
                 const affordable = unlimited || balance >= (item.price ?? 0);

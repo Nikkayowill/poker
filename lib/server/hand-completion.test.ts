@@ -30,40 +30,39 @@ describe("onHandCompleted", () => {
   it("records the hand and awards the unlock it earns in a single call", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
-    expect(await listOwnedCosmetics(profile.id)).not.toContain("donni");
+    expect(await listOwnedCosmetics(profile.id)).not.toContain("character1");
 
     // The whole point of the hook: one call does both halves. Nothing here
     // calls checkAvatarUnlocks itself, which is exactly the mistake the
-    // human-action path used to make. donni's threshold (50 hands won) is
-    // the catalog's lowest remaining avatar unlock, so this crosses it on
-    // the last of 50 calls rather than the first -- no catalog entry left
-    // unlocks off a single hand's own numbers the way a chips-won avatar
-    // used to.
+    // human-action path used to make. character1's threshold (250 hands won)
+    // is the catalog's lowest avatar unlock, so this crosses it on the last
+    // of 250 calls rather than the first -- no catalog entry unlocks off a
+    // single hand's own numbers the way a chips-won avatar used to.
     const gameId = randomUUID();
-    for (let handNumber = 1; handNumber < 50; handNumber++) {
+    for (let handNumber = 1; handNumber < 250; handNumber++) {
       const state = wonHand(token, 1000);
       state.id = gameId;
       state.handNumber = handNumber;
       await onHandCompleted(state);
     }
-    expect(await listOwnedCosmetics(profile.id)).not.toContain("donni");
+    expect(await listOwnedCosmetics(profile.id)).not.toContain("character1");
 
-    const fiftieth = wonHand(token, 1000);
-    fiftieth.id = gameId;
-    fiftieth.handNumber = 50;
-    await onHandCompleted(fiftieth);
+    const twoFiftieth = wonHand(token, 1000);
+    twoFiftieth.id = gameId;
+    twoFiftieth.handNumber = 250;
+    await onHandCompleted(twoFiftieth);
 
-    expect(await listOwnedCosmetics(profile.id)).toContain("donni");
+    expect(await listOwnedCosmetics(profile.id)).toContain("character1");
     const standing = await getPlayerStanding(profile.id, "lifetime");
-    expect(standing?.stats.handsWon).toBe(50);
-  });
+    expect(standing?.stats.handsWon).toBe(250);
+  }, 20_000);
 
   it("is safe to run twice for the same hand", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
     const gameId = randomUUID();
 
-    for (let handNumber = 1; handNumber < 50; handNumber++) {
+    for (let handNumber = 1; handNumber < 250; handNumber++) {
       const state = wonHand(token, 1000);
       state.id = gameId;
       state.handNumber = handNumber;
@@ -72,17 +71,17 @@ describe("onHandCompleted", () => {
 
     const state = wonHand(token, 1000);
     state.id = gameId;
-    state.handNumber = 50;
+    state.handNumber = 250;
     await onHandCompleted(state);
     // A retry, or both completion paths racing on the same hand. Neither the
     // stats nor the award may be applied a second time.
     await onHandCompleted(state);
 
     const standing = await getPlayerStanding(profile.id, "lifetime");
-    expect(standing?.stats.handsPlayed).toBe(50);
+    expect(standing?.stats.handsPlayed).toBe(250);
     const owned = await listOwnedCosmetics(profile.id);
-    expect(owned.filter((id) => id === "donni")).toHaveLength(1);
-  });
+    expect(owned.filter((id) => id === "character1")).toHaveLength(1);
+  }, 20_000);
 
   it("keeps the stats it already wrote when the unlock check fails, and still reports the failure", async () => {
     const token = randomUUID();

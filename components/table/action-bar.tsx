@@ -82,7 +82,6 @@ export function ActionBar({
   onLeave,
   profile,
   onClaimBackstop,
-  variant = "flat",
 }: {
   game: GameSnapshot;
   pending: boolean;
@@ -97,8 +96,6 @@ export function ActionBar({
    * ways out.
    */
   onClaimBackstop: () => void;
-  /** The 3D room keeps the same server intents but presents its own control console. */
-  variant?: "flat" | "3d";
 }) {
   const legal = game.legalActions;
   const mySeat = game.seats.find((seat) => seat.isMine);
@@ -152,7 +149,7 @@ export function ActionBar({
 
   if (bustedWaiting) {
     return (
-      <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>
+      <div className="action-bar">
         <div className="action-slot-status">
           <span className="action-kicker">All in</span>
           <strong>Your last chips are in -- the hand plays out before you can rebuy.</strong>
@@ -173,7 +170,7 @@ export function ActionBar({
     // ads) is the only way back in.
     const backstop = backstopState(profile, new Date(), TIER_CONFIG[game.tier].minBuyIn);
     return (
-      <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>
+      <div className="action-bar">
         <div className="action-slot-status">
           <span className="action-kicker">Stack exhausted</span>
           <strong>
@@ -246,7 +243,7 @@ export function ActionBar({
     // keeps this agreeing with scheduleNextHand by construction.
     const tableIsDone = game.isSeated && !game.nextHandAt;
     return (
-      <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>
+      <div className="action-bar">
         <div className="action-slot-status">
           <span className="action-kicker">
             {!game.isSeated ? "Seat closed" : tableIsDone ? "Table finished" : "Hand complete"}
@@ -283,7 +280,7 @@ export function ActionBar({
   // rebuy.
   if (game.isSeated && mySeat?.status === "out") {
     return (
-      <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>
+      <div className="action-bar">
         <div className="action-slot-status">
           <span className="action-kicker">Sat out</span>
           <strong>You’re in for the next hand -- sit tight while this one finishes.</strong>
@@ -296,11 +293,7 @@ export function ActionBar({
   const passiveIsCall = Boolean(legal?.canCall);
 
   return (
-    <div className={clsx(
-      "action-bar",
-      variant === "3d" && "action-bar-3d",
-      myTurn && "action-bar-your-turn",
-    )}>
+    <div className={clsx("action-bar", myTurn && "action-bar-your-turn")}>
       {/* Only your own turn burns the bar. Passing nulls otherwise leaves the
           fuse properties unset, which is what makes the track sit empty
           rather than animating somebody else's clock under your controls. */}

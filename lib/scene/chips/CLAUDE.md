@@ -4,7 +4,9 @@ Migrated from the root `CLAUDE.md` (2026-08-17) — loads only when working unde
 
 The 2D chip system was deleted and rebuilt from scratch; `chip-layer.ts`, `chip-physics.ts`,
 `chip-spring.ts` and `paint.ts` no longer exist. Both 2D renderers (classic ellipse + racetrack)
-share it through `ChipSpace`/`SceneProjection`. The 3D room's chips are separate and untouched.
+share it through `ChipSpace`/`SceneProjection`. The WebGL 3D room used to have its own separate,
+untouched chip system (`components/game3d/chips/`) -- that room was deleted outright, so this is the
+only chip system left in the app.
 - **A chip is sized in pixels, not world units** (`chip-spec.ts`). The old system sized it in world
   units and let the projection decide, which gave the side wall 1.7px on a desktop and 0.65px on a
   phone — under a pixel there is no cylinder, which is the whole "flat, like a UI element" problem.

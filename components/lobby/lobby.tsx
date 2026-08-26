@@ -72,7 +72,6 @@ export function Lobby({
   onContinueAsGuest,
   onSignOut,
   tableRenderer,
-  webglAvailable,
   landscape,
   onTableRendererChange,
   soundEnabled,
@@ -116,7 +115,6 @@ export function Lobby({
   /** The table-view choice, surfaced in the buy-in modal. See BuyInModal's
    * own header for why it belongs there and not only in the in-game menu. */
   tableRenderer: TableRenderer;
-  webglAvailable: boolean;
   landscape: boolean;
   onTableRendererChange: (renderer: TableRenderer) => void;
   /* The phone shell's third pane is where these live on a phone. They stay
@@ -289,7 +287,6 @@ export function Lobby({
             playerName={name}
             onPlayerNameChange={setNameOverride}
             tableRenderer={tableRenderer}
-            webglAvailable={webglAvailable}
             landscape={landscape}
             onTableRendererChange={onTableRendererChange}
             onConfirm={(tier, buyIn) => {
@@ -510,7 +507,6 @@ export function Lobby({
           playerName={name}
           onPlayerNameChange={setNameOverride}
           tableRenderer={tableRenderer}
-          webglAvailable={webglAvailable}
           landscape={landscape}
           onTableRendererChange={onTableRendererChange}
           onConfirm={(tier, buyIn) => {

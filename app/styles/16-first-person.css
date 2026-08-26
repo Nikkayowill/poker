@@ -217,10 +217,8 @@
      side or far seat. `NEAR_SEAT_BET_INSET_DESKTOP` is 0.48 now -- see that
      constant's own comment in seat-ring.ts for the measurement. This is the
      DOM label following it: measured the same way as the base rule, against
-     `window.__stackchipsScene.betSpot(0)` at 1440x900 with the table
-     renderer forced to `canvas_2d` (the default is the 3D room, which mounts
-     a differently-sized rail and would silently mis-tune this), 218px lands
-     it within a pixel of that pile. */
+     `window.__stackchipsScene.betSpot(0)` at 1440x900 against the racetrack
+     room's own rail sizing, 218px lands it within a pixel of that pile. */
   .seat-mine .table-bet {
     --bet-reach-y: 218px;
   }

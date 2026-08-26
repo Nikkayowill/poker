@@ -20,7 +20,7 @@
  * reality instead of only against each other.
  */
 
-import { offsetStadium, stadiumOutline, type StadiumPoint } from "../game3d/table-shape";
+import { offsetStadium, stadiumOutline, type StadiumPoint } from "./table-shape";
 
 /** A plain XYZ triple. X across the table, Y up from the floor, Z toward the camera. */
 export interface Vec3 {
@@ -771,8 +771,9 @@ const FIT_ITERATIONS = 40;
  * The distance search is a bisection rather than a formula, and has to be:
  * under perspective, moving the camera changes the foreshortening as well
  * as the size, so which constraint binds can swap over as the distance
- * walks and there's no closed form to solve. (The 3D room's camera fit
- * reached the same conclusion; see `lib/game3d`'s `frameCamera`.)
+ * walks and there is no closed form to solve. (The deleted WebGL 3D room's
+ * own camera fit -- `archive/webgl-3d-table` git tag -- reached the same
+ * conclusion.)
  */
 export function fitCamera(frame: Frame): Camera {
   const vertical = framingPoints();

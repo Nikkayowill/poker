@@ -223,11 +223,16 @@ function pickBotIdentity(state: GameState, position: number): number {
  * brings its own face with it instead of inheriting the chair's.
  */
 function botAvatarFor(identity: number): string {
-  // The 2D character roster only, never avatarCosmetics' combined list:
-  // that also holds the 3D-only roster, and landing a bot on a 3D id here
-  // would give it a face the racetrack's seat-art lookup can't resolve.
-  // Minus the earned tier, same reasoning as botCardBackFor; see
-  // botAvatarCosmetics.
+  // botAvatarCosmetics is the character roster minus its earned tier -- same
+  // reasoning as botCardBackFor, see that function's own comment.
+  //
+  // Used to matter for a second reason too: avatarCosmetics briefly also
+  // held a separate WebGL-3D-only roster, and landing a bot on one of those
+  // ids here would have given it a face the racetrack's seat-art lookup
+  // could never resolve. That roster is gone along with the 3D room, so
+  // avatarCosmetics is just the character roster now -- but botAvatarCosmetics
+  // stays the deliberate filter to reach for here rather than avatarCosmetics
+  // directly, since the earned-tier exclusion is still real.
   if (botAvatarCosmetics.length === 0) return DEFAULT_AVATAR_COSMETIC;
   return botAvatarCosmetics[identity % botAvatarCosmetics.length].id;
 }
@@ -728,7 +733,6 @@ export function createGame(
       avatarUrl: appearance?.avatarUrl ?? null,
       avatarPreset: appearance?.avatarPreset ?? "ace",
       avatarCosmetic: appearance?.equipped?.avatar2d ?? DEFAULT_AVATAR_COSMETIC,
-      avatar3dCosmetic: appearance?.equipped?.avatar3d,
       cardBackCosmetic: appearance?.equipped?.cardBack ?? DEFAULT_CARD_BACK,
       position: 0,
       isHuman: true,
@@ -882,7 +886,6 @@ export function claimSeat(
   seat.avatarUrl = profile.avatarUrl;
   seat.avatarPreset = profile.avatarPreset;
   seat.avatarCosmetic = profile.equipped.avatar2d;
-  seat.avatar3dCosmetic = profile.equipped.avatar3d;
   seat.cardBackCosmetic = profile.equipped.cardBack;
   // A claimed seat owns exactly the buy-in the player paid for, including chips
   // this seat already committed before the bot was replaced. Resetting the

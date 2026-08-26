@@ -68,64 +68,7 @@
    poker-table.tsx measures .poker-table-wrap to place every seat, and
    .poker-felt's overflow keeps the community cards clipped to the cloth. */
 
-/* The 3D room seats real figures in real chairs.
-   -------------------------------------------------------------------------
-   When it is the renderer, the DOM cut-outs must go, or every seat holds two
-   players: a flat illustrated head in front and a modelled person behind it,
-   at different scales and never quite aligned. That is the same defect the
-   Blackjack stage shipped when it drew Loki and Finn once in the scene and
-   again as a 34px avatar beside the hand, and it reads as a mistake
-   immediately even to someone who could not say what is wrong.
-
-   Only the ARTWORK goes. Everything else in a seat is information the room
-   does not render and must not lose -- the nameplate, the stack, the blind
-   and dealer markers, the winner badge, the turn-clock fuse ring, the folded
-   dimming, and the seat's own cards. They keep their geometry from
-   lib/game/table-geometry.ts and stay exactly where they were.
-
-   visibility rather than display, deliberately. `display: none` would take
-   .seat-figure out of layout, and .seat-plate is positioned in the flow
-   underneath it -- removing the box moves every nameplate at the table. The
-   figure keeps its size and stops being seen, which is the same trick the
-   rail rule below plays on the felt, and for the same reason. */
-.scene-room-3d .player-seat,
-.scene-room-3d .board-stack,
-.scene-room-3d .street-label,
-.scene-room-3d .dealer-puck,
-.scene-room-3d .muck-drift,
-.scene-room-3d .table-hud {
-  visibility: hidden;
-}
-
-/* ...and the flat table goes with them, for exactly the same reason a seat's
-   cut-out does: the 3D room models its own rail, cloth and shadow, so leaving
-   .poker-rail's artwork painted lays a 2D board over the top of them. It is
-   the more obvious of the two defects, because the plate is one image at one
-   fixed perspective while the room's table is drawn from the live camera --
-   the two ovals cannot agree at any viewport, and the flat one wins on
-   z-index (.poker-rail is z-index 1; .table-scene is 0).
-
-   This used to be handled a layer up and is not any more, which is how it
-   came back: `.scene-lit .poker-rail` blanked the CSS felt for BOTH rooms
-   while the 2D renderer painted its own cloth. The 2D room now draws only
-   chips over the real artwork (see the note above), so that rule was
-   correctly removed -- but removing it took the 3D room's only protection
-   with it. Hence the suppression lives here, under .scene-room-3d, where it
-   is the 3D room's own business and cannot be lost to a change in the
-   classic table's painting again.
-
-   visibility, not display/background: .poker-rail is the coordinate system
-   (.pot-anchor inside it, .poker-table-wrap around it) that chip flights,
-   the muck drift and every seat measure against. The box has to keep its
-   size and position and stop being seen. `visibility` also reaches the
-   ::after contact shadow, which would otherwise print a dark ellipse across
-   the room's own floor. */
-.scene-room-3d .poker-rail,
-.scene-room-3d .poker-table-wrap::after {
-  visibility: hidden;
-}
-
-/* The 3D room's "entering the room" splash -- see table-loading-splash.tsx
+/* This room's own "entering the room" splash -- see table-loading-splash.tsx
    for why this exists. Full-viewport rather than scoped to .table-area:
    nothing behind it (header, action bar) is meaningfully usable before the
    room is seated anyway, so covering the whole screen reads as one

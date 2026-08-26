@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * The local player's own corner HUD on the classic 2D and racetrack tables:
- * bottom-left, a direct port of the 3D room's <PlayerHudCorner> (see
- * components/game3d/hud/player-hud-corner.tsx, which this mirrors call for
- * call rather than reinventing).
+ * The local player's own corner HUD on the racetrack table -- bottom-left,
+ * originally a direct port of the now-deleted WebGL 3D room's own
+ * <PlayerHudCorner> (mirrored call for call rather than reinvented;
+ * recoverable from the `archive/webgl-3d-table` git tag if that history is
+ * ever needed).
  *
  * `.seat-mine` used to carry its own avatar figure at the near edge (see
  * 16-first-person.css's own header for that layout's history), which meant
@@ -28,10 +29,8 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import type { ReactionId } from "@/lib/game/reaction-channel";
 import { ReactionButton } from "./table-reactions";
 
-/** A poker chip, not a coin: this reads the table stack, not the Gold
- * wallet the navbar's Coins icon already means. Identical glyph to the 3D
- * HUD's (player-hud-corner.tsx) so the same icon means the same thing on
- * both tables. */
+/** A poker chip, not a coin -- this reads the table stack, not the Gold
+ * wallet the navbar's Coins icon already means. */
 function ChipGlyph() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">

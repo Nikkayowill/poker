@@ -25,24 +25,29 @@
   padding-right: max(clamp(10px, 3vw, 28px), var(--safe-right));
 }
 
-/* Desktop's 3D room: the console leaves the felt's own flex row and floats
-   over the bottom-right corner instead -- the same trick
-   12-responsive.css already plays for a landscape phone (see its "FLOATING
-   HUD CONTROLS" comment), applied here for the first time at desktop width.
-   Taking .action-layer out of the flex column is what actually frees the
-   height: .table-area is flex:1, so it grows into the row the bar vacated,
-   which is what lets the near seat's own back come down toward the room's
-   true bottom edge instead of stopping at the top of a reserved strip.
-   Corner, not centre: the near seat is centred and its own back is the one
-   thing a further table-scale pass must be free to bring toward the bottom
-   edge without a centred bar sitting in the way.
+/* Desktop: the console leaves the felt's own flex row and floats over the
+   bottom-right corner instead -- the same trick 12-responsive.css already
+   plays for a landscape phone (see its "FLOATING HUD CONTROLS" comment),
+   applied here for desktop width. Taking .action-layer out of the flex
+   column is what actually frees the height: .table-area is flex:1, so it
+   grows into the row the bar vacated, which is what lets the near seat's own
+   back come down toward the room's true bottom edge instead of stopping at
+   the top of a reserved strip. Corner, not centre: the near seat is centred
+   and its own back is the one thing a further table-scale pass must be free
+   to bring toward the bottom edge without a centred bar sitting in the way.
 
-   Scoped to .scene-room-3d -- the classic table's own desktop
-   --foreground-allowance bump (05-game-header.css) is a deliberate
-   legibility call for its near seat's larger nameplate and stays untouched
-   by this. */
+   This used to be two separate rules -- one scoped to the deleted WebGL 3D
+   room's `.scene-room-3d` class, one to its `:not()` -- because the two
+   renderers wanted different bar widths and the 3D one needed a positioning
+   shell the racetrack never did. With the 3D room gone there is only ever
+   one case, so the qualifier is gone with it; the racetrack's own numbers
+   (520px/40vw, refined below to 580px/43vw) are what survive. Table sizing
+   (--action-bar-height / --foreground-allowance, 05-game-header.css) is
+   deliberately left alone: the felt does not need to grow to make room,
+   since the cards it used to have to clear no longer live inside its
+   coordinate space at all. */
 @media (min-width: 901px) {
-  .game-content:has(.scene-room-3d) .action-layer {
+  .game-content .action-layer {
     position: absolute;
     z-index: 25;
     right: max(24px, var(--safe-right));
@@ -53,49 +58,7 @@
        taps back below, same as the mobile floating variant. */
     pointer-events: none;
   }
-  .game-content:has(.scene-room-3d) .action-layer .action-bar {
-    width: auto;
-    max-width: min(700px, 42vw);
-    margin: 0;
-    /* Sized by its own content now that it fills no reserved strip. */
-    height: auto;
-    align-items: center;
-    pointer-events: auto;
-  }
-}
-
-/* Desktop's classic table gets the identical corner move, for the identical
-   reason: a centred bar was the one thing standing between the near seat's
-   own hole cards (see .seat-mine .seat-cards in 16-first-person.css, which
-   now anchors straight to the bottom of the *screen* rather than the felt)
-   and the bottom edge. With the bar off to the side, that whole band is the
-   cards' alone.
-
-   A separate rule from the 3D one above rather than folding this into it --
-   `:not(:has(.scene-room-3d))` covers the classic renderer, and every frame
-   of the 3D room before its own `.scene-room-3d` class lands, which is
-   harmless: both rules move the bar to the same corner, and the 3D block
-   above always wins once it applies since it is the more specific selector
-   in source order after this one loses its match. The bar keeps its ordinary
-   green enamel buttons here -- 09-action-bar.css's own palette, not the 3D
-   console's glass treatment -- but the corner is otherwise its own to fill
-   now (see the second block below), same as every other fixture that claimed
-   a desktop corner got its own larger, more-deliberate sizing once it moved
-   into one. Table sizing (--action-bar-height / --foreground-allowance,
-   05-game-header.css) is still deliberately left alone, same call as the 3D
-   rule above: the felt does not need to grow to make room, since the cards
-   it used to have to clear no longer live inside its coordinate space at
-   all. */
-@media (min-width: 901px) {
-  .game-content:not(:has(.scene-room-3d)) .action-layer {
-    position: absolute;
-    z-index: 25;
-    right: max(24px, var(--safe-right));
-    bottom: 24px;
-    padding: 0;
-    pointer-events: none;
-  }
-  .game-content:not(:has(.scene-room-3d)) .action-layer .action-bar {
+  .game-content .action-layer .action-bar {
     width: auto;
     max-width: min(520px, 40vw);
     margin: 0;
@@ -107,13 +70,13 @@
   /* Docked alone in a corner it now has entirely to itself, the bar used to
      read as a mobile strip that had simply been relocated -- same 76px-tall
      band, same tight padding, just moved. Every other fixture that claimed a
-     desktop corner (.player-hud, the 3D console) got its own larger,
-     more-deliberate treatment when it did; this one never had. Bigger
-     controls and more air between them, plus a hairline of the room's own
-     gold rather than the flat green every narrower breakpoint still uses --
-     the skin stays the same enamel buttons (09-action-bar.css), only their
-     size and the frame around them change here. */
-  .game-content:not(:has(.scene-room-3d)) .action-layer .action-bar {
+     desktop corner (.player-hud) got its own larger, more-deliberate
+     treatment when it did; this one never had. Bigger controls and more air
+     between them, plus a hairline of the room's own gold rather than the
+     flat green every narrower breakpoint still uses -- the skin stays the
+     same enamel buttons (09-action-bar.css), only their size and the frame
+     around them change here. */
+  .game-content .action-layer .action-bar {
     max-width: min(580px, 43vw);
     padding: 14px 18px;
     gap: 14px;
@@ -123,16 +86,16 @@
       var(--elevation-4, 0 15px 35px rgba(0, 0, 0, .22)),
       0 0 46px rgba(217, 184, 93, .05);
   }
-  .game-content:not(:has(.scene-room-3d)) .action-layer .action-bar.action-bar-your-turn {
+  .game-content .action-layer .action-bar.action-bar-your-turn {
     border-color: rgba(217, 184, 93, .32);
     box-shadow:
       0 15px 35px rgba(0, 0, 0, .22),
       0 0 54px rgba(217, 184, 93, .1);
   }
-  .game-content:not(:has(.scene-room-3d)) .action-layer .action-slot-controls {
+  .game-content .action-layer .action-slot-controls {
     gap: 12px;
   }
-  .game-content:not(:has(.scene-room-3d)) .action-layer .action-slot-controls button {
+  .game-content .action-layer .action-slot-controls button {
     padding: 15px 22px;
     font-size: 14px;
     border-radius: 14px;
@@ -182,12 +145,11 @@
   isolation: isolate;
 }
 
-/* Layer 1 of the isolated table scene. Both live rooms (the racetrack, the
-   3D room) paint their own table and suppress this element outright (see
-   .scene-lit / .scene-room-racetrack / .scene-room-3d in 99-scene.css), so
-   nothing here is ever actually painted -- but the box stays. Its inset is
-   still the seat ring's living space: `lib/game/table-geometry.ts`'s CSS
-   ellipse (the 3D room's own DOM cutouts, and the racetrack's pre-layout
+/* Layer 1 of the isolated table scene. The racetrack paints its own table
+   and suppresses this element outright (see .scene-lit / .scene-room-racetrack
+   in 99-scene.css), so nothing here is ever actually painted -- but the box
+   stays. Its inset is still the seat ring's living space:
+   `lib/game/table-geometry.ts`'s CSS ellipse (the racetrack's pre-layout
    first frame -- see poker-table.tsx's `ringGeometry`) is solved against
    this element's box, not a fresh one. */
 .poker-rail {
@@ -601,16 +563,16 @@
    always true and can wait four seconds. */
 .table-hud:has(.hand-result) .blind-structure { display: none; }
 
-/* The local player's corner HUD -- a straight port of the 3D room's
-   <PlayerHudCorner> (components/game3d/game3d.module.css), same layout and
-   the same reasoning for being desktop-only: a phone's near-field band has
-   no spare corner for a second HUD without crowding the action bar under
-   it. See local-player-hud.tsx's own header for why this exists at all.
+/* The local player's corner HUD -- originally a straight port of the now-
+   deleted WebGL 3D room's own <PlayerHudCorner>, same layout and the same
+   reasoning for being desktop-only: a phone's near-field band has no spare
+   corner for a second HUD without crowding the action bar under it. See
+   local-player-hud.tsx's own header for why this exists at all.
 
-   Colour is this table's own tokens rather than the 3D HUD's purple glass
-   (--gold/--gold-light, the same pair the seat-figure ring already wears),
-   so the two "this is you" markers -- the ring around every seat's avatar
-   and this corner card -- read as one visual language rather than two
+   Colour is this table's own tokens (--gold/--gold-light, the same pair the
+   seat-figure ring already wears) rather than the deleted 3D HUD's purple
+   glass, so the two "this is you" markers -- the ring around every seat's
+   avatar and this corner card -- read as one visual language rather than two
    different apps bolted together.
 
    Flush to the corner rather than floating a measured distance off it, and
@@ -660,7 +622,7 @@
 
 /* Overrides 03-profile.css's 34px default via a descendant selector rather
    than a wider class list, so it wins on specificity regardless of load
-   order -- same reasoning as the 3D HUD's identical override. */
+   order. */
 .player-hud-portrait .profile-avatar {
   width: 64px;
   height: 64px;

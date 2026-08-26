@@ -3,21 +3,24 @@ import { expect, test } from "@playwright/test";
 /**
  * The pot has to land on the player who won it.
  *
- * This assertion predates the WebGL room and it is worth saying why it still
- * exists in that form. Every distance in the payout is computed at runtime,
- * which sounds self-correcting and is not: the original defect was that the
- * travel vector was measured from `.pot-anchor` while the chips *started*
- * somewhere else entirely, so they flew the right distance in the right
- * direction from the wrong place and stopped fifty pixels short of every
- * winner. Nothing failed. It just looked slightly off, and only if you knew
- * where to look.
+ * This assertion predates the racetrack room's canvas and it is worth saying
+ * why it still exists in that form. Every distance in the payout is computed
+ * at runtime, which sounds self-correcting and is not: the original defect
+ * was that the travel vector was measured from `.pot-anchor` while the chips
+ * *started* somewhere else entirely, so they flew the right distance in the
+ * right direction from the wrong place and stopped fifty pixels short of
+ * every winner. Nothing failed. It just looked slightly off, and only if you
+ * knew where to look.
  *
- * The chips are meshes now, so `getBoundingClientRect` is no longer available
- * to measure them -- which would have quietly turned this file into a test
- * that asserts nothing. `window.__stackchipsScene` exists for exactly this:
- * it projects each chip's world position back into viewport pixels, so the
- * same question ("did a chip actually reach the winner?") is still being
- * asked of the same screen coordinates.
+ * The chips are painted on a `<canvas>`, not real DOM nodes, so
+ * `getBoundingClientRect` is not available to measure them -- which would
+ * have quietly turned this file into a test that asserts nothing.
+ * `window.__stackchipsScene` exists for exactly this: it projects each
+ * chip's world position back into viewport pixels, so the same question
+ * ("did a chip actually reach the winner?") is still being asked of the same
+ * screen coordinates. (This seam also used to be implemented by the deleted
+ * WebGL 3D room, which is where "meshes" would have been the accurate word;
+ * the racetrack is the only implementer left.)
  */
 test("the pot lands on the winner it was paid to", async ({ browser }) => {
   test.setTimeout(150_000);
@@ -72,11 +75,11 @@ test("the pot lands on the winner it was paid to", async ({ browser }) => {
       const seats = [...document.querySelectorAll(".player-seat")];
       return {
         funnelSlots: scene.lastFunnel(),
-        // The room's own seat positions, not the DOM plates: the payout is
-        // aimed at the seat ring in the scene, and with the sprite layer off
-        // the plates are still on the CSS ellipse -- a different shape by up
-        // to ~180px at the sides. `table-scene.spec.ts` is what holds those
-        // two together when it matters; this asks only where the pot went.
+        // The scene's own seat positions, not the DOM plates: the payout is
+        // aimed at the seat ring the camera projected, which can differ from
+        // the CSS ellipse fallback by up to ~180px at the sides before the
+        // first real layout arrives. This asks only where the pot went, not
+        // whether the two rings agree.
         centres: seats.map((_, slot) => scene.seat(slot)),
         chips: scene.chips(),
         winning: seats
@@ -236,12 +239,12 @@ test("the pot lands on the winner it was paid to", async ({ browser }) => {
 });
 
 /**
- * `.pot-anchor` no longer draws anything -- the pile is meshes on the felt --
- * but it is still the fixed point two DOM effects are measured from: folded
- * cards drifting to the muck, and every hole card dealt. If a growing pot
- * could move or resize it, it would drag both trajectories with it, and the
- * symptom would be that everything on the table was slightly off rather than
- * anything visibly breaking.
+ * `.pot-anchor` no longer draws anything -- the pile is painted on the
+ * racetrack's canvas -- but it is still the fixed point two DOM effects are
+ * measured from: folded cards drifting to the muck, and every hole card
+ * dealt. If a growing pot could move or resize it, it would drag both
+ * trajectories with it, and the symptom would be that everything on the
+ * table was slightly off rather than anything visibly breaking.
  */
 test("the pot anchor stays the fixed point every DOM trajectory is measured from", async ({ browser }) => {
   test.setTimeout(120_000);

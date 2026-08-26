@@ -1,20 +1,17 @@
 /**
- * The contract behind `window.__stackchipsScene`, shared by both rooms.
+ * The contract behind `window.__stackchipsScene`, implemented today by the
+ * racetrack room (`components/table/scene/racetrack-scene.tsx`). The e2e
+ * specs that check where chips land, where a bet spot sits relative to the
+ * DOM avatar over it, and whether the render loop ever goes back to sleep
+ * are about the *table*, not about how it is drawn, which is why this is a
+ * standalone interface rather than a `declare global` inlined into that one
+ * renderer -- a renderer that stops matching it fails to compile instead of
+ * a spec silently asserting something the room no longer answers.
  *
- * There are two table renderers, the Canvas-2D room in
- * `components/table/scene/` and the R3F room in `components/game3d/`, and
- * `poker-table.tsx` picks between them with a single ternary. The e2e specs
- * that check where chips land, where a bet spot sits relative to the DOM
- * avatar over it, and whether the render loop ever goes back to sleep are
- * about the *table*, not about how it's drawn, so they have to run against
- * whichever room is mounted.
- *
- * That only works if both rooms answer the same questions in the same units,
- * which is why this is one exported interface rather than a `declare global`
- * in each renderer. Two structurally-identical declarations would merge
- * without complaint until the day they drifted, and the failure then is a
- * spec silently asserting something different depending on a preference
- * flag. Here, a renderer that stops matching fails to compile.
+ * It used to have a second implementer, the deleted WebGL 3D room
+ * (`archive/webgl-3d-table` git tag), which is also why some of the
+ * commentary below still explains a choice in terms of two renderers
+ * agreeing rather than one.
  *
  * Units: every coordinate is viewport CSS pixels, the same space
  * `getBoundingClientRect()` reports in, except `roomLift`, which is
@@ -24,9 +21,9 @@
  *
  * Perspective: `roomScale` and `roomFelt` were coined for an orthographic
  * projection, where a world unit is the same number of pixels everywhere.
- * The 3D room has no such number, so it *measures* both at the felt plane
- * and says so in its implementation; a caller must not read `roomScale` as a
- * constant that holds anywhere else in the scene.
+ * A true perspective camera has no such number, so the racetrack *measures*
+ * both at the felt plane and says so in its implementation; a caller must
+ * not read `roomScale` as a constant that holds anywhere else in the scene.
  */
 export interface StackchipsSceneSeam {
   /** Chips in flight, projected into viewport CSS pixels. */
@@ -60,12 +57,12 @@ export interface StackchipsSceneSeam {
   /**
    * Whether the room still has animation to show.
    *
-   * Pending work, not recent paint. Both rooms mean it that way (the 2D room
-   * reads its scheduler flag), and the 3D room learned the hard way that
-   * they aren't the same question: under software rendering it drew twice a
-   * second, so any "did we paint recently" window tight enough to prove a
-   * loop had settled called a visibly animating room asleep. See the note
-   * at the foot of `lib/game3d/scene-projection.ts`.
+   * Pending work, not recent paint -- this room reads its scheduler flag
+   * rather than a "did we paint recently" window. The deleted WebGL 3D room
+   * learned the hard way that those are not the same question: under
+   * software rendering it drew twice a second, so a recency window tight
+   * enough to prove a loop had settled called a visibly animating room
+   * asleep.
    */
   awake: () => boolean;
   /**

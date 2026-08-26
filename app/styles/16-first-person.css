@@ -123,7 +123,17 @@
    note on the same regression.
 
    This is the below-901px value now -- see the desktop override further
-   down, next to the rule that hides the figure this corridor exists for. */
+   down, next to the rule that hides the figure this corridor exists for.
+
+   THIS IS THE PRE-SCENE-READY FALLBACK, NOT WHAT A PLAYER ACTUALLY SEES.
+   The racetrack room (the only live table) overrides `.table-bet`'s
+   left/top/transform outright once its scene reports layout
+   (42-racetrack-table.css's `.seat-mine .table-bet` rule), so this number
+   only ever paints for the one frame before that, or if the scene never
+   becomes ready. To move a bet label a player will actually see, edit
+   `lib/scene/table-anchors.ts`'s CHIP_INSET_PER_SEAT/CHIP_OFFSET_PER_SEAT --
+   see the "Where table positioning actually lives" map in
+   app/styles/CLAUDE.md. */
 .seat-mine .table-bet {
   --bet-reach-y: 243px;
 }
@@ -219,6 +229,8 @@
      DOM label following it: measured the same way as the base rule, against
      `window.__stackchipsScene.betSpot(0)` at 1440x900 against the racetrack
      room's own rail sizing, 218px lands it within a pixel of that pile. */
+  /* Same pre-scene-ready-fallback caveat as the rule above -- see its note.
+     The real desktop position comes from lib/scene/table-anchors.ts. */
   .seat-mine .table-bet {
     --bet-reach-y: 218px;
   }

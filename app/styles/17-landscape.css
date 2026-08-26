@@ -151,7 +151,12 @@
      one's), and this override has to track that name or it silently stops
      doing anything -- the base rule no longer reads `--bet-reach` at all.
      This tier's own geometry (LANDSCAPE_RADIUS_Y, table-geometry.ts) did not
-     move with that change, so the number itself did not need re-measuring. */
+     move with that change, so the number itself did not need re-measuring.
+
+     PRE-SCENE-READY FALLBACK ONLY -- see 16-first-person.css's own note on
+     its `.seat-mine .table-bet` rule. The racetrack room overrides this
+     outright once ready; the real position comes from
+     lib/scene/table-anchors.ts (see app/styles/CLAUDE.md's positioning map). */
   .seat-mine .table-bet {
     --bet-reach-y: 49px;
   }
@@ -165,6 +170,7 @@
    correction is 29.6px against the 51.3 the full-width stages want, and
    holding 49px there would leave the label 21px above its own chips. */
 @media (max-height: 500px) and (orientation: landscape) and (max-aspect-ratio: 2/1) {
+  /* Fallback only -- same caveat as the two rules above. */
   .seat-mine .table-bet { --bet-reach-y: 30px; }
 }
 

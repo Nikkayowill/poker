@@ -398,7 +398,21 @@ export function potAnchor(): Vec3 {
   return { x: 0, y: FELT_TOP_Y, z: -FELT.halfWidth * POT_DEPTH_FRACTION };
 }
 
-/** Where a seat's bet sits once it is out on the cloth. */
+/**
+ * Where a seat's bet sits once it is out on the cloth.
+ *
+ * THIS IS THE ONE PLACE TO EDIT A BET LABEL'S ACTUAL ON-SCREEN POSITION.
+ * `racetrack-scene.tsx` reads this per seat to place both the drawn chip
+ * pile and the `--bet-dx-px`/`--bet-dy-px` (opponents) /
+ * `--bet-x-rel-px`/`--bet-y-rel-px` (your own seat) custom properties that
+ * `42-racetrack-table.css` positions the DOM `.table-bet` pill with. Nothing
+ * else in the CSS layer computes a real bet position any more -- the
+ * `--bet-reach-*` variables still in 08-seat.css / 12/16/17-responsive*.css
+ * are a pre-scene-ready fallback only (see 08-seat.css's own note on
+ * `.table-bet`), never what a player actually sees. See
+ * app/styles/CLAUDE.md's "Where table positioning actually lives" map for
+ * how every surface's position is split across this file and the CSS.
+ */
 export const CHIP_INSET_FRACTION = 0.88; // fallback default
 /**
  * Per-seat chip inset fractions. Adjust each seat individually:
@@ -406,7 +420,7 @@ export const CHIP_INSET_FRACTION = 0.88; // fallback default
  * - Higher values (e.g. 0.90) = chips further out on the curve
  */
 export const CHIP_INSET_PER_SEAT = [
-  0.7, // seat 0 (near, you)
+  0.8, // seat 0 (near, you)
   0.90, // seat 1 (far left)
   0.88, // seat 2 (left of dealer)
   0.88, // seat 3 (dealer's left)
@@ -420,9 +434,8 @@ export const CHIP_INSET_PER_SEAT = [
  * IMPORTANT: this is 3D table space, not screen space.
  * - x: left (-) / right (+) on the felt — this is the only axis that reads
  *   as pure left/right on screen.
- * - y: height ABOVE the cloth (-) below / (+) above. Leave at 0. This does
- *   NOT mean "screen down" — moving it changes how high the chip floats
- *   over the felt, which looks wrong fast.
+ * - y: height ABOVE the cloth (-) below / (+) above. LEAVE AT 0 -- see below,
+ *   this is not advisory.
  * - z: forward toward the camera (+) / back away from the camera (-). This
  *   is the axis that reads as up/down on screen (since the table is seen
  *   from an angle): negative z (away) moves a pile up and further; positive
@@ -430,14 +443,31 @@ export const CHIP_INSET_PER_SEAT = [
  *
  * To move a seat's chips diagonally down-and-left on screen: negative x,
  * positive z. Leave y at 0.
+ *
+ * A nonzero y was tried here (seats 1/2/4/5, tuned to taste) and reverted:
+ * this camera is tilted (CAMERA_ELEVATION_DEG), so its "up" and "forward"
+ * axes both carry a Y component, not just its "right" axis. Sinking a chip
+ * below the cloth therefore doesn't just move it down on screen -- it also
+ * shifts its projected X, because the same Y change alters the point's depth
+ * along "forward" and the pinhole divide (focal / depth) is what places X.
+ * Measured on MOBILE_LANDSCAPE_FRAME with seat 5's old y=-0.09: an 11cm
+ * height change alone (holding x/z fixed) moved the anchor 22.5px down AND
+ * 4px sideways from where it sits at true felt height -- a diagonal drift,
+ * worse the larger the offset, and both the .table-bet pill and the drawn
+ * chip pile follow this same anchor, so the drift moved the whole labelled
+ * pile away from the seat's own hands, not just the label away from the
+ * chips. If a seat's chips need to read lower or further on screen, use z
+ * (which is exactly what "down on screen" means for this camera); y is for
+ * a chip floating fractionally above the cloth for a landing/settle effect,
+ * not for screen-space placement.
  */
 export const CHIP_OFFSET_PER_SEAT: Vec3[] = [
   { x: 0, y: 0, z: 0 }, // seat 0 (near, you)
-  { x: -0.10, y: -0.04, z: 0.12 }, // seat 1 (far left)
-  { x: -0.13, y: -0.04, z: 0 }, // seat 2 (left of left of dealer)
+  { x: -0.10, y: 0, z: 0.12 }, // seat 1 (far left)
+  { x: -0.13, y: 0, z: 0 }, // seat 2 (left of left of dealer)
   { x: -0.10, y: 0, z: 0 }, // seat 3 (dealer's left)
-  { x: 0.12, y: -0.03, z: 0 }, // seat 4 (dealer's right)
-  { x: 0.20, y: -0.09, z: 0.07 }, // seat 5 (far right)
+  { x: 0.12, y: 0, z: 0 }, // seat 4 (dealer's right)
+  { x: 0.20, y: 0, z: 0.07 }, // seat 5 (far right)
 ];
 
 export function chipAnchor(slot: number, count: number = SEAT_COUNT): Vec3 {

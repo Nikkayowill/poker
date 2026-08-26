@@ -784,7 +784,18 @@
    variable-length string into it, so a long action ran under the table
    container. The table feed carries those events instead. */
 
-/* A posted bet belongs between its player and the pot, so it rides the inward
+/* PRE-SCENE-READY FALLBACK ONLY. The racetrack room -- the only live table,
+   see lib/scene/CLAUDE.md -- overrides `.table-bet`'s left/top/transform
+   outright once its scene reports layout (42-racetrack-table.css's two
+   `.scene-room-racetrack ... .table-bet` rules), reading positions the scene
+   computed from lib/scene/table-anchors.ts's CHIP_INSET_PER_SEAT /
+   CHIP_OFFSET_PER_SEAT -- THAT is the file to edit to move a bet label a
+   player actually sees. Everything below (here and the breakpoint overrides
+   in 12/16/17-*.css) only ever paints for the one frame before the scene is
+   ready, or if it never becomes ready. See app/styles/CLAUDE.md's
+   "Where table positioning actually lives" map.
+
+   A posted bet belongs between its player and the pot, so it rides the inward
    vector the seat geometry hands down (--bet-x/--bet-y). This used to be four
    rules keyed off which quadrant a seat sat in, which only ever covered the
    six-seat ring those classes described. */

@@ -20,5 +20,9 @@ export type DomainEvent =
   // free-for-all table against it would misword shipped text and dilute a
   // metric that's always meant 1v1.
   | { kind: "cribbage_won" }
+  // A 6-max Sit & Go win, kept separate from duel_won for the same reason
+  // cribbage_won is: it's the same "PvP duels" copy problem, and a Sit & Go
+  // is a 6-way table, not a 1v1, the same structural difference cribbage has.
+  | { kind: "sit_and_go_won" }
   | { kind: "puzzle_completed" }
   | { kind: "level_gained"; levels: number };

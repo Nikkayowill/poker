@@ -155,7 +155,29 @@ export function ActionBar({
       <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>
         <div className="action-slot-status">
           <span className="action-kicker">All in</span>
-          <strong>Your last chips are in -- the hand plays out before you can rebuy.</strong>
+          <strong>
+            {game.tournament
+              ? "Your last chips are in -- the hand plays out before you're eliminated or stay alive."
+              : "Your last chips are in -- the hand plays out before you can rebuy."}
+          </strong>
+        </div>
+      </div>
+    );
+  }
+
+  // A Sit & Go seat that busts is eliminated, full stop -- there is no
+  // rebuy to offer (the engine itself throws on one; see engine.ts's
+  // applyPlayerAction), so this branches ahead of the ordinary cash-table
+  // busted view entirely rather than reusing any part of it.
+  if (busted && game.tournament) {
+    return (
+      <div className={clsx("action-bar", variant === "3d" && "action-bar-3d")}>
+        <div className="action-slot-status">
+          <span className="action-kicker">Eliminated</span>
+          <strong>You&rsquo;re out of chips. This Sit &amp; Go plays on without you.</strong>
+        </div>
+        <div className="action-slot-controls">
+          <button className="primary-action action-slot-wide" onClick={onLeave}>Return to lobby</button>
         </div>
       </div>
     );

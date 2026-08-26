@@ -44,6 +44,164 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   the reasoning behind a decision is needed. What's kept here is what would otherwise be silently
   relearned or silently broken.
 
+### Sit & Go: a 6-max poker tournament, StackChips' first (2026-08-26)
+- Kayo asked whether tournaments are worth building on a play-money platform; scoped down to a single-
+  table Sit & Go rather than a scheduled multi-table event, since every staked PvP format here (duels,
+  cribbage) is deliberately human-only — a bot must never win a share of a real Gold pot — and a big
+  MTT risks a field that never fills at this app's population, where a 6-max table just waits for real
+  registrants. Branch `feat/sit-and-go-tournaments` (worktree `.claude/worktrees/sit-and-go`), off a
+  fresh `origin/main`. Four numbers confirmed with Kayo before building: 6-max; entry fee and starting
+  stack both equal an existing `STAKES_TIERS` tier's fixed buy-in (no new currency); blinds escalate on
+  a hand-count schedule at turbo pace; winner-take-all, no runner-up prize.
+- **Reuses the poker engine directly rather than forking it.** `GameState` gained one new optional
+  field, `tournament: TournamentState | null` (`lib/game/types.ts`), and `lib/game/engine.ts` grew five
+  small `if (state.tournament)` branches off it: `setupHand` recomputes blinds from
+  `lib/game/tournament.ts`'s `blindLevelForHand(handNumber, tierBlinds)` instead of leaving them static,
+  and its existing `funded.length < 2` early-return (unchanged, already fired exactly at one seat
+  standing) now also records `tournament.winnerProfileId`; `releaseBustedSeats` skips every bit of bot
+  refill/voluntary-leave machinery entirely (a Sit & Go has no bot fill, ever) and logs "eliminated"
+  instead of "sits out until they rebuy"; `applyPlayerAction`'s `rebuy` branch throws outright; its
+  `leave-seat` branch calls a new `forfeitTournamentSeat` (zeroes the stack, no bot handoff, no Gold
+  credited — leaving early forfeits the rest of a paid-in tournament) instead of `vacateSeat`;
+  `releaseInactiveSeats` (the AFK-after-3-missed-turns path) short-circuits to `[]` so an idle tournament
+  seat keeps auto-folding forever rather than ever being handed to a bot; `deductRake`'s existing
+  no-flop-no-drop guard gained `|| state.tournament`, since a fixed `entryFee * 6` prize pool has no
+  house edge to skim. A new `createTournamentGame` (in `engine.ts`, not `tournament.ts` — a deliberate
+  deviation from the first-drafted plan, made to avoid a circular import between the two modules) builds
+  six human seats with a real, non-null `profileId` each (unlike `claimSeat`, which leaves a guest's
+  null) and deals hand 1 through the same `setupHand` every other table uses, so there is no
+  special-cased "hand 1" blind logic anywhere.
+- **Two verification-run corrections to the first-drafted plan, both real:** `releaseBustedSeats` isn't
+  one wrappable bot-only block as first assumed — its first few lines log a busted-*human* message
+  unconditionally, which needed its own tournament-specific wording ("busts out and is eliminated"),
+  not suppression, since "sits out until they rebuy" is actively wrong with no rebuy to wait for. And
+  the settlement hook in the poker routes is **awaited**, not fired-and-forgotten the way
+  `onHandCompleted`'s stats recording is in the same routes — that pattern is fine for stats a
+  serverless invocation is allowed to lose, but this credits real Gold, and an un-awaited promise isn't
+  guaranteed to keep running after the response is sent.
+- **Registration/lobby is its own store+service pair** (`lib/server/sit-and-go-store.ts`,
+  `sit-and-go-service.ts`), shaped closely after cribbage's (`cribbage-table-store.ts`,
+  `cribbage-service.ts` — the one existing precedent for "an open, joinable, auto-starting table for N
+  humans"), with three deliberate deviations: entry fee is a `tier` column, not a client-chosen `stake`
+  integer, since it's always `TIER_CONFIG[tier].minBuyIn` and the two can never disagree; each seat row
+  also carries the registrant's session `token` (a new column, alongside `player_id`), since the poker
+  engine authorizes actions by token, not profile id, unlike cribbage's own engine; and dealing is two
+  guarded steps, not cribbage's one, because this game's "state" is a second row in the existing
+  `games`/`game_state_private` tables rather than an inline `jsonb` column on the same row — writing
+  that GameState speculatively before the deal guard succeeds would risk an orphaned `games` row on a
+  lost race, so `deal_sit_and_go_table` (flips the table active, no state payload) and
+  `set_sit_and_go_game_id` (records the built game, guarded on `game_id is null` so a post-crash retry
+  can't overwrite it) are separate RPCs. No host-early-start path exists at all, unlike cribbage's
+  start-at-3-of-4: a Sit & Go has no bot fill to cover a short-handed table, so there is exactly one way
+  to fill it — wait for all 6 — and exactly one caller of the deal RPCs.
+- **A real, distinct exploit path that cribbage never had to think about**: `lib/server/game-store.ts`'s
+  `archiveStaleGames` refunds every abandoned human seat's *current* stack as Gold, which is correct for
+  a cash table but would let two colluding tournament seats push chips to one via soft play, then both
+  go idle, and walk away with more Gold than either staked — no elimination, no single-winner guard ever
+  ran. Closed with a new `cancel_stale_sit_and_go_table` RPC (version-guarded `active` → `cancelled`,
+  never `completed`, never a winner) and a `refundAbandonedSitAndGo` helper that looks the game id up in
+  the Sit & Go store directly (not `state.tournament`, the "ask the store, not the blob" posture the
+  rest of that sweep already takes) and refunds each seat's *original* `entryFee` instead of its live
+  stack whenever a game id turns out to belong to one.
+- Settlement (`settleSitAndGoIfFinished`) is called from both `app/api/games/[id]/actions/route.ts` and
+  `.../advance/route.ts` — the ordinary poker routes, not a dedicated Sit & Go endpoint, since actual
+  hands are played entirely through them once a table deals. `lib/domain-events.ts` gained
+  `sit_and_go_won` (kept separate from `cribbage_won`/`duel_won` for the same "different shipped copy,
+  different structural shape" reason cribbage's own kind is separate), and `recordMultiWayResult`
+  (already cribbage's own plumbing — an N-player table, one winner, no draws) needed no new
+  leaderboard-store function, just a new `LEADERBOARD_GAMES` registry entry and a migration patching
+  `global_leaderboard_entries()`'s `game_id in (...)` list to match.
+- **UI turned out much smaller than first planned**, because `components/poker-app.tsx` already has a
+  generic `?table=<id>` deep-link bootstrap (built for a shared-table-link/room-code join) that loads
+  *any* existing game by id into the fully-wired `PokerTable` — sound, bet style, table renderer,
+  backstop, the works. The first-drafted plan called for a bespoke "table frame" wrapper reimplementing
+  a slice of that; once `PokerTable`'s real prop surface turned out to be ~20 props deep, reusing the
+  existing bootstrap outright (`sit-and-go-shell.tsx` just calls `router.push('/?table=' + gameId)` the
+  instant its poll reports the table active) was the smaller, safer, better-tested path — no new
+  "table frame" component exists. `components/sit-and-go/sit-and-go-shell.tsx` (lobby + waiting room
+  only, no match frame) mirrors `cribbage-shell.tsx`'s structure; `action-bar.tsx` gained a tournament
+  branch ahead of the ordinary cash-table busted view ("Eliminated" / "Return to lobby", never a rebuy
+  prompt, since the engine now throws on one unconditionally for a tournament seat).
+- Verified: full `npx vitest run` 2449/2449 green (~40 new tests across `tournament.test.ts`,
+  `engine.test.ts`'s new `describe("tournament mode", ...)` block, `sit-and-go-store.test.ts`,
+  `sit-and-go-service.test.ts`, and one new `game-store.test.ts` case pinning the stale-archive refund
+  fix), clean lint, clean production build with `/games/sit-and-go`, `/api/sit-and-go`, and
+  `/api/sit-and-go/[id]` all present, `tsc` clean apart from the pre-existing `safe-area.spec.ts`
+  failure. One pre-existing flaky test (`game-store.test.ts`'s "does not prefer a populated table whose
+  only human seat has gone quiet") reproduced identically with zero code changes between two runs,
+  confirmed unrelated. Not committed — see `[[feedback_stackchips_no_unrequested_commits]]`. Migration
+  is unapplied, per `[[reference_stackchips_migrations_not_auto_applied]]`.
+- **A `/code-review` pass caught two severe, real bugs the test suite structurally could not**: both new
+  CHECK constraints (`sit_and_go_tables_game_id_matches_status`, `..._prize_pool_matches_status`) were
+  written before the RPCs that violate them and never reconciled against those RPCs' real behavior --
+  `deal_sit_and_go_table` deliberately leaves `game_id` null while flipping `status` to `'active'` (the
+  whole point of the two-step deal), and `cancel_stale_sit_and_go_table` leaves `prize_pool` set while
+  flipping to `'cancelled'`, and neither constraint tolerated it. Both are hard `FALSE` on every attempt
+  in real Postgres — the feature could not deal a single table or cleanly recover an abandoned one
+  against a real Supabase-backed deploy, and memory-mode tests never exercise a SQL CHECK constraint at
+  all, so `npx vitest run` stayed green throughout. Fixed by narrowing both constraints to only require
+  what's actually invariant (`'waiting'`→null, `'completed'`→not-null; `'active'`/`'cancelled'` are
+  deliberately unconstrained on each column, for different, documented reasons per column).
+- The same pass found a real, independent product bug: a busted seat's `sit_and_go_table_players` row
+  is never deleted or updated (there is no mid-tournament equivalent of `leave_sit_and_go_table`, which
+  is pre-deal only by design), so an eliminated player read as "still registered" at that table for as
+  long as the other five seats took to decide a winner — blocking them from opening or joining anything
+  else, and `SitAndGoShell`'s own redirect effect bounced them straight back into the game they already
+  lost on every visit to the lobby. Fixed with a new `isEliminatedFrom`/`activeRegistrationFor` pair in
+  `sit-and-go-service.ts` that checks the caller's actual seat status in the dealt `GameState` (not just
+  table-level status) before treating them as still registered; pinned by two new tests in
+  `sit-and-go-service.test.ts`. Also fixed: `advanceTimedTurn`'s own AFK log line claimed "forfeits the
+  seat" for a tournament player past `MAX_MISSED_TURNS` even though `releaseInactiveSeats` is a no-op for
+  one (no bot fill, ever) — the seat just keeps auto-folding, so the claim was false and would repeat
+  every hand. `archiveStaleGames`'s new tournament branch also got a real N+1 fix (a new
+  `getSitAndGoTablesByGameIds`, batched the same way `getSeatCountsForSitAndGoTables` already is) since
+  the original per-candidate lookup meant one extra query per stale game swept, ordinary cash tables
+  included. Re-verified after all of the above: `npx vitest run` 2451/2452 green (2452/2452 on a clean
+  rerun — the one red result was the SAME pre-existing `game-store.test.ts` flake noted above, plus a
+  second, independently-flaky, unseeded-randomness simulation test in `engine.test.ts` also reproduced
+  and confirmed unrelated), clean lint, clean production build. **The two constraint fixes are the one
+  thing this review could not exercise directly** (no real Postgres in this environment) — verified by
+  hand-tracing the boolean logic against the RPCs' actual writes, not by a passing test; worth a real
+  `apply_migration` + live deal/cancel smoke test before this ships, not just another `npx vitest run`.
+- **A follow-up optimize pass found two real, measurable costs, both from this format's own numbers
+  (6 seats, every connected browser polling every 2s) rather than anything cribbage-scale ever hit.**
+  First: `GET /api/sit-and-go` called `readMySitAndGoTable` then, only for a caller with no active
+  table, `listOpenSitAndGoTables` — the exact shape `app/api/cribbage/route.ts` already uses — and each
+  independently calls `ensureProfile(token)`, which is never a cheap read: it unconditionally upserts
+  `player_sessions.last_seen_at` plus a `profiles` select on every single call, real writes, not just on
+  first creation. For the common case (browsing the open-table lobby, not yet registered), that's two
+  full resolves — at least 4 Supabase round trips — every 2s, for every idle browser sitting in the
+  lobby. Fixed with a new `readSitAndGoLobby(token)` that resolves the profile once and threads it into
+  new `myActiveTableFor(profile)`/`openTablesFor(profile)` helpers, used only by the route; the original
+  `readMySitAndGoTable`/`listOpenSitAndGoTables` are untouched (still independently tested, still resolve
+  their own profile) since other callers and their own tests genuinely need the token-in shape.
+  **Cribbage's route has the identical redundant-resolve shape and was deliberately left alone** — out
+  of scope for a Sit & Go optimize pass, flagged here rather than silently also fixed.
+- Second: `lib/server/head-to-head-store.ts`'s `recordHeadToHeadTable` (shared with cribbage, not new
+  this feature) looped its winner-vs-each-opponent RPC calls with a sequential `for...of` + `await` —
+  fine at cribbage's 4-max (at most 3 sequential round trips), but a Sit & Go's 6-max turns that into 5
+  sequential `apply_head_to_head_result` calls sitting on the settlement path a poker action/advance
+  response is held on (`payOutSitAndGo` is awaited, not fired-and-forgotten — see this section's own
+  note above on why). Changed to `Promise.all` — the opponents are independent pairs against the same
+  winner, so there was nothing for the sequential order to protect; verified the memory-mode branch's
+  per-pair streak bookkeeping is keyed independently per (profile, opponent) and has no shared state a
+  concurrent fan-out could race, and that `head-to-head-store.test.ts`'s existing assertions don't depend
+  on call order (they don't — every `applyResult` call in the memory branch runs synchronously to
+  completion before its wrapping promise resolves, so `array.map` invokes them in the same order a
+  `for` loop would; only real I/O timing changes on the Supabase branch).
+- Deliberately not changed: `sit_and_go_tables` has no index on `game_id` (queried by
+  `getSitAndGoTableByGameId`/the batched `getSitAndGoTablesByGameIds`), but the table holds one row per
+  Sit & Go ever played — a tiny, slow-growing table at this app's scale — so a sequential scan there
+  costs nothing worth a migration edit for. Revisit only if this table's row count ever gets large.
+  `payOutSitAndGo`'s own three awaited calls (Gold credit, mission event, achievement event) stayed
+  sequential rather than `Promise.all`'d — that shape is copy-identical to cribbage's `payOutTable`
+  (restated as "same discipline" in both files' own comments), and diverging it here would leave the one
+  N-player payout path in the app inconsistent with its own precedent for a smaller win than the two
+  fixes above; flagged as a shared, low-priority opportunity rather than done unilaterally.
+- Re-verified after both fixes: full `npx vitest run` 2454/2454 green (two new tests, covering
+  `readSitAndGoLobby`'s both branches), clean lint, clean production build with every Sit & Go route
+  still present, `tsc` clean apart from the pre-existing `safe-area.spec.ts` failure.
+
 ### The classic portrait-capable table is deleted outright; landscape-only, racetrack-only (2026-08-25)
 - Kayo's call, stated directly: sticking with landscape, the 2.5D racetrack is the main (only) table,
   keep the 3D room around since he may return to it once he's learned more rendering, and "players

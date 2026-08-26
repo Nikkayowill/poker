@@ -22,6 +22,7 @@ import {
 import { CHEAPEST_TIER, clampBuyIn, isStakesTier, TIER_CONFIG, type StakesTier } from "./tiers";
 import { DECK_TEMPLATE, makeDeck } from "./deck";
 import { isSeatRebuyEligible } from "./rebuy";
+import { blindLevelForHand, forfeitTournamentSeat } from "./tournament";
 
 const streetOrder: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
 type TurnAction = Exclude<
@@ -529,8 +530,18 @@ function reseat(state: GameState, seat: Seat) {
 function releaseBustedSeats(state: GameState, now: number = Date.now()) {
   state.seats.forEach((seat) => {
     if (!seat.isHuman || seat.stack > 0 || seat.status === "out") return;
-    addLog(state, `${seat.name} is out of chips and sits out until they rebuy`);
+    addLog(
+      state,
+      state.tournament
+        ? `${seat.name} busts out and is eliminated`
+        : `${seat.name} is out of chips and sits out until they rebuy`,
+    );
   });
+
+  // A Sit & Go has no bot fill, ever: a busted seat is eliminated, not
+  // waiting on a rebuy, and nobody voluntarily stands up to be replaced.
+  // Everything below this line is cash-table-only bot machinery.
+  if (state.tournament) return;
 
   // A healthy bot occasionally decides it's done and stands up on its own,
   // the main way a table's cast turns over now, since busted bots refill
@@ -606,7 +617,8 @@ function dealToCommunity(state: GameState, count: number) {
   }
 }
 
-function setupHand(state: GameState, firstHand = false, now: number = Date.now()) {
+/** Exported for createTournamentGame below, which deals the opening hand the same way createGame does. */
+export function setupHand(state: GameState, firstHand = false, now: number = Date.now()) {
   if (!firstHand) releaseBustedSeats(state, now);
   // Cleared before the funded check, so the dead-table branch below leaves
   // it null rather than inheriting the deadline that brought us here, which
@@ -618,12 +630,32 @@ function setupHand(state: GameState, firstHand = false, now: number = Date.now()
     state.street = "showdown";
     setCurrentPlayer(state, null);
     state.message = "Not enough players with chips to continue.";
+    // Chip conservation guarantees at most one seat has a positive stack the
+    // moment this branch fires, so this is the tournament's actual end
+    // condition, not a separate check: whichever seat still has chips has
+    // just won the whole table. Guarded on winnerProfileId so a stray extra
+    // call (e.g. a second advance racing in) never overwrites a result
+    // that's already decided.
+    if (state.tournament && !state.tournament.winnerProfileId) {
+      const survivor = funded[0];
+      if (survivor?.profileId) {
+        state.tournament.winnerProfileId = survivor.profileId;
+        state.tournament.finishedAtHand = state.handNumber;
+        state.message = `${survivor.name} wins the Sit & Go!`;
+      }
+    }
     return;
   }
 
   if (!firstHand) {
     state.buttonPosition = nextSeat(state, state.buttonPosition, (seat) => seat.stack > 0) ?? 0;
     state.handNumber += 1;
+  }
+  if (state.tournament) {
+    const level = blindLevelForHand(state.handNumber, TIER_CONFIG[state.tier]);
+    state.smallBlind = level.smallBlind;
+    state.bigBlind = level.bigBlind;
+    state.tournament.blindLevel = level.level;
   }
   state.deck = makeDeck(randomInt);
   state.community = [];
@@ -808,6 +840,7 @@ export function createGame(
     message: "",
     createdAt: now,
     updatedAt: now,
+    tournament: null,
   };
   // Rotate the starting cast per table instead of always seating the same
   // first SEAT_COUNT-1 pool entries in the same order. The seats above are
@@ -820,6 +853,115 @@ export function createGame(
   for (const seat of state.seats) {
     if (!seat.isHuman) restoreBotControl(seat, pickBotIdentity(state, seat.position));
   }
+  setupHand(state, true);
+  return state;
+}
+
+/**
+ * Builds a fresh Sit & Go table: exactly SEAT_COUNT human seats, every one
+ * funded at the tier's own buy-in, and deals hand 1 immediately -- the
+ * tournament equivalent of createGame, called once by
+ * lib/server/sit-and-go-service.ts the instant a table's last seat fills.
+ *
+ * Unlike createGame there are no bot seats to fill out and no per-seat buy-in
+ * choice: every entrant already paid the same fixed entry fee to register
+ * (lib/server/sit-and-go-service.ts), so every seat gets the same starting
+ * stack, and every seat needs a real, non-null profileId (unlike claimSeat,
+ * which leaves a guest's profileId null) since a Sit & Go settles Gold to
+ * this id once the table is decided.
+ */
+export function createTournamentGame(
+  entrants: Array<{
+    token: string;
+    profile: Pick<
+      PlayerProfile,
+      "id" | "isRegistered" | "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped"
+    >;
+  }>,
+  tier: StakesTier,
+): GameState {
+  if (entrants.length !== SEAT_COUNT) {
+    throw new Error(`A Sit & Go needs exactly ${SEAT_COUNT} entrants.`);
+  }
+  const now = new Date().toISOString();
+  const config = TIER_CONFIG[tier];
+  const startingStack = config.minBuyIn;
+
+  const seats: Seat[] = entrants.map(({ token, profile }, position) => ({
+    id: randomUUID(),
+    name: profile.displayName.slice(0, 18) || "Player",
+    initials: profile.initials,
+    accent: profile.accent,
+    avatarUrl: profile.avatarUrl,
+    avatarPreset: profile.avatarPreset,
+    avatarCosmetic: profile.equipped.avatar2d,
+    avatar3dCosmetic: profile.equipped.avatar3d,
+    cardBackCosmetic: profile.equipped.cardBack,
+    position,
+    isHuman: true,
+    ownerToken: token,
+    profileId: profile.id,
+    botIdentity: null,
+    personality: null,
+    stack: startingStack,
+    status: "active",
+    holeCards: [],
+    streetBet: 0,
+    committed: 0,
+    acted: false,
+    actedAtBet: null,
+    lastAction: null,
+    missedTurns: 0,
+    vpip: false,
+    reseatEligibleAt: null,
+  }));
+
+  const state: GameState = {
+    id: randomUUID(),
+    hostToken: entrants[0].token,
+    // True even though there's no join-by-room-code flow for this table at
+    // all: it keeps a Sit & Go table invisible to findOpenPublicGame/quick
+    // play, which would otherwise see six human seats and just find nothing
+    // open, but there's no reason to make that path reason about a format it
+    // was never built for.
+    isPrivate: true,
+    roomCode: null,
+    tier,
+    version: 1,
+    status: "playing",
+    street: "preflop",
+    handNumber: 1,
+    buttonPosition: 0,
+    smallBlind: config.smallBlind,
+    bigBlind: config.bigBlind,
+    currentPlayer: null,
+    turnStartedAt: null,
+    turnDeadlineAt: null,
+    nextHandAt: null,
+    currentBet: 0,
+    minRaise: config.bigBlind,
+    pot: 0,
+    rake: 0,
+    deck: [],
+    community: [],
+    seats,
+    winners: [],
+    log: [],
+    message: "",
+    createdAt: now,
+    updatedAt: now,
+    tournament: {
+      entryFee: startingStack,
+      startingStack,
+      blindLevel: 0,
+      finishedAtHand: null,
+      winnerProfileId: null,
+    },
+  };
+  // setupHand's own tournament branch recomputes smallBlind/bigBlind from
+  // blindLevelForHand(1, ...) immediately, so the placeholder level-0 values
+  // set above only matter for the instant between object construction and
+  // this call -- there is no special-cased "hand 1" blind logic anywhere.
   setupHand(state, true);
   return state;
 }
@@ -1032,8 +1174,10 @@ function deductRake(state: GameState, winnings: Map<string, number>): number {
   // the board out to five cards before it rakes, so a hand that got all-in
   // preflop and was dealt a run-out is still raked (a flop was dealt, and
   // the house did provide the pot). This guard is for the hand that ended
-  // before any board existed at all.
-  if (state.community.length === 0) return 0;
+  // before any board existed at all. A Sit & Go's prize pool is a fixed
+  // entryFee * seat count with no house edge to skim from -- rake would just
+  // silently shrink the chips that decide the eventual winner's payout.
+  if (state.community.length === 0 || state.tournament) return 0;
   const total = [...winnings.values()].reduce((sum, amount) => sum + amount, 0);
   const rake = rakeFor(total, state.bigBlind);
   if (rake <= 0) return 0;
@@ -1687,6 +1831,10 @@ export function normalizeGameState(state: GameState): GameState {
   }
   // Hands dealt before rake existed carry no rake figure; treat them as unraked.
   if (!Number.isFinite(state.rake)) state.rake = 0;
+  // Every table persisted before Sit & Go existed has no such field at all;
+  // undefined must become null, not stay undefined, since every tournament
+  // branch below tests this with a plain truthiness check.
+  if (state.tournament === undefined) state.tournament = null;
   // Tables persisted before continuous play carry no next-hand deadline. Null
   // is the safe reading: the table waits for someone to press Deal, exactly
   // as it did when that row was written.
@@ -1829,6 +1977,11 @@ export interface ReleasedSeat {
  * chips already committed to the pot and a hand it never chose to play.
  */
 export function releaseInactiveSeats(state: GameState): ReleasedSeat[] {
+  // No bot fill in a Sit & Go: an AFK tournament seat keeps timing out
+  // through the ordinary advanceTimedTurn path (auto-check/auto-fold) until
+  // blinds eat its stack, rather than being handed to a bot after three
+  // missed turns the way a cash seat is.
+  if (state.tournament) return [];
   const released: ReleasedSeat[] = [];
   state.seats.forEach((seat) => {
     if (!seat.isHuman || !seat.ownerToken) return;
@@ -1893,7 +2046,13 @@ export function advanceTimedTurn(state: GameState, now = Date.now()): TimedTurnA
     addLog(
       state,
       seat.missedTurns >= MAX_MISSED_TURNS
-        ? `${seat.name} ran out of time and forfeits the seat`
+        ? // A tournament seat is never actually released at this threshold --
+          // releaseInactiveSeats short-circuits to a no-op for one (no bot
+          // fill, ever) -- so "forfeits the seat" would be a standing lie,
+          // repeated on every hand for as long as the seat stays AFK.
+          state.tournament
+          ? `${seat.name} keeps missing turns (${seat.missedTurns} in a row) and is auto-folding`
+          : `${seat.name} ran out of time and forfeits the seat`
         : `${seat.name} ran out of time (${seat.missedTurns}/${MAX_MISSED_TURNS})`,
     );
   }
@@ -1919,11 +2078,21 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
   const seatIndex = state.seats.findIndex((seat) => seat.ownerToken === callerToken);
   if (seatIndex === -1) throw new Error("You are not seated at this table.");
   if (action.type === "leave-seat") {
-    vacateSeat(state, callerToken);
+    if (state.tournament) {
+      // Standing up mid-hand would drop this seat's cards and any chips it
+      // already committed with no one left to act for it -- the same reason
+      // a cash seat can't be reclaimed by a bot mid-hand either. Between
+      // hands, forfeit rather than vacateSeat: no bot takeover, no credit.
+      if (state.status === "playing") throw new Error("Finish this hand before leaving a Sit & Go table.");
+      forfeitTournamentSeat(state, seatIndex);
+    } else {
+      vacateSeat(state, callerToken);
+    }
   } else if (action.type === "next-hand") {
     if (state.status !== "complete") throw new Error("Finish the current hand first.");
     setupHand(state);
   } else if (action.type === "rebuy") {
+    if (state.tournament) throw new Error("This is a Sit & Go -- there's no rebuy.");
     const seat = state.seats[seatIndex];
     if (seat.stack > 0) throw new Error("Your seat still has chips.");
     // No "between hands" restriction: a busted seat sits out for as many

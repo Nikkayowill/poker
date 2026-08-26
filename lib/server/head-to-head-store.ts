@@ -179,9 +179,13 @@ export async function recordHeadToHeadTable(
   const opponents = [...new Set(participantIds)].filter((id) => id !== winnerId);
   if (opponents.length === 0) return;
   try {
-    for (const opponentId of opponents) {
-      await applyResult(winnerId, opponentId, gameId, "win");
-    }
+    // Concurrent, not one-at-a-time: each opponent is an independent pair
+    // with the winner, so there is nothing for a sequential loop to order
+    // correctly. This used to matter less at cribbage's 4-max (3 opponents),
+    // but a Sit & Go's 6-max (5 opponents) turns this into 5 sequential RPC
+    // round trips on the settlement path a poker action response is held on
+    // -- see sit-and-go-service.ts's payOutSitAndGo.
+    await Promise.all(opponents.map((opponentId) => applyResult(winnerId, opponentId, gameId, "win")));
   } catch (error) {
     console.error("head_to_head.record_table_failed", { gameId, participantIds, winnerId, error });
   }

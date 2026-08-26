@@ -5,6 +5,11 @@ import { TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import { adminClient } from "./supabase-admin";
 import { onHandCompleted } from "./hand-completion";
 import { creditGold } from "./profile-store";
+import {
+  cancelStaleSitAndGoTable,
+  getSitAndGoTablesByGameIds,
+  type StoredSitAndGoTable,
+} from "./sit-and-go-store";
 
 // Re-exported for the many existing callers that import it from here.
 export { adminClient };
@@ -170,33 +175,105 @@ const STALE_SWEEP_LIMIT = 25;
  * not block the sweep, but a real balance must not vanish because the table
  * that held it got cleaned up.
  *
+ * A Sit & Go table is a real exception to "refund the live stack": see
+ * refundAbandonedSitAndGo below. An abandoned tournament refunds each seat's
+ * ORIGINAL entry fee instead, via a version-guarded cancellation of its own
+ * registration row -- crediting a live, mid-tournament stack here would let
+ * two colluding seats push chips to one via soft play, go idle together, and
+ * walk away with more Gold than either ever staked, with no elimination and
+ * no single-winner guard ever running.
+ *
  * Guarded on `status = "playing"` in the same write that sets `"archived"`,
  * so a table someone genuinely returns to mid-sweep is left alone rather
  * than yanked out from under them.
  */
+/**
+ * Refunds an abandoned Sit & Go's ORIGINAL entry fee to every seat, never
+ * the live stack, and cancels its registration row -- see
+ * cancel_stale_sit_and_go_table's own migration comment for the exploit a
+ * live-stack refund here would open (two colluding seats pushing chips to
+ * one via soft play, then both going idle, walking away with more Gold than
+ * either ever staked). Looked up by game id directly rather than trusting
+ * `GameState.tournament`, the same "ask the store, not the blob" posture the
+ * rest of this sweep already takes for staleness itself.
+ *
+ * Refunds EVERY originally-registered seat, including one already busted out
+ * fair and square by forfeitTournamentSeat's own "leaving early forfeits it"
+ * rule -- deliberate, not a gap. That rule governs a player's own choice to
+ * walk away from a live tournament; an abandoned table is a different event
+ * entirely (nobody chose anything, no winner was ever legitimately decided),
+ * so treating it like a cancelled event and returning every buy-in is the
+ * more defensible call, the same way a real cancelled tournament refunds
+ * every entrant rather than only the ones still in it. Gold still conserves
+ * either way -- six debited in, six credited back out.
+ *
+
+ * Returns whether `gameId` belongs to a Sit & Go at all -- true either way
+ * once a real table is found, whether or not THIS call actually won the
+ * cancel race, so the caller never falls through to an ordinary live-stack
+ * credit for a tournament seat under any outcome.
+ *
+ * Takes the table pre-resolved (or undefined) rather than looking it up
+ * itself: both callers below batch this via getSitAndGoTablesByGameIds
+ * before their loop, since most swept candidates are ordinary cash tables
+ * and a per-candidate lookup would be one extra query each on the Supabase
+ * branch for every single one of them.
+ */
+async function refundAbandonedSitAndGo(
+  gameId: string,
+  table: StoredSitAndGoTable | null | undefined,
+  seats: Array<{ token: string }>,
+): Promise<boolean> {
+  if (!table) return false;
+  if (table.status !== "active") return true; // already settled or cancelled by something else
+
+  const cancelled = await cancelStaleSitAndGoTable(table.id, table.version);
+  if (!cancelled) return true; // lost the race to a real settlement, which already paid
+
+  for (const seat of seats) {
+    try {
+      await creditGold(seat.token, table.entryFee);
+    } catch (error) {
+      console.error("table.stale_sit_and_go_refund_failed", { gameId, token: seat.token, error });
+    }
+  }
+  return true;
+}
+
 export async function archiveStaleGames(limit = STALE_SWEEP_LIMIT): Promise<number> {
   const supabase = adminClient();
   const cutoffIso = new Date(Date.now() - staleTableMs()).toISOString();
 
   if (!supabase) {
-    let archived = 0;
-    for (const state of memoryGames.values()) {
-      if (state.status !== "playing") continue;
-      if (state.updatedAt >= cutoffIso) continue;
-      for (const seat of state.seats) {
-        if (!seat.ownerToken || seat.stack <= 0) continue;
-        try {
-          await creditGold(seat.ownerToken, seat.stack);
-        } catch (error) {
-          console.error("table.stale_archive_credit_failed", { gameId: state.id, token: seat.ownerToken, error });
+    // Filtered and bounded first, batched second: the same shape the
+    // Supabase branch below uses, so at most one sit-and-go lookup happens
+    // for this whole sweep rather than one per candidate.
+    const candidates = [...memoryGames.values()]
+      .filter((state) => state.status === "playing" && state.updatedAt < cutoffIso)
+      .slice(0, limit);
+    const sitAndGoByGameId = await getSitAndGoTablesByGameIds(candidates.map((state) => state.id));
+
+    for (const state of candidates) {
+      const humanSeats = state.seats.filter((seat) => seat.ownerToken);
+      const isSitAndGo = await refundAbandonedSitAndGo(
+        state.id,
+        sitAndGoByGameId.get(state.id),
+        humanSeats.map((seat) => ({ token: seat.ownerToken as string })),
+      );
+      if (!isSitAndGo) {
+        for (const seat of humanSeats) {
+          if (seat.stack <= 0) continue;
+          try {
+            await creditGold(seat.ownerToken as string, seat.stack);
+          } catch (error) {
+            console.error("table.stale_archive_credit_failed", { gameId: state.id, token: seat.ownerToken, error });
+          }
         }
       }
       state.status = "archived";
       state.updatedAt = new Date().toISOString();
-      archived += 1;
-      if (archived >= limit) break;
     }
-    return archived;
+    return candidates.length;
   }
 
   // Oldest-touched first and bounded, not filtered on updated_at here: a
@@ -252,9 +329,13 @@ export async function archiveStaleGames(limit = STALE_SWEEP_LIMIT): Promise<numb
     .select("id");
   if (archiveError || !archived) return 0;
 
+  const sitAndGoByGameId = await getSitAndGoTablesByGameIds(archived.map((row) => row.id as string));
   for (const row of archived) {
     const gameId = row.id as string;
-    for (const seat of humanSeatsByGame.get(gameId) ?? []) {
+    const seats = humanSeatsByGame.get(gameId) ?? [];
+    const isSitAndGo = await refundAbandonedSitAndGo(gameId, sitAndGoByGameId.get(gameId), seats.map((seat) => ({ token: seat.token })));
+    if (isSitAndGo) continue;
+    for (const seat of seats) {
       if (seat.stack <= 0) continue;
       try {
         await creditGold(seat.token, seat.stack);

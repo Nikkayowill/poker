@@ -44,7 +44,7 @@ import { awardWager } from "./progression-store";
  * engine/routes (lib/game/engine.ts's createHeadsUpGame, the same
  * app/api/games/[id]/actions and /advance routes every table uses), not
  * through anything in this file. See the migration's own header
- * (supabase/migrations/20260826140000_heads_up_tables.sql) for why this is
+ * (supabase/migrations/20260826174136_heads_up_tables.sql) for why this is
  * shaped like cribbage's table/service pair rather than pvp_matches.
  *
  * Same four money-ordering rules as every staked game in this app:

@@ -7,7 +7,7 @@
 -- direction. That migration's own comment points back at contract.ts; this
 -- one does too.
 --
--- Built on top of 20260826130000_sit_and_go_leaderboard.sql's own game_id
+-- Built on top of 20260826174040_sit_and_go_leaderboard.sql's own game_id
 -- list (which landed on origin/main after this migration's id was first
 -- picked, and adds 'sit-and-go' to the same list this one already touches)
 -- rather than this migration's own earlier draft -- redefining the function

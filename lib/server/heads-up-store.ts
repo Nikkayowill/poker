@@ -6,7 +6,7 @@ import { adminClient } from "./supabase-admin";
 /**
  * Persistence for heads-up match tables: the thin escrow/matchmaking wrapper
  * around a real poker game, not the poker state itself (see the migration's
- * own header, supabase/migrations/20260826140000_heads_up_tables.sql). Twin
+ * own header, supabase/migrations/20260826174136_heads_up_tables.sql). Twin
  * branch, same as every other store here: Supabase when configured, an
  * in-process Map otherwise, mirroring lib/server/cribbage-table-store.ts's
  * shape at 2 seats instead of 3-4 and a `game_id` link instead of its own

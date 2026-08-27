@@ -60,11 +60,17 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
     // being so. This section has not been reviewed by Nova Scotia counsel;
     // treat it as a first draft for a real lawyer, not a final opinion,
     // before leaning on it in an actual dispute.
-    version: 3,
+    //
+    // Bumped to 4 because the opening paragraphs still described StackChips
+    // as a poker game with bot-filled tables. The floor has grown to a
+    // whole arcade since (Cribbage, PvP duels, Ante Up's brain games) and
+    // most of that expansion is human-only with no computer opponent at
+    // all -- the old wording didn't cover what most of the app now is.
+    version: 4,
     title: "Terms of Service",
     body: [
-      "StackChips is a free-to-play social poker game played with Gold, an in-app entertainment currency. Nothing in StackChips is real-money gambling: no hand you play, and no amount of Gold you hold, wins, buys, or can be exchanged for real money, cryptocurrency, or any prize of monetary value.",
-      "Tables are filled with computer-controlled opponents. Any seat at your table that is not held by another player is played by StackChips software, and seats can change hands between hands as players join and leave. Computer opponents follow the same rules, the same betting limits, and the same shuffled deck as every other seat; they cannot see your cards, and they receive no advantage of any kind.",
+      "StackChips is a free-to-play social gaming app played with Gold, an in-app entertainment currency -- Texas Hold'em and Blackjack, Cribbage, head-to-head PvP duels (Chess, Checkers, Trivia Showdown, Word Race), and the Ante Up brain-game collection (Word Stack, Connections, Sudoku, Memory Match, Minesweeper, and others added over time). Nothing in StackChips is real-money gambling: no hand, match, or round you play, and no amount of Gold you hold, wins, buys, or can be exchanged for real money, cryptocurrency, or any prize of monetary value.",
+      "Poker and Blackjack tables may be filled with computer-controlled opponents. Any poker seat at your table that is not held by another player is played by StackChips software, and seats can change hands between hands as players join and leave. Computer opponents follow the same rules, the same betting limits, and the same shuffled deck as every other seat; they cannot see your cards, and they receive no advantage of any kind. Cribbage tables and PvP duels are human-only -- an empty seat there simply waits for another player rather than being filled by software.",
       "You must be at least 18 years old, or the age of majority where you live if that is higher, to play. By continuing you confirm you meet that requirement.",
       "Your Gold balance, table history, and cosmetics belong to your StackChips profile and have no value outside the app. We can suspend or terminate a profile that cheats, abuses other players, colludes, or attempts to convert Gold into anything of real-world value.",
       "Before either of us starts a court proceeding, you agree to first contact us at support@stackchips.app and describe the dispute; we will try in good faith to resolve it informally within 60 days.",

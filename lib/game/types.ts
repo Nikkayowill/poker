@@ -43,6 +43,14 @@ export interface Seat {
    * the price of the thing being worth owning.
    */
   cardBackCosmetic: string;
+  /**
+   * Denomination -> equipped chip-design id, drawn on this seat's own bet and
+   * standing-stack chips (never the shared pot mound, which has no single
+   * owner). Optional: absent/missing denominations just draw the house
+   * default, and bot seats never set this at all -- see
+   * `lib/cosmetics/catalog.ts`'s `EquippedCosmetics.chipDesigns`.
+   */
+  chipDesigns?: Partial<Record<number, string>>;
   position: number;
   isHuman: boolean;
   /** The session token of the human seated here; null for an open/bot seat. Never sent to clients. */

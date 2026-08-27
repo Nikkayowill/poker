@@ -736,6 +736,7 @@ export function createGame(
       avatarPreset: appearance?.avatarPreset ?? "ace",
       avatarCosmetic: appearance?.equipped?.avatar2d ?? DEFAULT_AVATAR_COSMETIC,
       cardBackCosmetic: appearance?.equipped?.cardBack ?? DEFAULT_CARD_BACK,
+      chipDesigns: appearance?.equipped?.chipDesigns ?? {},
       position: 0,
       isHuman: true,
       ownerToken: hostToken,
@@ -870,6 +871,7 @@ export function createHeadsUpGame(
     avatarPreset: entrant.profile.avatarPreset,
     avatarCosmetic: entrant.profile.equipped?.avatar2d ?? DEFAULT_AVATAR_COSMETIC,
     cardBackCosmetic: entrant.profile.equipped?.cardBack ?? DEFAULT_CARD_BACK,
+    chipDesigns: entrant.profile.equipped?.chipDesigns ?? {},
     position: index,
     isHuman: true,
     ownerToken: entrant.token,
@@ -981,6 +983,7 @@ export function createTournamentGame(
     avatarPreset: profile.avatarPreset,
     avatarCosmetic: profile.equipped.avatar2d,
     cardBackCosmetic: profile.equipped.cardBack,
+    chipDesigns: profile.equipped.chipDesigns,
     position,
     isHuman: true,
     ownerToken: token,
@@ -1110,6 +1113,7 @@ export function claimSeat(
   seat.avatarPreset = profile.avatarPreset;
   seat.avatarCosmetic = profile.equipped.avatar2d;
   seat.cardBackCosmetic = profile.equipped.cardBack;
+  seat.chipDesigns = profile.equipped.chipDesigns;
   // A claimed seat owns exactly the buy-in the player paid for, including chips
   // this seat already committed before the bot was replaced. Resetting the
   // behind-stack to the full buy-in would mint every posted blind/bet again.

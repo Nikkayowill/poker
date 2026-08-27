@@ -372,4 +372,42 @@
   transition: background var(--duration-base) ease, color var(--duration-base) ease;
 }
 .preview-angle-button:hover { background: rgba(255,255,255,.12); }
+
+/* ---- Chip designs ---- */
+/* A pure colour swatch -- chip designs have no supplied artwork, they're
+   just the same four-colour material lib/scene/chips/chip-spec.ts paints a
+   house chip from. */
+.cosmetic-art-chip { border-radius: 50%; }
+
+.chip-assign-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+.chip-assign-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--brand-surface-2);
+}
+.chip-assign-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.chip-assign-select {
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: 0;
+  background: rgba(255,255,255,.08);
+  color: var(--ink);
+  font-size: 12px;
+  max-width: 55%;
+}
+.chip-assign-select:disabled { opacity: .55; }
 .preview-angle-button.is-active { background: var(--brand-gold-light); color: #1c1305; }

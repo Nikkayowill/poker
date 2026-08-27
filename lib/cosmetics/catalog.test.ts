@@ -6,6 +6,8 @@ import {
   avatarFace,
   avatarFigure,
   characterAvatarCosmetics,
+  chipDesignMaterial,
+  CHIP_DESIGN_DENOMINATIONS,
   cosmetics,
   DEFAULT_AVATAR_COSMETIC,
   DEFAULT_CARD_BACK,
@@ -91,9 +93,54 @@ describe("cosmetic catalog", () => {
   it("gives every entry exactly one source of artwork", () => {
     for (const item of cosmetics) {
       // Card backs are drawn from `art`; avatars are supplied images keyed by
-      // id. An entry with both, or neither, renders as nothing at all.
+      // id; chip designs are drawn from `chip`. An entry with more than one
+      // of these, or none, renders as nothing at all.
       expect(Boolean(item.art)).toBe(item.slot === "cardBack");
+      expect(Boolean(item.chip)).toBe(item.slot === "chipDesign");
     }
+  });
+});
+
+describe("chip designs", () => {
+  it("gives away one free design and prices the rest", () => {
+    const designs = cosmetics.filter((item) => item.slot === "chipDesign");
+    expect(designs.length).toBeGreaterThan(1);
+    expect(designs.filter((item) => item.price === 0)).toHaveLength(1);
+    for (const item of designs.filter((entry) => entry.price !== 0)) {
+      expect(item.price).toBeGreaterThan(0);
+    }
+  });
+
+  it("resolves a design's own id to its material and falls back to null for anything else", () => {
+    const owned = cosmetics.find((item) => item.slot === "chipDesign")!;
+    expect(chipDesignMaterial(owned.id)).toEqual(owned.chip);
+    expect(chipDesignMaterial(undefined)).toBeNull();
+    expect(chipDesignMaterial(null)).toBeNull();
+    expect(chipDesignMaterial("not-a-real-id")).toBeNull();
+    // An avatar id is a real cosmetic, just the wrong slot -- must not leak
+    // through as a chip material.
+    expect(chipDesignMaterial(DEFAULT_AVATAR_COSMETIC)).toBeNull();
+  });
+
+  it("normalizes chipDesigns to only known denominations and only owned-slot ids, dropping the rest", () => {
+    const design = cosmetics.find((item) => item.slot === "chipDesign")!;
+    expect(defaultEquipped.chipDesigns).toEqual({});
+    const normalized = normalizeEquipped({
+      chipDesigns: {
+        1: design.id,
+        // Not one of the four denominations -- dropped.
+        7: design.id,
+        // A real id, wrong slot -- dropped.
+        25: DEFAULT_AVATAR_COSMETIC,
+        // Not a real id at all -- dropped.
+        100: "not-a-real-id",
+      },
+    });
+    expect(normalized.chipDesigns).toEqual({ 1: design.id });
+  });
+
+  it("resolves every denomination in CHIP_DESIGN_DENOMINATIONS", () => {
+    expect(CHIP_DESIGN_DENOMINATIONS).toEqual([1, 5, 25, 100]);
   });
 });
 

@@ -263,6 +263,13 @@ export const FACE = {
   groove: 0.7,
   /** The pressed inlay disc. */
   inlay: 0.55,
+  /**
+   * The rosette stamped into the inlay, behind the denomination: two thin
+   * scored rings and a five-point star, sized to sit inside `inlay` with
+   * room to spare rather than crowd its own edge.
+   */
+  rosetteOuter: 0.42,
+  rosetteInner: 0.32,
 } as const;
 
 /**
@@ -274,6 +281,14 @@ export const FACE = {
  * pixels, which reads as dirt on the chip.
  */
 export const NUMERAL_MIN_RADIUS_PX = 9;
+
+/**
+ * Below this drawn radius the rosette's two rings collapse into one smeared
+ * line and the star into a blob -- the same "art judged at the size it
+ * renders" rule `NUMERAL_MIN_RADIUS_PX` states, at the threshold the
+ * pressed-inlay depression ring already uses (`paintFace`'s own `rx >= 7`).
+ */
+export const ROSETTE_MIN_RADIUS_PX = 7;
 
 /* ------------------------------------------------------------------ *
  * Imperfection.

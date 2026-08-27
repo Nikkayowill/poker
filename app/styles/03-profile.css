@@ -21,7 +21,7 @@
   flex-shrink: 0;
   border-radius: 50%;
   background: var(--brand-gold-light);
-  box-shadow: 0 0 0 3px rgba(219, 156, 11, .18);
+  box-shadow: 0 0 0 3px rgba(255, 210, 63, .18);
   animation: gold-ready-pulse 2.4s ease-in-out infinite;
 }
 @keyframes gold-ready-pulse {

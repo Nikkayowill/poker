@@ -12,7 +12,7 @@
     var(--glow-purple),
     radial-gradient(1000px 600px at 94% 0%, rgba(220, 20, 19, .05), transparent 58%),
     var(--glow-gold),
-    radial-gradient(1400px 1100px at 50% 40%, rgba(126, 158, 214, .08), transparent 72%),
+    radial-gradient(1400px 1100px at 50% 40%, rgba(74, 28, 136, .08), transparent 72%),
     var(--brand-ink);
   background: var(--entry-room);
 }
@@ -112,7 +112,7 @@ body:has(.lobby-hub) { background: var(--brand-room); }
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  filter: drop-shadow(0 6px 16px rgba(152, 63, 224, .42));
+  filter: drop-shadow(0 6px 16px rgba(155, 63, 240, .42));
 }
 
 .wordmark {
@@ -172,5 +172,5 @@ body:has(.lobby-hub) { background: var(--brand-room); }
   gap: 8px;
   padding: 6px 12px;
   border-radius: var(--radius-pill);
-  background: rgba(219,156,11,.13);
+  background: rgba(255, 210, 63,.13);
 }

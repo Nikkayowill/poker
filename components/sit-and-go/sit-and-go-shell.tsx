@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
+import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { selectSound } from "@/lib/audio/ui-sounds";
 import { isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
@@ -164,7 +164,7 @@ export function SitAndGoShell() {
   return (
     <main className="duel-shell">
       <header className="floor-bar">
-        <Link className="floor-back" href="/games">← Ante Up</Link>
+        <FloorBackLink />
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
           <strong>

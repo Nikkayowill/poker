@@ -72,7 +72,7 @@
 .leaderboard-scope-active {
   background: linear-gradient(140deg, var(--brand-purple), var(--brand-purple-deep));
   color: #fff;
-  box-shadow: 0 8px 20px rgba(152,63,224,.32);
+  box-shadow: 0 8px 20px rgba(155, 63, 240,.32);
 }
 .leaderboard-scope-active:hover { color: #fff; background: linear-gradient(140deg, var(--brand-purple), var(--brand-purple-deep)); }
 
@@ -109,7 +109,7 @@
 .leaderboard-game-tab-active {
   background: linear-gradient(140deg, var(--brand-purple), var(--brand-purple-deep));
   color: #fff;
-  box-shadow: 0 8px 20px rgba(152,63,224,.32);
+  box-shadow: 0 8px 20px rgba(155, 63, 240,.32);
 }
 .leaderboard-game-tab-active:hover { color: #fff; background: linear-gradient(140deg, var(--brand-purple), var(--brand-purple-deep)); }
 

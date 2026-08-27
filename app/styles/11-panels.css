@@ -107,7 +107,7 @@
   padding: 18px;
   border: 0;
   border-radius: 16px;
-  background: linear-gradient(140deg, rgba(152,63,224,.14), rgba(255,255,255,.04));
+  background: linear-gradient(140deg, rgba(155, 63, 240,.14), rgba(255,255,255,.04));
 }
 
 .avatar-stage { position: relative; }
@@ -167,7 +167,7 @@
   color: var(--brand-gold-light);
   border: 0;
   border-radius: 9px;
-  background: rgba(219,156,11,.16);
+  background: rgba(255, 210, 63,.16);
   font-size: 9px;
   font-weight: 700;
   cursor: pointer;
@@ -212,7 +212,7 @@
 }
 
 /* A ring, not a border colour -- there is no border left to recolour. */
-.profile-field input:focus { background: rgba(255,255,255,.09); box-shadow: 0 0 0 2px rgba(152,63,224,.6); }
+.profile-field input:focus { background: rgba(255,255,255,.09); box-shadow: 0 0 0 2px rgba(155, 63, 240,.6); }
 
 .profile-field > span {
   position: absolute;
@@ -264,8 +264,8 @@
   padding: 7px 12px;
   color: var(--brand-gold-light);
   border-radius: 999px;
-  background: rgba(219,156,11,.14);
-  box-shadow: inset 0 0 0 1px rgba(219,156,11,.22);
+  background: rgba(255, 210, 63,.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 210, 63,.22);
   font-size: 11px;
   font-weight: 700;
 }

@@ -17,7 +17,7 @@
  */
 
 .hub-tile-arcade {
-  --tile-tint: rgba(152,63,224,.06);
+  --tile-tint: rgba(155, 63, 240,.06);
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
@@ -30,7 +30,7 @@
   background-image:
     linear-gradient(90deg, rgba(18,22,31,.95) 0%, rgba(18,22,31,.9) 100%),
     linear-gradient(var(--tile-tint), var(--tile-tint)),
-    linear-gradient(160deg, #222937, #171b25);
+    linear-gradient(160deg, #2c1854, #1a0f36);
 }
 .hub-tile-arcade:hover { transform: none; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
 
@@ -137,7 +137,7 @@
   flex: 0 0 auto;
   padding: 6px 12px;
   border-radius: var(--radius-control);
-  background: rgba(219,156,11,.12);
+  background: rgba(255, 210, 63,.12);
   color: var(--brand-gold-light);
 }
 
@@ -193,18 +193,33 @@
   gap: 12px;
 }
 
+/* Loud on purpose -- the one place in the chrome that breaks "purple is a
+   line and a glow, never a fill" (01-tokens.css's accent block). The floor is
+   the arcade cabinet's own marquee, not a settings panel; the gradient fill,
+   yellow-lit edge and filled CTA below are the concept the Neon Marquee
+   design canvas argued for the lobby/floor specifically, not a chrome-wide
+   rule -- .floor-row below and every other card-shaped surface in the app
+   stay on the restrained hairline treatment. */
 .floor-card {
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 15px 16px 14px;
   border-radius: var(--radius-card);
-  background: var(--brand-surface);
-  transition: box-shadow var(--duration-base) ease;
+  background: linear-gradient(160deg, var(--neon-purple-deep), var(--neon-ground-lift-2) 70%);
+  box-shadow: 0 0 0 1px rgba(255, 210, 63, .35), 0 18px 40px -22px rgba(155, 63, 240, .75);
+  transition: box-shadow var(--duration-base) ease, transform var(--duration-base) ease;
 }
-.floor-card:hover { box-shadow: var(--accent-edge), var(--accent-glow); }
-.floor-card strong { color: #eef2f8; font: 600 17px Georgia, serif; letter-spacing: -.01em; }
-.floor-card small { color: #93a1bb; font-size: 11.5px; line-height: 1.4; }
+.floor-card:hover {
+  box-shadow: 0 0 0 1px rgba(255, 210, 63, .5), 0 22px 46px -20px rgba(155, 63, 240, .9);
+  transform: translateY(-1px);
+}
+.floor-card strong { color: var(--neon-chalk); font: 600 17px Georgia, serif; letter-spacing: -.01em; }
+.floor-card small { color: var(--neon-muted); font-size: 11.5px; line-height: 1.4; }
+/* The stake line reads as the card's kicker (the concept's ".fk"), not
+   another line of blurb -- it's the one number a player is actually
+   deciding on, so it gets the yellow the rest of the small text doesn't. */
+.floor-card .floor-card-stake { color: var(--neon-yellow); font-weight: 700; }
 /* margin-top:auto, not a fixed 14px. Grid items stretch, so the cards in a row
    are already the same height -- but a one-line blurb and a two-line blurb put
    their buttons at different heights inside them, which is the row reading as
@@ -215,6 +230,22 @@
    collapses to nothing on the tallest card in the row -- the one that sets the
    height. 10px here plus the card's own 4px gap. */
 .floor-card small { margin-bottom: 10px; }
+/* The card's own CTA is filled, not the ghost button every other .floor-play
+   is -- the concept's "gets to be loud" list names badges/CTAs/wins
+   explicitly. `:not(:disabled)` and the two extra classes of specificity
+   keep a blocked card's button on the shared grey disabled state below
+   rather than reading as a live, tappable yellow button it isn't. */
+.floor-card .floor-play:not(:disabled) {
+  color: var(--neon-ground-lift-2);
+  background: var(--neon-yellow);
+  box-shadow: none;
+  font-weight: 750;
+}
+.floor-card .floor-play:not(:disabled):hover {
+  color: var(--neon-ground-lift-2);
+  background: var(--neon-yellow-bright);
+  box-shadow: 0 6px 16px -4px rgba(255, 210, 63, .6);
+}
 
 .floor-staked-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 
@@ -229,7 +260,7 @@
 /* A zebra wash rather than row rules: a fill, not a line. Nine hairlines down
    a list is nine boxes' worth of edge, which is what the borderless pass
    removed everywhere else in the chrome. */
-.floor-row:nth-child(odd) { background: rgba(164,186,224,.035); }
+.floor-row:nth-child(odd) { background: rgba(182, 166, 219,.035); }
 .floor-row:hover { background: var(--brand-surface); }
 .floor-row-blocked { opacity: .6; }
 
@@ -288,7 +319,7 @@
 .floor-play:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
 .floor-play:disabled {
   color: #6f7b92;
-  box-shadow: inset 0 0 0 1px rgba(164,186,224,.12);
+  box-shadow: inset 0 0 0 1px rgba(182, 166, 219,.12);
   cursor: not-allowed;
 }
 

@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { PlayingCard } from "@/components/table/playing-card";
+import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
@@ -166,7 +166,7 @@ export function AnteUpMemory() {
   return (
     <main className="duel-shell ante-shell">
       <header className="floor-bar">
-        <Link className="floor-back" href="/games" onClick={tapSound}>← Ante Up</Link>
+        <FloorBackLink />
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
           <strong>

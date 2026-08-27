@@ -253,62 +253,56 @@ export function AnteUpSudoku() {
       )}
 
       {!attempt ? (
-        <div className="duel-lobby">
-          <div className="floor-head">
-            <div className="lobby-kicker">Ante Up</div>
+        <section className="puzzle-summary ante-lobby-card">
+          <div className="ante-lobby-heading">
             <h1>Sudoku, against the clock</h1>
             <p>Wager on your own ability. Beat the grid before time runs out and cash out up to 10x.</p>
           </div>
 
-          <section className="duel-panel">
-            <h2 className="floor-section-head">Difficulty</h2>
-            <div className="ante-difficulties" role="group" aria-label="Difficulty">
-              {SUDOKU_DIFFICULTIES.map((entry) => {
-                const entryTier = ANTE_UP_TIERS[entry];
-                return (
-                  <button
-                    key={entry}
-                    type="button"
-                    className={clsx("ante-difficulty", entry === difficulty && "ante-difficulty-active")}
-                    aria-pressed={entry === difficulty}
-                    onClick={() => { selectSound(); setDifficulty(entry); }}
-                  >
-                    <strong>{entry[0].toUpperCase() + entry.slice(1)}</strong>
-                    <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+          <div className="ante-difficulties" role="group" aria-label="Difficulty">
+            {SUDOKU_DIFFICULTIES.map((entry) => {
+              const entryTier = ANTE_UP_TIERS[entry];
+              return (
+                <button
+                  key={entry}
+                  type="button"
+                  className={clsx("ante-difficulty", entry === difficulty && "ante-difficulty-active")}
+                  aria-pressed={entry === difficulty}
+                  onClick={() => { selectSound(); setDifficulty(entry); }}
+                >
+                  <strong>{entry[0].toUpperCase() + entry.slice(1)}</strong>
+                  <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
+                </button>
+              );
+            })}
+          </div>
 
-          <section className="duel-panel">
-            <h2 className="floor-section-head">Your wager</h2>
-            <StakePicker
-              ariaLabel="Wager"
-              picks={STAKE_QUICK_PICKS}
-              value={wager}
-              min={0}
-              leading={{ label: "Free", value: 0 }}
-              onChange={(next) => { selectSound(); setWager(next); }}
-            />
-            <p className="duel-pot-note">
-              {wager === 0
-                ? "Free practice -- no payout on a win, but there's no fun in that."
-                : wager < MIN_ANTE_UP_WAGER
-                  ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                  : `Beat ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Miss it and the wager is gone.`}
-            </p>
+          <StakePicker
+            ariaLabel="Wager"
+            picks={STAKE_QUICK_PICKS}
+            value={wager}
+            min={0}
+            leading={{ label: "Free", value: 0 }}
+            onChange={(next) => { selectSound(); setWager(next); }}
+          />
+          <p className="puzzle-verdict">
+            {wager === 0
+              ? "Free practice — no payout on a win, but there's no fun in that."
+              : wager < MIN_ANTE_UP_WAGER
+                ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
+                : `Beat ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Miss it and the wager is gone.`}
+          </p>
 
-            <button
-              type="button"
-              className="floor-play duel-open"
-              disabled={busy || !loaded || !canAfford}
-              onClick={() => { selectSound(); start(); }}
-            >
-              {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
-            </button>
-          </section>
-        </div>
+          <button
+            type="button"
+            className="puzzle-share-button"
+            disabled={busy || !loaded || !canAfford}
+            onClick={() => { selectSound(); start(); }}
+          >
+            <Coins size={15} aria-hidden="true" />
+            {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
+          </button>
+        </section>
       ) : (
         <div className="duel-match ante-match">
           <div className="duel-scoreline ante-scoreline">

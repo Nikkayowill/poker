@@ -266,7 +266,7 @@ export function ConnectionsBoard() {
     <main className="bj-shell puzzle-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <Link className="bj-back" href="/" onClick={tapSound}>← Back to the lobby</Link>
+          <Link className="bj-back" href="/games" onClick={tapSound}>← Ante Up</Link>
           <h1>Connections</h1>
           <p>
             {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Find the four groups of four
@@ -274,6 +274,10 @@ export function ConnectionsBoard() {
         </div>
         {profile && (
           <div className="puzzle-player">
+            <span className="gold-balance">
+              <Coins size={13} aria-hidden="true" />
+              <strong>{profile.unlimitedGold ? "Unlimited" : profile.goldBalance.toLocaleString()}</strong>
+            </span>
             <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
             <span className="bj-hand-who">
               <span className="bj-hand-label">{profile.displayName}</span>

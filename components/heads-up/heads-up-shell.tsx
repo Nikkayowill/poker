@@ -158,7 +158,7 @@ export function HeadsUpShell() {
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
 
   return (
-    <main className="duel-shell heads-up-shell">
+    <main className="duel-shell">
       <header className="floor-bar">
         <Link className="floor-back" href="/games">← Ante Up</Link>
         <span className="gold-balance floor-wallet">
@@ -233,7 +233,7 @@ function HeadsUpLobby({
   const canAfford = balance >= config.minBuyIn;
 
   return (
-    <div className="duel-lobby heads-up-lobby">
+    <div className="duel-lobby">
       <div className="floor-head">
         <div className="lobby-kicker">Heads-up · winner takes both stacks</div>
         <h1>Heads-Up Poker</h1>
@@ -248,7 +248,7 @@ function HeadsUpLobby({
               const host = invite.players.find((p) => p.profileId === invite.hostId);
               return (
                 <li key={invite.id} className="duel-challenge">
-                  <span className="duel-avatar" style={{ background: host?.accent ?? "#e7c66a" }} aria-hidden="true">
+                  <span className="duel-avatar" style={{ background: host?.accent ?? "var(--gold-light)" }} aria-hidden="true">
                     {host?.initials ?? "??"}
                   </span>
                   <span className="duel-challenge-identity">
@@ -336,7 +336,7 @@ function HeadsUpWaitingRoom({
   onLeave: () => void;
 }) {
   return (
-    <div className="crib-waiting heads-up-waiting">
+    <div className="crib-waiting">
       <div className="floor-head">
         <div className="lobby-kicker">{table.stake.toLocaleString()} Gold each · pot {table.pot.toLocaleString()}</div>
         <h1>Waiting for an opponent</h1>

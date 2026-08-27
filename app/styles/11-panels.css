@@ -371,7 +371,9 @@
 .tier-card {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 4px;
+  min-height: 44px;
   padding: 12px 10px;
   color: #b7c2d4;
   border: 0;
@@ -396,7 +398,11 @@
 }
 .tier-card.selected strong { color: var(--gold-light); }
 .tier-card.unaffordable { opacity: .45; cursor: not-allowed; }
-.tier-card.unaffordable small { color: #ff9c8a; }
+.tier-card.unaffordable small { color: var(--brand-red); }
+
+@media (max-width: 360px) {
+  .tier-grid { grid-template-columns: repeat(2, 1fr); }
+}
 
 .buyin-amount { margin-bottom: 6px; }
 .buyin-amount input[type="range"] {

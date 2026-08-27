@@ -303,7 +303,7 @@ export function BlackjackTable() {
     <main className="bj-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <Link className="bj-back" href="/" onClick={tapSound}>← Back to the lobby</Link>
+          <Link className="bj-back" href="/games" onClick={tapSound}>← Ante Up</Link>
           <h1>Blackjack 21</h1>
           <p>Dealer stands on soft 17 · Blackjack pays 3:2</p>
         </div>

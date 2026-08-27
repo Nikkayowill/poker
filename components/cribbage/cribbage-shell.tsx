@@ -161,12 +161,26 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
 
   useEffect(() => {
     mounted.current = true;
-    const first = window.setTimeout(() => void refresh(), 0);
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
+    // A hidden tab has no table to watch move, so skip the round-trip rather
+    // than polling a screen nobody is looking at -- same reasoning
+    // components/pvp/duel-shell.tsx applies to document.hidden.
+    const poll = () => {
+      if (!document.hidden) void refresh();
+    };
+    const first = window.setTimeout(poll, 0);
+    const timer = window.setInterval(poll, POLL_MS);
+    // The interval above still fires while hidden, just skipping the fetch,
+    // so it can still miss a move made and settled entirely while the tab
+    // was away. Resync the instant the tab is looked at again.
+    const resyncOnReturn = () => {
+      if (!document.hidden) void refresh();
+    };
+    document.addEventListener("visibilitychange", resyncOnReturn);
     return () => {
       mounted.current = false;
       window.clearTimeout(first);
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", resyncOnReturn);
     };
   }, [refresh]);
 

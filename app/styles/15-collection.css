@@ -49,7 +49,7 @@
   padding: 8px 13px;
   border-radius: var(--radius-pill);
   border: 0;
-  background: rgba(219,156,11,.16);
+  background: rgba(255, 210, 63,.16);
   color: var(--brand-gold-light);
   font-size: 13px;
 }
@@ -147,7 +147,7 @@
    first thing a "strip the boxes" pass silently deletes. */
 .cosmetic-card.is-equipped { background: none; }
 .cosmetic-card.is-equipped .cosmetic-art-frame {
-  box-shadow: 0 0 0 2px rgba(246,201,74,.7), 0 14px 32px rgba(152,63,224,.3);
+  box-shadow: 0 0 0 2px rgba(246,201,74,.7), 0 14px 32px rgba(155, 63, 240,.3);
 }
 
 .cosmetic-art-frame {
@@ -173,7 +173,7 @@
   font: 600 clamp(28px, 8vw, 56px)/1 Georgia, "Times New Roman", serif;
   letter-spacing: .08em;
   background:
-    radial-gradient(circle at 50% 42%, rgba(219,156,11,.22), transparent 46%),
+    radial-gradient(circle at 50% 42%, rgba(255, 210, 63,.22), transparent 46%),
     linear-gradient(145deg, #263b35, #11181b);
 }
 

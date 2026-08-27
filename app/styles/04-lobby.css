@@ -90,7 +90,7 @@
 
 .secondary-action:hover {
   color: #eef2f8;
-  background: rgba(164,186,224,.13);
+  background: rgba(182, 166, 219,.13);
 }
 
 
@@ -324,7 +324,7 @@ button:disabled { cursor: wait; opacity: .62; }
    that is actually there. */
 .entry-orb:nth-child(1) {
   left: 6%; top: 62%; width: 260px; height: 260px;
-  background: radial-gradient(circle, rgba(152, 63, 224, .20), transparent 70%);
+  background: radial-gradient(circle, rgba(155, 63, 240, .20), transparent 70%);
   animation-duration: 74s;
 }
 .entry-orb:nth-child(2) {
@@ -335,7 +335,7 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 .entry-orb:nth-child(3) {
   left: 63%; top: 74%; width: 320px; height: 320px;
-  background: radial-gradient(circle, rgba(219, 156, 11, .17), transparent 70%);
+  background: radial-gradient(circle, rgba(255, 210, 63, .17), transparent 70%);
   animation-duration: 88s;
   animation-delay: -46s;
 }
@@ -347,7 +347,7 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 .entry-orb:nth-child(5) {
   left: 44%; top: 40%; width: 150px; height: 150px;
-  background: radial-gradient(circle, rgba(126, 158, 214, .15), transparent 70%);
+  background: radial-gradient(circle, rgba(74, 28, 136, .15), transparent 70%);
   animation-duration: 53s;
   animation-delay: -33s;
 }
@@ -408,8 +408,8 @@ button:disabled { cursor: wait; opacity: .62; }
   /* Purple under the mark, gold over it: the drop shadow is doing the job the
      removed border used to, lifting the art off the glass. */
   filter:
-    drop-shadow(0 14px 34px rgba(152, 63, 224, .42))
-    drop-shadow(0 2px 10px rgba(219, 156, 11, .28));
+    drop-shadow(0 14px 34px rgba(155, 63, 240, .42))
+    drop-shadow(0 2px 10px rgba(255, 210, 63, .28));
 }
 
 /* Lifted off the sky rather than off a card. The near shadow is the edge that
@@ -678,7 +678,7 @@ button:disabled { cursor: wait; opacity: .62; }
      is light on the top face, and it stops at the top face. */
   background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
   box-shadow:
-    0 16px 38px rgba(219, 156, 11, .3),
+    0 16px 38px rgba(255, 210, 63, .3),
     inset 0 1px rgba(255, 255, 255, .45);
 }
 
@@ -688,7 +688,7 @@ button:disabled { cursor: wait; opacity: .62; }
   color: #e9eef6;
   background: var(--brand-surface-2);
 }
-.account-oauth-action:hover:not(:disabled) { background: rgba(164, 186, 224, .13); }
+.account-oauth-action:hover:not(:disabled) { background: rgba(182, 166, 219, .13); }
 
 .account-guest-action {
   color: #9fadc5;
@@ -799,7 +799,7 @@ button:disabled { cursor: wait; opacity: .62; }
   transition: background var(--duration-base) ease;
 }
 
-.entry-install-action:hover { background: rgba(164, 186, 224, .16); }
+.entry-install-action:hover { background: rgba(182, 166, 219, .16); }
 .entry-install-action:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
 
 .entry-support {
@@ -885,7 +885,7 @@ button:disabled { cursor: wait; opacity: .62; }
   padding: 16px 18px 14px;
   border-radius: var(--radius-card);
   background:
-    linear-gradient(100deg, rgba(152,63,224,.10), rgba(152,63,224,0) 58%),
+    linear-gradient(100deg, rgba(155, 63, 240,.10), rgba(155, 63, 240,0) 58%),
     var(--brand-surface);
   box-shadow: var(--accent-glow);
 }
@@ -901,7 +901,7 @@ button:disabled { cursor: wait; opacity: .62; }
   left: 0;
   width: 2px;
   border-radius: 2px;
-  background: linear-gradient(180deg, var(--brand-purple), rgba(152,63,224,.25));
+  background: linear-gradient(180deg, var(--brand-purple), rgba(155, 63, 240,.25));
 }
 
 .first-run-head {
@@ -963,7 +963,7 @@ button:disabled { cursor: wait; opacity: .62; }
   flex: 1;
   height: 2px;
   border-radius: 2px;
-  background: rgba(164,186,224,.14);
+  background: rgba(182, 166, 219,.14);
   transition: background var(--duration-slow) ease;
 }
 .first-run-tick.is-done { background: var(--brand-purple); }
@@ -1002,7 +1002,7 @@ button:disabled { cursor: wait; opacity: .62; }
   place-items: center;
   border-radius: var(--radius-round);
   background: radial-gradient(circle at 34% 28%, #f0bc3a, var(--brand-gold) 58%, #a86f04);
-  box-shadow: 0 0 0 2px rgba(219,156,11,.22);
+  box-shadow: 0 0 0 2px rgba(255, 210, 63,.22);
   color: #1a1208;
   font: 650 16px Georgia, serif;
   font-variant-numeric: tabular-nums;
@@ -1035,7 +1035,7 @@ button:disabled { cursor: wait; opacity: .62; }
   height: 5px;
   margin: 8px 0 6px;
   border-radius: 3px;
-  background: rgba(164,186,224,.09);
+  background: rgba(182, 166, 219,.09);
   overflow: hidden;
 }
 .rank-fill {
@@ -1173,7 +1173,7 @@ button:disabled { cursor: wait; opacity: .62; }
   height: 5px;
   margin-top: 2px;
   border-radius: 3px;
-  background: rgba(164,186,224,.09);
+  background: rgba(182, 166, 219,.09);
   overflow: hidden;
 }
 .mission-fill {
@@ -1273,7 +1273,7 @@ button:disabled { cursor: wait; opacity: .62; }
     linear-gradient(148deg, rgba(18,22,31,.95) 0%, rgba(18,22,31,.76) 44%, rgba(18,22,31,.06) 100%),
     linear-gradient(var(--tile-tint), var(--tile-tint)),
     var(--tile-art),
-    linear-gradient(160deg, #222937, #171b25);
+    linear-gradient(160deg, #2c1854, #1a0f36);
   background-size: auto, auto, cover, auto;
   background-position: center, center, center, center;
   background-repeat: no-repeat;
@@ -1364,7 +1364,7 @@ button:disabled { cursor: wait; opacity: .62; }
   --tile-art: url("/pokertable/table-desktop.webp");
   /* A trace of the room's own violet, not a colour wash over the art -- see
      above for what happened at .24. */
-  --tile-tint: rgba(152,63,224,.07);
+  --tile-tint: rgba(155, 63, 240,.07);
   /* Sized by *height*, not width: the plate is 2:1, so anything wide enough
      to read got taller than the tile and was clipped top and bottom into a
      green rounded rectangle -- a table with its ends cut off is not a table.

@@ -6,10 +6,12 @@ Migrated from the root `CLAUDE.md` (2026-08-17) — loads only when working unde
   shadow, and space — not 1px hairline borders. `--accent-edge` (inset ring) + `--accent-glow` stand
   in for a border; `--rule` is the one fading-hairline token for dividers between items (never an
   outline around one).
-- Palette: dark obsidian ground (`--brand-ink` `#0a0a0b`), brand purple/red/gold
-  (`#983fe0`/`#dc1413`/`#db9c0b`, sampled from the real logo) reserved for the mark and single
-  primary actions — not a wash across a whole surface. Table felt/gold (`05-game-header.css` through
-  `09-action-bar.css`, plus `16`/`17`/`99`) is untouched green felt and out of scope for chrome work.
+- Palette (2026-08-27): violet-black ground (`--brand-ink` `#150a2b`), brand purple/gold
+  (`#9b3ff0`/`#ffd23f`) now resolve to the current mark's own Neon Marquee palette (`--neon-*` in
+  `01-tokens.css`), reserved for chrome accents and single primary actions, not a wash across a whole
+  surface. `--brand-red` (`#dc1413`) is unchanged — the mark has no red, so it kept its old value and
+  stays a trace, never a wash. Table felt/gold (`05-game-header.css` through `09-action-bar.css`, plus
+  `16`/`17`/`99`) is untouched green felt and out of scope for chrome work.
 - A single unbalanced CSS block comment silently kills the **entire** stylesheet — PostCSS drops it,
   and neither tsc nor eslint reads CSS. `stylesheets.test.ts` guards against an orphaned comment
   delimiter.

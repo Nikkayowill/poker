@@ -14,7 +14,7 @@
 .cash-out-notice {
   color: var(--brand-gold-light);
   border: 0;
-  background: rgba(219, 156, 11, 0.16);
+  background: rgba(255, 210, 63, 0.16);
 }
 
 .cash-out-notice svg { flex-shrink: 0; color: var(--gold); }
@@ -58,8 +58,8 @@
   border: 0;
   border-radius: 18px;
   background:
-    radial-gradient(circle at 0 0, rgba(152,63,224,.24), transparent 48%),
-    radial-gradient(circle at 100% 100%, rgba(219,156,11,.16), transparent 52%),
+    radial-gradient(circle at 0 0, rgba(155, 63, 240,.24), transparent 48%),
+    radial-gradient(circle at 100% 100%, rgba(255, 210, 63,.16), transparent 52%),
     linear-gradient(130deg, rgba(26,20,38,.98), rgba(14,10,20,.98));
   box-shadow: 0 18px 46px rgba(0,0,0,.34);
 }
@@ -76,7 +76,7 @@
      removed) -- that was the logo's own gradient being spent on a notice,
      which is how a brand colour stops reading as identity. A flat brand purple
      wash and the accent's edge say "important" without borrowing the mark. */
-  background: rgba(152,63,224,.18);
+  background: rgba(155, 63, 240,.18);
   box-shadow: var(--accent-edge);
 }
 

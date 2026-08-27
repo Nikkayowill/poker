@@ -22,45 +22,68 @@
   --felt-dark: #0e392a;
 
   /* ------------------------------------------------------------------------
+     Neon Marquee -- the current mark's own palette (public/brand/stackchips-
+     logo.png, components/brand/stackchips-mark.tsx), pulled from the design
+     canvas it was built in. --neon-chalk and --neon-yellow already matched
+     what was baked directly into the two mark SVGs (#f6f1ff / #ffd23f)
+     before this pass; the rest of the block is what the chrome below now
+     points at instead of the old High Roller Arcade histogram colours.
+     ---------------------------------------------------------------------- */
+  --neon-ground: #150a2b;
+  --neon-ground-lift: #211141;
+  --neon-ground-lift-2: #2c1854;
+  --neon-panel-line: rgba(255, 227, 137, .14);
+  --neon-purple: #9b3ff0;
+  --neon-purple-bright: #c07bff;
+  --neon-purple-deep: #4a1c88;
+  --neon-yellow: #ffd23f;
+  --neon-yellow-bright: #ffe98a;
+  --neon-chalk: #f6f1ff;
+  --neon-muted: #b6a6db;
+  --neon-muted-2: #8a7ab3;
+
+  /* ------------------------------------------------------------------------
      Brand -- purple, red and gold.
 
-     Sampled from the actual logo file (public/brand/stackchips-logo.png) with
-     ImageMagick rather than picked by eye, so the chrome and the mark cannot
-     drift apart: --brand-purple/-red/-gold are literally three of the twelve
-     colours a quantised histogram of that PNG returns.
+     --brand-purple/-gold now resolve to the Neon Marquee mark's own palette
+     above, replacing the old "High Roller Arcade" histogram colours they
+     used to hold (frozen from 2026-08-09 to 2026-08-27 while the mark had
+     moved on and nothing tokenised its palette). --brand-red has no Neon
+     Marquee equivalent -- the mark is purple/yellow only -- so it keeps its
+     original value; it was already used sparingly, as a trace in
+     --brand-room below, never a wash.
 
      Scope matters. These dress the *chrome* -- the landing page, the sign-in
      surface, the lobby, the menus. The felt stays green and the table's chips
-     stay on CHIP_PALETTE: the game itself was not part of this reskin, and
+     stay on CHIP_PALETTE: the game itself is not part of this reskin, and
      --felt / --gold above are what it reads. Reaching for a --brand-* token
      inside 05-09, 16, 17 or 99 is therefore a mistake, not a shortcut.
      ---------------------------------------------------------------------- */
-  --brand-purple: #983fe0;
-  --brand-purple-deep: #6d2b9e;
+  --brand-purple: var(--neon-purple);
+  --brand-purple-deep: var(--neon-purple-deep);
   --brand-red: #dc1413;
   --brand-red-deep: #7f0d16;
-  --brand-gold: #db9c0b;
-  --brand-gold-light: #f6c94a;
+  --brand-gold: var(--neon-yellow);
+  --brand-gold-light: var(--neon-yellow-bright);
 
   /* Page and surface bases for the reskinned chrome.
    *
-   * BLUE-GREY, not the matte obsidian this used to be. The neutral near-black
-   * was doing its job -- it kept the two ambient glows honest -- but it left
-   * every unlit surface reading as a shade of nothing, so the tiles separated
-   * from the page only by luminance. A cool ground gives the room a
-   * temperature of its own: the surfaces below are lifts of the *same* hue
-   * rather than white washes, so a tile is a lighter piece of the room instead
-   * of a translucent sheet laid over it.
+   * VIOLET-BLACK now, not the blue-grey this used to be -- the Neon Marquee
+   * mark's own ground. The surfaces below are still lifts of that same hue
+   * rather than white washes, so a tile reads as a lighter piece of the room
+   * instead of a translucent sheet laid over it; that rule outlives the hue
+   * change it's stated under.
    *
-   * The rule the obsidian era established still holds and matters more now:
-   * the violet and gold come from the ambient glows layered over this base,
-   * never from re-tinting the base per surface. A blue ground plus a violet
-   * glow is a room; a blue ground plus per-surface violet fills is mud. */
-  --brand-ink: #12161f;
-  --brand-ink-lift: #1a1f2b;
-  --brand-ink-lift-2: #222937;
-  --brand-surface: rgba(164, 186, 224, .055);
-  --brand-surface-2: rgba(164, 186, 224, .085);
+   * The rule the earlier blue-grey era established still holds and matters
+   * more now: the violet and gold come from the ambient glows layered over
+   * this base, never from re-tinting the base per surface. A tinted ground
+   * plus per-surface violet fills is mud regardless of which hue the ground
+   * itself is. */
+  --brand-ink: var(--neon-ground);
+  --brand-ink-lift: var(--neon-ground-lift);
+  --brand-ink-lift-2: var(--neon-ground-lift-2);
+  --brand-surface: rgba(182, 166, 219, .055);
+  --brand-surface-2: rgba(182, 166, 219, .085);
 
   /* ------------------------------------------------------------------------
      Accent: a line and a glow, never a fill.
@@ -76,10 +99,10 @@
      surface can take the accent without a border (the chrome is still
      borderless by default) and without shifting layout by a pixel.
      ---------------------------------------------------------------------- */
-  --accent-line: rgba(152, 63, 224, .55);
-  --accent-edge: inset 0 0 0 1px rgba(152, 63, 224, .45);
-  --accent-glow: 0 0 24px -4px rgba(152, 63, 224, .55);
-  --accent-glow-gold: 0 0 24px -4px rgba(219, 156, 11, .5);
+  --accent-line: rgba(155, 63, 240, .55);
+  --accent-edge: inset 0 0 0 1px rgba(155, 63, 240, .45);
+  --accent-glow: 0 0 24px -4px rgba(155, 63, 240, .55);
+  --accent-glow-gold: 0 0 24px -4px rgba(255, 210, 63, .5);
 
   /* A hairline that fades out at both ends.
    *
@@ -91,8 +114,8 @@
    * sheets each drew a flat 1px line that wanted to be this.
    *
    * Used as a background on a 1px element, or as border-image. */
-  --rule: linear-gradient(90deg, transparent, rgba(164, 186, 224, .17) 18%, rgba(164, 186, 224, .17) 82%, transparent);
-  --rule-vertical: linear-gradient(180deg, transparent, rgba(164, 186, 224, .17) 18%, rgba(164, 186, 224, .17) 82%, transparent);
+  --rule: linear-gradient(90deg, transparent, rgba(182, 166, 219, .17) 18%, rgba(182, 166, 219, .17) 82%, transparent);
+  --rule-vertical: linear-gradient(180deg, transparent, rgba(182, 166, 219, .17) 18%, rgba(182, 166, 219, .17) 82%, transparent);
 
   /* A tiling monochrome noise field, baked into a data URI so it costs no
      request. Layered at the top of a background stack it breaks the flat
@@ -106,12 +129,14 @@
      on what the room looks like. Huge radii, low alpha, soft falloff: these
      are out-of-focus light bleeding into the dark, not gradient shapes.
 
-     Both were pulled back when the ground went blue-grey. Over obsidian a glow
-   had to carry the whole hue of the room; over a ground that already has a
-   temperature it only has to tint it, and the old alphas turned the top-left
-   corner frankly violet. */
-  --glow-purple: radial-gradient(1600px 900px at 8% -12%, rgba(152, 63, 224, .13), transparent 68%);
-  --glow-gold: radial-gradient(1700px 1000px at 88% 112%, rgba(219, 156, 11, .07), transparent 70%);
+     Both were pulled back when the ground first went from matte obsidian to a
+     tinted base. Over a flat black a glow had to carry the whole hue of the
+     room; over a ground that already has a temperature it only has to tint
+     it, and a stronger alpha here would turn the whole top-left corner
+     frankly violet. That still holds now that the ground itself is the Neon
+     Marquee violet-black rather than blue-grey. */
+  --glow-purple: radial-gradient(1600px 900px at 8% -12%, rgba(155, 63, 240, .13), transparent 68%);
+  --glow-gold: radial-gradient(1700px 1000px at 88% 112%, rgba(255, 210, 63, .07), transparent 70%);
 
   /* The whole room in one value, because four screens now have to agree on
      it -- the landing page, the signed-in hub, the collection and the
@@ -124,10 +149,12 @@
     var(--glow-purple),
     radial-gradient(1100px 640px at 96% -4%, rgba(220, 20, 19, .05), transparent 62%),
     var(--glow-gold),
-    /* The cool lift the blue-grey ground is built on: a wide, very low-alpha
+    /* The lift the violet-black ground is built on: a wide, very low-alpha
        wash that keeps the middle of a tall page from flattening back to the
-       flat base between the two corner glows. */
-    radial-gradient(1400px 1100px at 50% 40%, rgba(126, 158, 214, .09), transparent 72%),
+       flat base between the two corner glows. Same hue family as the ground
+       itself (see the note on --brand-ink above), not a cool wash laid over
+       it. */
+    radial-gradient(1400px 1100px at 50% 40%, rgba(74, 28, 136, .14), transparent 72%),
     var(--brand-ink);
 
   /* The four safe-area insets, once, as tokens.
@@ -306,11 +333,12 @@
 * { scrollbar-width: none; -ms-overflow-style: none; }
 *::-webkit-scrollbar { display: none; }
 
-/* The literal is the blue-grey ground, matching --brand-ink. Deliberately not
-   `var(--brand-ink)`: this is the paint behind every screen including the
-   table, and a custom property that failed to resolve would leave the document
-   transparent -- which on a PWA is the OS's own background showing through. */
-html, body { margin: 0; min-height: 100%; background: #12161f; color: var(--ink); }
+/* The literal is the Neon Marquee violet-black ground, matching --brand-ink.
+   Deliberately not `var(--brand-ink)`: this is the paint behind every screen
+   including the table, and a custom property that failed to resolve would
+   leave the document transparent -- which on a PWA is the OS's own
+   background showing through. */
+html, body { margin: 0; min-height: 100%; background: #150a2b; color: var(--ink); }
 
 html {
   /* A rapid Fold/Call/Raise tap sequence shouldn't be read as a double-tap
@@ -321,7 +349,7 @@ html {
 
 body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #12161f;
+  background: #150a2b;
   -webkit-tap-highlight-color: transparent;
   /* Fixed-width digits everywhere -- pot/stack/timer numerals update
      constantly during chip animations and shouldn't jitter or reflow. */

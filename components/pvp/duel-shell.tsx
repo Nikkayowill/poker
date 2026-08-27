@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
-import Link from "next/link";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
+import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import type { SoundEffect } from "@/lib/audio/sound-effects";
 import { MIN_DUEL_STAKE, type DuelSeat } from "@/lib/pvp/match-contract";
@@ -303,7 +303,7 @@ export function DuelShell<TSnapshot>({
   return (
     <main className="duel-shell">
       <header className="floor-bar">
-        <Link className="floor-back" href="/games">← Ante Up</Link>
+        <FloorBackLink />
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
           <strong>

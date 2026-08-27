@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
+import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHEAPEST_TIER, isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -160,7 +160,7 @@ export function HeadsUpShell() {
   return (
     <main className="duel-shell heads-up-shell">
       <header className="floor-bar">
-        <Link className="floor-back" href="/games">← Ante Up</Link>
+        <FloorBackLink />
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
           <strong>

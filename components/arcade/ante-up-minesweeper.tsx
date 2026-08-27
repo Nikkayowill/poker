@@ -7,6 +7,8 @@ import { Bomb, Coins, Flag } from "lucide-react";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_MINESWEEPER_TIERS,
@@ -39,7 +41,8 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * which is the move that makes a big board playable at all.
  */
 
-const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000] as const;
+/** StakePicker drops the picks above the chosen board's ceiling; see lib/arcade/ante-up-stakes.ts. */
+const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 25_000, 100_000, 500_000] as const;
 
 /** How long a press has to hold before it counts as a flag rather than a tap. */
 const LONG_PRESS_MS = 350;
@@ -243,7 +246,10 @@ export function AnteUpMinesweeper() {
   const playAgain = () => { setAttempt(null); setFlagMode(false); };
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
-  const canAfford = wager === 0 || (wager >= MIN_ANTE_UP_WAGER && balance >= wager);
+  const result = anteUpResultLine(attempt?.wager ?? 0, attempt?.payout ?? 0);
+  const ceiling = maxAnteUpWager("minesweeper", difficulty);
+  const canAfford =
+    wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
   const tier = ANTE_UP_MINESWEEPER_TIERS[difficulty];
 
   // Counted down from the absolute deadline against a `now` that ticks once a
@@ -300,7 +306,13 @@ export function AnteUpMinesweeper() {
                     entry.id === difficulty && "ante-difficulty-active",
                   )}
                   aria-pressed={entry.id === difficulty}
-                  onClick={() => { selectSound(); setDifficulty(entry.id); }}
+                  onClick={() => {
+                    selectSound();
+                    setDifficulty(entry.id);
+                    // An easier board lowers the ceiling under a wager that
+                    // was legal a moment ago; bring it down with it.
+                    setWager((current) => Math.min(current, maxAnteUpWager("minesweeper", entry.id)));
+                  }}
                 >
                   <strong>{entry.label}</strong>
                   <span>{entry.cols}×{entry.rows} · {entry.mines} mines</span>
@@ -315,6 +327,7 @@ export function AnteUpMinesweeper() {
             picks={STAKE_QUICK_PICKS}
             value={wager}
             min={0}
+            max={ceiling}
             leading={{ label: "Free", value: 0 }}
             onChange={(next) => { selectSound(); setWager(next); }}
           />
@@ -323,7 +336,9 @@ export function AnteUpMinesweeper() {
               ? "Free practice — no payout on a clear, but nothing at risk either."
               : wager < MIN_ANTE_UP_WAGER
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : `Clear ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Hit a mine, or run out of time, and the wager is gone.`}
+                : wager > ceiling
+                  ? `${difficulty[0].toUpperCase() + difficulty.slice(1)} caps at ${ceiling.toLocaleString()} Gold a wager. Step up a difficulty to stake more.`
+                  : `Clear ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${Math.round(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Hit a mine, or run out of time, and the wager is gone.`}
           </p>
 
           <button
@@ -414,7 +429,7 @@ export function AnteUpMinesweeper() {
 
           {settled ? (
             <div className={clsx("duel-result", attempt.status === "won" && "duel-result-won")}>
-              <WinCelebration active={attempt.status === "won" && attempt.payout > 0} amount={attempt.payout} />
+              <WinCelebration active={attempt.status === "won" && result.profited} amount={result.net} />
               <strong>
                 {attempt.status === "won"
                   ? "Board cleared"
@@ -428,13 +443,7 @@ export function AnteUpMinesweeper() {
               </strong>
               <span>{formatDuration(attempt.elapsedMs)} · {difficultyLabel(attempt.difficulty)}</span>
               <span className="duel-result-gold">
-                {attempt.status === "won"
-                  ? attempt.wager > 0
-                    ? `+${attempt.payout.toLocaleString()} Gold`
-                    : "Practice round — no Gold at stake"
-                  : attempt.wager > 0
-                    ? `−${attempt.wager.toLocaleString()} Gold`
-                    : "Practice round — nothing lost"}
+                {result.label}
               </span>
               <button type="button" className="floor-play" onClick={playAgain}>Play again</button>
             </div>

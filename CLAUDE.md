@@ -40,6 +40,33 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Ante Up was a money printer; wager ceilings + a payout retune (2026-08-27)
+Kayo reported real farming ("my gf was easily farming coins"), and it was the design working as
+written, not an implementation hole. Two compounding bugs: **no maximum wager existed anywhere in the
+app** (every route `z.number().int().min(0)`, the only bound being the player's balance), and
+**near-certain wins paid well above 1x** — easy Sudoku gave 15 minutes on a guaranteed-solvable grid
+for 1.5x, and Memory Match had *no* winning turn count that paid under 1x. Stake everything on the
+safest board, win, restake: at 1.5x with the 10/game/day cap, 100k compounds to ~19B in a day across
+three games. Fixed both halves. Ceilings live in one new `lib/arcade/ante-up-stakes.ts` (Sudoku easy
+5k → expert 500k; Minesweeper beginner 5k → expert 500k; the three games with no difficulty axis get
+25k flat), enforced in all five `open*`/`start*` services before any Gold moves. Payouts retuned down
+across all five games; the slow rungs at Memory Match, Word Stack and Connections now deliberately
+**pay back less than the stake**, so clearing a board is not by itself profit. Sudoku's clock ladder
+also ran backwards (easy 15 min, expert 5) and now grows with the grid. Memory's turn cap 20 → 16.
+Three things worth keeping: (1) the DB guard is a **BEFORE INSERT trigger, not a CHECK constraint** —
+a CHECK re-evaluates on every UPDATE, and since every settlement here is an UPDATE that *throws*, one
+pre-deploy over-ceiling attempt would have been permanently unsettleable, 500ing its page forever
+while the one-active-per-game index blocked any new attempt (verified rollback-safe against the live
+DB; a legacy 10k row still settles cleanly under the trigger). (2) `ANTE_UP_MEMORY_MAX_TURNS` is now
+**snapshotted onto the attempt** (`maxTurns`), since a retune of a forfeit condition otherwise takes a
+wager for a move that was legal when made — Sudoku/Minesweeper already did this, Memory was the odd
+one out. (3) Every board keyed its win celebration off `payout > 0`, which sub-1x rungs made a lie
+(1,000 staked, 600 back, rendered "+600 Gold" under a gold bloom); `lib/arcade/ante-up-result.ts` now
+computes net once for all five. **Still open:** Word Stack and Connections compute payout from the
+live table at settlement, so a daily round opened before a retune and finished after is paid at the
+new rate — land retunes at a UTC day boundary, or snapshot the multiplier into the round (its own
+pass). Migration unapplied; see `[[reference_stackchips_migrations_not_auto_applied]]`.
+
 ### Cribbage sync moved off its fixed 2s poll onto Realtime, same pattern as duels (2026-08-27)
 Follow-up to the PvP duel Realtime migration (below) — Kayo asked for cribbage on the identical
 pattern, named `crib`. Two channels, not one: `crib:lobby`, a single global channel every browser on

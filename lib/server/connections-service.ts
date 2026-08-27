@@ -20,6 +20,7 @@ import {
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
 import { MIN_ANTE_UP_WAGER, anteUpConnectionsPayout, connectionsDailyBonusMultiplier } from "@/lib/arcade/ante-up-connections";
+import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
 import { creditDailyBonus } from "./daily-puzzle-bonus";
@@ -155,6 +156,10 @@ export async function startConnectionsPuzzle(
       400,
     );
   }
+  // One flat ceiling; see lib/arcade/ante-up-stakes.ts and Word Stack's twin
+  // of this check. Deliberately after the resume short-circuit above.
+  const overCeiling = anteUpWagerCeilingProblem(CONNECTIONS_GAME, null, wagerInput);
+  if (overCeiling) throw new ConnectionsRequestError(overCeiling, 400);
 
   // Rule 1: the wager leaves first. Null is "cannot afford", not an error;
   // spendGoldByProfile is the authority.

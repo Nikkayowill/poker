@@ -12,6 +12,7 @@ import {
   type AnteUpMemoryAttempt,
   type AnteUpMemorySnapshot,
 } from "@/lib/arcade/ante-up-memory";
+import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   ActiveAnteUpAttemptExists,
@@ -92,6 +93,10 @@ export async function openAnteUpMemory(
       400,
     );
   }
+  // No difficulty rung to climb here, so this is one flat ceiling; see
+  // lib/arcade/ante-up-stakes.ts.
+  const overCeiling = anteUpWagerCeilingProblem(GAME, null, wagerInput);
+  if (overCeiling) throw new AnteUpMemoryRequestError(overCeiling, 400);
 
   if (wagerInput > 0) {
     const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);

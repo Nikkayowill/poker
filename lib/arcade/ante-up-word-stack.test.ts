@@ -17,21 +17,29 @@ describe("anteUpWordStackPayout", () => {
   });
 
   // Mirrors WAGER_MULTIPLIER_BY_GUESSES in ante-up-word-stack.ts: 1/2 guesses
-  // -> 8x, 3 -> 5x, 4 -> 3x, 5 -> 2x, 6 -> 1.5x.
+  // -> 4x, 3 -> 2.5x, 4 -> 1.6x, 5 -> 1.1x, 6 -> 0.7x. The last rung is below
+  // 1x on purpose; see that table's own comment.
   it.each([
-    [1, 8],
-    [2, 8],
-    [3, 5],
-    [4, 3],
-    [5, 2],
-    [6, 1.5],
+    [1, 4],
+    [2, 4],
+    [3, 2.5],
+    [4, 1.6],
+    [5, 1.1],
+    [6, 0.7],
   ])("pays wager * the tier for a %i-guess win", (guessCount, multiplier) => {
     expect(anteUpWordStackPayout({ wager: 1000, word: round("won", guessCount) })).toBe(Math.round(1000 * multiplier));
   });
 
   it("rounds wager * multiplier to a whole Gold amount", () => {
-    // 1-guess win, 8x -> 2664
-    expect(anteUpWordStackPayout({ wager: 333, word: round("won", 1) })).toBe(Math.round(333 * 8));
+    // 1-guess win, 4x -> 1332
+    expect(anteUpWordStackPayout({ wager: 333, word: round("won", 1) })).toBe(Math.round(333 * 4));
+  });
+
+  it("returns less than the wager for a win on the last legal guess", () => {
+    // The rung that used to pay 1.5x. Scraping it on guess 6 is the outcome
+    // closest to losing, so it must cost the player something -- a table where
+    // every win profits is what made the wager risk-free.
+    expect(anteUpWordStackPayout({ wager: 1000, word: round("won", 6) })).toBeLessThan(1000);
   });
 });
 

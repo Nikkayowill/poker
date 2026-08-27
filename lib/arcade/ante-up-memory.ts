@@ -40,14 +40,26 @@ export const MIN_ANTE_UP_WAGER = 500;
 
 /**
  * Turns a wagered attempt may take before it forfeits. Daily/free play is
- * never capped; see the file header. Chosen well above PERFECT_TURNS (8) so
- * an ordinary, unlucky-but-honest game clears comfortably inside it.
+ * never capped; see the file header.
+ *
+ * Still above PERFECT_TURNS (8), but no longer by so much that reaching it is
+ * a formality: at 20 turns essentially every attempt cleared, which made this
+ * cap decorative rather than the real loss condition the file header claims
+ * it is.
  */
-export const ANTE_UP_MEMORY_MAX_TURNS = 20;
+export const ANTE_UP_MEMORY_MAX_TURNS = 16;
 
 /**
  * Win-only payout multiplier, keyed by turns taken. Starting numbers, easy to
  * retune here.
+ *
+ * The slow rungs pay **less than 1x on purpose**: a win at 15 turns returns
+ * 0.6x the wager, so clearing the board is not by itself profitable. Every
+ * rung used to pay above 1x, which meant any win at all made money and the
+ * only way to lose Gold was to miss the cap entirely -- with the cap set as
+ * loosely as it was, that made a wagered attempt close to risk-free, and a
+ * risk-free wager compounds without bound. Speed is the skill this game
+ * actually tests, so speed is what has to be paid for.
  *
  * Exported, not just used internally by anteUpMemoryPayout below, because the
  * board's own payout field is 0 for the entire game (it only becomes real
@@ -56,11 +68,11 @@ export const ANTE_UP_MEMORY_MAX_TURNS = 20;
  * just callable against the turn count a live attempt already exposes.
  */
 export function wagerMultiplierForTurns(turns: number): number {
-  if (turns <= MEMORY_PAIRS) return 6;
-  if (turns <= 10) return 4;
-  if (turns <= 13) return 2.5;
-  if (turns <= 16) return 1.5;
-  return 1.2; // 17-20: a real win, just not a fast one. ANTE_UP_MEMORY_MAX_TURNS forfeits anything slower.
+  if (turns <= MEMORY_PAIRS) return 3;
+  if (turns <= 10) return 2;
+  if (turns <= 12) return 1.3;
+  if (turns <= 14) return 0.9;
+  return 0.6; // 15-16: a win, but a slow one, and it costs you. Anything slower forfeits.
 }
 
 export type AnteUpMemoryStatus = "active" | "won" | "lost";
@@ -71,6 +83,24 @@ export interface AnteUpMemoryAttempt {
   board: MemoryRound;
   status: AnteUpMemoryStatus;
   startedAt: string;
+  /**
+   * Copied from ANTE_UP_MEMORY_MAX_TURNS when the attempt opens, not re-read
+   * at settlement -- the same rule AnteUpAttempt's `multiplier` and
+   * AnteUpMinesweeperAttempt's `timeLimitMs` follow, and for a sharper reason
+   * here: this number is a forfeit condition. Retuning the constant while an
+   * attempt is live would otherwise decide, retroactively, that a player has
+   * already lost turns they were promised, and take a wager for a move that
+   * was legal when they made it.
+   *
+   * Optional for rows written before this field existed; readers fall back to
+   * the constant via attemptMaxTurns below.
+   */
+  maxTurns?: number;
+}
+
+/** The turn cap this attempt was opened under, not whatever it is today. */
+export function attemptMaxTurns(attempt: Pick<AnteUpMemoryAttempt, "maxTurns">): number {
+  return attempt.maxTurns ?? ANTE_UP_MEMORY_MAX_TURNS;
 }
 
 /** A fresh attempt: `randomInt` deals a board never shown as the shared daily layout; see the file header. */
@@ -80,6 +110,7 @@ export function startAnteUpMemory(randomInt: RandomInt, wager: number, now: Date
     board: startMemoryRound(dealMemoryTiles(randomInt), now),
     status: "active",
     startedAt: now.toISOString(),
+    maxTurns: ANTE_UP_MEMORY_MAX_TURNS,
   };
 }
 
@@ -99,7 +130,7 @@ export function flipAnteUpMemoryTile(attempt: AnteUpMemoryAttempt, index: number
 
   const board = flipMemoryTile(attempt.board, index, now);
   if (board.status === "solved") return { ...attempt, board, status: "won" };
-  if (board.turns > ANTE_UP_MEMORY_MAX_TURNS) return { ...attempt, board, status: "lost" };
+  if (board.turns > attemptMaxTurns(attempt)) return { ...attempt, board, status: "lost" };
   return { ...attempt, board, status: "active" };
 }
 
@@ -152,7 +183,7 @@ export function toAnteUpMemorySnapshot(
     matched: [...round.matched],
     revealed: [...round.revealed],
     turns: round.turns,
-    maxTurns: ANTE_UP_MEMORY_MAX_TURNS,
+    maxTurns: attemptMaxTurns(attempt),
     pairs: MEMORY_PAIRS,
     columns: MEMORY_COLUMNS,
     perfectTurns: PERFECT_TURNS,

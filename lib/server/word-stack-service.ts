@@ -20,6 +20,7 @@ import {
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
 import { MIN_ANTE_UP_WAGER, anteUpWordStackPayout, wordStackDailyBonusMultiplier } from "@/lib/arcade/ante-up-word-stack";
+import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
 import { creditDailyBonus } from "./daily-puzzle-bonus";
@@ -180,6 +181,12 @@ export async function startWordStackPuzzle(
       400,
     );
   }
+  // One flat ceiling: there is no harder board to earn a bigger one with, and
+  // the shared daily word is the same for everybody. See
+  // lib/arcade/ante-up-stakes.ts. Deliberately after the resume short-circuit
+  // above -- a resumed round already ignores the client's wager.
+  const overCeiling = anteUpWagerCeilingProblem(WORD_STACK_GAME, null, wagerInput);
+  if (overCeiling) throw new WordStackRequestError(overCeiling, 400);
 
   // Rule 1: the wager leaves first. Null is "cannot afford", not an error;
   // spendGoldByProfile is the authority.

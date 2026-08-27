@@ -13,6 +13,7 @@ import {
   type AnteUpAttempt,
   type AnteUpSnapshot,
 } from "@/lib/arcade/ante-up";
+import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
 import { isSudokuDifficulty, type SudokuDifficulty } from "@/lib/arcade/puzzles/sudoku";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
@@ -68,8 +69,15 @@ export class AnteUpRequestError extends ArcadeRequestError<AnteUpSnapshot, never
  * size (lib/server/ante-up-store.ts's countWageredAttemptsSince is per-game).
  *
  * Free (wager 0) practice is uncapped. This exists because a player skilled
- * enough to reliably beat Expert inside five minutes could otherwise farm
- * 10x off the house indefinitely. A starting number, easy to retune here.
+ * enough to reliably beat a grid inside its clock could otherwise farm the
+ * house indefinitely.
+ *
+ * Note what this cap does and does not do: it bounds how many wagered
+ * attempts run in a day, never how large each one is. That is why it did not
+ * stop the easy-grid farm on its own, and why the ceiling in
+ * lib/arcade/ante-up-stakes.ts and the multiplier ladder in
+ * lib/arcade/ante-up.ts had to change too. A starting number, easy to retune
+ * here.
  */
 export const ANTE_UP_DAILY_WAGERED_LIMIT = 10;
 
@@ -155,6 +163,11 @@ export async function openAnteUpAttempt(
       400,
     );
   }
+  // A bigger stake has to buy a harder grid; see lib/arcade/ante-up-stakes.ts.
+  // The board picker only offers permitted amounts, so a request that trips
+  // this did not come from it.
+  const overCeiling = anteUpWagerCeilingProblem(GAME, difficulty, wagerInput);
+  if (overCeiling) throw new AnteUpRequestError(overCeiling, 400);
 
   if (wagerInput > 0) {
     const sinceYesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);

@@ -120,6 +120,39 @@ describe("flipAnteUpMemoryTile", () => {
     expect(anteUpMemoryFlipProblem(finished, 0)).toBe("finished");
     expect(flipAnteUpMemoryTile(finished, 0, START)).toBe(finished);
   });
+
+  /**
+   * The cap is a forfeit condition, so an attempt has to be judged by the cap
+   * it was opened under. Retuning ANTE_UP_MEMORY_MAX_TURNS downward while
+   * attempts are live would otherwise decide retroactively that a player had
+   * already lost turns they were promised, and take the wager for a move that
+   * was legal when they made it.
+   */
+  it("judges an attempt by its own stored cap, not the current constant", () => {
+    const generous = ANTE_UP_MEMORY_MAX_TURNS + 4;
+    const attempt: AnteUpMemoryAttempt = { ...orderedAttempt(500, START), maxTurns: generous };
+
+    // Past today's constant, but inside the cap this attempt was opened under.
+    expect(forceMismatches(attempt, ANTE_UP_MEMORY_MAX_TURNS + 1, START).status).toBe("active");
+    expect(forceMismatches(attempt, generous + 1, START).status).toBe("lost");
+  });
+
+  it("falls back to the constant for a row written before the cap was stored", () => {
+    const legacy = orderedAttempt(500, START); // no maxTurns field at all
+    expect(legacy.maxTurns).toBeUndefined();
+    expect(forceMismatches(legacy, ANTE_UP_MEMORY_MAX_TURNS, START).status).toBe("active");
+    expect(forceMismatches(legacy, ANTE_UP_MEMORY_MAX_TURNS + 1, START).status).toBe("lost");
+  });
+
+  it("stamps the cap onto every attempt it opens", () => {
+    expect(startAnteUpMemory(() => 0, 500, START).maxTurns).toBe(ANTE_UP_MEMORY_MAX_TURNS);
+  });
+
+  it("reports the attempt's own cap to the browser", () => {
+    const generous = ANTE_UP_MEMORY_MAX_TURNS + 4;
+    const attempt: AnteUpMemoryAttempt = { ...orderedAttempt(500, START), maxTurns: generous };
+    expect(toAnteUpMemorySnapshot(attempt, { id: "a", version: 1 }).maxTurns).toBe(generous);
+  });
 });
 
 describe("resignAnteUpMemory", () => {
@@ -146,15 +179,23 @@ describe("anteUpMemoryPayout", () => {
   });
 
   it("scales the multiplier down as turns climb toward the cap", () => {
-    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(MEMORY_PAIRS) })).toBe(6000); // <=8
-    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(10) })).toBe(4000); // <=10
-    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(13) })).toBe(2500); // <=13
-    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(16) })).toBe(1500); // <=16
-    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(20) })).toBe(1200); // 17-20, still a real win
+    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(MEMORY_PAIRS) })).toBe(3000); // <=8
+    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(10) })).toBe(2000); // <=10
+    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(12) })).toBe(1300); // <=12
+    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(14) })).toBe(900); // <=14
+    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(16) })).toBe(600); // 15-16, a win that still costs
+  });
+
+  it("returns less than the wager for a slow clear", () => {
+    // The two slowest rungs pay below 1x on purpose. Every rung used to pay
+    // above it, which made any win profitable and the wager close to
+    // risk-free; see wagerMultiplierForTurns' own comment.
+    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(14) })).toBeLessThan(1000);
+    expect(anteUpMemoryPayout({ wager: 1000, board: fakeSolvedBoard(16) })).toBeLessThan(1000);
   });
 
   it("rounds to a whole Gold amount", () => {
-    expect(anteUpMemoryPayout({ wager: 333, board: fakeSolvedBoard(13) })).toBe(Math.round(333 * 2.5));
+    expect(anteUpMemoryPayout({ wager: 333, board: fakeSolvedBoard(12) })).toBe(Math.round(333 * 1.3));
   });
 });
 
@@ -167,11 +208,11 @@ describe("wagerMultiplierForTurns", () => {
   // time directly against turns so a change to one cannot silently drift
   // from the other.
   it("matches the tier ladder anteUpMemoryPayout pays out on a win", () => {
-    expect(wagerMultiplierForTurns(MEMORY_PAIRS)).toBe(6);
-    expect(wagerMultiplierForTurns(10)).toBe(4);
-    expect(wagerMultiplierForTurns(13)).toBe(2.5);
-    expect(wagerMultiplierForTurns(16)).toBe(1.5);
-    expect(wagerMultiplierForTurns(20)).toBe(1.2);
+    expect(wagerMultiplierForTurns(MEMORY_PAIRS)).toBe(3);
+    expect(wagerMultiplierForTurns(10)).toBe(2);
+    expect(wagerMultiplierForTurns(12)).toBe(1.3);
+    expect(wagerMultiplierForTurns(14)).toBe(0.9);
+    expect(wagerMultiplierForTurns(16)).toBe(0.6);
   });
 });
 

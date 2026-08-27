@@ -14,9 +14,18 @@ import type { ConnectionsRound } from "./puzzles/connections";
 /** The floor for a wager. Restated per game; see ante-up-word-stack.ts's MIN_ANTE_UP_WAGER for why. */
 export const MIN_ANTE_UP_WAGER = 500;
 
-/** Win-only payout multiplier, keyed by mistakes made. Starting numbers, easy to retune here. */
+/**
+ * Win-only payout multiplier, keyed by mistakes made. Starting numbers, easy
+ * to retune here.
+ *
+ * A 3-mistake win pays below 1x on purpose, for the same reason Word Stack's
+ * 6-guess rung does: solving on the last life left is the outcome closest to
+ * losing, and paying a premium for it made every win profitable and the wager
+ * close to risk-free. A clean 4-for-4 grid is still the point of the game, so
+ * it keeps the largest multiple by a wide margin.
+ */
 const WAGER_MULTIPLIER_BY_MISTAKES: Readonly<Record<number, number>> = {
-  0: 8, 1: 5, 2: 3, 3: 1.5,
+  0: 4, 1: 2.2, 2: 1.2, 3: 0.6,
 };
 
 /** Always-pays multiplier for the shared daily board's completion bonus. A loss still floors at 1.0x. */
@@ -30,7 +39,7 @@ export function anteUpConnectionsPayout(input: {
   puzzle: Pick<ConnectionsRound, "status" | "mistakes">;
 }): number {
   if (input.puzzle.status !== "won") return 0;
-  const multiplier = WAGER_MULTIPLIER_BY_MISTAKES[input.puzzle.mistakes] ?? 1.5;
+  const multiplier = WAGER_MULTIPLIER_BY_MISTAKES[input.puzzle.mistakes] ?? 0.6;
   return Math.round(input.wager * multiplier);
 }
 

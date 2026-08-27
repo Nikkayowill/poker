@@ -39,6 +39,27 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 ## Active milestone
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
+
+### Cribbage sync moved off its fixed 2s poll onto Realtime, same pattern as duels (2026-08-26)
+Follow-up to the PvP duel Realtime migration (branch `feat/pvp-duel-realtime-sync`, itself not yet
+merged) — Kayo asked for cribbage on the identical pattern, named `crib`. Two channels, not one:
+`crib:lobby`, a single global channel every browser on the open-table join screen shares (GET
+`/api/cribbage` lists open tables across every stake with no per-viewer filter, unlike a duel's own
+challenge list, so there's no narrower key to give it), and `crib:<tableId>` once seated. Both fired by
+a new `broadcast_crib_signal()` trigger (new migration, branch `feat/crib-realtime-sync`) on writes to
+`cribbage_tables` **and** `cribbage_table_players` — the latter matters because `claim_cribbage_seat()`
+(joining) only ever writes the seat table, never `cribbage_tables` itself, so a trigger on just the
+table would silently miss every join and the open list's seated-count would never update. Real bug
+caught writing the trigger: `NEW`/`OLD` are unassigned records (not null-valued rows) for the
+row-trigger operation that doesn't apply, so a naive `coalesce(new.table_id, old.table_id)` on the
+DELETE-only-for-leaves table raises "record is not assigned yet" — fixed by branching on `TG_OP`
+explicitly instead. Same shell changes as the duel branch: keyed on `tableId` (a primitive) rather than
+the table object so a move's version bump doesn't tear down and resubscribe the channel, a 15s backup
+poll alongside the channel (no other seated human's turn-clock tick to notice a stale socket the way
+poker has), fallback to the old fixed poll when Supabase isn't configured, and the same 429/Retry-After
+backoff duel-shell.tsx carries. **Migration not yet applied** — verify with
+`supabase migration list --linked` before assuming it's live; see
+`[[reference_stackchips_migrations_not_auto_applied]]`.
 - History below is a dense changelog, not the discovery narrative — one paragraph per pass covering
   what shipped and what's still load-bearing or still open. Full reasoning for any decision is
   recoverable from `git log`/PRs on the branch each entry names. Every pass listed was verified with

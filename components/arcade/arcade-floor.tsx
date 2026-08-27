@@ -16,6 +16,7 @@ import {
 } from "@/lib/arcade/games";
 import { gameOnSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "./use-arcade-sound";
+import { markEmbeddedFloorNav } from "./floor-back-link";
 
 /**
  * Small counts as words, because both call sites are sentences: "10 more
@@ -164,7 +165,7 @@ export function ArcadeFloor({
           <h2 className="floor-section-head" id="floor-free">Free today</h2>
           <div className="floor-free-grid">
             {free.map((game) => (
-              <FreeCard key={game.id} game={game} />
+              <FreeCard key={game.id} game={game} embedded={embedded} />
             ))}
           </div>
         </section>
@@ -186,7 +187,7 @@ export function ArcadeFloor({
           </p>
           <div className="floor-free-grid">
             {duels.map((game) => (
-              <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={`from ${arcadeEntryLabel(game)} Gold`} />
+              <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={`from ${arcadeEntryLabel(game)} Gold`} embedded={embedded} />
             ))}
           </div>
         </section>
@@ -207,7 +208,7 @@ export function ArcadeFloor({
           </p>
           <div className="floor-free-grid">
             {wagers.map((game) => (
-              <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={arcadeEntryLabel(game)} />
+              <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={arcadeEntryLabel(game)} embedded={embedded} />
             ))}
           </div>
         </section>
@@ -218,7 +219,7 @@ export function ArcadeFloor({
           <h2 className="floor-section-head" id="floor-staked">Staked in Gold</h2>
           <ul className="floor-staked-list">
             {staked.map((game) => (
-              <StakedRow key={game.id} game={game} wallet={wallet} />
+              <StakedRow key={game.id} game={game} wallet={wallet} embedded={embedded} />
             ))}
           </ul>
         </section>
@@ -228,15 +229,28 @@ export function ArcadeFloor({
 }
 
 /**
+ * The sound plus, when this card is rendered inside the mobile shell's
+ * embedded pane, the marker FloorBackLink needs to know a "← Ante Up" from
+ * the game we're about to open should go back in history rather than to the
+ * /games route. See floor-back-link.tsx.
+ */
+function onPlayClick(embedded: boolean): () => void {
+  return () => {
+    gameOnSound();
+    if (embedded) markEmbeddedFloorNav();
+  };
+}
+
+/**
  * A free daily. Never gated, so it's always a link: a puzzle that costs
  * nothing has no state where its button should be dead.
  */
-function FreeCard({ game }: { game: ArcadeGame }) {
+function FreeCard({ game, embedded }: { game: ArcadeGame; embedded: boolean }) {
   return (
     <article className="floor-card">
       <strong>{game.name}</strong>
       <small>{game.blurb}</small>
-      <Link className="floor-play" href={game.href ?? "/"} onClick={gameOnSound}>Play</Link>
+      <Link className="floor-play" href={game.href ?? "/"} onClick={onPlayClick(embedded)}>Play</Link>
     </article>
   );
 }
@@ -254,7 +268,17 @@ function FreeCard({ game }: { game: ArcadeGame }) {
  * returns a full phrase ("Free to play") for this kind, so it's passed
  * through as-is rather than wrapped in "from … Gold".
  */
-function GameCard({ game, wallet, stakeLabel }: { game: ArcadeGame; wallet: ArcadeWallet; stakeLabel: string }) {
+function GameCard({
+  game,
+  wallet,
+  stakeLabel,
+  embedded,
+}: {
+  game: ArcadeGame;
+  wallet: ArcadeWallet;
+  stakeLabel: string;
+  embedded: boolean;
+}) {
   const blocked = arcadeBlockedReason(game, wallet);
   return (
     <article className="floor-card">
@@ -262,7 +286,7 @@ function GameCard({ game, wallet, stakeLabel }: { game: ArcadeGame; wallet: Arca
       <small>{game.blurb}</small>
       <small className="floor-card-stake">{stakeLabel}</small>
       {blocked === null && game.href ? (
-        <Link className="floor-play" href={game.href} onClick={gameOnSound}>{arcadeActionLabel(game, wallet)}</Link>
+        <Link className="floor-play" href={game.href} onClick={onPlayClick(embedded)}>{arcadeActionLabel(game, wallet)}</Link>
       ) : (
         <button type="button" className="floor-play" disabled>
           {arcadeActionLabel(game, wallet)}
@@ -277,7 +301,7 @@ function GameCard({ game, wallet, stakeLabel }: { game: ArcadeGame; wallet: Arca
  * the thing being decided; a player scanning this list is reading the middle
  * column, not the left one.
  */
-function StakedRow({ game, wallet }: { game: ArcadeGame; wallet: ArcadeWallet }) {
+function StakedRow({ game, wallet, embedded }: { game: ArcadeGame; wallet: ArcadeWallet; embedded: boolean }) {
   const blocked = arcadeBlockedReason(game, wallet);
   return (
     <li className={clsx("floor-row", blocked && "floor-row-blocked")}>
@@ -291,7 +315,7 @@ function StakedRow({ game, wallet }: { game: ArcadeGame; wallet: ArcadeWallet })
           every other route. The blocked states stay buttons: there's
           nowhere to go. */}
       {blocked === null && game.href ? (
-        <Link className="floor-play" href={game.href} onClick={gameOnSound}>{arcadeActionLabel(game, wallet)}</Link>
+        <Link className="floor-play" href={game.href} onClick={onPlayClick(embedded)}>{arcadeActionLabel(game, wallet)}</Link>
       ) : (
         <button
           type="button"

@@ -39,6 +39,23 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 ## Active milestone
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
+
+### PvP duel sync moved off the fixed 2s poll onto Realtime (2026-08-26)
+Resolves the "known open item" below (now stale where it's still quoted). `duel-shell.tsx`'s own
+comment had called the 2s poll deliberate, judging Realtime "a bigger change than these games need" —
+Kayo asked for it anyway, on branch `feat/pvp-duel-realtime-sync`, migration + code together per
+`deploy-checklist`. New per-profile channel `pvp:<profileId>` (`lib/pvp/duel-channel.ts`), fired by a
+`broadcast_pvp_signal()` trigger (new migration) on every write to `pvp_challenges`/`pvp_matches`
+naming that profile — mirrors `table-channel.ts`'s invalidation-ping contract, but keyed per-player
+rather than per-game since a challenge has no match id yet to key on. Carries no version (unlike the
+table channel): a challenge and a match don't share one monotonic counter, so the payload is empty and
+any broadcast just triggers a full lobby re-fetch. A slow 15s backup poll still runs alongside the
+channel as a safety net a stale-without-erroring socket — poker's realtime has the turn-clock's own
+deadline pull to fall back on; a 2-player duel has no other seated human to notice for it. Falls back
+to the original fixed 2s poll when Supabase isn't configured (memory-mode dev, same accepted gap
+`poker-app.tsx` already has) or before this browser's own profile id is known. **Migration not yet
+applied** — verify with `supabase migration list --linked` before assuming it's live; see
+`[[reference_stackchips_migrations_not_auto_applied]]`.
 - History below is a dense changelog, not the discovery narrative — one paragraph per pass covering
   what shipped and what's still load-bearing or still open. Full reasoning for any decision is
   recoverable from `git log`/PRs on the branch each entry names. Every pass listed was verified with
@@ -322,7 +339,8 @@ settle once).
 - Challenging a specific opponent shipped for table seats (PR #111, 2026-08-19). Picking a friend to
   invite to an empty seat (M16 table invites) is still open — a different flow, no seated opponent to
   challenge.
-- PvP duel sync is a 2s poll, not Realtime.
+- ~~PvP duel sync is a 2s poll, not Realtime.~~ Moved to Realtime 2026-08-26 (see entry above);
+  migration for it isn't confirmed live yet.
 - Blackjack's Supabase persistence branch has never been exercised by a real hand in production (only
   type-checked, plus the memory-mode branch under test).
 - `multiplayer.spec.ts`'s six-player test and two `safe-area.spec.ts` table tests fail identically at

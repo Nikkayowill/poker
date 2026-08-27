@@ -522,3 +522,28 @@ export function chipDesignMaterial(id: string | null | undefined): ChipMaterial 
   const item = typeof id === "string" ? cosmeticById(id) : null;
   return item?.slot === "chipDesign" && item.chip ? item.chip : null;
 }
+
+/**
+ * The designs a bot may wear. Whole catalog, no `unlock`/rarity filter --
+ * same reasoning `botAvatarCosmetics` gives for letting Gold-priced
+ * characters through: a bot showing up in a design a player could go buy
+ * today advertises the store, it isn't a claim about the bot's own history.
+ * There's no earned tier here to exclude in the first place (no chip design
+ * carries `unlock`), so the filter is really just future-proofing against
+ * one showing up later.
+ */
+export const botChipDesignCosmetics: Cosmetic[] = chipDesignCosmetics.filter((item) => !item.unlock);
+
+/**
+ * One design, worn on all four denominations -- a bot's own chip colour,
+ * the same way `botAvatarFor` gives it one face rather than a different
+ * character per card. Keyed on identity, not seat position, so a rotated
+ * bot brings its colour with it, same as its face and card back.
+ */
+export function botChipDesignsFor(identity: number): Partial<Record<ChipDesignDenomination, string>> {
+  if (botChipDesignCosmetics.length === 0) return {};
+  const design = botChipDesignCosmetics[identity % botChipDesignCosmetics.length].id;
+  const assigned: Partial<Record<ChipDesignDenomination, string>> = {};
+  for (const denomination of CHIP_DESIGN_DENOMINATIONS) assigned[denomination] = design;
+  return assigned;
+}

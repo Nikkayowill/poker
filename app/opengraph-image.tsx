@@ -9,8 +9,10 @@ export const contentType = "image/png";
  * The card a link to stackchips.app renders as in Discord/iMessage/Slack/etc.
  * There was no OG image at all before this -- a shared link fell back to a
  * bare title-and-URL text card, which is invisible in a chat scrollback next
- * to any other game's actual preview. Same three brand colours as
- * app/icon.svg's sweep (#983fe0/#db9c0b/#dc1413), not a screenshot: a live
+ * to any other game's actual preview. Same three legacy --brand-* colours
+ * the rest of the chrome still uses (#983fe0/#db9c0b/#dc1413; see the note
+ * on those in 01-tokens.css -- they no longer trace to the current mark,
+ * which moved to Neon Marquee's purple/yellow), not a screenshot: a live
  * table changes hand to hand and a stale screenshot ages badly as a permanent
  * asset cached by every platform that has ever unfurled the link.
  */

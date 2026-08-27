@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!--
+    StackChips: Neon Marquee monogram / favicon source.
+
+    The Bungee "S" (same outlined glyph as the wordmark), centred on a
+    rounded purple-black badge with a single yellow baseline rule: the one
+    shape this concept keeps at favicon size instead of a shrunk wordmark,
+    same reasoning app/icon.svg already documents for the live mark.
+    Rasterize to 16/32/192/512 for actual favicon/app-icon use.
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#211141"/>
+      <stop offset="1" stop-color="#150a2b"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g transform="translate(256 216) scale(0.4166666666666667 -0.4166666666666667) translate(-330.5 -360.0)">
+    <path d="M403 0H87Q51 0 51 36V153Q51 189 87 189H356Q369 189 375.5 197.5Q382 206 382 218Q382 235 375.5 243.0Q369 251 356 252L206 273Q136 284 93.5 319.5Q51 355 51 439V544Q51 630 106.0 675.0Q161 720 258 720H538Q574 720 574 684V565Q574 529 538 529H305Q278 529 278 499Q278 470 305 467L454 447Q501 440 536.0 422.5Q571 405 590.5 371.0Q610 337 610 281V176Q610 91 555.0 45.5Q500 0 403 0Z" fill="#f6f1ff"/>
+  </g>
+  <rect x="146" y="378" width="220" height="16" rx="8" fill="#ffd23f"/>
+</svg>

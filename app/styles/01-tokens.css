@@ -24,10 +24,14 @@
   /* ------------------------------------------------------------------------
      Brand -- purple, red and gold.
 
-     Sampled from the actual logo file (public/brand/stackchips-logo.png) with
-     ImageMagick rather than picked by eye, so the chrome and the mark cannot
-     drift apart: --brand-purple/-red/-gold are literally three of the twelve
-     colours a quantised histogram of that PNG returns.
+     Originally sampled from the old "High Roller Arcade" logo file with
+     ImageMagick rather than picked by eye: --brand-purple/-red/-gold were
+     literally three of the twelve colours a quantised histogram of that PNG
+     returned. That logo is gone (public/brand/stackchips-logo.png now holds
+     the Neon Marquee mark, a different purple/yellow palette -- see
+     components/brand/stackchips-mark.tsx), so these three no longer trace to
+     a live file; they are frozen historical values for the existing chrome,
+     not something to keep re-deriving from whatever the mark is today.
 
      Scope matters. These dress the *chrome* -- the landing page, the sign-in
      surface, the lobby, the menus. The felt stays green and the table's chips

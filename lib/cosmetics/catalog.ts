@@ -175,11 +175,12 @@ const cardBackCosmetics: Cosmetic[] = [
  * Three tiers, in order:
  *  - standard (character4, character9): the starter roster. Free from the
  *    moment a profile exists, one man, one woman.
- *  - rare (character5-8, character10-29): Gold-purchasable, one ascending
- *    ladder, 80,000 up to 3,530,000, decelerating from ~50% a rung down to
- *    ~7% by the top. character26-29 (added 2026-08-26) continue the same
- *    constant-second-difference sequence (delta grows by 10,000 each rung)
- *    rather than starting a new curve.
+ *  - rare (character5-8, character10-31): Gold-purchasable, one ascending
+ *    ladder, 80,000 up to 4,080,000, decelerating from ~50% a rung down to
+ *    ~7% by the top. character26-29 (added 2026-08-26) and character30-31
+ *    (added the same day) continue the same constant-second-difference
+ *    sequence (delta grows by 10,000 each rung) rather than starting a new
+ *    curve.
  *  - signature (character1-3): earned only, on a lifetime hands-won ladder
  *    (250/750/1,500 hands) checked by `lib/server/avatar-unlocks.ts` after
  *    every hand. `price` is null on these and must stay null: Gold buying
@@ -255,6 +256,8 @@ const characterAvatarOffers: Record<
   character27: { name: "Reggie Cross", description: "Doesn't blink. Doesn't bluff. Doesn't need to.", price: 3_020_000 },
   character28: { name: "Wren Callahan", description: "Quiet at the felt. Loud on the leaderboard.", price: 3_270_000 },
   character29: { name: "Haruto Kessler", description: "Three decades at the table. Still the one to watch.", price: 3_530_000 },
+  character30: { name: "Wren Ashby", description: "Ink on her skin, math in her head. Reads you both.", price: 3_800_000 },
+  character31: { name: "Cade Osei", description: "Controller in one hand, your stack in the other.", price: 4_080_000 },
 };
 
 export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((character) => {

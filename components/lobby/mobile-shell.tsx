@@ -81,7 +81,7 @@ import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
 import { LobbyNotices } from "./lobby-notices";
 
-const PAGES = ["Play", "Ante Up", "You"] as const;
+const PAGES = ["Texas Hold'em", "Ante Up", "Profile"] as const;
 const PAGE_COUNT = PAGES.length;
 const PAGE_ICONS: readonly LucideIcon[] = [Spade, Gamepad2, User];
 
@@ -301,7 +301,7 @@ export function MobileShell({
           {/* Panes off-screen stay in the document, so they'd still be in
               the tab order and still read out. `inert` is what actually takes
               them out of both; hiding them would break the slide. */}
-          <section className="mshell-pane" aria-label="Play" inert={page !== 0}>
+          <section className="mshell-pane" aria-label="Texas Hold'em" inert={page !== 0}>
             <PlayPane
               profile={profile}
               loading={loading}
@@ -328,7 +328,7 @@ export function MobileShell({
             <ArcadeFloor profile={profile} embedded />
           </section>
 
-          <section className="mshell-pane" aria-label="You" inert={page !== 2}>
+          <section className="mshell-pane" aria-label="Profile" inert={page !== 2}>
             <YouPane
               profile={profile}
               onSignOut={onSignOut}
@@ -362,7 +362,7 @@ export function MobileShell({
               aria-current={active ? "page" : undefined}
               onClick={() => goTo(index)}
             >
-              <Icon size={23} strokeWidth={1.8} aria-hidden="true" />
+              <Icon size={20} strokeWidth={1.7} aria-hidden="true" />
               <span>{name}</span>
             </button>
           );

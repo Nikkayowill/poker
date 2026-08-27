@@ -38,7 +38,7 @@ function pane(page: Page, name: string) {
 test.describe("phone lobby", () => {
   test.use({ viewport: PHONE, hasTouch: true });
 
-  test("opens on Play, with the poker hero and the tab bar", async ({ page }) => {
+  test("opens on Texas Hold'em, with the poker hero and the tab bar", async ({ page }) => {
     await enterAsGuest(page);
 
     await expect(tabBar(page)).toBeVisible();
@@ -59,8 +59,8 @@ test.describe("phone lobby", () => {
     // inline rather than a second copy of the catalogue.
     await expect(pane(page, "Ante Up").getByText("more ways in.")).toBeVisible();
 
-    await nav.getByRole("button", { name: "You", exact: true }).click();
-    await expect(pane(page, "You").getByRole("heading", { name: "The leaderboard." }))
+    await nav.getByRole("button", { name: "Profile", exact: true }).click();
+    await expect(pane(page, "Profile").getByRole("heading", { name: "The leaderboard." }))
       .toBeVisible();
   });
 
@@ -70,19 +70,19 @@ test.describe("phone lobby", () => {
   test("only the current pane is reachable", async ({ page }) => {
     await enterAsGuest(page);
 
-    await expect(pane(page, "Play")).not.toHaveAttribute("inert", /.*/);
+    await expect(pane(page, "Texas Hold'em")).not.toHaveAttribute("inert", /.*/);
     await expect(pane(page, "Ante Up")).toHaveAttribute("inert", /.*/);
-    await expect(pane(page, "You")).toHaveAttribute("inert", /.*/);
+    await expect(pane(page, "Profile")).toHaveAttribute("inert", /.*/);
 
     await tabBar(page).getByRole("button", { name: "Ante Up", exact: true }).click();
     await expect(pane(page, "Ante Up")).not.toHaveAttribute("inert", /.*/);
-    await expect(pane(page, "Play")).toHaveAttribute("inert", /.*/);
+    await expect(pane(page, "Texas Hold'em")).toHaveAttribute("inert", /.*/);
   });
 
   test("a horizontal drag turns the page", async ({ page }) => {
     await enterAsGuest(page);
     const nav = tabBar(page);
-    await expect(nav.getByRole("button", { name: "Play", exact: true }))
+    await expect(nav.getByRole("button", { name: "Texas Hold'em", exact: true }))
       .toHaveAttribute("aria-current", "page");
 
     const box = await page.locator(".mshell-viewport").boundingBox();
@@ -118,7 +118,7 @@ test.describe("phone lobby", () => {
     }
     await page.mouse.up();
 
-    await expect(nav.getByRole("button", { name: "Play", exact: true }))
+    await expect(nav.getByRole("button", { name: "Texas Hold'em", exact: true }))
       .toHaveAttribute("aria-current", "page");
   });
 
@@ -130,18 +130,18 @@ test.describe("phone lobby", () => {
      input this test uses: it is the one that regressed silently. */
   test("a link inside a pane still follows on a plain click", async ({ page }) => {
     await enterAsGuest(page);
-    await tabBar(page).getByRole("button", { name: "You", exact: true }).click();
+    await tabBar(page).getByRole("button", { name: "Profile", exact: true }).click();
 
-    await pane(page, "You").getByRole("link", { name: /Collection/ }).click();
+    await pane(page, "Profile").getByRole("link", { name: /Collection/ }).click();
 
     await expect(page).toHaveURL(/\/collection$/);
   });
 
   test("the tab bar stays on screen while a pane scrolls", async ({ page }) => {
     await enterAsGuest(page);
-    await tabBar(page).getByRole("button", { name: "You", exact: true }).click();
+    await tabBar(page).getByRole("button", { name: "Profile", exact: true }).click();
 
-    const scrolled = pane(page, "You");
+    const scrolled = pane(page, "Profile");
     await expect(scrolled).toBeVisible();
     await scrolled.evaluate((element) => element.scrollTo(0, 4000));
 

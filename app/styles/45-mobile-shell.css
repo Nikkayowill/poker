@@ -571,26 +571,24 @@
 
   /* ---- the tab bar ----------------------------------------------------- */
 
-  /* Built to the shape both phone platforms use: a ~50px row of icon-over-label
-     targets sitting directly on the safe-area strip, with nothing between it
-     and the pane above. It used to carry a row of page dots on top, which is
-     24px of chrome no other app's tab bar has and which lifted the whole
-     control clear of the bottom edge -- that is what read as floating too high.
-     The bar is the position indicator now, the way every swipeable tab bar on
-     either platform already works, and the block comes out at 50 + inset,
-     which is the height a native one is. */
+  /* Built to the shape TikTok/Quora actually use: a ~44px row, icon tight over
+     label, sitting directly on the safe-area strip with nothing between it and
+     the pane above. Two prior passes already killed the things that read as
+     "floating too high" -- a row of page dots on top (24px of chrome no other
+     app's tab bar has), then a 34px shadow blur that drew a dark halo above the
+     bar and made a 44px row look taller than it was. Both are gone; this is the
+     bar those passes were aiming at. */
   .mshell-nav {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     flex-shrink: 0;
     /* The safe-area strip is part of the bar, not a gap under it -- otherwise
-       iOS paints the document colour beneath the home indicator. The 6px floor
+       iOS paints the document colour beneath the home indicator. The 4px floor
        is for everything that reports no inset (Android, any desktop browser at
-       this width): 50px of row alone sits tighter to the screen edge than a bar
-       on either platform does, and 56px is Material's own height. */
-    padding-bottom: max(var(--safe-bottom), 6px);
+       this width). */
+    padding-bottom: max(var(--safe-bottom), 4px);
     background: rgba(22, 27, 38, .94);
-    box-shadow: 0 -1px 0 rgba(182, 166, 219, .1), 0 -14px 34px rgba(0, 0, 0, .46);
+    box-shadow: 0 -1px 0 rgba(182, 166, 219, .1), 0 -4px 12px rgba(0, 0, 0, .3);
   }
 
   @supports (backdrop-filter: blur(18px)) {
@@ -602,20 +600,30 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
-    /* 50px is the platform row height either OS uses, and it clears the 44px
-       hit-target floor the rest of this shell is built to on its own. */
-    height: 50px;
+    gap: 2px;
+    /* 44px is the hit-target floor the rest of this shell is built to --
+       TikTok/Quora's own bars sit right at it, not the 50-56px a desktop-style
+       Material bar uses. */
+    height: 44px;
     border: 0;
     background: transparent;
     color: #7f8ba4;
     font: inherit;
     font-size: 10px;
-    font-weight: 650;
+    font-weight: 600;
     letter-spacing: .01em;
     cursor: pointer;
     touch-action: manipulation;
     transition: color var(--duration-base, .15s) linear;
+  }
+
+  /* "Texas Hold'em" is the longest label the bar carries; clip rather than
+     wrap so a long tab name never grows the row taller than the other two. */
+  .mshell-nav-item span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .mshell-nav-on { color: var(--brand-gold-light); }

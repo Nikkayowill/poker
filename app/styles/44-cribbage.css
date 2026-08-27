@@ -114,6 +114,11 @@
 }
 
 .crib-reveal summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  margin: -12px -14px;
+  padding: 12px 14px;
   color: var(--text-primary);
   font-size: 13px;
   cursor: pointer;
@@ -281,5 +286,14 @@
   }
   .crib-board {
     gap: 12px;
+  }
+  .crib-waiting {
+    gap: 14px;
+  }
+  .crib-seats {
+    gap: 8px;
+  }
+  .crib-scoreline {
+    gap: 8px;
   }
 }

@@ -98,7 +98,7 @@
 
 .wr-seconds small {
   font-size: 10px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.25em;
   text-transform: uppercase;
   color: var(--text-muted, var(--muted));
 }
@@ -344,7 +344,7 @@
 
 .wr-pip-you { background: var(--brand-gold); }
 .wr-pip-them { background: var(--brand-red); }
-.wr-pip-push { background: var(--accent-line); }
+.wr-pip-push { background: var(--brand-surface-2, var(--brand-surface)); }
 
 @media (max-width: 640px) {
   .wr-board {
@@ -360,5 +360,13 @@
 
   .wr-seconds small {
     display: none;
+  }
+
+  .wr-seconds > span {
+    font-size: 19px;
+  }
+
+  .wr-score strong {
+    font-size: 16px;
   }
 }

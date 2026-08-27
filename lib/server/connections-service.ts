@@ -19,7 +19,13 @@ import {
   getPuzzleRound,
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
-import { MIN_ANTE_UP_WAGER, anteUpConnectionsPayout, connectionsDailyBonusMultiplier } from "@/lib/arcade/ante-up-connections";
+import {
+  MIN_ANTE_UP_WAGER,
+  WAGER_MULTIPLIER_BY_MISTAKES,
+  anteUpConnectionsPayout,
+  connectionsDailyBonusMultiplier,
+} from "@/lib/arcade/ante-up-connections";
+import type { WagerLadder } from "@/lib/arcade/ante-up-ladder";
 import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
@@ -63,6 +69,17 @@ export const CONNECTIONS_GAME = "connections";
 /** The stored round, plus the wager it was opened with. Zero for the free daily play. */
 export interface StoredConnectionsRound extends ConnectionsRound {
   wager: number;
+  /**
+   * The payout ladder this round was opened under, copied in at open and
+   * never re-read from the module afterwards. A daily board can be opened in
+   * the morning and finished at night; without this, a retune landing in
+   * between pays the player at a rate they never agreed to. Optional: rounds
+   * written before this field existed fall back to the live table. See
+   * lib/arcade/ante-up-ladder.ts.
+   *
+   * Only meaningful when `wager > 0`; a free round has no payout to protect.
+   */
+  wagerLadder?: WagerLadder;
 }
 
 export interface ConnectionsView {
@@ -108,7 +125,11 @@ function view(
       ? {
           ...snapshot(stored),
           wager: stored.round.wager,
-          payout: anteUpConnectionsPayout({ wager: stored.round.wager, puzzle: stored.round }),
+          payout: anteUpConnectionsPayout({
+            wager: stored.round.wager,
+            puzzle: stored.round,
+            ladder: stored.round.wagerLadder,
+          }),
         }
       : null,
     profile,
@@ -173,7 +194,12 @@ export async function startConnectionsPuzzle(
   // node:crypto's randomInt is used rather than Math.random for the same
   // reason the deck uses it: this is the only randomness the server owns here.
   const puzzle = pickDaily(CONNECTIONS_PUZZLES, clock.day, CONNECTIONS_GAME);
-  const round: StoredConnectionsRound = { ...startConnectionsRound(puzzle, randomInt), wager: wagerInput };
+  const round: StoredConnectionsRound = {
+    ...startConnectionsRound(puzzle, randomInt),
+    wager: wagerInput,
+    // Copied in only for a real wager; see the field's own doc comment.
+    ...(wagerInput > 0 ? { wagerLadder: WAGER_MULTIPLIER_BY_MISTAKES } : {}),
+  };
 
   let stored: StoredConnections;
   try {
@@ -253,7 +279,11 @@ export async function playConnectionsGuess(
   }
 
   const nextPuzzle = submitConnectionsGuess(current.round, input.selection);
-  const next: StoredConnectionsRound = { ...nextPuzzle, wager: current.round.wager };
+  const next: StoredConnectionsRound = {
+    ...nextPuzzle,
+    wager: current.round.wager,
+    ...(current.round.wagerLadder ? { wagerLadder: current.round.wagerLadder } : {}),
+  };
   const complete = next.status !== "active";
   const stored = await advancePuzzleRound<StoredConnectionsRound>(current, next, complete);
   if (!stored) {
@@ -276,7 +306,11 @@ export async function playConnectionsGuess(
   // the settle write above is confirmed; a loss credits nothing, the wager
   // already having left the wallet when the board was opened.
   if (complete && current.round.wager > 0) {
-    const payout = anteUpConnectionsPayout({ wager: current.round.wager, puzzle: next });
+    const payout = anteUpConnectionsPayout({
+      wager: current.round.wager,
+      puzzle: next,
+      ladder: current.round.wagerLadder,
+    });
     if (payout > 0) {
       await creditGoldByProfile(profile.id, payout).catch((error) => {
         console.error("connections.wager_payout_credit_failed", { profileId: profile.id, payout, error });

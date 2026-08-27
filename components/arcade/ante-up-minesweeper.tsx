@@ -46,6 +46,9 @@ const LONG_PRESS_MS = 350;
 /** How often the shell re-reads a live attempt: catches the clock running out with nothing clicked. */
 const POLL_MS = 3000;
 
+/** Fallback pause on a 429 with no usable Retry-After header. */
+const DEFAULT_RETRY_AFTER_SECONDS = 5;
+
 interface AnteUpMinesweeperResponse {
   attempt: AnteUpMinesweeperSnapshot | null;
   profile: PlayerProfile;
@@ -88,19 +91,30 @@ export function AnteUpMinesweeper() {
     if (data.attempt !== undefined) setAttempt(data.attempt ?? null);
   }, []);
 
-  /** The background poll: reads the live attempt, sets no busy flag. */
-  const refresh = useCallback(async () => {
-    if (sending.current) return;
+  /**
+   * The background poll: reads the live attempt, sets no busy flag.
+   *
+   * Returns the pause (in ms) the poll loop should wait before its next tick
+   * when the server answered 429, or null for the ordinary POLL_MS cadence.
+   */
+  const refresh = useCallback(async (): Promise<number | null> => {
+    if (sending.current) return null;
     try {
       const response = await fetch("/api/ante-up-minesweeper", { cache: "no-store" });
+      if (response.status === 429) {
+        const header = Number(response.headers.get("Retry-After"));
+        const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
+        return seconds * 1000;
+      }
       const data = (await response.json()) as Partial<AnteUpMinesweeperResponse>;
-      if (!mounted.current || sending.current) return;
+      if (!mounted.current || sending.current) return null;
       if (response.ok) applyResponse(data);
     } catch {
       // A dropped poll is not worth a banner; the next one is seconds away.
     } finally {
       if (mounted.current) setLoaded(true);
     }
+    return null;
   }, [applyResponse]);
 
   /** A player-initiated action: start, move, resign. A 409 still applies its payload. */
@@ -142,11 +156,28 @@ export function AnteUpMinesweeper() {
     return () => window.clearTimeout(timer);
   }, [refresh]);
 
-  // Poll a live attempt so a clock running out with nobody clicking still settles.
+  // Poll a live attempt so a clock running out with nobody clicking still
+  // settles. A self-rescheduling timeout rather than setInterval: the next
+  // tick is only scheduled once the current refresh() has settled, so a slow
+  // response can never leave two polls in flight at once. A 429 reply makes
+  // refresh() return the server's own Retry-After (in ms) instead of null,
+  // which is used as that one tick's delay in place of POLL_MS -- the loop
+  // then resumes its normal cadence on the following tick.
   useEffect(() => {
     if (!active) return;
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
-    return () => window.clearInterval(timer);
+    let cancelled = false;
+    let timer: number | null = null;
+    const tick = () => {
+      void refresh().then((pauseMs) => {
+        if (cancelled) return;
+        timer = window.setTimeout(tick, pauseMs ?? POLL_MS);
+      });
+    };
+    timer = window.setTimeout(tick, POLL_MS);
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
   }, [active, refresh]);
 
   // The running clock, once a second, only while an attempt is live.

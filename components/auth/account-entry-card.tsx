@@ -133,7 +133,7 @@ export function AccountEntryCard({
   return (
     <section className="account-entry-card" aria-labelledby="account-entry-title">
       <header className="entry-head">
-        <StackChipsLogo size={148} priority className="entry-logo" />
+        <StackChipsLogo className="entry-logo" />
         <h1 id="account-entry-title">Play free. Stack chips.</h1>
 
         {!ready ? (

@@ -249,7 +249,7 @@
 
 /* ------------------------------------------------------------- narrow */
 
-@media (max-width: 480px) {
+@media (max-width: 640px) {
   .trivia-prompt {
     font-size: 17px;
   }
@@ -265,5 +265,9 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
+  }
+
+  .trivia-score strong {
+    font-size: 16px;
   }
 }

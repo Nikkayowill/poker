@@ -9,15 +9,28 @@
  * used by lib/server/connections-service.ts.
  */
 
+import { ladderMultiplier, type WagerLadder } from "./ante-up-ladder";
 import type { ConnectionsRound } from "./puzzles/connections";
 
 /** The floor for a wager. Restated per game; see ante-up-word-stack.ts's MIN_ANTE_UP_WAGER for why. */
 export const MIN_ANTE_UP_WAGER = 500;
 
-/** Win-only payout multiplier, keyed by mistakes made. Starting numbers, easy to retune here. */
-const WAGER_MULTIPLIER_BY_MISTAKES: Readonly<Record<number, number>> = {
-  0: 8, 1: 5, 2: 3, 3: 1.5,
+/**
+ * Win-only payout multiplier, keyed by mistakes made. Starting numbers, easy
+ * to retune here.
+ *
+ * A 3-mistake win pays below 1x on purpose, for the same reason Word Stack's
+ * 6-guess rung does: solving on the last life left is the outcome closest to
+ * losing, and paying a premium for it made every win profitable and the wager
+ * close to risk-free. A clean 4-for-4 grid is still the point of the game, so
+ * it keeps the largest multiple by a wide margin.
+ */
+export const WAGER_MULTIPLIER_BY_MISTAKES: WagerLadder = {
+  0: 4, 1: 2.2, 2: 1.2, 3: 0.6,
 };
+
+/** The lowest rung, and so the payout for a mistake count the ladder does not name. */
+export const CONNECTIONS_LADDER_FLOOR = 0.6;
 
 /** Always-pays multiplier for the shared daily board's completion bonus. A loss still floors at 1.0x. */
 const DAILY_BONUS_MULTIPLIER_BY_MISTAKES: Readonly<Record<number, number>> = {
@@ -28,9 +41,16 @@ const DAILY_BONUS_MULTIPLIER_BY_MISTAKES: Readonly<Record<number, number>> = {
 export function anteUpConnectionsPayout(input: {
   wager: number;
   puzzle: Pick<ConnectionsRound, "status" | "mistakes">;
+  /** The ladder this round was opened under; see lib/arcade/ante-up-ladder.ts. */
+  ladder?: WagerLadder;
 }): number {
   if (input.puzzle.status !== "won") return 0;
-  const multiplier = WAGER_MULTIPLIER_BY_MISTAKES[input.puzzle.mistakes] ?? 1.5;
+  const multiplier = ladderMultiplier(
+    input.ladder,
+    WAGER_MULTIPLIER_BY_MISTAKES,
+    input.puzzle.mistakes,
+    CONNECTIONS_LADDER_FLOOR,
+  );
   return Math.round(input.wager * multiplier);
 }
 

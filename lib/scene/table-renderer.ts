@@ -44,22 +44,6 @@ export function normalizeTableRenderer(value: unknown): TableRenderer {
 }
 
 /**
- * The next renderer in the cycle, for a single menu entry that toggles
- * through. With one renderer in the union there is nothing to cycle to --
- * kept as a function (rather than inlined at its one call site) so that call
- * site does not need to know how many renderers exist.
- */
-export function nextTableRenderer(): TableRenderer {
-  return RACETRACK_RENDERER;
-}
-
-/** What the table menu prints for the renderer. */
-export function tableRendererLabel(renderer: TableRenderer): string {
-  void renderer;
-  return "Table: 2.5D";
-}
-
-/**
  * The renderer to actually mount. Kept as a function -- rather than every
  * caller reading `RACETRACK_RENDERER` directly -- so a stored preference and
  * a browser capability can still be threaded through here if a second

@@ -52,8 +52,10 @@ import {
   hash01,
   INSERT_COUNT,
   NUMERAL_MIN_RADIUS_PX,
+  ROSETTE_MIN_RADIUS_PX,
   rgba,
   shade,
+  type ChipMaterial,
 } from "@/lib/scene/chips/chip-spec";
 
 /**
@@ -214,13 +216,20 @@ export function paintChip(
   space: ChipSpace,
   chip: RenderChip,
   chipRadius: number,
+  /**
+   * A player's own chip-design assignment for this denomination, resolved by
+   * the caller (racetrack-scene.tsx knows which seat owns this chip; this
+   * module doesn't). Falls back to the house `chipMaterial` lookup, same as
+   * an unassigned or since-removed design does further up the chain.
+   */
+  materialOverride?: ChipMaterial,
 ): void {
   const opacity = clamp(chip.opacity, 0, 1);
   if (opacity <= 0.01) return;
   const spot = place(projection, space, chip, chipRadius);
   if (!Number.isFinite(spot.x) || !Number.isFinite(spot.y) || spot.rx <= 0) return;
 
-  const material = chipMaterial(chip.denomination);
+  const material = materialOverride ?? chipMaterial(chip.denomination);
   const { rx, ry, wall } = spot;
 
   ctx.save();
@@ -249,8 +258,13 @@ export function paintChip(
  * A vertical darkening is then laid over it, because the wall really is in
  * shadow near the cloth. Both fills reuse the same path — the canvas keeps the
  * current path until the next `beginPath`, so the second fill is free.
+ *
+ * Exported alongside `paintFace` so a static preview (the store's chip-design
+ * swatch, `components/store/chip-design-art.tsx`) can draw the same chip
+ * outside a `RenderChip`/`SceneProjection` pair — everything below this point
+ * only needs the geometry the caller already worked out, not the table.
  */
-function paintWall(
+export function paintWall(
   ctx: CanvasRenderingContext2D,
   rx: number,
   ry: number,
@@ -336,14 +350,20 @@ function paintWall(
  * an off-centre highlight is what says so. The highlight is deliberately weak:
  * compressed clay is matte, and a bright specular is the single fastest way to
  * make a chip look like injection-moulded plastic.
+ *
+ * `denomination` is nullable: a chip on the table always carries one, but a
+ * store swatch previewing a chip *design* doesn't belong to any single
+ * denomination (a player assigns the same design to whichever of the four
+ * they like) — `null` skips the numeral and leaves the rosette as the face's
+ * only stamp.
  */
-function paintFace(
+export function paintFace(
   ctx: CanvasRenderingContext2D,
   rx: number,
   ry: number,
   material: { body: number; spot: number; inlay: number; ink: number },
   spin: number,
-  denomination: number,
+  denomination: number | null,
   squash: number,
 ): void {
   ctx.beginPath();
@@ -406,7 +426,7 @@ function paintFace(
   // outside the clip with a blurred, downward-offset shadow. Only the shadow
   // lands inside, pooling along the upper inner edge exactly as a pressed
   // inlay shades under an overhead lamp.
-  if (rx >= 7) {
+  if (rx >= ROSETTE_MIN_RADIUS_PX) {
     ctx.save();
     ctx.beginPath();
     ctx.ellipse(0, 0, rx * FACE.inlay, ry * FACE.inlay, 0, 0, Math.PI * 2);
@@ -422,8 +442,11 @@ function paintFace(
     ctx.restore();
   }
 
-  // The denomination, only at sizes where type is type rather than a smudge.
-  if (rx >= NUMERAL_MIN_RADIUS_PX) {
+  paintRosette(ctx, rx, material.ink, squash);
+
+  // The denomination, only at sizes where type is type rather than a smudge,
+  // and only when there is one to print.
+  if (denomination !== null && rx >= NUMERAL_MIN_RADIUS_PX) {
     const label = String(denomination);
     ctx.save();
     // Print lies on the face, so it foreshortens with it.
@@ -436,6 +459,69 @@ function paintFace(
     ctx.fillText(label, 0, size * 0.06);
     ctx.restore();
   }
+}
+
+/**
+ * The rosette: two thin scored rings and a five-point star, stamped behind
+ * the denomination the way a real ceramic chip presses a crest into its
+ * inlay instead of shipping a bare number. Faint on purpose -- the numeral
+ * above it is drawn at 0.88 alpha, this is a fraction of that, in the same
+ * "engraved, not printed" register as the groove and the edge inserts
+ * rather than a bold logo competing with the number for attention.
+ *
+ * Every denomination gets one, house or bought: the emblem is table
+ * furniture, like the wall's insert marks, not a thing Gold buys -- a
+ * purchased design only ever changes the four material colours underneath
+ * it.
+ */
+function paintRosette(
+  ctx: CanvasRenderingContext2D,
+  rx: number,
+  ink: number,
+  squash: number,
+): void {
+  if (rx < ROSETTE_MIN_RADIUS_PX) return;
+  ctx.save();
+  // Lies on the face, so it foreshortens with it -- same reasoning as the
+  // numeral's own `ctx.scale(1, squash)` just below.
+  ctx.scale(1, Math.max(0.15, squash));
+
+  ctx.strokeStyle = rgba(ink, 0.3);
+  ctx.lineWidth = Math.max(0.5, rx * 0.02);
+  ctx.beginPath();
+  ctx.arc(0, 0, rx * FACE.rosetteOuter, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, rx * FACE.rosetteInner, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = rgba(ink, 0.4);
+  ctx.beginPath();
+  starPath(ctx, rx * FACE.rosetteInner * 0.82, rx * FACE.rosetteInner * 0.34, 5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/** A five-point (or n-point) star, traced into the current path. */
+function starPath(
+  ctx: CanvasRenderingContext2D,
+  outerRadius: number,
+  innerRadius: number,
+  points: number,
+): void {
+  const step = Math.PI / points;
+  for (let index = 0; index < points * 2; index += 1) {
+    const radius = index % 2 === 0 ? outerRadius : innerRadius;
+    // Starts pointing straight up, same "north" every other face marking
+    // (the numeral, the insert cadence) implicitly assumes.
+    const angle = index * step - Math.PI / 2;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
 }
 
 /* ------------------------------------------------------------------ *

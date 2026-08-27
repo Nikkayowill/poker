@@ -7,6 +7,8 @@ import { Coins } from "lucide-react";
 import {
   avatarFigure,
   rarityLabels,
+  CHIP_DESIGN_DENOMINATIONS,
+  type ChipDesignDenomination,
   type Cosmetic,
   type CosmeticSlot,
   type EquippedCosmetics,
@@ -14,7 +16,16 @@ import {
 import { seatArtCharacter, seatArtSrc } from "@/lib/scene/seat-art";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { CardBackArt } from "@/components/card-back-art";
+import { ChipDesignArt } from "@/components/store/chip-design-art";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+
+/** Casino shorthand for a denomination -- "the 5s", "the 25s". */
+const CHIP_DENOMINATION_LABELS: Record<ChipDesignDenomination, string> = {
+  1: "1s",
+  5: "5s",
+  25: "25s",
+  100: "100s",
+};
 
 interface UnlockStats {
   handsWon: number;
@@ -33,6 +44,11 @@ function unlockProgress(item: Cosmetic, stats: UnlockStats | null): { current: n
 const SLOTS: { slot: CosmeticSlot; title: string; blurb: string }[] = [
   { slot: "avatar", title: "Avatars", blurb: "Who you are at the table." },
   { slot: "cardBack", title: "Card backs", blurb: "Seen by the whole table, on every hidden hand." },
+  {
+    slot: "chipDesign",
+    title: "Chip designs",
+    blurb: "Own as many as you like, then assign one to each denomination below.",
+  },
 ];
 
 type AcquisitionGroup = "default" | "earned" | "bought";
@@ -47,6 +63,16 @@ const ACQUISITION_GROUPS: { key: AcquisitionGroup; title: string; blurb: string 
   { key: "earned", title: "Earned", blurb: "Unlocked by playing -- no Gold spent." },
   { key: "bought", title: "Bought", blurb: "Purchased with Gold." },
 ];
+
+/**
+ * The single-equip slots' key on `EquippedCosmetics`, or null for
+ * `chipDesign`, which isn't a single equip -- see that field's own comment.
+ */
+function equippedKeyFor(slot: CosmeticSlot): "cardBack" | "avatar2d" | null {
+  if (slot === "avatar") return "avatar2d";
+  if (slot === "cardBack") return "cardBack";
+  return null;
+}
 
 function acquisitionGroup(item: Cosmetic): AcquisitionGroup {
   if (item.unlock) return "earned";
@@ -68,6 +94,10 @@ function CosmeticArt({ item, angle }: { item: Cosmetic; angle?: number }) {
   const [failed, setFailed] = useState(false);
 
   if (item.art) return <CardBackArt art={item.art} className="cosmetic-art" />;
+
+  if (item.slot === "chipDesign" && item.chip) {
+    return <ChipDesignArt material={item.chip} className="cosmetic-art cosmetic-art-chip" />;
+  }
 
   if (item.slot === "avatar" && !failed) {
     // The same plate the seat-art bucket draws at the table, not a
@@ -105,6 +135,11 @@ export function Collection() {
   const [confirming, setConfirming] = useState<Cosmetic | null>(null);
   const [previewing, setPreviewing] = useState<Cosmetic | null>(null);
   const [previewAngle, setPreviewAngle] = useState(0);
+  const [assigningDenomination, setAssigningDenomination] = useState<ChipDesignDenomination | null>(null);
+  // Which of the three slots is on screen. The page used to stack all three
+  // full sections top to bottom, which made "just look at chip designs" a
+  // scroll past however many avatars and card backs a profile has amassed.
+  const [activeSlot, setActiveSlot] = useState<CosmeticSlot>(SLOTS[0].slot);
 
   const ownedSet = useMemo(() => new Set(owned), [owned]);
 
@@ -159,6 +194,28 @@ export function Collection() {
     }
   };
 
+  const assign = async (denomination: ChipDesignDenomination, cosmeticId: string | null) => {
+    if (assigningDenomination !== null) return;
+    setAssigningDenomination(denomination);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/cosmetics/chip-designs/assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ denomination, cosmeticId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "That didn't work.");
+      setEquipped(data.equipped);
+      setNotice(cosmeticId ? "Chip design assigned." : "Back to the house default.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "That didn't work.");
+    } finally {
+      setAssigningDenomination(null);
+    }
+  };
+
   const balance = profile?.goldBalance ?? 0;
   const unlimited = profile?.unlimitedGold ?? false;
 
@@ -185,6 +242,21 @@ export function Collection() {
 
       {error && <p className="collection-error">{error}</p>}
       {notice && <p className="collection-notice">{notice}</p>}
+
+      <div className="collection-tabs" role="tablist" aria-label="Cosmetic category">
+        {SLOTS.map(({ slot, title }) => (
+          <button
+            key={slot}
+            type="button"
+            role="tab"
+            aria-selected={activeSlot === slot}
+            className={activeSlot === slot ? "is-active" : undefined}
+            onClick={() => { tapSound(); setActiveSlot(slot); }}
+          >
+            {title}
+          </button>
+        ))}
+      </div>
 
       {confirming && (
         <div className="confirm-overlay" role="presentation" onClick={() => { tapSound(); setConfirming(null); }}>
@@ -274,8 +346,8 @@ export function Collection() {
               <button type="button" className="cosmetic-action" onClick={() => { tapSound(); setPreviewing(null); }}>
                 Close
               </button>
-              {owned.includes(previewing.id) && equipped?.[
-                previewing.slot === "avatar" ? "avatar2d" : previewing.slot
+              {owned.includes(previewing.id) && equippedKeyFor(previewing.slot) !== null && equipped?.[
+                equippedKeyFor(previewing.slot)!
               ] !== previewing.id && (
                 <button
                   type="button"
@@ -308,7 +380,7 @@ export function Collection() {
         </div>
       )}
 
-      {SLOTS.map(({ slot, title, blurb }) => {
+      {SLOTS.filter(({ slot }) => slot === activeSlot).map(({ slot, title, blurb }) => {
         const items = catalog
           .filter((item) => item.slot === slot)
           // Owned items first so a player sees what's theirs before the
@@ -339,8 +411,8 @@ export function Collection() {
                 <div className="cosmetic-grid">
                   {group.items.map((item) => {
                 const isOwned = owned.includes(item.id);
-                const equipmentKey = item.slot === "avatar" ? "avatar2d" : item.slot;
-                const isEquipped = equipped?.[equipmentKey] === item.id;
+                const equipmentKey = equippedKeyFor(item.slot);
+                const isEquipped = equipmentKey !== null && equipped?.[equipmentKey] === item.id;
                 const forSale = typeof item.price === "number" && item.price > 0;
                 const affordable = unlimited || balance >= (item.price ?? 0);
                 const busy = pendingId === item.id;
@@ -367,16 +439,18 @@ export function Collection() {
                     <p className="cosmetic-desc">{item.description}</p>
 
                     {isOwned
-                      ? (
-                        <button
-                          type="button"
-                          className="cosmetic-action"
-                          disabled={busy || isEquipped}
-                          onClick={() => { selectSound(); void act(item, "equip"); }}
-                        >
-                          {isEquipped ? "Equipped" : busy ? "…" : "Equip"}
-                        </button>
-                      )
+                      ? item.slot === "chipDesign"
+                        ? <span className="cosmetic-locked">Owned -- assign it below</span>
+                        : (
+                          <button
+                            type="button"
+                            className="cosmetic-action"
+                            disabled={busy || isEquipped}
+                            onClick={() => { selectSound(); void act(item, "equip"); }}
+                          >
+                            {isEquipped ? "Equipped" : busy ? "…" : "Equip"}
+                          </button>
+                        )
                       : forSale
                         ? (
                           <button
@@ -417,6 +491,43 @@ export function Collection() {
           </section>
         );
       })}
+
+      {activeSlot === "chipDesign" && catalog.some((item) => item.slot === "chipDesign") && (
+        <section className="collection-section">
+          <h2>Assign chip designs</h2>
+          <p className="collection-blurb">
+            Pick which owned design shows on your own bet and stack chips at each denomination.
+            An unassigned denomination stays the house look -- everyone at the table sees your choices.
+          </p>
+          <div className="chip-assign-grid">
+            {CHIP_DESIGN_DENOMINATIONS.map((denomination) => {
+              const ownedDesigns = catalog.filter(
+                (item) => item.slot === "chipDesign" && owned.includes(item.id),
+              );
+              const current = equipped?.chipDesigns?.[denomination] ?? "";
+              return (
+                <div key={denomination} className="chip-assign-row">
+                  <span className="chip-assign-label">{CHIP_DENOMINATION_LABELS[denomination]}</span>
+                  <select
+                    className="chip-assign-select"
+                    value={current}
+                    disabled={assigningDenomination === denomination}
+                    onChange={(event) => {
+                      selectSound();
+                      void assign(denomination, event.target.value || null);
+                    }}
+                  >
+                    <option value="">House default</option>
+                    {ownedDesigns.map((item) => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </main>
   );
 }

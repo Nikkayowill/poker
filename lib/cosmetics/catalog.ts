@@ -11,6 +11,7 @@
  */
 
 import { SEAT_ART_CHARACTERS, seatArtSrc } from "@/lib/scene/seat-art";
+import type { ChipMaterial } from "@/lib/scene/chips/chip-spec";
 
 export type Rarity = "standard" | "premium" | "rare" | "signature";
 
@@ -21,7 +22,7 @@ export const rarityLabels: Record<Rarity, string> = {
   signature: "Signature",
 };
 
-export type CosmeticSlot = "cardBack" | "avatar";
+export type CosmeticSlot = "cardBack" | "avatar" | "chipDesign";
 
 export interface Cosmetic {
   id: string;
@@ -38,6 +39,13 @@ export interface Cosmetic {
    * what lets a single ownership and purchase path serve both.
    */
   art?: { base: string; ink: string };
+  /**
+   * Chip designs are the same five colours `lib/scene/chips/chip-spec.ts`
+   * paints a house chip from. Owning one doesn't put it anywhere on the felt
+   * by itself -- see `EquippedCosmetics.chipDesigns` -- a player assigns an
+   * owned design to whichever denomination they want it on.
+   */
+  chip?: ChipMaterial;
   /**
    * Avatar-only progress unlock, checked against lifetime PlayerStats after
    * every hand (lib/server/avatar-unlocks.ts) instead of a Gold purchase.
@@ -260,6 +268,269 @@ const characterAvatarOffers: Record<
   character31: { name: "Cade Osei", description: "Controller in one hand, your stack in the other.", price: 4_080_000 },
 };
 
+/**
+ * Chip designs. A player owns a pool of these (same purchase path as card
+ * backs and avatars) and assigns any owned design to any of the four
+ * denominations `lib/scene/chips/chip-spec.ts` currently draws (1/5/25/100)
+ * -- Kayo's own framing: "if someone bets small they could use pink chips to
+ * be their BB amount." Unlike the other two slots this isn't one equip per
+ * slot; see `EquippedCosmetics.chipDesigns`.
+ *
+ * Visible to the whole table on that player's own bet and standing-stack
+ * chips only -- the shared pot mound has no single owner (`RenderChip` never
+ * carries a `profileId` for pooled chips), so it always stays the house
+ * palette. That's a real scope limit, not an oversight: see
+ * `components/table/scene/racetrack-scene.tsx`'s chip-material resolver.
+ *
+ * One free tier entry, same reasoning as `back-house`/character4/9: a
+ * player should have a real alternative to try with no Gold spent, not just
+ * a locked storefront.
+ */
+const chipDesignCosmetics: Cosmetic[] = [
+  {
+    id: "chip-cobalt",
+    slot: "chipDesign",
+    name: "Cobalt",
+    description: "Deep blue clay, house-standard finish.",
+    rarity: "standard",
+    price: 0,
+    chip: { body: 0x1f3f6e, spot: 0xe6ddcb, inlay: 0x2a5490, ink: 0xf3ece0 },
+  },
+  {
+    id: "chip-crimson",
+    slot: "chipDesign",
+    name: "Crimson",
+    description: "Bright red clay, sharper than the house oxblood.",
+    rarity: "standard",
+    price: 20_000,
+    chip: { body: 0x6e1f2f, spot: 0xe6ddcb, inlay: 0x8a2a40, ink: 0xf3ece0 },
+  },
+  {
+    id: "chip-sable",
+    slot: "chipDesign",
+    name: "Sable Stripe",
+    description: "Black clay, white edge spots -- reads as a stripe from across the felt.",
+    rarity: "standard",
+    price: 20_000,
+    chip: { body: 0x18181a, spot: 0xf0ede4, inlay: 0x232326, ink: 0xf0ede4 },
+  },
+  {
+    id: "chip-violet",
+    slot: "chipDesign",
+    name: "Violet",
+    description: "Deep purple clay, pale inserts.",
+    rarity: "premium",
+    price: 150_000,
+    chip: { body: 0x3a1f5e, spot: 0xd9c8e6, inlay: 0x4c2a78, ink: 0xf3ece0 },
+  },
+  {
+    id: "chip-jade",
+    slot: "chipDesign",
+    name: "Jade",
+    description: "Cool green clay, a shade brighter than the house felt.",
+    rarity: "premium",
+    price: 150_000,
+    chip: { body: 0x1f5e46, spot: 0xd9e6dc, inlay: 0x2a7860, ink: 0xf3ece0 },
+  },
+  {
+    id: "chip-platinum",
+    slot: "chipDesign",
+    name: "Platinum",
+    description: "Bone-white clay, dark edge spots. Rare enough to notice.",
+    rarity: "rare",
+    price: 350_000,
+    chip: { body: 0xb9b4a8, spot: 0x2b2b2e, inlay: 0xcfc9ba, ink: 0x1b1b1d },
+  },
+
+  // Gold Reserve -- gold clay, black edge inserts and denomination. Ten
+  // shades of one hue rather than ten different colours, the way a real
+  // foil-pressed high-roller set stays "gold" across its whole run.
+  {
+    id: "chip-champagne-reserve",
+    slot: "chipDesign",
+    name: "Champagne Reserve",
+    description: "Pale gold clay, black inserts. The lightest chip in the Reserve run.",
+    rarity: "premium",
+    price: 150_000,
+    chip: { body: 0xd9b969, spot: 0x1c1408, inlay: 0xe8cf8f, ink: 0x1c1408 },
+  },
+  {
+    id: "chip-royal-aureate",
+    slot: "chipDesign",
+    name: "Royal Aureate",
+    description: "Deep gold clay, black edge spots -- the Reserve run's centerpiece.",
+    rarity: "rare",
+    price: 350_000,
+    chip: { body: 0xc99a2e, spot: 0x181206, inlay: 0xdaad42, ink: 0x181206 },
+  },
+  {
+    id: "chip-laurel-sovereign",
+    slot: "chipDesign",
+    name: "Laurel Sovereign",
+    description: "Antique gold clay with a warmer cast than house-standard.",
+    rarity: "rare",
+    price: 350_000,
+    chip: { body: 0xceab4a, spot: 0x1a1509, inlay: 0xdcbd63, ink: 0x1a1509 },
+  },
+  {
+    id: "chip-amber-high-roller",
+    slot: "chipDesign",
+    name: "Amber High Roller",
+    description: "Bright amber-gold clay, black inserts.",
+    rarity: "premium",
+    price: 150_000,
+    chip: { body: 0xd39a2e, spot: 0x1c1306, inlay: 0xe3ad42, ink: 0x1c1306 },
+  },
+  {
+    id: "chip-bronze-trifecta",
+    slot: "chipDesign",
+    name: "Bronze Trifecta",
+    description: "Muted bronze-gold clay, the darkest of the Reserve run.",
+    rarity: "premium",
+    price: 150_000,
+    chip: { body: 0xb98a3f, spot: 0x1a1409, inlay: 0xc99e52, ink: 0x1a1409 },
+  },
+  {
+    id: "chip-sunset-ledger",
+    slot: "chipDesign",
+    name: "Sunset Ledger",
+    description: "Warm orange-gold clay, black inserts.",
+    rarity: "premium",
+    price: 150_000,
+    chip: { body: 0xd6a13c, spot: 0x1c1407, inlay: 0xe4b654, ink: 0x1c1407 },
+  },
+  {
+    id: "chip-honeycomb-deuce",
+    slot: "chipDesign",
+    name: "Honeycomb Deuce",
+    description: "Bright yellow-gold clay, black inserts.",
+    rarity: "premium",
+    price: 150_000,
+    chip: { body: 0xd8b84b, spot: 0x1c1508, inlay: 0xe6cb66, ink: 0x1c1508 },
+  },
+  {
+    id: "chip-imperial-club",
+    slot: "chipDesign",
+    name: "Imperial Club",
+    description: "Saturated gold clay, black edge spots and denomination ink.",
+    rarity: "rare",
+    price: 350_000,
+    chip: { body: 0xc9a23a, spot: 0x191305, inlay: 0xdab851, ink: 0x191305 },
+  },
+  {
+    id: "chip-vintage-heart",
+    slot: "chipDesign",
+    name: "Vintage Heart",
+    description: "Aged gold clay, a shade darker than Bronze Trifecta.",
+    rarity: "premium",
+    price: 150_000,
+    chip: { body: 0xbd9635, spot: 0x171205, inlay: 0xceaa4c, ink: 0x171205 },
+  },
+  {
+    id: "chip-midas-bolt",
+    slot: "chipDesign",
+    name: "Midas Bolt",
+    description: "The brightest gold in the Reserve run, near-white at the highlight.",
+    rarity: "rare",
+    price: 350_000,
+    chip: { body: 0xe0be5c, spot: 0x1e1709, inlay: 0xefd47a, ink: 0x1e1709 },
+  },
+
+  // Neon Circuit -- near-black clay carrying one bright green accent, the
+  // same construction as Sable Stripe's dark-body/light-insert chip, just
+  // lit with neon instead of enamel white.
+  {
+    id: "chip-neon-lime-strike",
+    slot: "chipDesign",
+    name: "Neon Lime Strike",
+    description: "Near-black clay, lime-green inserts and denomination.",
+    rarity: "premium",
+    price: 150_000,
+    chip: { body: 0x101a13, spot: 0x5cff6e, inlay: 0x162016, ink: 0x9dffab },
+  },
+  {
+    id: "chip-acid-green-deuce",
+    slot: "chipDesign",
+    name: "Acid Green Deuce",
+    description: "Near-black clay, a sharper acid-green accent than Lime Strike.",
+    rarity: "premium",
+    price: 150_000,
+    chip: { body: 0x0f1a10, spot: 0x8dff3d, inlay: 0x152016, ink: 0xc4ff8d },
+  },
+  {
+    id: "chip-electric-jade-club",
+    slot: "chipDesign",
+    name: "Electric Jade Club",
+    description: "Near-black clay, a cooler jade-green accent.",
+    rarity: "rare",
+    price: 350_000,
+    chip: { body: 0x0d1a16, spot: 0x2bffa8, inlay: 0x13221c, ink: 0x8dffd4 },
+  },
+  {
+    id: "chip-emerald-volt-heart",
+    slot: "chipDesign",
+    name: "Emerald Volt Heart",
+    description: "Near-black clay, a mid-tone emerald accent.",
+    rarity: "premium",
+    price: 150_000,
+    chip: { body: 0x10190f, spot: 0x4dff6f, inlay: 0x162016, ink: 0xa8ffb8 },
+  },
+  {
+    id: "chip-cyber-mint-facet",
+    slot: "chipDesign",
+    name: "Cyber Mint Facet",
+    description: "Near-black clay, a pale mint-green accent.",
+    rarity: "rare",
+    price: 350_000,
+    chip: { body: 0x0d1a17, spot: 0x3dffc4, inlay: 0x13221f, ink: 0x9dffe0 },
+  },
+  {
+    id: "chip-toxic-sevens",
+    slot: "chipDesign",
+    name: "Toxic Sevens",
+    description: "Near-black clay, a yellow-shifted toxic-green accent.",
+    rarity: "rare",
+    price: 350_000,
+    chip: { body: 0x121a0d, spot: 0x9dff3d, inlay: 0x182212, ink: 0xceff8d },
+  },
+  {
+    id: "chip-radioactive-nova",
+    slot: "chipDesign",
+    name: "Radioactive Nova",
+    description: "Near-black clay, the brightest accent in the Circuit run.",
+    rarity: "rare",
+    price: 350_000,
+    chip: { body: 0x0d1a14, spot: 0x2bffb0, inlay: 0x13221a, ink: 0x8dffdc },
+  },
+  {
+    id: "chip-chartreuse-pulse",
+    slot: "chipDesign",
+    name: "Chartreuse Pulse",
+    description: "Near-black clay, a yellow-green chartreuse accent.",
+    rarity: "premium",
+    price: 150_000,
+    chip: { body: 0x151a0d, spot: 0xc2ff3d, inlay: 0x1e2212, ink: 0xe4ff8d },
+  },
+  {
+    id: "chip-viper-crown",
+    slot: "chipDesign",
+    name: "Viper Crown",
+    description: "Near-black clay, a mid-saturation green accent.",
+    rarity: "rare",
+    price: 350_000,
+    chip: { body: 0x0f190f, spot: 0x4dff86, inlay: 0x152016, ink: 0xa8ffc4 },
+  },
+  {
+    id: "chip-laser-emerald-ace",
+    slot: "chipDesign",
+    name: "Laser Emerald Ace",
+    description: "Near-black clay, a deep laser-emerald accent -- the coolest in the Circuit run.",
+    rarity: "rare",
+    price: 350_000,
+    chip: { body: 0x0c1a15, spot: 0x1dffb4, inlay: 0x122220, ink: 0x8dffe4 },
+  },
+];
+
 export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((character) => {
   const offer = characterAvatarOffers[character.id];
   if (!offer) {
@@ -294,7 +565,7 @@ export const avatarCosmetics: Cosmetic[] = characterAvatarCosmetics;
 export const DEFAULT_CARD_BACK = "back-house";
 export const DEFAULT_AVATAR_COSMETIC = "character4";
 
-export const cosmetics: Cosmetic[] = [...cardBackCosmetics, ...avatarCosmetics];
+export const cosmetics: Cosmetic[] = [...cardBackCosmetics, ...avatarCosmetics, ...chipDesignCosmetics];
 
 export function cosmeticById(id: string): Cosmetic | null {
   return cosmetics.find((item) => item.id === id) ?? null;
@@ -369,14 +640,34 @@ export function isPurchasable(item: Cosmetic): boolean {
  * a rename, the same reasoning `TableRenderer` follows in
  * `lib/scene/table-renderer.ts`.
  */
+/**
+ * The denominations a chip design can be assigned to. Chip designs are sold
+ * generically ("Cobalt", not "Cobalt 5"), so this is the one place that has
+ * to agree with `lib/scene/chips/chip-spec.ts`'s `CHIP_MATERIALS` -- kept as
+ * a literal rather than importing that table's keys so this module doesn't
+ * need to know the house palette, only the shape of the ladder it overrides.
+ */
+export const CHIP_DESIGN_DENOMINATIONS = [1, 5, 25, 100] as const;
+export type ChipDesignDenomination = (typeof CHIP_DESIGN_DENOMINATIONS)[number];
+
 export interface EquippedCosmetics {
   cardBack: string;
   avatar2d: string;
+  /**
+   * Denomination -> owned chip-design id. Unlike `cardBack`/`avatar2d` this
+   * is a pool assignment, not a single equip choice: a denomination with no
+   * entry here just draws the house `CHIP_MATERIALS` default, which is also
+   * what an unrecognised or since-removed id falls back to (`chipDesignMaterial`
+   * below), the same "never let a bad id blank the felt" rule `cardBackArt`
+   * follows.
+   */
+  chipDesigns: Partial<Record<ChipDesignDenomination, string>>;
 }
 
 export const defaultEquipped: EquippedCosmetics = {
   cardBack: DEFAULT_CARD_BACK,
   avatar2d: DEFAULT_AVATAR_COSMETIC,
+  chipDesigns: {},
 };
 
 /**
@@ -393,10 +684,54 @@ export function normalizeEquipped(raw: unknown): EquippedCosmetics {
   // needed its own slot and this one picked up its "2d" suffix; a profile
   // stored under the old name still resolves correctly.
   const legacyAvatar = input.avatar;
+  const rawChipDesigns = (input.chipDesigns ?? {}) as Record<string, unknown>;
+  const chipDesigns: Partial<Record<ChipDesignDenomination, string>> = {};
+  for (const denomination of CHIP_DESIGN_DENOMINATIONS) {
+    const value = rawChipDesigns[String(denomination)];
+    const item = typeof value === "string" ? cosmeticById(value) : null;
+    if (item?.slot === "chipDesign") chipDesigns[denomination] = item.id;
+  }
   return {
     cardBack: cosmeticById(String(input.cardBack ?? ""))?.slot === "cardBack"
       ? String(input.cardBack)
       : DEFAULT_CARD_BACK,
     avatar2d: pick(input.avatar2d ?? legacyAvatar, DEFAULT_AVATAR_COSMETIC),
+    chipDesigns,
   };
+}
+
+/**
+ * A chip design's material, or null for "no override, draw the house
+ * denomination default" -- an unset assignment and an unrecognised/removed
+ * id resolve the same way on purpose, so a deleted catalog entry never
+ * blanks a chip the way a missing card-back art lookup would blank a card.
+ */
+export function chipDesignMaterial(id: string | null | undefined): ChipMaterial | null {
+  const item = typeof id === "string" ? cosmeticById(id) : null;
+  return item?.slot === "chipDesign" && item.chip ? item.chip : null;
+}
+
+/**
+ * The designs a bot may wear. Whole catalog, no `unlock`/rarity filter --
+ * same reasoning `botAvatarCosmetics` gives for letting Gold-priced
+ * characters through: a bot showing up in a design a player could go buy
+ * today advertises the store, it isn't a claim about the bot's own history.
+ * There's no earned tier here to exclude in the first place (no chip design
+ * carries `unlock`), so the filter is really just future-proofing against
+ * one showing up later.
+ */
+export const botChipDesignCosmetics: Cosmetic[] = chipDesignCosmetics.filter((item) => !item.unlock);
+
+/**
+ * One design, worn on all four denominations -- a bot's own chip colour,
+ * the same way `botAvatarFor` gives it one face rather than a different
+ * character per card. Keyed on identity, not seat position, so a rotated
+ * bot brings its colour with it, same as its face and card back.
+ */
+export function botChipDesignsFor(identity: number): Partial<Record<ChipDesignDenomination, string>> {
+  if (botChipDesignCosmetics.length === 0) return {};
+  const design = botChipDesignCosmetics[identity % botChipDesignCosmetics.length].id;
+  const assigned: Partial<Record<ChipDesignDenomination, string>> = {};
+  for (const denomination of CHIP_DESIGN_DENOMINATIONS) assigned[denomination] = design;
+  return assigned;
 }

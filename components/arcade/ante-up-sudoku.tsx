@@ -5,9 +5,12 @@ import clsx from "clsx";
 import { Coins, Eraser, Pencil } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { ANTE_UP_TIERS, MIN_ANTE_UP_WAGER, type AnteUpSnapshot } from "@/lib/arcade/ante-up";
+import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import {
   SUDOKU_CELLS,
   SUDOKU_DIFFICULTIES,
@@ -30,7 +33,13 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * classes rather than a third copy of either; see 43-ante-up.css's header.
  */
 
-const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000] as const;
+/**
+ * Offered low to high; StakePicker drops the ones above the chosen board's
+ * ceiling, so easy shows three of these and expert shows all of them. The top
+ * end exists so the harder rungs can actually reach the headroom their
+ * ceiling grants (lib/arcade/ante-up-stakes.ts).
+ */
+const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 25_000, 100_000, 500_000] as const;
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 interface AnteUpResponse {
@@ -229,8 +238,13 @@ export function AnteUpSudoku() {
   const playAgain = () => { setAttempt(null); setSelected(null); setNotes({}); };
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
-  const canAfford = wager === 0 || (wager >= MIN_ANTE_UP_WAGER && balance >= wager);
+  const ceiling = maxAnteUpWager("sudoku", difficulty);
+  const canAfford =
+    wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
   const tier = ANTE_UP_TIERS[difficulty];
+  // What the attempt did to the balance, not what it credited: the slow
+  // rungs can pay back less than was staked. See lib/arcade/ante-up-result.ts.
+  const result = anteUpResultLine(attempt?.wager ?? 0, attempt?.payout ?? 0);
   const msRemaining = attempt ? Math.max(0, Date.parse(attempt.expiresAt) - now) : 0;
 
   return (
@@ -253,62 +267,69 @@ export function AnteUpSudoku() {
       )}
 
       {!attempt ? (
-        <div className="duel-lobby">
-          <div className="floor-head">
-            <div className="lobby-kicker">Ante Up</div>
+        <section className="puzzle-summary ante-lobby-card">
+          <div className="ante-lobby-heading">
             <h1>Sudoku, against the clock</h1>
-            <p>Wager on your own ability. Beat the grid before time runs out and cash out up to 10x.</p>
+            <p>
+              Wager on your own ability. Beat the grid before time runs out and cash out up to{" "}
+              {ANTE_UP_TIERS.expert.multiplier}x. The harder the grid, the more it pays and the more you may stake.
+            </p>
           </div>
 
-          <section className="duel-panel">
-            <h2 className="floor-section-head">Difficulty</h2>
-            <div className="ante-difficulties" role="group" aria-label="Difficulty">
-              {SUDOKU_DIFFICULTIES.map((entry) => {
-                const entryTier = ANTE_UP_TIERS[entry];
-                return (
-                  <button
-                    key={entry}
-                    type="button"
-                    className={clsx("ante-difficulty", entry === difficulty && "ante-difficulty-active")}
-                    aria-pressed={entry === difficulty}
-                    onClick={() => { selectSound(); setDifficulty(entry); }}
-                  >
-                    <strong>{entry[0].toUpperCase() + entry.slice(1)}</strong>
-                    <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+          <div className="ante-difficulties" role="group" aria-label="Difficulty">
+            {SUDOKU_DIFFICULTIES.map((entry) => {
+              const entryTier = ANTE_UP_TIERS[entry];
+              return (
+                <button
+                  key={entry}
+                  type="button"
+                  className={clsx("ante-difficulty", entry === difficulty && "ante-difficulty-active")}
+                  aria-pressed={entry === difficulty}
+                  onClick={() => {
+                    selectSound();
+                    setDifficulty(entry);
+                    // Dropping to an easier grid lowers the ceiling under a
+                    // wager that was legal a moment ago; bring it down with it
+                    // rather than leaving an amount the server will refuse.
+                    setWager((current) => Math.min(current, maxAnteUpWager("sudoku", entry)));
+                  }}
+                >
+                  <strong>{entry[0].toUpperCase() + entry.slice(1)}</strong>
+                  <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
+                </button>
+              );
+            })}
+          </div>
 
-          <section className="duel-panel">
-            <h2 className="floor-section-head">Your wager</h2>
-            <StakePicker
-              ariaLabel="Wager"
-              picks={STAKE_QUICK_PICKS}
-              value={wager}
-              min={0}
-              leading={{ label: "Free", value: 0 }}
-              onChange={(next) => { selectSound(); setWager(next); }}
-            />
-            <p className="duel-pot-note">
-              {wager === 0
-                ? "Free practice -- no payout on a win, but there's no fun in that."
-                : wager < MIN_ANTE_UP_WAGER
-                  ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                  : `Beat ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Miss it and the wager is gone.`}
-            </p>
+          <StakePicker
+            ariaLabel="Wager"
+            picks={STAKE_QUICK_PICKS}
+            value={wager}
+            min={0}
+            max={ceiling}
+            leading={{ label: "Free", value: 0 }}
+            onChange={(next) => { selectSound(); setWager(next); }}
+          />
+          <p className="puzzle-verdict">
+            {wager === 0
+              ? "Free practice — no payout on a win, but there's no fun in that."
+              : wager < MIN_ANTE_UP_WAGER
+                ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
+                : wager > ceiling
+                  ? `${difficulty[0].toUpperCase() + difficulty.slice(1)} caps at ${ceiling.toLocaleString()} Gold a wager. Step up a difficulty to stake more.`
+                  : `Beat ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${Math.round(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Miss it and the wager is gone.`}
+          </p>
 
-            <button
-              type="button"
-              className="floor-play duel-open"
-              disabled={busy || !loaded || !canAfford}
-              onClick={() => { selectSound(); start(); }}
-            >
-              {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
-            </button>
-          </section>
-        </div>
+          <button
+            type="button"
+            className="puzzle-share-button"
+            disabled={busy || !loaded || !canAfford}
+            onClick={() => { selectSound(); start(); }}
+          >
+            <Coins size={15} aria-hidden="true" />
+            {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
+          </button>
+        </section>
       ) : (
         <div className="duel-match ante-match">
           <div className="duel-scoreline ante-scoreline">
@@ -384,14 +405,13 @@ export function AnteUpSudoku() {
                 attempt.status === "won" && "duel-result-won",
               )}
             >
+              <WinCelebration active={attempt.status === "won" && result.profited} amount={result.net} />
               <strong>
                 {attempt.status === "won" ? "You beat it" : attempt.status === "timed-out" ? "Time's up" : "Gave up"}
               </strong>
               <span>{attempt.mistakes} {attempt.mistakes === 1 ? "mistake" : "mistakes"}</span>
               <span className="duel-result-gold">
-                {attempt.status === "won"
-                  ? attempt.wager > 0 ? `+${attempt.payout.toLocaleString()} Gold` : "Practice round -- no Gold at stake"
-                  : attempt.wager > 0 ? `−${attempt.wager.toLocaleString()} Gold` : "Practice round -- nothing lost"}
+                {result.label}
               </span>
               <button type="button" className="floor-play" onClick={playAgain}>Play again</button>
             </div>

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
-  Box, Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
+  Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
@@ -28,11 +28,7 @@ import {
   seatArtSlotFor,
   type SeatArtBox,
 } from "@/lib/scene/seat-art";
-import {
-  resolveTableRenderer,
-  tableRendererLabel,
-  type TableRenderer,
-} from "@/lib/scene/table-renderer";
+import { resolveTableRenderer } from "@/lib/scene/table-renderer";
 import { useDesktopViewport } from "@/components/use-desktop-viewport";
 import { useClipboardCopy } from "@/components/use-clipboard-copy";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -213,7 +209,6 @@ export function PokerTable({
   tableRendererSettled,
   landscape,
   tightLandscape,
-  onCycleTableRenderer,
   onSignIn,
   onSignOut,
   reactions,
@@ -242,8 +237,6 @@ export function PokerTable({
   /** The tight mobile-landscape tier (see use-tight-landscape.ts) -- the live
    *  feed moves into the header at this tier instead of overlaying the felt. */
   tightLandscape: boolean;
-  /** Called with the renderer currently mounted; see poker-app.tsx. */
-  onCycleTableRenderer: (mounted: TableRenderer) => void;
   onSignIn: () => void;
   onSignOut: () => void;
   /** This hand's active reactions, keyed by seat id; see use-table-reactions.ts. */
@@ -918,16 +911,6 @@ export function PokerTable({
         onSelect: onCycleBetStyle,
         icon: <Sparkles size={15} />,
       },
-      // The only renderer left, so this never visibly changes anything --
-      // kept as a menu entry (see `nextTableRenderer`'s own comment) so a
-      // renderer added back later has a place to be chosen from without new
-      // menu plumbing.
-      {
-        kind: "action" as const,
-        label: tableRendererLabel(activeRenderer),
-        onSelect: () => onCycleTableRenderer(activeRenderer),
-        icon: <Box size={15} />,
-      },
       {
         kind: "action",
         label: "Hand history",
@@ -987,7 +970,6 @@ export function PokerTable({
     return items;
   }, [
     soundEnabled, onToggleSound, betStyle, onCycleBetStyle,
-    activeRenderer, onCycleTableRenderer,
     game.isPrivate, game.roomCode,
     game.id, game.isSeated, roomCodeCopied, copyRoomCode, profile, onCustomize, onSignIn,
     onSignOut, onLeaveSeat,

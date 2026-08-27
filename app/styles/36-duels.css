@@ -40,7 +40,8 @@
      padding does -- this shell has no other top edge, so a bare 0 here put
      the "← Ante Up" back link flush under the status bar/battery icon on an
      installed iOS PWA. */
-  padding: calc(16px + var(--safe-top)) 20px max(24px, var(--safe-bottom));
+  padding: calc(16px + var(--safe-top)) max(20px, var(--safe-right)) max(24px, var(--safe-bottom))
+    max(20px, var(--safe-left));
   min-height: 100dvh;
 }
 
@@ -58,7 +59,12 @@
 }
 
 .duel-error button {
-  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -12px -8px -12px auto;
   border: 0;
   background: none;
   color: inherit;
@@ -88,6 +94,9 @@
 }
 
 .duel-tier {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: 7px 14px;
   border: 0;
   border-radius: var(--radius-control);
@@ -286,6 +295,7 @@
 .duel-pot {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 4px;
   padding: 5px 12px;
   border-radius: 999px;
@@ -322,6 +332,9 @@
 }
 
 .duel-resign {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: 7px 18px;
   border: 0;
   border-radius: var(--radius-control);
@@ -395,7 +408,8 @@
 
 @media (max-width: 640px) {
   .duel-shell {
-    padding: calc(12px + var(--safe-top)) 12px max(16px, var(--safe-bottom));
+    padding: calc(12px + var(--safe-top)) max(12px, var(--safe-right)) max(16px, var(--safe-bottom))
+      max(12px, var(--safe-left));
     gap: 14px;
   }
 

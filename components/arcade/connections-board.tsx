@@ -7,7 +7,10 @@ import { Coins, Shuffle } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
+import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { connectionsShareText, puzzleShareTitle } from "@/lib/arcade/puzzles/share";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
@@ -64,7 +67,8 @@ interface ConnectionsResponse {
 }
 
 const NOTICE_MS = 1800;
-const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000] as const;
+/** Capped by the game's flat ceiling in StakePicker; see lib/arcade/ante-up-stakes.ts. */
+const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000, 25_000] as const;
 
 /** Level 0-3 as the board's four colours, matching the share matrix's yellow-to-purple ramp. */
 const LEVEL_CLASS = ["cx-level-0", "cx-level-1", "cx-level-2", "cx-level-3"];
@@ -210,7 +214,14 @@ export function ConnectionsBoard() {
   }, [send, wager]);
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
+  const result = anteUpResultLine(round?.wager ?? 0, round?.payout ?? 0);
+  const ceiling = maxAnteUpWager("connections", null);
   const canAffordWager = balance >= wager;
+  const overCeiling = wager > ceiling;
+  // Kept apart from canAffordWager on purpose: they are different
+  // refusals and used to share the "Not enough Gold" label, which is the
+  // wrong thing to tell a player who has plenty and simply staked too much.
+  const canStart = !overCeiling && canAffordWager;
 
   const finished = Boolean(round && round.status !== "active");
   const playable = Boolean(round) && !finished && !busy;
@@ -266,7 +277,7 @@ export function ConnectionsBoard() {
     <main className="bj-shell puzzle-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <Link className="bj-back" href="/" onClick={tapSound}>← Back to the lobby</Link>
+          <Link className="bj-back" href="/games" onClick={tapSound}>← Ante Up</Link>
           <h1>Connections</h1>
           <p>
             {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Find the four groups of four
@@ -274,6 +285,10 @@ export function ConnectionsBoard() {
         </div>
         {profile && (
           <div className="puzzle-player">
+            <span className="gold-balance">
+              <Coins size={13} aria-hidden="true" />
+              <strong>{profile.unlimitedGold ? "Unlimited" : profile.goldBalance.toLocaleString()}</strong>
+            </span>
             <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
             <span className="bj-hand-who">
               <span className="bj-hand-label">{profile.displayName}</span>
@@ -297,6 +312,7 @@ export function ConnectionsBoard() {
             picks={STAKE_QUICK_PICKS}
             value={wager}
             min={0}
+            max={ceiling}
             leading={{ label: "Free", value: 0 }}
             onChange={(next) => { selectSound(); setWager(next); }}
           />
@@ -305,16 +321,26 @@ export function ConnectionsBoard() {
               ? "Free daily play — no Gold at stake."
               : wager < MIN_ANTE_UP_WAGER
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : "A clean solve pays out the most — run out of mistakes and the wager is gone."}
+                : overCeiling
+                  ? `Connections caps at ${ceiling.toLocaleString()} Gold a wager.`
+                  : "A clean solve pays out the most. Solving on your last life pays back less than you staked, and running out of mistakes loses the wager outright."}
           </p>
           <button
             type="button"
             className="puzzle-share-button"
-            disabled={busy || (wager > 0 && wager < MIN_ANTE_UP_WAGER) || (wager > 0 && !canAffordWager)}
+            disabled={busy || (wager > 0 && wager < MIN_ANTE_UP_WAGER) || (wager > 0 && !canStart)}
             onClick={() => { selectSound(); startBoard(); }}
           >
             <Coins size={15} aria-hidden="true" />
-            {busy ? "Dealing…" : wager > 0 && !canAffordWager ? "Not enough Gold" : wager === 0 ? "Play free" : "Ante up"}
+            {busy
+              ? "Dealing…"
+              : wager > 0 && overCeiling
+                ? "Over the cap"
+                : wager > 0 && !canAffordWager
+                  ? "Not enough Gold"
+                  : wager === 0
+                    ? "Play free"
+                    : "Ante up"}
           </button>
         </section>
       )}
@@ -387,6 +413,7 @@ export function ConnectionsBoard() {
 
       {finished && round && (
         <section className="puzzle-summary">
+          <WinCelebration active={round.status === "won" && result.profited} amount={result.net} />
           <p className="puzzle-verdict">
             {round.status === "won"
               ? round.mistakes === 0
@@ -395,11 +422,7 @@ export function ConnectionsBoard() {
               : "Out of mistakes. The groups are above."}
           </p>
           {round.wager > 0 && (
-            <p className="puzzle-verdict">
-              {round.status === "won"
-                ? <strong>+{round.payout.toLocaleString()} Gold</strong>
-                : <strong>−{round.wager.toLocaleString()} Gold</strong>}
-            </p>
+            <p className="puzzle-verdict"><strong>{result.label}</strong></p>
           )}
           <pre className="puzzle-share-preview" aria-label="Your result">{shareText}</pre>
           {shareText && (

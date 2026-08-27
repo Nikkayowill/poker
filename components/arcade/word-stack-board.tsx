@@ -7,7 +7,10 @@ import { Coins, Delete, CornerDownLeft } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
+import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { puzzleShareTitle, wordStackShareText } from "@/lib/arcade/puzzles/share";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
@@ -47,7 +50,8 @@ import type { PlayerProfile } from "@/lib/profile/types";
  */
 
 const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
-const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000] as const;
+/** Capped by the game's flat ceiling in StakePicker; see lib/arcade/ante-up-stakes.ts. */
+const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000, 25_000] as const;
 
 interface WordStackResponse {
   round: (WordStackSnapshot & { wager: number; payout: number }) | null;
@@ -174,7 +178,14 @@ export function WordStackBoard() {
   }, [send, wager]);
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
+  const result = anteUpResultLine(round?.wager ?? 0, round?.payout ?? 0);
+  const ceiling = maxAnteUpWager("word-stack", null);
   const canAffordWager = balance >= wager;
+  const overCeiling = wager > ceiling;
+  // Kept apart from canAffordWager on purpose: they are different
+  // refusals and used to share the "Not enough Gold" label, which is the
+  // wrong thing to tell a player who has plenty and simply staked too much.
+  const canStart = !overCeiling && canAffordWager;
 
   const finished = Boolean(round && round.status !== "active");
   const canType = Boolean(round) && !finished && !busy;
@@ -260,7 +271,7 @@ export function WordStackBoard() {
     <main className="bj-shell puzzle-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <Link className="bj-back" href="/" onClick={tapSound}>← Back to the lobby</Link>
+          <Link className="bj-back" href="/games" onClick={tapSound}>← Ante Up</Link>
           <h1>Daily Word Stack</h1>
           <p>
             {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Six guesses · One word a day for everyone
@@ -268,6 +279,10 @@ export function WordStackBoard() {
         </div>
         {profile && (
           <div className="puzzle-player">
+            <span className="gold-balance">
+              <Coins size={13} aria-hidden="true" />
+              <strong>{profile.unlimitedGold ? "Unlimited" : profile.goldBalance.toLocaleString()}</strong>
+            </span>
             <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
             <span className="bj-hand-who">
               <span className="bj-hand-label">{profile.displayName}</span>
@@ -293,6 +308,7 @@ export function WordStackBoard() {
             picks={STAKE_QUICK_PICKS}
             value={wager}
             min={0}
+            max={ceiling}
             leading={{ label: "Free", value: 0 }}
             onChange={(next) => { selectSound(); setWager(next); }}
           />
@@ -301,16 +317,26 @@ export function WordStackBoard() {
               ? "Free daily play — no Gold at stake."
               : wager < MIN_ANTE_UP_WAGER
                 ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : "Fewer guesses, bigger payout — miss all six and the wager is gone."}
+                : overCeiling
+                  ? `Word Stack caps at ${ceiling.toLocaleString()} Gold a wager.`
+                  : "Fewer guesses, bigger payout. Scraping it on the last guess pays back less than you staked, and missing all six loses the wager outright."}
           </p>
           <button
             type="button"
             className="puzzle-share-button"
-            disabled={busy || (wager > 0 && wager < MIN_ANTE_UP_WAGER) || (wager > 0 && !canAffordWager)}
+            disabled={busy || (wager > 0 && wager < MIN_ANTE_UP_WAGER) || (wager > 0 && !canStart)}
             onClick={() => { selectSound(); startBoard(); }}
           >
             <Coins size={15} aria-hidden="true" />
-            {busy ? "Dealing…" : wager > 0 && !canAffordWager ? "Not enough Gold" : wager === 0 ? "Play free" : "Ante up"}
+            {busy
+              ? "Dealing…"
+              : wager > 0 && overCeiling
+                ? "Over the cap"
+                : wager > 0 && !canAffordWager
+                  ? "Not enough Gold"
+                  : wager === 0
+                    ? "Play free"
+                    : "Ante up"}
           </button>
         </section>
       )}
@@ -345,6 +371,7 @@ export function WordStackBoard() {
 
       {finished && round && (
         <section className="puzzle-summary">
+          <WinCelebration active={round.status === "won" && result.profited} amount={result.net} />
           <p className="puzzle-verdict">
             {round.status === "won"
               ? `Solved in ${round.guesses.length}.`
@@ -354,11 +381,7 @@ export function WordStackBoard() {
             )}
           </p>
           {round.wager > 0 && (
-            <p className="puzzle-verdict">
-              {round.status === "won"
-                ? <strong>+{round.payout.toLocaleString()} Gold</strong>
-                : <strong>−{round.wager.toLocaleString()} Gold</strong>}
-            </p>
+            <p className="puzzle-verdict"><strong>{result.label}</strong></p>
           )}
           {/* The grid, exactly as it will be posted. Showing it is what makes
               the button read as "send this" rather than "send something". */}

@@ -5,7 +5,10 @@ import clsx from "clsx";
 import { Bomb, Coins, Flag } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
+import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_MINESWEEPER_TIERS,
@@ -38,13 +41,17 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * which is the move that makes a big board playable at all.
  */
 
-const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000] as const;
+/** StakePicker drops the picks above the chosen board's ceiling; see lib/arcade/ante-up-stakes.ts. */
+const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 25_000, 100_000, 500_000] as const;
 
 /** How long a press has to hold before it counts as a flag rather than a tap. */
 const LONG_PRESS_MS = 350;
 
 /** How often the shell re-reads a live attempt: catches the clock running out with nothing clicked. */
 const POLL_MS = 3000;
+
+/** Fallback pause on a 429 with no usable Retry-After header. */
+const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
 interface AnteUpMinesweeperResponse {
   attempt: AnteUpMinesweeperSnapshot | null;
@@ -88,19 +95,30 @@ export function AnteUpMinesweeper() {
     if (data.attempt !== undefined) setAttempt(data.attempt ?? null);
   }, []);
 
-  /** The background poll: reads the live attempt, sets no busy flag. */
-  const refresh = useCallback(async () => {
-    if (sending.current) return;
+  /**
+   * The background poll: reads the live attempt, sets no busy flag.
+   *
+   * Returns the pause (in ms) the poll loop should wait before its next tick
+   * when the server answered 429, or null for the ordinary POLL_MS cadence.
+   */
+  const refresh = useCallback(async (): Promise<number | null> => {
+    if (sending.current) return null;
     try {
       const response = await fetch("/api/ante-up-minesweeper", { cache: "no-store" });
+      if (response.status === 429) {
+        const header = Number(response.headers.get("Retry-After"));
+        const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
+        return seconds * 1000;
+      }
       const data = (await response.json()) as Partial<AnteUpMinesweeperResponse>;
-      if (!mounted.current || sending.current) return;
+      if (!mounted.current || sending.current) return null;
       if (response.ok) applyResponse(data);
     } catch {
       // A dropped poll is not worth a banner; the next one is seconds away.
     } finally {
       if (mounted.current) setLoaded(true);
     }
+    return null;
   }, [applyResponse]);
 
   /** A player-initiated action: start, move, resign. A 409 still applies its payload. */
@@ -142,11 +160,28 @@ export function AnteUpMinesweeper() {
     return () => window.clearTimeout(timer);
   }, [refresh]);
 
-  // Poll a live attempt so a clock running out with nobody clicking still settles.
+  // Poll a live attempt so a clock running out with nobody clicking still
+  // settles. A self-rescheduling timeout rather than setInterval: the next
+  // tick is only scheduled once the current refresh() has settled, so a slow
+  // response can never leave two polls in flight at once. A 429 reply makes
+  // refresh() return the server's own Retry-After (in ms) instead of null,
+  // which is used as that one tick's delay in place of POLL_MS -- the loop
+  // then resumes its normal cadence on the following tick.
   useEffect(() => {
     if (!active) return;
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
-    return () => window.clearInterval(timer);
+    let cancelled = false;
+    let timer: number | null = null;
+    const tick = () => {
+      void refresh().then((pauseMs) => {
+        if (cancelled) return;
+        timer = window.setTimeout(tick, pauseMs ?? POLL_MS);
+      });
+    };
+    timer = window.setTimeout(tick, POLL_MS);
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
   }, [active, refresh]);
 
   // The running clock, once a second, only while an attempt is live.
@@ -211,7 +246,10 @@ export function AnteUpMinesweeper() {
   const playAgain = () => { setAttempt(null); setFlagMode(false); };
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
-  const canAfford = wager === 0 || (wager >= MIN_ANTE_UP_WAGER && balance >= wager);
+  const result = anteUpResultLine(attempt?.wager ?? 0, attempt?.payout ?? 0);
+  const ceiling = maxAnteUpWager("minesweeper", difficulty);
+  const canAfford =
+    wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
   const tier = ANTE_UP_MINESWEEPER_TIERS[difficulty];
 
   // Counted down from the absolute deadline against a `now` that ticks once a
@@ -247,9 +285,8 @@ export function AnteUpMinesweeper() {
       )}
 
       {!attempt ? (
-        <div className="duel-lobby">
-          <div className="floor-head">
-            <div className="lobby-kicker">Ante Up</div>
+        <section className="puzzle-summary ante-lobby-card">
+          <div className="ante-lobby-heading">
             <h1>Minesweeper, against the clock</h1>
             <p>
               Every board can be cleared by logic alone — no board here ever comes down to a guess.
@@ -257,59 +294,63 @@ export function AnteUpMinesweeper() {
             </p>
           </div>
 
-          <section className="duel-panel">
-            <h2 className="floor-section-head">Difficulty</h2>
-            <div className="ante-difficulties" role="group" aria-label="Difficulty">
-              {MINESWEEPER_DIFFICULTIES.map((entry) => {
-                const entryTier = ANTE_UP_MINESWEEPER_TIERS[entry.id];
-                return (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className={clsx(
-                      "ante-difficulty",
-                      entry.id === difficulty && "ante-difficulty-active",
-                    )}
-                    aria-pressed={entry.id === difficulty}
-                    onClick={() => { selectSound(); setDifficulty(entry.id); }}
-                  >
-                    <strong>{entry.label}</strong>
-                    <span>{entry.cols}×{entry.rows} · {entry.mines} mines</span>
-                    <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+          <div className="ante-difficulties" role="group" aria-label="Difficulty">
+            {MINESWEEPER_DIFFICULTIES.map((entry) => {
+              const entryTier = ANTE_UP_MINESWEEPER_TIERS[entry.id];
+              return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  className={clsx(
+                    "ante-difficulty",
+                    entry.id === difficulty && "ante-difficulty-active",
+                  )}
+                  aria-pressed={entry.id === difficulty}
+                  onClick={() => {
+                    selectSound();
+                    setDifficulty(entry.id);
+                    // An easier board lowers the ceiling under a wager that
+                    // was legal a moment ago; bring it down with it.
+                    setWager((current) => Math.min(current, maxAnteUpWager("minesweeper", entry.id)));
+                  }}
+                >
+                  <strong>{entry.label}</strong>
+                  <span>{entry.cols}×{entry.rows} · {entry.mines} mines</span>
+                  <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
+                </button>
+              );
+            })}
+          </div>
 
-          <section className="duel-panel">
-            <h2 className="floor-section-head">Your wager</h2>
-            <StakePicker
-              ariaLabel="Wager"
-              picks={STAKE_QUICK_PICKS}
-              value={wager}
-              min={0}
-              leading={{ label: "Free", value: 0 }}
-              onChange={(next) => { selectSound(); setWager(next); }}
-            />
-            <p className="duel-pot-note">
-              {wager === 0
-                ? "Free practice — no payout on a clear, but nothing at risk either."
-                : wager < MIN_ANTE_UP_WAGER
-                  ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                  : `Clear ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Hit a mine, or run out of time, and the wager is gone.`}
-            </p>
+          <StakePicker
+            ariaLabel="Wager"
+            picks={STAKE_QUICK_PICKS}
+            value={wager}
+            min={0}
+            max={ceiling}
+            leading={{ label: "Free", value: 0 }}
+            onChange={(next) => { selectSound(); setWager(next); }}
+          />
+          <p className="puzzle-verdict">
+            {wager === 0
+              ? "Free practice — no payout on a clear, but nothing at risk either."
+              : wager < MIN_ANTE_UP_WAGER
+                ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
+                : wager > ceiling
+                  ? `${difficulty[0].toUpperCase() + difficulty.slice(1)} caps at ${ceiling.toLocaleString()} Gold a wager. Step up a difficulty to stake more.`
+                  : `Clear ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${Math.round(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Hit a mine, or run out of time, and the wager is gone.`}
+          </p>
 
-            <button
-              type="button"
-              className="floor-play duel-open"
-              disabled={busy || !loaded || !canAfford}
-              onClick={() => { selectSound(); start(); }}
-            >
-              {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
-            </button>
-          </section>
-        </div>
+          <button
+            type="button"
+            className="puzzle-share-button"
+            disabled={busy || !loaded || !canAfford}
+            onClick={() => { selectSound(); start(); }}
+          >
+            <Coins size={15} aria-hidden="true" />
+            {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
+          </button>
+        </section>
       ) : (
         <div className="duel-match ante-match ms-match">
           <div className="duel-scoreline ante-scoreline ms-scoreline">
@@ -388,6 +429,7 @@ export function AnteUpMinesweeper() {
 
           {settled ? (
             <div className={clsx("duel-result", attempt.status === "won" && "duel-result-won")}>
+              <WinCelebration active={attempt.status === "won" && result.profited} amount={result.net} />
               <strong>
                 {attempt.status === "won"
                   ? "Board cleared"
@@ -401,13 +443,7 @@ export function AnteUpMinesweeper() {
               </strong>
               <span>{formatDuration(attempt.elapsedMs)} · {difficultyLabel(attempt.difficulty)}</span>
               <span className="duel-result-gold">
-                {attempt.status === "won"
-                  ? attempt.wager > 0
-                    ? `+${attempt.payout.toLocaleString()} Gold`
-                    : "Practice round — no Gold at stake"
-                  : attempt.wager > 0
-                    ? `−${attempt.wager.toLocaleString()} Gold`
-                    : "Practice round — nothing lost"}
+                {result.label}
               </span>
               <button type="button" className="floor-play" onClick={playAgain}>Play again</button>
             </div>

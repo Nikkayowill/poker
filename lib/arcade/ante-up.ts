@@ -32,8 +32,12 @@ import {
 /**
  * The floor for a wager. Zero is always allowed too, for practice with no
  * payout. See MIN_DUEL_STAKE's doc comment for why a nonzero stake needs a
- * floor at all: without one, a farmed 10x from a stream of 1-Gold wagers is
- * indistinguishable from a real one.
+ * floor at all: without one, a multiple farmed from a stream of 1-Gold wagers
+ * is indistinguishable from a real one.
+ *
+ * The ceiling is the other end of the same rule and lives in
+ * lib/arcade/ante-up-stakes.ts, since it varies with the board's difficulty
+ * rather than being one number per game.
  */
 export const MIN_ANTE_UP_WAGER = 500;
 
@@ -45,14 +49,27 @@ export interface AnteUpTier {
 }
 
 /**
- * One rung per Sudoku difficulty: harder grid, tighter clock, bigger payout.
- * Starting numbers, not tuned against real play; easy to retune here.
+ * One rung per Sudoku difficulty: harder grid, more time to solve it, and a
+ * payout that prices how likely you are to finish at all.
+ *
+ * The clock ladder used to run backwards -- easy got 15 minutes and expert got
+ * 5 -- which made easy the only rung worth wagering on and expert close to
+ * unwinnable. Difficulty should come from the grid, not from an arbitrary
+ * clock, so the clock now grows with the grid and the multiplier carries the
+ * risk instead.
+ *
+ * Payouts sit deliberately close to 1x on easy. A guaranteed-solvable easy
+ * grid is very nearly a certain win, and anything much above 1x on a certain
+ * win prints money at whatever size the player can stake. The ceiling half of
+ * that same fix lives in lib/arcade/ante-up-stakes.ts.
+ *
+ * Starting numbers, not tuned against real solve rates; retune here.
  */
 export const ANTE_UP_TIERS: Record<SudokuDifficulty, AnteUpTier> = {
-  easy: { timeLimitMs: 15 * 60_000, multiplier: 1.5 },
-  medium: { timeLimitMs: 10 * 60_000, multiplier: 2.5 },
-  hard: { timeLimitMs: 7 * 60_000, multiplier: 5 },
-  expert: { timeLimitMs: 5 * 60_000, multiplier: 10 },
+  easy: { timeLimitMs: 6 * 60_000, multiplier: 1.1 },
+  medium: { timeLimitMs: 8 * 60_000, multiplier: 1.6 },
+  hard: { timeLimitMs: 9 * 60_000, multiplier: 2.5 },
+  expert: { timeLimitMs: 10 * 60_000, multiplier: 4 },
 };
 
 /**

@@ -39,6 +39,88 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 ## Active milestone
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
+
+### Word Stack and Connections now carry their payout ladder (2026-08-27)
+Closes the gap left open by the Ante Up economy fix earlier the same day. Both games computed their
+payout from a module-level multiplier table *at settlement*, and both are once-a-day boards that can
+be opened in the morning and finished at night, so a retune landing in between paid the player at a
+rate they never agreed to. That was not hypothetical: the same-day retune moved Word Stack's
+six-guess rung 1.5x -> 0.7x and Connections' three-mistake rung 1.5x -> 0.6x, either of which flips a
+board already in progress from a profit into a loss. `StoredWordStackRound`/`StoredConnectionsRound`
+now carry an optional `wagerLadder` copied in at open and never re-read from the module, the same
+rule `AnteUpAttempt.multiplier` and `AnteUpMinesweeperAttempt.timeLimitMs` already state in their own
+doc comments; `lib/arcade/ante-up-ladder.ts` holds the shared lookup. Stored only when `wager > 0`
+(a free round has no payout to protect) and carried forward on every guess, not just at open. Rounds
+written before the field existed fall back to the live table, which is the best answer available and
+exactly what they would have got anyway. **Memory Match has the same defect and was deliberately left
+alone** — its multiplier is a range function rather than a lookup map, so snapshotting it means
+converting the if-chain to a rung array, and its exposure is minutes (one sitting, one-active-per-game)
+rather than a whole UTC day.
+
+### Ante Up was a money printer; wager ceilings + a payout retune (2026-08-27)
+Kayo reported real farming ("my gf was easily farming coins"), and it was the design working as
+written, not an implementation hole. Two compounding bugs: **no maximum wager existed anywhere in the
+app** (every route `z.number().int().min(0)`, the only bound being the player's balance), and
+**near-certain wins paid well above 1x** — easy Sudoku gave 15 minutes on a guaranteed-solvable grid
+for 1.5x, and Memory Match had *no* winning turn count that paid under 1x. Stake everything on the
+safest board, win, restake: at 1.5x with the 10/game/day cap, 100k compounds to ~19B in a day across
+three games. Fixed both halves. Ceilings live in one new `lib/arcade/ante-up-stakes.ts` (Sudoku easy
+5k → expert 500k; Minesweeper beginner 5k → expert 500k; the three games with no difficulty axis get
+25k flat), enforced in all five `open*`/`start*` services before any Gold moves. Payouts retuned down
+across all five games; the slow rungs at Memory Match, Word Stack and Connections now deliberately
+**pay back less than the stake**, so clearing a board is not by itself profit. Sudoku's clock ladder
+also ran backwards (easy 15 min, expert 5) and now grows with the grid. Memory's turn cap 20 → 16.
+Three things worth keeping: (1) the DB guard is a **BEFORE INSERT trigger, not a CHECK constraint** —
+a CHECK re-evaluates on every UPDATE, and since every settlement here is an UPDATE that *throws*, one
+pre-deploy over-ceiling attempt would have been permanently unsettleable, 500ing its page forever
+while the one-active-per-game index blocked any new attempt (verified rollback-safe against the live
+DB; a legacy 10k row still settles cleanly under the trigger). (2) `ANTE_UP_MEMORY_MAX_TURNS` is now
+**snapshotted onto the attempt** (`maxTurns`), since a retune of a forfeit condition otherwise takes a
+wager for a move that was legal when made — Sudoku/Minesweeper already did this, Memory was the odd
+one out. (3) Every board keyed its win celebration off `payout > 0`, which sub-1x rungs made a lie
+(1,000 staked, 600 back, rendered "+600 Gold" under a gold bloom); `lib/arcade/ante-up-result.ts` now
+computes net once for all five. **Still open:** Word Stack and Connections compute payout from the
+live table at settlement, so a daily round opened before a retune and finished after is paid at the
+new rate — land retunes at a UTC day boundary, or snapshot the multiplier into the round (its own
+pass). Migration unapplied; see `[[reference_stackchips_migrations_not_auto_applied]]`.
+
+### Cribbage sync moved off its fixed 2s poll onto Realtime, same pattern as duels (2026-08-27)
+Follow-up to the PvP duel Realtime migration (below) — Kayo asked for cribbage on the identical
+pattern, named `crib`. Two channels, not one: `crib:lobby`, a single global channel every browser on
+the open-table join screen shares (GET `/api/cribbage` lists open tables across every stake with no
+per-viewer filter, unlike a duel's own challenge list, so there's no narrower key to give it), and
+`crib:<tableId>` once seated. Both fired by a new `broadcast_crib_signal()` trigger on writes to
+`cribbage_tables` **and** `cribbage_table_players` — the latter matters because `claim_cribbage_seat()`
+(joining) only ever writes the seat table, never `cribbage_tables` itself, so a trigger on just the
+table would silently miss every join and the open list's seated-count would never update. Real bug
+caught writing the trigger: `NEW`/`OLD` are unassigned records (not null-valued rows) for the
+row-trigger operation that doesn't apply, so a naive `coalesce(new.table_id, old.table_id)` on the
+DELETE-only-for-leaves table raises "record is not assigned yet" — fixed by branching on `TG_OP`
+explicitly instead. Same shell changes as the duel branch: keyed on `tableId` (a primitive) rather than
+the table object so a move's version bump doesn't tear down and resubscribe the channel, a 15s backup
+poll alongside the channel (no other seated human's turn-clock tick to notice a stale socket the way
+poker has), no fallback poll when Supabase isn't configured (same posture the duel branch settled on
+after Kayo asked for its own fallback to be removed), and the same 429/Retry-After backoff
+duel-shell.tsx carries. Migration applied 2026-08-27 (`crib_realtime_signals`, verified via
+`list_migrations` and a clean security-advisor pass).
+
+### PvP duel sync moved off the fixed 2s poll onto Realtime (2026-08-27)
+Resolves the "known open item" below (now stale where it's still quoted). `duel-shell.tsx`'s own
+comment had called the 2s poll deliberate, judging Realtime "a bigger change than these games need" —
+Kayo asked for it anyway. New per-profile channel `pvp:<profileId>` (`lib/pvp/duel-channel.ts`), fired
+by a `broadcast_pvp_signal()` trigger on every write to `pvp_challenges`/`pvp_matches` naming that
+profile — mirrors `table-channel.ts`'s invalidation-ping contract, but keyed per-player rather than
+per-game since a challenge has no match id yet to key on. Carries no version (unlike the table
+channel): a challenge and a match don't share one monotonic counter, so the payload is empty and any
+broadcast just triggers a full lobby re-fetch. A slow 15s backup poll still runs alongside the channel
+as a safety net against a stale-without-erroring socket — poker's realtime has the turn-clock's own
+deadline pull to fall back on; a 2-player duel has no other seated human to notice for it. No fallback
+poll otherwise (removed after Kayo asked for it): when Supabase isn't configured (memory-mode dev) or
+this browser's own profile id isn't known yet, the effect just doesn't subscribe, same posture
+`poker-app.tsx` already takes. Migration applied 2026-08-27 (`pvp_duel_realtime_signals`, verified via
+`list_migrations` and a clean security-advisor pass) — the general "verify before trusting a historical
+note" caution below still applies to older entries; see
+`[[reference_stackchips_migrations_not_auto_applied]]`.
 - History below is a dense changelog, not the discovery narrative — one paragraph per pass covering
   what shipped and what's still load-bearing or still open. Full reasoning for any decision is
   recoverable from `git log`/PRs on the branch each entry names. Every pass listed was verified with
@@ -322,7 +404,6 @@ settle once).
 - Challenging a specific opponent shipped for table seats (PR #111, 2026-08-19). Picking a friend to
   invite to an empty seat (M16 table invites) is still open — a different flow, no seated opponent to
   challenge.
-- PvP duel sync is a 2s poll, not Realtime.
 - Blackjack's Supabase persistence branch has never been exercised by a real hand in production (only
   type-checked, plus the memory-mode branch under test).
 - `multiplayer.spec.ts`'s six-player test and two `safe-area.spec.ts` table tests fail identically at

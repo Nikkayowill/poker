@@ -13,6 +13,7 @@
  * bonus" rule.
  */
 
+import { ladderMultiplier, type WagerLadder } from "./ante-up-ladder";
 import type { WordStackRound } from "./puzzles/word-stack";
 
 /**
@@ -24,10 +25,23 @@ import type { WordStackRound } from "./puzzles/word-stack";
  */
 export const MIN_ANTE_UP_WAGER = 500;
 
-/** Win-only payout multiplier, keyed by how many guesses the win took. Starting numbers, easy to retune here. */
-const WAGER_MULTIPLIER_BY_GUESSES: Readonly<Record<number, number>> = {
-  1: 8, 2: 8, 3: 5, 4: 3, 5: 2, 6: 1.5,
+/**
+ * Win-only payout multiplier, keyed by how many guesses the win took.
+ * Starting numbers, easy to retune here.
+ *
+ * A 6-guess win pays below 1x on purpose. Scraping the answer on the last
+ * legal guess is the outcome closest to not winning at all, and paying a
+ * premium for it (it used to pay 1.5x) meant any win was profitable and the
+ * wager carried almost no risk. The top rung came down too: a 1-guess win is
+ * luck rather than skill, and at 8x it was the single largest per-attempt
+ * payout anywhere in the app.
+ */
+export const WAGER_MULTIPLIER_BY_GUESSES: WagerLadder = {
+  1: 4, 2: 4, 3: 2.5, 4: 1.6, 5: 1.1, 6: 0.7,
 };
+
+/** The lowest rung, and so the payout for a guess count the ladder does not name. */
+export const WORD_STACK_LADDER_FLOOR = 0.7;
 
 /** Always-pays multiplier for the shared daily board's completion bonus. A loss still floors at 1.0x. */
 const DAILY_BONUS_MULTIPLIER_BY_GUESSES: Readonly<Record<number, number>> = {
@@ -35,9 +49,19 @@ const DAILY_BONUS_MULTIPLIER_BY_GUESSES: Readonly<Record<number, number>> = {
 };
 
 /** What a wager win pays. Zero on anything but a win: the wager is forfeit on a loss. */
-export function anteUpWordStackPayout(input: { wager: number; word: Pick<WordStackRound, "status" | "guesses"> }): number {
+export function anteUpWordStackPayout(input: {
+  wager: number;
+  word: Pick<WordStackRound, "status" | "guesses">;
+  /** The ladder this round was opened under; see lib/arcade/ante-up-ladder.ts. */
+  ladder?: WagerLadder;
+}): number {
   if (input.word.status !== "won") return 0;
-  const multiplier = WAGER_MULTIPLIER_BY_GUESSES[input.word.guesses.length] ?? 1.5;
+  const multiplier = ladderMultiplier(
+    input.ladder,
+    WAGER_MULTIPLIER_BY_GUESSES,
+    input.word.guesses.length,
+    WORD_STACK_LADDER_FLOOR,
+  );
   return Math.round(input.wager * multiplier);
 }
 

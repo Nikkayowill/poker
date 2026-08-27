@@ -263,6 +263,13 @@ export const FACE = {
   groove: 0.7,
   /** The pressed inlay disc. */
   inlay: 0.55,
+  /**
+   * The rosette stamped into the inlay, behind the denomination: two thin
+   * scored rings and a five-point star, sized to sit inside `inlay` with
+   * room to spare rather than crowd its own edge.
+   */
+  rosetteOuter: 0.42,
+  rosetteInner: 0.32,
 } as const;
 
 /**
@@ -272,8 +279,33 @@ export const FACE = {
  * Learned on the dealer avatars and re-learned here: art is judged at the
  * size it actually renders. A three-pixel-tall serif "100" is four grey
  * pixels, which reads as dirt on the chip.
+ *
+ * Was 9; brought down to just above the radius floor. At 9 an opponent's
+ * chip -- which regularly draws at or near MIN_RADIUS_PX under the
+ * racetrack's real perspective camera -- lost the numeral *and* the rosette
+ * below, leaving nothing but a flat dome: no bright ink, no light inlay
+ * accent, just body colour. 7 keeps the true floor (6px) numeral-free,
+ * since a serif digit genuinely doesn't survive one pixel of leeway, but
+ * gives every seat one step above that a real digit instead of a blank face.
  */
-export const NUMERAL_MIN_RADIUS_PX = 9;
+export const NUMERAL_MIN_RADIUS_PX = 7;
+
+/**
+ * Below this drawn radius the rosette's two rings collapse into one smeared
+ * line and the star into a blob -- the same "art judged at the size it
+ * renders" rule `NUMERAL_MIN_RADIUS_PX` states, at the threshold the
+ * pressed-inlay depression ring also uses (`paintFace`'s own
+ * `rx >= ROSETTE_MIN_RADIUS_PX`).
+ *
+ * Pinned to `MIN_RADIUS_PX` itself, not a number a pixel or two above it:
+ * the rosette is faint and engraved rather than bold (see `paintRosette`'s
+ * own comment), so it survives being small in a way a numeral doesn't, and
+ * it's the one mark that has to hold at every size a chip can draw -- an
+ * opponent's chip at the literal floor, with no numeral at all, still needs
+ * *something* light in the middle or it reads as a flat coloured dot rather
+ * than a chip.
+ */
+export const ROSETTE_MIN_RADIUS_PX = MIN_RADIUS_PX;
 
 /* ------------------------------------------------------------------ *
  * Imperfection.

@@ -15,9 +15,12 @@
  * same job ANTE_UP_MEMORY_MAX_TURNS does for Memory Match, and it also stops
  * an abandoned attempt from holding the player's one active slot forever.
  *
- * The limits are generous against real solve times on purpose (a competent
- * player clears expert in well under half of it); the clock is a backstop
- * against walking away, not the challenge itself. The challenge is the board.
+ * The limits still sit above real solve times -- the challenge is the board,
+ * not the stopwatch -- but no longer by the margin they once did. A beginner
+ * board with five minutes on it was a certain win, and a certain win paying
+ * 1.5x is a money printer at whatever size the player can stake. The clocks
+ * below are tighter and the multipliers lower for that reason; the ceiling
+ * half of the same fix lives in lib/arcade/ante-up-stakes.ts.
  */
 
 import {
@@ -46,12 +49,13 @@ export interface AnteUpMinesweeperTier {
   readonly multiplier: number;
 }
 
+/** Starting numbers, not tuned against real solve rates; retune here. */
 export const ANTE_UP_MINESWEEPER_TIERS: Readonly<
   Record<MinesweeperDifficulty, AnteUpMinesweeperTier>
 > = {
-  beginner: { timeLimitMs: 5 * 60 * 1000, multiplier: 1.5 },
-  intermediate: { timeLimitMs: 12 * 60 * 1000, multiplier: 3 },
-  expert: { timeLimitMs: 25 * 60 * 1000, multiplier: 6 },
+  beginner: { timeLimitMs: 3 * 60 * 1000, multiplier: 1.1 },
+  intermediate: { timeLimitMs: 10 * 60 * 1000, multiplier: 1.8 },
+  expert: { timeLimitMs: 20 * 60 * 1000, multiplier: 3 },
 };
 
 export type AnteUpMinesweeperStatus = "active" | "won" | "lost" | "timed-out";

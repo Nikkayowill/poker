@@ -162,7 +162,7 @@ export function SitAndGoShell() {
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
 
   return (
-    <main className="duel-shell crib-shell">
+    <main className="duel-shell">
       <header className="floor-bar">
         <FloorBackLink />
         <span className="gold-balance floor-wallet">

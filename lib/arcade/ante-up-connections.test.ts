@@ -13,13 +13,19 @@ describe("anteUpConnectionsPayout", () => {
   });
 
   it("pays the top multiplier for a clean solve", () => {
-    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 0) })).toBe(8000);
+    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 0) })).toBe(4000);
   });
 
-  it("pays less at each mistake tier: 1 -> 5x, 2 -> 3x, 3 -> 1.5x", () => {
-    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 1) })).toBe(5000);
-    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 2) })).toBe(3000);
-    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 3) })).toBe(1500);
+  it("pays less at each mistake tier: 1 -> 2.2x, 2 -> 1.2x, 3 -> 0.6x", () => {
+    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 1) })).toBe(2200);
+    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 2) })).toBe(1200);
+    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 3) })).toBe(600);
+  });
+
+  it("returns less than the wager for a win on the last life", () => {
+    // Below 1x on purpose: a table where every win profits is what made the
+    // wager risk-free. See WAGER_MULTIPLIER_BY_MISTAKES' own comment.
+    expect(anteUpConnectionsPayout({ wager: 1000, puzzle: puzzle("won", 3) })).toBeLessThan(1000);
   });
 
   it("pays nothing on a zero (free) wager, even on a win", () => {

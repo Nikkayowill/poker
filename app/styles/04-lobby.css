@@ -400,16 +400,16 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .entry-logo {
   display: block;
-  width: clamp(94px, 25vw, 112px);
+  /* The wordmark is a wide lockup (viewBox ~5.9:1), not the old square
+     badge, so this is a width clamp with height: auto rather than the old
+     94-112px square box -- a badge-sized box would render two words at
+     illegible height. */
+  width: clamp(240px, 78vw, 380px);
   height: auto;
-  /* The badge art carries its own bottom padding, so a negative margin here
-     is closing that gap rather than crowding the headline. */
-  margin: 0 auto -6px;
-  /* Purple under the mark, gold over it: the drop shadow is doing the job the
-     removed border used to, lifting the art off the glass. */
-  filter:
-    drop-shadow(0 14px 34px rgba(152, 63, 224, .42))
-    drop-shadow(0 2px 10px rgba(219, 156, 11, .28));
+  margin: 0 auto 16px;
+  /* No CSS drop-shadow here: the wordmark's own SVG carries a two-colour
+     glow (feGaussianBlur, not filter: drop-shadow) baked into its paths, so
+     a second glow on top of it just muddies the art. */
 }
 
 /* Lifted off the sky rather than off a card. The near shadow is the edge that

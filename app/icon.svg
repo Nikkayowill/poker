@@ -1,46 +1,37 @@
 <!--
   The StackChips favicon.
 
-  Deliberately NOT the full "High Roller Arcade" badge from
-  public/brand/stackchips-logo.png. That mark carries a card fan, a banner and
-  two lines of type; at the 16-32px a favicon actually renders it collapses
-  into a smudge; the same lesson components/arcade/dealer-avatar.tsx records
-  about judging a mark at its rendered size rather than in its viewBox.
+  Neon Marquee direction, replacing the old sweep-and-card mark. The Bungee
+  "S" from the wordmark, outlined rather than font-family text (see
+  public/brand/concepts/neon-marquee/README.md for how), on a rounded
+  purple-black badge with a single yellow baseline rule. Same reasoning the
+  old mark documented here: a full wordmark collapses into a smudge at the
+  16-32px a favicon actually renders, so the small mark stays one
+  unmistakable shape instead of a shrunk logo.
 
-  What survives the shrink is the badge's one unmistakable element: the
-  purple, gold and red arc sweeping over a card. So that is all this draws,
-  in the mark's own sampled colours (#983fe0 / #db9c0b / #dc1413).
+  components/brand/stackchips-mark.tsx draws the same glyph and rule (minus
+  this badge plate, since it sits directly on the app's own chrome rather
+  than needing a background of its own); keep the two in step.
 
   Prose here obeys XML, not the house style: a double hyphen inside a comment
-  is a parse error, and this file is served as image/svg+xml. It rendered as a
-  broken image in any strict parser (librsvg refused it outright) until the
-  em-dash pairs the rest of the codebase uses were taken back out.
+  is a parse error, and this file is served as image/svg+xml. It breaks in a
+  real SVG library over exactly that, not just a strict XML parser, which is
+  why the Neon Marquee concept files got the same fix before this one was
+  written.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="sweep" x1="0" y1="1" x2="1" y2="0">
-      <stop offset="0" stop-color="#983fe0"/>
-      <stop offset=".48" stop-color="#db9c0b"/>
-      <stop offset="1" stop-color="#dc1413"/>
-    </linearGradient>
-    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#f6c94a"/>
-      <stop offset="1" stop-color="#b48918"/>
+    <linearGradient id="badge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#211141"/>
+      <stop offset="1" stop-color="#150a2b"/>
     </linearGradient>
   </defs>
 
-  <rect width="512" height="512" rx="112" fill="#0a0710"/>
+  <rect width="512" height="512" rx="112" fill="url(#badge)"/>
 
-  <!-- The arc, struck well clear of the card so it still reads as a ring
-       rather than an outline once both are only a few pixels tall. -->
-  <path d="M84 300a172 172 0 0 1 344 0" fill="none" stroke="url(#sweep)"
-        stroke-width="26" stroke-linecap="round"/>
-
-  <!-- One card, tilted the way the fan's leading ace is. -->
-  <g transform="rotate(-9 256 300)">
-    <rect x="176" y="196" width="160" height="222" rx="26" fill="#fefefe"/>
-    <!-- Spade, gold: the badge's ace-of-spades pip. -->
-    <path d="M256 240c0 0-58 44-58 78a30 30 0 0 0 52 21l-10 39h32l-10-39a30 30 0 0 0 52-21c0-34-58-78-58-78z"
-          fill="url(#gold)"/>
+  <g transform="translate(256 216) scale(0.4166666666666667 -0.4166666666666667) translate(-330.5 -360.0)">
+    <path d="M403 0H87Q51 0 51 36V153Q51 189 87 189H356Q369 189 375.5 197.5Q382 206 382 218Q382 235 375.5 243.0Q369 251 356 252L206 273Q136 284 93.5 319.5Q51 355 51 439V544Q51 630 106.0 675.0Q161 720 258 720H538Q574 720 574 684V565Q574 529 538 529H305Q278 529 278 499Q278 470 305 467L454 447Q501 440 536.0 422.5Q571 405 590.5 371.0Q610 337 610 281V176Q610 91 555.0 45.5Q500 0 403 0Z" fill="#f6f1ff"/>
   </g>
+
+  <rect x="146" y="378" width="220" height="16" rx="8" fill="#ffd23f"/>
 </svg>

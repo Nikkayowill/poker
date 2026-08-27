@@ -6,7 +6,8 @@ import type { PublicSeat } from "@/lib/game/types";
 import type { BetAnimationStyle } from "@/lib/scene/bet-style";
 import type { BetFlight } from "@/lib/scene/chips/bet-flight";
 import { ChipScene } from "@/lib/scene/chips/chip-scene";
-import { solveChipWorldRadius } from "@/lib/scene/chips/chip-spec";
+import { solveChipWorldRadius, CHIP_MATERIALS, type ChipMaterial } from "@/lib/scene/chips/chip-spec";
+import { chipDesignMaterial } from "@/lib/cosmetics/catalog";
 import { METRES_PER_WORLD_UNIT, racetrackChipSpace, type ChipSpace } from "@/lib/scene/chip-space";
 import { CHIP_RADIUS, MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
 import { perspectiveProjection, scaledProjection, type SceneProjection } from "@/lib/scene/scene-projection";
@@ -248,6 +249,13 @@ export function RacetrackScene({
     seatCount: number;
     /** Which of the ring's SEAT_COUNT positions actually get an anchor published. See the `slots` prop. */
     slots: number[];
+    /**
+     * Anchor slot -> that seat's chip-design overrides, resolved to actual
+     * paint colours ahead of time so the per-frame loop below never touches
+     * the cosmetics catalog. Rebuilt whenever `seats`/`slots` change, not
+     * every frame -- see the effect below.
+     */
+    seatChipMaterials: Array<Partial<Record<number, ChipMaterial>>>;
     handledFlights: Set<string>;
     paidOutHand: number | null;
     lastPayoutSlots: number[];
@@ -313,6 +321,7 @@ export function RacetrackScene({
       reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
       seatCount: SEAT_COUNT,
       slots: slots ?? identitySlots(seats.length),
+      seatChipMaterials: Array.from({ length: SEAT_COUNT }, () => ({})),
       handledFlights: new Set(),
       paidOutHand: null,
       lastPayoutSlots: [],
@@ -504,11 +513,16 @@ export function RacetrackScene({
       // is repeated in the optional foreground pass below; making this pass
       // depend on that second canvas being mounted caused a visibility gap
       // during mount/remounts.
+      // A pooled pot chip has no `ownerSlot` and always draws the house
+      // material -- see `seatChipMaterials`'s own comment for why that's a
+      // deliberate scope limit, not a lookup miss.
+      const materialFor = (chip: (typeof drawList)[number]) =>
+        chip.ownerSlot !== undefined ? engine.seatChipMaterials[chip.ownerSlot]?.[chip.denomination] : undefined;
       for (const chip of drawList) {
         paintChipShadow(engine.ctx, engine.chipView, engine.space, chip, engine.chipRadius);
       }
       for (const chip of drawList) {
-        paintChip(engine.ctx, engine.chipView, engine.space, chip, engine.chipRadius);
+        paintChip(engine.ctx, engine.chipView, engine.space, chip, engine.chipRadius, materialFor(chip));
       }
       if (engine.foregroundCtx && engine.foregroundCanvas) {
         engine.foregroundCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -518,7 +532,7 @@ export function RacetrackScene({
           paintChipShadow(engine.foregroundCtx, engine.chipView, engine.space, chip, engine.chipRadius);
         }
         for (const chip of localBetChips) {
-          paintChip(engine.foregroundCtx, engine.chipView, engine.space, chip, engine.chipRadius);
+          paintChip(engine.foregroundCtx, engine.chipView, engine.space, chip, engine.chipRadius, materialFor(chip));
         }
       }
       engine.frames += 1;
@@ -623,6 +637,34 @@ export function RacetrackScene({
     if (next.length === engine.slots.length && next.every((slot, i) => slot === engine.slots[i])) return;
     engine.slots = next;
     publishLayoutRef.current?.();
+    pumpRef.current?.();
+  }, [seats, slots]);
+
+  /* ------------------------------------------------------------------ *
+   * A seat's equipped chip designs, resolved to paint colours and keyed by
+   * anchor slot (not seat index -- `chip.ownerSlot` is the anchor slot a
+   * bet was spawned at, see `spawnBet`'s own `slot` param). Recomputed
+   * whenever the seats or the slot mapping change, never per frame.
+   * ------------------------------------------------------------------ */
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const slotList = slots ?? identitySlots(seats.length);
+    const next: Array<Partial<Record<number, ChipMaterial>>> = Array.from(
+      { length: engine.seatCount },
+      () => ({}),
+    );
+    seats.forEach((seat, i) => {
+      const anchorSlot = slotList[i];
+      if (anchorSlot === undefined) return;
+      const overrides: Partial<Record<number, ChipMaterial>> = {};
+      for (const denomination of Object.keys(CHIP_MATERIALS).map(Number)) {
+        const material = chipDesignMaterial(seat.chipDesigns?.[denomination]);
+        if (material) overrides[denomination] = material;
+      }
+      next[anchorSlot] = overrides;
+    });
+    engine.seatChipMaterials = next;
     pumpRef.current?.();
   }, [seats, slots]);
 

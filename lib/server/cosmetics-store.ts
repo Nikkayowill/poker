@@ -5,6 +5,8 @@ import {
   isFreeCosmetic,
   isPurchasable,
   normalizeEquipped,
+  CHIP_DESIGN_DENOMINATIONS,
+  type ChipDesignDenomination,
   type EquippedCosmetics,
 } from "@/lib/cosmetics/catalog";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -108,6 +110,13 @@ export async function equipCosmetic(
 ): Promise<EquippedCosmetics> {
   const item = cosmeticById(cosmeticId);
   if (!item) throw new Error("That item doesn't exist.");
+  // A chip design isn't a single equip -- it's a pool assignment across four
+  // denomination slots (see assignChipDesign). Without this the spread below
+  // would write a `chipDesign` (singular) key normalizeEquipped never reads,
+  // silently returning success having equipped nothing.
+  if (item.slot === "chipDesign") {
+    throw new Error("Chip designs are assigned per denomination, not equipped directly.");
+  }
 
   const owned = await listOwnedCosmetics(profile.id);
   if (!owned.includes(cosmeticId)) throw new Error("You don't own that item yet.");
@@ -127,6 +136,50 @@ export async function equipCosmetic(
     .update({ equipped: next, updated_at: now })
     .eq("session_token", token);
   if (error) throw new Error(`Could not equip that item: ${error.message}`);
+  return next;
+}
+
+/**
+ * Assigns (or clears, with `cosmeticId: null`) an owned chip design to one
+ * denomination. Not `equipCosmetic`: a chip design is a pool assignment, one
+ * of four independent slots, rather than the single "equip this instead of
+ * that" swap the other two slots make -- see
+ * `lib/cosmetics/catalog.ts`'s `EquippedCosmetics.chipDesigns`.
+ */
+export async function assignChipDesign(
+  token: string,
+  profile: PlayerProfile,
+  denomination: ChipDesignDenomination,
+  cosmeticId: string | null,
+): Promise<EquippedCosmetics> {
+  if (!CHIP_DESIGN_DENOMINATIONS.includes(denomination)) {
+    throw new Error("That isn't a chip denomination.");
+  }
+  if (cosmeticId !== null) {
+    const item = cosmeticById(cosmeticId);
+    if (!item) throw new Error("That item doesn't exist.");
+    if (item.slot !== "chipDesign") throw new Error("That item isn't a chip design.");
+    const owned = await listOwnedCosmetics(profile.id);
+    if (!owned.includes(cosmeticId)) throw new Error("You don't own that item yet.");
+  }
+
+  const nextChipDesigns = { ...profile.equipped.chipDesigns };
+  if (cosmeticId === null) delete nextChipDesigns[denomination];
+  else nextChipDesigns[denomination] = cosmeticId;
+  const next = normalizeEquipped({ ...profile.equipped, chipDesigns: nextChipDesigns });
+  const now = new Date().toISOString();
+
+  const supabase = adminClient();
+  if (!supabase) {
+    setEquippedInMemory(token, next, now);
+    return next;
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ equipped: next, updated_at: now })
+    .eq("session_token", token);
+  if (error) throw new Error(`Could not assign that chip design: ${error.message}`);
   return next;
 }
 

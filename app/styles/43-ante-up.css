@@ -1,13 +1,36 @@
 /* Ante Up: Sudoku -- the solo half of Ante Up.
  *
- * Deliberately not a third copy of anything: the wager step, the lobby
- * chrome and the result card reuse 36-duels.css's classes as-is (.duel-tiers,
- * .duel-panel, .duel-result, .duel-resign...) since a solo skill wager is the
- * same shape of decision a duel's stake step already is. The grid and digit
- * pad reuse 33-sudoku.css's .sk-* classes untouched. This file holds only
- * what neither of those has: the difficulty tiles (which need to show a time
- * limit and a multiplier, not just a name) and the countdown clock.
+ * Deliberately not a third copy of anything: the in-progress match frame and
+ * result card reuse 36-duels.css's classes as-is (.duel-match, .duel-result,
+ * .duel-resign...) since a solo skill wager settles the same shape as a duel
+ * does. The grid and digit pad reuse 33-sudoku.css's .sk-* classes untouched.
+ * This file holds what neither of those has: the difficulty tiles (which need
+ * to show a time limit and a multiplier, not just a name), the countdown
+ * clock, and the pre-play card below.
  */
+
+/* ---- Pre-play card (Sudoku, Memory Match, Minesweeper) ----
+ *
+ * Before an attempt starts, all three borrow 25-puzzles.css's `.puzzle-summary`
+ * card -- the same one Word Stack/Connections open on -- rather than the
+ * arcade hub's own page-headline furniture (`.floor-head`, `.lobby-kicker`).
+ * That furniture is sized and worded for the hub itself (a 56px "N more ways
+ * in." headline, a repeated "Ante Up" kicker); reused on the way into a single
+ * game it read as the hub screen appearing a second time before the game did.
+ * `.ante-lobby-card` only adds what `.puzzle-summary` doesn't already give a
+ * centered card: its own width, since these three live in the wider
+ * `.duel-shell` rather than `.puzzle-shell`.
+ */
+.ante-lobby-card {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+}
+.ante-lobby-card > * { width: 100%; }
+
+.ante-lobby-heading { display: grid; gap: 6px; }
+.ante-lobby-heading h1 { margin: 0; font: 600 22px Georgia, serif; color: var(--text-primary); }
+.ante-lobby-heading p { margin: 0; color: var(--text-secondary); font-size: 13.5px; line-height: 1.5; }
 
 .ante-difficulties {
   display: grid;

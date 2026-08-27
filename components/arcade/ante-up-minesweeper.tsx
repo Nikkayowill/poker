@@ -278,9 +278,8 @@ export function AnteUpMinesweeper() {
       )}
 
       {!attempt ? (
-        <div className="duel-lobby">
-          <div className="floor-head">
-            <div className="lobby-kicker">Ante Up</div>
+        <section className="puzzle-summary ante-lobby-card">
+          <div className="ante-lobby-heading">
             <h1>Minesweeper, against the clock</h1>
             <p>
               Every board can be cleared by logic alone — no board here ever comes down to a guess.
@@ -288,59 +287,54 @@ export function AnteUpMinesweeper() {
             </p>
           </div>
 
-          <section className="duel-panel">
-            <h2 className="floor-section-head">Difficulty</h2>
-            <div className="ante-difficulties" role="group" aria-label="Difficulty">
-              {MINESWEEPER_DIFFICULTIES.map((entry) => {
-                const entryTier = ANTE_UP_MINESWEEPER_TIERS[entry.id];
-                return (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className={clsx(
-                      "ante-difficulty",
-                      entry.id === difficulty && "ante-difficulty-active",
-                    )}
-                    aria-pressed={entry.id === difficulty}
-                    onClick={() => { selectSound(); setDifficulty(entry.id); }}
-                  >
-                    <strong>{entry.label}</strong>
-                    <span>{entry.cols}×{entry.rows} · {entry.mines} mines</span>
-                    <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+          <div className="ante-difficulties" role="group" aria-label="Difficulty">
+            {MINESWEEPER_DIFFICULTIES.map((entry) => {
+              const entryTier = ANTE_UP_MINESWEEPER_TIERS[entry.id];
+              return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  className={clsx(
+                    "ante-difficulty",
+                    entry.id === difficulty && "ante-difficulty-active",
+                  )}
+                  aria-pressed={entry.id === difficulty}
+                  onClick={() => { selectSound(); setDifficulty(entry.id); }}
+                >
+                  <strong>{entry.label}</strong>
+                  <span>{entry.cols}×{entry.rows} · {entry.mines} mines</span>
+                  <span>{Math.round(entryTier.timeLimitMs / 60_000)} min · {entryTier.multiplier}x</span>
+                </button>
+              );
+            })}
+          </div>
 
-          <section className="duel-panel">
-            <h2 className="floor-section-head">Your wager</h2>
-            <StakePicker
-              ariaLabel="Wager"
-              picks={STAKE_QUICK_PICKS}
-              value={wager}
-              min={0}
-              leading={{ label: "Free", value: 0 }}
-              onChange={(next) => { selectSound(); setWager(next); }}
-            />
-            <p className="duel-pot-note">
-              {wager === 0
-                ? "Free practice — no payout on a clear, but nothing at risk either."
-                : wager < MIN_ANTE_UP_WAGER
-                  ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                  : `Clear ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Hit a mine, or run out of time, and the wager is gone.`}
-            </p>
+          <StakePicker
+            ariaLabel="Wager"
+            picks={STAKE_QUICK_PICKS}
+            value={wager}
+            min={0}
+            leading={{ label: "Free", value: 0 }}
+            onChange={(next) => { selectSound(); setWager(next); }}
+          />
+          <p className="puzzle-verdict">
+            {wager === 0
+              ? "Free practice — no payout on a clear, but nothing at risk either."
+              : wager < MIN_ANTE_UP_WAGER
+                ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
+                : `Clear ${difficulty} inside ${Math.round(tier.timeLimitMs / 60_000)} minutes and cash out ${(wager * tier.multiplier).toLocaleString()} Gold (${tier.multiplier}x). Hit a mine, or run out of time, and the wager is gone.`}
+          </p>
 
-            <button
-              type="button"
-              className="floor-play duel-open"
-              disabled={busy || !loaded || !canAfford}
-              onClick={() => { selectSound(); start(); }}
-            >
-              {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
-            </button>
-          </section>
-        </div>
+          <button
+            type="button"
+            className="puzzle-share-button"
+            disabled={busy || !loaded || !canAfford}
+            onClick={() => { selectSound(); start(); }}
+          >
+            <Coins size={15} aria-hidden="true" />
+            {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
+          </button>
+        </section>
       ) : (
         <div className="duel-match ante-match ms-match">
           <div className="duel-scoreline ante-scoreline ms-scoreline">

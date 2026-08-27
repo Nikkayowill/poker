@@ -5,6 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { Bomb, Coins, Flag } from "lucide-react";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
@@ -413,6 +414,7 @@ export function AnteUpMinesweeper() {
 
           {settled ? (
             <div className={clsx("duel-result", attempt.status === "won" && "duel-result-won")}>
+              <WinCelebration active={attempt.status === "won" && attempt.payout > 0} amount={attempt.payout} />
               <strong>
                 {attempt.status === "won"
                   ? "Board cleared"

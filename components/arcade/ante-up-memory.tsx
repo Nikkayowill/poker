@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { PlayingCard } from "@/components/table/playing-card";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
@@ -253,6 +254,7 @@ export function AnteUpMemory() {
                 attempt.status === "won" && "duel-result-won",
               )}
             >
+              <WinCelebration active={attempt.status === "won" && attempt.payout > 0} amount={attempt.payout} />
               <strong>
                 {attempt.status === "won" ? "You cleared it" : ranOutOfTurns ? "Ran out of turns" : "Gave up"}
               </strong>

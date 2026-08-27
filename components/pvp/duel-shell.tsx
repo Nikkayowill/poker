@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { Coins } from "lucide-react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { WinCelebration } from "@/components/celebration/win-celebration";
 import type { SoundEffect } from "@/lib/audio/sound-effects";
 import { MIN_DUEL_STAKE, type DuelSeat } from "@/lib/pvp/match-contract";
 import { PVP_STATE_CHANGED, pvpChannelName } from "@/lib/pvp/duel-channel";
@@ -639,6 +640,7 @@ function DuelMatchFrame<TSnapshot>({
 
       {settled ? (
         <div className={clsx("duel-result", won && "duel-result-won", drew && "duel-result-drew")}>
+          <WinCelebration active={won} amount={match.pot} />
           <strong>{drew ? "Draw" : won ? "You win" : "You lose"}</strong>
           <span>{match.outcome?.reason ?? ""}</span>
           <span className="duel-result-gold">

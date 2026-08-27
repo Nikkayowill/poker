@@ -7,6 +7,7 @@ import { Coins, Shuffle } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
+import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { connectionsShareText, puzzleShareTitle } from "@/lib/arcade/puzzles/share";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -391,6 +392,7 @@ export function ConnectionsBoard() {
 
       {finished && round && (
         <section className="puzzle-summary">
+          <WinCelebration active={round.status === "won" && round.payout > 0} amount={round.payout} />
           <p className="puzzle-verdict">
             {round.status === "won"
               ? round.mistakes === 0

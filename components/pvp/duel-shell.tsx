@@ -4,9 +4,12 @@ import { useCallback, useEffect, useRef, useState, type ComponentType } from "re
 import Link from "next/link";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import type { SoundEffect } from "@/lib/audio/sound-effects";
 import { MIN_DUEL_STAKE, type DuelSeat } from "@/lib/pvp/match-contract";
+import { PVP_STATE_CHANGED, pvpChannelName } from "@/lib/pvp/duel-channel";
+import { browserSupabase } from "@/lib/supabase/browser-client";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { StakePicker } from "./stake-picker";
 
@@ -81,15 +84,16 @@ export interface DuelBoardProps<TSnapshot = unknown> {
 }
 
 /**
- * How often the shell re-reads a live match.
- *
- * Polling rather than Realtime: lib/game/table-channel.ts's broadcast
- * envelope carries table invalidations and is wired to the poker game store,
- * and threading duels through it is a bigger change than these games need.
- * Two seconds is fast enough that a turn-based game feels live and slow
- * enough that two players cost four requests a second between them.
+ * The Realtime-path safety-net poll. Normal sync is instant, driven by
+ * lib/pvp/duel-channel.ts's `pvp:<profileId>` broadcast (see the effect
+ * below); this just guards against a socket that has gone quietly stale
+ * without firing CHANNEL_ERROR/CLOSED, at a cadence low enough that it is
+ * not the thing generating traffic.
  */
-const POLL_MS = 2000;
+const BACKUP_POLL_MS = 15_000;
+
+/** Fallback pause on a 429 with no usable Retry-After header. */
+const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
 interface LobbyResponse {
   match: DuelMatch | null;
@@ -143,6 +147,14 @@ export function DuelShell<TSnapshot>({
    */
   const sending = useRef(false);
   const mounted = useRef(true);
+  /**
+   * A timestamp (Date.now()-scale) refresh-driven sync must not fire before.
+   * Set by refresh() when the server answers 429, from that response's own
+   * Retry-After; the backup poll and the realtime handler both check it
+   * before spending a request, so a rate limit gets one clean backoff
+   * instead of immediately being hit again by whichever fires next.
+   */
+  const pausedUntil = useRef(0);
   const play = useArcadeSound({ gameSounds: true });
 
   const applyResponse = useCallback((data: Partial<LobbyResponse>) => {
@@ -167,6 +179,12 @@ export function DuelShell<TSnapshot>({
     if (sending.current) return;
     try {
       const response = await fetch(`/api/pvp/${game}`, { cache: "no-store" });
+      if (response.status === 429) {
+        const header = Number(response.headers.get("Retry-After"));
+        const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
+        pausedUntil.current = Date.now() + seconds * 1000;
+        return;
+      }
       const data = (await response.json()) as Partial<LobbyResponse>;
       if (!mounted.current || sending.current) return;
       if (response.ok) applyResponse(data);
@@ -244,32 +262,87 @@ export function DuelShell<TSnapshot>({
 
   useEffect(() => {
     mounted.current = true;
-    // A hidden tab (backgrounded window, switched tab) has no opponent to
-    // watch move, so skip the round-trip rather than polling a screen nobody
-    // is looking at, same reasoning poker-app.tsx's menu-music sync applies
-    // to document.hidden.
-    const poll = () => {
-      if (!document.hidden) void refresh();
-    };
     // Deferred a tick so the first paint is the empty lobby rather than a
-    // suspended render, matching every arcade machine.
-    const first = window.setTimeout(poll, 0);
-    const timer = window.setInterval(poll, POLL_MS);
-    // The interval above still fires while hidden, just skipping the fetch,
-    // so it can still miss a move made and settled entirely while the tab
-    // was away. Resync the instant the tab is looked at again, same pattern
-    // poker-app.tsx's resyncOnReturn uses for the table itself.
-    const resyncOnReturn = () => {
-      if (!document.hidden) void refresh();
-    };
-    document.addEventListener("visibilitychange", resyncOnReturn);
+    // suspended render, matching every arcade machine. This is the one fetch
+    // every mount gets regardless of how sync is wired below.
+    const first = window.setTimeout(() => void refresh(), 0);
     return () => {
       mounted.current = false;
       window.clearTimeout(first);
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", resyncOnReturn);
     };
   }, [refresh]);
+
+  /**
+   * Cross-browser sync: the other player's move, a challenge landing or
+   * being accepted, a match settling. This replaces the fixed 2s poll the
+   * shell used to run unconditionally -- lib/pvp/duel-channel.ts's
+   * `pvp:<profileId>` channel now carries the same invalidation-ping
+   * contract lib/game/table-channel.ts established for the poker table,
+   * fired by the `broadcast_pvp_signal()` trigger on every write to
+   * `pvp_challenges`/`pvp_matches` naming this profile.
+   *
+   * A hidden tab skips the re-fetch (nobody's watching), and resyncs the
+   * instant the tab is looked at again in case a broadcast landed while
+   * hidden -- same reasoning and pattern poker-app.tsx's resyncOnReturn
+   * uses for the table itself.
+   *
+   * No profile id yet (the brief window right after mount, before the first
+   * refresh() resolves) or no Supabase configured at all (memory-mode dev)
+   * both mean no channel this effect can subscribe to -- same gap
+   * poker-app.tsx's own Realtime effect accepts (`if (!gameId || !supabase)
+   * return;`), rather than falling back to a poll. Once subscribed, a slow
+   * BACKUP_POLL_MS poll still runs alongside the channel, purely as a safety
+   * net against a socket that goes quietly stale without firing
+   * CHANNEL_ERROR/CLOSED -- unlike the poker table, a two-player duel has no
+   * other seated human whose own turn-clock tick would notice for it.
+   */
+  useEffect(() => {
+    const supabase = browserSupabase();
+    const profileId = profile?.id;
+    if (!supabase || !profileId) return;
+
+    const resyncOnReturn = () => {
+      if (!document.hidden && Date.now() >= pausedUntil.current) void refresh();
+    };
+    document.addEventListener("visibilitychange", resyncOnReturn);
+
+    // Same in-flight guard shape as poker-app.tsx's refreshLatest: a
+    // broadcast landing mid-fetch queues one more refresh rather than
+    // firing a second overlapping request.
+    let refreshRunning = false;
+    let refreshQueued = false;
+    const refreshLatest = () => {
+      if (Date.now() < pausedUntil.current) return;
+      if (refreshRunning) {
+        refreshQueued = true;
+        return;
+      }
+      refreshRunning = true;
+      refreshQueued = false;
+      void refresh().finally(() => {
+        refreshRunning = false;
+        if (refreshQueued) refreshLatest();
+      });
+    };
+
+    let channel: RealtimeChannel | null = supabase
+      .channel(pvpChannelName(profileId))
+      .on("broadcast", { event: PVP_STATE_CHANGED }, () => {
+        if (!document.hidden) refreshLatest();
+      })
+      .subscribe();
+
+    const backupTimer = window.setInterval(() => {
+      if (!document.hidden) refreshLatest();
+    }, BACKUP_POLL_MS);
+
+    return () => {
+      window.clearInterval(backupTimer);
+      document.removeEventListener("visibilitychange", resyncOnReturn);
+      if (channel) void supabase.removeChannel(channel);
+      channel = null;
+    };
+  }, [profile?.id, refresh]);
 
   /**
    * Sends a move, stamped with the version of the match it was made on.

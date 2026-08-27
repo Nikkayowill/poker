@@ -5,6 +5,7 @@ import type { StakesTier } from "@/lib/game/tiers";
 import { getPlayerStanding } from "./stats-store";
 import { ensureProfile } from "./profile-store";
 import { joinSitAndGoTable, openSitAndGoTable, readSitAndGoTableById } from "./sit-and-go-service";
+import { openHeadsUpQuickPlay, readHeadsUpTableById } from "./heads-up-service";
 import {
   advanceStoredGameWithTimeouts,
   archiveStaleGames,
@@ -302,6 +303,37 @@ describe("stale-table matchmaking and archival (memory mode)", () => {
       // Debited the entry fee at registration, refunded the same entry fee
       // here: net zero. Seat 0's inflated 6000 stack must never have been
       // credited.
+      expect(await ensureProfile(tokens[i]).then((p) => p.goldBalance)).toBe(before[i].goldBalance);
+    }
+  });
+
+  it("refunds an abandoned heads-up match's ORIGINAL stake, not a live stack, and cancels rather than completes it", async () => {
+    const tokens = [randomUUID(), randomUUID()];
+    const before = await Promise.all(tokens.map((token) => ensureProfile(token)));
+
+    const { table: opened } = await openHeadsUpQuickPlay(tokens[0], "1k");
+    const { table: matched } = await openHeadsUpQuickPlay(tokens[1], "1k");
+    expect(matched.id).toBe(opened.id);
+    const gameId = matched.gameId!;
+
+    // Same soft-play-then-go-idle shape the Sit & Go test above simulates:
+    // a live stack pushed to one seat must never be what gets refunded.
+    const game = (await getStoredGame(gameId))!;
+    game.seats[0].stack = 2000;
+    game.seats[1].stack = 0;
+    game.updatedAt = new Date(Date.now() - 60_000).toISOString();
+    await createStoredGame(game);
+
+    await archiveStaleGames();
+
+    expect((await getStoredGame(gameId))?.status).toBe("archived");
+    const { table: cancelled } = await readHeadsUpTableById(tokens[0], opened.id);
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.winnerId).toBeNull();
+
+    for (let i = 0; i < 2; i += 1) {
+      // Debited the stake at match creation, refunded the same stake here:
+      // net zero. Seat 0's inflated 2000 stack must never have been credited.
       expect(await ensureProfile(tokens[i]).then((p) => p.goldBalance)).toBe(before[i].goldBalance);
     }
   });

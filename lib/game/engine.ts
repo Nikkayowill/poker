@@ -401,6 +401,26 @@ function fundedSeatsAfterRelease(state: GameState): number {
 }
 
 /**
+ * Marks the table decided the moment a hand leaves only one seat funded,
+ * instead of waiting for a later setupHand pass that might never come.
+ *
+ * A tournament seat never rebuys, so chip conservation guarantees at most one
+ * seat has a positive stack once this fires -- whichever one does has just
+ * won the whole table. Guarded on winnerProfileId so a stray extra call (a
+ * setupHand pass that still finds funded.length < 2, or a second advance
+ * racing in) never overwrites a result that's already decided.
+ */
+function finalizeTournamentIfDecided(state: GameState, survivor: Seat | undefined) {
+  if (!state.tournament || state.tournament.winnerProfileId) return;
+  if (!survivor?.profileId) return;
+  state.tournament.winnerProfileId = survivor.profileId;
+  state.tournament.finishedAtHand = state.handNumber;
+  state.message = state.tournament.format === "heads_up"
+    ? `${survivor.name} wins the match!`
+    : `${survivor.name} wins the Sit & Go!`;
+}
+
+/**
  * Marks a finished hand as due to be replaced.
  *
  * Called only where a hand actually played out, never where setupHand gave up
@@ -418,6 +438,18 @@ export function scheduleNextHand(state: GameState, now = Date.now()) {
   const canContinue = fundedSeatsAfterRelease(state) >= 2;
   if (!canContinue) {
     state.nextHandAt = null;
+    // A tournament's funded count can't be inflated by the bot-floor term
+    // fundedSeatsAfterRelease adds for cash tables (tournaments have no
+    // bots), so reading current stacks directly here is exact, not an
+    // approximation of what setupHand will see later. Finalizing right here,
+    // in the same call that ends the deciding hand, is what lets the very
+    // same /actions or /advance response settle the match -- instead of
+    // depending on some browser polling this game again after the match
+    // visibly ended and both players have every reason to navigate away.
+    if (state.tournament) {
+      const survivor = state.seats.find((seat) => seat.stack > 0);
+      finalizeTournamentIfDecided(state, survivor);
+    }
     return;
   }
   // The same beat regardless of who busted or how many did. One player
@@ -578,22 +610,12 @@ export function setupHand(state: GameState, firstHand = false, now: number = Dat
     state.street = "showdown";
     setCurrentPlayer(state, null);
     state.message = "Not enough players with chips to continue.";
-    // Chip conservation guarantees at most one seat has a positive stack the
-    // moment this branch fires, so this is the tournament's actual end
-    // condition (Sit & Go or heads-up alike), not a separate check:
-    // whichever seat still has chips has just won the whole table. Guarded
-    // on winnerProfileId so a stray extra call (e.g. a second advance racing
-    // in) never overwrites a result that's already decided.
-    if (state.tournament && !state.tournament.winnerProfileId) {
-      const survivor = funded[0];
-      if (survivor?.profileId) {
-        state.tournament.winnerProfileId = survivor.profileId;
-        state.tournament.finishedAtHand = state.handNumber;
-        state.message = state.tournament.format === "heads_up"
-          ? `${survivor.name} wins the match!`
-          : `${survivor.name} wins the Sit & Go!`;
-      }
-    }
+    // Normally already finalized by scheduleNextHand at the moment the
+    // deciding hand ended (see finalizeTournamentIfDecided); this is the
+    // fallback for a table that reaches here some other way (e.g. a table
+    // that was never funded to begin with). Guarded internally on
+    // winnerProfileId, so this is a no-op once the match is already decided.
+    finalizeTournamentIfDecided(state, funded[0]);
     return;
   }
 
@@ -2156,6 +2178,16 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
         );
       }
       forfeitTournamentSeat(state, seatIndex);
+      // Closes the same race finalizeTournamentIfDecided closes for a
+      // natural bust: a voluntary forfeit that leaves only one funded seat
+      // (the last two players at a Sit & Go, or either heads-up seat) must
+      // decide the match right here, not wait on a next-hand pass that only
+      // the surviving seat has any reason left to trigger. A Sit & Go with
+      // three or more players still funded must NOT be decided off whichever
+      // seat this find happens to hit first, so the funded count is checked
+      // before ever reading a "survivor".
+      const funded = state.seats.filter((candidate) => candidate.stack > 0);
+      if (funded.length < 2) finalizeTournamentIfDecided(state, funded[0]);
     } else {
       vacateSeat(state, callerToken);
     }

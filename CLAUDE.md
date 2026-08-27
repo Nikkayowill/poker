@@ -40,21 +40,42 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
-### PvP duel sync moved off the fixed 2s poll onto Realtime (2026-08-26)
+### Cribbage sync moved off its fixed 2s poll onto Realtime, same pattern as duels (2026-08-27)
+Follow-up to the PvP duel Realtime migration (below) — Kayo asked for cribbage on the identical
+pattern, named `crib`. Two channels, not one: `crib:lobby`, a single global channel every browser on
+the open-table join screen shares (GET `/api/cribbage` lists open tables across every stake with no
+per-viewer filter, unlike a duel's own challenge list, so there's no narrower key to give it), and
+`crib:<tableId>` once seated. Both fired by a new `broadcast_crib_signal()` trigger on writes to
+`cribbage_tables` **and** `cribbage_table_players` — the latter matters because `claim_cribbage_seat()`
+(joining) only ever writes the seat table, never `cribbage_tables` itself, so a trigger on just the
+table would silently miss every join and the open list's seated-count would never update. Real bug
+caught writing the trigger: `NEW`/`OLD` are unassigned records (not null-valued rows) for the
+row-trigger operation that doesn't apply, so a naive `coalesce(new.table_id, old.table_id)` on the
+DELETE-only-for-leaves table raises "record is not assigned yet" — fixed by branching on `TG_OP`
+explicitly instead. Same shell changes as the duel branch: keyed on `tableId` (a primitive) rather than
+the table object so a move's version bump doesn't tear down and resubscribe the channel, a 15s backup
+poll alongside the channel (no other seated human's turn-clock tick to notice a stale socket the way
+poker has), no fallback poll when Supabase isn't configured (same posture the duel branch settled on
+after Kayo asked for its own fallback to be removed), and the same 429/Retry-After backoff
+duel-shell.tsx carries. Migration applied 2026-08-27 (`crib_realtime_signals`, verified via
+`list_migrations` and a clean security-advisor pass).
+
+### PvP duel sync moved off the fixed 2s poll onto Realtime (2026-08-27)
 Resolves the "known open item" below (now stale where it's still quoted). `duel-shell.tsx`'s own
 comment had called the 2s poll deliberate, judging Realtime "a bigger change than these games need" —
-Kayo asked for it anyway, on branch `feat/pvp-duel-realtime-sync`, migration + code together per
-`deploy-checklist`. New per-profile channel `pvp:<profileId>` (`lib/pvp/duel-channel.ts`), fired by a
-`broadcast_pvp_signal()` trigger (new migration) on every write to `pvp_challenges`/`pvp_matches`
-naming that profile — mirrors `table-channel.ts`'s invalidation-ping contract, but keyed per-player
-rather than per-game since a challenge has no match id yet to key on. Carries no version (unlike the
-table channel): a challenge and a match don't share one monotonic counter, so the payload is empty and
-any broadcast just triggers a full lobby re-fetch. A slow 15s backup poll still runs alongside the
-channel as a safety net a stale-without-erroring socket — poker's realtime has the turn-clock's own
-deadline pull to fall back on; a 2-player duel has no other seated human to notice for it. Falls back
-to the original fixed 2s poll when Supabase isn't configured (memory-mode dev, same accepted gap
-`poker-app.tsx` already has) or before this browser's own profile id is known. **Migration not yet
-applied** — verify with `supabase migration list --linked` before assuming it's live; see
+Kayo asked for it anyway. New per-profile channel `pvp:<profileId>` (`lib/pvp/duel-channel.ts`), fired
+by a `broadcast_pvp_signal()` trigger on every write to `pvp_challenges`/`pvp_matches` naming that
+profile — mirrors `table-channel.ts`'s invalidation-ping contract, but keyed per-player rather than
+per-game since a challenge has no match id yet to key on. Carries no version (unlike the table
+channel): a challenge and a match don't share one monotonic counter, so the payload is empty and any
+broadcast just triggers a full lobby re-fetch. A slow 15s backup poll still runs alongside the channel
+as a safety net against a stale-without-erroring socket — poker's realtime has the turn-clock's own
+deadline pull to fall back on; a 2-player duel has no other seated human to notice for it. No fallback
+poll otherwise (removed after Kayo asked for it): when Supabase isn't configured (memory-mode dev) or
+this browser's own profile id isn't known yet, the effect just doesn't subscribe, same posture
+`poker-app.tsx` already takes. Migration applied 2026-08-27 (`pvp_duel_realtime_signals`, verified via
+`list_migrations` and a clean security-advisor pass) — the general "verify before trusting a historical
+note" caution below still applies to older entries; see
 `[[reference_stackchips_migrations_not_auto_applied]]`.
 - History below is a dense changelog, not the discovery narrative — one paragraph per pass covering
   what shipped and what's still load-bearing or still open. Full reasoning for any decision is
@@ -339,8 +360,6 @@ settle once).
 - Challenging a specific opponent shipped for table seats (PR #111, 2026-08-19). Picking a friend to
   invite to an empty seat (M16 table invites) is still open — a different flow, no seated opponent to
   challenge.
-- ~~PvP duel sync is a 2s poll, not Realtime.~~ Moved to Realtime 2026-08-26 (see entry above);
-  migration for it isn't confirmed live yet.
 - Blackjack's Supabase persistence branch has never been exercised by a real hand in production (only
   type-checked, plus the memory-mode branch under test).
 - `multiplayer.spec.ts`'s six-player test and two `safe-area.spec.ts` table tests fail identically at

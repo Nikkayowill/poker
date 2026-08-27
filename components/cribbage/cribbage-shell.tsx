@@ -4,12 +4,15 @@ import { useCallback, useEffect, useRef, useState, type ComponentType } from "re
 import Link from "next/link";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import type { SoundEffect } from "@/lib/audio/sound-effects";
+import { CRIB_STATE_CHANGED, cribLobbyChannelName, cribTableChannelName } from "@/lib/cribbage/crib-channel";
 import type { CribbageSeat, CribbageSnapshot } from "@/lib/cribbage/engine";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
+import { browserSupabase } from "@/lib/supabase/browser-client";
 
 /**
  * The client half of cribbage: the open-table lobby, the waiting room, the
@@ -26,7 +29,17 @@ import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
  */
 
 const STAKE_QUICK_PICKS = [MIN_DUEL_STAKE, 1000, 5000, 10_000, 25_000] as const;
-const POLL_MS = 2000;
+
+/**
+ * The Realtime-path safety-net poll. Normal sync is instant, driven by
+ * lib/cribbage/crib-channel.ts's `crib:lobby`/`crib:<tableId>` broadcast
+ * (see the effect below); this just guards against a socket that has gone
+ * quietly stale without firing CHANNEL_ERROR/CLOSED.
+ */
+const BACKUP_POLL_MS = 15_000;
+
+/** Fallback pause on a 429 with no usable Retry-After header. */
+const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
 interface CribbagePlayer {
   profileId: string;
@@ -86,6 +99,9 @@ interface LobbyResponse {
 
 export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardProps> }) {
   const [table, setTable] = useState<CribbageTable | null>(null);
+  // A primitive, not `table` itself, so the realtime effect below only
+  // resubscribes on join/leave -- not on every version bump a move causes.
+  const tableId = table?.id ?? null;
   const [openTables, setOpenTables] = useState<CribbageOpenTable[]>([]);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [stake, setStake] = useState<number>(MIN_DUEL_STAKE);
@@ -95,6 +111,14 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
 
   const sending = useRef(false);
   const mounted = useRef(true);
+  /**
+   * A timestamp (Date.now()-scale) refresh-driven sync must not fire before.
+   * Set by refresh() when the server answers 429, from that response's own
+   * Retry-After; the backup poll and the realtime handler both check it
+   * before spending a request. Same pattern duel-shell.tsx carries for its
+   * own poll.
+   */
+  const pausedUntil = useRef(0);
   const play = useArcadeSound({ gameSounds: true });
 
   const applyResponse = useCallback((data: Partial<LobbyResponse>) => {
@@ -119,6 +143,12 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
     if (sending.current) return;
     try {
       const response = await fetch("/api/cribbage", { cache: "no-store" });
+      if (response.status === 429) {
+        const header = Number(response.headers.get("Retry-After"));
+        const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
+        pausedUntil.current = Date.now() + seconds * 1000;
+        return;
+      }
       const data = (await response.json()) as Partial<LobbyResponse>;
       if (!mounted.current || sending.current) return;
       if (response.ok) applyResponse(data);
@@ -161,28 +191,90 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
 
   useEffect(() => {
     mounted.current = true;
-    // A hidden tab has no table to watch move, so skip the round-trip rather
-    // than polling a screen nobody is looking at -- same reasoning
-    // components/pvp/duel-shell.tsx applies to document.hidden.
-    const poll = () => {
-      if (!document.hidden) void refresh();
-    };
-    const first = window.setTimeout(poll, 0);
-    const timer = window.setInterval(poll, POLL_MS);
-    // The interval above still fires while hidden, just skipping the fetch,
-    // so it can still miss a move made and settled entirely while the tab
-    // was away. Resync the instant the tab is looked at again.
-    const resyncOnReturn = () => {
-      if (!document.hidden) void refresh();
-    };
-    document.addEventListener("visibilitychange", resyncOnReturn);
+    // Deferred a tick so the first paint is the empty lobby rather than a
+    // suspended render, matching every arcade machine. This is the one fetch
+    // every mount gets regardless of how sync is wired below.
+    const first = window.setTimeout(() => void refresh(), 0);
     return () => {
       mounted.current = false;
       window.clearTimeout(first);
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", resyncOnReturn);
     };
   }, [refresh]);
+
+  /**
+   * Cross-browser sync: a table appearing or filling in the open list, an
+   * opponent's move, a settled table. This replaces the fixed 2s poll the
+   * shell used to run unconditionally -- lib/cribbage/crib-channel.ts's
+   * channels carry the same invalidation-ping contract
+   * lib/pvp/duel-channel.ts established for duels, fired by the
+   * `broadcast_crib_signal()` trigger on every write to `cribbage_tables` or
+   * `cribbage_table_players`.
+   *
+   * Which channel depends on which screen this is: no live table means the
+   * join screen, watching the single global `crib:lobby` channel every
+   * browser there shares (the open-table list has no per-viewer filter to
+   * key a narrower channel on); a live table switches to that table's own
+   * `crib:<tableId>`. Keyed on the table id rather than the table object
+   * itself, so a move that only bumps `table.version` doesn't tear down and
+   * resubscribe the channel on every poll -- the same reason
+   * poker-app.tsx's channel effect depends on `gameId`, not `game`.
+   *
+   * No Supabase configured at all (memory-mode dev) means no channel this
+   * effect can subscribe to -- same gap poker-app.tsx's own Realtime effect
+   * accepts (`if (!gameId || !supabase) return;`), rather than falling back
+   * to a poll. Once subscribed, a slow BACKUP_POLL_MS poll still runs
+   * alongside the channel as a safety net against a socket gone quietly
+   * stale without firing CHANNEL_ERROR/CLOSED -- a cribbage table has no
+   * other seated human's turn-clock tick to notice for it the poker table
+   * does.
+   */
+  useEffect(() => {
+    const supabase = browserSupabase();
+    if (!supabase) return;
+
+    const resyncOnReturn = () => {
+      if (!document.hidden && Date.now() >= pausedUntil.current) void refresh();
+    };
+    document.addEventListener("visibilitychange", resyncOnReturn);
+
+    // Same in-flight guard shape as poker-app.tsx's refreshLatest: a
+    // broadcast landing mid-fetch queues one more refresh rather than
+    // firing a second overlapping request.
+    let refreshRunning = false;
+    let refreshQueued = false;
+    const refreshLatest = () => {
+      if (Date.now() < pausedUntil.current) return;
+      if (refreshRunning) {
+        refreshQueued = true;
+        return;
+      }
+      refreshRunning = true;
+      refreshQueued = false;
+      void refresh().finally(() => {
+        refreshRunning = false;
+        if (refreshQueued) refreshLatest();
+      });
+    };
+
+    const channelName = tableId ? cribTableChannelName(tableId) : cribLobbyChannelName();
+    let channel: RealtimeChannel | null = supabase
+      .channel(channelName)
+      .on("broadcast", { event: CRIB_STATE_CHANGED }, () => {
+        if (!document.hidden) refreshLatest();
+      })
+      .subscribe();
+
+    const backupTimer = window.setInterval(() => {
+      if (!document.hidden) refreshLatest();
+    }, BACKUP_POLL_MS);
+
+    return () => {
+      window.clearInterval(backupTimer);
+      document.removeEventListener("visibilitychange", resyncOnReturn);
+      if (channel) void supabase.removeChannel(channel);
+      channel = null;
+    };
+  }, [tableId, refresh]);
 
   const onMove = useCallback(
     (current: CribbageTable, move: unknown) => {

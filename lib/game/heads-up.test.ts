@@ -111,14 +111,18 @@ describe("heads-up match settlement", () => {
     expect(handOver.rake).toBe(0);
     expect(handOver.seats[0].stack + handOver.seats[1].stack).toBe(totalChips);
     expect(handOver.seats[1].stack).toBe(0);
-    // The tournament is only flagged finished once the next hand is set up
-    // and finds fewer than two funded seats -- the same lazy check every
-    // cash table's "not enough players" detection has always used.
-    expect(handOver.tournament?.winnerProfileId).toBeNull();
+    // Flagged finished the same instant the deciding hand ends, not on some
+    // later next-hand pass -- waiting left a real window where both players
+    // could leave the table before anything ever re-checked funded seats,
+    // and the match would never settle (see finalizeTournamentIfDecided).
+    expect(handOver.tournament?.winnerProfileId).toBe(handOver.seats[0].profileId);
+    expect(handOver.tournament?.finishedAtHand).toBe(handOver.handNumber);
 
+    // A stray next-hand call (e.g. a second browser tab racing in) must not
+    // re-decide or overwrite an already-decided match.
     const finished = applyPlayerAction(handOver, { type: "next-hand" }, tokens[0]);
-    expect(finished.tournament?.winnerProfileId).toBe(finished.seats[0].profileId);
-    expect(finished.tournament?.finishedAtHand).toBe(finished.handNumber);
+    expect(finished.tournament?.winnerProfileId).toBe(handOver.seats[0].profileId);
+    expect(finished.tournament?.finishedAtHand).toBe(handOver.handNumber);
   });
 
   it("never takes rake on a heads-up pot", () => {
@@ -183,11 +187,10 @@ describe("heads-up match: leaving forfeits", () => {
     const after = applyPlayerAction(game, { type: "leave-seat" }, tokens[0]);
     expect(after.seats[0].stack).toBe(0);
     expect(after.seats[0].status).toBe("out");
-    // Forfeiting zeroes the seat but doesn't itself decide the match -- same
-    // lazy detection a natural bust uses (see the settlement test above):
-    // the winner is only recorded once the next setupHand call finds fewer
-    // than two funded seats.
-    expect(after.tournament?.winnerProfileId).toBeNull();
+    // Forfeiting a heads-up seat leaves exactly one funded seat, so the
+    // match is decided the same instant, not on some later next-hand pass
+    // nobody has any reason left to trigger (see the settlement test above).
+    expect(after.tournament?.winnerProfileId).toBe(entrants[1].profile.id);
 
     const finished = applyPlayerAction(after, { type: "next-hand" }, tokens[1]);
     expect(finished.status).toBe("complete");

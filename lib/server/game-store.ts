@@ -10,6 +10,7 @@ import {
   getSitAndGoTablesByGameIds,
   type StoredSitAndGoTable,
 } from "./sit-and-go-store";
+import { cancelStaleHeadsUpTable, getHeadsUpTableByGameId } from "./heads-up-store";
 
 declare global {
   var __riverRoomGames: Map<string, GameState> | undefined;
@@ -237,6 +238,41 @@ async function refundAbandonedSitAndGo(
   return true;
 }
 
+/**
+ * Same shape as refundAbandonedSitAndGo, for a heads-up match abandoned
+ * before either side won it -- a decided match can never reach here, since a
+ * decided hand forces state.status to "complete" the same instant it's
+ * decided (see finalizeTournamentIfDecided in engine.ts), and this sweep's
+ * candidates are filtered to status: "playing" before this is ever called.
+ * Refunds each seat's stake (heads-up has exactly one entry fee, both sides
+ * paying the same amount, unlike a Sit & Go's shared prize pool), never the
+ * live stack, for the identical soft-play reason refundAbandonedSitAndGo's
+ * own comment gives.
+ *
+ * Looked up one table at a time rather than batched like
+ * getSitAndGoTablesByGameIds: heads-up tables are a small share of any given
+ * sweep batch (getHeadsUpTableByGameId's own comment already anticipates
+ * this exact caller), so the N+1 cost here is a few queries against 25
+ * candidates at most, not worth a second batched lookup path.
+ */
+async function refundAbandonedHeadsUp(gameId: string, seats: Array<{ token: string }>): Promise<boolean> {
+  const table = await getHeadsUpTableByGameId(gameId);
+  if (!table) return false;
+  if (table.status !== "active") return true; // already settled or cancelled by something else
+
+  const cancelled = await cancelStaleHeadsUpTable(table);
+  if (!cancelled) return true; // lost the race to a real settlement, which already paid
+
+  for (const seat of seats) {
+    try {
+      await creditGold(seat.token, table.stake);
+    } catch (error) {
+      console.error("table.stale_heads_up_refund_failed", { gameId, token: seat.token, error });
+    }
+  }
+  return true;
+}
+
 export async function archiveStaleGames(limit = STALE_SWEEP_LIMIT): Promise<number> {
   const supabase = adminClient();
   const cutoffIso = new Date(Date.now() - staleTableMs()).toISOString();
@@ -252,12 +288,10 @@ export async function archiveStaleGames(limit = STALE_SWEEP_LIMIT): Promise<numb
 
     for (const state of candidates) {
       const humanSeats = state.seats.filter((seat) => seat.ownerToken);
-      const isSitAndGo = await refundAbandonedSitAndGo(
-        state.id,
-        sitAndGoByGameId.get(state.id),
-        humanSeats.map((seat) => ({ token: seat.ownerToken as string })),
-      );
-      if (!isSitAndGo) {
+      const tokens = humanSeats.map((seat) => ({ token: seat.ownerToken as string }));
+      const isSitAndGo = await refundAbandonedSitAndGo(state.id, sitAndGoByGameId.get(state.id), tokens);
+      const isHeadsUp = !isSitAndGo && (await refundAbandonedHeadsUp(state.id, tokens));
+      if (!isSitAndGo && !isHeadsUp) {
         for (const seat of humanSeats) {
           if (seat.stack <= 0) continue;
           try {
@@ -330,8 +364,11 @@ export async function archiveStaleGames(limit = STALE_SWEEP_LIMIT): Promise<numb
   for (const row of archived) {
     const gameId = row.id as string;
     const seats = humanSeatsByGame.get(gameId) ?? [];
-    const isSitAndGo = await refundAbandonedSitAndGo(gameId, sitAndGoByGameId.get(gameId), seats.map((seat) => ({ token: seat.token })));
+    const tokens = seats.map((seat) => ({ token: seat.token }));
+    const isSitAndGo = await refundAbandonedSitAndGo(gameId, sitAndGoByGameId.get(gameId), tokens);
     if (isSitAndGo) continue;
+    const isHeadsUp = await refundAbandonedHeadsUp(gameId, tokens);
+    if (isHeadsUp) continue;
     for (const seat of seats) {
       if (seat.stack <= 0) continue;
       try {

@@ -252,10 +252,10 @@ describe("playing a match to completion", () => {
     const afterLeave = applyPlayerAction(state, { type: "leave-seat" }, a.token);
     await updateStoredGame(afterLeave, { type: "leave-seat" }, a.token);
     expect(afterLeave.seats[0].status).toBe("out");
-    // Forfeiting zeroes the seat but doesn't itself decide the match -- same
-    // lazy detection heads-up.test.ts pins: the winner is only recorded once
-    // the next setupHand call finds fewer than two funded seats.
-    expect(afterLeave.tournament?.winnerProfileId).toBeNull();
+    // Forfeiting leaves exactly one funded seat, so it decides the match the
+    // same instant -- same eager detection heads-up.test.ts pins -- rather
+    // than waiting on a next-hand pass nobody has any reason left to trigger.
+    expect(afterLeave.tournament?.winnerProfileId).toBe(afterLeave.seats[1].profileId); // b's seat
 
     const finished = applyPlayerAction(afterLeave, { type: "next-hand" }, b.token);
     await updateStoredGame(finished, { type: "next-hand" }, b.token);

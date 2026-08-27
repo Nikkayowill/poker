@@ -49,7 +49,6 @@ import {
 import {
   DEFAULT_TABLE_RENDERER,
   TABLE_RENDERER_STORAGE_KEY,
-  nextTableRenderer,
   normalizeTableRenderer,
   type TableRenderer,
 } from "@/lib/scene/table-renderer";
@@ -256,12 +255,11 @@ export function PokerApp() {
   // meant building and discarding a whole room) -- with one renderer left it
   // never actually disagrees with the default, but the signal costs nothing
   // to keep. See the note on `settled` in use-stored-preference.ts.
-  const [, setTableRendererState, tableRendererSettled] =
-    useStoredPreference<TableRenderer>({
-      key: TABLE_RENDERER_STORAGE_KEY,
-      fallback: DEFAULT_TABLE_RENDERER,
-      parse: normalizeTableRenderer,
-    });
+  const [, , tableRendererSettled] = useStoredPreference<TableRenderer>({
+    key: TABLE_RENDERER_STORAGE_KEY,
+    fallback: DEFAULT_TABLE_RENDERER,
+    parse: normalizeTableRenderer,
+  });
   // The 2.5D table is landscape-only -- see `resolveTableRenderer`. Owned here
   // rather than in each consumer so the lobby's preselect and the table itself
   // can never disagree about which way up the device is.
@@ -387,18 +385,6 @@ export function PokerApp() {
   const cycleBetStyle = useCallback(() => {
     setBetStyleState(nextBetStyle);
   }, [setBetStyleState]);
-
-  /**
-   * Steps the stored table-renderer preference. With only one renderer left
-   * (`nextTableRenderer` always answers `racetrack_2d5`) this never visibly
-   * changes anything -- kept, along with the menu entry that calls it, so a
-   * renderer added back later has a preference to step between without new
-   * plumbing threaded back through here and PokerTable.
-   */
-  const cycleTableRenderer = useCallback((mounted: TableRenderer) => {
-    void mounted;
-    setTableRendererState(nextTableRenderer());
-  }, [setTableRendererState]);
 
   /**
    * The daily claim, moved off the navbar.
@@ -1631,7 +1617,6 @@ export function PokerApp() {
             tableRendererSettled={tableRendererSettled}
             landscape={landscape}
             tightLandscape={tightLandscape}
-            onCycleTableRenderer={cycleTableRenderer}
             onSignIn={() => void signIn()}
             onSignOut={() => void signOut()}
             reactions={reactions}

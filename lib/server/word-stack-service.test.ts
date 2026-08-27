@@ -10,7 +10,10 @@ import {
   readWordStackPuzzle,
   startWordStackPuzzle,
 } from "./word-stack-service";
-import { ensureProfile } from "./profile-store";
+import { adjustGold, ensureProfile } from "./profile-store";
+import { advancePuzzleRound, getPuzzleRound } from "./daily-puzzle-store";
+import { WAGER_MULTIPLIER_BY_GUESSES } from "@/lib/arcade/ante-up-word-stack";
+import type { StoredWordStackRound } from "./word-stack-service";
 
 /**
  * The contract, in memory mode.
@@ -246,5 +249,76 @@ describe("playWordStackGuess", () => {
 
     expect((await readWordStackPuzzle(a)).round?.guesses).toHaveLength(1);
     expect((await readWordStackPuzzle(b)).round?.guesses).toHaveLength(0);
+  });
+});
+
+/**
+ * A daily board is opened once and can be finished many hours later, so the
+ * payout ladder it was opened under has to travel with it. Without this, a
+ * retune landing mid-round pays the player at a rate they never agreed to --
+ * and the 2026-08-27 retune moved the six-guess rung from 1.5x to 0.7x, which
+ * is the difference between a profit and a loss on the same board.
+ */
+describe("the wager ladder travels with the round", () => {
+  async function fundedPlayer(gold: number) {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const delta = gold - profile.goldBalance;
+    if (delta !== 0) await adjustGold(profile.id, delta);
+    return { token, id: profile.id };
+  }
+
+  it("stamps the live ladder onto a wagered round at open", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    await startWordStackPuzzle(token, 1000);
+
+    const stored = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
+    expect(stored?.round.wagerLadder).toEqual(WAGER_MULTIPLIER_BY_GUESSES);
+  });
+
+  it("leaves a free round without one, since it has no payout to protect", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    await startWordStackPuzzle(token, 0);
+
+    const stored = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
+    expect(stored?.round.wagerLadder).toBeUndefined();
+  });
+
+  it("carries the ladder through every guess, not just the first write", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    await startWordStackPuzzle(token, 1000);
+
+    const wrong = wrongGuesses(todaysAnswer());
+    await playWordStackGuess(token, { day: today(), version: 1, guess: wrong[0] });
+    await playWordStackGuess(token, { day: today(), version: 2, guess: wrong[1] });
+
+    const stored = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
+    expect(stored?.round.guesses).toHaveLength(2);
+    expect(stored?.round.wagerLadder).toEqual(WAGER_MULTIPLIER_BY_GUESSES);
+  });
+
+  it("pays a mid-flight round from its own ladder after a retune", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    await startWordStackPuzzle(token, 1000);
+
+    // Stand in for a retune landing while the board is open: write the
+    // pre-retune ladder back through the store, exactly as a round opened
+    // before the deploy would carry it. It has to go through the store --
+    // reads are defensively cloned, so mutating what getPuzzleRound returns
+    // changes nothing.
+    const opened = await getPuzzleRound<StoredWordStackRound>(id, WORD_STACK_GAME, today());
+    if (!opened) throw new Error("no round");
+    await advancePuzzleRound<StoredWordStackRound>(
+      opened,
+      { ...opened.round, wagerLadder: { 1: 8, 2: 8, 3: 5, 4: 3, 5: 2, 6: 1.5 } },
+      false,
+    );
+
+    const balanceBefore = (await ensureProfile(token)).goldBalance;
+    await playWordStackGuess(token, { day: today(), version: 2, guess: todaysAnswer() });
+    const credited = (await ensureProfile(token)).goldBalance - balanceBefore;
+
+    // One-guess win: 8x under the stored ladder, 4x under today's table.
+    expect(credited).toBe(8000);
   });
 });

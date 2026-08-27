@@ -40,6 +40,23 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Word Stack and Connections now carry their payout ladder (2026-08-27)
+Closes the gap left open by the Ante Up economy fix earlier the same day. Both games computed their
+payout from a module-level multiplier table *at settlement*, and both are once-a-day boards that can
+be opened in the morning and finished at night, so a retune landing in between paid the player at a
+rate they never agreed to. That was not hypothetical: the same-day retune moved Word Stack's
+six-guess rung 1.5x -> 0.7x and Connections' three-mistake rung 1.5x -> 0.6x, either of which flips a
+board already in progress from a profit into a loss. `StoredWordStackRound`/`StoredConnectionsRound`
+now carry an optional `wagerLadder` copied in at open and never re-read from the module, the same
+rule `AnteUpAttempt.multiplier` and `AnteUpMinesweeperAttempt.timeLimitMs` already state in their own
+doc comments; `lib/arcade/ante-up-ladder.ts` holds the shared lookup. Stored only when `wager > 0`
+(a free round has no payout to protect) and carried forward on every guess, not just at open. Rounds
+written before the field existed fall back to the live table, which is the best answer available and
+exactly what they would have got anyway. **Memory Match has the same defect and was deliberately left
+alone** — its multiplier is a range function rather than a lookup map, so snapshotting it means
+converting the if-chain to a rung array, and its exposure is minutes (one sitting, one-active-per-game)
+rather than a whole UTC day.
+
 ### Ante Up was a money printer; wager ceilings + a payout retune (2026-08-27)
 Kayo reported real farming ("my gf was easily farming coins"), and it was the design working as
 written, not an implementation hole. Two compounding bugs: **no maximum wager existed anywhere in the

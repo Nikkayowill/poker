@@ -19,7 +19,13 @@ import {
   getPuzzleRound,
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
-import { MIN_ANTE_UP_WAGER, anteUpWordStackPayout, wordStackDailyBonusMultiplier } from "@/lib/arcade/ante-up-word-stack";
+import {
+  MIN_ANTE_UP_WAGER,
+  WAGER_MULTIPLIER_BY_GUESSES,
+  anteUpWordStackPayout,
+  wordStackDailyBonusMultiplier,
+} from "@/lib/arcade/ante-up-word-stack";
+import type { WagerLadder } from "@/lib/arcade/ante-up-ladder";
 import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
@@ -71,6 +77,17 @@ export const WORD_STACK_GAME = "word-stack";
 /** The stored round, plus the wager it was opened with. Zero for the free daily play. */
 export interface StoredWordStackRound extends WordStackRound {
   wager: number;
+  /**
+   * The payout ladder this round was opened under, copied in at open and
+   * never re-read from the module afterwards. A daily board can be opened in
+   * the morning and finished at night; without this, a retune landing in
+   * between pays the player at a rate they never agreed to. Optional: rounds
+   * written before this field existed fall back to the live table. See
+   * lib/arcade/ante-up-ladder.ts.
+   *
+   * Only meaningful when `wager > 0`; a free round has no payout to protect.
+   */
+  wagerLadder?: WagerLadder;
 }
 
 export interface WordStackView {
@@ -121,7 +138,11 @@ function view(
       ? {
           ...snapshot(stored),
           wager: stored.round.wager,
-          payout: anteUpWordStackPayout({ wager: stored.round.wager, word: stored.round }),
+          payout: anteUpWordStackPayout({
+            wager: stored.round.wager,
+            word: stored.round,
+            ladder: stored.round.wagerLadder,
+          }),
         }
       : null,
     profile,
@@ -202,6 +223,8 @@ export async function startWordStackPuzzle(
   const round: StoredWordStackRound = {
     ...startWordStackRound(pickDaily(WORD_STACK_ANSWERS, clock.day, WORD_STACK_GAME)),
     wager: wagerInput,
+    // Copied in only for a real wager; see the field's own doc comment.
+    ...(wagerInput > 0 ? { wagerLadder: WAGER_MULTIPLIER_BY_GUESSES } : {}),
   };
 
   let stored: StoredWordStack;
@@ -286,7 +309,11 @@ export async function playWordStackGuess(
   }
 
   const nextWord = submitWordStackGuess(current.round, input.guess);
-  const next: StoredWordStackRound = { ...nextWord, wager: current.round.wager };
+  const next: StoredWordStackRound = {
+    ...nextWord,
+    wager: current.round.wager,
+    ...(current.round.wagerLadder ? { wagerLadder: current.round.wagerLadder } : {}),
+  };
   const complete = next.status !== "active";
   const stored = await advancePuzzleRound<StoredWordStackRound>(current, next, complete);
   if (!stored) {
@@ -311,7 +338,11 @@ export async function playWordStackGuess(
   // write above is confirmed; a loss credits nothing, since the wager
   // already left the wallet when the board was opened.
   if (complete && current.round.wager > 0) {
-    const payout = anteUpWordStackPayout({ wager: current.round.wager, word: next });
+    const payout = anteUpWordStackPayout({
+      wager: current.round.wager,
+      word: next,
+      ladder: current.round.wagerLadder,
+    });
     if (payout > 0) {
       await creditGoldByProfile(profile.id, payout).catch((error) => {
         console.error("word-stack.wager_payout_credit_failed", { profileId: profile.id, payout, error });

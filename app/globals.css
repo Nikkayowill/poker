@@ -75,6 +75,11 @@
    alphabetical fallback rather than by the number); renumbered here since it
    has no forward dependency pinning it to 43 the way ante-up does. */
 @import "./styles/47-site-info.css";
+/* Standalone: fixed-position overlay, no dependency on any earlier sheet's
+   classes. Plays over Ante Up's and the PvP duel shell's own result panels
+   (43/36) but doesn't need to load after them -- it never reads their
+   classes, only mounts inside them. */
+@import "./styles/48-win-celebration.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

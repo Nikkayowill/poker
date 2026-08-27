@@ -1,0 +1,39 @@
+/* components/celebration/win-celebration.tsx -- "You won! +N" fades in,
+   holds, then funnels up into the header's GoldBadge on a wagered win.
+   Fixed-position and self-contained, so it doesn't need the caller's
+   layout -- it plays over Ante Up's result panel and the PvP duel shell's
+   alike without either needing a positioned ancestor. */
+
+.win-celebration {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+}
+
+.win-message {
+  font-weight: 700;
+  font-size: clamp(22px, 5vw, 34px);
+  letter-spacing: -.01em;
+  color: var(--brand-gold-light);
+  text-shadow: 0 2px 20px rgba(0, 0, 0, .55);
+  opacity: 0;
+  animation: win-message-funnel 2.1s cubic-bezier(.22, .8, .3, 1) forwards;
+}
+
+/* Fade in (0-16%), hold (16-55%), then shrink and travel toward the
+   header's top-right corner while fading out -- not a measured DOM target,
+   just the corner GoldBadge always sits in, which reads as "that's where
+   it went" without wiring a ref through every game component. */
+@keyframes win-message-funnel {
+  0% { opacity: 0; transform: scale(.85); }
+  16% { opacity: 1; transform: scale(1); }
+  55% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: translate(40vw, -42vh) scale(.32); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .win-celebration { display: none; }
+}

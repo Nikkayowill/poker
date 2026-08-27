@@ -44,6 +44,50 @@ that grants nothing in-game (`lib/legal/documents.ts`'s `support_disclosure`) �
 - Confirm both support-payment migrations are on the production migration ledger (`supabase migration
   list --linked`) before enabling the support panel — see "Deploy / migration checklist" in CLAUDE.md.
 
+## Stripe Gold purchases
+
+Gold purchases are real money moving through the same Stripe integration, reinstated after an accepted
+risk (see `lib/legal/documents.ts`'s `gold_disclosure` and the "Gold purchase reinstated" entry in
+CLAUDE.md) — the mitigation is blocking Washington State billing addresses at checkout
+(`enforceGoldBillingRestriction` in `lib/server/stripe.ts`), not a full geoblock. Confirm that block is
+in effect before enabling the storefront live: attempt checkout with a Washington billing address in
+Stripe test mode and confirm it is refused rather than completed.
+
+- Configure the Gold-purchase Price env vars alongside the support ones — see `.env.example`.
+- Confirm the Gold-purchase migration(s) are on the production migration ledger before enabling the
+  storefront, same as the support-payment migrations above.
+
+## Web Push re-engagement notifications
+
+Optional — the feature stays off until its keys are present, so this section only applies if you intend
+to enable it for this deploy.
+
+- Generate a real VAPID key pair and configure it; nothing push-related works without one.
+- Confirm the `push_subscriptions` migration is on the production migration ledger.
+- The daily re-engagement cron fires at one fixed UTC hour with no per-player timezone — a known gap,
+  not a bug; don't be surprised by an off-hours notification during testing.
+
+## Sit & Go, Cribbage, PvP duels, and Ante Up wagers
+
+Every staked surface beyond poker cash tables follows the same money-ordering rules restated at the top
+of CLAUDE.md (debit before creation, credit only on a version-guarded settlement, single credit, escrow
+releases once). Before inviting players to any of these:
+
+- Confirm every migration each surface depends on (`sit_and_go_tables`/`sit_and_go_table_players`,
+  `cribbage_tables`/`cribbage_table_players`, `pvp_challenges`/`pvp_matches`, `ante_up_attempts`) is on
+  the production migration ledger — merging the PR that adds a table only ships code, never the schema.
+  See `[[reference_stackchips_migrations_not_auto_applied]]`-style verification: query the live project
+  directly, don't trust a changelog entry.
+- A `NOT VALID` CHECK constraint does not protect in-flight rows and has twice shipped broken against a
+  real Postgres while every memory-mode test passed — verify a new CHECK constraint against a real
+  Postgres transaction (a self-rolling-back `DO` block), not just the local test suite.
+- Ante Up wagers have a per-wager ceiling and retuned payouts (2026-08-26, PR #183) after a real farming
+  incident — confirm the ceiling is enforced server-side before treating a new Ante Up game as launch-ready.
+- Host a Sit & Go with a second profile, bust one seat, and confirm it does not get reseated to a bot and
+  does get cleaned up from the table's registrant list once eliminated.
+- Resign from a Cribbage table mid-hand with a second profile and confirm the table ends immediately with
+  the pot going to the higher score, rather than continuing with the remaining seats.
+
 ## Release verification
 
 Run:
@@ -75,6 +119,12 @@ Then verify in separate browser profiles:
     signup; confirm the support panel shows the active membership and
     "Manage membership" opens the Stripe Customer Portal. Confirm neither
     payment changed the test profile's Gold balance.
+12. In Stripe test mode, complete a Gold purchase and confirm the Gold balance
+    increases by exactly the purchased amount, once.
+13. Play a Sit & Go, a Cribbage table, one PvP duel, and one Ante Up wager to
+    completion with a second browser profile; confirm each settles Gold
+    exactly once and appears correctly on its leaderboard or head-to-head
+    record.
 
 ## Current operating envelope
 

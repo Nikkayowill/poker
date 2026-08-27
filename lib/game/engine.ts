@@ -16,6 +16,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import {
   botAvatarCosmetics,
   botCardBackFor,
+  botChipDesignsFor,
   DEFAULT_AVATAR_COSMETIC,
   DEFAULT_CARD_BACK,
 } from "@/lib/cosmetics/catalog";
@@ -378,6 +379,9 @@ function restoreBotControl(seat: Seat, identity: number = seat.position) {
   // for missing three turns, must not leave a 400,000 Gold card back behind
   // for a bot to keep playing with.
   seat.cardBackCosmetic = botCardBackFor(identity);
+  // Same idea, one step further along the table: a bot's own chip colour,
+  // not the house default every bot used to share -- see botChipDesignsFor.
+  seat.chipDesigns = botChipDesignsFor(identity);
   seat.missedTurns = 0;
   // Cleared on every reseat, not just set by the voluntary-leave path that
   // uses it: a seat coming back under any circumstance is funded and playing
@@ -765,6 +769,7 @@ export function createGame(
       ...bot,
       avatarCosmetic: botAvatarFor(index + 1),
       cardBackCosmetic: botCardBackFor(index + 1),
+      chipDesigns: botChipDesignsFor(index + 1),
       position: index + 1,
       isHuman: false,
       ownerToken: null,
@@ -2000,6 +2005,13 @@ export function normalizeGameState(state: GameState): GameState {
       seat.cardBackCosmetic = seat.isHuman
         ? DEFAULT_CARD_BACK
         : botCardBackFor(seat.botIdentity ?? seat.position);
+    }
+    // Same story again: tables dealt before bot chip designs existed have
+    // bot seats with no chipDesigns at all, which read as the house default
+    // on every denomination -- the exact "all bots look generic" gap this
+    // backfills, same as the two checks above.
+    if (!seat.isHuman && !seat.chipDesigns) {
+      seat.chipDesigns = botChipDesignsFor(seat.botIdentity ?? seat.position);
     }
     // Hands in flight before VPIP existed have no opinion either way; treat
     // as false rather than let `undefined` leak into a stats comparison.

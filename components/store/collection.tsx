@@ -14,9 +14,9 @@ import {
   type EquippedCosmetics,
 } from "@/lib/cosmetics/catalog";
 import { seatArtCharacter, seatArtSrc } from "@/lib/scene/seat-art";
-import { css as chipColor } from "@/lib/scene/chips/chip-spec";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { CardBackArt } from "@/components/card-back-art";
+import { ChipDesignArt } from "@/components/store/chip-design-art";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 
 /** Casino shorthand for a denomination -- "the 5s", "the 25s". */
@@ -96,15 +96,7 @@ function CosmeticArt({ item, angle }: { item: Cosmetic; angle?: number }) {
   if (item.art) return <CardBackArt art={item.art} className="cosmetic-art" />;
 
   if (item.slot === "chipDesign" && item.chip) {
-    return (
-      <div
-        className="cosmetic-art cosmetic-art-chip"
-        aria-hidden="true"
-        style={{
-          background: `radial-gradient(circle at 35% 30%, ${chipColor(item.chip.inlay)}, ${chipColor(item.chip.body)} 55%, ${chipColor(item.chip.spot)} 100%)`,
-        }}
-      />
-    );
+    return <ChipDesignArt material={item.chip} className="cosmetic-art cosmetic-art-chip" />;
   }
 
   if (item.slot === "avatar" && !failed) {
@@ -144,6 +136,10 @@ export function Collection() {
   const [previewing, setPreviewing] = useState<Cosmetic | null>(null);
   const [previewAngle, setPreviewAngle] = useState(0);
   const [assigningDenomination, setAssigningDenomination] = useState<ChipDesignDenomination | null>(null);
+  // Which of the three slots is on screen. The page used to stack all three
+  // full sections top to bottom, which made "just look at chip designs" a
+  // scroll past however many avatars and card backs a profile has amassed.
+  const [activeSlot, setActiveSlot] = useState<CosmeticSlot>(SLOTS[0].slot);
 
   const ownedSet = useMemo(() => new Set(owned), [owned]);
 
@@ -246,6 +242,21 @@ export function Collection() {
 
       {error && <p className="collection-error">{error}</p>}
       {notice && <p className="collection-notice">{notice}</p>}
+
+      <div className="collection-tabs" role="tablist" aria-label="Cosmetic category">
+        {SLOTS.map(({ slot, title }) => (
+          <button
+            key={slot}
+            type="button"
+            role="tab"
+            aria-selected={activeSlot === slot}
+            className={activeSlot === slot ? "is-active" : undefined}
+            onClick={() => { tapSound(); setActiveSlot(slot); }}
+          >
+            {title}
+          </button>
+        ))}
+      </div>
 
       {confirming && (
         <div className="confirm-overlay" role="presentation" onClick={() => { tapSound(); setConfirming(null); }}>
@@ -369,7 +380,7 @@ export function Collection() {
         </div>
       )}
 
-      {SLOTS.map(({ slot, title, blurb }) => {
+      {SLOTS.filter(({ slot }) => slot === activeSlot).map(({ slot, title, blurb }) => {
         const items = catalog
           .filter((item) => item.slot === slot)
           // Owned items first so a player sees what's theirs before the
@@ -481,7 +492,7 @@ export function Collection() {
         );
       })}
 
-      {catalog.some((item) => item.slot === "chipDesign") && (
+      {activeSlot === "chipDesign" && catalog.some((item) => item.slot === "chipDesign") && (
         <section className="collection-section">
           <h2>Assign chip designs</h2>
           <p className="collection-blurb">

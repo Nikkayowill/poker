@@ -71,6 +71,39 @@
 .collection-error { color: #ff9e9e; margin: 0 0 14px; font-size: 13px; }
 .collection-notice { color: var(--gold-light); margin: 0 0 14px; font-size: 13px; }
 
+/* A three-way segmented control, same idiom as .entry-segment (the sign-in/
+   create-account switch): which slot is on screen is the one fact this
+   control states, so the active side gets the same solid purple fill rather
+   than a quieter underline. Three sections used to sit stacked full-length
+   top to bottom, which turned "just look at chip designs" into a scroll past
+   however many avatars a profile has amassed first. */
+.collection-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: clamp(28px, 4vw, 44px);
+  border-radius: calc(var(--radius-control) + 4px);
+  background: var(--brand-surface);
+}
+.collection-tabs button {
+  min-height: 38px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: #93a1bb;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--duration-slow) ease, color var(--duration-slow) ease;
+}
+.collection-tabs button.is-active {
+  color: #fff;
+  background: linear-gradient(150deg, var(--brand-purple), var(--brand-purple-deep));
+  box-shadow: var(--accent-glow);
+}
+.collection-tabs button:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+
 /* Sections separate by distance, not by sitting in boxes -- the landing
    page's rule, scaled down for a page that is a catalogue rather than a
    pitch. */
@@ -374,10 +407,11 @@
 .preview-angle-button:hover { background: rgba(255,255,255,.12); }
 
 /* ---- Chip designs ---- */
-/* A pure colour swatch -- chip designs have no supplied artwork, they're
-   just the same four-colour material lib/scene/chips/chip-spec.ts paints a
-   house chip from. */
-.cosmetic-art-chip { border-radius: 50%; }
+/* components/store/chip-design-art.tsx draws the actual chip (wall, edge
+   inserts, bevel, rosette) into this canvas via chip-painter.ts's own
+   paintWall/paintFace -- it already draws its own round chip with margin
+   around it, so the frame just needs to hand it the full plate, no clip. */
+.cosmetic-art-chip { width: 100%; height: 100%; display: block; }
 
 .chip-assign-grid {
   display: grid;

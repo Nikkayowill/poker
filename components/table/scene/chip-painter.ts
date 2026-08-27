@@ -258,8 +258,13 @@ export function paintChip(
  * A vertical darkening is then laid over it, because the wall really is in
  * shadow near the cloth. Both fills reuse the same path — the canvas keeps the
  * current path until the next `beginPath`, so the second fill is free.
+ *
+ * Exported alongside `paintFace` so a static preview (the store's chip-design
+ * swatch, `components/store/chip-design-art.tsx`) can draw the same chip
+ * outside a `RenderChip`/`SceneProjection` pair — everything below this point
+ * only needs the geometry the caller already worked out, not the table.
  */
-function paintWall(
+export function paintWall(
   ctx: CanvasRenderingContext2D,
   rx: number,
   ry: number,
@@ -345,14 +350,20 @@ function paintWall(
  * an off-centre highlight is what says so. The highlight is deliberately weak:
  * compressed clay is matte, and a bright specular is the single fastest way to
  * make a chip look like injection-moulded plastic.
+ *
+ * `denomination` is nullable: a chip on the table always carries one, but a
+ * store swatch previewing a chip *design* doesn't belong to any single
+ * denomination (a player assigns the same design to whichever of the four
+ * they like) — `null` skips the numeral and leaves the rosette as the face's
+ * only stamp.
  */
-function paintFace(
+export function paintFace(
   ctx: CanvasRenderingContext2D,
   rx: number,
   ry: number,
   material: { body: number; spot: number; inlay: number; ink: number },
   spin: number,
-  denomination: number,
+  denomination: number | null,
   squash: number,
 ): void {
   ctx.beginPath();
@@ -433,8 +444,9 @@ function paintFace(
 
   paintRosette(ctx, rx, material.ink, squash);
 
-  // The denomination, only at sizes where type is type rather than a smudge.
-  if (rx >= NUMERAL_MIN_RADIUS_PX) {
+  // The denomination, only at sizes where type is type rather than a smudge,
+  // and only when there is one to print.
+  if (denomination !== null && rx >= NUMERAL_MIN_RADIUS_PX) {
     const label = String(denomination);
     ctx.save();
     // Print lies on the face, so it foreshortens with it.

@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import Link from "next/link";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
+import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { PlayingCard } from "@/components/table/playing-card";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { DealerStage } from "@/components/arcade/dealer-stage";
@@ -304,7 +304,7 @@ export function BlackjackTable() {
     <main className="bj-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <Link className="bj-back" href="/games" onClick={tapSound}>← Ante Up</Link>
+          <FloorBackLink />
           <h1>Blackjack 21</h1>
           <p>Dealer stands on soft 17 · Blackjack pays 3:2</p>
         </div>

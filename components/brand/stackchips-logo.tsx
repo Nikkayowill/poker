@@ -1,10 +1,12 @@
 /**
  * The StackChips wordmark, hero variant: tilted -2deg with a soft two-colour
- * glow, per the Neon Marquee brand concept. Large placements only (today
- * that's just the sign-in screen) -- components/brand/stackchips-mark.tsx is
- * what a header row gets instead, since the glow costs more to render than
- * it is worth at UI scale and a full wordmark collapses into a smudge below
- * hero size anyway.
+ * glow, per the Neon Marquee brand concept. Sign-in uses it at hero size
+ * (`.entry-logo`); the lobby header also uses it, clamped small
+ * (`.header-logo` in 02-app-shell.css) -- Kayo asked for the recognizable
+ * wordmark in the lobby nav specifically, not the single-glyph mark.
+ * components/brand/stackchips-mark.tsx (the lone "S") is still what the
+ * in-game header and the app icon/favicon use, where there's no room even
+ * for the small wordmark.
  *
  * Inline SVG, not an <Image> pointed at a rasterized copy: the glyphs are
  * outlined straight from Bungee-Regular (see

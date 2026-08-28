@@ -200,34 +200,29 @@ export function MobileShell({
   }, [page]);
 
   /*
-   * `position: fixed; bottom: 0` (45-mobile-shell.css) trusts the browser to
-   * already know where the true bottom edge is. On an installed iOS PWA's
-   * cold launch it briefly doesn't: WKWebView paints one frame against a
-   * taller pre-settle viewport before the real one lands, which is why the
-   * bar reads as "sitting too high" only on a fresh launch, and only until
-   * something else (any later relayout, e.g. a route change) recomputes it
-   * for free. Rather than guess at when that moment is, `visualViewport`
-   * reports the real, settled viewport directly -- set the gap between it
-   * and the layout viewport as an explicit `bottom` offset instead of
-   * relying on the CSS default to already be right.
+   * `position: fixed; bottom: 0` (45-mobile-shell.css) sits wrong ONLY on a
+   * true cold launch of the installed iOS PWA, and correcting itself the
+   * moment the shell remounts (leave to a game, come back) is the tell:
+   * nothing about the viewport's *size* changes on that round trip, so this
+   * was never a resize to listen for. The bar's fixed box was laid out once,
+   * at first mount, against a safe-area-inset-bottom value WKWebView hadn't
+   * finished reporting yet, and nothing ever asks it to relayout again --
+   * a remount does that by accident, this forces the same thing on purpose.
+   * A `display` toggle forces a real layout pass (unlike a `transform`
+   * nudge, which only touches compositing and never revisits `bottom`);
+   * `offsetHeight` between the two writes forces it synchronously, and both
+   * happen in the same tick, before the browser paints, so there's nothing
+   * to see.
    */
   useEffect(() => {
-    const sync = () => {
-      const nav = navRef.current;
-      const vv = window.visualViewport;
-      if (!nav || !vv) return;
-      const gap = window.innerHeight - (vv.height + vv.offsetTop);
-      nav.style.bottom = `${Math.max(0, Math.round(gap))}px`;
-    };
-    sync();
-    window.visualViewport?.addEventListener("resize", sync);
-    window.visualViewport?.addEventListener("scroll", sync);
-    window.addEventListener("resize", sync);
-    return () => {
-      window.visualViewport?.removeEventListener("resize", sync);
-      window.visualViewport?.removeEventListener("scroll", sync);
-      window.removeEventListener("resize", sync);
-    };
+    const nav = navRef.current;
+    if (!nav) return;
+    const raf = requestAnimationFrame(() => {
+      nav.style.display = "none";
+      void nav.offsetHeight;
+      nav.style.display = "";
+    });
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   /*

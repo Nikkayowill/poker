@@ -259,11 +259,13 @@ async function rawGameRows(gameId: string): Promise<{ profileId: string; stats: 
   }));
 }
 
+/** Qualifying rows only, scored. Pure so getGameBoard can share it against an already-fetched raw list rather than re-fetching. */
+function scoredRows(gameId: string, rows: { profileId: string; stats: LeaderboardStats }[]): ScoredRow[] {
+  return rows.filter((row) => qualifies(gameId, row.stats)).map((row) => ({ ...row, score: scoreOf(row.stats) }));
+}
+
 async function allGameRows(gameId: string): Promise<ScoredRow[]> {
-  const rows = await rawGameRows(gameId);
-  return rows
-    .filter((row) => qualifies(gameId, row.stats))
-    .map((row) => ({ ...row, score: scoreOf(row.stats) }));
+  return scoredRows(gameId, await rawGameRows(gameId));
 }
 
 /**
@@ -350,6 +352,54 @@ export async function getGameQualifyProgress(
   const sample = sampleOf(row.stats);
   if (sample <= 0 || sample >= contract.minSample) return null;
   return { sample, minSample: contract.minSample };
+}
+
+export interface GameBoard {
+  entries: LeaderboardEntry[];
+  mine: LeaderboardEntry | null;
+  mineProgress: LeaderboardQualifyProgress | null;
+}
+
+/**
+ * Everything a per-game leaderboard tab needs (top `limit`, the caller's own
+ * standing, and their qualify progress if they haven't reached it yet) off a
+ * single rawGameRows fetch, rather than the three independent calls
+ * getGameLeaderboard/getGameStanding/getGameQualifyProgress each made below
+ * them -- each of those re-ran the same unfiltered game_leaderboard_stats
+ * query and re-sorted the result, so one tab load was three full scans of the
+ * same table. This is what app/api/leaderboard/route.ts actually calls now;
+ * the three functions above stay for callers (and tests) that only need one
+ * piece.
+ */
+export async function getGameBoard(
+  gameId: string,
+  profileId: string | null,
+  limit = 10,
+): Promise<GameBoard> {
+  const contract = leaderboardGame(gameId);
+  if (!contract) return { entries: [], mine: null, mineProgress: null };
+
+  const raw = await rawGameRows(gameId);
+  const sorted = sortDescendingByGoodness(scoredRows(gameId, raw));
+  const entries = await decorateGameRows(gameId, sorted.slice(0, limit));
+
+  if (!profileId) return { entries, mine: null, mineProgress: null };
+
+  const index = sorted.findIndex((row) => row.profileId === profileId);
+  if (index !== -1) {
+    // Already in the decorated slice above (the common case: most callers
+    // checking their own standing are checking because they're near the
+    // top) -- reuse that row instead of paying for a second
+    // getPublicProfilesByIds round trip to decorate it again.
+    const inSlice = index < limit ? entries[index] : null;
+    const mine = inSlice ?? (await decorateGameRows(gameId, [sorted[index]]))[0];
+    return { entries, mine: mine ? { ...mine, rank: index + 1 } : null, mineProgress: null };
+  }
+
+  const rawRow = raw.find((row) => row.profileId === profileId);
+  const sample = rawRow ? sampleOf(rawRow.stats) : 0;
+  const mineProgress = sample > 0 && sample < contract.minSample ? { sample, minSample: contract.minSample } : null;
+  return { entries, mine: null, mineProgress };
 }
 
 // ---- friends board ------------------------------------------------------

@@ -6,6 +6,7 @@ import { __resetHeadToHeadMemory } from "./head-to-head-store";
 import {
   __resetLeaderboardMemory,
   getFriendsBoard,
+  getGameBoard,
   getGameLeaderboard,
   getGameQualifyProgress,
   getGameStanding,
@@ -174,6 +175,68 @@ describe("getGameQualifyProgress", () => {
 
   it("returns null for an unregistered game id", async () => {
     expect(await getGameQualifyProgress("solitaire", "whoever")).toBeNull();
+  });
+});
+
+describe("getGameBoard", () => {
+  it("matches getGameLeaderboard/getGameStanding/getGameQualifyProgress from a single call", async () => {
+    const a = await newPlayer("A");
+    const b = await newPlayer("B");
+    const c = await newPlayer("C");
+    for (let i = 0; i < 3; i += 1) await recordDuelResult("chess", [a.id, b.id], 0); // a: 3-0, qualifies
+    await recordDuelResult("chess", [c.id, b.id], 1); // c: 1 decided game, below minSample
+
+    const [entries, mine, mineProgress] = await Promise.all([
+      getGameLeaderboard("chess", 10),
+      getGameStanding("chess", a.id),
+      getGameQualifyProgress("chess", c.id),
+    ]);
+
+    const boardForA = await getGameBoard("chess", a.id, 10);
+    expect(boardForA.entries).toEqual(entries);
+    expect(boardForA.mine).toEqual(mine);
+    expect(boardForA.mineProgress).toBeNull();
+
+    const boardForC = await getGameBoard("chess", c.id, 10);
+    expect(boardForC.mine).toBeNull();
+    expect(boardForC.mineProgress).toEqual(mineProgress);
+  });
+
+  it("never returns both mine and mineProgress at once", async () => {
+    const a = await newPlayer("A");
+    const b = await newPlayer("B");
+    await recordDuelResult("chess", [a.id, b.id], 0); // below minSample: mineProgress, not mine
+
+    const below = await getGameBoard("chess", a.id, 10);
+    expect(below.mine).toBeNull();
+    expect(below.mineProgress).not.toBeNull();
+
+    for (let i = 0; i < 2; i += 1) await recordDuelResult("chess", [a.id, b.id], 0); // now qualifies: mine, not mineProgress
+    const above = await getGameBoard("chess", a.id, 10);
+    expect(above.mine).not.toBeNull();
+    expect(above.mineProgress).toBeNull();
+  });
+
+  it("caps the board at limit while still resolving a caller ranked just outside it", async () => {
+    const players = await Promise.all(Array.from({ length: 4 }, (_, i) => newPlayer(`P${i}`)));
+    // Distinct win rates so ranking is unambiguous: P0 best, P3 worst.
+    for (let i = 0; i < 3; i += 1) await recordDuelResult("chess", [players[0].id, players[3].id], 0);
+    for (let i = 0; i < 3; i += 1) await recordDuelResult("chess", [players[1].id, players[3].id], 0);
+    await recordDuelResult("chess", [players[1].id, players[3].id], 1);
+    for (let i = 0; i < 3; i += 1) await recordDuelResult("chess", [players[2].id, players[3].id], 0);
+    await recordDuelResult("chess", [players[2].id, players[3].id], 1);
+    await recordDuelResult("chess", [players[2].id, players[3].id], 1);
+
+    const board = await getGameBoard("chess", players[2].id, 2);
+    expect(board.entries).toHaveLength(2);
+    expect(board.entries.map((row) => row.profileId)).toEqual([players[0].id, players[1].id]);
+    expect(board.mine).not.toBeNull();
+    expect(board.mine!.profileId).toBe(players[2].id);
+    expect(board.mine!.rank).toBe(3);
+  });
+
+  it("returns an empty board for an unregistered game id rather than throwing", async () => {
+    expect(await getGameBoard("solitaire", "whoever", 10)).toEqual({ entries: [], mine: null, mineProgress: null });
   });
 });
 

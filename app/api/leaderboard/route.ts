@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { leaderboardGame } from "@/lib/leaderboard/contract";
-import { getFriendsBoard, getGameLeaderboard, getGameQualifyProgress, getGameStanding, getGlobalLeaderboard, getGlobalStanding } from "@/lib/server/leaderboard-store";
+import { getFriendsBoard, getGameBoard, getGlobalLeaderboard, getGlobalStanding } from "@/lib/server/leaderboard-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
@@ -69,13 +69,10 @@ export async function GET(request: NextRequest) {
     if (game !== "poker") {
       const contract = leaderboardGame(game);
       if (!contract) return NextResponse.json({ error: "Unknown leaderboard." }, { status: 400 });
-      // mineProgress is only ever non-null when mine is null -- a qualified
-      // player's own row already says everything progress would.
-      const [entries, mine, mineProgress] = await Promise.all([
-        getGameLeaderboard(game, 10),
-        profile ? getGameStanding(game, profile.id) : Promise.resolve(null),
-        profile ? getGameQualifyProgress(game, profile.id) : Promise.resolve(null),
-      ]);
+      // One fetch of game_leaderboard_stats produces the top 10, the caller's
+      // own standing, and their qualify progress together -- see getGameBoard's
+      // own comment for why this replaced three separate calls here.
+      const { entries, mine, mineProgress } = await getGameBoard(game, profile?.id ?? null, 10);
       return NextResponse.json({ game, label: contract.label, columns: contract.columns, entries, mine, mineProgress });
     }
 

@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { Coins } from "lucide-react";
+import { Coins, HelpCircle } from "lucide-react";
 import { PlayingCard } from "@/components/table/playing-card";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
+import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -48,6 +50,7 @@ export function AnteUpMemory() {
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
@@ -150,6 +153,8 @@ export function AnteUpMemory() {
   const ceiling = maxAnteUpWager("memory-match", null);
   const canAfford =
     wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
+  // Narrower than !canAfford; see ante-up-sudoku.tsx's own note on the same check.
+  const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
   const turnsLeft = attempt ? Math.max(0, attempt.maxTurns - attempt.turns) : ANTE_UP_MEMORY_MAX_TURNS;
   // A forfeit can only come from the turn cap or a resignation; the turn
   // count is what tells them apart, since both settle as "lost".
@@ -166,7 +171,12 @@ export function AnteUpMemory() {
   return (
     <main className="duel-shell ante-shell">
       <header className="floor-bar">
-        <FloorBackLink />
+        <div className="floor-bar-left">
+          <FloorBackLink />
+          <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>
+            <HelpCircle size={13} aria-hidden="true" /> How to play
+          </button>
+        </div>
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
           <strong>
@@ -174,6 +184,22 @@ export function AnteUpMemory() {
           </strong>
         </span>
       </header>
+
+      {showHelp && (
+        <HowToPlayModal title="Memory Match" onClose={() => setShowHelp(false)}>
+          <p>
+            Flip tiles two at a time to find all eight matching pairs. Wager Gold or play free,
+            any time — there&apos;s no daily board to gate here, so a fresh layout deals on every
+            attempt.
+          </p>
+          <p>
+            Clear all eight pairs within {ANTE_UP_MEMORY_MAX_TURNS} turns to win and cash out;
+            run past that cap, or give up early, and the wager is gone. Speed is what pays: a
+            fast clear multiplies the wager, a slow one can pay back less than you staked, so
+            clearing the board isn&apos;t by itself a profit.
+          </p>
+        </HowToPlayModal>
+      )}
 
       {error && (
         <div className="duel-error" role="alert">
@@ -220,6 +246,7 @@ export function AnteUpMemory() {
             <Coins size={15} aria-hidden="true" />
             {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
           </button>
+          {loaded && insufficientGold && <GoldShortfallHint needed={wager} compact />}
         </section>
       ) : (
         <div className="duel-match ante-match">

@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { Bomb, Coins, Flag } from "lucide-react";
+import { Bomb, Coins, Flag, HelpCircle } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
+import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -73,6 +75,7 @@ export function AnteUpMinesweeper() {
   const [error, setError] = useState<string | null>(null);
   const [flagMode, setFlagMode] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [showHelp, setShowHelp] = useState(false);
 
   const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
@@ -250,6 +253,8 @@ export function AnteUpMinesweeper() {
   const ceiling = maxAnteUpWager("minesweeper", difficulty);
   const canAfford =
     wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
+  // Narrower than !canAfford; see ante-up-sudoku.tsx's own note on the same check.
+  const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
   const tier = ANTE_UP_MINESWEEPER_TIERS[difficulty];
 
   // Counted down from the absolute deadline against a `now` that ticks once a
@@ -268,7 +273,12 @@ export function AnteUpMinesweeper() {
   return (
     <main className="duel-shell ante-shell">
       <header className="floor-bar">
-        <FloorBackLink />
+        <div className="floor-bar-left">
+          <FloorBackLink />
+          <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>
+            <HelpCircle size={13} aria-hidden="true" /> How to play
+          </button>
+        </div>
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
           <strong>
@@ -276,6 +286,22 @@ export function AnteUpMinesweeper() {
           </strong>
         </span>
       </header>
+
+      {showHelp && (
+        <HowToPlayModal title="Minesweeper" onClose={() => setShowHelp(false)}>
+          <p>
+            Clear every safe square without hitting a mine. Every board here is guaranteed
+            solvable by logic alone — the opening click is always safe, and a careful read of
+            the numbers never has to come down to a coin-flip guess.
+          </p>
+          <p>
+            Pick beginner, intermediate, or expert, then wager Gold or play free. The clock
+            starts on your first click; clear the board before it runs out and you win. Hit a
+            mine, let the clock expire, or resign, and the wager is gone. Harder difficulties
+            run a longer clock, pay more on a win, and let you stake more.
+          </p>
+        </HowToPlayModal>
+      )}
 
       {error && (
         <div className="duel-error" role="alert">
@@ -350,6 +376,7 @@ export function AnteUpMinesweeper() {
             <Coins size={15} aria-hidden="true" />
             {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
           </button>
+          {loaded && insufficientGold && <GoldShortfallHint needed={wager} compact />}
         </section>
       ) : (
         <div className="duel-match ante-match ms-match">

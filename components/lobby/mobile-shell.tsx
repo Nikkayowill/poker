@@ -43,6 +43,7 @@ import {
   Coins,
   Gamepad2,
   Gift,
+  HelpCircle,
   Layers,
   Lock,
   LogOut,
@@ -743,6 +744,14 @@ function YouPane({
             <Coins size={19} strokeWidth={1.8} aria-hidden="true" />
             <strong>Buy Gold</strong>
             <small>Never required to play</small>
+          </Link>
+          {/* SiteFooter below already links here, but as small footer text --
+              this tile is the same "always reachable" affordance the desktop
+              lobby's footer gives, sized for a thumb instead of a mouse. */}
+          <Link className="mshell-card mshell-tile" href="/how-to-play" onClick={tapSound}>
+            <HelpCircle size={19} strokeWidth={1.8} aria-hidden="true" />
+            <strong>How to Play</strong>
+            <small>Rules and hand rankings</small>
           </Link>
         </div>
       </div>

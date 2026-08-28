@@ -340,3 +340,60 @@
   .floor-row,
   .floor-play { transition: none; }
 }
+
+/* ===========================================================================
+   How to Play trigger + modal body.
+
+   `.floor-bar`/`.bj-header` are both two-child `justify-content:space-between`
+   rows (back link vs. wallet badge, or header copy vs. wallet+avatar); adding
+   a third top-level item would just re-space those two apart. Instead the
+   trigger joins the back link inside its existing left-hand grouping
+   (`.floor-bar-left` for the three plain-`.floor-bar` shells, `.bj-back-row`
+   for Word Stack/Connections' `.bj-header-copy`), so the space-between pair
+   itself never changes shape.
+   =========================================================================== */
+
+.floor-bar-left,
+.bj-back-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.htp-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  color: #93a1bb;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: color var(--duration-base) ease;
+}
+.htp-trigger:hover { color: #eef2f8; }
+.htp-trigger:focus-visible { outline: 0; border-radius: var(--radius-control); box-shadow: var(--brand-focus); }
+
+.htp-body {
+  display: grid;
+  gap: 14px;
+  padding: 2px 27px 27px;
+  color: #c2cbc5;
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+.htp-body p { margin: 0; }
+.htp-body ul,
+.htp-body ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+}
+.htp-body strong { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .htp-trigger { transition: none; }
+}

@@ -7,6 +7,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import type { SoundEffect } from "@/lib/audio/sound-effects";
 import { CRIB_STATE_CHANGED, cribLobbyChannelName, cribTableChannelName } from "@/lib/cribbage/crib-channel";
 import type { CribbageSeat, CribbageSnapshot } from "@/lib/cribbage/engine";
@@ -388,6 +389,10 @@ function CribbageLobby({
         <button type="button" className="floor-play duel-open" disabled={busy || !loaded || !canAfford} onClick={onOpen}>
           {!loaded ? "…" : !canAfford ? "Not enough Gold" : `Open a ${stake.toLocaleString()} Gold table`}
         </button>
+        {/* Only the actual Gold shortfall -- a stake below MIN_DUEL_STAKE is
+            a slider issue duel-pot-note above already covers, not a "go
+            earn more" one. */}
+        {loaded && stake >= MIN_DUEL_STAKE && balance < stake && <GoldShortfallHint needed={stake} />}
       </section>
 
       <section className="duel-panel">

@@ -10,6 +10,7 @@ import { TIER_CONFIG } from "@/lib/game/tiers";
 import { backstopState } from "@/lib/profile/backstop";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { BuyInModal } from "@/components/lobby/buy-in-modal";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 
 /**
  * The bar under the controls, burning down on the same clock as the seat ring.
@@ -249,6 +250,12 @@ export function ActionBar({
             </button>
           ) : (
             <button className="primary-action action-slot-wide" onClick={onLeave}>Return to lobby</button>
+          )}
+          {/* Only the truly stuck case -- backstop-ready already offers its
+              own way back in above, and unlimited/affordable Gold never
+              reaches this branch at all. */}
+          {!canRebuyWithGold && backstop !== "ready" && (
+            <GoldShortfallHint needed={TIER_CONFIG[game.tier].minBuyIn} />
           )}
         </div>
         {showRebuyModal && (

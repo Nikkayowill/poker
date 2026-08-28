@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { Coins, Shuffle } from "lucide-react";
+import { Coins, HelpCircle, Shuffle } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
+import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { connectionsShareText, puzzleShareTitle } from "@/lib/arcade/puzzles/share";
@@ -91,6 +93,7 @@ export function ConnectionsBoard() {
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [shake, setShake] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const noticeTimer = useRef<number | null>(null);
 
   const flash = useCallback((message: string, wobble = true) => {
@@ -222,6 +225,10 @@ export function ConnectionsBoard() {
   // refusals and used to share the "Not enough Gold" label, which is the
   // wrong thing to tell a player who has plenty and simply staked too much.
   const canStart = !overCeiling && canAffordWager;
+  // The specific "you're short" case the button's "Not enough Gold" label
+  // covers -- overCeiling has its own message ("Over the cap") and gets its
+  // own refusal first, so this must not also fire for that case.
+  const insufficientGold = wager > 0 && !overCeiling && !canAffordWager;
 
   const finished = Boolean(round && round.status !== "active");
   const playable = Boolean(round) && !finished && !busy;
@@ -277,7 +284,12 @@ export function ConnectionsBoard() {
     <main className="bj-shell puzzle-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <Link className="bj-back" href="/games" onClick={tapSound}>← Ante Up</Link>
+          <div className="bj-back-row">
+            <Link className="bj-back" href="/games" onClick={tapSound}>← Ante Up</Link>
+            <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>
+              <HelpCircle size={13} aria-hidden="true" /> How to play
+            </button>
+          </div>
           <h1>Connections</h1>
           <p>
             {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Find the four groups of four
@@ -299,6 +311,24 @@ export function ConnectionsBoard() {
           </div>
         )}
       </header>
+
+      {showHelp && (
+        <HowToPlayModal title="Connections" onClose={() => setShowHelp(false)}>
+          <p>
+            Find the four hidden groups of four among sixteen words. Select four tiles and
+            submit a guess; a wrong one costs a mistake and, if three of your four share a
+            group, tells you &ldquo;one away&rdquo; without saying which. Find all four groups
+            before you run out of mistakes and you win.
+          </p>
+          <p>
+            It&apos;s one shared puzzle a day for everyone, so there&apos;s exactly one wagered
+            attempt allowed — choose your wager, or play free, before it opens. A clean solve
+            with no mistakes pays the most; scraping it on your last life pays back less than you
+            staked, and running out of mistakes loses the wager outright. Whatever you wager, the
+            payout it can earn is locked in the moment the round opens.
+          </p>
+        </HowToPlayModal>
+      )}
 
       <p className={clsx("puzzle-notice", notice && "puzzle-notice-on")} role="status" aria-live="polite">
         {notice}
@@ -342,6 +372,7 @@ export function ConnectionsBoard() {
                     ? "Play free"
                     : "Ante up"}
           </button>
+          {insufficientGold && <GoldShortfallHint needed={wager} compact />}
         </section>
       )}
 

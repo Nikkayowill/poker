@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
-  Coins, Copy, DoorOpen, History, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
+  Coins, Copy, DoorOpen, History, HelpCircle, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
@@ -917,6 +917,10 @@ export function PokerTable({
         onSelect: () => setHistoryOpen(true),
         icon: <History size={15} />,
       },
+      // The only way to reach the rules page once actually seated -- the
+      // lobby footer links to it, but nothing does once a player has left
+      // the lobby. Always present, seated or not, same as Hand history above.
+      { kind: "link", label: "How to Play", href: "/how-to-play", icon: <HelpCircle size={15} /> },
     ];
     if (game.isPrivate && game.roomCode) {
       items.push({

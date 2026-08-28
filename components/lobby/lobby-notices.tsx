@@ -3,6 +3,7 @@
 import { Check, Cloud, Coins, ShieldCheck, X } from "lucide-react";
 import { CHEAPEST_TIER, TIER_CONFIG } from "@/lib/game/tiers";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 
 /**
  * The four status notices that sit above the lobby's own hero content --
@@ -88,6 +89,11 @@ export function LobbyNotices({
           <button type="button" className="secondary-action" disabled={loading} onClick={() => { selectSound(); onClaimBackstop(); }}>
             Claim a top-up
           </button>
+          {/* The button above is the one-time backstop grant specifically --
+              this points at every other free source (missions, the daily
+              streak, rewarded ads) for whenever the backstop itself is on
+              cooldown or already spent. */}
+          <GoldShortfallHint needed={TIER_CONFIG[CHEAPEST_TIER].minBuyIn} compact />
         </div>
       )}
     </>

@@ -81,6 +81,7 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
 import { LobbyNotices } from "./lobby-notices";
+import { MshellNavDebug } from "./mshell-nav-debug";
 
 const PAGES = ["Texas Hold'em", "Ante Up", "Profile"] as const;
 const PAGE_COUNT = PAGES.length;
@@ -189,6 +190,7 @@ export function MobileShell({
   /** Live drag distance in px. Null whenever no horizontal drag is in flight. */
   const [drag, setDrag] = useState<number | null>(null);
   const gestureRef = useRef<SwipeGesture | null>(null);
+  const navRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     try {
@@ -197,6 +199,41 @@ export function MobileShell({
       // A full or disabled store just means the next return starts on Play.
     }
   }, [page]);
+
+  /*
+   * On an installed iOS PWA's cold launch, the tab bar (`position: fixed;
+   * bottom: 0`, see 45-mobile-shell.css) can paint pinned against a stale
+   * viewport frame while WKWebView is still settling the real one -- it
+   * reads as "sitting too high" until something forces a repaint, which is
+   * exactly what a route change does (this shell never unmounts on one, so
+   * that alone doesn't explain it fixing itself on navigation elsewhere in
+   * the app). `visualViewport`'s `resize` event fires when that settle
+   * actually completes; nudging a transform on it forces WebKit to
+   * recompute the fixed box against the final viewport instead of waiting
+   * for an unrelated reflow to do it by accident. Two rAFs after mount
+   * cover a launch where the viewport never technically resizes but the
+   * first paint still lands mid-settle.
+   */
+  useEffect(() => {
+    let raf2 = 0;
+    const nudge = () => {
+      const nav = navRef.current;
+      if (!nav) return;
+      nav.style.transform = "translateZ(0.01px)";
+      requestAnimationFrame(() => {
+        if (nav) nav.style.transform = "";
+      });
+    };
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(nudge);
+    });
+    window.visualViewport?.addEventListener("resize", nudge);
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      window.visualViewport?.removeEventListener("resize", nudge);
+    };
+  }, []);
 
   /*
    * Which panes have been looked at, or are one gesture away from being looked
@@ -288,6 +325,7 @@ export function MobileShell({
 
   return (
     <div className="mshell">
+      <MshellNavDebug navRef={navRef} />
       <div
         className="mshell-viewport"
         onPointerDown={onPointerDown}
@@ -351,7 +389,7 @@ export function MobileShell({
         </div>
       </div>
 
-      <nav className="mshell-nav" aria-label="Lobby sections">
+      <nav ref={navRef} className="mshell-nav" aria-label="Lobby sections">
         {PAGES.map((name, index) => {
           const Icon = PAGE_ICONS[index];
           const active = index === page;

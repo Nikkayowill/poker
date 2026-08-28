@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import clsx from "clsx";
 import { Coins, CornerDownLeft, Delete, HelpCircle } from "lucide-react";
+import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
@@ -279,7 +279,7 @@ export function WordStackBoard() {
       <header className="bj-header">
         <div className="bj-header-copy">
           <div className="bj-back-row">
-            <Link className="bj-back" href="/games" onClick={tapSound}>← Ante Up</Link>
+            <FloorBackLink />
             <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>
               <HelpCircle size={13} aria-hidden="true" /> How to play
             </button>

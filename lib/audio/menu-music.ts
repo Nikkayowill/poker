@@ -3,6 +3,7 @@ import {
   MENU_MUSIC_METADATA,
   MENU_MUSIC_TRACKS,
 } from "./music-manifest";
+import { respectSilentSwitch } from "./audio-session";
 
 let enabled = true;
 let player: HTMLAudioElement | null = null;
@@ -164,6 +165,7 @@ function retryOnGesture() {
 }
 
 if (typeof window !== "undefined") {
+  respectSilentSwitch();
   window.addEventListener("pointerdown", retryOnGesture, { passive: true });
   window.addEventListener("keydown", retryOnGesture);
 }

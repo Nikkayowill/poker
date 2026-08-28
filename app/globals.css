@@ -80,9 +80,6 @@
    (43/36) but doesn't need to load after them -- it never reads their
    classes, only mounts inside them. */
 @import "./styles/48-win-celebration.css";
-/* Narrows .history-overlay/.history-drawer (10-notices.css) the same way
-   21-friends.css does; loads after it for the same reason. */
-@import "./styles/49-spectate-mode.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

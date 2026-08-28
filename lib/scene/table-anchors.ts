@@ -261,7 +261,7 @@ export function seatAngleDeg(slot: number, count: number = SEAT_COUNT): number {
  *   is the axis that reads as up/down on screen: negative z (away) moves
  *   a seat up and further back on screen.
  */
-export const SEAT_OFFSET_PER_SEAT: Vec3[] = [
+const SEAT_OFFSET_PER_SEAT: Vec3[] = [
   { x: 0, y: 0, z: 0 }, // seat 0 (you, camera)
   { x: 0, y: 0, z: 0 }, // seat 1 (far left)
   { x: 0, y: 0, z: 0 }, // seat 2 (left of dealer) — moved back

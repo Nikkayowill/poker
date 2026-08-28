@@ -73,7 +73,7 @@ export class HeadsUpRequestError extends ArcadeRequestError<never> {
 
 // ---- wire shapes -----------------------------------------------------------
 
-export interface HeadsUpPlayerView {
+interface HeadsUpPlayerView {
   profileId: string;
   seat: 0 | 1;
   displayName: string;

@@ -67,7 +67,26 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  /*
+   * getUser() is a real network call to Supabase's auth server, made on every
+   * rendered page view. Without a cap on it, a stall there -- Supabase having
+   * a bad moment, or this edge region having a bad moment reaching it -- blocks
+   * this function from ever returning, and Vercel's own routing middleware has
+   * a hard invocation timeout: once it fires, the entire app is unreachable,
+   * not just the cookie refresh. (This is exactly what a MIDDLEWARE_INVOCATION_
+   * TIMEOUT looks like from the outside: every page stuck loading, nothing
+   * gets in.) Racing it against a timeout means the worst case past
+   * REFRESH_TIMEOUT_MS is a request that goes through with an unrefreshed
+   * cookie -- that player's session might expire a little sooner than usual --
+   * instead of the whole site going down with it. `.catch` covers the other
+   * failure shape, a rejected call (a real network error, not just a slow
+   * one), the same way.
+   */
+  const REFRESH_TIMEOUT_MS = 3_000;
+  await Promise.race([
+    supabase.auth.getUser().catch(() => {}),
+    new Promise<void>((resolve) => setTimeout(resolve, REFRESH_TIMEOUT_MS)),
+  ]);
 
   return response;
 }

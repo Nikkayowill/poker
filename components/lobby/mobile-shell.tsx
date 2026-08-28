@@ -200,37 +200,33 @@ export function MobileShell({
   }, [page]);
 
   /*
-   * On an installed iOS PWA's cold launch, the tab bar (`position: fixed;
-   * bottom: 0`, see 45-mobile-shell.css) can paint pinned against a stale
-   * viewport frame while WKWebView is still settling the real one -- it
-   * reads as "sitting too high" until something forces a repaint, which is
-   * exactly what a route change does (this shell never unmounts on one, so
-   * that alone doesn't explain it fixing itself on navigation elsewhere in
-   * the app). `visualViewport`'s `resize` event fires when that settle
-   * actually completes; nudging a transform on it forces WebKit to
-   * recompute the fixed box against the final viewport instead of waiting
-   * for an unrelated reflow to do it by accident. Two rAFs after mount
-   * cover a launch where the viewport never technically resizes but the
-   * first paint still lands mid-settle.
+   * `position: fixed; bottom: 0` (45-mobile-shell.css) trusts the browser to
+   * already know where the true bottom edge is. On an installed iOS PWA's
+   * cold launch it briefly doesn't: WKWebView paints one frame against a
+   * taller pre-settle viewport before the real one lands, which is why the
+   * bar reads as "sitting too high" only on a fresh launch, and only until
+   * something else (any later relayout, e.g. a route change) recomputes it
+   * for free. Rather than guess at when that moment is, `visualViewport`
+   * reports the real, settled viewport directly -- set the gap between it
+   * and the layout viewport as an explicit `bottom` offset instead of
+   * relying on the CSS default to already be right.
    */
   useEffect(() => {
-    let raf2 = 0;
-    const nudge = () => {
+    const sync = () => {
       const nav = navRef.current;
-      if (!nav) return;
-      nav.style.transform = "translateZ(0.01px)";
-      requestAnimationFrame(() => {
-        if (nav) nav.style.transform = "";
-      });
+      const vv = window.visualViewport;
+      if (!nav || !vv) return;
+      const gap = window.innerHeight - (vv.height + vv.offsetTop);
+      nav.style.bottom = `${Math.max(0, Math.round(gap))}px`;
     };
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(nudge);
-    });
-    window.visualViewport?.addEventListener("resize", nudge);
+    sync();
+    window.visualViewport?.addEventListener("resize", sync);
+    window.visualViewport?.addEventListener("scroll", sync);
+    window.addEventListener("resize", sync);
     return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-      window.visualViewport?.removeEventListener("resize", nudge);
+      window.visualViewport?.removeEventListener("resize", sync);
+      window.visualViewport?.removeEventListener("scroll", sync);
+      window.removeEventListener("resize", sync);
     };
   }, []);
 

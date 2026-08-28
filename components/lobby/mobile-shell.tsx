@@ -81,7 +81,6 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
 import { LobbyNotices } from "./lobby-notices";
-import { MshellNavDebug } from "./mshell-nav-debug";
 
 const PAGES = ["Texas Hold'em", "Ante Up", "Profile"] as const;
 const PAGE_COUNT = PAGES.length;
@@ -325,7 +324,6 @@ export function MobileShell({
 
   return (
     <div className="mshell">
-      <MshellNavDebug navRef={navRef} />
       <div
         className="mshell-viewport"
         onPointerDown={onPointerDown}

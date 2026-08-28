@@ -605,9 +605,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    /* No z-index: nothing in this codebase uses one (verified), and every
-       modal/menu that can open over this shell mounts later in the DOM, which
-       is enough to paint above a bar that carries none either. */
+    z-index: 50;
     /* The safe-area strip is part of the bar, not a gap under it -- otherwise
        iOS paints the document colour beneath the home indicator. The 4px floor
        is for everything that reports no inset (Android, any desktop browser at

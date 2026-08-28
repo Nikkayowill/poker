@@ -207,4 +207,38 @@ describe("heads-up match: leaving forfeits", () => {
     const after = applyPlayerAction(game, { type: "leave-seat" }, tokens[1]);
     expect(after.tournament?.winnerProfileId).toBe(entrants[0].profile.id);
   });
+
+  it("leaving after the match is decided does not zero the winner's own stack", () => {
+    // The winner clicking "Leave table" off the win screen used to run
+    // through the exact same forfeitTournamentSeat call as a real forfeit,
+    // zeroing a stack that already reflected a paid-out win.
+    const { tokens, entrants } = twoEntrants();
+    const game = createHeadsUpGame(entrants, "1k");
+    game.status = "complete";
+    game.tournament!.winnerProfileId = entrants[0].profile.id;
+    game.tournament!.finishedAtHand = 3;
+    const stackBeforeLeaving = game.seats[0].stack;
+
+    const after = applyPlayerAction(game, { type: "leave-seat" }, tokens[0]);
+    expect(after.seats[0].stack).toBe(stackBeforeLeaving);
+    expect(after.seats[0].status).toBe("out");
+  });
+
+  it("the last funded seat leaving with no winner named yet becomes the winner, not an orphaned zero", () => {
+    // Reproduces the real stuck state this guards against: seat 1 already
+    // forfeited/busted to zero with the match never finalized (a lost race,
+    // or an out-of-order retry), then seat 0 -- the actual survivor -- also
+    // calls leave-seat. The old unconditional forfeitTournamentSeat would
+    // zero seat 0 too, leaving nobody funded and finalizeTournamentIfDecided
+    // permanently unable to name a winner.
+    const { tokens, entrants } = twoEntrants();
+    const game = createHeadsUpGame(entrants, "1k");
+    game.status = "complete";
+    game.seats[1].stack = 0;
+    game.seats[1].status = "out";
+
+    const after = applyPlayerAction(game, { type: "leave-seat" }, tokens[0]);
+    expect(after.seats[0].stack).toBeGreaterThan(0);
+    expect(after.tournament?.winnerProfileId).toBe(entrants[0].profile.id);
+  });
 });

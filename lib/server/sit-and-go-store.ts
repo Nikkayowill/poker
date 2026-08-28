@@ -153,6 +153,42 @@ export async function getSitAndGoSeats(tableId: string): Promise<SitAndGoSeatRow
 }
 
 /**
+ * Active tables whose tournament was decided (or double-forfeited into a
+ * dead end) without ever being settled -- the same escrow-holding gap
+ * getStaleActiveHeadsUpTables closes for heads-up matches, at 3-6 seats
+ * instead of 2: a Sit & Go that reaches `state.status: "complete"` with
+ * `tournament.winnerProfileId` still null (every remaining seat forfeited
+ * to zero with nobody left to name a winner) never flips this row's own
+ * status away from "active", and archiveStaleGames's `games.status =
+ * "playing"` sweep never sees it either. See that function's own comment
+ * for why `started_at`, not `updated_at` (this table has none), is the
+ * right cutoff column.
+ */
+export async function getStaleActiveSitAndGoTables(
+  cutoffIso: string,
+  limit: number,
+): Promise<StoredSitAndGoTable[]> {
+  const supabase = adminClient();
+  if (!supabase) {
+    return [...memoryTables.values()]
+      .filter((table) => table.status === "active" && table.gameId && (table.startedAt ?? table.createdAt) < cutoffIso)
+      .sort((a, b) => (a.startedAt ?? a.createdAt).localeCompare(b.startedAt ?? b.createdAt))
+      .slice(0, limit)
+      .map(cloneTable);
+  }
+  const { data, error } = await supabase
+    .from("sit_and_go_tables")
+    .select(TABLE_COLUMNS)
+    .eq("status", "active")
+    .not("game_id", "is", null)
+    .lt("started_at", cutoffIso)
+    .order("started_at", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(`Could not load stale Sit & Go tables: ${error.message}`);
+  return (data ?? []).map((row) => fromRow(row as TableRow));
+}
+
+/**
  * How many are registered at each of these tables, in one round trip. Feeds
  * the lobby list, which every connected browser polls every 2s -- same
  * reasoning as cribbage's getSeatCountsForTables.

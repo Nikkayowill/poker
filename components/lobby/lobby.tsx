@@ -2,7 +2,7 @@
 
 import { FormEvent, useState, type CSSProperties } from "react";
 import Link from "next/link";
-import { Users, X } from "lucide-react";
+import { Eye, Users, X } from "lucide-react";
 import { CHEAPEST_TIER, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { BetAnimationStyle } from "@/lib/scene/bet-style";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -22,6 +22,7 @@ import { FirstRunStrip } from "./first-run-strip";
 import { ArcadePanel } from "./arcade-panel";
 import { BuyInModal } from "./buy-in-modal";
 import { MobileShell } from "./mobile-shell";
+import { WatchTableDrawer } from "./watch-table-drawer";
 
 /**
  * `--tile-index` for the entrance stagger (see `@keyframes hub-tile-in` in
@@ -50,6 +51,7 @@ export function Lobby({
   onQuickPlay,
   onHostPrivate,
   onJoinCode,
+  onWatchTable,
   loading,
   sessionReady,
   error,
@@ -88,6 +90,7 @@ export function Lobby({
   onQuickPlay: (name: string, tier: StakesTier, buyIn: number) => void;
   onHostPrivate: (name: string, tier: StakesTier, buyIn: number) => void;
   onJoinCode: (name: string, code: string) => void;
+  onWatchTable: (gameId: string) => void;
   loading: boolean;
   sessionReady: boolean;
   error: string | null;
@@ -147,6 +150,8 @@ export function Lobby({
   // this, and the drawer owns its own fetch, so there is no shared state for
   // the parent to hold.
   const [friendsOpen, setFriendsOpen] = useState(false);
+  // Same story as friendsOpen just above: owns its own fetch, nothing to lift.
+  const [watchOpen, setWatchOpen] = useState(false);
   /* Phone widths get the swipeable shell instead of the hub grid. False
    * through the server render and hydration, then the real measurement; see
    * the hook for why that is the honest default and how 45-mobile-shell.css
@@ -246,6 +251,7 @@ export function Lobby({
             onHostPrivate={() => setBuyInMode("host")}
             onJoinCode={(code) => onJoinCode(name.trim() || "You", code)}
             onOpenFriends={() => setFriendsOpen(true)}
+            onOpenWatch={() => setWatchOpen(true)}
             onSignOut={profile.isRegistered ? onSignOut : onSaveProgress}
             soundEnabled={soundEnabled}
             onToggleSound={onToggleSound}
@@ -263,6 +269,12 @@ export function Lobby({
         </section>
 
         {friendsOpen && <FriendsDrawer onClose={() => setFriendsOpen(false)} />}
+        {watchOpen && (
+          <WatchTableDrawer
+            onClose={() => setWatchOpen(false)}
+            onWatch={(gameId) => { setWatchOpen(false); onWatchTable(gameId); }}
+          />
+        )}
         {buyInMode && (
           <BuyInModal
             title={buyInMode === "host" ? "Host a private table" : "Join a table"}
@@ -419,7 +431,20 @@ export function Lobby({
             <Users className="hub-tile-go" size={18} aria-hidden="true" />
           </button>
 
-          <form className="hub-tile hub-tile-code" style={tileIndexStyle(7)} onSubmit={submitJoin}>
+          <button
+            type="button"
+            className="hub-tile hub-tile-watch"
+            style={tileIndexStyle(7)}
+            onClick={() => { tapSound(); setWatchOpen(true); }}
+          >
+            <span className="hub-tile-body">
+              <strong>Watch a table</strong>
+              <small>Spectate a table in progress</small>
+            </span>
+            <Eye className="hub-tile-go" size={18} aria-hidden="true" />
+          </button>
+
+          <form className="hub-tile hub-tile-code" style={tileIndexStyle(8)} onSubmit={submitJoin}>
             <label htmlFor="join-code">Join with a room code</label>
             <div className="hub-code-row">
               <input
@@ -441,6 +466,12 @@ export function Lobby({
       <SiteFooter />
 
       {friendsOpen && <FriendsDrawer onClose={() => setFriendsOpen(false)} />}
+      {watchOpen && (
+        <WatchTableDrawer
+          onClose={() => setWatchOpen(false)}
+          onWatch={(gameId) => { setWatchOpen(false); onWatchTable(gameId); }}
+        />
+      )}
       {buyInMode && (
         <BuyInModal
           title={buyInMode === "host" ? "Host a private table" : "Join a table"}

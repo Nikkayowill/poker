@@ -499,6 +499,78 @@ export async function findOpenPublicGame(tier: StakesTier): Promise<string | nul
   return candidateIds.find((id) => populated.has(id)) ?? candidateIds[0];
 }
 
+export interface OpenTableSummary {
+  id: string;
+  tier: StakesTier;
+  humanCount: number;
+  seatCount: number;
+  handNumber: number;
+}
+
+const OPEN_TABLE_LIST_LIMIT = 20;
+
+/**
+ * Public tables mid-hand, for a lobby "watch a table" list -- not a
+ * matchmaking candidate list (that's findOpenPublicGame, which only cares
+ * about open seats). A spectator wants the opposite bias: the fullest,
+ * liveliest tables first, closed seats and all.
+ */
+export async function listPublicPlayingGames(limit = OPEN_TABLE_LIST_LIMIT): Promise<OpenTableSummary[]> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const summaries: OpenTableSummary[] = [];
+    for (const state of memoryGames.values()) {
+      if (state.isPrivate || state.status !== "playing") continue;
+      summaries.push({
+        id: state.id,
+        tier: state.tier,
+        humanCount: state.seats.filter((seat) => seat.isHuman).length,
+        seatCount: state.seats.length,
+        handNumber: state.handNumber,
+      });
+    }
+    summaries.sort((a, b) => b.humanCount - a.humanCount);
+    return summaries.slice(0, limit);
+  }
+
+  // Over-fetched: the query can't sort by human seat count (that's a joined
+  // row count, not a column), so it ranks by recency and the real ranking
+  // happens client-side below, over a wider candidate pool than the final
+  // limit so a recently-quiet table doesn't crowd out a busier older one.
+  const { data, error } = await supabase
+    .from("games")
+    .select("id, small_blind, big_blind, current_hand_number, game_seats(is_bot)")
+    .eq("is_private", false)
+    .eq("status", "playing")
+    .order("updated_at", { ascending: false })
+    .limit(limit * 4);
+  if (error) throw new Error(`Could not list tables: ${error.message}`);
+
+  const summaries: OpenTableSummary[] = [];
+  for (const row of data ?? []) {
+    const tier = tierForBlinds(row.small_blind as number, row.big_blind as number);
+    if (!tier) continue; // stale/mismatched blinds should never happen, but never crash a list over one bad row
+    const seats = (row.game_seats ?? []) as Array<{ is_bot: boolean }>;
+    summaries.push({
+      id: row.id as string,
+      tier,
+      humanCount: seats.filter((seat) => !seat.is_bot).length,
+      seatCount: seats.length,
+      handNumber: row.current_hand_number as number,
+    });
+  }
+  summaries.sort((a, b) => b.humanCount - a.humanCount);
+  return summaries.slice(0, limit);
+}
+
+function tierForBlinds(smallBlind: number, bigBlind: number): StakesTier | null {
+  for (const tier of Object.keys(TIER_CONFIG) as StakesTier[]) {
+    const config = TIER_CONFIG[tier];
+    if (config.smallBlind === smallBlind && config.bigBlind === bigBlind) return tier;
+  }
+  return null;
+}
+
 /**
  * Tables still live, split by public/private. A completed or archived game
  * is history, not a running table, so those statuses are excluded rather

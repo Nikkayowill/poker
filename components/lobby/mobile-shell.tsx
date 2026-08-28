@@ -208,20 +208,31 @@ export function MobileShell({
    * at first mount, against a safe-area-inset-bottom value WKWebView hadn't
    * finished reporting yet, and nothing ever asks it to relayout again --
    * a remount does that by accident, this forces the same thing on purpose.
-   * A `display` toggle forces a real layout pass (unlike a `transform`
-   * nudge, which only touches compositing and never revisits `bottom`);
-   * `offsetHeight` between the two writes forces it synchronously, and both
-   * happen in the same tick, before the browser paints, so there's nothing
-   * to see.
+   *
+   * One forced reflow on the next frame (take 2) still wasn't enough -- a
+   * cold-launch screenshot caught the gap surviving it, so WKWebView can
+   * take more than a single frame past mount to settle the real inset, and
+   * it never tells us when. There's no event to wait for instead (that's
+   * what take 1's visualViewport listener tried and take 2 dropped, per the
+   * remount tell above), so this now keeps forcing a relayout every frame
+   * for a couple of seconds after mount rather than betting on one. A
+   * `display` toggle forces a real layout pass (unlike a `transform` nudge,
+   * which only touches compositing and never revisits `bottom`/padding
+   * math); `offsetHeight` between the two writes forces it synchronously,
+   * so every retry is still invisible, not just the first.
    */
   useEffect(() => {
     const nav = navRef.current;
     if (!nav) return;
-    const raf = requestAnimationFrame(() => {
+    let raf = 0;
+    const deadline = Date.now() + 2000;
+    const settle = () => {
       nav.style.display = "none";
       void nav.offsetHeight;
       nav.style.display = "";
-    });
+      if (Date.now() < deadline) raf = requestAnimationFrame(settle);
+    };
+    raf = requestAnimationFrame(settle);
     return () => cancelAnimationFrame(raf);
   }, []);
 

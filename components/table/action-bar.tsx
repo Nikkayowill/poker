@@ -82,6 +82,7 @@ export function ActionBar({
   onLeave,
   profile,
   onClaimBackstop,
+  isSpectator,
 }: {
   game: GameSnapshot;
   pending: boolean;
@@ -96,6 +97,16 @@ export function ActionBar({
    * ways out.
    */
   onClaimBackstop: () => void;
+  /**
+   * True only for a caller who opened this table through "Watch a table",
+   * never through a seat of their own. `game.isSeated: false` alone can't
+   * carry this: it's also what a busted player whose seat closed reads,
+   * and that player needs the "you're out of chips" copy below, not a
+   * spectator's. This is client-only routing state (see watchTable in
+   * poker-app.tsx), not part of the server's snapshot, on purpose --
+   * nothing about who is allowed to read this table changes with it.
+   */
+  isSpectator: boolean;
 }) {
   const legal = game.legalActions;
   const mySeat = game.seats.find((seat) => seat.isMine);
@@ -288,32 +299,48 @@ export function ActionBar({
     // exit is the header. Reading the deadline rather than counting stacks
     // keeps this agreeing with scheduleNextHand by construction.
     const tableIsDone = tournamentWon || (game.isSeated && !game.nextHandAt);
+    // tableIsDone above is gated on game.isSeated, which is always false for
+    // a spectator -- it can never tell a spectator apart from a table that
+    // has genuinely stopped dealing (rare, but real; see engine.ts's "Not
+    // enough players with chips to continue."). nextHandAt itself is never
+    // redacted (toSnapshot spreads it unconditionally), so a spectator's own
+    // "is this actually over" reads it directly instead.
+    const spectatorTableDone = isSpectator && !game.nextHandAt;
+    const doneForViewer = isSpectator ? spectatorTableDone : tableIsDone;
     return (
       <div className="action-bar">
         <div className="action-slot-status">
           <span className="action-kicker">
-            {!game.isSeated ? "Seat closed" : tournamentWon ? "Match won" : tableIsDone ? "Table finished" : "Hand complete"}
+            {isSpectator
+              ? (spectatorTableDone ? "Table finished" : "Watching")
+              : !game.isSeated ? "Seat closed" : tournamentWon ? "Match won" : tableIsDone ? "Table finished" : "Hand complete"}
             {/* The clock itself: absent once the table is genuinely done
-                dealing (tableIsDone), present otherwise so the ordinary beat
-                between every hand never sits with no visible sign it's
-                moving on its own. Always the same beat, bust or no bust. */}
-            {game.isSeated && !tableIsDone && game.nextHandAt && (
+                dealing, present otherwise so the ordinary beat between every
+                hand never sits with no visible sign it's moving on its own.
+                Same beat for a spectator as for a seated player. */}
+            {!doneForViewer && game.nextHandAt && (
               <> · <NextHandCountdown deadlineAt={game.nextHandAt} />s</>
             )}
           </span>
           <strong>
-            {!game.isSeated
-              ? "You’re out of chips. Start a fresh table when you’re ready."
-              : tournamentWon
-                ? "You won the match!"
-                : otherBustedSeat
-                  ? `${otherBustedSeat.name} is sat out — the table deals on without them.`
-                  : game.message}
+            {isSpectator
+              ? (spectatorTableDone
+                ? "This table has stopped dealing."
+                : "This table just finished a hand — the next one deals shortly.")
+              : !game.isSeated
+                ? "You’re out of chips. Start a fresh table when you’re ready."
+                : tournamentWon
+                  ? "You won the match!"
+                  : otherBustedSeat
+                    ? `${otherBustedSeat.name} is sat out — the table deals on without them.`
+                    : game.message}
           </strong>
         </div>
         <div className="action-slot-controls">
           {(!game.isSeated || tableIsDone) && (
-            <button className="primary-action action-slot-wide" onClick={onLeave}>Return to lobby</button>
+            <button className="primary-action action-slot-wide" onClick={onLeave}>
+              {isSpectator ? "Stop watching" : "Return to lobby"}
+            </button>
           )}
         </div>
       </div>
@@ -332,6 +359,25 @@ export function ActionBar({
         <div className="action-slot-status">
           <span className="action-kicker">Sat out</span>
           <strong>You’re in for the next hand -- sit tight while this one finishes.</strong>
+        </div>
+      </div>
+    );
+  }
+
+  // A spectator's `legal` is always null (the server never sends legal
+  // actions to a caller holding no seat -- see toSnapshot in engine.ts), so
+  // without this the three-button bar below would just render every button
+  // permanently disabled: not wrong, but reads like a broken table rather
+  // than a table you're watching on purpose.
+  if (isSpectator && game.status === "playing") {
+    return (
+      <div className="action-bar">
+        <div className="action-slot-status">
+          <span className="action-kicker">Watching</span>
+          <strong>{game.message}</strong>
+        </div>
+        <div className="action-slot-controls">
+          <button className="primary-action action-slot-wide" onClick={onLeave}>Stop watching</button>
         </div>
       </div>
     );

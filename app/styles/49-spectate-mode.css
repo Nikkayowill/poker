@@ -1,0 +1,46 @@
+/* Watch-a-table drawer.
+ *
+ * Same shell reuse as friends (see 21-friends.css's own header): .history-overlay
+ * and .history-drawer already carry the slide-in, z-index, and phone
+ * bottom-sheet treatment, so this file holds only what's specific to a list
+ * of live tables.
+ */
+
+.watch-table-drawer { width: min(360px, 100%); }
+
+.watch-table-list {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 19px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.watch-table-list::-webkit-scrollbar { display: none; }
+
+.watch-table-empty { margin: 18px 0; color: #8d84a3; font-size: 12px; text-align: center; }
+
+.watch-table-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.watch-table-row + .watch-table-row { border-top: 1px solid var(--rule); }
+.watch-table-row:hover .watch-table-row-main strong { color: #c9a2f0; }
+.watch-table-row svg { flex-shrink: 0; color: #8d84a3; }
+.watch-table-row:hover svg { color: #c9a2f0; }
+
+.watch-table-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.watch-table-row-main strong {
+  color: #dfe5df;
+  font: 500 13.5px Georgia, serif;
+  transition: color .12s ease;
+}
+.watch-table-row-main small { color: #8d84a3; font-size: 10.5px; }

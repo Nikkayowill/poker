@@ -41,6 +41,7 @@ import {
   ClipboardList,
   Cloud,
   Coins,
+  Eye,
   Gamepad2,
   Gift,
   Layers,
@@ -137,6 +138,7 @@ export function MobileShell({
   onHostPrivate,
   onJoinCode,
   onOpenFriends,
+  onOpenWatch,
   onSignOut,
   soundEnabled,
   onToggleSound,
@@ -168,6 +170,7 @@ export function MobileShell({
   onHostPrivate: () => void;
   onJoinCode: (code: string) => void;
   onOpenFriends: () => void;
+  onOpenWatch: () => void;
   onSignOut: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
@@ -320,6 +323,7 @@ export function MobileShell({
               onHostPrivate={onHostPrivate}
               onJoinCode={onJoinCode}
               onOpenFriends={onOpenFriends}
+              onOpenWatch={onOpenWatch}
             />
           </section>
 
@@ -392,6 +396,7 @@ function PlayPane({
   onHostPrivate,
   onJoinCode,
   onOpenFriends,
+  onOpenWatch,
 }: {
   profile: PlayerProfile;
   loading: boolean;
@@ -410,6 +415,7 @@ function PlayPane({
   onHostPrivate: () => void;
   onJoinCode: (code: string) => void;
   onOpenFriends: () => void;
+  onOpenWatch: () => void;
 }) {
   const router = useRouter();
   const [tier, setTier] = useState<StakesTier>(CHEAPEST_TIER);
@@ -549,6 +555,11 @@ function PlayPane({
           <Users size={20} strokeWidth={1.8} aria-hidden="true" />
           <strong>Friends</strong>
           <small>People you play with</small>
+        </button>
+        <button type="button" className="mshell-card mshell-tile" onClick={() => { tapSound(); onOpenWatch(); }}>
+          <Eye size={20} strokeWidth={1.8} aria-hidden="true" />
+          <strong>Watch a table</strong>
+          <small>Spectate a table in progress</small>
         </button>
       </div>
 

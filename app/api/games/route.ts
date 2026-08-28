@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createGame, toSnapshot } from "@/lib/game/engine";
 import { CHEAPEST_TIER, STAKES_TIERS, type StakesTier } from "@/lib/game/tiers";
-import { createStoredGame, persistenceMode } from "@/lib/server/game-store";
+import { createStoredGame, listPublicPlayingGames, persistenceMode } from "@/lib/server/game-store";
 import { creditGold, spendGold } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { withRequestSessionCookie } from "@/lib/server/session";
@@ -17,6 +17,23 @@ const bodySchema = z.object({
   tier: z.enum(STAKES_TIERS).optional(),
   buyIn: z.number().int().positive().optional(),
 });
+
+/**
+ * Public tables mid-hand, for the lobby's "watch a table" list. No session
+ * or seat required to read this -- same no-auth-needed contract as
+ * GET /api/games/[id], which is what actually backs the spectate view.
+ */
+export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request, "games:list", 60, 60 * 1000);
+  if (limited) return limited;
+  try {
+    const tables = await listPublicPlayingGames();
+    return NextResponse.json({ tables });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not list tables.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
 
 /** Hosts a brand-new table: "Host Private Game" (isPrivate: true), or a fresh public table. */
 export async function POST(request: NextRequest) {

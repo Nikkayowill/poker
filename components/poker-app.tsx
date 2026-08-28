@@ -139,6 +139,11 @@ const FREE_GOLD_TRIGGER: RewardTrigger = {
 
 export function PokerApp() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
+  // Whether the current `game` was opened via "Watch a table" rather than a
+  // seat of the caller's own. Deliberately not derived from `game.isSeated`
+  // -- see the doc comment on ActionBar's isSpectator prop for why that
+  // alone can't tell a spectator from a busted former player.
+  const [spectating, setSpectating] = useState(false);
   // A predicted view of `game` for the caller's own fold/call/raise/all-in,
   // so the felt reacts on the tap instead of on the round trip; see
   // lib/game/optimistic-action.ts. Only ever rendered from, never treated
@@ -583,6 +588,7 @@ export function PokerApp() {
     if (!response.ok) throw new Error(data.error ?? "Could not join that table.");
     // No sound here: the game-on edge above fires off `game` itself, so this
     // path and the ?table= deep link it rewrites to now sound the same.
+    setSpectating(false);
     ingest(data);
     window.history.replaceState({}, "", `/?table=${data.game.id}`);
   }, [ingest]);
@@ -624,10 +630,13 @@ export function PokerApp() {
     const params = new URLSearchParams(window.location.search);
     const tableId = params.get("table");
     const code = params.get("code");
+    const watch = params.get("watch") === "1";
     if (!tableId && !code) return;
     const timer = window.setTimeout(() => {
+      if (tableId && watch) setSpectating(true);
       const opened = tableId ? refresh(tableId, { force: true }) : joinByCode(code!);
       void opened.catch((caught) => {
+        if (tableId && watch) setSpectating(false);
         setError(caught instanceof Error ? caught.message : "Could not open that table.");
         window.history.replaceState({}, "", "/");
       });
@@ -987,6 +996,7 @@ export function PokerApp() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not find you a table.");
+      setSpectating(false);
       ingest(data);
       window.history.pushState({}, "", `/?table=${data.game.id}`);
     } catch (caught) {
@@ -1007,6 +1017,7 @@ export function PokerApp() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not host a table.");
+      setSpectating(false);
       ingest(data);
       if (data.game?.roomCode) setCreatedRoomCode(data.game.roomCode);
       window.history.pushState({}, "", `/?table=${data.game.id}`);
@@ -1024,6 +1035,35 @@ export function PokerApp() {
       await joinByCode(code, name);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not join that table.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // A spectator opens the same GET the deep-link bootstrap already calls;
+  // toSnapshot itself withholds hole cards and legalActions for a caller
+  // holding no seat there, so this needs no separate "spectator" fetch path.
+  // A private table's 403 surfaces as the normal error toast -- watching one
+  // was never on offer, so refusing it here is correct, not a rough edge.
+  const watchTable = async (id: string) => {
+    setLoading(true);
+    setError(null);
+    // Set before the fetch, not after: refresh() awaits a real network round
+    // trip, and ingest() (inside it) calls setGame synchronously the moment
+    // that response lands. Setting this after await would leave a real,
+    // visible window where the table has rendered but isSpectator is still
+    // false -- exactly the busted-former-player copy this flag exists to
+    // avoid. Reset on failure so a rejected table (private, gone) doesn't
+    // leave spectating stuck true with no table to show for it.
+    setSpectating(true);
+    try {
+      await refresh(id, { force: true });
+      // watch=1 makes a reload of this URL re-enter as a spectator instead
+      // of defaulting to spectating: false -- see the bootstrap effect below.
+      window.history.pushState({}, "", `/?table=${id}&watch=1`);
+    } catch (caught) {
+      setSpectating(false);
+      setError(caught instanceof Error ? caught.message : "Could not open that table.");
     } finally {
       setLoading(false);
     }
@@ -1086,6 +1126,7 @@ export function PokerApp() {
   const leave = () => {
     leftGameIdRef.current = game?.id ?? null;
     setGame(null);
+    setSpectating(false);
     setError(null);
     window.history.replaceState({}, "", "/");
   };
@@ -1608,6 +1649,7 @@ export function PokerApp() {
             onLeaveSeat={leaveSeat}
             profile={profile}
             onClaimBackstop={claimBackstop}
+            isSpectator={spectating}
             onCustomize={() => setProfileOpen(true)}
             connectionState={connectionState}
             soundEnabled={soundEnabled}
@@ -1639,6 +1681,7 @@ export function PokerApp() {
             onQuickPlay={quickPlay}
             onHostPrivate={hostPrivate}
             onJoinCode={joinWithCode}
+            onWatchTable={watchTable}
             loading={loading}
             sessionReady={!profileLoading}
             error={error}

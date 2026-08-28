@@ -13,6 +13,7 @@ import {
   createStoredGame,
   findOpenPublicGame,
   getStoredGame,
+  listPublicPlayingGames,
   loadGameWithTimeouts,
 } from "./game-store";
 
@@ -196,6 +197,44 @@ describe("countActiveGames (memory mode)", () => {
     const live = createGame(randomUUID());
     await createStoredGame(live);
     expect((await countActiveGames()).publicTables).toBe(before.publicTables + 1);
+  });
+});
+
+describe("listPublicPlayingGames (memory mode)", () => {
+  it("lists only public tables still playing, ranked by human seat count", async () => {
+    const before = await listPublicPlayingGames(1000);
+    const beforeIds = new Set(before.map((table) => table.id));
+
+    const finished = createGame(randomUUID());
+    finished.status = "complete";
+    await createStoredGame(finished);
+
+    const privateTable = createGame(randomUUID(), "You", undefined, { isPrivate: true });
+    await createStoredGame(privateTable);
+
+    // createGame always seats the host as a human at seat 0, so an all-bot
+    // table has to be produced by hand -- there's no route that creates one.
+    const quiet = createGame(randomUUID());
+    quiet.seats[0].isHuman = false;
+    quiet.seats[0].ownerToken = null;
+    await createStoredGame(quiet);
+
+    const populated = createGame(randomUUID(), "You");
+    await createStoredGame(populated);
+
+    const after = await listPublicPlayingGames(1000);
+    const fresh = after.filter((table) => !beforeIds.has(table.id));
+    const freshIds = fresh.map((table) => table.id);
+
+    expect(freshIds).toContain(quiet.id);
+    expect(freshIds).toContain(populated.id);
+    expect(freshIds).not.toContain(finished.id);
+    expect(freshIds).not.toContain(privateTable.id);
+
+    // The populated table has a human seat and should rank ahead of the
+    // all-bot one, wherever either lands relative to tables from an earlier
+    // test in this file.
+    expect(freshIds.indexOf(populated.id)).toBeLessThan(freshIds.indexOf(quiet.id));
   });
 });
 

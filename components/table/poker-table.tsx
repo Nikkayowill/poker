@@ -200,6 +200,7 @@ export function PokerTable({
   onLeaveSeat,
   profile,
   onClaimBackstop,
+  isSpectator,
   onCustomize,
   connectionState,
   soundEnabled,
@@ -224,6 +225,8 @@ export function PokerTable({
   profile: PlayerProfile | null;
   /** The broke-player recovery top-up; see components/table/action-bar.tsx. */
   onClaimBackstop: () => void;
+  /** See the doc comment on ActionBar's own isSpectator prop. */
+  isSpectator: boolean;
   onCustomize: () => void;
   connectionState: ConnectionState;
   soundEnabled: boolean;
@@ -1473,6 +1476,7 @@ export function PokerTable({
             onLeave={onLeave}
             profile={profile}
             onClaimBackstop={onClaimBackstop}
+            isSpectator={isSpectator}
           />
         </div>
       </section>

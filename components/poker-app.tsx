@@ -63,7 +63,7 @@ import {
 } from "@/lib/push/client";
 import { Lobby } from "@/components/lobby/lobby";
 import { retireFirstRunStrip } from "@/components/lobby/first-run-strip";
-import { StackChipsMark } from "@/components/brand/stackchips-mark";
+import { StackChipsLogo } from "@/components/brand/stackchips-logo";
 import { ProfileModal } from "@/components/profile/profile-modal";
 import { Menu, type MenuItem } from "@/components/nav/menu";
 import { DonateButton } from "@/components/nav/donate-button";
@@ -1573,20 +1573,14 @@ export function PokerApp() {
       </div>
       {!game && (
         <header className={`lobby-header${navShowing ? " is-scrolling-up" : ""}`}>
-          {/* The mark alone. The typeset name that used to sit beside it is
-              gone from both headers: the mark carries the brand, and the two
-              together were saying the same thing twice in a 44px row.
-              Still the simplified mark rather than the full badge: at the
-              ~50px this row allows, the badge's own banner type collapses
-              into a smudge (checked on a real render), and with the wordmark
-              removed there is no more vertical room, not less.
-              The SVG is aria-hidden, so the label lives on the wrapper,
-              otherwise the header's only content is invisible to a screen
-              reader. */}
+          {/* The full "StackChips" wordmark, small: this is the lobby's own
+              nav brand slot, not the app icon/favicon (that's the single "S"
+              glyph — see app/icon.svg and StackChipsMark) and not the
+              hero-sized sign-in lockup (StackChipsLogo's own glow is tuned
+              for that scale). Kayo asked for the recognizable wordmark here
+              specifically, not the glyph alone. */}
           <div className="wordmark wordmark-mark-only">
-            <span className="wordmark-mark" role="img" aria-label="StackChips">
-              <StackChipsMark size={50} />
-            </span>
+            <StackChipsLogo className="header-logo" />
           </div>
           {/* The hub tiles already carry Collection and the leaderboard, so
               repeating them here was three chances to tap the same thing.

@@ -130,12 +130,24 @@ body:has(.lobby-hub) { background: var(--brand-room); }
   cursor: pointer;
 }
 
-/* Both headers are the mark alone now. The type rules above stay because the
-   class is still the header's brand slot and a caller may put a name back in
-   it; what this variant does is drop the gap that only existed to separate a
-   mark from words, so the mark is not floating in a 12px void at the left
-   edge of a row it now shares with nothing. */
+/* Both headers used to be the mark alone; the lobby header now carries the
+   full wordmark instead (see poker-app.tsx). The type rules above stay
+   because the class is still the header's brand slot and a caller may put a
+   name back in it; what this variant does is drop the gap that only existed
+   to separate a mark from words, so a mark-only caller (the in-game header)
+   is not floating in a 12px void at the left edge of a row it shares with
+   nothing. */
 .wordmark-mark-only { gap: 0; }
+
+/* The lobby's small wordmark. Same SVG as .entry-logo (sign-in's hero
+   lockup), just clamped to nav height instead of nav width -- the wordmark
+   is a wide lockup (viewBox ~5.9:1), so a height clamp is what keeps it
+   inside the header row without it needing to know the row's own height. */
+.header-logo {
+  display: block;
+  height: clamp(28px, 6vw, 34px);
+  width: auto;
+}
 
 .mark {
   width: 38px;

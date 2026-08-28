@@ -73,6 +73,18 @@ export function __resetHeadsUpTablesForTest(): void {
   memorySeats.clear();
 }
 
+/**
+ * Test seam only: backdates a table's `started_at` so getStaleActiveHeadsUpTables
+ * treats it as old enough to sweep, the same way game-store.test.ts's own
+ * `backdatedGame` helper stamps a game's `updatedAt` directly rather than
+ * waiting out a real clock.
+ */
+export function __backdateHeadsUpTableStartForTest(tableId: string, startedAt: string): void {
+  const table = memoryTables.get(tableId);
+  if (!table) return;
+  memoryTables.set(tableId, { ...table, startedAt });
+}
+
 function cloneTable(table: StoredHeadsUpTable): StoredHeadsUpTable {
   return { ...table };
 }
@@ -145,6 +157,46 @@ export async function getHeadsUpTableByGameId(gameId: string): Promise<StoredHea
     .maybeSingle();
   if (error) throw new Error(`Could not load that heads-up table: ${error.message}`);
   return data ? fromRow(data as TableRow) : null;
+}
+
+/**
+ * Active tables whose match was decided (or double-forfeited into a dead
+ * end) without ever being settled -- the escrow-holding counterpart to
+ * archiveStaleGames's `games.status = "playing"` sweep, which only ever
+ * sees a heads-up game still mid-play. A tournament that reaches
+ * `state.status: "complete"` with `tournament.winnerProfileId` still null
+ * (both seats forfeited to zero with nobody left to name a winner) never
+ * flips this row's own status away from "active", and nothing else ever
+ * looks at it again -- see game-store.ts's stale-sweep comment for the full
+ * story. Keyed on `started_at`, not `updated_at` (this table has no such
+ * column): a genuinely still-being-played match's own liveness is judged
+ * from the linked game, not from here, so this cutoff only needs to be
+ * "old enough that a match begun this long ago is not still in its first
+ * hand" -- the same staleTableMs() threshold the "playing" sweep already
+ * uses for exactly that judgment call.
+ */
+export async function getStaleActiveHeadsUpTables(
+  cutoffIso: string,
+  limit: number,
+): Promise<StoredHeadsUpTable[]> {
+  const supabase = adminClient();
+  if (!supabase) {
+    return [...memoryTables.values()]
+      .filter((table) => table.status === "active" && table.gameId && (table.startedAt ?? table.createdAt) < cutoffIso)
+      .sort((a, b) => (a.startedAt ?? a.createdAt).localeCompare(b.startedAt ?? b.createdAt))
+      .slice(0, limit)
+      .map(cloneTable);
+  }
+  const { data, error } = await supabase
+    .from("heads_up_tables")
+    .select(TABLE_COLUMNS)
+    .eq("status", "active")
+    .not("game_id", "is", null)
+    .lt("started_at", cutoffIso)
+    .order("started_at", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(`Could not load stale heads-up tables: ${error.message}`);
+  return (data ?? []).map((row) => fromRow(row as TableRow));
 }
 
 export async function getHeadsUpSeats(tableId: string): Promise<HeadsUpSeatRow[]> {

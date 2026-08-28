@@ -6,6 +6,7 @@ import { getPlayerStanding } from "./stats-store";
 import { ensureProfile } from "./profile-store";
 import { joinSitAndGoTable, openSitAndGoTable, readSitAndGoTableById } from "./sit-and-go-service";
 import { openHeadsUpQuickPlay, readHeadsUpTableById } from "./heads-up-service";
+import { __backdateHeadsUpTableStartForTest } from "./heads-up-store";
 import {
   advanceStoredGameWithTimeouts,
   archiveStaleGames,
@@ -334,6 +335,45 @@ describe("stale-table matchmaking and archival (memory mode)", () => {
     for (let i = 0; i < 2; i += 1) {
       // Debited the stake at match creation, refunded the same stake here:
       // net zero. Seat 0's inflated 2000 stack must never have been credited.
+      expect(await ensureProfile(tokens[i]).then((p) => p.goldBalance)).toBe(before[i].goldBalance);
+    }
+  });
+
+  it("refunds a heads-up match stuck 'complete' with no winner ever named, even though games.status already left 'playing'", async () => {
+    // The orphan sweepUndecidedTournaments exists for: both seats forfeited
+    // to zero (a double leave-seat, or the pre-fix corruption where the
+    // survivor's own post-decision leave zeroed them too) with nobody left
+    // for finalizeTournamentIfDecided to name winner. The underlying game
+    // is already "complete", so the ordinary games.status === "playing"
+    // sweep above never sees this row at all -- only the heads_up_tables
+    // row itself (still "active") says anything is wrong.
+    const tokens = [randomUUID(), randomUUID()];
+    const before = await Promise.all(tokens.map((token) => ensureProfile(token)));
+
+    const { table: opened } = await openHeadsUpQuickPlay(tokens[0], "1k");
+    const { table: matched } = await openHeadsUpQuickPlay(tokens[1], "1k");
+    const gameId = matched.gameId!;
+
+    const game = (await getStoredGame(gameId))!;
+    game.status = "complete";
+    game.seats[0].stack = 0;
+    game.seats[0].status = "out";
+    game.seats[1].stack = 0;
+    game.seats[1].status = "out";
+    game.tournament!.winnerProfileId = null;
+    await createStoredGame(game);
+    __backdateHeadsUpTableStartForTest(opened.id, new Date(Date.now() - 60_000).toISOString());
+
+    await archiveStaleGames();
+
+    // The game itself is left alone -- it's already "complete", not
+    // "playing", so this sweep never touches games.status at all.
+    expect((await getStoredGame(gameId))?.status).toBe("complete");
+    const { table: cancelled } = await readHeadsUpTableById(tokens[0], opened.id);
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.winnerId).toBeNull();
+
+    for (let i = 0; i < 2; i += 1) {
       expect(await ensureProfile(tokens[i]).then((p) => p.goldBalance)).toBe(before[i].goldBalance);
     }
   });

@@ -2193,17 +2193,40 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
             : "Finish this hand before leaving a Sit & Go table.",
         );
       }
-      forfeitTournamentSeat(state, seatIndex);
-      // Closes the same race finalizeTournamentIfDecided closes for a
-      // natural bust: a voluntary forfeit that leaves only one funded seat
-      // (the last two players at a Sit & Go, or either heads-up seat) must
-      // decide the match right here, not wait on a next-hand pass that only
-      // the surviving seat has any reason left to trigger. A Sit & Go with
-      // three or more players still funded must NOT be decided off whichever
-      // seat this find happens to hit first, so the funded count is checked
-      // before ever reading a "survivor".
-      const funded = state.seats.filter((candidate) => candidate.stack > 0);
-      if (funded.length < 2) finalizeTournamentIfDecided(state, funded[0]);
+      const leavingSeat = state.seats[seatIndex];
+      const otherFundedSeats = state.seats.filter(
+        (candidate, index) => index !== seatIndex && candidate.stack > 0,
+      );
+      if (state.tournament.winnerProfileId) {
+        // Already decided -- e.g. the winner clicking "Leave table" off the
+        // win screen. A plain exit, not a forfeit: forfeitTournamentSeat
+        // would zero a stack that already reflects a paid-out win.
+        leavingSeat.status = "out";
+      } else if (leavingSeat.stack > 0 && otherFundedSeats.length === 0) {
+        // Every other seat is already forfeited or busted out and nobody
+        // has been named winner yet -- this seat IS the survivor, not a
+        // forfeiter. Finalizing with its funded stack intact is what
+        // actually decides the match; zeroing it first (the old
+        // unconditional forfeit below) is exactly how a match used to end
+        // "complete" with no winner ever named -- see
+        // sweepUndecidedTournaments's own comment in game-store.ts, the
+        // safety net that now catches this state if anything still reaches
+        // it despite this guard.
+        leavingSeat.status = "out";
+        finalizeTournamentIfDecided(state, leavingSeat);
+      } else {
+        forfeitTournamentSeat(state, seatIndex);
+        // Closes the same race finalizeTournamentIfDecided closes for a
+        // natural bust: a voluntary forfeit that leaves only one funded seat
+        // (the last two players at a Sit & Go, or either heads-up seat) must
+        // decide the match right here, not wait on a next-hand pass that only
+        // the surviving seat has any reason left to trigger. A Sit & Go with
+        // three or more players still funded must NOT be decided off whichever
+        // seat this find happens to hit first, so the funded count -- computed
+        // before this seat's own forfeit above -- is checked before ever
+        // reading a "survivor".
+        if (otherFundedSeats.length <= 1) finalizeTournamentIfDecided(state, otherFundedSeats[0]);
+      }
     } else {
       vacateSeat(state, callerToken);
     }

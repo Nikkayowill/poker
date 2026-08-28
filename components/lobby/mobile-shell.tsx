@@ -189,7 +189,6 @@ export function MobileShell({
   /** Live drag distance in px. Null whenever no horizontal drag is in flight. */
   const [drag, setDrag] = useState<number | null>(null);
   const gestureRef = useRef<SwipeGesture | null>(null);
-  const navRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     try {
@@ -198,31 +197,6 @@ export function MobileShell({
       // A full or disabled store just means the next return starts on Play.
     }
   }, [page]);
-
-  /*
-   * On iOS PWA cold launch, WKWebView reads safe-area-inset-bottom before it
-   * has settled to its real value, leaving a gap under the nav bar. The value
-   * updates within 300-400ms, but the CSS doesn't recalculate unless something
-   * forces a reflow. Flipping your phone, navigating, or any relayout fixes it
-   * because the browser has to recompute everything. This forces the nav to
-   * recalculate its padding after the inset settles, once. A display toggle
-   * forces the reflow; three attempts spaced out gives WKWebView time.
-   */
-  useEffect(() => {
-    const nav = navRef.current;
-    if (!nav) return;
-
-    const attempts = [0, 150, 300];
-    const timeouts = attempts.map((delay) =>
-      setTimeout(() => {
-        nav.style.display = "none";
-        void nav.offsetHeight;
-        nav.style.display = "";
-      }, delay)
-    );
-
-    return () => attempts.forEach((_, i) => clearTimeout(timeouts[i]));
-  }, []);
 
   /*
    * Which panes have been looked at, or are one gesture away from being looked
@@ -377,7 +351,7 @@ export function MobileShell({
         </div>
       </div>
 
-      <nav ref={navRef} className="mshell-nav" aria-label="Lobby sections">
+      <nav className="mshell-nav" aria-label="Lobby sections">
         {PAGES.map((name, index) => {
           const Icon = PAGE_ICONS[index];
           const active = index === page;

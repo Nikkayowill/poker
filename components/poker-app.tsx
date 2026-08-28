@@ -1,6 +1,7 @@
 "use client";
 
 import type { RealtimeChannel, Session } from "@supabase/supabase-js";
+import { Capacitor } from "@capacitor/core";
 import { useCallback, useEffect, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import dynamic from "next/dynamic";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
@@ -820,6 +821,10 @@ export function PokerApp() {
 
   useEffect(() => {
     if (!("serviceWorker" in window.navigator)) return;
+    // The native shell (Capacitor) is its own install/update mechanism; the
+    // hand-rolled shell-caching SW is a web-PWA concern only and would just
+    // double-cache against the WebView for no benefit.
+    if (Capacitor.isNativePlatform()) return;
     if (process.env.NODE_ENV === "production") {
       void window.navigator.serviceWorker.register("/sw.js").catch(() => {
         // Installation is an enhancement; normal online play remains available.
@@ -1705,6 +1710,7 @@ export function PokerApp() {
       {activeRewardTrigger && entryComplete && (
         <RewardedAdModal
           trigger={activeRewardTrigger}
+          profile={profile}
           onClose={closeRewardModal}
           onCredited={(credited, remainingToday) => {
             setProfile(credited);

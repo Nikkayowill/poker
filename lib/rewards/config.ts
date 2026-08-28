@@ -75,6 +75,39 @@ export const REWARDED_AD_OFFER_LABEL =
   `Watch a ${REWARDED_AD_DURATION_LABEL} ad to claim ${REWARDED_AD_GOLD.toLocaleString("en-US")} Gold`;
 
 /**
+ * The native app's own "watch an ad, get Gold" offer, verified through
+ * AdMob's server-side verification (SSV) instead of Adsterra's client-timed
+ * wait (see lib/server/admob-ssv-service.ts) -- the real proof-of-watch the
+ * web path cannot have. Same player-facing amount as REWARDED_AD_GOLD, kept
+ * as its own name rather than an alias because the two mechanisms pay from
+ * separate ledgers (rewarded_ad_grants vs admob_ssv_receipts), so a future
+ * repricing of one doesn't quietly rename the other's import too.
+ */
+export const ADMOB_REWARDED_AD_GOLD = REWARDED_AD_GOLD;
+
+/**
+ * The native app's own daily ceiling, counted against admob_ssv_receipts --
+ * a separate counter from the web offer's REWARDED_AD_DAILY_LIMIT. In
+ * practice the two surfaces are mutually exclusive (a session is either the
+ * native shell or a browser, never both at once), so this is defense in
+ * depth rather than the primary bound: worst case, a player who genuinely
+ * used both surfaces in one UTC day is capped at the sum of the two, not
+ * unlimited.
+ */
+export const ADMOB_REWARDED_AD_DAILY_LIMIT = REWARDED_AD_DAILY_LIMIT;
+
+/**
+ * How long the native client polls after AdMob's own on-device "reward
+ * earned" event before giving up and telling the player to check back. The
+ * event that fires on-device is not the credit -- only Google's SSV callback
+ * to our server is (see admob-ssv-service.ts) -- so there is a real, normal
+ * gap between "the video finished" and "the balance moved" while that
+ * callback is in flight across Google's network.
+ */
+export const ADMOB_SSV_POLL_INTERVAL_MS = 2_000;
+export const ADMOB_SSV_POLL_TIMEOUT_MS = 30_000;
+
+/**
  * The balance under which the lobby's "Get Free Gold" row appears:
  * TIER_CONFIG[CHEAPEST_TIER].minBuyIn, a player who can't sit at the
  * cheapest table. Named here, off the tier ladder rather than a bare 1,000,

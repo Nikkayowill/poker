@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">StackChips</string>
+    <string name="title_activity_main">StackChips</string>
+    <string name="package_name">app.stackchips.mobile</string>
+    <string name="custom_url_scheme">app.stackchips.mobile</string>
+    <!-- TODO(Kayo): replace with the real App ID from your AdMob console
+         (see docs/native-app-admob-setup.md) before a real release build.
+         Google's own publicly documented Android sample App ID for now, so a
+         dev build doesn't crash on AdMob.initialize() before that account
+         exists -- never serves real ads, only lets the app start. -->
+    <string name="admob_app_id">ca-app-pub-3940256099942544~3347511713</string>
+</resources>

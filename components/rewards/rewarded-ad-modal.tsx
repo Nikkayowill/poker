@@ -1,15 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { Check, Coins, X } from "lucide-react";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type { RewardTrigger } from "@/lib/rewards/triggers";
 import {
+  ADMOB_SSV_POLL_INTERVAL_MS,
+  ADMOB_SSV_POLL_TIMEOUT_MS,
   REWARDED_AD_DURATION_SECONDS,
   REWARDED_AD_GOLD,
   REWARDED_AD_OFFER_LABEL,
 } from "@/lib/rewards/config";
 import { REWARDED_AD_UNIT } from "@/lib/ads/adsterra";
+import { watchNativeRewardedAd } from "@/lib/ads/admob-native";
 import { AdsterraSlot } from "@/components/ads/adsterra-slot";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
@@ -35,6 +39,16 @@ import { useModalDismiss } from "@/components/use-modal-dismiss";
  * whether it painted, and an ad blocker, a CSP block or a vendor outage would
  * otherwise strand a player behind a wait they completed. They did the thirty
  * seconds; they get the Gold.
+ *
+ * On the native shell (Capacitor.isNativePlatform()) this whole grant/claim
+ * dance is replaced outright: there is no client-issued grant, no countdown
+ * to fake, and no "trust the wait" fallback, because AdMob's rewarded-video
+ * unit carries real server-side verification (see lib/server/admob-ssv-
+ * service.ts). The native branch shows the platform's own ad UI (an
+ * out-of-process overlay this component never renders), then polls
+ * /api/profile/gold/admob-status for the one thing this device cannot
+ * observe directly: whether Google's signed callback has reached our server
+ * and actually moved the balance yet.
  */
 
 type Phase = "offer" | "watching" | "claiming" | "done";
@@ -46,6 +60,10 @@ interface GrantResponse {
   remainingToday: number;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** "4:32" once the wait is a minute or more, "45 seconds" below that; same convention as the puzzle countdowns. */
 function formatCountdown(seconds: number): string {
   if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
@@ -55,6 +73,8 @@ function formatCountdown(seconds: number): string {
 
 export interface RewardedAdModalProps {
   trigger: RewardTrigger;
+  /** Needed only on the native branch: AdMob's SSV callback identifies the player by profile id, and eligibility (registered, not unlimited Gold) is checked client-side before an ad view is spent on someone who could never be credited for it. */
+  profile: PlayerProfile | null;
   onClose: () => void;
   /**
    * Handed the credited profile so the navbar balance updates without a
@@ -70,17 +90,23 @@ export interface RewardedAdModalProps {
   onDailyLimitReached?: () => void;
 }
 
-export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress, onDailyLimitReached }: RewardedAdModalProps) {
+export function RewardedAdModal({ trigger, profile, onClose, onCredited, onSaveProgress, onDailyLimitReached }: RewardedAdModalProps) {
+  const isNative = Capacitor.isNativePlatform();
   const [phase, setPhase] = useState<Phase>("offer");
   const [grant, setGrant] = useState<GrantResponse | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(REWARDED_AD_DURATION_SECONDS);
   const [error, setError] = useState<string | null>(null);
   const [needsAccount, setNeedsAccount] = useState(false);
   const [awarded, setAwarded] = useState(0);
+  // Set only once the native poll (see startNative) gives up without ever
+  // seeing the callback land. Not an error -- the ad genuinely finished --
+  // just the one state where the player should be free to close the modal
+  // without the "walked away mid-wait" framing canDismiss gives "watching".
+  const [pollTimedOut, setPollTimedOut] = useState(false);
   // Escape and backdrop-click close, but not mid-watch: a stray keypress or
   // misplaced click should not throw away a wait in progress. The × is
   // always there for a deliberate exit (its own onClick is unguarded, below).
-  const canDismiss = phase !== "watching" && phase !== "claiming";
+  const canDismiss = pollTimedOut || (phase !== "watching" && phase !== "claiming");
   const { closeButtonRef: closeRef, onBackdropMouseDown } = useModalDismiss(onClose, canDismiss);
   // Read by the unmount cleanup only. A grant the player walked away from has
   // to be released, or the one-pending-per-profile index blocks their next
@@ -153,6 +179,71 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress, 
     }
   }, [grant, onCredited, onDailyLimitReached]);
 
+  /**
+   * The native path: no grant, no countdown. AdMob's own overlay plays the
+   * video (this component never renders anything for it -- see phase
+   * "watching" below, which on native shows a waiting message rather than
+   * the AdsterraSlot), and once it reports the reward was earned the only
+   * thing left to do is find out whether Google's SSV callback has reached
+   * our server yet.
+   */
+  const startNative = useCallback(async () => {
+    setError(null);
+    setNeedsAccount(false);
+    setPollTimedOut(false);
+    if (!profile || !profile.isRegistered) {
+      setNeedsAccount(true);
+      return;
+    }
+    const adUnitId = process.env.NEXT_PUBLIC_ADMOB_REWARDED_AD_UNIT_ID;
+    if (!adUnitId) {
+      setError("Ads aren't set up on this build yet.");
+      return;
+    }
+    const isTesting = process.env.NEXT_PUBLIC_ADMOB_USE_TEST_ADS === "true";
+    const nonce = crypto.randomUUID();
+    setPhase("watching");
+    try {
+      const result = await watchNativeRewardedAd(adUnitId, { userId: profile.id, customData: nonce }, isTesting);
+      if (!result.earned) {
+        setPhase("offer");
+        setError("The ad was closed before it finished, so there's nothing to claim yet.");
+        return;
+      }
+    } catch (caught) {
+      setPhase("offer");
+      setError(caught instanceof Error ? caught.message : "No ad is available right now. Try again shortly.");
+      return;
+    }
+
+    // The ad earned its reward on-device; the credit itself is still in
+    // flight over Google's own network (see the module doc comment). Poll
+    // rather than block indefinitely, and never treat a timeout as failure
+    // -- the callback may simply still be arriving.
+    setPhase("claiming");
+    const deadline = Date.now() + ADMOB_SSV_POLL_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch(`/api/profile/gold/admob-status?nonce=${encodeURIComponent(nonce)}`);
+        const data = await response.json();
+        if (response.ok && data.credited) {
+          const profileResponse = await fetch("/api/profile", { method: "POST" });
+          const profileData = await profileResponse.json();
+          setAwarded(data.awarded);
+          if (profileResponse.ok) onCredited(profileData.profile, data.remainingToday ?? 0);
+          setPhase("done");
+          return;
+        }
+      } catch {
+        // Transient network hiccup on the poll itself -- keep trying until
+        // the deadline rather than surface an error for this alone.
+      }
+      await sleep(ADMOB_SSV_POLL_INTERVAL_MS);
+    }
+    setPollTimedOut(true);
+    setError("Still confirming your reward -- check your balance in a moment.");
+  }, [profile, onCredited]);
+
   // The countdown. A setInterval, not a per-frame timer: nothing here animates,
   // and one tick a second is exactly the resolution the readout has.
   useEffect(() => {
@@ -203,7 +294,11 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress, 
                     </button>
                   )
                   : (
-                    <button type="button" className="primary-action" onClick={() => { selectSound(); void start(); }}>
+                    <button
+                      type="button"
+                      className="primary-action"
+                      onClick={() => { selectSound(); void (isNative ? startNative() : start()); }}
+                    >
                       <Coins size={15} /> Watch and claim
                     </button>
                   )}
@@ -214,7 +309,26 @@ export function RewardedAdModal({ trigger, onClose, onCredited, onSaveProgress, 
             </>
           )}
 
-          {(phase === "watching" || phase === "claiming") && (
+          {isNative && (phase === "watching" || phase === "claiming") && (
+            <>
+              {/* AdMob's rewarded unit is a native, out-of-process overlay --
+                  there is nothing for this component to render for the ad
+                  itself, only the states around it. */}
+              <p className="rewarded-ad-countdown" aria-live="polite">
+                {phase === "watching" ? "Playing the ad…" : "Confirming your reward…"}
+              </p>
+              {error && <p className="rewarded-ad-error" role="alert">{error}</p>}
+              {pollTimedOut && (
+                <div className="rewarded-ad-actions">
+                  <button type="button" className="primary-action" onClick={() => { tapSound(); onClose(); }}>
+                    Close
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {!isNative && (phase === "watching" || phase === "claiming") && (
             <>
               {/* Fixed box from first paint, so nothing in the page reflows
                   when the unit fills or fails. See adsterra-slot.tsx. */}

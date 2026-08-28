@@ -40,17 +40,21 @@ function playerFor(effect: SoundEffect): HTMLAudioElement | null {
 }
 
 /**
- * Instantiates (and starts loading) a set of sounds once. Browsers block audio
- * playback before any user gesture, so there is nothing to gain by loading
- * earlier, and building the <audio> elements up front means later playSound
- * calls only ever reuse an existing element, never create one mid-game.
+ * Instantiates (and starts loading) a set of sounds once. A gesture is only
+ * needed to call play() — fetching/decoding the bytes ahead of that is fine,
+ * and building the <audio> elements up front means later playSound calls
+ * only ever reuse an existing element, never create one mid-game. Waiting
+ * for the first gesture to even start the fetch meant that first tap raced
+ * the network for the click cue, so the click landed a beat before anyone
+ * heard it — loading eagerly instead lets the buffer be ready by the time a
+ * real gesture arrives.
  *
- * Priming everything on the first gesture anywhere meant the first tap on
- * the lobby pulled the entire table sound set down the wire on a screen with
- * no table on it: ~450KB competing with the lobby's own first load, on the
- * one connection a phone has. The set is split instead: the chrome cues load
- * on first gesture (the only ones the lobby can make), the table's own load
- * on the way into a game. Both are idempotent, so the second caller is free.
+ * Priming everything on page load meant the lobby pulled the entire table
+ * sound set down the wire on a screen with no table on it: ~450KB competing
+ * with the lobby's own first load, on the one connection a phone has. The
+ * set is split instead: the chrome cues load immediately (the only ones the
+ * lobby can make), the table's own load on the way into a game. Both are
+ * idempotent, so the second caller is free.
  */
 function prime(effects: readonly SoundEffect[]) {
   if (typeof window === "undefined") return;
@@ -73,8 +77,7 @@ export function primeTableSounds() {
 }
 
 if (typeof window !== "undefined") {
-  window.addEventListener("pointerdown", primeChromeOnce, { once: true, passive: true });
-  window.addEventListener("keydown", primeChromeOnce, { once: true });
+  primeChromeOnce();
 }
 
 export function setSoundEnabled(value: boolean) {
@@ -82,7 +85,10 @@ export function setSoundEnabled(value: boolean) {
 }
 
 function fire(audio: HTMLAudioElement) {
-  audio.currentTime = 0;
+  // Resetting currentTime before the browser has metadata (readyState 0) can
+  // throw in some engines rather than no-op; a fresh element is already at 0,
+  // so there's nothing to rewind yet anyway.
+  if (audio.readyState > 0) audio.currentTime = 0;
   void audio.play().catch(() => {
     // Autoplay can still be blocked before any gesture reaches this tab;
     // the next real interaction will succeed, nothing to recover here.

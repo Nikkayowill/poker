@@ -16,6 +16,7 @@ interface FakeAudio {
   volume: number;
   preload: string;
   currentTime: number;
+  readyState: number;
   play: ReturnType<typeof vi.fn>;
 }
 
@@ -28,6 +29,9 @@ async function loadPlayer() {
     volume = 1;
     preload = "";
     currentTime = -1;
+    // HAVE_CURRENT_DATA: matches a real element once its buffer has enough
+    // to seek, which is the case fire()'s rewind is written for.
+    readyState = 2;
     play = vi.fn(() => Promise.resolve());
     constructor(src: string) {
       this.src = src;
@@ -39,7 +43,13 @@ async function loadPlayer() {
   // `typeof window === "undefined"` guard to take the browser path.
   vi.stubGlobal("window", { addEventListener: vi.fn() });
   vi.resetModules();
-  return import("./sound-effects");
+  const player = await import("./sound-effects");
+  // The module eagerly primes the chrome cues (ui/select/game-on) on import
+  // now, so it can beat the first tap's own click sound to the buffer. None
+  // of these tests exercise those effects; drop what priming built so the
+  // assertions below stay about the effect each test actually plays.
+  built = [];
+  return player;
 }
 
 beforeEach(() => {
@@ -48,6 +58,36 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("priming", () => {
+  it("loads the chrome cues on import, with no gesture required", async () => {
+    built = [];
+    class MockAudio implements FakeAudio {
+      src: string;
+      volume = 1;
+      preload = "";
+      currentTime = -1;
+      readyState = 2;
+      play = vi.fn(() => Promise.resolve());
+      constructor(src: string) {
+        this.src = src;
+        built.push(this);
+      }
+    }
+    vi.stubGlobal("Audio", MockAudio);
+    vi.stubGlobal("window", { addEventListener: vi.fn() });
+    vi.resetModules();
+    await import("./sound-effects");
+    // ui, select, game-on -- fetched/decoded immediately so the first real
+    // tap of a session finds them already buffered instead of racing a
+    // fetch that starts on that same tap.
+    expect(built.map((a) => a.src)).toEqual([
+      SOUND_FILES.ui,
+      SOUND_FILES.select,
+      SOUND_FILES["game-on"],
+    ]);
+  });
 });
 
 describe("playSound", () => {

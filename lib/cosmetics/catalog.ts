@@ -315,6 +315,15 @@ const chipDesignCosmetics: Cosmetic[] = [
     chip: { body: 0x18181a, spot: 0xf0ede4, inlay: 0x232326, ink: 0xf0ede4 },
   },
   {
+    id: "chip-blush",
+    slot: "chipDesign",
+    name: "Blush",
+    description: "Bright pink clay -- easy to spot as your small-blind marker.",
+    rarity: "standard",
+    price: 20_000,
+    chip: { body: 0xa8285f, spot: 0xe6ddcb, inlay: 0xc23a74, ink: 0xf3ece0 },
+  },
+  {
     id: "chip-violet",
     slot: "chipDesign",
     name: "Violet",

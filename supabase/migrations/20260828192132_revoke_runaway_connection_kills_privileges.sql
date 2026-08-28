@@ -1,0 +1,12 @@
+-- runaway_connection_kills (20260819173729_runaway_connection_guard.sql) predates
+-- restrict_data_api_privileges.sql (2026-07-26) and was never swept by it, so it
+-- never got the explicit anon/authenticated revoke every other table in this app
+-- carries as defense-in-depth. RLS is enabled with zero policies, so this is not
+-- exploitable today (default-deny), but the live grant set is the full one
+-- (SELECT/INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER for both anon and
+-- authenticated) -- if anyone ever adds a permissive policy to this table later
+-- without separately checking grants, an anonymous caller with only the public
+-- API key could insert fake rows into this operational safety audit log, or
+-- truncate it outright. Same posture as every other table since the M15
+-- archives: service-role only.
+revoke all on public.runaway_connection_kills from anon, authenticated;

@@ -87,6 +87,12 @@
     flex-direction: column;
     flex-grow: 1;
     min-height: 0;
+    /* The tab bar's total height (its 44px row plus whatever safe-area strip
+       it eats into), named once so the bar itself, the panes that must not
+       scroll content under it, and the install nudge that sits just above it
+       all agree on the same number. See the tab bar's own comment for why the
+       bar is pinned rather than sized by this box's own height. */
+    --mshell-nav-h: calc(44px + max(var(--safe-bottom), 4px));
   }
 
   /* ---- the swipe track ------------------------------------------------ */
@@ -121,7 +127,10 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    padding: 8px 16px 20px;
+    /* The tab bar is pinned (fixed) rather than a flex sibling that carves
+       space out of this pane's own box -- see the tab bar's comment -- so
+       without this a pane's last card would render underneath it. */
+    padding: 8px 16px calc(20px + var(--mshell-nav-h));
   }
 
   /* Every child keeps its own height. A flex item's automatic minimum size is
@@ -135,12 +144,12 @@
   /* The PWA nudge pins itself to the viewport's bottom edge (13-status.css).
      Inside the shell it cannot reach the viewport at all: `.mshell-track` is
      transformed, and a transformed ancestor becomes the containing block for
-     `position: fixed` descendants. So `bottom: 0` here means the bottom of the
-     swipe area, not the screen -- which is exactly where it belongs, sitting
-     resting on top of the tab bar. Its safe-area padding comes off with it;
-     the bar underneath already covers that strip. */
+     `position: fixed` descendants. So `bottom` here resolves against the
+     swipe area, not the screen -- offset by the tab bar's own height so it
+     still rests on top of the bar rather than under it. Its safe-area padding
+     comes off with it; the bar underneath already covers that strip. */
   .lobby-shell .install-strip {
-    bottom: 0;
+    bottom: var(--mshell-nav-h);
     padding-bottom: 10px;
   }
 
@@ -577,11 +586,28 @@
      "floating too high" -- a row of page dots on top (24px of chrome no other
      app's tab bar has), then a 34px shadow blur that drew a dark halo above the
      bar and made a 44px row look taller than it was. Both are gone; this is the
-     bar those passes were aiming at. */
+     bar those passes were aiming at.
+
+     `position: fixed` rather than a flex sibling sized by `.lobby.lobby-shell`'s
+     own `100dvh` calc: on an installed iOS PWA (standalone), `100dvh` measures
+     short of the true screen bottom by roughly the home-indicator inset --
+     Safari-tab and standalone WKWebView disagree here even though both report
+     the same `--safe-bottom` -- so a height-derived bar sat a home-indicator's
+     width above the edge with a strip of bare room colour showing beneath it.
+     Fixed to the real viewport sidesteps the mismatch outright rather than
+     chasing the exact right dvh math for a container it doesn't need to fill.
+     `.mshell-pane`'s bottom padding and `.install-strip`'s offset both key off
+     `--mshell-nav-h` (declared on `.mshell`) to still clear it correctly. */
   .mshell-nav {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    flex-shrink: 0;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    /* No z-index: nothing in this codebase uses one (verified), and every
+       modal/menu that can open over this shell mounts later in the DOM, which
+       is enough to paint above a bar that carries none either. */
     /* The safe-area strip is part of the bar, not a gap under it -- otherwise
        iOS paints the document colour beneath the home indicator. The 4px floor
        is for everything that reports no inset (Android, any desktop browser at

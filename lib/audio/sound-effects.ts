@@ -6,6 +6,7 @@ import {
   soundGain,
   type SoundEffect,
 } from "./manifest";
+import { respectSilentSwitch } from "./audio-session";
 
 export type { SoundEffect };
 
@@ -77,6 +78,7 @@ export function primeTableSounds() {
 }
 
 if (typeof window !== "undefined") {
+  respectSilentSwitch();
   primeChromeOnce();
 }
 

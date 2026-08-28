@@ -635,6 +635,26 @@ export function PokerApp() {
     return () => window.clearTimeout(timer);
   }, [entryComplete, refresh, joinByCode]);
 
+  // A decided Sit & Go/heads-up match is never archived server-side (it
+  // stays a normal, forever-fetchable "complete" game so its win funnel can
+  // render), and nothing else ever clears the ?table= deep link once the
+  // player stops explicitly clicking "Leave table". If they instead close
+  // the tab/app mid-funnel, that URL survives in browser history; returning
+  // to it later re-triggers the deep-link bootstrap above, which force-
+  // refetches this same finished game and replays its win screen as if it
+  // just happened. Clearing the URL the moment the match is actually
+  // decided (not just this hand) closes that off without touching the
+  // funnel currently on screen -- it's the same replaceState `leave()` does
+  // on an explicit exit, just fired automatically once there's nothing left
+  // to come back to.
+  const tournamentWinnerId = game?.tournament?.winnerProfileId ?? null;
+  useEffect(() => {
+    if (!tournamentWinnerId || !gameId) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("table") !== gameId) return;
+    window.history.replaceState({}, "", "/");
+  }, [tournamentWinnerId, gameId]);
+
   /**
    * Redeems a friend invite code and reports the outcome as an auth notice,
    * the same toast used for "Welcome back"/"Progress secured", so an

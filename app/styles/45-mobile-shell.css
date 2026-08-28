@@ -92,7 +92,7 @@
        scroll content under it, and the install nudge that sits just above it
        all agree on the same number. See the tab bar's own comment for why the
        bar is pinned rather than sized by this box's own height. */
-    --mshell-nav-h: calc(44px + max(var(--safe-bottom), 4px));
+    --mshell-nav-h: 44px;
   }
 
   /* ---- the swipe track ------------------------------------------------ */
@@ -606,11 +606,7 @@
     right: 0;
     bottom: 0;
     z-index: 50;
-    /* The safe-area strip is part of the bar, not a gap under it -- otherwise
-       iOS paints the document colour beneath the home indicator. The 4px floor
-       is for everything that reports no inset (Android, any desktop browser at
-       this width). */
-    padding-bottom: max(var(--safe-bottom), 4px);
+    height: 44px;
     background: rgba(22, 27, 38, .94);
     box-shadow: 0 -1px 0 rgba(182, 166, 219, .1), 0 -4px 12px rgba(0, 0, 0, .3);
   }

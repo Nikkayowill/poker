@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import clsx from "clsx";
 import { Coins, Delete, CornerDownLeft } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
+import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { puzzleShareTitle, wordStackShareText } from "@/lib/arcade/puzzles/share";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
@@ -258,25 +259,20 @@ export function WordStackBoard() {
 
   return (
     <main className="bj-shell puzzle-shell">
-      <header className="bj-header">
-        <div className="bj-header-copy">
-          <Link className="bj-back" href="/" onClick={tapSound}>← Back to the lobby</Link>
-          <h1>Daily Word Stack</h1>
-          <p>
-            {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Six guesses · One word a day for everyone
-          </p>
-        </div>
-        {profile && (
-          <div className="puzzle-player">
-            <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
-            <span className="bj-hand-who">
-              <span className="bj-hand-label">{profile.displayName}</span>
-              <span className="bj-hand-caption">
-                {round ? `${round.guesses.length}/${round.maxGuesses} guesses` : "—"}
-              </span>
-            </span>
-          </div>
-        )}
+      {/* floor-bar/floor-head/duel-panel are the same entry-screen furniture
+          Ante Up Sudoku/Memory/Minesweeper use (36-duels.css, 22-arcade.css) --
+          reused rather than restated so the wager step looks like one product
+          instead of two. Only the pre-game step borrows it; the grid, keyboard
+          and finished card below stay this file's own, since a daily puzzle's
+          share/countdown features have no equivalent there. */}
+      <header className="floor-bar">
+        <FloorBackLink />
+        <span className="gold-balance floor-wallet">
+          <Coins size={13} aria-hidden="true" />
+          <strong>
+            {!loaded ? "—" : profile?.unlimitedGold ? "Unlimited" : (profile?.goldBalance ?? 0).toLocaleString()}
+          </strong>
+        </span>
       </header>
 
       {/* Always mounted so a message is announced as a change rather than as
@@ -286,33 +282,57 @@ export function WordStackBoard() {
       </p>
 
       {loaded && !round && (
-        <section className="puzzle-summary">
-          <p className="puzzle-verdict">Wager Gold on today&apos;s word, or play free.</p>
-          <StakePicker
-            ariaLabel="Wager"
-            picks={STAKE_QUICK_PICKS}
-            value={wager}
-            min={0}
-            leading={{ label: "Free", value: 0 }}
-            onChange={(next) => { selectSound(); setWager(next); }}
-          />
-          <p className="puzzle-verdict">
-            {wager === 0
-              ? "Free daily play — no Gold at stake."
-              : wager < MIN_ANTE_UP_WAGER
-                ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
-                : "Fewer guesses, bigger payout — miss all six and the wager is gone."}
-          </p>
-          <button
-            type="button"
-            className="puzzle-share-button"
-            disabled={busy || (wager > 0 && wager < MIN_ANTE_UP_WAGER) || (wager > 0 && !canAffordWager)}
-            onClick={() => { selectSound(); startBoard(); }}
-          >
-            <Coins size={15} aria-hidden="true" />
-            {busy ? "Dealing…" : wager > 0 && !canAffordWager ? "Not enough Gold" : wager === 0 ? "Play free" : "Ante up"}
-          </button>
-        </section>
+        <div className="duel-lobby">
+          <div className="floor-head">
+            <div className="lobby-kicker">Ante Up</div>
+            <h1>Daily Word Stack</h1>
+            <p>
+              {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Six guesses · One word a day for everyone
+            </p>
+          </div>
+
+          <section className="duel-panel">
+            <h2 className="floor-section-head">Your wager</h2>
+            <StakePicker
+              ariaLabel="Wager"
+              picks={STAKE_QUICK_PICKS}
+              value={wager}
+              min={0}
+              leading={{ label: "Free", value: 0 }}
+              onChange={(next) => { selectSound(); setWager(next); }}
+            />
+            <p className="duel-pot-note">
+              {wager === 0
+                ? "Free daily play — no Gold at stake."
+                : wager < MIN_ANTE_UP_WAGER
+                  ? `Wager at least ${MIN_ANTE_UP_WAGER.toLocaleString()} Gold, or play free.`
+                  : "Fewer guesses, bigger payout — miss all six and the wager is gone."}
+            </p>
+            <button
+              type="button"
+              className="floor-play duel-open"
+              disabled={busy || (wager > 0 && wager < MIN_ANTE_UP_WAGER) || (wager > 0 && !canAffordWager)}
+              onClick={() => { selectSound(); startBoard(); }}
+            >
+              {busy ? "Dealing…" : wager > 0 && !canAffordWager ? "Not enough Gold" : wager === 0 ? "Play free" : "Ante up"}
+            </button>
+          </section>
+        </div>
+      )}
+
+      {/* The puzzle-number/player strip the header used to hold, kept for
+          once a board is open -- Sudoku's equivalent is its duel-scoreline,
+          but there's no clock here, just guesses used. */}
+      {round && profile && (
+        <div className="puzzle-player">
+          <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
+          <span className="bj-hand-who">
+            <span className="bj-hand-label">{profile.displayName}</span>
+            <span className="bj-hand-caption">
+              {meta ? `Puzzle #${meta.puzzleNumber}` : ""} · {round.guesses.length}/{round.maxGuesses} guesses
+            </span>
+          </span>
+        </div>
       )}
 
       {round && (
@@ -345,6 +365,7 @@ export function WordStackBoard() {
 
       {finished && round && (
         <section className="puzzle-summary">
+          <WinCelebration active={round.status === "won" && round.payout > 0} amount={round.payout} />
           <p className="puzzle-verdict">
             {round.status === "won"
               ? `Solved in ${round.guesses.length}.`

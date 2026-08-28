@@ -1,7 +1,9 @@
 /* Daily Word Stack and Connections, plus the shared felt override Sudoku and
- * Memory Match need (see `.hud-felt-plain` below) -- all four reuse the
- * Blackjack shell (.bj-shell, .bj-header, .bj-back, .bj-hand-who) directly,
- * so this file holds only what a puzzle genuinely adds: the boards, the
+ * Memory Match need (see `.hud-felt-plain` below) -- both reuse the
+ * Blackjack shell's board/felt classes (.bj-shell, .bj-hand-who) directly,
+ * and their pre-game wager step reuses the duel chrome's own furniture
+ * instead (.floor-bar/.floor-head/.duel-panel, see .puzzle-shell below), so
+ * this file holds only what a puzzle genuinely adds: the boards, the
  * keyboard, the share summary, and that felt fix. It cascades after 23
  * because it overrides pieces of that shell.
  *
@@ -47,13 +49,24 @@
 }
 
 .puzzle-shell {
+  /* Word Stack and Connections borrow their pre-game wager step wholesale
+     from the duel chrome (.floor-head/.duel-panel/.duel-pot-note, 36-duels.css)
+     rather than keeping a second copy, so the "Ante Up" step looks identical
+     across every game. Those classes read --text-primary/-secondary/-muted,
+     which .duel-shell normally supplies -- restated here with the same
+     values since this shell is .bj-shell, not .duel-shell, and without them
+     the reused classes fall back to inherited --ink instead of their own
+     lighter/muted tones. */
+  --text-primary: #eef2f8;
+  --text-secondary: #93a1bb;
+  --text-muted: #7f8ba4;
   align-items: center;
 }
 .puzzle-shell > * {
   width: 100%;
   max-width: 520px;
 }
-.puzzle-shell > .bj-header {
+.puzzle-shell > .floor-bar {
   max-width: 640px;
 }
 

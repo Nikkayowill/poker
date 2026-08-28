@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { X } from "lucide-react";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHEAPEST_TIER, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { TABLE_FORMATS, type TableFormat } from "./table-format";
 
 /**
@@ -137,6 +138,12 @@ export function BuyInModal({
               })}
             </div>
           )}
+
+          {/* Selected tier only -- the grid above already flags every
+              unaffordable card on its own, so a second hint per card would
+              just repeat "Need X Gold" in two places. This one instead
+              answers the question the grid can't: where to go about it. */}
+          {!unlimitedGold && !canAfford(tier) && <GoldShortfallHint needed={config.minBuyIn} />}
 
           {/* Heads-up and tournament both buy in for the tier's fixed stack
               (same reasoning createHeadsUpGame/createTournamentGame give for

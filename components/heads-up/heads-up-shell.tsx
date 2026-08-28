@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHEAPEST_TIER, isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -304,6 +305,7 @@ function HeadsUpLobby({
             <button type="button" className="floor-play duel-open" disabled={busy || !loaded || !canAfford} onClick={onInviteFriend}>
               {!loaded ? "…" : !canAfford ? "Not enough Gold" : `Invite ${inviteTarget.name}`}
             </button>
+            {loaded && !canAfford && <GoldShortfallHint needed={config.minBuyIn} />}
           </>
         ) : (
           <>
@@ -315,6 +317,7 @@ function HeadsUpLobby({
             <button type="button" className="floor-play duel-open" disabled={busy || !loaded || !canAfford} onClick={onQuickPlay}>
               {!loaded ? "…" : !canAfford ? "Not enough Gold" : "Quick Play"}
             </button>
+            {loaded && !canAfford && <GoldShortfallHint needed={config.minBuyIn} />}
           </>
         )}
       </section>

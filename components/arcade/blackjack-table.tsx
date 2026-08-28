@@ -16,6 +16,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import { toArcadeWallet } from "@/lib/arcade/games";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import {
   canCoverStake,
   handTotal,
@@ -541,6 +542,17 @@ export function BlackjackTable() {
               </button>
             )}
         </div>
+        {/* Below the grid, not inside it -- .bj-actions is grid-auto-flow:
+            column, so a paragraph dropped in among the buttons would just
+            become another cramped column rather than sitting under them.
+            compact for the same tight-felt reason every other arcade card
+            uses it. Only the actual Gold shortfall on whichever control is
+            live: the deal gate (!cover.open) and the double gate
+            (!canAffordDouble) never both apply at once. */}
+        {!live && loaded && !cover.open && <GoldShortfallHint needed={stake} compact />}
+        {live && actions.double && !canAffordDouble && (
+          <GoldShortfallHint needed={round?.baseStake ?? 0} compact />
+        )}
       </section>
     </main>
   );

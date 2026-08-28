@@ -456,3 +456,16 @@
   .lobby { grid-template-columns: 1fr; padding-top: 50px; }
   .history-drawer { width: min(320px, 100%); }
 }
+
+/* Shared "you're short, here's how to fix it" hint --
+   components/shared/gold-shortfall-hint.tsx. Dropped under whatever control
+   a low balance just blocked (an Ante Up stake, a table buy-in, a duel/
+   Cribbage/Blackjack entry), so it stays deliberately plain -- a line of
+   text and a gold link, no card of its own -- rather than fighting that
+   control's own chrome. Same #ff9c8a as .profile-modal-footer's error text
+   above, for the same "something's wrong" read. */
+.gold-shortfall-hint { margin: 8px 0 0; font-size: 11px; line-height: 1.5; }
+.gold-shortfall-hint span { color: #ff9c8a; }
+.gold-shortfall-hint a { color: var(--brand-gold-light); font-weight: 650; text-decoration: none; }
+.gold-shortfall-hint a:hover { text-decoration: underline; }
+.gold-shortfall-hint-compact { margin-top: 4px; font-size: 9.5px; line-height: 1.4; }

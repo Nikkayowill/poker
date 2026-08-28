@@ -7,6 +7,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { WinCelebration } from "@/components/celebration/win-celebration";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import type { SoundEffect } from "@/lib/audio/sound-effects";
 import { MIN_DUEL_STAKE, type DuelSeat } from "@/lib/pvp/match-contract";
 import { PVP_STATE_CHANGED, pvpChannelName } from "@/lib/pvp/duel-channel";
@@ -523,6 +524,10 @@ function DuelLobby({
                   : `Open a ${stake.toLocaleString()} Gold challenge`}
           </button>
         )}
+        {/* Only the actual Gold shortfall -- a stake below MIN_DUEL_STAKE is
+            a slider issue duel-pot-note above already covers, not a "go
+            earn more" one. */}
+        {!mine && loaded && stake >= MIN_DUEL_STAKE && balance < stake && <GoldShortfallHint needed={stake} />}
       </section>
 
       <section className="duel-panel">

@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { Coins, Delete, CornerDownLeft } from "lucide-react";
+import { Coins, CornerDownLeft, Delete, HelpCircle } from "lucide-react";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
 import { NextPuzzleCountdown } from "@/components/arcade/next-puzzle-countdown";
+import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { puzzleShareTitle, wordStackShareText } from "@/lib/arcade/puzzles/share";
@@ -81,6 +83,7 @@ export function WordStackBoard() {
   const [loaded, setLoaded] = useState(false);
   /** Set on the row that was just rejected, so it can shake without a state machine. */
   const [shake, setShake] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const noticeTimer = useRef<number | null>(null);
 
   const flash = useCallback((message: string) => {
@@ -186,6 +189,10 @@ export function WordStackBoard() {
   // refusals and used to share the "Not enough Gold" label, which is the
   // wrong thing to tell a player who has plenty and simply staked too much.
   const canStart = !overCeiling && canAffordWager;
+  // The specific "you're short" case the button's "Not enough Gold" label
+  // covers -- overCeiling has its own message ("Over the cap") and gets its
+  // own refusal first, so this must not also fire for that case.
+  const insufficientGold = wager > 0 && !overCeiling && !canAffordWager;
 
   const finished = Boolean(round && round.status !== "active");
   const canType = Boolean(round) && !finished && !busy;
@@ -271,7 +278,12 @@ export function WordStackBoard() {
     <main className="bj-shell puzzle-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <Link className="bj-back" href="/games" onClick={tapSound}>← Ante Up</Link>
+          <div className="bj-back-row">
+            <Link className="bj-back" href="/games" onClick={tapSound}>← Ante Up</Link>
+            <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>
+              <HelpCircle size={13} aria-hidden="true" /> How to play
+            </button>
+          </div>
           <h1>Daily Word Stack</h1>
           <p>
             {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Six guesses · One word a day for everyone
@@ -293,6 +305,23 @@ export function WordStackBoard() {
           </div>
         )}
       </header>
+
+      {showHelp && (
+        <HowToPlayModal title="Word Stack" onClose={() => setShowHelp(false)}>
+          <p>
+            Guess the secret five-letter word in six tries. Each guess scores letter by letter:
+            green means the right letter in the right spot, gold means it&apos;s in the word but
+            in the wrong spot. Solve it before your guesses run out and you win.
+          </p>
+          <p>
+            It&apos;s one shared word a day for everyone, so there&apos;s exactly one wagered
+            attempt allowed — choose your wager, or play free, before it opens. Fewer guesses
+            pays more; scraping the answer on your last guess pays back less than you staked, and
+            missing all six loses the wager outright. Whatever you wager, the payout it can earn
+            is locked in the moment the round opens.
+          </p>
+        </HowToPlayModal>
+      )}
 
       {/* Always mounted so a message is announced as a change rather than as
           new content, and so the grid never shifts when one appears. */}
@@ -338,6 +367,7 @@ export function WordStackBoard() {
                     ? "Play free"
                     : "Ante up"}
           </button>
+          {insufficientGold && <GoldShortfallHint needed={wager} compact />}
         </section>
       )}
 

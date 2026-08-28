@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { selectSound } from "@/lib/audio/ui-sounds";
 import { isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -271,6 +272,7 @@ function SitAndGoLobby({
         <button type="button" className="floor-play duel-open" disabled={busy || !loaded || !canAfford} onClick={onOpen}>
           {!loaded ? "…" : !canAfford ? "Not enough Gold" : `Open a ${entryFee.toLocaleString()} Gold table`}
         </button>
+        {loaded && !canAfford && <GoldShortfallHint needed={entryFee} />}
       </section>
 
       <section className="duel-panel">

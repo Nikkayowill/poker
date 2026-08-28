@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { Coins, Eraser, Pencil } from "lucide-react";
+import { Coins, Eraser, HelpCircle, Pencil } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
+import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { ANTE_UP_TIERS, MIN_ANTE_UP_WAGER, type AnteUpSnapshot } from "@/lib/arcade/ante-up";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
@@ -68,6 +70,7 @@ export function AnteUpSudoku() {
   // or move any Gold, so there's nothing here for the server to referee.
   const [notesMode, setNotesMode] = useState(false);
   const [notes, setNotes] = useState<Record<number, Set<number>>>({});
+  const [showHelp, setShowHelp] = useState(false);
 
   const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
@@ -241,6 +244,10 @@ export function AnteUpSudoku() {
   const ceiling = maxAnteUpWager("sudoku", difficulty);
   const canAfford =
     wager === 0 || (wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance >= wager);
+  // Narrower than !canAfford: that also covers a wager under the floor or
+  // over the ceiling, which the verdict paragraph below already explains and
+  // which "earn more Gold" would not fix. Only an actual shortfall gets the hint.
+  const insufficientGold = wager >= MIN_ANTE_UP_WAGER && wager <= ceiling && balance < wager;
   const tier = ANTE_UP_TIERS[difficulty];
   // What the attempt did to the balance, not what it credited: the slow
   // rungs can pay back less than was staked. See lib/arcade/ante-up-result.ts.
@@ -250,7 +257,12 @@ export function AnteUpSudoku() {
   return (
     <main className="duel-shell ante-shell">
       <header className="floor-bar">
-        <FloorBackLink />
+        <div className="floor-bar-left">
+          <FloorBackLink />
+          <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>
+            <HelpCircle size={13} aria-hidden="true" /> How to play
+          </button>
+        </div>
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
           <strong>
@@ -258,6 +270,23 @@ export function AnteUpSudoku() {
           </strong>
         </span>
       </header>
+
+      {showHelp && (
+        <HowToPlayModal title="Sudoku" onClose={() => setShowHelp(false)}>
+          <p>
+            Fill the 9×9 grid so every row, column, and 3×3 box holds 1 through 9 exactly once.
+            Every grid is generated fresh with a guaranteed unique solution, so you can play as
+            often as you like — there&apos;s no shared daily board here.
+          </p>
+          <p>
+            Pick a difficulty, then wager Gold or play free. Beat the grid before its clock runs
+            out and you win; let the clock expire or give up and the wager is gone. A wrong digit
+            only costs a mistake, tracked but not fatal. Harder difficulties run a longer clock,
+            pay more on a win, and let you stake more — your wager and its payout are locked in
+            the moment you ante up.
+          </p>
+        </HowToPlayModal>
+      )}
 
       {error && (
         <div className="duel-error" role="alert">
@@ -329,6 +358,7 @@ export function AnteUpSudoku() {
             <Coins size={15} aria-hidden="true" />
             {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
           </button>
+          {loaded && insufficientGold && <GoldShortfallHint needed={wager} compact />}
         </section>
       ) : (
         <div className="duel-match ante-match">

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { Coins } from "lucide-react";
+import { Coins, HelpCircle } from "lucide-react";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   arcadeActionLabel,
@@ -17,6 +17,8 @@ import {
 import { gameOnSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "./use-arcade-sound";
 import { markEmbeddedFloorNav } from "./floor-back-link";
+import { HowToPlayModal } from "./how-to-play-modal";
+import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 
 /**
  * Small counts as words, because both call sites are sentences: "10 more
@@ -86,6 +88,7 @@ export function ArcadeFloor({
   useArcadeSound();
   const [fetchedProfile, setFetchedProfile] = useState<PlayerProfile | null>(null);
   const [fetched, setFetched] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const mounted = useRef(true);
   // PokerApp only hands down a profile once it has one, so a supplied
   // wallet is already loaded.
@@ -130,7 +133,12 @@ export function ArcadeFloor({
     <Shell className={embedded ? "floor-shell floor-shell-embedded" : "floor-shell"}>
       {!embedded && (
       <header className="floor-bar">
-        <Link className="floor-back" href="/" onClick={tapSound}>← The floor</Link>
+        <div className="floor-bar-left">
+          <Link className="floor-back" href="/" onClick={tapSound}>← The floor</Link>
+          <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>
+            <HelpCircle size={13} aria-hidden="true" /> How Ante Up works
+          </button>
+        </div>
         {/* .gold-balance is the navbar badge's own coin+amount layout
             (03-profile.css), reused rather than restated: the number a
             player checks before picking a stake should look the same
@@ -144,6 +152,30 @@ export function ArcadeFloor({
           </strong>
         </span>
       </header>
+      )}
+
+      {!embedded && showHelp && (
+        <HowToPlayModal title="How Ante Up works" onClose={() => setShowHelp(false)}>
+          <p>
+            Every Ante Up game can be played completely free — there&apos;s never a cost to
+            trying. Choose to wager Gold instead and you&apos;re staking it against your own
+            performance, not another player and not the house: beat the challenge and you cash
+            out a multiple of the wager, miss it and the wager is gone.
+          </p>
+          <p>
+            Sudoku, Memory Match, and Minesweeper are unlimited, any time, dealing a fresh board
+            every round. Word Stack and Connections are each one shared puzzle a day for
+            everyone, so there&apos;s exactly one wagered attempt allowed per day — choose your
+            wager, or play free, before that day&apos;s puzzle opens.
+          </p>
+          <p>
+            Every wager has a ceiling. Sudoku&apos;s and Minesweeper&apos;s climb with
+            difficulty, since a harder board is worth staking more on; Memory Match, Word Stack,
+            and Connections cap at one flat amount. Whatever you wager, the payout it can earn is
+            locked in the moment the round opens, so a later retune never changes what&apos;s
+            already in play.
+          </p>
+        </HowToPlayModal>
       )}
 
       <div className="floor-head">
@@ -292,6 +324,10 @@ function GameCard({
           {arcadeActionLabel(game, wallet)}
         </button>
       )}
+      {/* Only the Gold-blocked case -- a coming-soon or retired row has
+          nowhere for "earn more Gold" to send anyone. compact: this is a
+          grid card, not a modal. */}
+      {blocked === "insufficient-gold" && <GoldShortfallHint needed={game.entryCost} compact />}
     </article>
   );
 }
@@ -308,6 +344,12 @@ function StakedRow({ game, wallet, embedded }: { game: ArcadeGame; wallet: Arcad
       <span className="floor-row-identity">
         <strong>{game.name}</strong>
         <small>{game.blurb}</small>
+        {/* Inside the identity column (flex column, not the row's own flex
+            row) so this stacks under the blurb instead of becoming a fourth
+            item alongside the stake/button. Gold-blocked only, same reason
+            GameCard above gates it -- coming-soon/retired have no earn-more
+            link to offer. */}
+        {blocked === "insufficient-gold" && <GoldShortfallHint needed={game.entryCost} compact />}
       </span>
       <span className="floor-row-stake">{arcadeEntryLabel(game)}</span>
       {/* A playable row is a link, not a button with an onClick, since it

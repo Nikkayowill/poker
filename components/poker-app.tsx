@@ -755,6 +755,32 @@ export function PokerApp() {
     return () => window.clearTimeout(timer);
   }, [loadProfile]);
 
+  // Reports this browser's own IANA zone to the server once it differs from
+  // what's stored, so the re-engagement push cron can send at a sensible
+  // local hour instead of one fixed UTC time for everyone -- see
+  // app/api/profile/timezone/route.ts. Runs off the loaded profile rather
+  // than on mount so it only fires once a session cookie actually exists,
+  // and the ref stops a duplicate POST for the same value on a re-render
+  // (StoredProfile.timezone won't reflect the write until the next full
+  // /api/profile reload, which this effect must not wait on).
+  const reportedTimezoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!profile) return;
+    let detected: string;
+    try {
+      detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      return;
+    }
+    if (!detected || detected === profile.timezone || detected === reportedTimezoneRef.current) return;
+    reportedTimezoneRef.current = detected;
+    void fetch("/api/profile/timezone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timezone: detected }),
+    }).catch(() => {});
+  }, [profile]);
+
   /**
    * Gives a first-time visitor an actual profile once they enter the lobby.
    *

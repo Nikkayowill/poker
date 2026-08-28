@@ -21,6 +21,8 @@ export interface StoredPushSubscription {
   userAgent: string | null;
   createdAt: string;
   lastNotifiedAt: string | null;
+  /** The owning profile's stored IANA zone, or null if never captured. Only populated by pushSubscriptionsForInactivePlayers -- every other reader has no use for it. */
+  timezone: string | null;
 }
 
 /** What the browser's PushSubscription.toJSON() hands back: the shape POSTed to /api/push/subscribe. */
@@ -55,7 +57,7 @@ interface SubscriptionRow {
   last_notified_at: string | null;
 }
 
-function fromRow(row: SubscriptionRow): StoredPushSubscription {
+function fromRow(row: SubscriptionRow, timezone: string | null = null): StoredPushSubscription {
   return {
     id: String(row.id),
     profileId: String(row.profile_id),
@@ -65,6 +67,7 @@ function fromRow(row: SubscriptionRow): StoredPushSubscription {
     userAgent: row.user_agent,
     createdAt: String(row.created_at),
     lastNotifiedAt: row.last_notified_at,
+    timezone,
   };
 }
 
@@ -91,6 +94,7 @@ export async function savePushSubscription(
       userAgent,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
       lastNotifiedAt: existing?.lastNotifiedAt ?? null,
+      timezone: existing?.timezone ?? null,
     });
     return;
   }
@@ -136,25 +140,36 @@ export async function pushSubscriptionsForProfile(profileId: string): Promise<St
 }
 
 /**
- * Every subscribed, registered profile that has not claimed today's daily
- * Gold yet, joined in one query: the cron's whole candidate list.
- * "Today" is passed in rather than computed here (the same UTC-midnight
- * boundary isSameUtcDay uses) so the caller's own `now` drives it and a
- * test can pin it. Memory mode has no profiles table to join against here
- * (profile-store.ts's memory map is module-private), so it returns every
- * subscription unfiltered; that's fine, memory mode has no cron runner
- * calling this in practice.
+ * Every subscribed, registered profile that has not claimed daily Gold
+ * recently, joined in one query: the cron's whole candidate list.
+ *
+ * `sinceThreshold` is a loose recency bound (the caller passes roughly
+ * "24h ago"), not a precise day boundary -- since the cron now runs hourly
+ * and targets each player's own local send hour (lib/push/send-window.ts),
+ * the exact "is this a new day for them" answer is a per-candidate
+ * calculation the caller makes with each row's own `timezone`, not
+ * something one shared SQL boundary can get right for every zone at once.
+ * This query's job is just to keep the candidate set small.
+ *
+ * Memory mode has no profiles table to join against here (profile-store.ts's
+ * memory map is module-private), so it returns every subscription
+ * unfiltered; that's fine, memory mode has no cron runner calling this in
+ * practice.
  */
-export async function pushSubscriptionsForInactivePlayers(utcDayStart: Date): Promise<StoredPushSubscription[]> {
+export async function pushSubscriptionsForInactivePlayers(sinceThreshold: Date): Promise<StoredPushSubscription[]> {
   const client = adminClient();
   if (!client) return [...memorySubscriptions.values()];
   const { data, error } = await client
     .from("push_subscriptions")
-    .select(`${SUBSCRIPTION_COLUMNS}, profiles!inner(user_id, last_daily_claim_at)`)
+    .select(`${SUBSCRIPTION_COLUMNS}, profiles!inner(user_id, last_daily_claim_at, timezone)`)
     .not("profiles.user_id", "is", null)
-    .or(`last_daily_claim_at.is.null,last_daily_claim_at.lt.${utcDayStart.toISOString()}`, { foreignTable: "profiles" });
+    .or(`last_daily_claim_at.is.null,last_daily_claim_at.lt.${sinceThreshold.toISOString()}`, { foreignTable: "profiles" });
   if (error) throw new Error(error.message);
-  return (data ?? []).map((row) => fromRow(row as SubscriptionRow));
+  return (data ?? []).map((row) => {
+    const joined = row as SubscriptionRow & { profiles: { timezone: string | null } | { timezone: string | null }[] };
+    const profile = Array.isArray(joined.profiles) ? joined.profiles[0] : joined.profiles;
+    return fromRow(joined, profile?.timezone ?? null);
+  });
 }
 
 /** Marks a subscription notified now; skips it on a same-day cron re-run. */

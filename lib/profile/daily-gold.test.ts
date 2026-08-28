@@ -17,6 +17,7 @@ function profileWith(overrides: Partial<PlayerProfile>): PlayerProfile {
     unlimitedGold: false,
     lastDailyClaimAt: null,
     lastBackstopAt: null,
+    timezone: null,
     isRegistered: true,
     ...overrides,
   };

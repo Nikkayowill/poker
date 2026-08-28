@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/notify-inactive-players",
-      "schedule": "0 22 * * *"
+      "schedule": "0 * * * *"
     }
   ]
 }

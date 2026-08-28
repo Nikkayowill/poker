@@ -5,6 +5,7 @@ import type { AvatarPreset, PlayerProfile, ProfileUpdate, PublicProfileSummary }
 import { defaultEquipped, normalizeEquipped, type EquippedCosmetics } from "@/lib/cosmetics/catalog";
 import { BACKSTOP_COOLDOWN_MS, BACKSTOP_GRANT } from "@/lib/profile/backstop";
 import { isSameUtcDay } from "@/lib/profile/daily-gold";
+import { isValidTimezone } from "@/lib/profile/timezone";
 import { adminClient } from "./supabase-admin";
 
 // isRegistered is omitted and derived from userId in publicProfile, so the
@@ -80,6 +81,7 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     unlimitedGold: profile.unlimitedGold,
     lastDailyClaimAt: profile.lastDailyClaimAt,
     lastBackstopAt: profile.lastBackstopAt,
+    timezone: profile.timezone,
     isRegistered: profile.userId !== null,
   };
 }
@@ -116,6 +118,7 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     banned: false,
     lastSeenIp: null,
     lastBackstopAt: null,
+    timezone: null,
   };
 }
 
@@ -138,6 +141,7 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     banned: Boolean(row.banned),
     lastSeenIp: row.last_seen_ip ? String(row.last_seen_ip) : null,
     lastBackstopAt: row.last_backstop_at ? String(row.last_backstop_at) : null,
+    timezone: row.timezone ? String(row.timezone) : null,
   };
 }
 
@@ -301,6 +305,28 @@ export async function updateProfile(token: string, update: ProfileUpdate): Promi
     await supabase.storage.from("avatars").remove([String(previous.avatar_path)]);
   }
   return publicProfile(fromRow(data));
+}
+
+/**
+ * Records the browser's own IANA zone, reported by the client once on load
+ * and again whenever it changes (a player travels, or the OS zone changes).
+ * Silently a no-op for an unknown token or an invalid zone name rather than
+ * throwing -- this is a best-effort background capture, not something a
+ * player is ever blocked on or shown an error for.
+ */
+export async function setProfileTimezone(token: string, timezone: string): Promise<void> {
+  if (!isValidTimezone(timezone)) return;
+  const supabase = adminClient();
+  if (!supabase) {
+    const current = memoryProfiles.get(token);
+    if (!current) return;
+    memoryProfiles.set(token, { ...current, timezone, updatedAt: new Date().toISOString() });
+    return;
+  }
+  await supabase
+    .from("profiles")
+    .update({ timezone, updated_at: new Date().toISOString() })
+    .eq("session_token", token);
 }
 
 export async function saveAvatar(

@@ -47,6 +47,8 @@ export interface PlayerProfile {
   lastDailyClaimAt: string | null;
   /** ISO timestamp of the last broke-player recovery top-up, or null if never claimed. See lib/profile/backstop.ts. */
   lastBackstopAt: string | null;
+  /** IANA zone name (e.g. "America/Chicago"), captured client-side; null until the browser reports one. Drives the re-engagement push cron's local-time send. */
+  timezone: string | null;
   /**
    * Whether this profile is backed by a real account. A boolean rather than
    * the account id: the client only needs to know if progress is safe and

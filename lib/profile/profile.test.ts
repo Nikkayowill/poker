@@ -21,6 +21,7 @@ describe("profile appearance", () => {
       unlimitedGold: false,
       lastDailyClaimAt: null,
       lastBackstopAt: null,
+      timezone: null,
       isRegistered: false,
     };
     const snapshot = toSnapshot(createGame(token, profile.displayName, profile), token);

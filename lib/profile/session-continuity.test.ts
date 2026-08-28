@@ -56,6 +56,7 @@ const profile: PlayerProfile = {
   unlimitedGold: false,
   lastDailyClaimAt: null,
   lastBackstopAt: null,
+  timezone: null,
   isRegistered: true,
 };
 

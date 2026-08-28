@@ -22,7 +22,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
 
 const POLL_MS = 2000;
 
-export interface HeadsUpPlayer {
+interface HeadsUpPlayer {
   profileId: string;
   seat: 0 | 1;
   displayName: string;

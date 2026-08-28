@@ -720,7 +720,7 @@ export function chipDesignMaterial(id: string | null | undefined): ChipMaterial 
  * carries `unlock`), so the filter is really just future-proofing against
  * one showing up later.
  */
-export const botChipDesignCosmetics: Cosmetic[] = chipDesignCosmetics.filter((item) => !item.unlock);
+const botChipDesignCosmetics: Cosmetic[] = chipDesignCosmetics.filter((item) => !item.unlock);
 
 /**
  * One design, worn on all four denominations -- a bot's own chip colour,

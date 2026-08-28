@@ -99,7 +99,7 @@ export interface AnteUpMemoryAttempt {
 }
 
 /** The turn cap this attempt was opened under, not whatever it is today. */
-export function attemptMaxTurns(attempt: Pick<AnteUpMemoryAttempt, "maxTurns">): number {
+function attemptMaxTurns(attempt: Pick<AnteUpMemoryAttempt, "maxTurns">): number {
   return attempt.maxTurns ?? ANTE_UP_MEMORY_MAX_TURNS;
 }
 

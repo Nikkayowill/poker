@@ -22,7 +22,7 @@ import { adminClient } from "./supabase-admin";
  * orphaned games row on a lost race.
  */
 
-export type SitAndGoTableStatus = "waiting" | "active" | "completed" | "cancelled";
+type SitAndGoTableStatus = "waiting" | "active" | "completed" | "cancelled";
 
 export interface StoredSitAndGoTable {
   id: string;

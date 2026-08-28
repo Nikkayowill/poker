@@ -189,7 +189,6 @@ export function MobileShell({
   /** Live drag distance in px. Null whenever no horizontal drag is in flight. */
   const [drag, setDrag] = useState<number | null>(null);
   const gestureRef = useRef<SwipeGesture | null>(null);
-  const navRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     try {
@@ -198,43 +197,6 @@ export function MobileShell({
       // A full or disabled store just means the next return starts on Play.
     }
   }, [page]);
-
-  /*
-   * `position: fixed; bottom: 0` (45-mobile-shell.css) sits wrong ONLY on a
-   * true cold launch of the installed iOS PWA, and correcting itself the
-   * moment the shell remounts (leave to a game, come back) is the tell:
-   * nothing about the viewport's *size* changes on that round trip, so this
-   * was never a resize to listen for. The bar's fixed box was laid out once,
-   * at first mount, against a safe-area-inset-bottom value WKWebView hadn't
-   * finished reporting yet, and nothing ever asks it to relayout again --
-   * a remount does that by accident, this forces the same thing on purpose.
-   *
-   * One forced reflow on the next frame (take 2) still wasn't enough -- a
-   * cold-launch screenshot caught the gap surviving it, so WKWebView can
-   * take more than a single frame past mount to settle the real inset, and
-   * it never tells us when. There's no event to wait for instead (that's
-   * what take 1's visualViewport listener tried and take 2 dropped, per the
-   * remount tell above), so this now keeps forcing a relayout every frame
-   * for a couple of seconds after mount rather than betting on one. A
-   * `display` toggle forces a real layout pass (unlike a `transform` nudge,
-   * which only touches compositing and never revisits `bottom`/padding
-   * math); `offsetHeight` between the two writes forces it synchronously,
-   * so every retry is still invisible, not just the first.
-   */
-  useEffect(() => {
-    const nav = navRef.current;
-    if (!nav) return;
-    let raf = 0;
-    const deadline = Date.now() + 2000;
-    const settle = () => {
-      nav.style.display = "none";
-      void nav.offsetHeight;
-      nav.style.display = "";
-      if (Date.now() < deadline) raf = requestAnimationFrame(settle);
-    };
-    raf = requestAnimationFrame(settle);
-    return () => cancelAnimationFrame(raf);
-  }, []);
 
   /*
    * Which panes have been looked at, or are one gesture away from being looked
@@ -389,7 +351,7 @@ export function MobileShell({
         </div>
       </div>
 
-      <nav ref={navRef} className="mshell-nav" aria-label="Lobby sections">
+      <nav className="mshell-nav" aria-label="Lobby sections">
         {PAGES.map((name, index) => {
           const Icon = PAGE_ICONS[index];
           const active = index === page;

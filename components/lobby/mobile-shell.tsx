@@ -200,38 +200,40 @@ export function MobileShell({
   }, [page]);
 
   /*
-   * On an installed iOS PWA's cold launch, the tab bar (`position: fixed;
-   * bottom: 0`, see 45-mobile-shell.css) can paint pinned against a stale
-   * viewport frame while WKWebView is still settling the real one -- it
-   * reads as "sitting too high" until something forces a repaint, which is
-   * exactly what a route change does (this shell never unmounts on one, so
-   * that alone doesn't explain it fixing itself on navigation elsewhere in
-   * the app). `visualViewport`'s `resize` event fires when that settle
-   * actually completes; nudging a transform on it forces WebKit to
-   * recompute the fixed box against the final viewport instead of waiting
-   * for an unrelated reflow to do it by accident. Two rAFs after mount
-   * cover a launch where the viewport never technically resizes but the
-   * first paint still lands mid-settle.
+   * `position: fixed; bottom: 0` (45-mobile-shell.css) sits wrong ONLY on a
+   * true cold launch of the installed iOS PWA, and correcting itself the
+   * moment the shell remounts (leave to a game, come back) is the tell:
+   * nothing about the viewport's *size* changes on that round trip, so this
+   * was never a resize to listen for. The bar's fixed box was laid out once,
+   * at first mount, against a safe-area-inset-bottom value WKWebView hadn't
+   * finished reporting yet, and nothing ever asks it to relayout again --
+   * a remount does that by accident, this forces the same thing on purpose.
+   *
+   * One forced reflow on the next frame (take 2) still wasn't enough -- a
+   * cold-launch screenshot caught the gap surviving it, so WKWebView can
+   * take more than a single frame past mount to settle the real inset, and
+   * it never tells us when. There's no event to wait for instead (that's
+   * what take 1's visualViewport listener tried and take 2 dropped, per the
+   * remount tell above), so this now keeps forcing a relayout every frame
+   * for a couple of seconds after mount rather than betting on one. A
+   * `display` toggle forces a real layout pass (unlike a `transform` nudge,
+   * which only touches compositing and never revisits `bottom`/padding
+   * math); `offsetHeight` between the two writes forces it synchronously,
+   * so every retry is still invisible, not just the first.
    */
   useEffect(() => {
-    let raf2 = 0;
-    const nudge = () => {
-      const nav = navRef.current;
-      if (!nav) return;
-      nav.style.transform = "translateZ(0.01px)";
-      requestAnimationFrame(() => {
-        if (nav) nav.style.transform = "";
-      });
+    const nav = navRef.current;
+    if (!nav) return;
+    let raf = 0;
+    const deadline = Date.now() + 2000;
+    const settle = () => {
+      nav.style.display = "none";
+      void nav.offsetHeight;
+      nav.style.display = "";
+      if (Date.now() < deadline) raf = requestAnimationFrame(settle);
     };
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(nudge);
-    });
-    window.visualViewport?.addEventListener("resize", nudge);
-    return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-      window.visualViewport?.removeEventListener("resize", nudge);
-    };
+    raf = requestAnimationFrame(settle);
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   /*

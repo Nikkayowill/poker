@@ -8,7 +8,7 @@ import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { applyOptimisticAction } from "@/lib/game/optimistic-action";
 import type { StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
-import { oauthCallbackUrl } from "@/lib/auth/oauth-redirect";
+import { oauthCallbackUrl, passwordResetCallbackUrl } from "@/lib/auth/oauth-redirect";
 import { reportOAuthStart, reportStrayAuthCode } from "@/lib/auth/oauth-diagnostics";
 import {
   browserSupabase,
@@ -1301,6 +1301,23 @@ export function PokerApp() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  /**
+   * app/auth/reset-password/callback/route.ts sets this when a recovery
+   * code failed to exchange (expired link, already used, a Supabase
+   * outage) -- the counterpart to the authError effect above, kept as its
+   * own flag since "sign-in failed" and "your reset link expired" are
+   * different messages a returning player needs told apart.
+   */
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("resetError")) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    const timer = window.setTimeout(
+      () => setError("That password reset link is invalid or has expired. Please request a new one."),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const signIn = async (): Promise<void> => {
     const client = authClient();
     if (!client) return;
@@ -1380,6 +1397,34 @@ export function PokerApp() {
     } catch (caught) {
       setSignInPending(false);
       setError(caught instanceof Error ? caught.message : "Could not create your account.");
+    }
+  };
+
+  /**
+   * Deliberately doesn't distinguish "no account for that email" from "email
+   * sent" -- Supabase's own resetPasswordForEmail already resolves the same
+   * way either way, which is the correct anti-enumeration behaviour, so the
+   * confirmation copy is written to be true regardless (see
+   * AccountEntryCard's own "Check your email for a reset link" message,
+   * shown as soon as this is called rather than after the request settles).
+   * A caught error here means the *request itself* failed -- rate limited,
+   * Supabase misconfigured -- which is worth surfacing, unlike the
+   * unknown-email case.
+   */
+  const requestPasswordReset = async (email: string) => {
+    const client = authClient();
+    if (!client) return;
+    try {
+      const { error: resetRequestError } = await client.auth.resetPasswordForEmail(email, {
+        redirectTo: passwordResetCallbackUrl(),
+      });
+      if (resetRequestError) throw resetRequestError;
+    } catch (caught) {
+      console.error(
+        "Password reset request failed:",
+        caught instanceof Error ? caught.message : caught,
+      );
+      setError("Could not send a reset email right now. Please try again in a moment.");
     }
   };
 
@@ -1675,6 +1720,7 @@ export function PokerApp() {
             onSaveProgress={signIn}
             onEmailSignIn={(email, password, captchaToken) => void signInWithEmail(email, password, captchaToken)}
             onEmailSignUp={(email, password, captchaToken) => void signUpWithEmail(email, password, captchaToken)}
+            onForgotPassword={(email) => void requestPasswordReset(email)}
             onDismissSaveProgress={() => setSavePromptDismissed(true)}
             savePromptDismissed={savePromptDismissed}
             entryComplete={entryComplete}

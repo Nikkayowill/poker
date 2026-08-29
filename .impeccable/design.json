@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-29T00:00:00.000Z",
+  "title": "Design System: StackChips",
+  "extensions": {
+    "colorMeta": {
+      "brand-ink": { "role": "neutral", "displayName": "Neon Ground", "canonical": "#150a2b" },
+      "brand-ink-lift": { "role": "neutral", "displayName": "Neon Ground Lift", "canonical": "#211141" },
+      "brand-ink-lift-2": { "role": "neutral", "displayName": "Neon Ground Lift 2", "canonical": "#2c1854" },
+      "neon-purple": { "role": "primary", "displayName": "Neon Purple", "canonical": "#9b3ff0" },
+      "neon-purple-bright": { "role": "primary", "displayName": "Neon Purple Bright", "canonical": "#c07bff" },
+      "neon-purple-deep": { "role": "primary", "displayName": "Neon Purple Deep", "canonical": "#4a1c88" },
+      "brand-gold": { "role": "secondary", "displayName": "Brand Gold", "canonical": "#ffd23f" },
+      "brand-gold-light": { "role": "secondary", "displayName": "Brand Gold Light", "canonical": "#ffe98a" },
+      "brand-red": { "role": "tertiary", "displayName": "Brand Red (trace only)", "canonical": "#dc1413" },
+      "neon-chalk": { "role": "neutral", "displayName": "Neon Chalk", "canonical": "#f6f1ff" },
+      "neon-muted": { "role": "neutral", "displayName": "Neon Muted", "canonical": "#b6a6db" },
+      "muted-slate": { "role": "neutral", "displayName": "Muted Slate", "canonical": "#93a1bb" },
+      "muted-slate-2": { "role": "neutral", "displayName": "Muted Slate 2", "canonical": "#6f7b92" },
+      "ink": { "role": "neutral", "displayName": "Ink (shared with the felt)", "canonical": "#edf3ee" },
+      "felt": { "role": "neutral", "displayName": "Table Felt (out of chrome scope)", "canonical": "#164f3a" },
+      "gold-table": { "role": "secondary", "displayName": "Table Gold (out of chrome scope)", "canonical": "#d9b85d" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display / Georgia", "purpose": "Wordmark, page headlines, tile titles only." },
+      "body": { "displayName": "Body / Inter", "purpose": "Everything functional: forms, rows, nav, copy." },
+      "label": { "displayName": "Label", "purpose": "Uppercase field labels and small kickers." }
+    },
+    "shadows": [
+      { "name": "elevation-1", "value": "0 2px 4px rgba(0, 0, 0, .4)", "purpose": "Lightest lift off the surface below." },
+      { "name": "elevation-2", "value": "0 6px 14px rgba(0, 0, 0, .3)", "purpose": "A raised row or tile." },
+      { "name": "elevation-3", "value": "0 8px 18px rgba(0, 0, 0, .35)", "purpose": "A more prominent raised surface." },
+      { "name": "elevation-4", "value": "0 15px 35px rgba(0, 0, 0, .22)", "purpose": "A floating panel." },
+      { "name": "elevation-5", "value": "0 40px 120px rgba(0, 0, 0, .5)", "purpose": "The deepest lift in the scale." },
+      { "name": "accent-glow", "value": "0 0 24px -4px rgba(155, 63, 240, .55)", "purpose": "Purple selected/focused-state glow, paired with accent-edge." },
+      { "name": "accent-glow-gold", "value": "0 0 24px -4px rgba(255, 210, 63, .5)", "purpose": "Gold variant of the selected/focused glow." },
+      { "name": "button-primary-glow", "value": "0 16px 38px rgba(255, 210, 63, .3), inset 0 1px rgba(255, 255, 255, .45)", "purpose": "The primary gold button's signature colored shadow + bevel highlight." }
+    ],
+    "motion": [
+      { "name": "duration-instant", "value": ".08s", "purpose": "Micro state changes." },
+      { "name": "duration-fast", "value": ".12s", "purpose": "Hover/press feedback." },
+      { "name": "duration-base", "value": ".15s", "purpose": "Default interface transition." },
+      { "name": "duration-slow", "value": ".22s", "purpose": "Panels opening, toggles switching." },
+      { "name": "duration-slower", "value": ".25s", "purpose": "Larger surface transitions." },
+      { "name": "ease-decelerate", "value": "cubic-bezier(.2, .8, .3, 1)", "purpose": "Default easing for anything that arrives and stops." },
+      { "name": "ease-overshoot", "value": "cubic-bezier(.2, .9, .25, 1.2)", "purpose": "Physical motion — a toggle thumb, a settling tile." }
+    ],
+    "breakpoints": [
+      { "name": "phone", "value": "600px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single saturated action per screen — sign-in submit, mobile lobby's primary CTA.",
+      "html": "<button class=\"ds-btn-primary\">Continue</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 0 18px; border: 0; border-radius: 8px; color: #1c1305; font-size: 15px; font-weight: 750; cursor: pointer; background: linear-gradient(152deg, #ffe08f 0%, #ffe98a 38%, #ffd23f 74%, #a8760c 100%); box-shadow: 0 16px 38px rgba(255, 210, 63, .3), inset 0 1px rgba(255, 255, 255, .45); transition: filter .12s ease, transform .12s ease; } .ds-btn-primary:hover { filter: brightness(1.06); transform: translateY(-1px); } .ds-btn-primary:focus-visible { outline: 0; box-shadow: 0 0 0 2px #150a2b, 0 0 0 4px #ffe98a; }"
+    },
+    {
+      "name": "Secondary Button (OAuth)",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "One step quieter than primary — Google sign-in, secondary chrome actions.",
+      "html": "<button class=\"ds-btn-secondary\">Continue with Google</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 0 18px; border: 0; border-radius: 8px; color: #e9eef6; font-size: 15px; font-weight: 750; cursor: pointer; background: rgba(182, 166, 219, .085); transition: background .15s ease; } .ds-btn-secondary:hover { background: rgba(182, 166, 219, .13); } .ds-btn-secondary:focus-visible { outline: 0; box-shadow: 0 0 0 2px #150a2b, 0 0 0 4px #ffe98a; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Transparent at rest — guest entry, tertiary actions.",
+      "html": "<button class=\"ds-btn-ghost\">Continue as guest</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 0 18px; border: 0; border-radius: 8px; color: #9fadc5; font-size: 15px; font-weight: 750; cursor: pointer; background: transparent; transition: background .15s ease, color .15s ease; } .ds-btn-ghost:hover { color: #edf1f7; background: rgba(182, 166, 219, .055); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Filled surface, no border — the chrome's borderless-by-default field.",
+      "html": "<label class=\"ds-field\"><span>Email</span><input type=\"email\" placeholder=\"you@example.com\" /></label>",
+      "css": ".ds-field { display: grid; gap: 4px; text-align: left; } .ds-field > span { color: #96a3ba; font-size: 11px; font-weight: 750; letter-spacing: .15em; text-transform: uppercase; } .ds-field input { width: 100%; min-height: 46px; padding: 0 15px; color: #eef2f8; border: 0; border-radius: 8px; outline: 0; background: rgba(182, 166, 219, .055); font-size: 16px; transition: background .22s ease, box-shadow .22s ease; } .ds-field input:focus { background: rgba(182, 166, 219, .085); box-shadow: 0 0 0 1px rgba(155, 63, 240, .55), 0 0 24px -4px rgba(155, 63, 240, .55); } .ds-field input::placeholder { color: #6f7b92; }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "nav",
+      "refersTo": "components.entry-segment",
+      "description": "A two-way toggle that shows its state with a filled active tab rather than a text link.",
+      "html": "<div class=\"ds-segment\" role=\"group\"><button class=\"ds-segment-btn is-active\">Sign in</button><button class=\"ds-segment-btn\">Create account</button></div>",
+      "css": ".ds-segment { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(182, 166, 219, .055); } .ds-segment-btn { min-height: 38px; border: 0; border-radius: 8px; background: transparent; color: #93a1bb; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .22s ease, color .22s ease; } .ds-segment-btn.is-active { color: #fff; background: linear-gradient(150deg, #9b3ff0, #4a1c88); box-shadow: 0 0 24px -4px rgba(155, 63, 240, .55); }"
+    },
+    {
+      "name": "Bottom Navigation",
+      "kind": "nav",
+      "refersTo": "components.mshell-nav",
+      "description": "Three-tab fixed mobile nav, TikTok/Quora-shaped — 44px hit targets, gold active state.",
+      "html": "<nav class=\"ds-nav\"><button class=\"ds-nav-item is-on\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"9\"/></svg><span>Hold'em</span></button><button class=\"ds-nav-item\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"3\"/></svg><span>Ante Up</span></button><button class=\"ds-nav-item\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"8\" r=\"4\"/><path d=\"M4 20c0-4 4-6 8-6s8 2 8 6\"/></svg><span>Profile</span></button></nav>",
+      "css": ".ds-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: rgba(22, 27, 38, .94); box-shadow: 0 -1px 0 rgba(182, 166, 219, .1), 0 -4px 12px rgba(0, 0, 0, .3); } .ds-nav-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 44px; border: 0; background: transparent; color: #7f8ba4; font-size: 10px; font-weight: 600; cursor: pointer; } .ds-nav-item.is-on { color: #ffe98a; } .ds-nav-item.is-on svg { filter: drop-shadow(0 2px 8px rgba(255, 210, 63, .45)); }"
+    },
+    {
+      "name": "Toggle Switch",
+      "kind": "input",
+      "refersTo": "components.entry-switch",
+      "description": "A pill-track switch replacing a bordered checkbox for single-boolean choices.",
+      "html": "<label class=\"ds-switch-row\"><input type=\"checkbox\" class=\"ds-switch-input\" /><span class=\"ds-switch\"></span><span>Remember me</span></label>",
+      "css": ".ds-switch-row { display: flex; align-items: center; gap: 12px; cursor: pointer; } .ds-switch { position: relative; width: 42px; height: 24px; border-radius: 999px; background: rgba(255, 255, 255, .13); transition: background .22s ease; display: inline-block; } .ds-switch::after { content: \"\"; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #ece7f7; box-shadow: 0 2px 6px rgba(0, 0, 0, .45); transition: transform .22s cubic-bezier(.2,.8,.3,1); } .ds-switch-input { position: absolute; width: 1px; height: 1px; overflow: hidden; } .ds-switch-input:checked + .ds-switch { background: linear-gradient(110deg, #9b3ff0, #dc1413); } .ds-switch-input:checked + .ds-switch::after { transform: translateX(18px); }"
+    },
+    {
+      "name": "Card / Tile",
+      "kind": "card",
+      "refersTo": "components.mshell-tile",
+      "description": "Borderless lobby tile — press feedback is a scale, not a background change.",
+      "html": "<button class=\"ds-tile\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#ffe98a\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"9\"/></svg><strong>Sudoku</strong><small>Wager Gold, race the clock</small></button>",
+      "css": ".ds-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-height: 92px; border: 0; padding: 13px 14px; border-radius: 8px; background: rgba(182, 166, 219, .055); color: inherit; text-align: left; cursor: pointer; transition: transform .12s ease; } .ds-tile:active { transform: scale(.985); } .ds-tile strong { color: #eef2f8; font-family: Georgia, \"Times New Roman\", serif; font-size: 15.5px; font-weight: 600; } .ds-tile small { color: #93a1bb; font-size: 11.5px; line-height: 1.35; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Neon Marquee",
+    "overview": "StackChips' chrome — every screen except the felt itself — reads as a room lit by a single violet-and-gold sign in the dark: a deep violet-black ground, two soft out-of-focus glows bleeding in from opposite corners, and gold reserved for the one thing on a screen you're actually meant to press. It replaced an earlier \"High Roller Arcade\" chrome (blue-grey ground, a busier gold histogram accent) on 2026-08-27 when the app's own mark was redrawn; the mark's palette is now the chrome's palette, not the other way around.\n\nThe room is borderless by design. Older passes separated surfaces with 1px hairlines; the current system separates them with raised fill, real shadow, and space, and stands a border in for an --accent-edge inset ring plus --accent-glow when a surface needs to read as selected or focused. Purple is spent as a line and a glow, never a fill. Gold is spent once per screen, on the single primary action; everything else is quieter.",
+    "keyCharacteristics": [
+      "Violet-black ground with two ambient corner glows (violet top-left, gold bottom-right), never a flat black or a re-tinted-per-surface wash.",
+      "Borderless chrome — separation is fill + shadow + space, not hairlines.",
+      "One saturated gold fill per screen, spent on the single primary action.",
+      "Purple is a line and a glow — accents, selected states, focus rings — never a background wash.",
+      "A serif display face (Georgia) for the wordmark and headlines, sans-serif (Inter) for everything functional.",
+      "The table's green felt and gold are a deliberately separate, untouched visual world."
+    ],
+    "rules": [
+      { "name": "The One Light Rule", "body": "Violet and gold come from the two ambient glows layered over the ground, never from re-tinting the ground itself per surface.", "section": "colors" },
+      { "name": "The Single Fill Rule", "body": "A saturated color fill is spent at most once per screen, on the one thing that's actually the primary action or the current selection.", "section": "colors" },
+      { "name": "The One Serif Rule", "body": "Georgia appears only where something is being named or introduced — never on body copy, buttons, or anything functional.", "section": "typography" },
+      { "name": "The Glow-Not-Border Rule", "body": "A selected or focused chrome surface gets an inset ring plus a colored shadow instead of a visible border.", "section": "elevation" },
+      { "name": "The Two Radii Rule", "body": "Outside the table, everything is one of exactly two radii: --radius-card for a surface, --radius-control for anything interactive.", "section": "shapes" },
+      { "name": "Concentric Radii", "body": "A control nested inside a padded track grows the outer radius by its own padding rather than shrinking the inner control below the shared value.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do treat purple as a line and a glow — reach for it on a border-color or box-shadow, not a background.",
+      "Do spend the one saturated gold fill on the actual primary action of the screen, and nothing else on that screen.",
+      "Do use --radius-control/--radius-card (both 8px) for every chrome surface.",
+      "Do use Georgia only for the wordmark, a page headline, or a tile's own title."
+    ],
+    "donts": [
+      "Don't fill a whole chrome surface with --brand-purple/--neon-purple.",
+      "Don't add a visible 1px border to a chrome surface.",
+      "Don't reach for --brand-*/--neon-* tokens inside the table sheets, or --felt/table gold outside them.",
+      "Don't hand-write a new muted-gray literal — use --neon-muted/--neon-muted-2."
+    ]
+  }
+}

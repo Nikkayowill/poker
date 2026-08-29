@@ -1,0 +1,71 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "layout-transition",
+        "value": "*",
+        "files": [
+          "app/styles/04-lobby.css"
+        ],
+        "createdAt": "2026-08-29T05:22:50.422Z",
+        "reason": "Agent: layout-transition has no extractable value for this rule (only wildcard+file-scope works, per hooks.md), so this covers all 3 pre-existing hits in the file: .account-email-panel's max-height (comment at L898-904 -- content height is unknown until the Turnstile iframe loads, height can't transition to auto) and .rank-fill/.mission-fill's width (5px-tall bars inside overflow:hidden tracks, no page-level reflow). None introduced this session; a transform:scaleX swap for the fill bars is out of scope (touches rank-strip.tsx/missions component)."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#fff",
+        "createdAt": "2026-08-29T12:52:12.430Z",
+        "reason": "Debug utility page, not production UI"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "4px",
+        "createdAt": "2026-08-29T12:52:12.535Z",
+        "reason": "Debug utility page, not production UI"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "app/debug/footer-preview/footer-preview.css"
+        ],
+        "createdAt": "2026-08-29T12:53:11.947Z",
+        "reason": "Debug utility page, not production UI"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          "app/debug/footer-preview/footer-preview.css"
+        ],
+        "createdAt": "2026-08-29T12:53:12.054Z",
+        "reason": "Debug utility page uses system fonts"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "8px",
+        "createdAt": "2026-08-29T13:38:23.400Z",
+        "reason": "Claude: first .profile-avatar override to shrink below its 34px base (to 20px, matching the other two nav icons) -- the component's 12px initials-fallback font doesn't fit a 20px circle, and no scale rung covers this new, narrower context."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "12.5px",
+        "createdAt": "2026-08-29T13:53:24.623Z",
+        "reason": "Claude: .entry-forgot-link's own small-link size, in the same 11-15px range this exact screen already uses for secondary/tertiary text (.entry-remember-copy small is 11px, .account-entry-status is 15px) -- DESIGN.md documents typography by role, not a numeric ramp, so no size in this range is 'on ramp' by that measure."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#eef2f8",
+        "createdAt": "2026-08-29T13:53:24.727Z",
+        "reason": "Claude: already this screen's own input-text color (.entry-field input, 3 uses) and shared across 6 stylesheets; reused for .entry-forgot-link:hover rather than inventing a new near-white."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "12px",
+        "createdAt": "2026-08-29T13:53:24.834Z",
+        "reason": "Claude: .entry-forgot-sent's confirmation text, same small-text range as the sibling .entry-forgot-link (12.5px, already ignored) on this same screen."
+      }
+    ]
+  }
+}

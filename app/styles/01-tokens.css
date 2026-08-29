@@ -42,6 +42,21 @@
   --neon-muted: #b6a6db;
   --neon-muted-2: #8a7ab3;
 
+  /* A second, older muted-text family that predates the Neon Marquee reskin
+   * and was never migrated to --neon-muted/-2 above -- a cool blue-slate,
+   * not this mark's violet. Named here (2026-08-29) because a design-system
+   * audit found it hand-written in 8 stylesheets/48 places (sign-in,
+   * arcade, duels, collection, panels, the mobile shell...) as bare hex,
+   * several of them near-duplicates of each other by a few RGB units. That
+   * makes it the app's single most-used muted-text convention in practice,
+   * well ahead of --neon-muted/-2 -- not a mistake to migrate away from, a
+   * real, load-bearing family DESIGN.md had simply never captured. Adopting
+   * it into new/touched CSS is a straight rename, same as every other scale
+   * in this file; reconciling it with --neon-muted/-2 into one family is a
+   * separate, deliberate call this only surfaces, not one this pass makes. */
+  --muted-slate: #93a1bb;
+  --muted-slate-2: #6f7b92;
+
   /* ------------------------------------------------------------------------
      Brand -- purple, red and gold.
 

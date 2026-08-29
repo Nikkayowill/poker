@@ -7,13 +7,14 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "A server-authoritative six-max Texas Hold’em table.",
     start_url: "/",
     display: "standalone",
-    // The blue-grey ground, the same #0f1218 html/body sit on (01-tokens.css).
-    // These two are what the OS paints around the app (the splash while it
-    // boots and the strip behind the status bar), so leaving them on the old
-    // green-black meant an installed StackChips opened with a green frame
-    // around an obsidian room for as long as the launch took.
-    background_color: "#0f1218",
-    theme_color: "#0f1218",
+    // The violet-black "Neon Marquee" ground, the same #150a2b html/body sit
+    // on (01-tokens.css). These two are what the OS paints around the app
+    // (the splash while it boots and the strip behind the status bar), so a
+    // stale value here shows up as an installed StackChips opening with a
+    // differently-coloured frame around the room for as long as the launch
+    // takes.
+    background_color: "#150a2b",
+    theme_color: "#150a2b",
     orientation: "portrait-primary",
     // Only list icons that actually exist. A manifest entry pointing at a 404
     // is not cosmetic: Chrome treats an unfetchable icon as a failed install
@@ -22,8 +23,8 @@ export default function manifest(): MetadataRoute.Manifest {
     // called it too generic for this spot, though it stays as the favicon
     // and the in-game/lobby nav mark). It's the stacked STACK/CHIPS lockup
     // at /icons/icon-stacked.svg, see that file for the full reasoning.
-    // 192/512 rasters and app/apple-icon.png are generated from it
-    // (public/brand/concepts/neon-marquee/wordmark-stacked.svg is the
+    // 192/512 rasters and app/apple-icon.png are generated from
+    // it (public/brand/concepts/neon-marquee/wordmark-stacked.svg is the
     // documented source), so re-running that render is how these get
     // regenerated if the mark changes. The maskable variant pads the same
     // art to an 80% safe zone on a solid background; an "any"-purpose

@@ -58,7 +58,6 @@ import {
   Puzzle,
   Spade,
   Sparkles,
-  User,
   Users,
   Video,
   Volume2,
@@ -106,7 +105,14 @@ const BASE_SETTLE_MS = 250;
 const MIN_SETTLE_MS = 90;
 // Puzzle over a generic controller glyph: this tab is Sudoku/Word Stack/
 // Connections/Memory/Minesweeper plus the PvP duels, not "any game."
-const PAGE_ICONS: readonly LucideIcon[] = [Spade, Puzzle, User];
+//
+// Profile has no entry here -- Jakob's Law: TikTok, Instagram and YouTube
+// all render their own last tab as the player's actual photo, not a generic
+// person glyph, precisely because a familiar face is a stronger "this is
+// yours" cue than a silhouette everyone's app uses. See the nav render
+// below, which special-cases the last tab to <ProfileAvatar> instead of
+// reading this array.
+const PAGE_ICONS: readonly LucideIcon[] = [Spade, Puzzle];
 
 /**
  * Which pane the player was last on, so leaving the shell and coming back
@@ -418,7 +424,26 @@ export function MobileShell({
               aria-current={active ? "page" : undefined}
               onClick={() => goTo(index)}
             >
-              <Icon size={20} strokeWidth={1.8} aria-hidden="true" />
+              {/* The Profile tab renders the player's own avatar rather than
+                  reading PAGE_ICONS -- see the array's own comment. The other
+                  two swap outline/filled by toggling `fill`, the same
+                  active-state cue TikTok/Instagram/YouTube use on their own
+                  generic tabs (a color change alone was the design-review
+                  finding this replaces). */}
+              {Icon
+                ? <Icon size={20} strokeWidth={1.8} fill={active ? "currentColor" : "none"} aria-hidden="true" />
+                : (
+                  // aria-hidden, not just decorative styling: ProfileAvatar
+                  // sets its own role="img"/aria-label ("Kayo's avatar"),
+                  // which would otherwise concatenate into this button's
+                  // accessible name alongside the visible "Profile" label.
+                  <span aria-hidden="true">
+                    <ProfileAvatar
+                      profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }}
+                      className="mshell-nav-avatar"
+                    />
+                  </span>
+                )}
               <span>{name}</span>
             </button>
           );

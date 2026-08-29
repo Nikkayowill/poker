@@ -1,18 +1,15 @@
 "use client";
 
-import { ArrowRight, LoaderCircle, LogOut, Mail } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, LoaderCircle, LogOut, Mail } from "lucide-react";
 import { FormEvent, useState } from "react";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { StackChipsLogo } from "@/components/brand/stackchips-logo";
 import { InstallLine } from "@/components/pwa/install-line";
-import { selectSound } from "@/lib/audio/ui-sounds";
+import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { TurnstileWidget } from "@/components/auth/turnstile-widget";
 import { TURNSTILE_SITE_KEY } from "@/lib/auth/turnstile";
 import { requestPushPermissionAndSubscribe } from "@/lib/push/client";
-
-// Matches Supabase's password_min_length (Authentication -> Providers ->
-// Email). NIST SP 800-63B and OWASP ASVS L1 both put the floor at 8.
-const MIN_PASSWORD_LENGTH = 8;
+import { MIN_PASSWORD_LENGTH } from "@/lib/auth/password";
 
 /**
  * Google's mark, inline.
@@ -76,6 +73,7 @@ export function AccountEntryCard({
   onContinueAccount,
   onContinueAsGuest,
   onSignOut,
+  onForgotPassword,
 }: {
   ready: boolean;
   accountsAvailable: boolean;
@@ -90,6 +88,8 @@ export function AccountEntryCard({
   onContinueAccount: () => void;
   onContinueAsGuest: () => void;
   onSignOut: () => void;
+  /** Requests a Supabase recovery email for the given address. */
+  onForgotPassword: (email: string) => void;
 }) {
   const signedIn = Boolean(profile?.isRegistered);
   // Collapsed by default: the front screen is Google + Email + guest, and
@@ -101,6 +101,24 @@ export function AccountEntryCard({
   const [formError, setFormError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaResetSignal, setCaptchaResetSignal] = useState(0);
+  // True only once the Turnstile *script* has failed to load -- see
+  // TurnstileWidget's onLoadError doc comment. The widget's own transient
+  // errors don't set this; it can still recover from those on its own.
+  const [captchaLoadFailed, setCaptchaLoadFailed] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [resetRequested, setResetRequested] = useState(false);
+
+  const handleForgotPassword = () => {
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setFormError('Enter your email above, then tap "Forgot password?" again.');
+      return;
+    }
+    setFormError(null);
+    selectSound();
+    onForgotPassword(trimmed);
+    setResetRequested(true);
+  };
   const busy = !ready || pending;
 
   const submitEmailForm = (event: FormEvent) => {
@@ -113,7 +131,11 @@ export function AccountEntryCard({
       return;
     }
     if (TURNSTILE_SITE_KEY && !captchaToken) {
-      setFormError("Please complete the verification below.");
+      setFormError(
+        captchaLoadFailed
+          ? "Verification failed to load. Check your connection, or continue with Google instead."
+          : "Please complete the verification below.",
+      );
       return;
     }
     selectSound();
@@ -200,7 +222,12 @@ export function AccountEntryCard({
               <>
                 <button
                   type="button"
-                  className="account-oauth-action"
+                  // Gold (the one saturated fill DESIGN.md's Single Fill Rule
+                  // allows per screen) while Google is the front screen's own
+                  // lead choice; steps down to the quieter oauth surface once
+                  // opening the email panel below hands that one fill to its
+                  // own submit button instead -- never both gold at once.
+                  className={emailFormOpen ? "account-oauth-action" : "account-primary-action"}
                   disabled={busy}
                   onClick={() => {
                     selectSound();
@@ -281,18 +308,52 @@ export function AccountEntryCard({
                       </label>
                       <label className="entry-field">
                         <span>Password</span>
-                        <input
-                          type="password"
-                          autoComplete={emailMode === "sign-in" ? "current-password" : "new-password"}
-                          placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
-                          value={password}
-                          disabled={busy}
-                          onChange={(event) => setPassword(event.target.value)}
-                          minLength={MIN_PASSWORD_LENGTH}
-                          required
-                        />
+                        {/* Wrapped so the toggle can sit inside the input's own
+                            box (the field is styled as one filled surface,
+                            not a bordered input with a button beside it). */}
+                        <div className="entry-field-input">
+                          <input
+                            type={passwordVisible ? "text" : "password"}
+                            autoComplete={emailMode === "sign-in" ? "current-password" : "new-password"}
+                            placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+                            value={password}
+                            disabled={busy}
+                            onChange={(event) => setPassword(event.target.value)}
+                            minLength={MIN_PASSWORD_LENGTH}
+                            required
+                          />
+                          <button
+                            type="button"
+                            className="entry-field-toggle"
+                            disabled={busy}
+                            aria-label={passwordVisible ? "Hide password" : "Show password"}
+                            onClick={() => { tapSound(); setPasswordVisible((visible) => !visible); }}
+                          >
+                            {passwordVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
                       </label>
                     </div>
+
+                    {/* Sign-in mode only: a create-account form has no
+                        password to have forgotten yet. */}
+                    {emailMode === "sign-in" && (
+                      <div className="entry-forgot-row">
+                        <button
+                          type="button"
+                          className="entry-forgot-link"
+                          disabled={busy}
+                          onClick={handleForgotPassword}
+                        >
+                          Forgot password?
+                        </button>
+                        {resetRequested && (
+                          <span className="entry-forgot-sent" role="status">
+                            Check your email for a reset link.
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     <label className="account-remember">
                       <input
@@ -311,8 +372,17 @@ export function AccountEntryCard({
                     <TurnstileWidget
                       siteKey={TURNSTILE_SITE_KEY}
                       onToken={setCaptchaToken}
+                      onLoadError={() => setCaptchaLoadFailed(true)}
                       resetSignal={captchaResetSignal}
                     />
+                    {/* Shown as soon as the failure is known, not just after a
+                        rejected submit -- otherwise the only sign anything is
+                        wrong is a blank strip where the widget should be. */}
+                    {captchaLoadFailed && (
+                      <p className="account-entry-error" role="alert">
+                        Verification failed to load. Check your connection, or continue with Google instead.
+                      </p>
+                    )}
 
                     <button type="submit" className="account-primary-action" disabled={busy}>
                       {pending

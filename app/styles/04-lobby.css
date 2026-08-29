@@ -1181,26 +1181,30 @@ button:disabled { cursor: wait; opacity: .62; }
 .entry-support:hover { color: var(--brand-gold-light); }
 .entry-support:focus-visible { outline: 0; box-shadow: var(--brand-focus); border-radius: var(--radius-xs); }
 
-/* A fixed 2 columns, not flex-wrap: four links of uneven length wrapped
-   ragged (3 then 1), and that lone fourth link -- App Disclaimer -- read as
-   its own centred line rather than the last item of a list, closer to a
-   stray heading than a footer row. Two columns always split the same four
-   links 2-and-2, so it reads as one block at every width this page renders
-   at, not just the 390px it was caught on. Margin: auto centres the grid
-   itself rather than relying on justify-content, which was giving the
-   columns uneven space when one column was narrower than the other. */
+/* One row, three links (Kayo's call): the original four-link version wrapped
+   ragged on a real phone under flex-wrap (3-then-1, the lone fourth link
+   reading as a stray heading rather than the last item of a list), which is
+   why it became a 2-column grid instead -- and the grid then had its own
+   problem, sizing unevenly because "Supporting StackChips" (the longest
+   entry) made one column much wider than the other ("weird 2 column").
+   Dropping Supporting StackChips from this screen specifically (the page
+   itself is untouched -- still linked from /legal, the lobby footer's own
+   destination, see site-footer.tsx) removes both problems at once: three
+   short links comfortably share one flex row on a 390px phone with no wrap
+   and no column to size unevenly in the first place. */
 .entry-legal-links {
-  display: grid;
-  grid-template-columns: repeat(2, auto);
-  gap: 12px 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
   margin: 0 auto;
-  width: fit-content;
 }
 
 .entry-legal-links a {
   color: #7f8ba4;
   font-size: 10px;
   text-decoration: none;
+  white-space: nowrap;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
 }
 

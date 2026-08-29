@@ -438,10 +438,14 @@ export function AccountEntryCard({
         far it scrolls (X-style -- content in the middle, only the legal
         links fixed at the bottom). See .entry-footer's own CSS note. */}
     <footer className="entry-footer">
+      {/* Three links, not four: Kayo's call -- Supporting StackChips drops
+          off the sign-in screen specifically (the page itself is untouched,
+          still linked from /rewards and the lobby footer). It was also the
+          long outlier that made the old 2-column grid size unevenly; three
+          short links read as one clean row now instead. */}
       <nav className="entry-legal-links" aria-label="Legal">
         <a href="/legal/terms">Terms of Service</a>
         <a href="/legal/privacy">Privacy Policy</a>
-        <a href="/legal/support">Supporting StackChips</a>
         <a href="/legal/disclaimer">App Disclaimer</a>
       </nav>
     </footer>

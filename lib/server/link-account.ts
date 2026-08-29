@@ -1,8 +1,13 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
-import { ensureProfile, findSessionByUserId, linkProfileToUser } from "@/lib/server/profile-store";
+import {
+  ensureProfile,
+  findProfileBySessionToken,
+  findSessionByUserId,
+  linkProfileToUser,
+} from "@/lib/server/profile-store";
 import { persistenceMode } from "@/lib/server/game-store";
-import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
+import { readOrCreateSessionToken, readSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 /**
@@ -18,6 +23,11 @@ import type { PlayerProfile } from "@/lib/profile/types";
  *     on a new device, or one whose cookie was cleared)
  *   - it doesn't -> link the profile this browser is already using, so a
  *     guest keeps the Gold and avatar they just earned
+ *
+ * The restore branch discards whatever this browser was using instead, which
+ * is fine for an empty/never-played cookie but not for a guest mid-run --
+ * see `findRestoreConflict` below, which callers check first and route to a
+ * player confirmation instead of calling this silently.
  */
 export async function linkAuthenticatedUser(
   userId: string,
@@ -35,6 +45,35 @@ export async function linkAuthenticatedUser(
   await ensureProfile(token);
   const profile = await linkProfileToUser(token, userId);
   return { profile, restored: false, token };
+}
+
+/**
+ * Whether finishing this sign-in would silently throw away guest progress
+ * this browser is already holding.
+ *
+ * True only when the Google identity already owns a *different* profile
+ * (linkAuthenticatedUser's "restore" branch above) AND this browser is
+ * currently playing as its own unregistered guest -- something with
+ * balance/collection actually at risk. A brand-new cookie with no profile
+ * yet, or a browser that's already this same registered account, has
+ * nothing to lose, so those fall through to the ordinary silent link.
+ *
+ * Read-only on purpose: `readSessionToken` (not `readOrCreateSessionToken`)
+ * never mints a cookie for a caller only asking to look, and this runs
+ * before the caller has decided whether to commit to linking at all.
+ */
+export async function findRestoreConflict(
+  userId: string,
+  request: NextRequest,
+): Promise<boolean> {
+  const existing = await findSessionByUserId(userId);
+  if (!existing) return false;
+
+  const currentToken = readSessionToken(request);
+  if (!currentToken) return false;
+
+  const currentProfile = await findProfileBySessionToken(currentToken);
+  return Boolean(currentProfile && !currentProfile.isRegistered);
 }
 
 export function linkResultResponse(

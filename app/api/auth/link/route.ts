@@ -7,9 +7,14 @@ export const runtime = "nodejs";
 
 /**
  * Called after email/password sign-in completes client-side. Google sign-in
- * does not use this route -- the OAuth callback route handler links inline,
- * since it already holds a freshly authenticated server client from the
- * code exchange.
+ * ordinarily doesn't use this route -- the OAuth callback route handler
+ * links inline, since it already holds a freshly authenticated server
+ * client from the code exchange. The one exception is the player
+ * confirming a restore-vs-guest-progress conflict the callback route
+ * deferred (see `findRestoreConflict`): the Supabase session it already
+ * established is still sitting in the cookie, so this route finishes the
+ * same link the callback route would have, once the player has said to
+ * go ahead and discard the guest run.
  *
  * No token in the request body: the Supabase session now lives in a cookie
  * (@supabase/ssr), so getUser() reads it directly and verifies it against

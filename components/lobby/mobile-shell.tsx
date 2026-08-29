@@ -94,6 +94,16 @@ import { LobbyNotices } from "./lobby-notices";
 // ellipsis clip (.mshell-nav-item span, 45-mobile-shell.css).
 const PAGES = ["Play", "Ante Up", "Profile"] as const;
 const PAGE_COUNT = PAGES.length;
+
+/**
+ * The settle transition's duration at a full pane width of travel — matches
+ * `--duration-slower` in 45-mobile-shell.css, which is the floor it can't
+ * exceed. A release already close to the target scales this down (see
+ * `endGesture`) rather than always paying the full amount.
+ */
+const BASE_SETTLE_MS = 250;
+/** Never so short it reads as a cut rather than a landing. */
+const MIN_SETTLE_MS = 90;
 // Puzzle over a generic controller glyph: this tab is Sudoku/Word Stack/
 // Connections/Memory/Minesweeper plus the PvP duels, not "any game."
 const PAGE_ICONS: readonly LucideIcon[] = [Spade, Puzzle, User];
@@ -201,6 +211,15 @@ export function MobileShell({
   /** Live drag distance in px. Null whenever no horizontal drag is in flight. */
   const [drag, setDrag] = useState<number | null>(null);
   const gestureRef = useRef<SwipeGesture | null>(null);
+  /** Signed px/ms at the most recent pointer move, read once on release. */
+  const velocityRef = useRef(0);
+  /**
+   * How long the current settle transition should take. Scaled to the track's
+   * remaining travel rather than fixed, so a release close to the target
+   * pane arrives quickly and a release far from it takes the full duration —
+   * the same page turn no longer takes as long to finish as it does to start.
+   */
+  const [settleMs, setSettleMs] = useState(BASE_SETTLE_MS);
 
   useEffect(() => {
     try {
@@ -237,6 +256,7 @@ export function MobileShell({
   const goTo = useCallback((next: number) => {
     const target = clampPage(next, PAGE_COUNT);
     reach(target);
+    setSettleMs(BASE_SETTLE_MS); // a tab tap always travels the full pane width
     setPage((current) => {
       // `select`, not `tap`: a tab is a choice, and it changes what is on screen.
       if (target !== current) selectSound();
@@ -249,17 +269,20 @@ export function MobileShell({
     if (event.pointerType === "mouse" && event.buttons !== 1) return;
     if (event.target instanceof Element && event.target.closest(HORIZONTAL_SCROLLER)) return;
     reach(page - 1, page + 1);
+    velocityRef.current = 0;
     gestureRef.current = beginSwipe(
       event.clientX,
       event.clientY,
       event.currentTarget.clientWidth,
+      event.timeStamp,
     );
   }, [page, reach]);
 
   const onPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current;
     if (!gesture) return;
-    const move = trackSwipe(gesture, event.clientX, event.clientY, page, PAGE_COUNT);
+    const move = trackSwipe(gesture, event.clientX, event.clientY, page, PAGE_COUNT, event.timeStamp);
+    velocityRef.current = move.velocity;
     /*
      * Capture on the axis lock, not on press.
      *
@@ -288,7 +311,22 @@ export function MobileShell({
     const gesture = gestureRef.current;
     gestureRef.current = null;
     if (!gesture) return;
-    const settled = settleSwipe(gesture, drag ?? 0, page, PAGE_COUNT);
+    const offsetAtRelease = drag ?? 0;
+    const settled = settleSwipe(gesture, offsetAtRelease, page, PAGE_COUNT, velocityRef.current);
+    /*
+     * Duration scaled to what's actually left to travel, not fixed. The track
+     * is already sitting at `offsetAtRelease` px into the turn; the distance
+     * still to cover to reach the settled page is `(settled - page)` panes
+     * plus that offset, so a release close to the target keeps moving at
+     * roughly its current speed instead of visibly slowing to stretch out to
+     * the full BASE_SETTLE_MS. A tab tap never reaches here, so it always
+     * gets goTo's fixed duration above.
+     */
+    const remainingPx = Math.abs((settled - page) * gesture.width + offsetAtRelease);
+    setSettleMs(Math.max(
+      MIN_SETTLE_MS,
+      Math.round((remainingPx / gesture.width) * BASE_SETTLE_MS),
+    ));
     setDrag(null);
     if (settled !== page) {
       selectSound();
@@ -309,7 +347,12 @@ export function MobileShell({
       >
         <div
           className={`mshell-track${drag === null ? " mshell-track-settling" : ""}`}
-          style={{ transform: `translateX(calc(${-page * 100}% + ${Math.round(offset)}px))` }}
+          style={{
+            transform: `translateX(calc(${-page * 100}% + ${Math.round(offset)}px))`,
+            // Longhand wins over the class's `transition` shorthand for just
+            // this property, so the CSS still owns the property/easing/delay.
+            transitionDuration: drag === null ? `${settleMs}ms` : undefined,
+          }}
         >
           {/* Panes off-screen stay in the document, so they'd still be in
               the tab order and still read out. `inert` is what actually takes

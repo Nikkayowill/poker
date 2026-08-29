@@ -23,6 +23,12 @@
  *
  * The gesture maths lives in lib/ui/swipe-pager.ts, pure and tested. This file
  * only owns the pointer plumbing and what the panes contain.
+ *
+ * The tab bar (2026-08-29 rebuild, replacing a deleted one) is plain CSS, no
+ * JS: see the doc comment at the top of 45-mobile-shell.css for why a bar
+ * pinned with `position: fixed` plus a live `--safe-bottom` read needs
+ * nothing else, and why this file no longer forces a reflow on mount to work
+ * around a cold-launch safe-area bug that never actually needed one.
  */
 
 import {
@@ -197,38 +203,6 @@ export function MobileShell({
       // A full or disabled store just means the next return starts on Play.
     }
   }, [page]);
-
-  /*
-   * On iOS PWA cold launch, WKWebView reads env(safe-area-inset-*) before it
-   * has settled to its real value -- 300-400ms, by observation -- and never
-   * repaints on its own once it does. This file's own history carries the
-   * nav bar's version of that bug (see the git log on this component): it was
-   * fixed there by dropping the bar's dependency on --safe-bottom entirely,
-   * trading perfect home-indicator clearance for never being wrong.
-   *
-   * The header and this shell's own height (`--lobby-header-h`/`--safe-top`
-   * in app/styles/02-app-shell.css and 45-mobile-shell.css) still read
-   * --safe-top live, and that same trade isn't available there: guessing a
-   * fallback top inset instead of the real one risks sitting a header under
-   * an actual notch on some devices, which is worse than the bug it would
-   * replace. So this shell mounting is also the one moment worth spending a
-   * single forced reflow on: past the settle window, once, on the whole app
-   * shell rather than one element, so it corrects the header's own box at
-   * the same time it would have corrected the nav bar's. `.app-root` (poker-
-   * app.tsx's wrapper -- not reachable directly from this component) rather
-   * than <html>/<body>, so it can't disturb anything mounted straight to the
-   * document.
-   */
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const root = document.querySelector<HTMLElement>(".app-root");
-      if (!root) return;
-      root.style.display = "none";
-      void root.offsetHeight;
-      root.style.display = "";
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   /*
    * Which panes have been looked at, or are one gesture away from being looked

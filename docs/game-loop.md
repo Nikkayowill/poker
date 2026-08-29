@@ -1,191 +1,252 @@
 # The game loop: client-ignited, server-validated
 
-How a StackChips table moves forward when nobody has pressed anything. Written
-down because the shape is unusual on purpose, and because the obvious
-alternatives have each been proposed and rejected for reasons that are not
-obvious from the code alone.
+This document explains how a StackChips table moves forward. No player
+presses anything to make this happen. The design is unusual on purpose.
+Other engineers proposed the obvious alternatives already. The team rejected
+each alternative for reasons the code alone does not show. This document
+records those reasons.
 
 ## The one-sentence version
 
-Seated browsers say *"I think something is due"*; the server decides whether
-anything actually is, does it, and writes it under optimistic concurrency. The
-browser supplies no timestamp, no action and no authority — only the prompt.
+A seated browser sends one signal: a prompt that something may be due. The
+server alone decides if a step is due. The server performs the step. The
+server writes the result under optimistic concurrency.
+
+The browser supplies:
+- no timestamp
+- no action
+- no authority
+
+The browser supplies only the prompt.
 
 ## What the client actually does
 
-`lib/game/turn-clock.ts` is a pure function. Given a snapshot it answers one
-question: when, if ever, should this browser `POST /api/games/[id]/advance`?
+`lib/game/turn-clock.ts` is a pure function. The function reads a game
+snapshot. The function answers one question: when should this browser send
+`POST /api/games/[id]/advance`? The answer may be never.
 
-There are two deadlines it can be waiting on, and never both at once:
+The browser can wait on two deadlines. The browser never waits on both
+deadlines at the same time.
 
 | deadline | set when | cleared when |
 |---|---|---|
-| `turnDeadlineAt` | a seat is put on turn | the hand completes |
-| `nextHandAt` | a hand completes with ≥2 funded seats | the next hand is dealt |
+| `turnDeadlineAt` | a seat starts its turn | the hand ends |
+| `nextHandAt` | a hand ends with at least two funded seats | the game deals the next hand |
 
-`planTurnClock` prefers a live turn deadline and falls back to `nextHandAt`.
-With neither, it returns `idle` and the browser generates nothing at all —
-which is the correct resting state for a table with no funded opponents or one
+`planTurnClock` first checks for a live turn deadline. `planTurnClock` uses
+`nextHandAt` as a backup. With neither deadline set, `planTurnClock` returns
+`idle`. An idle browser sends no request. This idle state is correct for a
+table with no funded opponents. This idle state is also correct for a table
 still waiting for players.
 
-Every seated human is willing to fire, but they queue. The browser whose clock
-it is goes at the deadline; each other browser waits `BACKUP_STAGGER_MS` per
-place in line. A successful advance changes `version`, the broadcast wakes
-everyone, and every pending backup re-plans and cancels itself. So the ordinary
-case is exactly one request, and the case where that player closed their tab is
-covered by the next in line rather than stalling.
+Every seated human's browser stands ready to send the request, but the
+browsers queue, in order. The browser with the live deadline sends its
+request first, at the deadline. Each other browser waits an extra
+`BACKUP_STAGGER_MS` per place in the queue. A successful advance changes the
+`version` value. The broadcast then wakes every browser. Each waiting backup
+browser re-plans its own wait, then cancels itself.
 
-This replaced two failure modes, both observed live and both recorded in the
-header comment of `turn-clock.ts`: an unconditional 1.5s poll (18 requests in
-30 idle seconds), and a single elected browser whose disappearance froze the
-table completely.
+The ordinary case needs exactly one request. If a player closes their tab,
+the next browser in the queue covers the gap. The table never stalls.
+
+This design replaced two failure modes. Both failure modes appeared live.
+The header comment of `turn-clock.ts` records both:
+
+- An unconditional 1.5-second poll sent 18 requests in 30 idle seconds.
+- A single elected browser controlled each table. If that browser
+  disappeared, the table froze completely.
 
 ## What the server actually does
 
-`POST /advance` is not a command. It is a request to *evaluate*.
+`POST /advance` is not a command. `POST /advance` is a request to evaluate
+the game state.
 
-1. **Authenticate.** No `river_session` cookie → 401. Not seated at this table
-   → 403. A background `fetch` from the server itself has neither, which is why
-   self-calling designs do not work here (see below).
+1. **Authenticate.** The server checks for a `river_session` cookie.
+   - No cookie: the server returns 401.
+   - A cookie, but no seat at this table: the server returns 403.
+
+   A background `fetch` from the server itself carries neither the cookie
+   nor a seat. This is why self-calling designs do not work here. See
+   "Rejected alternatives" below.
+
 2. **Decide, from the server's own clock.** `resolveTimedAdvance` calls
-   `dealNextHandIfDue(state)` and `advanceTimedTurn(state)` with no `now`
-   argument, so both default to the server's `Date.now()`. **No client-supplied
-   time reaches the engine.** A browser that fires a second early gets a
-   snapshot back and nothing else; a browser that lies about the time has
-   nothing to lie with.
-3. **Write optimistically.** `try_persist_timed_game_action` takes the version
-   the caller started from and returns `false` rather than raising when another
-   request got there first. The loser re-reads the winner's state instead of
-   replaying its own decision on top. This is what makes the backup queue safe:
-   several browsers waking together produce one deal, not four.
+   `dealNextHandIfDue(state)` and `advanceTimedTurn(state)`. Neither call
+   passes a `now` argument. Both functions default to the server's own
+   `Date.now()` value. **No client-supplied time ever reaches the engine.**
+   A browser that sends its request one second early gets back only its
+   current snapshot. A dishonest browser has no time value to falsify.
 
-Because the server catches up rather than steps, one request resolves a *run*
-of overdue turns (`MAX_ADVANCE_STEPS`, currently 12). That is what makes a
-backgrounded tab or a dropped connection recoverable without polling — the
-table is not behind by one turn, it is behind by however many, and the next
-request settles all of them.
+3. **Write optimistically.** `try_persist_timed_game_action` takes the
+   version number the caller started from. If another request already won,
+   `try_persist_timed_game_action` returns `false` instead of raising an
+   error. The losing browser then re-reads the winner's state, rather than
+   replaying its own decision on top of it. This behavior keeps the backup
+   queue safe: several browsers can wake together and still produce only
+   one deal, not four.
+
+The server catches up in one pass instead of stepping through turns one at
+a time. One request can resolve a whole run of overdue turns, up to
+`MAX_ADVANCE_STEPS` (currently 12). This design makes a backgrounded tab, or
+a dropped connection, recoverable without polling. A table can fall behind
+by many turns, not only one turn. The next request settles every overdue
+turn at once.
 
 ## `nextHandAt` specifically
 
-A finished hand is scheduled by `scheduleNextHand()`, called at the two places
-a hand actually ends — `awardUncontested` and `showdown`. Deliberately *not* at
-the third place `status` becomes `"complete"`: `setupHand`'s bail-out when
-fewer than two seats have chips. A table that cannot deal must not advertise a
-deadline, or every seated browser would wake at it, ask to advance, and be told
-the same thing forever.
+`scheduleNextHand()` schedules a finished hand. Two places call
+`scheduleNextHand()`: `awardUncontested` and `showdown`. Both places mark
+the actual end of a hand.
 
-One delay, always: `NEXT_HAND_DELAY_MS` (2.8s) — derived from the celebration
-rather than chosen. The longest animation on a finished table is
-`win-amount-rise`, 1.4s from a .78s offset, so everything is over at 2.18s and
-this leaves a beat after it. `app/styles/stylesheets.test.ts` reads the
-stylesheets and fails if any celebration animation grows past the constant,
-because nothing else in the toolchain reads both a TypeScript value and a CSS
-keyframe. It was 4s while a player still pressed a button to move on; once the
-deal became automatic that extra second was dead air rather than a chance to
-act.
+A third place also sets `status` to `"complete"`: `setupHand`'s bail-out
+path, used when fewer than two seats hold chips. `scheduleNextHand()`
+deliberately skips this third place. A table that cannot deal must not
+advertise a deadline. Otherwise every seated browser would wake at that
+deadline, ask to advance, and get the same unusable answer forever.
 
-There used to be a second, longer delay here — `BUSTED_REBUY_GRACE_MS` (20s),
-held whenever a seated human had just lost their last chip, so the rebuy
-dialog stayed open in front of them before their seat was handed to a bot.
-Removed: it meant one player busting made every other seated browser wait 20s
-instead of 2.8s, and a real table never holds up the other players for one
-person's decision. A busted human now keeps their own seat — `setupHand`'s
-own per-seat pass reads their zero stack and sits them out, same as any other
-unfunded seat — and the table deals on at the normal beat regardless of who
-busted or how many did. See `releaseBustedSeats` and its callers in
-`lib/game/engine.ts`, and `lib/game/busted-seat.test.ts`.
+One delay always applies: `NEXT_HAND_DELAY_MS`, 2.8 seconds. The team
+derived this value from the celebration animation, rather than choosing it
+arbitrarily. The longest animation on a finished table is `win-amount-rise`:
+1.4 seconds, starting at a .78-second offset. This animation finishes at
+2.18 seconds. `NEXT_HAND_DELAY_MS` leaves one extra beat after the
+animation ends.
 
-`setupHand` clears `nextHandAt` before its funded-seats check, so the dead-table
-branch cannot inherit the deadline that woke it.
+`app/styles/stylesheets.test.ts` reads the stylesheet files. This test
+fails if any celebration animation grows past the `NEXT_HAND_DELAY_MS`
+constant, because no other tool in the toolchain reads both a TypeScript
+value and a CSS keyframe together.
 
-`normalizeGameState` reads a missing `nextHandAt` as `null`. Tables persisted
-before continuous play therefore behave exactly as they did when those rows
-were written: they wait for someone to press Deal.
+`NEXT_HAND_DELAY_MS` was once 4 seconds, from when a player still pressed a
+button to move on. The deal became automatic, and that extra second then
+became dead air instead of a chance to act.
 
-### Where the deal is performed, and why not where you would expect
+A second, longer delay used to exist: `BUSTED_REBUY_GRACE_MS`, 20 seconds.
+This delay held whenever a seated human had just lost their last chip. This
+delay kept the rebuy dialog open in front of that player, before the table
+handed that player's seat to a bot.
 
-`dealNextHandIfDue` is a separate function from `advanceTimedTurn`, and this is
-load-bearing. `advanceTimedTurn`'s contract is *"an action and an actor, or
-nothing happened"*, and its caller in `game-store.ts` returns early on a null
-action **without persisting anything**. The first implementation dealt the hand
-inside it, which meant the hand was dealt in memory and dropped on the floor —
-the browser advanced, saw no change, and re-dealt a hand nobody ever saved,
-forever. Splitting it out is what makes the persistence explicit.
+The team removed `BUSTED_REBUY_GRACE_MS`. One player busting had forced
+every other seated browser to wait 20 seconds instead of 2.8 seconds, and a
+real table never holds up other players for one person's decision.
 
-The deal is persisted through the same optimistic RPC as every other deadline,
-with `action_type = next_hand` and a **null** `actor_seat_id`. No schema change
-was needed: `game_actions.actor_seat_id` has always been nullable and
-`next_hand` has always been in the `action_type` enum, because the human "Deal
-next hand" button writes exactly that row.
+A busted human now keeps their own seat. `setupHand`'s own per-seat pass
+reads the zero stack and sits that player out, the same as any other
+unfunded seat. The table deals the next hand at the normal 2.8-second beat.
+This beat stays the same, regardless of who busted or how many players
+busted.
+
+See `releaseBustedSeats` and its callers in `lib/game/engine.ts`, and see
+`lib/game/busted-seat.test.ts`.
+
+`setupHand` clears `nextHandAt` before its funded-seats check. The
+dead-table branch therefore cannot inherit the deadline that woke it.
+
+`normalizeGameState` reads a missing `nextHandAt` value as `null`. Tables
+saved before continuous play therefore keep their original behavior: these
+older tables still wait for a player to press Deal.
+
+### Where the deal happens, and why not where expected
+
+`dealNextHandIfDue` is a separate function from `advanceTimedTurn`. This
+separation is load-bearing, not incidental. `advanceTimedTurn`'s contract
+states: an action and an actor, or nothing happened. Its caller in
+`game-store.ts` returns early on a null action, and persists nothing.
+
+The first implementation dealt the hand inside `advanceTimedTurn` itself.
+This design dealt the hand only in memory, and the dealt hand was never
+saved. The browser advanced, saw no change, and re-dealt a hand nobody ever
+saved, forever. Splitting `dealNextHandIfDue` out makes the persistence
+step explicit.
+
+The engine persists the deal through the same optimistic RPC as every other
+deadline. This write uses `action_type = next_hand` and a null
+`actor_seat_id`. No schema change was needed for this: `game_actions.actor_seat_id`
+has always allowed a null value, and `next_hand` has always
+been part of the `action_type` enum, because the old human "Deal next hand"
+button already wrote this exact same row.
 
 ## Rejected alternatives
 
-**Vercel Cron.** Minute granularity against a game that needs a four-second
-transition. Also wrong shape: a cron job sweeps *all* tables whether or not
-anything is due.
+**Vercel Cron.** Vercel Cron offers only minute granularity. This game
+needs a four-second transition. Vercel Cron also has the wrong shape: a
+cron job sweeps every table, whether or not anything is due.
 
-**`waitUntil` + a background self-`fetch`.** Proposed in detail; does not work
-here for three separate reasons, any one of which is fatal.
+**`waitUntil` plus a background self-`fetch`.** An engineer proposed this
+design in detail. Three separate reasons block this design here. Any single
+reason alone is fatal.
 
-- `/advance` cannot start a hand at all. `advanceTimedTurn` returns immediately
-  unless `status === "playing"`. Dealing happens through `next-hand` on
-  `/actions`, a different route.
-- Both routes require a `river_session` cookie and a seat at the table. A
-  server-side `fetch` carries neither, so the call is rejected before any of
-  the above matters.
-- A `setTimeout` inside `waitUntil` holds a billed serverless isolate idle for
-  the whole delay, per completed hand, per table — and still does not deliver
-  sub-second responsiveness, because it is explicitly waiting.
+- `/advance` cannot start a hand at all. `advanceTimedTurn` returns
+  immediately unless `status` equals `"playing"`. Dealing happens through
+  the separate `next-hand` action on the `/actions` route.
+- Both routes need a `river_session` cookie and a seat at the table. A
+  server-side `fetch` carries neither. The server rejects this call before
+  the first reason even matters.
+- A `setTimeout` inside `waitUntil` holds a billed serverless isolate idle
+  for the whole delay, per completed hand, per table. This design still
+  delivers no sub-second responsiveness, because it explicitly waits.
 
-**A manual "Deal next hand" button.** This is what the table used to have, and
-it was removed rather than kept alongside the timer: two ways to start a hand
-means a button that is usually a no-op by the time it is pressed, and clutter
-in the one strip that has to stay legible. Nothing forces a deal by hand any
-more — the busted player's "Close seat", which was the same action wearing a
-different decision, is gone too; a busted seat offers Rebuy any time, not
-just between hands, and the header's persistent "Leave table" is the exit.
-The cost is that a table which *cannot* deal again has no button to offer,
-so ActionBar reads `nextHandAt` and offers "Return to lobby" instead of an
-empty control row.
+**A manual "Deal next hand" button.** The table used to have this button.
+The team removed the button instead of keeping it alongside the timer: two
+ways to start a hand create a problem. The button is usually a no-op by the
+time a player presses it, and it adds clutter to the one control strip that
+must stay legible.
 
-One real exception to "any time": a seat that lost its last chips going
-all-in stays "live" (status `all-in`, not `out`) until the hand it busted in
-actually finishes deciding it — `isSeatRebuyEligible` (`lib/game/rebuy.ts`)
-is the one predicate the engine, the `/actions` route, and ActionBar all
-share for this, so the button itself doesn't appear until the server would
-actually accept it. It briefly disagreed with the server instead: the
-button showed at `stack === 0` alone, the server 409'd until the hand
-resolved, and nothing retried — the fix that made this file's "no window to
-miss" claim true rather than aspirational.
+No control now forces a deal by hand. The busted player's old "Close seat"
+control is also gone; this control was the same action in a different
+form. A busted seat now offers Rebuy at any time, not only between hands.
+The header's persistent "Leave table" control remains the only exit.
 
-**A persistent Node worker.** Code for one used to exist under
-`lib/server/table-manager/`, together with a `cash_game_sessions` ledger in
-`lib/server/cash-game-session-store.ts`. Neither was ever reachable: the entry
-point had no caller, and `assertPersistentTableRuntime()` threw whenever
-`process.env.VERCEL` was set, so none of it could run in production. It was
-deleted as dead weight — recover it with
-`git checkout c372499 -- lib/server/table-manager lib/server/cash-game-session-store.ts`
-if a worker is ever built for real. The `cash_game_sessions` table and its RPCs remain in the
-database, since migrations here are append-only.
+This design has one cost. A table that cannot deal again has no button to
+offer. `ActionBar` reads `nextHandAt` instead, and offers "Return to lobby"
+rather than an empty control row.
 
-Keeping the loop in the browsers is what lets guest play stay first-class: a
-seated guest already holds the session cookie the route requires, with no
-account, no JWT and no extra infrastructure.
+One real exception exists to "any time." A seat that lost its last chips
+going all-in keeps status `all-in`, not `out`, until that hand finishes
+deciding the seat's fate. `isSeatRebuyEligible` (`lib/game/rebuy.ts`) is the
+one shared predicate for this rule; the engine, the `/actions` route, and
+`ActionBar` all use it. The Rebuy button therefore does not appear until
+the server would actually accept it.
+
+An earlier version disagreed with the server on this point. The button
+showed whenever `stack === 0` alone. The server then returned a 409 error
+until the hand resolved, and nothing retried the request automatically.
+The fix made this document's "no window to miss" claim true, not merely a
+goal.
+
+**A persistent Node worker.** Code for a persistent Node worker used to
+exist under `lib/server/table-manager/`, together with a matching
+`cash_game_sessions` ledger in `lib/server/cash-game-session-store.ts`.
+Neither was ever reachable in production: the entry point had no caller,
+and `assertPersistentTableRuntime()` threw an error whenever
+`process.env.VERCEL` was set, so no part of this code could run live.
+
+The team deleted this code as dead weight. Recover it with
+`git checkout c372499 -- lib/server/table-manager lib/server/cash-game-session-store.ts`,
+if a worker is ever built for real. The `cash_game_sessions` table and its
+RPCs still remain in the database, because migrations here are
+append-only.
+
+Keeping the loop in the browsers lets guest play stay first-class. A seated
+guest already holds the session cookie the route needs, with:
+- no account
+- no JWT
+- no extra infrastructure
 
 ## Invariants worth not breaking
 
 - The engine never reads a client-supplied clock.
-- Exactly one of `turnDeadlineAt` / `nextHandAt` is non-null at a time.
-- A table that cannot deal has neither, so it generates no traffic.
-- Anything that changes state under a deadline goes through the optimistic RPC,
-  or several browsers will do it several times.
+- Exactly one of `turnDeadlineAt` or `nextHandAt` holds a non-null value at
+  a time.
+- A table that cannot deal has neither deadline set, so it generates no
+  traffic.
+- Every state change under a deadline goes through the optimistic RPC.
+  Otherwise several browsers repeat the same change several times.
 
 ## Where to look
 
 | concern | file |
 |---|---|
-| when a browser fires | `lib/game/turn-clock.ts` |
-| what is due, and what to do about it | `lib/game/engine.ts` (`advanceTimedTurn`, `dealNextHandIfDue`, `scheduleNextHand`) |
+| when a browser sends its request | `lib/game/turn-clock.ts` |
+| what is due, and the response to it | `lib/game/engine.ts` (`advanceTimedTurn`, `dealNextHandIfDue`, `scheduleNextHand`) |
 | catching up and persisting | `lib/server/game-store.ts` (`resolveTimedAdvance`) |
 | authentication and the HTTP surface | `app/api/games/[id]/advance/route.ts` |
 | the broadcast that cancels the backups | `lib/game/table-channel.ts` |

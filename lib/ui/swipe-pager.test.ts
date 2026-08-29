@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AXIS_LOCK_PX,
   EDGE_RESISTANCE,
+  FLICK_VELOCITY_PX_MS,
   SETTLE_FRACTION,
   beginSwipe,
   clampPage,
@@ -66,7 +67,14 @@ describe("edge resistance", () => {
 });
 
 describe("settling", () => {
-  const horizontal = { startX: 0, startY: 0, width: WIDTH, axis: "horizontal" as const };
+  const horizontal = {
+    startX: 0,
+    startY: 0,
+    width: WIDTH,
+    axis: "horizontal" as const,
+    lastX: 0,
+    lastTime: 0,
+  };
   const threshold = WIDTH * SETTLE_FRACTION;
 
   it("advances once the drag clears the threshold", () => {
@@ -89,8 +97,58 @@ describe("settling", () => {
   });
 
   it("never turns a page on an undecided gesture", () => {
-    const idle = { startX: 0, startY: 0, width: WIDTH, axis: "undecided" as const };
+    const idle = {
+      startX: 0,
+      startY: 0,
+      width: WIDTH,
+      axis: "undecided" as const,
+      lastX: 0,
+      lastTime: 0,
+    };
     expect(settleSwipe(idle, -WIDTH, 0, PAGES)).toBe(0);
+  });
+});
+
+describe("velocity", () => {
+  const horizontal = {
+    startX: 0,
+    startY: 0,
+    width: WIDTH,
+    axis: "horizontal" as const,
+    lastX: 0,
+    lastTime: 0,
+  };
+  const threshold = WIDTH * SETTLE_FRACTION;
+
+  it("carries the most recent sample's speed, not the whole gesture's average", () => {
+    const start = beginSwipe(0, 0, WIDTH, 0);
+    // A slow drag most of the way there...
+    const slow = trackSwipe(start, 40, 0, 1, PAGES, 500).gesture;
+    // ...then a fast flick right at the end.
+    const fast = trackSwipe(slow, 60, 0, 1, PAGES, 505);
+    expect(fast.velocity).toBeCloseTo((60 - 40) / 5);
+  });
+
+  it("a fast flick commits the turn short of the distance threshold", () => {
+    const start = beginSwipe(0, 0, WIDTH, 0);
+    const move = trackSwipe(start, -20, 0, 0, PAGES, 10); // well under `threshold`
+    expect(Math.abs(move.offset ?? 0)).toBeLessThan(threshold);
+    expect(move.velocity).toBeLessThanOrEqual(-FLICK_VELOCITY_PX_MS);
+    expect(settleSwipe(move.gesture, move.offset ?? 0, 0, PAGES, move.velocity)).toBe(1);
+  });
+
+  it("a slow drag short of the threshold does not fling", () => {
+    const start = beginSwipe(0, 0, WIDTH, 0);
+    const move = trackSwipe(start, -20, 0, 0, PAGES, 400); // same distance, much slower
+    expect(Math.abs(move.velocity)).toBeLessThan(FLICK_VELOCITY_PX_MS);
+    expect(settleSwipe(move.gesture, move.offset ?? 0, 0, PAGES, move.velocity)).toBe(0);
+  });
+
+  it("a flick against an already-over-threshold drag cannot un-commit it", () => {
+    // Offset already past the threshold toward page 1, but the most recent
+    // sample is a fast flick back the other way -- the distance already
+    // travelled wins, since flingingPrev only applies when offset > 0.
+    expect(settleSwipe(horizontal, -threshold - 5, 0, PAGES, FLICK_VELOCITY_PX_MS + 1)).toBe(1);
   });
 });
 

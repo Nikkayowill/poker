@@ -85,22 +85,38 @@
   }
   .account-entry-page {
     width: 100%;
-    /* 104px, down from the base rule's 148px -- a phone has less height to
-       give up before the form itself starts scrolling (see the budget note
-       on .account-entry-card h1), but the header is still gone, so this
-       still needs its own clearance rather than the old bare 24px. */
-    padding: calc(104px + var(--safe-top)) 14px calc(32px + var(--safe-bottom));
+    /* 124px, up from an earlier 104px (Kayo's call, 2026-08-29 follow-up: the
+       whole block still read too high against a real phone). A first pass at
+       154px pushed too far the other way: on a real *short* notched phone
+       (375x667, ~47px inset -- iPhone SE-class height with a taller phone's
+       inset) it turned a pre-existing 3px scroll into 47px. 124px was
+       measured against both ends: the 844-tall target render still gets a
+       clearly visible push down with no scroll, and the 667-tall/47px-inset
+       case only grows that pre-existing 3px scroll to ~17px, not something
+       new. Re-check both renders before pushing this further. */
+    /* The fixed footer (~70px including safe-bottom) takes up permanent
+       screen space at the bottom, so pad accordingly to keep the form's
+       last content from scrolling under it. Still bring content down per
+       Kayo's call. */
+    padding: calc(150px + var(--safe-top)) 14px calc(90px + var(--safe-bottom));
   }
   /* No card padding to restate -- the form stands on the page now. The
      headline still steps down: at clamp(32px...) over a star field it was
      the one line wide enough to reach both edges of a 390px screen. */
   .account-entry-card h1 { font-size: 32px; }
-  /* Re-tuned graze for this width's own 104px page padding -- see the base
-     rule's note in 04-lobby.css. Against a real 390x844 render, the base
-     rule's top already lands the wordmark almost a full character-box past
-     the fade band (this page centres the card on less free height here),
-     so this only needs a small nudge down, not the same jump. */
-  .entry-hero { top: 30px; }
+  /* Re-tuned graze for this width's own page padding -- see the base rule's
+     note in 04-lobby.css. The 30px was the actual reported bug: on a real
+     phone (not a render with no status-bar inset simulated) it put the
+     cast's heads inside the safe area, grazing the status bar/battery icon
+     -- + var(--safe-top) is the same fix as the base rule's, so both
+     breakpoints clear real device chrome. Moved 30px -> 40px alongside the
+     page padding's own 104px -> 124px bump just above, at roughly half the
+     delta on purpose: the card is centred on the space *below* this padding
+     (`margin: auto 0`), which only moves it down by half of any padding-top
+     increase, so the hero -- absolutely positioned, no auto-margin involved
+     -- needs a matching half-sized delta to keep grazing the wordmark
+     rather than drifting away from it. */
+  .entry-hero { top: calc(53px + var(--safe-top)); }
 
   /* The hub's head, tightened. On the landing page the huge display line is
      the whole point; on the hub it is a signpost above the thing you came to

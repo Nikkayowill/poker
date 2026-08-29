@@ -136,6 +136,7 @@ export function AccountEntryCard({
   };
 
   return (
+    <>
     <section className="account-entry-card" aria-labelledby="account-entry-title">
       <header className="entry-head">
         <StackChipsLogo className="entry-logo" />
@@ -346,24 +347,34 @@ export function AccountEntryCard({
 
       {error && <p className="account-entry-error" role="alert">{error}</p>}
 
-      {/* Keep the entry footer compact: install guidance, the play-money
-          disclosure, public legal pages, and a real address for support. */}
-      <footer className="entry-footer">
+      {/* Install guidance, the play-money disclosure, and a real support
+          address scroll with the form -- only the legal links are pinned in
+          the fixed bottom bar below (X-style: content in the middle,
+          "fluff" links as the footer). See .entry-footer's own CSS note. */}
+      <div className="entry-scroll-footer">
         <InstallLine />
         <p className="account-entry-footnote">
           Guest progress stays in this browser. StackChips Gold has no cash value
           and cannot be redeemed or withdrawn.
         </p>
-        <nav className="entry-legal-links" aria-label="Legal">
-          <a href="/legal/terms">Terms of Service</a>
-          <a href="/legal/privacy">Privacy Policy</a>
-          <a href="/legal/support">Supporting StackChips</a>
-          <a href="/legal/disclaimer">App Disclaimer</a>
-        </nav>
         <a className="entry-support" href="mailto:support@stackchips.app">
           support@stackchips.app
         </a>
-      </footer>
+      </div>
     </section>
+
+    {/* Sibling of .account-entry-card, not nested in it: pinned to the
+        viewport regardless of how tall the card's own content gets or how
+        far it scrolls (X-style -- content in the middle, only the legal
+        links fixed at the bottom). See .entry-footer's own CSS note. */}
+    <footer className="entry-footer">
+      <nav className="entry-legal-links" aria-label="Legal">
+        <a href="/legal/terms">Terms of Service</a>
+        <a href="/legal/privacy">Privacy Policy</a>
+        <a href="/legal/support">Supporting StackChips</a>
+        <a href="/legal/disclaimer">App Disclaimer</a>
+      </nav>
+    </footer>
+    </>
   );
 }

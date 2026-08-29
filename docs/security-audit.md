@@ -1,81 +1,149 @@
 # StackChips security audit
 
-Audited 2026-07-26 against the application migrations, server routes, runtime
-configuration, and the live Supabase project `gykxzlqwkraiflbfxtps`.
+## Audit scope and date
 
-**Stale — scoped to the seven original poker tables only.** Everything below
-describes the state as of the 2026-07-26 audit date and has not been redone
-since. A large amount of the app has shipped on top of that base and is not
-covered by this document at all, including several money-moving surfaces:
-Stripe (`stripe_payments`, `stripe_subscriptions` — one-time/monthly support
-and Gold purchase), PvP duel escrow (`pvp_challenges`, `pvp_matches`),
-cribbage tables (`cribbage_tables`, `cribbage_table_players`), Sit & Go
-tournaments (`sit_and_go_tables`, `sit_and_go_table_players`), Ante Up wagers
-(`ante_up_attempts`), the Blackjack/arcade/daily-puzzle round tables
-(`blackjack_rounds`, `arcade_rounds`, `daily_puzzle_rounds`), the Gold
-economy/progression tables (`player_cosmetics`, `player_progression`,
-`mission_*`, `achievement_*`, `rewarded_ad_grants`), leaderboards and
-head-to-head records, friends/table-invite/blocking (`friend_requests`,
-`friendships`, `profile_blocks`, `table_invites`, `friend_invite_codes`),
-hand archives, and Web Push subscriptions (`push_subscriptions`). Treat this
-file as historical background on the original seven-table design, not as a
-current security posture — verify RLS/privileges on any of the above by
-querying the live project directly, not by reading this document.
+The audit date is 2026-07-26. The audit team audited four items:
+
+- the application migrations
+- the server routes
+- the runtime configuration
+- the live Supabase project `gykxzlqwkraiflbfxtps`
+
+## Stale and scope warning — read this first
+
+**This audit is stale. This audit covers the seven original poker tables
+only.**
+
+The information below shows the state on the 2026-07-26 audit date. The
+team did not repeat the audit after that date.
+
+The app grew much larger after the audit date. This document does not
+cover many new app parts. This document does not cover several
+money-moving surfaces.
+
+The uncovered money-moving surfaces are:
+
+- Stripe: table `stripe_payments`, table `stripe_subscriptions` (one-time
+  support, monthly support, and Gold purchase)
+- PvP duel escrow: table `pvp_challenges`, table `pvp_matches`
+- cribbage tables: table `cribbage_tables`, table `cribbage_table_players`
+- Sit & Go tournaments: table `sit_and_go_tables`, table
+  `sit_and_go_table_players`
+- Ante Up wagers: table `ante_up_attempts`
+- Blackjack, arcade, and daily-puzzle round tables: table
+  `blackjack_rounds`, table `arcade_rounds`, table `daily_puzzle_rounds`
+- Gold economy and progression tables: table `player_cosmetics`, table
+  `player_progression`, table `mission_*`, table `achievement_*`, table
+  `rewarded_ad_grants`
+- leaderboards and head-to-head records
+- friends, table-invite, and blocking tables: table `friend_requests`,
+  table `friendships`, table `profile_blocks`, table `table_invites`,
+  table `friend_invite_codes`
+- hand archives
+- Web Push subscriptions: table `push_subscriptions`
+
+Treat this file as historical background only. This file describes the
+original seven-table design only. This file is not a report on the
+current security state.
+
+Query the live project directly to check Row Level Security (RLS) and
+privileges on any item above. Do not use this document for that check.
 
 ## Result
 
-The game is server-authoritative. Browser code receives the public Supabase URL
-and anonymous key only. The service-role key is read exclusively by server-only
-modules, and production refuses to start with a partial Supabase
-configuration.
+The server is authoritative for the game. The browser code receives only
+the public Supabase URL and the anonymous key.
 
-The live project has RLS enabled on all seven application tables:
-`player_sessions`, `profiles`, `games`, `game_seats`, `game_state_private`,
-`game_actions`, and `game_signals`. The `anon` and `authenticated` roles have
-no table privileges except `SELECT` on `game_signals`. That signal contains
-only an opaque game UUID, version, and timestamp. Realtime publishes only that
-table—not the private aggregate containing the deck and hole cards.
+Only `server-only` modules read the service-role key. Production does not
+start with a partial Supabase configuration.
 
-`persist_game_action` is callable only by `service_role`, uses an empty
-`search_path`, requires an exact version transition, and atomically persists
-the aggregate, public seat balances, action ledger, and Realtime signal.
+The live project enables RLS on seven application tables:
+
+- table `player_sessions`
+- table `profiles`
+- table `games`
+- table `game_seats`
+- table `game_state_private`
+- table `game_actions`
+- table `game_signals`
+
+The role `anon` and the role `authenticated` have no table privileges.
+Each role has one exception: `SELECT` on table `game_signals`.
+
+The table `game_signals` contains only three fields:
+
+- an opaque game universally unique identifier (UUID)
+- a version number
+- a timestamp
+
+Realtime publishes only the table `game_signals`. Realtime does not
+publish the private aggregate. The private aggregate contains the deck
+and the hole cards.
+
+Only the role `service_role` can call the remote procedure call (RPC)
+`persist_game_action`. The RPC `persist_game_action` uses an empty
+`search_path`. The RPC `persist_game_action` needs an exact version
+transition.
+
+The RPC `persist_game_action` writes four items as one atomic operation:
+
+- the aggregate
+- the public seat balances
+- the action ledger
+- the Realtime signal
 
 ## Requirement mapping
 
 | Requirement | Enforcement |
 | --- | --- |
-| A player cannot update chip balances or the pot | No browser write grants or RLS write policies. Only the Next.js server runs the engine and service-role persistence RPC. |
-| A player cannot select another hand | `game_state_private` has no browser privileges. `toSnapshot` reveals hole cards only to the seat owner, or at a genuine showdown when poker rules require showing. |
-| A player cannot act for another user | Every action resolves the HttpOnly `river_session` cookie to an owned seat; the engine rejects non-owners and out-of-turn actors. |
-| A player cannot bypass a full table | Seat claims are checked server-side, constrained to one seat number per table, and persisted with optimistic concurrency. The seventh isolated-browser test receives HTTP 409. |
-| A player cannot pick a winner or alter blinds | Neither is accepted as an API action. Showdown, payouts, blinds, betting state, and deck progression are calculated in `lib/game/engine.ts`. |
-| A private room cannot be read without authorization | The read route now returns HTTP 403 unless the requesting session owns a seat. Invite-code joining establishes that ownership before opening the table. |
-| Client chip amounts are validated | The only client amount is a proposed raise-to value. The engine floors it and checks current bet, stack, all-in exception, and minimum raise before persistence. |
-| Service credentials stay private | `SUPABASE_SERVICE_ROLE_KEY` is referenced only by `server-only` modules and is never prefixed `NEXT_PUBLIC_`. Errors do not print keys or environment values. |
+| A player cannot update chip balances or the pot | The browser has no write grants. The browser has no RLS write policies. Only the Next.js server runs the engine and the service-role persistence RPC. |
+| A player cannot select another hand | The table `game_state_private` has no browser privileges. The function `toSnapshot` reveals the hole cards to the seat owner only. The function `toSnapshot` also reveals the hole cards at a genuine showdown. Poker rules require the showdown reveal. |
+| A player cannot act for another user | Every action resolves the HttpOnly cookie `river_session` to an owned seat. The engine rejects non-owners. The engine rejects out-of-turn actors. |
+| A player cannot bypass a full table | The server checks seat claims on the server side. The server allows one seat number per table. The server persists seat claims with optimistic concurrency control. The seventh isolated-browser test receives the Hypertext Transfer Protocol (HTTP) status code 409. |
+| A player cannot pick a winner or alter blinds | The API (application programming interface) does not accept either action. The file `lib/game/engine.ts` calculates these items:<br>- the showdown<br>- the payouts<br>- the blinds<br>- the betting state<br>- the deck progression |
+| A private room cannot be read without authorization | The read route returns the HTTP status code 403 for a session with no seat. Invite-code joining gives the player seat ownership. The table opens after that. |
+| The server validates client chip amounts | The only client amount is a proposed raise-to value. The engine floors the raise-to value. The engine checks four items before persistence:<br>- the current bet<br>- the stack<br>- the all-in exception<br>- the minimum raise |
+| Service credentials stay private | Only `server-only` modules reference the environment variable `SUPABASE_SERVICE_ROLE_KEY`. The variable name never starts with the prefix `NEXT_PUBLIC_`. Error messages do not print keys or environment values. |
 
 ## Storage
 
-The avatar bucket is intentionally public for image delivery, limited to 2 MiB
-and PNG/JPEG/WebP/GIF. There are no browser upload policies. Uploads pass through
-the server endpoint, which validates image bytes and writes with the service
-role.
+The avatar bucket is intentionally public for image delivery. The bucket
+has a 2 MiB (mebibyte) size limit. The bucket accepts these image types:
+
+- PNG (Portable Network Graphics)
+- JPEG (Joint Photographic Experts Group)
+- WebP
+- GIF (Graphics Interchange Format)
+
+The bucket has no browser upload policies. Uploads pass through the
+server endpoint. The server endpoint validates the image bytes. The
+server endpoint writes the file with the role `service_role`.
 
 ## Changes made during this audit
 
-- Added defense-in-depth privilege revocation in
-  `20260726140816_restrict_data_api_privileges.sql`.
-- Preserved anonymous/authenticated `SELECT` only on safe Realtime invalidation
-  signals.
-- Added private-room authorization to `GET /api/games/[id]`.
-- Added isolated-browser tests for unauthorized reads, full tables, per-player
-  private cards, and server-owned action progression.
+- The audit team added defense-in-depth privilege revocation in the
+  migration `20260726140816_restrict_data_api_privileges.sql`.
+- The audit team kept `SELECT` access for the role `anon` and the role
+  `authenticated` on safe Realtime invalidation signals only.
+- The audit team added private-room authorization to the route
+  `GET /api/games/[id]`.
+- The audit team added isolated-browser tests for four cases:
+  - unauthorized reads
+  - full tables
+  - per-player private cards
+  - server-owned action progression
 
 ## Remaining operational controls
 
-- Rotate the service-role key immediately if it is ever pasted into a client,
-  issue, screenshot, or log.
-- Keep production logs access-controlled and configure retention/alerting at
-  the hosting provider.
-- Re-run the Supabase security/performance advisors after every schema change.
-- Treat public avatar URLs as public content; never store personal or secret
-  files in the avatar bucket.
+- Rotate the service-role key at once after any of these events:
+  - the key appears in a client
+  - the key appears in an issue
+  - the key appears in a screenshot
+  - the key appears in a log
+- Keep production logs access-controlled.
+- Configure log retention and alerting at the hosting provider.
+- Run the Supabase security advisor again after every schema change.
+- Run the Supabase performance advisor again after every schema change.
+- Treat public avatar URLs as public content.
+- Never store personal files in the avatar bucket.
+- Never store secret files in the avatar bucket.

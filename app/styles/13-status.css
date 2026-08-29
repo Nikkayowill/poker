@@ -216,26 +216,6 @@
 .install-strip-dismiss:hover { color: #ece7f7; }
 .install-strip-dismiss:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
 
-.auth-button {
-  padding: 8px 14px;
-  border-radius: 11px;
-  border: 0;
-  background: var(--brand-surface-2);
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background var(--duration-base) ease, filter var(--duration-base) ease;
-}
-
-.auth-button:hover { background: rgba(255,255,255,.12); }
-.game-header-actions .auth-button { padding: 7px 10px; font-size: 10px; }
-/* "Save progress" is the one call to action in this row, so it is filled
-   rather than tinted -- the border that used to distinguish it is gone. */
-.auth-button-save { color: #1c1305; background: linear-gradient(152deg, var(--brand-gold-light), var(--brand-gold)); }
-.auth-button-save:hover { filter: brightness(1.07); background: linear-gradient(152deg, var(--brand-gold-light), var(--brand-gold)); }
-
 .admin-shell {
   min-height: 100vh;
   min-height: 100svh;

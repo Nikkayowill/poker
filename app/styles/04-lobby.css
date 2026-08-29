@@ -186,9 +186,13 @@ button:disabled { cursor: wait; opacity: .62; }
      and the navbar. Keep the form in its own layer above that shared paint. */
   isolation: isolate;
   width: 100%;
-  /* Same arithmetic as .lobby above, for the same reason. */
-  height: calc(100vh - var(--lobby-header-h) - var(--safe-top));
-  height: calc(100svh - var(--lobby-header-h) - var(--safe-top));
+  /* No header sits above this page any more (see poker-app.tsx -- the lobby
+     nav bar only mounts once entryComplete, and this page is only ever
+     rendered before that), so it owns the full viewport rather than the
+     `100vh - header` arithmetic .lobby still needs. --safe-top used to be
+     cleared by the header's own padding; this page clears it itself now. */
+  height: 100vh;
+  height: 100svh;
   overflow-y: auto;
   /* Same guard as .lobby: the backstop that keeps the next wide child from
      panning the page sideways on a phone. */
@@ -198,7 +202,10 @@ button:disabled { cursor: wait; opacity: .62; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 76px 16px calc(24px + var(--safe-bottom));
+  /* 148px clears the status bar/notch with real room to spare and reads as
+     "centered in the upper half" rather than pinned to the top edge -- see
+     the note above .entry-hero on why the avatars don't move with this. */
+  padding: calc(148px + var(--safe-top)) 16px calc(24px + var(--safe-bottom));
   /* Transparent so the shell-level ceiling remains one continuous surface. */
   background: transparent;
 
@@ -381,25 +388,35 @@ button:disabled { cursor: wait; opacity: .62; }
 /* ---------------------------------------------------------------------------
    The centerpiece: three seat-art regulars, standing behind the form.
 
-   Tuned for mobile portrait, which is the actual target -- they peek up from
-   behind the logo/heading rather than floating as a separate block above the
-   form, so they cost no extra vertical scroll budget (see the note on the
-   form's own tight budget above .account-entry-card h1). Faded out toward
-   the bottom by a mask rather than clipped to a hard box, so this works
-   against any character's own crop without needing per-character tuning.
-   Sits behind .account-entry-card in the stacking order via plain DOM order
-   (see entry-hero.tsx), same tier as .entry-sky.
+   Tuned for mobile portrait, which is the actual target. Positioned
+   independently of .account-entry-page's own padding-top on purpose (Kayo's
+   call, 2026-08-29: the logo/heading sit lower now, the cast does not move
+   with them) -- at the tall end of the phone range this reads as a lineup
+   standing above the form with a gap rather than the original "peeking up
+   from behind the logo" design, and at the short end (iPhone SE, ~667px)
+   they still overlap it, both by the same fixed geometry below. Costs no
+   extra vertical scroll budget either way, since it's absolutely positioned
+   out of flow (see the note on the form's own tight budget above
+   .account-entry-card h1). Faded out toward the bottom by a mask rather than
+   clipped to a hard box, so this works against any character's own crop
+   without needing per-character tuning. Sits behind .account-entry-card in
+   the stacking order via plain DOM order (see entry-hero.tsx), same tier as
+   .entry-sky.
    --------------------------------------------------------------------------- */
 .entry-hero {
   position: absolute;
-  /* Negative top: part of the box sits above the page's own scroll origin,
-     so only the lower fraction actually shows -- "peeking up from behind"
-     the logo rather than a block that starts at the top and competes with
-     it. .account-entry-page scrolls (overflow-y: auto), so anything above
-     its own y:0 is clipped, not just visually faded -- too negative here
-     crops the characters' heads outright rather than merely hiding them.
-     Tuned against a real 390x844 render, not guessed. */
-  top: 8px;
+  /* Dropped low enough that the wordmark's own top edge sits inside the
+     mask's fade band (60-90% of this box's height, see .entry-hero-center-
+     img/.entry-hero-side below) -- the logo grazes the characters' chins
+     rather than sitting in the gap under them (Kayo's call, 2026-08-29).
+     .account-entry-card is centred by `margin: auto 0` on the available
+     space below this page's own padding-top, not pinned to it, so exactly
+     where the wordmark lands still shifts with viewport height -- this is
+     tuned against a real 1440x900 render, the .account-entry-card > h1
+     budget note's own reference size, not guessed. The 600px-and-under
+     override just below re-tunes the same graze against 390x844, the
+     actual target. */
+  top: 112px;
   left: 50%;
   transform: translateX(-50%);
   width: min(92vw, 380px);

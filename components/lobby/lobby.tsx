@@ -62,6 +62,7 @@ export function Lobby({
   onSaveProgress,
   onEmailSignIn,
   onEmailSignUp,
+  onForgotPassword,
   onDismissSaveProgress,
   savePromptDismissed,
   entryComplete,
@@ -100,6 +101,7 @@ export function Lobby({
   onSaveProgress: () => void;
   onEmailSignIn: (email: string, password: string, captchaToken?: string) => void;
   onEmailSignUp: (email: string, password: string, captchaToken?: string) => void;
+  onForgotPassword: (email: string) => void;
   onDismissSaveProgress: () => void;
   savePromptDismissed: boolean;
   entryComplete: boolean;
@@ -192,6 +194,7 @@ export function Lobby({
           onSignIn={onSaveProgress}
           onEmailSignIn={onEmailSignIn}
           onEmailSignUp={onEmailSignUp}
+          onForgotPassword={onForgotPassword}
           onContinueAccount={onContinueAccount}
           onContinueAsGuest={onContinueAsGuest}
           onSignOut={onSignOut}

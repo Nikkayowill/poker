@@ -659,8 +659,10 @@
     transition: color var(--duration-base, .15s) linear;
   }
 
-  /* "Texas Hold'em" is the longest label the bar carries; clip rather than
-     wrap so a long tab name never grows the row taller than the other two. */
+  /* Defensive, not descriptive of anything currently in PAGES: the three tab
+     labels ("Play"/"Ante Up"/"Profile") never come close to needing this, but
+     a bar mixing more/longer labels later shouldn't grow taller than its two
+     shortest tabs while it finds that out. */
   .mshell-nav-item span {
     max-width: 100%;
     overflow: hidden;
@@ -673,6 +675,25 @@
   /* The active icon carries a little of its own light, so the current tab is
      legible at a glance rather than only by comparing three label colours. */
   .mshell-nav-on svg { filter: drop-shadow(0 2px 8px rgba(255, 210, 63, .45)); }
+
+  /* Profile's tab is the player's own avatar (see mobile-shell.tsx), sized to
+     sit level with the other two tabs' 20px icons. Unlike an outline/filled
+     icon swap, a photo has no "filled" state to toggle, so the active cue is
+     a gold ring instead -- still color plus a second, non-color cue (a ring
+     appearing is a shape change, not just a hue shift), matching the glow the
+     other two icons get. */
+  .mshell-nav-avatar {
+    width: 20px !important;
+    height: 20px !important;
+    font-size: 8px !important;
+  }
+
+  .mshell-nav-on .mshell-nav-avatar {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, .22),
+      0 0 0 2px var(--brand-gold-light),
+      0 2px 8px rgba(255, 210, 63, .45);
+  }
 
   /* ---- motion opt-out --------------------------------------------------- */
 

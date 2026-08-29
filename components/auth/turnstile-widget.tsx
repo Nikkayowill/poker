@@ -49,10 +49,23 @@ function loadTurnstileScript(): Promise<void> {
 export function TurnstileWidget({
   siteKey,
   onToken,
+  onLoadError,
   resetSignal,
 }: {
   siteKey: string | undefined;
   onToken: (token: string | null) => void;
+  /**
+   * Fired only when the script itself never loaded (blocked domain, no
+   * connection) -- the one Turnstile failure nothing inside the widget can
+   * retry, since no widget ever rendered to retry it. Distinct from
+   * `onToken(null)`, which also covers the ordinary not-yet-completed,
+   * expired-token, and error-callback cases, all of which the widget can
+   * still recover from on its own. The caller needs to tell these apart: a
+   * submit blocked by "please complete the verification below" is only a
+   * legible message when the verification is actually visible and waiting,
+   * not when there's nothing on screen at all to complete.
+   */
+  onLoadError?: () => void;
   /** Bump after a failed submit -- tokens are single-use, so a retry needs a fresh one. */
   resetSignal: number;
 }) {
@@ -62,8 +75,10 @@ export function TurnstileWidget({
   // onToken the latest render passed, without tearing the widget down and
   // re-rendering it (and burning a fresh challenge) every parent re-render.
   const onTokenRef = useRef(onToken);
+  const onLoadErrorRef = useRef(onLoadError);
   useEffect(() => {
     onTokenRef.current = onToken;
+    onLoadErrorRef.current = onLoadError;
   });
 
   useEffect(() => {
@@ -76,10 +91,17 @@ export function TurnstileWidget({
           sitekey: siteKey,
           callback: (token) => onTokenRef.current(token),
           "expired-callback": () => onTokenRef.current(null),
+          // Cloudflare's own error-callback is often transient (the widget
+          // retries itself), so it stays mapped to onToken(null) exactly as
+          // before -- onLoadError is reserved for the script never having
+          // loaded at all, below, which nothing inside the widget can retry.
           "error-callback": () => onTokenRef.current(null),
         });
       })
-      .catch(() => onTokenRef.current(null));
+      .catch(() => {
+        onTokenRef.current(null);
+        onLoadErrorRef.current?.();
+      });
     return () => {
       cancelled = true;
       if (widgetIdRef.current && window.turnstile) {

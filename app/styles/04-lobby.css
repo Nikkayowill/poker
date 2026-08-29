@@ -769,7 +769,7 @@ button:disabled { cursor: wait; opacity: .62; }
   border: 0;
   border-radius: var(--radius-control);
   background: transparent;
-  color: #93a1bb;
+  color: var(--muted-slate);
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
@@ -798,7 +798,12 @@ button:disabled { cursor: wait; opacity: .62; }
 .entry-field { display: grid; gap: 4px; text-align: left; }
 
 .entry-field > span {
-  color: #96a3ba;
+  /* Was #96a3ba -- 3 units off --muted-slate per channel, imperceptible,
+     and --muted-slate is already this same screen's own segmented-control
+     color above and the app's single most-reused muted-text value (see its
+     doc comment in 01-tokens.css). A leftover near-duplicate, not a
+     deliberate step. */
+  color: var(--muted-slate);
   font-size: 11px;
   font-weight: 750;
   letter-spacing: .15em;
@@ -829,8 +834,66 @@ button:disabled { cursor: wait; opacity: .62; }
   box-shadow: 0 0 0 1px var(--accent-line), var(--accent-glow);
 }
 
-.entry-field input::placeholder { color: #6f7b92; }
+.entry-field input::placeholder { color: var(--muted-slate-2); }
 .entry-field input:disabled { opacity: .55; }
+
+/* The password field's own show/hide toggle. Positioned inside the input's
+   filled box rather than beside it -- a bordered mini-button next to a
+   borderless field would be the one bordered control on this whole screen. */
+.entry-field-input { position: relative; }
+.entry-field-input input { padding-right: 44px; }
+
+.entry-field-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted-slate);
+  cursor: pointer;
+  transition: color var(--duration-base) ease, background var(--duration-base) ease;
+}
+.entry-field-toggle:hover:not(:disabled) { color: #eef2f8; background: rgba(182, 166, 219, .08); }
+.entry-field-toggle:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+.entry-field-toggle:disabled { opacity: .55; cursor: default; }
+
+/* A text link, not a button styled like one -- this is the one control on
+   the card that deliberately reads as lower-commitment than everything
+   around it. Right-aligned under the password field, where every password
+   manager and browser autofill UI already trains a player to look for it. */
+.entry-forgot-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: -2px;
+}
+
+.entry-forgot-link {
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted-slate);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.entry-forgot-link:hover:not(:disabled) { color: #eef2f8; }
+.entry-forgot-link:focus-visible { outline: 0; box-shadow: var(--brand-focus); border-radius: var(--radius-xs); }
+.entry-forgot-link:disabled { opacity: .55; cursor: default; }
+
+.entry-forgot-sent {
+  color: var(--brand-gold-light);
+  font-size: 12px;
+}
 
 /* The remember toggle is a switch now. The old version was a checkbox inside
    a bordered strip, which was two boxes to say one boolean. */
@@ -888,7 +951,7 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .entry-remember-copy { display: grid; gap: 2px; text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
 .entry-remember-copy strong { color: #dde3ec; font-size: 13px; font-weight: 650; }
-.entry-remember-copy small { color: #93a1bb; font-size: 11px; }
+.entry-remember-copy small { color: var(--muted-slate); font-size: 11px; }
 
 /* Turnstile renders its own iframe at a fixed ~300px width; centering it
    keeps the widget tidy on the narrower end of the form's own width range. */

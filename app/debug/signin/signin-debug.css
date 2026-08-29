@@ -1,0 +1,134 @@
+/* Debug-only chrome for /debug/signin -- never imported by the real app. */
+
+.signin-debug-root {
+  min-height: 100svh;
+}
+
+.signin-debug-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.signin-debug-bar button {
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.signin-debug-bar button.is-active {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+}
+
+.signin-debug-bar button.adjust-toggle {
+  margin-left: auto;
+}
+
+/* Bottom sheet, not a top-pinned full-bleed panel: the sliders here move
+   .entry-hero/.entry-logo/the headline/the buttons, all of which live in
+   the UPPER two-thirds of the real page. A top-pinned drawer covered
+   exactly what it was editing -- you could drag a slider all day and
+   never see it move. Anchored to the bottom and capped short (one group's
+   sliders at a time, via the tabs below, rather than all 18 stacked)
+   instead, so the piece being adjusted sits in the open space above it;
+   scroll the real page under it if a lower element still needs clearing. */
+.signin-debug-drawer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 49;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: rgba(10, 4, 22, 0.94);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.signin-debug-drawer-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.signin-debug-drawer-actions button {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 12px;
+}
+
+.signin-debug-drawer-actions button.primary {
+  background: #f6c94a;
+  color: #1c1305;
+  border-color: #f6c94a;
+  font-weight: 700;
+}
+
+/* One group's sliders visible at a time -- see the note on .signin-debug-drawer
+   for why this replaced one long scrolling stack of all 18. */
+.signin-debug-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 12px;
+  padding-bottom: 2px;
+}
+
+.signin-debug-tabs button {
+  flex: none;
+  font-size: 11px;
+  white-space: nowrap;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  color: #b6a6db;
+}
+
+.signin-debug-tabs button.is-active {
+  background: rgba(246, 201, 74, 0.16);
+  border-color: #f6c94a;
+  color: #f6c94a;
+}
+
+.signin-debug-slider {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.signin-debug-slider-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.signin-debug-slider-row code {
+  font-family: 'Monaco', 'Courier New', monospace;
+  color: #f6c94a;
+}
+
+.signin-debug-slider input[type='range'] {
+  width: 100%;
+  accent-color: #f6c94a;
+}

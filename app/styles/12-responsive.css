@@ -83,6 +83,15 @@
     background-size: auto, auto, auto 56%, auto;
     background-position: center, center, right -30px center, center;
   }
+  /* This whole block through .entry-footer below was re-tuned 2026-08-29 by
+     Kayo directly, dragging real sliders against the real rendered page on
+     an iPhone 14-sized viewport (390x844) rather than guessed -- every
+     number below is the exact value he landed on, not an approximation.
+     Older comments on individual rules describe the PRIOR tuning pass and
+     are kept for the reasoning that's still load-bearing (why a graze
+     exists, why the footer eats fixed space), not because the numbers in
+     them are still current -- re-derive from a real render again before
+     trusting an old comment's specific px value over the rule beneath it. */
   .account-entry-page {
     width: 100%;
     /* 124px, up from an earlier 104px (Kayo's call, 2026-08-29 follow-up: the
@@ -98,12 +107,13 @@
        screen space at the bottom, so pad accordingly to keep the form's
        last content from scrolling under it. Still bring content down per
        Kayo's call. */
-    padding: calc(150px + var(--safe-top)) 14px calc(90px + var(--safe-bottom));
+    padding: calc(198px + var(--safe-top)) 14px calc(40px + var(--safe-bottom));
   }
   /* No card padding to restate -- the form stands on the page now. The
      headline still steps down: at clamp(32px...) over a star field it was
      the one line wide enough to reach both edges of a 390px screen. */
-  .account-entry-card h1 { font-size: 32px; }
+  .account-entry-card h1 { font-size: 25px; }
+  .account-entry-card > .entry-head > p:not(.account-entry-status) { font-size: 13px; }
   /* Re-tuned graze for this width's own page padding -- see the base rule's
      note in 04-lobby.css. The 30px was the actual reported bug: on a real
      phone (not a render with no status-bar inset simulated) it put the
@@ -116,7 +126,16 @@
      increase, so the hero -- absolutely positioned, no auto-margin involved
      -- needs a matching half-sized delta to keep grazing the wordmark
      rather than drifting away from it. */
-  .entry-hero { top: calc(53px + var(--safe-top)); }
+  .entry-hero { top: calc(40px + var(--safe-top)); width: 371px; }
+  .entry-logo { width: 340px; margin-bottom: 3px; }
+  .account-entry-actions { margin-top: 8px; }
+  /* Horizontal padding only -- min-height/font-size stayed at the base
+     rule's own values (48px/15px), only this got pulled in. */
+  .account-primary-action,
+  .account-oauth-action,
+  .account-guest-action,
+  .account-email-toggle { padding-left: 12px; padding-right: 12px; }
+  .entry-footer { padding-top: 6px; }
 
   /* The hub's head, tightened. On the landing page the huge display line is
      the whole point; on the hub it is a signpost above the thing you came to

@@ -65,6 +65,144 @@
         "value": "12px",
         "createdAt": "2026-08-29T13:53:24.834Z",
         "reason": "Claude: .entry-forgot-sent's confirmation text, same small-text range as the sibling .entry-forgot-link (12.5px, already ignored) on this same screen."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(0, 0, 0, 0.72)",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:19:33.390Z",
+        "reason": "debug-only overlay toolbar, never shipped/imported by the real app (same precedent as footer-preview.css)"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, 0.25)",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:19:33.505Z",
+        "reason": "debug-only overlay toolbar, never shipped/imported by the real app"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, 0.08)",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:19:33.624Z",
+        "reason": "debug-only overlay toolbar, never shipped/imported by the real app"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#000",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:19:33.740Z",
+        "reason": "debug-only overlay toolbar, never shipped/imported by the real app"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(10, 4, 22, 0.94)",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:36:18.386Z",
+        "reason": "debug-only overlay drawer, never shipped/imported by the real app"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, 0.12)",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:36:18.490Z",
+        "reason": "debug-only overlay drawer, never shipped/imported by the real app"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "6px",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:36:18.593Z",
+        "reason": "debug-only overlay drawer, never shipped/imported by the real app"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#f6c94a",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:36:18.697Z",
+        "reason": "debug-only overlay drawer accent, never shipped/imported by the real app"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#1c1305",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:36:18.799Z",
+        "reason": "debug-only overlay drawer accent, never shipped/imported by the real app"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#b6a6db",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:36:40.407Z",
+        "reason": "debug-only overlay drawer label color, never shipped/imported by the real app"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "app/debug/safe-area/page.tsx"
+        ],
+        "createdAt": "2026-08-29T15:39:20.001Z",
+        "reason": "Temporary internal diagnostic page, never shown to players; deleted with the viewport probe once the PWA cold-launch nav gap is resolved. Deliberately not on the brand palette so it cannot be mistaken for product UI."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, 0.18)",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:42:42.455Z",
+        "reason": "debug-only overlay drawer tabs, never shipped/imported by the real app"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(246, 201, 74, 0.16)",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:42:42.553Z",
+        "reason": "debug-only overlay drawer tabs, never shipped/imported by the real app"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "monaco",
+        "files": [
+          "app/debug/signin/signin-debug.css"
+        ],
+        "createdAt": "2026-08-29T15:42:42.655Z",
+        "reason": "debug-only overlay chrome monospace for numeric slider readouts, never shipped/imported by the real app"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "25px",
+        "createdAt": "2026-08-29T16:18:32.272Z",
+        "reason": "user confirmed: Kayo dragged this live against a real 390px-viewport render on his own phone via the sign-in adjuster tool, 2026-08-29"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "13px",
+        "createdAt": "2026-08-29T16:18:32.377Z",
+        "reason": "user confirmed: Kayo dragged this live against a real 390px-viewport render on his own phone via the sign-in adjuster tool, 2026-08-29"
       }
     ]
   }

@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+// TEMPORARY -- see the mount at the bottom of this file.
+import { ViewportProbe } from "@/components/debug/viewport-probe";
 
 const TITLE = "StackChips - Play Free Texas Hold’em";
 const DESCRIPTION =
@@ -103,7 +105,14 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <link rel="apple-touch-startup-image" href="/splash/apple-splash-1206x2622.png" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
         <link rel="apple-touch-startup-image" href="/splash/apple-splash-1320x2868.png" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* TEMPORARY -- remove with components/debug/viewport-probe.tsx and
+            app/debug/safe-area once the installed-PWA cold-launch nav gap is
+            resolved. Renders nothing; records the launch viewport timeline so
+            /debug/safe-area can read it back after the fact. */}
+        <ViewportProbe />
+      </body>
     </html>
   );
 }

@@ -25,10 +25,14 @@
  * only owns the pointer plumbing and what the panes contain.
  *
  * The tab bar (2026-08-29 rebuild, replacing a deleted one) is plain CSS, no
- * JS: see the doc comment at the top of 45-mobile-shell.css for why a bar
- * pinned with `position: fixed` plus a live `--safe-bottom` read needs
- * nothing else, and why this file no longer forces a reflow on mount to work
- * around a cold-launch safe-area bug that never actually needed one.
+ * JS: `position: fixed` plus a live `--safe-bottom` read. Do not add a
+ * `useEffect` that forces a reflow here to chase the installed-PWA
+ * cold-launch gap -- this file's history has done that three times now
+ * (b694082, 1372ea2, and one on 2026-08-29 reverted before it shipped) and
+ * it cannot work. See the open item at the top of 45-mobile-shell.css: the
+ * gap is the *room* colour, not the bar's, under a bar that is already at
+ * `bottom: 0`, which means the layout viewport itself is short and no
+ * amount of DOM reflow changes what WebKit reports for it.
  */
 
 import {

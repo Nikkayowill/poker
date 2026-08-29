@@ -1,24 +1,51 @@
 /* 45-mobile-shell.css -- the phone lobby: three swipeable panes under the
    existing header, with a tab bar at the bottom.
 
-   The tab bar is plain, static CSS: `position: fixed`, a z-index, and
-   `--safe-bottom` padding -- the exact same three ingredients
+   The tab bar is plain, static CSS for its own layout: `position: fixed`, a
+   z-index, and `--safe-bottom` padding -- the exact same three ingredients
    `.install-strip` (13-status.css) already uses for its own fixed bottom
-   bar, with nothing else added. An earlier version of this file chased a
-   supposed WKWebView "safe-area-inset-bottom hasn't settled yet" cold-launch
-   bug through five rounds of `useEffect` reflow-forcing and
-   `visualViewport` listeners (see this file's and mobile-shell.tsx's own git
-   history, 2026-08-28) before landing on dropping `--safe-bottom` from the
-   bar entirely, which traded away real home-indicator clearance to make the
-   symptom go away. That diagnosis doesn't hold up: `--safe-top`/
-   `--safe-bottom` are read live, with no JS involved, in every other file in
-   this app (`02-app-shell.css`, `05-game-header.css`, `13-status.css`, and
-   more), and none of those have a reported cold-launch gap. The one
-   documented real cause here (see 8cc6ae5's commit message on this repo) was
-   a plain missing z-index -- the bar had none, so it was quite possibly
-   painting under something else that did, on some devices some of the time.
-   Give it one, from the same scale every other fixed layer in this app
-   already uses, and there is nothing left to chase.
+   bar. An earlier version of this file chased a supposed WKWebView
+   "safe-area-inset-bottom hasn't settled yet" cold-launch bug through five
+   rounds of `useEffect` reflow-forcing and `visualViewport` listeners (see
+   this file's and mobile-shell.tsx's own git history, 2026-08-28), then
+   concluded that diagnosis didn't hold up -- reasoning that `--safe-top`/
+   `--safe-bottom` are read live elsewhere with no reported gap, and that a
+   missing z-index (8cc6ae5) was the one confirmed real cause -- and dropped
+   the reflow entirely.
+
+   OPEN BUG, and read this before touching the bar again (2026-08-29).
+
+   On an installed iOS PWA's cold launch the bar sits roughly a Safari-
+   toolbar's height above the screen bottom, with a strip of bare colour
+   under it; rotating to landscape and back fixes it for that session. A
+   fresh install (delete the icon, re-add) does NOT fix it, so this is not
+   the stale-WKWebView-instance trap.
+
+   What is ruled out, so nobody re-runs it:
+     - Stale/zero `--safe-bottom`. The padding below is INSIDE the bar and
+       its background paints across it, so a wrong inset makes the bar too
+       SHORT, flush at the bottom. It cannot open a gap beneath a
+       `bottom: 0` element.
+     - A hijacked containing block. Nothing on the ancestor chain
+       (.app-root > main.lobby.lobby-shell > .hub > .mshell) sets transform,
+       filter, backdrop-filter, perspective, contain or container-type, and
+       no other rule in this app sets `bottom` on .mshell-nav.
+     - Forced reflow from JS. Tried three times (b694082, 1372ea2, and once
+       on 2026-08-29, reverted before shipping). The strip is the ROOM
+       colour, not this bar's, under a bar already at `bottom: 0` -- so the
+       layout viewport is short and the DOM is laid out correctly inside it.
+       A reflow re-runs layout against the same short viewport. Only a real
+       window-bounds change (the rotation) makes WebKit re-measure, and JS
+       cannot trigger one.
+
+   So the remaining suspect is the web view's own frame at cold launch, not
+   anything this stylesheet says. Measure before changing code:
+   `app/debug/viewport-launch` renders the recorded launch timeline (window vs
+   visualViewport vs screen height, and where a fixed `bottom: 0` probe
+   actually lands). If the probe's bottom equals innerHeight while the gap
+   is still visible on screen, the gap is OUTSIDE the document entirely and
+   no CSS or JS in this app can close it -- that points at the manifest and
+   the native shell.
    =========================================================================
    Turns on at max-width 600px, the same width every other mobile rule in this
    app already uses (`--lobby-header-h` drops to 68px there, `.hub-grid` goes

@@ -28,8 +28,11 @@ import {
   browserSessionStorage,
   clearPendingFriendInvite,
   clearSessionContinuity,
+  entryOpenedSnapshot,
   markAccountLinkAnnounced,
+  markEntryOpened,
   readPendingFriendInvite,
+  serverEntryOpenedSnapshot,
   serverProfileSnapshot,
   sessionProfileSnapshot,
   shouldAnnounceAccountLink,
@@ -70,6 +73,7 @@ import { Menu, type MenuItem } from "@/components/nav/menu";
 import { DonateButton } from "@/components/nav/donate-button";
 import { GoldBadge } from "@/components/profile/gold-badge";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
+import { RestoreConflictModal } from "@/components/auth/restore-conflict-modal";
 import { RoomCreatedModal } from "@/components/table/room-created-modal";
 import { useLandscape } from "@/components/use-landscape";
 import { useTightLandscape } from "@/components/use-tight-landscape";
@@ -155,6 +159,10 @@ export function PokerApp() {
   const [cashOutNotice, setCashOutNotice] = useState<number | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(!accountsEnabled());
+  // Set by the `?restoreConfirm=1` effect below, when the OAuth callback
+  // route deferred finishing a Google sign-in because it would discard this
+  // tab's own guest progress. See confirmRestoreConflict/cancelRestoreConflict.
+  const [restoreConflict, setRestoreConflict] = useState(false);
 
   /*
    * Why the profile and the entry gate are derived rather than plain state:
@@ -191,14 +199,24 @@ export function PokerApp() {
   const profile = loadedProfile ?? (profileLoading ? cachedProfile : null);
 
   /**
-   * Entry is opened by choosing an account or Continue as guest, and is
-   * evidenced by holding a profile at all: the session cookie is the durable
-   * record of having been through the gate, and a profile only comes back
-   * when one exists. Deriving it rather than mirroring it into state is what
-   * stops a remount asking the question again.
+   * Entry is opened by choosing an account, Continue as guest, or completing
+   * a sign-in -- and, deliberately as of 2026-08-29, is NOT evidenced by
+   * holding a profile at all. A guest's session cookie is durable across
+   * visits on its own; treating it as proof the gate was already cleared let
+   * a guest bypass "Enter StackChips" forever, on every future open, with
+   * nothing pushing them toward a real account. So this reads a per-tab hint
+   * instead (see `lib/profile/session-continuity.ts`): true for the rest of
+   * an in-app navigation (stops a remount re-asking the question), false
+   * again on a fresh tab or a relaunched app, whether or not a cookie is
+   * still sitting there. `useSyncExternalStore`, not a bare `useState`, for
+   * the same hydration reason `cachedProfile` above uses it.
    */
-  const [entryOpened, setEntryOpened] = useState(false);
-  const entryComplete = entryOpened || profile !== null;
+  const entryOpened = useSyncExternalStore(
+    subscribeSessionCache,
+    () => entryOpenedSnapshot(browserSessionStorage()),
+    serverEntryOpenedSnapshot,
+  );
+  const entryComplete = entryOpened;
 
   /** Keeps this tab's copy in step, so the next mount paints instantly. */
   useEffect(() => {
@@ -1318,6 +1336,34 @@ export function PokerApp() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  /**
+   * The OAuth callback route's success signal. Every other entry path marks
+   * the gate open directly from the click handler that never left the page
+   * (continueWithAccount, continueAsGuest, confirmRestoreConflict below);
+   * Google is the one path that navigates away entirely and comes back as a
+   * fresh mount, so it needs the server to say so instead.
+   */
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("entered")) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    markEntryOpened(browserSessionStorage());
+  }, []);
+
+  /**
+   * The OAuth callback route's other signal: it authenticated a Google
+   * identity that already owns a different StackChips profile, while this
+   * browser was mid-guest-run with its own progress. Finishing the link
+   * would silently discard that guest progress, so the route stopped short
+   * of it -- this puts the choice in front of the player instead of making
+   * it for them. See confirmRestoreConflict/cancelRestoreConflict below.
+   */
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("restoreConfirm")) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    const timer = window.setTimeout(() => setRestoreConflict(true), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const signIn = async (): Promise<void> => {
     const client = authClient();
     if (!client) return;
@@ -1444,7 +1490,7 @@ export function PokerApp() {
     setSignInPending(true);
     try {
       await applySessionPreference();
-      setEntryOpened(true);
+      markEntryOpened(browserSessionStorage());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not open the lobby.");
     } finally {
@@ -1462,12 +1508,12 @@ export function PokerApp() {
     leftGameIdRef.current = game?.id ?? null;
     setGame(null);
     linkedAccountIdRef.current = null;
-    setEntryOpened(false);
-    // Both halves, together and before the reload below. `entryComplete` is
-    // derived from holding a profile now, so leaving either the loaded copy or
-    // this tab's cached one in place would keep the departing player's name and
-    // balance on screen, and waved through the gate, until the refetch
-    // landed. Clearing the tab also re-arms the greeting for the next account.
+    // Closes the entry gate again (among the rest of this tab's continuity
+    // hints) before the reload below, so signing out drops straight back to
+    // "Enter StackChips"/"Continue as guest" rather than a profile-less lobby
+    // that still reads as entered. Leaving the loaded copy or this tab's
+    // cached one in place would also keep the departing player's name and
+    // balance on screen until the refetch landed.
     setProfile(null);
     clearSessionContinuity(browserSessionStorage());
     setAuthNotice("Signed out — you can keep playing as a guest on this browser.");
@@ -1485,12 +1531,54 @@ export function PokerApp() {
       // than blocking it, so the `?table=` effect below still fires on the
       // same tick it always did and resuming a table you were seated at is
       // untouched. Adding an await here is what breaks that.
-      setEntryOpened(true);
+      markEntryOpened(browserSessionStorage());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not open the lobby.");
     } finally {
       setSignInPending(false);
     }
+  };
+
+  /**
+   * The player chose to go ahead: finish the link the callback route
+   * deferred, discarding this tab's guest progress in favor of the account
+   * that already exists. POST /api/auth/link reads the Supabase session the
+   * callback route already established, the same call the email/password
+   * path and the safety-net re-link both make.
+   */
+  const confirmRestoreConflict = async () => {
+    setRestoreConflict(false);
+    setSignInPending(true);
+    try {
+      const response = await fetch("/api/auth/link", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not sign in.");
+      setProfile(data.profile);
+      markEntryOpened(browserSessionStorage());
+      const storage = browserSessionStorage();
+      // Always a restore -- this modal only ever shows for the branch that
+      // found an existing account -- so unlike linkAccount() there is no
+      // "Progress secured" wording to choose between.
+      if (shouldAnnounceAccountLink(storage, data.profile.id)) {
+        markAccountLinkAnnounced(storage, data.profile.id);
+        setAuthNotice("Welcome back — your Gold, profile, and collection are ready.");
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not sign in.");
+    } finally {
+      setSignInPending(false);
+    }
+  };
+
+  /**
+   * The player chose not to lose the guest run: drop the Supabase session
+   * the callback route already established (so a reload doesn't find this
+   * browser half signed-in at the provider level) and leave the guest
+   * profile exactly as it was. Nothing was ever written to it.
+   */
+  const cancelRestoreConflict = async () => {
+    setRestoreConflict(false);
+    await authClient()?.auth.signOut().catch(() => {});
   };
 
   // Recomputed each render rather than stored: nothing else can change it, and
@@ -1747,6 +1835,12 @@ export function PokerApp() {
         )}
       {createdRoomCode && (
         <RoomCreatedModal code={createdRoomCode} onClose={() => setCreatedRoomCode(null)} />
+      )}
+      {restoreConflict && (
+        <RestoreConflictModal
+          onConfirm={() => void confirmRestoreConflict()}
+          onCancel={() => void cancelRestoreConflict()}
+        />
       )}
       {profileOpen && profile && (
         <ProfileModal

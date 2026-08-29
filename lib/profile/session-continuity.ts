@@ -6,10 +6,18 @@
  * Every piece of component state and every `useRef` in that tree starts over,
  * and two of them were carrying answers this browser had already earned:
  *
- *  1. **Whether the player is through the entry gate.** `entryComplete` starts
+ *  1. **Whether the player is through the entry gate.** `entryOpened` starts
  *     `false`, so the signed-out card painted on every single arrival at `/`
- *     until `GET /api/profile` came back: a login screen flashed at a player
- *     who had been playing for an hour, once per navigation.
+ *     until this tab's own hint said otherwise: a login screen flashed at a
+ *     player who had been playing for an hour, once per navigation. This is
+ *     deliberately still true even while a session cookie exists (2026-08-29,
+ *     Kayo's call): a guest profile alone used to be treated as proof the
+ *     gate was already cleared, which let a guest cookie skip "Enter
+ *     StackChips" forever, on every future visit, with nothing to push them
+ *     toward a real account. Now the cookie only ever answers "who is this,"
+ *     never "has this tab already tapped through" — that second question is
+ *     answered here, so it resets on a fresh tab/app open the same way the
+ *     cookie doesn't.
  *  2. **Whether this account has already been greeted.** `linkedAccountIdRef`
  *     is a ref, so the idempotent safety-net `POST /api/auth/link` re-ran on
  *     every mount and re-announced "Welcome back, your Gold, profile, and
@@ -47,6 +55,14 @@ export const SESSION_PROFILE_KEY = "stackchips:session-profile";
 
 /** The account id this tab has already greeted, so a remount stays quiet. */
 export const SESSION_GREETED_KEY = "stackchips:session-greeted";
+
+/**
+ * Whether this tab has cleared the entry gate ("Enter StackChips"/"Continue
+ * as guest"/a completed sign-in) during its own lifetime. See point 1 above
+ * for why a session cookie is no longer treated as answering this on its
+ * own.
+ */
+export const SESSION_ENTRY_OPENED_KEY = "stackchips:entry-opened";
 
 /**
  * A friend invite code clicked while signed out, waiting for a real account
@@ -198,6 +214,43 @@ export function serverProfileSnapshot(): PlayerProfile | null {
 }
 
 /**
+ * Whether this tab has already cleared the entry gate. Read through
+ * `useSyncExternalStore` (see `subscribeSessionCache` above) rather than a
+ * bare `useState`, for the same reason the cached profile is: a plain
+ * `useState(() => hasOpenedEntryThisSession(...))` would run its
+ * initializer against real `sessionStorage` on the client's hydration
+ * render, which can disagree with the server's window-less `false` and
+ * produce a hydration mismatch instead of a clean re-render once React
+ * settles on the client value.
+ */
+export function entryOpenedSnapshot(storage: PreferenceStorage | null): boolean {
+  if (!storage) return false;
+  try {
+    return storage.getItem(SESSION_ENTRY_OPENED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** The server has no tab to have opened the gate in. */
+export function serverEntryOpenedSnapshot(): boolean {
+  return false;
+}
+
+/** Records that this tab has cleared the entry gate. */
+export function markEntryOpened(storage: PreferenceStorage | null): void {
+  if (!storage) return;
+  try {
+    storage.setItem(SESSION_ENTRY_OPENED_KEY, "1");
+  } catch {
+    // Private-mode Safari and a full quota both throw; see writeCachedProfile.
+    // Worst case, this tab re-asks once on its next in-app remount.
+  } finally {
+    emitSessionCacheChange();
+  }
+}
+
+/**
  * Whether this tab still has to greet `accountId`.
  *
  * True for a genuine sign-in (including the reload that follows the Google
@@ -268,7 +321,7 @@ export function clearPendingFriendInvite(storage: PreferenceStorage | null): voi
 /**
  * Forgets everything this tab knows, on sign-out.
  *
- * All three keys, together, always. Clearing the greeting but keeping the
+ * All four keys, together, always. Clearing the greeting but keeping the
  * cached profile would paint the departing player's name and balance over
  * the entry card of whoever signs in next on this tab; keeping a pending
  * invite code would hand it to that next person's account instead of the
@@ -280,6 +333,7 @@ export function clearSessionContinuity(storage: PreferenceStorage | null): void 
     storage.removeItem(SESSION_PROFILE_KEY);
     storage.removeItem(SESSION_GREETED_KEY);
     storage.removeItem(PENDING_FRIEND_INVITE_KEY);
+    storage.removeItem(SESSION_ENTRY_OPENED_KEY);
   } catch {
     // Nothing useful to do; the values expire with the tab regardless.
   } finally {

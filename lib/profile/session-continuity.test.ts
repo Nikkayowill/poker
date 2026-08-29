@@ -3,13 +3,17 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import type { PreferenceStorage } from "@/lib/profile/stored-preference";
 import {
   PENDING_FRIEND_INVITE_KEY,
+  SESSION_ENTRY_OPENED_KEY,
   SESSION_GREETED_KEY,
   SESSION_PROFILE_KEY,
   clearPendingFriendInvite,
   clearSessionContinuity,
+  entryOpenedSnapshot,
   markAccountLinkAnnounced,
+  markEntryOpened,
   readCachedProfile,
   readPendingFriendInvite,
+  serverEntryOpenedSnapshot,
   serverProfileSnapshot,
   sessionProfileSnapshot,
   shouldAnnounceAccountLink,
@@ -185,6 +189,54 @@ describe("the useSyncExternalStore snapshot", () => {
   });
 });
 
+describe("the entry gate hint", () => {
+  it("is closed until this tab records opening it", () => {
+    expect(entryOpenedSnapshot(memoryStorage())).toBe(false);
+  });
+
+  it("stays open once marked, so an in-app remount doesn't re-ask", () => {
+    const storage = memoryStorage();
+    markEntryOpened(storage);
+    expect(entryOpenedSnapshot(storage)).toBe(true);
+  });
+
+  // The reported bug: a guest's session cookie alone used to count as having
+  // cleared the gate, on every future visit, forever. It no longer does --
+  // this file's own snapshot never looks at a profile, only at this tab's
+  // own hint.
+  it("reads as closed with no storage at all, rather than throwing", () => {
+    expect(entryOpenedSnapshot(null)).toBe(false);
+  });
+
+  it("survives a storage that throws on every access", () => {
+    const storage = throwingStorage();
+    expect(entryOpenedSnapshot(storage)).toBe(false);
+    expect(() => markEntryOpened(storage)).not.toThrow();
+  });
+
+  it("reads as closed on the server, where there is no tab to have opened it", () => {
+    expect(serverEntryOpenedSnapshot()).toBe(false);
+  });
+
+  it("notifies subscribers when marked open", () => {
+    const storage = memoryStorage();
+    let notifications = 0;
+    const unsubscribe = subscribeSessionCache(() => void (notifications += 1));
+
+    markEntryOpened(storage);
+    expect(notifications).toBe(1);
+
+    unsubscribe();
+  });
+
+  it("closes again once a sign-out clears the tab", () => {
+    const storage = memoryStorage();
+    markEntryOpened(storage);
+    clearSessionContinuity(storage);
+    expect(entryOpenedSnapshot(storage)).toBe(false);
+  });
+});
+
 describe("clearing on sign-out", () => {
   // Clearing one and not the other paints the departing player's name and
   // balance over the entry card of whoever signs in next on this tab.
@@ -197,6 +249,15 @@ describe("clearing on sign-out", () => {
 
     expect(storage.getItem(SESSION_PROFILE_KEY)).toBeNull();
     expect(storage.getItem(SESSION_GREETED_KEY)).toBeNull();
+  });
+
+  it("drops the entry-opened hint too", () => {
+    const storage = memoryStorage();
+    markEntryOpened(storage);
+
+    clearSessionContinuity(storage);
+
+    expect(storage.getItem(SESSION_ENTRY_OPENED_KEY)).toBeNull();
   });
 
   // A code left over from a previous account in this tab would otherwise

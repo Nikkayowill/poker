@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, LoaderCircle, LogOut } from "lucide-react";
+import { ArrowRight, LoaderCircle, LogOut, Mail } from "lucide-react";
 import { FormEvent, useState } from "react";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { StackChipsLogo } from "@/components/brand/stackchips-logo";
@@ -56,9 +56,11 @@ function GoogleMark() {
  *    card: it is the labelled landmark, and 04-lobby.css hangs the whole
  *    form's typography off it.
  *
- * The email form leads and Google follows, rather than the other way round:
- * a returning player's muscle memory is the field, and the previous ordering
- * hid email behind a text toggle two taps deep.
+ * Google leads, email follows behind a toggle: the front screen is two
+ * choices (Google, Email) plus guest, and tapping Email reveals the
+ * sign-in/create-account form in place. This inverts the previous ordering
+ * (email always open, Google below it) on purpose — a two-button front
+ * screen is the whole point of this pass, not an incidental reflow.
  */
 export function AccountEntryCard({
   ready,
@@ -90,6 +92,9 @@ export function AccountEntryCard({
   onSignOut: () => void;
 }) {
   const signedIn = Boolean(profile?.isRegistered);
+  // Collapsed by default: the front screen is Google + Email + guest, and
+  // this reveals the actual fields in place once Email is chosen.
+  const [emailFormOpen, setEmailFormOpen] = useState(false);
   const [emailMode, setEmailMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -192,95 +197,6 @@ export function AccountEntryCard({
           <>
             {accountsAvailable && (
               <>
-                {/* A two-way segmented control, not a text link: which of the
-                    two things the form is about to do is the single most
-                    consequential fact on this screen, so it gets a control
-                    that shows its state rather than one that describes it. */}
-                <div className="entry-segment" role="group" aria-label="Account action">
-                  <button
-                    type="button"
-                    className={emailMode === "sign-in" ? "is-active" : undefined}
-                    aria-pressed={emailMode === "sign-in"}
-                    disabled={busy}
-                    onClick={() => { selectSound(); setEmailMode("sign-in"); setFormError(null); }}
-                  >
-                    Sign in
-                  </button>
-                  {/* Both halves of the segment sound the same: which one you
-                      picked is on screen, and giving the two sides different
-                      cues would imply one is the bigger commitment. */}
-                  <button
-                    type="button"
-                    className={emailMode === "sign-up" ? "is-active" : undefined}
-                    aria-pressed={emailMode === "sign-up"}
-                    disabled={busy}
-                    onClick={() => { selectSound(); setEmailMode("sign-up"); setFormError(null); }}
-                  >
-                    Create account
-                  </button>
-                </div>
-
-                <form className="account-email-form" onSubmit={submitEmailForm}>
-                  <div className="account-email-fields">
-                    <label className="entry-field">
-                      <span>Email</span>
-                      <input
-                        type="email"
-                        autoComplete="email"
-                        placeholder="you@example.com"
-                        value={email}
-                        disabled={busy}
-                        onChange={(event) => setEmail(event.target.value)}
-                        required
-                      />
-                    </label>
-                    <label className="entry-field">
-                      <span>Password</span>
-                      <input
-                        type="password"
-                        autoComplete={emailMode === "sign-in" ? "current-password" : "new-password"}
-                        placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
-                        value={password}
-                        disabled={busy}
-                        onChange={(event) => setPassword(event.target.value)}
-                        minLength={MIN_PASSWORD_LENGTH}
-                        required
-                      />
-                    </label>
-                  </div>
-
-                  <label className="account-remember">
-                    <input
-                      type="checkbox"
-                      checked={remember}
-                      disabled={busy}
-                      onChange={(event) => { selectSound(); onRememberChange(event.target.checked); }}
-                    />
-                    <span className="entry-switch" aria-hidden="true" />
-                    <span className="entry-remember-copy">
-                      <strong>Stay signed in</strong>
-                      <small>Remember this player on this device</small>
-                    </span>
-                  </label>
-
-                  <TurnstileWidget
-                    siteKey={TURNSTILE_SITE_KEY}
-                    onToken={setCaptchaToken}
-                    resetSignal={captchaResetSignal}
-                  />
-
-                  <button type="submit" className="account-primary-action" disabled={busy}>
-                    {pending
-                      ? <><LoaderCircle className="account-entry-spinner" size={17} /> {emailMode === "sign-in" ? "Signing in…" : "Creating account…"}</>
-                      : emailMode === "sign-in"
-                        ? <>Sign in <ArrowRight size={17} /></>
-                        : <>Create account <ArrowRight size={17} /></>}
-                  </button>
-                  {formError && <p className="account-entry-error" role="alert">{formError}</p>}
-                </form>
-
-                <div className="entry-divider"><span>or</span></div>
-
                 <button
                   type="button"
                   className="account-oauth-action"
@@ -300,6 +216,113 @@ export function AccountEntryCard({
                   <GoogleMark />
                   {pending ? "Opening Google…" : "Continue with Google"}
                 </button>
+
+                {/* A real toggle, not a one-way reveal: tapping it again
+                    collapses the form back, same button either direction. */}
+                <button
+                  type="button"
+                  className="account-email-toggle"
+                  aria-expanded={emailFormOpen}
+                  disabled={busy}
+                  onClick={() => { selectSound(); setEmailFormOpen((open) => !open); }}
+                >
+                  <Mail size={17} />
+                  {emailFormOpen ? "Hide email sign-in" : "Continue with Email"}
+                </button>
+
+                {/* Stays mounted (rather than conditionally rendered) so the
+                    open transition below can animate from a real height
+                    instead of popping in unmounted; inert removes it from
+                    the tab order and the a11y tree while collapsed without
+                    touching layout the way display:none would. */}
+                <div className={`account-email-panel${emailFormOpen ? " is-open" : ""}`} inert={!emailFormOpen}>
+                  {/* A two-way segmented control, not a text link: which of the
+                      two things the form is about to do is the single most
+                      consequential fact on this screen, so it gets a control
+                      that shows its state rather than one that describes it. */}
+                  <div className="entry-segment" role="group" aria-label="Account action">
+                    <button
+                      type="button"
+                      className={emailMode === "sign-in" ? "is-active" : undefined}
+                      aria-pressed={emailMode === "sign-in"}
+                      disabled={busy}
+                      onClick={() => { selectSound(); setEmailMode("sign-in"); setFormError(null); }}
+                    >
+                      Sign in
+                    </button>
+                    {/* Both halves of the segment sound the same: which one you
+                        picked is on screen, and giving the two sides different
+                        cues would imply one is the bigger commitment. */}
+                    <button
+                      type="button"
+                      className={emailMode === "sign-up" ? "is-active" : undefined}
+                      aria-pressed={emailMode === "sign-up"}
+                      disabled={busy}
+                      onClick={() => { selectSound(); setEmailMode("sign-up"); setFormError(null); }}
+                    >
+                      Create account
+                    </button>
+                  </div>
+
+                  <form className="account-email-form" onSubmit={submitEmailForm}>
+                    <div className="account-email-fields">
+                      <label className="entry-field">
+                        <span>Email</span>
+                        <input
+                          type="email"
+                          autoComplete="email"
+                          placeholder="you@example.com"
+                          value={email}
+                          disabled={busy}
+                          onChange={(event) => setEmail(event.target.value)}
+                          required
+                        />
+                      </label>
+                      <label className="entry-field">
+                        <span>Password</span>
+                        <input
+                          type="password"
+                          autoComplete={emailMode === "sign-in" ? "current-password" : "new-password"}
+                          placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+                          value={password}
+                          disabled={busy}
+                          onChange={(event) => setPassword(event.target.value)}
+                          minLength={MIN_PASSWORD_LENGTH}
+                          required
+                        />
+                      </label>
+                    </div>
+
+                    <label className="account-remember">
+                      <input
+                        type="checkbox"
+                        checked={remember}
+                        disabled={busy}
+                        onChange={(event) => { selectSound(); onRememberChange(event.target.checked); }}
+                      />
+                      <span className="entry-switch" aria-hidden="true" />
+                      <span className="entry-remember-copy">
+                        <strong>Stay signed in</strong>
+                        <small>Remember this player on this device</small>
+                      </span>
+                    </label>
+
+                    <TurnstileWidget
+                      siteKey={TURNSTILE_SITE_KEY}
+                      onToken={setCaptchaToken}
+                      resetSignal={captchaResetSignal}
+                    />
+
+                    <button type="submit" className="account-primary-action" disabled={busy}>
+                      {pending
+                        ? <><LoaderCircle className="account-entry-spinner" size={17} /> {emailMode === "sign-in" ? "Signing in…" : "Creating account…"}</>
+                        : emailMode === "sign-in"
+                          ? <>Sign in <ArrowRight size={17} /></>
+                          : <>Create account <ArrowRight size={17} /></>}
+                    </button>
+                    {formError && <p className="account-entry-error" role="alert">{formError}</p>}
+                  </form>
+                </div>
               </>
             )}
 

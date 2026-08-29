@@ -12,6 +12,7 @@ import { accountsEnabled } from "@/lib/auth/client";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { usePhoneViewport } from "@/components/use-phone-viewport";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
+import { EntryHero } from "@/components/auth/entry-hero";
 import { SiteFooter } from "@/components/nav/site-footer";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { MissionsPanel } from "@/components/missions/missions-panel";
@@ -179,6 +180,7 @@ export function Lobby({
   if (!entryComplete) {
     return (
       <main className="account-entry-page">
+        <EntryHero />
         <AccountEntryCard
           ready={authReady && sessionReady}
           accountsAvailable={accountsEnabled()}

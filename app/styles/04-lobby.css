@@ -198,7 +198,7 @@ button:disabled { cursor: wait; opacity: .62; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 34px 16px calc(24px + var(--safe-bottom));
+  padding: 76px 16px calc(24px + var(--safe-bottom));
   /* Transparent so the shell-level ceiling remains one continuous surface. */
   background: transparent;
 
@@ -376,6 +376,250 @@ button:disabled { cursor: wait; opacity: .62; }
   .entry-sky::before { animation: none; opacity: .5; }
   .entry-sky::after { animation: none; opacity: .62; }
   .entry-orb { animation: none; opacity: 1; }
+}
+
+/* ---------------------------------------------------------------------------
+   The centerpiece: three seat-art regulars, standing behind the form.
+
+   Tuned for mobile portrait, which is the actual target -- they peek up from
+   behind the logo/heading rather than floating as a separate block above the
+   form, so they cost no extra vertical scroll budget (see the note on the
+   form's own tight budget above .account-entry-card h1). Faded out toward
+   the bottom by a mask rather than clipped to a hard box, so this works
+   against any character's own crop without needing per-character tuning.
+   Sits behind .account-entry-card in the stacking order via plain DOM order
+   (see entry-hero.tsx), same tier as .entry-sky.
+   --------------------------------------------------------------------------- */
+.entry-hero {
+  position: absolute;
+  /* Negative top: part of the box sits above the page's own scroll origin,
+     so only the lower fraction actually shows -- "peeking up from behind"
+     the logo rather than a block that starts at the top and competes with
+     it. .account-entry-page scrolls (overflow-y: auto), so anything above
+     its own y:0 is clipped, not just visually faded -- too negative here
+     crops the characters' heads outright rather than merely hiding them.
+     Tuned against a real 390x844 render, not guessed. */
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92vw, 380px);
+  height: min(30vh, 230px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.entry-hero-glow {
+  position: absolute;
+  left: 50%;
+  top: 8%;
+  width: 130%;
+  height: 60%;
+  transform: translateX(-50%);
+  background:
+    radial-gradient(circle, rgba(155, 63, 240, .28), transparent 68%),
+    radial-gradient(circle at 65% 70%, rgba(255, 210, 63, .16), transparent 62%);
+  filter: blur(6px);
+}
+
+/* The three plates share one fade mask and one bottom baseline (align-items:
+   flex-end) so they read as a lineup standing at the same rail, the same
+   read the racetrack seats themselves are built on. The centre plate paints
+   above the two flanks (z-index) and overlaps them by a negative margin,
+   which is what makes the flanks read as *behind* the centre rather than
+   three cutouts in a row.
+
+   Each slot is a fixed width with object-fit: contain, not width:auto off
+   the image's own aspect ratio. The roster's boxes are not uniform (a bust
+   crop and a fuller-body crop sit side by side at very different aspect
+   ratios), and sizing a plate off its own box the first time around put the
+   three at visibly uneven widths and made the trio read as lopsided rather
+   than a lineup -- a fixed slot is what keeps them evenly spaced no matter
+   which three characters end up here.
+
+   contain still means the two flanks only render at genuinely matching
+   size ("mirrored depth") when their own aspect ratios are reasonably
+   close to each other -- contain fits to whichever dimension binds first,
+   so a much squarer crop paired with a much taller one will size-fit the
+   box differently even though the box itself is identical (this is what
+   went wrong pairing character4 with the old, much-squarer character15:
+   she rendered visibly smaller/further back at the same box). Picking the
+   two flank characters' `box` aspect ratios (`lib/scene/seat-art.generated
+   .ts`) within roughly the same range as each other is therefore part of
+   choosing a trio here, not just "any three characters." */
+.entry-hero-cast {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.entry-hero-center-img,
+.entry-hero-side {
+  height: 100%;
+  object-position: bottom center;
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 90%);
+  mask-image: linear-gradient(to bottom, black 60%, transparent 90%);
+}
+
+.entry-hero-side { object-fit: contain; animation: entry-hero-sway 31s ease-in-out infinite; }
+
+/* The centre takes cover, not contain, and the flanks stay on contain --
+   deliberately different rules for the two roles. A flank pairs against
+   another flank, so both need the same fixed box AND to sit fully inside
+   it (contain), which is why picking two similarly-proportioned characters
+   for the flanks still matters (see the note above). The centre has no
+   sibling to match, only a box to fill, so cover -- crop to fill, cropping
+   whichever dimension overflows -- guarantees it always reads at full
+   prominence regardless of its own crop's proportions, at the cost of
+   trimming its own edges slightly (symmetric, since object-position is
+   centred) rather than shrinking. Found by putting Kayo's own supplied
+   character (a much squarer bust crop than character25, the one this slot
+   held before) in this slot and watching it render visibly smaller than
+   the flanks under contain -- cover is what a centrepiece that has to
+   dominate actually wants.
+
+   Split into a wrapper (.entry-hero-center, positioned/swayed) and the
+   image itself (.entry-hero-center-img, sized/masked/cropped): the chain
+   glints below need to sway with him, not independently, so the sway
+   animation has to live on something that also parents the glints -- an
+   <img> can't have children, so the portrait moved into a wrapper div
+   rather than the glints trying to track its position from outside it. */
+.entry-hero-center {
+  position: relative;
+  z-index: 2;
+  width: 40%;
+  height: 100%;
+  transform-origin: bottom center;
+  animation: entry-hero-sway 26s ease-in-out infinite;
+}
+
+.entry-hero-center-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  object-fit: cover;
+}
+
+.entry-hero-side {
+  position: relative;
+  z-index: 1;
+  width: 34%;
+  height: 82%;
+  opacity: .82;
+  /* Off-phase from the centre and from each other -- three plates swaying
+     in lockstep reads as one rigid unit; staggered, each reads as its own
+     small idle motion. */
+  animation-delay: -9s;
+}
+
+.entry-hero-side-left { margin-right: -4%; animation-duration: 34s; animation-delay: -4s; }
+.entry-hero-side-right { margin-left: -4%; }
+
+/* Slow and off-centre on purpose -- this is idle atmosphere behind a login
+   form, not a mascot waving -- but four stops rather than two, so the path
+   is a gentle loop (a gathers a touch of sideways drift as it rises, drifts
+   back as it falls) rather than a single up-and-back-down tick. Amplitude
+   is still small: 9px and about a degree at its widest. The flanks' own
+   transform already carries a mirror (set inline per-character, see
+   entry-hero.tsx) -- this keyframe only adds translate/rotate on top of it,
+   never replaces it, since a plain `transform` here would clobber the flip
+   rather than compose with it. */
+@keyframes entry-hero-sway {
+  0%   { translate: 0 0; rotate: -.7deg; }
+  25%  { translate: 2px -5px; rotate: -.1deg; }
+  50%  { translate: 0 -9px; rotate: .7deg; }
+  75%  { translate: -2px -5px; rotate: .1deg; }
+  100% { translate: 0 0; rotate: -.7deg; }
+}
+
+/* Sparkle off the chain -- glints that spawn near the necklace in the
+   centre portrait and drift upward as they catch light, parented by
+   .entry-hero-center rather than .entry-hero-cast so they inherit his sway
+   transform exactly instead of drifting out of sync with him. Deliberately
+   NOT masked like the portrait under it (see .entry-hero-center-img's
+   fade) -- these are meant to pop.
+
+   The rise is doing real work, not just decoration: .entry-hero is a
+   sibling of .account-entry-card, and .account-entry-card paints after it
+   in the DOM, so nothing inside .entry-hero -- however high its own
+   internal z-index -- can paint above the wordmark logo's own stacking
+   context. Verified against a real render: a glint sitting still at the
+   chain's own real pixels (roughly 67-80% down the portrait) landed
+   directly behind the logo, invisible for its entire life. Spawning there
+   anyway and drifting up ~15% of the box height means each one is only
+   briefly behind the wordmark near birth and spends most of its life
+   rising through the clear collar/jaw gap above it -- "sparkle coming off
+   the chain" stays literal instead of just starting higher than the chain
+   actually is. Restructuring the stacking order to let these paint above
+   the logo outright is a bigger change than four glints justify.
+
+   An 8-point sparkle (a diamond crossed with a plus, via clip-path) rather
+   than the soft round dots .entry-sky/.entry-hero's own ambient sparkle
+   uses -- a glint off metal reads as a hard flare, not a blurred star. */
+.entry-hero-glint {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  background: radial-gradient(circle, #fff 0%, var(--brand-gold-light) 45%, transparent 72%);
+  clip-path: polygon(50% 0%, 63% 37%, 100% 50%, 63% 63%, 50% 100%, 37% 63%, 0% 50%, 37% 37%);
+  opacity: 0;
+  pointer-events: none;
+  animation: entry-hero-glint 3.6s ease-in infinite;
+}
+
+.entry-hero-glint-1 { left: 40%; top: 74%; width: 11px; height: 11px; animation-delay: 0s; }
+.entry-hero-glint-2 { left: 60%; top: 71%; animation-delay: -1s; animation-duration: 4.1s; }
+.entry-hero-glint-3 { left: 47%; top: 78%; width: 10px; height: 10px; animation-delay: -2.1s; animation-duration: 3.3s; }
+.entry-hero-glint-4 { left: 54%; top: 76%; width: 9px; height: 9px; animation-delay: -3s; animation-duration: 3.9s; }
+
+/* Spawn small at the chain, pop bright as it lifts clear of the logo, fade
+   out still rising -- a spark drifting up and away, not a thing that
+   breathes in place like the ambient stars do. ease-in on the whole
+   animation (set on .entry-hero-glint above) backloads the rise so the
+   climb reads as launched rather than floated. */
+@keyframes entry-hero-glint {
+  0%   { opacity: 0; transform: translateY(0) scale(.3) rotate(0deg); }
+  18%  { opacity: 1; transform: translateY(-6px) scale(1) rotate(10deg); }
+  65%  { opacity: .85; transform: translateY(-26px) scale(.75) rotate(22deg); }
+  100% { opacity: 0; transform: translateY(-36px) scale(.35) rotate(30deg); }
+}
+
+/* Sparkle around them: the same deterministic two-star-field contract
+   .entry-sky uses (fixed radial-gradient points, entry-twinkle, no canvas,
+   no JS) rather than a third mechanism -- reusing the keyframe, just a
+   tighter/brighter placement since this is the one thing on the screen
+   meant to draw the eye first. */
+.entry-hero::before,
+.entry-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.entry-hero::before {
+  background-image:
+    radial-gradient(2px 2px at 14% 26%, rgba(255, 255, 255, .9), transparent 60%),
+    radial-gradient(2px 2px at 50% 12%, rgba(255, 210, 63, .85), transparent 60%),
+    radial-gradient(2px 2px at 86% 28%, rgba(255, 255, 255, .7), transparent 60%);
+  animation: entry-twinkle 7s ease-in-out infinite alternate;
+}
+
+.entry-hero::after {
+  background-image:
+    radial-gradient(2.4px 2.4px at 30% 44%, rgba(200, 172, 245, .85), transparent 60%),
+    radial-gradient(2px 2px at 70% 40%, rgba(255, 255, 255, .75), transparent 60%);
+  animation: entry-twinkle 11s ease-in-out infinite alternate-reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entry-hero-center, .entry-hero-side { animation: none; }
+  .entry-hero::before, .entry-hero::after { animation: none; opacity: .7; }
+  /* The glints are a flare, not a breathing loop like the stars above --
+     pinned visible rather than mid-fade so reduced motion doesn't leave
+     them stuck at their keyframe's 0% (invisible). */
+  .entry-hero-glint { animation: none; opacity: 1; }
 }
 
 /* No card. The form stands on the room's light, so everything that made this
@@ -628,33 +872,38 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-turnstile { display: flex; justify-content: center; }
 .account-turnstile:empty { display: none; }
 
-.entry-divider {
-  display: flex;
-  align-items: center;
+/* The panel behind the "Continue with Email" toggle. Stays in the DOM at all
+   times (see the component's own comment on why) and animates open/closed by
+   height -- max-height rather than height, since the real height depends on
+   content (the Turnstile widget's own iframe can arrive late) and height
+   can't transition to "auto". The number is a generous ceiling, not a
+   measurement: comfortably past anything this panel ever renders, so the
+   timing reads as this content's own height rather than a fixed box. */
+.account-email-panel {
+  display: grid;
   gap: 12px;
-  color: #93a1bb;
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: .18em;
-  text-transform: uppercase;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height var(--duration-slow) var(--ease-decelerate), opacity var(--duration-slow) ease;
 }
 
-/* The one rule in this block, and it is a divider between two options rather
-   than an outline around one. This is where the chrome's fading hairline was
-   first written by hand; it is --rule in 01-tokens.css now, and every other
-   rule in the chrome reads the same token so none of them can drift back into
-   an edge-to-edge line that reads as the top of a box. */
-.entry-divider::before,
-.entry-divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--rule);
+.account-email-panel.is-open {
+  max-height: 640px;
+  opacity: 1;
+  /* The segment control and form both have their own top margin/gap needs;
+     one shared gap on the panel covers both without restating it per row. */
+  margin-top: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-email-panel { transition: none; }
 }
 
 .account-primary-action,
 .account-oauth-action,
-.account-guest-action {
+.account-guest-action,
+.account-email-toggle {
   min-height: 48px;
   display: inline-flex;
   align-items: center;
@@ -690,6 +939,16 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 .account-oauth-action:hover:not(:disabled) { background: rgba(182, 166, 219, .13); }
 
+/* One step quieter than Google: Google is the front screen's one filled
+   secondary action, Email is the second choice sitting beside it, so it
+   takes the same treatment as the guest action rather than a second filled
+   surface competing for the same weight. */
+.account-email-toggle {
+  color: #b6c0d6;
+  background: var(--brand-surface);
+}
+.account-email-toggle:hover:not(:disabled) { color: #e9eef6; background: var(--brand-surface-2); }
+
 .account-guest-action {
   color: #9fadc5;
   background: transparent;
@@ -698,7 +957,8 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .account-primary-action:focus-visible,
 .account-oauth-action:focus-visible,
-.account-guest-action:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+.account-guest-action:focus-visible,
+.account-email-toggle:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
 
 /* The play-money disclosure. No top margin of its own -- it is a row of
    .entry-footer's grid now, and the gap there owns the spacing. */

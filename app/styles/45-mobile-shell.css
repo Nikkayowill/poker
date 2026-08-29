@@ -1,5 +1,24 @@
 /* 45-mobile-shell.css -- the phone lobby: three swipeable panes under the
    existing header, with a tab bar at the bottom.
+
+   The tab bar is plain, static CSS: `position: fixed`, a z-index, and
+   `--safe-bottom` padding -- the exact same three ingredients
+   `.install-strip` (13-status.css) already uses for its own fixed bottom
+   bar, with nothing else added. An earlier version of this file chased a
+   supposed WKWebView "safe-area-inset-bottom hasn't settled yet" cold-launch
+   bug through five rounds of `useEffect` reflow-forcing and
+   `visualViewport` listeners (see this file's and mobile-shell.tsx's own git
+   history, 2026-08-28) before landing on dropping `--safe-bottom` from the
+   bar entirely, which traded away real home-indicator clearance to make the
+   symptom go away. That diagnosis doesn't hold up: `--safe-top`/
+   `--safe-bottom` are read live, with no JS involved, in every other file in
+   this app (`02-app-shell.css`, `05-game-header.css`, `13-status.css`, and
+   more), and none of those have a reported cold-launch gap. The one
+   documented real cause here (see 8cc6ae5's commit message on this repo) was
+   a plain missing z-index -- the bar had none, so it was quite possibly
+   painting under something else that did, on some devices some of the time.
+   Give it one, from the same scale every other fixed layer in this app
+   already uses, and there is nothing left to chase.
    =========================================================================
    Turns on at max-width 600px, the same width every other mobile rule in this
    app already uses (`--lobby-header-h` drops to 68px there, `.hub-grid` goes
@@ -87,12 +106,11 @@
     flex-direction: column;
     flex-grow: 1;
     min-height: 0;
-    /* The tab bar's total height (its 44px row plus whatever safe-area strip
-       it eats into), named once so the bar itself, the panes that must not
-       scroll content under it, and the install nudge that sits just above it
-       all agree on the same number. See the tab bar's own comment for why the
-       bar is pinned rather than sized by this box's own height. */
-    --mshell-nav-h: 44px;
+    /* The tab bar's total height (its 44px row plus the real safe-area
+       strip), named once so the bar itself, the panes that must not scroll
+       content under it, and the install nudge that sits just above it all
+       agree on the same number. */
+    --mshell-nav-h: calc(44px + max(var(--safe-bottom), 4px));
   }
 
   /* ---- the swipe track ------------------------------------------------ */
@@ -582,11 +600,7 @@
 
   /* Built to the shape TikTok/Quora actually use: a ~44px row, icon tight over
      label, sitting directly on the safe-area strip with nothing between it and
-     the pane above. Two prior passes already killed the things that read as
-     "floating too high" -- a row of page dots on top (24px of chrome no other
-     app's tab bar has), then a 34px shadow blur that drew a dark halo above the
-     bar and made a 44px row look taller than it was. Both are gone; this is the
-     bar those passes were aiming at.
+     the pane above.
 
      `position: fixed` rather than a flex sibling sized by `.lobby.lobby-shell`'s
      own `100dvh` calc: on an installed iOS PWA (standalone), `100dvh` measures
@@ -597,7 +611,11 @@
      Fixed to the real viewport sidesteps the mismatch outright rather than
      chasing the exact right dvh math for a container it doesn't need to fill.
      `.mshell-pane`'s bottom padding and `.install-strip`'s offset both key off
-     `--mshell-nav-h` (declared on `.mshell`) to still clear it correctly. */
+     `--mshell-nav-h` (declared on `.mshell`) to still clear it correctly.
+
+     No JS anywhere in this rule or the ones below it -- `--safe-bottom` is
+     read live, same as every other fixed bottom layer in this app. See the
+     top of this file for why that's enough. */
   .mshell-nav {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -605,8 +623,12 @@
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 50;
-    height: 44px;
+    z-index: var(--z-status-overlay);
+    /* The safe-area strip is part of the bar, not a gap under it -- otherwise
+       iOS paints the document colour beneath the home indicator. The 4px floor
+       is for everything that reports no inset (Android, any desktop browser at
+       this width). */
+    padding-bottom: max(var(--safe-bottom), 4px);
     background: rgba(22, 27, 38, .94);
     box-shadow: 0 -1px 0 rgba(182, 166, 219, .1), 0 -4px 12px rgba(0, 0, 0, .3);
   }

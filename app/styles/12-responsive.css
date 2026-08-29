@@ -83,17 +83,24 @@
     background-size: auto, auto, auto 56%, auto;
     background-position: center, center, right -30px center, center;
   }
-  /* No height here any more. It used to be restated because the header is
-     68px at this width and the base rule subtracted a literal 82px; both now
-     read --lobby-header-h, which the block above redefines once. */
   .account-entry-page {
     width: 100%;
-    padding: 24px 14px calc(32px + var(--safe-bottom));
+    /* 104px, down from the base rule's 148px -- a phone has less height to
+       give up before the form itself starts scrolling (see the budget note
+       on .account-entry-card h1), but the header is still gone, so this
+       still needs its own clearance rather than the old bare 24px. */
+    padding: calc(104px + var(--safe-top)) 14px calc(32px + var(--safe-bottom));
   }
   /* No card padding to restate -- the form stands on the page now. The
      headline still steps down: at clamp(32px...) over a star field it was
      the one line wide enough to reach both edges of a 390px screen. */
   .account-entry-card h1 { font-size: 32px; }
+  /* Re-tuned graze for this width's own 104px page padding -- see the base
+     rule's note in 04-lobby.css. Against a real 390x844 render, the base
+     rule's top already lands the wordmark almost a full character-box past
+     the fade band (this page centres the card on less free height here),
+     so this only needs a small nudge down, not the same jump. */
+  .entry-hero { top: 30px; }
 
   /* The hub's head, tightened. On the landing page the huge display line is
      the whole point; on the hub it is a signpost above the thing you came to
@@ -124,7 +131,7 @@
     padding-left: max(12px, var(--safe-left));
     padding-right: max(12px, var(--safe-right));
   }
-  .leave-button, .game-header-actions .auth-button { padding: 7px; font-size: 9px; }
+  .leave-button { padding: 7px; font-size: 9px; }
   /* However much still doesn't fit -- the exact count varies by auth state
      and whether a seat is claimed -- scrolls instead of clipping or
      overlapping the wordmark beside it. Nothing here is ever literally

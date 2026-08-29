@@ -68,7 +68,6 @@ import { StackChipsLogo } from "@/components/brand/stackchips-logo";
 import { ProfileModal } from "@/components/profile/profile-modal";
 import { Menu, type MenuItem } from "@/components/nav/menu";
 import { DonateButton } from "@/components/nav/donate-button";
-import { AuthButton } from "@/components/profile/auth-button";
 import { GoldBadge } from "@/components/profile/gold-badge";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RoomCreatedModal } from "@/components/table/room-created-modal";
@@ -1553,8 +1552,9 @@ export function PokerApp() {
     ...(profile ? [{ kind: "action" as const, label: "Edit profile", onSelect: () => setProfileOpen(true), icon: <Settings2 size={15} /> }] : []),
     profile?.isRegistered
       ? { kind: "action", label: "Sign out", onSelect: () => void signOut(), icon: <LogOut size={15} /> }
-      // "Sign in", not "Save progress": it is the same signIn() the header's
-      // own AuthButton calls for a guest, and the two must say the same thing.
+      // "Sign in", not "Save progress": it is the same signIn() the
+      // sign-in screen's own Google button calls, and the two must say the
+      // same thing.
       : { kind: "action", label: "Sign in", onSelect: () => void signIn(), icon: <LogIn size={15} /> },
   ];
 
@@ -1576,7 +1576,13 @@ export function PokerApp() {
         <span className="entry-orb" />
         <span className="entry-orb" />
       </div>
-      {!game && (
+      {/* entryComplete, not just !game: the sign-in screen (AccountEntryCard)
+          carries its own hero-sized logo and "Continue with Google"/"Play as
+          guest" controls, so this bar would just be a second, smaller
+          sign-in prompt stacked above them. It reappears the moment
+          entryComplete flips true (guest or real account), same as every
+          other lobby chrome gated on that flag below. */}
+      {!game && entryComplete && (
         <header className={`lobby-header${navShowing ? " is-scrolling-up" : ""}`}>
           {/* The full "StackChips" wordmark, small: this is the lobby's own
               nav brand slot, not the app icon/favicon (that's the single "S"
@@ -1593,26 +1599,26 @@ export function PokerApp() {
               before choosing stakes. The heart is the one persistent nav
               fixture Support StackChips gets now; see DonateButton. */}
           <div className="header-actions">
-            {entryComplete && profile && (
+            {/* entryComplete itself is no longer a live condition here (the
+                header only mounts once it's true, above) — profile can still
+                be null for a beat on a first-time visitor's "Preparing your
+                seat…" screen, which is what these two still guard against. */}
+            {profile && (
               <GoldBadge profile={profile} claimable={dailyGold === "ready"} justClaimed={goldFlash} />
             )}
-            {entryComplete && <DonateButton />}
-            {entryComplete
-              ? (
-                <Menu
-                  label="Open player menu"
-                  trigger={profile
-          ? (
-            <span className="app-menu-profile-trigger">
-              <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
-              <strong className="app-menu-player-name">{profile.displayName}</strong>
-            </span>
-          )
-                    : <span className="app-menu-fallback"><Settings2 size={16} /></span>}
-                  items={lobbyMenuItems}
-                />
-              )
-              : <AuthButton profile={profile} onSignIn={() => void signIn()} onSignOut={() => void signOut()} />}
+            <DonateButton />
+            <Menu
+              label="Open player menu"
+              trigger={profile
+                ? (
+                  <span className="app-menu-profile-trigger">
+                    <ProfileAvatar profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }} />
+                    <strong className="app-menu-player-name">{profile.displayName}</strong>
+                  </span>
+                )
+                : <span className="app-menu-fallback"><Settings2 size={16} /></span>}
+              items={lobbyMenuItems}
+            />
           </div>
         </header>
       )}

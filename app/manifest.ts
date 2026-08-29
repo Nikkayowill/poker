@@ -18,15 +18,20 @@ export default function manifest(): MetadataRoute.Manifest {
     // Only list icons that actually exist. A manifest entry pointing at a 404
     // is not cosmetic: Chrome treats an unfetchable icon as a failed install
     // criterion, so a stale entry can suppress the install prompt entirely.
-    // 192/512 rasters are generated from app/icon.svg (see the git history
-    // of public/icons/ for the ImageMagick invocation) rather than hand-drawn,
-    // so re-running that conversion is how these get regenerated if the mark
-    // changes. The maskable variant pads the same art to a ~80% safe zone on
-    // a solid background; an "any"-purpose maskable icon gets center-cropped
-    // by Android's adaptive-icon mask otherwise.
+    // The install icon is deliberately NOT app/icon.svg's single "S" (Kayo
+    // called it too generic for this spot, though it stays as the favicon
+    // and the in-game/lobby nav mark). It's the stacked STACK/CHIPS lockup
+    // at /icons/icon-stacked.svg, see that file for the full reasoning.
+    // 192/512 rasters and app/apple-icon.png are generated from it
+    // (public/brand/concepts/neon-marquee/wordmark-stacked.svg is the
+    // documented source), so re-running that render is how these get
+    // regenerated if the mark changes. The maskable variant pads the same
+    // art to an 80% safe zone on a solid background; an "any"-purpose
+    // maskable icon gets center-cropped by Android's adaptive-icon mask
+    // otherwise.
     icons: [
       {
-        src: "/icon.svg",
+        src: "/icons/icon-stacked.svg",
         sizes: "any",
         type: "image/svg+xml",
         purpose: "any",

@@ -47,7 +47,6 @@ import {
   ClipboardList,
   Cloud,
   Coins,
-  Gamepad2,
   Gift,
   HelpCircle,
   Layers,
@@ -56,6 +55,7 @@ import {
   type LucideIcon,
   Medal,
   Music2,
+  Puzzle,
   Spade,
   Sparkles,
   User,
@@ -88,9 +88,15 @@ import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
 import { LobbyNotices } from "./lobby-notices";
 
-const PAGES = ["Texas Hold'em", "Ante Up", "Profile"] as const;
+// Tab labels, not section names -- "Play" is this pane's own accessible
+// name is still the fuller "Texas Hold'em" on the <section> below; the tab
+// bar just needs a word short enough that none of the three ever risks the
+// ellipsis clip (.mshell-nav-item span, 45-mobile-shell.css).
+const PAGES = ["Play", "Ante Up", "Profile"] as const;
 const PAGE_COUNT = PAGES.length;
-const PAGE_ICONS: readonly LucideIcon[] = [Spade, Gamepad2, User];
+// Puzzle over a generic controller glyph: this tab is Sudoku/Word Stack/
+// Connections/Memory/Minesweeper plus the PvP duels, not "any game."
+const PAGE_ICONS: readonly LucideIcon[] = [Spade, Puzzle, User];
 
 /**
  * Which pane the player was last on, so leaving the shell and coming back
@@ -369,7 +375,7 @@ export function MobileShell({
               aria-current={active ? "page" : undefined}
               onClick={() => goTo(index)}
             >
-              <Icon size={20} strokeWidth={1.7} aria-hidden="true" />
+              <Icon size={20} strokeWidth={1.8} aria-hidden="true" />
               <span>{name}</span>
             </button>
           );

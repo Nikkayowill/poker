@@ -205,7 +205,7 @@ button:disabled { cursor: wait; opacity: .62; }
   /* 148px clears the status bar/notch with real room to spare and reads as
      "centered in the upper half" rather than pinned to the top edge -- see
      the note above .entry-hero on why the avatars don't move with this. */
-  padding: calc(148px + var(--safe-top)) 16px calc(24px + var(--safe-bottom));
+  padding: calc(148px + var(--safe-top)) 16px calc(120px + var(--safe-bottom));
   /* Transparent so the shell-level ceiling remains one continuous surface. */
   background: transparent;
 
@@ -415,8 +415,14 @@ button:disabled { cursor: wait; opacity: .62; }
      tuned against a real 1440x900 render, the .account-entry-card > h1
      budget note's own reference size, not guessed. The 600px-and-under
      override just below re-tunes the same graze against 390x844, the
-     actual target. */
-  top: 112px;
+     actual target.
+
+     + var(--safe-top): the 112px alone was tuned against a render with no
+     notch/status-bar inset simulated, so on a real phone (Dynamic Island,
+     notch, or just a tall Android status bar) the cast's heads landed
+     under -- on some devices touching -- the status bar itself. 0px on
+     anything without an inset, so this is a no-op everywhere else. */
+  top: calc(112px + var(--safe-top));
   left: 50%;
   transform: translateX(-50%);
   width: min(92vw, 380px);
@@ -977,8 +983,9 @@ button:disabled { cursor: wait; opacity: .62; }
 .account-guest-action:focus-visible,
 .account-email-toggle:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
 
-/* The play-money disclosure. No top margin of its own -- it is a row of
-   .entry-footer's grid now, and the gap there owns the spacing. */
+/* The play-money disclosure. Lives in .entry-scroll-footer now (X-style:
+   only legal links are pinned to the bottom bar); that wrapper's own gap
+   handles the spacing, so no top margin here. */
 .account-entry-footnote {
   margin: 0 auto;
   max-width: 340px;
@@ -1028,15 +1035,36 @@ button:disabled { cursor: wait; opacity: .62; }
   flex: 0 0 auto;
 }
 
+/* The one thing pinned to the bottom of the viewport: the legal links,
+   nothing else (X-style -- content in the middle, "fluff" as the footer).
+   Sibling of .account-entry-card in the JSX, so its own height never
+   depends on the card's. A short, single-purpose bar, sized for exactly
+   one row of links -- see .entry-legal-links below for that row's own
+   layout. .account-entry-page's own padding-bottom clears this bar's
+   height so the scrolling content never runs under it. */
 .entry-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  padding: 14px 16px calc(14px + var(--safe-bottom));
+  border-top: 1px solid rgba(182, 166, 219, .15);
+  background: linear-gradient(180deg, rgba(22, 27, 38, 0), rgba(22, 27, 38, .94) 35%);
+}
+
+/* Everything that used to share the fixed footer with the legal links --
+   install guidance and the play-money disclosure -- now scrolls with the
+   form instead, in its own stack with the same divider-and-gap shape the
+   fixed bar used to carry. */
+.entry-scroll-footer {
   display: grid;
   justify-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-top: 15px;
-  padding-top: 12px;
-  /* The chrome's one legal line shape: a divider between the controls and the
-     small print, never an outline around either. --rule fades at both ends,
-     which is what stops it re-reading as the top edge of a box. */
+  padding-top: 14px;
   border-top: 0;
   background: var(--rule) top / 100% 1px no-repeat;
 }
@@ -1090,11 +1118,20 @@ button:disabled { cursor: wait; opacity: .62; }
 .entry-support:hover { color: var(--brand-gold-light); }
 .entry-support:focus-visible { outline: 0; box-shadow: var(--brand-focus); border-radius: var(--radius-xs); }
 
+/* A fixed 2 columns, not flex-wrap: four links of uneven length wrapped
+   ragged (3 then 1), and that lone fourth link -- App Disclaimer -- read as
+   its own centred line rather than the last item of a list, closer to a
+   stray heading than a footer row. Two columns always split the same four
+   links 2-and-2, so it reads as one block at every width this page renders
+   at, not just the 390px it was caught on. Margin: auto centres the grid
+   itself rather than relying on justify-content, which was giving the
+   columns uneven space when one column was narrower than the other. */
 .entry-legal-links {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 12px 24px;
+  margin: 0 auto;
+  width: fit-content;
 }
 
 .entry-legal-links a {

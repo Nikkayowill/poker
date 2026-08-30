@@ -1500,12 +1500,13 @@ export function PokerApp() {
    * Supabase misconfigured -- which is worth surfacing, unlike the
    * unknown-email case.
    */
-  const requestPasswordReset = async (email: string) => {
+  const requestPasswordReset = async (email: string, captchaToken?: string) => {
     const client = authClient();
     if (!client) return;
     try {
       const { error: resetRequestError } = await client.auth.resetPasswordForEmail(email, {
         redirectTo: passwordResetCallbackUrl(),
+        captchaToken,
       });
       if (resetRequestError) throw resetRequestError;
     } catch (caught) {
@@ -1851,7 +1852,7 @@ export function PokerApp() {
             onSaveProgress={signIn}
             onEmailSignIn={(email, password, captchaToken) => void signInWithEmail(email, password, captchaToken)}
             onEmailSignUp={(email, password, captchaToken) => void signUpWithEmail(email, password, captchaToken)}
-            onForgotPassword={(email) => void requestPasswordReset(email)}
+            onForgotPassword={(email, captchaToken) => void requestPasswordReset(email, captchaToken)}
             onDismissSaveProgress={() => setSavePromptDismissed(true)}
             savePromptDismissed={savePromptDismissed}
             entryComplete={entryComplete}

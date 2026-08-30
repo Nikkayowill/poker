@@ -279,7 +279,10 @@ export function WordStackBoard() {
       <header className="bj-header">
         <div className="bj-header-copy">
           <div className="bj-back-row">
-            <FloorBackLink />
+            <FloorBackLink
+              confirmLeave={!finished && (round?.wager ?? 0) > 0}
+              confirmMessage="Your wager is still in play on today's word. Leaving won't give it up — come back and finish your guesses."
+            />
             <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>
               <HelpCircle size={13} aria-hidden="true" /> How to play
             </button>

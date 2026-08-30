@@ -173,7 +173,7 @@ export function AnteUpMemory() {
       <header className="floor-bar">
         <div className="floor-bar-left">
           <FloorBackLink
-            confirmLeave={active}
+            confirmLeave={active && (attempt?.wager ?? 0) > 0}
             confirmMessage="Your wager is still in play on this board. Leaving won't give it up — come back to finish, or use Give Up to settle it now."
           />
           <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>

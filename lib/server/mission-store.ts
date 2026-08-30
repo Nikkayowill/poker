@@ -4,6 +4,7 @@ import { utcDayKey, utcWeekKey } from "@/lib/missions/period";
 import type { MissionCadence, MissionDefinition, MissionsPayload, MissionView } from "@/lib/missions/types";
 import { creditGoldByProfile } from "./profile-store";
 import { adminClient } from "./supabase-admin";
+import { createTtlCache } from "./ttl-cache";
 
 /**
  * Missions: daily and weekly objectives, auto-credited the instant they
@@ -87,15 +88,16 @@ function progressKey(profileId: string, code: string, period: string): string {
 // otherwise, and the catalog changes by migration/admin action, not by the
 // second.
 
-let cachedCatalog: { at: number; rows: MissionDefinition[] } | null = null;
 const CATALOG_CACHE_MS = 2 * 60 * 1000;
+const catalogCache = createTtlCache<MissionDefinition[]>(CATALOG_CACHE_MS);
 
 async function loadCatalog(now: number): Promise<MissionDefinition[]> {
-  if (cachedCatalog && now - cachedCatalog.at < CATALOG_CACHE_MS) return cachedCatalog.rows;
+  const cached = catalogCache.read(now);
+  if (cached) return cached;
 
   const supabase = adminClient();
   if (!supabase) {
-    cachedCatalog = { at: now, rows: DEFAULT_DEFINITIONS };
+    catalogCache.write(DEFAULT_DEFINITIONS, now);
     return DEFAULT_DEFINITIONS;
   }
 
@@ -121,7 +123,7 @@ async function loadCatalog(now: number): Promise<MissionDefinition[]> {
       sortOrder: Number(row.sort_order),
     }));
 
-  cachedCatalog = { at: now, rows };
+  catalogCache.write(rows, now);
   return rows;
 }
 

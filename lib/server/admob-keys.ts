@@ -1,4 +1,5 @@
 import "server-only";
+import { createTtlCache } from "./ttl-cache";
 
 /**
  * Google's rotating public keys for verifying an AdMob SSV callback's
@@ -24,7 +25,7 @@ interface VerifierKeysResponse {
   keys: Array<{ keyId: number; pem: string; base64?: string }>;
 }
 
-let cache: { keys: AdmobVerifierKey[]; fetchedAt: number } | null = null;
+const cache = createTtlCache<AdmobVerifierKey[]>(CACHE_TTL_MS);
 
 async function fetchKeys(): Promise<AdmobVerifierKey[]> {
   const response = await fetch(KEYS_URL, { cache: "no-store" });
@@ -42,18 +43,21 @@ async function fetchKeys(): Promise<AdmobVerifierKey[]> {
  * than failing every callback for the rest of the cache window.
  */
 export async function admobVerifierKey(keyId: number, now = Date.now()): Promise<string | null> {
-  if (!cache || now - cache.fetchedAt > CACHE_TTL_MS) {
-    cache = { keys: await fetchKeys(), fetchedAt: now };
+  let keys = cache.read(now);
+  if (!keys) {
+    keys = await fetchKeys();
+    cache.write(keys, now);
   }
-  let found = cache.keys.find((key) => key.keyId === keyId);
+  let found = keys.find((key) => key.keyId === keyId);
   if (!found) {
-    cache = { keys: await fetchKeys(), fetchedAt: Date.now() };
-    found = cache.keys.find((key) => key.keyId === keyId);
+    keys = await fetchKeys();
+    cache.write(keys);
+    found = keys.find((key) => key.keyId === keyId);
   }
   return found?.pem ?? null;
 }
 
 /** Test seam only: forces the next call to refetch rather than serve the cache. */
 export function __resetAdmobKeyCacheForTest(): void {
-  cache = null;
+  cache.reset();
 }

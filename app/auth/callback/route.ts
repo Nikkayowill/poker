@@ -78,7 +78,8 @@ export async function GET(request: NextRequest) {
     // confirm step only has to call POST /api/auth/link, which reads that
     // same cookie. Cancelling there signs the Supabase session back out
     // without ever touching this guest's own profile.
-    if (await findRestoreConflict(data.session.user.id, request)) {
+    const restoreCheck = await findRestoreConflict(data.session.user.id, request);
+    if (restoreCheck.hasConflict) {
       return NextResponse.redirect(`${origin}/?restoreConfirm=1`);
     }
 
@@ -86,7 +87,8 @@ export async function GET(request: NextRequest) {
     // cookies() (next/headers), which a Route Handler applies to the
     // response regardless of which NextResponse instance is returned.
     // Only StackChips' own gameplay-identity cookie needs adding here.
-    const result = await linkAuthenticatedUser(data.session.user.id, request);
+    // restoreCheck.existing is the same lookup this would otherwise redo.
+    const result = await linkAuthenticatedUser(data.session.user.id, request, restoreCheck.existing);
     return withRequestSessionCookie(request, NextResponse.redirect(`${origin}/?entered=1`), result.token);
   } catch (linkError) {
     console.error("[auth/callback] linkAuthenticatedUser failed", linkError);

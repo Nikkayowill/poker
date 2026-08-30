@@ -13,6 +13,7 @@ import { creditGoldByProfile } from "./profile-store";
 import { getProgression } from "./progression-store";
 import { getPlayerStanding, type PlayerStats } from "./stats-store";
 import { adminClient } from "./supabase-admin";
+import { createTtlCache } from "./ttl-cache";
 
 /**
  * Achievements: permanent, one-time Gold and cosmetic rewards for lifetime
@@ -107,15 +108,16 @@ function grantKey(profileId: string, code: string): string {
 
 // ---- catalog reads --------------------------------------------------------
 
-let cachedCatalog: { at: number; rows: AchievementDefinition[] } | null = null;
 const CATALOG_CACHE_MS = 2 * 60 * 1000;
+const catalogCache = createTtlCache<AchievementDefinition[]>(CATALOG_CACHE_MS);
 
 async function loadCatalog(now: number): Promise<AchievementDefinition[]> {
-  if (cachedCatalog && now - cachedCatalog.at < CATALOG_CACHE_MS) return cachedCatalog.rows;
+  const cached = catalogCache.read(now);
+  if (cached) return cached;
 
   const supabase = adminClient();
   if (!supabase) {
-    cachedCatalog = { at: now, rows: DEFAULT_DEFINITIONS };
+    catalogCache.write(DEFAULT_DEFINITIONS, now);
     return DEFAULT_DEFINITIONS;
   }
 
@@ -140,7 +142,7 @@ async function loadCatalog(now: number): Promise<AchievementDefinition[]> {
     sortOrder: Number(row.sort_order),
   }));
 
-  cachedCatalog = { at: now, rows };
+  catalogCache.write(rows, now);
   return rows;
 }
 

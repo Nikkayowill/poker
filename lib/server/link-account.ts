@@ -28,12 +28,19 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * is fine for an empty/never-played cookie but not for a guest mid-run --
  * see `findRestoreConflict` below, which callers check first and route to a
  * player confirmation instead of calling this silently.
+ *
+ * `existingSession`, when passed, is a session findRestoreConflict already
+ * looked up for the same userId -- reused rather than re-fetched, since the
+ * OAuth callback route calls both back to back. Any other caller (the
+ * email/password link route, the password-reset callback) omits it and this
+ * looks the session up itself, unchanged.
  */
 export async function linkAuthenticatedUser(
   userId: string,
   request: NextRequest,
+  existingSession?: { token: string; profile: PlayerProfile } | null,
 ): Promise<{ profile: PlayerProfile; restored: boolean; token: string }> {
-  const existing = await findSessionByUserId(userId);
+  const existing = existingSession !== undefined ? existingSession : await findSessionByUserId(userId);
   if (existing) {
     // Merging balances across sessions is exactly the mechanic that makes
     // multi-accounting pay, so any Gold on the guest profile this browser
@@ -61,19 +68,24 @@ export async function linkAuthenticatedUser(
  * Read-only on purpose: `readSessionToken` (not `readOrCreateSessionToken`)
  * never mints a cookie for a caller only asking to look, and this runs
  * before the caller has decided whether to commit to linking at all.
+ *
+ * Returns the session it looked up alongside the verdict, so a caller that
+ * goes on to call `linkAuthenticatedUser` on the non-conflict path can hand
+ * it straight through instead of triggering a second identical lookup.
  */
 export async function findRestoreConflict(
   userId: string,
   request: NextRequest,
-): Promise<boolean> {
+): Promise<{ hasConflict: boolean; existing: { token: string; profile: PlayerProfile } | null }> {
   const existing = await findSessionByUserId(userId);
-  if (!existing) return false;
+  if (!existing) return { hasConflict: false, existing: null };
 
   const currentToken = readSessionToken(request);
-  if (!currentToken) return false;
+  if (!currentToken) return { hasConflict: false, existing };
 
   const currentProfile = await findProfileBySessionToken(currentToken);
-  return Boolean(currentProfile && !currentProfile.isRegistered);
+  const hasConflict = Boolean(currentProfile && !currentProfile.isRegistered);
+  return { hasConflict, existing };
 }
 
 export function linkResultResponse(

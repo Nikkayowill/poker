@@ -606,12 +606,53 @@ export function PokerApp() {
   }, [ingest]);
 
   useEffect(() => {
+    let disposed = false;
+    let running = false;
+    let consecutiveRetries = 0;
+    let retryTimer: number | null = null;
+
+    const clearRetry = () => {
+      if (retryTimer === null) return;
+      window.clearTimeout(retryTimer);
+      retryTimer = null;
+    };
+
+    // Same backoff refreshLatest uses for the Realtime path below, reused
+    // here rather than the bare single-shot fetch this used to be. A match
+    // that's already finished has no future turn deadline and no more
+    // broadcasts coming -- a resume-time refresh that loses its one race
+    // against the OS still bringing the network back up used to be the end
+    // of it, and nothing would ever ask again. That's the frozen-HUD report
+    // this closes: a heads-up match decided at 2:30am by two idle timeouts,
+    // the phone locked between hands, and the single resync on return
+    // silently failing with no retry.
+    const attempt = () => {
+      if (disposed || !gameId || running) return;
+      clearRetry();
+      running = true;
+      void refresh(gameId)
+        .then(() => { consecutiveRetries = 0; })
+        .catch(() => {
+          if (disposed) return;
+          setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
+          if (consecutiveRetries >= MAX_REFRESH_RETRIES) {
+            consecutiveRetries = 0;
+            return;
+          }
+          const delay = Math.min(
+            REFRESH_RETRY_BASE_MS * 2 ** consecutiveRetries,
+            REFRESH_RETRY_MAX_MS,
+          );
+          consecutiveRetries += 1;
+          retryTimer = window.setTimeout(attempt, delay);
+        })
+        .finally(() => { running = false; });
+    };
+
     const markOffline = () => setConnectionState("offline");
     const reconnect = () => {
       setConnectionState("reconnecting");
-      if (gameId) {
-        void refresh(gameId).catch(() => setConnectionState("reconnecting"));
-      }
+      attempt();
     };
     // A backgrounded tab's setTimeout (the turn clock) and its Realtime
     // socket are both fair game for the browser to throttle or suspend.
@@ -621,8 +662,8 @@ export function PokerApp() {
     // is exactly the frozen feeling this closes: a resync the instant the tab
     // is looked at again, same request the reconnect path above already uses.
     const resyncOnReturn = () => {
-      if (document.hidden || !gameId) return;
-      void refresh(gameId).catch(() => {});
+      if (document.hidden) return;
+      attempt();
     };
     window.addEventListener("offline", markOffline);
     window.addEventListener("online", reconnect);
@@ -630,6 +671,8 @@ export function PokerApp() {
     window.addEventListener("focus", resyncOnReturn);
     if (!window.navigator.onLine) markOffline();
     return () => {
+      disposed = true;
+      clearRetry();
       window.removeEventListener("offline", markOffline);
       window.removeEventListener("online", reconnect);
       document.removeEventListener("visibilitychange", resyncOnReturn);

@@ -277,8 +277,14 @@ export function AdminDashboard() {
   };
 
   const cancelWaitingTable = async (table: WaitingPvpTable) => {
+    // A seatless table (nobody ever successfully claimed a seat) still
+    // refunds its host directly -- see admin-live-tables.ts's own comment on
+    // cancelWaitingPvpTable -- so at least one refund always goes out even
+    // at seatedCount 0.
+    const refundCount = Math.max(table.seatedCount, 1);
     const message = `Force-cancel this ${table.label} table hosted by ${table.hostName}?\n\n`
-      + `Refunds ${(table.stake * table.seatedCount).toLocaleString()} Gold to whoever is seated. This can't be undone.`;
+      + `Refunds ${(table.stake * refundCount).toLocaleString()} Gold to ${table.hostName}`
+      + `${table.seatedCount > 1 ? " and whoever else is seated" : ""}. This can't be undone.`;
     if (!window.confirm(message)) return;
     setPendingTableId(table.id);
     setError(null);
@@ -293,7 +299,7 @@ export function AdminDashboard() {
       setWaitingTables((current) => current?.filter((entry) => entry.id !== table.id) ?? null);
       if (data.refundFailures > 0) {
         setError(
-          `Cancelled, but ${data.refundFailures} of ${table.seatedCount} refund(s) failed to post -- `
+          `Cancelled, but ${data.refundFailures} of ${refundCount} refund(s) failed to post -- `
           + "check that player's Gold balance and credit it manually.",
         );
       }

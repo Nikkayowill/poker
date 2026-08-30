@@ -221,6 +221,7 @@ export async function openHeadsUpQuickPlay(
   if (!debited) throw new HeadsUpRequestError(`You need ${stake.toLocaleString()} Gold to play this tier.`, 400);
 
   const open = await findOpenHeadsUpTable(tier, profile.id);
+  let created: StoredHeadsUpTable | null = null;
   try {
     if (open) {
       await claimHeadsUpSeat(open.id, profile.id, token);
@@ -230,12 +231,21 @@ export async function openHeadsUpQuickPlay(
       return { table: await tableView(current, seats, profile.id), profile: debited };
     }
 
-    const created = await createHeadsUpTableRow(profile.id, tier, stake, null);
+    created = await createHeadsUpTableRow(profile.id, tier, stake, null);
     await claimHeadsUpSeat(created.id, profile.id, token);
     const seats = await getHeadsUpSeats(created.id);
     return { table: await tableView(created, seats, profile.id), profile: debited };
   } catch (error) {
     await creditGoldByProfile(profile.id, stake).catch(() => null);
+    // A failure between createHeadsUpTableRow and claimHeadsUpSeat succeeding
+    // would otherwise leave a host-less 'waiting' row sitting in front of
+    // every later quick-play search at this tier forever -- the exact shape
+    // of the live table admin-live-tables.ts had to learn to clean up.
+    // openHeadsUpInvite/openCribbageTable/openSitAndGoTable all already do
+    // this in the same spot; this was the one call site that didn't. Never
+    // applies to the `open` branch above: that table is someone else's, and
+    // this call's own failure must not touch it.
+    if (created) await cancelEmptyHeadsUpTable(created.id, profile.id).catch(() => null);
     if (error instanceof HeadsUpTableNotJoinable) throw new HeadsUpRequestError(error.message, 409);
     throw error;
   }

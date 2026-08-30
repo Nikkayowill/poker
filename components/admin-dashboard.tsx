@@ -10,6 +10,28 @@ interface TableStats {
   privateTables: number;
 }
 
+type PvpTableKind = "heads-up" | "cribbage" | "sit-and-go";
+
+interface WaitingPvpTable {
+  kind: PvpTableKind;
+  id: string;
+  hostId: string;
+  hostName: string;
+  stake: number;
+  label: string;
+  seatedCount: number;
+  capacity: number;
+  createdAt: string;
+}
+
+function formatAge(iso: string) {
+  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
 function isSameUtcDay(a: Date, b: Date) {
   return a.getUTCFullYear() === b.getUTCFullYear()
     && a.getUTCMonth() === b.getUTCMonth()
@@ -61,6 +83,7 @@ export function AdminDashboard() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [profiles, setProfiles] = useState<AdminProfileSummary[] | null>(null);
   const [tableStats, setTableStats] = useState<TableStats | null>(null);
+  const [waitingTables, setWaitingTables] = useState<WaitingPvpTable[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -68,6 +91,7 @@ export function AdminDashboard() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [query, setQuery] = useState("");
   const [accountFilter, setAccountFilter] = useState<"all" | "registered" | "guest">("all");
+  const [pendingTableId, setPendingTableId] = useState<string | null>(null);
   const { copiedValue: copiedId, copy: copyId } = useClipboardCopy(1500);
 
   const lock = async () => {
@@ -75,6 +99,7 @@ export function AdminDashboard() {
     setUnlocked(false);
     setProfiles(null);
     setTableStats(null);
+    setWaitingTables(null);
     setSelectedIds(new Set());
     setError(null);
   };
@@ -83,9 +108,10 @@ export function AdminDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [profilesResponse, tablesResponse] = await Promise.all([
+      const [profilesResponse, tablesResponse, pvpTablesResponse] = await Promise.all([
         fetch("/api/admin/profiles"),
         fetch("/api/admin/tables"),
+        fetch("/api/admin/pvp-tables"),
       ]);
       const profilesData = await profilesResponse.json();
       if (!profilesResponse.ok) {
@@ -105,6 +131,10 @@ export function AdminDashboard() {
         return new Set([...current].filter((id) => available.has(id)));
       });
       if (tablesResponse.ok) setTableStats(tablesData);
+      if (pvpTablesResponse.ok) {
+        const pvpTablesData = await pvpTablesResponse.json();
+        setWaitingTables(pvpTablesData.tables);
+      }
       setUnlocked(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load signups.");
@@ -243,6 +273,34 @@ export function AdminDashboard() {
     } finally {
       setPendingId(null);
       setBulkPending(false);
+    }
+  };
+
+  const cancelWaitingTable = async (table: WaitingPvpTable) => {
+    const message = `Force-cancel this ${table.label} table hosted by ${table.hostName}?\n\n`
+      + `Refunds ${(table.stake * table.seatedCount).toLocaleString()} Gold to whoever is seated. This can't be undone.`;
+    if (!window.confirm(message)) return;
+    setPendingTableId(table.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/pvp-tables", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: table.kind, tableId: table.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not cancel that table.");
+      setWaitingTables((current) => current?.filter((entry) => entry.id !== table.id) ?? null);
+      if (data.refundFailures > 0) {
+        setError(
+          `Cancelled, but ${data.refundFailures} of ${table.seatedCount} refund(s) failed to post -- `
+          + "check that player's Gold balance and credit it manually.",
+        );
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not cancel that table.");
+    } finally {
+      setPendingTableId(null);
     }
   };
 
@@ -435,6 +493,58 @@ export function AdminDashboard() {
           </div>
         </section>
       )}
+      <section className="admin-section" aria-labelledby="pvp-tables-heading">
+        <div className="admin-section-heading">
+          <div>
+            <h2 id="pvp-tables-heading">Waiting PvP tables</h2>
+            <p>
+              Heads-Up, Cribbage, and Sit &amp; Go tables still waiting for an opponent. Nothing
+              sweeps these automatically -- a table a host abandoned before it dealt sits here
+              forever, locking their stake, until you cancel it.
+            </p>
+          </div>
+        </div>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Game</th>
+                <th>Host</th>
+                <th>Stake</th>
+                <th>Seated</th>
+                <th>Waiting</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {(waitingTables ?? []).map((table) => (
+                <tr key={table.id}>
+                  <td>{table.label}</td>
+                  <td>{table.hostName}</td>
+                  <td>{table.stake.toLocaleString()}</td>
+                  <td>{table.seatedCount}/{table.capacity}</td>
+                  <td>{formatAge(table.createdAt)}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="admin-delete"
+                      disabled={pendingTableId === table.id}
+                      onClick={() => void cancelWaitingTable(table)}
+                    >
+                      {pendingTableId === table.id ? "Cancelling…" : "Cancel & refund"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {(waitingTables ?? []).length === 0 && (
+                <tr>
+                  <td colSpan={6} className="admin-empty">No tables are waiting for an opponent right now.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
       <section className="admin-section" aria-labelledby="players-heading">
         <div className="admin-section-heading admin-player-heading">
           <div>

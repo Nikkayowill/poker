@@ -308,6 +308,31 @@ export async function findOpenHeadsUpTable(tier: StakesTier, callerId: string): 
   return data ? fromRow(data as TableRow) : null;
 }
 
+/**
+ * Every waiting table across every tier, oldest first (the one most worth an
+ * admin's attention) -- admin visibility only. findOpenHeadsUpTable above
+ * answers a different question (the one candidate matchmaking should join at
+ * one tier, excluding the caller); this one's for the admin console's own
+ * listing, which needs to see all of them regardless of who opened them.
+ */
+export async function getOpenHeadsUpTables(): Promise<StoredHeadsUpTable[]> {
+  const supabase = adminClient();
+  if (!supabase) {
+    return [...memoryTables.values()]
+      .filter((table) => table.status === "waiting")
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map(cloneTable);
+  }
+  const { data, error } = await supabase
+    .from("heads_up_tables")
+    .select(TABLE_COLUMNS)
+    .eq("status", "waiting")
+    .order("created_at", { ascending: true })
+    .limit(100);
+  if (error) throw new Error(`Could not load open heads-up tables: ${error.message}`);
+  return (data ?? []).map((row) => fromRow(row as TableRow));
+}
+
 // ---- writes -------------------------------------------------------------
 
 /** Opens a bare table, host not yet seated; the caller seats them with claimHeadsUpSeat right after. */

@@ -136,6 +136,33 @@ describe("processAdmobSsvCallback", () => {
     expect(outcome).toMatchObject({ credited: false, reason: "ineligible" });
   });
 
+  it("refuses a genuinely signed callback for a different ad unit once one is configured", async () => {
+    vi.stubEnv("NEXT_PUBLIC_ADMOB_REWARDED_AD_UNIT_ID", "ca-app-pub-real/live-unit");
+    try {
+      const profileId = await registeredProfileId();
+      const outcome = await processAdmobSsvCallback(buildCallback({ userId: profileId }));
+      expect(outcome).toMatchObject({ credited: false, reason: "wrong-ad-unit" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("never double-credits a redelivery after an ambiguous credit failure", async () => {
+    // If the credit RPC throws after actually committing (a dropped response,
+    // not a real failure), the receipt must not be freed for retry -- see
+    // admob-ssv-service.ts's header comment, rule 4.
+    const profileId = await registeredProfileId();
+    const profileStore = await import("./profile-store");
+    const creditSpy = vi.spyOn(profileStore, "creditGoldByProfile").mockRejectedValueOnce(new Error("dropped"));
+    const callback = buildCallback({ userId: profileId });
+
+    await expect(processAdmobSsvCallback(callback)).rejects.toThrow("dropped");
+    const redelivery = await processAdmobSsvCallback(callback);
+
+    expect(redelivery).toMatchObject({ credited: false, reason: "duplicate" });
+    creditSpy.mockRestore();
+  });
+
   it("enforces the daily cap as a real bound", async () => {
     const profileId = await registeredProfileId();
     const before = await import("./profile-store").then((m) => m.getProfileById(profileId));

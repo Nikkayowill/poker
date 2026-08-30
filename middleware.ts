@@ -25,6 +25,7 @@ export async function middleware(request: NextRequest) {
   if (
     request.nextUrl.pathname.startsWith("/api/")
     || request.nextUrl.pathname === "/auth/callback"
+    || request.nextUrl.pathname === "/auth/reset-password/callback"
   ) {
     // Snapshots contain caller-filtered hole cards and every API may receive
     // an ambient credential. Never let a browser or shared intermediary reuse
@@ -37,12 +38,14 @@ export async function middleware(request: NextRequest) {
    * never inspect a Supabase access token. Calling auth.getUser() here added
    * an external Auth request to every fold, call, clock tick and snapshot for
    * no security benefit. Auth routes validate/refresh through their own
-   * createServerSupabase client, and the OAuth callback performs its own code
-   * exchange, so both paths are self-contained too.
+   * createServerSupabase client, and the OAuth callback and its password-
+   * reset counterpart both perform their own code exchange, so all three
+   * paths are self-contained too.
    */
   if (
     request.nextUrl.pathname.startsWith("/api/")
     || request.nextUrl.pathname === "/auth/callback"
+    || request.nextUrl.pathname === "/auth/reset-password/callback"
     || request.nextUrl.pathname === "/monitoring"
   ) {
     return response;

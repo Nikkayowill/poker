@@ -48,9 +48,15 @@ import { startOfUtcDay } from "./rewarded-ad-service";
  *      file made a moment earlier -- two callbacks racing close together
  *      would otherwise both read the count before either had written a row.
  *   4. Gold is credited only after that insert is confirmed (rule B, same
- *      ordering rewarded-ad-service.ts states); a credit that throws deletes
- *      the just-recorded receipt so Google's own redelivery can retry
- *      cleanly (rule C's analogue -- nothing was debited here either).
+ *      ordering rewarded-ad-service.ts states). The receipt is freed for
+ *      Google's redelivery to retry only when the credit is *known* not to
+ *      have happened (creditGoldByProfile's explicit `null` -- the profile
+ *      vanished before the write). A credit call that *throws* is ambiguous
+ *      -- the RPC may have committed in Postgres before this process ever
+ *      saw the response -- so that path leaves the receipt in place and
+ *      rethrows rather than risk a double credit on retry; an orphaned
+ *      verified-but-uncredited receipt is a recoverable ops problem, a
+ *      double credit is not.
  */
 
 export class AdmobSsvVerificationError extends Error {}
@@ -59,7 +65,14 @@ export type AdmobSsvOutcome =
   | { credited: true; profileId: string; awarded: number }
   | {
       credited: false;
-      reason: "duplicate" | "unknown-key" | "bad-signature" | "stale" | "ineligible" | "daily-limit";
+      reason:
+        | "duplicate"
+        | "unknown-key"
+        | "bad-signature"
+        | "stale"
+        | "ineligible"
+        | "daily-limit"
+        | "wrong-ad-unit";
     };
 
 // Generous on purpose: this isn't the anti-double-credit guard (transaction_id
@@ -104,6 +117,7 @@ export async function processAdmobSsvCallback(rawQuery: string, now = new Date()
   const userId = params.get("user_id");
   const timestampRaw = params.get("timestamp");
   const customData = params.get("custom_data");
+  const adUnit = params.get("ad_unit");
   if (!signature || !keyIdRaw || !transactionId || !userId || !timestampRaw) {
     throw new AdmobSsvVerificationError("Missing a required SSV field.");
   }
@@ -113,6 +127,16 @@ export async function processAdmobSsvCallback(rawQuery: string, now = new Date()
   const pem = await admobVerifierKey(keyId);
   if (!pem) return { credited: false, reason: "unknown-key" };
   if (!verifySignature(content, signature, pem)) return { credited: false, reason: "bad-signature" };
+
+  // The SSV callback URL is configured once per AdMob account, not per ad
+  // unit -- a genuinely signed callback from any other ad unit added under
+  // the same account later would otherwise be credited identically to the
+  // one rewarded-video unit this app actually shows. Only enforced when the
+  // expected unit is configured (it's blank in local/dev setups).
+  const expectedAdUnit = process.env.NEXT_PUBLIC_ADMOB_REWARDED_AD_UNIT_ID;
+  if (expectedAdUnit && adUnit && adUnit !== expectedAdUnit) {
+    return { credited: false, reason: "wrong-ad-unit" };
+  }
 
   const timestampMs = Number(timestampRaw);
   if (!Number.isFinite(timestampMs) || Math.abs(now.getTime() - timestampMs) > MAX_CALLBACK_AGE_MS) {
@@ -170,7 +194,11 @@ export async function processAdmobSsvCallback(rawQuery: string, now = new Date()
     }
     return { credited: true, profileId: profile.id, awarded: ADMOB_REWARDED_AD_GOLD };
   } catch (error) {
-    await deleteAdmobSsvReceipt(transactionId).catch(() => {});
+    // Unlike the explicit "profile vanished" branch above, a thrown error
+    // here doesn't tell us whether creditGoldByProfile's RPC actually
+    // committed before the failure -- deleting the receipt would let a
+    // Google redelivery retry a credit that already landed. Leave it and
+    // surface the error instead; see rule 4 above.
     throw error;
   }
 }
@@ -199,4 +227,25 @@ export async function admobRewardStatus(
     awarded: receipt.rewardGold,
     remainingToday: Math.max(0, ADMOB_REWARDED_AD_DAILY_LIMIT - claimedToday),
   };
+}
+
+/**
+ * Pre-flight check for the native modal, before it spends a real ad
+ * impression: has this profile already hit today's cap? start() and claim()
+ * on the web path both learn this from the server before/while spending the
+ * player's time (see the `reason === "daily-limit"` checks in
+ * rewarded-ad-modal.tsx); the native path has no equivalent grant request to
+ * piggyback that check on, since AdMob's own SDK plays the video with no
+ * server round trip first. Same early-exit-read posture as the one inside
+ * processAdmobSsvCallback -- the real gate is still the daily-cap trigger on
+ * the eventual SSV insert, this only avoids burning ad inventory on a view
+ * that can never be credited.
+ */
+export async function admobDailyLimitStatus(
+  profileId: string,
+  now = new Date(),
+): Promise<{ remainingToday: number }> {
+  const since = startOfUtcDay(now).toISOString();
+  const claimedToday = await countAdmobSsvReceipts(profileId, since);
+  return { remainingToday: Math.max(0, ADMOB_REWARDED_AD_DAILY_LIMIT - claimedToday) };
 }

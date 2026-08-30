@@ -101,7 +101,7 @@ export function Lobby({
   onSaveProgress: () => void;
   onEmailSignIn: (email: string, password: string, captchaToken?: string) => void;
   onEmailSignUp: (email: string, password: string, captchaToken?: string) => void;
-  onForgotPassword: (email: string) => void;
+  onForgotPassword: (email: string, captchaToken?: string) => void;
   onDismissSaveProgress: () => void;
   savePromptDismissed: boolean;
   entryComplete: boolean;

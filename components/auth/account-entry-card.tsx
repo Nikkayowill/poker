@@ -89,7 +89,7 @@ export function AccountEntryCard({
   onContinueAsGuest: () => void;
   onSignOut: () => void;
   /** Requests a Supabase recovery email for the given address. */
-  onForgotPassword: (email: string) => void;
+  onForgotPassword: (email: string, captchaToken?: string) => void;
 }) {
   const signedIn = Boolean(profile?.isRegistered);
   // Collapsed by default: the front screen is Google + Email + guest, and
@@ -114,9 +114,23 @@ export function AccountEntryCard({
       setFormError('Enter your email above, then tap "Forgot password?" again.');
       return;
     }
+    // Same gate submitEmailForm applies below: Supabase's captcha protection
+    // (when TURNSTILE_SITE_KEY is configured) covers resetPasswordForEmail
+    // too, not just signIn/signUp.
+    if (TURNSTILE_SITE_KEY && !captchaToken) {
+      setFormError(
+        captchaLoadFailed
+          ? "Verification failed to load. Check your connection, or continue with Google instead."
+          : "Please complete the verification below.",
+      );
+      return;
+    }
     setFormError(null);
     selectSound();
-    onForgotPassword(trimmed);
+    const token = captchaToken ?? undefined;
+    setCaptchaToken(null);
+    setCaptchaResetSignal((signal) => signal + 1);
+    onForgotPassword(trimmed, token);
     setResetRequested(true);
   };
   const busy = !ready || pending;

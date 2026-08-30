@@ -200,6 +200,22 @@ export function RewardedAdModal({ trigger, profile, onClose, onCredited, onSaveP
       setError("Ads aren't set up on this build yet.");
       return;
     }
+    // Same pre-flight the web path gets for free from its grant request
+    // (see start()'s reason === "daily-limit" check) -- without this, a
+    // capped-out player plays a full rewarded video that the eventual SSV
+    // callback can never credit.
+    try {
+      const response = await fetch("/api/profile/gold/admob-status");
+      const data = await response.json();
+      if (response.ok && data.remainingToday === 0) {
+        onDailyLimitReached?.();
+        setError("You've hit today's ad limit. Come back tomorrow for more.");
+        return;
+      }
+    } catch {
+      // Transient network hiccup on the precheck alone -- fall through and
+      // let the real SSV daily-cap trigger be the backstop, same as ever.
+    }
     const isTesting = process.env.NEXT_PUBLIC_ADMOB_USE_TEST_ADS === "true";
     const nonce = crypto.randomUUID();
     setPhase("watching");
@@ -241,8 +257,13 @@ export function RewardedAdModal({ trigger, profile, onClose, onCredited, onSaveP
       await sleep(ADMOB_SSV_POLL_INTERVAL_MS);
     }
     setPollTimedOut(true);
-    setError("Still confirming your reward -- check your balance in a moment.");
-  }, [profile, onCredited]);
+    // Deliberately doesn't promise the Gold is still coming: a rejected SSV
+    // callback (daily cap hit between the precheck above and now, a stale
+    // signature, an ineligible profile) never writes a receipt at all, so
+    // this poll timeout looks identical to "still in flight" from here --
+    // there's nothing this client can tell the two apart with.
+    setError("Couldn't confirm your reward yet. If your balance hasn't updated in a minute, it likely didn't go through -- try again later.");
+  }, [profile, onCredited, onDailyLimitReached]);
 
   // The countdown. A setInterval, not a per-frame timer: nothing here animates,
   // and one tick a second is exactly the resolution the readout has.

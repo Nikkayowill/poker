@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { admobRewardStatus } from "@/lib/server/admob-ssv-service";
+import { admobDailyLimitStatus, admobRewardStatus } from "@/lib/server/admob-ssv-service";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
@@ -7,7 +7,9 @@ import { readSessionToken } from "@/lib/server/session";
 export const runtime = "nodejs";
 
 /**
- * Lets the native app's own modal learn whether its watch was paid.
+ * Lets the native app's own modal learn whether its watch was paid, and,
+ * called with no `nonce`, whether today's cap is already spent before an ad
+ * even plays (see admobDailyLimitStatus's own doc comment).
  *
  * AdMob's SSV callback (app/api/ads/admob/ssv/route.ts) is server-to-server
  * -- it never touches the player's device, so the client that showed the ad
@@ -23,10 +25,13 @@ export async function GET(request: NextRequest) {
     const token = readSessionToken(request);
     if (!token) return NextResponse.json({ error: "Your profile session expired." }, { status: 401 });
 
-    const nonce = request.nextUrl.searchParams.get("nonce");
-    if (!nonce) return NextResponse.json({ error: "Missing nonce." }, { status: 400 });
-
     const profile = await ensureProfile(token);
+    const nonce = request.nextUrl.searchParams.get("nonce");
+    if (!nonce) {
+      const status = await admobDailyLimitStatus(profile.id);
+      return NextResponse.json(status);
+    }
+
     const status = await admobRewardStatus(profile.id, nonce);
     return NextResponse.json(status);
   } catch (error) {

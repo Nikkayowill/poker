@@ -290,7 +290,10 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
   return (
     <main className="duel-shell crib-shell">
       <header className="floor-bar">
-        <FloorBackLink />
+        <FloorBackLink
+          confirmLeave={table?.status === "active"}
+          confirmMessage="You have Gold staked on this table. Leaving won't end it — come back to finish, or use Resign to settle the pot now."
+        />
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
           <strong>

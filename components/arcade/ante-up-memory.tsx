@@ -172,7 +172,10 @@ export function AnteUpMemory() {
     <main className="duel-shell ante-shell">
       <header className="floor-bar">
         <div className="floor-bar-left">
-          <FloorBackLink />
+          <FloorBackLink
+            confirmLeave={active}
+            confirmMessage="Your wager is still in play on this board. Leaving won't give it up — come back to finish, or use Give Up to settle it now."
+          />
           <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>
             <HelpCircle size={13} aria-hidden="true" /> How to play
           </button>

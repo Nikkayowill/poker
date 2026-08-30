@@ -378,7 +378,10 @@ export function DuelShell<TSnapshot>({
   return (
     <main className="duel-shell">
       <header className="floor-bar">
-        <FloorBackLink />
+        <FloorBackLink
+          confirmLeave={match?.status === "active"}
+          confirmMessage="You have Gold staked on this match. Leaving won't resign it — you'll need to come back to finish, or use Resign to settle it now."
+        />
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
           <strong>

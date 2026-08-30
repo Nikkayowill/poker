@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { tapSound } from "@/lib/audio/ui-sounds";
 import { browserSessionStorage } from "@/lib/profile/session-continuity";
+import { LeaveGameConfirmModal } from "@/components/leave-game-confirm-modal";
 
 /**
  * Set by ArcadeFloor right before it navigates away from its *embedded*
@@ -40,23 +42,57 @@ export function markEmbeddedFloorNav(): void {
  * the game was reached from within the app, so "back" means back; it only
  * falls through to the plain /games link for a direct/deep link that has
  * nowhere of ours to return to.
+ *
+ * `confirmLeave` gates a "leave now?" prompt in front of that navigation —
+ * every caller sitting on a live wager (an active hand/match/table/attempt)
+ * passes `true` plus a `confirmMessage` describing what's actually at stake
+ * there; every other caller omits it and gets the old, unguarded click.
  */
-export function FloorBackLink() {
+export function FloorBackLink({
+  confirmLeave = false,
+  confirmMessage,
+}: { confirmLeave?: boolean; confirmMessage?: string } = {}) {
   const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+
+  const navigateBack = () => {
+    const store = browserSessionStorage();
+    if (!store?.getItem(EMBEDDED_NAV_KEY)) {
+      router.push("/games");
+      return;
+    }
+    store.removeItem(EMBEDDED_NAV_KEY);
+    router.back();
+  };
+
   return (
-    <Link
-      className="floor-back"
-      href="/games"
-      onClick={(event) => {
-        tapSound();
-        const store = browserSessionStorage();
-        if (!store?.getItem(EMBEDDED_NAV_KEY)) return;
-        store.removeItem(EMBEDDED_NAV_KEY);
-        event.preventDefault();
-        router.back();
-      }}
-    >
-      ← Ante Up
-    </Link>
+    <>
+      <Link
+        className="floor-back"
+        href="/games"
+        onClick={(event) => {
+          tapSound();
+          if (confirmLeave) {
+            event.preventDefault();
+            setConfirming(true);
+            return;
+          }
+          const store = browserSessionStorage();
+          if (!store?.getItem(EMBEDDED_NAV_KEY)) return;
+          store.removeItem(EMBEDDED_NAV_KEY);
+          event.preventDefault();
+          router.back();
+        }}
+      >
+        ← Ante Up
+      </Link>
+      {confirming && (
+        <LeaveGameConfirmModal
+          body={confirmMessage ?? "You have Gold on the line right now. Leave anyway?"}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => { setConfirming(false); navigateBack(); }}
+        />
+      )}
+    </>
   );
 }

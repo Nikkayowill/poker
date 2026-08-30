@@ -46,6 +46,7 @@ import type { SeatReaction } from "@/lib/game/use-table-reactions";
 import { ReactionButton } from "./table-reactions";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
+import { LeaveGameConfirmModal } from "@/components/leave-game-confirm-modal";
 import { ActionBar } from "./action-bar";
 import { MuckDrift } from "./table-effects";
 import { HandHistoryDrawer } from "./hand-history-drawer";
@@ -246,6 +247,7 @@ export function PokerTable({
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
+  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
   const activeRenderer = resolveTableRenderer();
   // Which of lib/scene/seat-art.ts's two hand-tuned tables applies to seat
   // art on the racetrack table; see useDesktopViewport's own note for why
@@ -354,6 +356,18 @@ export function PokerTable({
   // An uncontested win reaches nobody's handLabel but the winner's, so this
   // is silent for exactly the hands where "what beat you" has no answer.
   const mySeat = mySeatIndex !== -1 ? game.seats[mySeatIndex] : null;
+  // Chips already moved out of stack into this hand's pot: vacateSeat cashes
+  // out only what's left in stack, so this amount is what leaving right now
+  // would forfeit. Zero between hands (committed resets at setupHand), so a
+  // leave with nothing at risk skips the confirmation entirely.
+  const committedThisHand = mySeat?.committed ?? 0;
+  const requestLeave = useCallback((action: () => void) => {
+    if (committedThisHand > 0) {
+      setPendingLeave(() => action);
+    } else {
+      action();
+    }
+  }, [committedThisHand]);
   const myShowdownLoss = showFunnel && mySeat?.handLabel
     && !game.winners.some((winner) => winner.seatId === mySeat.id)
     ? mySeat.handLabel
@@ -966,7 +980,7 @@ export function PokerTable({
       items.push({
         kind: "action",
         label: "Give up seat",
-        onSelect: onLeaveSeat,
+        onSelect: () => requestLeave(onLeaveSeat),
         icon: <DoorOpen size={15} />,
         tone: "danger",
       });
@@ -976,7 +990,7 @@ export function PokerTable({
     soundEnabled, onToggleSound, betStyle, onCycleBetStyle,
     game.isPrivate, game.roomCode,
     game.id, game.isSeated, roomCodeCopied, copyRoomCode, profile, onCustomize, onSignIn,
-    onSignOut, onLeaveSeat,
+    onSignOut, onLeaveSeat, requestLeave,
   ]);
 
   /* Render gate: nothing paints until the renderer choice is genuinely
@@ -1034,7 +1048,7 @@ export function PokerTable({
         {/* Mark only, matching the lobby header. The button already carries
             its own accessible name, so the mark stays aria-hidden here rather
             than announcing the brand a second time inside it. */}
-        <button className="wordmark wordmark-mark-only" onClick={() => { tapSound(); onLeave(); }} aria-label="Leave table">
+        <button className="wordmark wordmark-mark-only" onClick={() => { tapSound(); requestLeave(onLeave); }} aria-label="Leave table">
           <span className="wordmark-mark"><StackChipsMark size={32} /></span>
         </button>
         {/* At the tight mobile-landscape tier there's no room left over the
@@ -1059,7 +1073,7 @@ export function PokerTable({
             middle column to hold, the header goes back to two (see
             05-game-header.css). */}
         <div className="game-header-actions">
-          <button className="leave-button" onClick={() => { tapSound(); onLeave(); }}>Leave table</button>
+          <button className="leave-button" onClick={() => { tapSound(); requestLeave(onLeave); }}>Leave table</button>
           <DonateButton gameId={game.id} />
           <Menu
             label="Open player menu"
@@ -1506,6 +1520,18 @@ export function PokerTable({
           inviteGameId={game.isPrivate && game.roomCode ? game.id : undefined}
           tableSeats={game.seats}
           onClose={() => setFriendsOpen(false)}
+        />
+      )}
+
+      {pendingLeave && (
+        <LeaveGameConfirmModal
+          body={`You have ${committedThisHand.toLocaleString()} chips already in this hand's pot. Leaving now cashes out your remaining stack, but those chips stay in the pot — you won't get them back.`}
+          onCancel={() => setPendingLeave(null)}
+          onConfirm={() => {
+            const action = pendingLeave;
+            setPendingLeave(null);
+            action();
+          }}
         />
       )}
     </main>

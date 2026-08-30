@@ -304,7 +304,10 @@ export function BlackjackTable() {
     <main className="bj-shell">
       <header className="bj-header">
         <div className="bj-header-copy">
-          <FloorBackLink />
+          <FloorBackLink
+            confirmLeave={live && !isPracticeRound}
+            confirmMessage="Your bet is already on the table this hand. Leaving now won't settle it — finish the hand, or come back before it resolves."
+          />
           <h1>Blackjack 21</h1>
           <p>Dealer stands on soft 17 · Blackjack pays 3:2</p>
         </div>

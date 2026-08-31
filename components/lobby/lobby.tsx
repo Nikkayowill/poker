@@ -85,6 +85,9 @@ export function Lobby({
   freeGoldEligible,
   onGetFreeGold,
   onEditProfile,
+  pushPermission,
+  pushSubscribed,
+  onTogglePushNotifications,
 }: {
   profile: PlayerProfile | null;
   onQuickPlay: (name: string, tier: StakesTier, buyIn: number) => void;
@@ -129,6 +132,12 @@ export function Lobby({
   freeGoldEligible: boolean;
   onGetFreeGold: () => void;
   onEditProfile: () => void;
+  /* Same push state poker-app.tsx's own player menu already tracks -- the
+   * phone shell has no equivalent dropdown, so the third pane is the only
+   * place a phone player can ever reach this toggle. */
+  pushPermission: NotificationPermission | "unsupported";
+  pushSubscribed: boolean;
+  onTogglePushNotifications: () => void;
 }) {
   /*
    * The buy-in modal's name field: the player's own edit if they have made one,
@@ -258,6 +267,9 @@ export function Lobby({
             onToggleMenuMusic={onToggleMenuMusic}
             betStyle={betStyle}
             onCycleBetStyle={onCycleBetStyle}
+            pushPermission={pushPermission}
+            pushSubscribed={pushSubscribed}
+            onTogglePushNotifications={onTogglePushNotifications}
             dailyGold={dailyGold}
             claimingGold={claimingGold}
             onClaimDailyGold={onClaimDailyGold}

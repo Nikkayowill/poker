@@ -1891,6 +1891,9 @@ export function PokerApp() {
             freeGoldEligible={freeGoldEligible}
             onGetFreeGold={() => setFreeGoldOpen(true)}
             onEditProfile={() => setProfileOpen(true)}
+            pushPermission={pushPermission}
+            pushSubscribed={pushSubscribed}
+            onTogglePushNotifications={togglePushNotifications}
           />
         )}
       {createdRoomCode && (

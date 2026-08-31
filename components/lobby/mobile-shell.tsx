@@ -47,6 +47,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
+  Bell,
+  BellOff,
   ChevronRight,
   ClipboardList,
   Cloud,
@@ -189,6 +191,9 @@ export function MobileShell({
   freeGoldEligible,
   onGetFreeGold,
   onEditProfile,
+  pushPermission,
+  pushSubscribed,
+  onTogglePushNotifications,
 }: {
   profile: PlayerProfile;
   loading: boolean;
@@ -220,6 +225,9 @@ export function MobileShell({
   freeGoldEligible: boolean;
   onGetFreeGold: () => void;
   onEditProfile: () => void;
+  pushPermission: NotificationPermission | "unsupported";
+  pushSubscribed: boolean;
+  onTogglePushNotifications: () => void;
 }) {
   // Lazy, and safe to touch storage in: `usePhoneViewport` reports false on
   // the server, so this component only ever mounts on the client.
@@ -425,6 +433,9 @@ export function MobileShell({
               onClaimDailyGold={onClaimDailyGold}
               freeGoldEligible={freeGoldEligible}
               onGetFreeGold={onGetFreeGold}
+              pushPermission={pushPermission}
+              pushSubscribed={pushSubscribed}
+              onTogglePushNotifications={onTogglePushNotifications}
             />
           </section>
         </div>
@@ -697,6 +708,9 @@ function YouPane({
   onToggleMenuMusic,
   betStyle,
   onCycleBetStyle,
+  pushPermission,
+  pushSubscribed,
+  onTogglePushNotifications,
 }: {
   profile: PlayerProfile;
   onSignOut: () => void;
@@ -712,6 +726,9 @@ function YouPane({
   onToggleMenuMusic: () => void;
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
+  pushPermission: NotificationPermission | "unsupported";
+  pushSubscribed: boolean;
+  onTogglePushNotifications: () => void;
 }) {
   const dailyReady = dailyGold === "ready";
   const dailyClaimed = dailyGold === "claimed";
@@ -796,6 +813,37 @@ function YouPane({
             <span className="mshell-row-body"><strong>Chip style</strong></span>
             <span className="mshell-setting-value">{betStyleLabel(betStyle).replace(/^Chip style: /, "")}</span>
           </button>
+          {/* Registered only, and hidden (not disabled) when the browser has
+              no Notification API at all -- same condition and reasoning as
+              poker-app.tsx's desktop player menu row, which this is the
+              phone shell's only equivalent of: the phone shell has no
+              dropdown of its own, so without this row a phone player who
+              signed up before push existed (or just never got the
+              account-creation prompt) has no way to ever turn it on. */}
+          {profile.isRegistered && pushPermission !== "unsupported" && (
+            <>
+              <div className="mshell-rule" />
+              <button
+                type="button"
+                className="mshell-row"
+                disabled={pushPermission === "denied"}
+                onClick={() => { selectSound(); onTogglePushNotifications(); }}
+              >
+                {pushSubscribed
+                  ? <Bell size={19} strokeWidth={1.8} aria-hidden="true" />
+                  : <BellOff size={19} strokeWidth={1.8} aria-hidden="true" />}
+                <span className="mshell-row-body">
+                  <strong>
+                    {pushPermission === "denied" ? "Notifications blocked" : "Notifications"}
+                  </strong>
+                  {pushPermission === "denied" && <small>Check your browser/device settings</small>}
+                </span>
+                {pushPermission !== "denied" && (
+                  <span className="mshell-setting-value">{pushSubscribed ? "On" : "Off"}</span>
+                )}
+              </button>
+            </>
+          )}
           <div className="mshell-rule" />
           {/* A guest has no account to sign out of, so the same slot offers
               the one thing that keeps their Gold: making one. */}

@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetNotificationsMemory,
   createNotification,
@@ -7,9 +7,13 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from "./notifications-store";
+import { sendPushToProfile } from "./push-service";
+
+vi.mock("./push-service", () => ({ sendPushToProfile: vi.fn(async () => {}) }));
 
 beforeEach(() => {
   __resetNotificationsMemory();
+  vi.mocked(sendPushToProfile).mockClear();
 });
 
 describe("notifications (memory mode)", () => {
@@ -64,5 +68,24 @@ describe("notifications (memory mode)", () => {
     const { notifications, unreadCount } = await listNotifications(profileId);
     expect(unreadCount).toBe(0);
     expect(notifications.every((row) => row.readAt !== null)).toBe(true);
+  });
+});
+
+describe("push copy", () => {
+  /**
+   * Three files have to agree on this one string or a tapped push goes
+   * nowhere useful: the url written here, the `notifications=1` check in
+   * public/sw.js's notificationclick, and the param NotificationBell reads
+   * on mount. Nothing else links them, so this is the test that notices if
+   * one of the three moves.
+   */
+  it("sends a friend request straight to the inbox, where it can be accepted", async () => {
+    const profileId = randomUUID();
+    await createNotification(profileId, "friend_request_received", { fromProfileId: randomUUID(), fromDisplayName: "Hero" });
+
+    expect(sendPushToProfile).toHaveBeenCalledWith(
+      profileId,
+      expect.objectContaining({ title: "New friend request", url: "/?notifications=1" }),
+    );
   });
 });

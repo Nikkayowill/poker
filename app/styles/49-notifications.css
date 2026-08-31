@@ -131,6 +131,42 @@
   font-size: 11px;
 }
 
+/* Accept/Decline on a friend-request row. Text buttons rather than the
+   Friends drawer's bare check/cross icons (21-friends.css): the drawer's own
+   section heading already says "Requests", where a row here sits in a mixed
+   list of achievements and missions and has to say what it does on its own. */
+.notification-row-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 7px;
+}
+.notification-row-actions button {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease;
+}
+.notification-row-actions button:disabled { opacity: .55; cursor: default; }
+.notification-row-accept {
+  color: #0d1a13;
+  background: #6fd3a2;
+}
+.notification-row-accept:not(:disabled):hover { background: #86e0b5; }
+.notification-row-decline {
+  color: #c6bcd6;
+  background: rgba(255, 255, 255, .07);
+}
+.notification-row-decline:not(:disabled):hover { color: #e08d8d; background: rgba(224, 141, 141, .18); }
+.notification-row-status {
+  margin: 5px 0 0;
+  color: #8b8398;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
 /* The global toast. Same visual treatment as .mission-toast (04-lobby.css)
    -- deliberately not shared with it, see notification-toast.tsx's own
    comment -- but fixed to the viewport rather than absolute-in-header, since

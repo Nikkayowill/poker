@@ -22,6 +22,7 @@ export const COME_BACK_PUSH_COPY: readonly string[] = [
   "Free Gold's waiting on you today. Don't leave it on the table.",
   "Bored? There's a seat with your name on it. Tap to play now.",
   "Today's daily Gold hasn't been claimed yet — it won't wait forever.",
+  "Something in your treasury has turned gold. Come harvest it.",
 ];
 
 /** Deterministic-enough pick for a cron run: seeded off the day so re-running the same day doesn't reshuffle who gets which line. */

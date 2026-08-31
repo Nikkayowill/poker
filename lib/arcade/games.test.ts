@@ -31,6 +31,7 @@ describe("arcade catalogue", () => {
       "Sudoku",
       "Memory Match",
       "Minesweeper",
+      "Sovereign Mint",
       "Chess",
       "Checkers",
       "Trivia Showdown",
@@ -54,6 +55,7 @@ describe("arcade catalogue", () => {
       "daily-sudoku",
       "memory-match",
       "minesweeper",
+      "sovereign-mint",
     ]);
   });
 

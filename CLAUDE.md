@@ -40,6 +40,59 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### The Mint's diorama became an outdoor farm; landscape CSS was measurably wrong (2026-08-31)
+Kayo, on the first cut: "why is the platform floating in the sky?" -- and it was, literally. The
+scene drew a violet slab on a `transparent: true` canvas, so the app's own dark ground showed through
+underneath and the whole treasury read as a platform in a void, while the panel beside it talked
+about surveying the grounds and crews tending nodes. The whole static world now lives in
+`mint-world.ts`, painted once into ONE canvas texture at boot (Canvas2D, not `Phaser.Graphics`: real
+gradients and soft radial shadows, and one quad instead of a command list re-walked every frame).
+**Land runs off all four edges** -- there is no platform to fall off. Distance is a hazy hedgerow
+along the top rather than a sky, because the grid already spans y 67..441 of a 470-tall stage and a
+real horizon band would have had to shrink tiles that are already near the touch-target floor in
+landscape. Three rules worth keeping: (1) **owned plots are the warmest thing in the frame** -- the
+first cut had bright green scrub for LOCKED plots against violet-grey soil, so twelve unusable tiles
+were the most inviting thing on screen; warm turned earth vs. cool dark scrub is also the grid's only
+real colour contrast on a phone. (2) Crops are **violet while growing, gold only when ripe**, drawn
+as two faces meeting at a ridge -- filled triangles with a lighter triangle inside made every ripe
+plot look like it was on fire. (3) Cloud shadows sit ABOVE the plot layer (`DEPTH_CLOUD` 800): the
+plots cover the field bed completely, so a shadow underneath disappears the moment it reaches the
+field. Only plot tweens are tracked for removal; Phaser does not kill a tween when its target is
+destroyed. **The landscape breakpoint was broken and the number was the bug**: `calc(100dvh - 128px)`
+assumed 128px of chrome where the real total (safe area, floor bar plus its `clamp()`ed margin,
+scoreline, two shell gaps) measures ~160px at 844x390, hanging the diorama 30px below the fold on the
+exact device the breakpoint exists for. The shell is now a fixed-height flex column and the stage
+takes what is left, no magic number. Its `@media` block **must stay last in `50-mint.css`** -- it
+overrides base rules at equal specificity, and it silently lost every panel rule while it sat above
+them. Node cards go 2x2 grid there (name/terms, yield/button); three portrait cards are ~300px
+against ~260px of height, and a wrapping flex row broke each card at a different word. Verified by
+screenshot at 900x900 and 844x390, populated via a route-intercepted fixture, plus reduced motion.
+
+### Sovereign Mint: an idle treasury of staked, timed Gold nodes (2026-08-31)
+Built from a GameDesigner-agent GDD Kayo brought in, after an engineering review rejected its
+economy outright (guaranteed 150-200% ROI with no cap: the Ante Up money printer with the variance
+removed). The shipped frame is deliberate: **flat net bonuses, never percentage ROI** (Pulse 1,000
+stake -> +50 in 15min, Core 10,000 -> +600 in 4h, Matrix 50,000 -> +2,500 in 24h) plus a
+**3-concurrent-node cap**, so max guaranteed income is ~7,500/day (rewarded-ads territory) and
+cannot compound with bankroll; plots 5-16 are a pure sink (2,500 doubling per tile), and owning
+more plots is never more income. Kayo's renderer call: **Phaser 2D, no 3D** ("dont use 3d") --
+`phaser` pinned 3.90.0, entering the bundle only through `mint-canvas.tsx`'s dynamic import (a
+1.2MB lazy chunk referenced by no page manifest; verified). Server mirrors Ante Up exactly:
+`lib/mint/` (tuning + pure derivation), twin-branch `mint-store`, `mint-service` restating the
+money-ordering rules, `payout`/`matures_at` snapshotted at plant (the wagerLadder rule), harvest a
+single guarded UPDATE (version + status + `matures_at <= now`) that pays at most once, plus an
+append-only `mint_harvests` ledger. Migration `20260831120000_mint_plots.sql` follows the
+trigger-not-CHECK lesson (fires only when a row turns growing, advisory-locked cap count) --
+unapplied, see `[[reference_stackchips_migrations_not_auto_applied]]`. Client: canvas is pure
+paint; input/a11y is a DOM overlay of real buttons sharing coordinates via `iso.ts` (canvas is
+invisible to screen readers). Two rules enforced by tests caught real bugs while building: GET
+`/api/mint` must use `readSessionToken` not `readOrCreateSessionToken` (session-minting.test.ts),
+and the catalog row's `entryCost` is 0 so a broke player is never wallet-gated away from their own
+ripe harvest. No XP on plant (a riskless stake must not feed progression), no missions, no
+leaderboard. Deliberately deferred with the GDD's blessing withdrawn: per-node push (infra can't),
+monuments/adjacency boosts/cosmetic grid skins (purchased-cosmetic yield amplifiers touch the
+gambling-law posture and need Kayo's own call).
+
 ### Word Stack and Connections now carry their payout ladder (2026-08-27)
 Closes the gap left open by the Ante Up economy fix earlier the same day. Both games computed their
 payout from a module-level multiplier table *at settlement*, and both are once-a-day boards that can

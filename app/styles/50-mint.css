@@ -1,0 +1,299 @@
+/* The Sovereign Mint (components/arcade/mint/).
+ *
+ * After 22-arcade.css and 36-duels.css: the shell, header bar and error line
+ * all come from those, so what is here is the diorama stage and the panel
+ * below it. The stage is the one unusual piece: a Phaser canvas paints the
+ * grid while a DOM overlay of real buttons (one per plot) sits on top of it
+ * for input and assistive tech. Both sides compute positions from
+ * components/arcade/mint/iso.ts against the same fixed logical size, so the
+ * stage MUST keep that exact aspect ratio -- Phaser FIT-scales into it and
+ * the percent-positioned buttons line up only because the box never letterboxes.
+ */
+
+.mint-scoreline {
+  align-items: baseline;
+}
+
+.mint-cap {
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Base (portrait/desktop): stage above, panel below. .mint-side is dissolved
+   so the error line and panel keep their own flow; the landscape block at the
+   END of this file is what gives it a box.
+
+   That block has to stay last. It overrides these base rules at the same
+   specificity, so source order is the only thing deciding the winner -- it
+   sat up here at first and every one of its panel rules was silently
+   clobbered by the base rules further down. */
+.mint-main { display: flex; flex-direction: column; }
+.mint-side { display: contents; }
+
+.mint-stage {
+  position: relative;
+  width: min(100%, 640px);
+  margin: 0 auto;
+  /* MINT_STAGE_W / MINT_STAGE_H. See the header comment before changing. */
+  aspect-ratio: 720 / 470;
+}
+
+.mint-canvas,
+.mint-canvas canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* The tappable diamond over each painted tile. Deliberately invisible at
+   rest -- the canvas already draws the tile -- but real for focus, hover and
+   the screen reader. Centered on the tile's stage position via translate. */
+.mint-tile-btn {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mint-tile-btn:hover,
+.mint-tile-btn.is-selected {
+  background: rgba(192, 123, 255, 0.14);
+}
+
+.mint-tile-btn.is-locked { cursor: default; }
+.mint-tile-btn.is-locked:hover { background: rgba(192, 123, 255, 0.07); }
+
+/* clip-path swallows outlines, so focus paints the same fill hover uses,
+   brighter, instead of a ring nobody would see. */
+.mint-tile-btn:focus-visible {
+  outline: none;
+  background: rgba(192, 123, 255, 0.28);
+}
+
+.mint-harvest-toast {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%);
+  margin: 0;
+  color: var(--brand-gold-light);
+  font-weight: 700;
+  font-size: 16px;
+  text-shadow: 0 0 18px rgba(255, 210, 63, 0.55);
+  pointer-events: none;
+  animation: mint-toast-rise 1.6s ease-out forwards;
+}
+
+@keyframes mint-toast-rise {
+  from { opacity: 0; translate: 0 14px; }
+  20% { opacity: 1; }
+  to { opacity: 0; translate: 0 -26px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mint-harvest-toast { animation: none; opacity: 1; }
+}
+
+/* -------- The panel under the stage -------- */
+
+.mint-detail {
+  margin-top: clamp(14px, 3vw, 22px);
+  /* Roughly the growing-state card, the shortest real panel, so switching
+     between selection states doesn't bounce the page below the stage. */
+  min-height: 150px;
+}
+
+.mint-hint {
+  color: var(--neon-muted);
+  text-align: center;
+  margin: 0 auto;
+  max-width: 44ch;
+}
+
+.mint-panel {
+  background: var(--brand-surface);
+  box-shadow: var(--accent-edge);
+  border-radius: 14px;
+  padding: clamp(14px, 3vw, 20px);
+}
+
+.mint-panel h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.mint-panel > p { margin: 6px 0; color: var(--neon-muted); font-size: 14px; }
+
+.mint-countdown {
+  font-variant-numeric: tabular-nums;
+  color: var(--neon-chalk);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mint-node-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 560px) {
+  .mint-node-cards { grid-template-columns: 1fr; }
+}
+
+.mint-node-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--brand-surface-2);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.mint-node-card h3 { margin: 0; font-size: 15px; }
+
+.mint-node-terms {
+  margin: 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+}
+
+.mint-node-yield {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--neon-chalk);
+}
+
+.mint-node-yield span { color: var(--brand-gold-light); }
+
+/* Filled CTA, same treatment as .floor-card .floor-play's filled variant:
+   the one saturated action on the panel. */
+.mint-cta {
+  margin-top: auto;
+  border: none;
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  color: #1d1502;
+  background: linear-gradient(180deg, var(--brand-gold-light), var(--brand-gold));
+  box-shadow: 0 2px 10px rgba(255, 210, 63, 0.25);
+}
+
+.mint-cta:hover:not(:disabled) { filter: brightness(1.06); }
+
+.mint-cta:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.mint-cta:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+}
+
+.mint-harvest-btn {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 15px;
+}
+
+/* Landscape phones. A 4:3-ish stage stacked over a panel cannot fit a 390px
+   viewport (the mobile review measured the panel a full screen below the
+   fold), so the stage snaps to the viewport's height and the panel takes the
+   width freed beside it -- the same spare-height thinking 46-minesweeper.css
+   applies, spent on a second column instead of a smaller board.
+
+   The stage's height is FLEXED, not calculated. It used to be
+   `calc(100dvh - 128px)`, and 128px was wrong: the real chrome above it (safe
+   area, floor bar and its clamp()ed margin, the scoreline, two shell gaps)
+   measured ~160px at 844x390, so the diorama hung a full 30px below the fold
+   on the exact device this breakpoint exists for. A magic number cannot track
+   a clamp() against viewport width anyway, so the shell becomes a fixed-height
+   flex column and the stage simply takes what is left. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .mint-shell {
+    height: 100dvh;
+    overflow: hidden;
+    gap: 8px;
+  }
+
+  /* Every band above the stage gives back what it can: the chrome is worth
+     less here than the picture it is sitting on top of. */
+  .mint-shell .floor-bar {
+    min-height: 34px;
+    margin-bottom: 6px;
+  }
+  .mint-shell .ante-lobby-heading h1 { font-size: 17px; }
+  .mint-shell .mint-cap { font-size: 12px; }
+
+  .mint-main {
+    flex-direction: row;
+    gap: 14px;
+    align-items: stretch;
+    flex: 1;
+    width: 100%;
+    /* Without this a flex child refuses to shrink below its content and the
+       row grows the shell back past the viewport. */
+    min-height: 0;
+  }
+  .mint-stage {
+    height: 100%;
+    width: auto;
+    max-width: none;
+    margin: 0;
+    flex: none;
+  }
+  .mint-side {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    /* Backstop only. The compact cards below are sized to fit without it, but
+       a long error line plus a shortfall hint can still outgrow 260px. */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .mint-detail { margin-top: 0; min-height: 0; }
+
+  /* Two lines per card, name opposite terms and yield opposite the button:
+       Pulse                    1,000 Gold - 15 min
+       Harvests 1,050 (+50)                 [ Plant ]
+     Three portrait cards stack to ~300px and three of the first attempt's
+     one-line-each-plus-button cards to ~440px; neither fits the ~260px this
+     breakpoint has to spend, and the third Plant button ended up below a
+     scroll on the one screen size this whole block exists for. */
+  .mint-node-cards { grid-template-columns: 1fr; gap: 8px; }
+  /* Grid, not a wrapping flex row: with flex the line breaks fall wherever
+     the numbers happen to be long, so Matrix wrapped one way and Pulse
+     another and the three cards stopped reading as one set. */
+  .mint-node-card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 3px 8px;
+    padding: 7px 10px;
+  }
+  .mint-node-card h3 { grid-area: 1 / 1; font-size: 14px; }
+  .mint-node-terms { grid-area: 1 / 2; font-size: 12.5px; text-align: right; }
+  .mint-node-yield { grid-area: 2 / 1; margin: 0; font-size: 12.5px; }
+  .mint-node-card .mint-cta {
+    grid-area: 2 / 2;
+    margin-top: 0;
+    padding: 5px 15px;
+    font-size: 13px;
+  }
+  /* The shortfall hint is the only other child, and it gets its own full row
+     under both columns rather than squeezing into one of them. */
+  .mint-node-card > :not(h3):not(.mint-node-terms):not(.mint-node-yield):not(.mint-cta) {
+    grid-column: 1 / -1;
+  }
+  .mint-panel { padding: 10px 12px; }
+  .mint-panel h2 { font-size: 15px; margin-bottom: 4px; }
+}

@@ -37,6 +37,17 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // No maximumScale/userScalable used to mean a page could get stuck zoomed
+  // in: iOS Safari auto-zooms the whole page on focusing any input under
+  // 16px, and does not zoom back out on blur. That's exactly what a player
+  // hit typing a custom Ante Up wager (StakePicker's field was 13px, fixed in
+  // 36-duels.css) -- reported as "the keyboard got zoomed in" on a Word Stack
+  // round, when it was really the game screen stuck zoomed in behind it,
+  // clipping rows the player never realized were still there. Capping the
+  // scale here is the backstop for every surface, not just the one field
+  // that triggered it this time.
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
   // Kept in step with app/manifest.ts and the html/body base: this is the
   // colour the browser paints its own chrome with, so a stale value shows up

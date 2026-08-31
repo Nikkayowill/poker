@@ -149,11 +149,14 @@ function readStoredPage(): number {
 }
 
 /**
- * Anything that scrolls sideways inside a pane; the stakes ladder today.
- * A drag that starts in one belongs to it, not to the pager, or picking a
- * stake would throw the player onto the next tab.
+ * Anything that scrolls sideways inside a pane -- the stakes ladder, and the
+ * leaderboard's own game-tab strip once it's wider than the screen (poker +
+ * global + friends + every registered game is nine-plus segments). A drag
+ * that starts in one belongs to it, not to the pager, or picking a stake (or
+ * trying to reach the last game tab) would throw the player onto the next
+ * shell tab instead.
  */
-const HORIZONTAL_SCROLLER = ".mshell-tiers";
+const HORIZONTAL_SCROLLER = ".mshell-tiers, .leaderboard-game-tabs";
 
 export function MobileShell({
   profile,

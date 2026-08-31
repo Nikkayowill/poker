@@ -2,6 +2,7 @@ import "server-only";
 import { missionSignalsForEvent, type MissionEvent } from "@/lib/missions/events";
 import { utcDayKey, utcWeekKey } from "@/lib/missions/period";
 import type { MissionCadence, MissionDefinition, MissionsPayload, MissionView } from "@/lib/missions/types";
+import { createNotification } from "./notifications-store";
 import { creditGoldByProfile } from "./profile-store";
 import { adminClient } from "./supabase-admin";
 import { createTtlCache } from "./ttl-cache";
@@ -269,16 +270,21 @@ async function grantOne(profileId: string, definition: MissionDefinition, now: D
     // throws, since a retry would then see the key already claimed.
     await creditGoldByProfile(profileId, definition.rewardGold);
     memoryGrants.add(key);
-    return;
+  } else {
+    const { error } = await supabase.rpc("grant_mission_reward", {
+      p_profile_id: profileId,
+      p_mission_code: definition.code,
+      p_period_start: period,
+      p_gold_amount: definition.rewardGold,
+    });
+    if (error) throw new Error(`Could not grant mission reward: ${error.message}`);
   }
 
-  const { error } = await supabase.rpc("grant_mission_reward", {
-    p_profile_id: profileId,
-    p_mission_code: definition.code,
-    p_period_start: period,
-    p_gold_amount: definition.rewardGold,
-  });
-  if (error) throw new Error(`Could not grant mission reward: ${error.message}`);
+  await createNotification(profileId, "mission_completed", {
+    code: definition.code,
+    title: definition.title,
+    rewardGold: definition.rewardGold,
+  }, now);
 }
 
 /**

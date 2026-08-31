@@ -71,6 +71,9 @@ import { StackChipsLogo } from "@/components/brand/stackchips-logo";
 import { ProfileModal } from "@/components/profile/profile-modal";
 import { Menu, type MenuItem } from "@/components/nav/menu";
 import { DonateButton } from "@/components/nav/donate-button";
+import { NotificationBell } from "@/components/notifications/notification-bell";
+import { NotificationToast } from "@/components/notifications/notification-toast";
+import { useNotifications } from "@/lib/notifications/use-notifications";
 import { GoldBadge } from "@/components/profile/gold-badge";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RestoreConflictModal } from "@/components/auth/restore-conflict-modal";
@@ -1737,6 +1740,12 @@ export function PokerApp() {
       : { kind: "action", label: "Sign in", onSelect: () => void signIn(), icon: <LogIn size={15} /> },
   ];
 
+  // Friend requests, friend adds, achievement unlocks, mission completions --
+  // fires everywhere (lobby and mid-hand), unlike AchievementToast/
+  // MissionToast which only mount on their own two pages. See
+  // components/notifications/notification-toast.tsx's own comment.
+  const { justArrived: notificationsArrived, clearArrived: clearNotificationsArrived } = useNotifications(profile?.id);
+
   /** Leaving the table while still seated cashes out first, so chips are never stranded. */
   const leaveTable = () => {
     if (game?.isSeated) {
@@ -1748,6 +1757,10 @@ export function PokerApp() {
 
   return (
     <div className="app-root">
+      {/* Unconditional, unlike the lobby-header bell above: a toast has to
+          fire mid-hand too, which is the entire point of building this
+          instead of just reusing AchievementToast/MissionToast. */}
+      <NotificationToast queue={notificationsArrived} onQueued={clearNotificationsArrived} />
       <div className="entry-sky app-entry-sky" aria-hidden="true">
         <span className="entry-orb" />
         <span className="entry-orb" />
@@ -1785,6 +1798,7 @@ export function PokerApp() {
             {profile && (
               <GoldBadge profile={profile} claimable={dailyGold === "ready"} justClaimed={goldFlash} />
             )}
+            {profile && <NotificationBell profileId={profile.id} />}
             <DonateButton />
             <Menu
               label="Open player menu"

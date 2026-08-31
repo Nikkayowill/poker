@@ -80,6 +80,10 @@
    (43/36) but doesn't need to load after them -- it never reads their
    classes, only mounts inside them. */
 @import "./styles/48-win-celebration.css";
+/* The notification bell/inbox (lobby header) and the global toast (mounted
+   app-wide). Standalone: portaled overlay + fixed toast stack, no dependency
+   on any earlier sheet's classes. */
+@import "./styles/49-notifications.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

@@ -354,20 +354,22 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
 
       {game === "poker" && (
         <div className="leaderboard-scope">
-          <button
-            type="button"
-            className={clsx("leaderboard-scope-button", scope === "season" && "leaderboard-scope-active")}
-            onClick={() => { selectSound(); setScope("season"); }}
-          >
-            This season
-          </button>
-          <button
-            type="button"
-            className={clsx("leaderboard-scope-button", scope === "lifetime" && "leaderboard-scope-active")}
-            onClick={() => { selectSound(); setScope("lifetime"); }}
-          >
-            All time
-          </button>
+          <div className="leaderboard-scope-track">
+            <button
+              type="button"
+              className={clsx("leaderboard-scope-button", scope === "season" && "leaderboard-scope-active")}
+              onClick={() => { selectSound(); setScope("season"); }}
+            >
+              This season
+            </button>
+            <button
+              type="button"
+              className={clsx("leaderboard-scope-button", scope === "lifetime" && "leaderboard-scope-active")}
+              onClick={() => { selectSound(); setScope("lifetime"); }}
+            >
+              All time
+            </button>
+          </div>
           {scope === "season" && season && (
             <span className="leaderboard-season-window">
               {daysRemaining(season.endsAt)} day{daysRemaining(season.endsAt) === 1 ? "" : "s"} left in this season

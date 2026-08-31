@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { Coins, HelpCircle, Shuffle } from "lucide-react";
+import { ArrowLeft, CalendarClock, Coins, HelpCircle, Shuffle } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
@@ -56,6 +57,13 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * `round === null` after the initial read no longer auto-opens today's board.
  * It renders a wager step (Free is always a choice) that opens it on the
  * player's own click. See startBoard.
+ *
+ * `day`/`onExit`: the puzzle archive (connections-archive.tsx) renders this
+ * same component for a missed day instead of duplicating it -- identical
+ * treatment to word-stack-board.tsx's, see that file's header for the full
+ * reasoning. Any explicit `day` prop is archive mode, which drops the wager
+ * step (archive puzzles are always free) and swaps FloorBackLink for a
+ * plain "back to archive" control calling `onExit`.
  */
 
 interface ConnectionsResponse {
@@ -75,11 +83,14 @@ const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000, 25_000] as con
 /** Level 0-3 as the board's four colours, matching the share matrix's yellow-to-purple ramp. */
 const LEVEL_CLASS = ["cx-level-0", "cx-level-1", "cx-level-2", "cx-level-3"];
 
-export function ConnectionsBoard() {
+export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () => void } = {}) {
   // Applies the player's stored mute on a route where PokerApp is not
   // mounted. The flag it sets is module-global, which is what lets the JSX
   // below call the chrome cues directly. See lib/audio/ui-sounds.ts.
   useArcadeSound({ gameSounds: true });
+  /** Any explicit `day` means archive mode; see this file's header. */
+  const isArchive = day !== undefined;
+  const queryDay = day ? `?day=${day}` : "";
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [round, setRound] = useState<(ConnectionsSnapshot & { wager: number; payout: number }) | null>(null);
   const [meta, setMeta] = useState<{ day: string; puzzleNumber: number; nextPuzzleAt: number } | null>(null);
@@ -193,7 +204,7 @@ export function ConnectionsBoard() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const response = await fetch("/api/arcade/connections", { cache: "no-store" });
+      const response = await fetch(`/api/arcade/connections${queryDay}`, { cache: "no-store" });
       const data = (await response.json().catch(() => ({}))) as Partial<ConnectionsResponse>;
       if (cancelled) return;
       if (data.profile) setProfile(data.profile);
@@ -210,11 +221,14 @@ export function ConnectionsBoard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [queryDay]);
 
   const startBoard = useCallback(() => {
-    void send("/api/arcade/connections", { wager });
-  }, [send, wager]);
+    // Archive plays are free-only; the wager step never renders in archive
+    // mode (see below), but forcing 0 here too keeps this call honest on its
+    // own rather than relying on the UI never offering another value.
+    void send("/api/arcade/connections", { wager: isArchive ? 0 : wager, ...(day ? { day } : {}) });
+  }, [day, isArchive, send, wager]);
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
   const result = anteUpResultLine(round?.wager ?? 0, round?.payout ?? 0);
@@ -285,17 +299,35 @@ export function ConnectionsBoard() {
       <header className="bj-header">
         <div className="bj-header-copy">
           <div className="bj-back-row">
-            <FloorBackLink
-              confirmLeave={!finished && (round?.wager ?? 0) > 0}
-              confirmMessage="Your wager is still in play on today's puzzle. Leaving won't give it up — come back and finish it."
-            />
+            {/* Archive rounds are always free, so there is never a wager to
+                confirm leaving -- and "back" here means back to the archive
+                list, not away from the game entirely. */}
+            {isArchive ? (
+              <button type="button" className="puzzle-archive-back" onClick={() => { tapSound(); onExit?.(); }}>
+                <ArrowLeft size={13} aria-hidden="true" /> Archive
+              </button>
+            ) : (
+              <FloorBackLink
+                confirmLeave={!finished && (round?.wager ?? 0) > 0}
+                confirmMessage="Your wager is still in play on today's puzzle. Leaving won't give it up — come back and finish it."
+              />
+            )}
+            {!isArchive && (
+              <Link href="/games/connections/archive" className="htp-trigger" onClick={() => tapSound()}>
+                <CalendarClock size={13} aria-hidden="true" /> Archive
+              </Link>
+            )}
             <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>
               <HelpCircle size={13} aria-hidden="true" /> How to play
             </button>
           </div>
           <h1>Connections</h1>
           <p>
-            {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Find the four groups of four
+            {meta
+              ? isArchive
+                ? `Puzzle #${meta.puzzleNumber} · ${meta.day}`
+                : `Puzzle #${meta.puzzleNumber} · Find the four groups of four`
+              : "Loading…"}
           </p>
         </div>
         {profile && (
@@ -337,7 +369,19 @@ export function ConnectionsBoard() {
         {notice}
       </p>
 
-      {loaded && !round && (
+      {loaded && !round && isArchive && (
+        // Archive puzzles are free-only: no StakePicker, no affordability or
+        // ceiling math -- none of that applies to a day that can't be
+        // wagered on. See this file's header and connections-service.ts.
+        <section className="puzzle-summary">
+          <p className="puzzle-verdict">Play this missed puzzle for free.</p>
+          <button type="button" className="puzzle-share-button" disabled={busy} onClick={() => { selectSound(); startBoard(); }}>
+            {busy ? "Dealing…" : "Play"}
+          </button>
+        </section>
+      )}
+
+      {loaded && !round && !isArchive && (
         <section className="puzzle-summary">
           <p className="puzzle-verdict">Wager Gold on today&apos;s puzzle, or play free.</p>
           <StakePicker

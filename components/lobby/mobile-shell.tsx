@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The phone lobby: three panes on one horizontal track, a tab bar underneath.
+ * The phone lobby: four panes on one horizontal track, a tab bar underneath.
  *
  * It is not three routes because Ante Up (`/games`) and the leaderboard
  * (`/leaderboard`) are real routes, and every one of them unmounts PokerApp on
@@ -62,6 +62,7 @@ import {
   Puzzle,
   Spade,
   Sparkles,
+  Trophy,
   Users,
   Video,
   Volume2,
@@ -93,9 +94,9 @@ import { LobbyNotices } from "./lobby-notices";
 
 // Tab labels, not section names -- "Play" is this pane's own accessible
 // name is still the fuller "Texas Hold'em" on the <section> below; the tab
-// bar just needs a word short enough that none of the three ever risks the
+// bar just needs a word short enough that none of the four ever risks the
 // ellipsis clip (.mshell-nav-item span, 45-mobile-shell.css).
-const PAGES = ["Play", "Ante Up", "Profile"] as const;
+const PAGES = ["Play", "Ante Up", "Leaderboard", "Profile"] as const;
 const PAGE_COUNT = PAGES.length;
 
 /**
@@ -108,7 +109,9 @@ const BASE_SETTLE_MS = 250;
 /** Never so short it reads as a cut rather than a landing. */
 const MIN_SETTLE_MS = 90;
 // Puzzle over a generic controller glyph: this tab is Sudoku/Word Stack/
-// Connections/Memory/Minesweeper plus the PvP duels, not "any game."
+// Connections/Memory/Minesweeper plus the PvP duels, not "any game." Trophy
+// is the same glyph poker-app.tsx's desktop menu already uses for its own
+// Leaderboard link.
 //
 // Profile has no entry here -- Jakob's Law: TikTok, Instagram and YouTube
 // all render their own last tab as the player's actual photo, not a generic
@@ -116,7 +119,7 @@ const MIN_SETTLE_MS = 90;
 // yours" cue than a silhouette everyone's app uses. See the nav render
 // below, which special-cases the last tab to <ProfileAvatar> instead of
 // reading this array.
-const PAGE_ICONS: readonly LucideIcon[] = [Spade, Puzzle];
+const PAGE_ICONS: readonly LucideIcon[] = [Spade, Puzzle, Trophy];
 
 /**
  * Which pane the player was last on, so leaving the shell and coming back
@@ -394,7 +397,16 @@ export function MobileShell({
             <ArcadeFloor profile={profile} embedded />
           </section>
 
-          <section className="mshell-pane" aria-label="Profile" inert={page !== 2}>
+          <section className="mshell-pane" aria-label="Leaderboard" inert={page !== 2}>
+            {/* The route's own leaderboard, embedded. Its game tabs, season
+                toggle, kicker and fetch all come with it, so this pane adds
+                no header above it, and the fetch is why it waits until this
+                pane has actually been reached rather than mounting with the
+                shell -- see `reached` above. */}
+            {(reached[2] ?? true) && <Leaderboard embedded />}
+          </section>
+
+          <section className="mshell-pane" aria-label="Profile" inert={page !== 3}>
             <YouPane
               profile={profile}
               onSignOut={onSignOut}
@@ -410,7 +422,6 @@ export function MobileShell({
               onClaimDailyGold={onClaimDailyGold}
               freeGoldEligible={freeGoldEligible}
               onGetFreeGold={onGetFreeGold}
-              showLeaderboard={reached[2] ?? true}
             />
           </section>
         </div>
@@ -683,7 +694,6 @@ function YouPane({
   onToggleMenuMusic,
   betStyle,
   onCycleBetStyle,
-  showLeaderboard,
 }: {
   profile: PlayerProfile;
   onSignOut: () => void;
@@ -699,8 +709,6 @@ function YouPane({
   onToggleMenuMusic: () => void;
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
-  /** False until this pane is one gesture away; see `reached` in MobileShell. */
-  showLeaderboard: boolean;
 }) {
   const dailyReady = dailyGold === "ready";
   const dailyClaimed = dailyGold === "claimed";
@@ -761,12 +769,6 @@ function YouPane({
           )}
         </div>
       )}
-
-      {/* The route's own leaderboard, embedded. Its game tabs, season toggle,
-          kicker and fetch all come with it, so this pane adds no header above
-          it, and the fetch is why it waits for `showLeaderboard` rather than
-          mounting with the shell. */}
-      {showLeaderboard && <Leaderboard embedded />}
 
       <div className="mshell-section">
         <span className="lobby-kicker">Settings</span>

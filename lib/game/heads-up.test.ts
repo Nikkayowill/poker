@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  advanceTimedTurn,
   applyPlayerAction,
   createHeadsUpGame,
   HEADS_UP_SEAT_COUNT,
+  MAX_MISSED_TURNS,
 } from "./engine";
 import { TIER_CONFIG } from "./tiers";
 import type { Card } from "./types";
@@ -171,12 +173,49 @@ describe("heads-up match: no rebuys", () => {
 });
 
 describe("heads-up match: leaving forfeits", () => {
-  it("refuses to leave mid-hand", () => {
+  it("leaving mid-hand on your own turn forfeits the match immediately, not just this hand", () => {
+    // The real "close the tab or click Leave" case: no waiting on the turn
+    // clock and no bot ever appears in the seat -- the match ends right here.
     const { tokens, entrants } = twoEntrants();
     const game = createHeadsUpGame(entrants, "1k"); // dealt immediately, so status is "playing"
     expect(game.status).toBe("playing");
+    const leavingIndex = game.currentPlayer!;
+    const leavingToken = tokens[leavingIndex];
+    const survivingProfileId = entrants[leavingIndex === 0 ? 1 : 0].profile.id;
 
-    expect(() => applyPlayerAction(game, { type: "leave-seat" }, tokens[0])).toThrow(/finish this hand/i);
+    const after = applyPlayerAction(game, { type: "leave-seat" }, leavingToken);
+    expect(after.seats[leavingIndex].status).toBe("out");
+    expect(after.seats[leavingIndex].stack).toBe(0);
+    expect(after.status).toBe("complete");
+    expect(after.tournament?.winnerProfileId).toBe(survivingProfileId);
+  });
+
+  it("leaving mid-hand off turn doesn't disturb the live hand, but fast-tracks the forfeit", () => {
+    // Whoever it currently isn't their turn can't be force-folded out of turn
+    // without risking the other seat's own live decision -- so this only
+    // primes the existing missed-turn count. The very next time it's their
+    // turn (below, simulated the same way the AFK-tournament-seat engine
+    // test does) it forfeits on the first timeout instead of the usual three.
+    const { tokens, entrants } = twoEntrants();
+    const game = createHeadsUpGame(entrants, "1k");
+    const stayingIndex = game.currentPlayer!;
+    const leavingIndex = stayingIndex === 0 ? 1 : 0;
+
+    const after = applyPlayerAction(game, { type: "leave-seat" }, tokens[leavingIndex]);
+    expect(after.status).toBe("playing");
+    expect(after.currentPlayer).toBe(stayingIndex);
+    expect(after.seats[leavingIndex].status).not.toBe("out");
+    expect(after.seats[leavingIndex].missedTurns).toBe(MAX_MISSED_TURNS - 1);
+    expect(after.tournament?.winnerProfileId).toBeNull();
+
+    // Fast-forward to the leaving seat's own turn timing out.
+    after.currentPlayer = leavingIndex;
+    after.turnStartedAt = new Date(Date.now() - 60_000).toISOString();
+    after.turnDeadlineAt = new Date(Date.now() - 1000).toISOString();
+    const { state } = advanceTimedTurn(after, Date.now());
+    expect(state.seats[leavingIndex].status).toBe("out");
+    expect(state.seats[leavingIndex].stack).toBe(0);
+    expect(state.tournament?.winnerProfileId).toBe(entrants[stayingIndex].profile.id);
   });
 
   it("zeroes the leaving seat between hands, and the next deal awards the match to the other seat", () => {

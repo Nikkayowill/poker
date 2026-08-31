@@ -2146,11 +2146,36 @@ export function advanceTimedTurn(state: GameState, now = Date.now()): TimedTurnA
   const seatIndex = state.currentPlayer;
   const seat = state.seats[seatIndex];
   const timedOut = seat.isHuman;
+  const actorSeatId = seat.id;
+
+  // A tournament seat has no bot fill to fall back on (releaseInactiveSeats
+  // is a no-op for one), so without this an abandoned seat -- a closed tab,
+  // or a "Leave table" click that fast-tracked this same count in
+  // applyPlayerAction -- would just keep auto-folding forever, leaving
+  // whoever's left grinding blinds off a seat that is never coming back.
+  // Forfeit outright the moment it crosses the same missed-turn threshold a
+  // cash seat would be released at instead.
+  if (timedOut && state.tournament && seat.missedTurns + 1 >= MAX_MISSED_TURNS) {
+    const action: TurnAction = { type: "fold" };
+    seat.missedTurns += 1;
+    seat.lastAction = "Timed out · Forfeited";
+    forfeitTournamentSeat(state, seatIndex);
+    addLog(
+      state,
+      state.tournament.format === "heads_up"
+        ? `${seat.name} ran out of time too many times and forfeits the match`
+        : `${seat.name} ran out of time too many times and forfeits their seat`,
+    );
+    progressAfterAction(state, seatIndex);
+    state.version += 1;
+    state.updatedAt = new Date(now).toISOString();
+    return { state, actorSeatId, action, timedOut };
+  }
+
   const legal = getLegalActions(state, seatIndex);
   const action: TurnAction = timedOut
     ? legal.canCheck ? { type: "check" } : { type: "fold" }
     : chooseBotAction(state, seatIndex);
-  const actorSeatId = seat.id;
 
   applyTurnAction(state, action);
   if (timedOut) {
@@ -2161,13 +2186,7 @@ export function advanceTimedTurn(state: GameState, now = Date.now()): TimedTurnA
     addLog(
       state,
       seat.missedTurns >= MAX_MISSED_TURNS
-        ? // A tournament seat is never actually released at this threshold --
-          // releaseInactiveSeats short-circuits to a no-op for one (no bot
-          // fill, ever) -- so "forfeits the seat" would be a standing lie,
-          // repeated on every hand for as long as the seat stays AFK.
-          state.tournament
-          ? `${seat.name} keeps missing turns (${seat.missedTurns} in a row) and is auto-folding`
-          : `${seat.name} ran out of time and forfeits the seat`
+        ? `${seat.name} ran out of time and forfeits the seat`
         : `${seat.name} ran out of time (${seat.missedTurns}/${MAX_MISSED_TURNS})`,
     );
   }
@@ -2182,50 +2201,67 @@ export function applyPlayerAction(state: GameState, action: PlayerAction, caller
   if (seatIndex === -1) throw new Error("You are not seated at this table.");
   if (action.type === "leave-seat") {
     if (state.tournament) {
-      // Standing up mid-hand would drop this seat's cards and any chips it
-      // already committed with no one left to act for it -- the same reason
-      // a cash seat can't be reclaimed by a bot mid-hand either. Between
-      // hands, forfeit rather than vacateSeat: no bot takeover, no credit.
       if (state.status === "playing") {
-        throw new Error(
-          state.tournament.format === "heads_up"
-            ? "Finish this hand before leaving a heads-up match."
-            : "Finish this hand before leaving a Sit & Go table.",
-        );
-      }
-      const leavingSeat = state.seats[seatIndex];
-      const otherFundedSeats = state.seats.filter(
-        (candidate, index) => index !== seatIndex && candidate.stack > 0,
-      );
-      if (state.tournament.winnerProfileId) {
-        // Already decided -- e.g. the winner clicking "Leave table" off the
-        // win screen. A plain exit, not a forfeit: forfeitTournamentSeat
-        // would zero a stack that already reflects a paid-out win.
-        leavingSeat.status = "out";
-      } else if (leavingSeat.stack > 0 && otherFundedSeats.length === 0) {
-        // Every other seat is already forfeited or busted out and nobody
-        // has been named winner yet -- this seat IS the survivor, not a
-        // forfeiter. Finalizing with its funded stack intact is what
-        // actually decides the match; zeroing it first (the old
-        // unconditional forfeit below) is exactly how a match used to end
-        // "complete" with no winner ever named -- see
-        // sweepUndecidedTournaments's own comment in game-store.ts, the
-        // safety net that now catches this state if anything still reaches
-        // it despite this guard.
-        leavingSeat.status = "out";
-        finalizeTournamentIfDecided(state, leavingSeat);
+        // A closed tab never reaches this branch at all -- there's no
+        // request to handle then -- so mid-hand only ever means an explicit
+        // "Leave table" click. It must not disturb a hand another seat is
+        // actively deciding, so: on this seat's own turn, forfeit resolves
+        // right now, the same way a timed-out forfeit does in
+        // advanceTimedTurn below. Off-turn, fast-track the missed-turn count
+        // so the very next time it's this seat's turn it forfeits
+        // immediately instead of waiting out three full timeouts -- the seat
+        // still can't be reclaimed by a bot mid-hand (no bot fill, ever), so
+        // there's nothing safe to do with it before then.
+        const leavingSeat = state.seats[seatIndex];
+        if (state.currentPlayer === seatIndex) {
+          forfeitTournamentSeat(state, seatIndex);
+          leavingSeat.lastAction = "Forfeited";
+          addLog(
+            state,
+            state.tournament.format === "heads_up"
+              ? `${leavingSeat.name} leaves and forfeits the match`
+              : `${leavingSeat.name} leaves and forfeits their seat`,
+          );
+          progressAfterAction(state, seatIndex);
+        } else {
+          leavingSeat.missedTurns = Math.max(leavingSeat.missedTurns, MAX_MISSED_TURNS - 1);
+          addLog(state, `${leavingSeat.name} is leaving and will forfeit on their next turn`);
+        }
       } else {
-        forfeitTournamentSeat(state, seatIndex);
-        // Closes the same race finalizeTournamentIfDecided closes for a
-        // natural bust: a voluntary forfeit that leaves only one funded seat
-        // (the last two players at a Sit & Go, or either heads-up seat) must
-        // decide the match right here, not wait on a next-hand pass that only
-        // the surviving seat has any reason left to trigger. A Sit & Go with
-        // three or more players still funded must NOT be decided off whichever
-        // seat this find happens to hit first, so the funded count -- computed
-        // before this seat's own forfeit above -- is checked before ever
-        // reading a "survivor".
-        if (otherFundedSeats.length <= 1) finalizeTournamentIfDecided(state, otherFundedSeats[0]);
+        const leavingSeat = state.seats[seatIndex];
+        const otherFundedSeats = state.seats.filter(
+          (candidate, index) => index !== seatIndex && candidate.stack > 0,
+        );
+        if (state.tournament.winnerProfileId) {
+          // Already decided -- e.g. the winner clicking "Leave table" off the
+          // win screen. A plain exit, not a forfeit: forfeitTournamentSeat
+          // would zero a stack that already reflects a paid-out win.
+          leavingSeat.status = "out";
+        } else if (leavingSeat.stack > 0 && otherFundedSeats.length === 0) {
+          // Every other seat is already forfeited or busted out and nobody
+          // has been named winner yet -- this seat IS the survivor, not a
+          // forfeiter. Finalizing with its funded stack intact is what
+          // actually decides the match; zeroing it first (the old
+          // unconditional forfeit below) is exactly how a match used to end
+          // "complete" with no winner ever named -- see
+          // sweepUndecidedTournaments's own comment in game-store.ts, the
+          // safety net that now catches this state if anything still reaches
+          // it despite this guard.
+          leavingSeat.status = "out";
+          finalizeTournamentIfDecided(state, leavingSeat);
+        } else {
+          forfeitTournamentSeat(state, seatIndex);
+          // Closes the same race finalizeTournamentIfDecided closes for a
+          // natural bust: a voluntary forfeit that leaves only one funded seat
+          // (the last two players at a Sit & Go, or either heads-up seat) must
+          // decide the match right here, not wait on a next-hand pass that only
+          // the surviving seat has any reason left to trigger. A Sit & Go with
+          // three or more players still funded must NOT be decided off whichever
+          // seat this find happens to hit first, so the funded count -- computed
+          // before this seat's own forfeit above -- is checked before ever
+          // reading a "survivor".
+          if (otherFundedSeats.length <= 1) finalizeTournamentIfDecided(state, otherFundedSeats[0]);
+        }
       }
     } else {
       vacateSeat(state, callerToken);

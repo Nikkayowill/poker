@@ -1525,7 +1525,16 @@ export function PokerTable({
 
       {pendingLeave && (
         <LeaveGameConfirmModal
-          body={`You have ${committedThisHand.toLocaleString()} chips already in this hand's pot. Leaving now cashes out your remaining stack, but those chips stay in the pot — you won't get them back.`}
+          body={
+            game.tournament
+              // There's no cashing out mid-tournament (see forfeitTournamentSeat
+              // in engine.ts) -- leaving here forfeits the whole seat, not just
+              // what's already in this hand's pot.
+              ? `Leaving now forfeits your seat${
+                game.tournament.format === "heads_up" ? " and the match" : ""
+              } — there's no cashing out mid-tournament.`
+              : `You have ${committedThisHand.toLocaleString()} chips already in this hand's pot. Leaving now cashes out your remaining stack, but those chips stay in the pot — you won't get them back.`
+          }
           onCancel={() => setPendingLeave(null)}
           onConfirm={() => {
             const action = pendingLeave;

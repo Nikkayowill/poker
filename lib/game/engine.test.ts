@@ -1770,12 +1770,37 @@ describe("tournament mode", () => {
     ).toThrow(/no rebuy/);
   });
 
-  it("refuses to leave mid-hand, and forfeits with zero Gold movement between hands", () => {
-    const { game, entrants } = createTournamentTable();
-    expect(() =>
-      applyPlayerAction(game, { type: "leave-seat" }, entrants[0].token),
-    ).toThrow(/Finish this hand/);
+  it("leaving mid-hand forfeits immediately on your own turn, with no bot handoff", () => {
+    const { game } = createTournamentTable();
+    const leavingIndex = game.currentPlayer!;
+    const leavingToken = game.seats[leavingIndex].ownerToken!;
 
+    const after = applyPlayerAction(game, { type: "leave-seat" }, leavingToken);
+    expect(after.seats[leavingIndex].stack).toBe(0);
+    expect(after.seats[leavingIndex].status).toBe("out");
+    // No bot handoff, unlike a cash table's vacateSeat.
+    expect(after.seats[leavingIndex].ownerToken).toBe(leavingToken);
+    expect(after.seats[leavingIndex].isHuman).toBe(true);
+    // Five other seats are still funded, so this alone doesn't decide the
+    // Sit & Go -- only forfeits the one seat that left.
+    expect(after.tournament?.winnerProfileId).toBeNull();
+  });
+
+  it("leaving mid-hand off turn fast-tracks the forfeit instead of disturbing the live hand", () => {
+    const { game } = createTournamentTable();
+    const stayingIndex = game.currentPlayer!;
+    const leavingIndex = game.seats.findIndex((seat, index) => index !== stayingIndex && seat.stack > 0);
+    const leavingToken = game.seats[leavingIndex].ownerToken!;
+
+    const after = applyPlayerAction(game, { type: "leave-seat" }, leavingToken);
+    expect(after.status).toBe("playing");
+    expect(after.currentPlayer).toBe(stayingIndex);
+    expect(after.seats[leavingIndex].status).not.toBe("out");
+    expect(after.seats[leavingIndex].missedTurns).toBe(MAX_MISSED_TURNS - 1);
+  });
+
+  it("forfeits with zero Gold movement once a hand has already ended", () => {
+    const { game, entrants } = createTournamentTable();
     game.status = "complete";
     const left = applyPlayerAction(game, { type: "leave-seat" }, entrants[0].token);
     expect(left.seats[0].stack).toBe(0);
@@ -1846,21 +1871,25 @@ describe("tournament mode", () => {
     expect(complete.winners[0].amount).toBe(10000);
   });
 
-  it("never claims to forfeit an AFK tournament seat -- there is no bot fill to hand it to", () => {
+  it("forfeits an AFK tournament seat outright once missed turns cross the threshold -- no bot fill to hand it to", () => {
     const { game } = createTournamentTable();
     const seatIndex = game.currentPlayer!;
-    // One more missed turn crosses MAX_MISSED_TURNS -- on a cash table this
-    // is exactly the threshold releaseInactiveSeats hands the seat to a bot
-    // at, but that function is a no-op for a tournament (see engine.ts), so
-    // the log line describing this moment must not claim it happened.
+    // One more missed turn crosses MAX_MISSED_TURNS. A cash table hands the
+    // seat to a bot at this same threshold (releaseInactiveSeats); a
+    // tournament seat is never handed to one, so it forfeits outright
+    // instead -- ending its own tournament life rather than being left to
+    // auto-fold forever with nobody left to notice it should be over.
     game.seats[seatIndex].missedTurns = MAX_MISSED_TURNS - 1;
     game.turnStartedAt = new Date(Date.now() - 60_000).toISOString();
     game.turnDeadlineAt = new Date(Date.now() - 1000).toISOString();
 
     const { state } = advanceTimedTurn(game, Date.now());
     expect(state.seats[seatIndex].missedTurns).toBe(MAX_MISSED_TURNS);
-    const lastLog = state.log.at(-1)?.text ?? "";
-    expect(lastLog).not.toMatch(/forfeits the seat/);
+    expect(state.seats[seatIndex].status).toBe("out");
+    expect(state.seats[seatIndex].stack).toBe(0);
     expect(state.seats[seatIndex].isHuman).toBe(true);
+    // Newest entry first (addLog unshifts).
+    const lastLog = state.log[0]?.text ?? "";
+    expect(lastLog).toMatch(/forfeits their seat/);
   });
 });

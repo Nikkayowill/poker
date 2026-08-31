@@ -1205,8 +1205,10 @@ export function PokerApp() {
         setCashOutNotice(data.cashedOut);
       }
     } catch {
-      // Best effort: the seat still reverts to a bot server-side even if this
-      // client never hears back, so there's nothing useful to show here.
+      // Best effort: a cash seat still reverts to a bot server-side, and a
+      // tournament seat still forfeits (immediately, or on its next turn --
+      // see applyPlayerAction's leave-seat handling in engine.ts), even if
+      // this client never hears back, so there's nothing useful to show here.
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,13 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { msUntilNextPuzzle, pickDaily, puzzleDay, puzzleNumber } from "@/lib/arcade/puzzles/daily";
+import {
+  PUZZLE_EPOCH_DAY,
+  msUntilNextPuzzle,
+  pickDaily,
+  previousDay,
+  puzzleDay,
+  puzzleNumber,
+} from "@/lib/arcade/puzzles/daily";
 import { WORD_STACK_ANSWERS } from "@/lib/arcade/puzzles/word-stack-answers";
 import { isAllowedWordStackGuess } from "@/lib/arcade/puzzles/word-stack-dictionary";
 import {
@@ -16,7 +23,9 @@ import {
   DailyPuzzleAlreadyStarted,
   advancePuzzleRound,
   createPuzzleRound,
+  getOrCreateCanonicalAnswer,
   getPuzzleRound,
+  getPuzzleRoundsForProfile,
   type StoredPuzzleRound,
 } from "./daily-puzzle-store";
 import {
@@ -70,6 +79,27 @@ import { awardWager } from "./progression-store";
  * A wager replaces the free path's daily completion bonus rather than
  * stacking with it. Free play still earns creditDailyBonus exactly as it
  * always has; a wagered attempt earns the wager's own payout instead.
+ *
+ * The puzzle archive: every function below takes an optional `day`, letting
+ * a player open and play any past day back to PUZZLE_EPOCH_DAY, not just
+ * today's. Two rules make that safe rather than a reopened version of the
+ * daily gate it otherwise protects:
+ *
+ *   - Archive plays are free-only. No wager on any day but today's -- see
+ *     the isArchive check in startWordStackPuzzle. Word Stack kept its
+ *     1-attempt/day gate specifically to bound staked play; letting an
+ *     archive wager too would remove that bound entirely (dozens of past
+ *     days, back to back, in one sitting).
+ *   - An archive completion earns no mission/achievement/daily-bonus credit
+ *     -- see the isToday guards in playWordStackGuess. Only finishing
+ *     *today's* puzzle is real once-a-day progress.
+ *
+ * The answer for a given day is resolved through
+ * getOrCreateCanonicalAnswer (daily-puzzle-store.ts) rather than calling
+ * pickDaily directly: pickDaily is a pure function of the answer pool's
+ * *current* size, so recomputing it for an old day after the pool has grown
+ * can silently produce a different word than the one actually shown that
+ * day. See that function's own doc comment.
  */
 
 export const WORD_STACK_GAME = "word-stack";
@@ -128,10 +158,17 @@ function snapshot(stored: StoredWordStack): WordStackSnapshot {
   });
 }
 
+/**
+ * `viewDay` describes whichever day the board being shown belongs to --
+ * today's by default, or an archive day when one is passed in. `msUntilNext`
+ * always describes the real countdown to tomorrow regardless: that is a
+ * property of "today," not of whichever day happens to be on screen.
+ */
 function view(
   stored: StoredWordStack | null,
   profile: PlayerProfile,
   clock: ReturnType<typeof today>,
+  viewDay: string = clock.day,
 ): WordStackView {
   return {
     round: stored
@@ -146,30 +183,33 @@ function view(
         }
       : null,
     profile,
-    day: clock.day,
-    puzzleNumber: clock.number,
+    day: viewDay,
+    puzzleNumber: puzzleNumber(viewDay),
     msUntilNextPuzzle: clock.msUntilNext,
   };
 }
 
 /**
- * Today's board as it stands, or null if it has not been opened.
+ * A board as it stands, or null if it has not been opened. Today's by
+ * default; pass `day` to read an archive day instead.
  *
  * Read-only: it never opens a board. Visiting a page must not be the same
  * thing as starting a puzzle, and the app's own rule is that game reads do not
  * write. Opening is POST, which costs the client one extra request on the
  * first visit of a day and nothing after.
  */
-export async function readWordStackPuzzle(token: string): Promise<WordStackView> {
+export async function readWordStackPuzzle(token: string, day?: string): Promise<WordStackView> {
   const profile = await ensureProfile(token);
   const clock = today();
-  const stored = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
-  return view(stored, profile, clock);
+  const targetDay = day ?? clock.day;
+  const stored = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, targetDay);
+  return view(stored, profile, clock, targetDay);
 }
 
 /**
- * Opens today's board at a wager (0 for the free play this has always been),
- * or hands back the one already in progress.
+ * Opens a board at a wager (0 for the free play this has always been), or
+ * hands back the one already in progress. Today's board by default; pass
+ * `day` to open an archive day instead, which is always free (see below).
  *
  * A refresh, a second tab or a back-button is a resume, not a new board,
  * and here that's stricter than the casino games' version of the same rule:
@@ -186,15 +226,31 @@ export async function readWordStackPuzzle(token: string): Promise<WordStackView>
 export async function startWordStackPuzzle(
   token: string,
   wagerInput = 0,
+  day?: string,
 ): Promise<WordStackView & { resumed: boolean }> {
   const profile = await ensureProfile(token);
   const clock = today();
+  const targetDay = day ?? clock.day;
+  const isArchive = targetDay !== clock.day;
 
-  const existing = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
-  if (existing) return { ...view(existing, profile, clock), resumed: true };
+  if (targetDay > clock.day) throw new WordStackRequestError("That puzzle hasn't been posted yet.", 400);
+  if (targetDay < PUZZLE_EPOCH_DAY) {
+    throw new WordStackRequestError("There's no puzzle before the archive begins.", 400);
+  }
+
+  const existing = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, targetDay);
+  if (existing) return { ...view(existing, profile, clock, targetDay), resumed: true };
 
   if (!Number.isInteger(wagerInput) || wagerInput < 0) {
     throw new WordStackRequestError("That is not a wager.", 400);
+  }
+  // Archive plays are free-only, checked here rather than only at the route
+  // so a caller cannot reach the wager path by skipping route-level
+  // validation. See this file's header for why: the 1-attempt/day gate is
+  // the only thing bounding staked play, and an archive would remove that
+  // bound entirely if wagering were allowed on it too.
+  if (isArchive && wagerInput > 0) {
+    throw new WordStackRequestError("Archive puzzles are free to play — wagering is only on today's word.", 400);
   }
   if (wagerInput > 0 && wagerInput < MIN_ANTE_UP_WAGER) {
     throw new WordStackRequestError(
@@ -216,12 +272,19 @@ export async function startWordStackPuzzle(
     throw new WordStackRequestError(`You need ${wagerInput.toLocaleString()} Gold to wager this.`, 400);
   }
 
-  // The answer is chosen here and nowhere else. pickDaily walks the pool, so
-  // every player asking on the same UTC day gets the same word, which is the
-  // entire premise of a shareable result. Every player's wager is their own;
-  // the word itself never depends on it.
+  // The answer is the canonical one for this day: pickDaily only actually
+  // runs on that day's first-ever ask (today's first opener, or an
+  // archive's first visitor) and is cached forever after. See
+  // getOrCreateCanonicalAnswer's own doc comment for why recomputing
+  // pickDaily fresh for an old day is unsafe once the pool has grown.
+  const answer = await getOrCreateCanonicalAnswer(
+    WORD_STACK_GAME,
+    targetDay,
+    () => pickDaily(WORD_STACK_ANSWERS, targetDay, WORD_STACK_GAME),
+    (round) => (round as StoredWordStackRound).answer,
+  );
   const round: StoredWordStackRound = {
-    ...startWordStackRound(pickDaily(WORD_STACK_ANSWERS, clock.day, WORD_STACK_GAME)),
+    ...startWordStackRound(answer),
     wager: wagerInput,
     // Copied in only for a real wager; see the field's own doc comment.
     ...(wagerInput > 0 ? { wagerLadder: WAGER_MULTIPLIER_BY_GUESSES } : {}),
@@ -232,7 +295,7 @@ export async function startWordStackPuzzle(
     stored = await createPuzzleRound<StoredWordStackRound>({
       profileId: profile.id,
       game: WORD_STACK_GAME,
-      day: clock.day,
+      day: targetDay,
       round,
       complete: false,
     });
@@ -241,8 +304,8 @@ export async function startWordStackPuzzle(
     if (wagerInput > 0) await creditGoldByProfile(profile.id, wagerInput).catch(() => null);
     if (error instanceof DailyPuzzleAlreadyStarted) {
       // Lost a race with another tab. The board that won is the real one.
-      const live = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
-      if (live) return { ...view(live, profile, clock), resumed: true };
+      const live = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, targetDay);
+      if (live) return { ...view(live, profile, clock, targetDay), resumed: true };
     }
     throw error;
   }
@@ -251,18 +314,25 @@ export async function startWordStackPuzzle(
   // same reasoning ante-up-service.ts's openAnteUpAttempt gives.
   if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, new Date()).catch(() => null);
 
-  return { ...view(stored, profile, clock), resumed: false };
+  return { ...view(stored, profile, clock, targetDay), resumed: false };
 }
 
 /**
  * Plays one guess.
  *
- * `day` and `version` are both required and both checked. The day catches a
- * board that rolled over while the player was staring at it: at 00:00 UTC
- * their tab is holding yesterday's puzzle, and applying a guess to today's
- * word would burn a guess on a board they have not seen. The version pins the
- * guess to the exact state they were looking at, so a double-fired submit
- * cannot spend two of their six on one word.
+ * `day` and `version` are both required and both checked. The day used to
+ * have to equal today's exactly; the puzzle archive loosens that on purpose
+ * to any day from PUZZLE_EPOCH_DAY through today -- `profile.id` scoping in
+ * getPuzzleRound below is what stops a player addressing anyone else's
+ * board, not this equality check, so widening it does not widen who can
+ * read or write what. A day still strictly after today (a clock skew, a
+ * forged future date) is rejected: there is no puzzle to play yet, and this
+ * is also what catches a board that rolled over while the player was
+ * staring at today's -- at 00:00 UTC their tab is holding yesterday's
+ * puzzle, and applying a guess to today's word would burn a guess on a
+ * board they have not seen. The version pins the guess to the exact state
+ * they were looking at, so a double-fired submit cannot spend two of their
+ * six on one word.
  */
 export async function playWordStackGuess(
   token: string,
@@ -271,16 +341,22 @@ export async function playWordStackGuess(
   const profile = await ensureProfile(token);
   const clock = today();
 
-  if (input.day !== clock.day) {
+  if (input.day > clock.day) {
     throw new WordStackRequestError(
       "A new puzzle just went up — this board has rolled over.",
       409,
       { reason: "rolled-over" },
     );
   }
+  if (input.day < PUZZLE_EPOCH_DAY) {
+    throw new WordStackRequestError("There's no puzzle before the archive begins.", 400);
+  }
 
-  const current = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
-  if (!current) throw new WordStackRequestError("You have not started today's puzzle.", 404);
+  const current = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, input.day);
+  if (!current) throw new WordStackRequestError("You have not started that puzzle.", 404);
+  // Only today's completion earns mission/achievement/daily-bonus credit --
+  // see the two isToday guards below and this file's header.
+  const isToday = current.day === clock.day;
 
   if (current.version !== input.version) {
     throw new WordStackRequestError("That board moved on. Here is where it actually stands.", 409, {
@@ -291,7 +367,7 @@ export async function playWordStackGuess(
 
   const problem = wordStackGuessProblem(current.round, input.guess);
   if (problem === "finished") {
-    throw new WordStackRequestError("Today's puzzle is already done.", 409, { round: snapshot(current) });
+    throw new WordStackRequestError("That puzzle is already done.", 409, { round: snapshot(current) });
   }
   if (problem) {
     throw new WordStackRequestError("A guess is five letters.", 400, { round: snapshot(current) });
@@ -318,7 +394,7 @@ export async function playWordStackGuess(
   const stored = await advancePuzzleRound<StoredWordStackRound>(current, next, complete);
   if (!stored) {
     // A lost race did not happen. Return the board that did.
-    const live = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, clock.day);
+    const live = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, current.day);
     throw new WordStackRequestError("That board moved on. Here is where it actually stands.", 409, {
       reason: "stale",
       round: live ? snapshot(live) : undefined,
@@ -329,14 +405,18 @@ export async function playWordStackGuess(
   // playing, not winning. Awaited: the route responds with this function's
   // own return value, so a fire-and-forget call here could be dropped by a
   // frozen serverless invocation right after the response goes out.
-  // applyMissionEvent never throws, so this only costs latency.
-  if (complete) await applyMissionEvent(profile.id, { kind: "puzzle_completed" });
-  if (complete) await applyAchievementEvent(profile.id, { kind: "puzzle_completed" });
+  // applyMissionEvent never throws, so this only costs latency. Archive
+  // completions earn none of this -- see isToday above and this file's header.
+  if (complete && isToday) await applyMissionEvent(profile.id, { kind: "puzzle_completed" });
+  if (complete && isToday) await applyAchievementEvent(profile.id, { kind: "puzzle_completed" });
 
   // A wager replaces the daily completion bonus rather than stacking with
   // it. Rule 2/3: a win credits wager * multiplier only after the settle
   // write above is confirmed; a loss credits nothing, since the wager
-  // already left the wallet when the board was opened.
+  // already left the wallet when the board was opened. The wager branch is
+  // naturally unreachable on an archive day (startWordStackPuzzle forces
+  // wager to 0 there), but the daily-bonus branch still needs its own
+  // isToday guard so an archive win doesn't quietly collect it.
   if (complete && current.round.wager > 0) {
     const payout = anteUpWordStackPayout({
       wager: current.round.wager,
@@ -348,14 +428,67 @@ export async function playWordStackGuess(
         console.error("word-stack.wager_payout_credit_failed", { profileId: profile.id, payout, error });
       });
     }
-  } else if (complete) {
+  } else if (complete && isToday) {
     // The per-game daily bonus, replacing the retired flat "daily_brain_game"
     // mission (see lib/server/daily-puzzle-bonus.ts). Pays even on a loss, at
-    // the floor multiplier. Only the free path earns this.
+    // the floor multiplier. Only today's free path earns this.
     await creditDailyBonus(profile.id, wordStackDailyBonusMultiplier(next));
   }
 
-  return view(stored, profile, clock);
+  return view(stored, profile, clock, current.day);
+}
+
+export type WordStackArchiveStatus = "not-started" | "active" | "won" | "lost";
+
+export interface WordStackArchiveDay {
+  day: string;
+  puzzleNumber: number;
+  status: WordStackArchiveStatus;
+}
+
+/**
+ * This player's status on every Word Stack day from yesterday back through
+ * the epoch -- "days you missed." Today is deliberately excluded: it's the
+ * live puzzle the main page already handles, not part of the archive.
+ *
+ * `token` is nullable and, unlike every other function in this file, never
+ * mints a profile when it's missing: the archive list is a read reachable
+ * with no session cookie at all (a direct link to /games/word-stack/archive
+ * with nothing else visited first), and visiting a read-only page must never
+ * be what creates a player -- see lib/server/session-minting.test.ts, which
+ * enforces this at the route level for exactly this reason. With no token
+ * there is by definition no history, so every day is reported "not-started"
+ * without touching the database at all.
+ *
+ * One query (getPuzzleRoundsForProfile, index-backed), not one per day: a
+ * day absent from that result set defaults to "not-started" here rather than
+ * being queried for individually or erroring.
+ */
+export async function listWordStackArchive(token: string | null): Promise<WordStackArchiveDay[]> {
+  const clock = today();
+  const profile = token ? await ensureProfile(token) : null;
+  const attempts = profile
+    ? await getPuzzleRoundsForProfile<StoredWordStackRound>(profile.id, WORD_STACK_GAME, { before: clock.day })
+    : [];
+  const byDay = new Map(attempts.map((attempt) => [attempt.day, attempt]));
+
+  const days: WordStackArchiveDay[] = [];
+  for (let day = previousDay(clock.day); day >= PUZZLE_EPOCH_DAY; day = previousDay(day)) {
+    const attempt = byDay.get(day);
+    days.push({
+      day,
+      puzzleNumber: puzzleNumber(day),
+      status:
+        !attempt
+          ? "not-started"
+          : attempt.status === "active"
+            ? "active"
+            : attempt.round.status === "won"
+              ? "won"
+              : "lost",
+    });
+  }
+  return days;
 }
 
 /**

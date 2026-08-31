@@ -4,6 +4,7 @@ import {
   dailyIndex,
   msUntilNextPuzzle,
   pickDaily,
+  previousDay,
   puzzleDay,
   puzzleNumber,
 } from "./daily";
@@ -93,6 +94,24 @@ describe("dailyIndex", () => {
 
   it("rejects an empty pool rather than returning NaN", () => {
     expect(() => dailyIndex("2026-08-05", 0, "word-stack")).toThrow();
+  });
+});
+
+describe("previousDay", () => {
+  it("steps back one UTC calendar day", () => {
+    expect(previousDay("2026-08-06")).toBe("2026-08-05");
+  });
+
+  it("crosses a month boundary", () => {
+    expect(previousDay("2026-09-01")).toBe("2026-08-31");
+  });
+
+  it("crosses a year boundary", () => {
+    expect(previousDay("2026-01-01")).toBe("2025-12-31");
+  });
+
+  it("crosses a leap-year February boundary", () => {
+    expect(previousDay("2028-03-01")).toBe("2028-02-29");
   });
 });
 

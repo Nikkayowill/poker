@@ -645,7 +645,7 @@
      top of this file for why that's enough. */
   .mshell-nav {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     position: fixed;
     left: 0;
     right: 0;
@@ -686,10 +686,10 @@
     transition: color var(--duration-base, .15s) linear;
   }
 
-  /* Defensive, not descriptive of anything currently in PAGES: the three tab
-     labels ("Play"/"Ante Up"/"Profile") never come close to needing this, but
-     a bar mixing more/longer labels later shouldn't grow taller than its two
-     shortest tabs while it finds that out. */
+  /* Defensive, not descriptive of anything currently in PAGES: the four tab
+     labels ("Play"/"Ante Up"/"Leaderboard"/"Profile") never come close to
+     needing this, but a bar mixing more/longer labels later shouldn't grow
+     taller than its shortest tabs while it finds that out. */
   .mshell-nav-item span {
     max-width: 100%;
     overflow: hidden;

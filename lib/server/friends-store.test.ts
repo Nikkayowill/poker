@@ -14,6 +14,7 @@ import {
   unblockProfile,
 } from "./friends-store";
 import { __resetHeadToHeadMemory, recordHeadToHeadDuel } from "./head-to-head-store";
+import { __resetNotificationsMemory, listNotifications } from "./notifications-store";
 import { ensureProfile } from "./profile-store";
 
 /**
@@ -37,6 +38,30 @@ async function befriend(a: string, b: string) {
 beforeEach(() => {
   __resetFriendsMemory();
   __resetHeadToHeadMemory();
+  __resetNotificationsMemory();
+});
+
+describe("notifications wiring", () => {
+  it("notifies the addressee when a request lands, and the requester when it's accepted", async () => {
+    const [hero, villain] = [await newPlayer("Hero"), await newPlayer("Villain")];
+    await befriend(hero, villain);
+
+    const [villainNotice] = (await listNotifications(villain)).notifications;
+    expect(villainNotice.kind).toBe("friend_request_received");
+
+    const [heroNotice] = (await listNotifications(hero)).notifications;
+    expect(heroNotice.kind).toBe("friend_request_accepted");
+  });
+
+  it("notifies the code owner when their invite code is redeemed", async () => {
+    const [hero, villain] = [await newPlayer("Hero"), await newPlayer("Villain")];
+    const { code } = await getOrCreateFriendInviteCode(hero);
+
+    await redeemFriendInviteCode(villain, code);
+
+    const [heroNotice] = (await listNotifications(hero)).notifications;
+    expect(heroNotice.kind).toBe("friend_request_accepted");
+  });
 });
 
 describe("friend requests (memory mode)", () => {

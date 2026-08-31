@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Swords, X } from "lucide-react";
+import { Swords, UserPlus, X } from "lucide-react";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHALLENGEABLE_DUELS } from "@/lib/pvp/duel-list";
 
@@ -16,12 +16,19 @@ import { CHALLENGEABLE_DUELS } from "@/lib/pvp/duel-list";
  * for a seat `lib/game/seat-presence.ts`'s `isChallengeableSeat` allows --
  * a registered human, not yourself, not a bot.
  *
- * No friendship gate: this is exactly the same request `openDuelChallenge`
- * already accepts from a stranger -- it only refuses a blocked pairing (see
- * lib/server/pvp-match-service.ts). Gating this control on friendship would
- * be inventing a policy the server does not enforce, and the friends
- * drawer's own "At this table" row already lets a stranger be challenged
- * this way once they're a friend; this just removes the detour.
+ * Also carries its own "Add friend" row, doing exactly what
+ * friends-drawer.tsx's "At this table" section does (POST
+ * /api/friends/requests) -- previously the only way to friend a seated
+ * stranger you'd just challenged was to close this panel, open the Friends
+ * drawer, and find them in that list separately.
+ *
+ * No friendship gate on the challenge itself: this is exactly the same
+ * request `openDuelChallenge` already accepts from a stranger -- it only
+ * refuses a blocked pairing (see lib/server/pvp-match-service.ts). Gating
+ * this control on friendship would be inventing a policy the server does not
+ * enforce, and the friends drawer's own "At this table" row already lets a
+ * stranger be challenged this way once they're a friend; this just removes
+ * the detour.
  *
  * The picker is portaled to <body> and fixed to the viewport rather than
  * anchored off the trigger's own position: a seat can land anywhere on the
@@ -40,6 +47,11 @@ export function ChallengeSeatControl({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const panelId = useId();
+  // Mirrors friends-drawer.tsx's own addFriend: a POST against the same
+  // /api/friends/requests route, just with its own local status rather than
+  // that drawer's shared `overview`/`busy` state, since this control has
+  // neither.
+  const [friendStatus, setFriendStatus] = useState<"idle" | "sending" | "sent" | "already_pending" | "already_friends" | "blocked" | "error">("idle");
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -57,6 +69,40 @@ export function ChallengeSeatControl({
     close();
     const params = new URLSearchParams({ challenge: profileId, name: displayName });
     router.push(`/games/${game}?${params.toString()}`);
+  };
+
+  const addFriend = useCallback(async () => {
+    selectSound();
+    setFriendStatus("sending");
+    try {
+      const response = await fetch("/api/friends/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId }),
+      });
+      const data = (await response.json().catch(() => null)) as { status?: string } | null;
+      if (!response.ok || !data?.status) {
+        setFriendStatus("error");
+        return;
+      }
+      if (data.status === "sent" || data.status === "already_pending" || data.status === "already_friends" || data.status === "blocked") {
+        setFriendStatus(data.status);
+      } else {
+        setFriendStatus("error");
+      }
+    } catch {
+      setFriendStatus("error");
+    }
+  }, [profileId]);
+
+  const friendLabel: Record<typeof friendStatus, string> = {
+    idle: "Add friend",
+    sending: "Adding…",
+    sent: "Friend request sent",
+    already_pending: "Already pending",
+    already_friends: "Already friends",
+    blocked: "Can't add that player",
+    error: "Couldn't send request",
   };
 
   return (
@@ -104,6 +150,15 @@ export function ChallengeSeatControl({
                 <X size={14} />
               </button>
             </div>
+            <button
+              type="button"
+              className="seat-challenge-add-friend"
+              disabled={friendStatus !== "idle" && friendStatus !== "error"}
+              onClick={() => void addFriend()}
+            >
+              <UserPlus size={13} aria-hidden="true" />
+              {friendLabel[friendStatus]}
+            </button>
             <div className="seat-challenge-options">
               {CHALLENGEABLE_DUELS.map((duel) => (
                 <button

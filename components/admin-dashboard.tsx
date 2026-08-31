@@ -93,6 +93,9 @@ export function AdminDashboard() {
   const [accountFilter, setAccountFilter] = useState<"all" | "registered" | "guest">("all");
   const [pendingTableId, setPendingTableId] = useState<string | null>(null);
   const { copiedValue: copiedId, copy: copyId } = useClipboardCopy(1500);
+  // Feedback for "Send test push" -- not a copy, so useClipboardCopy doesn't
+  // fit, but the same "which row, and clear itself after a beat" shape.
+  const [testPushResult, setTestPushResult] = useState<{ profileId: string; sentTo: number } | null>(null);
 
   const lock = async () => {
     await fetch("/api/admin/session", { method: "DELETE" }).catch(() => null);
@@ -222,6 +225,30 @@ export function AdminDashboard() {
       )) ?? null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update that profile's ban status.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  const sendTestPush = async (profile: AdminProfileSummary) => {
+    setPendingId(profile.id);
+    setError(null);
+    setTestPushResult(null);
+    try {
+      const response = await fetch("/api/admin/notifications/test-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: profile.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not send that test push.");
+      const result = { profileId: profile.id, sentTo: Number(data.sentTo ?? 0) };
+      setTestPushResult(result);
+      window.setTimeout(() => {
+        setTestPushResult((current) => (current?.profileId === profile.id ? null : current));
+      }, 3000);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not send that test push.");
     } finally {
       setPendingId(null);
     }
@@ -636,6 +663,7 @@ export function AdminDashboard() {
               <th>Adjust Gold</th>
               <th>Banned</th>
               <th />
+              <th>Push</th>
               <th />
             </tr>
           </thead>
@@ -705,6 +733,24 @@ export function AdminDashboard() {
                   <td>
                     <button
                       type="button"
+                      className="admin-toggle"
+                      disabled={bulkPending || pendingId === profile.id}
+                      onClick={() => void sendTestPush(profile)}
+                      title="Sends a real push to every device this profile has subscribed on -- delivery only, no notifications-table row."
+                    >
+                      {pendingId === profile.id ? "Sending…" : "Send test push"}
+                    </button>
+                    {testPushResult?.profileId === profile.id && (
+                      <span className="admin-flag">
+                        {testPushResult.sentTo > 0
+                          ? `Sent to ${testPushResult.sentTo} device${testPushResult.sentTo === 1 ? "" : "s"}`
+                          : "No subscribed devices"}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    <button
+                      type="button"
                       className="admin-delete"
                       disabled={bulkPending || pendingId === profile.id}
                       onClick={() => void removeProfiles([profile])}
@@ -717,7 +763,7 @@ export function AdminDashboard() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={11} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
+                <td colSpan={12} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
               </tr>
             )}
 

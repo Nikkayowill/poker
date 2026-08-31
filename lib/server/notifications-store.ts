@@ -52,6 +52,18 @@ export function __resetNotificationsMemory(): void {
 
 // ---- push copy --------------------------------------------------------
 
+/**
+ * Where a tapped push lands.
+ *
+ * The lobby with the inbox already open, not the lobby in general: a push is
+ * only worth tapping if it reaches the thing it was about, and for a friend
+ * request that thing is the row with the Accept button on it.
+ * NotificationBell reads this param once on mount and then strips it. It is
+ * the cold-start path only -- with a tab already open the service worker
+ * messages it instead of navigating, see public/sw.js.
+ */
+const INBOX_URL = "/?notifications=1";
+
 /** One line of push copy per kind, or null for a kind that shouldn't push (none today, but keeps the door open). */
 function pushPayloadFor<K extends NotificationKind>(
   kind: K,
@@ -60,19 +72,19 @@ function pushPayloadFor<K extends NotificationKind>(
   switch (kind) {
     case "friend_request_received": {
       const p = payload as NotificationPayloadMap["friend_request_received"];
-      return { title: "New friend request", body: `${p.fromDisplayName} wants to be friends.`, url: "/" };
+      return { title: "New friend request", body: `${p.fromDisplayName} wants to be friends.`, url: INBOX_URL };
     }
     case "friend_request_accepted": {
       const p = payload as NotificationPayloadMap["friend_request_accepted"];
-      return { title: "Friend added", body: `${p.fromDisplayName} is now your friend.`, url: "/" };
+      return { title: "Friend added", body: `${p.fromDisplayName} is now your friend.`, url: INBOX_URL };
     }
     case "achievement_unlocked": {
       const p = payload as NotificationPayloadMap["achievement_unlocked"];
-      return { title: "Achievement unlocked", body: `${p.title} (+${p.rewardGold.toLocaleString()} Gold)`, url: "/" };
+      return { title: "Achievement unlocked", body: `${p.title} (+${p.rewardGold.toLocaleString()} Gold)`, url: INBOX_URL };
     }
     case "mission_completed": {
       const p = payload as NotificationPayloadMap["mission_completed"];
-      return { title: "Mission complete", body: `${p.title} (+${p.rewardGold.toLocaleString()} Gold)`, url: "/" };
+      return { title: "Mission complete", body: `${p.title} (+${p.rewardGold.toLocaleString()} Gold)`, url: INBOX_URL };
     }
     default:
       return null;

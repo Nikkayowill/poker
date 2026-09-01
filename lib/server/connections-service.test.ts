@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PUZZLE_EPOCH_DAY, pickDaily, previousDay, puzzleDay } from "@/lib/arcade/puzzles/daily";
 import { CONNECTIONS_PUZZLES } from "@/lib/arcade/puzzles/connections-puzzles";
 import type { ConnectionsLevel } from "@/lib/arcade/puzzles/connections";
@@ -13,7 +13,25 @@ import {
   startConnectionsPuzzle,
   type StoredConnectionsRound,
 } from "./connections-service";
-import { ensureProfile } from "./profile-store";
+import { adjustGold, ensureProfile } from "./profile-store";
+
+/**
+ * A switch for making the canonical-answer lookup fail, for the ordering test
+ * at the bottom of this file. Everything else in daily-puzzle-store is the
+ * real thing -- this only stands in for the one call, and only when asked.
+ */
+const canon = vi.hoisted(() => ({ fails: false }));
+
+vi.mock("./daily-puzzle-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./daily-puzzle-store")>();
+  return {
+    ...actual,
+    getOrCreateCanonicalAnswer: (...args: Parameters<typeof actual.getOrCreateCanonicalAnswer>) =>
+      canon.fails
+        ? Promise.reject(new Error("canon unavailable"))
+        : actual.getOrCreateCanonicalAnswer(...args),
+  };
+});
 
 /**
  * The contract, in memory mode.
@@ -379,5 +397,41 @@ describe("the puzzle archive", () => {
     const archive = await listConnectionsArchive(null);
     expect(archive.length).toBeGreaterThan(0);
     expect(archive.every((entry) => entry.status === "not-started")).toBe(true);
+  });
+});
+
+/**
+ * The stake must not leave before everything that can throw has thrown.
+ *
+ * Same bug and same fix as word-stack-service.ts -- both services shared the
+ * ordering. getOrCreateCanonicalAnswer sat between the debit and the
+ * try/catch that refunds a failed round creation, so a throw from it charged
+ * the player and handed back no board. Not hypothetical: daily_puzzle_canon's
+ * migration went unapplied while its calling code was live, so the call threw
+ * on every wagered open until the table was created on 2026-09-01.
+ */
+describe("a failed canon lookup does not take the stake", () => {
+  async function fundedPlayer(gold: number) {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const delta = gold - profile.goldBalance;
+    if (delta !== 0) await adjustGold(profile.id, delta);
+    return { token, id: profile.id };
+  }
+
+  it("leaves the balance untouched when the canonical puzzle cannot be read", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    const before = (await ensureProfile(token)).goldBalance;
+
+    canon.fails = true;
+    try {
+      await expect(startConnectionsPuzzle(token, 1000)).rejects.toThrow("canon unavailable");
+    } finally {
+      canon.fails = false;
+    }
+
+    expect((await ensureProfile(token)).goldBalance).toBe(before);
+    // And no half-open round was left behind to burn the day's attempt.
+    expect(await getPuzzleRound<StoredConnectionsRound>(id, CONNECTIONS_GAME, today())).toBeNull();
   });
 });

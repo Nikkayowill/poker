@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exchangeState } from "@/lib/homestead/exchange";
 import { toHomesteadPlotSnapshots } from "@/lib/homestead/plots";
 import { readHomestead, toHomesteadErrorResponse } from "@/lib/server/homestead-service";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -35,10 +36,16 @@ export async function GET(request: NextRequest) {
   const token = readSessionToken(request);
   if (!(await isHomesteadAllowed(token))) return homesteadNotFound();
   if (!token) {
+    const now = new Date();
     return NextResponse.json({
-      plots: toHomesteadPlotSnapshots([], new Date()),
+      plots: toHomesteadPlotSnapshots([], now),
       profile: null,
       feed: 0,
+      inventory: {},
+      bushels: 0,
+      // The window's terms are the same for everybody, which is the point of
+      // it, so a visitor with no account still sees the real rate and ceiling.
+      exchange: exchangeState(0, now),
     });
   }
   try {

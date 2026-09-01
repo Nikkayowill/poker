@@ -208,7 +208,7 @@
         "rule": "design-system-font-size",
         "value": "16px",
         "createdAt": "2026-08-31T00:29:29.774Z",
-        "reason": "iOS Safari auto-zooms on focus for any input under 16px and doesn't zoom back out on blur -- this is the exact threshold, not a design choice, and matches the design system's own .ds-field input convention (design.json) of using 16px specifically for text inputs"
+        "reason": "DESIGN.md Hierarchy documents Body as 14-16px; the hook reads only the JSON block, which omits the prose ramp"
       },
       {
         "rule": "broken-image",
@@ -248,6 +248,66 @@
         "value": "10px",
         "createdAt": "2026-09-01T02:45:08.000Z",
         "reason": "the .ck-side eyebrow in 38-checkers.css is 10px; .ot-side is the same label in the identical clock row and must match its sibling board"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "14px",
+        "createdAt": "2026-09-01T18:04:56.387Z",
+        "reason": "DESIGN.md Hierarchy documents Body as 14-16px; the hook reads only the JSON block, which omits the prose ramp"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "15px",
+        "createdAt": "2026-09-01T18:05:02.518Z",
+        "reason": "DESIGN.md Hierarchy documents Body as 14-16px; the hook reads only the JSON block, which omits the prose ramp"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "11px",
+        "createdAt": "2026-09-01T18:05:14.477Z",
+        "reason": "DESIGN.md Hierarchy documents Label as 11px; the hook reads only the JSON block, which omits the prose ramp"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#ffe08f",
+        "createdAt": "2026-09-01T18:05:58.311Z",
+        "reason": "verbatim from design.json's own button-primary component CSS gradient; the detector does not read component values"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#a8760c",
+        "createdAt": "2026-09-01T18:06:05.273Z",
+        "reason": "verbatim from design.json's own button-primary component CSS gradient; the detector does not read component values"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#1c1305",
+        "createdAt": "2026-09-01T18:06:12.646Z",
+        "reason": "verbatim from design.json's own button-primary component CSS (its label colour); the detector does not read component values"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .45)",
+        "createdAt": "2026-09-01T18:06:19.195Z",
+        "reason": "verbatim from design.json's button-primary-glow shadow token (its bevel highlight)"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 210, 63, .3)",
+        "createdAt": "2026-09-01T18:06:25.368Z",
+        "reason": "verbatim from design.json's button-primary-glow shadow token (brand gold at 30%)"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(0, 0, 0, .7)",
+        "createdAt": "2026-09-01T18:08:57.115Z",
+        "reason": "modal scrim; the palette has no scrim token and six other stylesheets use ad-hoc black rgba for the same job"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(0, 0, 0, .55)",
+        "createdAt": "2026-09-01T18:09:04.378Z",
+        "reason": "progress-bar track scrim over artwork; the palette has no scrim token and other stylesheets use ad-hoc black rgba for the same job"
       }
     ]
   }

@@ -1,0 +1,33 @@
+Homestead tile art
+==================
+
+Source:  Tiny Farm (1.0) by Kenney -- https://kenney.nl/assets/tiny-farm
+License: Creative Commons Zero (CC0 1.0)
+         http://creativecommons.org/publicdomain/zero/1.0/
+
+CC0 places the work in the public domain: free to use in commercial projects,
+no attribution required. This file is here because crediting Kenney is the
+decent thing to do, and because a later reader needs to know these tiles are
+safe to ship without having to re-derive it.
+
+The tiles are 16x16 and are rendered with image-rendering: pixelated, so they
+must never be resampled -- see the eslint-disable in homestead-grid.tsx for why
+next/image is deliberately not used on them.
+
+Which source tile became which file is recorded in
+scripts/extract-homestead-tiles.py; re-run it to regenerate or to swap packs.
+
+NOTE ON WHAT IS NOT HERE: the pack has no pig. The middle livestock tier keeps
+its `pig` stock id in the database but is labelled "Sheep Pen" in
+lib/homestead/catalogue.ts so the art and the words agree. Drawing a pig and
+changing that one label is all it takes to switch back.
+
+It also has no egg and no fleece. The nearest candidate (tile 125) reads as a
+bread loaf, so those two produce icons borrow their animal instead -- the
+shorthand a shop list uses when it shows the creature rather than the thing it
+gave. The quantity label sits beside the icon and carries the meaning.
+
+The Bushel -- the farm's currency -- is a wheat sheaf (tile 68).
+
+Deliberately NOT used as a source: jeremyckahn/farmhand. Its art is
+CC BY-NC-SA 4.0, and the NonCommercial term rules it out for StackChips.

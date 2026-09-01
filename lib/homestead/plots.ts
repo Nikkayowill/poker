@@ -2,7 +2,7 @@
  * Pure derivation from stored plot rows to what the Homestead renders. Lives
  * in lib/ rather than beside the component for the usual reason: vitest only
  * reaches lib/ and app/, and the state derivation is exactly the logic that
- * wants tests (the Phaser layer is render-only and owns no rules).
+ * wants tests (the grid component is render-only and owns no rules).
  *
  * There is no clock here. Every function takes `now` explicitly; the client
  * calls this with its own clock for display, and the server's collect guard is
@@ -31,8 +31,10 @@ export interface HomesteadPlotRow {
   plotIndex: number;
   status: "empty" | "working" | "mucked";
   stock: HomesteadStock | null;
+  /** Seed cost in Bushels, snapshotted at planting. */
   stake: number | null;
-  payout: number | null;
+  /** Units of produce this will yield, snapshotted at planting. */
+  yieldQuantity: number | null;
   startedAt: string | null;
   /** Excludes time spent hungry: feeding pushes this forward. */
   readyAt: string | null;
@@ -63,8 +65,10 @@ export interface HomesteadPlotSnapshot {
   plotIndex: number;
   state: HomesteadPlotState;
   stock: HomesteadStock | null;
+  /** Seed cost in Bushels. */
   stake: number | null;
-  payout: number | null;
+  /** Units of produce this will yield. */
+  yieldQuantity: number | null;
   startedAt: string | null;
   readyAt: string | null;
   /** 0..1 while working; 1 once ready; null otherwise. */
@@ -157,7 +161,7 @@ export function toHomesteadPlotSnapshots(
       state: locked ? "locked" : "empty",
       stock: null,
       stake: null,
-      payout: null,
+      yieldQuantity: null,
       startedAt: null,
       readyAt: null,
       progress: null,
@@ -201,7 +205,7 @@ export function toHomesteadPlotSnapshots(
       state: ready ? "ready" : hungry ? "hungry" : "working",
       stock: row.stock,
       stake: row.stake,
-      payout: row.payout,
+      yieldQuantity: row.yieldQuantity,
       startedAt: row.startedAt,
       readyAt: row.readyAt,
       progress: progressOf(row.startedAt as string, row.readyAt as string, now),

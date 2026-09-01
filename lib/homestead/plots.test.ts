@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HOMESTEAD_CATALOGUE, HOMESTEAD_FREE_PLOTS, homesteadPlotPrice } from "./catalogue";
+import { HOMESTEAD_STOCK, HOMESTEAD_YIELDS, netPerCycle, yieldValue } from "./items";
 import {
   hungryAtFor,
   isHomesteadPlotHungry,
@@ -16,8 +17,8 @@ function workingRow(over: Partial<HomesteadPlotRow> = {}): HomesteadPlotRow {
     plotIndex: 1,
     status: "working",
     stock: "cattle",
-    stake: CATTLE.stake,
-    payout: CATTLE.payout,
+    stake: CATTLE.seedCost,
+    yieldQuantity: HOMESTEAD_YIELDS.cattle.quantity,
     startedAt: T0.toISOString(),
     readyAt: new Date(T0.getTime() + CATTLE.durationMs).toISOString(),
     lastFedAt: T0.toISOString(),
@@ -47,7 +48,7 @@ describe("the grid", () => {
 
   it("surfaces a mucked plot with its fee and nothing else", () => {
     const [plot] = toHomesteadPlotSnapshots(
-      [workingRow({ status: "mucked", stock: null, stake: null, payout: null, startedAt: null, readyAt: null, lastFedAt: null, muckFee: 100 })],
+      [workingRow({ status: "mucked", stock: null, stake: null, yieldQuantity: null, startedAt: null, readyAt: null, lastFedAt: null, muckFee: 100 })],
       T0,
     );
     expect(plot.state).toBe("mucked");
@@ -100,13 +101,30 @@ describe("hunger", () => {
 });
 
 describe("the catalogue's own arithmetic", () => {
-  it("pays a flat bonus on every tier, never a multiple of the stake", () => {
-    // What stops this being a money printer: the bonus cannot scale with how
-    // much a player is able to stake.
-    const bonuses = Object.values(HOMESTEAD_CATALOGUE).map((def) => def.payout - def.stake);
-    expect(bonuses.every((bonus) => bonus > 0)).toBe(true);
-    const ratios = Object.values(HOMESTEAD_CATALOGUE).map((def) => def.payout / def.stake);
-    expect(Math.max(...ratios)).toBeLessThan(1.1);
+  it("leaves every tier worth planting, and none of them a Gold path", () => {
+    // Bushels, not Gold, so a multiple here is not a money printer the way it
+    // was -- but a tier that costs more than it yields is a trap, and a tier
+    // that yields wildly more than the rest is where a grinder would live.
+    for (const stock of HOMESTEAD_STOCK) {
+      const def = HOMESTEAD_CATALOGUE[stock];
+      expect(netPerCycle(stock, def.seedCost)).toBeGreaterThan(0);
+    }
+    const ratios = HOMESTEAD_STOCK.map(
+      (stock) => yieldValue(stock) / HOMESTEAD_CATALOGUE[stock].seedCost,
+    );
+    expect(Math.max(...ratios)).toBeLessThan(2.5);
+  });
+
+  it("keeps the expected muck cost at 40% of what the plot earned, on every tier", () => {
+    // The rule the flat-fee version of this got wrong: a single fee across
+    // tiers an order of magnitude apart makes the cheapest one permanently
+    // negative.
+    for (const stock of HOMESTEAD_STOCK) {
+      const def = HOMESTEAD_CATALOGUE[stock];
+      const net = netPerCycle(stock, def.seedCost);
+      expect(def.muckFee).toBeGreaterThanOrEqual(net * 2 - 1);
+      expect(def.muckFee).toBeLessThanOrEqual(net * 2 + 1);
+    }
   });
 
   it("doubles the acreage price per tile and sells nothing outside the grid", () => {

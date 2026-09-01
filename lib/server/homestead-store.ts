@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 import type { HomesteadPlotRow } from "@/lib/homestead/plots";
 import type { HomesteadStock } from "@/lib/homestead/catalogue";
+import { BUSHELS } from "@/lib/homestead/items";
 import { adminClient } from "./supabase-admin";
 
 /**
@@ -35,6 +36,8 @@ export interface StoredHomesteadPlot extends HomesteadPlotRow {
 declare global {
   var __riverRoomHomesteadPlots: Map<string, StoredHomesteadPlot> | undefined;
   var __riverRoomHomesteadFeed: Map<string, number> | undefined;
+  var __riverRoomHomesteadInventory: Map<string, HomesteadInventory> | undefined;
+  var __riverRoomHomesteadExchanges: Map<string, number> | undefined;
   var __riverRoomHomesteadHarvests: HomesteadHarvestEntry[] | undefined;
 }
 
@@ -44,6 +47,14 @@ globalThis.__riverRoomHomesteadPlots = memoryPlots;
 const memoryFeed = globalThis.__riverRoomHomesteadFeed ?? new Map<string, number>();
 globalThis.__riverRoomHomesteadFeed = memoryFeed;
 
+const memoryInventory =
+  globalThis.__riverRoomHomesteadInventory ?? new Map<string, HomesteadInventory>();
+globalThis.__riverRoomHomesteadInventory = memoryInventory;
+
+/** Gold taken out of the farm, keyed `${profileId}:${YYYY-MM-DD}`. */
+const memoryExchanges = globalThis.__riverRoomHomesteadExchanges ?? new Map<string, number>();
+globalThis.__riverRoomHomesteadExchanges = memoryExchanges;
+
 const memoryHarvests = globalThis.__riverRoomHomesteadHarvests ?? [];
 globalThis.__riverRoomHomesteadHarvests = memoryHarvests;
 
@@ -51,6 +62,8 @@ globalThis.__riverRoomHomesteadHarvests = memoryHarvests;
 export function __resetHomesteadForTest(): void {
   memoryPlots.clear();
   memoryFeed.clear();
+  memoryInventory.clear();
+  memoryExchanges.clear();
   memoryHarvests.length = 0;
 }
 
@@ -68,7 +81,7 @@ export class HomesteadPlotExists extends Error {
 }
 
 const PLOT_COLUMNS =
-  "id, profile_id, plot_index, status, stock, stake, payout, started_at, ready_at, last_fed_at, muck_fee, version, created_at";
+  "id, profile_id, plot_index, status, stock, stake, yield_quantity, started_at, ready_at, last_fed_at, muck_fee, version, created_at";
 
 interface PlotDbRow {
   id: string;
@@ -77,7 +90,7 @@ interface PlotDbRow {
   status: string;
   stock: string | null;
   stake: number | string | null;
-  payout: number | string | null;
+  yield_quantity: number | string | null;
   started_at: string | null;
   ready_at: string | null;
   last_fed_at: string | null;
@@ -100,7 +113,7 @@ function fromRow(row: PlotDbRow): StoredHomesteadPlot {
     status: statusOf(row.status),
     stock: (row.stock as HomesteadStock | null) ?? null,
     stake: row.stake === null ? null : Number(row.stake),
-    payout: row.payout === null ? null : Number(row.payout),
+    yieldQuantity: row.yield_quantity === null ? null : Number(row.yield_quantity),
     startedAt: row.started_at ? String(row.started_at) : null,
     readyAt: row.ready_at ? String(row.ready_at) : null,
     lastFedAt: row.last_fed_at ? String(row.last_fed_at) : null,
@@ -180,7 +193,7 @@ export async function createHomesteadPlot(
       status: "empty",
       stock: null,
       stake: null,
-      payout: null,
+      yieldQuantity: null,
       startedAt: null,
       readyAt: null,
       lastFedAt: null,
@@ -247,7 +260,7 @@ export async function stockHomesteadPlot(
   entry: {
     stock: HomesteadStock;
     stake: number;
-    payout: number;
+    yieldQuantity: number;
     startedAt: Date;
     readyAt: Date;
     lastFedAt: Date | null;
@@ -259,7 +272,7 @@ export async function stockHomesteadPlot(
     status: "working" as const,
     stock: entry.stock,
     stake: entry.stake,
-    payout: entry.payout,
+    yieldQuantity: entry.yieldQuantity,
     startedAt: entry.startedAt.toISOString(),
     readyAt: entry.readyAt.toISOString(),
     lastFedAt: entry.lastFedAt ? entry.lastFedAt.toISOString() : null,
@@ -281,7 +294,7 @@ export async function stockHomesteadPlot(
       status: next.status,
       stock: next.stock,
       stake: next.stake,
-      payout: next.payout,
+      yield_quantity: next.yieldQuantity,
       started_at: next.startedAt,
       ready_at: next.readyAt,
       last_fed_at: next.lastFedAt,
@@ -361,7 +374,7 @@ export async function collectHomesteadPlot(
     status: (muckFee === null ? "empty" : "mucked") as "empty" | "mucked",
     stock: null,
     stake: null,
-    payout: null,
+    yieldQuantity: null,
     startedAt: null,
     readyAt: null,
     lastFedAt: null,
@@ -391,7 +404,7 @@ export async function collectHomesteadPlot(
       status: cleared.status,
       stock: null,
       stake: null,
-      payout: null,
+      yieldQuantity: null,
       started_at: null,
       ready_at: null,
       last_fed_at: null,
@@ -475,6 +488,150 @@ export async function adjustHomesteadFeed(profileId: string, delta: number): Pro
     if (error.code === "23514") return null;
     throw new Error(`Could not update your feed store: ${error.message}`);
   }
+  return data === null ? null : Number(data);
+}
+
+/* ------------------------------------------------------------------ */
+/* Inventory and Bushels                                               */
+/* ------------------------------------------------------------------ */
+
+/** Every held line for one player, keyed by item id. Bushels are one of them. */
+export type HomesteadInventory = Record<string, number>;
+
+export async function readHomesteadInventory(profileId: string): Promise<HomesteadInventory> {
+  const supabase = adminClient();
+  if (!supabase) return { ...(memoryInventory.get(profileId) ?? {}) };
+
+  const { data, error } = await supabase
+    .from("homestead_inventory")
+    .select("item_id, quantity")
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not read your barn: ${error.message}`);
+
+  const inventory: HomesteadInventory = {};
+  for (const row of (data ?? []) as { item_id: string; quantity: number | string }[]) {
+    inventory[row.item_id] = Number(row.quantity);
+  }
+  return inventory;
+}
+
+/**
+ * Moves one inventory line by `delta`, refusing to go negative. Returns the new
+ * quantity, or null when there was not enough to spend -- which the caller must
+ * treat exactly like a lost race, because it is one. Same posture as
+ * adjustHomesteadFeed and, above it, credit_gold.
+ */
+export async function adjustHomesteadInventory(
+  profileId: string,
+  itemId: string,
+  delta: number,
+): Promise<number | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const held = memoryInventory.get(profileId) ?? {};
+    const next = (held[itemId] ?? 0) + delta;
+    if (next < 0) return null;
+    memoryInventory.set(profileId, { ...held, [itemId]: next });
+    return next;
+  }
+
+  const { data, error } = await supabase.rpc("adjust_homestead_inventory", {
+    p_profile_id: profileId,
+    p_item_id: itemId,
+    p_delta: delta,
+  });
+  if (error) {
+    if (error.code === "23514") return null;
+    throw new Error(`Could not update your barn: ${error.message}`);
+  }
+  return data === null ? null : Number(data);
+}
+
+/**
+ * Seeds a new farm's Bushels exactly once. Returns true only on the write that
+ * actually created the row -- a profile whose bushels row already exists is
+ * never topped up, even sitting at zero, because the primary key is the
+ * idempotency guard rather than a balance check. A player who spends the grant
+ * does not get another by clearing their farm.
+ */
+export async function grantStartingBushels(profileId: string, amount: number): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const held = memoryInventory.get(profileId);
+    if (held && BUSHELS in held) return false;
+    memoryInventory.set(profileId, { ...(held ?? {}), [BUSHELS]: Math.max(amount, 0) });
+    return true;
+  }
+
+  const { data, error } = await supabase.rpc("grant_homestead_starting_bushels", {
+    p_profile_id: profileId,
+    p_amount: amount,
+  });
+  if (error) throw new Error(`Could not open your barn: ${error.message}`);
+  return data === true;
+}
+
+/* ------------------------------------------------------------------ */
+/* The exchange window                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * How much Gold this player has already taken out of the farm today. Read-only
+ * and advisory: it is what the store sheet shows, never what a reservation is
+ * decided on. The decision is made inside reserveHomesteadExchange, atomically,
+ * because anything read first can be raced.
+ */
+export async function readHomesteadExchanged(profileId: string, day: string): Promise<number> {
+  const supabase = adminClient();
+  if (!supabase) return memoryExchanges.get(`${profileId}:${day}`) ?? 0;
+
+  const { data, error } = await supabase
+    .from("homestead_exchanges")
+    .select("gold")
+    .eq("profile_id", profileId)
+    .eq("day", day)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read today's exchange: ${error.message}`);
+  return data ? Number((data as { gold: number | string }).gold) : 0;
+}
+
+/**
+ * Reserves `gold` against today's ceiling, atomically, and returns the day's
+ * new total -- or null when the reservation would break the ceiling.
+ *
+ * Null is the whole point of this function. It is the same posture every other
+ * write here takes: a null is a refusal or a lost race, the two are
+ * indistinguishable from the caller, and null must never pay. Two requests
+ * racing for the last of the day's allowance cannot both win, because the RPC
+ * takes a row lock rather than reading and then writing.
+ *
+ * `ceiling` can only ever TIGHTEN what the database allows: the SQL function
+ * carries its own hard copy of the constant and takes the smaller of the two,
+ * so raising the farm's Gold faucet needs a migration rather than a deploy.
+ */
+export async function reserveHomesteadExchange(
+  profileId: string,
+  day: string,
+  gold: number,
+  ceiling: number,
+): Promise<number | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${day}`;
+    const used = memoryExchanges.get(key) ?? 0;
+    const next = used + gold;
+    if (next > ceiling) return null;
+    memoryExchanges.set(key, next);
+    return next;
+  }
+
+  const { data, error } = await supabase.rpc("reserve_homestead_exchange", {
+    p_profile_id: profileId,
+    p_day: day,
+    p_gold: gold,
+    p_ceiling: ceiling,
+  });
+  if (error) throw new Error(`Could not reach the exchange window: ${error.message}`);
   return data === null ? null : Number(data);
 }
 

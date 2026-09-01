@@ -211,7 +211,7 @@ export function BlackjackTable() {
   // before the balance has arrived is simply untrue.
   const cover = canCoverStake(stake, wallet);
   const live = Boolean(round && round.phase !== "settled");
-  const actions = round?.legal ?? { hit: false, stand: false, double: false };
+  const actions = round?.legal ?? { hit: false, stand: false, double: false, resign: false };
   // The opening wager is already debited, so doubling needs one more of it in
   // the wallet, not two. A practice round's baseStake is 0, so this stays
   // open the same way the deal gate does.
@@ -222,14 +222,15 @@ export function BlackjackTable() {
   const outcomeWon = round?.outcome === "player-blackjack"
     || round?.outcome === "player-win"
     || round?.outcome === "dealer-bust";
-  const outcomeLost = round?.outcome === "dealer-win" || round?.outcome === "player-bust";
+  const outcomeLost = round?.outcome === "dealer-win" || round?.outcome === "player-bust"
+    || round?.outcome === "player-resign";
 
   const deal = () => {
     if (!cover.open || busy) return;
     void send("/api/arcade/blackjack", practice ? { practice: true } : { tier });
   };
 
-  const act = (action: "hit" | "stand" | "double") => {
+  const act = (action: "hit" | "stand" | "double" | "resign") => {
     if (!round || busy) return;
     void send("/api/arcade/blackjack/actions", {
       roundId: round.id,
@@ -525,6 +526,16 @@ export function BlackjackTable() {
                   onClick={() => { selectSound(); act("double"); }}
                 >
                   Double
+                </button>
+                <button
+                  type="button"
+                  className="bj-action"
+                  disabled={!actions.resign || busy}
+                  // No confirm step, matching Double: that also risks real
+                  // Gold on one tap and has never needed one.
+                  onClick={() => { selectSound(); act("resign"); }}
+                >
+                  Resign
                 </button>
               </>
             )

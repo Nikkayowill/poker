@@ -205,5 +205,7 @@ export function dealerLine(
       return "Over. Next one.";
     case "push":
       return "Push. Stake back.";
+    case "player-resign":
+      return "Your call. Next one.";
   }
 }

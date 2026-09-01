@@ -325,9 +325,15 @@
 .bj-practice-toggle:disabled { opacity: .4; cursor: not-allowed; }
 .bj-practice-toggle:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
 
-.bj-actions { display: grid; grid-auto-flow: column; gap: 9px; }
+/* grid-auto-columns: 1fr rather than leaving columns at their auto/content
+   width -- Resign made this a 4-up row, and four content-sized buttons with
+   fixed 18px padding is what overflows a narrow phone. Equal, shrinkable
+   columns keep 3-up (every other outcome) visually identical to before while
+   making 4-up safe. */
+.bj-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 9px; }
 .bj-action {
   min-height: 48px;
+  min-width: 0;
   padding: 0 18px;
   color: var(--ink);
   border: 1px solid rgba(255,255,255,.12);

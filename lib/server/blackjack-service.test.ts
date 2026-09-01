@@ -218,6 +218,94 @@ describe("the version guard", () => {
   });
 });
 
+describe("resigning", () => {
+  it("forfeits the stake and frees the player to deal again", async () => {
+    const { token, round } = await playableRound(2000);
+    const settled = await actOnBlackjackRound(token, {
+      roundId: round.id,
+      version: round.version,
+      action: "resign",
+    });
+    expect(settled.round?.outcome).toBe("player-resign");
+    expect(settled.profile.goldBalance).toBe(2000 - STAKE);
+
+    const next = await dealBlackjackRound(token, { tier: "1k" });
+    expect(next.resumed).toBe(false);
+  });
+
+  it("charges nothing beyond the stake already spent at deal", async () => {
+    // Rule 1: the stake left the wallet at deal time. Rule 3: settlement is a
+    // single credit, and a resign's is 0, so the balance must not move again.
+    const { token, round } = await playableRound(2000);
+    const before = (await ensureProfile(token)).goldBalance;
+    await actOnBlackjackRound(token, { roundId: round.id, version: round.version, action: "resign" });
+    expect((await ensureProfile(token)).goldBalance).toBe(before);
+  });
+});
+
+/**
+ * The incident this closes: a round abandoned between the deal and the
+ * player's first action (tab closed, connection dropped) used to sit active
+ * forever, and blackjack_rounds_one_active_per_profile then locked that
+ * profile out of Blackjack permanently -- it happened to two real players in
+ * production before this sweep existed. See CLAUDE.md's Known open items,
+ * corrected 2026-09-01.
+ */
+describe("the staleness sweep", () => {
+  it("leaves a fresh round alone", async () => {
+    const { token, round } = await playableRound();
+    const soon = new Date(Date.now() + 60_000);
+    const live = await readBlackjackRound(token, soon);
+    expect(live.round?.id).toBe(round.id);
+    expect(live.round?.phase).toBe("player-turn");
+  });
+
+  it("does not sweep a round still within the timeout", async () => {
+    const { token, round } = await playableRound();
+    const almost = new Date(Date.now() + 29 * 60 * 1000);
+    const live = await readBlackjackRound(token, almost);
+    expect(live.round?.id).toBe(round.id);
+  });
+
+  it("force-resigns a round abandoned past the timeout, on the next read", async () => {
+    const { token } = await playableRound(2000);
+    const wayLater = new Date(Date.now() + 31 * 60 * 1000);
+    const live = await readBlackjackRound(token, wayLater);
+    // Nothing is active any more -- the same forfeit a deliberate resign
+    // would have produced, not an error and not a hand left dangling.
+    expect(live.round).toBeNull();
+    expect(live.profile.goldBalance).toBe(2000 - STAKE);
+  });
+
+  it("frees the profile's one-active-round slot instead of locking it forever", async () => {
+    // This is the actual production bug: without the sweep, dealBlackjackRound
+    // sees the stale round as still "existing" and hands it back with
+    // resumed: true forever, and the player can never open a fresh one.
+    const { token } = await playableRound(2000);
+    const wayLater = new Date(Date.now() + 31 * 60 * 1000);
+    const opened = await dealBlackjackRound(token, { tier: "1k" }, wayLater);
+    expect(opened.resumed).toBe(false);
+  });
+
+  it("does not sweep a round that already moved past player-turn", async () => {
+    // A settled hand has nothing left for a stray tab to abandon -- the sweep
+    // only ever targets player-turn.
+    const { token, round } = await playableRound(2000);
+    const settled = await actOnBlackjackRound(token, {
+      roundId: round.id,
+      version: round.version,
+      action: "stand",
+    });
+    expect(settled.round?.phase).toBe("settled");
+
+    const wayLater = new Date(Date.now() + 31 * 60 * 1000);
+    const live = await readBlackjackRound(token, wayLater);
+    expect(live.round).toBeNull();
+    // Whatever stand actually paid, not a second forfeit on top of it.
+    expect(live.profile.goldBalance).toBe(settled.profile.goldBalance);
+  });
+});
+
 describe("doubling", () => {
   it("takes a second stake and settles at the doubled wager", async () => {
     const { token, round } = await playableRound();

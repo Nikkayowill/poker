@@ -40,6 +40,7 @@ describe("dealerExpression", () => {
       "dealer-win": true,
       "player-bust": true,
       push: true,
+      "player-resign": true,
     };
     for (const outcome of Object.keys(outcomes) as BlackjackOutcome[]) {
       const expression = dealerExpression("settled", outcome);
@@ -184,9 +185,12 @@ describe("what the cloth says", () => {
   });
 
   it("never prints a rule this game does not implement", () => {
-    // Insurance, splitting and surrender are all absent from the engine.
-    // legalBlackjackActions offers exactly three verbs, and the cloth must not
-    // advertise a fourth.
+    // Insurance, splitting and the casino "surrender" rule (half the stake
+    // back) are all absent from the engine. `resign` is a real fourth verb
+    // but not a casino rule this cloth would advertise -- see
+    // lib/arcade/blackjack.ts's own header on the distinction -- so it is
+    // exempted from the "must not advertise a fourth" check rather than
+    // added to the forbidden-words list below.
     const verbs = Object.keys(legalBlackjackActions({
       phase: "player-turn",
       playerHand: [{ rank: "9", suit: "hearts" }, { rank: "7", suit: "clubs" }],
@@ -198,7 +202,7 @@ describe("what the cloth says", () => {
       outcome: null,
       dealerHoleHidden: true,
     } as never));
-    expect(new Set(verbs)).toEqual(new Set(["hit", "stand", "double"]));
+    expect(new Set(verbs)).toEqual(new Set(["hit", "stand", "double", "resign"]));
 
     const cloth = feltPrint().join(" ").toLowerCase();
     for (const absent of ["insurance", "split", "surrender", "even money", "must hit"]) {

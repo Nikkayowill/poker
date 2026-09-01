@@ -9,6 +9,7 @@ import {
   hit,
   isNatural,
   legalBlackjackActions,
+  resign,
   settlementPayout,
   stand,
   startRound,
@@ -149,6 +150,44 @@ describe("hit", () => {
   it("is inert once the round is settled", () => {
     const settled = stand(startRound({ stake: 100, deck: stacked(["10S", "9H"], ["10D", "8C"]) }));
     expect(hit(settled)).toBe(settled);
+  });
+});
+
+describe("resign", () => {
+  it("forfeits the whole stake and settles the round", () => {
+    const round = resign(startRound({ stake: 100, deck: stacked(["5S", "4H"], ["6D", "5C"]) }));
+    expect(round.phase).toBe("settled");
+    expect(round.outcome).toBe("player-resign");
+    expect(round.netGold).toBe(-100);
+    expect(settlementPayout(round)).toBe(0);
+  });
+
+  it("forfeits nothing on a practice (stake 0) round -- there is nothing to forfeit", () => {
+    const round = resign(startRound({ stake: 0, deck: stacked(["5S", "4H"], ["6D", "5C"]) }));
+    expect(round.netGold).toBe(0);
+  });
+
+  it("is only legal on the opening turn, same as hit and stand", () => {
+    const settled = stand(startRound({ stake: 100, deck: stacked(["10S", "9H"], ["10D", "8C"]) }));
+    expect(resign(settled)).toBe(settled);
+  });
+
+  it("cannot be called after a double locked the wager in", () => {
+    // doubleDown always leaves the round settled (exactly one more card, then
+    // the dealer plays out), so resign has no live phase left to act on.
+    // Dealer already stands on 18, so playDealer draws nothing further.
+    const doubled = doubleDown(
+      startRound({ stake: 100, deck: stacked(["5S", "4H"], ["10D", "8C"], ["2S"]) }),
+    );
+    expect(doubled.phase).toBe("settled");
+    expect(resign(doubled)).toBe(doubled);
+  });
+
+  it("is offered exactly when hit and stand are", () => {
+    const live = startRound({ stake: 100, deck: stacked(["5S", "4H"], ["10D", "8C"]) });
+    expect(legalBlackjackActions(live).resign).toBe(true);
+    const settled = stand(live);
+    expect(legalBlackjackActions(settled).resign).toBe(false);
   });
 });
 
@@ -366,7 +405,7 @@ describe("toBlackjackSnapshot", () => {
     const snapshot = toBlackjackSnapshot(round, meta);
     expect(snapshot.id).toBe("round-1");
     expect(snapshot.version).toBe(3);
-    expect(snapshot.legal).toEqual({ hit: true, stand: true, double: true });
+    expect(snapshot.legal).toEqual({ hit: true, stand: true, double: true, resign: true });
     expect(snapshot.netGold).toBe(0);
     expect(snapshot.outcome).toBeNull();
   });
@@ -377,6 +416,6 @@ describe("toBlackjackSnapshot", () => {
     expect(snapshot.phase).toBe("settled");
     expect(snapshot.outcome).toBe("player-blackjack");
     expect(snapshot.netGold).toBe(1500);
-    expect(snapshot.legal).toEqual({ hit: false, stand: false, double: false });
+    expect(snapshot.legal).toEqual({ hit: false, stand: false, double: false, resign: false });
   });
 });

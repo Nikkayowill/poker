@@ -127,7 +127,11 @@ $$;
 comment on function public.adjust_homestead_feed(uuid, integer) is
   'Moves a player''s feed balance atomically. Raises 23514 from the servings check rather than going negative; callers treat that as a lost race.';
 
-revoke all on function public.adjust_homestead_feed(uuid, integer) from anon, authenticated;
+-- `public` is load-bearing and not redundant: anon and authenticated inherit
+-- Postgres's default PUBLIC execute grant, so revoking from the two roles
+-- alone leaves the function callable on /rest/v1/rpc. Same three-name list
+-- credit_gold uses. See 20260901_revoke_homestead_function_execute_from_public.
+revoke all on function public.adjust_homestead_feed(uuid, integer) from public, anon, authenticated;
 
 -- WHY A TRIGGER AND NOT CHECK CONSTRAINTS, for the tunable rules
 --
@@ -205,6 +209,11 @@ $$;
 
 comment on function public.homestead_plots_enforce_stock_shape() is
   'Gates what may be STOCKED (payout ceiling per stock type, separate crop and livestock caps). Mirrors lib/homestead/catalogue.ts. Fires only when a row turns working, so it can never block a collection; see the migration that added it for why CHECKs would brick in-flight plots.';
+
+-- A trigger function is never meant to be called directly, and revoking
+-- EXECUTE does not stop the trigger: Postgres invokes trigger functions
+-- without checking the firing role's privilege.
+revoke execute on function public.homestead_plots_enforce_stock_shape() from public, anon, authenticated;
 
 drop trigger if exists homestead_plots_stock_shape on public.homestead_plots;
 create trigger homestead_plots_stock_shape

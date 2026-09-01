@@ -8,7 +8,7 @@ function growingRow(plotIndex: number, plantedAt: Date, maturesAt: Date): MintPl
   return {
     plotIndex,
     status: "growing",
-    nodeType: "pulse",
+    nodeType: "hen",
     stake: 1000,
     payout: 1050,
     plantedAt: plantedAt.toISOString(),
@@ -78,7 +78,7 @@ describe("growth", () => {
     const [plot] = toMintPlotSnapshots([growingRow(1, T0, matures)], now);
     expect(plot.state).toBe("growing");
     expect(plot.growthPercent).toBeCloseTo(0.4, 5);
-    expect(plot.nodeType).toBe("pulse");
+    expect(plot.nodeType).toBe("hen");
     expect(plot.payout).toBe(1050);
   });
 

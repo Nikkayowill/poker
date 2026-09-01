@@ -15,7 +15,7 @@ create table public.mint_plots (
   profile_id uuid not null references public.profiles(id) on delete cascade,
   plot_index int not null check (plot_index between 1 and 16),
   status text not null default 'empty' check (status in ('empty', 'growing')),
-  node_type text check (node_type in ('pulse', 'core', 'matrix')),
+  node_type text check (node_type in ('hen', 'pig', 'cattle')),
   -- Already debited by the time this is set (rule 1). Stored, not derived,
   -- so the ledger records exactly what was staked.
   stake integer check (stake > 0),
@@ -91,9 +91,9 @@ begin
   -- other turns a permitted plant into a 500 from the database instead of a
   -- clean 400 from the service.
   payout_ceiling := case new.node_type
-    when 'pulse' then 1050
-    when 'core' then 10600
-    when 'matrix' then 52500
+    when 'hen' then 1050
+    when 'pig' then 10600
+    when 'cattle' then 52500
     -- Any node type not listed yields NULL and is left alone, fail-open on
     -- purpose: a node added later belongs in nodes.ts first and here second.
     else null
@@ -144,7 +144,7 @@ create table public.mint_harvests (
   id uuid primary key default gen_random_uuid(),
   profile_id uuid not null references public.profiles(id) on delete cascade,
   plot_index int not null check (plot_index between 1 and 16),
-  node_type text not null check (node_type in ('pulse', 'core', 'matrix')),
+  node_type text not null check (node_type in ('hen', 'pig', 'cattle')),
   stake integer not null check (stake > 0),
   payout integer not null check (payout > 0),
   planted_at timestamptz not null,

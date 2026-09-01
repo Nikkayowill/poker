@@ -38,7 +38,7 @@ vi.mock("./mint-store", async (importOriginal) => {
  */
 
 const T0 = new Date("2026-08-31T12:00:00.000Z");
-const PULSE_RIPE = new Date(T0.getTime() + MINT_NODES.pulse.durationMs);
+const PULSE_RIPE = new Date(T0.getTime() + MINT_NODES.hen.durationMs);
 
 async function funded(gold = 500_000) {
   const token = randomUUID();
@@ -61,37 +61,37 @@ describe("planting", () => {
     const { token, id } = await funded();
     const before = await balance(token);
 
-    await plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "pulse" }, T0);
+    await plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "hen" }, T0);
 
-    expect(await balance(token)).toBe(before - MINT_NODES.pulse.stake);
+    expect(await balance(token)).toBe(before - MINT_NODES.hen.stake);
     const row = await getMintPlot(id, 1);
     expect(row?.status).toBe("growing");
-    expect(row?.stake).toBe(MINT_NODES.pulse.stake);
-    expect(row?.payout).toBe(MINT_NODES.pulse.payout);
+    expect(row?.stake).toBe(MINT_NODES.hen.stake);
+    expect(row?.payout).toBe(MINT_NODES.hen.payout);
     expect(row?.maturesAt).toBe(PULSE_RIPE.toISOString());
   });
 
   it("creates a free plot's row lazily without charging for the plot", async () => {
     const { token } = await funded();
     const before = await balance(token);
-    await plantMintNodeOnPlot(token, { plotIndex: MINT_FREE_PLOTS, nodeType: "pulse" }, T0);
+    await plantMintNodeOnPlot(token, { plotIndex: MINT_FREE_PLOTS, nodeType: "hen" }, T0);
     // Only the stake left; no plot price on a free tile.
-    expect(await balance(token)).toBe(before - MINT_NODES.pulse.stake);
+    expect(await balance(token)).toBe(before - MINT_NODES.hen.stake);
   });
 
   it("refuses a stake the player cannot cover, without debiting", async () => {
-    const { token } = await funded(MINT_NODES.pulse.stake - 1);
-    await expect(plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "pulse" }, T0)).rejects.toBeInstanceOf(
+    const { token } = await funded(MINT_NODES.hen.stake - 1);
+    await expect(plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "hen" }, T0)).rejects.toBeInstanceOf(
       MintRequestError,
     );
-    expect(await balance(token)).toBe(MINT_NODES.pulse.stake - 1);
+    expect(await balance(token)).toBe(MINT_NODES.hen.stake - 1);
   });
 
   it("refuses an occupied plot without touching the wallet", async () => {
     const { token } = await funded();
-    await plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "pulse" }, T0);
+    await plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "hen" }, T0);
     const after = await balance(token);
-    await expect(plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "core" }, T0)).rejects.toBeInstanceOf(
+    await expect(plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "pig" }, T0)).rejects.toBeInstanceOf(
       MintRequestError,
     );
     expect(await balance(token)).toBe(after);
@@ -101,7 +101,7 @@ describe("planting", () => {
     const { token } = await funded();
     const before = await balance(token);
     await expect(
-      plantMintNodeOnPlot(token, { plotIndex: MINT_FREE_PLOTS + 1, nodeType: "pulse" }, T0),
+      plantMintNodeOnPlot(token, { plotIndex: MINT_FREE_PLOTS + 1, nodeType: "hen" }, T0),
     ).rejects.toBeInstanceOf(MintRequestError);
     expect(await balance(token)).toBe(before);
   });
@@ -109,11 +109,11 @@ describe("planting", () => {
   it("caps concurrent nodes, and the refused plant costs nothing", async () => {
     const { token } = await funded();
     for (let plot = 1; plot <= MINT_CONCURRENT_NODE_CAP; plot += 1) {
-      await plantMintNodeOnPlot(token, { plotIndex: plot, nodeType: "pulse" }, T0);
+      await plantMintNodeOnPlot(token, { plotIndex: plot, nodeType: "hen" }, T0);
     }
     const after = await balance(token);
     await expect(
-      plantMintNodeOnPlot(token, { plotIndex: MINT_CONCURRENT_NODE_CAP + 1, nodeType: "pulse" }, T0),
+      plantMintNodeOnPlot(token, { plotIndex: MINT_CONCURRENT_NODE_CAP + 1, nodeType: "hen" }, T0),
     ).rejects.toBeInstanceOf(MintRequestError);
     expect(await balance(token)).toBe(after);
   });
@@ -123,7 +123,7 @@ describe("planting", () => {
     const before = await balance(token);
     vi.mocked(plantMintNode).mockRejectedValueOnce(new Error("Could not plant that node: check_violation"));
 
-    await expect(plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "matrix" }, T0)).rejects.toThrow(
+    await expect(plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "cattle" }, T0)).rejects.toThrow(
       "check_violation",
     );
     // Rule 1's second half: the write failed, so the debit came back.
@@ -138,19 +138,19 @@ describe("planting", () => {
     // either never debits (it read the row late) or debits and refunds (it
     // lost the guarded write). Both end with one stake gone.
     const results = await Promise.allSettled([
-      plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "pulse" }, T0),
-      plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "pulse" }, T0),
+      plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "hen" }, T0),
+      plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "hen" }, T0),
     ]);
 
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(await balance(token)).toBe(before - MINT_NODES.pulse.stake);
+    expect(await balance(token)).toBe(before - MINT_NODES.hen.stake);
   });
 });
 
 describe("harvesting", () => {
   it("refuses before maturity and credits nothing", async () => {
     const { token } = await funded();
-    await plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "pulse" }, T0);
+    await plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "hen" }, T0);
     const after = await balance(token);
 
     const early = new Date(PULSE_RIPE.getTime() - 1);
@@ -160,16 +160,16 @@ describe("harvesting", () => {
 
   it("credits the payout exactly once, and a second harvest finds nothing", async () => {
     const { token } = await funded();
-    await plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "pulse" }, T0);
+    await plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "hen" }, T0);
     const staked = await balance(token);
 
     const { harvested, plots } = await harvestMintPlot(token, 1, PULSE_RIPE);
-    expect(harvested.payout).toBe(MINT_NODES.pulse.payout);
+    expect(harvested.payout).toBe(MINT_NODES.hen.payout);
     expect(plots[0].state).toBe("empty");
-    expect(await balance(token)).toBe(staked + MINT_NODES.pulse.payout);
+    expect(await balance(token)).toBe(staked + MINT_NODES.hen.payout);
 
     await expect(harvestMintPlot(token, 1, PULSE_RIPE)).rejects.toBeInstanceOf(MintRequestError);
-    expect(await balance(token)).toBe(staked + MINT_NODES.pulse.payout);
+    expect(await balance(token)).toBe(staked + MINT_NODES.hen.payout);
   });
 
   it("pays the payout snapshotted on the row, not today's tuning table", async () => {
@@ -178,7 +178,7 @@ describe("harvesting", () => {
     const { token, id } = await funded();
     const row = await createMintPlot(id, 1);
     await plantMintNode(row, {
-      nodeType: "pulse",
+      nodeType: "hen",
       stake: 1000,
       payout: 7777,
       plantedAt: T0,
@@ -195,7 +195,7 @@ describe("harvesting", () => {
     const { id } = await funded();
     const created = await createMintPlot(id, 1);
     await plantMintNode(created, {
-      nodeType: "pulse",
+      nodeType: "hen",
       stake: 1000,
       payout: 1050,
       plantedAt: T0,
@@ -212,7 +212,7 @@ describe("harvesting", () => {
     const { id } = await funded();
     const created = await createMintPlot(id, 1);
     await plantMintNode(created, {
-      nodeType: "pulse",
+      nodeType: "hen",
       stake: 1000,
       payout: 1050,
       plantedAt: T0,
@@ -224,16 +224,16 @@ describe("harvesting", () => {
 
   it("records every settled harvest in the ledger", async () => {
     const { token, id } = await funded();
-    await plantMintNodeOnPlot(token, { plotIndex: 2, nodeType: "pulse" }, T0);
+    await plantMintNodeOnPlot(token, { plotIndex: 2, nodeType: "hen" }, T0);
     await harvestMintPlot(token, 2, PULSE_RIPE);
 
     const entries = __mintHarvestsForTest().filter((entry) => entry.profileId === id);
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       plotIndex: 2,
-      nodeType: "pulse",
-      stake: MINT_NODES.pulse.stake,
-      payout: MINT_NODES.pulse.payout,
+      nodeType: "hen",
+      stake: MINT_NODES.hen.stake,
+      payout: MINT_NODES.hen.payout,
     });
   });
 });
@@ -298,9 +298,9 @@ describe("reading", () => {
 
   it("derives ripeness from the maturity snapshot", async () => {
     const { token } = await funded();
-    await plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "pulse" }, T0);
+    await plantMintNodeOnPlot(token, { plotIndex: 1, nodeType: "hen" }, T0);
 
-    const mid = await readMintTreasury(token, new Date(T0.getTime() + MINT_NODES.pulse.durationMs / 2));
+    const mid = await readMintTreasury(token, new Date(T0.getTime() + MINT_NODES.hen.durationMs / 2));
     expect(mid.plots[0].state).toBe("growing");
 
     const ripe = await readMintTreasury(token, PULSE_RIPE);

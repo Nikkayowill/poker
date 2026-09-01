@@ -20,7 +20,7 @@
  * retune must not change what an already-planted node pays.
  */
 
-export const MINT_NODE_TYPES = ["pulse", "core", "matrix"] as const;
+export const MINT_NODE_TYPES = ["hen", "pig", "cattle"] as const;
 export type MintNodeType = (typeof MINT_NODE_TYPES)[number];
 
 export function isMintNodeType(value: string): value is MintNodeType {
@@ -41,9 +41,9 @@ export interface MintNodeDef {
  * mint_plots_enforce_node_shape() in step with this table when retuning.
  */
 export const MINT_NODES: Readonly<Record<MintNodeType, MintNodeDef>> = {
-  pulse: { stake: 1_000, durationMs: 15 * 60 * 1000, payout: 1_050 },
-  core: { stake: 10_000, durationMs: 4 * 60 * 60 * 1000, payout: 10_600 },
-  matrix: { stake: 50_000, durationMs: 24 * 60 * 60 * 1000, payout: 52_500 },
+  hen: { stake: 1_000, durationMs: 15 * 60 * 1000, payout: 1_050 },
+  pig: { stake: 10_000, durationMs: 4 * 60 * 60 * 1000, payout: 10_600 },
+  cattle: { stake: 50_000, durationMs: 24 * 60 * 60 * 1000, payout: 52_500 },
 };
 
 /**

@@ -91,18 +91,20 @@ const SELECT_RING = 0xffe98a;
  * violet side of the palette so the three animals span it.
  */
 const ANIMAL: Record<MintNodeType, { body: number; shade: number }> = {
-  pulse: { body: 0xe4d9c4, shade: 0x8f8676 },
-  core: { body: 0xbb9098, shade: 0x704d57 },
-  matrix: { body: 0xbfae9c, shade: 0x6a5f54 },
+  hen: { body: 0xe4d9c4, shade: 0x8f8676 },
+  pig: { body: 0xbb9098, shade: 0x704d57 },
+  cattle: { body: 0xbfae9c, shade: 0x6a5f54 },
 };
 
 /** Set back per species, since the three silhouettes are not the same size. */
-const ANIMAL_SCALE: Record<MintNodeType, number> = { pulse: 0.8, core: 0.7, matrix: 0.68 };
+const ANIMAL_SCALE: Record<MintNodeType, number> = { hen: 0.8, pig: 0.7, cattle: 0.68 };
 
 const BEAK_GOLD = 0xf2a63c;
 const COMB_RED = 0xc23a34;
 const EYE_DARK = 0x1a1420;
 const HORN_CHALK = 0xe8e0d2;
+const OUTLINE = 0x18110f;
+const COW_PATCH = 0x584a3f;
 
 /**
  * Slab thickness under each plot's top face, straight from the homestead
@@ -113,7 +115,7 @@ const HORN_CHALK = 0xe8e0d2;
  * heavily in this projection, so the lift shows exactly where a plot has no
  * neighbour in front of it, which is where it should.
  */
-const TILE_LIFT = 12;
+const TILE_LIFT = 8;
 
 function diamond(halfW: number, halfH: number): Phaser.Geom.Point[] {
   return [
@@ -129,7 +131,7 @@ export class MintScene extends Phaser.Scene {
   /**
    * Only the PLOT tweens are tracked. Phaser does not kill a tween just
    * because its target was destroyed, and the plot layer is destroyed on
-   * every repaint, so a ripe pulse left running would tick against a dead
+   * every repaint, so a ripe hen left running would tick against a dead
    * object forever. The ambient tweens in buildAmbience own targets that live
    * as long as the scene does, and the scene's tween manager takes them with
    * it when the game is destroyed.
@@ -377,7 +379,7 @@ export class MintScene extends Phaser.Scene {
     if (tile.state === "growing" || tile.state === "ripe") {
       const ripe = tile.state === "ripe";
       const growth = ripe ? 1 : Math.min(1, Math.max(0, tile.growthPercent ?? 0));
-      this.paintPen(container, tile.nodeType ?? "pulse", growth, ripe);
+      this.paintPen(container, tile.nodeType ?? "hen", growth, ripe);
     }
 
     return container;
@@ -541,8 +543,8 @@ export class MintScene extends Phaser.Scene {
     // thirds of the diamond.
     const animal = this.add.graphics();
     const skin = ANIMAL[nodeType];
-    if (nodeType === "pulse") this.paintHen(animal, skin);
-    else if (nodeType === "core") this.paintPig(animal, skin);
+    if (nodeType === "hen") this.paintHen(animal, skin);
+    else if (nodeType === "pig") this.paintPig(animal, skin);
     else this.paintCow(animal, skin);
     animal.setScale(ANIMAL_SCALE[nodeType]);
     container.add(animal);
@@ -615,89 +617,187 @@ export class MintScene extends Phaser.Scene {
     }
   }
 
-  /** Pulse: a hen. Adapted from the homestead branch's chicken. */
+  /**
+   * Hen. Built on the homestead branch's chicken, with the three things that
+   * make it read at plot size: a dark contour so it survives against the soil,
+   * a wing breaking up the body, and a three-bump comb instead of one spike.
+   */
   private paintHen(g: Phaser.GameObjects.Graphics, skin: { body: number; shade: number }): void {
-    g.lineStyle(2, skin.shade, 1);
-    for (const legX of [-5, 6]) {
+    g.lineStyle(2.5, OUTLINE, 0.9);
+    for (const legX of [-5, 7]) {
       g.beginPath();
-      g.moveTo(legX, 2);
-      g.lineTo(legX, -7);
+      g.moveTo(legX, 3);
+      g.lineTo(legX, -8);
       g.strokePath();
     }
+    // Feet.
+    g.lineStyle(2, OUTLINE, 0.9);
+    for (const legX of [-5, 7]) {
+      g.beginPath();
+      g.moveTo(legX - 4, 3);
+      g.lineTo(legX + 4, 3);
+      g.strokePath();
+    }
+
     g.fillStyle(skin.body, 1);
-    g.fillEllipse(0, -18, 40, 26);
-    g.fillStyle(skin.shade, 0.75);
-    g.fillEllipse(-6, -16, 22, 14);
-    g.fillStyle(skin.body, 1);
-    g.fillCircle(16, -31, 10);
-    g.fillStyle(BEAK_GOLD, 1);
-    g.fillTriangle(24, -31, 34, -28, 24, -26);
-    g.fillStyle(COMB_RED, 1);
-    g.fillTriangle(12, -40, 16, -47, 20, -40);
-    g.fillStyle(EYE_DARK, 1);
-    g.fillCircle(19, -33, 1.8);
+    g.fillEllipse(0, -19, 42, 28);
+    g.lineStyle(1.6, OUTLINE, 0.55);
+    g.strokeEllipseShape(new Phaser.Geom.Ellipse(0, -19, 42, 28));
+
+    // Wing, and the shaded underside.
+    g.fillStyle(skin.shade, 0.85);
+    g.fillEllipse(-3, -15, 24, 15);
+    g.fillStyle(skin.shade, 0.5);
+    g.fillEllipse(-4, -22, 20, 11);
+
+    // Tail, behind the body's silhouette but drawn after so it stays crisp.
     g.fillStyle(skin.shade, 1);
-    g.fillTriangle(-22, -20, -34, -14, -22, -10);
+    g.fillTriangle(-19, -22, -35, -15, -19, -9);
+    g.lineStyle(1.4, OUTLINE, 0.5);
+    g.beginPath();
+    g.moveTo(-19, -22);
+    g.lineTo(-35, -15);
+    g.lineTo(-19, -9);
+    g.strokePath();
+
+    g.fillStyle(skin.body, 1);
+    g.fillCircle(17, -32, 10.5);
+    g.lineStyle(1.6, OUTLINE, 0.5);
+    g.strokeCircleShape(new Phaser.Geom.Circle(17, -32, 10.5));
+
+    // Comb: three bumps, which is what stops it reading as a horn.
+    g.fillStyle(COMB_RED, 1);
+    g.fillCircle(12, -41, 3.4);
+    g.fillCircle(17, -43, 3.8);
+    g.fillCircle(22, -41, 3.2);
+    // Wattle under the beak.
+    g.fillStyle(COMB_RED, 1);
+    g.fillEllipse(23, -25, 5, 7);
+
+    g.fillStyle(BEAK_GOLD, 1);
+    g.fillTriangle(25, -33, 36, -30, 25, -27);
+    g.fillStyle(EYE_DARK, 1);
+    g.fillCircle(20, -34, 2);
   }
 
-  /** Core: a pig. New, drawn in the same idiom as the two it stands beside. */
+  /**
+   * Pig. New, in the same idiom as the two it stands beside. The snout is
+   * doing the work here -- without a clear disc with two nostrils on it, a
+   * pink oval with ears is just a blob.
+   */
   private paintPig(g: Phaser.GameObjects.Graphics, skin: { body: number; shade: number }): void {
-    g.lineStyle(3, skin.shade, 1);
-    for (const legX of [-16, -6, 8, 17]) {
+    g.lineStyle(3.5, OUTLINE, 0.9);
+    for (const legX of [-17, -6, 8, 18]) {
       g.beginPath();
-      g.moveTo(legX, 2);
-      g.lineTo(legX, -11);
+      g.moveTo(legX, 3);
+      g.lineTo(legX, -12);
       g.strokePath();
     }
+    // Trotters.
+    g.fillStyle(OUTLINE, 0.9);
+    for (const legX of [-17, -6, 8, 18]) g.fillEllipse(legX, 3, 6, 3);
+
     g.fillStyle(skin.body, 1);
-    g.fillEllipse(0, -25, 52, 30);
-    g.fillStyle(skin.shade, 0.65);
-    g.fillEllipse(-8, -20, 26, 14);
-    g.fillStyle(skin.body, 1);
-    g.fillCircle(23, -33, 13);
-    // Snout, then the two ears that stop it reading as a bean with a face.
-    g.fillStyle(skin.shade, 0.9);
-    g.fillEllipse(33, -31, 12, 9);
-    g.fillStyle(EYE_DARK, 1);
-    g.fillCircle(31, -32, 1.5);
-    g.fillCircle(36, -31, 1.5);
-    g.fillCircle(24, -37, 1.9);
-    g.fillStyle(skin.body, 1);
-    g.fillTriangle(16, -44, 24, -46, 18, -37);
-    g.fillTriangle(28, -46, 34, -42, 27, -37);
+    g.fillEllipse(-2, -26, 54, 32);
+    g.lineStyle(1.8, OUTLINE, 0.5);
+    g.strokeEllipseShape(new Phaser.Geom.Ellipse(-2, -26, 54, 32));
+    g.fillStyle(skin.shade, 0.55);
+    g.fillEllipse(-6, -19, 34, 15);
+
+    // Curl of tail.
     g.lineStyle(2.5, skin.shade, 1);
     g.beginPath();
-    g.moveTo(-26, -28);
-    g.lineTo(-33, -33);
+    g.moveTo(-28, -30);
+    g.lineTo(-34, -35);
     g.strokePath();
+
+    // Ears first, so the head's outline cuts over their base.
+    g.fillStyle(skin.shade, 1);
+    g.fillTriangle(15, -45, 24, -49, 20, -38);
+    g.fillTriangle(30, -49, 36, -43, 29, -38);
+
+    g.fillStyle(skin.body, 1);
+    g.fillCircle(24, -33, 13.5);
+    g.lineStyle(1.8, OUTLINE, 0.5);
+    g.strokeCircleShape(new Phaser.Geom.Circle(24, -33, 13.5));
+
+    // Snout disc plus nostrils.
+    g.fillStyle(skin.shade, 1);
+    g.fillEllipse(34, -31, 14, 11);
+    g.lineStyle(1.4, OUTLINE, 0.55);
+    g.strokeEllipseShape(new Phaser.Geom.Ellipse(34, -31, 14, 11));
+    g.fillStyle(EYE_DARK, 0.85);
+    g.fillEllipse(32, -31, 2.6, 3.4);
+    g.fillEllipse(37, -31, 2.6, 3.4);
+
+    g.fillStyle(EYE_DARK, 1);
+    g.fillCircle(23, -38, 2);
   }
 
-  /** Matrix: a cow. Adapted from the homestead branch's cattle. */
+  /**
+   * Cow. The homestead branch's cattle, plus the patches -- an unbroken beige
+   * body reads as a generic quadruped at this size, and two dark patches read
+   * as a cow immediately.
+   */
   private paintCow(g: Phaser.GameObjects.Graphics, skin: { body: number; shade: number }): void {
-    g.lineStyle(3, skin.shade, 1);
-    for (const legX of [-18, -8, 10, 20]) {
+    g.lineStyle(3.5, OUTLINE, 0.9);
+    for (const legX of [-19, -8, 10, 21]) {
       g.beginPath();
-      g.moveTo(legX, 2);
-      g.lineTo(legX, -14);
+      g.moveTo(legX, 3);
+      g.lineTo(legX, -15);
       g.strokePath();
     }
-    g.fillStyle(skin.body, 1);
-    g.fillRoundedRect(-27, -40, 54, 27, 9);
-    g.fillStyle(skin.shade, 0.7);
-    g.fillEllipse(-8, -24, 26, 12);
-    g.fillEllipse(10, -34, 16, 9);
-    g.fillStyle(skin.body, 1);
-    g.fillRoundedRect(20, -52, 22, 20, 7);
-    g.fillStyle(HORN_CHALK, 1);
-    g.fillTriangle(23, -51, 13, -57, 25, -46);
-    g.fillTriangle(39, -51, 49, -57, 37, -46);
-    g.fillStyle(EYE_DARK, 1);
-    g.fillCircle(28, -44, 2);
-    g.fillCircle(37, -44, 2);
-    g.lineStyle(3, skin.shade, 1);
+    // Hooves.
+    g.fillStyle(OUTLINE, 0.9);
+    for (const legX of [-19, -8, 10, 21]) g.fillEllipse(legX, 3, 7, 3.4);
+
+    // Tail, behind the body.
+    g.lineStyle(2.5, OUTLINE, 0.85);
     g.beginPath();
-    g.moveTo(-27, -36);
-    g.lineTo(-36, -20);
+    g.moveTo(-28, -36);
+    g.lineTo(-37, -20);
     g.strokePath();
+    g.fillStyle(skin.shade, 1);
+    g.fillEllipse(-37, -18, 4, 7);
+
+    g.fillStyle(skin.body, 1);
+    g.fillRoundedRect(-28, -41, 56, 29, 10);
+    g.lineStyle(1.8, OUTLINE, 0.5);
+    g.strokeRoundedRect(-28, -41, 56, 29, 10);
+
+    // Patches. Kept inside the body's rounded rect so nothing hangs off it.
+    g.fillStyle(COW_PATCH, 0.9);
+    g.fillEllipse(-13, -32, 20, 15);
+    g.fillEllipse(9, -24, 15, 11);
+
+    // Udder, small, on the shaded underside.
+    g.fillStyle(COMB_RED, 0.5);
+    g.fillEllipse(-4, -12, 12, 6);
+
+    // Ears, then the head over their base.
+    g.fillStyle(skin.shade, 1);
+    g.fillEllipse(19, -49, 9, 6);
+    g.fillEllipse(45, -49, 9, 6);
+
+    g.fillStyle(skin.body, 1);
+    g.fillRoundedRect(21, -54, 23, 22, 8);
+    g.lineStyle(1.8, OUTLINE, 0.5);
+    g.strokeRoundedRect(21, -54, 23, 22, 8);
+
+    // Horns, short and swept, attached at the skull.
+    g.fillStyle(HORN_CHALK, 1);
+    g.fillTriangle(24, -53, 15, -59, 26, -48);
+    g.fillTriangle(41, -53, 50, -59, 39, -48);
+
+    // Muzzle.
+    g.fillStyle(skin.shade, 0.9);
+    g.fillEllipse(32, -36, 15, 9);
+    g.fillStyle(EYE_DARK, 0.8);
+    g.fillEllipse(29, -36, 2.4, 3);
+    g.fillEllipse(35, -36, 2.4, 3);
+
+    g.fillStyle(EYE_DARK, 1);
+    g.fillCircle(27, -46, 2.2);
+    g.fillCircle(38, -46, 2.2);
   }
 }

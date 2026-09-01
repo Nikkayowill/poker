@@ -21,7 +21,7 @@ import { MINT_STAGE_H, MINT_STAGE_W, MINT_TAP_HALF_H, MINT_TAP_HALF_W, mintTileC
 import type { MintSceneTile } from "./mint-scene";
 
 /**
- * The Sovereign Mint: a diorama of staked, timed Gold nodes.
+ * The Sovereign Mint: a diorama of staked, timed livestock pens.
  *
  * Split of responsibilities: this shell owns every rule-shaped thing (data,
  * requests, selection, the action panel), the Phaser canvas underneath is
@@ -51,10 +51,15 @@ interface MintResponse {
   round?: MintPlotSnapshot[];
 }
 
+/**
+ * Plain farm nouns, following the homestead branch's own catalogue ("Hen
+ * Coop", "Cattle Pen"). The first cut called these Pulse, Core and Matrix,
+ * which read as server hardware sitting in a field.
+ */
 const NODE_COPY: Record<MintNodeType, { label: string; duration: string; tagline: string }> = {
-  pulse: { label: "Pulse", duration: "15 min", tagline: "Quick turnaround" },
-  core: { label: "Core", duration: "4 hrs", tagline: "Check back later" },
-  matrix: { label: "Matrix", duration: "24 hrs", tagline: "Overnight hold" },
+  hen: { label: "Hen Coop", duration: "15 min", tagline: "Quick turnaround" },
+  pig: { label: "Pig Pen", duration: "4 hrs", tagline: "Check back later" },
+  cattle: { label: "Cattle Pen", duration: "24 hrs", tagline: "Overnight hold" },
 };
 
 function countdownLabel(msLeft: number): string {
@@ -208,11 +213,11 @@ export function MintTreasury() {
           ? `Plot ${plot.plotIndex}, locked. Unlocks for ${plot.unlockPrice?.toLocaleString()} Gold.`
           : `Plot ${plot.plotIndex}, locked. Unlock earlier plots first.`;
       case "empty":
-        return `Plot ${plot.plotIndex}, empty. Plant a node here.`;
+        return `Plot ${plot.plotIndex}, empty. Stock a pen here.`;
       case "growing":
-        return `Plot ${plot.plotIndex}, ${NODE_COPY[plot.nodeType as MintNodeType]?.label ?? "node"} growing. Ready in ${countdownLabel(Date.parse(plot.maturesAt ?? "") - nowMs)}.`;
+        return `Plot ${plot.plotIndex}, ${NODE_COPY[plot.nodeType as MintNodeType]?.label ?? "pen"} working. Ready in ${countdownLabel(Date.parse(plot.maturesAt ?? "") - nowMs)}.`;
       case "ripe":
-        return `Plot ${plot.plotIndex}, ready. Harvest ${plot.payout?.toLocaleString()} Gold.`;
+        return `Plot ${plot.plotIndex}, ready. Collect ${plot.payout?.toLocaleString()} Gold.`;
     }
   };
 
@@ -241,7 +246,7 @@ export function MintTreasury() {
           <h1>Sovereign Mint</h1>
         </div>
         <span className="mint-cap" aria-live="polite">
-          {growingCount}/{MINT_CONCURRENT_NODE_CAP} nodes growing
+          {growingCount}/{MINT_CONCURRENT_NODE_CAP} pens working
         </span>
       </div>
 
@@ -284,7 +289,7 @@ export function MintTreasury() {
             {!loaded ? (
               <p className="mint-hint">Surveying the grounds…</p>
             ) : selectedPlot === null ? (
-              <p className="mint-hint">Tap a tile. Stake Gold into a node, come back when it&apos;s grown, harvest more back.</p>
+              <p className="mint-hint">Tap a plot. Stake Gold on livestock, come back when they&apos;ve paid out, collect more than you put in.</p>
             ) : selectedPlot.state === "locked" ? (
               <div className="mint-panel">
                 <h2>Locked plot</h2>
@@ -307,9 +312,9 @@ export function MintTreasury() {
               </div>
             ) : selectedPlot.state === "empty" ? (
               <div className="mint-panel">
-                <h2>Plant a node</h2>
+                <h2>Stock the pen</h2>
                 {growingCount >= MINT_CONCURRENT_NODE_CAP ? (
-                  <p>Your crews can only tend {MINT_CONCURRENT_NODE_CAP} nodes at once. Harvest one first.</p>
+                  <p>Your hands can only tend {MINT_CONCURRENT_NODE_CAP} pens at once. Collect from one first.</p>
                 ) : (
                   <div className="mint-node-cards">
                     {MINT_NODE_TYPES.map((nodeType) => {
@@ -323,7 +328,7 @@ export function MintTreasury() {
                             {node.stake.toLocaleString()} Gold · {copy.duration}
                           </p>
                           <p className="mint-node-yield">
-                            Harvests {node.payout.toLocaleString()} <span>(+{(node.payout - node.stake).toLocaleString()})</span>
+                            Pays {node.payout.toLocaleString()} <span>(+{(node.payout - node.stake).toLocaleString()})</span>
                           </p>
                           <button
                             type="button"
@@ -331,7 +336,7 @@ export function MintTreasury() {
                             disabled={busy || short}
                             onClick={() => void act({ action: "plant", plotIndex: selectedPlot.plotIndex, nodeType })}
                           >
-                            Plant
+                            Stock
                           </button>
                           {short && <GoldShortfallHint needed={node.stake} compact />}
                         </div>
@@ -342,22 +347,22 @@ export function MintTreasury() {
               </div>
             ) : selectedPlot.state === "growing" ? (
               <div className="mint-panel">
-                <h2>{NODE_COPY[selectedPlot.nodeType as MintNodeType]?.label ?? "Node"} growing</h2>
+                <h2>{NODE_COPY[selectedPlot.nodeType as MintNodeType]?.label ?? "Pen"} working</h2>
                 <p className="mint-countdown">
                   Ready in {countdownLabel(Date.parse(selectedPlot.maturesAt ?? "") - nowMs)}
                 </p>
-                <p>Harvests {selectedPlot.payout?.toLocaleString()} Gold. It keeps growing while you&apos;re away.</p>
+                <p>Pays {selectedPlot.payout?.toLocaleString()} Gold. They keep working while you&apos;re away.</p>
               </div>
             ) : (
               <div className="mint-panel">
-                <h2>Ready to harvest</h2>
+                <h2>Ready to collect</h2>
                 <button
                   type="button"
                   className="mint-cta mint-harvest-btn"
                   disabled={busy}
                   onClick={() => void act({ action: "harvest", plotIndex: selectedPlot.plotIndex })}
                 >
-                  Harvest {selectedPlot.payout?.toLocaleString()} Gold
+                  Collect {selectedPlot.payout?.toLocaleString()} Gold
                 </button>
               </div>
             )}
@@ -368,14 +373,14 @@ export function MintTreasury() {
       {showHelp && (
         <HowToPlayModal title="Sovereign Mint" onClose={() => setShowHelp(false)}>
           <p>
-            Stake Gold into a node on an empty plot. It matures on its own — even while the app is
-            closed — and once it turns gold, harvesting pays your stake back plus a bonus.
+            Stake Gold on livestock in an empty pen. They work on their own — even while the app is
+            closed — and once the pen turns gold, collecting pays your stake back plus a bonus.
           </p>
           <ul>
-            <li>Pulse: {MINT_NODES.pulse.stake.toLocaleString()} Gold for 15 minutes, harvests {MINT_NODES.pulse.payout.toLocaleString()}.</li>
-            <li>Core: {MINT_NODES.core.stake.toLocaleString()} Gold for 4 hours, harvests {MINT_NODES.core.payout.toLocaleString()}.</li>
-            <li>Matrix: {MINT_NODES.matrix.stake.toLocaleString()} Gold for 24 hours, harvests {MINT_NODES.matrix.payout.toLocaleString()}.</li>
-            <li>At most {MINT_CONCURRENT_NODE_CAP} nodes grow at once.</li>
+            <li>Hen Coop: {MINT_NODES.hen.stake.toLocaleString()} Gold for 15 minutes, pays {MINT_NODES.hen.payout.toLocaleString()}.</li>
+            <li>Pig Pen: {MINT_NODES.pig.stake.toLocaleString()} Gold for 4 hours, pays {MINT_NODES.pig.payout.toLocaleString()}.</li>
+            <li>Cattle Pen: {MINT_NODES.cattle.stake.toLocaleString()} Gold for 24 hours, pays {MINT_NODES.cattle.payout.toLocaleString()}.</li>
+            <li>At most {MINT_CONCURRENT_NODE_CAP} pens work at once.</li>
             <li>Locked plots unlock in order, for Gold. More plots means more layout, not more income.</li>
           </ul>
         </HowToPlayModal>

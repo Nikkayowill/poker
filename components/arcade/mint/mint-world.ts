@@ -279,44 +279,167 @@ function paintWorn(ctx: CanvasRenderingContext2D): void {
  * kerb that holds it. The plots themselves are Phaser objects drawn on top of
  * this by mint-scene.ts, since they change with play; this is only the bed.
  */
+/**
+ * How far the field sits below the surrounding turf. Deep on purpose: the
+ * homestead branch's island sells its earth by sheer mass, and it gets away
+ * with a mass that runs off the bottom of the frame because it has a void
+ * around it. This scene has a foreground to protect, so the same mass goes on
+ * the INSIDE -- a deep cut with strata in it, rather than a block underneath.
+ */
+const PIT_DEPTH = 27;
+
+/**
+ * The field bed: a hole dug in the ground, not a platform standing on it.
+ *
+ * Two earlier attempts got this backwards. A flat bed with slightly raised
+ * tiles read as planters set down on a lawn, and adding an external bank under
+ * the near edges made it worse -- a wall of earth is still a wall, and with
+ * grass visible on all four sides ANY outward-facing cliff reads as something
+ * sitting on top of the turf. What reads as dug is the opposite: the wall you
+ * can see belongs to the INSIDE of the hole, along the two far rims, with turf
+ * overhanging every edge. There is no outward face anywhere, so there is
+ * nothing for the eye to read as a plinth.
+ *
+ * The far wall is visible because the field diamond is deliberately a little
+ * larger than the 4x4 grid inside it: that margin is the gap between the rim
+ * and the outermost plots, and it is exactly where the cut face shows.
+ */
 function paintFieldBed(ctx: CanvasRenderingContext2D): void {
-  // Soil showing between and under the plots, sunk into the grass.
+  const top = { x: FIELD_CX, y: FIELD_CY - FIELD_HALF_H };
+  const right = { x: FIELD_CX + FIELD_HALF_W, y: FIELD_CY };
+  const bottom = { x: FIELD_CX, y: FIELD_CY + FIELD_HALF_H };
+  const left = { x: FIELD_CX - FIELD_HALF_W, y: FIELD_CY };
+
+  // The floor of the hole.
   ctx.save();
   diamond(ctx, FIELD_CX, FIELD_CY, FIELD_HALF_W, FIELD_HALF_H);
-  const bed = ctx.createLinearGradient(0, FIELD_CY - FIELD_HALF_H, 0, FIELD_CY + FIELD_HALF_H);
-  bed.addColorStop(0, "#2a1d13");
+  const bed = ctx.createLinearGradient(0, top.y, 0, bottom.y);
+  bed.addColorStop(0, "#241811");
   bed.addColorStop(1, "#17100b");
   ctx.fillStyle = bed;
   ctx.fill();
-
-  // The kerb: a bright lip on the sun side, a dropped shadow on the near
-  // side. Together they read as ground cut away, which is the opposite of the
-  // extruded slab this replaced.
   ctx.clip();
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = "rgba(12, 8, 26, 0.6)";
-  diamond(ctx, FIELD_CX, FIELD_CY - 3, FIELD_HALF_W, FIELD_HALF_H);
+
+  // The two far inner walls, dropping from the rim down into the hole. The
+  // left one faces away from the low sun, so it goes a stop darker.
+  const wall = (from: { x: number; y: number }, to: { x: number; y: number }, lit: boolean) => {
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.lineTo(to.x, to.y + PIT_DEPTH);
+    ctx.lineTo(from.x, from.y + PIT_DEPTH);
+    ctx.closePath();
+    const face = ctx.createLinearGradient(0, from.y, 0, from.y + PIT_DEPTH);
+    face.addColorStop(0, lit ? "#3d2a19" : "#241810");
+    face.addColorStop(1, lit ? "#241710" : "#150e09");
+    ctx.fillStyle = face;
+    ctx.fill();
+  };
+  wall(left, top, false);
+  wall(top, right, true);
+
+  // Seams of subsoil down the wall. One line reads as a highlight; three read
+  // as layered earth, which is the whole difference between a painted edge
+  // and a dug one.
+  for (const [depth, alpha, width] of [[4, 0.3, 2], [12, 0.19, 1.6], [20, 0.12, 1.4]] as const) {
+    ctx.lineWidth = width;
+    ctx.strokeStyle = `rgba(163, 124, 84, ${alpha})`;
+    ctx.beginPath();
+    ctx.moveTo(left.x, left.y + depth);
+    ctx.lineTo(top.x, top.y + depth);
+    ctx.lineTo(right.x, right.y + depth);
+    ctx.stroke();
+  }
+
+  // Stones embedded in the cut face.
+  const grit = noise(0x6b21);
+  for (let i = 0; i < 26; i += 1) {
+    const along = grit();
+    const onLeft = i % 2 === 0;
+    const x = onLeft ? left.x + (top.x - left.x) * along : top.x + (right.x - top.x) * along;
+    const y =
+      (onLeft ? left.y + (top.y - left.y) * along : top.y + (right.y - top.y) * along) +
+      3 + grit() * (PIT_DEPTH - 6);
+    ctx.fillStyle = `rgba(150, 116, 78, ${0.14 + grit() * 0.16})`;
+    ctx.beginPath();
+    ctx.ellipse(x, y, 2 + grit() * 3, 1.3 + grit() * 1.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Ambient occlusion in the near corners, where the hole is deepest from
+  // this angle and least light reaches.
+  ctx.lineWidth = 14;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "rgba(8, 5, 14, 0.4)";
+  ctx.beginPath();
+  ctx.moveTo(left.x, left.y);
+  ctx.lineTo(bottom.x, bottom.y);
+  ctx.lineTo(right.x, right.y);
   ctx.stroke();
   ctx.restore();
 
   // The field is the one thing on this screen anybody touches, so it gets the
   // warmest light in the frame. Everything else is scenery and stays cooler
   // and darker than this.
-  lightPool(ctx, FIELD_CX + 40, FIELD_CY - 30, 300, "rgba(255, 198, 120, 0.16)", 0.85);
+  lightPool(ctx, FIELD_CX + 40, FIELD_CY - 30, 300, "rgba(255, 198, 120, 0.15)", 0.85);
 
+  // ---- turf overhanging every rim ----
+  // Clipped to the field so the grass visibly hangs INTO the hole. This is the
+  // other half of the dug read: ground that stops in a clean drawn line is a
+  // shape, and ground that spills over an edge is ground.
   ctx.save();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = "rgba(150, 116, 82, 0.5)";
+  diamond(ctx, FIELD_CX, FIELD_CY, FIELD_HALF_W, FIELD_HALF_H);
+  ctx.clip();
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 9;
+  ctx.strokeStyle = PALETTE.groundNear;
   ctx.beginPath();
-  ctx.moveTo(FIELD_CX - FIELD_HALF_W, FIELD_CY);
-  ctx.lineTo(FIELD_CX, FIELD_CY - FIELD_HALF_H);
-  ctx.lineTo(FIELD_CX + FIELD_HALF_W, FIELD_CY);
+  ctx.moveTo(left.x - 4, left.y);
+  ctx.lineTo(top.x, top.y - 3);
+  ctx.lineTo(right.x + 4, right.y);
   ctx.stroke();
-  ctx.strokeStyle = "rgba(255, 200, 110, 0.22)";
-  ctx.lineWidth = 2;
+  // The near rims get a thinner lip: from this angle you are looking over
+  // them, so only a sliver of turf shows.
+  ctx.lineWidth = 5;
   ctx.beginPath();
-  ctx.moveTo(FIELD_CX, FIELD_CY - FIELD_HALF_H);
-  ctx.lineTo(FIELD_CX + FIELD_HALF_W, FIELD_CY);
+  ctx.moveTo(left.x - 3, left.y);
+  ctx.lineTo(bottom.x, bottom.y + 3);
+  ctx.lineTo(right.x + 3, right.y);
+  ctx.stroke();
+
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = "rgba(58, 122, 85, 0.55)";
+  ctx.beginPath();
+  ctx.moveTo(left.x - 4, left.y - 3);
+  ctx.lineTo(top.x, top.y - 6);
+  ctx.lineTo(right.x + 4, right.y - 3);
+  ctx.stroke();
+
+  // Blades breaking over the far rim, so the edge is never a clean line.
+  const tuft = noise(0x2c9d);
+  ctx.lineWidth = 1.4;
+  ctx.lineCap = "round";
+  for (let i = 0; i < 40; i += 1) {
+    const along = tuft();
+    const onLeft = i % 2 === 0;
+    const x = onLeft ? left.x + (top.x - left.x) * along : top.x + (right.x - top.x) * along;
+    const y = onLeft ? left.y + (top.y - left.y) * along : top.y + (right.y - top.y) * along;
+    ctx.strokeStyle = tuft() > 0.65 ? "rgba(178, 168, 104, 0.38)" : "rgba(52, 112, 78, 0.6)";
+    const bend = (tuft() - 0.5) * 4;
+    ctx.beginPath();
+    ctx.moveTo(x, y + 2);
+    ctx.quadraticCurveTo(x + bend, y + 7, x + bend * 1.6, y + 11);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // A warm catch of light on the far rim itself, above the turf.
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(255, 200, 110, 0.22)";
+  ctx.beginPath();
+  ctx.moveTo(top.x, top.y - 4);
+  ctx.lineTo(right.x, right.y - 1);
   ctx.stroke();
   ctx.restore();
 }

@@ -51,7 +51,7 @@ export function MintCanvas({
         width: MINT_STAGE_W,
         height: MINT_STAGE_H,
         scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-        // The diorama animates a slow pulse at most; half rate is plenty and
+        // The diorama animates a slow hen at most; half rate is plenty and
         // half the battery. Phaser already pauses fully on tab blur.
         fps: { target: 30 },
         scene,
@@ -71,7 +71,7 @@ export function MintCanvas({
 
   // Repaint only when the visible state of some tile actually changed; the
   // parent recomputes `tiles` every clock tick for its countdown text, and a
-  // repaint per second would restart the ripe pulse tween each time.
+  // repaint per second would restart the ripe hen tween each time.
   const signature = tiles
     .map(
       (tile) =>

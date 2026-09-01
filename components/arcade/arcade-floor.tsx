@@ -102,7 +102,7 @@ export function ArcadeFloor({
   }, [supplied]);
 
   const wallet = toArcadeWallet(profile);
-  const { free, duels, wagers, staked } = splitArcadeFloor();
+  const { free, duels, wagers, staked, idle } = splitArcadeFloor();
 
   // A plain div when embedded: PokerApp already owns the page's <main>, and a
   // nested one is invalid. The extra class is what 45-mobile-shell.css hangs
@@ -250,6 +250,24 @@ export function ArcadeFloor({
           </p>
           <div className="floor-free-grid">
             {wagers.map((game) => (
+              <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={arcadeEntryLabel(game)} embedded={embedded} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {idle.length > 0 && (
+        <section className="floor-section" aria-labelledby="floor-idle">
+          {/* Its own section because it is the one row here that is not a
+              contest: nothing to beat, nobody to beat, and no way to lose
+              what you put in. Under "Beat the board" it would sit beneath a
+              note promising you can lose your stake, which is false of it. */}
+          <h2 className="floor-section-head" id="floor-idle">Keep something growing</h2>
+          <p className="floor-section-note">
+            Runs while you are away. Nothing here can be lost — you plant, it grows, you come back.
+          </p>
+          <div className="floor-free-grid">
+            {idle.map((game) => (
               <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={arcadeEntryLabel(game)} embedded={embedded} />
             ))}
           </div>

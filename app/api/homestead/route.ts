@@ -3,7 +3,7 @@ import { exchangeState } from "@/lib/homestead/exchange";
 import { toHomesteadPlotSnapshots } from "@/lib/homestead/plots";
 import { readHomestead, toHomesteadErrorResponse } from "@/lib/server/homestead-service";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
-import { homesteadNotFound, isHomesteadAllowed } from "@/lib/server/homestead-access";
+import { homesteadLocked, requestHasHomesteadPass } from "@/lib/server/homestead-access";
 import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
@@ -19,22 +19,22 @@ export const runtime = "nodejs";
  * locked ladder -- and their first stocking is what creates their identity,
  * through the actions route.
  *
- * On production but not released: only an account on
- * HOMESTEAD_ALLOWED_USER_IDS gets past this, and everyone else gets a 404.
+ * On the floor but not open: only a caller carrying the access-code pass gets
+ * past this, and everyone else gets a 401 that names the reason so the client
+ * can show the code prompt. See lib/server/homestead-access.ts.
  *
- * The rate limiter runs BEFORE that check, which is the opposite order the
- * admin gate this replaced used. That gate was a cookie signature check and
- * cost nothing, so it was worth running first to keep an anonymous caller
- * from even measuring the limit. This one costs a database read, so gating
- * ahead of the limiter would hand an unauthenticated flood a query
- * amplifier -- the cheap in-memory check has to come first.
+ * The limiter still runs first. The pass check is now a cheap HMAC rather
+ * than the database read the account allowlist needed, so the ordering costs
+ * nothing either way -- but the rule it came from stands: never put work in
+ * front of the limiter.
  */
 export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request, "homestead:read", 120, 60 * 1000);
   if (limited) return limited;
 
+  if (!requestHasHomesteadPass(request)) return homesteadLocked();
+
   const token = readSessionToken(request);
-  if (!(await isHomesteadAllowed(token))) return homesteadNotFound();
   if (!token) {
     const now = new Date();
     return NextResponse.json({

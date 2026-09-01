@@ -741,6 +741,76 @@
 
 .hs-link-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
 
+/* ---- the gate --------------------------------------------------------- */
+
+.hs-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 24px 12px;
+}
+
+.hs-gate-card {
+  width: min(100%, 380px);
+  padding: 22px 20px;
+  border-radius: var(--radius-card);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--accent-edge), var(--elevation-4);
+  text-align: center;
+}
+
+.hs-gate-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface-2);
+  color: var(--brand-gold-light);
+}
+
+.hs-gate-card p {
+  margin: 8px 0 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+}
+
+.hs-gate-card form {
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
+  text-align: left;
+}
+
+.hs-gate-label {
+  color: var(--neon-muted-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* 16px is not a design choice: iOS Safari zooms any input under it on focus
+   and never zooms back out, which on a full-screen gate strands the player. */
+.hs-gate-input {
+  margin-top: 6px;
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  color: var(--neon-chalk);
+  font-size: 16px;
+  letter-spacing: .04em;
+}
+
+.hs-gate-input:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
+
+.hs-gate-card .duel-error { margin-top: 10px; }
+
 /* ---- the exchange window --------------------------------------------- */
 
 /* The store sheet's shelf headings. These shipped with no rule at all in phase

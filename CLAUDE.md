@@ -97,6 +97,31 @@ Art is Kenney's **CC0** Tiny Farm pack (`public/homestead/tiles/`, see its `CRED
 is a re-run. **The pack has no pig:** the middle tier keeps its `pig` stock id (it is on live rows;
 renaming it would be a data migration to fix a caption) and is labelled **"Sheep Pen"**.
 
+### The account allowlist became an access code, and the tile went on the floor (2026-09-01)
+Kayo: "just [make] it available in the UI but u can only get in through a code." Replaces
+`HOMESTEAD_ALLOWED_USER_IDS` with **`HOMESTEAD_ACCESS_CODE`** — one shared code, entered at
+`/games/homestead`, traded for a pass cookie at `POST /api/homestead/unlock`. The allowlist worked
+but made "let a friend look at it" a deploy; a code is what was actually wanted.
+**The cookie holds an HMAC of the code, never the code**, which buys three things at once: a stolen
+cookie is worth no more than the code it came from, **rotating the code revokes every pass with no
+revocation list** (the expected value is recomputed from the live code per request), and forging one
+needs the code. Keyed on `SESSION_SECRET` when set and on the code when not, because an unset
+optional secret must never be a second way a feature goes dark (session.ts's own rule).
+**The rate limit IS the security, not the code's length** — 8 attempts / 10 min, and it runs first;
+a code short enough to say out loud is brute-forceable at HTTP speed and these routes move real Gold.
+Answers **401 now, not 404**: the old 404 hid the feature's existence, and a tile on the floor
+announces it, so hiding the route only makes a locked door look broken.
+**The tile is `live` and got its own floor section, "Keep something growing", under a new
+`kind: "idle"`.** Not `wager`: that section's own note promises you can lose the Gold you stake, and
+the Homestead has no stake and no losing branch, so filing it there would make the note false about a
+row beneath it. It is deliberately **left out of the hub tile's "N free every day" count** — free of
+Gold but behind a code, so counting it promises something most readers cannot open. Opening the game
+to everyone is now deleting one variable; no catalog edit.
+Verified over real HTTP against a built server: locked routes 401, wrong code 401, right code 200 and
+issues a cookie **containing no substring of the code**, page renders the gate rather than a 404, a
+locked POST sets **no** session cookie, and a guessing run gets cut off at the 8th attempt.
+`findUserIdBySessionToken` in `profile-store.ts` is now unused — it existed only for the allowlist.
+
 ### Phase 3: the exchange window, the farm's one Gold outlet (2026-09-01)
 Same branch. **Bushels -> Gold at 2 Gold each, capped at a flat 5,000 Gold per player per UTC day**
 (Kayo's numbers, signed off). The cap is the feature; the rate is not. A generous rate only means a

@@ -5,6 +5,7 @@ import {
   arcadeActionLabel,
   arcadeBlockedReason,
   arcadeEntryLabel,
+  arcadeFloorSummary,
   canAffordArcadeGame,
   splitArcadeFloor,
   toArcadeWallet,
@@ -101,25 +102,44 @@ describe("arcade catalogue", () => {
     }
   });
 
-  it("keeps an unlisted game off the floor while leaving its route intact", () => {
+  it("puts the Homestead on the floor, in its own section", () => {
     const homestead = ARCADE_GAMES.find((entry) => entry.id === "homestead");
-    expect(homestead?.status).toBe("unlisted");
+    expect(homestead?.status).toBe("live");
     expect(homestead?.href).toBe("/games/homestead");
 
-    // The floor only ever shows live rows, so it never surfaces. This is the
-    // whole mechanism: unlisted means unadvertised, not unreachable.
+    // Its own bucket, never the wager one. "Beat the board" promises in its
+    // own section note that you can lose the Gold you stake, and the
+    // Homestead has no stake and no losing branch -- filing it there would
+    // make that note false about one of the rows beneath it. What actually
+    // keeps people out is the access code on the route, not this row; see
+    // lib/server/homestead-access.ts.
     const floor = splitArcadeFloor();
-    const onFloor = [...floor.free, ...floor.duels, ...floor.wagers, ...floor.staked];
-    expect(onFloor.map((entry) => entry.id)).not.toContain("homestead");
+    expect(floor.idle.map((entry) => entry.id)).toContain("homestead");
+    expect(floor.wagers.map((entry) => entry.id)).not.toContain("homestead");
+  });
+
+  it("leaves a code-locked game out of the hub tile's free count", () => {
+    // The hub promises "N free every day". An idle row costs no Gold but sits
+    // behind a code, so counting it there promises the reader something most
+    // of them cannot open -- the same class of stale number this catalogue's
+    // header warns about three times.
+    const { free, idle } = splitArcadeFloor();
+    const summary = arcadeFloorSummary();
+    expect(idle.length).toBeGreaterThan(0);
+    expect(summary.free).toBe(free.length + splitArcadeFloor().wagers.length);
+    expect(summary.previewNames).not.toContain("StackChips Homestead");
   });
 
   it("never puts a price on a daily puzzle, or a floor under a solo wager", () => {
-    // Both are legitimately 0, for opposite reasons: a puzzle has nothing to
-    // wager, a wager's floor is "free" because the real amount is picked on
-    // the page itself, same as a duel's stake tier used to be picked there.
+    // All three are legitimately 0, for different reasons: a puzzle has
+    // nothing to wager, a wager's floor is "free" because the real amount is
+    // picked on the page itself, and an idle row stakes nothing at all -- the
+    // Homestead's 0 is there so the floor never wallet-gates a player out of
+    // a harvest they already grew.
     for (const entry of ARCADE_GAMES) {
-      if (entry.kind === "puzzle" || entry.kind === "wager") expect(entry.entryCost).toBe(0);
-      else expect(entry.entryCost).toBeGreaterThan(0);
+      if (entry.kind === "puzzle" || entry.kind === "wager" || entry.kind === "idle") {
+        expect(entry.entryCost).toBe(0);
+      } else expect(entry.entryCost).toBeGreaterThan(0);
     }
   });
 });

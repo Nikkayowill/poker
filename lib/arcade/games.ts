@@ -90,7 +90,15 @@ export type ArcadeGameId =
  * gone (Word Stack/Connections, which have no second, unlimited mode to
  * redirect to).
  */
-export type ArcadeGameKind = "casino" | "puzzle" | "duel" | "wager";
+/**
+ * `idle` is its own kind rather than a flavour of `wager`, because the floor
+ * groups by what a row IS and the Homestead is not a contest. Every `wager`
+ * row is a board you can lose Gold on, which is what its section note
+ * promises in as many words; the Homestead has no opponent, no clock and no
+ * losing branch, so filing it there would make that note a lie about one of
+ * the rows underneath it.
+ */
+export type ArcadeGameKind = "casino" | "puzzle" | "duel" | "wager" | "idle";
 
 /**
  * `retired` is the status a game gets when it stops being offered but the
@@ -230,14 +238,13 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     id: "homestead",
     name: "StackChips Homestead",
     blurb: "Raise crops and livestock, sell what they make",
-    kind: "wager",
+    kind: "idle",
     entryCost: 0,
-    // Deployed but not released: off the floor by this status, and its routes
-    // and page additionally refuse anyone whose account is not named in
-    // HOMESTEAD_ALLOWED_USER_IDS (see lib/server/homestead-access.ts). To
-    // release it, flip this to "live" AND clear that variable -- either one
-    // alone still leaves it hidden.
-    status: "unlisted",
+    // On the floor, but behind a code: the routes and the page both require
+    // the pass HOMESTEAD_ACCESS_CODE buys (see lib/server/homestead-access.ts).
+    // The tile being visible is the point -- this is `live` so people can find
+    // it and ask. Opening it to everyone is one variable: unset the code.
+    status: "live",
     href: "/games/homestead",
   },
   // ---- Duels: skill/social games staked against another player, not the
@@ -351,11 +358,14 @@ export function arcadeEntryLabel(game: ArcadeGame): string {
   // above. The exact wording still differs by the two sub-shapes described
   // there: Sudoku/Memory Match are unlimited (no daily identity to name),
   // Word Stack/Connections are still the one shared puzzle for the day.
+  // The Homestead's zero is a third meaning again: nothing is staked here at
+  // all. Its entryCost is 0 so the floor never wallet-gates the door to a
+  // harvest (see its own catalog comment), and what it earns is Bushels --
+  // Gold only ever leaves it through the capped daily exchange, so "sell for
+  // Gold" would misstate the loop. Checked before the `wager` line below,
+  // which would otherwise swallow it and print "Free daily".
+  if (game.kind === "idle") return "Free to open · runs while you're away";
   if (game.kind !== "wager") return "Free daily";
-  // The Homestead's zero is a third meaning again: there is no free mode at all,
-  // only stakes chosen inside (its entryCost is 0 purely so the floor never
-  // wallet-gates the door to a harvest; see its own catalog comment).
-  if (game.id === "homestead") return "Raise stock, sell for Gold";
   return game.id === "daily-word-stack" || game.id === "connections"
     ? "Free daily · or wager it"
     : "Free, or wager Gold";
@@ -401,6 +411,7 @@ export function splitArcadeFloor(games: readonly ArcadeGame[] = ARCADE_GAMES): {
   duels: ArcadeGame[];
   wagers: ArcadeGame[];
   staked: ArcadeGame[];
+  idle: ArcadeGame[];
 } {
   const live = games.filter((game) => game.status === "live");
   return {
@@ -408,6 +419,7 @@ export function splitArcadeFloor(games: readonly ArcadeGame[] = ARCADE_GAMES): {
     duels: live.filter((game) => game.kind === "duel"),
     wagers: live.filter((game) => game.kind === "wager"),
     staked: live.filter((game) => game.kind === "casino"),
+    idle: live.filter((game) => game.kind === "idle"),
   };
 }
 
@@ -434,6 +446,12 @@ export function arcadeFloorSummary(games: readonly ArcadeGame[] = ARCADE_GAMES):
     // "0 free every day" on the hub tile. A wager row is genuinely free to
     // open -- the stake is a choice made on the game's own page -- so it
     // belongs on this side of the line.
+    // `idle` is deliberately in neither count. The Homestead is free to open
+    // in the sense of costing no Gold, but it is behind an access code, so
+    // counting it in "N free every day" promises the reader something most of
+    // them cannot open -- the exact class of wrong number this file's header
+    // is about. It comes back into the count by losing the code, not by
+    // editing this line.
     free: free.length + wagers.length,
     // The rows that cannot be opened without spending: a duel's ante and
     // Blackjack's buy-in are both charged before anything deals.

@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
-import { notFound } from "next/navigation";
 import { HomesteadFarm } from "@/components/arcade/homestead/homestead-farm";
-import { isHomesteadAllowed } from "@/lib/server/homestead-access";
-import { readSessionTokenFromCookies } from "@/lib/server/session";
+import { HomesteadLock } from "@/components/arcade/homestead/homestead-lock";
+import { isHomesteadUnlocked } from "@/lib/server/homestead-access";
 
 export const metadata: Metadata = {
   title: "StackChips Homestead",
@@ -11,22 +10,20 @@ export const metadata: Metadata = {
 };
 
 /**
- * On production, but only for the accounts named in HOMESTEAD_ALLOWED_USER_IDS.
+ * On the floor, behind a code.
  *
- * The PAGE is gated here, which the admin-session version of this could not
- * do: ADMIN_SESSION_COOKIE is scoped `path=/api/admin`, so a page never
- * received it and the best that version could manage was rendering a locked
- * state for strangers. The player session cookie is `path=/`, so a server
- * component sees it and can answer a real 404 instead -- same answer as the
- * routes, so the page and the API can never disagree about who is allowed.
+ * The tile is visible to everyone now, so this page no longer answers 404 --
+ * hiding a route the arcade openly advertises would only make a locked door
+ * look like a bug. It renders the code prompt instead, and the API behind it
+ * refuses independently, so the prompt is a courtesy rather than the lock.
  *
- * The API gate is still the one that matters. This is the courtesy half: it
- * stops a stranger loading a farm UI that would only fail on every call.
+ * Reading the cookie here makes this page dynamic, which it needs to be
+ * anyway: a cached "enter the code" page served to someone who already has
+ * the pass would lock them out of their own farm.
  */
 export default async function HomesteadPage() {
   const store = await cookies();
-  const token = readSessionTokenFromCookies((name) => store.get(name)?.value);
-  if (!(await isHomesteadAllowed(token))) notFound();
+  const unlocked = isHomesteadUnlocked((name) => store.get(name)?.value);
 
-  return <HomesteadFarm />;
+  return unlocked ? <HomesteadFarm /> : <HomesteadLock />;
 }

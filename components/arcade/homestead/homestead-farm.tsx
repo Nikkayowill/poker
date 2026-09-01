@@ -179,6 +179,13 @@ export function HomesteadFarm() {
     try {
       const response = await fetch("/api/homestead", { cache: "no-store" });
       if (response.status === 429) return;
+      // The pass was rotated or expired under us. Reload so the server
+      // component answers with the gate rather than leaving a farm on screen
+      // whose every button will now fail.
+      if (response.status === 401) {
+        window.location.reload();
+        return;
+      }
       const data = (await response.json()) as Partial<HomesteadResponse>;
       if (!mounted.current || sending.current) return;
       if (response.ok) {
@@ -251,6 +258,10 @@ export function HomesteadFarm() {
           const header = Number(response.headers.get("Retry-After"));
           const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
           if (mounted.current) setError(`Too many taps. Give it ${seconds}s.`);
+          return;
+        }
+        if (response.status === 401) {
+          window.location.reload();
           return;
         }
         const data = (await response.json()) as Partial<HomesteadResponse>;

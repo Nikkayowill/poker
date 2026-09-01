@@ -1,14 +1,57 @@
 /* The StackChips Homestead (components/arcade/homestead/).
  *
  * After 22-arcade.css and 36-duels.css: the shell, header bar and error line
- * all come from those, so what is here is the diorama stage and the panel
- * below it. The stage is the one unusual piece: a Phaser canvas paints the
- * grid while a DOM overlay of real buttons (one per plot) sits on top of it
- * for input and assistive tech. Both sides compute positions from
- * components/arcade/homestead/iso.ts against the same fixed logical size, so the
- * stage MUST keep that exact aspect ratio -- Phaser FIT-scales into it and
- * the percent-positioned buttons line up only because the box never letterboxes.
+ * all come from those, so what is here is the field, the toolbelt and the
+ * panel beside them.
+ *
+ * The field is a plain CSS grid of buttons -- one per plot, each a stack of
+ * 16x16 pixel-art tiles scaled up with image-rendering: pixelated. It replaced
+ * a Phaser canvas with a DOM overlay of tap targets twinned to it through a
+ * shared coordinate module; the tile is now the button, so there is no
+ * projection for two layers to agree on and no fixed aspect ratio to preserve.
+ *
+ * The load-bearing idea here is the affordance tint. Every plot carries
+ * data-afford (act | blocked | none) computed by lib/homestead/tools.ts from
+ * the held tool, and the rules under "what a tap would do" light the field
+ * accordingly. That is what lets you see what the farm needs before tapping
+ * anything, and it is the reason the detail panel stopped being the only way
+ * to reach an action.
+ *
+ * Two deliberate departures from the Neon Marquee system, both confined to the
+ * field itself:
+ *
+ * 1. The plots carry NO radius. Everything in chrome is --radius-card or
+ *    --radius-control, but these are 16px pixel-art tiles: a rounded corner
+ *    on a nearest-neighbour-scaled sprite crops whole source pixels off the
+ *    art. The frame around the field keeps the system radius.
+ * 2. --hs-grass is the field's bed, and it is a sprite colour rather than a
+ *    palette one: it is sampled from the tiles themselves (#84c669, the grass
+ *    inside Kenney's soil tiles) so the plots sit in a continuous lawn instead
+ *    of floating as islands on the violet chrome. Anything else here shows a
+ *    seam between the art and the page.
+ *
+ * The affordance tint is deliberately NOT green, which was the first attempt.
+ * Green is what the art already is -- every soil tile is a brown patch on a
+ * green lawn -- so a green "you can act here" wash vanished into the
+ * background on the one screenshot that was supposed to prove it worked. It is
+ * violet instead: the highest-contrast hue against grass and soil that is also
+ * already the system's own accent, spent exactly as the Glow-Not-Border rule
+ * asks, as an inset ring plus a glow rather than a fill.
+ *
+ * The landscape @media block MUST stay last in this file. It overrides base
+ * rules at equal specificity, so source order is the only thing deciding the
+ * winner -- it sat above them once and every panel rule it set was silently
+ * clobbered.
  */
+
+.hs-shell {
+  /* Sampled straight out of the tile PNGs. These three are sprite colours,
+     not chrome: they exist to agree with artwork the palette knows nothing
+     about, and none of them is used outside the field. */
+  --hs-grass: #84c669;
+  --hs-hungry: #ff8a3d;
+  --hs-muck: #785830;
+}
 
 .hs-scoreline {
   align-items: baseline;
@@ -20,231 +63,617 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Base (portrait/desktop): stage above, panel below. .hs-side is dissolved
-   so the error line and panel keep their own flow; the landscape block at the
-   END of this file is what gives it a box.
-
-   That block has to stay last. It overrides these base rules at the same
-   specificity, so source order is the only thing deciding the winner -- it
-   sat up here at first and every one of its panel rules was silently
-   clobbered by the base rules further down. */
-.hs-main { display: flex; flex-direction: column; }
+/* Base (portrait/desktop): field, then dock, then panel. .hs-side is
+   dissolved so the error line and panel keep their own flow; the landscape
+   block at the END of this file is what gives it a box. */
+.hs-main { display: flex; flex-direction: column; gap: 12px; }
 .hs-side { display: contents; }
 
-.hs-stage {
+.hs-field {
   position: relative;
-  width: min(100%, 640px);
-  margin: 0 auto;
-  /* MINT_STAGE_W / MINT_STAGE_H. See the header comment before changing. */
-  aspect-ratio: 720 / 470;
+  width: 100%;
+  display: flex;
+  justify-content: center;
 }
 
-.hs-canvas,
-.hs-canvas canvas {
+/* ---- the field ------------------------------------------------------- */
+
+/* Square by construction: the grid is as wide as it is tall because every
+   plot is 1:1 and the column count is fixed. Capping the WIDTH against
+   viewport height is what keeps a 4x4 board from pushing the dock off a short
+   screen -- the same spare-height thinking 46-minesweeper.css applies. */
+.hs-grid {
+  display: grid;
+  gap: 2px;
+  width: min(100%, 460px, 52dvh);
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-card);
+  /* The lawn the plots are cut into. The 2px gap between tiles becomes grass
+     rather than a violet seam, which is what makes sixteen sprites read as one
+     field. */
+  background: var(--hs-grass);
+  box-shadow: var(--elevation-2);
+}
+
+.hs-plot {
+  position: relative;
+  aspect-ratio: 1;
+  display: block;
+  padding: 0;
+  border: 0;
+  /* No radius on purpose -- see the header. */
+  border-radius: 0;
+  background: none;
+  cursor: pointer;
+  overflow: hidden;
+  /* The tile art is authored at 16px; anything but nearest-neighbour turns
+     pixel art to mush the moment it is scaled past 2x. */
+  image-rendering: pixelated;
+  transition: transform var(--duration-fast, .12s) ease, filter var(--duration-fast, .12s) ease;
+}
+
+.hs-plot-ground,
+.hs-plot-stock {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
 }
 
-/* The tappable diamond over each painted tile. Deliberately invisible at
-   rest -- the canvas already draws the tile -- but real for focus, hover and
-   the screen reader. Centered on the tile's stage position via translate. */
-.hs-tile-btn {
+/* The thing standing on the plot is drawn a little smaller than its bed, so
+   the soil reads as ground rather than as a frame around a sticker. */
+.hs-plot-stock {
+  inset: 12%;
+  width: 76%;
+  height: 76%;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, .35));
+}
+
+/* Locked land is scrub standing on bare lawn -- unworked, not a hole punched
+   in the field, so this only knocks the life out of the bush. */
+.hs-plot[data-state="locked"] .hs-plot-stock {
+  filter: saturate(.55) brightness(.75);
+}
+
+.hs-plot[data-state="hungry"] .hs-plot-stock {
+  /* A stopped animal should look stopped, not just badged as stopped. */
+  filter: saturate(.35) brightness(.85) drop-shadow(0 2px 0 rgba(0, 0, 0, .35));
+}
+
+.hs-plot-progress {
   position: absolute;
-  transform: translate(-50%, -50%);
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
-  -webkit-tap-highlight-color: transparent;
+  left: 8%;
+  right: 8%;
+  bottom: 7%;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, .55);
+  overflow: hidden;
 }
 
-.hs-tile-btn:hover,
-.hs-tile-btn.is-selected {
-  background: rgba(192, 123, 255, 0.14);
+/* Scaled, not widened. Sixteen plots each ticking once a second is sixteen
+   layout passes a second if this animates `width`; a transform stays on the
+   compositor. The track's own overflow: hidden supplies the rounded ends, so
+   the fill needs no radius of its own to distort under the scale. */
+.hs-plot-progress > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  background: var(--neon-purple-bright);
+  transition: transform 1s linear;
 }
 
-.hs-tile-btn.is-locked { cursor: default; }
-.hs-tile-btn.is-locked:hover { background: rgba(192, 123, 255, 0.07); }
+/* State rings live on ::before, NOT on the button's own box-shadow.
+   An inset box-shadow paints above the element's background but BELOW its
+   children, and both tile sprites are children at inset: 0 -- so every state
+   ring set on .hs-plot itself was painted over by the artwork and never
+   appeared on screen at all. The affordance ring only ever showed because it
+   was already on a pseudo-element. */
+.hs-plot::before,
+.hs-plot[data-afford="act"]::after,
+.hs-plot[data-afford="blocked"]::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+}
 
-/* clip-path swallows outlines, so focus paints the same fill hover uses,
-   brighter, instead of a ring nobody would see. */
-.hs-tile-btn:focus-visible {
-  outline: none;
-  background: rgba(192, 123, 255, 0.28);
+.hs-plot::before { inset: 0; }
+
+/* A ripe plot is the warmest thing in the frame at all times, tool or no
+   tool -- it is the only state that is costing the player money to ignore. */
+.hs-plot[data-state="ready"]::before {
+  box-shadow: inset 0 0 0 3px var(--brand-gold), var(--accent-glow-gold);
+}
+
+.hs-plot[data-state="ready"] .hs-plot-stock {
+  animation: hs-ripe 2.4s ease-in-out infinite;
+}
+
+@keyframes hs-ripe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5%); }
+}
+
+/* Amber for "stopped, and waiting on you" -- distinct from the gold that
+   means "finished and worth money", and from the red that means "you cannot
+   pay for this". */
+.hs-plot[data-state="hungry"]::before {
+  box-shadow: inset 0 0 0 3px var(--hs-hungry);
+}
+
+.hs-plot[data-state="mucked"]::before {
+  box-shadow: inset 0 0 0 3px var(--hs-muck);
+}
+
+.hs-plot.is-selected::before {
+  box-shadow: inset 0 0 0 3px var(--neon-chalk);
+}
+
+.hs-plot:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+  z-index: 1;
+}
+
+/* ---- what a tap would do --------------------------------------------- */
+
+/* The whole point of the toolbelt. `act` means the held tool works here and
+   is paid for; `blocked` means this IS the tool's target and only Gold, feed
+   or a free slot is missing. Both light up, in different colours, because a
+   blocked plot that looked identical to an irrelevant one would hide the
+   reason the farm has stopped. */
+/* Inset by the state ring's own width so the two nest concentrically instead
+   of one hiding the other: a ripe plot under a held Harvest reads gold on the
+   outside (it is worth money) and violet within (a tap will take it). */
+.hs-plot[data-afford="act"]::after,
+.hs-plot[data-afford="blocked"]::after {
+  inset: 3px;
+}
+
+.hs-plot[data-afford="act"]::after {
+  box-shadow: inset 0 0 0 3px var(--neon-purple-bright), var(--accent-glow);
+  animation: hs-beckon 1.6s ease-in-out infinite;
+}
+
+/* Red is a trace in this system and this is exactly that: a ring around the
+   plot that cannot be paid for, not a wash over the art. */
+.hs-plot[data-afford="blocked"]::after {
+  box-shadow: inset 0 0 0 3px var(--brand-red);
+}
+
+.hs-plot[data-afford="blocked"] { cursor: not-allowed; }
+
+@keyframes hs-beckon {
+  0%, 100% { opacity: .55; }
+  50% { opacity: 1; }
+}
+
+.hs-plot[data-afford="act"]:hover { transform: scale(1.05); }
+.hs-plot[data-afford="none"]:hover { filter: brightness(1.12); }
+
+/* The harvest flourish. Mounted fresh per collection (keyed on a nonce) so a
+   second harvest on the same plot replays it. */
+.hs-plot-pop {
+  position: absolute;
+  inset: -20%;
+  /* Above the state and affordance rings, which sit at z-index 1 -- the burst
+     is the last thing that happened and should read over everything. */
+  z-index: 2;
+  border-radius: var(--radius-round);
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 233, 138, .85), transparent 65%);
+  animation: hs-pop 620ms ease-out forwards;
+}
+
+@keyframes hs-pop {
+  from { opacity: .95; transform: scale(.4); }
+  to { opacity: 0; transform: scale(1.35); }
 }
 
 .hs-toast {
   position: absolute;
+  top: 12px;
   left: 50%;
-  top: 22%;
   transform: translateX(-50%);
   margin: 0;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-ink);
+  box-shadow: inset 0 0 0 1px var(--brand-gold), var(--accent-glow-gold);
   color: var(--brand-gold-light);
-  font-weight: 700;
-  font-size: 16px;
-  text-shadow: 0 0 18px rgba(255, 210, 63, 0.55);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   pointer-events: none;
-  animation: hs-toast-rise 1.6s ease-out forwards;
+  animation: hs-toast 1.8s ease-out forwards;
 }
 
-@keyframes hs-toast-rise {
-  from { opacity: 0; translate: 0 14px; }
-  20% { opacity: 1; }
-  to { opacity: 0; translate: 0 -26px; }
+@keyframes hs-toast {
+  0% { opacity: 0; transform: translate(-50%, 8px); }
+  18% { opacity: 1; transform: translate(-50%, 0); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -12px); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .hs-toast { animation: none; opacity: 1; }
+.hs-loading { text-align: center; padding: 40px 0; }
+
+/* ---- the toolbelt ---------------------------------------------------- */
+
+.hs-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
 }
 
-/* -------- The panel under the stage -------- */
-
-.hs-detail {
-  margin-top: clamp(14px, 3vw, 22px);
-  /* Roughly the growing-state card, the shortest real panel, so switching
-     between selection states doesn't bounce the page below the stage. */
-  min-height: 150px;
+/* A row within thumb reach in portrait; the landscape block turns it into a
+   column beside the field so the same five targets stay one-handed. */
+.hs-toolbelt {
+  display: flex;
+  gap: 6px;
+  width: min(100%, 460px);
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface);
 }
+
+.hs-tool {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  /* 44px is the touch-target floor; the dock is the one thing on this screen
+     that is always in use, so it does not get to dip under it. */
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 5px 2px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--neon-muted);
+  cursor: pointer;
+  transition: background var(--duration-fast, .12s) ease, color var(--duration-fast, .12s) ease;
+}
+
+.hs-tool img {
+  width: 26px;
+  height: 26px;
+  image-rendering: pixelated;
+}
+
+.hs-tool-label {
+  font-size: 11px;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
+.hs-tool:hover { background: var(--brand-surface-2); }
+
+/* Inset ring plus glow rather than a border, so holding a tool adds no layout
+   box and the dock does not reflow by a pixel as you move across it. */
+.hs-tool.is-held {
+  background: var(--brand-surface-2);
+  box-shadow: var(--accent-edge), var(--accent-glow);
+  color: var(--neon-chalk);
+}
+
+.hs-tool:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+}
+
+.hs-tool-count {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-gold);
+  color: var(--brand-ink);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- what to plant --------------------------------------------------- */
+
+.hs-seeds {
+  display: flex;
+  gap: 6px;
+  width: min(100%, 460px);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.hs-seed {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 5px 10px 5px 6px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-muted);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hs-seed img { width: 22px; height: 22px; image-rendering: pixelated; }
+
+.hs-seed.is-picked {
+  background: var(--brand-surface-2);
+  box-shadow: inset 0 0 0 1px var(--brand-gold), var(--accent-glow-gold);
+  color: var(--neon-chalk);
+}
+
+/* Full is not disabled: picking a full track is how you find out it is full,
+   and the field then explains it in red rather than the chip refusing a tap. */
+.hs-seed[data-full] { opacity: .55; }
+
+.hs-seed:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+}
+
+.hs-tool-hint {
+  margin: 0;
+  min-height: 18px;
+  color: var(--neon-muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.hs-tool-hint.is-busy { color: var(--brand-gold-light); }
+
+/* ---- the detail panel ------------------------------------------------ */
+
+.hs-detail { margin-top: 4px; }
 
 .hs-hint {
+  margin: 0;
   color: var(--neon-muted);
-  text-align: center;
-  margin: 0 auto;
-  max-width: 44ch;
+  font-size: 14px;
 }
 
 .hs-panel {
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--radius-card);
   background: var(--brand-surface);
-  box-shadow: var(--accent-edge);
-  border-radius: 14px;
-  padding: clamp(14px, 3vw, 20px);
 }
 
 .hs-panel h2 {
   margin: 0 0 6px;
   font-size: 16px;
+  color: var(--neon-chalk);
 }
 
 .hs-panel > p { margin: 6px 0; color: var(--neon-muted); font-size: 14px; }
 
 .hs-countdown {
+  color: var(--brand-gold-light) !important;
+  font-size: 16px !important;
   font-variant-numeric: tabular-nums;
-  color: var(--neon-chalk);
-  font-size: 16px;
-  font-weight: 600;
 }
+
+.hs-note { font-size: 14px !important; opacity: .85; }
 
 .hs-stock-cards {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
-}
-
-@media (max-width: 560px) {
-  .hs-stock-cards { grid-template-columns: 1fr; }
+  margin-top: 8px;
 }
 
 .hs-stock-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-card);
   background: var(--brand-surface-2);
-  border-radius: 12px;
-  padding: 12px;
 }
 
 .hs-stock-card h3 { margin: 0; font-size: 15px; }
 
 .hs-stock-terms {
-  margin: 0;
+  margin: 3px 0 0;
   color: var(--neon-muted);
   font-size: 14px;
 }
 
 .hs-stock-yield {
-  margin: 0 0 6px;
-  font-size: 14px;
+  margin: 3px 0 0;
   color: var(--neon-chalk);
+  font-size: 14px;
 }
 
 .hs-stock-yield span { color: var(--brand-gold-light); }
 
-/* Filled CTA, same treatment as .floor-card .floor-play's filled variant:
-   the one saturated action on the panel. */
 .hs-cta {
-  margin-top: auto;
-  border: none;
-  border-radius: 999px;
-  padding: 9px 16px;
-  font-weight: 700;
-  font-size: 14px;
+  margin-top: 8px;
+  min-height: 44px;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
+  box-shadow: var(--button-primary-glow, 0 16px 38px rgba(255, 210, 63, .3), inset 0 1px rgba(255, 255, 255, .45));
+  color: #1c1305;
+  font-size: 15px;
+  font-weight: 750;
   cursor: pointer;
-  color: #1d1502;
-  background: linear-gradient(180deg, var(--brand-gold-light), var(--brand-gold));
-  box-shadow: 0 2px 10px rgba(255, 210, 63, 0.25);
+  transition: filter var(--duration-fast, .12s) ease, transform var(--duration-fast, .12s) ease;
 }
 
-.hs-cta:hover:not(:disabled) { filter: brightness(1.06); }
+.hs-cta:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
 
 .hs-cta:disabled {
-  cursor: default;
-  opacity: 0.45;
+  opacity: .45;
+  cursor: not-allowed;
 }
 
 .hs-cta:focus-visible {
-  outline: 2px solid var(--neon-purple-bright);
-  outline-offset: 2px;
+  outline: 0;
+  box-shadow: var(--brand-focus);
 }
 
-.hs-sell-btn {
-  width: 100%;
-  padding: 12px 16px;
-  font-size: 15px;
-}
+.hs-sell-btn { font-size: 15px; padding: 10px 22px; }
 
-/* -------- HUD: feed counter and the way into the supply store -------- */
+/* ---- HUD and store --------------------------------------------------- */
 
 .hs-hud {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Screen-reader-only. There is no shared utility for this in the codebase --
+   every component inlines the pattern -- so it is inlined here too. */
+.hs-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The farm's own purse, and the first thing in the HUD: everything on this
+   screen is bought with Bushels, and Gold only ever buys acreage. */
+.hs-purse {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--neon-chalk);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hs-purse img {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+}
+
+.hs-store-badge {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-gold);
+  color: var(--brand-ink);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the barn -------------------------------------------------------- */
+
+.hs-barn {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hs-barn-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface-2);
+}
+
+.hs-barn-row > img {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  image-rendering: pixelated;
+}
+
+.hs-barn-name {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  flex: 1;
+}
+
+.hs-barn-name strong {
+  color: var(--neon-chalk);
+  font-size: 14px;
+}
+
+/* Never wraps. A second line here pushes the sell buttons out of alignment
+   with the rows above, and the barn stops reading as a list. */
+.hs-barn-name > span {
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hs-barn-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+/* The sell buttons are the one place a screen gets more than one gold fill.
+   They are the same action repeated at two quantities rather than competing
+   choices, so they read as a pair, not as two primaries. */
+.hs-cta-small {
+  margin-top: 0;
+  min-height: 36px;
+  padding: 5px 11px;
+  font-size: 14px;
+  box-shadow: none;
 }
 
 .hs-feed {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   color: var(--neon-muted);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 
-/* The one way to buy anything, so it reads as a control rather than a label,
-   but stays quieter than the gold CTA on the panel -- the store is a door, not
-   the action. */
 .hs-store-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border: none;
-  border-radius: 999px;
-  padding: 7px 13px;
-  font-size: 13px;
-  font-weight: 650;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-muted);
+  font-size: 14px;
   cursor: pointer;
-  color: var(--neon-chalk);
-  background: var(--brand-surface-2);
-  box-shadow: var(--accent-edge);
 }
 
-.hs-store-btn:hover { background: rgba(182, 166, 219, 0.14); }
+.hs-store-btn:hover { background: var(--brand-surface-2); }
 .hs-store-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
-
-/* -------- The supply store sheet -------- */
 
 .hs-sheet-scrim {
   position: fixed;
@@ -253,116 +682,189 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(8, 4, 20, 0.62);
-  padding: max(12px, var(--safe-left)) max(12px, var(--safe-right))
-    max(12px, var(--safe-bottom)) max(12px, var(--safe-left));
-}
-
-@media (min-width: 641px) {
-  .hs-sheet-scrim { align-items: center; }
+  background: rgba(0, 0, 0, .7);
+  padding: 12px;
 }
 
 .hs-sheet {
   width: min(100%, 520px);
-  max-height: min(86dvh, 620px);
+  max-height: 80dvh;
   overflow-y: auto;
-  overscroll-behavior: contain;
-  background: var(--brand-ink-lift, #211141);
-  box-shadow: var(--accent-edge), 0 24px 60px -24px rgba(0, 0, 0, 0.8);
-  border-radius: 16px;
-  padding: clamp(14px, 3vw, 20px);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--elevation-4);
 }
 
 .hs-sheet-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  margin-bottom: 8px;
 }
 
-.hs-sheet-head h2 { margin: 0; font-size: 17px; }
+.hs-sheet-head h2 { margin: 0; font-size: 16px; }
 
 .hs-sheet-close {
-  border: none;
-  background: none;
-  color: var(--neon-muted);
+  min-height: 44px;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-chalk);
   font-size: 14px;
-  font-weight: 650;
   cursor: pointer;
-  padding: 4px 2px;
 }
 
 .hs-sheet-close:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
 
 .hs-sheet-note {
-  margin: 0;
+  margin: 8px 0 0;
   color: var(--neon-muted);
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: 14px;
 }
 
 .hs-sheet-note strong { color: var(--neon-chalk); }
 
-/* -------- Panel extras the five states need -------- */
-
-/* Section headings inside the stock picker; the two tracks are a real split
-   (fields look after themselves, pens do not) so they get labelled rather
-   than run together. */
-.hs-group-label {
-  margin: 10px 0 6px;
-  font-size: 11.5px;
-  font-weight: 650;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--neon-muted-2);
-}
-
-.hs-group-label:first-of-type { margin-top: 2px; }
-
-.hs-note {
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: var(--neon-muted-2);
-}
-
 .hs-link-btn {
+  display: block;
   margin-top: 8px;
-  border: none;
-  background: none;
   padding: 0;
-  color: var(--brand-gold-light);
-  font-size: 13.5px;
-  font-weight: 600;
-  cursor: pointer;
+  border: 0;
+  background: none;
+  color: var(--neon-purple-bright);
+  font-size: 14px;
   text-decoration: underline;
-  text-underline-offset: 3px;
+  cursor: pointer;
 }
 
 .hs-link-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
 
-/* Hungry and mucked plots read through the overlay too, not only on canvas:
-   the button is what a screen reader and a keyboard land on. */
-.hs-tile-btn.is-hungry:hover,
-.hs-tile-btn.is-hungry.is-selected { background: rgba(255, 138, 61, 0.18); }
-.hs-tile-btn.is-mucked:hover,
-.hs-tile-btn.is-mucked.is-selected { background: rgba(120, 88, 48, 0.2); }
+/* ---- the exchange window --------------------------------------------- */
 
-/* Landscape phones. A 4:3-ish stage stacked over a panel cannot fit a 390px
-   viewport (the mobile review measured the panel a full screen below the
-   fold), so the stage snaps to the viewport's height and the panel takes the
-   width freed beside it -- the same spare-height thinking 46-minesweeper.css
-   applies, spent on a second column instead of a smaller board.
+/* The store sheet's shelf headings. These shipped with no rule at all in phase
+   2, so all three groups read as one wall of body copy. A kicker rather than a
+   heading: it labels a shelf, it is not a title. */
+.hs-group-label {
+  margin: 16px 0 0;
+  color: var(--neon-muted-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
 
-   The stage's height is FLEXED, not calculated. It used to be
-   `calc(100dvh - 128px)`, and 128px was wrong: the real chrome above it (safe
-   area, floor bar and its clamp()ed margin, the scoreline, two shell gaps)
-   measured ~160px at 844x390, so the diorama hung a full 30px below the fold
-   on the exact device this breakpoint exists for. A magic number cannot track
-   a clamp() against viewport width anyway, so the shell becomes a fixed-height
-   flex column and the stage simply takes what is left. */
+/* The only place on this screen where the farm touches real money, so it is
+   the only block with its own surface and a gold edge. That edge is marking a
+   boundary, not decorating a card -- everything above it is the farm's own
+   currency going round in a circle. */
+.hs-exchange {
+  margin-top: 6px;
+  padding: 12px;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface-2);
+  box-shadow: inset 0 0 0 1px rgba(255, 210, 63, .18);
+}
+
+.hs-exchange > .hs-sheet-note:first-child { margin-top: 0; }
+.hs-exchange .hs-cta { width: 100%; }
+
+.hs-exchange-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 10px 0 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hs-exchange-meter strong { color: var(--brand-gold-light); }
+
+/* Drains rather than fills: the bar is what is LEFT of the day, matching the
+   number under it. Filled-as-spent shipped for one screenshot and put a full
+   gold bar directly above the words "0 of 5,000 Gold left today". */
+.hs-exchange-bar {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  overflow: hidden;
+}
+
+/* Scaled, not resized: the fill is full-width and squashed by a transform, so
+   the tween stays off the layout path. The gradient scales with it, which on a
+   6px bar is the same picture. */
+.hs-exchange-bar > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--brand-gold) 0%, var(--brand-gold-light) 100%);
+  transition: transform var(--duration-slow, .22s) ease;
+}
+
+.hs-exchange-amounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+/* Violet, not gold: the chips choose an amount, and the gold fill on this
+   screen belongs to the one button that actually moves money. */
+.hs-amount {
+  min-height: 44px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.hs-amount.is-on {
+  background: var(--neon-purple-deep);
+  box-shadow: var(--accent-edge), var(--accent-glow);
+  color: var(--neon-chalk);
+}
+
+.hs-amount:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+.hs-exchange-done { color: var(--brand-gold-light) !important; }
+
+/* Motion here is all ambient -- a ripe plot bobbing, the affordance pulse,
+   the harvest burst. None of it carries information the colour does not, so
+   it can all simply stop. */
+@media (prefers-reduced-motion: reduce) {
+  .hs-plot[data-state="ready"] .hs-plot-stock,
+  .hs-plot[data-afford="act"]::after,
+  .hs-plot-pop,
+  .hs-toast {
+    animation: none;
+  }
+  .hs-plot,
+  .hs-cta { transition: none; }
+  .hs-plot-progress > span,
+  .hs-exchange-bar > span { transition: none; }
+  .hs-toast { opacity: 1; }
+}
+
+/* ---- landscape phones (MUST STAY LAST) -------------------------------
+   Height is the scarce axis here, not width: at 844x390 there is no room for
+   field over dock over panel. The shell becomes a fixed-height flex column and
+   the row splits into field | dock | panel, so the field takes the full height
+   and the dock turns into a column of the same five buttons.
+
+   The height is FLEXED, never calculated. It used to be `calc(100dvh - 128px)`
+   and 128px was wrong -- the real chrome above it (safe area, floor bar and its
+   clamp()ed margin, the scoreline, two shell gaps) measures ~160px at 844x390,
+   so the field hung a full 30px below the fold on the exact device this
+   breakpoint exists for. A magic number cannot track a clamp() against
+   viewport width anyway. */
 @media (orientation: landscape) and (max-height: 520px) {
   .hs-shell {
     height: 100dvh;
@@ -370,18 +872,18 @@
     gap: 8px;
   }
 
-  /* Every band above the stage gives back what it can: the chrome is worth
+  /* Every band above the field gives back what it can: the chrome is worth
      less here than the picture it is sitting on top of. */
   .hs-shell .floor-bar {
     min-height: 34px;
     margin-bottom: 6px;
   }
-  .hs-shell .ante-lobby-heading h1 { font-size: 17px; }
-  .hs-shell .hs-cap { font-size: 12px; }
+  .hs-shell .ante-lobby-heading h1 { font-size: 16px; }
+  .hs-shell .hs-cap { font-size: 14px; }
 
   .hs-main {
     flex-direction: row;
-    gap: 14px;
+    gap: 10px;
     align-items: stretch;
     flex: 1;
     width: 100%;
@@ -389,64 +891,65 @@
        row grows the shell back past the viewport. */
     min-height: 0;
   }
-  .hs-stage {
+
+  .hs-field { flex: none; height: 100%; width: auto; }
+  .hs-grid {
     height: 100%;
     width: auto;
+    aspect-ratio: 1;
     max-width: none;
-    margin: 0;
-    flex: none;
+    padding: 6px;
   }
+
+  .hs-controls {
+    flex: none;
+    width: auto;
+    justify-content: center;
+  }
+
+  /* The dock stands up. Same five targets, same sizes, now down the side
+     where a thumb wrapped around the phone can still reach them. */
+  .hs-toolbelt {
+    flex-direction: column;
+    width: auto;
+    height: 100%;
+    justify-content: center;
+  }
+  .hs-tool { flex: none; min-height: 46px; width: 62px; }
+  .hs-tool img { width: 22px; height: 22px; }
+
+  /* Seeds go vertical alongside the dock rather than scrolling horizontally
+     under a field that no longer has anything under it. */
+  .hs-seeds {
+    flex-direction: column;
+    width: auto;
+    max-height: 100%;
+    overflow-x: visible;
+    overflow-y: auto;
+  }
+  .hs-seed { padding: 4px 9px 4px 5px; min-height: 36px; }
+  .hs-seed img { width: 18px; height: 18px; }
+
+  .hs-tool-hint { display: none; }
+
   .hs-side {
     display: block;
     flex: 1;
     min-width: 0;
-    /* Backstop only. The compact cards below are sized to fit without it, but
-       a long error line plus a shortfall hint can still outgrow 260px. */
+    /* Backstop only. The compact panel below is sized to fit without it, but
+       a long error line plus a shortfall hint can still outgrow the height. */
     overflow-y: auto;
     overscroll-behavior: contain;
   }
   .hs-detail { margin-top: 0; min-height: 0; }
 
-  /* Two lines per card, name opposite terms and yield opposite the button:
-       Pulse                    1,000 Gold - 15 min
-       Harvests 1,050 (+50)                 [ Plant ]
-     Three portrait cards stack to ~300px and three of the first attempt's
-     one-line-each-plus-button cards to ~440px; neither fits the ~260px this
-     breakpoint has to spend, and the third Plant button ended up below a
-     scroll on the one screen size this whole block exists for. */
-  .hs-stock-cards { grid-template-columns: 1fr; gap: 8px; }
-  /* Grid, not a wrapping flex row: with flex the line breaks fall wherever
-     the numbers happen to be long, so Matrix wrapped one way and Pulse
-     another and the three cards stopped reading as one set. */
-  .hs-stock-card {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: center;
-    gap: 3px 8px;
-    padding: 7px 10px;
-  }
-  .hs-stock-card h3 { grid-area: 1 / 1; font-size: 14px; }
-  .hs-stock-terms { grid-area: 1 / 2; font-size: 12.5px; text-align: right; }
-  .hs-stock-yield { grid-area: 2 / 1; margin: 0; font-size: 12.5px; }
-  .hs-stock-card .hs-cta {
-    grid-area: 2 / 2;
-    margin-top: 0;
-    padding: 5px 15px;
-    font-size: 13px;
-  }
-  /* The shortfall hint is the only other child, and it gets its own full row
-     under both columns rather than squeezing into one of them. */
-  .hs-stock-card > :not(h3):not(.hs-stock-terms):not(.hs-stock-yield):not(.hs-cta) {
-    grid-column: 1 / -1;
-  }
   .hs-panel { padding: 10px 12px; }
   .hs-panel h2 { font-size: 15px; margin-bottom: 4px; }
+  .hs-panel > p { font-size: 14px; margin: 4px 0; }
+  .hs-countdown { font-size: 15px !important; }
 
-  /* Five things to buy do not fit 260px however they are stacked, so the
-     panel scrolls here (the .hs-side backstop above). What this trims is the
-     chrome around them, so four of the five are visible before you have to. */
-  .hs-group-label { margin: 6px 0 4px; font-size: 10.5px; }
-  .hs-stock-card { padding: 6px 10px; gap: 2px 8px; }
-  .hs-stock-card h3 { font-size: 13.5px; }
-  .hs-stock-terms, .hs-stock-yield { font-size: 12px; }
+  .hs-stock-cards { grid-template-columns: 1fr; gap: 8px; }
+  .hs-stock-card { padding: 7px 10px; }
+  .hs-stock-card h3 { font-size: 14px; }
+  .hs-stock-terms, .hs-stock-yield { font-size: 14px; }
 }

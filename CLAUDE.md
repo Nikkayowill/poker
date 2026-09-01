@@ -46,6 +46,120 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### The Homestead is being rebuilt to match `jeremyckahn/farmhand` (2026-09-01)
+Kayo brought that repo as the target -- "it matches what I want it to look like and how I want it to
+be on mobile... I want our homestead to adopt most of if not all of the game here". **Its code is
+GPL-2.0-or-later and its art is CC BY-NC-SA 4.0; the NonCommercial term rules the art out outright
+because StackChips sells Gold. Reimplement from the design, never copy a file.** Full teardown and
+the phase plan: https://claude.ai/code/artifact/482f085c-851f-4941-8070-0715c3feddc7
+
+**Economy, decided by Kayo:** two layers. Harvests will sell for an internal currency (**Bushels**,
+working name) which never leaves the farm, and that is where all of farmhand's variance lives --
+swinging prices, crafting margins, loans, cow breeding -- safely, because none of it is Gold. Gold
+leaves only through **one exchange window with a flat per-player daily ceiling**: not a percentage,
+not scaled by land owned, not scaled by trading skill. That invariant (**the farm's maximum Gold
+output is a constant**) is what keeps this out of the category Ante Up was in when it printed money,
+and it is the thing to defend in review. Collections will stop paying Gold entirely, so there is one
+faucet rather than two stacked. Cosmetics pricing is deliberately parked.
+Phases: (1) feel, (2) Bushels + inventory + shop, (3) the exchange window, (4) the market, (5) the
+meta. **The ceiling lands before prices start swinging**, so the valve is closed and tested before
+there is any variance behind it. Phases 1-3 are built (see below); phase 4 is next and now has a
+closed valve in front of it.
+
+### Phase 1 shipped the farmhand feel; Phaser is gone (2026-09-01)
+Branch `feat/homestead-farmhand-feel` off main. **The Phaser canvas and `iso.ts` are deleted** --
+Kayo's call, reversing his own earlier "use Phaser.js and 2d elements" (which was made against a 3D
+proposal, not against DOM). The field is now a plain CSS grid of buttons, one per plot, each a stack
+of 16x16 pixel-art tiles under `image-rendering: pixelated`. That deletes the whole coordinate-twinning
+arrangement `iso.ts` existed for: a canvas is invisible to a screen reader, so every painted tile had
+needed an invisible DOM copy kept in sync. **The tile is the button now.** Also removes the `phaser`
+dependency and its 1.2MB chunk.
+Interaction is **tool-first**: hold a tool from the dock, and every plot it can act on lights up.
+`lib/homestead/tools.ts` owns all of it (`affordanceFor` returns `act | blocked | none`) so it is
+testable; the components render what it returns and own no rules. **`blocked` is deliberately
+distinct from `none`** -- a plot that IS the tool's target but lacks Gold, feed or a free slot lights
+red, because collapsing it into "not tappable" hides the reason the farm has stopped.
+Three things found by actually screenshotting it, none of which reasoning caught:
+1. **State rings were invisible in the first cut.** An inset `box-shadow` paints above the element's
+   background but BELOW its children, and both tile sprites are children at `inset: 0` -- so the
+   gold "ready", amber "hungry" and brown "mucked" rings were painted over by the artwork and never
+   appeared at all. State rings now live on `::before`, the affordance ring on `::after` inset by
+   3px so the two nest concentrically.
+2. **The affordance tint must not be green.** Green was the obvious farming-game choice and it
+   vanished: every Kenney soil tile is a brown patch on a green lawn, so the tint disappeared into
+   the art. It is violet now (`--accent-edge`/`--accent-glow`) -- highest contrast against grass and
+   soil, and already the system's own accent spent as a ring and a glow rather than a fill.
+3. **The plots needed a shared bed.** Sixteen sprites on the violet chrome read as islands; the grid
+   now carries `--hs-grass: #84c669`, sampled from the tiles' own grass, so the 2px gap between
+   tiles becomes lawn and the field reads as one field.
+Art is Kenney's **CC0** Tiny Farm pack (`public/homestead/tiles/`, see its `CREDITS.txt`);
+`scripts/extract-homestead-tiles.py` records which source tile became which file, so swapping packs
+is a re-run. **The pack has no pig:** the middle tier keeps its `pig` stock id (it is on live rows;
+renaming it would be a data migration to fix a caption) and is labelled **"Sheep Pen"**.
+
+### Phase 3: the exchange window, the farm's one Gold outlet (2026-09-01)
+Same branch. **Bushels -> Gold at 2 Gold each, capped at a flat 5,000 Gold per player per UTC day**
+(Kayo's numbers, signed off). The cap is the feature; the rate is not. A generous rate only means a
+player reaches the ceiling sooner and banks the rest, which is the shape to keep when phase 4 starts
+moving prices. Sized against the faucets that already exist rather than against what the farm can
+grow: daily grant 1,000 x2.5 streak, ads 500x6, backstop 1,000/12h, and below the ~7,500/day the
+pre-Bushels Homestead paid uncapped.
+**The invariant, and the whole review question: the ceiling is a constant.** Not a percentage, not
+scaled by acreage, bankroll or trading skill. Skill decides how fast the day's bucket fills, never
+how big it is. `lib/homestead/exchange.ts` holds it as a bare number on purpose, and
+`exchange.test.ts` asserts it is one; a service test drains the window on a bare farm and on a
+six-plot one and asserts both get exactly 5,000.
+**Gold now moves in exactly two places** (`buyHomesteadPlot` spends, `exchangeHomesteadBushels`
+pays) and a source-scanning test counts the `spendGoldByProfile`/`creditGoldByProfile` call sites so
+a third fails rather than ships. A second test pins the route's action list, because the change that
+would actually break this is a Gold->Bushels action: a round trip turns a ceiling into a laundry.
+Ordering is rule 1 with the currencies swapped -- **Bushels leave, then the day is reserved, then
+Gold lands** -- and a refused reservation refunds. The rate is read at exchange time, NOT snapshotted:
+unlike a planted plot nothing was agreed in advance.
+Migration `20260901190000_homestead_exchange.sql`, **UNAPPLIED**: `homestead_exchanges`
+(profile_id, day, gold), PK `(profile_id, day)`, one RPC. **It needs no advisory lock and the reason
+is worth knowing** -- unlike `admob_ssv_receipts_enforce_daily_cap`, which counts rows in the table
+it is inserting into and so can miss an uncommitted sibling, the number here lives IN the row being
+written and the conflict target is the primary key, so `insert ... on conflict do update ... where
+gold + p_gold <= ceiling` re-evaluates against the winner's committed row. **The RPC carries its own
+hard copy of the ceiling and takes `least(p_ceiling, hard_ceiling)`**, so application code can only
+ever tighten it -- raising the farm's Gold faucet costs a migration.
+UI is a gold-edged block at the BOTTOM of the supply store sheet (everything above it is the farm's
+own money going round; this is where it leaves, and it should be a thing you go and do). One bug the
+screenshots caught again: **the allowance bar filled as the day was spent, which put a full gold bar
+directly above the words "0 of 5,000 Gold left today"**. It drains now. Also fixed in passing:
+`.hs-group-label` had no CSS rule at all, so phase 2's three store headings rendered as body copy.
+
+### Phase 2: Bushels, produce and the store (2026-09-01)
+Same branch. **Every Homestead table was verified EMPTY in production first** (`homestead_plots`,
+`homestead_feed`, `homestead_harvests` all 0 rows -- nobody has ever played it, since the gate allows
+nobody), which is what made a free reshape of the economy possible; re-verify before applying the
+migration anywhere that has since been played.
+
+**The loop is now farmhand's.** Harvesting no longer pays anything -- it puts PRODUCE in a barn, and
+selling that produce at the supply store is what earns **Bushels**. That split is not cosmetic: a
+market can only swing a price if there is something you are holding while it swings, which is exactly
+what phase 4 needs. `collectHomestead` moves no money at all now, and nothing should ever add money
+back to it.
+
+**Currency wall, and the thing to defend in review: only `buy-plot` moves Gold.** Seed, feed, muck and
+produce are all Bushels or items, and they never leave the farm. Land stays Gold (Kayo's call) so the
+2,500-doubling ladder survives as a sink and Gold has a reason to enter at all. Several service tests
+assert a Gold balance is *unchanged* across an action purely to catch a second Gold path being added.
+New farms get `HOMESTEAD_STARTING_BUSHELS` (150) exactly once via
+`grant_homestead_starting_bushels` -- `INSERT ... ON CONFLICT DO NOTHING` makes the **primary key the
+idempotency guard**, so a player who spends it all does not get another by refreshing.
+
+New migration `20260901180000_homestead_inventory.sql`, **UNAPPLIED**: one `homestead_inventory`
+(profile, item_id, quantity) table holding produce AND Bushels behind ONE row-locking RPC -- one
+function is one EXECUTE grant to get right, and that grant has shipped wrong twice here. Two columns
+change meaning: `homestead_plots.stake` is Bushels now, and `payout` is **inert** (kept, since
+migrations are append-only) replaced by a new `yield_quantity` snapshot. The stocking trigger's
+ceiling was denominated in Gold payouts and is re-pointed at `yield_quantity`, which is the real last
+line before a faucet: inflated yield -> produce -> Bushels -> phase 3's exchange -> Gold.
+**`bushels` shares a table with produce, so the `sell` action's item enum is the only thing between a
+request and infinite money** -- there is a test for exactly that.
+
 ### Homestead migration applied, and a revoke that wasn't revoking (2026-09-01)
 `20260831150000_homestead_plots.sql` is **applied to production**, verified against real Postgres with
 a self-rolling-back `DO` block rather than trusted from the memory-mode tests (which cannot exercise a

@@ -20,49 +20,87 @@ import {
   toHomesteadPlotSnapshots,
   type HomesteadPlotSnapshot,
 } from "@/lib/homestead/plots";
+import {
+  BUSHELS,
+  HOMESTEAD_ITEM_CATALOGUE,
+  HOMESTEAD_STARTING_BUSHELS,
+  HOMESTEAD_YIELDS,
+  isHomesteadItem,
+  itemLabel,
+  type HomesteadItem,
+} from "@/lib/homestead/items";
+import {
+  HOMESTEAD_GOLD_CEILING,
+  HOMESTEAD_MAX_EXCHANGE_BUSHELS,
+  exchangeState,
+  goldForBushels,
+  homesteadExchangeDay,
+  type HomesteadExchangeState,
+} from "@/lib/homestead/exchange";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
   HomesteadPlotExists,
   adjustHomesteadFeed,
+  adjustHomesteadInventory,
   clearHomesteadMuck,
   collectHomesteadPlot,
   countWorkingHomesteadPlots,
   createHomesteadPlot,
   feedHomesteadPlot,
   getHomesteadPlot,
+  grantStartingBushels,
   listHomesteadPlots,
+  readHomesteadExchanged,
   readHomesteadFeed,
+  readHomesteadInventory,
   recordHomesteadHarvest,
+  reserveHomesteadExchange,
   stockHomesteadPlot,
   type StoredHomesteadPlot,
 } from "./homestead-store";
 import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
 
 /**
- * Everything between a StackChips Homestead request and the wallet.
+ * Everything between a StackChips Homestead request and the player's purses.
  *
- * A Homestead plot is a *guaranteed* win -- nothing here can lose your stake,
+ * TWO CURRENCIES, and which is which is the whole safety story:
+ *
+ *   * **Bushels** are the farm's own money. Seed, feed and muck are priced in
+ *     them, produce sells for them, and they never leave the Homestead. A bug
+ *     in any of it costs a save state, not money.
+ *   * **Gold** touches the farm in exactly TWO places, and there must never be
+ *     a third: buyHomesteadPlot spends it on acreage, and
+ *     exchangeHomesteadBushels pays it out at the daily window, under a flat
+ *     per-player ceiling. Nothing else here may move Gold. If a future change
+ *     adds a third Gold path, that is the thing to stop and think about,
+ *     because the farm's maximum Gold output being a flat constant is what
+ *     keeps this out of the category Ante Up was in when it printed money.
+ *     There is deliberately no Gold -> Bushels path in either direction other
+ *     than acreage: a round trip would let a player launder Gold through the
+ *     capped window and back, which is a second faucet wearing a sink's coat.
+ *
+ * A Homestead plot is a *guaranteed* win -- nothing here can lose your seed,
  * animals go hungry but never die -- so the ordering discipline every staked
- * service restates matters with nothing to hide behind:
+ * service restates still applies, now mostly to Bushels:
  *
- *   1. **The Gold leaves the wallet before the thing it pays for exists.**
- *      A plot purchase debits before the row inserts; a stocking debits before
- *      the guarded write; feed debits before the servings land. Either write
- *      failing refunds.
- *   2. **A payout is credited only after the version-guarded collection write
- *      is confirmed.** collectHomesteadPlot returns null on a lost race, a
- *      stale version, or a not-actually-ready row, and null must never pay:
- *      the writer that wins the race is the one that pays.
- *   3. **Settlement is a single credit of the payout snapshotted at stocking,
- *      never a second debit and never a re-read of the catalogue.** A retune
- *      between stocking and collection pays what the player agreed to.
+ *   1. **The money leaves the purse before the thing it pays for exists.**
+ *      A plot purchase debits Gold before the row inserts; a planting debits
+ *      Bushels before the guarded write; feed debits before the servings land.
+ *      Either write failing refunds.
+ *   2. **Produce is credited only after the version-guarded harvest write is
+ *      confirmed.** collectHomesteadPlot returns null on a lost race, a stale
+ *      version, or a not-actually-ready row, and null must never pay: the
+ *      writer that wins the race is the one that is paid.
+ *   3. **Settlement credits the yield snapshotted at planting, never a re-read
+ *      of the catalogue.** A retune between planting and harvest gives the
+ *      player what they agreed to.
  *
  * There is no rule 4 (escrow released exactly once): no second party.
  *
  * Deliberately absent: awardWager. Ante Up grants XP on a wager because the
- * wager can lose; a Homestead stake cannot, and XP for parking Gold would make
- * this a progression faucet on top of a Gold faucet.
+ * wager can lose; a Homestead planting cannot, and XP for parking Bushels
+ * would make this a progression faucet on top of everything else.
  *
  * THE MUCK ROLL is the one thing here that is not a pure function of
  * timestamps, and it lives in exactly one place: rollMuck, called once inside
@@ -80,6 +118,11 @@ export interface HomesteadView {
   plots: HomesteadPlotSnapshot[];
   profile: PlayerProfile;
   feed: number;
+  /** Produce held, by item id. Excludes Bushels, which get their own field. */
+  inventory: Record<string, number>;
+  bushels: number;
+  /** Today's exchange window: the rate, the flat ceiling, what is left of it. */
+  exchange: HomesteadExchangeState;
 }
 
 function parsePlotIndex(value: number): number {
@@ -94,16 +137,30 @@ async function snapshots(profileId: string, now: Date): Promise<HomesteadPlotSna
 }
 
 async function view(profile: PlayerProfile, now: Date): Promise<HomesteadView> {
-  return {
-    plots: await snapshots(profile.id, now),
-    profile,
-    feed: await readHomesteadFeed(profile.id),
-  };
+  const [plots, feed, held, exchanged] = await Promise.all([
+    snapshots(profile.id, now),
+    readHomesteadFeed(profile.id),
+    readHomesteadInventory(profile.id),
+    readHomesteadExchanged(profile.id, homesteadExchangeDay(now)),
+  ]);
+
+  const { [BUSHELS]: bushels = 0, ...inventory } = held;
+  return { plots, profile, feed, inventory, bushels, exchange: exchangeState(exchanged, now) };
 }
 
-/** The whole farm, as the client renders it. */
+/**
+ * The whole farm, as the client renders it.
+ *
+ * The starting grant happens here, on the first read, because a farm with no
+ * Bushels cannot plant anything and so cannot begin. It is safe to attempt on
+ * every read: the store's INSERT ... ON CONFLICT DO NOTHING means a profile
+ * that already has a bushels row is never topped up, even sitting at zero, so
+ * a player who spends the grant does not get another by refreshing.
+ */
 export async function readHomestead(token: string, now = new Date()): Promise<HomesteadView> {
-  return view(await ensureProfile(token), now);
+  const profile = await ensureProfile(token);
+  await grantStartingBushels(profile.id, HOMESTEAD_STARTING_BUSHELS);
+  return view(profile, now);
 }
 
 /**
@@ -231,12 +288,15 @@ export async function stockHomestead(
     );
   }
 
-  // Rule 1: the stake leaves first.
-  const debited = await spendGoldByProfile(profile.id, def.stake);
-  if (!debited) {
+  // Rule 1: the seed is paid for first. Bushels, not Gold -- a null here is a
+  // lost race or an empty purse, and both mean nothing was planted.
+  const produce = HOMESTEAD_YIELDS[stock];
+  const paid = await adjustHomesteadInventory(profile.id, BUSHELS, -def.seedCost);
+  if (paid === null) {
     throw new HomesteadRequestError(
-      `You need ${def.stake.toLocaleString()} Gold for that.`,
+      `${def.label} seed costs ${def.seedCost.toLocaleString()} Bushels.`,
       400,
+      { round: await snapshots(profile.id, now) },
     );
   }
 
@@ -244,8 +304,8 @@ export async function stockHomestead(
   try {
     stocked = await stockHomesteadPlot(plot, {
       stock,
-      stake: def.stake,
-      payout: def.payout,
+      stake: def.seedCost,
+      yieldQuantity: produce.quantity,
       startedAt: now,
       readyAt: new Date(now.getTime() + def.durationMs),
       // An animal counts as fed the moment it arrives; a crop never eats.
@@ -255,22 +315,22 @@ export async function stockHomestead(
     // The database refused outright -- the trigger raising on a cap race or a
     // ceiling desync arrives HERE as a throw, never as the null below -- and
     // nothing came into existence, so the player must not have paid for it.
-    await creditGoldByProfile(profile.id, def.stake).catch(() => null);
+    await adjustHomesteadInventory(profile.id, BUSHELS, def.seedCost).catch(() => null);
     throw error;
   }
   if (!stocked) {
     // Lost the guarded write (another tab moved this plot first): same rule,
-    // the stake goes back.
-    await creditGoldByProfile(profile.id, def.stake).catch(() => null);
+    // the seed goes back.
+    await adjustHomesteadInventory(profile.id, BUSHELS, def.seedCost).catch(() => null);
     throw new HomesteadRequestError("That plot moved on.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
 
-  return view(debited, now);
+  return view(profile, now);
 }
 
-/** Buys a shipment of feed. Pure sink: Gold out, servings in. */
+/** Buys a shipment of feed. Pure sink: Bushels out, servings in. */
 export async function buyHomesteadFeed(
   token: string,
   itemId: string,
@@ -280,11 +340,11 @@ export async function buyHomesteadFeed(
   if (!item) throw new HomesteadRequestError("No such shipment.", 400);
   const profile = await ensureProfile(token);
 
-  // Rule 1: the Gold leaves before the servings land.
-  const debited = await spendGoldByProfile(profile.id, item.cost);
-  if (!debited) {
+  // Rule 1: the Bushels leave before the servings land.
+  const paid = await adjustHomesteadInventory(profile.id, BUSHELS, -item.cost);
+  if (paid === null) {
     throw new HomesteadRequestError(
-      `You need ${item.cost.toLocaleString()} Gold for a ${item.label}.`,
+      `A ${item.label} costs ${item.cost.toLocaleString()} Bushels.`,
       400,
     );
   }
@@ -292,11 +352,164 @@ export async function buyHomesteadFeed(
   try {
     await adjustHomesteadFeed(profile.id, item.servings);
   } catch (error) {
-    await creditGoldByProfile(profile.id, item.cost).catch(() => null);
+    await adjustHomesteadInventory(profile.id, BUSHELS, item.cost).catch(() => null);
     throw error;
   }
 
-  return view(debited, now);
+  return view(profile, now);
+}
+
+/**
+ * Sells produce at the supply store. This is where a harvest finally becomes
+ * money, and it is deliberately a separate act from harvesting: a market can
+ * only swing a price if there is something you are holding while it swings,
+ * which is what phase 4 needs.
+ *
+ * Priced from the catalogue at the moment of sale rather than snapshotted --
+ * unlike a planted plot, nothing was agreed in advance here. When phase 4
+ * makes prices move, THIS is the call that reads the moving price.
+ */
+export async function sellHomesteadProduce(
+  token: string,
+  input: { item: string; quantity: number },
+  now = new Date(),
+): Promise<HomesteadView & { sold: { item: HomesteadItem; quantity: number; bushels: number } }> {
+  if (!isHomesteadItem(input.item)) throw new HomesteadRequestError("No such produce.", 400);
+  const item: HomesteadItem = input.item;
+  if (!Number.isInteger(input.quantity) || input.quantity < 1) {
+    throw new HomesteadRequestError("Sell at least one.", 400);
+  }
+  const profile = await ensureProfile(token);
+
+  // Rule 1 in the other direction: the produce leaves before the money lands,
+  // so a failure here cannot pay for goods the player still holds. A null is
+  // "you do not have that many", which is also what a racing second tab looks
+  // like from here.
+  const remaining = await adjustHomesteadInventory(profile.id, item, -input.quantity);
+  if (remaining === null) {
+    throw new HomesteadRequestError(
+      `You do not have ${itemLabel(item, input.quantity)} to sell.`,
+      400,
+    );
+  }
+
+  const bushels = HOMESTEAD_ITEM_CATALOGUE[item].price * input.quantity;
+  try {
+    await adjustHomesteadInventory(profile.id, BUSHELS, bushels);
+  } catch (error) {
+    // The produce is already gone from the bag; put it back rather than leave
+    // the player short of both.
+    await adjustHomesteadInventory(profile.id, item, input.quantity).catch(() => null);
+    throw error;
+  }
+
+  return { ...(await view(profile, now)), sold: { item, quantity: input.quantity, bushels } };
+}
+
+/**
+ * The exchange window: Bushels out of the farm, Gold in to the player. THE
+ * ONLY PLACE GOLD LEAVES THE HOMESTEAD, and the only one there may ever be.
+ *
+ * What makes it safe is not the rate, it is the ceiling, and the ceiling is a
+ * flat daily constant that does not vary with anything -- not land owned, not
+ * Bushels held, not Gold balance, not how well the player traded. Skill decides
+ * how quickly the day's bucket fills; nothing decides how big it is. See
+ * lib/homestead/exchange.ts.
+ *
+ * The ordering is rule 1 with the currencies swapped, and the order is the
+ * whole correctness argument:
+ *
+ *   1. **The Bushels leave first.** Nothing can be paid for produce the player
+ *      still holds.
+ *   2. **Then the day's allowance is reserved**, atomically, in the same write
+ *      that checks it. A null is a refusal or a lost race and the two are
+ *      indistinguishable here on purpose -- either way nothing was reserved, so
+ *      the Bushels go straight back.
+ *   3. **Only then is Gold credited.** By that point the debit and the
+ *      reservation are both durable, so a failure at the last step cannot pay
+ *      twice; it is logged loudly and the response carries the player's real
+ *      balance, re-read, rather than an optimistic one.
+ *
+ * The rate is read now rather than snapshotted (unlike a planted plot's yield):
+ * an exchange is instantaneous, so there is no in-flight agreement a retune
+ * could break.
+ */
+export async function exchangeHomesteadBushels(
+  token: string,
+  bushelsInput: number,
+  now = new Date(),
+): Promise<HomesteadView & { exchanged: { bushels: number; gold: number } }> {
+  if (
+    !Number.isInteger(bushelsInput) ||
+    bushelsInput < 1 ||
+    bushelsInput > HOMESTEAD_MAX_EXCHANGE_BUSHELS
+  ) {
+    throw new HomesteadRequestError("Choose how many Bushels to exchange.", 400);
+  }
+  const profile = await ensureProfile(token);
+  const day = homesteadExchangeDay(now);
+  const gold = goldForBushels(bushelsInput);
+
+  // Step 1: the Bushels leave. Null is an empty barn or a racing second tab,
+  // and both mean nothing was exchanged.
+  const left = await adjustHomesteadInventory(profile.id, BUSHELS, -bushelsInput);
+  if (left === null) {
+    throw new HomesteadRequestError(
+      `You only have ${(await bushelBalance(profile.id)).toLocaleString()} Bushels.`,
+      400,
+    );
+  }
+
+  // Step 2: reserve the day's allowance. This is the valve, and it is one
+  // atomic write rather than a read followed by a write, so two requests
+  // racing for the last of the day cannot both take it.
+  let reserved: number | null;
+  try {
+    reserved = await reserveHomesteadExchange(profile.id, day, gold, HOMESTEAD_GOLD_CEILING);
+  } catch (error) {
+    await adjustHomesteadInventory(profile.id, BUSHELS, bushelsInput).catch(() => null);
+    throw error;
+  }
+  if (reserved === null) {
+    await adjustHomesteadInventory(profile.id, BUSHELS, bushelsInput).catch(() => null);
+    // Hitting the ceiling is the feature working, not a fault, so it reads as
+    // a closing time rather than an error -- and the caller gets the true
+    // remaining allowance in the view attached to the refusal.
+    const state = exchangeState(await readHomesteadExchanged(profile.id, day), now);
+    throw new HomesteadRequestError(
+      state.remaining > 0
+        ? `The window has ${state.remaining.toLocaleString()} Gold left today. Exchange ${state.maxBushels.toLocaleString()} Bushels or fewer.`
+        : "You have exchanged all the Gold this farm can send out today. The window opens again at midnight UTC.",
+      409,
+    );
+  }
+
+  // Step 3: the Gold lands. Both writes above are already durable, so this one
+  // never refunds -- a retry could pay twice, which is the one outcome worth
+  // avoiding more than a missing credit. Logged loudly, same reasoning as
+  // ante-up-service.ts's payOutWin.
+  let credited: PlayerProfile | null = null;
+  try {
+    credited = await creditGoldByProfile(profile.id, gold);
+  } catch (error) {
+    console.error("homestead.exchange_credit_failed", {
+      profileId: profile.id,
+      day,
+      bushels: bushelsInput,
+      gold,
+      error,
+    });
+  }
+
+  return {
+    ...(await view(credited ?? (await ensureProfile(token)), now)),
+    exchanged: { bushels: bushelsInput, gold },
+  };
+}
+
+/** What is actually in the barn, for a refusal message that names a number. */
+async function bushelBalance(profileId: string): Promise<number> {
+  return (await readHomesteadInventory(profileId))[BUSHELS] ?? 0;
 }
 
 /**
@@ -375,10 +588,10 @@ export async function clearHomesteadPlot(
   }
 
   const fee = plot.muckFee;
-  const debited = await spendGoldByProfile(profile.id, fee);
-  if (!debited) {
+  const paid = await adjustHomesteadInventory(profile.id, BUSHELS, -fee);
+  if (paid === null) {
     throw new HomesteadRequestError(
-      `Clearing this costs ${fee.toLocaleString()} Gold.`,
+      `Clearing this costs ${fee.toLocaleString()} Bushels.`,
       400,
       { round: await snapshots(profile.id, now) },
     );
@@ -388,17 +601,17 @@ export async function clearHomesteadPlot(
   try {
     cleared = await clearHomesteadMuck(plot);
   } catch (error) {
-    await creditGoldByProfile(profile.id, fee).catch(() => null);
+    await adjustHomesteadInventory(profile.id, BUSHELS, fee).catch(() => null);
     throw error;
   }
   if (!cleared) {
-    await creditGoldByProfile(profile.id, fee).catch(() => null);
+    await adjustHomesteadInventory(profile.id, BUSHELS, fee).catch(() => null);
     throw new HomesteadRequestError("That plot moved on.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
 
-  return view(debited, now);
+  return view(profile, now);
 }
 
 /**
@@ -411,17 +624,29 @@ function rollMuck(stock: HomesteadStock): number | null {
 }
 
 /**
- * Sells a ready plot's produce. Allowed while banned, same posture as
- * resigning a duel: it only returns Gold already committed, and stranding a
- * stake inside a suspended account's grid forever is a punishment nobody
+ * Harvests a ready plot into the bag. Allowed while banned, same posture as
+ * resigning a duel: it only returns produce already grown, and stranding a
+ * crop inside a suspended account's grid forever is a punishment nobody
  * designed.
+ *
+ * NOTE this no longer pays anything. It moves produce into the inventory and
+ * that is all; turning produce into Bushels is sellHomesteadProduce, and
+ * turning Bushels into Gold is phase 3's exchange. No Gold moves in this
+ * function, and none should ever be added to it.
  */
 export async function collectHomestead(
   token: string,
   plotIndexInput: number,
   now = new Date(),
 ): Promise<
-  HomesteadView & { collected: { stock: HomesteadStock; stake: number; payout: number; mucked: boolean } }
+  HomesteadView & {
+    collected: {
+      stock: HomesteadStock;
+      item: HomesteadItem;
+      quantity: number;
+      mucked: boolean;
+    };
+  }
 > {
   const plotIndex = parsePlotIndex(plotIndexInput);
   const profile = await ensureProfile(token);
@@ -457,38 +682,37 @@ export async function collectHomestead(
   }
 
   // The guarded write above confirmed `plot` was exactly the row settled, so
-  // its snapshotted stake/payout are the truth about what was staked and what
-  // is owed.
-  const collected = {
-    stock,
-    stake: plot.stake ?? 0,
-    payout: plot.payout ?? 0,
-    mucked: muckFee !== null,
-  };
+  // its snapshotted yield is the truth about what this plot grew. Rule 3: the
+  // snapshot, never a re-read of the catalogue -- a retune while it grew does
+  // not change what the player agreed to plant.
+  const item = HOMESTEAD_YIELDS[stock].item;
+  const quantity = plot.yieldQuantity ?? HOMESTEAD_YIELDS[stock].quantity;
+  const collected = { stock, item, quantity, mucked: muckFee !== null };
 
-  // Rule 3: one credit, of the snapshot. Never throws -- the plot is already
-  // durably settled, and a credit failure must not turn a finished collection
-  // into an error response on top of the missing Gold. Logged loudly, same
-  // reasoning as ante-up-service.ts's payOutWin.
-  if (collected.payout > 0) {
-    try {
-      await creditGoldByProfile(profile.id, collected.payout);
-    } catch (error) {
-      console.error("homestead.payout_credit_failed", {
-        profileId: profile.id,
-        plotIndex,
-        payout: collected.payout,
-        error,
-      });
-    }
+  // Rule 2 satisfied: the produce lands only after the guarded write. Never
+  // throws -- the plot is already durably settled, and a failure here must not
+  // turn a finished harvest into an error response on top of the missing
+  // produce. Logged loudly, same reasoning as ante-up-service.ts's payOutWin.
+  try {
+    await adjustHomesteadInventory(profile.id, item, quantity);
+  } catch (error) {
+    console.error("homestead.yield_credit_failed", {
+      profileId: profile.id,
+      plotIndex,
+      item,
+      quantity,
+      error,
+    });
   }
 
   await recordHomesteadHarvest({
     profileId: profile.id,
     plotIndex,
     stock,
-    stake: collected.stake,
-    payout: collected.payout,
+    // Both in Bushels, so the economy dashboard sees one currency: what the
+    // seed cost, and what the produce was worth at today's price.
+    stake: plot.stake ?? 0,
+    payout: HOMESTEAD_ITEM_CATALOGUE[item].price * quantity,
     startedAt: plot.startedAt ?? now.toISOString(),
     collectedAt: now.toISOString(),
   });

@@ -27,7 +27,10 @@ import {
   useContext,
   useEffect,
   useState,
+  useSyncExternalStore,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 import { Capacitor } from "@capacitor/core";
 
@@ -40,6 +43,17 @@ import {
   SOUND_STORAGE_KEY,
 } from "@/lib/audio/sound-preference";
 import { parseEnabledFlag } from "@/lib/profile/stored-preference";
+import type { PlayerProfile } from "@/lib/profile/types";
+import {
+  browserSessionStorage,
+  clearSessionContinuity,
+  entryOpenedSnapshot,
+  serverEntryOpenedSnapshot,
+  serverProfileSnapshot,
+  sessionProfileSnapshot,
+  subscribeSessionCache,
+  writeCachedProfile,
+} from "@/lib/profile/session-continuity";
 
 type AppShellValue = {
   soundEnabled: boolean;
@@ -55,6 +69,29 @@ type AppShellValue = {
    */
   immersive: boolean;
   setImmersive: (active: boolean) => void;
+  /**
+   * This browser's profile, or null before it's known/for a signed-out
+   * visitor. `setProfile` is a raw setter, deliberately -- every call site
+   * that already did `setProfile(data.profile)` after a game action, buy-in,
+   * or claim keeps working unchanged, just reading it from here instead of a
+   * local useState. See the state block below for how `profile` itself is
+   * derived (a cache bridge, not a plain value).
+   */
+  profile: PlayerProfile | null;
+  setProfile: Dispatch<SetStateAction<PlayerProfile | null>>;
+  /** False once the initial GET /api/profile (success or failure) has settled. */
+  profileLoading: boolean;
+  /** Re-fetches the profile from the server. Exposed for the same explicit refresh poker-app.tsx already did. */
+  loadProfile: () => Promise<void>;
+  /** Set only by the initial mount-time load failing; cleared by the next attempt that doesn't. */
+  profileError: string | null;
+  /**
+   * Whether this tab has cleared "Enter StackChips" (an account, guest, or a
+   * completed sign-in) during its own lifetime. The gate screen itself still
+   * only ever renders at `/` -- this is read-only state for everything else
+   * that needs to know whether a player is past it, not a second gate.
+   */
+  entryComplete: boolean;
 };
 
 const AppShellContext = createContext<AppShellValue | null>(null);
@@ -161,6 +198,76 @@ export function AppShell({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  /*
+   * Moved from components/poker-app.tsx, where this whole block was
+   * duplicated by every navigation: the arcade, Collection and the
+   * leaderboard were separate routes that unmounted it, so the signed-out
+   * card painted for the length of one GET /api/profile on every single
+   * arrival, once per navigation, for a player who had been signed in for an
+   * hour. See lib/profile/session-continuity.ts for the full reasoning on
+   * why the cache is sessionStorage-not-localStorage and why the entry gate
+   * is a per-tab hint rather than something a profile's mere presence can
+   * answer.
+   *
+   * `cachedProfile` reaches the first render synchronously via
+   * useSyncExternalStore, which is the point: a value that arrives after the
+   * first paint has already let the wrong screen show. `profileLoading` is
+   * what keeps the cache honest -- the moment the real fetch settles,
+   * `loadedProfile` is the answer even when the answer is null, so a player
+   * whose session has expired doesn't keep seeing their old balance.
+   */
+  const [loadedProfile, setProfile] = useState<PlayerProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  const cachedProfile = useSyncExternalStore(
+    subscribeSessionCache,
+    useCallback(() => sessionProfileSnapshot(browserSessionStorage()), []),
+    serverProfileSnapshot,
+  );
+  const profile = loadedProfile ?? (profileLoading ? cachedProfile : null);
+
+  const entryComplete = useSyncExternalStore(
+    subscribeSessionCache,
+    useCallback(() => entryOpenedSnapshot(browserSessionStorage()), []),
+    serverEntryOpenedSnapshot,
+  );
+
+  /** Keeps this tab's copy in step, so the next mount paints instantly. */
+  useEffect(() => {
+    if (loadedProfile) writeCachedProfile(browserSessionStorage(), loadedProfile);
+  }, [loadedProfile]);
+
+  const loadProfile = useCallback(async () => {
+    const response = await fetch("/api/profile", { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? "Could not load your profile.");
+    setProfile(data.profile);
+    // A profile came back, so this browser holds a session cookie and has
+    // cleared the entry gate before in some earlier tab -- entryComplete is
+    // its own per-tab hint (see above) and isn't set from here. No profile is
+    // the other half: the session is gone, so this tab's cached copy is
+    // stale and must not be shown to whoever arrives next.
+    if (!data.profile) clearSessionContinuity(browserSessionStorage());
+  }, []);
+
+  // Unconditional and mount-once: this is what makes a returning player's
+  // session resolve even if the very first screen they land on is a deep
+  // link straight into a game, not `/`. Deferred a tick for the same reason
+  // every use-stored-preference-style restore is: setting state during the
+  // commit that's still hydrating would swap markup underneath it.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadProfile()
+        .then(() => setProfileError(null))
+        .catch((caught) => {
+          setProfileError(caught instanceof Error ? caught.message : "Could not load your profile.");
+        })
+        .finally(() => setProfileLoading(false));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadProfile]);
+
   const value: AppShellValue = {
     soundEnabled,
     toggleSound,
@@ -168,6 +275,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     toggleMenuMusic,
     immersive,
     setImmersive,
+    profile,
+    setProfile,
+    profileLoading,
+    loadProfile,
+    profileError,
+    entryComplete,
   };
 
   return <AppShellContext.Provider value={value}>{children}</AppShellContext.Provider>;

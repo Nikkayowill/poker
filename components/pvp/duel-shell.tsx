@@ -6,6 +6,7 @@ import { Coins } from "lucide-react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { useAppShell } from "@/components/shell/app-shell";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import type { SoundEffect } from "@/lib/audio/sound-effects";
@@ -119,7 +120,12 @@ export function DuelShell<TSnapshot>({
 }) {
   const [match, setMatch] = useState<DuelMatch<TSnapshot> | null>(null);
   const [challenges, setChallenges] = useState<DuelChallenge[]>([]);
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  // The persistent shell owns the profile now -- this screen still gets it
+  // back from its own GET /api/pvp/[game] response too (unchanged this
+  // phase), it just writes that into the shared setter instead of a local
+  // copy, which is also what makes a stake won/lost here show up in the
+  // lobby's own Gold balance without a separate refetch.
+  const { profile, setProfile } = useAppShell();
   const [stake, setStake] = useState<number>(MIN_DUEL_STAKE);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -174,7 +180,7 @@ export function DuelShell<TSnapshot>({
         return (data.match as DuelMatch<TSnapshot>) ?? null;
       });
     }
-  }, []);
+  }, [setProfile]);
 
   /** Reads the lobby: the live match if there is one, the open challenges if not. */
   const refresh = useCallback(async () => {
@@ -245,7 +251,7 @@ export function DuelShell<TSnapshot>({
         if (mounted.current) setBusy(false);
       }
     },
-    [refresh],
+    [refresh, setProfile],
   );
 
   useEffect(() => {

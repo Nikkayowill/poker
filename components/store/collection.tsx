@@ -14,7 +14,7 @@ import {
   type EquippedCosmetics,
 } from "@/lib/cosmetics/catalog";
 import { seatArtCharacter, seatArtSrc } from "@/lib/scene/seat-art";
-import type { PlayerProfile } from "@/lib/profile/types";
+import { useAppShell } from "@/components/shell/app-shell";
 import { CardBackArt } from "@/components/card-back-art";
 import { ChipDesignArt } from "@/components/store/chip-design-art";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -127,7 +127,10 @@ export function Collection() {
   const [catalog, setCatalog] = useState<Cosmetic[]>([]);
   const [owned, setOwned] = useState<string[]>([]);
   const [equipped, setEquipped] = useState<EquippedCosmetics | null>(null);
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  // The persistent shell owns the profile now -- this screen still gets it
+  // back from its own GET /api/cosmetics response too (unchanged this phase),
+  // it just writes that into the shared setter instead of a local copy.
+  const { profile, setProfile } = useAppShell();
   const [stats, setStats] = useState<UnlockStats | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -156,7 +159,7 @@ export function Collection() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load the collection.");
     }
-  }, []);
+  }, [setProfile]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);

@@ -3,7 +3,6 @@ import { toHomesteadPlotSnapshots } from "@/lib/homestead/plots";
 import { readHomestead, toHomesteadErrorResponse } from "@/lib/server/homestead-service";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
-import { isStaffRequest, staffOnlyNotFound } from "@/lib/server/staff-gate";
 
 export const runtime = "nodejs";
 
@@ -17,12 +16,12 @@ export const runtime = "nodejs";
  * rule): a caller with no cookie sees the pristine farm -- four free plots, a
  * locked ladder -- and their first stocking is what creates their identity,
  * through the actions route.
+ *
+ * Open to any caller. The Homestead was briefly behind an admin session while
+ * it was unreleased; that is gone, and its `unlisted` catalog status is now
+ * the only thing keeping it off the arcade floor.
  */
 export async function GET(request: NextRequest) {
-  // Not offered publicly yet: staff session or nothing. Checked before the
-  // rate limiter so an anonymous caller cannot even measure the limit.
-  if (!isStaffRequest(request)) return staffOnlyNotFound();
-
   const limited = enforceRateLimit(request, "homestead:read", 120, 60 * 1000);
   if (limited) return limited;
 

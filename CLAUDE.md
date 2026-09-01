@@ -57,7 +57,26 @@ Supabase's advisor catches the SECURITY DEFINER case, so run `get_advisors` afte
 that adds a function. Also this pass: `50-homestead.css` renumbered to **52** (main's Nonogram and
 Othello took 50 and 51 while the branch was open).
 
-### The Homestead is staff-only, and lives under /admin because of a cookie path (2026-09-01)
+### The staff gate is gone; the Homestead is unlisted, not closed (2026-09-01)
+Reverses the entry below, on Kayo's call: "scrap the whole admin access. just let me look at it." The
+gate worked but made the game hard to even open -- `ADMIN_SESSION_COOKIE` is per-origin, so the prod
+passcode does nothing on a preview deploy, and `ADMIN_SECRET` is scoped per Vercel environment, so a
+Preview build without it locks staff out along with everyone else. Deleted `lib/server/staff-gate.ts`
+and its test; routes moved back to `/api/homestead[/actions]` (the cookie path no longer constrains
+where they live), page to `/games/homestead` beside every other game, and the "Admin session required"
+locked state went with them. `ArcadeGameStatus`'s fourth value is renamed **`staff-only` ->
+`unlisted`**, because with no gate left the old name was a lie. **Know exactly what `unlisted` buys:
+`splitArcadeFloor` still shows only `live` rows, so it stays off the floor -- and that is ALL it does.
+The routes are open and move real Gold, so anyone with the URL can play it.** That is the same
+"a catalog row is not a lock" lesson `lib/arcade/retired.ts` records, now running in the other
+direction: unadvertised, never unreachable. Flipping `status` to `live` is the whole release. If it
+ever has to be genuinely closed again, the route must refuse -- that is a separate thing to build, not
+a status value. Also worth keeping: **`npm run dev` cannot verify this page at localhost.**
+`next.config.ts`'s `allowedDevOrigins` pins a stale `192.168.2.144`, so the page server-renders and
+then no client component mounts -- dead canvas, dead buttons, nothing in the console. Build and
+`next start` instead; see `[[reference_stackchips_local_testing]]`.
+
+### SUPERSEDED by the entry above: the Homestead was staff-only under /admin (2026-09-01)
 Kayo: finished but not for the public yet, reachable only through the admin portal. New
 `ArcadeGameStatus` value **`staff-only`** -- a fourth state, not a flavour of the other three: built,
 mounted, moving real Gold, just not offered. `splitArcadeFloor` shows only `live` rows so it never

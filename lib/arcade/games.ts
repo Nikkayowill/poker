@@ -103,19 +103,20 @@ export type ArcadeGameKind = "casino" | "puzzle" | "duel" | "wager";
  * distinction.
  */
 /**
- * `staff-only` is a fourth state and not a flavour of the other three: the
- * game is finished, mounted, and moving real Gold, but is not being offered to
- * the public yet. It is not `coming-soon` (that means "not built"), and it is
- * not `retired` (that means "was offered, then stopped"). Collapsing it into
- * either would lose exactly the distinction this type exists to keep.
+ * `unlisted` is a fourth state and not a flavour of the other three: the game
+ * is finished, mounted, and moving real Gold, but is not being advertised yet.
+ * It is not `coming-soon` (that means "not built"), and it is not `retired`
+ * (that means "was offered, then stopped"). Collapsing it into either would
+ * lose exactly the distinction this type exists to keep.
  *
- * Hiding the row is only half of it. `splitArcadeFloor` shows `live` rows and
- * nothing else, so a staff-only game never reaches the floor -- but a catalog
- * row is not a lock, so the routes carry their own gate. See
- * lib/server/staff-gate.ts, and lib/arcade/retired.ts for the same lesson
- * learned the first time.
+ * `splitArcadeFloor` shows `live` rows and nothing else, so an unlisted game
+ * never reaches the floor. That is ALL it does. Per lib/arcade/retired.ts's
+ * lesson, a catalog row is not a lock: the routes stay open, so anyone with
+ * the URL can play it. Unlisted means unadvertised, never unreachable -- if a
+ * game must actually be closed, the route has to refuse, and that is a
+ * separate thing to build.
  */
-export type ArcadeGameStatus = "coming-soon" | "live" | "retired" | "staff-only";
+export type ArcadeGameStatus = "coming-soon" | "live" | "retired" | "unlisted";
 
 export interface ArcadeGame {
   id: ArcadeGameId;
@@ -231,10 +232,10 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "Raise crops and livestock, sell what they make",
     kind: "wager",
     entryCost: 0,
-    // Finished and playable, but reachable only from the admin dashboard
-    // until it is opened up. See lib/server/staff-gate.ts.
-    status: "staff-only",
-    href: "/admin/homestead",
+    // Finished and playable by anyone with the link, just not on the floor
+    // yet. Flip to "live" to announce it; nothing else has to change.
+    status: "unlisted",
+    href: "/games/homestead",
   },
   // ---- Duels: skill/social games staked against another player, not the
   // house. Winner takes the pot both players anted; see lib/pvp/. Priced at

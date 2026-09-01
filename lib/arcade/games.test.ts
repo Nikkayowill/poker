@@ -91,25 +91,23 @@ describe("arcade catalogue", () => {
   it("gives a route to every game that was actually built, and only those", () => {
     // The rule is "was it built", not "is it offered". A live entry with a
     // null href renders an unclickable "Play"; a coming-soon entry with an
-    // href is a link to a page that does not exist yet. staff-only is the
+    // href is a link to a page that does not exist yet. `unlisted` is the
     // case that forced the distinction: it IS built and it DOES have a
-    // route, the route just refuses anyone without an admin session (see
-    // lib/server/staff-gate.ts), so requiring a null href here would have
-    // meant deleting a working link to hide a game.
+    // working route, so requiring a null href here would have meant deleting
+    // a real link just to keep the game off the floor.
     for (const entry of ARCADE_GAMES) {
       if (entry.status === "coming-soon") expect(entry.href).toBeNull();
       else expect(entry.href).toBeTruthy();
     }
   });
 
-  it("keeps a staff-only game off the floor while leaving its route intact", () => {
+  it("keeps an unlisted game off the floor while leaving its route intact", () => {
     const homestead = ARCADE_GAMES.find((entry) => entry.id === "homestead");
-    expect(homestead?.status).toBe("staff-only");
-    // Under /admin, because that is the only path the admin session cookie
-    // is sent to. See lib/server/staff-gate.ts.
-    expect(homestead?.href).toBe("/admin/homestead");
+    expect(homestead?.status).toBe("unlisted");
+    expect(homestead?.href).toBe("/games/homestead");
 
-    // The floor only ever shows live rows, so it never surfaces.
+    // The floor only ever shows live rows, so it never surfaces. This is the
+    // whole mechanism: unlisted means unadvertised, not unreachable.
     const floor = splitArcadeFloor();
     const onFloor = [...floor.free, ...floor.duels, ...floor.wagers, ...floor.staked];
     expect(onFloor.map((entry) => entry.id)).not.toContain("homestead");

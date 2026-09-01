@@ -17,7 +17,6 @@ import {
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
-import { isStaffRequest, staffOnlyNotFound } from "@/lib/server/staff-gate";
 
 export const runtime = "nodejs";
 
@@ -30,6 +29,12 @@ export const runtime = "nodejs";
  * No `version` field in any action: each handler reads the live row itself and
  * the guarded write settles at most once, so a stale client gets a 409
  * carrying the true grid rather than a torn write.
+ *
+ * Open to any caller. The Homestead was briefly behind an admin session while
+ * it was unreleased; that is gone, and the only thing keeping it unadvertised
+ * now is its `unlisted` catalog status, which keeps it off the arcade floor.
+ * Anyone with the URL can play it, so treat it as live for anything that
+ * moves Gold.
  */
 const plotIndexSchema = z.number().int().min(1).max(HOMESTEAD_GRID_PLOTS);
 
@@ -50,12 +55,6 @@ const bodySchema = z.discriminatedUnion("action", [
 ]);
 
 export async function POST(request: NextRequest) {
-  // Not offered publicly yet: staff session or nothing. This is the route
-  // that moves Gold, so it is the one that actually matters -- and it is
-  // checked before the session cookie is minted, so a probe cannot even earn
-  // an identity from it.
-  if (!isStaffRequest(request)) return staffOnlyNotFound();
-
   // Every action here moves Gold at most once and the guards make replays
   // idempotent; 60/min covers a fast Hen Coop restocking ritual plus feeding
   // with a wide margin.

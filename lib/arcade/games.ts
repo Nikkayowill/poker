@@ -240,10 +240,10 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "Raise crops and livestock, sell what they make",
     kind: "idle",
     entryCost: 0,
-    // On the floor, but behind a code: the routes and the page both require
-    // the pass HOMESTEAD_ACCESS_CODE buys (see lib/server/homestead-access.ts).
-    // The tile being visible is the point -- this is `live` so people can find
-    // it and ask. Opening it to everyone is one variable: unset the code.
+    // On the floor, but open only to players an admin has let in: the routes
+    // and the page both check profiles.homestead_access (see
+    // lib/server/homestead-access.ts). The tile being visible is the point --
+    // this is `live` so people can find it and ask.
     status: "live",
     href: "/games/homestead",
   },

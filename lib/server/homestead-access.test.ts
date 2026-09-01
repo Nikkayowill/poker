@@ -1,30 +1,24 @@
 import { readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  homesteadAccessCode,
-  isHomesteadCode,
-  isHomesteadUnlocked,
-  withHomesteadPassCookie,
-} from "./homestead-access";
-import { NextResponse } from "next/server";
+import { describe, expect, it } from "vitest";
+import { tokenHasHomesteadAccess } from "./homestead-access";
+import { ensureProfile, setHomesteadAccess } from "./profile-store";
 
 /**
- * The Homestead is on the arcade floor and behind an access code, so the tile
- * being visible is now doing none of the work -- the routes are.
- * lib/arcade/retired.ts records the same lesson from the retired casino games:
- * a catalog edit changes a link, a still-mounted handler is still reachable by
- * anyone with the URL.
+ * The Homestead is on the arcade floor and open only to profiles an admin has
+ * let in, so the tile being visible is doing none of the work -- the routes
+ * are. lib/arcade/retired.ts records the same lesson from the retired casino
+ * games: a catalog edit changes a link, a still-mounted handler is still
+ * reachable by anyone with the URL.
  *
  * The file walk below is deliberate. The property worth protecting is not
  * "today's routes are gated" (a reader can see that) but "a route added
  * tomorrow cannot quietly skip it". A test that imported the handlers by name
- * would pass happily while a fourth, ungated route sat beside them.
+ * would pass happily while a third, ungated route sat beside them.
  */
 
 const API_DIR = join(process.cwd(), "app/api/homestead");
 const PAGE = join(process.cwd(), "app/(lobby)/games/homestead/page.tsx");
-const UNLOCK = join(API_DIR, "unlock/route.ts");
 
 function routeFiles(dir: string): string[] {
   const found: string[] = [];
@@ -36,10 +30,22 @@ function routeFiles(dir: string): string[] {
   return found;
 }
 
-/** Every route except the one whose whole job is to take the code. */
-const gatedRoutes = routeFiles(API_DIR).filter((path) => path !== UNLOCK);
+const gatedRoutes = routeFiles(API_DIR);
 
-describe("the Homestead's code gate", () => {
+/** A handler's body with comments stripped, for asking what runs before what. */
+function handlerBody(path: string): string {
+  // Comments are stripped first, and names are matched as CALLS rather than
+  // bare words. An earlier version of this test did neither and failed on the
+  // route it was policing, because the comment above that route's gate
+  // explains the ordering by naming the very function whose position it was
+  // measuring.
+  const whole = readFileSync(path, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^[ \t]*\/\/.*$/gm, "");
+  return whole.slice(whole.search(/^export async function/m));
+}
+
+describe("the Homestead's access gate", () => {
   it("finds the routes it is supposed to be checking", () => {
     // Guards the guard: if the directory moves or is renamed, the loop below
     // would vacuously pass over an empty list.
@@ -47,136 +53,86 @@ describe("the Homestead's code gate", () => {
   });
 
   it.each(gatedRoutes.map((path) => [path.slice(process.cwd().length + 1), path]))(
-    "gates %s behind the pass",
+    "gates %s",
     (_label, path) => {
       const source = readFileSync(path, "utf8");
-      expect(source).toContain("requestHasHomesteadPass");
+      expect(source).toContain("tokenHasHomesteadAccess");
       expect(source).toContain("homesteadLocked");
     },
   );
 
   it("gates the page too", () => {
     const source = readFileSync(PAGE, "utf8");
-    expect(source).toContain("isHomesteadUnlocked");
+    expect(source).toContain("tokenHasHomesteadAccess");
   });
 
-  it("never mints a session before deciding, on any route", () => {
-    // Order matters on the actions route in particular: the gate has to run
-    // before a session is minted, or probing a locked endpoint hands the
-    // prober a session cookie.
+  it("rate limits before the gate, on every route", () => {
+    // The gate costs a database read now that the guest list lives in the
+    // profiles table. A check that costs work in front of the limiter hands an
+    // unauthenticated flood a query amplifier -- the same ordering rule the
+    // account-allowlist version of this gate established.
     for (const path of gatedRoutes) {
-      // Comments are stripped first, and the names are matched as CALLS
-      // rather than as bare words. The first draft of this test did neither
-      // and failed on the route it was policing, because the comment above
-      // that route's gate explains the ordering by naming the very function
-      // whose position it was measuring.
-      const whole = readFileSync(path, "utf8")
-        .replace(/\/\*[\s\S]*?\*\//g, "")
-        .replace(/^[ \t]*\/\/.*$/gm, "");
-      // Only the handler body: every one of these names also appears in the
-      // import block at the top, where the order means nothing.
-      const source = whole.slice(whole.search(/^export async function/m));
-      const gate = source.indexOf("requestHasHomesteadPass(");
-      const minting = source.indexOf("readOrCreateSessionToken(");
+      const source = handlerBody(path);
+      const limiter = source.indexOf("enforceRateLimit(");
+      const gate = source.indexOf("tokenHasHomesteadAccess(");
+      expect(limiter, `${path} must rate limit`).toBeGreaterThanOrEqual(0);
       expect(gate, `${path} must call the gate`).toBeGreaterThanOrEqual(0);
-      if (minting >= 0) expect(gate).toBeLessThan(minting);
+      expect(limiter).toBeLessThan(gate);
     }
   });
 
-  it("rate limits the unlock route before it does anything else", () => {
-    // The limiter is the only thing making a short code hard to guess, and
-    // these routes move real Gold. It also has to come first: a check that
-    // costs work in front of the limiter hands a flood an amplifier.
-    const whole = readFileSync(UNLOCK, "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^[ \t]*\/\/.*$/gm, "");
-    const source = whole.slice(whole.search(/^export async function/m));
-    expect(source).toContain("enforceRateLimit(");
-    expect(source.indexOf("enforceRateLimit(")).toBeLessThan(source.indexOf("isHomesteadCode("));
+  it("never mints a session on any route", () => {
+    // A session minted for a caller who is not on the list is an identity a
+    // prober never asked for, handed out by a refusal. It is also useless: a
+    // fresh token has no profile behind it, so it could never be on the list.
+    for (const path of gatedRoutes) {
+      expect(handlerBody(path)).not.toContain("readOrCreateSessionToken(");
+    }
   });
 });
 
-describe("what the code buys", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
+describe("who the gate lets in", () => {
+  it("refuses a caller with no session at all", async () => {
+    expect(await tokenHasHomesteadAccess(null)).toBe(false);
+    expect(await tokenHasHomesteadAccess("")).toBe(false);
   });
 
-  /** The cookie jar a response's Set-Cookie would produce on the next request. */
-  function jarFrom(response: NextResponse): (name: string) => string | undefined {
-    const set = new Map<string, string>();
-    for (const cookie of response.cookies.getAll()) set.set(cookie.name, cookie.value);
-    return (name) => set.get(name);
-  }
-
-  it("admits nobody when no code is configured", () => {
-    // Fail closed, the same posture ADMIN_SECRET takes. This repo is public,
-    // so there is no committed default to fall back on -- which also means a
-    // forgotten variable looks exactly like a broken feature.
-    vi.stubEnv("HOMESTEAD_ACCESS_CODE", "");
-    expect(homesteadAccessCode()).toBeNull();
-    expect(isHomesteadCode("")).toBe(false);
-    expect(isHomesteadCode("anything")).toBe(false);
-    expect(isHomesteadUnlocked(() => "whatever-was-in-the-jar")).toBe(false);
+  it("refuses a real player who has not been granted access", async () => {
+    // Fail closed: the column defaults to false, so shipping the gate admits
+    // nobody until somebody is named in the admin dashboard.
+    const token = `homestead-gate-fresh-${Math.random()}`;
+    const profile = await ensureProfile(token);
+    expect(profile.id).toBeTruthy();
+    expect(await tokenHasHomesteadAccess(token)).toBe(false);
   });
 
-  it("opens for the code and stays shut for anything else", () => {
-    vi.stubEnv("HOMESTEAD_ACCESS_CODE", "back-forty");
-    expect(isHomesteadCode("back-forty")).toBe(true);
-    expect(isHomesteadCode("back-fort")).toBe(false);
-    expect(isHomesteadCode("BACK-FORTY")).toBe(false);
+  it("opens for a granted profile and shuts again when it is revoked", async () => {
+    const token = `homestead-gate-granted-${Math.random()}`;
+    const profile = await ensureProfile(token);
+
+    await setHomesteadAccess(profile.id, true);
+    expect(await tokenHasHomesteadAccess(token)).toBe(true);
+
+    // Revocation is the same switch thrown back, with no cookie left holding a
+    // pass -- which is the thing a shared code could not do for one person.
+    await setHomesteadAccess(profile.id, false);
+    expect(await tokenHasHomesteadAccess(token)).toBe(false);
   });
 
-  it("issues a pass the next request accepts", () => {
-    vi.stubEnv("HOMESTEAD_ACCESS_CODE", "back-forty");
-    const jar = jarFrom(withHomesteadPassCookie(NextResponse.json({ ok: true })));
-    expect(isHomesteadUnlocked(jar)).toBe(true);
+  it("grants access to one profile without opening it for another", async () => {
+    const granted = `homestead-gate-one-${Math.random()}`;
+    const other = `homestead-gate-two-${Math.random()}`;
+    const grantedProfile = await ensureProfile(granted);
+    await ensureProfile(other);
+
+    await setHomesteadAccess(grantedProfile.id, true);
+    expect(await tokenHasHomesteadAccess(granted)).toBe(true);
+    expect(await tokenHasHomesteadAccess(other)).toBe(false);
   });
 
-  it("never puts the code itself in the cookie", () => {
-    // A pass that IS the code turns every browser's cookie jar into a copy of
-    // the secret, readable by anything that can reach document.cookie on a
-    // bad day.
-    vi.stubEnv("HOMESTEAD_ACCESS_CODE", "back-forty");
-    const response = withHomesteadPassCookie(NextResponse.json({ ok: true }));
-    for (const cookie of response.cookies.getAll()) {
-      expect(cookie.value).not.toContain("back-forty");
-    }
-  });
-
-  it("invalidates every pass already issued when the code is rotated", () => {
-    // The whole revocation story: there is no list to clear, because the
-    // expected value is recomputed from whatever the code is right now.
-    vi.stubEnv("HOMESTEAD_ACCESS_CODE", "back-forty");
-    const jar = jarFrom(withHomesteadPassCookie(NextResponse.json({ ok: true })));
-    expect(isHomesteadUnlocked(jar)).toBe(true);
-
-    vi.stubEnv("HOMESTEAD_ACCESS_CODE", "north-field");
-    expect(isHomesteadUnlocked(jar)).toBe(false);
-  });
-
-  it("does not accept a pass minted under a different SESSION_SECRET", () => {
-    vi.stubEnv("HOMESTEAD_ACCESS_CODE", "back-forty");
-    vi.stubEnv("SESSION_SECRET", "one");
-    const jar = jarFrom(withHomesteadPassCookie(NextResponse.json({ ok: true })));
-    expect(isHomesteadUnlocked(jar)).toBe(true);
-
-    vi.stubEnv("SESSION_SECRET", "two");
-    expect(isHomesteadUnlocked(jar)).toBe(false);
-  });
-
-  it("still works with no SESSION_SECRET set", () => {
-    // Signing is optional app-wide, and an unset secret must never be a
-    // second way for a feature to go dark -- the rule session.ts states for
-    // its own token signing.
-    vi.stubEnv("SESSION_SECRET", "");
-    vi.stubEnv("HOMESTEAD_ACCESS_CODE", "back-forty");
-    const jar = jarFrom(withHomesteadPassCookie(NextResponse.json({ ok: true })));
-    expect(isHomesteadUnlocked(jar)).toBe(true);
-  });
-
-  it("refuses an empty or absent cookie", () => {
-    vi.stubEnv("HOMESTEAD_ACCESS_CODE", "back-forty");
-    expect(isHomesteadUnlocked(() => undefined)).toBe(false);
-    expect(isHomesteadUnlocked(() => "")).toBe(false);
+  it("refuses to grant access to a profile that does not exist", async () => {
+    await expect(
+      setHomesteadAccess("00000000-0000-4000-8000-000000000000", true),
+    ).rejects.toThrow(/not found/i);
   });
 });

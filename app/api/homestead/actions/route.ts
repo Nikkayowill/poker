@@ -20,11 +20,8 @@ import {
 } from "@/lib/server/homestead-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
-import { homesteadLocked, requestHasHomesteadPass } from "@/lib/server/homestead-access";
-import {
-  readOrCreateSessionToken,
-  withRequestSessionCookie,
-} from "@/lib/server/session";
+import { homesteadLocked, tokenHasHomesteadAccess } from "@/lib/server/homestead-access";
+import { readSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -46,8 +43,8 @@ export const runtime = "nodejs";
  * carrying the true grid rather than a torn write.
  *
  * This is the route that moves money, so it is the one the gate really matters
- * on: only a caller carrying the access-code pass gets past, everyone else
- * gets a 401.
+ * on: only a profile an admin has granted access gets past, everyone else gets
+ * a 401.
  */
 const plotIndexSchema = z.number().int().min(1).max(HOMESTEAD_GRID_PLOTS);
 
@@ -116,13 +113,15 @@ export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, "homestead:act", 60, 60 * 1000);
   if (limited) return limited;
 
-  // The pass check runs BEFORE readOrCreateSessionToken below -- otherwise
-  // probing a locked endpoint hands the prober a freshly minted session, which
-  // is the one thing a refusal must never hand out. It reads the cookie jar
-  // and nothing else, so a caller with no pass costs us an HMAC and a 401.
-  if (!requestHasHomesteadPass(request)) return homesteadLocked();
+  // Access is granted to a PROFILE, so the session cookie is what says who is
+  // asking -- and it is read, never minted. A fresh token has no profile
+  // behind it, so minting one here would fail the check anyway while handing a
+  // prober an identity they never asked for, which is the one thing a refusal
+  // must not do. It runs after the limiter above because it costs a database
+  // read; see lib/server/homestead-access.ts.
+  const token = readSessionToken(request);
+  if (!token || !(await tokenHasHomesteadAccess(token))) return homesteadLocked();
 
-  const token = readOrCreateSessionToken(request);
   try {
     const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {

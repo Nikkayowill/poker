@@ -230,6 +230,27 @@ export function AdminDashboard() {
     }
   };
 
+  const toggleHomestead = async (profile: AdminProfileSummary) => {
+    setPendingId(profile.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/homestead-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: profile.id, allowed: !profile.homesteadAccess }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not update that profile's Homestead access.");
+      setProfiles((current) => current?.map((entry) => (
+        entry.id === profile.id ? { ...entry, homesteadAccess: !profile.homesteadAccess } : entry
+      )) ?? null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update that profile's Homestead access.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
   const sendTestPush = async (profile: AdminProfileSummary) => {
     setPendingId(profile.id);
     setError(null);
@@ -662,6 +683,7 @@ export function AdminDashboard() {
               <th>Unlimited</th>
               <th>Adjust Gold</th>
               <th>Banned</th>
+              <th>Homestead</th>
               <th />
               <th>Push</th>
               <th />
@@ -712,6 +734,7 @@ export function AdminDashboard() {
                     />
                   </td>
                   <td>{profile.banned ? "Yes" : "No"}</td>
+                  <td>{profile.homesteadAccess ? "Yes" : "No"}</td>
                   <td>
                     <button
                       type="button"
@@ -720,6 +743,15 @@ export function AdminDashboard() {
                       onClick={() => void toggleUnlimited(profile)}
                     >
                       {profile.unlimitedGold ? "Revoke" : "Grant unlimited"}
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-toggle"
+                      disabled={bulkPending || pendingId === profile.id}
+                      onClick={() => void toggleHomestead(profile)}
+                      title="Lets this player into the StackChips Homestead while it is unreleased. It is the whole guest list -- there is no code."
+                    >
+                      {profile.homesteadAccess ? "Close Homestead" : "Open Homestead"}
                     </button>
                     <button
                       type="button"
@@ -763,7 +795,7 @@ export function AdminDashboard() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={12} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
+                <td colSpan={13} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
               </tr>
             )}
 

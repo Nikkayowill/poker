@@ -97,8 +97,41 @@ Art is Kenney's **CC0** Tiny Farm pack (`public/homestead/tiles/`, see its `CRED
 is a re-run. **The pack has no pig:** the middle tier keeps its `pig` stock id (it is on live rows;
 renaming it would be a data migration to fix a caption) and is labelled **"Sheep Pen"**.
 
-### The account allowlist became an access code, and the tile went on the floor (2026-09-01)
-Kayo: "just [make] it available in the UI but u can only get in through a code." Replaces
+### The access code is gone; access is a switch in the admin portal (2026-09-01)
+Kayo: "the code into homestead is done. scrap it and just allow me to assign access to ppl in admin
+portal" -- and, separately, "the code to get into homestead doesnt even work", which is what a code
+that was never set in the environment it shipped to looks like from outside. Both the code and the
+account allowlist before it kept the guest list **in a deploy**, and both fail silently the same way:
+an unset variable is indistinguishable from a broken feature. A row in a table cannot fail that way.
+**`profiles.homestead_access`, one boolean per player, toggled from the admin dashboard** beside the
+ban and unlimited-Gold switches it deliberately copies. Migration
+`20260901200000_homestead_access.sql`, **UNAPPLIED** -- and it must land BEFORE the code, or the
+gate's `select` throws and every Homestead route 500s instead of refusing politely.
+`POST /api/admin/homestead-access` grants and revokes; `HOMESTEAD_ACCESS_CODE`,
+`POST /api/homestead/unlock`, the pass cookie and the code prompt are all deleted.
+**Keyed on the profile, not the auth account**, because a profile is what the dashboard lists, what a
+session cookie resolves to, and what a guest has -- so a guest can be let in exactly like a
+registered player. Fail closed: the column defaults false, so nobody is in until somebody is named,
+**including Kayo** (grant yourself first).
+Two ordering rules, both live again and both tested: the gate **costs a database read**, so it runs
+AFTER the rate limiter (gating first hands an unauthenticated flood a query amplifier), and it reads
+the session cookie with `readSessionToken`, **never** `readOrCreateSessionToken` -- a refusal must not
+hand a prober an identity, and a freshly minted token could never be on the list anyway. That also
+removes the read route's old tokenless preview of the farm: with no cookie there is no profile a
+grant could have been made to. `homestead-access.test.ts` still walks `app/api/homestead` so a route
+added tomorrow cannot skip the gate, and now also asserts no route mints a session at all.
+The locked page shows the visitor **their own player id**, because granting means finding them in a
+dashboard whose search box matches exactly that string.
+Verified over real HTTP in memory mode: anonymous 401, a real ungranted profile 401, a locked POST
+sets **no** session cookie, the admin route 404s without the admin cookie, granting flips one profile
+to 200 while another stays 401, the page renders the farm for the granted and the ask-for-access card
+otherwise, revoking shuts it again, and granting a nonexistent profile is refused.
+**`next start` cannot run memory mode**: it forces `NODE_ENV=production` and
+`readSupabaseRuntimeConfig` treats an empty config as an error there rather than as memory mode, so
+local HTTP verification without Supabase credentials has to be `next dev`.
+
+### SUPERSEDED by the entry above: the account allowlist became an access code (2026-09-01)
+Kayo: "just [make] it available in the UI but u can only get in through a code." Replaced
 `HOMESTEAD_ALLOWED_USER_IDS` with **`HOMESTEAD_ACCESS_CODE`** — one shared code, entered at
 `/games/homestead`, traded for a pass cookie at `POST /api/homestead/unlock`. The allowlist worked
 but made "let a friend look at it" a deploy; a code is what was actually wanted.

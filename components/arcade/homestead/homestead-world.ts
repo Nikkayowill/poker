@@ -20,10 +20,10 @@
  * frame under WebGL while a baked texture is one quad. Everything here is
  * deterministic (see `noise`), so the same world paints on every mount.
  *
- * No Phaser import: this is plain 2D canvas, called by mint-scene.ts.
+ * No Phaser import: this is plain 2D canvas, called by homestead-scene.ts.
  */
 
-export const MINT_WORLD_TEXTURE = "mint-world";
+export const HOMESTEAD_WORLD_TEXTURE = "hs-world";
 
 /**
  * Light comes low from the upper right, behind the windmill. Every highlight
@@ -40,15 +40,136 @@ const FIELD_HALF_W = 302;
 const FIELD_HALF_H = 194;
 
 /** Where the windmill's blades pivot. The scene spins them from this point. */
-export const MINT_WINDMILL_HUB = { x: 632, y: 104 } as const;
+export const HOMESTEAD_WINDMILL_HUB = { x: 632, y: 104 } as const;
 
-const PALETTE = {
-  groundFar: "#2b3a55",
-  groundMid: "#284a41",
-  groundNear: "#17302f",
-  groundDeep: "#0f1f22",
-  grassLit: "#3a7a55",
-} as const;
+/**
+ * The farm has three times of day, picked from the player's own clock when the
+ * scene boots. Only colour and light change: the land, the buildings and every
+ * highlight direction stay exactly where they are, because re-lighting the
+ * scene from a different angle would mean re-authoring every prop's shading
+ * for three cases instead of one. What sells the hour is temperature, the mist
+ * in the distance, and whether the lamps are doing any work.
+ */
+export type HomesteadPhase = "morning" | "dusk" | "night";
+
+interface Tone {
+  groundFar: string;
+  groundUpper: string;
+  groundMid: string;
+  groundNear: string;
+  groundDeep: string;
+  grassLit: string;
+  grassBlade: string;
+  grassBladeLit: string;
+  /** The sun or moon's own wash across the upper right. */
+  sky: string;
+  skyAlpha: number;
+  /** The coloured bounce off everything else. */
+  ambient: string;
+  ambientAlpha: number;
+  mistTop: string;
+  mistMid: string;
+  ridgeFar: string;
+  treeline: string;
+  hedge: string;
+  hedgeRim: string;
+  /** Multiplies every window and lamp: full at night, barely on at dawn. */
+  lamps: number;
+  fieldLight: string;
+  vignette: string;
+}
+
+const TONES: Readonly<Record<HomesteadPhase, Tone>> = {
+  morning: {
+    groundFar: "#6d92a0",
+    groundUpper: "#568578",
+    groundMid: "#478862",
+    groundNear: "#316049",
+    groundDeep: "#1e4136",
+    grassLit: "#5aa06a",
+    grassBlade: "rgba(72, 150, 100, 0.3)",
+    grassBladeLit: "rgba(214, 210, 140, 0.26)",
+    sky: "rgba(255, 240, 190, 0.62)",
+    skyAlpha: 0.62,
+    ambient: "rgba(120, 190, 220, 0.2)",
+    ambientAlpha: 0.5,
+    mistTop: "rgba(206, 226, 236, 0.62)",
+    mistMid: "rgba(186, 214, 226, 0.26)",
+    ridgeFar: "#7d97ac",
+    treeline: "#4d7488",
+    hedge: "#2c5350",
+    hedgeRim: "rgba(255, 232, 150, 0.16)",
+    lamps: 0.25,
+    fieldLight: "rgba(255, 236, 170, 0.14)",
+    vignette: "rgba(24, 48, 52, 0.3)",
+  },
+  dusk: {
+    groundFar: "#2b3a55",
+    groundUpper: "#2a4650",
+    groundMid: "#284a41",
+    groundNear: "#17302f",
+    groundDeep: "#0f1f22",
+    grassLit: "#3a7a55",
+    grassBlade: "rgba(52, 112, 78, 0.3)",
+    grassBladeLit: "rgba(178, 168, 104, 0.26)",
+    sky: "rgba(255, 196, 96, 0.5)",
+    skyAlpha: 0.5,
+    ambient: "rgba(155, 63, 240, 0.22)",
+    ambientAlpha: 0.5,
+    mistTop: "rgba(126, 118, 196, 0.5)",
+    mistMid: "rgba(110, 108, 178, 0.22)",
+    ridgeFar: "#3a3a68",
+    treeline: "#2b3555",
+    hedge: "#1c3340",
+    hedgeRim: "rgba(255, 186, 104, 0.13)",
+    lamps: 1,
+    fieldLight: "rgba(255, 198, 120, 0.15)",
+    vignette: "rgba(6, 4, 18, 0.6)",
+  },
+  night: {
+    groundFar: "#1b2440",
+    groundUpper: "#1a2c3a",
+    groundMid: "#17322f",
+    groundNear: "#0e1f22",
+    groundDeep: "#080f14",
+    grassLit: "#25553f",
+    grassBlade: "rgba(38, 84, 62, 0.3)",
+    grassBladeLit: "rgba(140, 156, 168, 0.2)",
+    sky: "rgba(150, 186, 255, 0.3)",
+    skyAlpha: 0.4,
+    ambient: "rgba(90, 70, 190, 0.2)",
+    ambientAlpha: 0.45,
+    mistTop: "rgba(78, 84, 150, 0.42)",
+    mistMid: "rgba(68, 76, 134, 0.18)",
+    ridgeFar: "#232746",
+    treeline: "#1a2138",
+    hedge: "#111f28",
+    hedgeRim: "rgba(160, 190, 255, 0.1)",
+    lamps: 1.35,
+    fieldLight: "rgba(255, 198, 120, 0.1)",
+    vignette: "rgba(2, 2, 10, 0.7)",
+  },
+};
+
+/**
+ * Which tone the player's own clock lands in. Deliberately read from the
+ * device rather than UTC: the farm should look like the time where the player
+ * actually is, and there is nothing here worth a timezone column for.
+ */
+export function homesteadPhaseFor(date = new Date()): HomesteadPhase {
+  const hour = date.getHours();
+  if (hour >= 5 && hour < 12) return "morning";
+  if (hour < 20) return "dusk";
+  return "night";
+}
+
+/**
+ * Set for the duration of one paint. The painter is synchronous and runs once
+ * per mount, so a module-level current tone is simpler than threading a
+ * parameter through twenty private functions -- and there is never a second
+ * paint in flight to race it.
+ */
+let tone: Tone = TONES.dusk;
 
 /** Deterministic value noise, so the scatter is identical on every mount. */
 function noise(seed: number): () => number {
@@ -122,7 +243,13 @@ function contactShadow(
   ctx.restore();
 }
 
-export function paintMintWorld(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+export function paintHomesteadWorld(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  phase: HomesteadPhase = "dusk",
+): void {
+  tone = TONES[phase];
   ctx.clearRect(0, 0, w, h);
   // Strict back-to-front by ground contact point. Everything before the field
   // bed stands beyond it, everything after stands nearer than it -- and no
@@ -149,17 +276,17 @@ export function paintMintWorld(ctx: CanvasRenderingContext2D, w: number, h: numb
  */
 function paintGround(ctx: CanvasRenderingContext2D, w: number, h: number): void {
   const ground = ctx.createLinearGradient(0, 0, 0, h);
-  ground.addColorStop(0, PALETTE.groundFar);
-  ground.addColorStop(0.22, "#2a4650");
-  ground.addColorStop(0.52, PALETTE.groundMid);
-  ground.addColorStop(0.84, PALETTE.groundNear);
-  ground.addColorStop(1, PALETTE.groundDeep);
+  ground.addColorStop(0, tone.groundFar);
+  ground.addColorStop(0.22, tone.groundUpper);
+  ground.addColorStop(0.52, tone.groundMid);
+  ground.addColorStop(0.84, tone.groundNear);
+  ground.addColorStop(1, tone.groundDeep);
   ctx.fillStyle = ground;
   ctx.fillRect(0, 0, w, h);
 
   // The sun's own wash across the upper right, and its bounce on the grass.
-  lightPool(ctx, SUN_X, SUN_Y, 340, "rgba(255, 196, 96, 0.5)", 0.5);
-  lightPool(ctx, 300, 150, 420, "rgba(155, 63, 240, 0.22)", 0.5);
+  lightPool(ctx, SUN_X, SUN_Y, 340, tone.sky, tone.skyAlpha);
+  lightPool(ctx, 300, 150, 420, tone.ambient, tone.ambientAlpha);
 
   // Broad soft undulations, so the plane is not a single flat sheet.
   const rand = noise(0x51ac);
@@ -170,7 +297,7 @@ function paintGround(ctx: CanvasRenderingContext2D, w: number, h: number): void 
     const rx = 90 + rand() * 190;
     const lift = rand() > 0.5;
     ctx.globalAlpha = 0.06 + rand() * 0.05;
-    ctx.fillStyle = lift ? PALETTE.grassLit : "#0d1b24";
+    ctx.fillStyle = lift ? tone.grassLit : tone.groundDeep;
     ctx.beginPath();
     ctx.ellipse(x, y, rx, rx * 0.34, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -222,26 +349,26 @@ function paintDistance(ctx: CanvasRenderingContext2D, w: number): void {
   };
 
   // Furthest ridge, barely separated from the haze.
-  bumps(46, 22, 58, "#3a3a68", 0x9a11);
+  bumps(46, 22, 58, tone.ridgeFar, 0x9a11);
   // A far treeline, cooler and darker.
-  bumps(64, 30, 40, "#2b3555", 0x71cc);
+  bumps(64, 30, 40, tone.treeline, 0x71cc);
 
   // Mist pooling in front of the far ridge, thickest at the horizon.
   const mist = ctx.createLinearGradient(0, 8, 0, 108);
-  mist.addColorStop(0, "rgba(126, 118, 196, 0.5)");
-  mist.addColorStop(0.55, "rgba(110, 108, 178, 0.22)");
+  mist.addColorStop(0, tone.mistTop);
+  mist.addColorStop(0.55, tone.mistMid);
   mist.addColorStop(1, "rgba(110, 108, 178, 0)");
   ctx.fillStyle = mist;
   ctx.fillRect(0, 0, w, 112);
 
   // The near hedgerow, sitting on this side of the mist so it stays solid.
-  bumps(88, 26, 34, "#1c3340", 0x4d20, 46);
+  bumps(88, 26, 34, tone.hedge, 0x4d20, 46);
 
   // A warm wash sitting ON the hedge tops. Drawn as free-floating arcs first
   // time out, which read as scratches in the sky rather than light on leaves.
   const rim = ctx.createLinearGradient(0, 62, 0, 92);
   rim.addColorStop(0, "rgba(255, 186, 104, 0)");
-  rim.addColorStop(0.6, "rgba(255, 186, 104, 0.13)");
+  rim.addColorStop(0.6, tone.hedgeRim);
   rim.addColorStop(1, "rgba(255, 186, 104, 0)");
   ctx.fillStyle = rim;
   ctx.fillRect(0, 62, w, 30);
@@ -277,7 +404,7 @@ function paintWorn(ctx: CanvasRenderingContext2D): void {
 /**
  * The field bed: the ground the sixteen plots are cut into, plus the low stone
  * kerb that holds it. The plots themselves are Phaser objects drawn on top of
- * this by mint-scene.ts, since they change with play; this is only the bed.
+ * this by homestead-scene.ts, since they change with play; this is only the bed.
  */
 /**
  * How far the field's mass runs below its near corner. Sized to leave the
@@ -407,7 +534,7 @@ function paintFieldBed(ctx: CanvasRenderingContext2D): void {
 
   // The field is the one thing on this screen anybody touches, so it gets the
   // warmest light in the frame.
-  lightPool(ctx, FIELD_CX + 40, FIELD_CY - 30, 300, "rgba(255, 198, 120, 0.15)", 0.85);
+  lightPool(ctx, FIELD_CX + 40, FIELD_CY - 30, 300, tone.fieldLight, 0.85);
 
   // Turf breaking over the far rim, so the join is never a clean drawn line.
   ctx.save();
@@ -415,7 +542,7 @@ function paintFieldBed(ctx: CanvasRenderingContext2D): void {
   ctx.clip();
   ctx.lineJoin = "round";
   ctx.lineWidth = 7;
-  ctx.strokeStyle = PALETTE.groundNear;
+  ctx.strokeStyle = tone.groundNear;
   ctx.beginPath();
   ctx.moveTo(left.x - 4, left.y);
   ctx.lineTo(top.x, top.y - 3);
@@ -451,12 +578,12 @@ function paintFieldBed(ctx: CanvasRenderingContext2D): void {
 }
 
 /**
- * The windmill. Only the tower is baked here; mint-scene.ts adds the blades
+ * The windmill. Only the tower is baked here; homestead-scene.ts adds the blades
  * as one rotating sprite, which is the single piece of ambient motion worth a
  * draw call because a still windmill is what makes a diorama look frozen.
  */
 function paintWindmill(ctx: CanvasRenderingContext2D): void {
-  const { x, y: hubY } = MINT_WINDMILL_HUB;
+  const { x, y: hubY } = HOMESTEAD_WINDMILL_HUB;
   const base = 196;
   const capY = hubY + 14;
   contactShadow(ctx, x - 12, base + 2, 32, 9, 0.42);
@@ -493,7 +620,7 @@ function paintWindmill(ctx: CanvasRenderingContext2D): void {
   ctx.stroke();
 
   // A lamp at its foot, tying it to the same warm light as the vault house.
-  lightPool(ctx, x - 4, base - 14, 82, "rgba(255, 200, 96, 0.24)", 0.7);
+  lightPool(ctx, x - 4, base - 14, 82, "rgba(255, 200, 96, 0.24)", 0.7 * tone.lamps);
 }
 
 function paintVaultHouse(ctx: CanvasRenderingContext2D): void {
@@ -560,8 +687,8 @@ function paintVaultHouse(ctx: CanvasRenderingContext2D): void {
   ctx.lineTo(x + 14, y - 8);
   ctx.closePath();
   ctx.fill();
-  lightPool(ctx, x + 22, y - 14, 74, "rgba(255, 206, 96, 0.42)", 0.75);
-  lightPool(ctx, x + 30, y + 24, 60, "rgba(255, 196, 86, 0.24)", 0.7);
+  lightPool(ctx, x + 22, y - 14, 74, "rgba(255, 206, 96, 0.42)", 0.75 * tone.lamps);
+  lightPool(ctx, x + 30, y + 24, 60, "rgba(255, 196, 86, 0.24)", 0.7 * tone.lamps);
 }
 
 function paintTrees(ctx: CanvasRenderingContext2D): void {
@@ -695,7 +822,7 @@ function paintCart(ctx: CanvasRenderingContext2D): void {
     ctx.ellipse(cx, cy, 4.2, 2.6, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  lightPool(ctx, x + 2, y - 16, 78, "rgba(255, 206, 96, 0.3)", 0.7);
+  lightPool(ctx, x + 2, y - 16, 78, "rgba(255, 206, 96, 0.3)", 0.7 * tone.lamps);
 
   // Wheel.
   ctx.fillStyle = "#1b1430";
@@ -757,7 +884,7 @@ function paintScatter(ctx: CanvasRenderingContext2D, w: number, h: number): void
     const depth = (cy - 100) / (h - 100);
     const scale = 0.5 + depth * 0.9;
     const lit = cx > SUN_X - 320 && rand() > 0.55;
-    ctx.strokeStyle = lit ? "rgba(178, 168, 104, 0.26)" : "rgba(52, 112, 78, 0.3)";
+    ctx.strokeStyle = lit ? tone.grassBladeLit : tone.grassBlade;
     for (let blade = 0; blade < 3 + Math.floor(rand() * 3); blade += 1) {
       const x = cx + (rand() - 0.5) * 13;
       const y = cy + (rand() - 0.5) * 5;
@@ -792,7 +919,7 @@ function paintScatter(ctx: CanvasRenderingContext2D, w: number, h: number): void
 function paintVignette(ctx: CanvasRenderingContext2D, w: number, h: number): void {
   const vignette = ctx.createRadialGradient(w * 0.5, h * 0.52, h * 0.28, w * 0.5, h * 0.52, h * 0.95);
   vignette.addColorStop(0, "rgba(0,0,0,0)");
-  vignette.addColorStop(1, "rgba(6, 4, 18, 0.6)");
+  vignette.addColorStop(1, tone.vignette);
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, w, h);
 }

@@ -1,23 +1,29 @@
 import Phaser from "phaser";
-import type { MintNodeType } from "@/lib/mint/nodes";
+import { isLivestock, type HomesteadStock } from "@/lib/homestead/catalogue";
 import {
-  MINT_STAGE_H,
-  MINT_STAGE_W,
-  MINT_TILE_HALF_H,
-  MINT_TILE_HALF_W,
-  mintPaintOrder,
-  mintTileCenter,
+  HOMESTEAD_STAGE_H,
+  HOMESTEAD_STAGE_W,
+  HOMESTEAD_TILE_HALF_H,
+  HOMESTEAD_TILE_HALF_W,
+  plotPaintOrder,
+  plotCenter,
 } from "./iso";
-import { MINT_WINDMILL_HUB, MINT_WORLD_TEXTURE, paintMintWorld } from "./mint-world";
+import {
+  HOMESTEAD_WINDMILL_HUB,
+  HOMESTEAD_WORLD_TEXTURE,
+  homesteadPhaseFor,
+  paintHomesteadWorld,
+  type HomesteadPhase,
+} from "./homestead-world";
 
 /**
  * The diorama, and nothing but the diorama. This scene owns no rules and no
- * data: mint-treasury.tsx tells it what each tile looks like via setPlots
+ * data: homestead-farm.tsx tells it what each tile looks like via setPlots
  * and it paints, full stop. Input is not handled here either -- the DOM
  * overlay's buttons (real, focusable, screen-reader-visible) sit on top of
  * the canvas and do all the tapping, so the canvas stays pure paint.
  *
- * Everything static lives in mint-world.ts, baked into one texture at boot
+ * Everything static lives in homestead-world.ts, baked into one texture at boot
  * (read its header for the art direction and why the land runs off all four
  * edges). What is left here is the part that moves or changes: the sixteen
  * plots, the crops growing in them, and three pieces of ambient life.
@@ -27,26 +33,26 @@ import { MINT_WINDMILL_HUB, MINT_WORLD_TEXTURE, paintMintWorld } from "./mint-wo
  * cloud shadows, ten fireflies, and at most three pulsing ripe glows. Nothing
  * rebuilds per frame -- the plot layer is only rebuilt when a tile's visible
  * state actually changes, and the growth bar moves in 24 discrete steps (see
- * mint-canvas.tsx's signature) rather than every tick.
+ * homestead-canvas.tsx's signature) rather than every tick.
  *
- * This file imports Phaser, so nothing outside mint-canvas.tsx's dynamic
+ * This file imports Phaser, so nothing outside homestead-canvas.tsx's dynamic
  * import chain may import it -- that boundary is what keeps the engine out
  * of the lobby shell bundle.
  */
 
-export interface MintSceneTile {
+export interface HomesteadSceneTile {
   plotIndex: number;
-  state: "locked" | "empty" | "growing" | "ripe";
-  nodeType: MintNodeType | null;
-  /** 0..1 while growing. */
-  growthPercent: number | null;
+  state: "locked" | "empty" | "working" | "hungry" | "ready" | "mucked";
+  stock: HomesteadStock | null;
+  /** 0..1 while working. */
+  progress: number | null;
   selected: boolean;
 }
 
-const GLOW_TEXTURE = "mint-glow";
-const COIN_TEXTURE = "mint-coin";
-const BLADE_TEXTURE = "mint-blades";
-const CLOUD_TEXTURE = "mint-cloud";
+const GLOW_TEXTURE = "hs-glow";
+const COIN_TEXTURE = "hs-coin";
+const BLADE_TEXTURE = "hs-blades";
+const CLOUD_TEXTURE = "hs-cloud";
 
 /**
  * Depths. The cloud shadows sit ABOVE the plots on purpose: the plots cover
@@ -90,20 +96,26 @@ const SELECT_RING = 0xffe98a;
  * warm tilled soil at dusk. The pig is new, in the same idiom, and sits on the
  * violet side of the palette so the three animals span it.
  */
-const ANIMAL: Record<MintNodeType, { body: number; shade: number }> = {
+const ANIMAL: Record<"hen" | "pig" | "cattle", { body: number; shade: number }> = {
   hen: { body: 0xf4efe4, shade: 0x9c917c },
   pig: { body: 0xd9a3ac, shade: 0x855762 },
   cattle: { body: 0xdccfba, shade: 0x776a5c },
 };
 
 /** Set back per species, since the three silhouettes are not the same size. */
-const ANIMAL_SCALE: Record<MintNodeType, number> = { hen: 0.86, pig: 0.76, cattle: 0.74 };
+const ANIMAL_SCALE: Record<"hen" | "pig" | "cattle", number> = { hen: 0.86, pig: 0.76, cattle: 0.74 };
 
 const BEAK_GOLD = 0xffb43d;
 const COMB_RED = 0xdc3f36;
 const EYE_DARK = 0x1a1420;
 const HORN_CHALK = 0xe8e0d2;
 const OUTLINE = 0x18110f;
+const HUNGRY_RING = 0xff8a3d;
+const MUCK_DARK = 0x2b1d0e;
+const MUCK_WET = 0x4a361f;
+const CROP_STEM = 0x2f7a4b;
+const CROP_LEAF = 0x6fd08c;
+const CROP_GRAIN = 0xe8c15a;
 const COW_PATCH = 0x4a3d33;
 
 /**
@@ -126,7 +138,7 @@ function diamond(halfW: number, halfH: number): Phaser.Geom.Point[] {
   ];
 }
 
-export class MintScene extends Phaser.Scene {
+export class HomesteadScene extends Phaser.Scene {
   private plotLayer: Phaser.GameObjects.Container | null = null;
   /**
    * Only the PLOT tweens are tracked. Phaser does not kill a tween just
@@ -137,12 +149,14 @@ export class MintScene extends Phaser.Scene {
    * it when the game is destroyed.
    */
   private plotTweens: Phaser.Tweens.Tween[] = [];
-  private pending: MintSceneTile[] | null = null;
+  private pending: HomesteadSceneTile[] | null = null;
   private booted = false;
   private reducedMotion = false;
+  /** Read once at boot; a mount is short enough that the hour cannot turn under it. */
+  private phase: HomesteadPhase = "dusk";
 
   constructor() {
-    super("mint");
+    super("homestead");
   }
 
   create(): void {
@@ -151,6 +165,8 @@ export class MintScene extends Phaser.Scene {
     // boot -- flipping the OS setting mid-session re-applies on next mount.
     this.reducedMotion =
       typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    this.phase = homesteadPhaseFor();
 
     this.buildTextures();
     this.buildWorld();
@@ -164,7 +180,7 @@ export class MintScene extends Phaser.Scene {
   }
 
   /** Repaints the whole 16-plot field. Called on state changes, not per frame. */
-  setPlots(tiles: MintSceneTile[]): void {
+  setPlots(tiles: HomesteadSceneTile[]): void {
     if (!this.booted) {
       this.pending = tiles;
       return;
@@ -175,7 +191,7 @@ export class MintScene extends Phaser.Scene {
   /** The gold fountain a settled harvest earns. Purely celebratory. */
   celebrateHarvest(plotIndex: number): void {
     if (!this.booted || this.reducedMotion) return;
-    const { x, y } = mintTileCenter(plotIndex);
+    const { x, y } = plotCenter(plotIndex);
     const fountain = this.add.particles(x, y - 10, COIN_TEXTURE, {
       speed: { min: 160, max: 320 },
       angle: { min: -125, max: -55 },
@@ -264,11 +280,11 @@ export class MintScene extends Phaser.Scene {
   }
 
   private buildWorld(): void {
-    const world = this.canvasTexture(MINT_WORLD_TEXTURE, MINT_STAGE_W, MINT_STAGE_H);
+    const world = this.canvasTexture(HOMESTEAD_WORLD_TEXTURE, HOMESTEAD_STAGE_W, HOMESTEAD_STAGE_H);
     if (world) {
-      paintMintWorld(world.getContext(), MINT_STAGE_W, MINT_STAGE_H);
+      paintHomesteadWorld(world.getContext(), HOMESTEAD_STAGE_W, HOMESTEAD_STAGE_H, this.phase);
       world.refresh();
-      this.add.image(0, 0, MINT_WORLD_TEXTURE).setOrigin(0, 0).setDepth(DEPTH_WORLD);
+      this.add.image(0, 0, HOMESTEAD_WORLD_TEXTURE).setOrigin(0, 0).setDepth(DEPTH_WORLD);
     }
   }
 
@@ -281,7 +297,7 @@ export class MintScene extends Phaser.Scene {
    */
   private buildAmbience(): void {
     const blades = this.add
-      .image(MINT_WINDMILL_HUB.x, MINT_WINDMILL_HUB.y, BLADE_TEXTURE)
+      .image(HOMESTEAD_WINDMILL_HUB.x, HOMESTEAD_WINDMILL_HUB.y, BLADE_TEXTURE)
       .setDepth(DEPTH_BLADES);
     if (!this.reducedMotion) {
       this.tweens.add({
@@ -302,7 +318,7 @@ export class MintScene extends Phaser.Scene {
           .setAlpha(alpha);
         this.tweens.add({
           targets: shadow,
-          x: MINT_STAGE_W + 280,
+          x: HOMESTEAD_STAGE_W + 280,
           duration,
           delay,
           repeat: -1,
@@ -315,11 +331,11 @@ export class MintScene extends Phaser.Scene {
 
     // A scene-local generator, not Phaser.Math.RND: sowing the global one
     // would reseed every other consumer in the game.
-    const rand = new Phaser.Math.RandomDataGenerator(["mint-fireflies"]);
+    const rand = new Phaser.Math.RandomDataGenerator(["homestead-fireflies"]);
     for (let i = 0; i < 10; i += 1) {
       const gold = i % 3 === 0;
       const fly = this.add
-        .image(rand.between(20, MINT_STAGE_W - 20), rand.between(150, MINT_STAGE_H - 24), GLOW_TEXTURE)
+        .image(rand.between(20, HOMESTEAD_STAGE_W - 20), rand.between(150, HOMESTEAD_STAGE_H - 24), GLOW_TEXTURE)
         .setDepth(DEPTH_AIR)
         .setScale(gold ? 0.09 : 0.07)
         .setTint(gold ? RIPE_GOLD_BRIGHT : 0xc07bff)
@@ -339,30 +355,32 @@ export class MintScene extends Phaser.Scene {
     }
   }
 
-  private renderTiles(tiles: MintSceneTile[]): void {
+  private renderTiles(tiles: HomesteadSceneTile[]): void {
     for (const tween of this.plotTweens) tween.remove();
     this.plotTweens = [];
     this.plotLayer?.destroy(true);
     this.plotLayer = this.add.container(0, 0).setDepth(DEPTH_PLOTS);
 
     const byIndex = new Map(tiles.map((tile) => [tile.plotIndex, tile]));
-    for (const plotIndex of mintPaintOrder()) {
+    for (const plotIndex of plotPaintOrder()) {
       const tile = byIndex.get(plotIndex);
       if (tile) this.plotLayer.add(this.buildTile(tile));
     }
   }
 
-  private buildTile(tile: MintSceneTile): Phaser.GameObjects.Container {
-    const { x, y } = mintTileCenter(tile.plotIndex);
+  private buildTile(tile: HomesteadSceneTile): Phaser.GameObjects.Container {
+    const { x, y } = plotCenter(tile.plotIndex);
     const container = this.add.container(x, y);
     const ground = this.add.graphics();
     container.add(ground);
 
-    const points = diamond(MINT_TILE_HALF_W, MINT_TILE_HALF_H);
+    const points = diamond(HOMESTEAD_TILE_HALF_W, HOMESTEAD_TILE_HALF_H);
     this.paintSlab(ground, tile.state === "locked");
 
     if (tile.state === "locked") {
       this.paintFallow(ground, points, tile.plotIndex);
+    } else if (tile.state === "mucked") {
+      this.paintMuck(ground, points, tile.plotIndex);
     } else {
       this.paintTilled(ground, points);
     }
@@ -372,14 +390,19 @@ export class MintScene extends Phaser.Scene {
     if (tile.selected) {
       const ring = this.add.graphics();
       ring.lineStyle(2, SELECT_RING, 0.9);
-      ring.strokePoints(diamond(MINT_TILE_HALF_W - 2, MINT_TILE_HALF_H - 1), true);
+      ring.strokePoints(diamond(HOMESTEAD_TILE_HALF_W - 2, HOMESTEAD_TILE_HALF_H - 1), true);
       container.add(ring);
     }
 
-    if (tile.state === "growing" || tile.state === "ripe") {
-      const ripe = tile.state === "ripe";
-      const growth = ripe ? 1 : Math.min(1, Math.max(0, tile.growthPercent ?? 0));
-      this.paintPen(container, tile.nodeType ?? "hen", growth, ripe);
+    if (tile.state === "working" || tile.state === "hungry" || tile.state === "ready") {
+      const ready = tile.state === "ready";
+      const progress = ready ? 1 : Math.min(1, Math.max(0, tile.progress ?? 0));
+      const stock = tile.stock ?? "hen";
+      if (isLivestock(stock)) {
+        this.paintPen(container, stock, progress, ready, tile.state === "hungry");
+      } else {
+        this.paintField(container, stock, progress, ready);
+      }
     }
 
     return container;
@@ -394,10 +417,10 @@ export class MintScene extends Phaser.Scene {
     gfx.fillStyle(0x120b08, alpha);
     gfx.fillPoints(
       [
-        new Phaser.Geom.Point(-MINT_TILE_HALF_W, 0),
-        new Phaser.Geom.Point(0, MINT_TILE_HALF_H),
-        new Phaser.Geom.Point(0, MINT_TILE_HALF_H + TILE_LIFT),
-        new Phaser.Geom.Point(-MINT_TILE_HALF_W, TILE_LIFT),
+        new Phaser.Geom.Point(-HOMESTEAD_TILE_HALF_W, 0),
+        new Phaser.Geom.Point(0, HOMESTEAD_TILE_HALF_H),
+        new Phaser.Geom.Point(0, HOMESTEAD_TILE_HALF_H + TILE_LIFT),
+        new Phaser.Geom.Point(-HOMESTEAD_TILE_HALF_W, TILE_LIFT),
       ],
       true,
     );
@@ -405,10 +428,10 @@ export class MintScene extends Phaser.Scene {
     gfx.fillStyle(locked ? 0x1b2b23 : 0x33200f, alpha);
     gfx.fillPoints(
       [
-        new Phaser.Geom.Point(MINT_TILE_HALF_W, 0),
-        new Phaser.Geom.Point(0, MINT_TILE_HALF_H),
-        new Phaser.Geom.Point(0, MINT_TILE_HALF_H + TILE_LIFT),
-        new Phaser.Geom.Point(MINT_TILE_HALF_W, TILE_LIFT),
+        new Phaser.Geom.Point(HOMESTEAD_TILE_HALF_W, 0),
+        new Phaser.Geom.Point(0, HOMESTEAD_TILE_HALF_H),
+        new Phaser.Geom.Point(0, HOMESTEAD_TILE_HALF_H + TILE_LIFT),
+        new Phaser.Geom.Point(HOMESTEAD_TILE_HALF_W, TILE_LIFT),
       ],
       true,
     );
@@ -425,8 +448,8 @@ export class MintScene extends Phaser.Scene {
     gfx.fillStyle(FALLOW_GRASS_LIT, 0.32);
     gfx.fillPoints(
       [
-        new Phaser.Geom.Point(0, -MINT_TILE_HALF_H),
-        new Phaser.Geom.Point(MINT_TILE_HALF_W, 0),
+        new Phaser.Geom.Point(0, -HOMESTEAD_TILE_HALF_H),
+        new Phaser.Geom.Point(HOMESTEAD_TILE_HALF_W, 0),
         new Phaser.Geom.Point(0, 0),
       ],
       true,
@@ -435,7 +458,7 @@ export class MintScene extends Phaser.Scene {
     gfx.strokePoints(points, true);
 
     // Weeds, fixed per plot so a repaint never reshuffles them.
-    const rand = new Phaser.Math.RandomDataGenerator([`mint-fallow-${plotIndex}`]);
+    const rand = new Phaser.Math.RandomDataGenerator([`homestead-fallow-${plotIndex}`]);
     gfx.lineStyle(1.2, FALLOW_GRASS_LIT, 0.6);
     for (let i = 0; i < 7; i += 1) {
       const wx = rand.between(-40, 40);
@@ -472,8 +495,8 @@ export class MintScene extends Phaser.Scene {
     gfx.fillStyle(SOIL_LIT, 0.45);
     gfx.fillPoints(
       [
-        new Phaser.Geom.Point(0, -MINT_TILE_HALF_H),
-        new Phaser.Geom.Point(MINT_TILE_HALF_W, 0),
+        new Phaser.Geom.Point(0, -HOMESTEAD_TILE_HALF_H),
+        new Phaser.Geom.Point(HOMESTEAD_TILE_HALF_W, 0),
         new Phaser.Geom.Point(0, 0),
       ],
       true,
@@ -481,8 +504,8 @@ export class MintScene extends Phaser.Scene {
     gfx.fillStyle(SOIL_DARK, 0.5);
     gfx.fillPoints(
       [
-        new Phaser.Geom.Point(-MINT_TILE_HALF_W, 0),
-        new Phaser.Geom.Point(0, MINT_TILE_HALF_H),
+        new Phaser.Geom.Point(-HOMESTEAD_TILE_HALF_W, 0),
+        new Phaser.Geom.Point(0, HOMESTEAD_TILE_HALF_H),
         new Phaser.Geom.Point(0, 0),
       ],
       true,
@@ -493,16 +516,16 @@ export class MintScene extends Phaser.Scene {
     for (let i = -2; i <= 2; i += 1) {
       const offset = i * 13;
       gfx.beginPath();
-      gfx.moveTo(-MINT_TILE_HALF_W + Math.abs(offset) * 1.6, offset);
-      gfx.lineTo(MINT_TILE_HALF_W - Math.abs(offset) * 1.6, offset);
+      gfx.moveTo(-HOMESTEAD_TILE_HALF_W + Math.abs(offset) * 1.6, offset);
+      gfx.lineTo(HOMESTEAD_TILE_HALF_W - Math.abs(offset) * 1.6, offset);
       gfx.strokePath();
     }
 
     gfx.lineStyle(1.5, 0xa9803f, 0.45);
     gfx.beginPath();
-    gfx.moveTo(-MINT_TILE_HALF_W, 0);
-    gfx.lineTo(0, -MINT_TILE_HALF_H);
-    gfx.lineTo(MINT_TILE_HALF_W, 0);
+    gfx.moveTo(-HOMESTEAD_TILE_HALF_W, 0);
+    gfx.lineTo(0, -HOMESTEAD_TILE_HALF_H);
+    gfx.lineTo(HOMESTEAD_TILE_HALF_W, 0);
     gfx.strokePath();
   }
 
@@ -517,15 +540,16 @@ export class MintScene extends Phaser.Scene {
    */
   private paintPen(
     container: Phaser.GameObjects.Container,
-    nodeType: MintNodeType,
-    growth: number,
-    ripe: boolean,
+    stock: HomesteadStock,
+    progress: number,
+    ready: boolean,
+    hungry: boolean,
   ): void {
     const glow = this.add
       .image(0, -14, GLOW_TEXTURE)
-      .setTint(ripe ? RIPE_GOLD : GROWING_RING)
-      .setScale(ripe ? 1.35 : 0.75, ripe ? 0.9 : 0.5)
-      .setAlpha(ripe ? 0.55 : 0.1);
+      .setTint(ready ? RIPE_GOLD : hungry ? HUNGRY_RING : GROWING_RING)
+      .setScale(ready ? 1.35 : 0.75, ready ? 0.9 : 0.5)
+      .setAlpha(ready ? 0.55 : hungry ? 0.22 : 0.1);
     container.add(glow);
 
     // Trodden ground under the animal, so it stands in the pen rather than on
@@ -542,23 +566,33 @@ export class MintScene extends Phaser.Scene {
     // neighbours in this projection, so each is set back to roughly two
     // thirds of the diamond.
     const animal = this.add.graphics();
-    const skin = ANIMAL[nodeType];
-    if (nodeType === "hen") this.paintHen(animal, skin);
-    else if (nodeType === "pig") this.paintPig(animal, skin);
+    const skin = ANIMAL[stock as "hen" | "pig" | "cattle"];
+    if (stock === "hen") this.paintHen(animal, skin);
+    else if (stock === "pig") this.paintPig(animal, skin);
     else this.paintCow(animal, skin);
-    animal.setScale(ANIMAL_SCALE[nodeType]);
+    animal.setScale(ANIMAL_SCALE[stock as "hen" | "pig" | "cattle"]);
+    // A hungry animal drains toward the alert colour and sits a touch lower.
+    if (hungry) animal.setAlpha(0.72);
     container.add(animal);
 
     const edge = this.add.graphics();
-    if (ripe) {
+    if (ready) {
       edge.lineStyle(2.5, RIPE_GOLD, 0.9);
-      edge.strokePoints(diamond(MINT_TILE_HALF_W - 3, MINT_TILE_HALF_H - 2), true);
+      edge.strokePoints(diamond(HOMESTEAD_TILE_HALF_W - 3, HOMESTEAD_TILE_HALF_H - 2), true);
+    } else if (hungry) {
+      // A frozen clock gets a frozen rim: the progress arc stops where it was
+      // and the whole edge goes amber, so "this one wants you" reads from
+      // across the field without a countdown.
+      edge.lineStyle(2.5, HUNGRY_RING, 0.85);
+      edge.strokePoints(diamond(HOMESTEAD_TILE_HALF_W - 3, HOMESTEAD_TILE_HALF_H - 2), true);
     } else {
-      this.paintProgressRim(edge, growth);
+      this.paintProgressRim(edge, progress);
     }
     container.add(edge);
 
-    if (ripe) {
+    if (hungry) container.add(this.feedGlyph());
+
+    if (ready) {
       const coins = this.add.graphics();
       for (let i = 0; i < 5; i += 1) {
         const cx = -22 + i * 11 + (i % 2 === 0 ? 3 : -4);
@@ -588,20 +622,175 @@ export class MintScene extends Phaser.Scene {
   }
 
   /**
+   * The bowl over a hungry pen. Deliberately a shape rather than a colour
+   * change alone: an amber tint on a beige cow is nearly invisible on a phone
+   * at dusk, and the whole point of the state is that you can spot it without
+   * opening anything.
+   */
+  private feedGlyph(): Phaser.GameObjects.Graphics {
+    const g = this.add.graphics();
+    g.fillStyle(0x140d09, 0.55);
+    g.fillEllipse(0, -54, 30, 12);
+    g.fillStyle(HUNGRY_RING, 1);
+    g.fillEllipse(0, -56, 24, 10);
+    g.fillStyle(0x2a1a0c, 1);
+    g.fillEllipse(0, -58, 18, 6);
+    g.fillStyle(CROP_GRAIN, 1);
+    g.fillEllipse(-4, -59, 5, 3);
+    g.fillEllipse(3, -58, 5, 3);
+    return g;
+  }
+
+  /**
+   * A field of crops. Unlike an animal, a plant genuinely does get bigger as
+   * it matures, so height carries progress here and the rim is left to say
+   * only whether it is ready.
+   */
+  private paintField(
+    container: Phaser.GameObjects.Container,
+    stock: HomesteadStock,
+    progress: number,
+    ready: boolean,
+  ): void {
+    const cash = stock === "cash_crop";
+    const eased = 0.18 + 0.82 * progress;
+
+    if (ready) {
+      const glow = this.add
+        .image(0, -18, GLOW_TEXTURE)
+        .setTint(RIPE_GOLD)
+        .setScale(1.3, 0.85)
+        .setAlpha(0.5);
+      container.add(glow);
+      if (!this.reducedMotion) {
+        this.plotTweens.push(
+          this.tweens.add({
+            targets: glow,
+            alpha: { from: 0.32, to: 0.62 },
+            duration: 1200,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.easeInOut",
+          }),
+        );
+      }
+    }
+
+    const rows = this.add.graphics();
+    // Two rows of three, offset, so a full field reads as planted ground
+    // rather than three lonely stalks.
+    const stalks: Array<{ x: number; y: number }> = [
+      { x: -22, y: 6 }, { x: 0, y: 9 }, { x: 22, y: 6 },
+      { x: -11, y: -4 }, { x: 11, y: -4 },
+    ];
+    for (const at of stalks) {
+      const height = (cash ? 34 : 22) * eased;
+      rows.lineStyle(cash ? 3 : 2.4, CROP_STEM, 1);
+      rows.beginPath();
+      rows.moveTo(at.x, at.y);
+      rows.lineTo(at.x, at.y - height);
+      rows.strokePath();
+
+      if (cash && ready) {
+        // Grain heads: stacked diamonds up the top third.
+        for (let i = 0; i < 3; i += 1) {
+          const y = at.y - height + i * 6;
+          rows.fillStyle(i % 2 === 0 ? CROP_GRAIN : RIPE_GOLD_BRIGHT, 1);
+          rows.fillPoints(
+            [
+              new Phaser.Geom.Point(at.x, y - 5),
+              new Phaser.Geom.Point(at.x + 5, y),
+              new Phaser.Geom.Point(at.x, y + 5),
+              new Phaser.Geom.Point(at.x - 5, y),
+            ],
+            true,
+          );
+        }
+      } else {
+        // Leaves either side of a centre shoot. A rounded crown here read as
+        // a ball on a stick, which is the note the homestead branch's own
+        // sprout carries.
+        const leaf = (dx: number, colour: number) => {
+          rows.fillStyle(colour, 1);
+          rows.fillPoints(
+            [
+              new Phaser.Geom.Point(at.x, at.y - height + 4),
+              new Phaser.Geom.Point(at.x + dx, at.y - height - 2),
+              new Phaser.Geom.Point(at.x + dx * 0.2, at.y - height + 8),
+            ],
+            true,
+          );
+        };
+        leaf(-9 * eased, CROP_LEAF);
+        leaf(9 * eased, CROP_STEM);
+        rows.fillStyle(CROP_LEAF, 1);
+        rows.fillPoints(
+          [
+            new Phaser.Geom.Point(at.x - 3, at.y - height),
+            new Phaser.Geom.Point(at.x + 3, at.y - height),
+            new Phaser.Geom.Point(at.x, at.y - height - 10 * eased),
+          ],
+          true,
+        );
+      }
+    }
+    container.add(rows);
+
+    const edge = this.add.graphics();
+    if (ready) {
+      edge.lineStyle(2.5, RIPE_GOLD, 0.9);
+      edge.strokePoints(diamond(HOMESTEAD_TILE_HALF_W - 3, HOMESTEAD_TILE_HALF_H - 2), true);
+    } else {
+      this.paintProgressRim(edge, progress);
+    }
+    container.add(edge);
+  }
+
+  /** A plot that needs maintenance: churned mud, un-plantable until paid for. */
+  private paintMuck(
+    gfx: Phaser.GameObjects.Graphics,
+    points: Phaser.Geom.Point[],
+    plotIndex: number,
+  ): void {
+    gfx.fillStyle(MUCK_DARK, 1);
+    gfx.fillPoints(points, true);
+
+    const rand = new Phaser.Math.RandomDataGenerator([`homestead-muck-${plotIndex}`]);
+    for (let i = 0; i < 7; i += 1) {
+      // Keep every blob inside the diamond: |x/halfW| + |y/halfH| <= 1.
+      const u = rand.realInRange(-1, 1);
+      const v = rand.realInRange(-1, 1);
+      const k = Math.min(1, 0.72 / (Math.abs(u) + Math.abs(v) + 0.001));
+      gfx.fillStyle(i % 2 === 0 ? MUCK_DARK : MUCK_WET, 0.9);
+      gfx.fillEllipse(
+        u * HOMESTEAD_TILE_HALF_W * k,
+        v * HOMESTEAD_TILE_HALF_H * k,
+        14 + rand.between(0, 18),
+        7 + rand.between(0, 8),
+      );
+    }
+    // Puddle sheen, so "weather-worn" reads as wet rather than just dark.
+    gfx.fillStyle(0x7fa8c8, 0.12);
+    gfx.fillEllipse(4, 4, 34, 14);
+    gfx.lineStyle(1, 0x120c06, 0.6);
+    gfx.strokePoints(points, true);
+  }
+
+  /**
    * A violet stroke walking the diamond's perimeter from the near corner.
    * Perimeter rather than a progress bar because the plot is a diamond, and a
    * straight bar laid over it fights the projection at every angle.
    */
   private paintProgressRim(gfx: Phaser.GameObjects.Graphics, growth: number): void {
     const corners = [
-      { x: 0, y: MINT_TILE_HALF_H - 2 },
-      { x: -(MINT_TILE_HALF_W - 3), y: 0 },
-      { x: 0, y: -(MINT_TILE_HALF_H - 2) },
-      { x: MINT_TILE_HALF_W - 3, y: 0 },
-      { x: 0, y: MINT_TILE_HALF_H - 2 },
+      { x: 0, y: HOMESTEAD_TILE_HALF_H - 2 },
+      { x: -(HOMESTEAD_TILE_HALF_W - 3), y: 0 },
+      { x: 0, y: -(HOMESTEAD_TILE_HALF_H - 2) },
+      { x: HOMESTEAD_TILE_HALF_W - 3, y: 0 },
+      { x: 0, y: HOMESTEAD_TILE_HALF_H - 2 },
     ];
     gfx.lineStyle(2, GROWING_RING, 0.22);
-    gfx.strokePoints(diamond(MINT_TILE_HALF_W - 3, MINT_TILE_HALF_H - 2), true);
+    gfx.strokePoints(diamond(HOMESTEAD_TILE_HALF_W - 3, HOMESTEAD_TILE_HALF_H - 2), true);
 
     const travelled = Math.min(1, Math.max(0, growth)) * 4;
     gfx.lineStyle(2.5, GROWING_RING, 0.75);

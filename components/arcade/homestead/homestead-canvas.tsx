@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { MINT_STAGE_H, MINT_STAGE_W } from "./iso";
-import type { MintScene, MintSceneTile } from "./mint-scene";
+import { HOMESTEAD_STAGE_H, HOMESTEAD_STAGE_W } from "./iso";
+import type { HomesteadScene, HomesteadSceneTile } from "./homestead-scene";
 
 /**
  * The Phaser mount, and the bundle boundary. Both the engine and the scene
@@ -14,17 +14,17 @@ import type { MintScene, MintSceneTile } from "./mint-scene";
  * Rendering is fully driven from props: `tiles` repaints the grid whenever
  * its signature changes, `celebrate` fires the harvest fountain once per
  * nonce. The canvas is decorative to assistive tech (the DOM overlay in
- * mint-treasury.tsx is the real control surface), hence aria-hidden.
+ * homestead-farm.tsx is the real control surface), hence aria-hidden.
  */
-export function MintCanvas({
+export function HomesteadCanvas({
   tiles,
   celebrate,
 }: {
-  tiles: MintSceneTile[];
+  tiles: HomesteadSceneTile[];
   celebrate: { plotIndex: number; nonce: number } | null;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const sceneRef = useRef<MintScene | null>(null);
+  const sceneRef = useRef<HomesteadScene | null>(null);
   const gameRef = useRef<{ destroy: (removeCanvas: boolean) => void } | null>(null);
   const tilesRef = useRef(tiles);
   useEffect(() => {
@@ -37,9 +37,9 @@ export function MintCanvas({
     if (!host) return;
 
     void (async () => {
-      const [{ default: Phaser }, { MintScene: SceneClass }] = await Promise.all([
+      const [{ default: Phaser }, { HomesteadScene: SceneClass }] = await Promise.all([
         import("phaser"),
-        import("./mint-scene"),
+        import("./homestead-scene"),
       ]);
       if (cancelled) return;
 
@@ -48,8 +48,8 @@ export function MintCanvas({
         type: Phaser.AUTO,
         parent: host,
         transparent: true,
-        width: MINT_STAGE_W,
-        height: MINT_STAGE_H,
+        width: HOMESTEAD_STAGE_W,
+        height: HOMESTEAD_STAGE_H,
         scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
         // The diorama animates a slow hen at most; half rate is plenty and
         // half the battery. Phaser already pauses fully on tab blur.
@@ -75,7 +75,7 @@ export function MintCanvas({
   const signature = tiles
     .map(
       (tile) =>
-        `${tile.plotIndex}:${tile.state}:${tile.nodeType ?? ""}:${Math.round((tile.growthPercent ?? 0) * 24)}:${tile.selected ? 1 : 0}`,
+        `${tile.plotIndex}:${tile.state}:${tile.stock ?? ""}:${Math.round((tile.progress ?? 0) * 24)}:${tile.selected ? 1 : 0}`,
     )
     .join("|");
   useEffect(() => {
@@ -86,5 +86,5 @@ export function MintCanvas({
     if (celebrate) sceneRef.current?.celebrateHarvest(celebrate.plotIndex);
   }, [celebrate]);
 
-  return <div ref={hostRef} className="mint-canvas" aria-hidden="true" />;
+  return <div ref={hostRef} className="homestead-canvas" aria-hidden="true" />;
 }

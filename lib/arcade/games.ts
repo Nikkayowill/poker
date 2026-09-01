@@ -46,7 +46,7 @@ export type ArcadeGameId =
   | "trivia-showdown"
   | "word-race"
   | "cribbage-table"
-  | "sovereign-mint";
+  | "homestead";
 
 /**
  * `casino` stakes Gold against the house on a chance outcome. `duel` stakes
@@ -196,19 +196,19 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   },
   // `kind: "wager"` in the loose sense the doc comment above gives it (Gold
   // staked on something other than another player, no house odds), but the
-  // Mint has no free mode and no way to lose: a node's payout is fixed at
-  // plant. entryCost 0 rather than the cheapest node's stake so the floor
-  // never wallet-gates the tile -- a broke player may still own ripe nodes,
-  // and blocking the door to their own harvest over the price of the *next*
-  // stake would strand exactly the Gold that gets them un-broke.
+  // Homestead has no free mode and no way to lose: a plot's payout is fixed
+  // at stocking. entryCost 0 rather than the cheapest crop's stake so the
+  // floor never wallet-gates the tile -- a broke player may still own plots
+  // ready to sell, and blocking the door to their own payout over the price
+  // of the *next* stake would strand exactly the Gold that gets them un-broke.
   {
-    id: "sovereign-mint",
-    name: "Sovereign Mint",
-    blurb: "Stake Gold into timed nodes, harvest more back",
+    id: "homestead",
+    name: "StackChips Homestead",
+    blurb: "Raise crops and livestock, sell what they make",
     kind: "wager",
     entryCost: 0,
     status: "live",
-    href: "/games/mint",
+    href: "/games/homestead",
   },
   // ---- Duels: skill/social games staked against another player, not the
   // house. Winner takes the pot both players anted; see lib/pvp/. Priced at
@@ -309,10 +309,10 @@ export function arcadeEntryLabel(game: ArcadeGame): string {
   // there: Sudoku/Memory Match are unlimited (no daily identity to name),
   // Word Stack/Connections are still the one shared puzzle for the day.
   if (game.kind !== "wager") return "Free daily";
-  // The Mint's zero is a third meaning again: there is no free mode at all,
+  // The Homestead's zero is a third meaning again: there is no free mode at all,
   // only stakes chosen inside (its entryCost is 0 purely so the floor never
   // wallet-gates the door to a harvest; see its own catalog comment).
-  if (game.id === "sovereign-mint") return "Stake Gold, harvest more";
+  if (game.id === "homestead") return "Raise stock, sell for Gold";
   return game.id === "daily-word-stack" || game.id === "connections"
     ? "Free daily · or wager it"
     : "Free, or wager Gold";

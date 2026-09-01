@@ -84,7 +84,7 @@
    app-wide). Standalone: portaled overlay + fixed toast stack, no dependency
    on any earlier sheet's classes. */
 @import "./styles/49-notifications.css";
-@import "./styles/50-mint.css";
+@import "./styles/50-homestead.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

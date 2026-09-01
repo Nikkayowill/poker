@@ -40,6 +40,34 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### The Mint became the StackChips Homestead: crops, feed, muck, three times of day (2026-08-31)
+Kayo's expansion spec (his own, written in the homestead branch's register) plus the rename:
+`sovereign-mint` -> `homestead`, `/games/mint` -> `/games/homestead`, `mint_plots` -> `homestead_plots`,
+node types `pulse|core|matrix` -> `hen|pig|cattle`. Free to do because the migration was still
+unapplied; after it lands this is a data migration, not a find-and-replace. Five plot states now
+(`locked|empty|working|hungry|ready|mucked`) across two tracks with **separate caps** -- 3 pens and 3
+fields -- because crops sharing the livestock budget makes them just a cheaper animal.
+**Three corrections to the spec, all load-bearing.** (1) Its flat maintenance fee is arithmetically
+impossible here: at 20% muck and a flat 1,500, a Hen Coop's +50 net becomes **-250 a cycle**, so the
+tier new players start on is a guaranteed loser. `muckFee` is now 2x the tier's net bonus, holding
+expected muck cost at 40% of what the plot earned on every tier -- there is a test asserting exactly
+this. (2) Its `#1A1A1D`/`#222226` are the homestead demo's near-black stage, which Kayo had already
+ruled out ("DONT COPY THE BACKGROUND"); states map onto our dusk palette instead. (3) **A 20% roll
+cannot be computed on read.** Everything else here is a pure function of timestamps, which is why the
+feature needs no background jobs; a dice roll evaluated on read re-rolls on every refetch and a player
+rerolls muck by pulling to refresh. It is rolled once in `rollMuck`, server-side, inside the guarded
+settlement write, and stored. **Hunger freezes rather than kills** (Kayo asked whether animals should
+die; the blocker is that per-plot push is not buildable on this stack, so a feed deadline is one the
+app is structurally unable to warn about): a hungry pen stops, and feeding pushes `ready_at` forward
+by the time spent hungry, so neglect costs time and never Gold. That is also why readiness is no
+longer a pure function of `started_at` and the row has to remember `last_fed_at`. Feed is a per-player
+consumable behind a row-locking RPC (`adjust_homestead_feed`), same posture as `credit_gold`. Only
+Pig and Cattle can ever go hungry -- a Hen's hunger window is deliberately longer than its own cycle,
+so the cheapest tier stays fire-and-forget. World gained `morning|dusk|night` tones picked from the
+player's own device clock at boot; only colour and light change, because re-lighting from a different
+angle would mean re-authoring every prop's shading three times. Supply store is a sheet off a HUD
+button. 35 new tests.
+
 ### The Mint's diorama became an outdoor farm; landscape CSS was measurably wrong (2026-08-31)
 Kayo, on the first cut: "why is the platform floating in the sky?" -- and it was, literally. The
 scene drew a violet slab on a `transparent: true` canvas, so the app's own dark ground showed through

@@ -778,14 +778,16 @@
   font-size: 14px;
 }
 
-.hs-gate-card form {
+/* The player id, for someone who has to go and ask to be let in. Selectable
+   and allowed to wrap: a uuid is wider than this card on a phone, and an id
+   that overflows its own box cannot be read out or copied.
+   Qualified by .hs-gate-card so it outranks that block's own `p` rule above,
+   which would otherwise win on specificity and reset the colour and size. */
+.hs-gate-card .hs-gate-id {
   display: flex;
   flex-direction: column;
+  gap: 6px;
   margin-top: 16px;
-  text-align: left;
-}
-
-.hs-gate-label {
   color: var(--neon-muted-2);
   font-size: 12px;
   font-weight: 700;
@@ -793,23 +795,17 @@
   text-transform: uppercase;
 }
 
-/* 16px is not a design choice: iOS Safari zooms any input under it on focus
-   and never zooms back out, which on a full-screen gate strands the player. */
-.hs-gate-input {
-  margin-top: 6px;
-  min-height: 48px;
-  padding: 10px 14px;
-  border: 0;
+.hs-gate-id code {
+  padding: 8px 10px;
   border-radius: var(--radius-control);
   background: var(--brand-surface);
   color: var(--neon-chalk);
-  font-size: 16px;
-  letter-spacing: .04em;
+  font-size: 13px;
+  letter-spacing: .02em;
+  text-transform: none;
+  overflow-wrap: anywhere;
+  user-select: all;
 }
-
-.hs-gate-input:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
-
-.hs-gate-card .duel-error { margin-top: 10px; }
 
 /* ---- the exchange window --------------------------------------------- */
 

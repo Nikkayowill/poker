@@ -111,18 +111,18 @@ describe("arcade catalogue", () => {
     // own section note that you can lose the Gold you stake, and the
     // Homestead has no stake and no losing branch -- filing it there would
     // make that note false about one of the rows beneath it. What actually
-    // keeps people out is the access code on the route, not this row; see
-    // lib/server/homestead-access.ts.
+    // keeps people out is the per-profile grant the routes check, not this
+    // row; see lib/server/homestead-access.ts.
     const floor = splitArcadeFloor();
     expect(floor.idle.map((entry) => entry.id)).toContain("homestead");
     expect(floor.wagers.map((entry) => entry.id)).not.toContain("homestead");
   });
 
-  it("leaves a code-locked game out of the hub tile's free count", () => {
-    // The hub promises "N free every day". An idle row costs no Gold but sits
-    // behind a code, so counting it there promises the reader something most
-    // of them cannot open -- the same class of stale number this catalogue's
-    // header warns about three times.
+  it("leaves an access-gated game out of the hub tile's free count", () => {
+    // The hub promises "N free every day". An idle row costs no Gold but opens
+    // only for players an admin has let in, so counting it there promises the
+    // reader something most of them cannot open -- the same class of stale
+    // number this catalogue's header warns about three times.
     const { free, idle } = splitArcadeFloor();
     const summary = arcadeFloorSummary();
     expect(idle.length).toBeGreaterThan(0);

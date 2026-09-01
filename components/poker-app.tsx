@@ -1,7 +1,6 @@
 "use client";
 
 import type { RealtimeChannel, Session } from "@supabase/supabase-js";
-import { Capacitor } from "@capacitor/core";
 import { useCallback, useEffect, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import dynamic from "next/dynamic";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
@@ -23,7 +22,6 @@ import {
 } from "@/lib/game/table-channel";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { dailyGoldState } from "@/lib/profile/daily-gold";
-import { parseEnabledFlag } from "@/lib/profile/stored-preference";
 import {
   browserSessionStorage,
   clearPendingFriendInvite,
@@ -41,7 +39,8 @@ import {
   writePendingFriendInvite,
 } from "@/lib/profile/session-continuity";
 import { useStoredPreference } from "@/components/use-stored-preference";
-import { playSound, primeTableSounds, setSoundEnabled } from "@/lib/audio/sound-effects";
+import { useAppShell } from "@/components/shell/app-shell";
+import { playSound, primeTableSounds } from "@/lib/audio/sound-effects";
 import { gameOnSound } from "@/lib/audio/ui-sounds";
 import {
   BET_STYLE_STORAGE_KEY,
@@ -57,7 +56,6 @@ import {
   type TableRenderer,
 } from "@/lib/scene/table-renderer";
 import { tableSounds } from "@/lib/audio/table-sounds";
-import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
 import { Bell, BellOff, Coins, Gift, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
 import {
   disablePushOnThisDevice,
@@ -86,11 +84,6 @@ import { REWARDED_AD_ELIGIBLE_BELOW } from "@/lib/rewards/config";
 import type { RewardTrigger } from "@/lib/rewards/triggers";
 import type { ConnectionState } from "@/components/table/poker-table";
 import { useTableReactions } from "@/lib/game/use-table-reactions";
-import {
-  LEGACY_SOUND_STORAGE_KEY,
-  MUSIC_STORAGE_KEY,
-  SOUND_STORAGE_KEY,
-} from "@/lib/audio/sound-preference";
 
 /**
  * The table, fetched only when there is one to show.
@@ -245,24 +238,12 @@ export function PokerApp() {
   const [signInPending, setSignInPending] = useState(false);
   const [navShowing, setNavShowing] = useState(false);
   const [savePromptDismissed, setSavePromptDismissed] = useState(false);
-  const [soundEnabled, setSoundEnabledState] = useStoredPreference<boolean>({
-    key: SOUND_STORAGE_KEY,
-    legacyKey: LEGACY_SOUND_STORAGE_KEY,
-    fallback: true,
-    parse: parseEnabledFlag,
-    apply: (enabled, cause) => {
-      setSoundEnabled(enabled);
-      // Plays only as confirmation of an actual unmute, and only after the
-      // line above has unmuted the channel it plays through.
-      if (enabled && cause === "change") playSound("ui");
-    },
-  });
-  const [musicEnabled, setMusicEnabledState] = useStoredPreference<boolean>({
-    key: MUSIC_STORAGE_KEY,
-    fallback: true,
-    parse: parseEnabledFlag,
-    apply: setMenuMusicEnabled,
-  });
+  // Sound/music preferences and the immersive signal now live in the
+  // persistent shell (components/shell/app-shell.tsx) -- this component no
+  // longer unmounts on every arcade/collection/leaderboard navigation, but it
+  // also isn't the only screen that needs these any more, so they moved up to
+  // where every screen can reach them.
+  const { soundEnabled, toggleSound, musicEnabled, toggleMenuMusic, setImmersive } = useAppShell();
   const [betStyle, setBetStyleState] = useStoredPreference<BetAnimationStyle>({
     key: BET_STYLE_STORAGE_KEY,
     fallback: DEFAULT_BET_STYLE,
@@ -395,14 +376,6 @@ export function PokerApp() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  const toggleSound = useCallback(() => {
-    setSoundEnabledState((current) => !current);
-  }, [setSoundEnabledState]);
-
-  const toggleMenuMusic = useCallback(() => {
-    setMusicEnabledState((current) => !current);
-  }, [setMusicEnabledState]);
-
   const cycleBetStyle = useCallback(() => {
     setBetStyleState(nextBetStyle);
   }, [setBetStyleState]);
@@ -436,36 +409,14 @@ export function PokerApp() {
     }
   }, [claimingGold]);
 
+  // Tells the shell a hand is in progress -- pauses ambient music and (once
+  // Phase 3 wires it) hides the persistent nav chrome. The table itself
+  // already behaves as the target "immersive" screen today (its own header
+  // below is gated `!game`), so this just formalizes that into the shared
+  // signal rather than changing any table behavior.
   useEffect(() => {
-    // The screen boundary is wider than just `game`: PokerApp only owns the
-    // lobby/hub/table experience, and the arcade (`/games/*`) plus
-    // /collection, /leaderboard and /store are separate routes that unmount
-    // this whole component. Without a cleanup here, navigating to any of
-    // them left the singleton <audio> element in lib/audio/menu-music.ts
-    // playing behind a page that never asked for it, since nothing under
-    // those routes imports stopMenuMusic. The cleanup below fixes that: it
-    // fires on every unmount, which is every such navigation.
-    //
-    // Tab visibility is the other half: a hidden tab (backgrounded window,
-    // switched tab) has no in-app "leave" to hook, so it's read directly via
-    // document.hidden. sync() is the single source of truth for both game
-    // and visibility so the two conditions can't drift into two separate
-    // start/stop call sites.
-    setMenuMusicEnabled(musicEnabled);
-
-    const sync = () => {
-      if (!musicEnabled) return;
-      if (game || document.hidden) stopMenuMusic();
-      else startMenuMusic();
-    };
-
-    sync();
-    document.addEventListener("visibilitychange", sync);
-    return () => {
-      document.removeEventListener("visibilitychange", sync);
-      stopMenuMusic();
-    };
-  }, [game, musicEnabled]);
+    setImmersive(Boolean(game));
+  }, [game, setImmersive]);
 
   // Fetch the table's chunk (see the `dynamic` call at the top of this file)
   // while the lobby is sitting still, so taking a seat costs no more than it
@@ -882,25 +833,9 @@ export function PokerApp() {
     };
   }, [entryComplete, profile, profileLoading]);
 
-  useEffect(() => {
-    if (!("serviceWorker" in window.navigator)) return;
-    // The native shell (Capacitor) is its own install/update mechanism; the
-    // hand-rolled shell-caching SW is a web-PWA concern only and would just
-    // double-cache against the WebView for no benefit.
-    if (Capacitor.isNativePlatform()) return;
-    if (process.env.NODE_ENV === "production") {
-      void window.navigator.serviceWorker.register("/sw.js").catch(() => {
-        // Installation is an enhancement; normal online play remains available.
-      });
-      return;
-    }
-
-    // A development service worker can serve stale shell responses while Fast
-    // Refresh is rebuilding. Keep npm run dev as a plain network experience.
-    void window.navigator.serviceWorker.getRegistrations().then((registrations) => {
-      registrations.forEach((registration) => void registration.unregister());
-    });
-  }, []);
+  // Service-worker registration moved to components/shell/app-shell.tsx --
+  // it's mount-once either way, and now that this component isn't the only
+  // thing that ever mounts, that's where mount-once things belong.
 
   useEffect(() => {
     // The shared client, never a fresh one: a second createClient here means

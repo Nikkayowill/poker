@@ -47,7 +47,8 @@ export type ArcadeGameId =
   | "othello-duel"
   | "trivia-showdown"
   | "word-race"
-  | "cribbage-table";
+  | "cribbage-table"
+  | "homestead";
 
 /**
  * `casino` stakes Gold against the house on a chance outcome. `duel` stakes
@@ -101,7 +102,21 @@ export type ArcadeGameKind = "casino" | "puzzle" | "duel" | "wager";
  * human decided to stop offering it" — collapsing them would lose that
  * distinction.
  */
-export type ArcadeGameStatus = "coming-soon" | "live" | "retired";
+/**
+ * `unlisted` is a fourth state and not a flavour of the other three: the game
+ * is finished, mounted, and moving real Gold, but is not being advertised yet.
+ * It is not `coming-soon` (that means "not built"), and it is not `retired`
+ * (that means "was offered, then stopped"). Collapsing it into either would
+ * lose exactly the distinction this type exists to keep.
+ *
+ * `splitArcadeFloor` shows `live` rows and nothing else, so an unlisted game
+ * never reaches the floor. That is ALL it does. Per lib/arcade/retired.ts's
+ * lesson, a catalog row is not a lock: the routes stay open, so anyone with
+ * the URL can play it. Unlisted means unadvertised, never unreachable -- if a
+ * game must actually be closed, the route has to refuse, and that is a
+ * separate thing to build.
+ */
+export type ArcadeGameStatus = "coming-soon" | "live" | "retired" | "unlisted";
 
 export interface ArcadeGame {
   id: ArcadeGameId;
@@ -203,6 +218,27 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     entryCost: 0,
     status: "live",
     href: "/games/nonogram",
+  },
+  // `kind: "wager"` in the loose sense the doc comment above gives it (Gold
+  // staked on something other than another player, no house odds), but the
+  // Homestead has no free mode and no way to lose: a plot's payout is fixed
+  // at stocking. entryCost 0 rather than the cheapest crop's stake so the
+  // floor never wallet-gates the tile -- a broke player may still own plots
+  // ready to sell, and blocking the door to their own payout over the price
+  // of the *next* stake would strand exactly the Gold that gets them un-broke.
+  {
+    id: "homestead",
+    name: "StackChips Homestead",
+    blurb: "Raise crops and livestock, sell what they make",
+    kind: "wager",
+    entryCost: 0,
+    // Deployed but not released: off the floor by this status, and its routes
+    // and page additionally refuse anyone whose account is not named in
+    // HOMESTEAD_ALLOWED_USER_IDS (see lib/server/homestead-access.ts). To
+    // release it, flip this to "live" AND clear that variable -- either one
+    // alone still leaves it hidden.
+    status: "unlisted",
+    href: "/games/homestead",
   },
   // ---- Duels: skill/social games staked against another player, not the
   // house. Winner takes the pot both players anted; see lib/pvp/. Priced at
@@ -316,6 +352,10 @@ export function arcadeEntryLabel(game: ArcadeGame): string {
   // there: Sudoku/Memory Match are unlimited (no daily identity to name),
   // Word Stack/Connections are still the one shared puzzle for the day.
   if (game.kind !== "wager") return "Free daily";
+  // The Homestead's zero is a third meaning again: there is no free mode at all,
+  // only stakes chosen inside (its entryCost is 0 purely so the floor never
+  // wallet-gates the door to a harvest; see its own catalog comment).
+  if (game.id === "homestead") return "Raise stock, sell for Gold";
   return game.id === "daily-word-stack" || game.id === "connections"
     ? "Free daily · or wager it"
     : "Free, or wager Gold";

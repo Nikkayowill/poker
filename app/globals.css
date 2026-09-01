@@ -91,6 +91,9 @@
 /* Othello's board. After 36-duels.css, whose lobby, match frame and result
    card it narrows, the same relationship 37/38/39/40 have. */
 @import "./styles/51-othello.css";
+/* The Homestead. Self-contained -- it shares no classes with any sheet above,
+   so its number is just the next one free. */
+@import "./styles/52-homestead.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

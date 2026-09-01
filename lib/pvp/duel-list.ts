@@ -1,5 +1,5 @@
 /**
- * The four duels, for pickers that let a caller start one against someone
+ * The five duels, for pickers that let a caller start one against someone
  * specific: the friends drawer's Challenge select and the table's own
  * challenge-this-seat control.
  *
@@ -10,11 +10,12 @@
  * into the browser bundle the same way Word Race's once did before that file
  * existed. Each /games/* page still hardcodes its own id and title
  * separately for the same reason: this is the one shared list for the two
- * places that need all four at once.
+ * places that need them all at once.
  */
 export const CHALLENGEABLE_DUELS: readonly { id: string; label: string }[] = [
   { id: "chess", label: "Chess" },
   { id: "checkers", label: "Checkers" },
+  { id: "othello", label: "Othello" },
   { id: "trivia", label: "Trivia Showdown" },
   { id: "word-race", label: "Word Race" },
 ];

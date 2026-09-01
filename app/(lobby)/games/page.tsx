@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   // duels added four. The page itself counts the catalogue every render
   // (arcadeFloorSummary); a number written down here cannot follow it, which
   // is the exact failure lib/arcade/games.ts's header records three times.
-  description: "Puzzles, head-to-head duels and card games beside the tables.",
+  description: "Solo boards, head-to-head duels and Blackjack, beside the tables.",
 };
 
 /**

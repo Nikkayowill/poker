@@ -84,6 +84,13 @@
    app-wide). Standalone: portaled overlay + fixed toast stack, no dependency
    on any earlier sheet's classes. */
 @import "./styles/49-notifications.css";
+/* Ante Up: Nonogram's board. After 36/43 (it reuses the duel shell and the
+   Ante Up wager step) and after 46, whose .ms-flag-toggle / .ms-hint the
+   Fill-Cross toggle reuses rather than restating. */
+@import "./styles/50-nonogram.css";
+/* Othello's board. After 36-duels.css, whose lobby, match frame and result
+   card it narrows, the same relationship 37/38/39/40 have. */
+@import "./styles/51-othello.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

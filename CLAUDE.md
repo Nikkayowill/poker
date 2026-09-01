@@ -40,6 +40,47 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Ante Up copy pass, plus Nonogram and Othello (2026-08-31)
+Kayo: the Ante Up heading ("Eleven more ways in.") "makes no sense and is old", every card blurb
+needed rewriting, and the heading had to match the other tabs. It now follows the house head shape
+every other floor already used (kicker / short noun phrase / one line): **Ante Up / "Every game
+beside the table."** The old line counted the catalogue through a number-to-words table (`spell()`,
+deleted) -- a count baked into a sentence goes stale the day a game ships, which is the rule
+`lib/arcade/games.ts`'s own header records three times and which broke three more places found in
+this pass: the hub tile shipped reading a literal **"0 free every day"**, the first-run strip
+literally read **"0 puzzles are free every day"** (both counted `kind: "puzzle"`, a bucket empty
+since the 2026-08-21 move of every brain game to `kind: "wager"`), and the same strip said "Ten more
+games" against a catalogue of thirteen. Blurbs described the *price* rather than the game, so three
+cards said the identical "Wager Gold, or play free — any time" and two more said "1v1, winner takes
+the pot", while the stake line directly beneath said it again; every blurb now names its own
+mechanic. Section heads: "Ante up" (colliding with the tab of the same name) -> **Beat the board**,
+"Staked in Gold" (true of all three sections) -> **Against the house**, "Player vs. player" -> **Head
+to head**. The floor's how-it-works modal opened "Every Ante Up game can be played completely free",
+untrue of Blackjack and the five duels; now scoped to the solo boards, and carrying Nonogram's rules
+(Kayo asked for them there specifically).
+
+**Nonogram** (12th solo game, `/games/nonogram`) and **Othello** (5th duel, `/games/othello`) shipped
+in the same pass. Nonogram runs 5x5 to 25x25 on five rungs (easy/medium/hard/expert/master), and its
+generator carries the same no-guess guarantee Minesweeper's does, by the same reasoning: a puzzle
+needing a guess is a coin flip and this stakes real Gold. `lib/arcade/puzzles/nonogram.ts`'s line
+solver is a two-pass DP over (position, run), not an enumeration of arrangements -- a 25-wide line
+with six runs has thousands. **The generation loop provably terminates rather than merely usually
+terminating**: when line logic stalls, the repair *adds* a filled square, which strictly increases
+the filled count, and the all-filled grid (every clue a single run the width of the board) is
+trivially solvable, so it cannot run past `size * size` repairs. In practice it is a handful or none
+-- 25x25 generates in ~2ms, worst case ~7ms, measured. Only a wrong *fill* is scored; a cross is
+player notation and free, which is what lets the mistake budget be small (3 at 5x5 up to 6 at 25x25).
+The board does not shrink to fit a phone the way Minesweeper's does -- 625 squares at a tappable size
+will not fit, and `.ng-frame` scrolls in both axes instead. Othello was picked over Connect Four for
+one reason: **Connect Four is solved**, and a player who has memorised the first-player win would farm
+every opponent they got seat 0 against, for real Gold. Its two rules worth knowing are in the engine
+header (a move must flip something; a player with no legal move passes and does not lose, and only
+when neither side can move is it over -- which is usually but not always a full board). No draw or
+repetition rules: every move fills a square, so it cannot loop. Balance conservation verified live
+end to end (4,000 Gold across two players before and after). Migration
+`20260831140000_othello_leaderboard.sql` adds 'othello' to `global_leaderboard_entries()` and is
+**unapplied**; see `[[reference_stackchips_migrations_not_auto_applied]]`.
+
 ### Word Stack and Connections now carry their payout ladder (2026-08-27)
 Closes the gap left open by the Ante Up economy fix earlier the same day. Both games computed their
 payout from a module-level multiplier table *at settlement*, and both are once-a-day boards that can

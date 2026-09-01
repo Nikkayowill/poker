@@ -108,11 +108,19 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
   // The persistent shell owns the profile now -- this screen still gets it
   // back from its own GET /api/cribbage response too (unchanged this phase),
   // it just writes that into the shared setter instead of a local copy.
-  const { profile, setProfile } = useAppShell();
+  const { profile, setProfile, setImmersive } = useAppShell();
   const [stake, setStake] = useState<number>(MIN_DUEL_STAKE);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Tells the shell a table is joined -- hides the persistent nav chrome the
+  // same way poker-app.tsx does for a hand in progress, and duel-shell.tsx
+  // now does for a match. Not narrowed to a live round: the completed-table
+  // result screen is still this screen, not the open-table lobby.
+  useEffect(() => {
+    setImmersive(Boolean(table));
+  }, [table, setImmersive]);
 
   const sending = useRef(false);
   const mounted = useRef(true);

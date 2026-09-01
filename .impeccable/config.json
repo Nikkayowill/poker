@@ -308,6 +308,12 @@
         "value": "rgba(0, 0, 0, .55)",
         "createdAt": "2026-09-01T18:09:04.378Z",
         "reason": "progress-bar track scrim over artwork; the palette has no scrim token and other stylesheets use ad-hoc black rgba for the same job"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(4, 6, 11, .6)",
+        "createdAt": "2026-09-01T21:27:02.321Z",
+        "reason": "matches the existing un-tokenized header shadow literal at 02-app-shell.css:77 (rgba(4, 6, 11, .72)) -- same near-black tone, not a new color choice"
       }
     ]
   }

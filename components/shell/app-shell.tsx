@@ -44,6 +44,8 @@ import {
 } from "@/lib/audio/sound-preference";
 import { parseEnabledFlag } from "@/lib/profile/stored-preference";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { PersistentChrome } from "@/components/shell/persistent-chrome";
+import { useAndroidBackButton } from "@/components/shell/use-android-back-button";
 import {
   browserSessionStorage,
   clearSessionContinuity,
@@ -103,6 +105,8 @@ export function useAppShell(): AppShellValue {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  useAndroidBackButton();
+
   const [immersive, setImmersive] = useState(false);
 
   // Moved from components/poker-app.tsx verbatim -- see use-stored-preference.ts
@@ -283,5 +287,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     entryComplete,
   };
 
-  return <AppShellContext.Provider value={value}>{children}</AppShellContext.Provider>;
+  return (
+    <AppShellContext.Provider value={value}>
+      {children}
+      <PersistentChrome />
+    </AppShellContext.Provider>
+  );
 }

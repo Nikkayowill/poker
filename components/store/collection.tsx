@@ -154,7 +154,11 @@ export function Collection() {
       setCatalog(data.cosmetics);
       setOwned(data.owned);
       setEquipped(data.equipped);
-      setProfile(data.profile);
+      // Guarded like every other screen that shares this setter: a signed-
+      // out response sends `profile: null` (see app/api/cosmetics/route.ts),
+      // which would otherwise wipe out a real profile the shell already
+      // loaded correctly, taking the persistent nav chrome down with it.
+      if (data.profile) setProfile(data.profile);
       setStats(data.stats);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load the collection.");
@@ -184,7 +188,7 @@ export function Collection() {
       if (!response.ok) throw new Error(data.error ?? "That didn't work.");
       if (path === "purchase") {
         setOwned(data.owned);
-        setProfile(data.profile);
+        if (data.profile) setProfile(data.profile);
         setNotice(`${item.name} is yours.`);
       } else {
         setEquipped(data.equipped);

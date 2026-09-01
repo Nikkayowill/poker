@@ -7,6 +7,7 @@ import { PlayingCard } from "@/components/table/playing-card";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { useAppShell } from "@/components/shell/app-shell";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
@@ -46,7 +47,10 @@ interface AnteUpMemoryResponse {
 export function AnteUpMemory() {
   const [wager, setWager] = useState<number>(MIN_ANTE_UP_WAGER);
   const [attempt, setAttempt] = useState<AnteUpMemorySnapshot | null>(null);
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  // The persistent shell owns the profile now -- this screen still gets it
+  // back from its own attempt-response payload too (unchanged), it just
+  // writes into the shared setter instead of a local copy.
+  const { profile, setProfile, setImmersive } = useAppShell();
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +59,13 @@ export function AnteUpMemory() {
   const play = useArcadeSound({ gameSounds: true });
   const active = attempt?.status === "active";
   const settled = attempt !== null && attempt.status !== "active";
+
+  // Tells the shell an attempt is open -- hides the persistent nav chrome,
+  // same as every other live-money screen. Not narrowed to `active`: the
+  // settled result is still this screen, not the picker.
+  useEffect(() => {
+    setImmersive(Boolean(attempt));
+  }, [attempt, setImmersive]);
 
   // Same guard duel-shell.tsx (and ante-up-sudoku.tsx) keep: true while the
   // player's own action is in flight, so nothing else can paint over it.
@@ -65,7 +76,7 @@ export function AnteUpMemory() {
   const applyResponse = useCallback((data: Partial<AnteUpMemoryResponse>) => {
     if (data.profile) setProfile(data.profile);
     if (data.attempt !== undefined) setAttempt(data.attempt ?? null);
-  }, []);
+  }, [setProfile]);
 
   /** The initial read: restores a live attempt after a refresh. */
   const refresh = useCallback(async () => {

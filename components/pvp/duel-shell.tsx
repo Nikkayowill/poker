@@ -125,7 +125,7 @@ export function DuelShell<TSnapshot>({
   // phase), it just writes that into the shared setter instead of a local
   // copy, which is also what makes a stake won/lost here show up in the
   // lobby's own Gold balance without a separate refetch.
-  const { profile, setProfile } = useAppShell();
+  const { profile, setProfile, setImmersive } = useAppShell();
   const [stake, setStake] = useState<number>(MIN_DUEL_STAKE);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -142,6 +142,14 @@ export function DuelShell<TSnapshot>({
    */
   const [challengeTarget, setChallengeTarget] = useState<string | null>(null);
   const [challengeName, setChallengeName] = useState<string | null>(null);
+
+  // Tells the shell a match is live -- hides the persistent nav chrome the
+  // same way poker-app.tsx does for a hand in progress. Deliberately not
+  // narrowed to an in-progress status: the settled/result card is still this
+  // screen, not the lobby, and its own FloorBackLink is the way out.
+  useEffect(() => {
+    setImmersive(Boolean(match));
+  }, [match, setImmersive]);
 
   /**
    * Whether a poll is allowed to overwrite what is on screen.

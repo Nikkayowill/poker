@@ -91,20 +91,20 @@ const SELECT_RING = 0xffe98a;
  * violet side of the palette so the three animals span it.
  */
 const ANIMAL: Record<MintNodeType, { body: number; shade: number }> = {
-  hen: { body: 0xe4d9c4, shade: 0x8f8676 },
-  pig: { body: 0xbb9098, shade: 0x704d57 },
-  cattle: { body: 0xbfae9c, shade: 0x6a5f54 },
+  hen: { body: 0xf4efe4, shade: 0x9c917c },
+  pig: { body: 0xd9a3ac, shade: 0x855762 },
+  cattle: { body: 0xdccfba, shade: 0x776a5c },
 };
 
 /** Set back per species, since the three silhouettes are not the same size. */
-const ANIMAL_SCALE: Record<MintNodeType, number> = { hen: 0.8, pig: 0.7, cattle: 0.68 };
+const ANIMAL_SCALE: Record<MintNodeType, number> = { hen: 0.86, pig: 0.76, cattle: 0.74 };
 
-const BEAK_GOLD = 0xf2a63c;
-const COMB_RED = 0xc23a34;
+const BEAK_GOLD = 0xffb43d;
+const COMB_RED = 0xdc3f36;
 const EYE_DARK = 0x1a1420;
 const HORN_CHALK = 0xe8e0d2;
 const OUTLINE = 0x18110f;
-const COW_PATCH = 0x584a3f;
+const COW_PATCH = 0x4a3d33;
 
 /**
  * Slab thickness under each plot's top face, straight from the homestead
@@ -641,7 +641,7 @@ export class MintScene extends Phaser.Scene {
 
     g.fillStyle(skin.body, 1);
     g.fillEllipse(0, -19, 42, 28);
-    g.lineStyle(1.6, OUTLINE, 0.55);
+    g.lineStyle(1.8, OUTLINE, 0.8);
     g.strokeEllipseShape(new Phaser.Geom.Ellipse(0, -19, 42, 28));
 
     // Wing, and the shaded underside.
@@ -653,7 +653,7 @@ export class MintScene extends Phaser.Scene {
     // Tail, behind the body's silhouette but drawn after so it stays crisp.
     g.fillStyle(skin.shade, 1);
     g.fillTriangle(-19, -22, -35, -15, -19, -9);
-    g.lineStyle(1.4, OUTLINE, 0.5);
+    g.lineStyle(1.6, OUTLINE, 0.8);
     g.beginPath();
     g.moveTo(-19, -22);
     g.lineTo(-35, -15);
@@ -662,7 +662,7 @@ export class MintScene extends Phaser.Scene {
 
     g.fillStyle(skin.body, 1);
     g.fillCircle(17, -32, 10.5);
-    g.lineStyle(1.6, OUTLINE, 0.5);
+    g.lineStyle(1.8, OUTLINE, 0.8);
     g.strokeCircleShape(new Phaser.Geom.Circle(17, -32, 10.5));
 
     // Comb: three bumps, which is what stops it reading as a horn.
@@ -699,7 +699,7 @@ export class MintScene extends Phaser.Scene {
 
     g.fillStyle(skin.body, 1);
     g.fillEllipse(-2, -26, 54, 32);
-    g.lineStyle(1.8, OUTLINE, 0.5);
+    g.lineStyle(2, OUTLINE, 0.8);
     g.strokeEllipseShape(new Phaser.Geom.Ellipse(-2, -26, 54, 32));
     g.fillStyle(skin.shade, 0.55);
     g.fillEllipse(-6, -19, 34, 15);
@@ -718,13 +718,13 @@ export class MintScene extends Phaser.Scene {
 
     g.fillStyle(skin.body, 1);
     g.fillCircle(24, -33, 13.5);
-    g.lineStyle(1.8, OUTLINE, 0.5);
+    g.lineStyle(2, OUTLINE, 0.8);
     g.strokeCircleShape(new Phaser.Geom.Circle(24, -33, 13.5));
 
     // Snout disc plus nostrils.
     g.fillStyle(skin.shade, 1);
     g.fillEllipse(34, -31, 14, 11);
-    g.lineStyle(1.4, OUTLINE, 0.55);
+    g.lineStyle(1.6, OUTLINE, 0.8);
     g.strokeEllipseShape(new Phaser.Geom.Ellipse(34, -31, 14, 11));
     g.fillStyle(EYE_DARK, 0.85);
     g.fillEllipse(32, -31, 2.6, 3.4);
@@ -762,7 +762,7 @@ export class MintScene extends Phaser.Scene {
 
     g.fillStyle(skin.body, 1);
     g.fillRoundedRect(-28, -41, 56, 29, 10);
-    g.lineStyle(1.8, OUTLINE, 0.5);
+    g.lineStyle(2, OUTLINE, 0.8);
     g.strokeRoundedRect(-28, -41, 56, 29, 10);
 
     // Patches. Kept inside the body's rounded rect so nothing hangs off it.
@@ -781,7 +781,7 @@ export class MintScene extends Phaser.Scene {
 
     g.fillStyle(skin.body, 1);
     g.fillRoundedRect(21, -54, 23, 22, 8);
-    g.lineStyle(1.8, OUTLINE, 0.5);
+    g.lineStyle(2, OUTLINE, 0.8);
     g.strokeRoundedRect(21, -54, 23, 22, 8);
 
     // Horns, short and swept, attached at the skull.

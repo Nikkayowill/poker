@@ -5,24 +5,49 @@ import {
   MARK_UNKNOWN,
   NONOGRAM_DIFFICULTIES,
   NONOGRAM_MAX_CELLS,
-  generateNonogram,
+  NONOGRAM_UNDO_DEPTH,
+  hintNonogramCell,
   isNoGuessNonogram,
   isNonogramDifficulty,
   markNonogramCell,
+  markNonogramCells,
   nonogramClues,
   nonogramConfig,
   nonogramElapsedMs,
+  nonogramHintProblem,
   nonogramMarkProblem,
+  nonogramUndoProblem,
+  nonogramClueProgress,
   nonogramView,
   resignNonogramRound,
+  satisfiedNonogramClues,
   solveNonogram,
   solveNonogramLine,
   startNonogramRound,
+  undoNonogram,
+  type NonogramDeal,
   type NonogramDifficulty,
   type NonogramRound,
+  type NonogramRoundOptions,
 } from "./nonogram";
+import { dealNonogram } from "./nonogram-deal";
 
 const NOW = new Date("2026-08-31T12:00:00.000Z");
+
+/** A dealt round at the given rung, so every test does not restate the deal step. */
+function deal(
+  difficulty: NonogramDifficulty,
+  seed: number,
+  options?: NonogramRoundOptions,
+): NonogramRound {
+  return startNonogramRound(difficulty, seed, dealNonogram(seed, difficulty), options);
+}
+
+/** A round on a board written out here, for tests that need to know where the runs are. */
+function handmade(rows: readonly string[], options?: NonogramRoundOptions): NonogramRound {
+  const made: NonogramDeal = { solution: rows.join(""), title: "Test" };
+  return { ...startNonogramRound("easy", 1, made, options), size: rows.length };
+}
 
 /** Line-solver cell codes, restated here so the tests read as the solver does. */
 const UNKNOWN = 0;
@@ -111,29 +136,38 @@ describe("solveNonogram", () => {
   });
 });
 
-describe("generation", () => {
+describe("dealing", () => {
   it.each(NONOGRAM_DIFFICULTIES.map((entry) => entry.id))(
     "%s deals a board line logic alone can finish",
     (difficulty) => {
       const { size } = nonogramConfig(difficulty);
       for (let seed = 0; seed < 12; seed += 1) {
-        const grid = generateNonogram(seed * 7919 + 13, difficulty);
-        expect(grid).toHaveLength(size * size);
-        expect(isNoGuessNonogram(grid, size)).toBe(true);
+        const dealt = dealNonogram(seed * 7919 + 13, difficulty);
+        expect(dealt.solution).toHaveLength(size * size);
+        expect(isNoGuessNonogram(dealt.solution, size)).toBe(true);
       }
     },
   );
 
   it("is reproducible from its seed", () => {
-    expect(generateNonogram(4242, "medium")).toBe(generateNonogram(4242, "medium"));
-    expect(generateNonogram(4242, "medium")).not.toBe(generateNonogram(4243, "medium"));
+    expect(dealNonogram(4242, "medium")).toEqual(dealNonogram(4242, "medium"));
   });
 
   it("never deals a blank or completely filled picture", () => {
     for (const entry of NONOGRAM_DIFFICULTIES) {
-      const grid = generateNonogram(99, entry.id);
-      expect(grid).toContain("#");
-      expect(grid).toContain(".");
+      const dealt = dealNonogram(99, entry.id);
+      expect(dealt.solution).toContain("#");
+      expect(dealt.solution).toContain(".");
+    }
+  });
+
+  // The reveal is the reward, and a board with no name has nothing to reveal
+  // but the shape. The rungs a drawing exists for must always get one.
+  it("names the drawing on every rung the library covers", () => {
+    for (const difficulty of ["easy", "medium", "hard"] as const) {
+      for (let seed = 0; seed < 8; seed += 1) {
+        expect(dealNonogram(seed * 101 + 3, difficulty).title).toBeTruthy();
+      }
     }
   });
 
@@ -159,10 +193,11 @@ describe("difficulties", () => {
 });
 
 describe("playing a round", () => {
-  const round = () => startNonogramRound("easy", 2026);
+  const round = (options?: NonogramRoundOptions) => deal("easy", 2026, options);
 
   it("starts blank, with the clock unstarted", () => {
     const fresh = round();
+    expect(fresh.size).toBe(5);
     expect(fresh.marks).toBe(MARK_UNKNOWN.repeat(25));
     expect(fresh.status).toBe("active");
     expect(fresh.startedAt).toBeNull();
@@ -271,7 +306,7 @@ describe("playing a round", () => {
 
 describe("the view", () => {
   it("withholds the answer while the round is live and gives it up once it is over", () => {
-    const fresh = startNonogramRound("easy", 7);
+    const fresh = deal("easy", 7);
     const live = nonogramView(fresh);
     expect(live.solution).toBeNull();
     expect(JSON.stringify(live)).not.toContain(fresh.solution);
@@ -281,17 +316,234 @@ describe("the view", () => {
   });
 
   it("carries the clues, which are the puzzle rather than the answer", () => {
-    const fresh = startNonogramRound("easy", 7);
+    const fresh = deal("easy", 7);
     expect(nonogramView(fresh).clues).toEqual(nonogramClues(fresh.solution, 5));
   });
 
   it("counts squares down against squares to go", () => {
-    const fresh = startNonogramRound("easy", 7);
+    const fresh = deal("easy", 7);
     const view = nonogramView(fresh);
     expect(view.filled).toBe(0);
     expect(view.filledTotal).toBe([...fresh.solution].filter((cell) => cell === "#").length);
 
     const played = markNonogramCell(fresh, fresh.solution.indexOf("#"), "fill", NOW);
     expect(nonogramView(played).filled).toBe(1);
+  });
+});
+
+describe("strokes", () => {
+  // A row of three filled squares with an empty one either side, so a drag can
+  // run off the end of a run on purpose.
+  const rows = ["..#..", ".###.", "#####", ".###.", "..#.."];
+
+  it("puts a whole dragged run down in one call", () => {
+    const fresh = handmade(rows);
+    const { round, applied, aborted } = markNonogramCells(fresh, [10, 11, 12, 13, 14], "fill", NOW);
+    expect(applied).toBe(5);
+    expect(aborted).toBe(false);
+    expect(round.marks.slice(10, 15)).toBe(MARK_FILLED.repeat(5));
+    expect(round.mistakes).toBe(0);
+  });
+
+  // The reason a stroke exists rather than a loop of taps: a drag that runs
+  // past the end of a run is one wrong assertion, not one per square.
+  it("stops at the first wrong fill, so a bad drag costs one mistake", () => {
+    const fresh = handmade(rows);
+    const { round, aborted } = markNonogramCells(fresh, [5, 6, 7, 8, 9], "fill", NOW);
+    expect(aborted).toBe(true);
+    expect(round.mistakes).toBe(1);
+    expect(round.marks[5]).toBe(MARK_CROSSED);
+    // Everything past the mistake is untouched: the drag never got there.
+    expect(round.marks[8]).toBe(MARK_UNKNOWN);
+    expect(round.marks[9]).toBe(MARK_UNKNOWN);
+  });
+
+  it("skips squares the board refuses rather than failing the whole stroke", () => {
+    const fresh = handmade(rows);
+    const first = markNonogramCells(fresh, [11], "fill", NOW).round;
+    // 11 is already settled; the drag runs straight over it.
+    const { round, applied } = markNonogramCells(first, [11, 12, 13], "fill", NOW);
+    expect(applied).toBe(2);
+    expect(round.marks.slice(11, 14)).toBe(MARK_FILLED.repeat(3));
+  });
+
+  it("hands back the same round when nothing changed, so no version is burned", () => {
+    const fresh = handmade(rows);
+    const { round, applied } = markNonogramCells(fresh, [0, 1], "clear", NOW);
+    expect(applied).toBe(0);
+    expect(round).toBe(fresh);
+  });
+
+  it("counts as one undo step however many squares it covered", () => {
+    const fresh = handmade(rows);
+    const { round } = markNonogramCells(fresh, [0, 1, 3, 4], "cross", NOW);
+    expect(round.history).toHaveLength(1);
+    expect(undoNonogram(round).marks).toBe(fresh.marks);
+  });
+});
+
+describe("auto-cross", () => {
+  const rows = ["..#..", ".###.", "#####", ".###.", "..#.."];
+
+  it("crosses off the rest of a line once the player's fills satisfy its clue", () => {
+    const fresh = handmade(rows);
+    // Row 0's clue is [1] and its filled square is index 2.
+    const { round } = markNonogramCells(fresh, [2], "fill", NOW);
+    expect(round.marks.slice(0, 5)).toBe("xx#xx");
+  });
+
+  it("never crosses a line that is only partly down", () => {
+    const fresh = handmade(rows);
+    // Row 2's clue is [5]; one square of it proves nothing about the rest.
+    const { round } = markNonogramCells(fresh, [10], "fill", NOW);
+    expect(round.marks.slice(11, 15)).toBe(MARK_UNKNOWN.repeat(4));
+  });
+
+  it("stays out of the way when the round was dealt with it off", () => {
+    const fresh = handmade(rows, { autoCross: false });
+    const { round } = markNonogramCells(fresh, [2], "fill", NOW);
+    expect(round.marks.slice(0, 5)).toBe("??#??");
+  });
+
+  it("charges nothing for what it puts down", () => {
+    const fresh = handmade(rows);
+    const { round } = markNonogramCells(fresh, [2], "fill", NOW);
+    expect(round.mistakes).toBe(0);
+  });
+});
+
+describe("undo", () => {
+  const rows = ["..#..", ".###.", "#####", ".###.", "..#.."];
+
+  it("has nothing to take back on a fresh board", () => {
+    expect(nonogramUndoProblem(handmade(rows))).toBe("nothing-to-undo");
+  });
+
+  it("takes back one stroke at a time, newest first", () => {
+    let round = handmade(rows);
+    round = markNonogramCells(round, [0], "cross", NOW).round;
+    round = markNonogramCells(round, [1], "cross", NOW).round;
+
+    const once = undoNonogram(round);
+    expect(once.marks[1]).toBe(MARK_UNKNOWN);
+    expect(once.marks[0]).toBe(MARK_CROSSED);
+    expect(undoNonogram(once).marks[0]).toBe(MARK_UNKNOWN);
+  });
+
+  // Undoing banked work is never what the player meant, and the board has
+  // already proved the square. Same rule nonogramMarkProblem states.
+  it("leaves a square the board has proved filled alone", () => {
+    const fresh = handmade(rows);
+    const { round } = markNonogramCells(fresh, [10, 11], "fill", NOW);
+    const undone = undoNonogram(round);
+    expect(undone.marks[10]).toBe(MARK_FILLED);
+    expect(undone.marks[11]).toBe(MARK_FILLED);
+  });
+
+  // Being wrong happened. Refunding it would make the budget meaningless.
+  it("never refunds a mistake", () => {
+    const fresh = handmade(rows);
+    const { round } = markNonogramCells(fresh, [0], "fill", NOW);
+    expect(round.mistakes).toBe(1);
+    expect(undoNonogram(round).mistakes).toBe(1);
+  });
+
+  it("keeps a bounded history rather than the whole round", () => {
+    let round = handmade(["#....", ".....", ".....", ".....", "....."]);
+    for (let i = 0; i < NONOGRAM_UNDO_DEPTH + 8; i += 1) {
+      round = markNonogramCells(round, [1 + (i % 20)], i % 2 === 0 ? "cross" : "clear", NOW).round;
+    }
+    expect(round.history.length).toBeLessThanOrEqual(NONOGRAM_UNDO_DEPTH);
+  });
+
+  it("refuses once the round is over", () => {
+    expect(nonogramUndoProblem(resignNonogramRound(handmade(rows), NOW))).toBe("finished");
+  });
+});
+
+describe("hints", () => {
+  const rows = ["..#..", ".###.", "#####", ".###.", "..#.."];
+
+  it("fills in a square of the picture, not an empty one", () => {
+    const fresh = handmade(rows);
+    const hinted = hintNonogramCell(fresh, NOW);
+    const given = [...hinted.marks].findIndex(
+      (mark, index) => mark === MARK_FILLED && fresh.marks[index] !== MARK_FILLED,
+    );
+    expect(given).toBeGreaterThanOrEqual(0);
+    expect(fresh.solution[given]).toBe("#");
+  });
+
+  it("costs a mistake", () => {
+    const hinted = hintNonogramCell(handmade(rows), NOW);
+    expect(hinted.mistakes).toBe(1);
+    expect(hinted.hints).toBe(1);
+  });
+
+  // A help button that ends the game is a trap, not a feature.
+  it("refuses the last mistake in the budget", () => {
+    let round = handmade(rows);
+    // Two wrong fills on a three-mistake board leaves exactly one.
+    round = markNonogramCells(round, [0], "fill", NOW).round;
+    round = markNonogramCells(round, [1], "fill", NOW).round;
+    expect(round.mistakes).toBe(2);
+    expect(nonogramHintProblem(round)).toBe("budget");
+    expect(hintNonogramCell(round, NOW)).toBe(round);
+  });
+
+  it("can finish the board, and says so", () => {
+    let round = handmade(["#....", ".....", ".....", ".....", "....."]);
+    round = hintNonogramCell(round, NOW);
+    expect(round.status).toBe("cleared");
+  });
+
+  it("is one undo step, like any other stroke", () => {
+    const round = hintNonogramCell(handmade(rows), NOW);
+    expect(round.history).toHaveLength(1);
+  });
+
+  it("refuses once the round is over", () => {
+    expect(nonogramHintProblem(resignNonogramRound(handmade(rows), NOW))).toBe("finished");
+  });
+});
+
+describe("clue progress", () => {
+  it("strikes off a run that is closed on both sides and the right length", () => {
+    // x # # x ?  against a clue of [2]
+    expect(satisfiedNonogramClues(["x", "#", "#", "x", "?"], [2])).toEqual([true]);
+  });
+
+  it("leaves a run alone while it could still grow", () => {
+    // A run against an unknown might be longer than it looks.
+    expect(satisfiedNonogramClues(["x", "#", "#", "?", "?"], [2])).toEqual([false]);
+  });
+
+  it("works in from both ends and stops at what it cannot prove", () => {
+    // The first and last runs are pinned; the middle one is floating.
+    const line = ["#", "x", "?", "#", "x", "#", "#"];
+    expect(satisfiedNonogramClues(line, [1, 1, 2])).toEqual([true, false, true]);
+  });
+
+  it("never strikes off a run of the wrong length", () => {
+    expect(satisfiedNonogramClues(["#", "#", "#", "x", "x"], [2])).toEqual([false]);
+  });
+
+  it("gives a blank line nothing to strike off", () => {
+    expect(satisfiedNonogramClues(["x", "x", "x"], [])).toEqual([]);
+  });
+
+  it("reads a whole board's worth, rows and columns", () => {
+    const solution = "..#...###.#####.###...#..";
+    const clues = nonogramClues(solution, 5);
+    const done = nonogramClueProgress("?".repeat(25), 5, clues);
+    expect(done.rows).toHaveLength(5);
+    expect(done.cols).toHaveLength(5);
+    expect(done.rows.flat().some(Boolean)).toBe(false);
+
+    // The finished picture accounts for every number in every line.
+    const solved = [...solution].map((cell) => (cell === "#" ? MARK_FILLED : MARK_CROSSED)).join("");
+    const all = nonogramClueProgress(solved, 5, clues);
+    expect(all.rows.flat().every(Boolean)).toBe(true);
+    expect(all.cols.flat().every(Boolean)).toBe(true);
   });
 });

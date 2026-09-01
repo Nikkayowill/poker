@@ -265,6 +265,25 @@ export async function startWordStackPuzzle(
   const overCeiling = anteUpWagerCeilingProblem(WORD_STACK_GAME, null, wagerInput);
   if (overCeiling) throw new WordStackRequestError(overCeiling, 400);
 
+  // The answer is the canonical one for this day: pickDaily only actually
+  // runs on that day's first-ever ask (today's first opener, or an
+  // archive's first visitor) and is cached forever after. See
+  // getOrCreateCanonicalAnswer's own doc comment for why recomputing
+  // pickDaily fresh for an old day is unsafe once the pool has grown.
+  //
+  // Deliberately before the debit. This reads and writes no money and needs
+  // nothing the debit produces, but it CAN throw (it talks to the database),
+  // and it used to sit between the debit and the try/catch below that refunds
+  // -- so a throw here charged the player and handed back no board. Rule 1
+  // still holds with it up here: the stake leaves before the round it pays
+  // for exists.
+  const answer = await getOrCreateCanonicalAnswer(
+    WORD_STACK_GAME,
+    targetDay,
+    () => pickDaily(WORD_STACK_ANSWERS, targetDay, WORD_STACK_GAME),
+    (round) => (round as StoredWordStackRound).answer,
+  );
+
   // Rule 1: the wager leaves first. Null is "cannot afford", not an error;
   // spendGoldByProfile is the authority.
   const debited = wagerInput > 0 ? await spendGoldByProfile(profile.id, wagerInput) : profile;
@@ -272,17 +291,6 @@ export async function startWordStackPuzzle(
     throw new WordStackRequestError(`You need ${wagerInput.toLocaleString()} Gold to wager this.`, 400);
   }
 
-  // The answer is the canonical one for this day: pickDaily only actually
-  // runs on that day's first-ever ask (today's first opener, or an
-  // archive's first visitor) and is cached forever after. See
-  // getOrCreateCanonicalAnswer's own doc comment for why recomputing
-  // pickDaily fresh for an old day is unsafe once the pool has grown.
-  const answer = await getOrCreateCanonicalAnswer(
-    WORD_STACK_GAME,
-    targetDay,
-    () => pickDaily(WORD_STACK_ANSWERS, targetDay, WORD_STACK_GAME),
-    (round) => (round as StoredWordStackRound).answer,
-  );
   const round: StoredWordStackRound = {
     ...startWordStackRound(answer),
     wager: wagerInput,

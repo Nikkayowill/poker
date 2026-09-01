@@ -76,6 +76,43 @@ asserts the gate runs before `readOrCreateSessionToken` (or probing it hands the
 cookie). Verified live: anonymous 404s on every surface including the old public URLs, admin session
 gets 200 and the real service runs.
 
+### Nonogram rebuilt to compete with the picross apps (2026-09-01)
+Kayo: make it compete with "the main nonogram games out there" and include everything that makes it
+enjoyable. The v1 shipped the day before was a correct nonogram nobody would choose to play: **boards
+were 58% uniform random noise**, so solving one revealed static rather than a picture -- the reveal is
+the entire reward of the genre and it was missing -- and **every single square was its own HTTP round
+trip**, which on a 625-square master board is 625 sequential requests inside a 40-minute clock. Both
+are fixed. Boards are now **drawings**: 65 hand-authored pictures at 5x5/10x10/15x15 (cat, anchor,
+crown, penguin, guitar...), each one **verified line-solvable by `nonogram-pictures.test.ts` upright
+AND mirrored** -- that test is the gate that lets art ship, since ambiguity in a nonogram is invisible
+to the eye and this stakes real Gold. Mirroring is the only transform used (a rotated cat is not a
+cat, and the reveal is the point). 20x20/25x25 are past what hand art can carry, so they are **grown**:
+a mirror-symmetric half-grid smoothed by a majority rule into blobs, then repaired to solvable by the
+same strictly-increasing-fill argument the old generator used. The library is `server-only` behind the
+new `nonogram-deal.ts` and the engine takes a *dealt* board rather than importing one -- the
+arrangement `connections.ts` has with `connections-puzzles.ts` -- because `nonogram.ts` is
+client-imported and the library is the answer key; verified absent from `.next/static` after a build,
+not assumed from tree-shaking. Gameplay: **strokes** (`markNonogramCells`, one request per drag,
+axis-locked client-side) that **stop at the first wrong fill**, so a drag past the end of a run costs
+one mistake rather than one per square; **auto-cross** (chosen at deal, stored on the round, sound
+because a mark can only ever be a *correct* fill so marks matching a clue mean that line is finished);
+**undo** (bounded 20 strokes, never unfills a square the board has proved, never refunds a mistake);
+**hints** that cost a mistake and refuse to spend the last one (a free hint on a no-guess board is a
+free square, and enough of them is a board that pays without being played). Plus per-clue-number
+strike-off (`nonogramClueProgress`, in the engine so it is testable and cannot drift from the
+component), a row/column crosshair, zoom, a Pan tool (squares are `touch-action: none` so a finger
+paints; Pan is what hands the drag back to the scroller), full keyboard play, a progress bar, a
+localStorage personal best, and the finished picture revealed clean with its name. Real CSS bug found
+and fixed while shooting screenshots: **`--ng-clue-step` was declared on `.ng-match`, so its
+`calc(var(--ng-cell) * .66)` resolved against that element's 24px fallback and never against the
+per-rung `--ng-cell` set inline on `.ng-grid`** -- descendants inherited the already-resolved value --
+which silently clipped the top number off every two-deep column clue; see `app/styles/CLAUDE.md`.
+**Still open: the tiers were not retuned and should be.** They were set against random-noise boards
+that almost nobody finished; drawings with real runs in them plus drag-painting move the win rate up
+by an unmeasured amount, and expert/master pay 3.2x and 5x. `ANTE_UP_NONOGRAM_TIERS`' own header now
+says so. Solve-rate data from real attempts is the honest input; `ante-up-stakes.ts`'s ceilings bound
+the damage until then.
+
 ### The Mint became the StackChips Homestead: crops, feed, muck, three times of day (2026-08-31)
 Kayo's expansion spec (his own, written in the homestead branch's register) plus the rename:
 `sovereign-mint` -> `homestead`, `mint_plots` -> `homestead_plots`,

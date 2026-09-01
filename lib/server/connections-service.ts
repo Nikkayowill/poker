@@ -229,13 +229,6 @@ export async function startConnectionsPuzzle(
   const overCeiling = anteUpWagerCeilingProblem(CONNECTIONS_GAME, null, wagerInput);
   if (overCeiling) throw new ConnectionsRequestError(overCeiling, 400);
 
-  // Rule 1: the wager leaves first. Null is "cannot afford", not an error;
-  // spendGoldByProfile is the authority.
-  const debited = wagerInput > 0 ? await spendGoldByProfile(profile.id, wagerInput) : profile;
-  if (!debited) {
-    throw new ConnectionsRequestError(`You need ${wagerInput.toLocaleString()} Gold to wager this.`, 400);
-  }
-
   // The puzzle is the canonical one for this day: pickDaily only actually
   // runs on that day's first-ever ask and is cached forever after -- see
   // getOrCreateCanonicalAnswer's own doc comment for why recomputing
@@ -244,12 +237,27 @@ export async function startConnectionsPuzzle(
   // the shuffle is not, and node:crypto's randomInt is used rather than
   // Math.random for the same reason the deck uses it -- this is the only
   // randomness the server owns here.
+  //
+  // Deliberately before the debit. This reads and writes no money and needs
+  // nothing the debit produces, but it CAN throw (it talks to the database),
+  // and it used to sit between the debit and the try/catch below that refunds
+  // -- so a throw here charged the player and handed back no board. Rule 1
+  // still holds with it up here: the stake leaves before the round it pays
+  // for exists.
   const puzzle = await getOrCreateCanonicalAnswer(
     CONNECTIONS_GAME,
     targetDay,
     () => pickDaily(CONNECTIONS_PUZZLES, targetDay, CONNECTIONS_GAME),
     (round) => ({ groups: (round as StoredConnectionsRound).groups }),
   );
+
+  // Rule 1: the wager leaves first. Null is "cannot afford", not an error;
+  // spendGoldByProfile is the authority.
+  const debited = wagerInput > 0 ? await spendGoldByProfile(profile.id, wagerInput) : profile;
+  if (!debited) {
+    throw new ConnectionsRequestError(`You need ${wagerInput.toLocaleString()} Gold to wager this.`, 400);
+  }
+
   const round: StoredConnectionsRound = {
     ...startConnectionsRound(puzzle, randomInt),
     wager: wagerInput,

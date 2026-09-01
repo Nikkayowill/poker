@@ -63,9 +63,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Base (portrait/desktop): field, then dock, then panel. .hs-side is
-   dissolved so the error line and panel keep their own flow; the landscape
-   block at the END of this file is what gives it a box. */
+/* Base (landscape, taller than the breakpoint below, or desktop): field, then
+   dock, then panel. The component gates out portrait entirely now (see
+   homestead-farm.tsx's useLandscape check) -- this stack of rules is never
+   actually seen turned the other way, but it still matters: the media query
+   below only fires under 520px of height, so a landscape tablet or a desktop
+   window renders this exact layout. .hs-side is dissolved so the error line
+   and panel keep their own flow; the landscape block at the END of this file
+   is what gives it a box. */
 .hs-main { display: flex; flex-direction: column; gap: 12px; }
 .hs-side { display: contents; }
 
@@ -970,15 +975,41 @@
   .hs-controls {
     flex: none;
     width: auto;
-    justify-content: center;
+    /* On a short landscape screen the toolbelt (5 rows) plus a held seed's
+       3-row strip can outgrow the available height even after the fix above.
+       `.hs-shell` clips overflow for the whole page, so without its own
+       scroll this column would silently clip Hen Coop off the bottom with no
+       way to reach it -- min-height: 0 lets a flex child shrink below its
+       content size at all, which is what makes the overflow-y below able to
+       kick in instead of the column refusing to shrink and forcing the shell
+       to clip it.
+       Plain `center` is the wrong keyword once this scrolls: a centered flex
+       container with more content than room clips evenly off BOTH ends and
+       starts scrolled to the middle, so Look/Plant at the top become just as
+       unreachable as Hen Coop was at the bottom -- scrollTop cannot go
+       negative to recover them. `safe center` keeps the centering when
+       everything fits (every landscape phone this media query actually
+       targets) and falls back to start-alignment the moment it doesn't, so
+       the scrollable case always begins at the first tool and every row
+       stays reachable by scrolling one direction. */
+    justify-content: safe center;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   /* The dock stands up. Same five targets, same sizes, now down the side
-     where a thumb wrapped around the phone can still reach them. */
+     where a thumb wrapped around the phone can still reach them.
+     `height: 100%` here used to claim the whole of .hs-controls for the
+     toolbelt alone, so the seed strip below it (rendered only while Plant is
+     held) had nothing left and was flexed down to a 2px sliver -- present in
+     the DOM, invisible on screen, which made Plant impossible to use in
+     landscape with no error and no empty state to explain why. The toolbelt
+     now sizes to its own content and .hs-controls' `justify-content: center`
+     (base rule) centers the toolbelt+seeds group as a whole instead. */
   .hs-toolbelt {
+    flex: none;
     flex-direction: column;
     width: auto;
-    height: 100%;
     justify-content: center;
   }
   .hs-tool { flex: none; min-height: 46px; width: 62px; }
@@ -987,6 +1018,7 @@
   /* Seeds go vertical alongside the dock rather than scrolling horizontally
      under a field that no longer has anything under it. */
   .hs-seeds {
+    flex: none;
     flex-direction: column;
     width: auto;
     max-height: 100%;

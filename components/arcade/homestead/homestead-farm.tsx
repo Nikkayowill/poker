@@ -6,7 +6,9 @@ import { Coins, HelpCircle, Store, Wheat } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
+import { useLandscape } from "@/components/use-landscape";
 import { tapSound } from "@/lib/audio/ui-sounds";
 import {
   HOMESTEAD_CATALOGUE,
@@ -159,6 +161,12 @@ export function HomesteadFarm() {
   const [celebrate, setCelebrate] = useState<{ plotIndex: number; nonce: number } | null>(null);
   const [lastCollect, setLastCollect] = useState<{ text: string; nonce: number } | null>(null);
 
+  // Landscape-only, same posture and same hook as the poker table (see
+  // poker-table.tsx) rather than a second orientation check invented here:
+  // a 4-wide grid plus a 5-tool dock plus a seed strip is exactly the kind of
+  // layout that only barely fits sideways (see the landscape media query
+  // below) and does not fit at all turned the other way.
+  const landscape = useLandscape();
   const play = useArcadeSound({ gameSounds: true });
   const sending = useRef(false);
   const mounted = useRef(true);
@@ -427,6 +435,25 @@ export function HomesteadFarm() {
   // was spent put a full gold bar directly above the words "0 of 5,000 Gold
   // left today", which is the opposite of what it meant. It drains now.
   const exchangeLeft = exchange.ceiling > 0 ? exchange.remaining / exchange.ceiling : 0;
+
+  // After every hook above, same position poker-table.tsx gates its own
+  // render at. A full replacement, not an overlay -- the farm itself never
+  // mounts in portrait, so there is nothing underneath to half-render or to
+  // trap a tap on. `useLandscape`'s server snapshot defaults to landscape, so
+  // this never flashes on desktop and only ever shows up on a real portrait
+  // phone once the client has actually checked.
+  if (!landscape) {
+    return (
+      <main className="game-shell orientation-gate-shell">
+        <div className="orientation-gate" role="status" aria-live="polite">
+          <span className="orientation-gate-mark"><StackChipsMark size={44} /></span>
+          <h1>Turn your phone sideways</h1>
+          <p>The Homestead is available in landscape mode.</p>
+          <small>Rotate your device to keep farming.</small>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="duel-shell ante-shell hs-shell">

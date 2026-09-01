@@ -465,6 +465,10 @@ export function AdminDashboard() {
           <p className="admin-subtitle">Player support, moderation, and table health.</p>
         </div>
         <div className="admin-header-actions">
+          {/* The only way into the Homestead while it is staff-only. The
+              route 404s without the admin session this page already holds,
+              so the link works from here and nowhere else. */}
+          <Link className="admin-back" href="/admin/homestead">Homestead (unreleased) →</Link>
           <Link className="admin-back" href="/">← Back to the table</Link>
           <button
             type="button"

@@ -40,9 +40,28 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### The Homestead is staff-only, and lives under /admin because of a cookie path (2026-09-01)
+Kayo: finished but not for the public yet, reachable only through the admin portal. New
+`ArcadeGameStatus` value **`staff-only`** -- a fourth state, not a flavour of the other three: built,
+mounted, moving real Gold, just not offered. `splitArcadeFloor` shows only `live` rows so it never
+reaches the floor, and per `lib/arcade/retired.ts`'s lesson the routes carry their own gate rather
+than relying on a hidden catalog row. **The load-bearing discovery, found by curl and not by
+reasoning:** `ADMIN_SESSION_COOKIE` is scoped `path=/api/admin`, so mounted at `/api/homestead` the
+gate could not see the cookie that authorises it and 404'd staff as well as strangers. Widening the
+cookie to `/` was rejected (the narrow path is what keeps an admin credential off ordinary traffic,
+the same reasoning that moved admin auth off a request header) -- the game moved instead:
+`/api/admin/homestead[/actions]`, page at `/admin/homestead`, catalog href to match. The PAGE is
+deliberately ungated and cannot be gated, for the same path reason; it matches how `/admin` already
+works -- renders for anyone, API behind it refuses, stranger gets a locked state. Everything answers
+**404, never 403**: a 403 confirms the feature exists. `staff-gate.test.ts` walks
+`app/api/admin/homestead` on the filesystem so a route added tomorrow cannot skip the gate, and
+asserts the gate runs before `readOrCreateSessionToken` (or probing it hands the prober a session
+cookie). Verified live: anonymous 404s on every surface including the old public URLs, admin session
+gets 200 and the real service runs.
+
 ### The Mint became the StackChips Homestead: crops, feed, muck, three times of day (2026-08-31)
 Kayo's expansion spec (his own, written in the homestead branch's register) plus the rename:
-`sovereign-mint` -> `homestead`, `/games/mint` -> `/games/homestead`, `mint_plots` -> `homestead_plots`,
+`sovereign-mint` -> `homestead`, `mint_plots` -> `homestead_plots`,
 node types `pulse|core|matrix` -> `hen|pig|cattle`. Free to do because the migration was still
 unapplied; after it lands this is a data migration, not a find-and-replace. Five plot states now
 (`locked|empty|working|hungry|ready|mucked`) across two tracks with **separate caps** -- 3 pens and 3

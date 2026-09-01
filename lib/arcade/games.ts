@@ -100,7 +100,20 @@ export type ArcadeGameKind = "casino" | "puzzle" | "duel" | "wager";
  * human decided to stop offering it" — collapsing them would lose that
  * distinction.
  */
-export type ArcadeGameStatus = "coming-soon" | "live" | "retired";
+/**
+ * `staff-only` is a fourth state and not a flavour of the other three: the
+ * game is finished, mounted, and moving real Gold, but is not being offered to
+ * the public yet. It is not `coming-soon` (that means "not built"), and it is
+ * not `retired` (that means "was offered, then stopped"). Collapsing it into
+ * either would lose exactly the distinction this type exists to keep.
+ *
+ * Hiding the row is only half of it. `splitArcadeFloor` shows `live` rows and
+ * nothing else, so a staff-only game never reaches the floor -- but a catalog
+ * row is not a lock, so the routes carry their own gate. See
+ * lib/server/staff-gate.ts, and lib/arcade/retired.ts for the same lesson
+ * learned the first time.
+ */
+export type ArcadeGameStatus = "coming-soon" | "live" | "retired" | "staff-only";
 
 export interface ArcadeGame {
   id: ArcadeGameId;
@@ -207,8 +220,10 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "Raise crops and livestock, sell what they make",
     kind: "wager",
     entryCost: 0,
-    status: "live",
-    href: "/games/homestead",
+    // Finished and playable, but reachable only from the admin dashboard
+    // until it is opened up. See lib/server/staff-gate.ts.
+    status: "staff-only",
+    href: "/admin/homestead",
   },
   // ---- Duels: skill/social games staked against another player, not the
   // house. Winner takes the pot both players anted; see lib/pvp/. Priced at

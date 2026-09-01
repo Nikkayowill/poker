@@ -106,6 +106,8 @@ export function HomesteadFarm() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [feed, setFeed] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  /** 404 from the API means no admin session; see lib/server/staff-gate.ts. */
+  const [locked, setLocked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
@@ -129,8 +131,12 @@ export function HomesteadFarm() {
   const refresh = useCallback(async () => {
     if (sending.current) return;
     try {
-      const response = await fetch("/api/homestead", { cache: "no-store" });
+      const response = await fetch("/api/admin/homestead", { cache: "no-store" });
       if (response.status === 429) return;
+      if (response.status === 404) {
+        if (mounted.current) setLocked(true);
+        return;
+      }
       const data = (await response.json()) as Partial<HomesteadResponse>;
       if (!mounted.current || sending.current) return;
       if (response.ok) applyResponse(data);
@@ -171,7 +177,7 @@ export function HomesteadFarm() {
       setBusy(true);
       setError(null);
       try {
-        const response = await fetch("/api/homestead/actions", {
+        const response = await fetch("/api/admin/homestead/actions", {
           method: "POST",
           cache: "no-store",
           headers: { "Content-Type": "application/json" },
@@ -289,6 +295,21 @@ export function HomesteadFarm() {
       </div>
     );
   };
+
+  if (locked) {
+    return (
+      <main className="duel-shell ante-shell hs-shell">
+        <section className="hs-panel hs-locked">
+          <h2>Admin session required</h2>
+          <p>
+            The Homestead is finished but not open to players yet. Unlock the admin console first,
+            then come back.
+          </p>
+          <a className="hs-cta" href="/admin">Go to the admin console</a>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="duel-shell ante-shell hs-shell">

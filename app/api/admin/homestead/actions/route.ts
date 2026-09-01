@@ -17,6 +17,7 @@ import {
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
+import { isStaffRequest, staffOnlyNotFound } from "@/lib/server/staff-gate";
 
 export const runtime = "nodejs";
 
@@ -49,6 +50,12 @@ const bodySchema = z.discriminatedUnion("action", [
 ]);
 
 export async function POST(request: NextRequest) {
+  // Not offered publicly yet: staff session or nothing. This is the route
+  // that moves Gold, so it is the one that actually matters -- and it is
+  // checked before the session cookie is minted, so a probe cannot even earn
+  // an identity from it.
+  if (!isStaffRequest(request)) return staffOnlyNotFound();
+
   // Every action here moves Gold at most once and the guards make replays
   // idempotent; 60/min covers a fast Hen Coop restocking ritual plus feeding
   // with a wide margin.

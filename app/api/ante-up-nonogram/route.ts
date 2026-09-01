@@ -16,6 +16,8 @@ export const runtime = "nodejs";
 const startSchema = z.object({
   difficulty: z.string().min(1).max(20),
   wager: z.number().int().min(0),
+  /** Off is the paper experience: cross your own finished lines. Defaults on. */
+  autoCross: z.boolean().optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -56,7 +58,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await openAnteUpNonogram(token, parsed.data.difficulty, parsed.data.wager);
+    const result = await openAnteUpNonogram(token, parsed.data.difficulty, parsed.data.wager, {
+      autoCross: parsed.data.autoCross,
+    });
     return withRequestSessionCookie(request, NextResponse.json(result), token);
   } catch (error) {
     return withRequestSessionCookie(request, toAnteUpNonogramErrorResponse(error), token);

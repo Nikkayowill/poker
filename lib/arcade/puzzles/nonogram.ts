@@ -5,29 +5,47 @@
  * filled cells in each line, in order. The player reconstructs the picture
  * from those numbers alone.
  *
- * Two things here are load-bearing and easy to undo by accident:
+ * Three things here are load-bearing and easy to undo by accident:
  *
  * 1. **Every puzzle is solvable by line logic alone.** `solveNonogram` is the
  *    same reasoning a person does (take one line at a time, keep the cells
  *    that every legal arrangement of that line agrees on, repeat), and
- *    `generateNonogram` does not hand back a grid until that reasoning
+ *    ./nonogram-deal.ts does not hand back a board until that reasoning
  *    finishes it. A nonogram that needs a guess is a coin flip, and
  *    lib/arcade/ante-up-nonogram.ts stakes real Gold on this. Same guarantee,
  *    same reason, as `isNoGuessBoard` in ./minesweeper.ts.
  *
  * 2. **The solution never crosses the wire while a round is live.**
  *    `nonogramView` is the only shape that may, and it carries the clues and
- *    the player's own marks, never the answer. Same rule as ./minesweeper.ts's
- *    mine list and lib/pvp/word-race-words.ts being server-only: a client
- *    holding the answer wins every time.
+ *    the player's own marks, never the answer or the drawing's name. Same rule
+ *    as ./minesweeper.ts's mine list and lib/pvp/word-race-words.ts being
+ *    server-only: a client holding the answer wins every time. This module is
+ *    client-imported, which is why the picture library lives behind
+ *    `server-only` in ./nonogram-pictures.ts and a round is *dealt* one rather
+ *    than importing it -- the arrangement ./connections.ts has with
+ *    ./connections-puzzles.ts.
  *
- * Only a *fill* is checked against the solution. A cross is the player's own
- * notation for "I have worked out this one is empty" and is never scored --
- * marking one wrong costs nothing but the confusion it causes you, exactly as
- * in every paper nonogram. That is why the mistake budget can be small.
+ * 3. **Only a *fill* is checked against the solution.** A cross is the
+ *    player's own notation for "I have worked out this one is empty" and is
+ *    never scored -- marking one wrong costs nothing but the confusion it
+ *    causes you, exactly as in every paper nonogram. That is why the mistake
+ *    budget can be small.
+ *
+ * Everything past the bare rules is here because a nonogram nobody wants to
+ * play is not a cheaper nonogram, it is a worse one:
+ *
+ *   - **Strokes.** `markNonogramCells` puts a whole dragged line down in one
+ *     call. Every good picross is played by dragging, and a 25x25 board is 625
+ *     squares -- one round trip each would be a worse game and a slower one.
+ *     A stroke stops at its first wrong fill, so a bad drag costs one mistake
+ *     rather than the whole budget.
+ *   - **Auto-cross.** Once the player's own fills satisfy a line's clue, the
+ *     rest of that line is provably empty and gets crossed for them. Provably
+ *     from the marks and the clues, never from the answer: fills are only ever
+ *     correct (a wrong one becomes a cross), so marks matching the clue means
+ *     the line is finished.
+ *   - **Undo**, one stroke at a time, and **hints**, which cost a mistake.
  */
-
-import { mulberry32 } from "@/lib/seeded-random";
 
 export type NonogramDifficulty = "easy" | "medium" | "hard" | "expert" | "master";
 
@@ -304,94 +322,61 @@ export function isNoGuessNonogram(solution: string, size: number): boolean {
   return solved.every((cell) => cell !== UNKNOWN);
 }
 
-/* ------------------------------------------------------------- generation */
+/* ------------------------------------------------------------------ deal */
 
 /**
- * How full a fresh grid starts.
+ * A dealt board: the answer and, when it is a drawing rather than a grown
+ * shape, what that drawing is of.
  *
- * Sparse grids make dull pictures and, more importantly, ambiguous ones: a
- * line with one short run in it has many places that run could sit. A little
- * over half is where random grids start being pinned down by their own
- * neighbours.
+ * Handed to `startNonogramRound` rather than made by it. The picture library
+ * is `server-only` and this module is not; see the file header.
  */
-const FILL_DENSITY = 0.58;
-
-function randomGrid(random: () => number, size: number): string[] {
-  const cells: string[] = [];
-  for (let index = 0; index < size * size; index += 1) {
-    cells.push(random() < FILL_DENSITY ? SOLUTION_FILLED : SOLUTION_EMPTY);
-  }
-  return cells;
-}
-
-/**
- * A puzzle that line logic alone can finish, every time, with no retry cap to
- * fall off the end of.
- *
- * A random grid usually is one already. When it is not, the fix is to *add* a
- * filled square somewhere the solver got stuck and try again, and that is
- * what makes this terminate rather than merely usually terminate: every
- * repair strictly increases the number of filled squares, and the completely
- * filled grid (every clue reading "n", every line settled on the first pass)
- * is trivially solvable. So the loop cannot run past `size * size` repairs,
- * and in practice it stops after a handful or none at all.
- *
- * The fallback branch matters for the same reason. When every undetermined
- * square is *already* filled in the solution there is nothing to add
- * cell-by-cell, so the repair fills that square's whole row instead. A row
- * holding an undetermined square is never already full (a full row's clue is
- * a single run the width of the board, which the line solver settles
- * immediately), so that branch also strictly adds squares.
- */
-export function generateNonogram(seed: number, difficulty: NonogramDifficulty): string {
-  const { size } = nonogramConfig(difficulty);
-  const random = mulberry32(seed >>> 0);
-  const cells = randomGrid(random, size);
-
-  for (let repair = 0; repair <= size * size; repair += 1) {
-    const solved = solveNonogram(nonogramClues(cells.join(""), size), size);
-    if (solved !== null) {
-      const stuck: number[] = [];
-      for (let index = 0; index < solved.length; index += 1) {
-        if (solved[index] === UNKNOWN) stuck.push(index);
-      }
-      if (stuck.length === 0) return cells.join("");
-
-      const addable = stuck.filter((index) => cells[index] === SOLUTION_EMPTY);
-      if (addable.length > 0) {
-        cells[addable[Math.floor(random() * addable.length)]] = SOLUTION_FILLED;
-        continue;
-      }
-      const row = Math.floor(stuck[0] / size);
-      for (let col = 0; col < size; col += 1) cells[row * size + col] = SOLUTION_FILLED;
-      continue;
-    }
-
-    // A contradiction can only come from a malformed clue set, which the
-    // clues-from-a-real-grid path above cannot produce. Filling a row is
-    // still the safe way forward: it moves toward the trivially solvable
-    // all-filled grid rather than looping on the same broken one.
-    for (let col = 0; col < size; col += 1) cells[col] = SOLUTION_FILLED;
-  }
-
-  return cells.join("");
+export interface NonogramDeal {
+  /** '#' / '.', row-major, `size * size` long. */
+  readonly solution: string;
+  /** The drawing's name, or null for a grown shape that is not a named thing. */
+  readonly title: string | null;
 }
 
 /* ------------------------------------------------------------------ round */
 
+/**
+ * How many strokes back undo reaches.
+ *
+ * Bounded because the whole round is one stored JSON row and an unbounded
+ * history on a 25x25 board is unbounded storage. Twenty is well past the
+ * "that drag went sideways" case undo actually exists for.
+ */
+export const NONOGRAM_UNDO_DEPTH = 20;
+
+/** One square a stroke changed, and what it read before. Undo puts these back. */
+export interface NonogramUndoCell {
+  index: number;
+  /** The mark character that was there: '?', '#' or 'x'. */
+  was: string;
+}
+
 export interface NonogramRound {
   difficulty: NonogramDifficulty;
   size: number;
-  /** Drives the layout, so a round is reproducible from its own stored state. */
+  /** Kept so a round is reproducible from its own stored state. */
   seed: number;
   /** '#' / '.', row-major. Never leaves the server while the round is live. */
   solution: string;
+  /** What the drawing is of, or null for a grown shape. Redacted while the round is live. */
+  title: string | null;
   /** '?' / '#' / 'x', row-major. What the player has put down. */
   marks: string;
   /** Wrong fills so far. A cross is never wrong; see the file header. */
   mistakes: number;
   /** Copied from the difficulty at deal, so a retune cannot move it mid-board. */
   mistakeLimit: number;
+  /** Crosses off the rest of a line the moment the player's fills satisfy its clue. */
+  autoCross: boolean;
+  /** Squares given away. Each cost a mistake; see `hintNonogramCell`. */
+  hints: number;
+  /** The last NONOGRAM_UNDO_DEPTH strokes, oldest first. */
+  history: NonogramUndoCell[][];
   status: NonogramRoundStatus;
   /** Fills, crosses and clears: what the player actually did. */
   moves: number;
@@ -400,19 +385,30 @@ export interface NonogramRound {
   endedAt: string | null;
 }
 
+export interface NonogramRoundOptions {
+  /** Defaults on. Off is the paper experience, for players who want to cross their own. */
+  autoCross?: boolean;
+}
+
 export function startNonogramRound(
   difficulty: NonogramDifficulty,
   seed: number,
+  deal: NonogramDeal,
+  options: NonogramRoundOptions = {},
 ): NonogramRound {
   const config = nonogramConfig(difficulty);
   return {
     difficulty,
     size: config.size,
     seed: seed >>> 0,
-    solution: generateNonogram(seed, difficulty),
+    solution: deal.solution,
+    title: deal.title,
     marks: MARK_UNKNOWN.repeat(config.size * config.size),
     mistakes: 0,
     mistakeLimit: config.mistakes,
+    autoCross: options.autoCross ?? true,
+    hints: 0,
+    history: [],
     status: "active",
     moves: 0,
     startedAt: null,
@@ -424,10 +420,6 @@ function inBounds(round: NonogramRound, index: number): boolean {
   return Number.isInteger(index) && index >= 0 && index < round.size * round.size;
 }
 
-function withMark(marks: string, index: number, mark: string): string {
-  return marks.slice(0, index) + mark + marks.slice(index + 1);
-}
-
 /**
  * Whether every filled square of the solution has been filled in.
  *
@@ -435,7 +427,7 @@ function withMark(marks: string, index: number, mark: string): string {
  * ever marking an empty square has still solved it, and a paper nonogram
  * would not care either.
  */
-function isCleared(round: NonogramRound, marks: string): boolean {
+function isCleared(round: NonogramRound, marks: readonly string[]): boolean {
   for (let index = 0; index < round.solution.length; index += 1) {
     if (round.solution[index] === SOLUTION_FILLED && marks[index] !== MARK_FILLED) return false;
   }
@@ -463,12 +455,258 @@ export function nonogramMarkProblem(
   return null;
 }
 
+/* ------------------------------------------------------------ auto-cross */
+
+/** The runs the given marks spell out in one line. Only '#' counts; '?' and 'x' both break a run. */
+function markedRuns(cells: readonly string[]): number[] {
+  const runs: number[] = [];
+  let run = 0;
+  for (const cell of cells) {
+    if (cell === MARK_FILLED) {
+      run += 1;
+    } else if (run > 0) {
+      runs.push(run);
+      run = 0;
+    }
+  }
+  if (run > 0) runs.push(run);
+  return runs;
+}
+
+function sameRuns(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((run, i) => run === b[i]);
+}
+
+/**
+ * Crosses off the rest of the row and column through `index`, when the
+ * player's own fills already satisfy that line's clue.
+ *
+ * This reads nothing but the marks and the clues, both of which the player
+ * already has, so it gives away nothing the board had not already told them.
+ * It is sound because a mark can only ever be a *correct* fill -- a wrong one
+ * is turned into a cross -- so a line whose marked runs equal its clue is a
+ * line that is finished, and every remaining square in it is empty.
+ *
+ * Mutates `cells` and appends what it changed to `changed`, since it runs
+ * inside a stroke that is already accumulating both.
+ */
+function autoCrossThrough(
+  round: NonogramRound,
+  clues: NonogramClues,
+  cells: string[],
+  index: number,
+  changed: NonogramUndoCell[],
+): void {
+  const size = round.size;
+  const row = Math.floor(index / size);
+  const col = index % size;
+
+  const rowCells = cells.slice(row * size, row * size + size);
+  if (sameRuns(markedRuns(rowCells), clues.rows[row])) {
+    for (let c = 0; c < size; c += 1) {
+      const at = row * size + c;
+      if (cells[at] === MARK_UNKNOWN) {
+        changed.push({ index: at, was: MARK_UNKNOWN });
+        cells[at] = MARK_CROSSED;
+      }
+    }
+  }
+
+  const colCells: string[] = [];
+  for (let r = 0; r < size; r += 1) colCells.push(cells[r * size + col]);
+  if (sameRuns(markedRuns(colCells), clues.cols[col])) {
+    for (let r = 0; r < size; r += 1) {
+      const at = r * size + col;
+      if (cells[at] === MARK_UNKNOWN) {
+        changed.push({ index: at, was: MARK_UNKNOWN });
+        cells[at] = MARK_CROSSED;
+      }
+    }
+  }
+}
+
+/**
+ * Which clue numbers in one line the player's marks have already pinned down.
+ *
+ * Worked from both ends inwards, which is how a person does it: a run closed
+ * off on both sides, the right length, and the next one still unaccounted for
+ * from that end is settled, and the scan stops at the first square that could
+ * still be anything. Stopping there is the whole point -- a run floating in
+ * the middle of a line with unknowns either side might be any of the clues,
+ * and striking off the wrong one is worse than striking off none.
+ *
+ * Reads the marks and the clue, never the solution, so it is safe to run in
+ * the browser -- which is where it does run, to dim the numbers as they are
+ * accounted for. Lives here rather than in the component so it can be tested
+ * and so the two cannot drift.
+ */
+export function satisfiedNonogramClues(
+  cells: readonly string[],
+  clue: readonly number[],
+): boolean[] {
+  const done = clue.map(() => false);
+  if (clue.length === 0) return done;
+
+  let head = 0;
+  let at = 0;
+  while (at < cells.length && head < clue.length) {
+    const cell = cells[at];
+    if (cell === MARK_CROSSED) { at += 1; continue; }
+    if (cell === MARK_UNKNOWN) break;
+
+    let end = at;
+    while (end < cells.length && cells[end] === MARK_FILLED) end += 1;
+    // An open right edge means the run may still grow, so its length proves nothing.
+    if (end < cells.length && cells[end] === MARK_UNKNOWN) break;
+    if (end - at !== clue[head]) break;
+    done[head] = true;
+    head += 1;
+    at = end;
+  }
+
+  let tail = clue.length - 1;
+  at = cells.length - 1;
+  while (at >= 0 && tail >= head) {
+    const cell = cells[at];
+    if (cell === MARK_CROSSED) { at -= 1; continue; }
+    if (cell === MARK_UNKNOWN) break;
+
+    let end = at;
+    while (end >= 0 && cells[end] === MARK_FILLED) end -= 1;
+    if (end >= 0 && cells[end] === MARK_UNKNOWN) break;
+    if (at - end !== clue[tail]) break;
+    done[tail] = true;
+    tail -= 1;
+    at = end;
+  }
+
+  return done;
+}
+
+/** Every clue number's state, by line. `rows[r][i]` is the i'th number of row r. */
+export function nonogramClueProgress(
+  marks: string,
+  size: number,
+  clues: NonogramClues,
+): { rows: boolean[][]; cols: boolean[][] } {
+  const cells = [...marks];
+  const rows: boolean[][] = [];
+  const cols: boolean[][] = [];
+
+  for (let row = 0; row < size; row += 1) {
+    rows.push(satisfiedNonogramClues(cells.slice(row * size, row * size + size), clues.rows[row]));
+  }
+  for (let col = 0; col < size; col += 1) {
+    const line: string[] = [];
+    for (let row = 0; row < size; row += 1) line.push(cells[row * size + col]);
+    cols.push(satisfiedNonogramClues(line, clues.cols[col]));
+  }
+  return { rows, cols };
+}
+
+/* ----------------------------------------------------------------- moves */
+
+/** What a stroke did, past the board it produced. */
+export interface NonogramStrokeResult {
+  round: NonogramRound;
+  /** Squares the player's own marks landed on, auto-crosses excluded. */
+  applied: number;
+  /** True when a wrong fill cut the stroke short. */
+  aborted: boolean;
+}
+
+/**
+ * Puts a whole stroke down: one mark, across a list of squares, in order.
+ *
+ * This is the move. `markNonogramCell` is one square through the same path,
+ * because a drag and a tap should not be able to disagree about the rules.
+ *
+ * Two things a stroke does that a loop of taps would not:
+ *
+ *   - **It stops at the first wrong fill.** A player dragging along a row is
+ *     asserting the whole run, and being wrong about where it ends is one
+ *     mistake, not one per square past the end. Any good picross does this,
+ *     and the alternative here would let a single careless drag spend a whole
+ *     mistake budget.
+ *   - **It is one undo step.** The stroke's squares are recorded together, so
+ *     undo takes back the drag rather than the last square of it.
+ *
+ * Squares the board refuses (out of bounds, already settled, no change) are
+ * skipped rather than failing the stroke: a drag runs over settled squares all
+ * the time and stopping there would make dragging useless.
+ */
+export function markNonogramCells(
+  round: NonogramRound,
+  indexes: readonly number[],
+  mark: NonogramMark,
+  now: Date,
+): NonogramStrokeResult {
+  if (round.status !== "active") return { round, applied: 0, aborted: false };
+
+  const cells = [...round.marks];
+  const changed: NonogramUndoCell[] = [];
+  const clues = round.autoCross ? nonogramClues(round.solution, round.size) : null;
+
+  let mistakes = round.mistakes;
+  let applied = 0;
+  let aborted = false;
+
+  for (const index of indexes) {
+    if (!inBounds(round, index)) continue;
+    const current = cells[index];
+    if (current === MARK_FILLED) continue;
+    if (mark === "clear" && current === MARK_UNKNOWN) continue;
+    if (mark === "cross" && current === MARK_CROSSED) continue;
+
+    changed.push({ index, was: current });
+    applied += 1;
+
+    if (mark === "clear") {
+      cells[index] = MARK_UNKNOWN;
+    } else if (mark === "cross") {
+      cells[index] = MARK_CROSSED;
+    } else if (round.solution[index] === SOLUTION_FILLED) {
+      cells[index] = MARK_FILLED;
+      if (clues) autoCrossThrough(round, clues, cells, index, changed);
+    } else {
+      // The board has just proved this square empty; leaving it blank would
+      // only invite the same wrong fill again.
+      cells[index] = MARK_CROSSED;
+      mistakes += 1;
+      aborted = true;
+      break;
+    }
+  }
+
+  if (changed.length === 0) return { round, applied: 0, aborted };
+
+  let status: NonogramRoundStatus = "active";
+  if (mistakes >= round.mistakeLimit) status = "lost";
+  else if (isCleared(round, cells)) status = "cleared";
+
+  const history = [...round.history, changed].slice(-NONOGRAM_UNDO_DEPTH);
+
+  return {
+    round: {
+      ...round,
+      marks: cells.join(""),
+      mistakes,
+      history,
+      status,
+      moves: round.moves + applied,
+      startedAt: round.startedAt ?? now.toISOString(),
+      endedAt: status === "active" ? null : now.toISOString(),
+    },
+    applied,
+    aborted,
+  };
+}
+
 /**
  * Puts one mark down.
  *
  * A fill is the only mark checked against the solution. A wrong one costs a
- * mistake and leaves the square crossed, since the board has just proved it
- * empty and pretending otherwise would only invite the same wrong fill again.
+ * mistake and leaves the square crossed.
  */
 export function markNonogramCell(
   round: NonogramRound,
@@ -477,30 +715,105 @@ export function markNonogramCell(
   now: Date,
 ): NonogramRound {
   if (nonogramMarkProblem(round, index, mark)) return round;
+  return markNonogramCells(round, [index], mark, now).round;
+}
 
-  const correct = round.solution[index] === SOLUTION_FILLED;
-  let marks = round.marks;
-  let mistakes = round.mistakes;
+/* ------------------------------------------------------------------ undo */
 
-  if (mark === "clear") {
-    marks = withMark(marks, index, MARK_UNKNOWN);
-  } else if (mark === "cross") {
-    marks = withMark(marks, index, MARK_CROSSED);
-  } else if (correct) {
-    marks = withMark(marks, index, MARK_FILLED);
-  } else {
-    marks = withMark(marks, index, MARK_CROSSED);
-    mistakes += 1;
+/** Why undo cannot run, or null if it can. */
+export type NonogramUndoProblem = "finished" | "nothing-to-undo";
+
+export function nonogramUndoProblem(round: NonogramRound): NonogramUndoProblem | null {
+  if (round.status !== "active") return "finished";
+  if (round.history.length === 0) return "nothing-to-undo";
+  return null;
+}
+
+/**
+ * Takes back the last stroke.
+ *
+ * Squares the board has proved filled are left alone: they are settled the
+ * same way `nonogramMarkProblem` says they are, and un-filling banked work is
+ * never what the player meant. So undo is in practice the way back from a
+ * cross-drag that went one square too far, which is the accident it exists
+ * for. A mistake already charged is never refunded -- being wrong happened,
+ * and letting undo unwind it would make the budget meaningless.
+ */
+export function undoNonogram(round: NonogramRound): NonogramRound {
+  if (nonogramUndoProblem(round)) return round;
+
+  const cells = [...round.marks];
+  const stroke = round.history[round.history.length - 1];
+  // Backwards, so a square a stroke touched twice ends on what it read first.
+  for (let i = stroke.length - 1; i >= 0; i -= 1) {
+    const { index, was } = stroke[i];
+    if (cells[index] === MARK_FILLED) continue;
+    cells[index] = was;
   }
 
-  let status: NonogramRoundStatus = "active";
-  if (mistakes >= round.mistakeLimit) status = "lost";
-  else if (isCleared(round, marks)) status = "cleared";
+  return { ...round, marks: cells.join(""), history: round.history.slice(0, -1) };
+}
+
+/* ------------------------------------------------------------------ hint */
+
+/** Why a hint cannot be given, or null if it can. */
+export type NonogramHintProblem = "finished" | "budget" | "nothing-left";
+
+/**
+ * A hint costs one mistake, and the last one may not be spent on it.
+ *
+ * Costing something is not optional. Every board here is finishable by
+ * reasoning alone, so a free hint is a free square, and enough free squares on
+ * a board staking real Gold is a board that pays without being played. The
+ * mistake budget is the natural price: it is already the thing that measures
+ * how much room you have to be uncertain. Refusing the last one is the
+ * difference between a hint and a trap -- nobody wants a help button that ends
+ * the game.
+ */
+export function nonogramHintProblem(round: NonogramRound): NonogramHintProblem | null {
+  if (round.status !== "active") return "finished";
+  if (round.mistakes + 1 >= round.mistakeLimit) return "budget";
+  for (let index = 0; index < round.solution.length; index += 1) {
+    if (round.solution[index] === SOLUTION_FILLED && round.marks[index] !== MARK_FILLED) return null;
+  }
+  return "nothing-left";
+}
+
+/**
+ * Fills in one square of the picture the player has not found yet.
+ *
+ * A filled square rather than an empty one: an empty square is a cross, which
+ * is worth nothing on this board, and a hint that costs a mistake had better
+ * be progress. Which square is picked from the round's own seed and move
+ * count, so it is stable for a given board state rather than re-rolling if the
+ * request is retried.
+ */
+export function hintNonogramCell(round: NonogramRound, now: Date): NonogramRound {
+  if (nonogramHintProblem(round)) return round;
+
+  const candidates: number[] = [];
+  for (let index = 0; index < round.solution.length; index += 1) {
+    if (round.solution[index] === SOLUTION_FILLED && round.marks[index] !== MARK_FILLED) {
+      candidates.push(index);
+    }
+  }
+
+  const pick = candidates[(round.seed + round.moves * 31) % candidates.length];
+  const cells = [...round.marks];
+  const changed: NonogramUndoCell[] = [{ index: pick, was: cells[pick] }];
+  cells[pick] = MARK_FILLED;
+  if (round.autoCross) {
+    autoCrossThrough(round, nonogramClues(round.solution, round.size), cells, pick, changed);
+  }
+
+  const status: NonogramRoundStatus = isCleared(round, cells) ? "cleared" : "active";
 
   return {
     ...round,
-    marks,
-    mistakes,
+    marks: cells.join(""),
+    mistakes: round.mistakes + 1,
+    hints: round.hints + 1,
+    history: [...round.history, changed].slice(-NONOGRAM_UNDO_DEPTH),
     status,
     moves: round.moves + 1,
     startedAt: round.startedAt ?? now.toISOString(),
@@ -533,8 +846,20 @@ export interface NonogramView {
    * the redaction boundary; see the file header.
    */
   solution: string | null;
+  /**
+   * What the drawing is of, once the round is over. Null while it is live, and
+   * null afterwards too for a grown shape that is not a named thing. Redacted
+   * with the solution rather than alongside it: the library is small enough
+   * that "Cat" plus the clues is very nearly the answer.
+   */
+  title: string | null;
   mistakes: number;
   mistakeLimit: number;
+  /** Squares given away by a hint. Each one already cost a mistake. */
+  hints: number;
+  autoCross: boolean;
+  /** Whether there is a stroke to take back. The history itself never leaves the server. */
+  canUndo: boolean;
   /** How many filled squares the picture has, and how many are down. Both are derivable from the clues. */
   filled: number;
   filledTotal: number;
@@ -569,8 +894,12 @@ export function nonogramView(round: NonogramRound): NonogramView {
     status: round.status,
     marks: round.marks,
     solution: round.status === "active" ? null : round.solution,
+    title: round.status === "active" ? null : round.title,
     mistakes: round.mistakes,
     mistakeLimit: round.mistakeLimit,
+    hints: round.hints,
+    autoCross: round.autoCross,
+    canUndo: round.status === "active" && round.history.length > 0,
     filled,
     filledTotal,
     moves: round.moves,

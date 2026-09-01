@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
+  hintAnteUpNonogramAttempt,
   playAnteUpNonogram,
   resignAnteUpNonogramAttempt,
+  strokeAnteUpNonogramCells,
   toAnteUpNonogramErrorResponse,
+  undoAnteUpNonogramStroke,
 } from "@/lib/server/ante-up-nonogram-service";
 import { NONOGRAM_MAX_CELLS } from "@/lib/arcade/puzzles/nonogram";
 import { isBanned } from "@/lib/server/profile-store";
@@ -13,8 +16,11 @@ import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server
 export const runtime = "nodejs";
 
 /**
- * Acts on the caller's own live Ante Up: Nonogram attempt. `mark` puts a fill,
- * a cross or a clear on one square; `resign` gives up early.
+ * Acts on the caller's own live Ante Up: Nonogram attempt.
+ *
+ * `mark` puts a fill, a cross or a clear on one square and `stroke` does the
+ * same across a dragged run of them; `undo` takes the last stroke back; `hint`
+ * buys a square for a mistake; `resign` gives up early.
  *
  * One action for all three marks rather than three, unlike Minesweeper's
  * reveal/flag/chord: those are three different rules, while these are one rule
@@ -23,17 +29,40 @@ export const runtime = "nodejs";
  *
  * The index bound here is only the outer edge of the largest board; the real
  * per-round bound is the engine's, since the board size depends on the
- * difficulty this particular attempt was opened at.
+ * difficulty this particular attempt was opened at. A stroke is bounded by the
+ * same number of squares, since the longest legal drag is a whole board.
  */
+const cellIndex = z.number().int().min(0).max(NONOGRAM_MAX_CELLS - 1);
+
 const markSchema = z.object({
   action: z.literal("mark"),
   version: z.number().int().positive(),
-  index: z.number().int().min(0).max(NONOGRAM_MAX_CELLS - 1),
+  index: cellIndex,
   mark: z.enum(["fill", "cross", "clear"]),
+});
+const strokeSchema = z.object({
+  action: z.literal("stroke"),
+  version: z.number().int().positive(),
+  indexes: z.array(cellIndex).min(1).max(NONOGRAM_MAX_CELLS),
+  mark: z.enum(["fill", "cross", "clear"]),
+});
+const undoSchema = z.object({
+  action: z.literal("undo"),
+  version: z.number().int().positive(),
+});
+const hintSchema = z.object({
+  action: z.literal("hint"),
+  version: z.number().int().positive(),
 });
 const resignSchema = z.object({ action: z.literal("resign") });
 
-const bodySchema = z.discriminatedUnion("action", [markSchema, resignSchema]);
+const bodySchema = z.discriminatedUnion("action", [
+  markSchema,
+  strokeSchema,
+  undoSchema,
+  hintSchema,
+  resignSchema,
+]);
 
 export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, "ante-up-nonogram:act", 900, 60 * 1000);
@@ -58,14 +87,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const body = parsed.data;
     const result =
-      parsed.data.action === "resign"
+      body.action === "resign"
         ? await resignAnteUpNonogramAttempt(token)
-        : await playAnteUpNonogram(token, {
-            version: parsed.data.version,
-            index: parsed.data.index,
-            mark: parsed.data.mark,
-          });
+        : body.action === "stroke"
+          ? await strokeAnteUpNonogramCells(token, {
+              version: body.version,
+              indexes: body.indexes,
+              mark: body.mark,
+            })
+          : body.action === "undo"
+            ? await undoAnteUpNonogramStroke(token, { version: body.version })
+            : body.action === "hint"
+              ? await hintAnteUpNonogramAttempt(token, { version: body.version })
+              : await playAnteUpNonogram(token, {
+                  version: body.version,
+                  index: body.index,
+                  mark: body.mark,
+                });
     return withRequestSessionCookie(request, NextResponse.json(result), token);
   } catch (error) {
     return withRequestSessionCookie(request, toAnteUpNonogramErrorResponse(error), token);

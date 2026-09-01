@@ -10,9 +10,9 @@
  * that could run, not how big each run was, and compounding does the rest.
  *
  * The rule this file encodes: **a bigger stake has to buy a harder board.**
- * Sudoku and Minesweeper have real difficulty rungs to hang that on, so their
- * ceiling climbs with difficulty. The other three have no difficulty axis, so
- * they get one flat ceiling each until they grow one.
+ * Sudoku, Minesweeper and Nonogram have real difficulty rungs to hang that on,
+ * so their ceiling climbs with difficulty. The other three have no difficulty
+ * axis, so they get one flat ceiling each until they grow one.
  *
  * This is only half the fix. The other half lives in each game's own
  * multiplier table: a ceiling bounds what a single attempt can pay, but a
@@ -26,17 +26,19 @@
  */
 
 import type { MinesweeperDifficulty } from "./puzzles/minesweeper";
+import type { NonogramDifficulty } from "./puzzles/nonogram";
 import type { SudokuDifficulty } from "./puzzles/sudoku";
 
 /**
  * Every game that takes a wager, by the id it is stored under. Matches the
  * `GAME` constant in each game's service, and `ante_up_attempts.game` for the
- * three that write there (Word Stack and Connections keep their wager inside a
+ * four that write there (Word Stack and Connections keep their wager inside a
  * daily_puzzle_rounds row instead).
  */
 export const ANTE_UP_GAMES = [
   "sudoku",
   "minesweeper",
+  "nonogram",
   "memory-match",
   "word-stack",
   "connections",
@@ -57,6 +59,20 @@ const MINESWEEPER_MAX_WAGER: Readonly<Record<MinesweeperDifficulty, number>> = {
   beginner: 5_000,
   intermediate: 50_000,
   expert: 500_000,
+};
+
+/**
+ * Five rungs, one per board size (5x5 through 25x25). The top rung stops at
+ * the same 500,000 Sudoku and Minesweeper stop at rather than climbing past
+ * them for having two more rungs: this ladder is longer because a nonogram
+ * has a size axis, not because a nonogram is worth more.
+ */
+const NONOGRAM_MAX_WAGER: Readonly<Record<NonogramDifficulty, number>> = {
+  easy: 5_000,
+  medium: 25_000,
+  hard: 100_000,
+  expert: 250_000,
+  master: 500_000,
 };
 
 /**
@@ -89,6 +105,10 @@ export function maxAnteUpWager(game: AnteUpGame, tier: string | null): number {
       return tier !== null && tier in MINESWEEPER_MAX_WAGER
         ? MINESWEEPER_MAX_WAGER[tier as MinesweeperDifficulty]
         : MINESWEEPER_MAX_WAGER.beginner;
+    case "nonogram":
+      return tier !== null && tier in NONOGRAM_MAX_WAGER
+        ? NONOGRAM_MAX_WAGER[tier as NonogramDifficulty]
+        : NONOGRAM_MAX_WAGER.easy;
     default:
       return FLAT_MAX_WAGER[game];
   }
@@ -127,7 +147,9 @@ function nextRungUp(
       ? (["easy", "medium", "hard", "expert"] as const)
       : game === "minesweeper"
         ? (["beginner", "intermediate", "expert"] as const)
-        : null;
+        : game === "nonogram"
+          ? (["easy", "medium", "hard", "expert", "master"] as const)
+          : null;
   if (!ladder || tier === null) return null;
 
   const next = ladder[ladder.indexOf(tier) + 1];

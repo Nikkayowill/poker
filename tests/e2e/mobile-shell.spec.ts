@@ -57,7 +57,8 @@ test.describe("phone lobby", () => {
 
     // The arcade floor's own heading, proving the route component rendered
     // inline rather than a second copy of the catalogue.
-    await expect(pane(page, "Ante Up").getByText("more ways in.")).toBeVisible();
+    await expect(pane(page, "Ante Up").getByRole("heading", { name: "Every game beside the table." }))
+      .toBeVisible();
 
     await nav.getByRole("button", { name: "Profile", exact: true }).click();
     await expect(pane(page, "Profile").getByRole("heading", { name: "The leaderboard." }))

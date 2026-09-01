@@ -218,6 +218,36 @@
         ],
         "createdAt": "2026-09-01T00:05:08.266Z",
         "reason": "false positive: DEALER_ART_SRC (lib/scene/dealer-art.generated.ts) is an imported constant the hook can't statically resolve, not an empty/placeholder src -- it points at public/table2d5/dealer.webp, which exists and is verified by lib/scene/table-dealer.test.ts"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#545b6b",
+        "createdAt": "2026-09-01T02:45:08.000Z",
+        "reason": "physical disc shading, copied verbatim from .ck-piece-black in 38-checkers.css so the two duel boards match; a material highlight, not a palette colour"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#191c23",
+        "createdAt": "2026-09-01T02:45:08.000Z",
+        "reason": "physical disc shading, copied verbatim from .ck-piece-black in 38-checkers.css so the two duel boards match; a material highlight, not a palette colour"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#cdd3e0",
+        "createdAt": "2026-09-01T02:45:08.000Z",
+        "reason": "white Othello disc's mid-tone; a plastic-disc gradient stop, not a palette colour"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#9aa2b4",
+        "createdAt": "2026-09-01T02:45:08.000Z",
+        "reason": "white Othello disc's shade stop; a plastic-disc gradient, not a palette colour"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "10px",
+        "createdAt": "2026-09-01T02:45:08.000Z",
+        "reason": "the .ck-side eyebrow in 38-checkers.css is 10px; .ot-side is the same label in the identical clock row and must match its sibling board"
       }
     ]
   }

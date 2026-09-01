@@ -29,7 +29,7 @@
 import { ARCADE_GAMES } from "@/lib/arcade/games";
 
 /**
- * How many free dailies there actually are, counted rather than written down.
+ * How many games cost nothing to start, counted rather than written down.
  *
  * The arcade panel's header used to read "10 games in the works", which was
  * true until Blackjack shipped and then quietly became a lie. Onboarding copy
@@ -37,10 +37,20 @@ import { ARCADE_GAMES } from "@/lib/arcade/games";
  * miscounting the free games is the first sentence a new player reads. This
  * imports pure data; `lib/arcade/games.ts` has no server dependencies, which
  * is why the panel can read it too.
+ *
+ * That is exactly what went wrong here anyway, one layer down. This counted
+ * `kind === "puzzle"`, a bucket that has been empty since the 2026-08-21 move
+ * of every brain game to `kind: "wager"` -- so the first sentence a new player
+ * read was literally "0 puzzles are free every day". A wager row is free to
+ * open (the stake is a choice made on the game's own page), so it is what this
+ * count has to mean.
  */
-export const FREE_DAILY_COUNT = ARCADE_GAMES.filter(
-  (game) => game.kind === "puzzle" && game.status === "live",
+export const FREE_TO_PLAY_COUNT = ARCADE_GAMES.filter(
+  (game) => (game.kind === "puzzle" || game.kind === "wager") && game.status === "live",
 ).length;
+
+/** Every game not behind Hold'em, for the step that opens the door to them. */
+export const ARCADE_GAME_COUNT = ARCADE_GAMES.filter((game) => game.status === "live").length;
 
 /** What a step's primary button does. The component maps these to handlers. */
 export type FirstRunAction =
@@ -77,14 +87,16 @@ export const FIRST_RUN_STEPS: readonly FirstRunStep[] = [
   },
   {
     id: "arcade",
-    body: "Ten more games sit behind Ante Up — blackjack, brain games, head-to-head duels and the rest.",
+    // Counted, never written down -- this step said "Ten" while the catalogue
+    // held thirteen. See the note on the constants above.
+    body: `${ARCADE_GAME_COUNT} more games sit behind Ante Up: blackjack, brain games and head-to-head duels.`,
     actionLabel: "Open Ante Up",
     action: { kind: "link", href: "/games" },
     nextLabel: "Next",
   },
   {
     id: "free",
-    body: `${FREE_DAILY_COUNT} puzzles are free every day and never touch your Gold. They reset at midnight UTC.`,
+    body: `${FREE_TO_PLAY_COUNT} of them are free to play and never touch your Gold. Word Stack and Connections are a fresh puzzle for everyone each day, resetting at midnight UTC.`,
     actionLabel: "Play today's Word Stack",
     action: { kind: "link", href: "/games/word-stack" },
     nextLabel: "Got it",

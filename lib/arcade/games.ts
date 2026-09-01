@@ -41,8 +41,10 @@ export type ArcadeGameId =
   | "daily-sudoku"
   | "memory-match"
   | "minesweeper"
+  | "nonogram"
   | "chess-duel"
   | "checkers-duel"
+  | "othello-duel"
   | "trivia-showdown"
   | "word-race"
   | "cribbage-table";
@@ -138,7 +140,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "blackjack-21",
     name: "Blackjack 21",
-    blurb: "Beat the dealer, 3:2 on naturals",
+    blurb: "Beat the dealer, 3:2 on a natural",
     kind: "casino",
     entryCost: 1000,
     status: "live",
@@ -151,7 +153,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     // what makes the emoji grid worth posting. A blurb promising something
     // the board does not do is a promise broken on the click; see this
     // file's own header for the rule that learned that the hard way.
-    blurb: "Wager Gold on today's word, or play free",
+    blurb: "Six guesses at the word everyone gets today",
     kind: "wager",
     entryCost: 0,
     status: "live",
@@ -160,7 +162,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "connections",
     name: "Connections",
-    blurb: "Wager Gold on today's puzzle, or play free",
+    blurb: "Find the four groups hiding in sixteen words",
     kind: "wager",
     entryCost: 0,
     status: "live",
@@ -169,7 +171,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "daily-sudoku",
     name: "Sudoku",
-    blurb: "Wager Gold, or play free — any time",
+    blurb: "Fill the grid, from easy up to expert",
     kind: "wager",
     entryCost: 0,
     status: "live",
@@ -178,7 +180,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "memory-match",
     name: "Memory Match",
-    blurb: "Wager Gold, or play free — any time",
+    blurb: "Pair the whole board before your turns run out",
     kind: "wager",
     entryCost: 0,
     status: "live",
@@ -187,11 +189,20 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "minesweeper",
     name: "Minesweeper",
-    blurb: "Wager Gold, or play free — any time",
+    blurb: "Clear the field, no guesswork on any board",
     kind: "wager",
     entryCost: 0,
     status: "live",
     href: "/games/minesweeper",
+  },
+  {
+    id: "nonogram",
+    name: "Nonogram",
+    blurb: "Turn a grid of numbers into a picture",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/nonogram",
   },
   // ---- Duels: skill/social games staked against another player, not the
   // house. Winner takes the pot both players anted; see lib/pvp/. Priced at
@@ -200,7 +211,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "chess-duel",
     name: "Chess",
-    blurb: "1v1, winner takes the pot",
+    blurb: "Checkmate them and take the pot",
     kind: "duel",
     entryCost: MIN_DUEL_STAKE,
     status: "live",
@@ -209,16 +220,29 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "checkers-duel",
     name: "Checkers",
-    blurb: "1v1, winner takes the pot",
+    blurb: "Take their last piece to take the pot",
     kind: "duel",
     entryCost: MIN_DUEL_STAKE,
     status: "live",
     href: "/games/checkers",
   },
+  // Perfect information and no dice, like the two above it. Picked over
+  // Connect Four for one reason worth writing down: Connect Four is solved,
+  // and a player who has memorised the first-player win would farm every
+  // opponent they got seat 0 against. See lib/pvp/othello.ts's own header.
+  {
+    id: "othello-duel",
+    name: "Othello",
+    blurb: "Hold the most discs when the board runs out",
+    kind: "duel",
+    entryCost: MIN_DUEL_STAKE,
+    status: "live",
+    href: "/games/othello",
+  },
   {
     id: "trivia-showdown",
     name: "Trivia Showdown",
-    blurb: "Multiple choice, fastest correct answer wins",
+    blurb: "First right answer takes the question",
     kind: "duel",
     entryCost: MIN_DUEL_STAKE,
     status: "live",
@@ -240,7 +264,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "cribbage-table",
     name: "Cribbage",
-    blurb: "3-4 players, winner takes the pot",
+    blurb: "Peg to 121 at a table of three or four",
     kind: "duel",
     entryCost: MIN_DUEL_STAKE,
     status: "live",
@@ -365,11 +389,15 @@ export function arcadeFloorSummary(games: readonly ArcadeGame[] = ARCADE_GAMES):
 } {
   const { free, duels, wagers, staked } = splitArcadeFloor(games);
   return {
-    free: free.length,
-    // Duels and wagers are staked Gold too: the tile's second number is
-    // "how many cost something", and splitting it further would need a third
-    // line of copy on a tile that has room for two.
-    staked: duels.length + wagers.length + staked.length,
+    // "Costs nothing to start", not "kind: puzzle". The puzzle bucket is
+    // empty and has been for a while, so counting only it printed a literal
+    // "0 free every day" on the hub tile. A wager row is genuinely free to
+    // open -- the stake is a choice made on the game's own page -- so it
+    // belongs on this side of the line.
+    free: free.length + wagers.length,
+    // The rows that cannot be opened without spending: a duel's ante and
+    // Blackjack's buy-in are both charged before anything deals.
+    staked: duels.length + staked.length,
     // Free first, matching the order the floor puts them in, so the tile and
     // the page it opens do not disagree about what the arcade leads with.
     previewNames: [...free, ...duels, ...wagers, ...staked]

@@ -1,0 +1,239 @@
+/* Ante Up: Nonogram.
+ *
+ * After 36-duels.css and 43-ante-up.css: the shell, the wager step, the result
+ * block and the difficulty tiles all come from those two, so what is here is
+ * the board, its two clue gutters, and the one control only this game has (the
+ * Fill/Cross toggle, which borrows .ms-flag-toggle from 46-minesweeper.css
+ * rather than restating it). Every colour below is a design token, including
+ * the ones 46 still spells out as literals -- see app/styles/CLAUDE.md.
+ *
+ * The hard problem here is the opposite of Minesweeper's. That board is sized
+ * to fit whatever the viewport can spare; this one is NOT. A nonogram is read
+ * by counting along a line, and a 25x25 grid shrunk to fit a phone gives you
+ * 12px squares nobody can count, let alone hit. So the squares keep a fixed,
+ * legible size per rung (--ng-cell, set inline from the board's own width) and
+ * .ng-frame scrolls in both axes instead. A board you have to pan is playable;
+ * a board you cannot see is not.
+ *
+ * Rows are flex strips rather than one CSS grid, because the clue gutters are
+ * not cells: a grid would have to give every row's clue block a span, and the
+ * two gutters different ones again. Fixed-width strips line up by
+ * construction. Both gutter depths come from the longest clue in that
+ * direction, measured per board and passed in as --ng-row-clues /
+ * --ng-col-clues -- a fixed gutter either clips a busy line or spends half a
+ * phone screen on a quiet one.
+ */
+
+.ng-match {
+  /* One number the whole board is drawn from. Everything below is a multiple
+     of it, so a rung's size is set in one place (the component's CELL_PX) and
+     nothing here needs editing when a rung moves. */
+  --ng-cell: 24px;
+  --ng-clue-step: calc(var(--ng-cell) * .66);
+  --ng-line: var(--line);
+  --ng-line-major: color-mix(in srgb, var(--neon-muted) 40%, transparent);
+}
+
+/* Scrolls in both axes rather than shrinking the board; see the header. The
+   max-height keeps a 25x25 from pushing "Give up" off the page -- the frame
+   scrolls, the page does not. Borderless per the chrome's rule: a recessed
+   fill and space, no hairline frame. */
+.ng-frame {
+  max-width: 100%;
+  max-height: max(280px, calc(100dvh - 320px));
+  margin: 0 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--radius-lg, 9px);
+  background: color-mix(in srgb, var(--brand-ink) 55%, transparent);
+  padding: 8px;
+  /* A panned board on a phone: momentum scrolling, and no browser-owned
+     pan/zoom stealing the drag that a long-press cross needs. */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+}
+
+.ng-grid {
+  display: flex;
+  flex-direction: column;
+  /* Not 100%: the board is exactly as wide as its own squares, and the frame
+     scrolls to whatever is left over. A stretched grid would put the clue
+     numbers out of line with the columns they describe. */
+  width: max-content;
+  margin: 0 auto;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.ng-head,
+.ng-row {
+  display: flex;
+  align-items: stretch;
+}
+
+/* ---- Clue gutters ----
+ * The corner is the intersection of the two, so it has to be exactly the row
+ * gutter wide and the column gutter deep or every clue after it is off by the
+ * difference.
+ */
+.ng-corner {
+  flex: 0 0 auto;
+  width: calc(var(--ng-row-clues, 4) * var(--ng-clue-step));
+  height: calc(var(--ng-col-clues, 4) * var(--ng-clue-step));
+}
+
+.ng-clue {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: calc(var(--ng-cell) * .46);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  transition: color .15s ease, opacity .15s ease;
+}
+
+/* Both gutters push their numbers toward the board, so the last run in a clue
+   always sits against the first square it could occupy. That adjacency is what
+   makes a clue readable at a glance; centred numbers would float. */
+.ng-clue-col {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  width: var(--ng-cell);
+  height: calc(var(--ng-col-clues, 4) * var(--ng-clue-step));
+  padding-bottom: 3px;
+  gap: calc(var(--ng-clue-step) * .18);
+}
+
+.ng-clue-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  width: calc(var(--ng-row-clues, 4) * var(--ng-clue-step));
+  height: var(--ng-cell);
+  padding-right: 5px;
+  gap: calc(var(--ng-clue-step) * .3);
+}
+
+/* A clue the player's own marks already satisfy, struck through the way it
+   would be on paper. Derived from the marks, never the answer -- see the
+   component's own note. Dimmed rather than hidden: it is still needed for
+   counting the lines that cross it. */
+.ng-clue-done {
+  color: var(--text-muted);
+  opacity: .55;
+}
+
+/* ---- The board ---- */
+.ng-cell {
+  flex: 0 0 auto;
+  width: var(--ng-cell);
+  height: var(--ng-cell);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  /* Every square carries its own right/bottom hairline, so the grid lines are
+     the squares rather than a background showing through gaps. That is what
+     lets the every-fifth line be heavier without shifting anything -- it is a
+     colour change on a box that is already there, not an added border. */
+  border: 0;
+  border-right: 1px solid var(--ng-line);
+  border-bottom: 1px solid var(--ng-line);
+  background: var(--brand-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background .1s ease, transform .08s ease;
+}
+.ng-cell:focus-visible {
+  outline: none;
+  box-shadow: var(--brand-focus);
+  z-index: 2;
+}
+.ng-cell:disabled { cursor: default; }
+
+/* The heavier every-fifth rule, the convention every paper nonogram uses so a
+   long line can be counted in blocks of five. Applied to clue cells too, so
+   the rule runs the full width and height of the board including its gutters. */
+.ng-major-col { border-right-color: var(--ng-line-major); }
+.ng-major-row { border-bottom-color: var(--ng-line-major); }
+.ng-clue-col.ng-major-col { border-right: 1px solid var(--ng-line-major); }
+.ng-clue-row.ng-major-row { border-bottom: 1px solid var(--ng-line-major); }
+
+/* Filled vs blank is the only distinction the whole game is read from, so
+   these sit on opposite sides of the board colour rather than a few percent
+   apart -- the same lesson 46-minesweeper.css records about covered vs opened
+   squares. A crossed square is a third thing and reads as neither: sunk and
+   quiet, since it is the player's own note rather than part of the picture. */
+.ng-cell-blank:hover:not(:disabled) { background: var(--brand-surface-2); }
+.ng-cell-blank:active:not(:disabled) { transform: scale(.9); }
+
+.ng-cell-filled {
+  background: var(--brand-gold-light);
+  cursor: default;
+}
+
+.ng-cell-crossed {
+  background: color-mix(in srgb, var(--brand-ink) 45%, transparent);
+  color: var(--text-muted);
+}
+.ng-cell-crossed:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--brand-ink) 28%, transparent);
+}
+
+/* Only ever painted once the round is over: a square of the picture that was
+   never filled in. On a win there are none, so this is the shape of what went
+   wrong on a loss. */
+.ng-cell-missed {
+  background: color-mix(in srgb, var(--brand-red) 42%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-red) 55%, var(--neon-chalk));
+}
+
+/* ---- Scoreline ----
+ * Three things instead of the duel scoreline's two, matching .ms-scoreline:
+ * the clock keeps the middle and the counters sit either side of it.
+ */
+.ng-scoreline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ng-scoreline .ante-clock { flex: 1; text-align: center; }
+
+.ng-mistakes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+/* No size bump on the number: <strong> already carries it on weight, and the
+   type ramp has no step between this row's 13px and the scoreline's clock. */
+/* Once one is spent the counter is a warning, not a readout. */
+.ng-mistakes-spent { color: color-mix(in srgb, var(--brand-red) 55%, var(--neon-chalk)); }
+
+/* ---- Toolbar ----
+ * .ms-flag-toggle and .ms-hint come from 46-minesweeper.css; this is the same
+ * control doing the same job (a sticky secondary-mark mode for a device with
+ * no right mouse button), so it reuses them rather than growing a near-copy.
+ */
+.ng-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 10px auto 0;
+  width: min(100%, 520px);
+}
+
+.ng-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Five rungs rather than the three every other Ante Up game has, so the tiles
+   wrap instead of trying to share one row at phone width. */
+.ng-difficulties { flex-wrap: wrap; }

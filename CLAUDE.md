@@ -35,6 +35,12 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 - `river_*` cookies/module names and Sentry slugs are legacy compatibility IDs; do not casually rename them.
 - Test changed rules/layout. Run: `npm test`, `npm run lint`, `npm run build`; use `npm run test:e2e` for flows/UI.
 - Preserve unrelated work; `.claude/` may be locally untracked.
+- **This checkout is shared by several concurrent sessions. Do your work in your own worktree**
+  (`git worktree add -b <branch> .claude/worktrees/<name> origin/main`), never on a branch in the
+  primary tree. Branch-level and destructive git there (checkout/switch/merge/rebase, stash/reset/
+  clean/restore, `git add -A`, `git commit -a`) is refused by `.claude/hooks/guard-shared-worktree.sh`,
+  because those land under whoever else is mid-task rather than staying local. Reads are always fine;
+  `ALLOW_SHARED_TREE=1` in the command is the deliberate override.
 
 ## Active milestone
 

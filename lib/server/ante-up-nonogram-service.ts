@@ -3,22 +3,30 @@ import { randomInt } from "crypto";
 import { NextResponse } from "next/server";
 import {
   MIN_ANTE_UP_WAGER,
+  anteUpNonogramHintProblem,
   anteUpNonogramMarkProblem,
   anteUpNonogramPayout,
+  anteUpNonogramUndoProblem,
+  hintAnteUpNonogram,
   markAnteUpNonogramCell,
   resignAnteUpNonogram,
   startAnteUpNonogram,
+  strokeAnteUpNonogram,
   tickAnteUpNonogram,
   toAnteUpNonogramSnapshot,
+  undoAnteUpNonogram,
   type AnteUpNonogramAttempt,
   type AnteUpNonogramSnapshot,
 } from "@/lib/arcade/ante-up-nonogram";
 import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
+import { dealNonogram } from "@/lib/arcade/puzzles/nonogram-deal";
 import {
   isNonogramDifficulty,
   type NonogramDifficulty,
+  type NonogramHintProblem,
   type NonogramMark,
   type NonogramMoveProblem,
+  type NonogramUndoProblem,
 } from "@/lib/arcade/puzzles/nonogram";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
@@ -132,6 +140,7 @@ export async function openAnteUpNonogram(
   token: string,
   difficultyInput: string,
   wagerInput: number,
+  options: { autoCross?: boolean } = {},
   now = new Date(),
 ): Promise<{ attempt: AnteUpNonogramSnapshot; profile: PlayerProfile }> {
   const difficulty = parseDifficulty(difficultyInput);
@@ -171,8 +180,18 @@ export async function openAnteUpNonogram(
   }
 
   // node:crypto's randomInt, same source the other Ante Up deals draw from. The
-  // seed is stored on the round so its picture is reproducible from its own state.
-  const state = startAnteUpNonogram(difficulty, wagerInput, randomInt(2 ** 31), now);
+  // seed is stored on the round so its picture is reproducible from its own
+  // state. The picture itself is dealt here rather than inside the engine:
+  // the library is `server-only` and the engine is client-imported.
+  const seed = randomInt(2 ** 31);
+  const state = startAnteUpNonogram(
+    difficulty,
+    wagerInput,
+    seed,
+    dealNonogram(seed, difficulty),
+    now,
+    { autoCross: options.autoCross },
+  );
 
   let stored: StoredAnteUpAttempt<AnteUpNonogramAttempt>;
   try {
@@ -213,6 +232,68 @@ function refusal(problem: NonogramMoveProblem): string {
 }
 
 /**
+ * The caller's live attempt at the version they acted on.
+ *
+ * Every action that changes a board goes through here, so the clock check, the
+ * version check and their two different 409s are written once. Both throw with
+ * the true board attached: a refused action still has to leave the player
+ * looking at what is actually there.
+ */
+async function requireLiveAttempt(
+  profileId: string,
+  version: number,
+  now: Date,
+): Promise<StoredAnteUpAttempt<AnteUpNonogramAttempt>> {
+  const current = await getActiveAnteUpAttempt<AnteUpNonogramAttempt>(profileId, GAME);
+  if (!current) throw new AnteUpNonogramRequestError("Start an attempt first.", 404);
+
+  const ticked = tickAnteUpNonogram(current.state, now);
+  if (ticked !== null) {
+    // The clock already ran out; settle that before refusing, so the response
+    // carries the true (timed-out) state rather than a stale "active" one the
+    // player could mistake for still-playable.
+    const settled =
+      (await advanceAnteUpAttempt(current, ticked)) ??
+      (await getAnteUpAttemptById<AnteUpNonogramAttempt>(current.id)) ??
+      current;
+    throw new AnteUpNonogramRequestError("Time's up.", 409, { round: snapshot(settled, now) });
+  }
+
+  if (current.version !== version) {
+    throw new AnteUpNonogramRequestError("That board moved on.", 409, {
+      round: snapshot(current, now),
+    });
+  }
+
+  return current;
+}
+
+/**
+ * Writes an advanced attempt, and pays it if that advance won the board.
+ *
+ * Rule 2 of the ordering rules above lives here: a null from
+ * `advanceAnteUpAttempt` is a lost race, which means somebody else already
+ * settled (and paid) this attempt, so it must not pay again.
+ */
+async function settle(
+  profileId: string,
+  current: StoredAnteUpAttempt<AnteUpNonogramAttempt>,
+  next: AnteUpNonogramAttempt,
+  now: Date,
+): Promise<AnteUpNonogramSnapshot> {
+  const stored = await advanceAnteUpAttempt(current, next);
+  if (!stored) {
+    const live = (await getAnteUpAttemptById<AnteUpNonogramAttempt>(current.id)) ?? current;
+    throw new AnteUpNonogramRequestError("That board moved on.", 409, {
+      round: snapshot(live, now),
+    });
+  }
+
+  if (stored.state.status === "won") await payOutWin(profileId, stored.state);
+  return snapshot(stored, now);
+}
+
+/**
  * Marks one square, and settles the attempt if it finished.
  *
  * `version` pins the mark to the exact board the player was looking at, the
@@ -224,26 +305,7 @@ export async function playAnteUpNonogram(
   now = new Date(),
 ): Promise<{ attempt: AnteUpNonogramSnapshot; profile: PlayerProfile }> {
   const profile = await ensureProfile(token);
-  const current = await getActiveAnteUpAttempt<AnteUpNonogramAttempt>(profile.id, GAME);
-  if (!current) throw new AnteUpNonogramRequestError("Start an attempt first.", 404);
-
-  const ticked = tickAnteUpNonogram(current.state, now);
-  if (ticked !== null) {
-    // The clock already ran out; settle that before refusing the mark, so the
-    // response carries the true (timed-out) state rather than a stale "active"
-    // one the player could mistake for still-playable.
-    const settled =
-      (await advanceAnteUpAttempt(current, ticked)) ??
-      (await getAnteUpAttemptById<AnteUpNonogramAttempt>(current.id)) ??
-      current;
-    throw new AnteUpNonogramRequestError("Time's up.", 409, { round: snapshot(settled, now) });
-  }
-
-  if (current.version !== input.version) {
-    throw new AnteUpNonogramRequestError("That board moved on.", 409, {
-      round: snapshot(current, now),
-    });
-  }
+  const current = await requireLiveAttempt(profile.id, input.version, now);
 
   const problem = anteUpNonogramMarkProblem(current.state, input.index, input.mark, now);
   if (problem) {
@@ -253,18 +315,94 @@ export async function playAnteUpNonogram(
   }
 
   const next = markAnteUpNonogramCell(current.state, input.index, input.mark, now);
-  const stored = await advanceAnteUpAttempt(current, next);
-  if (!stored) {
-    // Rule 2: a lost race did not happen.
-    const live = (await getAnteUpAttemptById<AnteUpNonogramAttempt>(current.id)) ?? current;
-    throw new AnteUpNonogramRequestError("That board moved on.", 409, {
-      round: snapshot(live, now),
+  return { attempt: await settle(profile.id, current, next, now), profile };
+}
+
+/**
+ * Puts a whole dragged stroke down.
+ *
+ * One request for a drag rather than one per square, which is what makes a
+ * 625-square board playable at all -- see markNonogramCells' own note. The
+ * version pins the stroke to the board the player was looking at, exactly as a
+ * single mark does.
+ *
+ * A stroke that changes nothing is not written. `markNonogramCells` hands back
+ * the same round in that case, and writing it anyway would bump the stored
+ * version for no reason and start refusing the player's own next move.
+ */
+export async function strokeAnteUpNonogramCells(
+  token: string,
+  input: { version: number; indexes: readonly number[]; mark: NonogramMark },
+  now = new Date(),
+): Promise<{ attempt: AnteUpNonogramSnapshot; profile: PlayerProfile }> {
+  const profile = await ensureProfile(token);
+  const current = await requireLiveAttempt(profile.id, input.version, now);
+
+  const next = strokeAnteUpNonogram(current.state, input.indexes, input.mark, now);
+  if (next === current.state) return { attempt: snapshot(current, now), profile };
+
+  return { attempt: await settle(profile.id, current, next, now), profile };
+}
+
+function undoRefusal(problem: NonogramUndoProblem): string {
+  return problem === "finished" ? "This attempt is already over." : "There is nothing to undo.";
+}
+
+/** Takes back the last stroke. Costs nothing and refunds nothing; see undoNonogram. */
+export async function undoAnteUpNonogramStroke(
+  token: string,
+  input: { version: number },
+  now = new Date(),
+): Promise<{ attempt: AnteUpNonogramSnapshot; profile: PlayerProfile }> {
+  const profile = await ensureProfile(token);
+  const current = await requireLiveAttempt(profile.id, input.version, now);
+
+  const problem = anteUpNonogramUndoProblem(current.state, now);
+  if (problem) {
+    throw new AnteUpNonogramRequestError(undoRefusal(problem), 409, {
+      round: snapshot(current, now),
     });
   }
 
-  if (stored.state.status === "won") await payOutWin(profile.id, stored.state);
+  const next = undoAnteUpNonogram(current.state, now);
+  return { attempt: await settle(profile.id, current, next, now), profile };
+}
 
-  return { attempt: snapshot(stored, now), profile };
+function hintRefusal(problem: NonogramHintProblem): string {
+  switch (problem) {
+    case "finished":
+      return "This attempt is already over.";
+    case "budget":
+      return "A hint costs a mistake, and that is your last one. This one is on you.";
+    default:
+      return "The picture is already finished.";
+  }
+}
+
+/**
+ * Gives one square of the picture away, for one mistake.
+ *
+ * Settled through the same path a mark is, because a hint can finish the board
+ * and a finished board pays. The price is charged inside the engine; see
+ * hintNonogramCell for why it is a mistake rather than a share of the payout.
+ */
+export async function hintAnteUpNonogramAttempt(
+  token: string,
+  input: { version: number },
+  now = new Date(),
+): Promise<{ attempt: AnteUpNonogramSnapshot; profile: PlayerProfile }> {
+  const profile = await ensureProfile(token);
+  const current = await requireLiveAttempt(profile.id, input.version, now);
+
+  const problem = anteUpNonogramHintProblem(current.state, now);
+  if (problem) {
+    throw new AnteUpNonogramRequestError(hintRefusal(problem), 409, {
+      round: snapshot(current, now),
+    });
+  }
+
+  const next = hintAnteUpNonogram(current.state, now);
+  return { attempt: await settle(profile.id, current, next, now), profile };
 }
 
 /** Gives up early. The wager is already spent; see the ordering rules above. */

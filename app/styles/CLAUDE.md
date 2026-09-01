@@ -12,6 +12,14 @@ Migrated from the root `CLAUDE.md` (2026-08-17) — loads only when working unde
   surface. `--brand-red` (`#dc1413`) is unchanged — the mark has no red, so it kept its old value and
   stays a trace, never a wash. Table felt/gold (`05-game-header.css` through `09-action-bar.css`, plus
   `16`/`17`/`99`) is untouched green felt and out of scope for chrome work.
+- A custom property whose value is a `calc()` over *another* custom property resolves that calc
+  against **the element it is declared on**, and descendants inherit the already-resolved value — it
+  does not re-resolve against a closer override. So a `--step: calc(var(--cell) * .66)` on a wrapper
+  will keep using the wrapper's own `--cell` even when a child sets `--cell` inline. Declare the
+  derived property on the same element that carries the value it derives from. This shipped as a real
+  bug in `50-nonogram.css` (2026-09-01): the clue gutter kept a 24px fallback at every board size and
+  clipped the top number off every two-deep column clue, which makes a nonogram unsolvable rather than
+  untidy.
 - A single unbalanced CSS block comment silently kills the **entire** stylesheet — PostCSS drops it,
   and neither tsc nor eslint reads CSS. `stylesheets.test.ts` guards against an orphaned comment
   delimiter.

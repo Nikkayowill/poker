@@ -5,21 +5,27 @@ import {
   anteUpNonogramDeadline,
   anteUpNonogramMarkProblem,
   anteUpNonogramPayout,
+  anteUpNonogramHintProblem,
   anteUpNonogramSize,
+  anteUpNonogramUndoProblem,
+  hintAnteUpNonogram,
   markAnteUpNonogramCell,
   resignAnteUpNonogram,
   startAnteUpNonogram,
+  strokeAnteUpNonogram,
   tickAnteUpNonogram,
   toAnteUpNonogramSnapshot,
+  undoAnteUpNonogram,
   type AnteUpNonogramAttempt,
 } from "./ante-up-nonogram";
 import { NONOGRAM_DIFFICULTIES } from "./puzzles/nonogram";
+import { dealNonogram } from "./puzzles/nonogram-deal";
 
 const NOW = new Date("2026-08-31T12:00:00.000Z");
 const META = { id: "attempt-1", version: 3 };
 
 function attempt(wager = 1000): AnteUpNonogramAttempt {
-  return startAnteUpNonogram("easy", wager, 2026, NOW);
+  return startAnteUpNonogram("easy", wager, 2026, dealNonogram(2026, "easy"), NOW);
 }
 
 /** Fills every square of the answer, in order. The shortest winning line. */
@@ -224,5 +230,95 @@ describe("the snapshot", () => {
 describe("the wager floor", () => {
   it("is the same number every Ante Up game restates", () => {
     expect(MIN_ANTE_UP_WAGER).toBe(500);
+  });
+});
+
+describe("strokes, undo and hints on an attempt", () => {
+  it("carries a stroke's win up onto the attempt", () => {
+    const fresh = attempt();
+    const filled: number[] = [];
+    for (let index = 0; index < fresh.board.solution.length; index += 1) {
+      if (fresh.board.solution[index] === "#") filled.push(index);
+    }
+    // One square at a time rather than one stroke: a stroke stops at the first
+    // wrong fill, and the picture's squares are not contiguous.
+    let state = fresh;
+    for (const index of filled) state = strokeAnteUpNonogram(state, [index], "fill", NOW);
+    expect(state.status).toBe("won");
+    expect(anteUpNonogramPayout(state)).toBeGreaterThan(0);
+  });
+
+  it("carries a spent budget up as a loss", () => {
+    let state = attempt();
+    const empties: number[] = [];
+    for (let index = 0; index < state.board.solution.length; index += 1) {
+      if (state.board.solution[index] === ".") empties.push(index);
+    }
+    for (const index of empties.slice(0, state.board.mistakeLimit)) {
+      state = strokeAnteUpNonogram(state, [index], "fill", NOW);
+    }
+    expect(state.status).toBe("lost");
+    expect(anteUpNonogramPayout(state)).toBe(0);
+  });
+
+  it("refuses a stroke, an undo and a hint once the clock has run out", () => {
+    const started = markAnteUpNonogramCell(attempt(), attempt().board.solution.indexOf("#"), "fill", NOW);
+    const late = new Date(NOW.getTime() + started.timeLimitMs + 1000);
+    expect(strokeAnteUpNonogram(started, [0], "cross", late)).toBe(started);
+    expect(anteUpNonogramUndoProblem(started, late)).toBe("finished");
+    expect(anteUpNonogramHintProblem(started, late)).toBe("finished");
+  });
+
+  it("takes back the last stroke without touching the wager or the clock", () => {
+    const fresh = attempt();
+    const empty = fresh.board.solution.indexOf(".");
+    const crossed = strokeAnteUpNonogram(fresh, [empty], "cross", NOW);
+    expect(anteUpNonogramUndoProblem(crossed, NOW)).toBeNull();
+
+    const undone = undoAnteUpNonogram(crossed, NOW);
+    expect(undone.board.marks).toBe(fresh.board.marks);
+    expect(undone.wager).toBe(crossed.wager);
+    expect(undone.board.startedAt).toBe(crossed.board.startedAt);
+  });
+
+  it("charges a hint a mistake and leaves the payout terms alone", () => {
+    const fresh = attempt();
+    const hinted = hintAnteUpNonogram(fresh, NOW);
+    expect(hinted.board.mistakes).toBe(1);
+    expect(hinted.board.hints).toBe(1);
+    expect(hinted.multiplier).toBe(fresh.multiplier);
+    expect(hinted.timeLimitMs).toBe(fresh.timeLimitMs);
+  });
+
+  it("still pays a board a hint happened to finish", () => {
+    const fresh = attempt();
+    let state = fresh;
+    const filled: number[] = [];
+    for (let index = 0; index < fresh.board.solution.length; index += 1) {
+      if (fresh.board.solution[index] === "#") filled.push(index);
+    }
+    for (const index of filled.slice(0, -1)) {
+      state = strokeAnteUpNonogram(state, [index], "fill", NOW);
+    }
+    expect(state.status).toBe("active");
+    state = hintAnteUpNonogram(state, NOW);
+    expect(state.status).toBe("won");
+    expect(anteUpNonogramPayout(state)).toBe(Math.round(state.wager * state.multiplier));
+  });
+});
+
+describe("what the snapshot says about the picture", () => {
+  it("keeps the drawing's name back while the round is live", () => {
+    const live = toAnteUpNonogramSnapshot(attempt(), META, NOW);
+    expect(live.board.title).toBeNull();
+    expect(live.board.solution).toBeNull();
+  });
+
+  it("names the drawing once the round is over", () => {
+    const done = resignAnteUpNonogram(attempt(), NOW);
+    const view = toAnteUpNonogramSnapshot(done, META, NOW);
+    expect(view.board.solution).toBe(done.board.solution);
+    expect(view.board.title).toBe(done.board.title);
+    expect(view.board.title).toBeTruthy();
   });
 });

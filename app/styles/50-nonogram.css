@@ -2,10 +2,11 @@
  *
  * After 36-duels.css and 43-ante-up.css: the shell, the wager step, the result
  * block and the difficulty tiles all come from those two, so what is here is
- * the board, its two clue gutters, and the one control only this game has (the
- * Fill/Cross toggle, which borrows .ms-flag-toggle from 46-minesweeper.css
- * rather than restating it). Every colour below is a design token, including
- * the ones 46 still spells out as literals -- see app/styles/CLAUDE.md.
+ * the board, its two clue gutters, and the controls only this game has -- the
+ * Fill/Cross/Pan segment, the zoom pair, undo and hint. .ms-hint comes from
+ * 46-minesweeper.css and is reused as-is. Every colour below is a design
+ * token, including the ones 46 still spells out as literals -- see
+ * app/styles/CLAUDE.md.
  *
  * The hard problem here is the opposite of Minesweeper's. That board is sized
  * to fit whatever the viewport can spare; this one is NOT. A nonogram is read
@@ -14,6 +15,13 @@
  * legible size per rung (--ng-cell, set inline from the board's own width) and
  * .ng-frame scrolls in both axes instead. A board you have to pan is playable;
  * a board you cannot see is not.
+ *
+ * The board is played by dragging, which is what the touch-action rules below
+ * are really about. A square is touch-action: none so a finger on it paints
+ * rather than scrolls; the frame still has to scroll, since a 25x25 board is
+ * wider than any phone, so the Pan tool is what hands the drag back to the
+ * scroller. That is one control instead of a gesture nobody would discover,
+ * and it is why .ng-frame-panning exists.
  *
  * Rows are flex strips rather than one CSS grid, because the clue gutters are
  * not cells: a grid would have to give every row's clue block a span, and the
@@ -25,11 +33,6 @@
  */
 
 .ng-match {
-  /* One number the whole board is drawn from. Everything below is a multiple
-     of it, so a rung's size is set in one place (the component's CELL_PX) and
-     nothing here needs editing when a rung moves. */
-  --ng-cell: 24px;
-  --ng-clue-step: calc(var(--ng-cell) * .66);
   --ng-line: var(--line);
   --ng-line-major: color-mix(in srgb, var(--neon-muted) 40%, transparent);
 }
@@ -51,9 +54,31 @@
      pan/zoom stealing the drag that a long-press cross needs. */
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x pan-y;
+  /* Room for the sticky gutters to sit against without the first clue kissing
+     the frame edge, and a floor so a 5x5 board is not a postage stamp. */
+  min-height: 180px;
 }
 
+/* Pan mode. The squares stop swallowing the drag and the whole frame reads as
+   grabbable, which is the only feedback distinguishing it from Fill mode. */
+.ng-frame-panning { cursor: grab; }
+.ng-frame-panning:active { cursor: grabbing; }
+
 .ng-grid {
+  /* One number the whole board is drawn from. Everything below is a multiple
+     of it, so a rung's size (and the zoom on top of it) is set in one place --
+     the component's CELL_PX, passed in inline as --ng-cell on this element.
+     *
+     * --ng-clue-step is declared HERE and not on .ng-match, which is the trap
+     * this hit: a custom property whose value is a calc() over another custom
+     * property resolves that calc against the element it is declared on, and
+     * descendants inherit the resolved value. Declared upstream of the inline
+     * --ng-cell it would silently keep using the 24px fallback at every rung,
+     * which is exactly what clipped the top number off a two-deep column clue
+     * on a 46px board.
+     */
+  --ng-cell: 24px;
+  --ng-clue-step: calc(var(--ng-cell) * .66);
   display: flex;
   flex-direction: column;
   /* Not 100%: the board is exactly as wide as its own squares, and the frame
@@ -64,6 +89,9 @@
   user-select: none;
   -webkit-touch-callout: none;
 }
+
+/* In pan mode every square hands its drag straight back to the scroller. */
+.ng-grid-pan .ng-cell { touch-action: pan-x pan-y; cursor: inherit; }
 
 .ng-head,
 .ng-row {
@@ -101,7 +129,11 @@
   align-items: center;
   justify-content: flex-end;
   width: var(--ng-cell);
-  height: calc(var(--ng-col-clues, 4) * var(--ng-clue-step));
+  /* A floor rather than a fixed height. The step is sized to hold one number
+     comfortably, but font metrics are not something CSS can promise, and a
+     gutter one pixel short clips a clue -- which makes the board unsolvable,
+     not untidy. The head row stretches to whichever column needs most. */
+  min-height: calc(var(--ng-col-clues, 4) * var(--ng-clue-step));
   padding-bottom: 3px;
   gap: calc(var(--ng-clue-step) * .18);
 }
@@ -110,20 +142,34 @@
   flex-direction: row;
   align-items: center;
   justify-content: flex-end;
-  width: calc(var(--ng-row-clues, 4) * var(--ng-clue-step));
+  min-width: calc(var(--ng-row-clues, 4) * var(--ng-clue-step));
   height: var(--ng-cell);
   padding-right: 5px;
   gap: calc(var(--ng-clue-step) * .3);
 }
 
-/* A clue the player's own marks already satisfy, struck through the way it
-   would be on paper. Derived from the marks, never the answer -- see the
+/* A single clue number the player's marks have pinned down, struck off the way
+   it would be on paper. Derived from the marks, never the answer -- see the
    component's own note. Dimmed rather than hidden: it is still needed for
-   counting the lines that cross it. */
-.ng-clue-done {
+   counting the lines that cross it, and a number that vanished would shift
+   every other number in its gutter. */
+.ng-run-done {
   color: var(--text-muted);
-  opacity: .55;
+  opacity: .4;
 }
+
+/* The whole line, once every number in it is accounted for. Quieter again than
+   its individual numbers, so a finished line drops out of the scan entirely. */
+.ng-clue-done { opacity: .5; }
+
+/* The row and column the cursor is in. The clue gutter is lit too, because the
+   point of a crosshair on a 25-wide board is to connect a square to the numbers
+   that describe it -- lighting the squares alone would light the wrong half. */
+.ng-clue-lit {
+  color: var(--neon-chalk);
+  background: color-mix(in srgb, var(--neon-muted) 9%, transparent);
+}
+.ng-clue-lit .ng-run-done { color: var(--text-secondary); }
 
 /* ---- The board ---- */
 .ng-cell {
@@ -144,6 +190,10 @@
   background: var(--brand-surface);
   color: var(--text-muted);
   cursor: pointer;
+  /* The drag is ours, not the scroller's; the Pan tool gives it back. Also
+     kills the long-press callout and the double-tap zoom, both of which fire
+     constantly while painting a board. */
+  touch-action: none;
   transition: background .1s ease, transform .08s ease;
 }
 .ng-cell:focus-visible {
@@ -167,7 +217,17 @@
    squares. A crossed square is a third thing and reads as neither: sunk and
    quiet, since it is the player's own note rather than part of the picture. */
 .ng-cell-blank:hover:not(:disabled) { background: var(--brand-surface-2); }
-.ng-cell-blank:active:not(:disabled) { transform: scale(.9); }
+
+/* No press-scale on a square: the board is painted by dragging across it, and
+   twenty squares shrinking in sequence under a finger reads as a stutter
+   rather than as feedback. The mark landing instantly is the feedback. */
+
+/* The crosshair: the row and column the cursor sits in, lit faintly. Under the
+   mark colours, never over them -- a lit blank square and a filled one must
+   still be unmistakable, which is the one distinction the whole game is read
+   from. */
+.ng-cell-lit.ng-cell-blank { background: color-mix(in srgb, var(--neon-muted) 11%, transparent); }
+.ng-cell-lit.ng-cell-crossed { background: color-mix(in srgb, var(--brand-ink) 38%, transparent); }
 
 .ng-cell-filled {
   background: var(--brand-gold-light);
@@ -210,11 +270,33 @@
 /* Once one is spent the counter is a warning, not a readout. */
 .ng-mistakes-spent { color: color-mix(in srgb, var(--brand-red) 55%, var(--neon-chalk)); }
 
-/* ---- Toolbar ----
- * .ms-flag-toggle and .ms-hint come from 46-minesweeper.css; this is the same
- * control doing the same job (a sticky secondary-mark mode for a device with
- * no right mouse button), so it reuses them rather than growing a near-copy.
+/* Under a minute left. A colour change rather than anything that moves: the
+   board is the thing being looked at and a flashing clock in the corner pulls
+   the eye off it at exactly the wrong moment. */
+.ng-clock-low { color: color-mix(in srgb, var(--brand-red) 60%, var(--neon-chalk)); }
+
+/* ---- Progress ----
+ * How much of the picture is down, as a bar rather than a count. A nonogram is
+ * finished when the last square lands and the count "312/347" says nothing a
+ * player can feel; a bar closing on full does.
  */
+.ng-progress-bar {
+  width: min(100%, 520px);
+  height: 4px;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--neon-muted) 14%, transparent);
+  overflow: hidden;
+}
+.ng-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand-gold-light);
+  transition: width .18s ease;
+}
+
+/* ---- Toolbar ---- */
 .ng-toolbar {
   display: flex;
   align-items: center;
@@ -225,14 +307,139 @@
   width: min(100%, 520px);
 }
 
-.ng-progress {
+/* Fill / Cross / Pan as one segmented control rather than three buttons: they
+   are three states of one setting, and a segmented control is the only shape
+   that says so without a label. */
+.ng-tools {
+  display: inline-flex;
+  border-radius: var(--radius-md, 7px);
+  /* A lift, not a darken: this is a control sitting on the room, where
+     .ng-frame below it is a recess cut into it. */
+  background: var(--brand-surface);
+  padding: 2px;
+  gap: 2px;
+}
+
+.ng-tool {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: var(--text-muted);
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 5px);
+  background: transparent;
+  color: var(--text-secondary);
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
 }
+.ng-tool:hover { color: var(--neon-chalk); }
+/* The accent is an edge and the light it throws, never a purple fill -- see
+   01-tokens.css's own note on why. The lift is what says "this one", the ring
+   is what says "and it is the active choice". */
+.ng-tool-active {
+  background: var(--brand-surface-2);
+  box-shadow: var(--accent-edge);
+  color: var(--neon-chalk);
+}
+.ng-tool:focus-visible { outline: none; box-shadow: var(--brand-focus); }
+
+.ng-zoom,
+.ng-helpers { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Borderless, per the chrome's own rule: a raised fill and space rather than a
+   hairline around a box. See app/styles/CLAUDE.md. */
+.ng-icon-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 5px);
+  background: var(--brand-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.ng-icon-button:hover:not(:disabled) { color: var(--neon-chalk); background: var(--brand-surface-2); }
+.ng-icon-button:disabled { opacity: .4; cursor: default; }
+.ng-icon-button:focus-visible { outline: none; box-shadow: var(--brand-focus); }
+
+/* A hint costs a mistake, so it is coloured like one. Nothing here should
+   suggest it is free help. */
+.ng-hint { color: color-mix(in srgb, var(--brand-gold-light) 70%, var(--neon-chalk)); }
+
+.ng-hint-line { text-align: center; margin: 6px auto 0; }
+
+/* ---- Reveal ----
+ * The finished picture, with no gridlines, no crosses and no mistakes on it.
+ * This is what the whole board was for and it cannot be read inside the
+ * playing grid, where every square carries a hairline and three possible
+ * states. Sized off the board's own width so a 5x5 and a 25x25 both land at
+ * roughly the same overall size.
+ */
+.ng-reveal {
+  display: grid;
+  grid-template-columns: repeat(var(--ng-reveal-size, 10), 1fr);
+  width: min(190px, 60vw);
+  aspect-ratio: 1;
+  margin: 2px auto 8px;
+  border-radius: var(--radius-sm, 5px);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--brand-ink) 62%, transparent);
+}
+.ng-reveal span { display: block; }
+.ng-reveal-on { background: var(--brand-gold-light); }
+
+/* What it was of. Shown on a loss as well as a win: the picture itself is on
+   screen either way by then, so withholding the word for it would only be
+   coy. */
+.ng-reveal-name {
+  margin: 0 0 2px;
+  color: var(--neon-chalk);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+.ng-record {
+  color: var(--brand-gold-light);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+/* ---- Lobby ---- */
+.ng-best {
+  margin: 0;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.ng-best strong { color: var(--neon-chalk); font-variant-numeric: tabular-nums; }
+
+/* The one setting that has to be chosen before the deal rather than during it,
+   because it is stored on the round: a retune of the rules mid-board is the
+   thing lib/arcade/ante-up-ladder.ts's header exists to forbid. */
+.ng-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: min(100%, 520px);
+  margin: 0 auto;
+  padding: 10px 12px;
+  border-radius: var(--radius-md, 7px);
+  background: color-mix(in srgb, var(--brand-ink) 45%, transparent);
+  cursor: pointer;
+}
+.ng-option input { margin-top: 2px; accent-color: var(--brand-gold-light); }
+.ng-option span { display: flex; flex-direction: column; gap: 2px; }
+.ng-option strong { color: var(--neon-chalk); font-size: 13px; }
+.ng-option small { color: var(--text-muted); font-size: 11.5px; line-height: 1.35; }
 
 /* Five rungs rather than the three every other Ante Up game has, so the tiles
    wrap instead of trying to share one row at phone width. */

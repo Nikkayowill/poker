@@ -3,10 +3,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   ANTE_UP_NONOGRAM_DAILY_WAGERED_LIMIT,
   AnteUpNonogramRequestError,
+  hintAnteUpNonogramAttempt,
   openAnteUpNonogram,
   playAnteUpNonogram,
   readAnteUpNonogram,
   resignAnteUpNonogramAttempt,
+  strokeAnteUpNonogramCells,
+  undoAnteUpNonogramStroke,
 } from "./ante-up-nonogram-service";
 import {
   __resetAnteUpAttemptsForTest,
@@ -365,5 +368,197 @@ describe("reading", () => {
   it("gives a resignation with nothing live a null rather than an error", async () => {
     const { token } = await funded();
     expect((await resignAnteUpNonogramAttempt(token)).attempt).toBeNull();
+  });
+});
+
+describe("strokes", () => {
+  it("pays exactly once for a picture finished by strokes", async () => {
+    const { token, id } = await funded(10_000);
+    const { attempt } = await openAnteUpNonogram(token, "easy", 1000);
+    expect(await balance(token)).toBe(9000);
+
+    const { filled } = await squares(id);
+    for (const index of filled) {
+      const stored = await getAnteUpAttemptById<AnteUpNonogramAttempt>(attempt.id);
+      if (!stored || stored.state.status !== "active") break;
+      await strokeAnteUpNonogramCells(token, {
+        version: stored.version,
+        indexes: [index],
+        mark: "fill",
+      });
+    }
+
+    const done = await byId(attempt.id);
+    expect(done.state.status).toBe("won");
+    const payout = Math.round(1000 * ANTE_UP_NONOGRAM_TIERS.easy.multiplier);
+    expect(await balance(token)).toBe(9000 + payout);
+  });
+
+  // The reason a stroke is one request: a bad drag is one wrong assertion.
+  it("charges one mistake for a drag that ran past the end of a run", async () => {
+    const { token, id } = await funded();
+    await openAnteUpNonogram(token, "easy", 0);
+    const { empty } = await squares(id);
+    const stored = await live(id);
+
+    await strokeAnteUpNonogramCells(token, {
+      version: stored.version,
+      indexes: empty.slice(0, 3),
+      mark: "fill",
+    });
+    expect((await live(id)).state.board.mistakes).toBe(1);
+  });
+
+  it("writes nothing, and burns no version, for a stroke that changes nothing", async () => {
+    const { token, id } = await funded();
+    await openAnteUpNonogram(token, "easy", 0);
+    const before = await live(id);
+
+    const { attempt } = await strokeAnteUpNonogramCells(token, {
+      version: before.version,
+      indexes: [0, 1, 2],
+      mark: "clear",
+    });
+    expect(attempt.version).toBe(before.version);
+    expect((await live(id)).version).toBe(before.version);
+  });
+
+  it("refuses a stroke pinned to a version that has moved on, and returns the true board", async () => {
+    const { token, id } = await funded();
+    await openAnteUpNonogram(token, "easy", 0);
+    const { filled } = await squares(id);
+    const stored = await live(id);
+    await strokeAnteUpNonogramCells(token, {
+      version: stored.version,
+      indexes: [filled[0]],
+      mark: "fill",
+    });
+
+    await expect(
+      strokeAnteUpNonogramCells(token, {
+        version: stored.version,
+        indexes: [filled[1]],
+        mark: "fill",
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe("undo and hints", () => {
+  it("takes back a stroke of crosses", async () => {
+    const { token, id } = await funded();
+    await openAnteUpNonogram(token, "easy", 0);
+    const { empty } = await squares(id);
+    const opened = await live(id);
+
+    await strokeAnteUpNonogramCells(token, {
+      version: opened.version,
+      indexes: empty.slice(0, 3),
+      mark: "cross",
+    });
+    const marked = await live(id);
+    expect(marked.state.board.marks).not.toBe(opened.state.board.marks);
+
+    const { attempt } = await undoAnteUpNonogramStroke(token, { version: marked.version });
+    expect(attempt.board.marks).toBe(opened.state.board.marks);
+    expect(attempt.board.canUndo).toBe(false);
+  });
+
+  it("refuses an undo with nothing to take back", async () => {
+    const { token, id } = await funded();
+    await openAnteUpNonogram(token, "easy", 0);
+    const stored = await live(id);
+    await expect(
+      undoAnteUpNonogramStroke(token, { version: stored.version }),
+    ).rejects.toBeInstanceOf(AnteUpNonogramRequestError);
+  });
+
+  it("charges a hint a mistake and gives a square of the picture", async () => {
+    const { token, id } = await funded();
+    await openAnteUpNonogram(token, "easy", 0);
+    const stored = await live(id);
+
+    const { attempt } = await hintAnteUpNonogramAttempt(token, { version: stored.version });
+    expect(attempt.board.mistakes).toBe(1);
+    expect(attempt.board.hints).toBe(1);
+    expect(attempt.board.filled).toBeGreaterThan(0);
+  });
+
+  // The mistake is the price, and it is charged inside the engine. What
+  // matters here is that a board a hint finished still pays like any other.
+  it("pays a wagered board that a hint finished", async () => {
+    const { token, id } = await funded(10_000);
+    const { attempt } = await openAnteUpNonogram(token, "easy", 1000);
+    const { filled } = await squares(id);
+
+    for (const index of filled.slice(0, -1)) {
+      const stored = await getAnteUpAttemptById<AnteUpNonogramAttempt>(attempt.id);
+      if (!stored || stored.state.status !== "active") break;
+      await strokeAnteUpNonogramCells(token, {
+        version: stored.version,
+        indexes: [index],
+        mark: "fill",
+      });
+    }
+
+    const nearly = await live(id);
+    expect(nearly.state.status).toBe("active");
+    const { attempt: won } = await hintAnteUpNonogramAttempt(token, { version: nearly.version });
+    expect(won.status).toBe("won");
+    expect(await balance(token)).toBe(
+      9000 + Math.round(1000 * ANTE_UP_NONOGRAM_TIERS.easy.multiplier),
+    );
+  });
+
+  it("refuses a hint that would spend the last mistake", async () => {
+    const { token, id } = await funded();
+    await openAnteUpNonogram(token, "easy", 0);
+    const { empty } = await squares(id);
+    const limit = (await live(id)).state.board.mistakeLimit;
+
+    for (const index of empty.slice(0, limit - 1)) {
+      const stored = await live(id);
+      await strokeAnteUpNonogramCells(token, {
+        version: stored.version,
+        indexes: [index],
+        mark: "fill",
+      });
+    }
+
+    const stored = await live(id);
+    expect(stored.state.board.mistakes).toBe(limit - 1);
+    await expect(
+      hintAnteUpNonogramAttempt(token, { version: stored.version }),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe("the picture", () => {
+  it("keeps the drawing's name back until the attempt is settled", async () => {
+    const { token } = await funded();
+    const { attempt } = await openAnteUpNonogram(token, "easy", 0);
+    expect(attempt.board.title).toBeNull();
+
+    const { attempt: done } = await resignAnteUpNonogramAttempt(token);
+    expect(done?.board.title).toBeTruthy();
+  });
+
+  it("deals a drawing rather than static on every rung that has one", async () => {
+    for (const difficulty of ["easy", "medium", "hard"] as const) {
+      const { token } = await funded();
+      await openAnteUpNonogram(token, difficulty, 0);
+      const { attempt } = await resignAnteUpNonogramAttempt(token);
+      expect(attempt?.board.title).toBeTruthy();
+    }
+  });
+
+  it("carries the auto-cross choice from the deal onto the round", async () => {
+    const { token } = await funded();
+    const off = await openAnteUpNonogram(token, "easy", 0, { autoCross: false });
+    expect(off.attempt.board.autoCross).toBe(false);
+    await resignAnteUpNonogramAttempt(token);
+
+    const on = await openAnteUpNonogram(token, "easy", 0);
+    expect(on.attempt.board.autoCross).toBe(true);
   });
 });

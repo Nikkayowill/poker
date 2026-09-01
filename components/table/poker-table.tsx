@@ -811,12 +811,16 @@ export function PokerTable({
   );
   // Standing street bets by ring slot, for the scene: what each seat has
   // committed this street rests in front of them as chips until the street
-  // closes. Slots, not seat ids, for the same reason betFlights uses them.
+  // closes. Slots, not seat ids, for the same reason betFlights uses them --
+  // and slotOf's actual assigned slot, not the seat's array index, for the
+  // same reason betFlights uses slotOf too: a heads-up table's opponent sits
+  // at a randomly-chosen ring slot (see seatSlots/headsUpOpponentSlot), so
+  // array index 1 is not necessarily their real slot.
   const sceneStreetBets = useMemo(
     () => orderedSeats
-      .map((seat, slot) => ({ slot, amount: seat.streetBet }))
-      .filter((bet) => bet.amount > 0),
-    [orderedSeats],
+      .map((seat) => ({ slot: slotOf.get(seat.id) ?? -1, amount: seat.streetBet }))
+      .filter((bet) => bet.slot >= 0 && bet.amount > 0),
+    [orderedSeats, slotOf],
   );
   // What the centre pile is actually showing (pot minus whatever is still
   // standing at a seat), so its label agrees with the chips the scene draws
@@ -1013,11 +1017,12 @@ export function PokerTable({
      100dvh, not 100vh: on mobile browsers `vh` is the tallest the viewport
      ever gets, chrome included, so a 100vh hold is visibly taller than the
      table that replaces it and the whole page shifts on the swap. The rest
-     of this codebase uses dvh for the same reason. The colour is the room's
-     own base tone from 01-tokens.css, so the hold is indistinguishable from
-     the shell that follows it rather than a black flash between two greys. */
+     of this codebase uses dvh for the same reason. The colour is the Neon
+     Marquee ground (01-tokens.css's own html/body literal, #150a2b, stated
+     the same way there for the same reason), so the hold is indistinguishable
+     from the shell that follows it rather than a flash between two darks. */
   if (!tableRendererSettled) {
-    return <div style={{ width: "100vw", height: "100dvh", backgroundColor: "#0b0c0d" }} />;
+    return <div style={{ width: "100vw", height: "100dvh", backgroundColor: "#150a2b" }} />;
   }
 
   if (!landscape) {

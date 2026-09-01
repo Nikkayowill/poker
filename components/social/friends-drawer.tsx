@@ -8,6 +8,13 @@ import { useClipboardCopy } from "@/components/use-clipboard-copy";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import type { GameSnapshot, PublicSeat } from "@/lib/game/types";
+import { TIER_CONFIG } from "@/lib/game/tiers";
+// Type-only: heads-up-shell.tsx is a "use client" component, but this import
+// is erased at compile time, so it carries none of that module's own code
+// into this bundle -- the same reasoning lib/social/types.ts's own header
+// gives for keeping wire shapes out of server-only files, just the client
+// side of it.
+import type { HeadsUpTable } from "@/components/heads-up/heads-up-shell";
 import { formatRecord } from "@/lib/leaderboard/contract";
 import { CHALLENGEABLE_DUELS } from "@/lib/pvp/duel-list";
 import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
@@ -185,6 +192,18 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
   const [overview, setOverview] = useState<FriendsOverview>(EMPTY);
   const [invites, setInvites] = useState<PendingTableInvite[]>([]);
   /**
+   * Pending Heads-Up challenges from a friend.
+   *
+   * A parallel, unrelated system from `invites` above -- see
+   * lib/server/heads-up-service.ts's own doc comment on openHeadsUpInvite:
+   * a Heads-Up invite is a reserved seat on a heads_up_tables row, not a
+   * table_invites row, so it needs its own fetch. Before this, the only
+   * place that ever read it was HeadsUpShell's own poll on /games/heads-up
+   * itself -- an invited friend who hadn't already navigated there saw
+   * nothing at all.
+   */
+  const [headsUpInvites, setHeadsUpInvites] = useState<HeadsUpTable[]>([]);
+  /**
    * Friends already invited to this table in this session.
    *
    * The server is the authority (a second invite comes back
@@ -291,6 +310,22 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
   }, []);
 
   /**
+   * Reads pending Heads-Up challenges, same silent-on-failure contract as
+   * `loadInvites` above: a transient miss on a background poll should leave
+   * the last-known list standing, not blank it or surface a banner.
+   */
+  const loadHeadsUpInvites = useCallback(async () => {
+    try {
+      const response = await fetch("/api/heads-up", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = (await response.json()) as { invites?: HeadsUpTable[] };
+      if (mounted.current) setHeadsUpInvites(data.invites ?? []);
+    } catch {
+      // Left as-is; see loadInvites' own comment for why.
+    }
+  }, []);
+
+  /**
    * The caller's own invite code, fetching-and-creating it on first open.
    *
    * Silent on failure like `loadInvites`: the code is a convenience this
@@ -317,6 +352,7 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
     const timer = window.setTimeout(() => {
       void load();
       void loadInvites();
+      void loadHeadsUpInvites();
       void loadInviteCode();
     }, 0);
     // One interval drives both the refetch and the countdown: a row that has
@@ -324,13 +360,14 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
     const poll = window.setInterval(() => {
       setNow(Date.now());
       void loadInvites();
+      void loadHeadsUpInvites();
     }, INVITE_POLL_MS);
     return () => {
       mounted.current = false;
       window.clearTimeout(timer);
       window.clearInterval(poll);
     };
-  }, [load, loadInvites, loadInviteCode]);
+  }, [load, loadInvites, loadHeadsUpInvites, loadInviteCode]);
 
   useEffect(() => {
     // Whatever opened the drawer, the lobby's Friends tile in practice.
@@ -766,12 +803,12 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
           )}
 
           {gate === "none" && loading && total === 0 && liveInvites.length === 0
-            && atTable.length === 0 && overview.recentOpponents.length === 0 && (
+            && headsUpInvites.length === 0 && atTable.length === 0 && overview.recentOpponents.length === 0 && (
             <p className="friends-loading" role="status">Loading your friends…</p>
           )}
 
           {gate === "none" && !loading && total === 0 && liveInvites.length === 0
-            && atTable.length === 0 && overview.recentOpponents.length === 0 && !error && (
+            && headsUpInvites.length === 0 && atTable.length === 0 && overview.recentOpponents.length === 0 && !error && (
             <div className="friends-empty">
               <UserPlus size={20} aria-hidden="true" />
               <strong>No friends yet</strong>
@@ -861,6 +898,44 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
                   </div>
                 </div>
               ))}
+            </section>
+          )}
+
+          {headsUpInvites.length > 0 && (
+            <section className="friends-section friends-invites" aria-label="Heads-up challenges">
+              <h3>Heads-Up · {headsUpInvites.length}</h3>
+              {headsUpInvites.map((invite) => {
+                const host = invite.players.find((p) => p.profileId === invite.hostId);
+                return (
+                  <div className="friend-row friend-row-invite" key={invite.id}>
+                    <span className="duel-avatar" style={{ background: host?.accent ?? "var(--gold-light)" }} aria-hidden="true">
+                      {host?.initials ?? "??"}
+                    </span>
+                    <div className="friend-identity">
+                      <strong>{host?.displayName ?? "A friend"}</strong>
+                      <small>{invite.stake.toLocaleString()} Gold · {TIER_CONFIG[invite.tier].label} · Heads-Up</small>
+                    </div>
+                    <div className="friend-actions">
+                      {/* Navigates rather than joining inline: HeadsUpShell
+                          already owns the join call and the redirect once
+                          the match deals (heads-up-shell.tsx), so acting on
+                          the invite here too would be a second copy of that
+                          logic to keep in sync. Same "route to where the
+                          action lives" choice this file already makes for
+                          the outbound Heads-Up button and the duel
+                          Challenge… select above. */}
+                      <button
+                        type="button"
+                        className="friend-accept invite-join"
+                        onClick={() => { selectSound(); router.push("/games/heads-up"); }}
+                      >
+                        <Spade size={13} aria-hidden="true" />
+                        Play
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </section>
           )}
 

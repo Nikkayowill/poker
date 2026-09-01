@@ -1,0 +1,214 @@
+/* Othello: only what the board adds.
+ *
+ * The lobby, the match frame and the result card are 36-duels.css, which this
+ * sheet cascades after and narrows -- the same relationship 38-checkers.css
+ * has, and this board is deliberately built to the same measurements so the
+ * two feel like one app rather than two ports. Borderless, per the chrome's
+ * rule: every ring below is either part of a disc or a state signal carried by
+ * an inset box-shadow, which adds no layout box and so cannot shift the grid
+ * by a pixel as a player scans it.
+ *
+ * The board is sized off min(), never a fixed pixel width, for the reason
+ * 38-checkers.css records at length: .duel-board scrolls a wide child rather
+ * than panning the page, and a board that needed that scroll on a 390px phone
+ * would be a board nobody can play on one.
+ *
+ * Unlike checkers, every square here is playable -- there is no light half --
+ * so the board is one flat colour and the whole visual load falls on the
+ * discs and the legal-move markers. That is why the markers are numbered
+ * rather than plain dots: with no square colour to read, an unlabelled dot
+ * would be the only thing on the board that is not a disc, and it would still
+ * only say "legal".
+ */
+
+.ot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* One width for the clock rows and the board together; see 38-checkers.css's
+     own note on this expression, which this matches on purpose. The board is
+     the one element with vertical room to give, the floor is for a rotated
+     phone where 100dvh briefly collapses. */
+  width: min(100%, 420px, max(240px, calc(100dvh - 330px)));
+}
+
+/* ---------------------------------------------------------------- clocks */
+
+.ot-clock-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--brand-surface);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ot-side {
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+}
+
+/* The disc count is the score AND the win condition, which is not true of
+   checkers' piece count (you win there by leaving them nothing to move, and
+   the count is only a hint). So it gets the emphasis a score deserves rather
+   than sitting quietly beside the clock. */
+.ot-discs {
+  margin-left: auto;
+  /* Inherits the row's size and carries its emphasis on weight and colour --
+     the type ramp has no step between this row and the clock beside it. */
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.ot-clock {
+  min-width: 52px;
+  text-align: right;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* Whose clock is actually running is the one thing a player reads this row
+   for, and it is carried by the colour rather than a border. */
+.ot-clock-running {
+  color: var(--brand-gold);
+}
+
+/* ----------------------------------------------------------------- board */
+
+.ot-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  width: 100%;
+  aspect-ratio: 1;
+  /* The gap IS the grid lines: 1px of the board's own darker ground showing
+     between squares, rather than eight borders that would each add a box. */
+  gap: 1px;
+  padding: 1px;
+  border-radius: var(--radius-lg, 9px);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--brand-ink) 70%, transparent);
+  /* Space and a real shadow, not a frame. --elevation-4 is the scale's
+     "floating panel" step, which is what a board lifted off the room is.
+     38-checkers.css hand-tunes its own (`0 18px 40px -24px`) from before the
+     scale was written down; this is the same intent said in the documented
+     vocabulary rather than a second hand-tuned value. */
+  box-shadow: var(--elevation-4);
+}
+
+.ot-square {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  appearance: none;
+  cursor: default;
+  /* One colour for every square: unlike a chequerboard, Othello has no
+     unplayable half to distinguish. Green because that is the felt this whole
+     app is played on, and because a disc-flipping game with no board pattern
+     needs its ground to read as a table rather than a spreadsheet. */
+  background: color-mix(in srgb, var(--felt) 82%, var(--brand-ink));
+  transition: background .12s ease;
+}
+
+.ot-square:not(:disabled) {
+  cursor: pointer;
+}
+
+.ot-square:focus-visible {
+  outline: none;
+  box-shadow: var(--brand-focus);
+  z-index: 2;
+}
+
+/* ----------------------------------------------------------------- discs */
+
+.ot-disc {
+  width: 76%;
+  height: 76%;
+  border-radius: 50%;
+}
+
+/* A near-black disc on a dark board is a hole in the picture -- the same
+   problem 38-checkers.css records for its own black piece, and the same fix:
+   a light rim, not a lighter fill. */
+.ot-disc-black {
+  background: radial-gradient(circle at 34% 28%, #545b6b, #191c23 68%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--neon-muted) 35%, transparent),
+    inset 0 -2px 4px rgba(0, 0, 0, .55);
+}
+
+.ot-disc-white {
+  background: radial-gradient(circle at 34% 28%, #ffffff, #cdd3e0 62%, #9aa2b4);
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, .3);
+}
+
+/* Which discs are the viewer's own, at a glance -- and in Othello that
+   changes constantly, which is exactly why it needs saying. Compound with the
+   colour selectors above (rather than a bare .ot-disc-yours rule) so the ring
+   adds to that disc's own shading instead of replacing it: box-shadow is a
+   single property, and a later same-specificity rule overwrites it whole. */
+.ot-disc-black.ot-disc-yours {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--neon-muted) 35%, transparent),
+    inset 0 -2px 4px rgba(0, 0, 0, .55),
+    0 0 0 2px var(--brand-gold-light);
+}
+
+.ot-disc-white.ot-disc-yours {
+  box-shadow:
+    inset 0 -2px 4px rgba(0, 0, 0, .3),
+    0 0 0 2px var(--brand-gold-light);
+}
+
+/* --------------------------------------------------------------- states */
+
+/* An empty square you may play, carrying what it would turn over. The count
+   is the information: in Othello the biggest flip is often the worst move, so
+   this is a statement of what is on offer, never advice. */
+.ot-square-legal {
+  background: color-mix(in srgb, var(--felt) 68%, var(--brand-gold));
+}
+
+.ot-square-legal:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--felt) 52%, var(--brand-gold));
+}
+
+.ot-ghost {
+  display: grid;
+  place-items: center;
+  width: 62%;
+  height: 62%;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--brand-gold-light) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-gold-light) 55%, transparent);
+  color: var(--brand-gold-light);
+  font-size: min(3.4vw, 15px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* --------------------------------------------------------------- status */
+
+.ot-status {
+  margin: 0;
+  min-height: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* A pass is the one board event with no visible cause: the turn indicator
+   moves and nothing on the board changed. It gets the emphasis for that
+   reason, not because it is good or bad news. */
+.ot-status-passed {
+  color: var(--brand-gold);
+}

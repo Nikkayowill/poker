@@ -40,6 +40,23 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Homestead migration applied, and a revoke that wasn't revoking (2026-09-01)
+`20260831150000_homestead_plots.sql` is **applied to production**, verified against real Postgres with
+a self-rolling-back `DO` block rather than trusted from the memory-mode tests (which cannot exercise a
+SQL CHECK at all): payout ceilings, both caps of 3 counted separately, the guarded collection paying
+once and never tripping the stocking trigger, the feed RPC refusing to go negative. Applying it
+exposed a real hole. The migration revoked EXECUTE `from anon, authenticated` but **not `from
+public`**, and both roles inherit the default PUBLIC grant, so the revoke was a no-op and
+`adjust_homestead_feed` sat callable on `/rest/v1/rpc` -- SECURITY DEFINER, taking the profile id as a
+parameter rather than reading the caller's session, so any anonymous caller could move any player's
+feed balance, and feed is bought with Gold. Exactly what
+`20260813170000_revoke_pvp_trigger_function_execute.sql` exists to fix; that makes twice. The idiom is
+`from public, anon, authenticated` and all three names matter -- copy it from `credit_gold`, and check
+`proacl` afterwards rather than re-reading the migration (a correct one has no bare `=X/postgres`).
+Supabase's advisor catches the SECURITY DEFINER case, so run `get_advisors` after applying anything
+that adds a function. Also this pass: `50-homestead.css` renumbered to **52** (main's Nonogram and
+Othello took 50 and 51 while the branch was open).
+
 ### The Homestead is staff-only, and lives under /admin because of a cookie path (2026-09-01)
 Kayo: finished but not for the public yet, reachable only through the admin portal. New
 `ArcadeGameStatus` value **`staff-only`** -- a fourth state, not a flavour of the other three: built,
@@ -109,7 +126,7 @@ destroyed. **The landscape breakpoint was broken and the number was the bug**: `
 assumed 128px of chrome where the real total (safe area, floor bar plus its `clamp()`ed margin,
 scoreline, two shell gaps) measures ~160px at 844x390, hanging the diorama 30px below the fold on the
 exact device the breakpoint exists for. The shell is now a fixed-height flex column and the stage
-takes what is left, no magic number. Its `@media` block **must stay last in `50-mint.css`** -- it
+takes what is left, no magic number. Its `@media` block **must stay last in `52-homestead.css`** -- it
 overrides base rules at equal specificity, and it silently lost every panel rule while it sat above
 them. Node cards go 2x2 grid there (name/terms, yield/button); three portrait cards are ~300px
 against ~260px of height, and a wrapping flex row broke each card at a different word. Verified by
@@ -139,6 +156,47 @@ ripe harvest. No XP on plant (a riskless stake must not feed progression), no mi
 leaderboard. Deliberately deferred with the GDD's blessing withdrawn: per-node push (infra can't),
 monuments/adjacency boosts/cosmetic grid skins (purchased-cosmetic yield amplifiers touch the
 gambling-law posture and need Kayo's own call).
+
+### Ante Up copy pass, plus Nonogram and Othello (2026-08-31)
+Kayo: the Ante Up heading ("Eleven more ways in.") "makes no sense and is old", every card blurb
+needed rewriting, and the heading had to match the other tabs. It now follows the house head shape
+every other floor already used (kicker / short noun phrase / one line): **Ante Up / "Every game
+beside the table."** The old line counted the catalogue through a number-to-words table (`spell()`,
+deleted) -- a count baked into a sentence goes stale the day a game ships, which is the rule
+`lib/arcade/games.ts`'s own header records three times and which broke three more places found in
+this pass: the hub tile shipped reading a literal **"0 free every day"**, the first-run strip
+literally read **"0 puzzles are free every day"** (both counted `kind: "puzzle"`, a bucket empty
+since the 2026-08-21 move of every brain game to `kind: "wager"`), and the same strip said "Ten more
+games" against a catalogue of thirteen. Blurbs described the *price* rather than the game, so three
+cards said the identical "Wager Gold, or play free — any time" and two more said "1v1, winner takes
+the pot", while the stake line directly beneath said it again; every blurb now names its own
+mechanic. Section heads: "Ante up" (colliding with the tab of the same name) -> **Beat the board**,
+"Staked in Gold" (true of all three sections) -> **Against the house**, "Player vs. player" -> **Head
+to head**. The floor's how-it-works modal opened "Every Ante Up game can be played completely free",
+untrue of Blackjack and the five duels; now scoped to the solo boards, and carrying Nonogram's rules
+(Kayo asked for them there specifically).
+
+**Nonogram** (12th solo game, `/games/nonogram`) and **Othello** (5th duel, `/games/othello`) shipped
+in the same pass. Nonogram runs 5x5 to 25x25 on five rungs (easy/medium/hard/expert/master), and its
+generator carries the same no-guess guarantee Minesweeper's does, by the same reasoning: a puzzle
+needing a guess is a coin flip and this stakes real Gold. `lib/arcade/puzzles/nonogram.ts`'s line
+solver is a two-pass DP over (position, run), not an enumeration of arrangements -- a 25-wide line
+with six runs has thousands. **The generation loop provably terminates rather than merely usually
+terminating**: when line logic stalls, the repair *adds* a filled square, which strictly increases
+the filled count, and the all-filled grid (every clue a single run the width of the board) is
+trivially solvable, so it cannot run past `size * size` repairs. In practice it is a handful or none
+-- 25x25 generates in ~2ms, worst case ~7ms, measured. Only a wrong *fill* is scored; a cross is
+player notation and free, which is what lets the mistake budget be small (3 at 5x5 up to 6 at 25x25).
+The board does not shrink to fit a phone the way Minesweeper's does -- 625 squares at a tappable size
+will not fit, and `.ng-frame` scrolls in both axes instead. Othello was picked over Connect Four for
+one reason: **Connect Four is solved**, and a player who has memorised the first-player win would farm
+every opponent they got seat 0 against, for real Gold. Its two rules worth knowing are in the engine
+header (a move must flip something; a player with no legal move passes and does not lose, and only
+when neither side can move is it over -- which is usually but not always a full board). No draw or
+repetition rules: every move fills a square, so it cannot loop. Balance conservation verified live
+end to end (4,000 Gold across two players before and after). Migration
+`20260831140000_othello_leaderboard.sql` adds 'othello' to `global_leaderboard_entries()` and is
+**unapplied**; see `[[reference_stackchips_migrations_not_auto_applied]]`.
 
 ### Word Stack and Connections now carry their payout ladder (2026-08-27)
 Closes the gap left open by the Ante Up economy fix earlier the same day. Both games computed their

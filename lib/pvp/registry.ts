@@ -20,12 +20,14 @@
 import type { AnyDuelGame } from "./match-contract";
 import { CHESS_DUEL } from "./chess";
 import { CHECKERS_DUEL } from "./checkers";
+import { OTHELLO_DUEL } from "./othello";
 import { TRIVIA_DUEL } from "./trivia";
 import { WORD_RACE_DUEL } from "./word-race";
 
 export const DUEL_GAMES: Readonly<Record<string, AnyDuelGame>> = {
   chess: CHESS_DUEL,
   checkers: CHECKERS_DUEL,
+  othello: OTHELLO_DUEL,
   trivia: TRIVIA_DUEL,
   "word-race": WORD_RACE_DUEL,
 };

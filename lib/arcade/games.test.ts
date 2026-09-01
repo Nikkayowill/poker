@@ -31,9 +31,11 @@ describe("arcade catalogue", () => {
       "Sudoku",
       "Memory Match",
       "Minesweeper",
+      "Nonogram",
       "StackChips Homestead",
       "Chess",
       "Checkers",
+      "Othello",
       "Trivia Showdown",
       "Word Race",
       "Cribbage",
@@ -46,7 +48,7 @@ describe("arcade catalogue", () => {
     // a free daily play (the wager now gates that one attempt); Sudoku/
     // Memory Match have no daily gate left at all. Both shapes are still
     // `kind: "wager"` -- see lib/arcade/games.ts's own note. Minesweeper
-    // (2026-08-24) joins the second, unlimited shape.
+    // (2026-08-24) and Nonogram (2026-08-31) join the second, unlimited shape.
     const floor = splitArcadeFloor();
     expect(floor.free).toHaveLength(0);
     expect(floor.wagers.map((entry) => entry.id)).toEqual([
@@ -55,6 +57,7 @@ describe("arcade catalogue", () => {
       "daily-sudoku",
       "memory-match",
       "minesweeper",
+      "nonogram",
     ]);
   });
 

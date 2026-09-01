@@ -18,7 +18,7 @@ export const HOMESTEAD_STAGE_W = 720;
  * Cropped tight to the art: the grid spans y ~30 (a ripe tower's glow above
  * row 0) to ~441 (row 3's extruded south edge), so 470 leaves balanced
  * margins where 540 wasted ~30% of every viewport's height on empty stage
- * (found by the mobile review). 50-mint.css's aspect-ratio must match.
+ * (found by the mobile review). 52-homestead.css's aspect-ratio must match.
  */
 export const HOMESTEAD_STAGE_H = 470;
 

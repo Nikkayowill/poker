@@ -209,6 +209,15 @@
         "value": "16px",
         "createdAt": "2026-08-31T00:29:29.774Z",
         "reason": "iOS Safari auto-zooms on focus for any input under 16px and doesn't zoom back out on blur -- this is the exact threshold, not a design choice, and matches the design system's own .ds-field input convention (design.json) of using 16px specifically for text inputs"
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "components/table/poker-table.tsx"
+        ],
+        "createdAt": "2026-09-01T00:05:08.266Z",
+        "reason": "false positive: DEALER_ART_SRC (lib/scene/dealer-art.generated.ts) is an imported constant the hook can't statically resolve, not an empty/placeholder src -- it points at public/table2d5/dealer.webp, which exists and is verified by lib/scene/table-dealer.test.ts"
       }
     ]
   }

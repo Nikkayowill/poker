@@ -70,7 +70,9 @@
   place-items: center;
   min-height: 100dvh;
   padding: 24px;
-  background: #0b0c0d;
+  /* The Neon Marquee ground literal, matching 01-tokens.css's own html/body
+     rule -- not the old matte-obsidian tone this used to carry. */
+  background: #150a2b;
   color: var(--ink);
   text-align: center;
 }

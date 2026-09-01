@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
+import { notFound } from "next/navigation";
 import { HomesteadFarm } from "@/components/arcade/homestead/homestead-farm";
+import { isHomesteadAllowed } from "@/lib/server/homestead-access";
+import { readSessionTokenFromCookies } from "@/lib/server/session";
 
 export const metadata: Metadata = {
   title: "StackChips Homestead",
@@ -7,16 +11,22 @@ export const metadata: Metadata = {
 };
 
 /**
- * Anyone with the URL can play this. It is kept off the arcade floor by its
- * `unlisted` catalog status rather than by a gate -- see lib/arcade/games.ts.
+ * On production, but only for the accounts named in HOMESTEAD_ALLOWED_USER_IDS.
  *
- * It used to sit under /admin behind an admin session, which worked but made
- * it awkward to even look at: the admin cookie is scoped `path=/api/admin`
- * and is per-origin, so a preview deploy without ADMIN_SECRET locked staff
- * out along with everyone else. `noindex` is what keeps it out of search
- * while it is unannounced; it is not a security boundary, and the routes
- * behind it are open, so treat this as live for anything that moves Gold.
+ * The PAGE is gated here, which the admin-session version of this could not
+ * do: ADMIN_SESSION_COOKIE is scoped `path=/api/admin`, so a page never
+ * received it and the best that version could manage was rendering a locked
+ * state for strangers. The player session cookie is `path=/`, so a server
+ * component sees it and can answer a real 404 instead -- same answer as the
+ * routes, so the page and the API can never disagree about who is allowed.
+ *
+ * The API gate is still the one that matters. This is the courtesy half: it
+ * stops a stranger loading a farm UI that would only fail on every call.
  */
-export default function HomesteadPage() {
+export default async function HomesteadPage() {
+  const store = await cookies();
+  const token = readSessionTokenFromCookies((name) => store.get(name)?.value);
+  if (!(await isHomesteadAllowed(token))) notFound();
+
   return <HomesteadFarm />;
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { toHomesteadPlotSnapshots } from "@/lib/homestead/plots";
 import { readHomestead, toHomesteadErrorResponse } from "@/lib/server/homestead-service";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { homesteadNotFound, isHomesteadAllowed } from "@/lib/server/homestead-access";
 import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
@@ -17,15 +18,22 @@ export const runtime = "nodejs";
  * locked ladder -- and their first stocking is what creates their identity,
  * through the actions route.
  *
- * Open to any caller. The Homestead was briefly behind an admin session while
- * it was unreleased; that is gone, and its `unlisted` catalog status is now
- * the only thing keeping it off the arcade floor.
+ * On production but not released: only an account on
+ * HOMESTEAD_ALLOWED_USER_IDS gets past this, and everyone else gets a 404.
+ *
+ * The rate limiter runs BEFORE that check, which is the opposite order the
+ * admin gate this replaced used. That gate was a cookie signature check and
+ * cost nothing, so it was worth running first to keep an anonymous caller
+ * from even measuring the limit. This one costs a database read, so gating
+ * ahead of the limiter would hand an unauthenticated flood a query
+ * amplifier -- the cheap in-memory check has to come first.
  */
 export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request, "homestead:read", 120, 60 * 1000);
   if (limited) return limited;
 
   const token = readSessionToken(request);
+  if (!(await isHomesteadAllowed(token))) return homesteadNotFound();
   if (!token) {
     return NextResponse.json({
       plots: toHomesteadPlotSnapshots([], new Date()),

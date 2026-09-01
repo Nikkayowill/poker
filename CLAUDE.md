@@ -57,6 +57,29 @@ Supabase's advisor catches the SECURITY DEFINER case, so run `get_advisors` afte
 that adds a function. Also this pass: `50-homestead.css` renumbered to **52** (main's Nonogram and
 Othello took 50 and 51 while the branch was open).
 
+### Homestead ships to prod gated on one account, by env not by code (2026-09-01)
+Kayo wants it on production but visible only to his own account. The gate is an allowlist of Supabase
+auth account ids in **`HOMESTEAD_ALLOWED_USER_IDS`**, checked in `lib/server/homestead-access.ts`.
+**Ids, not emails:** the session cookie already resolves to `profiles.user_id`, so an id costs a
+lookup we make anyway, where matching an email would mean a Supabase auth-admin call on every read.
+**Env, not committed:** `Nikkayowill/poker` is a PUBLIC repo -- an email is personal data and an
+account id names one real person -- so there is no default and **unset allows nobody, including
+Kayo**; forgetting the variable is indistinguishable from the feature being broken, so say so wherever
+it deploys. Needed `findUserIdBySessionToken` in `profile-store.ts` because `publicProfile()`
+deliberately drops `userId` (`isRegistered` is derived from it), so nothing player-facing can name a
+specific account. **The PAGE is genuinely gated this time, which the admin version could not manage:**
+the player session cookie is `path=/`, so a server component reads it via `next/headers` and calls
+`notFound()` -- the admin cookie's `path=/api/admin` was what forced the old "render for anyone, let
+the API refuse" compromise. Still 404 everywhere, never 403. **The rate limiter now runs BEFORE the
+gate, reversing the old order**: the admin check was a free signature check worth running first, but
+this one costs a database read, and gating ahead of the limiter hands an unauthenticated flood a query
+amplifier. `homestead-access.test.ts` walks `app/api/homestead` so a route added tomorrow cannot skip
+the gate, and asserts the gate precedes `readOrCreateSessionToken`. That ordering test **failed on its
+first run against correct code**: it string-matched bare names, and the comment explaining the
+ordering names the very function whose position it measures -- it now strips comments and matches
+calls (`name(`). Releasing means flipping `status` to `live` AND clearing the variable; either alone
+still hides it.
+
 ### The staff gate is gone; the Homestead is unlisted, not closed (2026-09-01)
 Reverses the entry below, on Kayo's call: "scrap the whole admin access. just let me look at it." The
 gate worked but made the game hard to even open -- `ADMIN_SESSION_COOKIE` is per-origin, so the prod

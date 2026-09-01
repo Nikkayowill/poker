@@ -16,7 +16,12 @@ import {
 } from "@/lib/server/homestead-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
-import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
+import { homesteadNotFound, isHomesteadAllowed } from "@/lib/server/homestead-access";
+import {
+  readOrCreateSessionToken,
+  readSessionToken,
+  withRequestSessionCookie,
+} from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -30,11 +35,9 @@ export const runtime = "nodejs";
  * the guarded write settles at most once, so a stale client gets a 409
  * carrying the true grid rather than a torn write.
  *
- * Open to any caller. The Homestead was briefly behind an admin session while
- * it was unreleased; that is gone, and the only thing keeping it unadvertised
- * now is its `unlisted` catalog status, which keeps it off the arcade floor.
- * Anyone with the URL can play it, so treat it as live for anything that
- * moves Gold.
+ * This is the route that moves Gold, so it is the one the allowlist really
+ * matters on: only an account named in HOMESTEAD_ALLOWED_USER_IDS gets past,
+ * everyone else gets a 404.
  */
 const plotIndexSchema = z.number().int().min(1).max(HOMESTEAD_GRID_PLOTS);
 
@@ -60,6 +63,12 @@ export async function POST(request: NextRequest) {
   // with a wide margin.
   const limited = enforceRateLimit(request, "homestead:act", 60, 60 * 1000);
   if (limited) return limited;
+
+  // Gated on the token already in the cookie, read-only, BEFORE
+  // readOrCreateSessionToken below -- otherwise probing a closed endpoint
+  // hands the prober a freshly minted session. A caller with no cookie has no
+  // account, so they can never be on the list anyway.
+  if (!(await isHomesteadAllowed(readSessionToken(request)))) return homesteadNotFound();
 
   const token = readOrCreateSessionToken(request);
   try {

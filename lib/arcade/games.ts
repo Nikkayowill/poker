@@ -232,8 +232,11 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "Raise crops and livestock, sell what they make",
     kind: "wager",
     entryCost: 0,
-    // Finished and playable by anyone with the link, just not on the floor
-    // yet. Flip to "live" to announce it; nothing else has to change.
+    // Deployed but not released: off the floor by this status, and its routes
+    // and page additionally refuse anyone whose account is not named in
+    // HOMESTEAD_ALLOWED_USER_IDS (see lib/server/homestead-access.ts). To
+    // release it, flip this to "live" AND clear that variable -- either one
+    // alone still leaves it hidden.
     status: "unlisted",
     href: "/games/homestead",
   },

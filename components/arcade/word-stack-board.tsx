@@ -17,6 +17,7 @@ import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { puzzleShareTitle, wordStackShareText } from "@/lib/arcade/puzzles/share";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { useAppShell } from "@/components/shell/app-shell";
 import {
   WORD_STACK_MAX_GUESSES,
   WORD_STACK_WORD_LENGTH,
@@ -87,9 +88,20 @@ export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => v
   /** Any explicit `day` means archive mode; see this file's header. */
   const isArchive = day !== undefined;
   const queryDay = day ? `?day=${day}` : "";
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  // The persistent shell owns the profile now -- this screen still gets it
+  // back from its own round-response payload too (unchanged), it just
+  // writes into the shared setter instead of a local copy.
+  const { profile, setProfile, setImmersive } = useAppShell();
   const [round, setRound] = useState<(WordStackSnapshot & { wager: number; payout: number }) | null>(null);
   const [meta, setMeta] = useState<{ day: string; puzzleNumber: number; nextPuzzleAt: number } | null>(null);
+
+  // Tells the shell a round is open (opened, mid-guess, or just finished) --
+  // hides the persistent nav chrome, same as every other live-money screen.
+  // round === null is also the "pick a wager" step, per this file's own
+  // header comment, so chrome correctly stays up through that.
+  useEffect(() => {
+    setImmersive(Boolean(round));
+  }, [round, setImmersive]);
   const [wager, setWager] = useState<number>(MIN_ANTE_UP_WAGER);
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -161,7 +173,7 @@ export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => v
         setLoaded(true);
       }
     },
-    [flash],
+    [flash, setProfile],
   );
 
   // Read-only first: visiting a page must not consume the day's attempt.
@@ -188,7 +200,7 @@ export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => v
     return () => {
       cancelled = true;
     };
-  }, [queryDay]);
+  }, [queryDay, setProfile]);
 
   const startBoard = useCallback(() => {
     // Archive plays are free-only; the wager step never renders in archive

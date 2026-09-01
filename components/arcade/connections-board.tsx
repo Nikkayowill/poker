@@ -17,6 +17,7 @@ import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { connectionsShareText, puzzleShareTitle } from "@/lib/arcade/puzzles/share";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { useAppShell } from "@/components/shell/app-shell";
 import {
   CONNECTIONS_GROUP_SIZE,
   type ConnectionsSnapshot,
@@ -91,9 +92,20 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
   /** Any explicit `day` means archive mode; see this file's header. */
   const isArchive = day !== undefined;
   const queryDay = day ? `?day=${day}` : "";
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  // The persistent shell owns the profile now -- this screen still gets it
+  // back from its own round-response payload too (unchanged), it just
+  // writes into the shared setter instead of a local copy.
+  const { profile, setProfile, setImmersive } = useAppShell();
   const [round, setRound] = useState<(ConnectionsSnapshot & { wager: number; payout: number }) | null>(null);
   const [meta, setMeta] = useState<{ day: string; puzzleNumber: number; nextPuzzleAt: number } | null>(null);
+
+  // Tells the shell a round is open (opened, mid-guess, or just finished) --
+  // hides the persistent nav chrome, same as every other live-money screen.
+  // round === null is also the "pick a wager" step, per this file's own
+  // header comment, so chrome correctly stays up through that.
+  useEffect(() => {
+    setImmersive(Boolean(round));
+  }, [round, setImmersive]);
   const [wager, setWager] = useState<number>(MIN_ANTE_UP_WAGER);
   const [selection, setSelection] = useState<string[]>([]);
   /** Local display order. Empty until a board arrives; reshuffled only by the button. */
@@ -194,7 +206,7 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
         setLoaded(true);
       }
     },
-    [flash],
+    [flash, setProfile],
   );
 
   // Read-only GET first: visiting the page must not consume the day's
@@ -221,7 +233,7 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
     return () => {
       cancelled = true;
     };
-  }, [queryDay]);
+  }, [queryDay, setProfile]);
 
   const startBoard = useCallback(() => {
     // Archive plays are free-only; the wager step never renders in archive

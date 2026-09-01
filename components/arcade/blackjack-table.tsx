@@ -16,6 +16,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import { toArcadeWallet } from "@/lib/arcade/games";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { useAppShell } from "@/components/shell/app-shell";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import {
   canCoverStake,
@@ -110,7 +111,10 @@ export function BlackjackTable() {
   // mounted. The flag it sets is module-global, which is what lets the JSX
   // below call the chrome cues directly. See lib/audio/ui-sounds.ts.
   useArcadeSound({ gameSounds: true });
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  // The persistent shell owns the profile now -- this screen still gets it
+  // back from its own round-response payload too (unchanged), it just
+  // writes into the shared setter instead of a local copy.
+  const { profile, setProfile, setImmersive } = useAppShell();
   const [loaded, setLoaded] = useState(false);
   const [tier, setTier] = useState<StakesTier>("1k");
   /**
@@ -121,6 +125,15 @@ export function BlackjackTable() {
    */
   const [practice, setPractice] = useState(false);
   const [round, setRound] = useState<BlackjackSnapshot | null>(null);
+
+  // Tells the shell a hand is dealt -- hides the persistent nav chrome, same
+  // as every other live-money screen. Not narrowed to "still resolving": the
+  // finished-hand screen (tip prompt included) is still this screen, not the
+  // tier picker.
+  useEffect(() => {
+    setImmersive(Boolean(round));
+  }, [round, setImmersive]);
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionNet, setSessionNet] = useState(0);
@@ -192,7 +205,7 @@ export function BlackjackTable() {
         setLoaded(true);
       }
     },
-    [],
+    [setProfile],
   );
 
   useEffect(() => {

@@ -58,13 +58,9 @@ import {
   Layers,
   Lock,
   LogOut,
-  type LucideIcon,
   Medal,
   Music2,
-  Puzzle,
-  Spade,
   Sparkles,
-  Trophy,
   Users,
   Video,
   Volume2,
@@ -88,18 +84,12 @@ import {
 } from "@/lib/ui/swipe-pager";
 import { ArcadeFloor } from "@/components/arcade/arcade-floor";
 import { Leaderboard } from "@/components/leaderboard/leaderboard";
+import { LOBBY_PANE_STORAGE_KEY, TAB_COUNT, TAB_LABELS, TabBar } from "@/components/shell/tab-bar";
 import { SiteFooter } from "@/components/nav/site-footer";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
 import { LobbyNotices } from "./lobby-notices";
-
-// Tab labels, not section names -- "Play" is this pane's own accessible
-// name is still the fuller "Texas Hold'em" on the <section> below; the tab
-// bar just needs a word short enough that none of the four ever risks the
-// ellipsis clip (.mshell-nav-item span, 45-mobile-shell.css).
-const PAGES = ["Play", "Ante Up", "Leaderboard", "Profile"] as const;
-const PAGE_COUNT = PAGES.length;
 
 /**
  * The settle transition's duration at a full pane width of travel — matches
@@ -110,41 +100,27 @@ const PAGE_COUNT = PAGES.length;
 const BASE_SETTLE_MS = 250;
 /** Never so short it reads as a cut rather than a landing. */
 const MIN_SETTLE_MS = 90;
-// Puzzle over a generic controller glyph: this tab is Sudoku/Word Stack/
-// Connections/Memory/Minesweeper plus the PvP duels, not "any game." Trophy
-// is the same glyph poker-app.tsx's desktop menu already uses for its own
-// Leaderboard link.
-//
-// Profile has no entry here -- Jakob's Law: TikTok, Instagram and YouTube
-// all render their own last tab as the player's actual photo, not a generic
-// person glyph, precisely because a familiar face is a stronger "this is
-// yours" cue than a silhouette everyone's app uses. See the nav render
-// below, which special-cases the last tab to <ProfileAvatar> instead of
-// reading this array.
-const PAGE_ICONS: readonly LucideIcon[] = [Spade, Puzzle, Trophy];
 
 /**
  * Which pane the player was last on, so leaving the shell and coming back
  * lands where they left rather than back on Play.
  *
  * Half of this shell's doors (Collection, Achievements, Rewards, Buy Gold,
- * Challenges, every tile on Ante Up) are real routes that unmount PokerApp,
- * so returning from one rebuilt the shell from scratch. Tab bars do not behave
- * that way anywhere else, and the tell was landing two panes away from the
- * link you had just pressed.
+ * Challenges, every tile on Ante Up) are real routes; components/shell/
+ * persistent-chrome.tsx writes this same key before navigating here for a
+ * tab with no standalone route of its own, so a tap from outside `/` lands on
+ * the right pane too, not always back on Play.
  *
  * sessionStorage, never localStorage: this is where you are in this visit, not
  * a preference. A fresh open should still start on Play. Same reasoning as
  * lib/profile/session-continuity.ts, which is where the storage accessor comes
  * from.
  */
-const PAGE_STORAGE_KEY = "stackchips:lobby-pane";
-
 function readStoredPage(): number {
   const store = browserSessionStorage();
   if (!store) return 0;
   try {
-    return clampPage(Number.parseInt(store.getItem(PAGE_STORAGE_KEY) ?? "", 10) || 0, PAGE_COUNT);
+    return clampPage(Number.parseInt(store.getItem(LOBBY_PANE_STORAGE_KEY) ?? "", 10) || 0, TAB_COUNT);
   } catch {
     return 0;
   }
@@ -247,7 +223,7 @@ export function MobileShell({
 
   useEffect(() => {
     try {
-      browserSessionStorage()?.setItem(PAGE_STORAGE_KEY, String(page));
+      browserSessionStorage()?.setItem(LOBBY_PANE_STORAGE_KEY, String(page));
     } catch {
       // A full or disabled store just means the next return starts on Play.
     }
@@ -266,7 +242,7 @@ export function MobileShell({
    * empty halfway through the slide that reveals it.
    */
   const [reached, setReached] = useState<readonly boolean[]>(
-    () => PAGES.map((_, index) => index === page),
+    () => TAB_LABELS.map((_, index) => index === page),
   );
   const reach = useCallback((...indexes: number[]) => {
     setReached((current) => {
@@ -278,7 +254,7 @@ export function MobileShell({
   }, []);
 
   const goTo = useCallback((next: number) => {
-    const target = clampPage(next, PAGE_COUNT);
+    const target = clampPage(next, TAB_COUNT);
     reach(target);
     setSettleMs(BASE_SETTLE_MS); // a tab tap always travels the full pane width
     setPage((current) => {
@@ -305,7 +281,7 @@ export function MobileShell({
   const onPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current;
     if (!gesture) return;
-    const move = trackSwipe(gesture, event.clientX, event.clientY, page, PAGE_COUNT, event.timeStamp);
+    const move = trackSwipe(gesture, event.clientX, event.clientY, page, TAB_COUNT, event.timeStamp);
     velocityRef.current = move.velocity;
     /*
      * Capture on the axis lock, not on press.
@@ -336,7 +312,7 @@ export function MobileShell({
     gestureRef.current = null;
     if (!gesture) return;
     const offsetAtRelease = drag ?? 0;
-    const settled = settleSwipe(gesture, offsetAtRelease, page, PAGE_COUNT, velocityRef.current);
+    const settled = settleSwipe(gesture, offsetAtRelease, page, TAB_COUNT, velocityRef.current);
     /*
      * Duration scaled to what's actually left to travel, not fixed. The track
      * is already sitting at `offsetAtRelease` px into the turn; the distance
@@ -441,43 +417,7 @@ export function MobileShell({
         </div>
       </div>
 
-      <nav className="mshell-nav" aria-label="Lobby sections">
-        {PAGES.map((name, index) => {
-          const Icon = PAGE_ICONS[index];
-          const active = index === page;
-          return (
-            <button
-              key={name}
-              type="button"
-              className={`mshell-nav-item${active ? " mshell-nav-on" : ""}`}
-              aria-current={active ? "page" : undefined}
-              onClick={() => goTo(index)}
-            >
-              {/* The Profile tab renders the player's own avatar rather than
-                  reading PAGE_ICONS -- see the array's own comment. The other
-                  two swap outline/filled by toggling `fill`, the same
-                  active-state cue TikTok/Instagram/YouTube use on their own
-                  generic tabs (a color change alone was the design-review
-                  finding this replaces). */}
-              {Icon
-                ? <Icon size={20} strokeWidth={1.8} fill={active ? "currentColor" : "none"} aria-hidden="true" />
-                : (
-                  // aria-hidden, not just decorative styling: ProfileAvatar
-                  // sets its own role="img"/aria-label ("Kayo's avatar"),
-                  // which would otherwise concatenate into this button's
-                  // accessible name alongside the visible "Profile" label.
-                  <span aria-hidden="true">
-                    <ProfileAvatar
-                      profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }}
-                      className="mshell-nav-avatar"
-                    />
-                  </span>
-                )}
-              <span>{name}</span>
-            </button>
-          );
-        })}
-      </nav>
+      <TabBar activeIndex={page} onSelect={goTo} profile={profile} />
     </div>
   );
 }

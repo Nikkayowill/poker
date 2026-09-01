@@ -1,0 +1,38 @@
+/* 53-app-shell.css -- the persistent desktop header, components/shell/
+   desktop-header.tsx. Rendered from components/shell/persistent-chrome.tsx
+   on every route except `/`, which keeps its own full .lobby-header
+   untouched (02-app-shell.css) -- this is deliberately a leaner sibling, not
+   a copy of it, so it gets its own class rather than reusing that one. See
+   desktop-header.tsx's own header comment for why.
+
+   Chrome rules from app/styles/CLAUDE.md hold here: borderless, separation
+   from a raised fill plus real shadow rather than a 1px outline, --rule only
+   between rows (not used here, single row). */
+
+.app-shell-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-status-overlay);
+  height: var(--lobby-header-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(24px, 5vw, 76px);
+  padding-left: max(clamp(24px, 5vw, 76px), var(--safe-left));
+  padding-right: max(clamp(24px, 5vw, 76px), var(--safe-right));
+  background: var(--brand-ink-lift);
+  box-shadow: 0 4px 20px -6px rgba(4, 6, 11, .6);
+}
+
+.app-shell-header .header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+@media (max-width: 600px) {
+  /* Never actually reached -- PersistentChrome renders the phone tab bar
+     below this width, not this header -- kept as a hard backstop so a future
+     breakpoint change can't accidentally show both at once. */
+  .app-shell-header { display: none; }
+}

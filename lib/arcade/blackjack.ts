@@ -17,7 +17,12 @@
  *   - A natural pays 3:2. Two naturals push.
  *   - Double down is offered on the opening two cards only, draws exactly one
  *     card, and doubles the wager.
- *   - No splitting, no insurance, no surrender.
+ *   - No splitting, no insurance, no surrender. "Surrender" here is the
+ *     casino table rule (half the stake back before playing on) -- this app
+ *     has no such half-back option. `resign()` below is a different thing:
+ *     the all-or-nothing forfeit every other staked game in the app already
+ *     has, needed so an abandoned hand has a way to end. See its own doc
+ *     comment.
  */
 
 import { makeDeck, type RandomInt } from "@/lib/game/deck";
@@ -31,7 +36,8 @@ export type BlackjackOutcome =
   | "dealer-bust"
   | "dealer-win"
   | "player-bust"
-  | "push";
+  | "push"
+  | "player-resign";
 
 export interface HandTotal {
   /** The best total that is not a bust, or the hard total once it busts. */
@@ -65,6 +71,7 @@ export interface LegalBlackjackActions {
   hit: boolean;
   stand: boolean;
   double: boolean;
+  resign: boolean;
 }
 
 /** Dealer stands on this, hard or soft. */
@@ -125,6 +132,7 @@ function settle(round: BlackjackRound, outcome: BlackjackOutcome): BlackjackRoun
         return round.stake;
       case "player-bust":
       case "dealer-win":
+      case "player-resign":
         // `|| 0` rather than the bare negation: a practice loss negates a
         // stake of 0, and JS's -0 fails a strict `=== 0`/`toBe(0)` check
         // even though it is the same number. `-0 || 0` is the one-line fix
@@ -221,6 +229,27 @@ export function stand(round: BlackjackRound): BlackjackRound {
 }
 
 /**
+ * Gives the hand up before it's decided, forfeiting the whole stake. This is
+ * not the casino rule of the same shape this file's own header disclaims
+ * ("no surrender" means no half-stake-back bail) -- it is the same
+ * all-or-nothing resign every other staked game in the app already has
+ * (lib/server/pvp-match-service.ts, cribbage-service.ts, ante-up-*).
+ *
+ * Blackjack needed this one specifically because it was the only staked game
+ * with no way to end a hand except playing it out: a round abandoned between
+ * the deal and the player's first action (tab closed, connection dropped)
+ * had no path to settled, and blackjack_rounds_one_active_per_profile then
+ * blocks that profile from ever dealing again -- not hypothetical, this
+ * happened to two real players before lib/server/blackjack-service.ts grew a
+ * staleness sweep to catch the case a player calling this cannot: a client
+ * that never sends another request at all.
+ */
+export function resign(round: BlackjackRound): BlackjackRound {
+  if (round.phase !== "player-turn") return round;
+  return settle(round, "player-resign");
+}
+
+/**
  * Double down: twice the wager, exactly one card, turn over. Busting on that
  * card settles at the doubled stake, which is the risk being taken, and is
  * why the caller has to check the wallet covers it before offering it.
@@ -246,6 +275,7 @@ export function legalBlackjackActions(round: BlackjackRound): LegalBlackjackActi
     stand: live,
     // Opening two cards only. After a hit the wager is locked.
     double: live && round.playerHand.length === 2,
+    resign: live,
   };
 }
 
@@ -347,6 +377,8 @@ export function outcomeLabel(outcome: BlackjackOutcome): string {
       return "Bust";
     case "push":
       return "Push";
+    case "player-resign":
+      return "You resigned";
   }
 }
 

@@ -46,6 +46,27 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Blackjack orphaned-round lockout closed; the "never exercised in prod" claim was stale (2026-09-01)
+A money-path audit queried the live DB rather than trusting this file's own claim that Blackjack's
+Supabase persistence branch had "never been exercised by a real hand in production" — it was stale: 55
+rows, 3 distinct real profiles, 53 staked, back to 2026-08-11. Real exercise surfaced the real bug the
+claim wasn't there to predict: `blackjack-service.ts` had no resign/abandon action, so a round abandoned
+between the deal and the player's first action (tab closed, connection dropped — an ordinary mobile
+event) sat `active` forever, and `blackjack_rounds_one_active_per_profile` then permanently locked that
+profile out of Blackjack. Found live: two such rows, real players "Grilly" (1,000 Gold, stuck since
+08-14) and "Hugol" (5,000 Gold, stuck since 08-11, 47 minutes after account creation — plausibly their
+first hand ever), both `version: 1`, never touched since the deal. Fixed by hand first (refunded via
+`credit_gold_by_profile`, rows force-settled), then the root cause: `resign()` in the engine (forfeits
+the stake, same as every other staked game's resign) plus a 30-minute staleness sweep in
+`blackjack-service.ts` that force-resigns an abandoned round on the next read, keyed off the DB row's
+own `updated_at` rather than a new engine-level clock — the engine's own header rule ("nothing here
+reads a clock") stays true. See `[[project_stackchips_blackjack_orphaned_rounds]]` for the full incident
+record. Same pass also closed a second, unrelated gap: Nonogram shipped without its tiers ever being
+added to `ante_up_attempts_enforce_wager_ceiling` (the DB-side wager-ceiling trigger), so it had no
+database backstop, only the TypeScript check — fixed, plus a test that reads the trigger's live
+definition off the migration files and fails if a future game's TS ceiling and DB ceiling ever drift
+apart again.
+
 ### The Homestead is being rebuilt to match `jeremyckahn/farmhand` (2026-09-01)
 Kayo brought that repo as the target -- "it matches what I want it to look like and how I want it to
 be on mobile... I want our homestead to adopt most of if not all of the game here". **Its code is
@@ -761,8 +782,6 @@ settle once).
 - Challenging a specific opponent shipped for table seats (PR #111, 2026-08-19). Picking a friend to
   invite to an empty seat (M16 table invites) is still open — a different flow, no seated opponent to
   challenge.
-- Blackjack's Supabase persistence branch has never been exercised by a real hand in production (only
-  type-checked, plus the memory-mode branch under test).
 - `multiplayer.spec.ts`'s six-player test and two `safe-area.spec.ts` table tests fail identically at
   a pristine HEAD worktree, unrelated to recent work — reconfirm against a fresh worktree before
   treating a red run here as a regression (see `[[reference_stackchips_e2e_traps]]`).

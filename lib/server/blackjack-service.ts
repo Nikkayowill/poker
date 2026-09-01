@@ -6,6 +6,7 @@ import {
   doubleDown,
   hit,
   legalBlackjackActions,
+  resign,
   settlementPayout,
   stand,
   toBlackjackSnapshot,
@@ -65,7 +66,24 @@ export class BlackjackRequestError extends ArcadeRequestError<BlackjackSnapshot>
   readonly name = "BlackjackRequestError";
 }
 
-export type BlackjackAction = "hit" | "stand" | "double";
+export type BlackjackAction = "hit" | "stand" | "double" | "resign";
+
+/**
+ * How long a round may sit dealt but untouched (still in player-turn) before
+ * the next read force-resigns it. This is what closes the gap a resign
+ * action alone cannot: a client that never sends another request at all --
+ * tab closed, connection dropped -- rather than one that deliberately quits.
+ * Without this, blackjack_rounds_one_active_per_profile locks that profile
+ * out of Blackjack forever the moment it happens: exactly what happened live
+ * to two real players before this existed (see CLAUDE.md's Known open items,
+ * corrected 2026-09-01).
+ *
+ * Long enough that a player who's merely thinking, or whose phone locked,
+ * never gets timed out from under them; short enough that an orphaned round
+ * doesn't hold a stake and that profile's one active-round slot hostage for
+ * long.
+ */
+const STALE_ROUND_TIMEOUT_MS = 30 * 60 * 1000;
 
 /** Maps a thrown error to the response both Blackjack routes send. */
 export function toBlackjackErrorResponse(error: unknown): NextResponse {
@@ -107,10 +125,38 @@ async function payOut(
   }
 }
 
+/**
+ * Force-resigns `stored` if it has sat dealt but untouched past
+ * STALE_ROUND_TIMEOUT_MS, and returns the live truth either way: the same
+ * round back if it was not stale, null if the sweep just settled it (nothing
+ * is active anymore, so the caller is free to deal a fresh one), or a fresh
+ * read if a real action landed in the same instant (that action is the true
+ * outcome, not this cleanup's -- same reasoning as rule 2 above). Never
+ * throws and never pays: settlementPayout on a resign is always 0 (the whole
+ * stake is forfeit, same as any other loss), so there is nothing to credit.
+ */
+async function settleIfStale(
+  profileId: string,
+  stored: StoredBlackjackRound,
+  now: Date,
+): Promise<StoredBlackjackRound | null> {
+  const staleFor = now.getTime() - Date.parse(stored.updatedAt);
+  if (stored.round.phase !== "player-turn" || staleFor < STALE_ROUND_TIMEOUT_MS) return stored;
+
+  const advanced = await advanceBlackjackRound(stored, resign(stored.round));
+  // A successful advance means the sweep just force-settled this round, so
+  // there is nothing active left for the caller -- same as if it had never
+  // existed. A lost race (null) means a real action landed in the same
+  // instant; that real outcome is the true state, not this cleanup's, so
+  // re-fetch it rather than trust the stale object this function was handed.
+  return advanced ? null : await getActiveBlackjackRound(profileId);
+}
+
 /** The caller's live round, or null. Used to restore the felt after a refresh. */
-export async function readBlackjackRound(token: string): Promise<BlackjackView> {
+export async function readBlackjackRound(token: string, now = new Date()): Promise<BlackjackView> {
   const profile = await ensureProfile(token);
-  const stored = await getActiveBlackjackRound(profile.id);
+  const found = await getActiveBlackjackRound(profile.id);
+  const stored = found ? await settleIfStale(profile.id, found, now) : null;
   return view(stored, profile);
 }
 
@@ -131,10 +177,12 @@ export async function readBlackjackRound(token: string): Promise<BlackjackView> 
 export async function dealBlackjackRound(
   token: string,
   input: { tier: StakesTier } | { practice: true },
+  now = new Date(),
 ): Promise<BlackjackView & { resumed: boolean }> {
   let profile = await ensureProfile(token);
 
-  const existing = await getActiveBlackjackRound(profile.id);
+  const found = await getActiveBlackjackRound(profile.id);
+  const existing = found ? await settleIfStale(profile.id, found, now) : null;
   if (existing) return { ...view(existing, profile), resumed: true };
 
   let tier: BlackjackRoundTier;
@@ -214,10 +262,12 @@ export async function dealBlackjackRound(
 export async function actOnBlackjackRound(
   token: string,
   input: { roundId: string; version: number; action: BlackjackAction },
+  now = new Date(),
 ): Promise<BlackjackView> {
   let profile = await ensureProfile(token);
 
-  const current = await getActiveBlackjackRound(profile.id);
+  const found = await getActiveBlackjackRound(profile.id);
+  const current = found ? await settleIfStale(profile.id, found, now) : null;
   if (!current) {
     throw new BlackjackRequestError("You do not have a Blackjack round in progress.", 404);
   }
@@ -259,7 +309,8 @@ export async function actOnBlackjackRound(
   const next: BlackjackRound =
     input.action === "hit" ? hit(current.round)
       : input.action === "stand" ? stand(current.round)
-        : doubleDown(current.round);
+        : input.action === "double" ? doubleDown(current.round)
+          : resign(current.round);
 
   const stored = await advanceBlackjackRound(current, next);
   if (!stored) {

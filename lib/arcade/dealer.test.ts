@@ -22,6 +22,7 @@ describe("dealerLine", () => {
       "dealer-win": true,
       "player-bust": true,
       push: true,
+      "player-resign": true,
     };
     for (const outcome of Object.keys(outcomes) as BlackjackOutcome[]) {
       const line = dealerLine("settled", outcome);

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
-  Coins, Copy, DoorOpen, History, HelpCircle, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
+  Coins, Copy, Divide, DoorOpen, History, HelpCircle, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
@@ -207,6 +207,8 @@ export function PokerTable({
   onToggleSound,
   betStyle,
   onCycleBetStyle,
+  stackInBigBlinds,
+  onToggleStackInBigBlinds,
   tableRendererSettled,
   landscape,
   tightLandscape,
@@ -231,6 +233,9 @@ export function PokerTable({
   onToggleSound: () => void;
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
+  /** Whether a stack reads in raw chips or in big blinds; see lib/scene/stack-display.ts. */
+  stackInBigBlinds: boolean;
+  onToggleStackInBigBlinds: () => void;
   /** Has the stored renderer choice arrived? See the render gate below. */
   tableRendererSettled: boolean;
   /** Is the viewport wider than it is tall? The 2.5D table is landscape-only. */
@@ -931,6 +936,12 @@ export function PokerTable({
       },
       {
         kind: "action",
+        label: stackInBigBlinds ? "Show stack in chips" : "Show stack in big blinds",
+        onSelect: onToggleStackInBigBlinds,
+        icon: <Divide size={15} />,
+      },
+      {
+        kind: "action",
         label: "Hand history",
         onSelect: () => setHistoryOpen(true),
         icon: <History size={15} />,
@@ -992,6 +1003,7 @@ export function PokerTable({
     return items;
   }, [
     soundEnabled, onToggleSound, betStyle, onCycleBetStyle,
+    stackInBigBlinds, onToggleStackInBigBlinds,
     game.isPrivate, game.roomCode,
     game.id, game.isSeated, roomCodeCopied, copyRoomCode, profile, onCustomize, onSignIn,
     onSignOut, onLeaveSeat, requestLeave,
@@ -1134,6 +1146,8 @@ export function PokerTable({
             <LocalPlayerHud
               name={mySeat.name}
               stack={mySeat.stack}
+              bigBlind={game.bigBlind}
+              stackInBigBlinds={stackInBigBlinds}
               profile={profile}
               handLabel={mySeat.handLabel}
               onSendReaction={onSendReaction}
@@ -1473,6 +1487,7 @@ export function PokerTable({
                 handNumber={game.handNumber}
                 smallBlind={game.smallBlind}
                 bigBlind={game.bigBlind}
+                stackInBigBlinds={stackInBigBlinds}
                 turnStartedAt={game.turnStartedAt}
                 turnDeadlineAt={game.turnDeadlineAt}
                 winAmount={showFunnel ? game.winners.find((winner) => winner.seatId === seat.id)?.amount : undefined}

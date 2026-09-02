@@ -11,6 +11,7 @@ import { isWinningCard } from "@/lib/game/winning-cards";
 import { reactionLabel } from "@/lib/game/reaction-channel";
 import type { SeatReaction } from "@/lib/game/use-table-reactions";
 import type { SeatArtBox } from "@/lib/scene/seat-art";
+import { formatStack } from "@/lib/scene/stack-display";
 import { missingArtwork } from "@/components/artwork-cache";
 import { ChallengeSeatControl } from "./challenge-seat-control";
 import { PlayingCard } from "./playing-card";
@@ -170,6 +171,7 @@ function SeatNameplate({
   isWinner,
   smallBlind,
   bigBlind,
+  stackInBigBlinds,
   turnStartedAt,
   turnDeadlineAt,
   opponentHud,
@@ -178,6 +180,8 @@ function SeatNameplate({
   isWinner: boolean;
   smallBlind: number;
   bigBlind: number;
+  /** See lib/scene/stack-display.ts. */
+  stackInBigBlinds: boolean;
   turnStartedAt: string | null;
   turnDeadlineAt: string | null;
   opponentHud: boolean;
@@ -222,7 +226,7 @@ function SeatNameplate({
         )}
         {!away && (
           <span className="seat-status-stack" aria-label={`${seat.stack.toLocaleString()} chips`}>
-            {seat.stack.toLocaleString()}
+            {formatStack(seat.stack, bigBlind, stackInBigBlinds)}
           </span>
         )}
       </div>
@@ -261,7 +265,7 @@ function SeatNameplate({
               aria-label={`${seat.stack.toLocaleString()} chips`}
             >
               <span className="chip-dot" />
-              <strong>{seat.stack.toLocaleString()}</strong>
+              <strong>{formatStack(seat.stack, bigBlind, stackInBigBlinds)}</strong>
             </span>
           )}
         {/* Only the seat on the clock carries one, so it doubles as the
@@ -285,6 +289,7 @@ export const PlayerSeat = memo(function PlayerSeat({
   winAmount,
   smallBlind,
   bigBlind,
+  stackInBigBlinds,
   turnStartedAt,
   turnDeadlineAt,
   elementRef,
@@ -303,6 +308,8 @@ export const PlayerSeat = memo(function PlayerSeat({
   winAmount?: number;
   smallBlind: number;
   bigBlind: number;
+  /** See lib/scene/stack-display.ts. */
+  stackInBigBlinds: boolean;
   /** Position on the ring as drawn, 0 being the local player's near edge. */
   dealSlot: number;
   dealSeatCount: number;
@@ -392,6 +399,7 @@ export const PlayerSeat = memo(function PlayerSeat({
       isWinner={isWinner}
       smallBlind={smallBlind}
       bigBlind={bigBlind}
+      stackInBigBlinds={stackInBigBlinds}
       turnStartedAt={turnStartedAt}
       turnDeadlineAt={turnDeadlineAt}
       opponentHud={placement === "seat-ring"}

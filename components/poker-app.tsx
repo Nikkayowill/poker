@@ -49,6 +49,7 @@ import {
   normalizeTableRenderer,
   type TableRenderer,
 } from "@/lib/scene/table-renderer";
+import { parseStackInBigBlinds, STACK_DISPLAY_STORAGE_KEY } from "@/lib/scene/stack-display";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { Bell, BellOff, Coins, Gift, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
 import {
@@ -191,6 +192,13 @@ export function PokerApp() {
     fallback: DEFAULT_BET_STYLE,
     parse: normalizeBetStyle,
   });
+  // Same shape as betStyle above: a prop on <PokerTable>, not a module
+  // singleton, so no `apply`. Off by default -- see stack-display.ts.
+  const [stackInBigBlinds, setStackInBigBlindsState] = useStoredPreference<boolean>({
+    key: STACK_DISPLAY_STORAGE_KEY,
+    fallback: false,
+    parse: parseStackInBigBlinds,
+  });
   // Same shape as betStyle above, and deliberately with no `apply`: the
   // consumer is a prop on <PokerTable>, not a module singleton, so there is
   // nothing to push the value into outside React.
@@ -321,6 +329,10 @@ export function PokerApp() {
   const cycleBetStyle = useCallback(() => {
     setBetStyleState(nextBetStyle);
   }, [setBetStyleState]);
+
+  const toggleStackInBigBlinds = useCallback(() => {
+    setStackInBigBlindsState((current) => !current);
+  }, [setStackInBigBlindsState]);
 
   /**
    * The daily claim, moved off the navbar.
@@ -1690,6 +1702,8 @@ export function PokerApp() {
             onToggleSound={toggleSound}
             betStyle={betStyle}
             onCycleBetStyle={cycleBetStyle}
+            stackInBigBlinds={stackInBigBlinds}
+            onToggleStackInBigBlinds={toggleStackInBigBlinds}
             tableRendererSettled={tableRendererSettled}
             landscape={landscape}
             tightLandscape={tightLandscape}

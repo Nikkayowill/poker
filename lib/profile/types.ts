@@ -71,6 +71,8 @@ export interface PublicProfileSummary {
   initials: string;
   avatarUrl: string | null;
   avatarPreset: AvatarPreset;
+  /** Equipped 2D seat-art character id, same field seat.avatarCosmetic already carries at the table. */
+  avatarCosmetic: string;
   accent: string;
 }
 

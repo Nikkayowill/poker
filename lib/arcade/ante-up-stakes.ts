@@ -25,9 +25,9 @@
  * measured against real solve rates; retune them here and nowhere else.
  */
 
-import type { MinesweeperDifficulty } from "./puzzles/minesweeper";
-import type { NonogramDifficulty } from "./puzzles/nonogram";
-import type { SudokuDifficulty } from "./puzzles/sudoku";
+import { MINESWEEPER_DIFFICULTIES, type MinesweeperDifficulty } from "./puzzles/minesweeper";
+import { NONOGRAM_DIFFICULTIES, type NonogramDifficulty } from "./puzzles/nonogram";
+import { SUDOKU_DIFFICULTIES, type SudokuDifficulty } from "./puzzles/sudoku";
 
 /**
  * Every game that takes a wager, by the id it is stored under. Matches the
@@ -137,22 +137,30 @@ export function anteUpWagerCeilingProblem(
   return `That board caps at ${max.toLocaleString()} Gold a wager.${stakeMore}`;
 }
 
-/** The next difficulty that would allow a bigger wager, for the message above. */
+/**
+ * The next difficulty that would allow a bigger wager, for the message above.
+ *
+ * Reads order and label off each game's own difficulty ladder (the same one
+ * its UI and its server-side config lookup use) rather than a hand-typed copy
+ * here, so a rung added, removed or renamed in one place can't silently go
+ * stale in this message. Sudoku has no label field of its own -- neither does
+ * its difficulty picker, which capitalizes the id the same way.
+ */
 function nextRungUp(
   game: AnteUpGame,
   tier: string | null,
 ): { label: string; max: number } | null {
-  const ladder: readonly string[] | null =
+  const ladder: readonly { id: string; label: string }[] | null =
     game === "sudoku"
-      ? (["easy", "medium", "hard", "expert"] as const)
+      ? SUDOKU_DIFFICULTIES.map((id) => ({ id, label: id.charAt(0).toUpperCase() + id.slice(1) }))
       : game === "minesweeper"
-        ? (["beginner", "intermediate", "expert"] as const)
+        ? MINESWEEPER_DIFFICULTIES
         : game === "nonogram"
-          ? (["easy", "medium", "hard", "expert", "master"] as const)
+          ? NONOGRAM_DIFFICULTIES
           : null;
   if (!ladder || tier === null) return null;
 
-  const next = ladder[ladder.indexOf(tier) + 1];
+  const next = ladder[ladder.findIndex((rung) => rung.id === tier) + 1];
   if (next === undefined) return null;
-  return { label: next.charAt(0).toUpperCase() + next.slice(1), max: maxAnteUpWager(game, next) };
+  return { label: next.label, max: maxAnteUpWager(game, next.id) };
 }

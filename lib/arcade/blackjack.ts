@@ -363,6 +363,29 @@ export function toBlackjackSnapshot(
   };
 }
 
+/**
+ * Win/loss/push classification of a settled outcome.
+ *
+ * A switch with no default, so a new BlackjackOutcome the compiler doesn't
+ * see a case for fails the build here instead of silently falling through an
+ * OR-chain a caller hand-wrote -- outcomeLabel above already leans on the
+ * same exhaustiveness.
+ */
+export function outcomeResult(outcome: BlackjackOutcome): "win" | "loss" | "push" {
+  switch (outcome) {
+    case "player-blackjack":
+    case "player-win":
+    case "dealer-bust":
+      return "win";
+    case "dealer-win":
+    case "player-bust":
+    case "player-resign":
+      return "loss";
+    case "push":
+      return "push";
+  }
+}
+
 export function outcomeLabel(outcome: BlackjackOutcome): string {
   switch (outcome) {
     case "player-blackjack":

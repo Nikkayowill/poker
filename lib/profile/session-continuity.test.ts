@@ -61,6 +61,7 @@ const profile: PlayerProfile = {
   lastDailyClaimAt: null,
   lastBackstopAt: null,
   isRegistered: true,
+  homesteadAccess: false,
 };
 
 describe("the cached profile", () => {

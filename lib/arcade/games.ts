@@ -47,8 +47,7 @@ export type ArcadeGameId =
   | "othello-duel"
   | "trivia-showdown"
   | "word-race"
-  | "cribbage-table"
-  | "homestead";
+  | "cribbage-table";
 
 /**
  * `casino` stakes Gold against the house on a chance outcome. `duel` stakes
@@ -226,26 +225,6 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     entryCost: 0,
     status: "live",
     href: "/games/nonogram",
-  },
-  // `kind: "wager"` in the loose sense the doc comment above gives it (Gold
-  // staked on something other than another player, no house odds), but the
-  // Homestead has no free mode and no way to lose: a plot's payout is fixed
-  // at stocking. entryCost 0 rather than the cheapest crop's stake so the
-  // floor never wallet-gates the tile -- a broke player may still own plots
-  // ready to sell, and blocking the door to their own payout over the price
-  // of the *next* stake would strand exactly the Gold that gets them un-broke.
-  {
-    id: "homestead",
-    name: "StackChips Homestead",
-    blurb: "Raise crops and livestock, sell what they make",
-    kind: "idle",
-    entryCost: 0,
-    // On the floor, but open only to players an admin has let in: the routes
-    // and the page both check profiles.homestead_access (see
-    // lib/server/homestead-access.ts). The tile being visible is the point --
-    // this is `live` so people can find it and ask.
-    status: "live",
-    href: "/games/homestead",
   },
   // ---- Duels: skill/social games staked against another player, not the
   // house. Winner takes the pot both players anted; see lib/pvp/. Priced at

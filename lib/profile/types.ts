@@ -53,6 +53,15 @@ export interface PlayerProfile {
    * which rewards are unlocked, never who the account is.
    */
   isRegistered: boolean;
+  /**
+   * Admin-granted access to the Homestead while it is unreleased -- see
+   * lib/server/homestead-access.ts. Safe to expose here even though it's
+   * assigned in the admin dashboard: it says nothing about anyone but the
+   * profile it belongs to, which is exactly who's asking. This is what lets
+   * the Homestead tile grey itself out client-side instead of every visitor
+   * round-tripping to find out.
+   */
+  homesteadAccess: boolean;
 }
 
 /**

@@ -83,6 +83,7 @@ import {
   type SwipeGesture,
 } from "@/lib/ui/swipe-pager";
 import { ArcadeFloor } from "@/components/arcade/arcade-floor";
+import { StackChipsLogo } from "@/components/brand/stackchips-logo";
 import { Leaderboard } from "@/components/leaderboard/leaderboard";
 import { LOBBY_PANE_STORAGE_KEY, TAB_COUNT, TAB_LABELS, TabBar } from "@/components/shell/tab-bar";
 import { SiteFooter } from "@/components/nav/site-footer";
@@ -557,6 +558,32 @@ function PlayPane({
           </button>
         </div>
       </div>
+
+      {/* Right under Texas Hold'em -- see the desktop hub tile's own comment
+          for why this moved off the Ante Up floor and why the wordmark
+          stands in for "StackChips" rather than being typed out. Locked by
+          default: homesteadAccess is granted per player from the admin
+          dashboard while the game is still being tried out, so a card
+          nobody can open renders as an inert row instead of a disabled
+          link pretending to be a live door. */}
+      {profile.homesteadAccess ? (
+        <Link className="mshell-card mshell-row mshell-homestead-row" href="/games/homestead" onClick={tapSound}>
+          <StackChipsLogo className="mshell-homestead-logo" />
+          <span className="mshell-row-body">
+            <strong>Homestead</strong>
+            <small>Raise crops and livestock, sell what they make</small>
+          </span>
+          <ChevronRight size={18} aria-hidden="true" />
+        </Link>
+      ) : (
+        <div className="mshell-card mshell-row mshell-homestead-row mshell-row-locked" aria-disabled="true">
+          <StackChipsLogo className="mshell-homestead-logo" />
+          <span className="mshell-row-body">
+            <strong>Homestead</strong>
+            <small className="mshell-homestead-soon">Coming soon</small>
+          </span>
+        </div>
+      )}
 
       {/* Every tier is a fixed buy-in (minBuyIn === maxBuyIn), so picking the
           stake is also picking the amount. That's why the phone goes straight

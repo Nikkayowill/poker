@@ -23,11 +23,16 @@ interface StoredProfile extends Omit<PlayerProfile, "isRegistered"> {
   homesteadAccess: boolean;
 }
 
-/** The admin dashboard's view of a profile: adds the moderation fields publicProfile() omits from every player-facing response. */
+/**
+ * The admin dashboard's view of a profile: adds the moderation fields
+ * publicProfile() omits from every player-facing response. homesteadAccess
+ * is NOT one of them any more -- publicProfile() now carries it too, since
+ * telling a player their own access flag isn't a moderation leak the way
+ * banned/lastSeenIp would be. It stays listed on StoredProfile itself only.
+ */
 export type AdminProfileSummary = PlayerProfile & {
   banned: boolean;
   lastSeenIp: string | null;
-  homesteadAccess: boolean;
 };
 
 function adminProfileView(profile: StoredProfile): AdminProfileSummary {
@@ -35,7 +40,6 @@ function adminProfileView(profile: StoredProfile): AdminProfileSummary {
     ...publicProfile(profile),
     banned: profile.banned,
     lastSeenIp: profile.lastSeenIp,
-    homesteadAccess: profile.homesteadAccess,
   };
 }
 
@@ -89,6 +93,7 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     lastDailyClaimAt: profile.lastDailyClaimAt,
     lastBackstopAt: profile.lastBackstopAt,
     isRegistered: profile.userId !== null,
+    homesteadAccess: profile.homesteadAccess,
   };
 }
 

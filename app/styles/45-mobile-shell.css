@@ -486,6 +486,23 @@
     line-height: 1.35;
   }
 
+  /* Stands in for a lucide icon in the row's leading slot -- the StackChips
+     wordmark itself (components/brand/stackchips-logo.tsx), so the row
+     reads "StackChips Homestead" instead of typing it out. */
+  .mshell-homestead-logo { flex-shrink: 0; width: 58px; height: auto; }
+  .mshell-homestead-soon {
+    color: #93a1bb;
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+  }
+  /* Locked-by-default: homesteadAccess is granted per player from the admin
+     dashboard, so a row nobody can open renders as an inert <div>, not a
+     disabled control. Same treatment .hub-tile-locked gives the desktop
+     tile -- dimmed, no chevron, no press feedback. */
+  .mshell-row-locked { opacity: .55; cursor: default; }
+
   .mshell-rule {
     height: 1px;
     background: var(--rule);

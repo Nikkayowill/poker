@@ -1,0 +1,250 @@
+"use client";
+
+import { useEffect, useImperativeHandle, useMemo, useRef, type Ref } from "react";
+import type { HomesteadStock } from "@/lib/homestead/catalogue";
+import type { HomesteadPlotSnapshot } from "@/lib/homestead/plots";
+import { affordanceFor, type AffordanceContext, type HomesteadTool } from "@/lib/homestead/tools";
+import type { HomesteadScene, HomesteadSceneCell, PlotScreenRect } from "./homestead-scene";
+
+export type { PlotScreenRect };
+
+/**
+ * The Phaser mount, and the bundle boundary.
+ *
+ * Both the engine and the scene enter through the dynamic import below, so a
+ * player who never opens the Homestead never downloads Phaser -- the same
+ * isolation poker-app.tsx's `dynamic(..., { ssr: false })` gives the table.
+ *
+ * Rendering is driven from props: `plots` plus the held tool become the
+ * scene's cells (what each plot is, and what a tap would do to it), and the
+ * scene repaints only the cells whose picture actually changed. Everything
+ * the player can DO comes back out through `onPlotTap`, routed by the shell
+ * exactly as the old grid's taps were, so the rules never moved.
+ *
+ * `api` is the shell's handle for the few things that are not a render:
+ * dragging a seed out of the strip (the placement ghost), and the zoom
+ * buttons for mouse users who have no pinch. Its coordinates are CSS pixels
+ * relative to this host; the scene converts, because the canvas underneath is
+ * deliberately denser than the screen (see the scale config below).
+ *
+ * The canvas is decorative to assistive tech. The keyboard and screen-reader
+ * surface is the plot list in homestead-farm.tsx, which drives the same
+ * callbacks -- hence aria-hidden here rather than a second, invisible copy of
+ * every tile kept in sync with the canvas.
+ */
+
+export interface HomesteadWorldApi {
+  /** Move (or hide, with null) the placement ghost. Returns the empty plot under it. */
+  setGhost: (stock: HomesteadStock | null, clientX: number, clientY: number) => number | null;
+  zoomBy: (factor: number) => void;
+  recenter: () => void;
+  /** Pan so a plot sits clear of the overlays, if it is not already. */
+  focusPlot: (plotIndex: number) => void;
+  /** Report where a plot is on screen via `onTrackedRect` until told to stop. */
+  trackPlot: (plotIndex: number | null) => void;
+}
+
+export interface HomesteadWorldProps {
+  plots: HomesteadPlotSnapshot[];
+  tool: HomesteadTool;
+  context: AffordanceContext;
+  selected: number | null;
+  celebrate: { plotIndex: number; nonce: number } | null;
+  onPlotTap: (plot: HomesteadPlotSnapshot) => void;
+  onGroundTap: () => void;
+  onReady: () => void;
+  /** The tracked plot's place on the canvas, whenever it moves. */
+  onTrackedRect: (rect: PlotScreenRect | null) => void;
+  api: Ref<HomesteadWorldApi | null>;
+}
+
+function toCells(
+  plots: HomesteadPlotSnapshot[],
+  tool: HomesteadTool,
+  context: AffordanceContext,
+  selected: number | null,
+): HomesteadSceneCell[] {
+  return plots.map((plot) => ({
+    plotIndex: plot.plotIndex,
+    state: plot.state,
+    stock: plot.stock,
+    progress: plot.progress,
+    afford: affordanceFor(tool, plot, context).kind,
+    selected: plot.plotIndex === selected,
+    purchasable: plot.purchasable,
+    unlockPrice: plot.unlockPrice,
+  }));
+}
+
+export function HomesteadWorld({
+  plots,
+  tool,
+  context,
+  selected,
+  celebrate,
+  onPlotTap,
+  onGroundTap,
+  onReady,
+  onTrackedRect,
+  api,
+}: HomesteadWorldProps) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const sceneRef = useRef<HomesteadScene | null>(null);
+  const gameRef = useRef<{ destroy: (removeCanvas: boolean) => void } | null>(null);
+
+  // The scene calls back into whatever the shell currently is, not whatever
+  // it was when the game booted.
+  const plotsRef = useRef(plots);
+  const tapRef = useRef(onPlotTap);
+  const groundRef = useRef(onGroundTap);
+  const readyRef = useRef(onReady);
+  const trackedRef = useRef(onTrackedRect);
+  useEffect(() => {
+    plotsRef.current = plots;
+    tapRef.current = onPlotTap;
+    groundRef.current = onGroundTap;
+    readyRef.current = onReady;
+    trackedRef.current = onTrackedRect;
+  });
+
+  const cells = useMemo(() => toCells(plots, tool, context, selected), [plots, tool, context, selected]);
+  const cellsRef = useRef(cells);
+  useEffect(() => {
+    cellsRef.current = cells;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    let observer: ResizeObserver | null = null;
+    const host = hostRef.current;
+    if (!host) return;
+
+    void (async () => {
+      // The module namespace, not `.default`: see the import note at the top
+      // of homestead-scene.ts.
+      const [Phaser, { HomesteadScene: SceneClass, DPR }] = await Promise.all([
+        import("phaser"),
+        import("./homestead-scene"),
+      ]);
+      if (cancelled) return;
+
+      const reducedMotion =
+        typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      const scene = new SceneClass(
+        {
+          onTapPlot: (plotIndex) => {
+            const plot = plotsRef.current.find((p) => p.plotIndex === plotIndex);
+            if (plot) tapRef.current(plot);
+          },
+          onTapGround: () => groundRef.current(),
+          onReady: () => readyRef.current(),
+          onTrackedRect: (rect) => trackedRef.current(rect),
+        },
+        { reducedMotion, host },
+      );
+
+      const size = () => ({
+        width: Math.max(2, Math.round(host.clientWidth * DPR)),
+        height: Math.max(2, Math.round(host.clientHeight * DPR)),
+      });
+      const first = size();
+
+      const game = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent: host,
+        // Smoothing on, everywhere: the world is baked vector art rather than
+        // pixel art, and it is drawn oversized and scaled down.
+        pixelArt: false,
+        render: { antialias: true, mipmapFilter: "LINEAR_MIPMAP_LINEAR", roundPixels: false },
+        backgroundColor: "#86c96e",
+        // Phaser handles no input at all. The scene reads pointer events off
+        // this host element itself (see homestead-scene.ts's bindInput for
+        // why), and two input layers on one surface would double-handle every
+        // press.
+        input: { mouse: false, touch: false, keyboard: false },
+        // Rendered at device resolution and shown at CSS size (52-homestead.css
+        // forces the canvas to fill its host): the canvas is DPR times denser
+        // than the screen, which is what keeps the vector art crisp. Scale.NONE
+        // because we drive the size ourselves -- RESIZE would match the canvas
+        // to the CSS box and throw that density away.
+        scale: { mode: Phaser.Scale.NONE, width: first.width, height: first.height },
+        // The world is a few hundred sprites on one texture; the default
+        // loop is cheap here, and a drag wants every frame it can get.
+        scene,
+        // No physics: the animals are a pure function in lib/homestead/world.ts.
+        audio: { noAudio: true },
+      });
+      sceneRef.current = scene;
+      gameRef.current = game;
+      scene.setPlots(cellsRef.current);
+
+      // A handle for the gesture harness to read the camera through. Dev only:
+      // production never gets a global.
+      if (process.env.NODE_ENV !== "production") {
+        (window as unknown as { __homestead?: { scene: unknown } }).__homestead = { scene };
+      }
+
+      // The scale manager only has a canvas to size once the game has booted,
+      // so every resize -- including the observer's own first, synchronous
+      // call -- waits for it.
+      const fit = () => {
+        if (!game.isBooted) return;
+        const next = size();
+        if (game.scale.width === next.width && game.scale.height === next.height) return;
+        game.scale.resize(next.width, next.height);
+        game.scale.refresh();
+      };
+      game.events.once("ready", fit);
+      observer = new ResizeObserver(fit);
+      observer.observe(host);
+    })();
+
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+      observer = null;
+      sceneRef.current = null;
+      gameRef.current?.destroy(true);
+      gameRef.current = null;
+      if (process.env.NODE_ENV !== "production") {
+        delete (window as unknown as { __homestead?: unknown }).__homestead;
+      }
+    };
+  }, []);
+
+  // The shell's handle. Every method looks the scene up at call time, so the
+  // handle is valid from first render and simply does nothing until the
+  // engine has finished booting.
+  useImperativeHandle(
+    api,
+    () => ({
+      setGhost: (stock, clientX, clientY) => {
+        const host = hostRef.current;
+        const scene = sceneRef.current;
+        if (!host || !scene) return null;
+        const rect = host.getBoundingClientRect();
+        return scene.setGhost(stock, clientX - rect.left, clientY - rect.top);
+      },
+      zoomBy: (factor) => sceneRef.current?.zoomBy(factor),
+      recenter: () => sceneRef.current?.recenter(),
+      focusPlot: (plotIndex) => sceneRef.current?.focusPlot(plotIndex),
+      trackPlot: (plotIndex) => sceneRef.current?.trackPlot(plotIndex),
+    }),
+    [],
+  );
+
+  // Repaint when some cell's picture changed. The parent re-derives plots
+  // every second for its countdowns; the scene diffs per cell and only
+  // rebuilds the ones whose signature moved, so this is cheap to call often.
+  useEffect(() => {
+    sceneRef.current?.setPlots(cells);
+  }, [cells]);
+
+  useEffect(() => {
+    if (celebrate) sceneRef.current?.celebrateHarvest(celebrate.plotIndex);
+  }, [celebrate]);
+
+  return <div ref={hostRef} className="hs-world" aria-hidden="true" />;
+}

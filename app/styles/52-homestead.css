@@ -1,342 +1,202 @@
 /* The StackChips Homestead (components/arcade/homestead/).
  *
  * After 22-arcade.css and 36-duels.css: the shell, header bar and error line
- * all come from those, so what is here is the field, the toolbelt and the
- * panel beside them.
+ * all come from those, so what is here is the world, the chrome pinned over
+ * it, and the store sheet.
  *
- * The field is a plain CSS grid of buttons -- one per plot, each a stack of
- * 16x16 pixel-art tiles scaled up with image-rendering: pixelated. It replaced
- * a Phaser canvas with a DOM overlay of tap targets twinned to it through a
- * shared coordinate module; the tile is now the button, so there is no
- * projection for two layers to agree on and no fixed aspect ratio to preserve.
+ * Two layers. The world is a Phaser canvas (homestead-world.tsx) that fills
+ * .hs-field and moves when the player drags it. Everything else on the screen
+ * -- the title pill, the toolbelt, the seed strip, the detail panel, the zoom
+ * buttons, the hint -- is DOM absolutely positioned over that canvas and never
+ * moves. Each overlay wrapper is pointer-events: none with its controls set
+ * back to auto, so a drag that starts in the gap between two buttons reaches
+ * the map underneath. The whole page is a fixed-height column for the same
+ * reason the table is: the map needs a definite height to fill, and a page
+ * that scrolls under a map that also scrolls is two things fighting for one
+ * finger.
  *
- * The load-bearing idea here is the affordance tint. Every plot carries
- * data-afford (act | blocked | none) computed by lib/homestead/tools.ts from
- * the held tool, and the rules under "what a tap would do" light the field
- * accordingly. That is what lets you see what the farm needs before tapping
- * anything, and it is the reason the detail panel stopped being the only way
- * to reach an action.
+ * The state and affordance rings that used to be CSS on grid buttons are now
+ * drawn in the canvas by homestead-scene.ts, in the same colours: gold for
+ * ripe, amber for hungry, brown for weather-worn, chalk for selected, violet
+ * for "the held tool can act here" and red for "it could, but you cannot pay".
+ * The palette reasoning is unchanged -- the affordance tint is violet rather
+ * than green because green is what the art already is -- and lives in that
+ * file's colour table.
  *
- * Two deliberate departures from the Neon Marquee system, both confined to the
- * field itself:
- *
- * 1. The plots carry NO radius. Everything in chrome is --radius-card or
- *    --radius-control, but these are 16px pixel-art tiles: a rounded corner
- *    on a nearest-neighbour-scaled sprite crops whole source pixels off the
- *    art. The frame around the field keeps the system radius.
- * 2. --hs-grass is the field's bed, and it is a sprite colour rather than a
- *    palette one: it is sampled from the tiles themselves (#84c669, the grass
- *    inside Kenney's soil tiles) so the plots sit in a continuous lawn instead
- *    of floating as islands on the violet chrome. Anything else here shows a
- *    seam between the art and the page.
- *
- * The affordance tint is deliberately NOT green, which was the first attempt.
- * Green is what the art already is -- every soil tile is a brown patch on a
- * green lawn -- so a green "you can act here" wash vanished into the
- * background on the one screenshot that was supposed to prove it worked. It is
- * violet instead: the highest-contrast hue against grass and soil that is also
- * already the system's own accent, spent exactly as the Glow-Not-Border rule
- * asks, as an inset ring plus a glow rather than a fill.
+ * The world is vector art now, not a tile sheet: every sprite is a Canvas2D
+ * painter (components/arcade/homestead/homestead-art.ts) baked into a Phaser
+ * texture at boot and drawn at the browser's own device pixel ratio, so it is
+ * smooth at every zoom rather than a grid of fixed-size squares. Nothing is
+ * downloaded for it. `--hs-grass` matches the grass painter's own fill colour
+ * so the DOM frame and the canvas background read as one continuous lawn.
+ * --hs-hungry and --hs-muck are the same state colours the scene draws with,
+ * kept here for the keyboard plot list. The chrome's own icons
+ * (`.hs-ico`, below) are the same painters, drawn into a small DOM canvas by
+ * `<HomesteadIcon>` rather than loaded as PNGs.
  *
  * The landscape @media block MUST stay last in this file. It overrides base
  * rules at equal specificity, so source order is the only thing deciding the
- * winner -- it sat above them once and every panel rule it set was silently
- * clobbered.
+ * winner.
  */
 
 .hs-shell {
-  /* Sampled straight out of the tile PNGs. These three are sprite colours,
-     not chrome: they exist to agree with artwork the palette knows nothing
-     about, and none of them is used outside the field. */
-  --hs-grass: #84c669;
+  /* These three are sprite colours, not chrome: they exist to agree with
+     artwork the palette knows nothing about, and none of them is used
+     outside the field. --hs-grass matches the grass painter's own fill. */
+  --hs-grass: #86c96e;
   --hs-hungry: #ff8a3d;
   --hs-muck: #785830;
+
+  /* A fixed viewport, not a page. .duel-shell gives min-height and a gap
+     sized for a scrolling lobby; the map needs a hard height to fill. */
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  gap: 10px;
+  padding-bottom: max(10px, var(--safe-bottom));
 }
 
-.hs-scoreline {
-  align-items: baseline;
+.hs-shell .floor-bar { margin-bottom: 0; }
+
+.hs-main {
+  position: relative;
+  flex: 1;
+  /* Without this a flex child refuses to shrink below its content and the
+     column grows the shell back past the viewport. */
+  min-height: 0;
 }
+
+/* ---- the world ------------------------------------------------------- */
+
+.hs-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--hs-grass);
+  box-shadow: var(--elevation-2);
+}
+
+/* The canvas host, and the element every gesture is read off (see
+   homestead-scene.ts's bindInput). touch-action: none hands every touch to the
+   map -- the browser would otherwise claim a two-finger move as page zoom and
+   a one-finger move as scroll, and the map would get neither.
+   -webkit-touch-callout stops iOS turning a held thumb into a callout menu,
+   which cancels the touch and abandons the pan mid-drag. */
+.hs-world {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.hs-world canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.hs-shell.is-placing .hs-world { cursor: copy; }
+
+/* ---- the icon painters ------------------------------------------------ */
+
+/* Every icon on this screen -- tool, seed chip, HUD purse/feed, barn row --
+   is a <HomesteadIcon>: a vector painter drawn into a small DOM canvas
+   rather than a pixel-art PNG. This is the fallback size; every context
+   below sets its own, the same contract the old <img> icons had. */
+.hs-ico {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+
+.hs-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  background: var(--hs-grass);
+  color: var(--brand-ink);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+/* ---- the title pill -------------------------------------------------- */
+
+/* The heading sits over the map's top-left corner rather than in a band
+   above it: on a phone that band was a fifth of the height the map now has. */
+.hs-scoreline {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: auto;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--brand-ink) 78%, transparent);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.hs-scoreline .ante-lobby-heading h1 { font-size: 16px; }
 
 .hs-cap {
   color: var(--neon-muted);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-
-/* Base (landscape, taller than the breakpoint below, or desktop): field, then
-   dock, then panel. The component gates out portrait entirely now (see
-   homestead-farm.tsx's useLandscape check) -- this stack of rules is never
-   actually seen turned the other way, but it still matters: the media query
-   below only fires under 520px of height, so a landscape tablet or a desktop
-   window renders this exact layout. .hs-side is dissolved so the error line
-   and panel keep their own flow; the landscape block at the END of this file
-   is what gives it a box. */
-.hs-main { display: flex; flex-direction: column; gap: 12px; }
-.hs-side { display: contents; }
-
-.hs-field {
-  position: relative;
-  width: 100%;
-  display: flex;
-  justify-content: center;
-}
-
-/* ---- the field ------------------------------------------------------- */
-
-/* Square by construction: the grid is as wide as it is tall because every
-   plot is 1:1 and the column count is fixed. Capping the WIDTH against
-   viewport height is what keeps a 4x4 board from pushing the dock off a short
-   screen -- the same spare-height thinking 46-minesweeper.css applies. */
-.hs-grid {
-  display: grid;
-  gap: 2px;
-  width: min(100%, 460px, 52dvh);
-  padding: 6px;
-  border: 0;
-  border-radius: var(--radius-card);
-  /* The lawn the plots are cut into. The 2px gap between tiles becomes grass
-     rather than a violet seam, which is what makes sixteen sprites read as one
-     field. */
-  background: var(--hs-grass);
-  box-shadow: var(--elevation-2);
-}
-
-.hs-plot {
-  position: relative;
-  aspect-ratio: 1;
-  display: block;
-  padding: 0;
-  border: 0;
-  /* No radius on purpose -- see the header. */
-  border-radius: 0;
-  background: none;
-  cursor: pointer;
-  overflow: hidden;
-  /* The tile art is authored at 16px; anything but nearest-neighbour turns
-     pixel art to mush the moment it is scaled past 2x. */
-  image-rendering: pixelated;
-  transition: transform var(--duration-fast, .12s) ease, filter var(--duration-fast, .12s) ease;
-}
-
-.hs-plot-ground,
-.hs-plot-stock {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  image-rendering: pixelated;
-  pointer-events: none;
-}
-
-/* The thing standing on the plot is drawn a little smaller than its bed, so
-   the soil reads as ground rather than as a frame around a sticker. */
-.hs-plot-stock {
-  inset: 12%;
-  width: 76%;
-  height: 76%;
-  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, .35));
-}
-
-/* Locked land is scrub standing on bare lawn -- unworked, not a hole punched
-   in the field, so this only knocks the life out of the bush. */
-.hs-plot[data-state="locked"] .hs-plot-stock {
-  filter: saturate(.55) brightness(.75);
-}
-
-.hs-plot[data-state="hungry"] .hs-plot-stock {
-  /* A stopped animal should look stopped, not just badged as stopped. */
-  filter: saturate(.35) brightness(.85) drop-shadow(0 2px 0 rgba(0, 0, 0, .35));
-}
-
-.hs-plot-progress {
-  position: absolute;
-  left: 8%;
-  right: 8%;
-  bottom: 7%;
-  height: 4px;
-  border-radius: var(--radius-pill);
-  background: rgba(0, 0, 0, .55);
-  overflow: hidden;
-}
-
-/* Scaled, not widened. Sixteen plots each ticking once a second is sixteen
-   layout passes a second if this animates `width`; a transform stays on the
-   compositor. The track's own overflow: hidden supplies the rounded ends, so
-   the fill needs no radius of its own to distort under the scale. */
-.hs-plot-progress > span {
-  display: block;
-  width: 100%;
-  height: 100%;
-  transform-origin: left center;
-  background: var(--neon-purple-bright);
-  transition: transform 1s linear;
-}
-
-/* State rings live on ::before, NOT on the button's own box-shadow.
-   An inset box-shadow paints above the element's background but BELOW its
-   children, and both tile sprites are children at inset: 0 -- so every state
-   ring set on .hs-plot itself was painted over by the artwork and never
-   appeared on screen at all. The affordance ring only ever showed because it
-   was already on a pseudo-element. */
-.hs-plot::before,
-.hs-plot[data-afford="act"]::after,
-.hs-plot[data-afford="blocked"]::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.hs-plot::before { inset: 0; }
-
-/* A ripe plot is the warmest thing in the frame at all times, tool or no
-   tool -- it is the only state that is costing the player money to ignore. */
-.hs-plot[data-state="ready"]::before {
-  box-shadow: inset 0 0 0 3px var(--brand-gold), var(--accent-glow-gold);
-}
-
-.hs-plot[data-state="ready"] .hs-plot-stock {
-  animation: hs-ripe 2.4s ease-in-out infinite;
-}
-
-@keyframes hs-ripe {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5%); }
-}
-
-/* Amber for "stopped, and waiting on you" -- distinct from the gold that
-   means "finished and worth money", and from the red that means "you cannot
-   pay for this". */
-.hs-plot[data-state="hungry"]::before {
-  box-shadow: inset 0 0 0 3px var(--hs-hungry);
-}
-
-.hs-plot[data-state="mucked"]::before {
-  box-shadow: inset 0 0 0 3px var(--hs-muck);
-}
-
-.hs-plot.is-selected::before {
-  box-shadow: inset 0 0 0 3px var(--neon-chalk);
-}
-
-.hs-plot:focus-visible {
-  outline: 2px solid var(--neon-purple-bright);
-  outline-offset: 2px;
-  z-index: 1;
-}
-
-/* ---- what a tap would do --------------------------------------------- */
-
-/* The whole point of the toolbelt. `act` means the held tool works here and
-   is paid for; `blocked` means this IS the tool's target and only Gold, feed
-   or a free slot is missing. Both light up, in different colours, because a
-   blocked plot that looked identical to an irrelevant one would hide the
-   reason the farm has stopped. */
-/* Inset by the state ring's own width so the two nest concentrically instead
-   of one hiding the other: a ripe plot under a held Harvest reads gold on the
-   outside (it is worth money) and violet within (a tap will take it). */
-.hs-plot[data-afford="act"]::after,
-.hs-plot[data-afford="blocked"]::after {
-  inset: 3px;
-}
-
-.hs-plot[data-afford="act"]::after {
-  box-shadow: inset 0 0 0 3px var(--neon-purple-bright), var(--accent-glow);
-  animation: hs-beckon 1.6s ease-in-out infinite;
-}
-
-/* Red is a trace in this system and this is exactly that: a ring around the
-   plot that cannot be paid for, not a wash over the art. */
-.hs-plot[data-afford="blocked"]::after {
-  box-shadow: inset 0 0 0 3px var(--brand-red);
-}
-
-.hs-plot[data-afford="blocked"] { cursor: not-allowed; }
-
-@keyframes hs-beckon {
-  0%, 100% { opacity: .55; }
-  50% { opacity: 1; }
-}
-
-.hs-plot[data-afford="act"]:hover { transform: scale(1.05); }
-.hs-plot[data-afford="none"]:hover { filter: brightness(1.12); }
-
-/* The harvest flourish. Mounted fresh per collection (keyed on a nonce) so a
-   second harvest on the same plot replays it. */
-.hs-plot-pop {
-  position: absolute;
-  inset: -20%;
-  /* Above the state and affordance rings, which sit at z-index 1 -- the burst
-     is the last thing that happened and should read over everything. */
-  z-index: 2;
-  border-radius: var(--radius-round);
-  pointer-events: none;
-  background: radial-gradient(circle, rgba(255, 233, 138, .85), transparent 65%);
-  animation: hs-pop 620ms ease-out forwards;
-}
-
-@keyframes hs-pop {
-  from { opacity: .95; transform: scale(.4); }
-  to { opacity: 0; transform: scale(1.35); }
-}
-
-.hs-toast {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  margin: 0;
-  padding: 5px 14px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--brand-ink);
-  box-shadow: inset 0 0 0 1px var(--brand-gold), var(--accent-glow-gold);
-  color: var(--brand-gold-light);
-  font-size: 14px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-  animation: hs-toast 1.8s ease-out forwards;
-}
-
-@keyframes hs-toast {
-  0% { opacity: 0; transform: translate(-50%, 8px); }
-  18% { opacity: 1; transform: translate(-50%, 0); }
-  75% { opacity: 1; }
-  100% { opacity: 0; transform: translate(-50%, -12px); }
-}
-
-.hs-loading { text-align: center; padding: 40px 0; }
 
 /* ---- the toolbelt ---------------------------------------------------- */
 
+/* Pinned down the right edge, where a thumb wrapped around a phone held
+   sideways already is. The seed strip stands to its LEFT rather than under it
+   (row-reverse), because five tools plus five seeds stacked in one column
+   outgrow a 390px-tall screen and the bottom of the list becomes unreachable.
+   Side by side, each column fits with room to spare. */
 .hs-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 48px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row-reverse;
   align-items: center;
-  width: 100%;
+  gap: 8px;
+  pointer-events: none;
 }
 
-/* A row within thumb reach in portrait; the landscape block turns it into a
-   column beside the field so the same five targets stay one-handed. */
 .hs-toolbelt {
   display: flex;
+  flex-direction: column;
   gap: 6px;
-  width: min(100%, 460px);
+  max-height: 100%;
   padding: 6px;
   border: 0;
   border-radius: var(--radius-card);
-  background: var(--brand-surface);
+  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
+  box-shadow: var(--elevation-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  pointer-events: auto;
 }
 
 .hs-tool {
   position: relative;
-  flex: 1;
-  min-width: 0;
+  flex: none;
+  width: 62px;
   /* 44px is the touch-target floor; the dock is the one thing on this screen
      that is always in use, so it does not get to dip under it. */
-  min-height: 52px;
+  min-height: 46px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -351,10 +211,9 @@
   transition: background var(--duration-fast, .12s) ease, color var(--duration-fast, .12s) ease;
 }
 
-.hs-tool img {
-  width: 26px;
-  height: 26px;
-  image-rendering: pixelated;
+.hs-tool .hs-ico {
+  width: 22px;
+  height: 22px;
 }
 
 .hs-tool-label {
@@ -397,14 +256,22 @@
 
 .hs-seeds {
   display: flex;
+  flex-direction: column;
   gap: 6px;
-  width: min(100%, 460px);
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  padding-bottom: 2px;
-  scrollbar-width: thin;
+  max-height: 100%;
+  padding: 6px;
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
+  box-shadow: var(--elevation-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  pointer-events: auto;
 }
 
+/* pan-y, not none: the strip scrolls vertically when it has to, and the drag
+   that places a chip on the map is a sideways one. Anything vertical stays
+   the browser's; anything else is ours. */
 .hs-seed {
   flex: 0 0 auto;
   display: flex;
@@ -418,10 +285,13 @@
   color: var(--neon-muted);
   font-size: 14px;
   white-space: nowrap;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.hs-seed img { width: 22px; height: 22px; image-rendering: pixelated; }
+.hs-seed .hs-ico { width: 22px; height: 22px; }
 
 .hs-seed.is-picked {
   background: var(--brand-surface-2);
@@ -430,7 +300,7 @@
 }
 
 /* Full is not disabled: picking a full track is how you find out it is full,
-   and the field then explains it in red rather than the chip refusing a tap. */
+   and the map then explains it in red rather than the chip refusing a tap. */
 .hs-seed[data-full] { opacity: .55; }
 
 .hs-seed:focus-visible {
@@ -438,19 +308,122 @@
   outline-offset: 2px;
 }
 
+/* ---- zoom buttons ---------------------------------------------------- */
+
+/* For a mouse, which has no pinch. Bottom-right, under the toolbelt's
+   column, which stops 48px short of the bottom to leave this room. */
+.hs-camera {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
+  box-shadow: var(--elevation-2);
+}
+
+.hs-camera-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--neon-muted);
+  cursor: pointer;
+}
+
+.hs-camera-btn:hover { background: var(--brand-surface-2); color: var(--neon-chalk); }
+.hs-camera-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+/* ---- the hint -------------------------------------------------------- */
+
 .hs-tool-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  max-width: min(60%, 520px);
   margin: 0;
-  min-height: 18px;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--brand-ink) 78%, transparent);
+  backdrop-filter: blur(6px);
   color: var(--neon-muted);
   font-size: 14px;
   text-align: center;
+  pointer-events: none;
 }
 
 .hs-tool-hint.is-busy { color: var(--brand-gold-light); }
 
-/* ---- the detail panel ------------------------------------------------ */
+.hs-toast {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-ink);
+  box-shadow: inset 0 0 0 1px var(--brand-gold), var(--accent-glow-gold);
+  color: var(--brand-gold-light);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: hs-toast 1.8s ease-out forwards;
+}
 
-.hs-detail { margin-top: 4px; }
+@keyframes hs-toast {
+  0% { opacity: 0; transform: translate(-50%, 8px); }
+  18% { opacity: 1; transform: translate(-50%, 0); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -12px); }
+}
+
+/* ---- the error line and the detail card ------------------------------ */
+
+/* The error line floats over the map's bottom-left, above the hint pill. */
+.hs-side {
+  position: absolute;
+  left: 8px;
+  bottom: 44px;
+  width: min(320px, 52%);
+  pointer-events: none;
+}
+
+.hs-side > * { pointer-events: auto; }
+
+/* The detail card hangs beside the plot it is about. Its position is set
+   on the node by homestead-farm.tsx's placeDetail, from the plot's place on
+   the canvas, so the card follows the plot through a pan or a zoom; the
+   stylesheet only says how big it may be. Hidden until the first position
+   arrives, so it never flashes at the corner. */
+.hs-detail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: min(300px, 46%);
+  margin: 0;
+  visibility: hidden;
+  will-change: transform;
+}
+
+.hs-detail:empty { display: none; }
+
+/* The shared error line is a translucent wash, tuned for a dark page. Over
+   bright grass it turns to mud and the words go with it; give it the panel's
+   own solid ground here. */
+.hs-side .duel-error {
+  background: color-mix(in srgb, var(--brand-red) 22%, var(--brand-ink-lift));
+  box-shadow: var(--elevation-4);
+}
 
 .hs-hint {
   margin: 0;
@@ -462,7 +435,8 @@
   padding: 12px 14px;
   border: 0;
   border-radius: var(--radius-card);
-  background: var(--brand-surface);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--accent-edge), var(--elevation-4);
 }
 
 .hs-panel h2 {
@@ -540,6 +514,77 @@
 
 .hs-sell-btn { font-size: 15px; padding: 10px 22px; }
 
+/* ---- the keyboard plot list ------------------------------------------ */
+
+/* Invisible until something in it has focus, then a strip of numbered plot
+   buttons over the bottom of the map. A canvas cannot be tabbed into; this
+   is how the keyboard gets the same sixteen taps a finger has. */
+.hs-plot-list {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.hs-plot-list:focus-within {
+  left: 50%;
+  bottom: 44px;
+  width: auto;
+  height: auto;
+  max-width: calc(100% - 16px);
+  padding: 8px 10px;
+  transform: translateX(-50%);
+  clip-path: none;
+  border-radius: var(--radius-card);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--elevation-4);
+  white-space: normal;
+}
+
+.hs-plot-list-hint {
+  margin: 0 0 6px;
+  color: var(--neon-muted);
+  font-size: 12px;
+}
+
+.hs-plot-list ul {
+  display: grid;
+  grid-template-columns: repeat(8, 32px);
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hs-plot-item {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  color: var(--neon-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.hs-plot-item[data-state="locked"] { opacity: .5; }
+.hs-plot-item[data-state="ready"] { box-shadow: inset 0 0 0 2px var(--brand-gold); }
+.hs-plot-item[data-state="hungry"] { box-shadow: inset 0 0 0 2px var(--hs-hungry); }
+.hs-plot-item[data-state="mucked"] { box-shadow: inset 0 0 0 2px var(--hs-muck); }
+.hs-plot-item[data-afford="act"] { color: var(--neon-chalk); background: var(--neon-purple-deep); }
+.hs-plot-item[data-afford="blocked"] { box-shadow: inset 0 0 0 2px var(--brand-red); }
+.hs-plot-item.is-selected { color: var(--neon-chalk); box-shadow: inset 0 0 0 2px var(--neon-chalk); }
+
+.hs-plot-item:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+}
+
 /* ---- HUD and store --------------------------------------------------- */
 
 .hs-hud {
@@ -572,10 +617,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-.hs-purse img {
+.hs-purse .hs-ico,
+.hs-feed .hs-ico {
   width: 16px;
   height: 16px;
-  image-rendering: pixelated;
 }
 
 .hs-store-badge {
@@ -610,11 +655,9 @@
   background: var(--brand-surface-2);
 }
 
-.hs-barn-row > img {
+.hs-barn-row > .hs-ico {
   width: 28px;
   height: 28px;
-  flex: none;
-  image-rendering: pixelated;
 }
 
 .hs-barn-name {
@@ -907,147 +950,41 @@
 
 .hs-exchange-done { color: var(--brand-gold-light) !important; }
 
-/* Motion here is all ambient -- a ripe plot bobbing, the affordance pulse,
-   the harvest burst. None of it carries information the colour does not, so
-   it can all simply stop. */
+/* Motion in the DOM layer is the toast only; the map's own motion (animals,
+   the ripe bob, the affordance pulse) is switched off inside the scene from
+   the same media query. */
 @media (prefers-reduced-motion: reduce) {
-  .hs-plot[data-state="ready"] .hs-plot-stock,
-  .hs-plot[data-afford="act"]::after,
-  .hs-plot-pop,
-  .hs-toast {
-    animation: none;
-  }
-  .hs-plot,
+  .hs-toast { animation: none; opacity: 1; }
   .hs-cta { transition: none; }
-  .hs-plot-progress > span,
   .hs-exchange-bar > span { transition: none; }
-  .hs-toast { opacity: 1; }
 }
 
 /* ---- landscape phones (MUST STAY LAST) -------------------------------
-   Height is the scarce axis here, not width: at 844x390 there is no room for
-   field over dock over panel. The shell becomes a fixed-height flex column and
-   the row splits into field | dock | panel, so the field takes the full height
-   and the dock turns into a column of the same five buttons.
-
-   The height is FLEXED, never calculated. It used to be `calc(100dvh - 128px)`
-   and 128px was wrong -- the real chrome above it (safe area, floor bar and its
-   clamp()ed margin, the scoreline, two shell gaps) measures ~160px at 844x390,
-   so the field hung a full 30px below the fold on the exact device this
-   breakpoint exists for. A magic number cannot track a clamp() against
-   viewport width anyway. */
+   Height is the scarce axis here: at 844x390 every band of chrome above the
+   map comes straight out of the map. The layout is the same fixed column as
+   everywhere else; this block only shrinks what sits over and above it. */
 @media (orientation: landscape) and (max-height: 520px) {
   .hs-shell {
-    height: 100dvh;
-    overflow: hidden;
-    gap: 8px;
+    gap: 6px;
+    padding-top: calc(6px + var(--safe-top));
   }
 
-  /* Every band above the field gives back what it can: the chrome is worth
-     less here than the picture it is sitting on top of. */
-  .hs-shell .floor-bar {
-    min-height: 34px;
-    margin-bottom: 6px;
-  }
-  .hs-shell .ante-lobby-heading h1 { font-size: 16px; }
-  .hs-shell .hs-cap { font-size: 14px; }
+  .hs-shell .floor-bar { min-height: 34px; }
 
-  .hs-main {
-    flex-direction: row;
-    gap: 10px;
-    align-items: stretch;
-    flex: 1;
-    width: 100%;
-    /* Without this a flex child refuses to shrink below its content and the
-       row grows the shell back past the viewport. */
-    min-height: 0;
-  }
+  .hs-scoreline { padding: 3px 10px; }
+  .hs-scoreline .ante-lobby-heading h1 { font-size: 14px; }
+  .hs-shell .hs-cap { font-size: 12px; }
 
-  .hs-field { flex: none; height: 100%; width: auto; }
-  .hs-grid {
-    height: 100%;
-    width: auto;
-    aspect-ratio: 1;
-    max-width: none;
-    padding: 6px;
-  }
+  .hs-tool { width: 56px; min-height: 42px; }
+  .hs-tool .hs-ico { width: 20px; height: 20px; }
 
-  .hs-controls {
-    flex: none;
-    width: auto;
-    /* On a short landscape screen the toolbelt (5 rows) plus a held seed's
-       3-row strip can outgrow the available height even after the fix above.
-       `.hs-shell` clips overflow for the whole page, so without its own
-       scroll this column would silently clip Hen Coop off the bottom with no
-       way to reach it -- min-height: 0 lets a flex child shrink below its
-       content size at all, which is what makes the overflow-y below able to
-       kick in instead of the column refusing to shrink and forcing the shell
-       to clip it.
-       Plain `center` is the wrong keyword once this scrolls: a centered flex
-       container with more content than room clips evenly off BOTH ends and
-       starts scrolled to the middle, so Look/Plant at the top become just as
-       unreachable as Hen Coop was at the bottom -- scrollTop cannot go
-       negative to recover them. `safe center` keeps the centering when
-       everything fits (every landscape phone this media query actually
-       targets) and falls back to start-alignment the moment it doesn't, so
-       the scrollable case always begins at the first tool and every row
-       stays reachable by scrolling one direction. */
-    justify-content: safe center;
-    min-height: 0;
-    overflow-y: auto;
-  }
-
-  /* The dock stands up. Same five targets, same sizes, now down the side
-     where a thumb wrapped around the phone can still reach them.
-     `height: 100%` here used to claim the whole of .hs-controls for the
-     toolbelt alone, so the seed strip below it (rendered only while Plant is
-     held) had nothing left and was flexed down to a 2px sliver -- present in
-     the DOM, invisible on screen, which made Plant impossible to use in
-     landscape with no error and no empty state to explain why. The toolbelt
-     now sizes to its own content and .hs-controls' `justify-content: center`
-     (base rule) centers the toolbelt+seeds group as a whole instead. */
-  .hs-toolbelt {
-    flex: none;
-    flex-direction: column;
-    width: auto;
-    justify-content: center;
-  }
-  .hs-tool { flex: none; min-height: 46px; width: 62px; }
-  .hs-tool img { width: 22px; height: 22px; }
-
-  /* Seeds go vertical alongside the dock rather than scrolling horizontally
-     under a field that no longer has anything under it. */
-  .hs-seeds {
-    flex: none;
-    flex-direction: column;
-    width: auto;
-    max-height: 100%;
-    overflow-x: visible;
-    overflow-y: auto;
-  }
   .hs-seed { padding: 4px 9px 4px 5px; min-height: 36px; }
-  .hs-seed img { width: 18px; height: 18px; }
-
-  .hs-tool-hint { display: none; }
-
-  .hs-side {
-    display: block;
-    flex: 1;
-    min-width: 0;
-    /* Backstop only. The compact panel below is sized to fit without it, but
-       a long error line plus a shortfall hint can still outgrow the height. */
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-  .hs-detail { margin-top: 0; min-height: 0; }
+  .hs-seed .hs-ico { width: 18px; height: 18px; }
 
   .hs-panel { padding: 10px 12px; }
   .hs-panel h2 { font-size: 15px; margin-bottom: 4px; }
   .hs-panel > p { font-size: 14px; margin: 4px 0; }
   .hs-countdown { font-size: 15px !important; }
 
-  .hs-stock-cards { grid-template-columns: 1fr; gap: 8px; }
-  .hs-stock-card { padding: 7px 10px; }
-  .hs-stock-card h3 { font-size: 14px; }
-  .hs-stock-terms, .hs-stock-yield { font-size: 14px; }
+  .hs-tool-hint { font-size: 12px; max-width: 50%; }
 }

@@ -37,7 +37,12 @@ export interface HomesteadToolDef {
   label: string;
   /** One line under the dock saying what a tap does right now. */
   hint: string;
-  /** Filename under /homestead/tiles, without the extension. */
+  /**
+   * Name of a vector painter in components/arcade/homestead/homestead-art.ts
+   * (its `PainterName` union). Kept as a plain string here rather than that
+   * type so this file stays free of a components/ import; the toolbelt casts
+   * it back to `PainterName` when it hands the name to `<HomesteadIcon>`.
+   */
   icon: string;
 }
 
@@ -45,27 +50,27 @@ export const HOMESTEAD_TOOL_DEFS: Readonly<Record<HomesteadTool, HomesteadToolDe
   inspect: {
     label: "Look",
     hint: "Tap any plot to see what it is doing.",
-    icon: "tool-inspect",
+    icon: "ico-look",
   },
   plant: {
     label: "Plant",
     hint: "Pick what to put in, then tap an empty plot.",
-    icon: "tool-plant",
+    icon: "ico-plant",
   },
   harvest: {
     label: "Harvest",
     hint: "Tap a gold plot to sell what it made.",
-    icon: "tool-harvest",
+    icon: "ico-harvest",
   },
   feed: {
     label: "Feed",
     hint: "Tap a hungry pen to start its clock again.",
-    icon: "tool-feed",
+    icon: "ico-feed",
   },
   clear: {
     label: "Clear",
     hint: "Tap a weather-worn plot to put it back to work.",
-    icon: "tool-clear",
+    icon: "ico-clear",
   },
 };
 

@@ -105,6 +105,7 @@ function otherPlayerSummary(profile: StoredProfile): PublicProfileSummary {
     initials: profile.initials,
     avatarUrl: profile.avatarUrl,
     avatarPreset: profile.avatarPreset,
+    avatarCosmetic: profile.equipped.avatar2d,
     accent: profile.accent,
   };
 }

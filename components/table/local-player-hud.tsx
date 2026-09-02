@@ -27,6 +27,7 @@ import { useProgression } from "@/components/profile/use-progression";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type { ReactionId } from "@/lib/game/reaction-channel";
+import { formatStack } from "@/lib/scene/stack-display";
 import { ReactionButton } from "./table-reactions";
 
 /** A poker chip, not a coin -- this reads the table stack, not the Gold
@@ -56,6 +57,8 @@ function ChipGlyph() {
 export function LocalPlayerHud({
   name,
   stack,
+  bigBlind,
+  stackInBigBlinds,
   profile,
   handLabel,
   onSendReaction,
@@ -66,6 +69,9 @@ export function LocalPlayerHud({
    * guest's session name is what the felt actually calls this seat. */
   name: string;
   stack: number;
+  bigBlind: number;
+  /** See lib/scene/stack-display.ts. */
+  stackInBigBlinds: boolean;
   profile: PlayerProfile | null;
   handLabel?: string | null;
   onSendReaction?: (reactionId: ReactionId) => void;
@@ -120,7 +126,8 @@ export function LocalPlayerHud({
         )}
 
         <span className="player-hud-cash">
-          <ChipGlyph />${stack.toLocaleString()}
+          <ChipGlyph />
+          {stackInBigBlinds ? formatStack(stack, bigBlind, true) : `$${stack.toLocaleString()}`}
         </span>
       </div>
 

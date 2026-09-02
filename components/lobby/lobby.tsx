@@ -11,6 +11,7 @@ import { backstopState } from "@/lib/profile/backstop";
 import { accountsEnabled } from "@/lib/auth/client";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { usePhoneViewport } from "@/components/use-phone-viewport";
+import { StackChipsLogo } from "@/components/brand/stackchips-logo";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
 import { EntryHero } from "@/components/auth/entry-hero";
 import { SiteFooter } from "@/components/nav/site-footer";
@@ -380,10 +381,50 @@ export function Lobby({
                 target, which is what the artwork says. */}
           </button>
 
+          {/* Right under Texas Hold'em, not filed away on the Ante Up floor
+              (it moved out of that catalogue -- see lib/arcade/games.ts). The
+              wordmark stands in for "StackChips" rather than typing it, so
+              the tile reads "StackChips Homestead" the same way the app's own
+              masthead does. Locked-by-default: `homesteadAccess` is granted
+              per player from the admin dashboard while the game is still
+              being tried out, and a card nobody can open should say so
+              plainly rather than pretend to be a live door -- so it renders
+              as an inert <div>, not a disabled button dressed as a link. */}
+          {profile.homesteadAccess ? (
+            <Link
+              className="hub-tile hub-tile-homestead"
+              href="/games/homestead"
+              style={tileIndexStyle(1)}
+              onClick={tapSound}
+            >
+              <span className="hub-tile-body">
+                <span className="hub-tile-homestead-mark">
+                  <StackChipsLogo className="hub-tile-homestead-logo" />
+                  <strong>Homestead</strong>
+                </span>
+                <small>Raise crops and livestock, sell what they make</small>
+              </span>
+            </Link>
+          ) : (
+            <div
+              className="hub-tile hub-tile-homestead hub-tile-locked"
+              style={tileIndexStyle(1)}
+              aria-disabled="true"
+            >
+              <span className="hub-tile-body">
+                <span className="hub-tile-homestead-mark">
+                  <StackChipsLogo className="hub-tile-homestead-logo" />
+                  <strong>Homestead</strong>
+                </span>
+                <small className="hub-tile-soon">Coming soon</small>
+              </span>
+            </div>
+          )}
+
           <button
             type="button"
             className="hub-tile hub-tile-private"
-            style={tileIndexStyle(1)}
+            style={tileIndexStyle(2)}
             disabled={loading || !sessionReady}
             onClick={() => { tapSound(); setBuyInMode("host"); }}
           >
@@ -393,7 +434,7 @@ export function Lobby({
             </span>
           </button>
 
-          <Link className="hub-tile hub-tile-gold" href="/store/gold" style={tileIndexStyle(2)} onClick={tapSound}>
+          <Link className="hub-tile hub-tile-gold" href="/store/gold" style={tileIndexStyle(3)} onClick={tapSound}>
             <span className="hub-tile-body">
               <strong>Buy Gold</strong>
               <small>Optional — never required to play</small>
@@ -404,16 +445,16 @@ export function Lobby({
               by DOM order: the panel claims a 2x2 block, and any tile ahead
               of it in the source takes a cell that block needs, which pushes
               it down a row and reopens the hole it exists to close. */}
-          <ArcadePanel profile={profile} style={tileIndexStyle(3)} />
+          <ArcadePanel profile={profile} style={tileIndexStyle(4)} />
 
-          <Link className="hub-tile hub-tile-collection" href="/collection" style={tileIndexStyle(4)} onClick={tapSound}>
+          <Link className="hub-tile hub-tile-collection" href="/collection" style={tileIndexStyle(5)} onClick={tapSound}>
             <span className="hub-tile-body">
               <strong>Collection</strong>
               <small>Avatars and card backs</small>
             </span>
           </Link>
 
-          <Link className="hub-tile hub-tile-leaderboard" href="/leaderboard" style={tileIndexStyle(5)} onClick={tapSound}>
+          <Link className="hub-tile hub-tile-leaderboard" href="/leaderboard" style={tileIndexStyle(6)} onClick={tapSound}>
             <span className="hub-tile-body">
               <strong>Leaderboard</strong>
               <small>This season&rsquo;s standings</small>
@@ -426,7 +467,7 @@ export function Lobby({
           <button
             type="button"
             className="hub-tile hub-tile-friends"
-            style={tileIndexStyle(6)}
+            style={tileIndexStyle(7)}
             onClick={() => { tapSound(); setFriendsOpen(true); }}
           >
             <span className="hub-tile-body">
@@ -436,7 +477,7 @@ export function Lobby({
             <Users className="hub-tile-go" size={18} aria-hidden="true" />
           </button>
 
-          <form className="hub-tile hub-tile-code" style={tileIndexStyle(7)} onSubmit={submitJoin}>
+          <form className="hub-tile hub-tile-code" style={tileIndexStyle(8)} onSubmit={submitJoin}>
             <label htmlFor="join-code">Join with a room code</label>
             <div className="hub-code-row">
               <input

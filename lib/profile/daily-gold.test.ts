@@ -18,6 +18,7 @@ function profileWith(overrides: Partial<PlayerProfile>): PlayerProfile {
     lastDailyClaimAt: null,
     lastBackstopAt: null,
     isRegistered: true,
+    homesteadAccess: false,
     ...overrides,
   };
 }

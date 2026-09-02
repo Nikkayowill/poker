@@ -22,6 +22,7 @@ describe("profile appearance", () => {
       lastDailyClaimAt: null,
       lastBackstopAt: null,
       isRegistered: false,
+      homesteadAccess: false,
     };
     const snapshot = toSnapshot(createGame(token, profile.displayName, profile), token);
     expect(snapshot.seats[0]).toMatchObject({

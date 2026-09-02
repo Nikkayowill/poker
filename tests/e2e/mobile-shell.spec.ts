@@ -148,7 +148,12 @@ test.describe("phone lobby", () => {
 
     const nav = await tabBar(page).boundingBox();
     if (!nav) throw new Error("no tab bar");
-    expect(Math.round(nav.y + nav.height)).toBe(PHONE.height);
+    // The bar is a floating pill now, not flush against the edge -- it sits
+    // `max(--safe-bottom, 10px) + 10px` above the bottom (20px here, since
+    // this test has no safe-area inset to report). Checking it's still
+    // *fixed* there (not scrolled away with the pane) is the point of this
+    // test, not the exact flush position a floating bar no longer has.
+    expect(Math.round(nav.y + nav.height)).toBe(PHONE.height - 20);
   });
 });
 

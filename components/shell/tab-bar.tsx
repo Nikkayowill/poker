@@ -65,22 +65,29 @@ export function TabBar({
           >
             {/* The other two tabs swap outline/filled by toggling `fill`, the
                 same active-state cue TikTok/Instagram/YouTube use on their
-                own generic tabs. */}
+                own generic tabs. Wrapped so the press animation (CSS, on
+                .mshell-nav-icon) can scale/rotate just the glyph -- the
+                label underneath stays put, which is what keeps a tap from
+                reading as the whole button wobbling. */}
             {Icon
-              ? <Icon size={20} strokeWidth={1.8} fill={active ? "currentColor" : "none"} aria-hidden="true" />
+              ? (
+                <span className="mshell-nav-icon" aria-hidden="true">
+                  <Icon size={22} strokeWidth={1.8} fill={active ? "currentColor" : "none"} />
+                </span>
+              )
               : (
                 // aria-hidden, not just decorative styling: ProfileAvatar
                 // sets its own role="img"/aria-label, which would otherwise
                 // concatenate into this button's accessible name alongside
                 // the visible "Profile" label.
-                <span aria-hidden="true">
+                <span className="mshell-nav-icon" aria-hidden="true">
                   <ProfileAvatar
                     profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }}
                     className="mshell-nav-avatar"
                   />
                 </span>
               )}
-            <span>{name}</span>
+            <span className="mshell-nav-label">{name}</span>
           </button>
         );
       })}

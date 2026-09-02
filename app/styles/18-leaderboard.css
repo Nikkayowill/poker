@@ -17,6 +17,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* PersistentChrome's floating tab bar (45-mobile-shell.css) sits fixed over
+   this route's own content on phone. It used to sit flush against the
+   safe-area strip; now it floats clear of it, which needs more bottom
+   clearance than the flat bar did. */
+@media (max-width: 600px) {
+  .leaderboard-shell {
+    padding-bottom: calc(96px + var(--safe-bottom) + 30px);
+  }
+}
+
 .leaderboard-header {
   display: flex;
   flex-wrap: wrap;

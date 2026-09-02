@@ -1,4 +1,6 @@
-/* The StackChips Homestead (components/arcade/homestead/).
+/* StackAcres, on the floor -- "Homestead" everywhere in this file's own
+ * names (components/arcade/homestead/, the hs- prefix, the route) is the
+ * plumbing name, unrenamed on purpose; the display name changed, not this.
  *
  * After 22-arcade.css and 36-duels.css: the shell, header bar and error line
  * all come from those, so what is here is the field, the toolbelt and the
@@ -62,6 +64,12 @@
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
+
+/* The heading's real name is the logo (components/brand/stackacres-logo.tsx);
+   the <h1> beside it is sr-only, kept for the a11y tree only. This has room
+   to be the widest the mark ships anywhere -- it's the game's own masthead,
+   not a tile competing with a chevron and a blurb. */
+.hs-heading-logo { width: 210px; height: auto; }
 
 /* Base (landscape, taller than the breakpoint below, or desktop): field, then
    dock, then panel. The component gates out portrait entirely now (see
@@ -765,6 +773,11 @@
   text-align: center;
 }
 
+/* The gate card is centered text (see .hs-gate-card above); the logo is a
+   grid item with a fixed width, so it needs its own centering rather than
+   inheriting text-align. */
+.hs-gate-card .hs-heading-logo { margin: 0 auto; }
+
 .hs-gate-icon {
   display: inline-flex;
   align-items: center;
@@ -950,6 +963,7 @@
     margin-bottom: 6px;
   }
   .hs-shell .ante-lobby-heading h1 { font-size: 16px; }
+  .hs-shell .hs-heading-logo { width: 150px; }
   .hs-shell .hs-cap { font-size: 14px; }
 
   .hs-main {

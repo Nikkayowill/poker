@@ -83,7 +83,7 @@ import {
   type SwipeGesture,
 } from "@/lib/ui/swipe-pager";
 import { ArcadeFloor } from "@/components/arcade/arcade-floor";
-import { StackChipsLogo } from "@/components/brand/stackchips-logo";
+import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { Leaderboard } from "@/components/leaderboard/leaderboard";
 import { LOBBY_PANE_STORAGE_KEY, TAB_COUNT, TAB_LABELS, TabBar } from "@/components/shell/tab-bar";
 import { SiteFooter } from "@/components/nav/site-footer";
@@ -560,26 +560,29 @@ function PlayPane({
       </div>
 
       {/* Right under Texas Hold'em -- see the desktop hub tile's own comment
-          for why this moved off the Ante Up floor and why the wordmark
-          stands in for "StackChips" rather than being typed out. Locked by
-          default: homesteadAccess is granted per player from the admin
-          dashboard while the game is still being tried out, so a card
-          nobody can open renders as an inert row instead of a disabled
-          link pretending to be a live door. */}
+          for why this moved off the Ante Up floor. Named StackAcres now, not
+          "Homestead" (Kayo's call; see components/brand/stackacres-logo.tsx)
+          -- the row's own logo is decorative at this size rather than
+          spelling the name (the bold text next to it does that), same as
+          the old StackChips mark it replaces here. Locked by default:
+          homesteadAccess is granted per player from the admin dashboard
+          while the game is still being tried out, so a card nobody can open
+          renders as an inert row instead of a disabled link pretending to
+          be a live door. */}
       {profile.homesteadAccess ? (
         <Link className="mshell-card mshell-row mshell-homestead-row" href="/games/homestead" onClick={tapSound}>
-          <StackChipsLogo className="mshell-homestead-logo" />
+          <StackAcresLogo className="mshell-homestead-logo" />
           <span className="mshell-row-body">
-            <strong>Homestead</strong>
+            <strong>StackAcres</strong>
             <small>Raise crops and livestock, sell what they make</small>
           </span>
           <ChevronRight size={18} aria-hidden="true" />
         </Link>
       ) : (
         <div className="mshell-card mshell-row mshell-homestead-row mshell-row-locked" aria-disabled="true">
-          <StackChipsLogo className="mshell-homestead-logo" />
+          <StackAcresLogo className="mshell-homestead-logo" />
           <span className="mshell-row-body">
-            <strong>Homestead</strong>
+            <strong>StackAcres</strong>
             <small className="mshell-homestead-soon">Coming soon</small>
           </span>
         </div>

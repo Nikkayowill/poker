@@ -314,6 +314,18 @@
         "value": "rgba(4, 6, 11, .6)",
         "createdAt": "2026-09-01T21:27:02.321Z",
         "reason": "matches the existing un-tokenized header shadow literal at 02-app-shell.css:77 (rgba(4, 6, 11, .72)) -- same near-black tone, not a new color choice"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-09-02T01:15:25.067Z",
+        "reason": "pre-existing: Inter is DESIGN.md's own documented body typeface, not introduced by this edit (my change only appended a .sr-only utility to this file)"
+      },
+      {
+        "rule": "bounce-easing",
+        "value": "cubic-bezier(.2, .9, .25, 1.2)",
+        "createdAt": "2026-09-02T01:15:25.182Z",
+        "reason": "pre-existing: this is DESIGN.md's own documented --ease-overshoot token (purpose: toggle thumb / settling tile), not introduced by this edit"
       }
     ]
   }

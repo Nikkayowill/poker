@@ -486,9 +486,10 @@
     line-height: 1.35;
   }
 
-  /* Stands in for a lucide icon in the row's leading slot -- the StackChips
-     wordmark itself (components/brand/stackchips-logo.tsx), so the row
-     reads "StackChips Homestead" instead of typing it out. */
+  /* Stands in for a lucide icon in the row's leading slot -- the StackAcres
+     wordmark itself (components/brand/stackacres-logo.tsx), decorative at
+     this size rather than legible; the bold "StackAcres" beside it carries
+     the name. */
   .mshell-homestead-logo { flex-shrink: 0; width: 58px; height: auto; }
   .mshell-homestead-soon {
     color: #93a1bb;

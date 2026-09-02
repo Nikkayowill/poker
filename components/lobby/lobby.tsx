@@ -11,7 +11,7 @@ import { backstopState } from "@/lib/profile/backstop";
 import { accountsEnabled } from "@/lib/auth/client";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { usePhoneViewport } from "@/components/use-phone-viewport";
-import { StackChipsLogo } from "@/components/brand/stackchips-logo";
+import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
 import { EntryHero } from "@/components/auth/entry-hero";
 import { SiteFooter } from "@/components/nav/site-footer";
@@ -382,14 +382,19 @@ export function Lobby({
           </button>
 
           {/* Right under Texas Hold'em, not filed away on the Ante Up floor
-              (it moved out of that catalogue -- see lib/arcade/games.ts). The
-              wordmark stands in for "StackChips" rather than typing it, so
-              the tile reads "StackChips Homestead" the same way the app's own
-              masthead does. Locked-by-default: `homesteadAccess` is granted
-              per player from the admin dashboard while the game is still
-              being tried out, and a card nobody can open should say so
-              plainly rather than pretend to be a live door -- so it renders
-              as an inert <div>, not a disabled button dressed as a link. */}
+              (it moved out of that catalogue -- see lib/arcade/games.ts).
+              Named StackAcres now, not "StackChips Homestead" -- Kayo's
+              call, a name that reads as its own game on the floor rather
+              than a StackChips sub-page (components/brand/stackacres-logo.
+              tsx has the full reasoning). The route/module/CSS-class name
+              is still "homestead" throughout -- a display rename, not a
+              plumbing one; see that file's own doc comment before
+              renaming any of that. Locked-by-default: `homesteadAccess` is
+              granted per player from the admin dashboard while the game is
+              still being tried out, and a card nobody can open should say
+              so plainly rather than pretend to be a live door -- so it
+              renders as an inert <div>, not a disabled button dressed as a
+              link. */}
           {profile.homesteadAccess ? (
             <Link
               className="hub-tile hub-tile-homestead"
@@ -398,10 +403,7 @@ export function Lobby({
               onClick={tapSound}
             >
               <span className="hub-tile-body">
-                <span className="hub-tile-homestead-mark">
-                  <StackChipsLogo className="hub-tile-homestead-logo" />
-                  <strong>Homestead</strong>
-                </span>
+                <StackAcresLogo className="hub-tile-homestead-logo" />
                 <small>Raise crops and livestock, sell what they make</small>
               </span>
             </Link>
@@ -412,10 +414,7 @@ export function Lobby({
               aria-disabled="true"
             >
               <span className="hub-tile-body">
-                <span className="hub-tile-homestead-mark">
-                  <StackChipsLogo className="hub-tile-homestead-logo" />
-                  <strong>Homestead</strong>
-                </span>
+                <StackAcresLogo className="hub-tile-homestead-logo" />
                 <small className="hub-tile-soon">Coming soon</small>
               </span>
             </div>

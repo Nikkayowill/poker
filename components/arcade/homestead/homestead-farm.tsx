@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { Coins, HelpCircle, Store, Wheat } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
+import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
@@ -46,7 +47,11 @@ import { HomesteadGrid, HomesteadSeedStrip } from "./homestead-grid";
 import { HomesteadToolbelt } from "./homestead-toolbelt";
 
 /**
- * The StackChips Homestead: a farm of staked crops and livestock.
+ * StackAcres: a farm of staked crops and livestock. Named that on the floor
+ * (Kayo's call, replacing "StackChips Homestead") -- the route, this
+ * directory, every lib/homestead/* module and DB table are still named
+ * "homestead" throughout, a display rename only. Don't casually rename
+ * those to match; that's a bigger, deliberate pass of its own.
  *
  * Split of responsibilities: this shell owns data, requests and the held
  * tool; ./homestead-grid.tsx draws plots; ./homestead-toolbelt.tsx is the
@@ -494,8 +499,14 @@ export function HomesteadFarm() {
       </header>
 
       <div className="duel-scoreline ante-scoreline hs-scoreline">
+        {/* The real logo (components/brand/stackacres-logo.tsx), StackAcres
+            now rather than the typed "StackChips Homestead" this heading
+            shipped with. The <h1> stays -- a decorative mark shouldn't
+            erase the page's own heading -- but moves to sr-only, since the
+            logo already spells the same name visually. */}
         <div className="ante-lobby-heading">
-          <h1>StackChips Homestead</h1>
+          <h1 className="sr-only">StackAcres</h1>
+          <StackAcresLogo className="hs-heading-logo" aria-hidden="true" />
         </div>
         <span className="hs-cap" aria-live="polite">
           {penCount}/{HOMESTEAD_PEN_CAP} pens · {fieldCount}/{HOMESTEAD_FIELD_CAP} fields
@@ -833,7 +844,7 @@ export function HomesteadFarm() {
       )}
 
       {showHelp && (
-        <HowToPlayModal title="StackChips Homestead" onClose={() => setShowHelp(false)}>
+        <HowToPlayModal title="StackAcres" onClose={() => setShowHelp(false)}>
           <p>
             Pick a tool from the belt, then tap a plot. Every plot the tool can work on lights up,
             so you can see what the farm needs without reading it.

@@ -2,6 +2,7 @@
 
 import { ArrowRight, Eye, EyeOff, LoaderCircle, LogOut, Mail } from "lucide-react";
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { StackChipsLogo } from "@/components/brand/stackchips-logo";
 import { InstallLine } from "@/components/pwa/install-line";
@@ -458,9 +459,9 @@ export function AccountEntryCard({
           long outlier that made the old 2-column grid size unevenly; three
           short links read as one clean row now instead. */}
       <nav className="entry-legal-links" aria-label="Legal">
-        <a href="/legal/terms">Terms of Service</a>
-        <a href="/legal/privacy">Privacy Policy</a>
-        <a href="/legal/disclaimer">App Disclaimer</a>
+        <Link href="/legal/terms">Terms of Service</Link>
+        <Link href="/legal/privacy">Privacy Policy</Link>
+        <Link href="/legal/disclaimer">App Disclaimer</Link>
       </nav>
     </footer>
     </>

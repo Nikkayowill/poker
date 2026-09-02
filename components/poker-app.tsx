@@ -1,8 +1,7 @@
 "use client";
 
 import type { RealtimeChannel, Session } from "@supabase/supabase-js";
-import { Capacitor } from "@capacitor/core";
-import { useCallback, useEffect, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useCallback, useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { applyOptimisticAction } from "@/lib/game/optimistic-action";
@@ -23,25 +22,19 @@ import {
 } from "@/lib/game/table-channel";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { dailyGoldState } from "@/lib/profile/daily-gold";
-import { parseEnabledFlag } from "@/lib/profile/stored-preference";
 import {
   browserSessionStorage,
   clearPendingFriendInvite,
   clearSessionContinuity,
-  entryOpenedSnapshot,
   markAccountLinkAnnounced,
   markEntryOpened,
   readPendingFriendInvite,
-  serverEntryOpenedSnapshot,
-  serverProfileSnapshot,
-  sessionProfileSnapshot,
   shouldAnnounceAccountLink,
-  subscribeSessionCache,
-  writeCachedProfile,
   writePendingFriendInvite,
 } from "@/lib/profile/session-continuity";
 import { useStoredPreference } from "@/components/use-stored-preference";
-import { playSound, primeTableSounds, setSoundEnabled } from "@/lib/audio/sound-effects";
+import { useAppShell } from "@/components/shell/app-shell";
+import { playSound, primeTableSounds } from "@/lib/audio/sound-effects";
 import { gameOnSound } from "@/lib/audio/ui-sounds";
 import {
   BET_STYLE_STORAGE_KEY,
@@ -56,8 +49,8 @@ import {
   normalizeTableRenderer,
   type TableRenderer,
 } from "@/lib/scene/table-renderer";
+import { parseStackInBigBlinds, STACK_DISPLAY_STORAGE_KEY } from "@/lib/scene/stack-display";
 import { tableSounds } from "@/lib/audio/table-sounds";
-import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
 import { Bell, BellOff, Coins, Gift, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
 import {
   disablePushOnThisDevice,
@@ -71,6 +64,9 @@ import { StackChipsLogo } from "@/components/brand/stackchips-logo";
 import { ProfileModal } from "@/components/profile/profile-modal";
 import { Menu, type MenuItem } from "@/components/nav/menu";
 import { DonateButton } from "@/components/nav/donate-button";
+import { NotificationBell } from "@/components/notifications/notification-bell";
+import { NotificationToast } from "@/components/notifications/notification-toast";
+import { useNotifications } from "@/lib/notifications/use-notifications";
 import { GoldBadge } from "@/components/profile/gold-badge";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RestoreConflictModal } from "@/components/auth/restore-conflict-modal";
@@ -83,11 +79,6 @@ import { REWARDED_AD_ELIGIBLE_BELOW } from "@/lib/rewards/config";
 import type { RewardTrigger } from "@/lib/rewards/triggers";
 import type { ConnectionState } from "@/components/table/poker-table";
 import { useTableReactions } from "@/lib/game/use-table-reactions";
-import {
-  LEGACY_SOUND_STORAGE_KEY,
-  MUSIC_STORAGE_KEY,
-  SOUND_STORAGE_KEY,
-} from "@/lib/audio/sound-preference";
 
 /**
  * The table, fetched only when there is one to show.
@@ -150,10 +141,8 @@ export function PokerApp() {
   // queued a prediction settles, whether or not the request succeeded.
   const [optimisticGame, addOptimisticAction] = useOptimistic(game, applyOptimisticAction);
   const [, startActionTransition] = useTransition();
-  const [loadedProfile, setProfile] = useState<PlayerProfile | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [profileLoading, setProfileLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connected");
   const [cashOutNotice, setCashOutNotice] = useState<number | null>(null);
@@ -164,64 +153,14 @@ export function PokerApp() {
   // tab's own guest progress. See confirmRestoreConflict/cancelRestoreConflict.
   const [restoreConflict, setRestoreConflict] = useState(false);
 
-  /*
-   * Why the profile and the entry gate are derived rather than plain state:
-   * the arcade, Collection and the leaderboard are their own routes, so "Back
-   * to the lobby" unmounts this component and mounts a fresh one. Everything
-   * below used to start empty on each arrival, and the player watched the app
-   * rediscover facts it already knew: the signed-out card painted for the
-   * length of one `GET /api/profile`, then the hub's own "Preparing your
-   * seat..." for the rest of it, then finally the hub. A login screen
-   * flashing at somebody an hour into a session, once per navigation.
-   *
-   * `cachedProfile` is this tab's copy of the last profile the server sent
-   * (see lib/profile/session-continuity.ts for why it is sessionStorage and
-   * never localStorage). It reaches the first render synchronously through
-   * `useSyncExternalStore`, which is the point: `useStoredPreference` defers
-   * by a tick, and a value that arrives after the first paint has already let
-   * the wrong screen show. Same trade `first-run-strip.tsx` makes.
-   *
-   * It is a bridge, not an authority, and `profileLoading` is what keeps that
-   * honest: the moment the real fetch settles, `loadedProfile` is the answer
-   * even when the answer is null. That ordering matters: read the cache after
-   * the load settles and a player whose session has expired keeps seeing
-   * their old balance and stays waved through the gate.
-   */
-  const readSessionProfile = useCallback(
-    () => sessionProfileSnapshot(browserSessionStorage()),
-    [],
-  );
-  const cachedProfile = useSyncExternalStore(
-    subscribeSessionCache,
-    readSessionProfile,
-    serverProfileSnapshot,
-  );
-  const profile = loadedProfile ?? (profileLoading ? cachedProfile : null);
-
-  /**
-   * Entry is opened by choosing an account, Continue as guest, or completing
-   * a sign-in -- and, deliberately as of 2026-08-29, is NOT evidenced by
-   * holding a profile at all. A guest's session cookie is durable across
-   * visits on its own; treating it as proof the gate was already cleared let
-   * a guest bypass "Enter StackChips" forever, on every future open, with
-   * nothing pushing them toward a real account. So this reads a per-tab hint
-   * instead (see `lib/profile/session-continuity.ts`): true for the rest of
-   * an in-app navigation (stops a remount re-asking the question), false
-   * again on a fresh tab or a relaunched app, whether or not a cookie is
-   * still sitting there. `useSyncExternalStore`, not a bare `useState`, for
-   * the same hydration reason `cachedProfile` above uses it.
-   */
-  const entryOpened = useSyncExternalStore(
-    subscribeSessionCache,
-    () => entryOpenedSnapshot(browserSessionStorage()),
-    serverEntryOpenedSnapshot,
-  );
-  const entryComplete = entryOpened;
-
-  /** Keeps this tab's copy in step, so the next mount paints instantly. */
-  useEffect(() => {
-    if (loadedProfile) writeCachedProfile(browserSessionStorage(), loadedProfile);
-  }, [loadedProfile]);
+  // The profile, the entry gate, and the fetch that keeps them current now
+  // live in the persistent shell (components/shell/app-shell.tsx) -- this
+  // component no longer unmounts on every arcade/collection/leaderboard
+  // navigation, but it also isn't the only screen with a profile to show any
+  // more, so that lifecycle moved up to where every screen can reach it. See
+  // that file for the cachedProfile/entryComplete reasoning this used to
+  // carry inline.
+  const { profile, setProfile, profileLoading, loadProfile, profileError, entryComplete } = useAppShell();
 
   // Both notices retire themselves; see NOTICE_VISIBLE_MS. Keyed on the value
   // so a second cash-out restarts the clock rather than inheriting the tail of
@@ -242,28 +181,23 @@ export function PokerApp() {
   const [signInPending, setSignInPending] = useState(false);
   const [navShowing, setNavShowing] = useState(false);
   const [savePromptDismissed, setSavePromptDismissed] = useState(false);
-  const [soundEnabled, setSoundEnabledState] = useStoredPreference<boolean>({
-    key: SOUND_STORAGE_KEY,
-    legacyKey: LEGACY_SOUND_STORAGE_KEY,
-    fallback: true,
-    parse: parseEnabledFlag,
-    apply: (enabled, cause) => {
-      setSoundEnabled(enabled);
-      // Plays only as confirmation of an actual unmute, and only after the
-      // line above has unmuted the channel it plays through.
-      if (enabled && cause === "change") playSound("ui");
-    },
-  });
-  const [musicEnabled, setMusicEnabledState] = useStoredPreference<boolean>({
-    key: MUSIC_STORAGE_KEY,
-    fallback: true,
-    parse: parseEnabledFlag,
-    apply: setMenuMusicEnabled,
-  });
+  // Sound/music preferences and the immersive signal now live in the
+  // persistent shell (components/shell/app-shell.tsx) -- this component no
+  // longer unmounts on every arcade/collection/leaderboard navigation, but it
+  // also isn't the only screen that needs these any more, so they moved up to
+  // where every screen can reach them.
+  const { soundEnabled, toggleSound, musicEnabled, toggleMenuMusic, setImmersive } = useAppShell();
   const [betStyle, setBetStyleState] = useStoredPreference<BetAnimationStyle>({
     key: BET_STYLE_STORAGE_KEY,
     fallback: DEFAULT_BET_STYLE,
     parse: normalizeBetStyle,
+  });
+  // Same shape as betStyle above: a prop on <PokerTable>, not a module
+  // singleton, so no `apply`. Off by default -- see stack-display.ts.
+  const [stackInBigBlinds, setStackInBigBlindsState] = useStoredPreference<boolean>({
+    key: STACK_DISPLAY_STORAGE_KEY,
+    fallback: false,
+    parse: parseStackInBigBlinds,
   });
   // Same shape as betStyle above, and deliberately with no `apply`: the
   // consumer is a prop on <PokerTable>, not a module singleton, so there is
@@ -392,17 +326,13 @@ export function PokerApp() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  const toggleSound = useCallback(() => {
-    setSoundEnabledState((current) => !current);
-  }, [setSoundEnabledState]);
-
-  const toggleMenuMusic = useCallback(() => {
-    setMusicEnabledState((current) => !current);
-  }, [setMusicEnabledState]);
-
   const cycleBetStyle = useCallback(() => {
     setBetStyleState(nextBetStyle);
   }, [setBetStyleState]);
+
+  const toggleStackInBigBlinds = useCallback(() => {
+    setStackInBigBlindsState((current) => !current);
+  }, [setStackInBigBlindsState]);
 
   /**
    * The daily claim, moved off the navbar.
@@ -431,38 +361,16 @@ export function PokerApp() {
     } finally {
       setClaimingGold(false);
     }
-  }, [claimingGold]);
+  }, [claimingGold, setProfile]);
 
+  // Tells the shell a hand is in progress -- pauses ambient music and (once
+  // Phase 3 wires it) hides the persistent nav chrome. The table itself
+  // already behaves as the target "immersive" screen today (its own header
+  // below is gated `!game`), so this just formalizes that into the shared
+  // signal rather than changing any table behavior.
   useEffect(() => {
-    // The screen boundary is wider than just `game`: PokerApp only owns the
-    // lobby/hub/table experience, and the arcade (`/games/*`) plus
-    // /collection, /leaderboard and /store are separate routes that unmount
-    // this whole component. Without a cleanup here, navigating to any of
-    // them left the singleton <audio> element in lib/audio/menu-music.ts
-    // playing behind a page that never asked for it, since nothing under
-    // those routes imports stopMenuMusic. The cleanup below fixes that: it
-    // fires on every unmount, which is every such navigation.
-    //
-    // Tab visibility is the other half: a hidden tab (backgrounded window,
-    // switched tab) has no in-app "leave" to hook, so it's read directly via
-    // document.hidden. sync() is the single source of truth for both game
-    // and visibility so the two conditions can't drift into two separate
-    // start/stop call sites.
-    setMenuMusicEnabled(musicEnabled);
-
-    const sync = () => {
-      if (!musicEnabled) return;
-      if (game || document.hidden) stopMenuMusic();
-      else startMenuMusic();
-    };
-
-    sync();
-    document.addEventListener("visibilitychange", sync);
-    return () => {
-      document.removeEventListener("visibilitychange", sync);
-      stopMenuMusic();
-    };
-  }, [game, musicEnabled]);
+    setImmersive(Boolean(game));
+  }, [game, setImmersive]);
 
   // Fetch the table's chunk (see the `dynamic` call at the top of this file)
   // while the lobby is sitting still, so taking a seat costs no more than it
@@ -542,19 +450,8 @@ export function PokerApp() {
     if (game) retireFirstRunStrip();
   }, [game]);
 
-  const loadProfile = useCallback(async () => {
-    const response = await fetch("/api/profile", { cache: "no-store" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error ?? "Could not load your profile.");
-    setProfile(data.profile);
-    // A profile came back, so this browser holds a session cookie and has been
-    // through the entry gate before. `entryComplete` reads off the profile
-    // directly rather than mirroring into state, so there is nothing to set
-    // here. No profile is the other half of that: the session is gone, so
-    // this tab's cached copy is stale and must not be shown to whoever
-    // arrives next.
-    if (!data.profile) clearSessionContinuity(browserSessionStorage());
-  }, []);
+  // loadProfile itself now lives in the shell (components/shell/app-shell.tsx)
+  // -- destructured above alongside profile/profileLoading.
 
   const ingest = useCallback((data: { game: GameSnapshot; persistence: string; profile?: PlayerProfile }) => {
     leftGameIdRef.current = null;
@@ -569,7 +466,7 @@ export function PokerApp() {
     // rebuy), so the navbar balance updates without a separate profile
     // re-fetch.
     if (data.profile) setProfile(data.profile);
-  }, []);
+  }, [setProfile]);
 
   // `force` is for the one caller that represents a real join rather than a
   // background poll: the ?table= deep-link bootstrap, which must apply even
@@ -823,18 +720,10 @@ export function PokerApp() {
         });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [setProfile]);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadProfile()
-        .catch((caught) => {
-          setError(caught instanceof Error ? caught.message : "Could not load your profile.");
-        })
-        .finally(() => setProfileLoading(false));
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [loadProfile]);
+  // The unconditional mount-time loadProfile() call also moved to the shell
+  // -- it has to run there now regardless of which route mounts first.
 
   /**
    * Gives a first-time visitor an actual profile once they enter the lobby.
@@ -877,27 +766,11 @@ export function PokerApp() {
     return () => {
       active = false;
     };
-  }, [entryComplete, profile, profileLoading]);
+  }, [entryComplete, profile, profileLoading, setProfile]);
 
-  useEffect(() => {
-    if (!("serviceWorker" in window.navigator)) return;
-    // The native shell (Capacitor) is its own install/update mechanism; the
-    // hand-rolled shell-caching SW is a web-PWA concern only and would just
-    // double-cache against the WebView for no benefit.
-    if (Capacitor.isNativePlatform()) return;
-    if (process.env.NODE_ENV === "production") {
-      void window.navigator.serviceWorker.register("/sw.js").catch(() => {
-        // Installation is an enhancement; normal online play remains available.
-      });
-      return;
-    }
-
-    // A development service worker can serve stale shell responses while Fast
-    // Refresh is rebuilding. Keep npm run dev as a plain network experience.
-    void window.navigator.serviceWorker.getRegistrations().then((registrations) => {
-      registrations.forEach((registration) => void registration.unregister());
-    });
-  }, []);
+  // Service-worker registration moved to components/shell/app-shell.tsx --
+  // it's mount-once either way, and now that this component isn't the only
+  // thing that ever mounts, that's where mount-once things belong.
 
   useEffect(() => {
     // The shared client, never a fresh one: a second createClient here means
@@ -1205,8 +1078,10 @@ export function PokerApp() {
         setCashOutNotice(data.cashedOut);
       }
     } catch {
-      // Best effort: the seat still reverts to a bot server-side even if this
-      // client never hears back, so there's nothing useful to show here.
+      // Best effort: a cash seat still reverts to a bot server-side, and a
+      // tournament seat still forfeits (immediately, or on its next turn --
+      // see applyPlayerAction's leave-seat handling in engine.ts), even if
+      // this client never hears back, so there's nothing useful to show here.
     } finally {
       setLoading(false);
     }
@@ -1264,7 +1139,7 @@ export function PokerApp() {
     } finally {
       setSignInPending(false);
     }
-  }, []);
+  }, [setProfile]);
 
   useEffect(() => {
     if (profileLoading) return;
@@ -1735,6 +1610,12 @@ export function PokerApp() {
       : { kind: "action", label: "Sign in", onSelect: () => void signIn(), icon: <LogIn size={15} /> },
   ];
 
+  // Friend requests, friend adds, achievement unlocks, mission completions --
+  // fires everywhere (lobby and mid-hand), unlike AchievementToast/
+  // MissionToast which only mount on their own two pages. See
+  // components/notifications/notification-toast.tsx's own comment.
+  const { justArrived: notificationsArrived, clearArrived: clearNotificationsArrived } = useNotifications(profile?.id);
+
   /** Leaving the table while still seated cashes out first, so chips are never stranded. */
   const leaveTable = () => {
     if (game?.isSeated) {
@@ -1746,6 +1627,10 @@ export function PokerApp() {
 
   return (
     <div className="app-root">
+      {/* Unconditional, unlike the lobby-header bell above: a toast has to
+          fire mid-hand too, which is the entire point of building this
+          instead of just reusing AchievementToast/MissionToast. */}
+      <NotificationToast queue={notificationsArrived} onQueued={clearNotificationsArrived} />
       <div className="entry-sky app-entry-sky" aria-hidden="true">
         <span className="entry-orb" />
         <span className="entry-orb" />
@@ -1783,6 +1668,7 @@ export function PokerApp() {
             {profile && (
               <GoldBadge profile={profile} claimable={dailyGold === "ready"} justClaimed={goldFlash} />
             )}
+            {profile && <NotificationBell profileId={profile.id} />}
             <DonateButton />
             <Menu
               label="Open player menu"
@@ -1804,7 +1690,7 @@ export function PokerApp() {
           <PokerTable
             game={optimisticGame ?? game}
             pending={loading}
-            error={error}
+            error={error ?? profileError}
             onAction={act}
             onLeave={leaveTable}
             onLeaveSeat={leaveSeat}
@@ -1816,6 +1702,8 @@ export function PokerApp() {
             onToggleSound={toggleSound}
             betStyle={betStyle}
             onCycleBetStyle={cycleBetStyle}
+            stackInBigBlinds={stackInBigBlinds}
+            onToggleStackInBigBlinds={toggleStackInBigBlinds}
             tableRendererSettled={tableRendererSettled}
             landscape={landscape}
             tightLandscape={tightLandscape}
@@ -1843,7 +1731,7 @@ export function PokerApp() {
             onJoinCode={joinWithCode}
             loading={loading}
             sessionReady={!profileLoading}
-            error={error}
+            error={error ?? profileError}
             cashOutNotice={cashOutNotice}
             onDismissCashOut={() => setCashOutNotice(null)}
             onClaimBackstop={claimBackstop}
@@ -1875,6 +1763,9 @@ export function PokerApp() {
             freeGoldEligible={freeGoldEligible}
             onGetFreeGold={() => setFreeGoldOpen(true)}
             onEditProfile={() => setProfileOpen(true)}
+            pushPermission={pushPermission}
+            pushSubscribed={pushSubscribed}
+            onTogglePushNotifications={togglePushNotifications}
           />
         )}
       {createdRoomCode && (

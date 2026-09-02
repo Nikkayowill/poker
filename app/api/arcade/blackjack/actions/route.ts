@@ -11,7 +11,7 @@ import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server
 export const runtime = "nodejs";
 
 /**
- * Hit, stand or double on the caller's live round.
+ * Hit, stand, double or resign on the caller's live round.
  *
  * `version` is not optional and is not advisory: the service pins the action
  * to the exact state the player was looking at, so a retried or double-fired
@@ -25,7 +25,7 @@ export const runtime = "nodejs";
 const actionSchema = z.object({
   roundId: z.string().uuid(),
   version: z.number().int().positive(),
-  action: z.enum(["hit", "stand", "double"]),
+  action: z.enum(["hit", "stand", "double", "resign"]),
 });
 
 export async function POST(request: NextRequest) {

@@ -1,0 +1,1010 @@
+/* StackAcres, on the floor -- "Homestead" everywhere in this file's own
+ * names (components/arcade/homestead/, the hs- prefix, the route) is the
+ * plumbing name, unrenamed on purpose; the display name changed, not this.
+ *
+ * After 22-arcade.css and 36-duels.css: the shell, header bar and error line
+ * all come from those, so what is here is the world, the chrome pinned over
+ * it, and the store sheet.
+ *
+ * Two layers. The world is a Phaser canvas (homestead-world.tsx) that fills
+ * .hs-field and moves when the player drags it. Everything else on the screen
+ * -- the title pill, the toolbelt, the seed strip, the detail panel, the zoom
+ * buttons, the hint -- is DOM absolutely positioned over that canvas and never
+ * moves. Each overlay wrapper is pointer-events: none with its controls set
+ * back to auto, so a drag that starts in the gap between two buttons reaches
+ * the map underneath. The whole page is a fixed-height column for the same
+ * reason the table is: the map needs a definite height to fill, and a page
+ * that scrolls under a map that also scrolls is two things fighting for one
+ * finger.
+ *
+ * The state and affordance rings that used to be CSS on grid buttons are now
+ * drawn in the canvas by homestead-scene.ts, in the same colours: gold for
+ * ripe, amber for hungry, brown for weather-worn, chalk for selected, violet
+ * for "the held tool can act here" and red for "it could, but you cannot pay".
+ * The palette reasoning is unchanged -- the affordance tint is violet rather
+ * than green because green is what the art already is -- and lives in that
+ * file's colour table.
+ *
+ * The world is vector art now, not a tile sheet: every sprite is a Canvas2D
+ * painter (components/arcade/homestead/homestead-art.ts) baked into a Phaser
+ * texture at boot and drawn at the browser's own device pixel ratio, so it is
+ * smooth at every zoom rather than a grid of fixed-size squares. Nothing is
+ * downloaded for it. `--hs-grass` matches the grass painter's own fill colour
+ * so the DOM frame and the canvas background read as one continuous lawn.
+ * --hs-hungry and --hs-muck are the same state colours the scene draws with,
+ * kept here for the keyboard plot list. The chrome's own icons
+ * (`.hs-ico`, below) are the same painters, drawn into a small DOM canvas by
+ * `<HomesteadIcon>` rather than loaded as PNGs.
+ *
+ * The landscape @media block MUST stay last in this file. It overrides base
+ * rules at equal specificity, so source order is the only thing deciding the
+ * winner.
+ */
+
+.hs-shell {
+  /* These three are sprite colours, not chrome: they exist to agree with
+     artwork the palette knows nothing about, and none of them is used
+     outside the field. --hs-grass matches the grass painter's own fill. */
+  --hs-grass: #86c96e;
+  --hs-hungry: #ff8a3d;
+  --hs-muck: #785830;
+
+  /* A fixed viewport, not a page. .duel-shell gives min-height and a gap
+     sized for a scrolling lobby; the map needs a hard height to fill. */
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  gap: 10px;
+  padding-bottom: max(10px, var(--safe-bottom));
+}
+
+.hs-shell .floor-bar { margin-bottom: 0; }
+
+.hs-main {
+  position: relative;
+  flex: 1;
+  /* Without this a flex child refuses to shrink below its content and the
+     column grows the shell back past the viewport. */
+  min-height: 0;
+}
+
+/* ---- the world ------------------------------------------------------- */
+
+.hs-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--hs-grass);
+  box-shadow: var(--elevation-2);
+}
+
+/* The canvas host, and the element every gesture is read off (see
+   homestead-scene.ts's bindInput). touch-action: none hands every touch to the
+   map -- the browser would otherwise claim a two-finger move as page zoom and
+   a one-finger move as scroll, and the map would get neither.
+   -webkit-touch-callout stops iOS turning a held thumb into a callout menu,
+   which cancels the touch and abandons the pan mid-drag. */
+.hs-world {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.hs-world canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.hs-shell.is-placing .hs-world { cursor: copy; }
+
+/* ---- the icon painters ------------------------------------------------ */
+
+/* Every icon on this screen -- tool, seed chip, HUD purse/feed, barn row --
+   is a <HomesteadIcon>: a vector painter drawn into a small DOM canvas
+   rather than a pixel-art PNG. This is the fallback size; every context
+   below sets its own, the same contract the old <img> icons had. */
+.hs-ico {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+
+.hs-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  background: var(--hs-grass);
+  color: var(--brand-ink);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+/* ---- the title pill -------------------------------------------------- */
+
+/* The heading sits over the map's top-left corner rather than in a band
+   above it: on a phone that band was a fifth of the height the map now has. */
+.hs-scoreline {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: auto;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--brand-ink) 78%, transparent);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.hs-scoreline .ante-lobby-heading h1 { font-size: 16px; }
+
+.hs-cap {
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The heading's real name is the logo (components/brand/stackacres-logo.tsx);
+   the <h1> beside it is sr-only, kept for the a11y tree only. This has room
+   to be the widest the mark ships anywhere -- it's the game's own masthead,
+   not a tile competing with a chevron and a blurb. */
+.hs-heading-logo { width: 210px; height: auto; }
+/* ---- the toolbelt ---------------------------------------------------- */
+
+/* Pinned down the right edge, where a thumb wrapped around a phone held
+   sideways already is. The seed strip stands to its LEFT rather than under it
+   (row-reverse), because five tools plus five seeds stacked in one column
+   outgrow a 390px-tall screen and the bottom of the list becomes unreachable.
+   Side by side, each column fits with room to spare. */
+.hs-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 48px;
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.hs-toolbelt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 100%;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
+  box-shadow: var(--elevation-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  pointer-events: auto;
+}
+
+.hs-tool {
+  position: relative;
+  flex: none;
+  width: 62px;
+  /* 44px is the touch-target floor; the dock is the one thing on this screen
+     that is always in use, so it does not get to dip under it. */
+  min-height: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 5px 2px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--neon-muted);
+  cursor: pointer;
+  transition: background var(--duration-fast, .12s) ease, color var(--duration-fast, .12s) ease;
+}
+
+.hs-tool .hs-ico {
+  width: 22px;
+  height: 22px;
+}
+
+.hs-tool-label {
+  font-size: 11px;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
+.hs-tool:hover { background: var(--brand-surface-2); }
+
+/* Inset ring plus glow rather than a border, so holding a tool adds no layout
+   box and the dock does not reflow by a pixel as you move across it. */
+.hs-tool.is-held {
+  background: var(--brand-surface-2);
+  box-shadow: var(--accent-edge), var(--accent-glow);
+  color: var(--neon-chalk);
+}
+
+.hs-tool:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+}
+
+.hs-tool-count {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-gold);
+  color: var(--brand-ink);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- what to plant --------------------------------------------------- */
+
+.hs-seeds {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 100%;
+  padding: 6px;
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
+  box-shadow: var(--elevation-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  pointer-events: auto;
+}
+
+/* pan-y, not none: the strip scrolls vertically when it has to, and the drag
+   that places a chip on the map is a sideways one. Anything vertical stays
+   the browser's; anything else is ours. */
+.hs-seed {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 5px 10px 5px 6px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-muted);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.hs-seed .hs-ico { width: 22px; height: 22px; }
+
+.hs-seed.is-picked {
+  background: var(--brand-surface-2);
+  box-shadow: inset 0 0 0 1px var(--brand-gold), var(--accent-glow-gold);
+  color: var(--neon-chalk);
+}
+
+/* Full is not disabled: picking a full track is how you find out it is full,
+   and the map then explains it in red rather than the chip refusing a tap. */
+.hs-seed[data-full] { opacity: .55; }
+
+.hs-seed:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+}
+
+/* ---- zoom buttons ---------------------------------------------------- */
+
+/* For a mouse, which has no pinch. Bottom-right, under the toolbelt's
+   column, which stops 48px short of the bottom to leave this room. */
+.hs-camera {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
+  box-shadow: var(--elevation-2);
+}
+
+.hs-camera-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--neon-muted);
+  cursor: pointer;
+}
+
+.hs-camera-btn:hover { background: var(--brand-surface-2); color: var(--neon-chalk); }
+.hs-camera-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+/* ---- the hint -------------------------------------------------------- */
+
+.hs-tool-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  max-width: min(60%, 520px);
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--brand-ink) 78%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--neon-muted);
+  font-size: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.hs-tool-hint.is-busy { color: var(--brand-gold-light); }
+
+.hs-toast {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-ink);
+  box-shadow: inset 0 0 0 1px var(--brand-gold), var(--accent-glow-gold);
+  color: var(--brand-gold-light);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: hs-toast 1.8s ease-out forwards;
+}
+
+@keyframes hs-toast {
+  0% { opacity: 0; transform: translate(-50%, 8px); }
+  18% { opacity: 1; transform: translate(-50%, 0); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -12px); }
+}
+
+/* ---- the error line and the detail card ------------------------------ */
+
+/* The error line floats over the map's bottom-left, above the hint pill. */
+.hs-side {
+  position: absolute;
+  left: 8px;
+  bottom: 44px;
+  width: min(320px, 52%);
+  pointer-events: none;
+}
+
+.hs-side > * { pointer-events: auto; }
+
+/* The detail card hangs beside the plot it is about. Its position is set
+   on the node by homestead-farm.tsx's placeDetail, from the plot's place on
+   the canvas, so the card follows the plot through a pan or a zoom; the
+   stylesheet only says how big it may be. Hidden until the first position
+   arrives, so it never flashes at the corner. */
+.hs-detail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: min(300px, 46%);
+  margin: 0;
+  visibility: hidden;
+  will-change: transform;
+}
+
+.hs-detail:empty { display: none; }
+
+/* The shared error line is a translucent wash, tuned for a dark page. Over
+   bright grass it turns to mud and the words go with it; give it the panel's
+   own solid ground here. */
+.hs-side .duel-error {
+  background: color-mix(in srgb, var(--brand-red) 22%, var(--brand-ink-lift));
+  box-shadow: var(--elevation-4);
+}
+
+.hs-hint {
+  margin: 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+}
+
+.hs-panel {
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--accent-edge), var(--elevation-4);
+}
+
+.hs-panel h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: var(--neon-chalk);
+}
+
+.hs-panel > p { margin: 6px 0; color: var(--neon-muted); font-size: 14px; }
+
+.hs-countdown {
+  color: var(--brand-gold-light) !important;
+  font-size: 16px !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.hs-note { font-size: 14px !important; opacity: .85; }
+
+.hs-stock-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.hs-stock-card {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface-2);
+}
+
+.hs-stock-card h3 { margin: 0; font-size: 15px; }
+
+.hs-stock-terms {
+  margin: 3px 0 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+}
+
+.hs-stock-yield {
+  margin: 3px 0 0;
+  color: var(--neon-chalk);
+  font-size: 14px;
+}
+
+.hs-stock-yield span { color: var(--brand-gold-light); }
+
+.hs-cta {
+  margin-top: 8px;
+  min-height: 44px;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
+  box-shadow: var(--button-primary-glow, 0 16px 38px rgba(255, 210, 63, .3), inset 0 1px rgba(255, 255, 255, .45));
+  color: #1c1305;
+  font-size: 15px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: filter var(--duration-fast, .12s) ease, transform var(--duration-fast, .12s) ease;
+}
+
+.hs-cta:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+
+.hs-cta:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.hs-cta:focus-visible {
+  outline: 0;
+  box-shadow: var(--brand-focus);
+}
+
+.hs-sell-btn { font-size: 15px; padding: 10px 22px; }
+
+/* ---- the keyboard plot list ------------------------------------------ */
+
+/* Invisible until something in it has focus, then a strip of numbered plot
+   buttons over the bottom of the map. A canvas cannot be tabbed into; this
+   is how the keyboard gets the same sixteen taps a finger has. */
+.hs-plot-list {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.hs-plot-list:focus-within {
+  left: 50%;
+  bottom: 44px;
+  width: auto;
+  height: auto;
+  max-width: calc(100% - 16px);
+  padding: 8px 10px;
+  transform: translateX(-50%);
+  clip-path: none;
+  border-radius: var(--radius-card);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--elevation-4);
+  white-space: normal;
+}
+
+.hs-plot-list-hint {
+  margin: 0 0 6px;
+  color: var(--neon-muted);
+  font-size: 12px;
+}
+
+.hs-plot-list ul {
+  display: grid;
+  grid-template-columns: repeat(8, 32px);
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hs-plot-item {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  color: var(--neon-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.hs-plot-item[data-state="locked"] { opacity: .5; }
+.hs-plot-item[data-state="ready"] { box-shadow: inset 0 0 0 2px var(--brand-gold); }
+.hs-plot-item[data-state="hungry"] { box-shadow: inset 0 0 0 2px var(--hs-hungry); }
+.hs-plot-item[data-state="mucked"] { box-shadow: inset 0 0 0 2px var(--hs-muck); }
+.hs-plot-item[data-afford="act"] { color: var(--neon-chalk); background: var(--neon-purple-deep); }
+.hs-plot-item[data-afford="blocked"] { box-shadow: inset 0 0 0 2px var(--brand-red); }
+.hs-plot-item.is-selected { color: var(--neon-chalk); box-shadow: inset 0 0 0 2px var(--neon-chalk); }
+
+.hs-plot-item:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+}
+
+/* ---- HUD and store --------------------------------------------------- */
+
+.hs-hud {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Screen-reader-only. There is no shared utility for this in the codebase --
+   every component inlines the pattern -- so it is inlined here too. */
+.hs-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The farm's own purse, and the first thing in the HUD: everything on this
+   screen is bought with Bushels, and Gold only ever buys acreage. */
+.hs-purse {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--neon-chalk);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hs-purse .hs-ico,
+.hs-feed .hs-ico {
+  width: 16px;
+  height: 16px;
+}
+
+.hs-store-badge {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-gold);
+  color: var(--brand-ink);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the barn -------------------------------------------------------- */
+
+.hs-barn {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hs-barn-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface-2);
+}
+
+.hs-barn-row > .hs-ico {
+  width: 28px;
+  height: 28px;
+}
+
+.hs-barn-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.hs-barn-name strong {
+  color: var(--neon-chalk);
+  font-size: 14px;
+}
+
+/* Never wraps. A second line here pushes the sell buttons out of alignment
+   with the rows above, and the barn stops reading as a list. */
+.hs-barn-name > span {
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hs-barn-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+/* The sell buttons are the one place a screen gets more than one gold fill.
+   They are the same action repeated at two quantities rather than competing
+   choices, so they read as a pair, not as two primaries. */
+.hs-cta-small {
+  margin-top: 0;
+  min-height: 36px;
+  padding: 5px 11px;
+  font-size: 14px;
+  box-shadow: none;
+}
+
+.hs-feed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hs-store-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.hs-store-btn:hover { background: var(--brand-surface-2); }
+.hs-store-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+.hs-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, .7);
+  padding: 12px;
+}
+
+.hs-sheet {
+  width: min(100%, 520px);
+  max-height: 80dvh;
+  overflow-y: auto;
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--elevation-4);
+}
+
+.hs-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.hs-sheet-head h2 { margin: 0; font-size: 16px; }
+
+.hs-sheet-close {
+  min-height: 44px;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-chalk);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.hs-sheet-close:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+.hs-sheet-note {
+  margin: 8px 0 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+}
+
+.hs-sheet-note strong { color: var(--neon-chalk); }
+
+.hs-link-btn {
+  display: block;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--neon-purple-bright);
+  font-size: 14px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.hs-link-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+/* ---- the gate --------------------------------------------------------- */
+
+.hs-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 24px 12px;
+}
+
+.hs-gate-card {
+  width: min(100%, 380px);
+  padding: 22px 20px;
+  border-radius: var(--radius-card);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--accent-edge), var(--elevation-4);
+  text-align: center;
+}
+
+/* The gate card is centered text (see .hs-gate-card above); the logo is a
+   grid item with a fixed width, so it needs its own centering rather than
+   inheriting text-align. */
+.hs-gate-card .hs-heading-logo { margin: 0 auto; }
+
+.hs-gate-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface-2);
+  color: var(--brand-gold-light);
+}
+
+.hs-gate-card p {
+  margin: 8px 0 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+}
+
+/* The player id, for someone who has to go and ask to be let in. Selectable
+   and allowed to wrap: a uuid is wider than this card on a phone, and an id
+   that overflows its own box cannot be read out or copied.
+   Qualified by .hs-gate-card so it outranks that block's own `p` rule above,
+   which would otherwise win on specificity and reset the colour and size. */
+.hs-gate-card .hs-gate-id {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+  color: var(--neon-muted-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.hs-gate-id code {
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  color: var(--neon-chalk);
+  font-size: 13px;
+  letter-spacing: .02em;
+  text-transform: none;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* ---- the exchange window --------------------------------------------- */
+
+/* The store sheet's shelf headings. These shipped with no rule at all in phase
+   2, so all three groups read as one wall of body copy. A kicker rather than a
+   heading: it labels a shelf, it is not a title. */
+.hs-group-label {
+  margin: 16px 0 0;
+  color: var(--neon-muted-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* The only place on this screen where the farm touches real money, so it is
+   the only block with its own surface and a gold edge. That edge is marking a
+   boundary, not decorating a card -- everything above it is the farm's own
+   currency going round in a circle. */
+.hs-exchange {
+  margin-top: 6px;
+  padding: 12px;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface-2);
+  box-shadow: inset 0 0 0 1px rgba(255, 210, 63, .18);
+}
+
+.hs-exchange > .hs-sheet-note:first-child { margin-top: 0; }
+.hs-exchange .hs-cta { width: 100%; }
+
+.hs-exchange-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 10px 0 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hs-exchange-meter strong { color: var(--brand-gold-light); }
+
+/* Drains rather than fills: the bar is what is LEFT of the day, matching the
+   number under it. Filled-as-spent shipped for one screenshot and put a full
+   gold bar directly above the words "0 of 5,000 Gold left today". */
+.hs-exchange-bar {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  overflow: hidden;
+}
+
+/* Scaled, not resized: the fill is full-width and squashed by a transform, so
+   the tween stays off the layout path. The gradient scales with it, which on a
+   6px bar is the same picture. */
+.hs-exchange-bar > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--brand-gold) 0%, var(--brand-gold-light) 100%);
+  transition: transform var(--duration-slow, .22s) ease;
+}
+
+.hs-exchange-amounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+/* Violet, not gold: the chips choose an amount, and the gold fill on this
+   screen belongs to the one button that actually moves money. */
+.hs-amount {
+  min-height: 44px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.hs-amount.is-on {
+  background: var(--neon-purple-deep);
+  box-shadow: var(--accent-edge), var(--accent-glow);
+  color: var(--neon-chalk);
+}
+
+.hs-amount:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+.hs-exchange-done { color: var(--brand-gold-light) !important; }
+
+/* Motion in the DOM layer is the toast only; the map's own motion (animals,
+   the ripe bob, the affordance pulse) is switched off inside the scene from
+   the same media query. */
+@media (prefers-reduced-motion: reduce) {
+  .hs-toast { animation: none; opacity: 1; }
+  .hs-cta { transition: none; }
+  .hs-exchange-bar > span { transition: none; }
+}
+
+/* ---- landscape phones (MUST STAY LAST) -------------------------------
+   Height is the scarce axis here: at 844x390 every band of chrome above the
+   map comes straight out of the map. The layout is the same fixed column as
+   everywhere else; this block only shrinks what sits over and above it. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .hs-shell {
+    gap: 6px;
+    padding-top: calc(6px + var(--safe-top));
+  }
+
+  /* Every band above the field gives back what it can: the chrome is worth
+     less here than the picture it is sitting on top of. */
+  .hs-shell .floor-bar {
+    min-height: 34px;
+    margin-bottom: 6px;
+  }
+  .hs-shell .ante-lobby-heading h1 { font-size: 16px; }
+  .hs-shell .hs-heading-logo { width: 150px; }
+  .hs-shell .hs-cap { font-size: 14px; }
+
+  .hs-scoreline { padding: 3px 10px; }
+  .hs-scoreline .ante-lobby-heading h1 { font-size: 14px; }
+  .hs-shell .hs-cap { font-size: 12px; }
+
+  .hs-tool { width: 56px; min-height: 42px; }
+  .hs-tool .hs-ico { width: 20px; height: 20px; }
+
+  .hs-seed { padding: 4px 9px 4px 5px; min-height: 36px; }
+  .hs-seed .hs-ico { width: 18px; height: 18px; }
+
+  .hs-panel { padding: 10px 12px; }
+  .hs-panel h2 { font-size: 15px; margin-bottom: 4px; }
+  .hs-panel > p { font-size: 14px; margin: 4px 0; }
+  .hs-countdown { font-size: 15px !important; }
+
+  .hs-tool-hint { font-size: 12px; max-width: 50%; }
+}

@@ -3,7 +3,8 @@ import { ARCADE_GAMES } from "@/lib/arcade/games";
 import {
   FIRST_RUN_DONE,
   FIRST_RUN_STEPS,
-  FREE_DAILY_COUNT,
+  ARCADE_GAME_COUNT,
+  FREE_TO_PLAY_COUNT,
   firstRunProgressLabel,
   isFirstRunRetired,
   nextFirstRunStep,
@@ -31,12 +32,26 @@ describe("first-run steps", () => {
     }
   });
 
-  it("counts the free dailies rather than restating them", () => {
-    const counted = ARCADE_GAMES.filter((g) => g.kind === "puzzle" && g.status === "live").length;
-    expect(FREE_DAILY_COUNT).toBe(counted);
+  it("counts the free-to-play games rather than restating them", () => {
+    // Not `kind === "puzzle"`: that bucket has been empty since every brain
+    // game moved to `kind: "wager"`, and counting it printed a literal "0
+    // puzzles are free every day" at a new player. See the constant's own note.
+    const counted = ARCADE_GAMES.filter(
+      (g) => (g.kind === "puzzle" || g.kind === "wager") && g.status === "live",
+    ).length;
+    expect(FREE_TO_PLAY_COUNT).toBe(counted);
+    expect(counted).toBeGreaterThan(0);
     // The number has to reach the copy, or deriving it bought nothing.
     const free = FIRST_RUN_STEPS.find((step) => step.id === "free");
     expect(free?.body.startsWith(`${counted} `)).toBe(true);
+  });
+
+  it("counts the arcade itself rather than restating it", () => {
+    // This step read "Ten more games" while the catalogue held thirteen.
+    const counted = ARCADE_GAMES.filter((g) => g.status === "live").length;
+    expect(ARCADE_GAME_COUNT).toBe(counted);
+    const arcade = FIRST_RUN_STEPS.find((step) => step.id === "arcade");
+    expect(arcade?.body.startsWith(`${counted} `)).toBe(true);
   });
 });
 

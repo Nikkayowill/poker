@@ -11,6 +11,7 @@ import { isWinningCard } from "@/lib/game/winning-cards";
 import { reactionLabel } from "@/lib/game/reaction-channel";
 import type { SeatReaction } from "@/lib/game/use-table-reactions";
 import type { SeatArtBox } from "@/lib/scene/seat-art";
+import { formatStack } from "@/lib/scene/stack-display";
 import { missingArtwork } from "@/components/artwork-cache";
 import { ChallengeSeatControl } from "./challenge-seat-control";
 import { PlayingCard } from "./playing-card";
@@ -170,6 +171,7 @@ function SeatNameplate({
   isWinner,
   smallBlind,
   bigBlind,
+  stackInBigBlinds,
   turnStartedAt,
   turnDeadlineAt,
   opponentHud,
@@ -178,6 +180,8 @@ function SeatNameplate({
   isWinner: boolean;
   smallBlind: number;
   bigBlind: number;
+  /** See lib/scene/stack-display.ts. */
+  stackInBigBlinds: boolean;
   turnStartedAt: string | null;
   turnDeadlineAt: string | null;
   opponentHud: boolean;
@@ -209,6 +213,7 @@ function SeatNameplate({
     return (
       <div className="seat-plate seat-opponent-hud">
         {challenge}
+        {seat.adminBadge && <span className="seat-admin-tag">Admin</span>}
         {seat.isCurrent && hasTurnTimer ? (
           <SeatTimer
             startedAt={turnStartedAt}
@@ -222,7 +227,7 @@ function SeatNameplate({
         )}
         {!away && (
           <span className="seat-status-stack" aria-label={`${seat.stack.toLocaleString()} chips`}>
-            {seat.stack.toLocaleString()}
+            {formatStack(seat.stack, bigBlind, stackInBigBlinds)}
           </span>
         )}
       </div>
@@ -232,6 +237,7 @@ function SeatNameplate({
   return (
     <div className="seat-plate">
       {challenge}
+      {seat.adminBadge && <span className="seat-admin-tag">Admin</span>}
       <div className="seat-name-row">
         <strong>{seat.name}</strong>
         {seat.isMine && <span className="you-chip">You</span>}
@@ -261,7 +267,7 @@ function SeatNameplate({
               aria-label={`${seat.stack.toLocaleString()} chips`}
             >
               <span className="chip-dot" />
-              <strong>{seat.stack.toLocaleString()}</strong>
+              <strong>{formatStack(seat.stack, bigBlind, stackInBigBlinds)}</strong>
             </span>
           )}
         {/* Only the seat on the clock carries one, so it doubles as the
@@ -285,6 +291,7 @@ export const PlayerSeat = memo(function PlayerSeat({
   winAmount,
   smallBlind,
   bigBlind,
+  stackInBigBlinds,
   turnStartedAt,
   turnDeadlineAt,
   elementRef,
@@ -303,6 +310,8 @@ export const PlayerSeat = memo(function PlayerSeat({
   winAmount?: number;
   smallBlind: number;
   bigBlind: number;
+  /** See lib/scene/stack-display.ts. */
+  stackInBigBlinds: boolean;
   /** Position on the ring as drawn, 0 being the local player's near edge. */
   dealSlot: number;
   dealSeatCount: number;
@@ -386,12 +395,22 @@ export const PlayerSeat = memo(function PlayerSeat({
       }}
     />
   ) : null;
+  // "Admin" above the head, the way the dealer carries her own label
+  // (`.dealer-label`, poker-table.tsx). Only where there is a head to sit
+  // above: the local seat draws no racetrack art, so its tag stays inside
+  // the plate (`.seat-admin-tag`, rendered by SeatNameplate). The mobile
+  // landscape tier hides this one and shows that one instead, since the
+  // plate itself moves above the portrait there; see 42-racetrack-table.css.
+  const adminLabel = seat.adminBadge && racetrackArt ? (
+    <span className="seat-admin-label" aria-hidden="true">Admin</span>
+  ) : null;
   const nameplate = (
     <SeatNameplate
       seat={seat}
       isWinner={isWinner}
       smallBlind={smallBlind}
       bigBlind={bigBlind}
+      stackInBigBlinds={stackInBigBlinds}
       turnStartedAt={turnStartedAt}
       turnDeadlineAt={turnDeadlineAt}
       opponentHud={placement === "seat-ring"}
@@ -443,6 +462,7 @@ export const PlayerSeat = memo(function PlayerSeat({
       {figure}
       {cards}
       {racetrackArtEl}
+      {adminLabel}
       {handStrength}
       {nameplate}
       {seat.streetBet > 0 && <span className="table-bet">${seat.streetBet}</span>}

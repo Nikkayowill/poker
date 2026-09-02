@@ -625,6 +625,23 @@
   color: #17170f;
   background: var(--gold);
 }
+
+/* "Admin", said inside the plate: the local seat's own version (it draws
+   no portrait to hang a label over) and the mobile racetrack's, where the
+   plate itself is what sits above the head. Same voice as `.dealer-label`
+   (42-racetrack-table.css) -- plain bold white on the shadow, no pill --
+   so it reads as the dealer's kind of label rather than a status chip. */
+.seat-admin-tag {
+  display: block;
+  color: #ffffff;
+  font: 700 10px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: .02em;
+  text-shadow: 0 0 2px rgba(0, 0, 0, .8), 0 0 4px rgba(0, 0, 0, .6);
+}
+
+/* The floating twin over an opponent's portrait. Only the racetrack knows
+   where a head is (`--seat-art-crown-dy`), so it is switched on there. */
+.seat-admin-label { display: none; }
 .seat-stack {
   display: flex;
   align-items: center;
@@ -986,3 +1003,27 @@
 /* Each option reuses .app-menu-item (20-menu.css) for the row itself --
    same dropdown, same look. */
 .seat-challenge-options { display: flex; flex-direction: column; padding: 6px; }
+
+/* Same pill look as .friend-invite (21-friends.css), just full-width and
+   sitting above the duel list rather than inline in a friends-drawer row --
+   this panel has no row of its own for it to sit beside. */
+.seat-challenge-add-friend {
+  width: calc(100% - 12px);
+  height: 30px;
+  margin: 0 6px 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 15px;
+  color: #9c93b1;
+  background: rgba(255, 255, 255, .06);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease;
+}
+.seat-challenge-add-friend:not(:disabled):hover { color: #c9a2f0; background: rgba(155, 63, 240, .2); }
+.seat-challenge-add-friend:disabled { opacity: .6; cursor: default; }

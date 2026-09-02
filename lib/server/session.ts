@@ -89,6 +89,19 @@ function expireCookie(response: NextResponse, name: string): void {
   response.cookies.set(name, "", { ...cookieOptions(false), maxAge: 0 });
 }
 
+/**
+ * The same read as readSessionToken, for a caller holding a cookie store
+ * rather than a NextRequest -- a server component using next/headers, which
+ * has no request object to hand. Both go through verifyToken, so a page and a
+ * route can never disagree about whether a cookie is valid.
+ */
+export function readSessionTokenFromCookies(
+  get: (name: string) => string | undefined,
+): string | null {
+  const raw = get(HOST_COOKIE_NAME) ?? get(LEGACY_COOKIE_NAME) ?? null;
+  return raw ? verifyToken(raw) : null;
+}
+
 export function readSessionToken(request: NextRequest): string | null {
   const raw = request.cookies.get(HOST_COOKIE_NAME)?.value
     ?? request.cookies.get(LEGACY_COOKIE_NAME)?.value

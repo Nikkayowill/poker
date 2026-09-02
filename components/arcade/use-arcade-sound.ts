@@ -1,46 +1,22 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import {
-  playSound,
-  primeTableSounds,
-  setSoundEnabled,
-  type SoundEffect,
-} from "@/lib/audio/sound-effects";
-import {
-  LEGACY_SOUND_STORAGE_KEY,
-  SOUND_STORAGE_KEY,
-} from "@/lib/audio/sound-preference";
-import { browserPreferenceStorage, parseEnabledFlag, readStoredPreference } from "@/lib/profile/stored-preference";
+import { playSound, primeTableSounds, type SoundEffect } from "@/lib/audio/sound-effects";
 
 /**
  * Lets an arcade machine make a noise without ignoring the player's mute.
  *
- * The mute is one preference for the whole app, but it was only ever applied
- * by components/poker-app.tsx, which is not mounted on an arcade route. The
- * module-level flag in lib/audio/sound-effects.ts defaults to `true`, so a
- * machine that simply called `playSound` would be loud for a player who had
- * turned sound off in the lobby, on a page with no control to turn it back
- * off. This reads the same key poker-app reads, including the legacy-key
- * migration, and applies it before anything can play.
- *
- * Read-only: there is no sound toggle on these pages, and one that wrote a
- * second opinion of the preference into the same key from a second place is
- * how the two would drift.
+ * The mute is one preference for the whole app. It used to need re-syncing
+ * here because the module-level flag in lib/audio/sound-effects.ts defaults
+ * to `true` and only components/poker-app.tsx ever applied the stored value
+ * -- and poker-app isn't mounted on an arcade route. Now that the persistent
+ * shell (components/shell/app-shell.tsx) is the single, always-mounted owner
+ * of that flag, there is nothing left for an arcade screen to sync: by the
+ * time this hook runs, the shell has already applied it.
  */
 export function useArcadeSound(
   { gameSounds = false }: { gameSounds?: boolean } = {},
 ): (effect: SoundEffect) => void {
-  useEffect(() => {
-    setSoundEnabled(
-      readStoredPreference(browserPreferenceStorage(), {
-        key: SOUND_STORAGE_KEY,
-        legacyKey: LEGACY_SOUND_STORAGE_KEY,
-        parse: parseEnabledFlag,
-      }),
-    );
-  }, []);
-
   // A machine plays the deal/chip/win cues, so it fetches them on mount
   // rather than mid-round. A menu, like the arcade floor or the lobby, does
   // not and must not: both are screens the phone shell renders on load, and

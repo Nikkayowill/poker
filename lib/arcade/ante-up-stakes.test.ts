@@ -1,9 +1,12 @@
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { ANTE_UP_GAMES, anteUpWagerCeilingProblem, maxAnteUpWager } from "./ante-up-stakes";
 import { ANTE_UP_TIERS } from "./ante-up";
 import { ANTE_UP_MINESWEEPER_TIERS } from "./ante-up-minesweeper";
 import { SUDOKU_DIFFICULTIES } from "./puzzles/sudoku";
 import { MINESWEEPER_DIFFICULTIES } from "./puzzles/minesweeper";
+import { NONOGRAM_DIFFICULTIES } from "./puzzles/nonogram";
 
 /**
  * The ceiling half of the anti-farm fix. What has to hold: a wager may never
@@ -120,5 +123,69 @@ describe("the payout ladders this file bounds", () => {
     for (let i = 1; i < clocks.length; i += 1) {
       expect(clocks[i]).toBeGreaterThanOrEqual(clocks[i - 1]);
     }
+  });
+});
+
+/**
+ * `maxAnteUpWager` above is only half the ceiling. The other half is the
+ * `ante_up_attempts_enforce_wager_ceiling` BEFORE INSERT trigger (see
+ * supabase/migrations/20260827090000_ante_up_wager_tier_ceiling.sql for why
+ * it is a trigger and not a CHECK), which makes the rule true of the data
+ * itself rather than of the one code path that happens to call this file. A
+ * trigger cannot import a TypeScript module, so its case list is a duplicate
+ * kept in step by hand -- and a duplicated invariant drifts silently. That is
+ * exactly what happened: Nonogram shipped with a ceiling here and none in the
+ * trigger, so its only enforcement was whichever service function remembered
+ * to call `anteUpWagerCeilingProblem`. Fixed in
+ * 20260901090000_nonogram_wager_ceiling.sql; this test is what stops the next
+ * game from doing the same thing quietly.
+ *
+ * Reads the trigger's *current* definition off migration files on disk
+ * (Postgres has no test-time presence here), taking the most recently
+ * written migration that redefines the function -- each one has always
+ * replaced the whole case list, never patched it, so the latest file is the
+ * whole truth, the same way the last CREATE OR REPLACE wins when Postgres
+ * applies them in order.
+ */
+describe("the DB ceiling trigger stays in step with maxAnteUpWager", () => {
+  function currentTriggerCeilings(): Map<string, number> {
+    const dir = path.join(process.cwd(), "supabase/migrations");
+    const marker = "create or replace function public.ante_up_attempts_enforce_wager_ceiling";
+    const owning = readdirSync(dir)
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .filter((name) => readFileSync(path.join(dir, name), "utf8").includes(marker));
+
+    if (owning.length === 0) {
+      throw new Error(
+        "No migration defines ante_up_attempts_enforce_wager_ceiling -- has it been renamed or dropped?",
+      );
+    }
+
+    const sql = readFileSync(path.join(dir, owning[owning.length - 1]), "utf8");
+    const ceilings = new Map<string, number>();
+    const linePattern = /when new\.game = '([a-z-]+)'(?:\s+and new\.tier = '([a-z]+)')?\s+then\s+(\d+)/g;
+    for (const [, game, tier, amount] of sql.matchAll(linePattern)) {
+      ceilings.set(tier ? `${game}:${tier}` : game, Number(amount));
+    }
+    return ceilings;
+  }
+
+  const ceilings = currentTriggerCeilings();
+
+  it.each(SUDOKU_DIFFICULTIES)("sudoku/%s", (tier) => {
+    expect(ceilings.get(`sudoku:${tier}`)).toBe(maxAnteUpWager("sudoku", tier));
+  });
+
+  it.each(MINESWEEPER_DIFFICULTIES.map((d) => d.id))("minesweeper/%s", (tier) => {
+    expect(ceilings.get(`minesweeper:${tier}`)).toBe(maxAnteUpWager("minesweeper", tier));
+  });
+
+  it.each(NONOGRAM_DIFFICULTIES.map((d) => d.id))("nonogram/%s", (tier) => {
+    expect(ceilings.get(`nonogram:${tier}`)).toBe(maxAnteUpWager("nonogram", tier));
+  });
+
+  it("memory-match's flat ceiling matches (word-stack/connections deliberately don't write to this table)", () => {
+    expect(ceilings.get("memory-match")).toBe(maxAnteUpWager("memory-match", null));
   });
 });

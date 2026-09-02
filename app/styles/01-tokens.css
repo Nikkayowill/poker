@@ -374,3 +374,19 @@ body {
 button, input { font: inherit; }
 button { color: inherit; touch-action: manipulation; }
 input[type="range"] { touch-action: pan-x; }
+
+/* Visually hidden, still in the a11y tree: for a real heading whose visible
+   surface is a decorative mark rather than typed text (see StackAcres' own
+   logo header in 52-homestead.css) -- the standard clip-rect recipe, not
+   `display: none`, which would remove it from the tree entirely. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { useAppShell } from "@/components/shell/app-shell";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { selectSound } from "@/lib/audio/ui-sounds";
 import { isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
@@ -63,7 +64,11 @@ export function SitAndGoShell() {
   const router = useRouter();
   const [table, setTable] = useState<SitAndGoTable | null>(null);
   const [openTables, setOpenTables] = useState<SitAndGoOpenTable[]>([]);
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  // The persistent shell owns the profile now -- this screen still gets it
+  // back from its own GET /api/sit-and-go response too (unchanged this
+  // phase), it just writes that into the shared setter instead of a local
+  // copy.
+  const { profile, setProfile } = useAppShell();
   const [tier, setTier] = useState<StakesTier>(STAKES_TIERS[0]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -96,7 +101,7 @@ export function SitAndGoShell() {
     } finally {
       if (mounted.current) setLoaded(true);
     }
-  }, []);
+  }, [setProfile]);
 
   const send = useCallback(async (url: string, body: unknown) => {
     sending.current = true;
@@ -124,7 +129,7 @@ export function SitAndGoShell() {
       sending.current = false;
       if (mounted.current) setBusy(false);
     }
-  }, []);
+  }, [setProfile]);
 
   // The tier picked one level up, in the main buy-in flow's own format
   // picker (BuyInModal / MobileShell) -- `?tier=<id>`, carried straight

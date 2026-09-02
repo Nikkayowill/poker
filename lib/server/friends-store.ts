@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FriendSummary, FriendsOverview, PendingRequest, RecentOpponent } from "@/lib/social/types";
 import { getHeadToHeadRecords, listRecentOpponentIds } from "./head-to-head-store";
+import { createNotification } from "./notifications-store";
 import { getPublicProfilesByIds } from "./profile-store";
 import { adminClient } from "./supabase-admin";
 
@@ -452,9 +453,12 @@ export async function sendFriendRequest(
 
   // Confirms the target exists *and* is the gate on enumeration: an unknown
   // id and a real one differ only in this one lookup, which is why the route
-  // rate-limits sends far more tightly than reads.
-  const profiles = await getPublicProfilesByIds([addressee]);
+  // rate-limits sends far more tightly than reads. Fetched alongside the
+  // requester's own profile so a successful send has the display name it
+  // needs for the addressee's notification without a second round trip.
+  const profiles = await getPublicProfilesByIds([addressee, requester]);
   if (!profiles.has(addressee)) return { status: "unknown_profile" };
+  const requesterName = profiles.get(requester)?.displayName ?? "Someone";
 
   if (await isBlockedEitherWay(requester, addressee)) return { status: "blocked" };
   if (await areFriends(requester, addressee)) return { status: "already_friends" };
@@ -471,6 +475,7 @@ export async function sendFriendRequest(
       createdAt: new Date().toISOString(),
       respondedAt: null,
     });
+    await createNotification(addressee, "friend_request_received", { fromProfileId: requester, fromDisplayName: requesterName });
     return { status: "sent", requestId: id };
   }
 
@@ -487,6 +492,7 @@ export async function sendFriendRequest(
     if (error.code === UNIQUE_VIOLATION) return { status: "already_pending" };
     throw new Error(`Could not send the friend request: ${error.message}`);
   }
+  await createNotification(addressee, "friend_request_received", { fromProfileId: requester, fromDisplayName: requesterName });
   return { status: "sent", requestId: String(data.id) };
 }
 
@@ -523,6 +529,8 @@ export async function respondToFriendRequest(
       if (!memoryDb.friendships.has(`${a}:${b}`)) {
         memoryDb.friendships.set(`${a}:${b}`, { profileA: a, profileB: b, createdAt: now });
       }
+      const myName = (await getPublicProfilesByIds([me])).get(me)?.displayName ?? "Someone";
+      await createNotification(request.requesterId, "friend_request_accepted", { fromProfileId: me, fromDisplayName: myName });
       return { status: "accepted" };
     }
 
@@ -533,7 +541,21 @@ export async function respondToFriendRequest(
       p_addressee_id: me,
     });
     if (error) throw new Error(`Could not accept the friend request: ${error.message}`);
-    return data === true ? { status: "accepted" } : { status: "not_found" };
+    if (data !== true) return { status: "not_found" };
+
+    // The RPC returns only a boolean, so the requester to notify is looked
+    // up after the fact rather than threaded through it -- one extra read on
+    // the success path only, against a row that has already settled.
+    const { data: settledRow } = await supabase
+      .from("friend_requests")
+      .select("requester_id")
+      .eq("id", requestId)
+      .maybeSingle();
+    if (settledRow) {
+      const myName = (await getPublicProfilesByIds([me])).get(me)?.displayName ?? "Someone";
+      await createNotification(String(settledRow.requester_id), "friend_request_accepted", { fromProfileId: me, fromDisplayName: myName });
+    }
+    return { status: "accepted" };
   }
 
   const settledStatus = action === "decline" ? "declined" : "cancelled";
@@ -781,6 +803,8 @@ export async function redeemFriendInviteCode(
     const [a, b] = canonicalPair(me, owner);
     if (memoryDb.friendships.has(`${a}:${b}`)) return { status: "already_friends", profileId: owner };
     memoryDb.friendships.set(`${a}:${b}`, { profileA: a, profileB: b, createdAt: new Date().toISOString() });
+    const myName = (await getPublicProfilesByIds([me])).get(me)?.displayName ?? "Someone";
+    await createNotification(owner, "friend_request_accepted", { fromProfileId: me, fromDisplayName: myName });
     return { status: "friended", profileId: owner };
   }
 
@@ -806,5 +830,7 @@ export async function redeemFriendInviteCode(
   if (insertError && insertError.code !== UNIQUE_VIOLATION) {
     throw new Error(`Could not add that friend: ${insertError.message}`);
   }
+  const myName = (await getPublicProfilesByIds([me])).get(me)?.displayName ?? "Someone";
+  await createNotification(owner, "friend_request_accepted", { fromProfileId: me, fromDisplayName: myName });
   return { status: "friended", profileId: owner };
 }

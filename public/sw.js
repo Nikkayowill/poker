@@ -39,6 +39,11 @@
 // cached "/" on a live fetch, only reads it as an offline fallback. Without
 // this bump, a device that's ever gone offline once would keep the offline
 // fallback frozen on the pre-fix HTML indefinitely.
+// v11: notificationclick now messages an already-focused tab so a tapped
+// push can open the in-app inbox (where a friend request is answered) rather
+// than only focusing whatever screen was up. Handler-only change, same as
+// v8 -- no SHELL entry moved, so CACHE_NAME stays put and the browser's
+// normal byte-diff update check is what picks this file up.
 const CACHE_NAME = "stackchips-shell-v10";
 const SHELL = [
   "/",
@@ -138,6 +143,13 @@ self.addEventListener("push", (event) => {
 
 // Tapping the notification focuses an already-open StackChips tab instead of
 // stacking a new one -- most players already have the PWA open somewhere.
+//
+// A focused tab is also told what the tap was for, since focusing alone
+// drops it: the app is one route with the table rendered in place, so
+// client.navigate() to the notification's own URL would reload the page and
+// yank a player out of the hand they're in. A message lets the running app
+// open its inbox where it stands. Only the cold-start branch below, which
+// has no tab to message, uses the URL.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const targetUrl = event.notification.data && event.notification.data.url ? event.notification.data.url : "/";
@@ -145,6 +157,9 @@ self.addEventListener("notificationclick", (event) => {
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
         if (client.url.includes(self.location.origin) && "focus" in client) {
+          if (targetUrl.includes("notifications=1") && "postMessage" in client) {
+            client.postMessage({ type: "stackchips:open-notifications" });
+          }
           return client.focus();
         }
       }

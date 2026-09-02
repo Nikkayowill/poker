@@ -95,6 +95,13 @@
      which thins the glyph from the inside at this size. */
   user-select: none;
   pointer-events: none;
+  /* Belt-and-suspenders alongside the U+FE0E on each glyph in chess-board.tsx:
+     without forcing text presentation, a mobile browser can substitute a
+     color emoji font for these codepoints, which paints its own fixed color
+     and ignores the color/text-shadow below -- both sides then look the same
+     dark piece. Support for this property is still landing, so the variation
+     selector is the one both sides actually rely on. */
+  font-variant-emoji: text;
 }
 
 .chess-piece-white {

@@ -6,6 +6,7 @@ import { Coins } from "lucide-react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { useAppShell } from "@/components/shell/app-shell";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import type { SoundEffect } from "@/lib/audio/sound-effects";
@@ -104,11 +105,22 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
   // resubscribes on join/leave -- not on every version bump a move causes.
   const tableId = table?.id ?? null;
   const [openTables, setOpenTables] = useState<CribbageOpenTable[]>([]);
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  // The persistent shell owns the profile now -- this screen still gets it
+  // back from its own GET /api/cribbage response too (unchanged this phase),
+  // it just writes that into the shared setter instead of a local copy.
+  const { profile, setProfile, setImmersive } = useAppShell();
   const [stake, setStake] = useState<number>(MIN_DUEL_STAKE);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Tells the shell a table is joined -- hides the persistent nav chrome the
+  // same way poker-app.tsx does for a hand in progress, and duel-shell.tsx
+  // now does for a match. Not narrowed to a live round: the completed-table
+  // result screen is still this screen, not the open-table lobby.
+  useEffect(() => {
+    setImmersive(Boolean(table));
+  }, [table, setImmersive]);
 
   const sending = useRef(false);
   const mounted = useRef(true);
@@ -138,7 +150,7 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
         return data.table ?? null;
       });
     }
-  }, []);
+  }, [setProfile]);
 
   const refresh = useCallback(async () => {
     if (sending.current) return;
@@ -188,7 +200,7 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
       sending.current = false;
       if (mounted.current) setBusy(false);
     }
-  }, []);
+  }, [setProfile]);
 
   useEffect(() => {
     mounted.current = true;

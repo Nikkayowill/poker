@@ -70,7 +70,9 @@
   place-items: center;
   min-height: 100dvh;
   padding: 24px;
-  background: #0b0c0d;
+  /* The Neon Marquee ground literal, matching 01-tokens.css's own html/body
+     rule -- not the old matte-obsidian tone this used to carry. */
+  background: #150a2b;
   color: var(--ink);
   text-align: center;
 }
@@ -363,7 +365,8 @@
   .scene-room-racetrack .center-pot-amount span { font-size: 8px; }
   .scene-room-racetrack .center-pot-amount strong { font-size: 11px; }
 
-  .dealer-label {
+  .dealer-label,
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-admin-label {
     font-size: 11px;
   }
 }
@@ -528,6 +531,38 @@
   text-shadow:
     0 0 2px rgba(0, 0, 0, 0.8),
     0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+/* "Admin" above a seated player's head: the dealer's own label, worn by a
+   person. Same type, same shadow, no pill -- `.dealer-label` above is the
+   reference and this should read as the same thing said about someone else.
+   Positioned the way the portrait is (`--seat-art-dx`/`--seat-art-crown-dy`,
+   poker-table.tsx): the seat box is centred on the projected crown, so this
+   lands a fixed clearance above the actual hair at every seat rather than a
+   guessed offset from the seat's anchor. Two steps above the seat's own
+   `--seat-z`, level with the plate, so a neighbour's shoulder never covers
+   it. The in-plate twin (`.seat-admin-tag`) is hidden here and shown on the
+   mobile tier instead, where the plate itself moves above the head. */
+.scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-admin-label {
+  display: block;
+  position: absolute;
+  left: calc(50% + var(--seat-art-dx, 0px));
+  top: calc(var(--seat-art-crown-dy, 0px) - 18px);
+  z-index: calc(var(--seat-z, 4) + 2);
+  transform: translateX(-50%);
+  color: #ffffff;
+  font: 700 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.8),
+    0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+.scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-admin-tag {
+  display: none;
 }
 
 /* Opponent seat art -- lib/scene/seat-art.ts computes width/height and a
@@ -909,6 +944,23 @@
        Reading the same number the art reads keeps every seat aligned, rather
        than cancelling one seat's offset with a second hand-tuned number. */
     left: var(--seat-art-dx, 0px);
+  }
+
+  /* The plate now sits above the head, so the floating "Admin" label would
+     land on top of it; the tag rides inside the plate instead, as its top
+     line, and the plate reaches one line higher to keep the same clearance
+     over the hair (same clamp against the stage's own top edge). */
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-admin-label {
+    display: none;
+  }
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-admin-tag {
+    display: inline-block;
+  }
+  .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine):has(.seat-admin-tag) .seat-plate {
+    top: max(
+      calc(var(--seat-art-crown-dy, 0px) - 49px),
+      calc(-1 * var(--seat-y, 0px) + 2px)
+    );
   }
 
   .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-name-row {

@@ -9,6 +9,7 @@ import type {
 } from "@/lib/achievements/types";
 import type { DomainEvent } from "@/lib/domain-events";
 import { awardCosmetic } from "./cosmetics-store";
+import { createNotification } from "./notifications-store";
 import { creditGoldByProfile } from "./profile-store";
 import { getProgression } from "./progression-store";
 import { getPlayerStanding, type PlayerStats } from "./stats-store";
@@ -305,16 +306,22 @@ async function grantOne(profileId: string, definition: AchievementDefinition, no
     if (definition.rewardCosmeticId) await awardCosmetic(profileId, definition.rewardCosmeticId);
     if (definition.rewardGold > 0) await creditGoldByProfile(profileId, definition.rewardGold);
     memoryGrants.set(key, now.toISOString());
-    return;
+  } else {
+    const { error } = await supabase.rpc("grant_achievement_reward", {
+      p_profile_id: profileId,
+      p_achievement_code: definition.code,
+      p_gold_amount: definition.rewardGold,
+      p_cosmetic_id: definition.rewardCosmeticId,
+    });
+    if (error) throw new Error(`Could not grant achievement reward: ${error.message}`);
   }
 
-  const { error } = await supabase.rpc("grant_achievement_reward", {
-    p_profile_id: profileId,
-    p_achievement_code: definition.code,
-    p_gold_amount: definition.rewardGold,
-    p_cosmetic_id: definition.rewardCosmeticId,
-  });
-  if (error) throw new Error(`Could not grant achievement reward: ${error.message}`);
+  await createNotification(profileId, "achievement_unlocked", {
+    code: definition.code,
+    title: definition.title,
+    rewardGold: definition.rewardGold,
+    rewardCosmeticId: definition.rewardCosmeticId,
+  }, now);
 }
 
 /**

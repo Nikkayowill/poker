@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import clsx from "clsx";
 import {
-  Coins, Copy, DoorOpen, History, HelpCircle, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
+  Coins, Copy, Divide, DoorOpen, History, HelpCircle, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
 import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
@@ -207,6 +207,8 @@ export function PokerTable({
   onToggleSound,
   betStyle,
   onCycleBetStyle,
+  stackInBigBlinds,
+  onToggleStackInBigBlinds,
   tableRendererSettled,
   landscape,
   tightLandscape,
@@ -231,6 +233,9 @@ export function PokerTable({
   onToggleSound: () => void;
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
+  /** Whether a stack reads in raw chips or in big blinds; see lib/scene/stack-display.ts. */
+  stackInBigBlinds: boolean;
+  onToggleStackInBigBlinds: () => void;
   /** Has the stored renderer choice arrived? See the render gate below. */
   tableRendererSettled: boolean;
   /** Is the viewport wider than it is tall? The 2.5D table is landscape-only. */
@@ -811,12 +816,16 @@ export function PokerTable({
   );
   // Standing street bets by ring slot, for the scene: what each seat has
   // committed this street rests in front of them as chips until the street
-  // closes. Slots, not seat ids, for the same reason betFlights uses them.
+  // closes. Slots, not seat ids, for the same reason betFlights uses them --
+  // and slotOf's actual assigned slot, not the seat's array index, for the
+  // same reason betFlights uses slotOf too: a heads-up table's opponent sits
+  // at a randomly-chosen ring slot (see seatSlots/headsUpOpponentSlot), so
+  // array index 1 is not necessarily their real slot.
   const sceneStreetBets = useMemo(
     () => orderedSeats
-      .map((seat, slot) => ({ slot, amount: seat.streetBet }))
-      .filter((bet) => bet.amount > 0),
-    [orderedSeats],
+      .map((seat) => ({ slot: slotOf.get(seat.id) ?? -1, amount: seat.streetBet }))
+      .filter((bet) => bet.slot >= 0 && bet.amount > 0),
+    [orderedSeats, slotOf],
   );
   // What the centre pile is actually showing (pot minus whatever is still
   // standing at a seat), so its label agrees with the chips the scene draws
@@ -927,6 +936,12 @@ export function PokerTable({
       },
       {
         kind: "action",
+        label: stackInBigBlinds ? "Show stack in chips" : "Show stack in big blinds",
+        onSelect: onToggleStackInBigBlinds,
+        icon: <Divide size={15} />,
+      },
+      {
+        kind: "action",
         label: "Hand history",
         onSelect: () => setHistoryOpen(true),
         icon: <History size={15} />,
@@ -988,6 +1003,7 @@ export function PokerTable({
     return items;
   }, [
     soundEnabled, onToggleSound, betStyle, onCycleBetStyle,
+    stackInBigBlinds, onToggleStackInBigBlinds,
     game.isPrivate, game.roomCode,
     game.id, game.isSeated, roomCodeCopied, copyRoomCode, profile, onCustomize, onSignIn,
     onSignOut, onLeaveSeat, requestLeave,
@@ -1013,11 +1029,12 @@ export function PokerTable({
      100dvh, not 100vh: on mobile browsers `vh` is the tallest the viewport
      ever gets, chrome included, so a 100vh hold is visibly taller than the
      table that replaces it and the whole page shifts on the swap. The rest
-     of this codebase uses dvh for the same reason. The colour is the room's
-     own base tone from 01-tokens.css, so the hold is indistinguishable from
-     the shell that follows it rather than a black flash between two greys. */
+     of this codebase uses dvh for the same reason. The colour is the Neon
+     Marquee ground (01-tokens.css's own html/body literal, #150a2b, stated
+     the same way there for the same reason), so the hold is indistinguishable
+     from the shell that follows it rather than a flash between two darks. */
   if (!tableRendererSettled) {
-    return <div style={{ width: "100vw", height: "100dvh", backgroundColor: "#0b0c0d" }} />;
+    return <div style={{ width: "100vw", height: "100dvh", backgroundColor: "#150a2b" }} />;
   }
 
   if (!landscape) {
@@ -1129,6 +1146,8 @@ export function PokerTable({
             <LocalPlayerHud
               name={mySeat.name}
               stack={mySeat.stack}
+              bigBlind={game.bigBlind}
+              stackInBigBlinds={stackInBigBlinds}
               profile={profile}
               handLabel={mySeat.handLabel}
               onSendReaction={onSendReaction}
@@ -1468,6 +1487,7 @@ export function PokerTable({
                 handNumber={game.handNumber}
                 smallBlind={game.smallBlind}
                 bigBlind={game.bigBlind}
+                stackInBigBlinds={stackInBigBlinds}
                 turnStartedAt={game.turnStartedAt}
                 turnDeadlineAt={game.turnDeadlineAt}
                 winAmount={showFunnel ? game.winners.find((winner) => winner.seatId === seat.id)?.amount : undefined}
@@ -1525,7 +1545,16 @@ export function PokerTable({
 
       {pendingLeave && (
         <LeaveGameConfirmModal
-          body={`You have ${committedThisHand.toLocaleString()} chips already in this hand's pot. Leaving now cashes out your remaining stack, but those chips stay in the pot — you won't get them back.`}
+          body={
+            game.tournament
+              // There's no cashing out mid-tournament (see forfeitTournamentSeat
+              // in engine.ts) -- leaving here forfeits the whole seat, not just
+              // what's already in this hand's pot.
+              ? `Leaving now forfeits your seat${
+                game.tournament.format === "heads_up" ? " and the match" : ""
+              } — there's no cashing out mid-tournament.`
+              : `You have ${committedThisHand.toLocaleString()} chips already in this hand's pot. Leaving now cashes out your remaining stack, but those chips stay in the pot — you won't get them back.`
+          }
           onCancel={() => setPendingLeave(null)}
           onConfirm={() => {
             const action = pendingLeave;

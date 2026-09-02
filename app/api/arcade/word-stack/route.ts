@@ -5,8 +5,15 @@ import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
-/** `wager` is optional and defaults to 0 (free); an empty POST body is still a valid open. */
-const startSchema = z.object({ wager: z.number().int().min(0).optional() });
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * `wager` is optional and defaults to 0 (free); an empty POST body is still a
+ * valid open. `day` is optional and defaults to today; passed by the puzzle
+ * archive to open a past day instead -- the service enforces that it is
+ * free-only and within [PUZZLE_EPOCH_DAY, today].
+ */
+const startSchema = z.object({ wager: z.number().int().min(0).optional(), day: z.string().regex(DAY_PATTERN).optional() });
 
 export const runtime = "nodejs";
 
@@ -28,11 +35,27 @@ export const runtime = "nodejs";
  * session-token pattern rather than /api/history's registered-only split. A
  * guest's board is keyed to their cookie-lived profile, the honest trade:
  * they keep their streak exactly as long as they keep the cookie.
+ *
+ * An optional `?day=` reads an archive day instead of today's -- the puzzle
+ * archive page uses this to load a day it already opened without reopening
+ * it, the same read-never-writes rule as the no-day path.
  */
 export async function GET(request: NextRequest) {
   const token = readOrCreateSessionToken(request);
+  const dayParam = request.nextUrl.searchParams.get("day");
+  if (dayParam && !DAY_PATTERN.test(dayParam)) {
+    return withRequestSessionCookie(
+      request,
+      NextResponse.json({ error: "That is not a puzzle day." }, { status: 400 }),
+      token,
+    );
+  }
   try {
-    return withRequestSessionCookie(request, NextResponse.json(await readWordStackPuzzle(token)), token);
+    return withRequestSessionCookie(
+      request,
+      NextResponse.json(await readWordStackPuzzle(token, dayParam ?? undefined)),
+      token,
+    );
   } catch (error) {
     return withRequestSessionCookie(request, toWordStackErrorResponse(error), token);
   }
@@ -64,7 +87,7 @@ export async function POST(request: NextRequest) {
     }
     return withRequestSessionCookie(
       request,
-      NextResponse.json(await startWordStackPuzzle(token, parsed.data.wager ?? 0)),
+      NextResponse.json(await startWordStackPuzzle(token, parsed.data.wager ?? 0, parsed.data.day)),
       token,
     );
   } catch (error) {

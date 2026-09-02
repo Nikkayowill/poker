@@ -486,6 +486,24 @@
     line-height: 1.35;
   }
 
+  /* Stands in for a lucide icon in the row's leading slot -- the StackAcres
+     wordmark itself (components/brand/stackacres-logo.tsx), decorative at
+     this size rather than legible; the bold "StackAcres" beside it carries
+     the name. */
+  .mshell-homestead-logo { flex-shrink: 0; width: 58px; height: auto; }
+  .mshell-homestead-soon {
+    color: #93a1bb;
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+  }
+  /* Locked-by-default: homesteadAccess is granted per player from the admin
+     dashboard, so a row nobody can open renders as an inert <div>, not a
+     disabled control. Same treatment .hub-tile-locked gives the desktop
+     tile -- dimmed, no chevron, no press feedback. */
+  .mshell-row-locked { opacity: .55; cursor: default; }
+
   .mshell-rule {
     height: 1px;
     background: var(--rule);
@@ -645,7 +663,7 @@
      top of this file for why that's enough. */
   .mshell-nav {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     position: fixed;
     left: 0;
     right: 0;
@@ -686,10 +704,10 @@
     transition: color var(--duration-base, .15s) linear;
   }
 
-  /* Defensive, not descriptive of anything currently in PAGES: the three tab
-     labels ("Play"/"Ante Up"/"Profile") never come close to needing this, but
-     a bar mixing more/longer labels later shouldn't grow taller than its two
-     shortest tabs while it finds that out. */
+  /* Defensive, not descriptive of anything currently in PAGES: the four tab
+     labels ("Play"/"Ante Up"/"Leaderboard"/"Profile") never come close to
+     needing this, but a bar mixing more/longer labels later shouldn't grow
+     taller than its shortest tabs while it finds that out. */
   .mshell-nav-item span {
     max-width: 100%;
     overflow: hidden;

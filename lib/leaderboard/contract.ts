@@ -127,6 +127,7 @@ function winLossRecordContract(gameId: string, label: string): LeaderboardGameCo
 export const LEADERBOARD_GAMES: Readonly<Record<string, LeaderboardGameContract>> = {
   chess: winLossRecordContract("chess", "Chess"),
   checkers: winLossRecordContract("checkers", "Checkers"),
+  othello: winLossRecordContract("othello", "Othello"),
   trivia: winLossRecordContract("trivia", "Trivia Showdown"),
   "word-race": winLossRecordContract("word-race", "Word Race"),
   cribbage: winLossRecordContract("cribbage", "Cribbage"),

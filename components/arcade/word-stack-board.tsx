@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { Coins, CornerDownLeft, Delete, HelpCircle } from "lucide-react";
+import { ArrowLeft, CalendarClock, Coins, CornerDownLeft, Delete, HelpCircle } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { ShareResultButton } from "@/components/arcade/share-result-button";
@@ -16,6 +17,7 @@ import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { puzzleShareTitle, wordStackShareText } from "@/lib/arcade/puzzles/share";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { useAppShell } from "@/components/shell/app-shell";
 import {
   WORD_STACK_MAX_GUESSES,
   WORD_STACK_WORD_LENGTH,
@@ -49,6 +51,16 @@ import type { PlayerProfile } from "@/lib/profile/types";
  * guesses and a caret to fight with. So letters are buttons, and a physical
  * keyboard is handled separately with a window listener. Both paths funnel
  * into the same three actions.
+ *
+ * `day`/`onExit`: the puzzle archive (word-stack-archive.tsx) renders this
+ * same component for a missed day instead of duplicating it. Passing `day`
+ * puts the board in archive mode -- even if it happens to equal today's own
+ * UTC date, on purpose: computing "is this actually today" from a client-side
+ * `new Date()` would break the file's UTC-only-server-resolved-days rule, and
+ * costs nothing since the same board renders correctly either way. Archive
+ * mode drops the wager step entirely (archive puzzles are always free -- see
+ * word-stack-service.ts) and swaps FloorBackLink for a plain "back to
+ * archive" control that calls `onExit` instead of navigating away.
  */
 
 const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
@@ -68,14 +80,28 @@ interface WordStackResponse {
 /** How long a transient message ("Not in the word list") stays up. */
 const NOTICE_MS = 1800;
 
-export function WordStackBoard() {
+export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => void } = {}) {
   // Applies the player's stored mute on a route where PokerApp is not
   // mounted. The flag it sets is module-global, which is what lets the JSX
   // below call the chrome cues directly. See lib/audio/ui-sounds.ts.
   useArcadeSound({ gameSounds: true });
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  /** Any explicit `day` means archive mode; see this file's header. */
+  const isArchive = day !== undefined;
+  const queryDay = day ? `?day=${day}` : "";
+  // The persistent shell owns the profile now -- this screen still gets it
+  // back from its own round-response payload too (unchanged), it just
+  // writes into the shared setter instead of a local copy.
+  const { profile, setProfile, setImmersive } = useAppShell();
   const [round, setRound] = useState<(WordStackSnapshot & { wager: number; payout: number }) | null>(null);
   const [meta, setMeta] = useState<{ day: string; puzzleNumber: number; nextPuzzleAt: number } | null>(null);
+
+  // Tells the shell a round is open (opened, mid-guess, or just finished) --
+  // hides the persistent nav chrome, same as every other live-money screen.
+  // round === null is also the "pick a wager" step, per this file's own
+  // header comment, so chrome correctly stays up through that.
+  useEffect(() => {
+    setImmersive(Boolean(round));
+  }, [round, setImmersive]);
   const [wager, setWager] = useState<number>(MIN_ANTE_UP_WAGER);
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -147,7 +173,7 @@ export function WordStackBoard() {
         setLoaded(true);
       }
     },
-    [flash],
+    [flash, setProfile],
   );
 
   // Read-only first: visiting a page must not consume the day's attempt.
@@ -157,7 +183,7 @@ export function WordStackBoard() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const response = await fetch("/api/arcade/word-stack", { cache: "no-store" });
+      const response = await fetch(`/api/arcade/word-stack${queryDay}`, { cache: "no-store" });
       const data = (await response.json().catch(() => ({}))) as Partial<WordStackResponse>;
       if (cancelled) return;
       if (data.profile) setProfile(data.profile);
@@ -174,11 +200,14 @@ export function WordStackBoard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [queryDay, setProfile]);
 
   const startBoard = useCallback(() => {
-    void send("/api/arcade/word-stack", { wager });
-  }, [send, wager]);
+    // Archive plays are free-only; the wager step never renders in archive
+    // mode (see below), but forcing 0 here too keeps this call honest on its
+    // own rather than relying on the UI never offering another value.
+    void send("/api/arcade/word-stack", { wager: isArchive ? 0 : wager, ...(day ? { day } : {}) });
+  }, [day, isArchive, send, wager]);
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
   const result = anteUpResultLine(round?.wager ?? 0, round?.payout ?? 0);
@@ -279,17 +308,35 @@ export function WordStackBoard() {
       <header className="bj-header">
         <div className="bj-header-copy">
           <div className="bj-back-row">
-            <FloorBackLink
-              confirmLeave={!finished && (round?.wager ?? 0) > 0}
-              confirmMessage="Your wager is still in play on today's word. Leaving won't give it up — come back and finish your guesses."
-            />
+            {/* Archive rounds are always free, so there is never a wager to
+                confirm leaving -- and "back" here means back to the archive
+                list, not away from the game entirely. */}
+            {isArchive ? (
+              <button type="button" className="puzzle-archive-back" onClick={() => { tapSound(); onExit?.(); }}>
+                <ArrowLeft size={13} aria-hidden="true" /> Archive
+              </button>
+            ) : (
+              <FloorBackLink
+                confirmLeave={!finished && (round?.wager ?? 0) > 0}
+                confirmMessage="Your wager is still in play on today's word. Leaving won't give it up — come back and finish your guesses."
+              />
+            )}
+            {!isArchive && (
+              <Link href="/games/word-stack/archive" className="htp-trigger" onClick={() => tapSound()}>
+                <CalendarClock size={13} aria-hidden="true" /> Archive
+              </Link>
+            )}
             <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>
               <HelpCircle size={13} aria-hidden="true" /> How to play
             </button>
           </div>
           <h1>Daily Word Stack</h1>
           <p>
-            {meta ? `Puzzle #${meta.puzzleNumber}` : "Loading…"} · Six guesses · One word a day for everyone
+            {meta
+              ? isArchive
+                ? `Puzzle #${meta.puzzleNumber} · ${meta.day}`
+                : `Puzzle #${meta.puzzleNumber} · Six guesses · One word a day for everyone`
+              : "Loading…"}
           </p>
         </div>
         {profile && (
@@ -332,7 +379,19 @@ export function WordStackBoard() {
         {notice}
       </p>
 
-      {loaded && !round && (
+      {loaded && !round && isArchive && (
+        // Archive puzzles are free-only: no StakePicker, no affordability or
+        // ceiling math -- none of that applies to a day that can't be
+        // wagered on. See this file's header and word-stack-service.ts.
+        <section className="puzzle-summary">
+          <p className="puzzle-verdict">Play this missed puzzle for free.</p>
+          <button type="button" className="puzzle-share-button" disabled={busy} onClick={() => { selectSound(); startBoard(); }}>
+            {busy ? "Dealing…" : "Play"}
+          </button>
+        </section>
+      )}
+
+      {loaded && !round && !isArchive && (
         <section className="puzzle-summary">
           <p className="puzzle-verdict">Wager Gold on today&apos;s word, or play free.</p>
           <StakePicker

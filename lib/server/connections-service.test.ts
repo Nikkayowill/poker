@@ -1,17 +1,37 @@
 import { randomUUID } from "crypto";
-import { beforeEach, describe, expect, it } from "vitest";
-import { pickDaily, puzzleDay } from "@/lib/arcade/puzzles/daily";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PUZZLE_EPOCH_DAY, pickDaily, previousDay, puzzleDay } from "@/lib/arcade/puzzles/daily";
 import { CONNECTIONS_PUZZLES } from "@/lib/arcade/puzzles/connections-puzzles";
 import type { ConnectionsLevel } from "@/lib/arcade/puzzles/connections";
-import { __resetDailyPuzzlesForTest } from "./daily-puzzle-store";
+import { __resetDailyPuzzlesForTest, createPuzzleRound, getPuzzleRound } from "./daily-puzzle-store";
 import {
   CONNECTIONS_GAME,
   ConnectionsRequestError,
+  listConnectionsArchive,
   playConnectionsGuess,
   readConnectionsPuzzle,
   startConnectionsPuzzle,
+  type StoredConnectionsRound,
 } from "./connections-service";
-import { ensureProfile } from "./profile-store";
+import { adjustGold, ensureProfile } from "./profile-store";
+
+/**
+ * A switch for making the canonical-answer lookup fail, for the ordering test
+ * at the bottom of this file. Everything else in daily-puzzle-store is the
+ * real thing -- this only stands in for the one call, and only when asked.
+ */
+const canon = vi.hoisted(() => ({ fails: false }));
+
+vi.mock("./daily-puzzle-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./daily-puzzle-store")>();
+  return {
+    ...actual,
+    getOrCreateCanonicalAnswer: (...args: Parameters<typeof actual.getOrCreateCanonicalAnswer>) =>
+      canon.fails
+        ? Promise.reject(new Error("canon unavailable"))
+        : actual.getOrCreateCanonicalAnswer(...args),
+  };
+});
 
 /**
  * The contract, in memory mode.
@@ -26,10 +46,19 @@ function today(): string {
   return puzzleDay(new Date());
 }
 
+function tomorrow(): string {
+  return puzzleDay(new Date(Date.now() + 24 * 60 * 60 * 1000));
+}
+
+/** The four words of one group of a given day's board. */
+function groupFor(day: string, level: ConnectionsLevel): string[] {
+  const puzzle = pickDaily(CONNECTIONS_PUZZLES, day, CONNECTIONS_GAME);
+  return puzzle.groups.find((entry) => entry.level === level)!.members;
+}
+
 /** The four words of one group of today's board. */
 function group(level: ConnectionsLevel): string[] {
-  const puzzle = pickDaily(CONNECTIONS_PUZZLES, today(), CONNECTIONS_GAME);
-  return puzzle.groups.find((entry) => entry.level === level)!.members;
+  return groupFor(today(), level);
 }
 
 /** A selection guaranteed to be wrong: one word from each group. */
@@ -50,11 +79,11 @@ async function player() {
 }
 
 /** Plays a sequence of selections, threading the version. Returns the last view. */
-async function playAll(token: string, selections: string[][], startVersion = 1) {
+async function playAll(token: string, selections: string[][], startVersion = 1, day = today()) {
   let version = startVersion;
-  let view = await readConnectionsPuzzle(token);
+  let view = await readConnectionsPuzzle(token, day);
   for (const selection of selections) {
-    view = await playConnectionsGuess(token, { day: today(), version, selection });
+    view = await playConnectionsGuess(token, { day, version, selection });
     version += 1;
   }
   return view;
@@ -213,8 +242,16 @@ describe("playConnectionsGuess", () => {
     const token = await player();
     await startConnectionsPuzzle(token);
     await expect(
-      playConnectionsGuess(token, { day: "2020-01-01", version: 1, selection: group(0) }),
+      playConnectionsGuess(token, { day: tomorrow(), version: 1, selection: group(0) }),
     ).rejects.toMatchObject({ status: 409, reason: "rolled-over" });
+  });
+
+  it("refuses a guess dated before the archive begins", async () => {
+    const token = await player();
+    await startConnectionsPuzzle(token);
+    await expect(
+      playConnectionsGuess(token, { day: previousDay(PUZZLE_EPOCH_DAY), version: 1, selection: group(0) }),
+    ).rejects.toMatchObject({ status: 400 });
   });
 
   it("carries the true board back on a rejection", async () => {
@@ -236,5 +273,165 @@ describe("playConnectionsGuess", () => {
     await expect(
       playConnectionsGuess(await player(), { day: today(), version: 1, selection: group(0) }),
     ).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("the puzzle archive", () => {
+  it("opens and plays a past day end to end, free, with that day's own puzzle number", async () => {
+    const token = await player();
+    const day = previousDay(today());
+
+    const opened = await startConnectionsPuzzle(token, 0, day);
+    expect(opened.day).toBe(day);
+    expect(opened.round?.wager).toBe(0);
+
+    const won = await playAll(
+      token,
+      ([0, 1, 2, 3] as ConnectionsLevel[]).map((level) => groupFor(day, level)),
+      1,
+      day,
+    );
+    expect(won.round?.status).toBe("won");
+    expect(won.day).toBe(day);
+  });
+
+  it("refuses a wager on an archive day, and never touches the wallet", async () => {
+    const token = await player();
+    const before = (await ensureProfile(token)).goldBalance;
+    const day = previousDay(today());
+    await expect(startConnectionsPuzzle(token, 1000, day)).rejects.toMatchObject({ status: 400 });
+    expect((await ensureProfile(token)).goldBalance).toBe(before);
+  });
+
+  it("rejects opening a day after today", async () => {
+    await expect(startConnectionsPuzzle(await player(), 0, tomorrow())).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("rejects opening a day before the archive begins", async () => {
+    await expect(
+      startConnectionsPuzzle(await player(), 0, previousDay(PUZZLE_EPOCH_DAY)),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("gives no daily bonus for completing an archive day, only for completing today's puzzle", async () => {
+    const archiveToken = await player();
+    const day = previousDay(today());
+    await startConnectionsPuzzle(archiveToken, 0, day);
+    const beforeArchive = (await ensureProfile(archiveToken)).goldBalance;
+    await playAll(
+      archiveToken,
+      ([0, 1, 2, 3] as ConnectionsLevel[]).map((level) => groupFor(day, level)),
+      1,
+      day,
+    );
+    expect((await ensureProfile(archiveToken)).goldBalance).toBe(beforeArchive);
+
+    const todayToken = await player();
+    await startConnectionsPuzzle(todayToken, 0);
+    const beforeToday = (await ensureProfile(todayToken)).goldBalance;
+    await playAll(todayToken, ([0, 1, 2, 3] as ConnectionsLevel[]).map((level) => group(level)));
+    expect((await ensureProfile(todayToken)).goldBalance).toBeGreaterThan(beforeToday);
+  });
+
+  it("gives a later archive opener the same puzzle a prior real attempt already recorded", async () => {
+    // The regression this guards: pickDaily is a pure function of the pool's
+    // *current* size, so recomputing it fresh for an old day would silently
+    // disagree with whatever the first real player actually saw if the pool
+    // has changed size since. A planted mismatch stands in for that drift.
+    const day = previousDay(today());
+    const truePuzzle = pickDaily(CONNECTIONS_PUZZLES, day, CONNECTIONS_GAME);
+    const plantedGroups = truePuzzle.groups.map((group, index) => ({
+      ...group,
+      label: `PLANTED ${index}`,
+    }));
+
+    const priorToken = await player();
+    const priorProfile = await ensureProfile(priorToken);
+    await createPuzzleRound<StoredConnectionsRound>({
+      profileId: priorProfile.id,
+      game: CONNECTIONS_GAME,
+      day,
+      round: {
+        groups: plantedGroups,
+        order: plantedGroups.flatMap((g) => g.members),
+        solvedLevels: [],
+        attempts: [],
+        mistakes: 0,
+        status: "active",
+        lastVerdict: null,
+        wager: 0,
+      },
+      complete: false,
+    });
+
+    const laterToken = await player();
+    await startConnectionsPuzzle(laterToken, 0, day);
+    const laterProfile = await ensureProfile(laterToken);
+    const stored = await getPuzzleRound<StoredConnectionsRound>(laterProfile.id, CONNECTIONS_GAME, day);
+    expect(stored?.round.groups.map((g) => g.label)).toEqual(plantedGroups.map((g) => g.label));
+  });
+
+  it("lists every day since the epoch, newest first, with this player's own status", async () => {
+    const token = await player();
+    const yesterday = previousDay(today());
+    await startConnectionsPuzzle(token, 0, yesterday);
+    await playAll(
+      token,
+      ([0, 1, 2, 3] as ConnectionsLevel[]).map((level) => groupFor(yesterday, level)),
+      1,
+      yesterday,
+    );
+
+    const archive = await listConnectionsArchive(token);
+    expect(archive[0].day).toBe(yesterday);
+    expect(archive[0].status).toBe("won");
+    expect(archive.every((entry) => entry.day < today())).toBe(true);
+    expect(archive.every((entry) => entry.day >= PUZZLE_EPOCH_DAY)).toBe(true);
+    expect(archive.some((entry) => entry.status === "not-started")).toBe(true);
+  });
+
+  it("answers a null token (no session cookie yet) without minting a profile", async () => {
+    // Same regression word-stack-service.test.ts guards: a GET-only route
+    // must never create a session, and a visitor with no cookie has by
+    // definition played nothing.
+    const archive = await listConnectionsArchive(null);
+    expect(archive.length).toBeGreaterThan(0);
+    expect(archive.every((entry) => entry.status === "not-started")).toBe(true);
+  });
+});
+
+/**
+ * The stake must not leave before everything that can throw has thrown.
+ *
+ * Same bug and same fix as word-stack-service.ts -- both services shared the
+ * ordering. getOrCreateCanonicalAnswer sat between the debit and the
+ * try/catch that refunds a failed round creation, so a throw from it charged
+ * the player and handed back no board. Not hypothetical: daily_puzzle_canon's
+ * migration went unapplied while its calling code was live, so the call threw
+ * on every wagered open until the table was created on 2026-09-01.
+ */
+describe("a failed canon lookup does not take the stake", () => {
+  async function fundedPlayer(gold: number) {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const delta = gold - profile.goldBalance;
+    if (delta !== 0) await adjustGold(profile.id, delta);
+    return { token, id: profile.id };
+  }
+
+  it("leaves the balance untouched when the canonical puzzle cannot be read", async () => {
+    const { token, id } = await fundedPlayer(50_000);
+    const before = (await ensureProfile(token)).goldBalance;
+
+    canon.fails = true;
+    try {
+      await expect(startConnectionsPuzzle(token, 1000)).rejects.toThrow("canon unavailable");
+    } finally {
+      canon.fails = false;
+    }
+
+    expect((await ensureProfile(token)).goldBalance).toBe(before);
+    // And no half-open round was left behind to burn the day's attempt.
+    expect(await getPuzzleRound<StoredConnectionsRound>(id, CONNECTIONS_GAME, today())).toBeNull();
   });
 });

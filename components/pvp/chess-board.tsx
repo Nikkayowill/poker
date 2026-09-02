@@ -26,10 +26,17 @@ import type { DuelBoardProps } from "./duel-shell";
  * most system fonts, so a board built from both reads as two different piece
  * sets. One shape per kind plus a fill and an outline is legible at the ~40px
  * a phone gets, which is the size this has to survive.
+ *
+ * Every glyph carries a trailing U+FE0E (text variation selector). Without it,
+ * mobile browsers commonly resolve these codepoints to the platform's color
+ * emoji font instead of a monochrome symbol font — a color-emoji glyph paints
+ * its own fixed color and ignores the `color`/`text-shadow` below, so both
+ * sides rendered as the same dark piece. The selector forces text-glyph
+ * presentation, which is what lets CSS colour it at all.
  */
 const GLYPHS: Record<Exclude<ChessSquare, "">, string> = {
-  K: "♚", Q: "♛", R: "♜", B: "♝", N: "♞", P: "♟",
-  k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟",
+  K: "♚︎", Q: "♛︎", R: "♜︎", B: "♝︎", N: "♞︎", P: "♟︎",
+  k: "♚︎", q: "♛︎", r: "♜︎", b: "♝︎", n: "♞︎", p: "♟︎",
 };
 
 const PIECE_NAMES: Record<string, string> = {

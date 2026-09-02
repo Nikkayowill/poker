@@ -89,7 +89,6 @@
 .leaderboard-scope-active:hover { color: #fff; background: linear-gradient(150deg, var(--brand-purple), var(--brand-purple-deep)); }
 
 .leaderboard-season-window {
-  margin-left: auto;
   color: var(--muted);
   font-size: 12px;
 }

@@ -378,6 +378,80 @@
 }
 .puzzle-countdown strong { color: var(--ink); }
 
+/* ---- Puzzle archive ---- */
+
+/* The selected-day board's "back to archive" control (word-stack-board.tsx /
+   connections-board.tsx in archive mode). Same colours as .floor-back
+   (22-arcade.css), which it stands in for there -- an archive round is
+   always free, so there is never a wager to guard leaving, and "back" means
+   back to the list, not off the page -- but needs icon+text alignment
+   .floor-back was never built for. */
+.puzzle-archive-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #93a1bb;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: color var(--duration-base) ease;
+}
+.puzzle-archive-back:hover { color: #eef2f8; }
+.puzzle-archive-back:focus-visible { outline: 0; border-radius: var(--radius-control); box-shadow: var(--brand-focus); }
+
+.puzzle-archive-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.puzzle-archive-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--surface-2);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-base) ease, border-color var(--duration-base) ease;
+}
+.puzzle-archive-row:hover { background: rgba(255, 255, 255, 0.06); }
+.puzzle-archive-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.puzzle-archive-row-main strong { font: 700 14px system-ui, sans-serif; }
+.puzzle-archive-row-day { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.puzzle-archive-row-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* Status colour rides on the row's border and the status text/icon only --
+   the row's own background stays neutral so a long list doesn't turn into a
+   wall of colour. */
+.puzzle-archive-row-won { border-color: #2f7d4f; }
+.puzzle-archive-row-won .puzzle-archive-row-status { color: #4fae74; }
+.puzzle-archive-row-lost { border-color: rgba(220, 20, 19, 0.4); }
+.puzzle-archive-row-lost .puzzle-archive-row-status { color: #d97a79; }
+.puzzle-archive-row-active { border-color: var(--gold); }
+.puzzle-archive-row-active .puzzle-archive-row-status { color: var(--gold); }
+
 /* ---- Narrow phones ---- */
 
 @media (max-width: 420px) {

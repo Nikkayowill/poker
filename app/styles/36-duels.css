@@ -134,6 +134,16 @@
   background: transparent;
   color: var(--text-primary);
   font: inherit;
+  /* iOS Safari auto-zooms the whole page on focus for any input under 16px,
+     and does not zoom back out on blur -- a player who opened this field to
+     type a custom wager stayed zoomed in for the rest of the game (reported
+     as "the keyboard got zoomed in" on a Word Stack round, though this field
+     is what's actually focused; the on-screen game keyboard afterwards just
+     inherited the stuck zoom and read as cut off). 16px sits at the exact
+     threshold, overriding the inherited 13px from .duel-tier-custom. Every
+     Ante Up game and the PvP duel lobby share this one field, so one fix
+     here covers all of them. */
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }

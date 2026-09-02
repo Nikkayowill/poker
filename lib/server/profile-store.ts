@@ -19,16 +19,30 @@ interface StoredProfile extends Omit<PlayerProfile, "isRegistered"> {
   /** Admin-only moderation fields, never present in publicProfile()'s shape. */
   banned: boolean;
   lastSeenIp: string | null;
+  /** Admin-granted access to the Homestead while it is unreleased. */
+  homesteadAccess: boolean;
+  /** Shows "Admin" above this player's seat at the table. Dashboard-granted. */
+  adminBadge: boolean;
 }
 
-/** The admin dashboard's view of a profile: adds the moderation fields publicProfile() omits from every player-facing response. */
+/**
+ * The admin dashboard's view of a profile: adds the moderation fields
+ * publicProfile() omits from every player-facing response. homesteadAccess
+ * is NOT one of them any more -- publicProfile() now carries it too, since
+ * telling a player their own access flag isn't a moderation leak the way
+ * banned/lastSeenIp would be. It stays listed on StoredProfile itself only.
+ */
 export type AdminProfileSummary = PlayerProfile & {
   banned: boolean;
   lastSeenIp: string | null;
 };
 
 function adminProfileView(profile: StoredProfile): AdminProfileSummary {
-  return { ...publicProfile(profile), banned: profile.banned, lastSeenIp: profile.lastSeenIp };
+  return {
+    ...publicProfile(profile),
+    banned: profile.banned,
+    lastSeenIp: profile.lastSeenIp,
+  };
 }
 
 declare global {
@@ -81,6 +95,8 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     lastDailyClaimAt: profile.lastDailyClaimAt,
     lastBackstopAt: profile.lastBackstopAt,
     isRegistered: profile.userId !== null,
+    homesteadAccess: profile.homesteadAccess,
+    adminBadge: profile.adminBadge,
   };
 }
 
@@ -92,6 +108,7 @@ function otherPlayerSummary(profile: StoredProfile): PublicProfileSummary {
     initials: profile.initials,
     avatarUrl: profile.avatarUrl,
     avatarPreset: profile.avatarPreset,
+    avatarCosmetic: profile.equipped.avatar2d,
     accent: profile.accent,
   };
 }
@@ -115,6 +132,8 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     userId: null,
     banned: false,
     lastSeenIp: null,
+    homesteadAccess: false,
+    adminBadge: false,
     lastBackstopAt: null,
   };
 }
@@ -137,6 +156,8 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     userId: row.user_id ? String(row.user_id) : null,
     banned: Boolean(row.banned),
     lastSeenIp: row.last_seen_ip ? String(row.last_seen_ip) : null,
+    homesteadAccess: Boolean(row.homestead_access),
+    adminBadge: Boolean(row.admin_badge),
     lastBackstopAt: row.last_backstop_at ? String(row.last_backstop_at) : null,
   };
 }
@@ -229,6 +250,29 @@ export async function ensureProfile(token: string, preferredName?: string): Prom
  * supplied, so security-sensitive routes must not turn an unknown token into
  * a new server-side identity while trying to authenticate it.
  */
+/**
+ * The auth account this session belongs to, or null while it is still a guest.
+ *
+ * publicProfile() deliberately drops `userId` (isRegistered is derived from
+ * it), so anything that has to name one specific account -- an allowlist, not
+ * a "is this player registered" check -- cannot go through the profile shape.
+ * Narrow on purpose: it returns the id and nothing else.
+ */
+export async function findUserIdBySessionToken(token: string | null): Promise<string | null> {
+  if (!token) return null;
+
+  const supabase = adminClient();
+  if (!supabase) return memoryProfiles.get(token)?.userId ?? null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("user_id")
+    .eq("session_token", token)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data.user_id ? String(data.user_id) : null;
+}
+
 export async function findProfileBySessionToken(token: string): Promise<PlayerProfile | null> {
   if (!token) return null;
 
@@ -759,6 +803,66 @@ export async function banProfile(profileId: string, banned: boolean): Promise<vo
     .eq("id", profileId)
     .select("id");
   if (error) throw new Error(`Could not update ban status: ${error.message}`);
+  if (!data || data.length === 0) throw new Error("Profile not found.");
+}
+
+/**
+ * Whether this session's profile has been let into the Homestead.
+ *
+ * Reads by session token rather than profile id, the same shape isBanned()
+ * uses, because the caller of a game route holds a cookie and nothing else.
+ * A token with no profile behind it is not an error here -- it is simply
+ * somebody who has never played, and they are not on the list.
+ */
+export async function hasHomesteadAccess(token: string): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) return memoryProfiles.get(token)?.homesteadAccess ?? false;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("homestead_access")
+    .eq("session_token", token)
+    .maybeSingle();
+  if (error) throw new Error(`Could not check Homestead access: ${error.message}`);
+  return Boolean(data?.homestead_access);
+}
+
+/** Lets a specific profile into (or back out of) the Homestead while it is unreleased. */
+export async function setHomesteadAccess(profileId: string, allowed: boolean): Promise<void> {
+  const supabase = adminClient();
+  const now = new Date().toISOString();
+  if (!supabase) {
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) throw new Error("Profile not found.");
+    const [token, current] = entry;
+    memoryProfiles.set(token, { ...current, homesteadAccess: allowed, updatedAt: now });
+    return;
+  }
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ homestead_access: allowed, updated_at: now })
+    .eq("id", profileId)
+    .select("id");
+  if (error) throw new Error(`Could not update Homestead access: ${error.message}`);
+  if (!data || data.length === 0) throw new Error("Profile not found.");
+}
+
+/** Puts the "Admin" tag above a profile's seat at the table, or takes it off. */
+export async function setAdminBadge(profileId: string, shown: boolean): Promise<void> {
+  const supabase = adminClient();
+  const now = new Date().toISOString();
+  if (!supabase) {
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) throw new Error("Profile not found.");
+    const [token, current] = entry;
+    memoryProfiles.set(token, { ...current, adminBadge: shown, updatedAt: now });
+    return;
+  }
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ admin_badge: shown, updated_at: now })
+    .eq("id", profileId)
+    .select("id");
+  if (error) throw new Error(`Could not update the admin tag: ${error.message}`);
   if (!data || data.length === 0) throw new Error("Profile not found.");
 }
 

@@ -37,6 +37,8 @@ export interface StoredBlackjackRound {
   tier: BlackjackRoundTier;
   baseStake: number;
   round: BlackjackRound;
+  /** When this row last changed. What the staleness sweep in blackjack-service.ts measures against. */
+  updatedAt: string;
 }
 
 /** Thrown when a profile already has a live round. The route resumes it rather than dealing a second one. */
@@ -67,6 +69,7 @@ interface RoundRow {
   tier: string;
   base_stake: number | string;
   state: unknown;
+  updated_at: string;
 }
 
 function fromRow(row: RoundRow): StoredBlackjackRound {
@@ -78,10 +81,11 @@ function fromRow(row: RoundRow): StoredBlackjackRound {
     tier: String(row.tier) as BlackjackRoundTier,
     baseStake: Number(row.base_stake),
     round: row.state as BlackjackRound,
+    updatedAt: String(row.updated_at),
   };
 }
 
-const ROUND_COLUMNS = "id, profile_id, version, status, tier, base_stake, state";
+const ROUND_COLUMNS = "id, profile_id, version, status, tier, base_stake, state, updated_at";
 
 /** A defensive copy, so a caller mutating what it got back cannot reach into the memory store. */
 function clone(stored: StoredBlackjackRound): StoredBlackjackRound {
@@ -138,6 +142,7 @@ export async function createBlackjackRound(input: {
       tier: input.tier,
       baseStake: input.baseStake,
       round: input.round,
+      updatedAt: new Date().toISOString(),
     };
     memoryRounds.set(stored.id, clone(stored));
     return clone(stored);
@@ -184,7 +189,13 @@ export async function advanceBlackjackRound(
     // order: the row exists, it is still live, and it is at the version the
     // caller acted on.
     if (!stored || stored.status !== "active" || stored.version !== current.version) return null;
-    const updated: StoredBlackjackRound = { ...stored, version, status, round: next };
+    const updated: StoredBlackjackRound = {
+      ...stored,
+      version,
+      status,
+      round: next,
+      updatedAt: new Date().toISOString(),
+    };
     memoryRounds.set(current.id, clone(updated));
     return clone(updated);
   }

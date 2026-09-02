@@ -35,10 +35,533 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 - `river_*` cookies/module names and Sentry slugs are legacy compatibility IDs; do not casually rename them.
 - Test changed rules/layout. Run: `npm test`, `npm run lint`, `npm run build`; use `npm run test:e2e` for flows/UI.
 - Preserve unrelated work; `.claude/` may be locally untracked.
+- **This checkout is shared by several concurrent sessions. Do your work in your own worktree**
+  (`git worktree add -b <branch> .claude/worktrees/<name> origin/main`), never on a branch in the
+  primary tree. Branch-level and destructive git there (checkout/switch/merge/rebase, stash/reset/
+  clean/restore, `git add -A`, `git commit -a`) is refused by `.claude/hooks/guard-shared-worktree.sh`,
+  because those land under whoever else is mid-task rather than staying local. Reads are always fine;
+  `ALLOW_SHARED_TREE=1` in the command is the deliberate override.
 
 ## Active milestone
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
+
+### Homestead stocking was broken in production since Phase 2 landed (2026-09-02)
+Kayo hit "Could not stock that plot" live. Root cause: `20260901180000_homestead_inventory.sql`
+made `payout` inert (collections yield produce via the new `yield_quantity` column, not Gold) and
+re-pointed the stocking trigger's ceiling at `yield_quantity` -- but missed the original migration's
+CHECK constraint, `homestead_plots_stock_matches_status`, which still required `payout is not null`
+for a working plot. Nothing has written `payout` since that day, so every stocking UPDATE has set
+status = 'working' with payout still null and the CHECK rejected it outright -- **every stock attempt
+has failed since 2026-09-01**, never caught by the memory-mode suite (it doesn't exercise a real SQL
+CHECK) and apparently never actually attempted in production until now. No Gold/Bushels were at risk:
+`stockHomestead`'s catch block already refunds the seed cost when the database throws. Fixed by
+swapping the constraint's dependency from `payout` to `yield_quantity`
+(`20260902130000_fix_homestead_plot_stock_check.sql`), applied directly to production and verified
+there with a self-cleaning insert/delete against a real row before landing the file. Also fixes a
+smaller trap for next time: a verification INSERT wrapped in a `WITH ... AS (INSERT ... RETURNING)
+DELETE ... WHERE id IN (...)` CTE did not actually delete the row it inserted (left one real test row
+on a real player's profile, caught and cleaned up by hand) -- for a self-cleaning check against a real
+table, verify the leftover count directly rather than trusting the CTE's own RETURNING silently
+returning nothing.
+
+### Homestead: the grid became a 2D sandbox viewport (2026-09-01)
+Kayo's brief: "a major evolution", not a new game -- take the economics as they are (acreage, crops,
+pens) and move them into a fluid world the player drags, zooms and places things in, with the menu
+layer pinned to the screen. **Phaser is back for the Homestead** (`phaser` 3.90.0, exact), which
+reverses his 2026-09-01 "DOM grid, drop Phaser" call; that call was made when the field was a 4x4 of
+buttons, this brief explicitly asks for Phaser scenes. Two layers that never mix: the world is ONE
+Phaser scene (`components/arcade/homestead/homestead-scene.ts`) that fills `.hs-field` and moves when
+dragged; the header, toolbelt, seed strip, detail card, store sheet and modals are all still DOM,
+absolutely positioned over the canvas by `52-homestead.css` -- a `<button>` is reachable by a screen
+reader and a thumb, a Phaser Text is neither. The brief's "UIScene" is that DOM layer, not a second
+Phaser scene. **Nothing on the server changed.** A plot is still `plotIndex` 1-16 bought in ladder
+order; `lib/homestead/world.ts` (pure, 22 tests) only decides WHERE index N is drawn (a 5x5-tile
+square, 4 across, inside a 4-tile forest ring), which plot a world point hits, how far the camera may
+roam, and how the animals wander. "Place the coop anywhere" is therefore "drop it on any empty plot":
+a chip dragged out of the seed strip becomes a ghost that snaps to the empty plot under the finger
+(`setGhost`), and dropping it fires the same `stock` action a tap would. "Buying acreage expands the
+map" is literal -- `acreageBounds` fences the camera to owned plots plus the one for sale plus a ring of
+forest, so a purchase pushes the border out and the camera glides to the new land. Animals are real
+sprites inside fenced pens (3 hens, 2 sheep, 2 cows) driven by `stepCritter`, a pure state machine
+that cannot walk one through a fence (tested over 5,000 steps); hungry pens stand still and grey.
+State/affordance rings, progress bars and the harvest burst are all drawn in the canvas in the same
+colours the CSS used. Things worth keeping: (1) `import * as Phaser` -- the package's ESM build has no
+default export, and `import Phaser from "phaser"` fails only at bundle time; (2) Phaser's own input
+system is switched off entirely (`input: {mouse:false, touch:false, keyboard:false}` in
+`homestead-world.tsx`) and every gesture is read off native `pointerdown/move/up/cancel` listeners
+bound straight to the host element instead — two input layers on one surface would double-handle
+every press; (3) the detail card is a popover hung beside the selected plot -- the scene reports the plot's screen
+rect every frame it moves (`trackPlot`) and `placeDetail` positions the node directly, no state --
+because at phone zoom the map is barely wider than the screen and any fixed corner panel covers plots
+that can never be scrolled out from under it; a `ResizeObserver` re-places it when its own content
+grows (a bought plot's card gets taller on the same spot). Keyboard/screen-reader path is
+`HomesteadPlotList`, sixteen real buttons hidden until focused. The whole packed Tiny Farm sheet
+ships as `public/homestead/tilemap_packed.png` (CC0); frame meanings are `FRAME` in `world.ts`.
+Verified with the memory-mode harness from `[[project_stackchips_homestead_farmhand_adoption]]`
+(`next dev` + minted cookie + admin grant; `localhost`, not `127.0.0.1`, or middleware's origin check
+403s every POST) at 844x390 and 1280x800: tap, drag-place, pan, wheel/button/pinch zoom, buy, reload.
+**Not verified live: ready/hungry/mucked rendering** (needs a 15-minute clock); the code paths are
+the same `buildCell` switch. Open: `suggestedTool` lands a fresh farm on Plant with no seed, so the
+first thing on screen is two red "blocked" rings -- pre-existing behaviour, now more visible.
+
+### Homestead art went vector and the map went open-world (2026-09-02)
+Kayo's brief: "it's 2026, Gameboy graphics aren't it" -- better graphics, keep the smoothness the
+racetrack has, nothing downloaded. Every sprite on the map and every icon in the chrome (toolbelt,
+seed chips, HUD purse/feed, store barn rows) is now a Canvas2D painter
+(`components/arcade/homestead/homestead-art.ts`), baked into a Phaser texture at boot and rendered at
+the browser's own device pixel ratio -- smooth at every zoom, nothing is a pixel and nothing is a
+downloaded asset. `tilemap_packed.png` (the Kenney Tiny Farm sheet) is deleted; the cut PNG tiles under
+`public/homestead/tiles/` stay on disk only because another branch's lobby card reads `cattle.png`
+directly, and nothing in these components references them any more. The map also became genuinely
+open-world: the camera is no longer fenced to the acreage plus a forest ring. Roaming past the farm in
+any direction grows procedural scenery in `HOMESTEAD_CHUNK`-wide chunks (`chunkScenery`, deterministic
+per chunk so it regrows the same trees on return), denser near the farm and thinner far out, with a
+`FARM_ZONE` rectangle kept permanently clear so nothing can grow inside the plot ladder or lean over
+its fence. `lib/homestead/world.ts`'s `acreageBounds` is renamed `ownedBounds` and lost its role as a
+camera fence -- it only frames the opening shot and "back to the farm" now; zoom limits became fixed
+constants (`HOMESTEAD_ZOOM_MIN`/`MAX`) instead of a function of the roamable area, since there is no
+longer a roamable area to fit. The plots, the economy and every server rule are untouched -- this pass
+touched only where things are drawn and what draws them. One trap worth keeping, found shooting the
+QA screenshots: Phaser hears pointer events on the *window*, so a drag that starts on a seed chip and
+then crosses the map would pan the camera out from under its own drop target if it were handled
+through Phaser's own input. Rather than patch that with a target/pointer-id check layered onto
+Phaser's events, `bindInput()` (`homestead-scene.ts`) switches Phaser's input off entirely and reads
+every gesture -- including its own pointer-id bookkeeping, since a stray third finger must be
+rejected and capture/cancel handled by hand -- off native pointer events bound to the host element
+directly. This *replaced* an earlier target-check design built on Phaser's own pointer bookkeeping,
+the same shape of bug as `[[reference_stackchips_phaser_canvas_dom_overlay]]` one layer up -- it isn't
+layered on top of it.
+
+### Blackjack orphaned-round lockout closed; the "never exercised in prod" claim was stale (2026-09-01)
+A money-path audit queried the live DB rather than trusting this file's own claim that Blackjack's
+Supabase persistence branch had "never been exercised by a real hand in production" — it was stale: 55
+rows, 3 distinct real profiles, 53 staked, back to 2026-08-11. Real exercise surfaced the real bug the
+claim wasn't there to predict: `blackjack-service.ts` had no resign/abandon action, so a round abandoned
+between the deal and the player's first action (tab closed, connection dropped — an ordinary mobile
+event) sat `active` forever, and `blackjack_rounds_one_active_per_profile` then permanently locked that
+profile out of Blackjack. Found live: two such rows, real players "Grilly" (1,000 Gold, stuck since
+08-14) and "Hugol" (5,000 Gold, stuck since 08-11, 47 minutes after account creation — plausibly their
+first hand ever), both `version: 1`, never touched since the deal. Fixed by hand first (refunded via
+`credit_gold_by_profile`, rows force-settled), then the root cause: `resign()` in the engine (forfeits
+the stake, same as every other staked game's resign) plus a 30-minute staleness sweep in
+`blackjack-service.ts` that force-resigns an abandoned round on the next read, keyed off the DB row's
+own `updated_at` rather than a new engine-level clock — the engine's own header rule ("nothing here
+reads a clock") stays true. See `[[project_stackchips_blackjack_orphaned_rounds]]` for the full incident
+record. Same pass also closed a second, unrelated gap: Nonogram shipped without its tiers ever being
+added to `ante_up_attempts_enforce_wager_ceiling` (the DB-side wager-ceiling trigger), so it had no
+database backstop, only the TypeScript check — fixed, plus a test that reads the trigger's live
+definition off the migration files and fails if a future game's TS ceiling and DB ceiling ever drift
+apart again.
+
+### The Homestead is being rebuilt to match `jeremyckahn/farmhand` (2026-09-01)
+Kayo brought that repo as the target -- "it matches what I want it to look like and how I want it to
+be on mobile... I want our homestead to adopt most of if not all of the game here". **Its code is
+GPL-2.0-or-later and its art is CC BY-NC-SA 4.0; the NonCommercial term rules the art out outright
+because StackChips sells Gold. Reimplement from the design, never copy a file.** Full teardown and
+the phase plan: https://claude.ai/code/artifact/482f085c-851f-4941-8070-0715c3feddc7
+
+**Economy, decided by Kayo:** two layers. Harvests will sell for an internal currency (**Bushels**,
+working name) which never leaves the farm, and that is where all of farmhand's variance lives --
+swinging prices, crafting margins, loans, cow breeding -- safely, because none of it is Gold. Gold
+leaves only through **one exchange window with a flat per-player daily ceiling**: not a percentage,
+not scaled by land owned, not scaled by trading skill. That invariant (**the farm's maximum Gold
+output is a constant**) is what keeps this out of the category Ante Up was in when it printed money,
+and it is the thing to defend in review. Collections will stop paying Gold entirely, so there is one
+faucet rather than two stacked. Cosmetics pricing is deliberately parked.
+Phases: (1) feel, (2) Bushels + inventory + shop, (3) the exchange window, (4) the market, (5) the
+meta. **The ceiling lands before prices start swinging**, so the valve is closed and tested before
+there is any variance behind it. Phases 1-3 are built (see below); phase 4 is next and now has a
+closed valve in front of it.
+
+### Phase 1 shipped the farmhand feel; Phaser is gone (2026-09-01)
+Branch `feat/homestead-farmhand-feel` off main. **The Phaser canvas and `iso.ts` are deleted** --
+Kayo's call, reversing his own earlier "use Phaser.js and 2d elements" (which was made against a 3D
+proposal, not against DOM). The field is now a plain CSS grid of buttons, one per plot, each a stack
+of 16x16 pixel-art tiles under `image-rendering: pixelated`. That deletes the whole coordinate-twinning
+arrangement `iso.ts` existed for: a canvas is invisible to a screen reader, so every painted tile had
+needed an invisible DOM copy kept in sync. **The tile is the button now.** Also removes the `phaser`
+dependency and its 1.2MB chunk.
+Interaction is **tool-first**: hold a tool from the dock, and every plot it can act on lights up.
+`lib/homestead/tools.ts` owns all of it (`affordanceFor` returns `act | blocked | none`) so it is
+testable; the components render what it returns and own no rules. **`blocked` is deliberately
+distinct from `none`** -- a plot that IS the tool's target but lacks Gold, feed or a free slot lights
+red, because collapsing it into "not tappable" hides the reason the farm has stopped.
+Three things found by actually screenshotting it, none of which reasoning caught:
+1. **State rings were invisible in the first cut.** An inset `box-shadow` paints above the element's
+   background but BELOW its children, and both tile sprites are children at `inset: 0` -- so the
+   gold "ready", amber "hungry" and brown "mucked" rings were painted over by the artwork and never
+   appeared at all. State rings now live on `::before`, the affordance ring on `::after` inset by
+   3px so the two nest concentrically.
+2. **The affordance tint must not be green.** Green was the obvious farming-game choice and it
+   vanished: every Kenney soil tile is a brown patch on a green lawn, so the tint disappeared into
+   the art. It is violet now (`--accent-edge`/`--accent-glow`) -- highest contrast against grass and
+   soil, and already the system's own accent spent as a ring and a glow rather than a fill.
+3. **The plots needed a shared bed.** Sixteen sprites on the violet chrome read as islands; the grid
+   now carries `--hs-grass: #84c669`, sampled from the tiles' own grass, so the 2px gap between
+   tiles becomes lawn and the field reads as one field.
+Art is Kenney's **CC0** Tiny Farm pack (`public/homestead/tiles/`, see its `CREDITS.txt`);
+`scripts/extract-homestead-tiles.py` records which source tile became which file, so swapping packs
+is a re-run. **The pack has no pig:** the middle tier keeps its `pig` stock id (it is on live rows;
+renaming it would be a data migration to fix a caption) and is labelled **"Sheep Pen"**.
+
+### The access code is gone; access is a switch in the admin portal (2026-09-01)
+Kayo: "the code into homestead is done. scrap it and just allow me to assign access to ppl in admin
+portal" -- and, separately, "the code to get into homestead doesnt even work", which is what a code
+that was never set in the environment it shipped to looks like from outside. Both the code and the
+account allowlist before it kept the guest list **in a deploy**, and both fail silently the same way:
+an unset variable is indistinguishable from a broken feature. A row in a table cannot fail that way.
+**`profiles.homestead_access`, one boolean per player, toggled from the admin dashboard** beside the
+ban and unlimited-Gold switches it deliberately copies. Migration
+`20260901200000_homestead_access.sql`, **UNAPPLIED** -- and it must land BEFORE the code, or the
+gate's `select` throws and every Homestead route 500s instead of refusing politely.
+`POST /api/admin/homestead-access` grants and revokes; `HOMESTEAD_ACCESS_CODE`,
+`POST /api/homestead/unlock`, the pass cookie and the code prompt are all deleted.
+**Keyed on the profile, not the auth account**, because a profile is what the dashboard lists, what a
+session cookie resolves to, and what a guest has -- so a guest can be let in exactly like a
+registered player. Fail closed: the column defaults false, so nobody is in until somebody is named,
+**including Kayo** (grant yourself first).
+Two ordering rules, both live again and both tested: the gate **costs a database read**, so it runs
+AFTER the rate limiter (gating first hands an unauthenticated flood a query amplifier), and it reads
+the session cookie with `readSessionToken`, **never** `readOrCreateSessionToken` -- a refusal must not
+hand a prober an identity, and a freshly minted token could never be on the list anyway. That also
+removes the read route's old tokenless preview of the farm: with no cookie there is no profile a
+grant could have been made to. `homestead-access.test.ts` still walks `app/api/homestead` so a route
+added tomorrow cannot skip the gate, and now also asserts no route mints a session at all.
+The locked page shows the visitor **their own player id**, because granting means finding them in a
+dashboard whose search box matches exactly that string.
+Verified over real HTTP in memory mode: anonymous 401, a real ungranted profile 401, a locked POST
+sets **no** session cookie, the admin route 404s without the admin cookie, granting flips one profile
+to 200 while another stays 401, the page renders the farm for the granted and the ask-for-access card
+otherwise, revoking shuts it again, and granting a nonexistent profile is refused.
+**`next start` cannot run memory mode**: it forces `NODE_ENV=production` and
+`readSupabaseRuntimeConfig` treats an empty config as an error there rather than as memory mode, so
+local HTTP verification without Supabase credentials has to be `next dev`.
+
+### SUPERSEDED by the entry above: the account allowlist became an access code (2026-09-01)
+Kayo: "just [make] it available in the UI but u can only get in through a code." Replaced
+`HOMESTEAD_ALLOWED_USER_IDS` with **`HOMESTEAD_ACCESS_CODE`** — one shared code, entered at
+`/games/homestead`, traded for a pass cookie at `POST /api/homestead/unlock`. The allowlist worked
+but made "let a friend look at it" a deploy; a code is what was actually wanted.
+**The cookie holds an HMAC of the code, never the code**, which buys three things at once: a stolen
+cookie is worth no more than the code it came from, **rotating the code revokes every pass with no
+revocation list** (the expected value is recomputed from the live code per request), and forging one
+needs the code. Keyed on `SESSION_SECRET` when set and on the code when not, because an unset
+optional secret must never be a second way a feature goes dark (session.ts's own rule).
+**The rate limit IS the security, not the code's length** — 8 attempts / 10 min, and it runs first;
+a code short enough to say out loud is brute-forceable at HTTP speed and these routes move real Gold.
+Answers **401 now, not 404**: the old 404 hid the feature's existence, and a tile on the floor
+announces it, so hiding the route only makes a locked door look broken.
+**The tile is `live` and got its own floor section, "Keep something growing", under a new
+`kind: "idle"`.** Not `wager`: that section's own note promises you can lose the Gold you stake, and
+the Homestead has no stake and no losing branch, so filing it there would make the note false about a
+row beneath it. It is deliberately **left out of the hub tile's "N free every day" count** — free of
+Gold but behind a code, so counting it promises something most readers cannot open. Opening the game
+to everyone is now deleting one variable; no catalog edit.
+Verified over real HTTP against a built server: locked routes 401, wrong code 401, right code 200 and
+issues a cookie **containing no substring of the code**, page renders the gate rather than a 404, a
+locked POST sets **no** session cookie, and a guessing run gets cut off at the 8th attempt.
+`findUserIdBySessionToken` in `profile-store.ts` is now unused — it existed only for the allowlist.
+
+### Phase 3: the exchange window, the farm's one Gold outlet (2026-09-01)
+Same branch. **Bushels -> Gold at 2 Gold each, capped at a flat 5,000 Gold per player per UTC day**
+(Kayo's numbers, signed off). The cap is the feature; the rate is not. A generous rate only means a
+player reaches the ceiling sooner and banks the rest, which is the shape to keep when phase 4 starts
+moving prices. Sized against the faucets that already exist rather than against what the farm can
+grow: daily grant 1,000 x2.5 streak, ads 500x6, backstop 1,000/12h, and below the ~7,500/day the
+pre-Bushels Homestead paid uncapped.
+**The invariant, and the whole review question: the ceiling is a constant.** Not a percentage, not
+scaled by acreage, bankroll or trading skill. Skill decides how fast the day's bucket fills, never
+how big it is. `lib/homestead/exchange.ts` holds it as a bare number on purpose, and
+`exchange.test.ts` asserts it is one; a service test drains the window on a bare farm and on a
+six-plot one and asserts both get exactly 5,000.
+**Gold now moves in exactly two places** (`buyHomesteadPlot` spends, `exchangeHomesteadBushels`
+pays) and a source-scanning test counts the `spendGoldByProfile`/`creditGoldByProfile` call sites so
+a third fails rather than ships. A second test pins the route's action list, because the change that
+would actually break this is a Gold->Bushels action: a round trip turns a ceiling into a laundry.
+Ordering is rule 1 with the currencies swapped -- **Bushels leave, then the day is reserved, then
+Gold lands** -- and a refused reservation refunds. The rate is read at exchange time, NOT snapshotted:
+unlike a planted plot nothing was agreed in advance.
+Migration `20260901190000_homestead_exchange.sql`, **UNAPPLIED**: `homestead_exchanges`
+(profile_id, day, gold), PK `(profile_id, day)`, one RPC. **It needs no advisory lock and the reason
+is worth knowing** -- unlike `admob_ssv_receipts_enforce_daily_cap`, which counts rows in the table
+it is inserting into and so can miss an uncommitted sibling, the number here lives IN the row being
+written and the conflict target is the primary key, so `insert ... on conflict do update ... where
+gold + p_gold <= ceiling` re-evaluates against the winner's committed row. **The RPC carries its own
+hard copy of the ceiling and takes `least(p_ceiling, hard_ceiling)`**, so application code can only
+ever tighten it -- raising the farm's Gold faucet costs a migration.
+UI is a gold-edged block at the BOTTOM of the supply store sheet (everything above it is the farm's
+own money going round; this is where it leaves, and it should be a thing you go and do). One bug the
+screenshots caught again: **the allowance bar filled as the day was spent, which put a full gold bar
+directly above the words "0 of 5,000 Gold left today"**. It drains now. Also fixed in passing:
+`.hs-group-label` had no CSS rule at all, so phase 2's three store headings rendered as body copy.
+
+### Phase 2: Bushels, produce and the store (2026-09-01)
+Same branch. **Every Homestead table was verified EMPTY in production first** (`homestead_plots`,
+`homestead_feed`, `homestead_harvests` all 0 rows -- nobody has ever played it, since the gate allows
+nobody), which is what made a free reshape of the economy possible; re-verify before applying the
+migration anywhere that has since been played.
+
+**The loop is now farmhand's.** Harvesting no longer pays anything -- it puts PRODUCE in a barn, and
+selling that produce at the supply store is what earns **Bushels**. That split is not cosmetic: a
+market can only swing a price if there is something you are holding while it swings, which is exactly
+what phase 4 needs. `collectHomestead` moves no money at all now, and nothing should ever add money
+back to it.
+
+**Currency wall, and the thing to defend in review: only `buy-plot` moves Gold.** Seed, feed, muck and
+produce are all Bushels or items, and they never leave the farm. Land stays Gold (Kayo's call) so the
+2,500-doubling ladder survives as a sink and Gold has a reason to enter at all. Several service tests
+assert a Gold balance is *unchanged* across an action purely to catch a second Gold path being added.
+New farms get `HOMESTEAD_STARTING_BUSHELS` (150) exactly once via
+`grant_homestead_starting_bushels` -- `INSERT ... ON CONFLICT DO NOTHING` makes the **primary key the
+idempotency guard**, so a player who spends it all does not get another by refreshing.
+
+New migration `20260901180000_homestead_inventory.sql`, **UNAPPLIED**: one `homestead_inventory`
+(profile, item_id, quantity) table holding produce AND Bushels behind ONE row-locking RPC -- one
+function is one EXECUTE grant to get right, and that grant has shipped wrong twice here. Two columns
+change meaning: `homestead_plots.stake` is Bushels now, and `payout` is **inert** (kept, since
+migrations are append-only) replaced by a new `yield_quantity` snapshot. The stocking trigger's
+ceiling was denominated in Gold payouts and is re-pointed at `yield_quantity`, which is the real last
+line before a faucet: inflated yield -> produce -> Bushels -> phase 3's exchange -> Gold.
+**`bushels` shares a table with produce, so the `sell` action's item enum is the only thing between a
+request and infinite money** -- there is a test for exactly that.
+
+### Homestead migration applied, and a revoke that wasn't revoking (2026-09-01)
+`20260831150000_homestead_plots.sql` is **applied to production**, verified against real Postgres with
+a self-rolling-back `DO` block rather than trusted from the memory-mode tests (which cannot exercise a
+SQL CHECK at all): payout ceilings, both caps of 3 counted separately, the guarded collection paying
+once and never tripping the stocking trigger, the feed RPC refusing to go negative. Applying it
+exposed a real hole. The migration revoked EXECUTE `from anon, authenticated` but **not `from
+public`**, and both roles inherit the default PUBLIC grant, so the revoke was a no-op and
+`adjust_homestead_feed` sat callable on `/rest/v1/rpc` -- SECURITY DEFINER, taking the profile id as a
+parameter rather than reading the caller's session, so any anonymous caller could move any player's
+feed balance, and feed is bought with Gold. Exactly what
+`20260813170000_revoke_pvp_trigger_function_execute.sql` exists to fix; that makes twice. The idiom is
+`from public, anon, authenticated` and all three names matter -- copy it from `credit_gold`, and check
+`proacl` afterwards rather than re-reading the migration (a correct one has no bare `=X/postgres`).
+Supabase's advisor catches the SECURITY DEFINER case, so run `get_advisors` after applying anything
+that adds a function. Also this pass: `50-homestead.css` renumbered to **52** (main's Nonogram and
+Othello took 50 and 51 while the branch was open).
+
+### Homestead ships to prod gated on one account, by env not by code (2026-09-01)
+Kayo wants it on production but visible only to his own account. The gate is an allowlist of Supabase
+auth account ids in **`HOMESTEAD_ALLOWED_USER_IDS`**, checked in `lib/server/homestead-access.ts`.
+**Ids, not emails:** the session cookie already resolves to `profiles.user_id`, so an id costs a
+lookup we make anyway, where matching an email would mean a Supabase auth-admin call on every read.
+**Env, not committed:** `Nikkayowill/poker` is a PUBLIC repo -- an email is personal data and an
+account id names one real person -- so there is no default and **unset allows nobody, including
+Kayo**; forgetting the variable is indistinguishable from the feature being broken, so say so wherever
+it deploys. Needed `findUserIdBySessionToken` in `profile-store.ts` because `publicProfile()`
+deliberately drops `userId` (`isRegistered` is derived from it), so nothing player-facing can name a
+specific account. **The PAGE is genuinely gated this time, which the admin version could not manage:**
+the player session cookie is `path=/`, so a server component reads it via `next/headers` and calls
+`notFound()` -- the admin cookie's `path=/api/admin` was what forced the old "render for anyone, let
+the API refuse" compromise. Still 404 everywhere, never 403. **The rate limiter now runs BEFORE the
+gate, reversing the old order**: the admin check was a free signature check worth running first, but
+this one costs a database read, and gating ahead of the limiter hands an unauthenticated flood a query
+amplifier. `homestead-access.test.ts` walks `app/api/homestead` so a route added tomorrow cannot skip
+the gate, and asserts the gate precedes `readOrCreateSessionToken`. That ordering test **failed on its
+first run against correct code**: it string-matched bare names, and the comment explaining the
+ordering names the very function whose position it measures -- it now strips comments and matches
+calls (`name(`). Releasing means flipping `status` to `live` AND clearing the variable; either alone
+still hides it.
+
+### The staff gate is gone; the Homestead is unlisted, not closed (2026-09-01)
+Reverses the entry below, on Kayo's call: "scrap the whole admin access. just let me look at it." The
+gate worked but made the game hard to even open -- `ADMIN_SESSION_COOKIE` is per-origin, so the prod
+passcode does nothing on a preview deploy, and `ADMIN_SECRET` is scoped per Vercel environment, so a
+Preview build without it locks staff out along with everyone else. Deleted `lib/server/staff-gate.ts`
+and its test; routes moved back to `/api/homestead[/actions]` (the cookie path no longer constrains
+where they live), page to `/games/homestead` beside every other game, and the "Admin session required"
+locked state went with them. `ArcadeGameStatus`'s fourth value is renamed **`staff-only` ->
+`unlisted`**, because with no gate left the old name was a lie. **Know exactly what `unlisted` buys:
+`splitArcadeFloor` still shows only `live` rows, so it stays off the floor -- and that is ALL it does.
+The routes are open and move real Gold, so anyone with the URL can play it.** That is the same
+"a catalog row is not a lock" lesson `lib/arcade/retired.ts` records, now running in the other
+direction: unadvertised, never unreachable. Flipping `status` to `live` is the whole release. If it
+ever has to be genuinely closed again, the route must refuse -- that is a separate thing to build, not
+a status value. Also worth keeping: **`npm run dev` cannot verify this page at localhost.**
+`next.config.ts`'s `allowedDevOrigins` pins a stale `192.168.2.144`, so the page server-renders and
+then no client component mounts -- dead canvas, dead buttons, nothing in the console. Build and
+`next start` instead; see `[[reference_stackchips_local_testing]]`.
+
+### SUPERSEDED by the entry above: the Homestead was staff-only under /admin (2026-09-01)
+Kayo: finished but not for the public yet, reachable only through the admin portal. New
+`ArcadeGameStatus` value **`staff-only`** -- a fourth state, not a flavour of the other three: built,
+mounted, moving real Gold, just not offered. `splitArcadeFloor` shows only `live` rows so it never
+reaches the floor, and per `lib/arcade/retired.ts`'s lesson the routes carry their own gate rather
+than relying on a hidden catalog row. **The load-bearing discovery, found by curl and not by
+reasoning:** `ADMIN_SESSION_COOKIE` is scoped `path=/api/admin`, so mounted at `/api/homestead` the
+gate could not see the cookie that authorises it and 404'd staff as well as strangers. Widening the
+cookie to `/` was rejected (the narrow path is what keeps an admin credential off ordinary traffic,
+the same reasoning that moved admin auth off a request header) -- the game moved instead:
+`/api/admin/homestead[/actions]`, page at `/admin/homestead`, catalog href to match. The PAGE is
+deliberately ungated and cannot be gated, for the same path reason; it matches how `/admin` already
+works -- renders for anyone, API behind it refuses, stranger gets a locked state. Everything answers
+**404, never 403**: a 403 confirms the feature exists. `staff-gate.test.ts` walks
+`app/api/admin/homestead` on the filesystem so a route added tomorrow cannot skip the gate, and
+asserts the gate runs before `readOrCreateSessionToken` (or probing it hands the prober a session
+cookie). Verified live: anonymous 404s on every surface including the old public URLs, admin session
+gets 200 and the real service runs.
+
+### Nonogram rebuilt to compete with the picross apps (2026-09-01)
+Kayo: make it compete with "the main nonogram games out there" and include everything that makes it
+enjoyable. The v1 shipped the day before was a correct nonogram nobody would choose to play: **boards
+were 58% uniform random noise**, so solving one revealed static rather than a picture -- the reveal is
+the entire reward of the genre and it was missing -- and **every single square was its own HTTP round
+trip**, which on a 625-square master board is 625 sequential requests inside a 40-minute clock. Both
+are fixed. Boards are now **drawings**: 65 hand-authored pictures at 5x5/10x10/15x15 (cat, anchor,
+crown, penguin, guitar...), each one **verified line-solvable by `nonogram-pictures.test.ts` upright
+AND mirrored** -- that test is the gate that lets art ship, since ambiguity in a nonogram is invisible
+to the eye and this stakes real Gold. Mirroring is the only transform used (a rotated cat is not a
+cat, and the reveal is the point). 20x20/25x25 are past what hand art can carry, so they are **grown**:
+a mirror-symmetric half-grid smoothed by a majority rule into blobs, then repaired to solvable by the
+same strictly-increasing-fill argument the old generator used. The library is `server-only` behind the
+new `nonogram-deal.ts` and the engine takes a *dealt* board rather than importing one -- the
+arrangement `connections.ts` has with `connections-puzzles.ts` -- because `nonogram.ts` is
+client-imported and the library is the answer key; verified absent from `.next/static` after a build,
+not assumed from tree-shaking. Gameplay: **strokes** (`markNonogramCells`, one request per drag,
+axis-locked client-side) that **stop at the first wrong fill**, so a drag past the end of a run costs
+one mistake rather than one per square; **auto-cross** (chosen at deal, stored on the round, sound
+because a mark can only ever be a *correct* fill so marks matching a clue mean that line is finished);
+**undo** (bounded 20 strokes, never unfills a square the board has proved, never refunds a mistake);
+**hints** that cost a mistake and refuse to spend the last one (a free hint on a no-guess board is a
+free square, and enough of them is a board that pays without being played). Plus per-clue-number
+strike-off (`nonogramClueProgress`, in the engine so it is testable and cannot drift from the
+component), a row/column crosshair, zoom, a Pan tool (squares are `touch-action: none` so a finger
+paints; Pan is what hands the drag back to the scroller), full keyboard play, a progress bar, a
+localStorage personal best, and the finished picture revealed clean with its name. Real CSS bug found
+and fixed while shooting screenshots: **`--ng-clue-step` was declared on `.ng-match`, so its
+`calc(var(--ng-cell) * .66)` resolved against that element's 24px fallback and never against the
+per-rung `--ng-cell` set inline on `.ng-grid`** -- descendants inherited the already-resolved value --
+which silently clipped the top number off every two-deep column clue; see `app/styles/CLAUDE.md`.
+**Still open: the tiers were not retuned and should be.** They were set against random-noise boards
+that almost nobody finished; drawings with real runs in them plus drag-painting move the win rate up
+by an unmeasured amount, and expert/master pay 3.2x and 5x. `ANTE_UP_NONOGRAM_TIERS`' own header now
+says so. Solve-rate data from real attempts is the honest input; `ante-up-stakes.ts`'s ceilings bound
+the damage until then.
+
+### The Mint became the StackChips Homestead: crops, feed, muck, three times of day (2026-08-31)
+Kayo's expansion spec (his own, written in the homestead branch's register) plus the rename:
+`sovereign-mint` -> `homestead`, `mint_plots` -> `homestead_plots`,
+node types `pulse|core|matrix` -> `hen|pig|cattle`. Free to do because the migration was still
+unapplied; after it lands this is a data migration, not a find-and-replace. Five plot states now
+(`locked|empty|working|hungry|ready|mucked`) across two tracks with **separate caps** -- 3 pens and 3
+fields -- because crops sharing the livestock budget makes them just a cheaper animal.
+**Three corrections to the spec, all load-bearing.** (1) Its flat maintenance fee is arithmetically
+impossible here: at 20% muck and a flat 1,500, a Hen Coop's +50 net becomes **-250 a cycle**, so the
+tier new players start on is a guaranteed loser. `muckFee` is now 2x the tier's net bonus, holding
+expected muck cost at 40% of what the plot earned on every tier -- there is a test asserting exactly
+this. (2) Its `#1A1A1D`/`#222226` are the homestead demo's near-black stage, which Kayo had already
+ruled out ("DONT COPY THE BACKGROUND"); states map onto our dusk palette instead. (3) **A 20% roll
+cannot be computed on read.** Everything else here is a pure function of timestamps, which is why the
+feature needs no background jobs; a dice roll evaluated on read re-rolls on every refetch and a player
+rerolls muck by pulling to refresh. It is rolled once in `rollMuck`, server-side, inside the guarded
+settlement write, and stored. **Hunger freezes rather than kills** (Kayo asked whether animals should
+die; the blocker is that per-plot push is not buildable on this stack, so a feed deadline is one the
+app is structurally unable to warn about): a hungry pen stops, and feeding pushes `ready_at` forward
+by the time spent hungry, so neglect costs time and never Gold. That is also why readiness is no
+longer a pure function of `started_at` and the row has to remember `last_fed_at`. Feed is a per-player
+consumable behind a row-locking RPC (`adjust_homestead_feed`), same posture as `credit_gold`. Only
+Pig and Cattle can ever go hungry -- a Hen's hunger window is deliberately longer than its own cycle,
+so the cheapest tier stays fire-and-forget. World gained `morning|dusk|night` tones picked from the
+player's own device clock at boot; only colour and light change, because re-lighting from a different
+angle would mean re-authoring every prop's shading three times. Supply store is a sheet off a HUD
+button. 35 new tests.
+
+### The Mint's diorama became an outdoor farm; landscape CSS was measurably wrong (2026-08-31)
+Kayo, on the first cut: "why is the platform floating in the sky?" -- and it was, literally. The
+scene drew a violet slab on a `transparent: true` canvas, so the app's own dark ground showed through
+underneath and the whole treasury read as a platform in a void, while the panel beside it talked
+about surveying the grounds and crews tending nodes. The whole static world now lives in
+`mint-world.ts`, painted once into ONE canvas texture at boot (Canvas2D, not `Phaser.Graphics`: real
+gradients and soft radial shadows, and one quad instead of a command list re-walked every frame).
+**Land runs off all four edges** -- there is no platform to fall off. Distance is a hazy hedgerow
+along the top rather than a sky, because the grid already spans y 67..441 of a 470-tall stage and a
+real horizon band would have had to shrink tiles that are already near the touch-target floor in
+landscape. Three rules worth keeping: (1) **owned plots are the warmest thing in the frame** -- the
+first cut had bright green scrub for LOCKED plots against violet-grey soil, so twelve unusable tiles
+were the most inviting thing on screen; warm turned earth vs. cool dark scrub is also the grid's only
+real colour contrast on a phone. (2) Crops are **violet while growing, gold only when ripe**, drawn
+as two faces meeting at a ridge -- filled triangles with a lighter triangle inside made every ripe
+plot look like it was on fire. (3) Cloud shadows sit ABOVE the plot layer (`DEPTH_CLOUD` 800): the
+plots cover the field bed completely, so a shadow underneath disappears the moment it reaches the
+field. Only plot tweens are tracked for removal; Phaser does not kill a tween when its target is
+destroyed. **The landscape breakpoint was broken and the number was the bug**: `calc(100dvh - 128px)`
+assumed 128px of chrome where the real total (safe area, floor bar plus its `clamp()`ed margin,
+scoreline, two shell gaps) measures ~160px at 844x390, hanging the diorama 30px below the fold on the
+exact device the breakpoint exists for. The shell is now a fixed-height flex column and the stage
+takes what is left, no magic number. Its `@media` block **must stay last in `52-homestead.css`** -- it
+overrides base rules at equal specificity, and it silently lost every panel rule while it sat above
+them. Node cards go 2x2 grid there (name/terms, yield/button); three portrait cards are ~300px
+against ~260px of height, and a wrapping flex row broke each card at a different word. Verified by
+screenshot at 900x900 and 844x390, populated via a route-intercepted fixture, plus reduced motion.
+
+### Sovereign Mint: an idle treasury of staked, timed Gold nodes (2026-08-31)
+Built from a GameDesigner-agent GDD Kayo brought in, after an engineering review rejected its
+economy outright (guaranteed 150-200% ROI with no cap: the Ante Up money printer with the variance
+removed). The shipped frame is deliberate: **flat net bonuses, never percentage ROI** (Pulse 1,000
+stake -> +50 in 15min, Core 10,000 -> +600 in 4h, Matrix 50,000 -> +2,500 in 24h) plus a
+**3-concurrent-node cap**, so max guaranteed income is ~7,500/day (rewarded-ads territory) and
+cannot compound with bankroll; plots 5-16 are a pure sink (2,500 doubling per tile), and owning
+more plots is never more income. Kayo's renderer call: **Phaser 2D, no 3D** ("dont use 3d") --
+`phaser` pinned 3.90.0, entering the bundle only through `mint-canvas.tsx`'s dynamic import (a
+1.2MB lazy chunk referenced by no page manifest; verified). Server mirrors Ante Up exactly:
+`lib/mint/` (tuning + pure derivation), twin-branch `mint-store`, `mint-service` restating the
+money-ordering rules, `payout`/`matures_at` snapshotted at plant (the wagerLadder rule), harvest a
+single guarded UPDATE (version + status + `matures_at <= now`) that pays at most once, plus an
+append-only `mint_harvests` ledger. Migration `20260831120000_mint_plots.sql` follows the
+trigger-not-CHECK lesson (fires only when a row turns growing, advisory-locked cap count) --
+unapplied, see `[[reference_stackchips_migrations_not_auto_applied]]`. Client: canvas is pure
+paint; input/a11y is a DOM overlay of real buttons sharing coordinates via `iso.ts` (canvas is
+invisible to screen readers). Two rules enforced by tests caught real bugs while building: GET
+`/api/mint` must use `readSessionToken` not `readOrCreateSessionToken` (session-minting.test.ts),
+and the catalog row's `entryCost` is 0 so a broke player is never wallet-gated away from their own
+ripe harvest. No XP on plant (a riskless stake must not feed progression), no missions, no
+leaderboard. Deliberately deferred with the GDD's blessing withdrawn: per-node push (infra can't),
+monuments/adjacency boosts/cosmetic grid skins (purchased-cosmetic yield amplifiers touch the
+gambling-law posture and need Kayo's own call).
+
+### Ante Up copy pass, plus Nonogram and Othello (2026-08-31)
+Kayo: the Ante Up heading ("Eleven more ways in.") "makes no sense and is old", every card blurb
+needed rewriting, and the heading had to match the other tabs. It now follows the house head shape
+every other floor already used (kicker / short noun phrase / one line): **Ante Up / "Every game
+beside the table."** The old line counted the catalogue through a number-to-words table (`spell()`,
+deleted) -- a count baked into a sentence goes stale the day a game ships, which is the rule
+`lib/arcade/games.ts`'s own header records three times and which broke three more places found in
+this pass: the hub tile shipped reading a literal **"0 free every day"**, the first-run strip
+literally read **"0 puzzles are free every day"** (both counted `kind: "puzzle"`, a bucket empty
+since the 2026-08-21 move of every brain game to `kind: "wager"`), and the same strip said "Ten more
+games" against a catalogue of thirteen. Blurbs described the *price* rather than the game, so three
+cards said the identical "Wager Gold, or play free — any time" and two more said "1v1, winner takes
+the pot", while the stake line directly beneath said it again; every blurb now names its own
+mechanic. Section heads: "Ante up" (colliding with the tab of the same name) -> **Beat the board**,
+"Staked in Gold" (true of all three sections) -> **Against the house**, "Player vs. player" -> **Head
+to head**. The floor's how-it-works modal opened "Every Ante Up game can be played completely free",
+untrue of Blackjack and the five duels; now scoped to the solo boards, and carrying Nonogram's rules
+(Kayo asked for them there specifically).
+
+**Nonogram** (12th solo game, `/games/nonogram`) and **Othello** (5th duel, `/games/othello`) shipped
+in the same pass. Nonogram runs 5x5 to 25x25 on five rungs (easy/medium/hard/expert/master), and its
+generator carries the same no-guess guarantee Minesweeper's does, by the same reasoning: a puzzle
+needing a guess is a coin flip and this stakes real Gold. `lib/arcade/puzzles/nonogram.ts`'s line
+solver is a two-pass DP over (position, run), not an enumeration of arrangements -- a 25-wide line
+with six runs has thousands. **The generation loop provably terminates rather than merely usually
+terminating**: when line logic stalls, the repair *adds* a filled square, which strictly increases
+the filled count, and the all-filled grid (every clue a single run the width of the board) is
+trivially solvable, so it cannot run past `size * size` repairs. In practice it is a handful or none
+-- 25x25 generates in ~2ms, worst case ~7ms, measured. Only a wrong *fill* is scored; a cross is
+player notation and free, which is what lets the mistake budget be small (3 at 5x5 up to 6 at 25x25).
+The board does not shrink to fit a phone the way Minesweeper's does -- 625 squares at a tappable size
+will not fit, and `.ng-frame` scrolls in both axes instead. Othello was picked over Connect Four for
+one reason: **Connect Four is solved**, and a player who has memorised the first-player win would farm
+every opponent they got seat 0 against, for real Gold. Its two rules worth knowing are in the engine
+header (a move must flip something; a player with no legal move passes and does not lose, and only
+when neither side can move is it over -- which is usually but not always a full board). No draw or
+repetition rules: every move fills a square, so it cannot loop. Balance conservation verified live
+end to end (4,000 Gold across two players before and after). Migration
+`20260831140000_othello_leaderboard.sql` adds 'othello' to `global_leaderboard_entries()` and is
+**unapplied**; see `[[reference_stackchips_migrations_not_auto_applied]]`.
 
 ### Word Stack and Connections now carry their payout ladder (2026-08-27)
 Closes the gap left open by the Ante Up economy fix earlier the same day. Both games computed their
@@ -404,8 +927,6 @@ settle once).
 - Challenging a specific opponent shipped for table seats (PR #111, 2026-08-19). Picking a friend to
   invite to an empty seat (M16 table invites) is still open — a different flow, no seated opponent to
   challenge.
-- Blackjack's Supabase persistence branch has never been exercised by a real hand in production (only
-  type-checked, plus the memory-mode branch under test).
 - `multiplayer.spec.ts`'s six-player test and two `safe-area.spec.ts` table tests fail identically at
   a pristine HEAD worktree, unrelated to recent work — reconfirm against a fresh worktree before
   treating a red run here as a regression (see `[[reference_stackchips_e2e_traps]]`).

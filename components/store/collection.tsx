@@ -14,7 +14,7 @@ import {
   type EquippedCosmetics,
 } from "@/lib/cosmetics/catalog";
 import { seatArtCharacter, seatArtSrc } from "@/lib/scene/seat-art";
-import type { PlayerProfile } from "@/lib/profile/types";
+import { useAppShell } from "@/components/shell/app-shell";
 import { CardBackArt } from "@/components/card-back-art";
 import { ChipDesignArt } from "@/components/store/chip-design-art";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -51,7 +51,7 @@ const SLOTS: { slot: CosmeticSlot; title: string; blurb: string }[] = [
   },
 ];
 
-type AcquisitionGroup = "default" | "earned" | "bought";
+type AcquisitionGroup = "default" | "earned" | "bought" | "admin";
 
 // Avatars split three ways by how you get them -- rarity already lines up
 // 1:1 with this for characters (standard = default, signature = earned,
@@ -62,6 +62,10 @@ const ACQUISITION_GROUPS: { key: AcquisitionGroup; title: string; blurb: string 
   { key: "default", title: "Default", blurb: "Every account starts with these." },
   { key: "earned", title: "Earned", blurb: "Unlocked by playing -- no Gold spent." },
   { key: "bought", title: "Bought", blurb: "Purchased with Gold." },
+  // Only ever rendered for the one profile holding the admin badge -- the
+  // route that supplies `cosmetics` drops every adminOnly item for anyone
+  // else, so this group is simply absent from their screen.
+  { key: "admin", title: "Admin", blurb: "Yours alone." },
 ];
 
 /**
@@ -75,6 +79,7 @@ function equippedKeyFor(slot: CosmeticSlot): "cardBack" | "avatar2d" | null {
 }
 
 function acquisitionGroup(item: Cosmetic): AcquisitionGroup {
+  if (item.adminOnly) return "admin";
   if (item.unlock) return "earned";
   if (typeof item.price === "number" && item.price > 0) return "bought";
   return "default";
@@ -127,7 +132,10 @@ export function Collection() {
   const [catalog, setCatalog] = useState<Cosmetic[]>([]);
   const [owned, setOwned] = useState<string[]>([]);
   const [equipped, setEquipped] = useState<EquippedCosmetics | null>(null);
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  // The persistent shell owns the profile now -- this screen still gets it
+  // back from its own GET /api/cosmetics response too (unchanged this phase),
+  // it just writes that into the shared setter instead of a local copy.
+  const { profile, setProfile } = useAppShell();
   const [stats, setStats] = useState<UnlockStats | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -151,12 +159,16 @@ export function Collection() {
       setCatalog(data.cosmetics);
       setOwned(data.owned);
       setEquipped(data.equipped);
-      setProfile(data.profile);
+      // Guarded like every other screen that shares this setter: a signed-
+      // out response sends `profile: null` (see app/api/cosmetics/route.ts),
+      // which would otherwise wipe out a real profile the shell already
+      // loaded correctly, taking the persistent nav chrome down with it.
+      if (data.profile) setProfile(data.profile);
       setStats(data.stats);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load the collection.");
     }
-  }, []);
+  }, [setProfile]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -181,7 +193,7 @@ export function Collection() {
       if (!response.ok) throw new Error(data.error ?? "That didn't work.");
       if (path === "purchase") {
         setOwned(data.owned);
-        setProfile(data.profile);
+        if (data.profile) setProfile(data.profile);
         setNotice(`${item.name} is yours.`);
       } else {
         setEquipped(data.equipped);

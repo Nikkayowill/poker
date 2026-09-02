@@ -5,6 +5,7 @@ import {
   arcadeActionLabel,
   arcadeBlockedReason,
   arcadeEntryLabel,
+  arcadeFloorSummary,
   canAffordArcadeGame,
   splitArcadeFloor,
   toArcadeWallet,
@@ -31,8 +32,10 @@ describe("arcade catalogue", () => {
       "Sudoku",
       "Memory Match",
       "Minesweeper",
+      "Nonogram",
       "Chess",
       "Checkers",
+      "Othello",
       "Trivia Showdown",
       "Word Race",
       "Cribbage",
@@ -45,7 +48,7 @@ describe("arcade catalogue", () => {
     // a free daily play (the wager now gates that one attempt); Sudoku/
     // Memory Match have no daily gate left at all. Both shapes are still
     // `kind: "wager"` -- see lib/arcade/games.ts's own note. Minesweeper
-    // (2026-08-24) joins the second, unlimited shape.
+    // (2026-08-24) and Nonogram (2026-08-31) join the second, unlimited shape.
     const floor = splitArcadeFloor();
     expect(floor.free).toHaveLength(0);
     expect(floor.wagers.map((entry) => entry.id)).toEqual([
@@ -54,6 +57,7 @@ describe("arcade catalogue", () => {
       "daily-sudoku",
       "memory-match",
       "minesweeper",
+      "nonogram",
     ]);
   });
 
@@ -84,23 +88,41 @@ describe("arcade catalogue", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("routes every live game and only live games", () => {
-    // A live entry with a null href renders an unclickable "Play"; a
-    // coming-soon or retired entry with an href is a link to a page nobody
-    // should be sent to.
+  it("gives a route to every game that was actually built, and only those", () => {
+    // The rule is "was it built", not "is it offered". A live entry with a
+    // null href renders an unclickable "Play"; a coming-soon entry with an
+    // href is a link to a page that does not exist yet. `unlisted` is the
+    // case that forced the distinction: it IS built and it DOES have a
+    // working route, so requiring a null href here would have meant deleting
+    // a real link just to keep the game off the floor.
     for (const entry of ARCADE_GAMES) {
-      if (entry.status === "live") expect(entry.href).toBeTruthy();
-      else expect(entry.href).toBeNull();
+      if (entry.status === "coming-soon") expect(entry.href).toBeNull();
+      else expect(entry.href).toBeTruthy();
     }
   });
 
+  it("keeps the idle bucket empty now that the Homestead has its own card in the play area", () => {
+    // The Homestead moved off this floor entirely -- it has its own tile in
+    // the main lobby now, under Texas Hold'em (components/lobby/lobby.tsx,
+    // components/lobby/mobile-shell.tsx), gated on profile.homesteadAccess
+    // rather than being a catalog row players can even see before they're
+    // let in. `kind: "idle"` and its `floor.idle` bucket stay in the catalog
+    // machinery for whichever future row is genuinely "nothing to lose,
+    // nothing to beat" -- see lib/arcade/games.ts's own doc comment -- so
+    // this just pins that nothing occupies it any more.
+    expect(ARCADE_GAMES.some((entry) => entry.kind === "idle")).toBe(false);
+    expect(splitArcadeFloor().idle).toHaveLength(0);
+    expect(arcadeFloorSummary().previewNames).not.toContain("StackChips Homestead");
+  });
+
   it("never puts a price on a daily puzzle, or a floor under a solo wager", () => {
-    // Both are legitimately 0, for opposite reasons: a puzzle has nothing to
-    // wager, a wager's floor is "free" because the real amount is picked on
-    // the page itself, same as a duel's stake tier used to be picked there.
+    // Both are legitimately 0, for different reasons: a puzzle has nothing
+    // to wager, and a wager's floor is "free" because the real amount is
+    // picked on the page itself.
     for (const entry of ARCADE_GAMES) {
-      if (entry.kind === "puzzle" || entry.kind === "wager") expect(entry.entryCost).toBe(0);
-      else expect(entry.entryCost).toBeGreaterThan(0);
+      if (entry.kind === "puzzle" || entry.kind === "wager" || entry.kind === "idle") {
+        expect(entry.entryCost).toBe(0);
+      } else expect(entry.entryCost).toBeGreaterThan(0);
     }
   });
 });

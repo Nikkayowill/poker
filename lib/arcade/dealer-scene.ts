@@ -90,6 +90,10 @@ export function dealerExpression(
     case "player-bust":
       return "sympathy";
     case "push":
+    // A resign is the player's own call, not a bad beat -- sympathy is for
+    // losses that happen to them, not ones they chose. Same neutral reaction
+    // as a push, for a different reason.
+    case "player-resign":
     case null:
       return "idle";
   }

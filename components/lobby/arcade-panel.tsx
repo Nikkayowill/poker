@@ -48,8 +48,13 @@ export function ArcadePanel({
         <Gamepad2 size={16} aria-hidden="true" />
         <div className="arcade-head-copy">
           <strong id="arcade-heading">Ante Up</strong>
+          {/* Both counted off the catalogue, never written down -- see the
+              note on `summary` above. "free every day" was the old wording
+              and was wrong twice: these are free every time, not once a day,
+              and the number it counted was the empty puzzle bucket, so the
+              tile shipped reading "0 free every day". */}
           <small>
-            {summary.free} free every day · {summary.staked} staked in Gold
+            {summary.free} free to play · {summary.staked} staked in Gold
           </small>
         </div>
       </div>

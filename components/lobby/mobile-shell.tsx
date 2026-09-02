@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The phone lobby: three panes on one horizontal track, a tab bar underneath.
+ * The phone lobby: four panes on one horizontal track, a tab bar underneath.
  *
  * It is not three routes because Ante Up (`/games`) and the leaderboard
  * (`/leaderboard`) are real routes, and every one of them unmounts PokerApp on
@@ -47,6 +47,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
+  Bell,
+  BellOff,
   ChevronRight,
   ClipboardList,
   Cloud,
@@ -56,11 +58,8 @@ import {
   Layers,
   Lock,
   LogOut,
-  type LucideIcon,
   Medal,
   Music2,
-  Puzzle,
-  Spade,
   Sparkles,
   Users,
   Video,
@@ -84,19 +83,14 @@ import {
   type SwipeGesture,
 } from "@/lib/ui/swipe-pager";
 import { ArcadeFloor } from "@/components/arcade/arcade-floor";
+import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { Leaderboard } from "@/components/leaderboard/leaderboard";
+import { LOBBY_PANE_STORAGE_KEY, TAB_COUNT, TAB_LABELS, TabBar } from "@/components/shell/tab-bar";
 import { SiteFooter } from "@/components/nav/site-footer";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
 import { LobbyNotices } from "./lobby-notices";
-
-// Tab labels, not section names -- "Play" is this pane's own accessible
-// name is still the fuller "Texas Hold'em" on the <section> below; the tab
-// bar just needs a word short enough that none of the three ever risks the
-// ellipsis clip (.mshell-nav-item span, 45-mobile-shell.css).
-const PAGES = ["Play", "Ante Up", "Profile"] as const;
-const PAGE_COUNT = PAGES.length;
 
 /**
  * The settle transition's duration at a full pane width of travel — matches
@@ -107,50 +101,41 @@ const PAGE_COUNT = PAGES.length;
 const BASE_SETTLE_MS = 250;
 /** Never so short it reads as a cut rather than a landing. */
 const MIN_SETTLE_MS = 90;
-// Puzzle over a generic controller glyph: this tab is Sudoku/Word Stack/
-// Connections/Memory/Minesweeper plus the PvP duels, not "any game."
-//
-// Profile has no entry here -- Jakob's Law: TikTok, Instagram and YouTube
-// all render their own last tab as the player's actual photo, not a generic
-// person glyph, precisely because a familiar face is a stronger "this is
-// yours" cue than a silhouette everyone's app uses. See the nav render
-// below, which special-cases the last tab to <ProfileAvatar> instead of
-// reading this array.
-const PAGE_ICONS: readonly LucideIcon[] = [Spade, Puzzle];
 
 /**
  * Which pane the player was last on, so leaving the shell and coming back
  * lands where they left rather than back on Play.
  *
  * Half of this shell's doors (Collection, Achievements, Rewards, Buy Gold,
- * Challenges, every tile on Ante Up) are real routes that unmount PokerApp,
- * so returning from one rebuilt the shell from scratch. Tab bars do not behave
- * that way anywhere else, and the tell was landing two panes away from the
- * link you had just pressed.
+ * Challenges, every tile on Ante Up) are real routes; components/shell/
+ * persistent-chrome.tsx writes this same key before navigating here for a
+ * tab with no standalone route of its own, so a tap from outside `/` lands on
+ * the right pane too, not always back on Play.
  *
  * sessionStorage, never localStorage: this is where you are in this visit, not
  * a preference. A fresh open should still start on Play. Same reasoning as
  * lib/profile/session-continuity.ts, which is where the storage accessor comes
  * from.
  */
-const PAGE_STORAGE_KEY = "stackchips:lobby-pane";
-
 function readStoredPage(): number {
   const store = browserSessionStorage();
   if (!store) return 0;
   try {
-    return clampPage(Number.parseInt(store.getItem(PAGE_STORAGE_KEY) ?? "", 10) || 0, PAGE_COUNT);
+    return clampPage(Number.parseInt(store.getItem(LOBBY_PANE_STORAGE_KEY) ?? "", 10) || 0, TAB_COUNT);
   } catch {
     return 0;
   }
 }
 
 /**
- * Anything that scrolls sideways inside a pane; the stakes ladder today.
- * A drag that starts in one belongs to it, not to the pager, or picking a
- * stake would throw the player onto the next tab.
+ * Anything that scrolls sideways inside a pane -- the stakes ladder, and the
+ * leaderboard's own game-tab strip once it's wider than the screen (poker +
+ * global + friends + every registered game is nine-plus segments). A drag
+ * that starts in one belongs to it, not to the pager, or picking a stake (or
+ * trying to reach the last game tab) would throw the player onto the next
+ * shell tab instead.
  */
-const HORIZONTAL_SCROLLER = ".mshell-tiers";
+const HORIZONTAL_SCROLLER = ".mshell-tiers, .leaderboard-game-tabs";
 
 export function MobileShell({
   profile,
@@ -183,6 +168,9 @@ export function MobileShell({
   freeGoldEligible,
   onGetFreeGold,
   onEditProfile,
+  pushPermission,
+  pushSubscribed,
+  onTogglePushNotifications,
 }: {
   profile: PlayerProfile;
   loading: boolean;
@@ -214,6 +202,9 @@ export function MobileShell({
   freeGoldEligible: boolean;
   onGetFreeGold: () => void;
   onEditProfile: () => void;
+  pushPermission: NotificationPermission | "unsupported";
+  pushSubscribed: boolean;
+  onTogglePushNotifications: () => void;
 }) {
   // Lazy, and safe to touch storage in: `usePhoneViewport` reports false on
   // the server, so this component only ever mounts on the client.
@@ -233,7 +224,7 @@ export function MobileShell({
 
   useEffect(() => {
     try {
-      browserSessionStorage()?.setItem(PAGE_STORAGE_KEY, String(page));
+      browserSessionStorage()?.setItem(LOBBY_PANE_STORAGE_KEY, String(page));
     } catch {
       // A full or disabled store just means the next return starts on Play.
     }
@@ -252,7 +243,7 @@ export function MobileShell({
    * empty halfway through the slide that reveals it.
    */
   const [reached, setReached] = useState<readonly boolean[]>(
-    () => PAGES.map((_, index) => index === page),
+    () => TAB_LABELS.map((_, index) => index === page),
   );
   const reach = useCallback((...indexes: number[]) => {
     setReached((current) => {
@@ -264,7 +255,7 @@ export function MobileShell({
   }, []);
 
   const goTo = useCallback((next: number) => {
-    const target = clampPage(next, PAGE_COUNT);
+    const target = clampPage(next, TAB_COUNT);
     reach(target);
     setSettleMs(BASE_SETTLE_MS); // a tab tap always travels the full pane width
     setPage((current) => {
@@ -291,7 +282,7 @@ export function MobileShell({
   const onPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current;
     if (!gesture) return;
-    const move = trackSwipe(gesture, event.clientX, event.clientY, page, PAGE_COUNT, event.timeStamp);
+    const move = trackSwipe(gesture, event.clientX, event.clientY, page, TAB_COUNT, event.timeStamp);
     velocityRef.current = move.velocity;
     /*
      * Capture on the axis lock, not on press.
@@ -322,7 +313,7 @@ export function MobileShell({
     gestureRef.current = null;
     if (!gesture) return;
     const offsetAtRelease = drag ?? 0;
-    const settled = settleSwipe(gesture, offsetAtRelease, page, PAGE_COUNT, velocityRef.current);
+    const settled = settleSwipe(gesture, offsetAtRelease, page, TAB_COUNT, velocityRef.current);
     /*
      * Duration scaled to what's actually left to travel, not fixed. The track
      * is already sitting at `offsetAtRelease` px into the turn; the distance
@@ -394,7 +385,16 @@ export function MobileShell({
             <ArcadeFloor profile={profile} embedded />
           </section>
 
-          <section className="mshell-pane" aria-label="Profile" inert={page !== 2}>
+          <section className="mshell-pane" aria-label="Leaderboard" inert={page !== 2}>
+            {/* The route's own leaderboard, embedded. Its game tabs, season
+                toggle, kicker and fetch all come with it, so this pane adds
+                no header above it, and the fetch is why it waits until this
+                pane has actually been reached rather than mounting with the
+                shell -- see `reached` above. */}
+            {(reached[2] ?? true) && <Leaderboard embedded />}
+          </section>
+
+          <section className="mshell-pane" aria-label="Profile" inert={page !== 3}>
             <YouPane
               profile={profile}
               onSignOut={onSignOut}
@@ -410,49 +410,15 @@ export function MobileShell({
               onClaimDailyGold={onClaimDailyGold}
               freeGoldEligible={freeGoldEligible}
               onGetFreeGold={onGetFreeGold}
-              showLeaderboard={reached[2] ?? true}
+              pushPermission={pushPermission}
+              pushSubscribed={pushSubscribed}
+              onTogglePushNotifications={onTogglePushNotifications}
             />
           </section>
         </div>
       </div>
 
-      <nav className="mshell-nav" aria-label="Lobby sections">
-        {PAGES.map((name, index) => {
-          const Icon = PAGE_ICONS[index];
-          const active = index === page;
-          return (
-            <button
-              key={name}
-              type="button"
-              className={`mshell-nav-item${active ? " mshell-nav-on" : ""}`}
-              aria-current={active ? "page" : undefined}
-              onClick={() => goTo(index)}
-            >
-              {/* The Profile tab renders the player's own avatar rather than
-                  reading PAGE_ICONS -- see the array's own comment. The other
-                  two swap outline/filled by toggling `fill`, the same
-                  active-state cue TikTok/Instagram/YouTube use on their own
-                  generic tabs (a color change alone was the design-review
-                  finding this replaces). */}
-              {Icon
-                ? <Icon size={20} strokeWidth={1.8} fill={active ? "currentColor" : "none"} aria-hidden="true" />
-                : (
-                  // aria-hidden, not just decorative styling: ProfileAvatar
-                  // sets its own role="img"/aria-label ("Kayo's avatar"),
-                  // which would otherwise concatenate into this button's
-                  // accessible name alongside the visible "Profile" label.
-                  <span aria-hidden="true">
-                    <ProfileAvatar
-                      profile={{ ...profile, avatarCosmetic: profile.equipped.avatar2d }}
-                      className="mshell-nav-avatar"
-                    />
-                  </span>
-                )}
-              <span>{name}</span>
-            </button>
-          );
-        })}
-      </nav>
+      <TabBar activeIndex={page} onSelect={goTo} profile={profile} />
     </div>
   );
 }
@@ -593,6 +559,35 @@ function PlayPane({
         </div>
       </div>
 
+      {/* Right under Texas Hold'em -- see the desktop hub tile's own comment
+          for why this moved off the Ante Up floor. Named StackAcres now, not
+          "Homestead" (Kayo's call; see components/brand/stackacres-logo.tsx)
+          -- the row's own logo is decorative at this size rather than
+          spelling the name (the bold text next to it does that), same as
+          the old StackChips mark it replaces here. Locked by default:
+          homesteadAccess is granted per player from the admin dashboard
+          while the game is still being tried out, so a card nobody can open
+          renders as an inert row instead of a disabled link pretending to
+          be a live door. */}
+      {profile.homesteadAccess ? (
+        <Link className="mshell-card mshell-row mshell-homestead-row" href="/games/homestead" onClick={tapSound}>
+          <StackAcresLogo className="mshell-homestead-logo" />
+          <span className="mshell-row-body">
+            <strong>StackAcres</strong>
+            <small>Raise crops and livestock, sell what they make</small>
+          </span>
+          <ChevronRight size={18} aria-hidden="true" />
+        </Link>
+      ) : (
+        <div className="mshell-card mshell-row mshell-homestead-row mshell-row-locked" aria-disabled="true">
+          <StackAcresLogo className="mshell-homestead-logo" />
+          <span className="mshell-row-body">
+            <strong>StackAcres</strong>
+            <small className="mshell-homestead-soon">Coming soon</small>
+          </span>
+        </div>
+      )}
+
       {/* Every tier is a fixed buy-in (minBuyIn === maxBuyIn), so picking the
           stake is also picking the amount. That's why the phone goes straight
           to a seat instead of opening the buy-in modal the desktop hub uses.
@@ -683,7 +678,9 @@ function YouPane({
   onToggleMenuMusic,
   betStyle,
   onCycleBetStyle,
-  showLeaderboard,
+  pushPermission,
+  pushSubscribed,
+  onTogglePushNotifications,
 }: {
   profile: PlayerProfile;
   onSignOut: () => void;
@@ -699,8 +696,9 @@ function YouPane({
   onToggleMenuMusic: () => void;
   betStyle: BetAnimationStyle;
   onCycleBetStyle: () => void;
-  /** False until this pane is one gesture away; see `reached` in MobileShell. */
-  showLeaderboard: boolean;
+  pushPermission: NotificationPermission | "unsupported";
+  pushSubscribed: boolean;
+  onTogglePushNotifications: () => void;
 }) {
   const dailyReady = dailyGold === "ready";
   const dailyClaimed = dailyGold === "claimed";
@@ -762,12 +760,6 @@ function YouPane({
         </div>
       )}
 
-      {/* The route's own leaderboard, embedded. Its game tabs, season toggle,
-          kicker and fetch all come with it, so this pane adds no header above
-          it, and the fetch is why it waits for `showLeaderboard` rather than
-          mounting with the shell. */}
-      {showLeaderboard && <Leaderboard embedded />}
-
       <div className="mshell-section">
         <span className="lobby-kicker">Settings</span>
         <div className="mshell-card">
@@ -791,6 +783,37 @@ function YouPane({
             <span className="mshell-row-body"><strong>Chip style</strong></span>
             <span className="mshell-setting-value">{betStyleLabel(betStyle).replace(/^Chip style: /, "")}</span>
           </button>
+          {/* Registered only, and hidden (not disabled) when the browser has
+              no Notification API at all -- same condition and reasoning as
+              poker-app.tsx's desktop player menu row, which this is the
+              phone shell's only equivalent of: the phone shell has no
+              dropdown of its own, so without this row a phone player who
+              signed up before push existed (or just never got the
+              account-creation prompt) has no way to ever turn it on. */}
+          {profile.isRegistered && pushPermission !== "unsupported" && (
+            <>
+              <div className="mshell-rule" />
+              <button
+                type="button"
+                className="mshell-row"
+                disabled={pushPermission === "denied"}
+                onClick={() => { selectSound(); onTogglePushNotifications(); }}
+              >
+                {pushSubscribed
+                  ? <Bell size={19} strokeWidth={1.8} aria-hidden="true" />
+                  : <BellOff size={19} strokeWidth={1.8} aria-hidden="true" />}
+                <span className="mshell-row-body">
+                  <strong>
+                    {pushPermission === "denied" ? "Notifications blocked" : "Notifications"}
+                  </strong>
+                  {pushPermission === "denied" && <small>Check your browser/device settings</small>}
+                </span>
+                {pushPermission !== "denied" && (
+                  <span className="mshell-setting-value">{pushSubscribed ? "On" : "Off"}</span>
+                )}
+              </button>
+            </>
+          )}
           <div className="mshell-rule" />
           {/* A guest has no account to sign out of, so the same slot offers
               the one thing that keeps their Gold: making one. */}

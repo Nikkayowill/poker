@@ -10,6 +10,28 @@ interface TableStats {
   privateTables: number;
 }
 
+type PvpTableKind = "heads-up" | "cribbage" | "sit-and-go";
+
+interface WaitingPvpTable {
+  kind: PvpTableKind;
+  id: string;
+  hostId: string;
+  hostName: string;
+  stake: number;
+  label: string;
+  seatedCount: number;
+  capacity: number;
+  createdAt: string;
+}
+
+function formatAge(iso: string) {
+  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
 function isSameUtcDay(a: Date, b: Date) {
   return a.getUTCFullYear() === b.getUTCFullYear()
     && a.getUTCMonth() === b.getUTCMonth()
@@ -61,6 +83,7 @@ export function AdminDashboard() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [profiles, setProfiles] = useState<AdminProfileSummary[] | null>(null);
   const [tableStats, setTableStats] = useState<TableStats | null>(null);
+  const [waitingTables, setWaitingTables] = useState<WaitingPvpTable[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -68,13 +91,18 @@ export function AdminDashboard() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [query, setQuery] = useState("");
   const [accountFilter, setAccountFilter] = useState<"all" | "registered" | "guest">("all");
+  const [pendingTableId, setPendingTableId] = useState<string | null>(null);
   const { copiedValue: copiedId, copy: copyId } = useClipboardCopy(1500);
+  // Feedback for "Send test push" -- not a copy, so useClipboardCopy doesn't
+  // fit, but the same "which row, and clear itself after a beat" shape.
+  const [testPushResult, setTestPushResult] = useState<{ profileId: string; sentTo: number } | null>(null);
 
   const lock = async () => {
     await fetch("/api/admin/session", { method: "DELETE" }).catch(() => null);
     setUnlocked(false);
     setProfiles(null);
     setTableStats(null);
+    setWaitingTables(null);
     setSelectedIds(new Set());
     setError(null);
   };
@@ -83,9 +111,10 @@ export function AdminDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [profilesResponse, tablesResponse] = await Promise.all([
+      const [profilesResponse, tablesResponse, pvpTablesResponse] = await Promise.all([
         fetch("/api/admin/profiles"),
         fetch("/api/admin/tables"),
+        fetch("/api/admin/pvp-tables"),
       ]);
       const profilesData = await profilesResponse.json();
       if (!profilesResponse.ok) {
@@ -105,6 +134,10 @@ export function AdminDashboard() {
         return new Set([...current].filter((id) => available.has(id)));
       });
       if (tablesResponse.ok) setTableStats(tablesData);
+      if (pvpTablesResponse.ok) {
+        const pvpTablesData = await pvpTablesResponse.json();
+        setWaitingTables(pvpTablesData.tables);
+      }
       setUnlocked(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load signups.");
@@ -197,6 +230,72 @@ export function AdminDashboard() {
     }
   };
 
+  const toggleAdminBadge = async (profile: AdminProfileSummary) => {
+    setPendingId(profile.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/admin-badge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: profile.id, shown: !profile.adminBadge }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not update that profile's admin tag.");
+      setProfiles((current) => current?.map((entry) => (
+        entry.id === profile.id ? { ...entry, adminBadge: !profile.adminBadge } : entry
+      )) ?? null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update that profile's admin tag.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  const toggleHomestead = async (profile: AdminProfileSummary) => {
+    setPendingId(profile.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/homestead-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: profile.id, allowed: !profile.homesteadAccess }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not update that profile's Homestead access.");
+      setProfiles((current) => current?.map((entry) => (
+        entry.id === profile.id ? { ...entry, homesteadAccess: !profile.homesteadAccess } : entry
+      )) ?? null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update that profile's Homestead access.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  const sendTestPush = async (profile: AdminProfileSummary) => {
+    setPendingId(profile.id);
+    setError(null);
+    setTestPushResult(null);
+    try {
+      const response = await fetch("/api/admin/notifications/test-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: profile.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not send that test push.");
+      const result = { profileId: profile.id, sentTo: Number(data.sentTo ?? 0) };
+      setTestPushResult(result);
+      window.setTimeout(() => {
+        setTestPushResult((current) => (current?.profileId === profile.id ? null : current));
+      }, 3000);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not send that test push.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
   const adjustGold = async (profile: AdminProfileSummary, delta: number) => {
     setPendingId(profile.id);
     setError(null);
@@ -243,6 +342,40 @@ export function AdminDashboard() {
     } finally {
       setPendingId(null);
       setBulkPending(false);
+    }
+  };
+
+  const cancelWaitingTable = async (table: WaitingPvpTable) => {
+    // A seatless table (nobody ever successfully claimed a seat) still
+    // refunds its host directly -- see admin-live-tables.ts's own comment on
+    // cancelWaitingPvpTable -- so at least one refund always goes out even
+    // at seatedCount 0.
+    const refundCount = Math.max(table.seatedCount, 1);
+    const message = `Force-cancel this ${table.label} table hosted by ${table.hostName}?\n\n`
+      + `Refunds ${(table.stake * refundCount).toLocaleString()} Gold to ${table.hostName}`
+      + `${table.seatedCount > 1 ? " and whoever else is seated" : ""}. This can't be undone.`;
+    if (!window.confirm(message)) return;
+    setPendingTableId(table.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/pvp-tables", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: table.kind, tableId: table.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not cancel that table.");
+      setWaitingTables((current) => current?.filter((entry) => entry.id !== table.id) ?? null);
+      if (data.refundFailures > 0) {
+        setError(
+          `Cancelled, but ${data.refundFailures} of ${refundCount} refund(s) failed to post -- `
+          + "check that player's Gold balance and credit it manually.",
+        );
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not cancel that table.");
+    } finally {
+      setPendingTableId(null);
     }
   };
 
@@ -435,6 +568,58 @@ export function AdminDashboard() {
           </div>
         </section>
       )}
+      <section className="admin-section" aria-labelledby="pvp-tables-heading">
+        <div className="admin-section-heading">
+          <div>
+            <h2 id="pvp-tables-heading">Waiting PvP tables</h2>
+            <p>
+              Heads-Up, Cribbage, and Sit &amp; Go tables still waiting for an opponent. Nothing
+              sweeps these automatically -- a table a host abandoned before it dealt sits here
+              forever, locking their stake, until you cancel it.
+            </p>
+          </div>
+        </div>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Game</th>
+                <th>Host</th>
+                <th>Stake</th>
+                <th>Seated</th>
+                <th>Waiting</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {(waitingTables ?? []).map((table) => (
+                <tr key={table.id}>
+                  <td>{table.label}</td>
+                  <td>{table.hostName}</td>
+                  <td>{table.stake.toLocaleString()}</td>
+                  <td>{table.seatedCount}/{table.capacity}</td>
+                  <td>{formatAge(table.createdAt)}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="admin-delete"
+                      disabled={pendingTableId === table.id}
+                      onClick={() => void cancelWaitingTable(table)}
+                    >
+                      {pendingTableId === table.id ? "Cancelling…" : "Cancel & refund"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {(waitingTables ?? []).length === 0 && (
+                <tr>
+                  <td colSpan={6} className="admin-empty">No tables are waiting for an opponent right now.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
       <section className="admin-section" aria-labelledby="players-heading">
         <div className="admin-section-heading admin-player-heading">
           <div>
@@ -519,7 +704,10 @@ export function AdminDashboard() {
               <th>Unlimited</th>
               <th>Adjust Gold</th>
               <th>Banned</th>
+              <th>Homestead</th>
+              <th>Admin tag</th>
               <th />
+              <th>Push</th>
               <th />
             </tr>
           </thead>
@@ -568,6 +756,8 @@ export function AdminDashboard() {
                     />
                   </td>
                   <td>{profile.banned ? "Yes" : "No"}</td>
+                  <td>{profile.homesteadAccess ? "Yes" : "No"}</td>
+                  <td>{profile.adminBadge ? "Yes" : "No"}</td>
                   <td>
                     <button
                       type="button"
@@ -579,12 +769,48 @@ export function AdminDashboard() {
                     </button>
                     <button
                       type="button"
+                      className="admin-toggle"
+                      disabled={bulkPending || pendingId === profile.id}
+                      onClick={() => void toggleHomestead(profile)}
+                      title="Lets this player into StackAcres (the farm game, formerly labeled 'Homestead' here) while it is unreleased. It is the whole guest list -- there is no code."
+                    >
+                      {profile.homesteadAccess ? "Close StackAcres" : "Open StackAcres"}
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-toggle"
+                      disabled={bulkPending || pendingId === profile.id}
+                      onClick={() => void toggleAdminBadge(profile)}
+                      title="Shows an Admin tag above this player's seat at the poker table, styled like the dealer's label. Cosmetic only."
+                    >
+                      {profile.adminBadge ? "Remove Admin tag" : "Give Admin tag"}
+                    </button>
+                    <button
+                      type="button"
                       className="admin-ban"
                       disabled={bulkPending || pendingId === profile.id}
                       onClick={() => void toggleBanned(profile)}
                     >
                       {profile.banned ? "Unban" : "Ban"}
                     </button>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="admin-toggle"
+                      disabled={bulkPending || pendingId === profile.id}
+                      onClick={() => void sendTestPush(profile)}
+                      title="Sends a real push to every device this profile has subscribed on -- delivery only, no notifications-table row."
+                    >
+                      {pendingId === profile.id ? "Sending…" : "Send test push"}
+                    </button>
+                    {testPushResult?.profileId === profile.id && (
+                      <span className="admin-flag">
+                        {testPushResult.sentTo > 0
+                          ? `Sent to ${testPushResult.sentTo} device${testPushResult.sentTo === 1 ? "" : "s"}`
+                          : "No subscribed devices"}
+                      </span>
+                    )}
                   </td>
                   <td>
                     <button
@@ -601,7 +827,7 @@ export function AdminDashboard() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={11} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
+                <td colSpan={13} className="admin-empty">No players match &ldquo;{query}&rdquo;.</td>
               </tr>
             )}
 

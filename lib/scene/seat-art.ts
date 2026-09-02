@@ -24,6 +24,23 @@ import { SEAT_ART_CHARACTERS, type SeatArtCharacter } from "./seat-art.generated
 export type { SeatArtCharacter };
 export { SEAT_ART_CHARACTERS };
 
+/**
+ * Characters excluded from `seatArtCharacterForSlot`'s random/hash-based
+ * fallback pool -- a real person's likeness (an admin-badge-gated cosmetic,
+ * `Cosmetic.adminOnly` in lib/cosmetics/catalog.ts), not a face any random
+ * opponent seat should ever wear. A bot never reaches this pool at all
+ * (`botAvatarFor` always resolves to a real `botAvatarCosmetics` entry,
+ * which already excludes these) -- this only guards the fallback used when
+ * a seat's own `avatarCosmetic` fails to resolve (legacy/stale data).
+ *
+ * Duplicated here rather than imported from the catalog on purpose:
+ * catalog.ts already imports `SEAT_ART_CHARACTERS` from this module, so the
+ * reverse import would be circular. `catalog.test.ts` asserts every
+ * `adminOnly` id in the catalog appears in this set, so the two cannot
+ * silently drift apart.
+ */
+export const ADMIN_ONLY_CHARACTER_IDS: ReadonlySet<string> = new Set(["character32"]);
+
 export function seatArtCharacter(id: string): SeatArtCharacter | null {
   return SEAT_ART_CHARACTERS.find((c) => c.id === id) ?? null;
 }
@@ -96,12 +113,18 @@ function forcedAnglesForSlot(slot: number): readonly number[] {
 }
 
 export function seatArtCharacterForSlot(tableId: string, handNumber: number, slot: number): SeatArtCharacter | null {
-  if (SEAT_ART_CHARACTERS.length === 0) return null;
+  // Excluded first, same fallback-to-unfiltered shape the forced-angle
+  // filter below already uses -- one admin-only character emptying an
+  // otherwise-eligible pool should never actually happen, but "fall back to
+  // showing someone's real face" is the wrong failure mode if it ever does.
+  const castable = SEAT_ART_CHARACTERS.filter((character) => !ADMIN_ONLY_CHARACTER_IDS.has(character.id));
+  const base = castable.length > 0 ? castable : SEAT_ART_CHARACTERS;
+  if (base.length === 0) return null;
   const required = forcedAnglesForSlot(slot);
   const eligible = required.length === 0
-    ? SEAT_ART_CHARACTERS
-    : SEAT_ART_CHARACTERS.filter((character) => required.every((angle) => character.angles.includes(angle)));
-  const pool = eligible.length > 0 ? eligible : SEAT_ART_CHARACTERS;
+    ? base
+    : base.filter((character) => required.every((angle) => character.angles.includes(angle)));
+  const pool = eligible.length > 0 ? eligible : base;
   const hand = Number.isFinite(handNumber) ? Math.max(0, Math.floor(handNumber)) : 0;
   const cast = Math.floor(hand / HANDS_PER_CAST);
   const index = (hashTableId(tableId) + cast + slot) % pool.length;

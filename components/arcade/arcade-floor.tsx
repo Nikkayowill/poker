@@ -18,27 +18,8 @@ import { gameOnSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "./use-arcade-sound";
 import { markEmbeddedFloorNav } from "./floor-back-link";
 import { HowToPlayModal } from "./how-to-play-modal";
+import { GamePreview } from "./game-preview";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
-
-/**
- * Small counts as words, because both call sites are sentences: "10 more
- * ways in." reads as a spec line, "Ten more ways in." reads as a person
- * saying it. Capped at twelve, falling back to digits above that; the
- * catalogue is ten games, so this never needs a real number-to-words
- * library. The words are capitalised here (both call sites start a
- * sentence) rather than via a text-transform that would shout the whole
- * line to fix one word.
- *
- * Index 0 is "No", so an empty catalogue reads "No more ways in." instead
- * of the "0 more ways in." a bare number would give.
- */
-const WORDS = [
-  "No", "One", "Two", "Three", "Four", "Five",
-  "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve",
-];
-function spell(count: number): string {
-  return WORDS[count] ?? String(count);
-}
 
 /**
  * The arcade floor: every game that is not Hold'em, on its own route.
@@ -122,12 +103,15 @@ export function ArcadeFloor({
   }, [supplied]);
 
   const wallet = toArcadeWallet(profile);
-  const { free, duels, wagers, staked } = splitArcadeFloor();
+  const { free, duels, wagers, staked, idle } = splitArcadeFloor();
 
   // A plain div when embedded: PokerApp already owns the page's <main>, and a
   // nested one is invalid. The extra class is what 45-mobile-shell.css hangs
   // the "this is a pane, not a page" sizing off.
   const Shell = embedded ? "div" : "main";
+  // Same rule leaderboard.tsx follows: embedded, this is one pane of the
+  // phone shell and its heading sits under the page's, not beside it.
+  const Heading = embedded ? "h2" : "h1";
 
   return (
     <Shell className={embedded ? "floor-shell floor-shell-embedded" : "floor-shell"}>
@@ -156,39 +140,65 @@ export function ArcadeFloor({
 
       {!embedded && showHelp && (
         <HowToPlayModal title="How Ante Up works" onClose={() => setShowHelp(false)}>
+          {/* Scoped to the solo boards on purpose. The floor also carries
+              duels and Blackjack, neither of which has a free mode, and the
+              old wording ("Every Ante Up game can be played completely
+              free") promised one for all eleven rows. */}
           <p>
-            Every Ante Up game can be played completely free — there&apos;s never a cost to
-            trying. Choose to wager Gold instead and you&apos;re staking it against your own
-            performance, not another player and not the house: beat the challenge and you cash
-            out a multiple of the wager, miss it and the wager is gone.
+            The solo boards under &ldquo;Beat the board&rdquo; are always free to play, so
+            there&apos;s never a cost to trying one. Stake Gold on a round instead and
+            you&apos;re staking it against your own play, not another player and not the
+            house: beat the board and you cash out a multiple of the stake, miss it and the
+            stake is gone.
           </p>
           <p>
-            Sudoku, Memory Match, and Minesweeper are unlimited, any time, dealing a fresh board
-            every round. Word Stack and Connections are each one shared puzzle a day for
-            everyone, so there&apos;s exactly one wagered attempt allowed per day — choose your
-            wager, or play free, before that day&apos;s puzzle opens.
+            Sudoku, Memory Match, Minesweeper and Nonogram are unlimited, any time, dealing a
+            fresh board every round. Word Stack and Connections are each one shared puzzle a day
+            for everyone, so there&apos;s exactly one wagered attempt allowed per day — choose
+            your wager, or play free, before that day&apos;s puzzle opens.
+          </p>
+          {/* Nonogram is the newest board and the one nobody arrives already
+              knowing, so it gets its rules stated here rather than only behind
+              its own How to play. Everything else in this modal is a rule
+              about wagering; this paragraph is the exception, and it earns it
+              by being the difference between the game looking arbitrary and
+              looking solvable. */}
+          <p>
+            <strong>Nonogram</strong> is the one that needs a word of explanation. The numbers
+            down the side and across the top of the grid are its answer: each one is the length
+            of a run of filled squares in that line, in order, with a gap between runs. A row
+            reading &ldquo;4 2&rdquo; has four filled squares, a gap, then two more. Fill in
+            every square in the picture and you win. Crossing off a square you have worked out
+            is empty is free and never scored, so only a wrong <em>fill</em> costs you one of
+            the board&apos;s few mistakes. Boards run 5×5 up to 25×25, and like Minesweeper,
+            every one can be finished by logic alone.
           </p>
           <p>
-            Every wager has a ceiling. Sudoku&apos;s and Minesweeper&apos;s climb with
-            difficulty, since a harder board is worth staking more on; Memory Match, Word Stack,
-            and Connections cap at one flat amount. Whatever you wager, the payout it can earn is
-            locked in the moment the round opens, so a later retune never changes what&apos;s
-            already in play.
+            Every wager has a ceiling. Sudoku&apos;s, Minesweeper&apos;s and Nonogram&apos;s
+            climb with difficulty, since a harder board is worth staking more on; Memory Match,
+            Word Stack, and Connections cap at one flat amount. Whatever you wager, the payout
+            it can earn is locked in the moment the round opens, so a later retune never changes
+            what&apos;s already in play.
           </p>
         </HowToPlayModal>
       )}
 
       <div className="floor-head">
+        {/* Kicker, one short noun phrase, one line of context: the same head
+            shape every other floor uses (Challenges, Achievements, Rewards,
+            Collection, the leaderboard), so a swipe between tabs doesn't
+            change the furniture. This used to read "Eleven more ways in.",
+            which counted the catalogue off a number-to-words table and
+            framed the whole section as an appendix to poker. It named a
+            count nobody asked for and matched nothing else in the app.
+
+            No number in here on purpose, for the reason lib/arcade/games.ts
+            gives about prices: a count written into a sentence is a count
+            that goes stale the day a game ships. */}
         <div className="lobby-kicker">Ante Up</div>
-        {/* Both numbers are counted off the catalogue, never hardcoded,
-            the same rule lib/arcade/games.ts states about prices and blurbs
-            and has broken before. Spelled as words because these are
-            sentences: "10 more ways in." reads as a spec line, "Ten more
-            ways in." reads as a person saying it. */}
-        <h1>{spell(duels.length + wagers.length + staked.length)} more ways in.</h1>
+        <Heading>Every game beside the table.</Heading>
         <p>
-          Every Ante Up game starts free — wager Gold from the same wallet as the
-          tables once you&apos;ve got the hang of it.
+          Play free, or stake Gold from the same wallet as the tables.
         </p>
       </div>
 
@@ -213,9 +223,9 @@ export function ArcadeFloor({
               seated" rather than "both" since Cribbage joined this section
               as a 3-4 player table, not a 1v1 (see its own catalog
               entry). */}
-          <h2 className="floor-section-head" id="floor-duels">Player vs. player</h2>
+          <h2 className="floor-section-head" id="floor-duels">Head to head</h2>
           <p className="floor-section-note">
-            Everyone seated antes in. Winner takes the pot — the house takes nothing.
+            Everyone seated antes in and the winner takes the pot. The house takes nothing.
           </p>
           <div className="floor-free-grid">
             {duels.map((game) => (
@@ -234,9 +244,10 @@ export function ArcadeFloor({
               game; see lib/arcade/games.ts's own note on the two sub-shapes
               ("keeps a daily puzzle" vs. "no daily gate at all") this one
               line covers. */}
-          <h2 className="floor-section-head" id="floor-wagers">Ante up</h2>
+          <h2 className="floor-section-head" id="floor-wagers">Beat the board</h2>
           <p className="floor-section-note">
-            Choose a wager, or play free — miss it and the wager is gone, but there&apos;s never a cost to trying.
+            Free as often as you like. Stake Gold instead and you win it back with interest, or lose it,
+            on your own play alone.
           </p>
           <div className="floor-free-grid">
             {wagers.map((game) => (
@@ -246,9 +257,29 @@ export function ArcadeFloor({
         </section>
       )}
 
+      {idle.length > 0 && (
+        <section className="floor-section" aria-labelledby="floor-idle">
+          {/* Its own section because it is the one row here that is not a
+              contest: nothing to beat, nobody to beat, and no way to lose
+              what you put in. Under "Beat the board" it would sit beneath a
+              note promising you can lose your stake, which is false of it. */}
+          <h2 className="floor-section-head" id="floor-idle">Keep something growing</h2>
+          <p className="floor-section-note">
+            Runs while you are away. Nothing here can be lost — you plant, it grows, you come back.
+          </p>
+          <div className="floor-free-grid">
+            {idle.map((game) => (
+              <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={arcadeEntryLabel(game)} embedded={embedded} />
+            ))}
+          </div>
+        </section>
+      )}
+
       {staked.length > 0 && (
         <section className="floor-section" aria-labelledby="floor-staked">
-          <h2 className="floor-section-head" id="floor-staked">Staked in Gold</h2>
+          {/* "Staked in Gold" described the two sections above it just as
+              well. What actually sets this one apart is the opponent. */}
+          <h2 className="floor-section-head" id="floor-staked">Against the house</h2>
           <ul className="floor-staked-list">
             {staked.map((game) => (
               <StakedRow key={game.id} game={game} wallet={wallet} embedded={embedded} />
@@ -280,6 +311,7 @@ function onPlayClick(embedded: boolean): () => void {
 function FreeCard({ game, embedded }: { game: ArcadeGame; embedded: boolean }) {
   return (
     <article className="floor-card">
+      <GamePreview id={game.id} />
       <strong>{game.name}</strong>
       <small>{game.blurb}</small>
       <Link className="floor-play" href={game.href ?? "/"} onClick={onPlayClick(embedded)}>Play</Link>
@@ -314,6 +346,7 @@ function GameCard({
   const blocked = arcadeBlockedReason(game, wallet);
   return (
     <article className="floor-card">
+      <GamePreview id={game.id} />
       <strong>{game.name}</strong>
       <small>{game.blurb}</small>
       <small className="floor-card-stake">{stakeLabel}</small>
@@ -341,6 +374,7 @@ function StakedRow({ game, wallet, embedded }: { game: ArcadeGame; wallet: Arcad
   const blocked = arcadeBlockedReason(game, wallet);
   return (
     <li className={clsx("floor-row", blocked && "floor-row-blocked")}>
+      <GamePreview id={game.id} />
       <span className="floor-row-identity">
         <strong>{game.name}</strong>
         <small>{game.blurb}</small>

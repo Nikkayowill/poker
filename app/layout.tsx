@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 // TEMPORARY -- see the mount at the bottom of this file.
 import { ViewportProbe } from "@/components/debug/viewport-probe";
+import { AppShell } from "@/components/shell/app-shell";
 
 const TITLE = "StackChips - Play Free Texas Hold’em";
 const DESCRIPTION =
@@ -37,6 +38,17 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // No maximumScale/userScalable used to mean a page could get stuck zoomed
+  // in: iOS Safari auto-zooms the whole page on focusing any input under
+  // 16px, and does not zoom back out on blur. That's exactly what a player
+  // hit typing a custom Ante Up wager (StakePicker's field was 13px, fixed in
+  // 36-duels.css) -- reported as "the keyboard got zoomed in" on a Word Stack
+  // round, when it was really the game screen stuck zoomed in behind it,
+  // clipping rows the player never realized were still there. Capping the
+  // scale here is the backstop for every surface, not just the one field
+  // that triggered it this time.
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
   // Kept in step with app/manifest.ts and the html/body base: this is the
   // colour the browser paints its own chrome with, so a stale value shows up
@@ -106,7 +118,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <link rel="apple-touch-startup-image" href="/splash/apple-splash-1320x2868.png" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
       </head>
       <body>
-        {children}
+        {/* AppShell wraps every route and never unmounts on navigation -- a
+            layout only ever swaps `{children}`, not itself. See its own file
+            for why the state that used to live in poker-app.tsx moved here. */}
+        <AppShell>{children}</AppShell>
         {/* TEMPORARY -- remove with components/debug/viewport-probe.tsx and
             app/debug/safe-area once the installed-PWA cold-launch nav gap is
             resolved. Renders nothing; records the launch viewport timeline so

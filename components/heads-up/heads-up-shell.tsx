@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
+import { useAppShell } from "@/components/shell/app-shell";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { CHEAPEST_TIER, isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
@@ -58,7 +59,10 @@ export function HeadsUpShell() {
   const router = useRouter();
   const [table, setTable] = useState<HeadsUpTable | null>(null);
   const [invites, setInvites] = useState<HeadsUpTable[]>([]);
-  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  // The persistent shell owns the profile now -- this screen still gets it
+  // back from its own GET /api/heads-up response too (unchanged this phase),
+  // it just writes that into the shared setter instead of a local copy.
+  const { profile, setProfile } = useAppShell();
   const [tier, setTier] = useState<StakesTier>(CHEAPEST_TIER);
   const [inviteTarget, setInviteTarget] = useState<{ id: string; name: string } | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -84,7 +88,7 @@ export function HeadsUpShell() {
     } finally {
       if (mounted.current) setLoaded(true);
     }
-  }, []);
+  }, [setProfile]);
 
   const send = useCallback(async (url: string, body: unknown) => {
     sending.current = true;
@@ -112,7 +116,7 @@ export function HeadsUpShell() {
       sending.current = false;
       if (mounted.current) setBusy(false);
     }
-  }, []);
+  }, [setProfile]);
 
   // The friend this lobby was opened to invite, from the friends drawer's
   // own picker (`?invite=<profileId>&name=<displayName>`) -- a prefill only,

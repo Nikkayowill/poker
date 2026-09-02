@@ -56,6 +56,11 @@ export function puzzleNumber(day: PuzzleDay): number {
   return Math.round((dayStartMs(day) - dayStartMs(PUZZLE_EPOCH_DAY)) / MS_PER_DAY) + 1;
 }
 
+/** One UTC calendar day before `day`. What the puzzle archive's day-walk steps by. */
+export function previousDay(day: PuzzleDay): PuzzleDay {
+  return new Date(dayStartMs(day) - MS_PER_DAY).toISOString().slice(0, 10);
+}
+
 /** How long until the next puzzle, in ms. What the "next puzzle in 4:12:08" countdown reads. */
 export function msUntilNextPuzzle(now: Date): number {
   const next = dayStartMs(puzzleDay(now)) + MS_PER_DAY;

@@ -41,8 +41,10 @@ export type ArcadeGameId =
   | "daily-sudoku"
   | "memory-match"
   | "minesweeper"
+  | "nonogram"
   | "chess-duel"
   | "checkers-duel"
+  | "othello-duel"
   | "trivia-showdown"
   | "word-race"
   | "cribbage-table";
@@ -87,7 +89,15 @@ export type ArcadeGameId =
  * gone (Word Stack/Connections, which have no second, unlimited mode to
  * redirect to).
  */
-export type ArcadeGameKind = "casino" | "puzzle" | "duel" | "wager";
+/**
+ * `idle` is its own kind rather than a flavour of `wager`, because the floor
+ * groups by what a row IS and the Homestead is not a contest. Every `wager`
+ * row is a board you can lose Gold on, which is what its section note
+ * promises in as many words; the Homestead has no opponent, no clock and no
+ * losing branch, so filing it there would make that note a lie about one of
+ * the rows underneath it.
+ */
+export type ArcadeGameKind = "casino" | "puzzle" | "duel" | "wager" | "idle";
 
 /**
  * `retired` is the status a game gets when it stops being offered but the
@@ -99,7 +109,21 @@ export type ArcadeGameKind = "casino" | "puzzle" | "duel" | "wager";
  * human decided to stop offering it" — collapsing them would lose that
  * distinction.
  */
-export type ArcadeGameStatus = "coming-soon" | "live" | "retired";
+/**
+ * `unlisted` is a fourth state and not a flavour of the other three: the game
+ * is finished, mounted, and moving real Gold, but is not being advertised yet.
+ * It is not `coming-soon` (that means "not built"), and it is not `retired`
+ * (that means "was offered, then stopped"). Collapsing it into either would
+ * lose exactly the distinction this type exists to keep.
+ *
+ * `splitArcadeFloor` shows `live` rows and nothing else, so an unlisted game
+ * never reaches the floor. That is ALL it does. Per lib/arcade/retired.ts's
+ * lesson, a catalog row is not a lock: the routes stay open, so anyone with
+ * the URL can play it. Unlisted means unadvertised, never unreachable -- if a
+ * game must actually be closed, the route has to refuse, and that is a
+ * separate thing to build.
+ */
+export type ArcadeGameStatus = "coming-soon" | "live" | "retired" | "unlisted";
 
 export interface ArcadeGame {
   id: ArcadeGameId;
@@ -138,7 +162,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "blackjack-21",
     name: "Blackjack 21",
-    blurb: "Beat the dealer, 3:2 on naturals",
+    blurb: "Beat the dealer, 3:2 on a natural",
     kind: "casino",
     entryCost: 1000,
     status: "live",
@@ -151,7 +175,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     // what makes the emoji grid worth posting. A blurb promising something
     // the board does not do is a promise broken on the click; see this
     // file's own header for the rule that learned that the hard way.
-    blurb: "Wager Gold on today's word, or play free",
+    blurb: "Six guesses at the word everyone gets today",
     kind: "wager",
     entryCost: 0,
     status: "live",
@@ -160,7 +184,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "connections",
     name: "Connections",
-    blurb: "Wager Gold on today's puzzle, or play free",
+    blurb: "Find the four groups hiding in sixteen words",
     kind: "wager",
     entryCost: 0,
     status: "live",
@@ -169,7 +193,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "daily-sudoku",
     name: "Sudoku",
-    blurb: "Wager Gold, or play free — any time",
+    blurb: "Fill the grid, from easy up to expert",
     kind: "wager",
     entryCost: 0,
     status: "live",
@@ -178,7 +202,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "memory-match",
     name: "Memory Match",
-    blurb: "Wager Gold, or play free — any time",
+    blurb: "Pair the whole board before your turns run out",
     kind: "wager",
     entryCost: 0,
     status: "live",
@@ -187,11 +211,20 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "minesweeper",
     name: "Minesweeper",
-    blurb: "Wager Gold, or play free — any time",
+    blurb: "Clear the field, no guesswork on any board",
     kind: "wager",
     entryCost: 0,
     status: "live",
     href: "/games/minesweeper",
+  },
+  {
+    id: "nonogram",
+    name: "Nonogram",
+    blurb: "Turn a grid of numbers into a picture",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/nonogram",
   },
   // ---- Duels: skill/social games staked against another player, not the
   // house. Winner takes the pot both players anted; see lib/pvp/. Priced at
@@ -200,7 +233,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "chess-duel",
     name: "Chess",
-    blurb: "1v1, winner takes the pot",
+    blurb: "Checkmate them and take the pot",
     kind: "duel",
     entryCost: MIN_DUEL_STAKE,
     status: "live",
@@ -209,16 +242,29 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "checkers-duel",
     name: "Checkers",
-    blurb: "1v1, winner takes the pot",
+    blurb: "Take their last piece to take the pot",
     kind: "duel",
     entryCost: MIN_DUEL_STAKE,
     status: "live",
     href: "/games/checkers",
   },
+  // Perfect information and no dice, like the two above it. Picked over
+  // Connect Four for one reason worth writing down: Connect Four is solved,
+  // and a player who has memorised the first-player win would farm every
+  // opponent they got seat 0 against. See lib/pvp/othello.ts's own header.
+  {
+    id: "othello-duel",
+    name: "Othello",
+    blurb: "Hold the most discs when the board runs out",
+    kind: "duel",
+    entryCost: MIN_DUEL_STAKE,
+    status: "live",
+    href: "/games/othello",
+  },
   {
     id: "trivia-showdown",
     name: "Trivia Showdown",
-    blurb: "Multiple choice, fastest correct answer wins",
+    blurb: "First right answer takes the question",
     kind: "duel",
     entryCost: MIN_DUEL_STAKE,
     status: "live",
@@ -240,7 +286,7 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
   {
     id: "cribbage-table",
     name: "Cribbage",
-    blurb: "3-4 players, winner takes the pot",
+    blurb: "Peg to 121 at a table of three or four",
     kind: "duel",
     entryCost: MIN_DUEL_STAKE,
     status: "live",
@@ -291,6 +337,13 @@ export function arcadeEntryLabel(game: ArcadeGame): string {
   // above. The exact wording still differs by the two sub-shapes described
   // there: Sudoku/Memory Match are unlimited (no daily identity to name),
   // Word Stack/Connections are still the one shared puzzle for the day.
+  // The Homestead's zero is a third meaning again: nothing is staked here at
+  // all. Its entryCost is 0 so the floor never wallet-gates the door to a
+  // harvest (see its own catalog comment), and what it earns is Bushels --
+  // Gold only ever leaves it through the capped daily exchange, so "sell for
+  // Gold" would misstate the loop. Checked before the `wager` line below,
+  // which would otherwise swallow it and print "Free daily".
+  if (game.kind === "idle") return "Free to open · runs while you're away";
   if (game.kind !== "wager") return "Free daily";
   return game.id === "daily-word-stack" || game.id === "connections"
     ? "Free daily · or wager it"
@@ -337,6 +390,7 @@ export function splitArcadeFloor(games: readonly ArcadeGame[] = ARCADE_GAMES): {
   duels: ArcadeGame[];
   wagers: ArcadeGame[];
   staked: ArcadeGame[];
+  idle: ArcadeGame[];
 } {
   const live = games.filter((game) => game.status === "live");
   return {
@@ -344,6 +398,7 @@ export function splitArcadeFloor(games: readonly ArcadeGame[] = ARCADE_GAMES): {
     duels: live.filter((game) => game.kind === "duel"),
     wagers: live.filter((game) => game.kind === "wager"),
     staked: live.filter((game) => game.kind === "casino"),
+    idle: live.filter((game) => game.kind === "idle"),
   };
 }
 
@@ -365,11 +420,21 @@ export function arcadeFloorSummary(games: readonly ArcadeGame[] = ARCADE_GAMES):
 } {
   const { free, duels, wagers, staked } = splitArcadeFloor(games);
   return {
-    free: free.length,
-    // Duels and wagers are staked Gold too: the tile's second number is
-    // "how many cost something", and splitting it further would need a third
-    // line of copy on a tile that has room for two.
-    staked: duels.length + wagers.length + staked.length,
+    // "Costs nothing to start", not "kind: puzzle". The puzzle bucket is
+    // empty and has been for a while, so counting only it printed a literal
+    // "0 free every day" on the hub tile. A wager row is genuinely free to
+    // open -- the stake is a choice made on the game's own page -- so it
+    // belongs on this side of the line.
+    // `idle` is deliberately in neither count. The Homestead is free to open
+    // in the sense of costing no Gold, but it is behind an access code, so
+    // counting it in "N free every day" promises the reader something most of
+    // them cannot open -- the exact class of wrong number this file's header
+    // is about. It comes back into the count by losing the code, not by
+    // editing this line.
+    free: free.length + wagers.length,
+    // The rows that cannot be opened without spending: a duel's ante and
+    // Blackjack's buy-in are both charged before anything deals.
+    staked: duels.length + staked.length,
     // Free first, matching the order the floor puts them in, so the tile and
     // the page it opens do not disagree about what the arcade leads with.
     previewNames: [...free, ...duels, ...wagers, ...staked]

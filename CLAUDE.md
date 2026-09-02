@@ -46,6 +46,45 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Homestead: paths, a pond and yard props close out the art-volume gap (2026-09-02)
+The "still open" line at the end of the StackAcres premium pass entry below named the honest gap to
+the FarmVille bar as "art volume (paths, water, props, a character)". Paths, water and props are done
+here; **a character is deliberately deferred** — Kayo's call: it makes no sense to draw a farmhand
+before the map itself is settled. `art-paths.ts`/`lib/homestead/paths.ts` lay a dirt road and a lane
+with damp rims and a worn centre band; `art-water.ts`/`lib/homestead/water.ts` add a pond (lily pads,
+reeds, a dock, wandering ducks, rippling); `art-props.ts`/`lib/homestead/props.ts` scatter a windmill,
+well, wheelbarrow, crate stack, log pile, mailbox, signpost, three lamps, a flower bed, a broken stone
+wall and a scarecrow through the yard, plus woodland litter (fallen logs, mushrooms, boulders) in the
+open world beyond the farm. All three new art modules follow the existing painter conventions (one
+sun / lit-mass shading, POT-safe `bakeTexture` baking) rather than inventing their own.
+
+A 2-agent review pass (correctness + polish-vs-CLAUDE.md-aesthetic) caught one real timing bug and one
+drift risk, both fixed: `pokePlot`'s crop-tap guard set `juiceUntil` to a flat 460ms, but the actual
+chained squash-tween for a field's last plant (row 3, col 4) runs to 180ms delay + 340ms of tweening =
+520ms — a re-tap in that 60ms gap started a second squash tween fighting the first's yoyo-back for a
+frame, a visible jitter on fast re-tapping. Now `this.now + 520`, with the geometry spelled out in a
+comment so a future field-size change doesn't quietly reopen the gap. Second: `PROP_SIZE`
+(`lib/homestead/props.ts`) hand-restates each prop's painted box that `art-props.ts`'s `PROP_PAINTERS`
+already carries as its own `w`/`h` — nothing enforced the two agreeing, the exact "drifted hand-written
+copies" pattern this file's own history has hit before (STAKES_TIERS, the wager ladders). Added a
+one-off cross-check in `props.test.ts` (test-only import of the painter module, not a production
+dependency) so a future resize that forgets the matching row fails loudly. The barn roof's inline
+light/dark-split-plus-shingle-course draw duplicates the shared `roof()` helper's geometry by hand —
+left alone: the two aren't actually pixel-identical (different overlay alphas, shingle-line count, and
+the barn's own diamond ridge finial vs the helper's line highlight), so unifying them would change the
+rendered art for a nit-level dedup, not a free win.
+
+**Still open, unchanged by this pass:** the wild-plot tint (`wild` painter in `homestead-art.ts`) still
+reads as a flat grey rectangle when zoomed out — confirmed byte-for-byte untouched by this diff, same
+gap the premium-pass entry called out. **A production DB bug was found sitting in this worktree,
+unrelated to the art pass and not yet applied**: `supabase/migrations/20260902130000_fix_homestead_plot_stock_check.sql`
+fixes `homestead_plots_stock_matches_status`, whose CHECK still required the now-inert `payout` column
+— every stocking attempt has been failing since `20260901180000_homestead_inventory.sql` re-pointed
+the trigger at `yield_quantity` without updating this CHECK to match (no Gold/Bushels at risk;
+`stockHomestead`'s catch block already refunds on a DB throw, per that migration's own comment). This
+migration is **unapplied** — apply it before/alongside this branch's own migrations; see
+`[[reference_stackchips_migrations_not_auto_applied]]`.
+
 ### Homestead: the grid became a 2D sandbox viewport (2026-09-01)
 Kayo's brief: "a major evolution", not a new game -- take the economics as they are (acreage, crops,
 pens) and move them into a fluid world the player drags, zooms and places things in, with the menu
@@ -85,6 +124,41 @@ Verified with the memory-mode harness from `[[project_stackchips_homestead_farmh
 **Not verified live: ready/hungry/mucked rendering** (needs a 15-minute clock); the code paths are
 the same `buildCell` switch. Open: `suggestedTool` lands a fresh farm on Plant with no seed, so the
 first thing on screen is two red "blocked" rings -- pre-existing behaviour, now more visible.
+
+### StackAcres premium pass: mipmaps that actually exist, one sun, tap juice (2026-09-02)
+Kayo brought a five-file Phaser "mandate" (EngineConfig / PremiumCameraController /
+DynamicGridManager / TactileJuiceEngine / HomesteadViewportScene, plain `.js` under a `src/` tree
+this repo does not have) plus a FarmVille 3 screen recording as the bar, with "don't take everything
+I provide as law." None of the five files was dropped in: the config half was already in
+`homestead-world.tsx` (`pixelArt: false`, `antialias: true`, `roundPixels: false`), and the rest
+would have re-opened bugs this branch had already closed -- the camera controller runs on Phaser's
+own pointer bookkeeping (the phantom-finger pinch bug from Kayo's iPhone), its `wheel` listener is on
+`window` with `preventDefault` and never removed, its inertia is `v *= 0.9` per frame (twice as fast
+on a 120Hz phone; ours is `pow(decay, dt/16)`), it has no pinch at all, `transparent: true` is the
+"platform floating in the sky" bug from 2026-08-31, the grid manager loads a texture atlas that does
+not exist against a no-downloads rule, and the juice engine's guard sets `isDeDeforming` (typo) so it
+never guards. What was real in it was built properly in the existing TypeScript. **The finding worth
+keeping: `mipmapFilter: "LINEAR_MIPMAP_LINEAR"` had been silently doing nothing.** Phaser 3.90 only
+calls `gl.generateMipmap` when `IsSizePowerOfTwo(width, height)` (`WebGLTextureWrapper.update`),
+and `WebGLRenderer.init` requests a plain `webgl` context, which cannot mip NPOT textures at all;
+every painter was baked at `ceil(w*8) x ceil(h*8)`, so none qualified and the zoomed-out farm
+(6x minification at zoom 0.6) sampled roughly one texel in forty. `bakeTexture` now pads every
+canvas to a power of two (`powerOfTwoCeil`, tested) and registers the painted region as
+`ART_FRAME`; every `add.image`/`setTexture` in the scene names that frame. Verified on the live GL
+wrappers through the dev handle, not assumed: every texture reports `LINEAR_MIPMAP_LINEAR`. Art: one
+sun, high and upper-left, applied everywhere (`litMass` clips a radial light onto any mass; the
+`shadow` painter is anchored at its own centre so a caller placing it at a thing's feet puts the pool
+UNDER the feet, offset right -- before, `ay: 1` hid most of every shadow up behind the trunk); tilled
+soil with lit lips and clods; a cream dotted lot marker on empty plots; eave shadow, shingle courses
+and a lit ridge on the barn; broad faint sun sweeps in the grass tile; a screen-pinned vignette with
+a warm sun corner (scrollFactor 0 still zooms, so it is centred on the camera and sized `view/zoom`).
+Motion: a per-pen depth sort by y (`sortPen`, permutes only the contiguous sprite block so the near
+fence stays in front), idle breathing out of phase per animal, and `pokePlot` -- volume-preserving
+squash-and-stretch on a tap, hop through a tweened `lift` because update() owns y, one bounce at a
+time. Still open and deliberately not touched: the tiers of the wild-plot tint block read as a hard
+grey rectangle when zoomed out; the first-run "four red rings" (Plant held with no seed) noted in the
+2026-09-01 entry; and the honest gap to the FarmVille bar is now art volume (paths, water, props, a
+character), not engine settings.
 
 ### Homestead art went vector and the map went open-world (2026-09-02)
 Kayo's brief: "it's 2026, Gameboy graphics aren't it" -- better graphics, keep the smoothness the

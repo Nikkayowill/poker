@@ -772,9 +772,9 @@ export function AdminDashboard() {
                       className="admin-toggle"
                       disabled={bulkPending || pendingId === profile.id}
                       onClick={() => void toggleHomestead(profile)}
-                      title="Lets this player into the StackChips Homestead while it is unreleased. It is the whole guest list -- there is no code."
+                      title="Lets this player into StackAcres (the farm game, formerly labeled 'Homestead' here) while it is unreleased. It is the whole guest list -- there is no code."
                     >
-                      {profile.homesteadAccess ? "Close Homestead" : "Open Homestead"}
+                      {profile.homesteadAccess ? "Close StackAcres" : "Open StackAcres"}
                     </button>
                     <button
                       type="button"

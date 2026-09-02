@@ -1771,13 +1771,16 @@ button:disabled { cursor: wait; opacity: .62; }
 .hub-tile-collection { --tile-art: url("/table2d5/seats/character16/0.webp"); background-size: auto, auto, 78px, auto; background-position: center, center, right 12px bottom -4px, center; }
 .hub-tile-leaderboard { --tile-art: url("/chips/chip-royal-spade.webp"); background-size: auto, auto, 78px, auto; background-position: center, center, right 16px bottom 12px, center; }
 
-/* The name reads as the StackChips wordmark plus "Homestead" set beside it,
-   rather than typing "StackChips Homestead" as plain text -- the same mark
-   the sign-in card and the app header use (components/brand/stackchips-logo.
-   tsx), so the tile matches the app's own masthead rather than approximating
-   it. cattle.png is a real corner of the game's own pixel-art tileset
-   (public/homestead/tiles/), bled off the corner the same way every other
-   tile here anchors its art -- pixelated on purpose, it's a 16x16 sprite. */
+/* The name is StackAcres now, not "StackChips Homestead" (Kayo's call --
+   see components/brand/stackacres-logo.tsx for the reasoning), rendered as
+   its own logo rather than typed text -- sized up from the 104px a
+   single-line wordmark elsewhere in the app gets away with, since this one
+   carries two words at comparable weight and goes soft below ~130px.
+   The route/module/CSS-class name is still "homestead" throughout -- a
+   display rename, not a plumbing one. cattle.png is a real corner of the
+   game's own pixel-art tileset (public/homestead/tiles/), bled off the
+   corner the same way every other tile here anchors its art -- pixelated
+   on purpose, it's a 16x16 sprite. */
 .hub-tile-homestead {
   --tile-art: url("/homestead/tiles/cattle.png");
   --tile-tint: rgba(255,255,255,.02);
@@ -1785,8 +1788,7 @@ button:disabled { cursor: wait; opacity: .62; }
   background-position: center, center, right 16px bottom 14px, center;
   image-rendering: pixelated;
 }
-.hub-tile-homestead-mark { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
-.hub-tile-homestead-logo { width: 104px; height: auto; }
+.hub-tile-homestead-logo { width: 150px; height: auto; margin-bottom: 1px; }
 /* Same 10px kicker voice the hero's category line uses (.hub-tile-kicker),
    standing in for the blurb on a tile nobody can open yet. */
 .hub-tile-soon { color: #9d93b8 !important; font-weight: 650; letter-spacing: .2em; text-transform: uppercase; }

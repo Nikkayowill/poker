@@ -7,7 +7,10 @@ import { findProfileBySessionToken } from "@/lib/server/profile-store";
 import { readSessionTokenFromCookies } from "@/lib/server/session";
 
 export const metadata: Metadata = {
-  title: "StackChips Homestead",
+  // The route stays /games/homestead (a plumbing rename is a separate,
+  // deliberate pass) but the game's real name on the floor is StackAcres --
+  // see components/brand/stackacres-logo.tsx.
+  title: "StackAcres",
   robots: { index: false, follow: false },
 };
 

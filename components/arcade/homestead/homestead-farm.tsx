@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { Coins, HelpCircle, Store, Wheat } from "lucide-react";
+import { Coins, HelpCircle, LocateFixed, Store, ZoomIn, ZoomOut } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
@@ -43,25 +43,37 @@ import {
   type AffordanceContext,
   type HomesteadTool,
 } from "@/lib/homestead/tools";
-import { HomesteadGrid, HomesteadSeedStrip } from "./homestead-grid";
+import type { PainterName } from "./homestead-art";
+import { HomesteadPlotList, HomesteadSeedStrip } from "./homestead-grid";
+import { HomesteadIcon } from "./homestead-icon";
 import { HomesteadToolbelt } from "./homestead-toolbelt";
+import { HomesteadWorld, type HomesteadWorldApi, type PlotScreenRect } from "./homestead-world";
 
 /**
- * StackAcres: a farm of staked crops and livestock. Named that on the floor
- * (Kayo's call, replacing "StackChips Homestead") -- the route, this
- * directory, every lib/homestead/* module and DB table are still named
- * "homestead" throughout, a display rename only. Don't casually rename
- * those to match; that's a bigger, deliberate pass of its own.
+ * StackAcres: a farm of staked crops and livestock, drawn as a place you look
+ * around in. Named that on the floor (Kayo's call, replacing "StackChips
+ * Homestead") -- the route, this directory, every lib/homestead/* module and
+ * DB table are still named "homestead" throughout, a display rename only.
+ * Don't casually rename those to match; that's a bigger, deliberate pass of
+ * its own.
  *
  * Split of responsibilities: this shell owns data, requests and the held
- * tool; ./homestead-grid.tsx draws plots; ./homestead-toolbelt.tsx is the
- * dock; and every rule about what a tap can do lives in lib/homestead/tools.ts
- * so it is testable.
+ * tool; ./homestead-world.tsx mounts the map (a Phaser canvas the player
+ * drags and zooms, with the animals wandering their pens); ./homestead-grid.tsx
+ * holds the keyboard plot list and the seed chips; ./homestead-toolbelt.tsx
+ * is the dock; and every rule about what a tap can do lives in
+ * lib/homestead/tools.ts so it is testable.
  *
- * The interaction is tool-first, the way a farming game works rather than the
- * way a form does: hold a tool, and every plot it can act on lights up. Tapping
- * acts immediately. Look is the resting tool and the only one that opens the
- * detail panel -- that panel is now for reading, not for finding the button.
+ * Two layers, and they never mix. The world scrolls; the chrome does not.
+ * Header, toolbelt, seed strip, detail panel and store are all DOM, pinned to
+ * the screen edges over the canvas, exactly where they were when the farm
+ * was a grid. Only the field itself moved into the canvas -- and the canvas
+ * owns no rules, it just says which plot was tapped.
+ *
+ * The interaction is still tool-first: hold a tool, and every plot it can act
+ * on lights up on the map. Tapping acts immediately. Planting has a second
+ * way in that a grid never had: drag a chip out of the seed strip and drop it
+ * on the empty plot you want, which is what the map is for.
  *
  * No poll. Progress is a pure function of the timestamps the server already
  * sent, so a one-second local clock re-derives it and the only refetches are
@@ -70,14 +82,20 @@ import { HomesteadToolbelt } from "./homestead-toolbelt";
  * about it and the client never guesses.
  */
 
-/* See homestead-grid.tsx: the HUD purse and the barn list draw the same 16x16
-   pixel-art PNGs, and next/image's resampling is what destroys pixel art. */
-/* eslint-disable @next/next/no-img-element */
-
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
-/** The board is 4x4. One number, because the grid is a real CSS grid now. */
-const GRID_COLUMNS = 4;
+/** How far a press on a seed chip has to travel before it is a drag, not a tap. */
+const DRAG_SLOP_PX = 8;
+
+/** Gap between a plot and the card hung beside it, in CSS pixels. */
+const DETAIL_GAP_PX = 10;
+/** Width the toolbelt column reserves down the right edge of the map. */
+const DETAIL_RIGHT_RESERVE_PX = 130;
+const DETAIL_EDGE_PX = 8;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
 
 interface HomesteadResponse {
   plots: HomesteadPlotSnapshot[];
@@ -141,6 +159,18 @@ function withLocalClock(plots: HomesteadPlotSnapshot[], nowMs: number): Homestea
   });
 }
 
+/** A seed chip being dragged toward the map. */
+interface Placement {
+  stock: HomesteadStock;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  /** Becomes true once the press has travelled past the slop. */
+  dragging: boolean;
+  /** The empty plot the ghost last snapped to, if any. */
+  over: number | null;
+}
+
 export function HomesteadFarm() {
   const [plots, setPlots] = useState<HomesteadPlotSnapshot[]>([]);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
@@ -155,6 +185,7 @@ export function HomesteadFarm() {
   const [exchangeChoice, setExchangeChoice] = useState<number | null>(null);
   const [exchangeNote, setExchangeNote] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [worldReady, setWorldReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tool, setTool] = useState<HomesteadTool>("inspect");
@@ -165,17 +196,21 @@ export function HomesteadFarm() {
   const [showStore, setShowStore] = useState(false);
   const [celebrate, setCelebrate] = useState<{ plotIndex: number; nonce: number } | null>(null);
   const [lastCollect, setLastCollect] = useState<{ text: string; nonce: number } | null>(null);
+  const [placing, setPlacing] = useState<HomesteadStock | null>(null);
 
   // Landscape-only, same posture and same hook as the poker table (see
   // poker-table.tsx) rather than a second orientation check invented here:
-  // a 4-wide grid plus a 5-tool dock plus a seed strip is exactly the kind of
-  // layout that only barely fits sideways (see the landscape media query
-  // below) and does not fit at all turned the other way.
+  // the map wants the wide axis for the toolbelt to sit beside it, and the
+  // chrome above it already spends most of a portrait phone's height.
   const landscape = useLandscape();
   const play = useArcadeSound({ gameSounds: true });
   const sending = useRef(false);
   const mounted = useRef(true);
   const suggested = useRef(false);
+  const world = useRef<HomesteadWorldApi | null>(null);
+  const placement = useRef<Placement | null>(null);
+  const detail = useRef<HTMLElement | null>(null);
+  const controls = useRef<HTMLDivElement | null>(null);
   useEffect(() => () => { mounted.current = false; }, []);
 
   const applyResponse = useCallback((data: Partial<HomesteadResponse>) => {
@@ -366,12 +401,150 @@ export function HomesteadFarm() {
     [act, context, seed, tool],
   );
 
+  /** A tap on grass or forest closes whatever panel was open. */
+  const onGroundTap = useCallback(() => {
+    setSelected(null);
+  }, []);
+
+  // The detail card hangs beside the plot it is about and follows it as the
+  // map moves: the scene reports the plot's place on screen whenever that
+  // changes, and the card is positioned straight onto the DOM node here
+  // rather than through state, since a drag reports every frame. Cards go to
+  // the plot's right when there is room short of the toolbelt, else its
+  // left, else under it -- and always within the map's edges.
+  useEffect(() => {
+    world.current?.trackPlot(selected);
+    if (selected !== null) world.current?.focusPlot(selected);
+  }, [selected]);
+
+  const lastRect = useRef<PlotScreenRect | null>(null);
+  const placeDetail = useCallback((rect: PlotScreenRect | null) => {
+    lastRect.current = rect;
+    const el = detail.current;
+    if (!el) return;
+    if (!rect) {
+      el.style.visibility = "hidden";
+      return;
+    }
+    const pw = el.offsetWidth;
+    const ph = el.offsetHeight;
+    // The toolbelt, plus the seed strip when Plant is held: measured, since
+    // the strip comes and goes and the card must never slide under either.
+    const reserve = Math.max(
+      DETAIL_RIGHT_RESERVE_PX,
+      (controls.current?.offsetWidth ?? 0) + DETAIL_EDGE_PX * 2,
+    );
+    const usable = rect.viewWidth - reserve;
+    let left: number;
+    let top: number;
+    if (rect.x + rect.width + DETAIL_GAP_PX + pw <= usable) {
+      left = rect.x + rect.width + DETAIL_GAP_PX;
+      top = rect.y + rect.height / 2 - ph / 2;
+    } else if (rect.x - DETAIL_GAP_PX - pw >= DETAIL_EDGE_PX) {
+      left = rect.x - DETAIL_GAP_PX - pw;
+      top = rect.y + rect.height / 2 - ph / 2;
+    } else {
+      left = rect.x + rect.width / 2 - pw / 2;
+      top = rect.y + rect.height + DETAIL_GAP_PX;
+      if (top + ph > rect.viewHeight - DETAIL_EDGE_PX) top = rect.y - DETAIL_GAP_PX - ph;
+    }
+    left = clamp(left, DETAIL_EDGE_PX, Math.max(DETAIL_EDGE_PX, usable - pw));
+    top = clamp(top, DETAIL_EDGE_PX, Math.max(DETAIL_EDGE_PX, rect.viewHeight - ph - DETAIL_EDGE_PX));
+    el.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+    el.style.visibility = "visible";
+  }, []);
+
+  // The card changes size without the plot moving -- a bought plot's "Buy
+  // acreage" becomes the taller "Empty plot" on the same spot, a countdown
+  // wraps -- and a card placed for its old height runs off the bottom of the
+  // map. Re-place it from the last known plot position whenever it resizes.
+  useEffect(() => {
+    const el = detail.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => placeDetail(lastRect.current));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [placeDetail, landscape]);
+
   const pickTool = useCallback((next: HomesteadTool) => {
     tapSound();
     setTool(next);
     setError(null);
     if (next !== "inspect") setSelected(null);
   }, []);
+
+  /**
+   * Drag a chip out of the seed strip and onto the map. The press itself is
+   * just a press until it has moved DRAG_SLOP_PX, so a tap on a chip still
+   * picks it the way it always did; past that the chip becomes a ghost over
+   * the canvas that snaps to the empty plot under the finger, and letting go
+   * there plants. Letting go anywhere else just puts the chip down.
+   *
+   * Listened for on the window rather than the chip: a touch pointer stays
+   * captured by the element it started on, and a mouse does not, and the
+   * window hears both.
+   */
+  const onSeedPress = useCallback(
+    (stock: HomesteadStock, event: React.PointerEvent<HTMLButtonElement>) => {
+      if (event.button !== 0 && event.pointerType === "mouse") return;
+      const start: Placement = {
+        stock,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        dragging: false,
+        over: null,
+      };
+      placement.current = start;
+
+      const move = (e: PointerEvent) => {
+        const current = placement.current;
+        if (!current || e.pointerId !== current.pointerId) return;
+        if (!current.dragging) {
+          const travelled = Math.hypot(e.clientX - current.startX, e.clientY - current.startY);
+          if (travelled < DRAG_SLOP_PX) return;
+          current.dragging = true;
+          setPlacing(stock);
+          setSeed(stock);
+          setTool("plant");
+          setSelected(null);
+          setError(null);
+        }
+        current.over = world.current?.setGhost(stock, e.clientX, e.clientY) ?? null;
+      };
+
+      const finish = (e: PointerEvent) => {
+        const current = placement.current;
+        if (!current || e.pointerId !== current.pointerId) return;
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", finish);
+        window.removeEventListener("pointercancel", finish);
+        placement.current = null;
+        if (!current.dragging) return;
+        const over = e.type === "pointerup" ? current.over : null;
+        world.current?.setGhost(null, 0, 0);
+        setPlacing(null);
+        if (over === null) return;
+        const plot = livePlots.find((p) => p.plotIndex === over);
+        if (!plot) return;
+        // The seed state may not have committed yet; judge the drop by the
+        // chip that was actually dragged.
+        const affordance = affordanceFor("plant", plot, { ...context, selectedStock: stock });
+        if (affordance.kind === "blocked") {
+          setError(affordance.reason);
+          return;
+        }
+        if (affordance.kind !== "act") return;
+        tapSound();
+        void act({ action: "stock", plotIndex: plot.plotIndex, stock });
+      };
+
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", finish);
+      window.addEventListener("pointercancel", finish);
+    },
+    [act, context, livePlots],
+  );
 
   const labelFor = useCallback(
     (plot: HomesteadPlotSnapshot): string => {
@@ -441,6 +614,8 @@ export function HomesteadFarm() {
   // left today", which is the opposite of what it meant. It drains now.
   const exchangeLeft = exchange.ceiling > 0 ? exchange.remaining / exchange.ceiling : 0;
 
+  const onWorldReady = useCallback(() => setWorldReady(true), []);
+
   // After every hook above, same position poker-table.tsx gates its own
   // render at. A full replacement, not an overlay -- the farm itself never
   // mounts in portrait, so there is nothing underneath to half-render or to
@@ -460,8 +635,16 @@ export function HomesteadFarm() {
     );
   }
 
+  const hint = busy
+    ? "Working…"
+    : placing
+      ? `Drop the ${HOMESTEAD_CATALOGUE[placing].label} on an empty plot.`
+      : seed && tool === "plant"
+        ? `${HOMESTEAD_CATALOGUE[seed].label} · ${HOMESTEAD_CATALOGUE[seed].seedCost.toLocaleString()} Bushels · ${formatDuration(HOMESTEAD_CATALOGUE[seed].durationMs)} · yields ${itemLabel(HOMESTEAD_YIELDS[seed].item, HOMESTEAD_YIELDS[seed].quantity)}. Tap a plot, or drag the chip onto one.`
+        : toolHint;
+
   return (
-    <main className="duel-shell ante-shell hs-shell">
+    <main className={clsx("duel-shell ante-shell hs-shell", { "is-placing": placing !== null })}>
       <header className="floor-bar">
         <div className="floor-bar-left">
           <FloorBackLink />
@@ -474,12 +657,12 @@ export function HomesteadFarm() {
             ever buys acreage. */}
         <div className="hs-hud">
           <span className="hs-purse" title="Bushels">
-            <img src="/homestead/tiles/bushels.png" alt="" aria-hidden="true" />
+            <HomesteadIcon name="ico-bushels" size={16} />
             <strong>{bushels.toLocaleString()}</strong>
             <span className="hs-sr">Bushels</span>
           </span>
           <span className="hs-feed" title="Feed servings">
-            <Wheat size={13} aria-hidden="true" />
+            <HomesteadIcon name="ico-feed" size={16} />
             <strong>{feed}</strong>
             <span className="hs-sr">feed servings</span>
           </span>
@@ -498,184 +681,217 @@ export function HomesteadFarm() {
         </div>
       </header>
 
-      <div className="duel-scoreline ante-scoreline hs-scoreline">
-        {/* The real logo (components/brand/stackacres-logo.tsx), StackAcres
-            now rather than the typed "StackChips Homestead" this heading
-            shipped with. The <h1> stays -- a decorative mark shouldn't
-            erase the page's own heading -- but moves to sr-only, since the
-            logo already spells the same name visually. */}
-        <div className="ante-lobby-heading">
-          <h1 className="sr-only">StackAcres</h1>
-          <StackAcresLogo className="hs-heading-logo" aria-hidden="true" />
-        </div>
-        <span className="hs-cap" aria-live="polite">
-          {penCount}/{HOMESTEAD_PEN_CAP} pens · {fieldCount}/{HOMESTEAD_FIELD_CAP} fields
-        </span>
-      </div>
-
       <div className="hs-main">
+        {/* The world. Everything after it inside .hs-field is chrome pinned
+            over the canvas; the canvas itself is the only thing that moves
+            when the player drags. */}
         <div className="hs-field">
-          {!loaded ? (
-            <p className="hs-hint hs-loading">Walking the fences…</p>
-          ) : (
-            <HomesteadGrid
+          {loaded && (
+            <HomesteadWorld
               plots={livePlots}
-              columns={GRID_COLUMNS}
               tool={tool}
               context={context}
               selected={selected}
-              labelFor={labelFor}
-              onPlotTap={onPlotTap}
               celebrate={celebrate}
+              onPlotTap={onPlotTap}
+              onGroundTap={onGroundTap}
+              onReady={onWorldReady}
+              onTrackedRect={placeDetail}
+              api={world}
             />
           )}
+          {(!loaded || !worldReady) && (
+            <p className="hs-hint hs-loading">Walking the fences…</p>
+          )}
+
+          <div className="duel-scoreline ante-scoreline hs-scoreline">
+            {/* The real logo (components/brand/stackacres-logo.tsx), StackAcres
+                now rather than the typed "StackChips Homestead" this heading
+                shipped with. The <h1> stays -- a decorative mark shouldn't
+                erase the page's own heading -- but moves to sr-only, since the
+                logo already spells the same name visually. */}
+            <div className="ante-lobby-heading">
+              <h1 className="sr-only">StackAcres</h1>
+              <StackAcresLogo className="hs-heading-logo" aria-hidden="true" />
+            </div>
+            <span className="hs-cap" aria-live="polite">
+              {penCount}/{HOMESTEAD_PEN_CAP} pens · {fieldCount}/{HOMESTEAD_FIELD_CAP} fields
+            </span>
+          </div>
+
           {lastCollect && (
             <p key={lastCollect.nonce} className="hs-toast" role="status">
               {lastCollect.text}
             </p>
           )}
-        </div>
 
-        <div className="hs-controls">
-          <HomesteadToolbelt tool={tool} context={context} onPick={pickTool} />
-          {tool === "plant" && (
-            <HomesteadSeedStrip
-              stocks={HOMESTEAD_STOCK}
-              labels={stockLabels}
-              selected={seed}
-              disabledStocks={fullStocks}
-              onPick={(stock) => { tapSound(); setSeed(stock); setError(null); }}
-            />
-          )}
+          <div className="hs-controls" ref={controls}>
+            <HomesteadToolbelt tool={tool} context={context} onPick={pickTool} />
+            {tool === "plant" && (
+              <HomesteadSeedStrip
+                stocks={HOMESTEAD_STOCK}
+                labels={stockLabels}
+                selected={seed}
+                disabledStocks={fullStocks}
+                onPick={(stock) => { tapSound(); setSeed(stock); setError(null); }}
+                onPressStart={onSeedPress}
+              />
+            )}
+          </div>
+
+          <div className="hs-camera" role="group" aria-label="Map view">
+            <button type="button" className="hs-camera-btn" aria-label="Zoom in" onClick={() => world.current?.zoomBy(1.3)}>
+              <ZoomIn size={16} aria-hidden="true" />
+            </button>
+            <button type="button" className="hs-camera-btn" aria-label="Zoom out" onClick={() => world.current?.zoomBy(1 / 1.3)}>
+              <ZoomOut size={16} aria-hidden="true" />
+            </button>
+            <button type="button" className="hs-camera-btn" aria-label="Back to the farm" onClick={() => world.current?.recenter()}>
+              <LocateFixed size={16} aria-hidden="true" />
+            </button>
+          </div>
+
           <p className={clsx("hs-tool-hint", { "is-busy": busy })} aria-live="polite">
-            {busy ? "Working…" : seed && tool === "plant"
-              ? `${HOMESTEAD_CATALOGUE[seed].label} · ${HOMESTEAD_CATALOGUE[seed].seedCost.toLocaleString()} Bushels · ${formatDuration(HOMESTEAD_CATALOGUE[seed].durationMs)} · yields ${itemLabel(HOMESTEAD_YIELDS[seed].item, HOMESTEAD_YIELDS[seed].quantity)}`
-              : toolHint}
+            {hint}
           </p>
-        </div>
 
-        <div className="hs-side">
-          {error && <p className="duel-error" role="alert">{error}</p>}
-          <section className="hs-detail" aria-live="polite">
+          <div className="hs-side">
+            {error && <p className="duel-error" role="alert">{error}</p>}
+          </div>
+
+          {/* Positioned by placeDetail, not by the stylesheet: it hangs off
+              whichever plot is selected and follows it across the map. */}
+          <section className="hs-detail" aria-live="polite" ref={detail}>
             {selectedPlot === null ? null : selectedPlot.state === "locked" ? (
-              <div className="hs-panel">
-                <h2>Buy acreage</h2>
-                {selectedPlot.purchasable && selectedPlot.unlockPrice !== null ? (
-                  <>
-                    <p>Expand the farm. Land is permanent.</p>
-                    <button
-                      type="button"
-                      className="hs-cta"
-                      disabled={busy || balance < selectedPlot.unlockPrice}
-                      onClick={() => void act({ action: "buy-plot", plotIndex: selectedPlot.plotIndex })}
-                    >
-                      Buy for {selectedPlot.unlockPrice.toLocaleString()} Gold
-                    </button>
-                    {balance < selectedPlot.unlockPrice && (
-                      <GoldShortfallHint needed={selectedPlot.unlockPrice} compact />
-                    )}
-                  </>
-                ) : (
-                  <p>Acreage sells in order. Buy the cheaper plots first.</p>
-                )}
-              </div>
-            ) : selectedPlot.state === "mucked" ? (
-              <div className="hs-panel">
-                <h2>Weather-worn</h2>
-                <p>
-                  This plot took a beating on its last run. Nothing goes in it until the brush is
-                  cleared and the fencing is back up.
-                </p>
-                <button
-                  type="button"
-                  className="hs-cta"
-                  disabled={busy || bushels < (selectedPlot.muckFee ?? 0)}
-                  onClick={() => void act({ action: "clear", plotIndex: selectedPlot.plotIndex })}
-                >
-                  Clear for {selectedPlot.muckFee?.toLocaleString()} Bushels
-                </button>
-                {bushels < (selectedPlot.muckFee ?? 0) && (
-                  <p className="hs-note">Sell some produce at the store first.</p>
-                )}
-              </div>
-            ) : selectedPlot.state === "empty" ? (
-              <div className="hs-panel">
-                <h2>Empty plot</h2>
-                <p>
-                  Take the seedling from the toolbelt, pick what you want, and tap here. Fields and
-                  pens have their own limits.
-                </p>
-                <button type="button" className="hs-cta" onClick={() => pickTool("plant")}>
-                  Plant something
-                </button>
-              </div>
-            ) : selectedPlot.state === "hungry" ? (
-              <div className="hs-panel">
-                <h2>{HOMESTEAD_CATALOGUE[selectedPlot.stock!].label} is hungry</h2>
-                <p>
-                  They stop working until they&apos;re fed. Nothing is lost — the clock just waits
-                  for you, and picks up where it left off.
-                </p>
-                <button
-                  type="button"
-                  className="hs-cta"
-                  disabled={busy || feed < 1}
-                  onClick={() => void act({ action: "feed", plotIndex: selectedPlot.plotIndex })}
-                >
-                  {feed < 1 ? "No feed left" : "Feed them (1 serving)"}
-                </button>
-                {feed < 1 && (
+                <div className="hs-panel">
+                  <h2>Buy acreage</h2>
+                  {selectedPlot.purchasable && selectedPlot.unlockPrice !== null ? (
+                    <>
+                      <p>Clear the thicket and push the fence line out. Land is permanent.</p>
+                      <button
+                        type="button"
+                        className="hs-cta"
+                        disabled={busy || balance < selectedPlot.unlockPrice}
+                        onClick={() => void act({ action: "buy-plot", plotIndex: selectedPlot.plotIndex })}
+                      >
+                        Buy for {selectedPlot.unlockPrice.toLocaleString()} Gold
+                      </button>
+                      {balance < selectedPlot.unlockPrice && (
+                        <GoldShortfallHint needed={selectedPlot.unlockPrice} compact />
+                      )}
+                    </>
+                  ) : (
+                    <p>Acreage sells in order. Buy the plot with the price on it first.</p>
+                  )}
+                </div>
+              ) : selectedPlot.state === "mucked" ? (
+                <div className="hs-panel">
+                  <h2>Weather-worn</h2>
+                  <p>
+                    This plot took a beating on its last run. Nothing goes in it until the brush is
+                    cleared and the fencing is back up.
+                  </p>
                   <button
                     type="button"
-                    className="hs-link-btn"
-                    onClick={() => { tapSound(); setShowStore(true); }}
+                    className="hs-cta"
+                    disabled={busy || bushels < (selectedPlot.muckFee ?? 0)}
+                    onClick={() => void act({ action: "clear", plotIndex: selectedPlot.plotIndex })}
                   >
-                    Buy feed at the supply store
+                    Clear for {selectedPlot.muckFee?.toLocaleString()} Bushels
                   </button>
-                )}
-              </div>
-            ) : selectedPlot.state === "working" ? (
-              <div className="hs-panel">
-                <h2>{HOMESTEAD_CATALOGUE[selectedPlot.stock!].label} working</h2>
-                <p className="hs-countdown">
-                  Ready in {countdownLabel(Date.parse(selectedPlot.readyAt ?? "") - nowMs)}
-                </p>
-                <p>
-                  Will yield{" "}
-                  {itemLabel(
-                    HOMESTEAD_YIELDS[selectedPlot.stock!].item,
-                    selectedPlot.yieldQuantity ?? HOMESTEAD_YIELDS[selectedPlot.stock!].quantity,
+                  {bushels < (selectedPlot.muckFee ?? 0) && (
+                    <p className="hs-note">Sell some produce at the store first.</p>
                   )}
-                  . Keeps going while you&apos;re away.
-                </p>
-                {selectedPlot.hungryAt && (
-                  <p className="hs-note">
-                    Wants feeding in {countdownLabel(Date.parse(selectedPlot.hungryAt) - nowMs)}.
+                </div>
+              ) : selectedPlot.state === "empty" ? (
+                <div className="hs-panel">
+                  <h2>Empty plot</h2>
+                  <p>
+                    Take the seedling from the toolbelt and drag what you want onto this plot, or
+                    pick it and tap here. Fields and pens have their own limits.
                   </p>
-                )}
-              </div>
-            ) : (
-              <div className="hs-panel">
-                <h2>Ready to harvest</h2>
-                <p>
-                  Goes straight into the barn. Sell it at the supply store whenever the
-                  price suits you.
-                </p>
-                <button
-                  type="button"
-                  className="hs-cta hs-sell-btn"
-                  disabled={busy}
-                  onClick={() => void act({ action: "collect", plotIndex: selectedPlot.plotIndex })}
-                >
-                  Harvest{" "}
-                  {itemLabel(
-                    HOMESTEAD_YIELDS[selectedPlot.stock!].item,
-                    selectedPlot.yieldQuantity ?? HOMESTEAD_YIELDS[selectedPlot.stock!].quantity,
+                  <button type="button" className="hs-cta" onClick={() => pickTool("plant")}>
+                    Plant something
+                  </button>
+                </div>
+              ) : selectedPlot.state === "hungry" ? (
+                <div className="hs-panel">
+                  <h2>{HOMESTEAD_CATALOGUE[selectedPlot.stock!].label} is hungry</h2>
+                  <p>
+                    They stop working until they&apos;re fed. Nothing is lost — the clock just waits
+                    for you, and picks up where it left off.
+                  </p>
+                  <button
+                    type="button"
+                    className="hs-cta"
+                    disabled={busy || feed < 1}
+                    onClick={() => void act({ action: "feed", plotIndex: selectedPlot.plotIndex })}
+                  >
+                    {feed < 1 ? "No feed left" : "Feed them (1 serving)"}
+                  </button>
+                  {feed < 1 && (
+                    <button
+                      type="button"
+                      className="hs-link-btn"
+                      onClick={() => { tapSound(); setShowStore(true); }}
+                    >
+                      Buy feed at the supply store
+                    </button>
                   )}
-                </button>
-              </div>
-            )}
+                </div>
+              ) : selectedPlot.state === "working" ? (
+                <div className="hs-panel">
+                  <h2>{HOMESTEAD_CATALOGUE[selectedPlot.stock!].label} working</h2>
+                  <p className="hs-countdown">
+                    Ready in {countdownLabel(Date.parse(selectedPlot.readyAt ?? "") - nowMs)}
+                  </p>
+                  <p>
+                    Will yield{" "}
+                    {itemLabel(
+                      HOMESTEAD_YIELDS[selectedPlot.stock!].item,
+                      selectedPlot.yieldQuantity ?? HOMESTEAD_YIELDS[selectedPlot.stock!].quantity,
+                    )}
+                    . Keeps going while you&apos;re away.
+                  </p>
+                  {selectedPlot.hungryAt && (
+                    <p className="hs-note">
+                      Wants feeding in {countdownLabel(Date.parse(selectedPlot.hungryAt) - nowMs)}.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="hs-panel">
+                  <h2>Ready to harvest</h2>
+                  <p>
+                    Goes straight into the barn. Sell it at the supply store whenever the
+                    price suits you.
+                  </p>
+                  <button
+                    type="button"
+                    className="hs-cta hs-sell-btn"
+                    disabled={busy}
+                    onClick={() => void act({ action: "collect", plotIndex: selectedPlot.plotIndex })}
+                  >
+                    Harvest{" "}
+                    {itemLabel(
+                      HOMESTEAD_YIELDS[selectedPlot.stock!].item,
+                      selectedPlot.yieldQuantity ?? HOMESTEAD_YIELDS[selectedPlot.stock!].quantity,
+                    )}
+                  </button>
+                </div>
+              )}
           </section>
+
+          {loaded && (
+            <HomesteadPlotList
+              plots={livePlots}
+              tool={tool}
+              context={context}
+              selected={selected}
+              labelFor={labelFor}
+              onPlotTap={onPlotTap}
+            />
+          )}
         </div>
       </div>
 
@@ -711,11 +927,7 @@ export function HomesteadFarm() {
                   const def = HOMESTEAD_ITEM_CATALOGUE[item];
                   return (
                     <li key={item} className="hs-barn-row">
-                      <img
-                        src={`/homestead/tiles/${def.icon}.png`}
-                        alt=""
-                        aria-hidden="true"
-                      />
+                      <HomesteadIcon name={def.icon as PainterName} size={28} />
                       <span className="hs-barn-name">
                         <strong>{itemLabel(item, quantity)}</strong>
                         <span>{def.price.toLocaleString()} each</span>
@@ -846,8 +1058,10 @@ export function HomesteadFarm() {
       {showHelp && (
         <HowToPlayModal title="StackAcres" onClose={() => setShowHelp(false)}>
           <p>
-            Pick a tool from the belt, then tap a plot. Every plot the tool can work on lights up,
-            so you can see what the farm needs without reading it.
+            The farm is a map. Drag to look around it, pinch or scroll to zoom. Pick a tool from
+            the belt, then tap a plot: every plot the tool can work on lights up, so you can see
+            what the farm needs without reading it. To plant, drag a chip from the seed strip and
+            drop it on an empty plot.
           </p>
           <p>
             The farm runs on <strong>Bushels</strong>, its own currency. Harvests go into the barn
@@ -871,7 +1085,11 @@ export function HomesteadFarm() {
               A finished plot sometimes comes up weather-worn and needs clearing before it can be
               used again.
             </li>
-            <li>Acreage unlocks in order, for Gold. More land means more room, not more income.</li>
+            <li>
+              The thicket at the edge of your land is acreage for sale. Tap the plot with the price
+              on it to clear it; the map grows with every plot you buy. More land means more room,
+              not more income.
+            </li>
           </ul>
         </HowToPlayModal>
       )}

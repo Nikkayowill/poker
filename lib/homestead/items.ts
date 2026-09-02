@@ -44,18 +44,24 @@ export interface HomesteadItemDef {
   /** Singular name. Quantities read "3 Carrots" via `itemLabel`. */
   label: string;
   plural: string;
-  /** Filename under /homestead/tiles, without the extension. */
+  /**
+   * Name of a vector painter in components/arcade/homestead/homestead-art.ts
+   * (its `PainterName` union). Kept as a plain string, same reason as
+   * HomesteadToolDef.icon in ./tools.ts: this file stays free of a
+   * components/ import, and the store casts the name back for
+   * `<HomesteadIcon>`.
+   */
   icon: string;
   /** What the store pays for one, in Bushels. */
   price: number;
 }
 
 export const HOMESTEAD_ITEM_CATALOGUE: Readonly<Record<HomesteadItem, HomesteadItemDef>> = {
-  carrot: { label: "Carrot", plural: "Carrots", icon: "item-carrot", price: 6 },
-  corn: { label: "Corn", plural: "Corn", icon: "item-corn", price: 22 },
-  eggs: { label: "Egg", plural: "Eggs", icon: "item-eggs", price: 9 },
-  wool: { label: "Fleece", plural: "Fleeces", icon: "item-wool", price: 38 },
-  milk: { label: "Milk", plural: "Milk", icon: "item-milk", price: 110 },
+  carrot: { label: "Carrot", plural: "Carrots", icon: "ico-carrot", price: 6 },
+  corn: { label: "Corn", plural: "Corn", icon: "ico-corn", price: 22 },
+  eggs: { label: "Egg", plural: "Eggs", icon: "ico-egg", price: 9 },
+  wool: { label: "Fleece", plural: "Fleeces", icon: "ico-fleece", price: 38 },
+  milk: { label: "Milk", plural: "Milk", icon: "ico-milk", price: 110 },
 };
 
 /** What one finished plot puts in the bag. */

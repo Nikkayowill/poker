@@ -46,6 +46,74 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Homestead: the grid became a 2D sandbox viewport (2026-09-01)
+Kayo's brief: "a major evolution", not a new game -- take the economics as they are (acreage, crops,
+pens) and move them into a fluid world the player drags, zooms and places things in, with the menu
+layer pinned to the screen. **Phaser is back for the Homestead** (`phaser` 3.90.0, exact), which
+reverses his 2026-09-01 "DOM grid, drop Phaser" call; that call was made when the field was a 4x4 of
+buttons, this brief explicitly asks for Phaser scenes. Two layers that never mix: the world is ONE
+Phaser scene (`components/arcade/homestead/homestead-scene.ts`) that fills `.hs-field` and moves when
+dragged; the header, toolbelt, seed strip, detail card, store sheet and modals are all still DOM,
+absolutely positioned over the canvas by `52-homestead.css` -- a `<button>` is reachable by a screen
+reader and a thumb, a Phaser Text is neither. The brief's "UIScene" is that DOM layer, not a second
+Phaser scene. **Nothing on the server changed.** A plot is still `plotIndex` 1-16 bought in ladder
+order; `lib/homestead/world.ts` (pure, 22 tests) only decides WHERE index N is drawn (a 5x5-tile
+square, 4 across, inside a 4-tile forest ring), which plot a world point hits, how far the camera may
+roam, and how the animals wander. "Place the coop anywhere" is therefore "drop it on any empty plot":
+a chip dragged out of the seed strip becomes a ghost that snaps to the empty plot under the finger
+(`setGhost`), and dropping it fires the same `stock` action a tap would. "Buying acreage expands the
+map" is literal -- `acreageBounds` fences the camera to owned plots plus the one for sale plus a ring of
+forest, so a purchase pushes the border out and the camera glides to the new land. Animals are real
+sprites inside fenced pens (3 hens, 2 sheep, 2 cows) driven by `stepCritter`, a pure state machine
+that cannot walk one through a fence (tested over 5,000 steps); hungry pens stand still and grey.
+State/affordance rings, progress bars and the harvest burst are all drawn in the canvas in the same
+colours the CSS used. Things worth keeping: (1) `import * as Phaser` -- the package's ESM build has no
+default export, and `import Phaser from "phaser"` fails only at bundle time; (2) Phaser's own input
+system is switched off entirely (`input: {mouse:false, touch:false, keyboard:false}` in
+`homestead-world.tsx`) and every gesture is read off native `pointerdown/move/up/cancel` listeners
+bound straight to the host element instead — two input layers on one surface would double-handle
+every press; (3) the detail card is a popover hung beside the selected plot -- the scene reports the plot's screen
+rect every frame it moves (`trackPlot`) and `placeDetail` positions the node directly, no state --
+because at phone zoom the map is barely wider than the screen and any fixed corner panel covers plots
+that can never be scrolled out from under it; a `ResizeObserver` re-places it when its own content
+grows (a bought plot's card gets taller on the same spot). Keyboard/screen-reader path is
+`HomesteadPlotList`, sixteen real buttons hidden until focused. The whole packed Tiny Farm sheet
+ships as `public/homestead/tilemap_packed.png` (CC0); frame meanings are `FRAME` in `world.ts`.
+Verified with the memory-mode harness from `[[project_stackchips_homestead_farmhand_adoption]]`
+(`next dev` + minted cookie + admin grant; `localhost`, not `127.0.0.1`, or middleware's origin check
+403s every POST) at 844x390 and 1280x800: tap, drag-place, pan, wheel/button/pinch zoom, buy, reload.
+**Not verified live: ready/hungry/mucked rendering** (needs a 15-minute clock); the code paths are
+the same `buildCell` switch. Open: `suggestedTool` lands a fresh farm on Plant with no seed, so the
+first thing on screen is two red "blocked" rings -- pre-existing behaviour, now more visible.
+
+### Homestead art went vector and the map went open-world (2026-09-02)
+Kayo's brief: "it's 2026, Gameboy graphics aren't it" -- better graphics, keep the smoothness the
+racetrack has, nothing downloaded. Every sprite on the map and every icon in the chrome (toolbelt,
+seed chips, HUD purse/feed, store barn rows) is now a Canvas2D painter
+(`components/arcade/homestead/homestead-art.ts`), baked into a Phaser texture at boot and rendered at
+the browser's own device pixel ratio -- smooth at every zoom, nothing is a pixel and nothing is a
+downloaded asset. `tilemap_packed.png` (the Kenney Tiny Farm sheet) is deleted; the cut PNG tiles under
+`public/homestead/tiles/` stay on disk only because another branch's lobby card reads `cattle.png`
+directly, and nothing in these components references them any more. The map also became genuinely
+open-world: the camera is no longer fenced to the acreage plus a forest ring. Roaming past the farm in
+any direction grows procedural scenery in `HOMESTEAD_CHUNK`-wide chunks (`chunkScenery`, deterministic
+per chunk so it regrows the same trees on return), denser near the farm and thinner far out, with a
+`FARM_ZONE` rectangle kept permanently clear so nothing can grow inside the plot ladder or lean over
+its fence. `lib/homestead/world.ts`'s `acreageBounds` is renamed `ownedBounds` and lost its role as a
+camera fence -- it only frames the opening shot and "back to the farm" now; zoom limits became fixed
+constants (`HOMESTEAD_ZOOM_MIN`/`MAX`) instead of a function of the roamable area, since there is no
+longer a roamable area to fit. The plots, the economy and every server rule are untouched -- this pass
+touched only where things are drawn and what draws them. One trap worth keeping, found shooting the
+QA screenshots: Phaser hears pointer events on the *window*, so a drag that starts on a seed chip and
+then crosses the map would pan the camera out from under its own drop target if it were handled
+through Phaser's own input. Rather than patch that with a target/pointer-id check layered onto
+Phaser's events, `bindInput()` (`homestead-scene.ts`) switches Phaser's input off entirely and reads
+every gesture -- including its own pointer-id bookkeeping, since a stray third finger must be
+rejected and capture/cancel handled by hand -- off native pointer events bound to the host element
+directly. This *replaced* an earlier target-check design built on Phaser's own pointer bookkeeping,
+the same shape of bug as `[[reference_stackchips_phaser_canvas_dom_overlay]]` one layer up -- it isn't
+layered on top of it.
+
 ### Blackjack orphaned-round lockout closed; the "never exercised in prod" claim was stale (2026-09-01)
 A money-path audit queried the live DB rather than trusting this file's own claim that Blackjack's
 Supabase persistence branch had "never been exercised by a real hand in production" — it was stale: 55

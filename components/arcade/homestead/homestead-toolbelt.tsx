@@ -8,6 +8,8 @@ import {
   type AffordanceContext,
   type HomesteadTool,
 } from "@/lib/homestead/tools";
+import type { PainterName } from "./homestead-art";
+import { HomesteadIcon } from "./homestead-icon";
 
 /**
  * The dock: pick a tool, then tap plots.
@@ -18,12 +20,6 @@ import {
  * tool has something to say about, which is what lets you glance at the dock
  * and know the farm needs feeding without reading the field.
  */
-
-/* See homestead-grid.tsx: these are 16x16 pixel-art PNGs, and next/image's
-   resampling is what destroys pixel art. */
-/* eslint-disable @next/next/no-img-element */
-
-const TILES = "/homestead/tiles";
 
 export interface HomesteadToolbeltProps {
   tool: HomesteadTool;
@@ -53,7 +49,7 @@ export function HomesteadToolbelt({ tool, context, onPick }: HomesteadToolbeltPr
             }
             onClick={() => onPick(id)}
           >
-            <img src={`${TILES}/${def.icon}.png`} alt="" aria-hidden="true" />
+            <HomesteadIcon name={def.icon as PainterName} size={22} />
             <span className="hs-tool-label">{def.label}</span>
             {count > 0 && (
               <span className="hs-tool-count" aria-hidden="true">

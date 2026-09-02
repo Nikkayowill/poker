@@ -94,7 +94,10 @@ export async function GET(request: NextRequest) {
             ...standing.stats,
             rank: standing.rank,
             displayName: profile.displayName,
+            initials: profile.initials,
             avatarUrl: profile.avatarUrl,
+            avatarPreset: profile.avatarPreset,
+            avatarCosmetic: profile.equipped.avatar2d,
             accent: profile.accent,
           }
           : null

@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CARD_BACK } from "@/lib/cosmetics/catalog";
 import { assignChipDesign, equipCosmetic, listOwnedCosmetics, purchaseCosmetic } from "./cosmetics-store";
-import { adjustGold, ensureProfile, setUnlimitedGold } from "./profile-store";
+import { adjustGold, ensureProfile, setAdminBadge, setUnlimitedGold } from "./profile-store";
 
 describe("cosmetic ownership (memory mode)", () => {
   it("grants free items to everyone without storing ownership", async () => {
@@ -148,5 +148,34 @@ describe("cosmetic ownership (memory mode)", () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
     await expect(assignChipDesign(token, profile, 7 as never, null)).rejects.toThrow("chip denomination");
+  });
+});
+
+describe("the admin-only avatar (character32)", () => {
+  it("is absent from ownership without the admin badge, and present with it", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    expect(await listOwnedCosmetics(profile.id)).not.toContain("character32");
+    expect(await listOwnedCosmetics(profile.id, { adminBadge: false })).not.toContain("character32");
+    expect(await listOwnedCosmetics(profile.id, { adminBadge: true })).toContain("character32");
+  });
+
+  it("can be equipped only by a profile currently holding the admin badge", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await expect(equipCosmetic(token, profile, "character32")).rejects.toThrow("don't own that item yet");
+
+    await setAdminBadge(profile.id, true);
+    const badged = await ensureProfile(token);
+    const equipped = await equipCosmetic(token, badged, "character32");
+    expect(equipped.avatar2d).toBe("character32");
+  });
+
+  it("can never be bought, badge or not", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await setAdminBadge(profile.id, true);
+    const badged = await ensureProfile(token);
+    await expect(purchaseCosmetic(token, badged, "character32")).rejects.toThrow("earned, not bought");
   });
 });

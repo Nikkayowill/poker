@@ -1,5 +1,6 @@
 import { Lock } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
+import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 
 /**
  * The door. There is nothing to type any more: access is granted per player
@@ -28,9 +29,13 @@ export function HomesteadLock({ playerId }: { playerId: string | null }) {
             <Lock size={20} />
           </span>
           {/* Same class the farm's own screen uses for its title, so the door
-              and the room behind it are named in one voice. */}
+              and the room behind it are named in one voice -- StackAcres now,
+              including the logo: an h1 stays for the a11y tree but the
+              visible mark is the real lockup, same as the farm's own
+              header. */}
           <div className="ante-lobby-heading">
-            <h1>StackChips Homestead</h1>
+            <h1 className="sr-only">StackAcres</h1>
+            <StackAcresLogo className="hs-heading-logo" aria-hidden="true" />
           </div>
           <p>
             A farm of crops and livestock. It is still being built, so it opens one player at a

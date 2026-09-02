@@ -7,8 +7,18 @@ import { ChevronDown, Coins, Crown } from "lucide-react";
 import type { LeaderboardColumn } from "@/lib/leaderboard/contract";
 import { formatRecord, formatStreak, leaderboardTabs } from "@/lib/leaderboard/contract";
 import { selectSound } from "@/lib/audio/ui-sounds";
+import { ProfileAvatar } from "@/components/profile/profile-avatar";
+import type { AvatarPreset } from "@/lib/profile/types";
 
-interface PokerEntry {
+/** The extra identity fields a top-3 row needs to render ProfileAvatar's real portrait instead of the initials disc. Every rank still carries these; only rank <= 3 uses them. */
+interface RankedAvatarIdentity {
+  initials: string;
+  avatarUrl: string | null;
+  avatarPreset: AvatarPreset;
+  avatarCosmetic: string;
+}
+
+interface PokerEntry extends RankedAvatarIdentity {
   profileId: string;
   rank: number;
   displayName: string;
@@ -21,7 +31,7 @@ interface PokerEntry {
   totalChipsWon: number;
 }
 
-interface GenericEntry {
+interface GenericEntry extends RankedAvatarIdentity {
   profileId: string;
   rank: number;
   displayName: string;
@@ -35,7 +45,7 @@ interface QualifyProgress {
   minSample: number;
 }
 
-interface GlobalEntry {
+interface GlobalEntry extends RankedAvatarIdentity {
   profileId: string;
   rank: number;
   displayName: string;
@@ -98,6 +108,17 @@ function Avatar({ displayName, accent }: { displayName: string; accent: string }
       {displayName.slice(0, 2).toUpperCase()}
     </span>
   );
+}
+
+/**
+ * Top 3 get the player's real equipped character portrait, the same art the
+ * table draws at their seat -- everyone else keeps the plain initials disc.
+ * Structure only: this is still the same row shape/slot as `Avatar`, just a
+ * different element filling it.
+ */
+function RankAvatar({ entry }: { entry: RankedAvatarIdentity & { rank: number; displayName: string; accent: string } }) {
+  if (entry.rank > 3) return <Avatar displayName={entry.displayName} accent={entry.accent} />;
+  return <ProfileAvatar profile={entry} className="leaderboard-avatar-photo" />;
 }
 
 function played(entry: { wins: number; losses: number; draws: number }): number {
@@ -181,7 +202,7 @@ function PokerRow({ entry, mine, scope }: { entry: PokerEntry; mine: boolean; sc
   return (
     <div className={clsx("leaderboard-row", mine && "leaderboard-row-mine")}>
       <RankBadge rank={entry.rank} />
-      <Avatar displayName={entry.displayName} accent={entry.accent} />
+      <RankAvatar entry={entry} />
       <span className="leaderboard-name">{entry.displayName}{mine && <em> (you)</em>}</span>
       <span className="leaderboard-stat">{entry.handsPlayed}</span>
       <span className="leaderboard-stat">{entry.handsPlayed > 0 ? Math.round((entry.vpipHands / entry.handsPlayed) * 100) : 0}%</span>
@@ -211,7 +232,7 @@ function GenericRow({ entry, mine, columns }: { entry: GenericEntry; mine: boole
   return (
     <div className={clsx("leaderboard-row", "leaderboard-row-generic", `leaderboard-row-generic-${columns.length}`, mine && "leaderboard-row-mine")}>
       <RankBadge rank={entry.rank} />
-      <Avatar displayName={entry.displayName} accent={entry.accent} />
+      <RankAvatar entry={entry} />
       <span className="leaderboard-name">{entry.displayName}{mine && <em> (you)</em>}</span>
       {columns.map((column) => (
         <span key={column.key} className="leaderboard-stat">{entry.cells[column.key] ?? "—"}</span>
@@ -224,7 +245,7 @@ function GlobalRow({ entry, mine }: { entry: GlobalEntry; mine: boolean }) {
   return (
     <div className={clsx("leaderboard-row", "leaderboard-row-generic", "leaderboard-row-generic-2", mine && "leaderboard-row-mine")}>
       <RankBadge rank={entry.rank} />
-      <Avatar displayName={entry.displayName} accent={entry.accent} />
+      <RankAvatar entry={entry} />
       <span className="leaderboard-name">{entry.displayName}{mine && <em> (you)</em>}</span>
       <span className="leaderboard-stat">{Math.round(entry.globalScore * 100)}</span>
       <span className="leaderboard-stat">{entry.gamesCounted}</span>

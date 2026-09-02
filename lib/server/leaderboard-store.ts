@@ -1,5 +1,7 @@
 import "server-only";
 import { leaderboardGame, type LeaderboardStats } from "@/lib/leaderboard/contract";
+import type { AvatarPreset } from "@/lib/profile/types";
+import { DEFAULT_AVATAR_COSMETIC } from "@/lib/cosmetics/catalog";
 import { listFriendIds } from "./friends-store";
 import { getHeadToHeadSummaries, recordHeadToHeadDuel, recordHeadToHeadTable } from "./head-to-head-store";
 import { getPublicProfilesByIds } from "./profile-store";
@@ -37,7 +39,11 @@ export interface LeaderboardEntry {
   profileId: string;
   rank: number;
   displayName: string;
+  initials: string;
   avatarUrl: string | null;
+  avatarPreset: AvatarPreset;
+  /** Equipped 2D seat-art character id, for a top-3 rank's real portrait on the board. */
+  avatarCosmetic: string;
   accent: string;
   stats: LeaderboardStats;
   cells: Record<string, string>;
@@ -71,7 +77,11 @@ export interface GlobalLeaderboardEntry {
   profileId: string;
   rank: number;
   displayName: string;
+  initials: string;
   avatarUrl: string | null;
+  avatarPreset: AvatarPreset;
+  /** Equipped 2D seat-art character id, for a top-3 rank's real portrait on the board. */
+  avatarCosmetic: string;
   accent: string;
   globalScore: number;
   gamesCounted: number;
@@ -278,7 +288,10 @@ type RankedIdentity = {
   profileId: string;
   rank: number;
   displayName: string;
+  initials: string;
   avatarUrl: string | null;
+  avatarPreset: AvatarPreset;
+  avatarCosmetic: string;
   accent: string;
 };
 
@@ -293,7 +306,10 @@ async function decorateRankedRows<Row extends { profileId: string }, Extra>(
       profileId: row.profileId,
       rank: index + 1,
       displayName: profile?.displayName ?? "Player",
+      initials: profile?.initials ?? "??",
       avatarUrl: profile?.avatarUrl ?? null,
+      avatarPreset: profile?.avatarPreset ?? "ace",
+      avatarCosmetic: profile?.avatarCosmetic ?? DEFAULT_AVATAR_COSMETIC,
       accent: profile?.accent ?? "#e7c66a",
       ...extra(row),
     };

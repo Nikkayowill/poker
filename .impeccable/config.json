@@ -322,6 +322,18 @@
         "reason": "Phaser world-space Text in homestead-scene.ts: 7 world units render at 14-42px on screen under the camera zoom, not a DOM type step"
       },
       {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-09-02T01:15:25.067Z",
+        "reason": "pre-existing: Inter is DESIGN.md's own documented body typeface, not introduced by this edit (my change only appended a .sr-only utility to this file)"
+      },
+      {
+        "rule": "bounce-easing",
+        "value": "cubic-bezier(.2, .9, .25, 1.2)",
+        "createdAt": "2026-09-02T01:15:25.182Z",
+        "reason": "pre-existing: this is DESIGN.md's own documented --ease-overshoot token (purpose: toggle thumb / settling tile), not introduced by this edit"
+      },
+      {
         "rule": "design-system-font-size",
         "value": "6.5px",
         "createdAt": "2026-09-02T04:54:05.238Z",

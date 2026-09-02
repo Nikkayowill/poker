@@ -20,18 +20,28 @@ export async function GET(request: NextRequest) {
   try {
     // Browsing the catalog is not entering the room, so a caller with no
     // session gets it with nothing owned rather than a fresh throwaway
-    // profile. Purchase and equip still require a real session.
+    // profile. Purchase and equip still require a real session. An
+    // admin-only item (Cosmetic.adminOnly) is dropped from the payload
+    // entirely rather than sent as a locked/preview card -- "not in the
+    // catalog" means invisible, not just unbuyable, and a tokenless caller
+    // has no badge to check, so it never sees one either.
     const token = readSessionToken(request);
     if (!token) {
-      return NextResponse.json({ cosmetics, owned: [], equipped: null, profile: null, stats: null });
+      return NextResponse.json({
+        cosmetics: cosmetics.filter((item) => !item.adminOnly),
+        owned: [],
+        equipped: null,
+        profile: null,
+        stats: null,
+      });
     }
     const profile = await ensureProfile(token);
     const [owned, standing] = await Promise.all([
-      listOwnedCosmetics(profile.id),
+      listOwnedCosmetics(profile.id, { adminBadge: profile.adminBadge }),
       getPlayerStanding(profile.id, "lifetime"),
     ]);
     return NextResponse.json({
-      cosmetics,
+      cosmetics: profile.adminBadge ? cosmetics : cosmetics.filter((item) => !item.adminOnly),
       owned,
       equipped: profile.equipped,
       profile,

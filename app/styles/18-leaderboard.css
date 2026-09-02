@@ -208,6 +208,16 @@
   font-weight: 750;
 }
 
+/* Top-3 rows swap the initials disc for ProfileAvatar's real portrait, same
+   slot/size -- .profile-avatar's own CSS (app/styles/03-profile.css) already
+   supplies the circle/border/fallback-monogram styling, this only matches its
+   footprint to what .leaderboard-avatar occupies everywhere else. */
+.profile-avatar.leaderboard-avatar-photo {
+  width: 30px;
+  height: 30px;
+  font-size: 10px;
+}
+
 .leaderboard-name {
   min-width: 0;
   overflow: hidden;

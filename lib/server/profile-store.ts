@@ -21,13 +21,20 @@ interface StoredProfile extends Omit<PlayerProfile, "isRegistered"> {
   lastSeenIp: string | null;
   /** Admin-granted access to the Homestead while it is unreleased. */
   homesteadAccess: boolean;
+  /** Shows "Admin" above this player's seat at the table. Dashboard-granted. */
+  adminBadge: boolean;
 }
 
-/** The admin dashboard's view of a profile: adds the moderation fields publicProfile() omits from every player-facing response. */
+/**
+ * The admin dashboard's view of a profile: adds the moderation fields
+ * publicProfile() omits from every player-facing response. homesteadAccess
+ * is NOT one of them any more -- publicProfile() now carries it too, since
+ * telling a player their own access flag isn't a moderation leak the way
+ * banned/lastSeenIp would be. It stays listed on StoredProfile itself only.
+ */
 export type AdminProfileSummary = PlayerProfile & {
   banned: boolean;
   lastSeenIp: string | null;
-  homesteadAccess: boolean;
 };
 
 function adminProfileView(profile: StoredProfile): AdminProfileSummary {
@@ -35,7 +42,6 @@ function adminProfileView(profile: StoredProfile): AdminProfileSummary {
     ...publicProfile(profile),
     banned: profile.banned,
     lastSeenIp: profile.lastSeenIp,
-    homesteadAccess: profile.homesteadAccess,
   };
 }
 
@@ -89,6 +95,8 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     lastDailyClaimAt: profile.lastDailyClaimAt,
     lastBackstopAt: profile.lastBackstopAt,
     isRegistered: profile.userId !== null,
+    homesteadAccess: profile.homesteadAccess,
+    adminBadge: profile.adminBadge,
   };
 }
 
@@ -100,6 +108,7 @@ function otherPlayerSummary(profile: StoredProfile): PublicProfileSummary {
     initials: profile.initials,
     avatarUrl: profile.avatarUrl,
     avatarPreset: profile.avatarPreset,
+    avatarCosmetic: profile.equipped.avatar2d,
     accent: profile.accent,
   };
 }
@@ -124,6 +133,7 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     banned: false,
     lastSeenIp: null,
     homesteadAccess: false,
+    adminBadge: false,
     lastBackstopAt: null,
   };
 }
@@ -147,6 +157,7 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     banned: Boolean(row.banned),
     lastSeenIp: row.last_seen_ip ? String(row.last_seen_ip) : null,
     homesteadAccess: Boolean(row.homestead_access),
+    adminBadge: Boolean(row.admin_badge),
     lastBackstopAt: row.last_backstop_at ? String(row.last_backstop_at) : null,
   };
 }
@@ -832,6 +843,26 @@ export async function setHomesteadAccess(profileId: string, allowed: boolean): P
     .eq("id", profileId)
     .select("id");
   if (error) throw new Error(`Could not update Homestead access: ${error.message}`);
+  if (!data || data.length === 0) throw new Error("Profile not found.");
+}
+
+/** Puts the "Admin" tag above a profile's seat at the table, or takes it off. */
+export async function setAdminBadge(profileId: string, shown: boolean): Promise<void> {
+  const supabase = adminClient();
+  const now = new Date().toISOString();
+  if (!supabase) {
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) throw new Error("Profile not found.");
+    const [token, current] = entry;
+    memoryProfiles.set(token, { ...current, adminBadge: shown, updatedAt: now });
+    return;
+  }
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ admin_badge: shown, updated_at: now })
+    .eq("id", profileId)
+    .select("id");
+  if (error) throw new Error(`Could not update the admin tag: ${error.message}`);
   if (!data || data.length === 0) throw new Error("Profile not found.");
 }
 

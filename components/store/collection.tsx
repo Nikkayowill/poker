@@ -51,7 +51,7 @@ const SLOTS: { slot: CosmeticSlot; title: string; blurb: string }[] = [
   },
 ];
 
-type AcquisitionGroup = "default" | "earned" | "bought";
+type AcquisitionGroup = "default" | "earned" | "bought" | "admin";
 
 // Avatars split three ways by how you get them -- rarity already lines up
 // 1:1 with this for characters (standard = default, signature = earned,
@@ -62,6 +62,10 @@ const ACQUISITION_GROUPS: { key: AcquisitionGroup; title: string; blurb: string 
   { key: "default", title: "Default", blurb: "Every account starts with these." },
   { key: "earned", title: "Earned", blurb: "Unlocked by playing -- no Gold spent." },
   { key: "bought", title: "Bought", blurb: "Purchased with Gold." },
+  // Only ever rendered for the one profile holding the admin badge -- the
+  // route that supplies `cosmetics` drops every adminOnly item for anyone
+  // else, so this group is simply absent from their screen.
+  { key: "admin", title: "Admin", blurb: "Yours alone." },
 ];
 
 /**
@@ -75,6 +79,7 @@ function equippedKeyFor(slot: CosmeticSlot): "cardBack" | "avatar2d" | null {
 }
 
 function acquisitionGroup(item: Cosmetic): AcquisitionGroup {
+  if (item.adminOnly) return "admin";
   if (item.unlock) return "earned";
   if (typeof item.price === "number" && item.price > 0) return "bought";
   return "default";

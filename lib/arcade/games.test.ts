@@ -33,7 +33,6 @@ describe("arcade catalogue", () => {
       "Memory Match",
       "Minesweeper",
       "Nonogram",
-      "StackChips Homestead",
       "Chess",
       "Checkers",
       "Othello",
@@ -102,40 +101,24 @@ describe("arcade catalogue", () => {
     }
   });
 
-  it("puts the Homestead on the floor, in its own section", () => {
-    const homestead = ARCADE_GAMES.find((entry) => entry.id === "homestead");
-    expect(homestead?.status).toBe("live");
-    expect(homestead?.href).toBe("/games/homestead");
-
-    // Its own bucket, never the wager one. "Beat the board" promises in its
-    // own section note that you can lose the Gold you stake, and the
-    // Homestead has no stake and no losing branch -- filing it there would
-    // make that note false about one of the rows beneath it. What actually
-    // keeps people out is the per-profile grant the routes check, not this
-    // row; see lib/server/homestead-access.ts.
-    const floor = splitArcadeFloor();
-    expect(floor.idle.map((entry) => entry.id)).toContain("homestead");
-    expect(floor.wagers.map((entry) => entry.id)).not.toContain("homestead");
-  });
-
-  it("leaves an access-gated game out of the hub tile's free count", () => {
-    // The hub promises "N free every day". An idle row costs no Gold but opens
-    // only for players an admin has let in, so counting it there promises the
-    // reader something most of them cannot open -- the same class of stale
-    // number this catalogue's header warns about three times.
-    const { free, idle } = splitArcadeFloor();
-    const summary = arcadeFloorSummary();
-    expect(idle.length).toBeGreaterThan(0);
-    expect(summary.free).toBe(free.length + splitArcadeFloor().wagers.length);
-    expect(summary.previewNames).not.toContain("StackChips Homestead");
+  it("keeps the idle bucket empty now that the Homestead has its own card in the play area", () => {
+    // The Homestead moved off this floor entirely -- it has its own tile in
+    // the main lobby now, under Texas Hold'em (components/lobby/lobby.tsx,
+    // components/lobby/mobile-shell.tsx), gated on profile.homesteadAccess
+    // rather than being a catalog row players can even see before they're
+    // let in. `kind: "idle"` and its `floor.idle` bucket stay in the catalog
+    // machinery for whichever future row is genuinely "nothing to lose,
+    // nothing to beat" -- see lib/arcade/games.ts's own doc comment -- so
+    // this just pins that nothing occupies it any more.
+    expect(ARCADE_GAMES.some((entry) => entry.kind === "idle")).toBe(false);
+    expect(splitArcadeFloor().idle).toHaveLength(0);
+    expect(arcadeFloorSummary().previewNames).not.toContain("StackChips Homestead");
   });
 
   it("never puts a price on a daily puzzle, or a floor under a solo wager", () => {
-    // All three are legitimately 0, for different reasons: a puzzle has
-    // nothing to wager, a wager's floor is "free" because the real amount is
-    // picked on the page itself, and an idle row stakes nothing at all -- the
-    // Homestead's 0 is there so the floor never wallet-gates a player out of
-    // a harvest they already grew.
+    // Both are legitimately 0, for different reasons: a puzzle has nothing
+    // to wager, and a wager's floor is "free" because the real amount is
+    // picked on the page itself.
     for (const entry of ARCADE_GAMES) {
       if (entry.kind === "puzzle" || entry.kind === "wager" || entry.kind === "idle") {
         expect(entry.entryCost).toBe(0);

@@ -375,6 +375,8 @@ function restoreBotControl(seat: Seat, identity: number = seat.position) {
   seat.avatarUrl = fallback.avatarUrl;
   seat.avatarPreset = fallback.avatarPreset;
   seat.avatarCosmetic = botAvatarFor(identity);
+  // The tag is the person's, not the chair's.
+  seat.adminBadge = false;
   // The deck goes back with the seat. A player who leaves, or is released
   // for missing three turns, must not leave a 400,000 Gold card back behind
   // for a bot to keep playing with.
@@ -718,7 +720,7 @@ export function createGame(
   appearance?: Pick<
     PlayerProfile,
     "id" | "isRegistered" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped"
-  >,
+  > & { adminBadge?: boolean },
   options?: { isPrivate?: boolean; tier?: StakesTier; buyIn?: number },
 ): GameState {
   const now = new Date().toISOString();
@@ -741,6 +743,7 @@ export function createGame(
       avatarCosmetic: appearance?.equipped?.avatar2d ?? DEFAULT_AVATAR_COSMETIC,
       cardBackCosmetic: appearance?.equipped?.cardBack ?? DEFAULT_CARD_BACK,
       chipDesigns: appearance?.equipped?.chipDesigns ?? {},
+      adminBadge: appearance?.adminBadge ?? false,
       position: 0,
       isHuman: true,
       ownerToken: hostToken,
@@ -856,7 +859,7 @@ export function createHeadsUpGame(
     profile: Pick<
       PlayerProfile,
       "id" | "isRegistered" | "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped"
-    >;
+    > & { adminBadge?: boolean };
   }>,
   tier: StakesTier,
 ): GameState {
@@ -877,6 +880,7 @@ export function createHeadsUpGame(
     avatarCosmetic: entrant.profile.equipped?.avatar2d ?? DEFAULT_AVATAR_COSMETIC,
     cardBackCosmetic: entrant.profile.equipped?.cardBack ?? DEFAULT_CARD_BACK,
     chipDesigns: entrant.profile.equipped?.chipDesigns ?? {},
+    adminBadge: entrant.profile.adminBadge ?? false,
     position: index,
     isHuman: true,
     ownerToken: entrant.token,
@@ -968,7 +972,7 @@ export function createTournamentGame(
     profile: Pick<
       PlayerProfile,
       "id" | "isRegistered" | "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped"
-    >;
+    > & { adminBadge?: boolean };
   }>,
   tier: StakesTier,
 ): GameState {
@@ -989,6 +993,7 @@ export function createTournamentGame(
     avatarCosmetic: profile.equipped.avatar2d,
     cardBackCosmetic: profile.equipped.cardBack,
     chipDesigns: profile.equipped.chipDesigns,
+    adminBadge: profile.adminBadge ?? false,
     position,
     isHuman: true,
     ownerToken: token,
@@ -1075,7 +1080,7 @@ export function claimSeat(
   profile: Pick<
     PlayerProfile,
     "id" | "isRegistered" | "displayName" | "initials" | "accent" | "avatarUrl" | "avatarPreset" | "equipped"
-  >,
+  > & { adminBadge?: boolean },
   buyIn?: number,
 ): { state: GameState; seatIndex: number } {
   const existing = state.seats.findIndex((seat) => seat.ownerToken === token);
@@ -1119,6 +1124,7 @@ export function claimSeat(
   seat.avatarCosmetic = profile.equipped.avatar2d;
   seat.cardBackCosmetic = profile.equipped.cardBack;
   seat.chipDesigns = profile.equipped.chipDesigns;
+  seat.adminBadge = profile.adminBadge ?? false;
   // A claimed seat owns exactly the buy-in the player paid for, including chips
   // this seat already committed before the bot was replaced. Resetting the
   // behind-stack to the full buy-in would mint every posted blind/bet again.

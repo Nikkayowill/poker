@@ -1,5 +1,7 @@
 import "server-only";
 import { randomUUID } from "crypto";
+import type { AvatarPreset } from "@/lib/profile/types";
+import { DEFAULT_AVATAR_COSMETIC } from "@/lib/cosmetics/catalog";
 import { ensureProfile, getPublicProfilesByIds } from "./profile-store";
 import { adminClient } from "./supabase-admin";
 import type { GameState } from "@/lib/game/types";
@@ -23,7 +25,11 @@ export interface PlayerStats {
 export interface LeaderboardEntry extends PlayerStats {
   rank: number;
   displayName: string;
+  initials: string;
   avatarUrl: string | null;
+  avatarPreset: AvatarPreset;
+  /** Equipped 2D seat-art character id, for a top-3 rank's real portrait on the board. */
+  avatarCosmetic: string;
   accent: string;
 }
 
@@ -215,7 +221,10 @@ async function decorate(rows: PlayerStats[]): Promise<LeaderboardEntry[]> {
       ...row,
       rank: index + 1,
       displayName: profile?.displayName ?? "Player",
+      initials: profile?.initials ?? "??",
       avatarUrl: profile?.avatarUrl ?? null,
+      avatarPreset: profile?.avatarPreset ?? "ace",
+      avatarCosmetic: profile?.avatarCosmetic ?? DEFAULT_AVATAR_COSMETIC,
       accent: profile?.accent ?? "#e7c66a",
     };
   });

@@ -18,6 +18,7 @@ import { gameOnSound, tapSound } from "@/lib/audio/ui-sounds";
 import { useArcadeSound } from "./use-arcade-sound";
 import { markEmbeddedFloorNav } from "./floor-back-link";
 import { HowToPlayModal } from "./how-to-play-modal";
+import { GamePreview } from "./game-preview";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 
 /**
@@ -310,6 +311,7 @@ function onPlayClick(embedded: boolean): () => void {
 function FreeCard({ game, embedded }: { game: ArcadeGame; embedded: boolean }) {
   return (
     <article className="floor-card">
+      <GamePreview id={game.id} />
       <strong>{game.name}</strong>
       <small>{game.blurb}</small>
       <Link className="floor-play" href={game.href ?? "/"} onClick={onPlayClick(embedded)}>Play</Link>
@@ -344,6 +346,7 @@ function GameCard({
   const blocked = arcadeBlockedReason(game, wallet);
   return (
     <article className="floor-card">
+      <GamePreview id={game.id} />
       <strong>{game.name}</strong>
       <small>{game.blurb}</small>
       <small className="floor-card-stake">{stakeLabel}</small>
@@ -371,6 +374,7 @@ function StakedRow({ game, wallet, embedded }: { game: ArcadeGame; wallet: Arcad
   const blocked = arcadeBlockedReason(game, wallet);
   return (
     <li className={clsx("floor-row", blocked && "floor-row-blocked")}>
+      <GamePreview id={game.id} />
       <span className="floor-row-identity">
         <strong>{game.name}</strong>
         <small>{game.blurb}</small>

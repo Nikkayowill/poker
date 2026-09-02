@@ -25,13 +25,26 @@ globalThis.__riverRoomCosmetics = memoryOwned;
  * Every cosmetic a profile can currently equip. Free items are granted to
  * everyone implicitly rather than written to the ownership table, so the
  * table only ever holds things that were actually earned or bought.
+ *
+ * `adminBadge` adds admin-only items (`Cosmetic.adminOnly`) the same way --
+ * implicitly, never written to the ownership table -- gated on the caller
+ * telling us whether this profile currently holds the badge. Defaults to
+ * false rather than reading `profile.adminBadge` itself, so every existing
+ * call site (mostly tests, plus avatar-unlocks/achievement-store, none of
+ * which have an admin-only item to worry about) keeps working unchanged;
+ * only the two callers with a real profile in hand and something to gain
+ * from it (the collection route, `equipCosmetic`) opt in.
  */
-export async function listOwnedCosmetics(profileId: string): Promise<string[]> {
+export async function listOwnedCosmetics(
+  profileId: string,
+  options?: { adminBadge?: boolean },
+): Promise<string[]> {
   const free = cosmetics.filter(isFreeCosmetic).map((item) => item.id);
+  const admin = options?.adminBadge ? cosmetics.filter((item) => item.adminOnly).map((item) => item.id) : [];
 
   const supabase = adminClient();
   if (!supabase) {
-    return [...new Set([...free, ...(memoryOwned.get(profileId) ?? [])])];
+    return [...new Set([...free, ...admin, ...(memoryOwned.get(profileId) ?? [])])];
   }
 
   const { data, error } = await supabase
@@ -39,7 +52,7 @@ export async function listOwnedCosmetics(profileId: string): Promise<string[]> {
     .select("cosmetic_id")
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not load your collection: ${error.message}`);
-  return [...new Set([...free, ...(data ?? []).map((row) => String(row.cosmetic_id))])];
+  return [...new Set([...free, ...admin, ...(data ?? []).map((row) => String(row.cosmetic_id))])];
 }
 
 export interface PurchaseResult {
@@ -118,7 +131,7 @@ export async function equipCosmetic(
     throw new Error("Chip designs are assigned per denomination, not equipped directly.");
   }
 
-  const owned = await listOwnedCosmetics(profile.id);
+  const owned = await listOwnedCosmetics(profile.id, { adminBadge: profile.adminBadge });
   if (!owned.includes(cosmeticId)) throw new Error("You don't own that item yet.");
 
   const equipmentKey = item.slot === "avatar" ? "avatar2d" : item.slot;

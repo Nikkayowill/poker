@@ -247,6 +247,97 @@
   box-shadow: 0 6px 16px -4px rgba(255, 210, 63, .6);
 }
 
+/* ---- Game preview: a tiny hand-drawn board/mechanic icon, not a
+   screenshot -- see components/arcade/game-preview.tsx's own header for
+   why. Shared by every card shape below: a .floor-card stacks it above the
+   name, a .floor-row sits it beside the name at a fraction of the size, so
+   the two contexts size it differently rather than the icon itself
+   changing shape. */
+.game-preview { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; }
+.floor-card .game-preview { height: 34px; margin-bottom: 6px; }
+.floor-row .game-preview {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-surface-2);
+  overflow: hidden;
+}
+
+.pv-grid { display: grid; grid-template-columns: repeat(var(--pv-cols), 7px); grid-auto-rows: 7px; gap: 1.5px; }
+.pv-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1.5px;
+  color: var(--neon-ground);
+  font-size: 5px;
+  font-weight: 700;
+  line-height: 1;
+}
+.pv-tone-empty { background: var(--brand-surface-2); }
+.pv-tone-purple { background: var(--neon-purple); }
+.pv-tone-purple-bright { background: var(--neon-purple-bright); }
+.pv-tone-gold { background: var(--neon-yellow); }
+.pv-tone-gold-bright { background: var(--neon-yellow-bright); }
+.pv-tone-chalk { background: var(--neon-chalk); }
+.pv-tone-red { background: var(--brand-red); color: var(--neon-chalk); }
+.pv-tone-black { background: var(--neon-ground); color: var(--neon-chalk); }
+.pv-tone-white { background: var(--neon-chalk); color: var(--neon-ground); }
+
+/* Word Stack / Word Race: a row of letter tiles, bigger than a grid cell
+   since there are only 4-5 of them and they carry a whole glyph each. */
+.pv-tiles { display: flex; align-items: center; gap: 3px; }
+.pv-tiles .pv-cell { width: 12px; height: 12px; border-radius: 2px; font-size: 7px; }
+
+/* Nonogram: clue numbers beside the grid, the one detail that tells it
+   apart from a plain checkerboard. */
+.pv-nonogram { display: flex; align-items: center; gap: 5px; }
+.pv-clues {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  height: 24px;
+  color: var(--neon-muted);
+  font-size: 5px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.pv-cards { position: relative; width: 30px; height: 28px; }
+.pv-card {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 23px;
+  border-radius: 2px;
+  font-size: 7px;
+  font-weight: 700;
+}
+.pv-card-back {
+  top: 1px;
+  left: 0;
+  background: linear-gradient(160deg, var(--neon-purple-deep), var(--neon-purple));
+  box-shadow: 0 0 0 1px rgba(255, 210, 63, .3);
+}
+.pv-card-face { top: 5px; left: 10px; background: var(--neon-chalk); box-shadow: var(--elevation-1); }
+
+.pv-trivia { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.pv-trivia-mark { color: var(--neon-yellow); font: 700 16px Georgia, serif; line-height: 1; }
+.pv-trivia-bar { width: 26px; height: 4px; border-radius: 2px; }
+
+.pv-pegtrack { display: flex; align-items: center; gap: 3px; }
+.pv-peg { width: 6px; height: 6px; border-radius: 50%; background: var(--brand-surface-2); }
+.pv-peg.pv-tone-gold { box-shadow: 0 0 4px var(--neon-yellow); }
+.pv-peg.pv-tone-purple-bright { box-shadow: 0 0 4px var(--neon-purple-bright); }
+
+/* .floor-row is a dense list row -- the tiled/card previews above are sized
+   for a card's own breathing room, so shrink them to fit the 34px swatch
+   the row gives them (only Blackjack uses .floor-row today). */
+.floor-row .pv-cards { width: 26px; height: 24px; }
+.floor-row .pv-card { width: 14px; height: 19px; }
+
 .floor-staked-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 
 .floor-row {

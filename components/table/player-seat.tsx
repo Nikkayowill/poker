@@ -213,6 +213,7 @@ function SeatNameplate({
     return (
       <div className="seat-plate seat-opponent-hud">
         {challenge}
+        {seat.adminBadge && <span className="seat-admin-tag">Admin</span>}
         {seat.isCurrent && hasTurnTimer ? (
           <SeatTimer
             startedAt={turnStartedAt}
@@ -236,6 +237,7 @@ function SeatNameplate({
   return (
     <div className="seat-plate">
       {challenge}
+      {seat.adminBadge && <span className="seat-admin-tag">Admin</span>}
       <div className="seat-name-row">
         <strong>{seat.name}</strong>
         {seat.isMine && <span className="you-chip">You</span>}
@@ -393,6 +395,15 @@ export const PlayerSeat = memo(function PlayerSeat({
       }}
     />
   ) : null;
+  // "Admin" above the head, the way the dealer carries her own label
+  // (`.dealer-label`, poker-table.tsx). Only where there is a head to sit
+  // above: the local seat draws no racetrack art, so its tag stays inside
+  // the plate (`.seat-admin-tag`, rendered by SeatNameplate). The mobile
+  // landscape tier hides this one and shows that one instead, since the
+  // plate itself moves above the portrait there; see 42-racetrack-table.css.
+  const adminLabel = seat.adminBadge && racetrackArt ? (
+    <span className="seat-admin-label" aria-hidden="true">Admin</span>
+  ) : null;
   const nameplate = (
     <SeatNameplate
       seat={seat}
@@ -451,6 +462,7 @@ export const PlayerSeat = memo(function PlayerSeat({
       {figure}
       {cards}
       {racetrackArtEl}
+      {adminLabel}
       {handStrength}
       {nameplate}
       {seat.streetBet > 0 && <span className="table-bet">${seat.streetBet}</span>}

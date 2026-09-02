@@ -62,6 +62,7 @@ const profile: PlayerProfile = {
   lastBackstopAt: null,
   isRegistered: true,
   homesteadAccess: false,
+  adminBadge: false,
 };
 
 describe("the cached profile", () => {

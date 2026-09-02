@@ -21,6 +21,8 @@ interface StoredProfile extends Omit<PlayerProfile, "isRegistered"> {
   lastSeenIp: string | null;
   /** Admin-granted access to the Homestead while it is unreleased. */
   homesteadAccess: boolean;
+  /** Shows "Admin" above this player's seat at the table. Dashboard-granted. */
+  adminBadge: boolean;
 }
 
 /**
@@ -94,6 +96,7 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     lastBackstopAt: profile.lastBackstopAt,
     isRegistered: profile.userId !== null,
     homesteadAccess: profile.homesteadAccess,
+    adminBadge: profile.adminBadge,
   };
 }
 
@@ -130,6 +133,7 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     banned: false,
     lastSeenIp: null,
     homesteadAccess: false,
+    adminBadge: false,
     lastBackstopAt: null,
   };
 }
@@ -153,6 +157,7 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     banned: Boolean(row.banned),
     lastSeenIp: row.last_seen_ip ? String(row.last_seen_ip) : null,
     homesteadAccess: Boolean(row.homestead_access),
+    adminBadge: Boolean(row.admin_badge),
     lastBackstopAt: row.last_backstop_at ? String(row.last_backstop_at) : null,
   };
 }
@@ -838,6 +843,26 @@ export async function setHomesteadAccess(profileId: string, allowed: boolean): P
     .eq("id", profileId)
     .select("id");
   if (error) throw new Error(`Could not update Homestead access: ${error.message}`);
+  if (!data || data.length === 0) throw new Error("Profile not found.");
+}
+
+/** Puts the "Admin" tag above a profile's seat at the table, or takes it off. */
+export async function setAdminBadge(profileId: string, shown: boolean): Promise<void> {
+  const supabase = adminClient();
+  const now = new Date().toISOString();
+  if (!supabase) {
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) throw new Error("Profile not found.");
+    const [token, current] = entry;
+    memoryProfiles.set(token, { ...current, adminBadge: shown, updatedAt: now });
+    return;
+  }
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ admin_badge: shown, updated_at: now })
+    .eq("id", profileId)
+    .select("id");
+  if (error) throw new Error(`Could not update the admin tag: ${error.message}`);
   if (!data || data.length === 0) throw new Error("Profile not found.");
 }
 

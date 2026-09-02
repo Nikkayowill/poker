@@ -46,6 +46,25 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Homestead stocking was broken in production since Phase 2 landed (2026-09-02)
+Kayo hit "Could not stock that plot" live. Root cause: `20260901180000_homestead_inventory.sql`
+made `payout` inert (collections yield produce via the new `yield_quantity` column, not Gold) and
+re-pointed the stocking trigger's ceiling at `yield_quantity` -- but missed the original migration's
+CHECK constraint, `homestead_plots_stock_matches_status`, which still required `payout is not null`
+for a working plot. Nothing has written `payout` since that day, so every stocking UPDATE has set
+status = 'working' with payout still null and the CHECK rejected it outright -- **every stock attempt
+has failed since 2026-09-01**, never caught by the memory-mode suite (it doesn't exercise a real SQL
+CHECK) and apparently never actually attempted in production until now. No Gold/Bushels were at risk:
+`stockHomestead`'s catch block already refunds the seed cost when the database throws. Fixed by
+swapping the constraint's dependency from `payout` to `yield_quantity`
+(`20260902130000_fix_homestead_plot_stock_check.sql`), applied directly to production and verified
+there with a self-cleaning insert/delete against a real row before landing the file. Also fixes a
+smaller trap for next time: a verification INSERT wrapped in a `WITH ... AS (INSERT ... RETURNING)
+DELETE ... WHERE id IN (...)` CTE did not actually delete the row it inserted (left one real test row
+on a real player's profile, caught and cleaned up by hand) -- for a self-cleaning check against a real
+table, verify the leftover count directly rather than trusting the CTE's own RETURNING silently
+returning nothing.
+
 ### Homestead: the grid became a 2D sandbox viewport (2026-09-01)
 Kayo's brief: "a major evolution", not a new game -- take the economics as they are (acreage, crops,
 pens) and move them into a fluid world the player drags, zooms and places things in, with the menu

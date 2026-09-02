@@ -51,6 +51,12 @@ export interface Seat {
    * `lib/cosmetics/catalog.ts`'s `EquippedCosmetics.chipDesigns`.
    */
   chipDesigns?: Partial<Record<number, string>>;
+  /**
+   * Shows "Admin" above this seat, the way the dealer carries her own label.
+   * Copied from the profile when a human sits and cleared when a bot takes
+   * the chair. Optional so tables dealt before it existed stay readable.
+   */
+  adminBadge?: boolean;
   position: number;
   isHuman: boolean;
   /** The session token of the human seated here; null for an open/bot seat. Never sent to clients. */

@@ -378,6 +378,20 @@ describe("server game engine", () => {
     expect(guestView.seats[0].handLabel).toBeNull();
   });
 
+  it("carries the admin tag with the person, not the chair", () => {
+    const state = createGame("host", "Kayo", { ...testProfile("Kayo"), adminBadge: true });
+    expect(state.seats[0].adminBadge).toBe(true);
+    expect(state.seats.slice(1).every((seat) => seat.adminBadge === false)).toBe(true);
+    expect(toSnapshot(state, "host").seats[0].adminBadge).toBe(true);
+
+    const claimed = claimSeat(state, "guest", testProfile("Guest"), 1000);
+    expect(claimed.state.seats[claimed.seatIndex].adminBadge).toBe(false);
+
+    const { state: vacated } = vacateSeat(claimed.state, "host");
+    expect(vacated.seats[0].isHuman).toBe(false);
+    expect(vacated.seats[0].adminBadge).toBe(false);
+  });
+
   it("keeps a busted human's own seat sitting out through the next deal", () => {
     const hostToken = crypto.randomUUID();
     let game = createGame(hostToken, "Host");

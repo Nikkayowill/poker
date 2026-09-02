@@ -62,6 +62,13 @@ export interface PlayerProfile {
    * round-tripping to find out.
    */
   homesteadAccess: boolean;
+  /**
+   * Whether this player's seat carries an "Admin" tag at the poker table,
+   * styled like the dealer's own label. Granted from the admin dashboard,
+   * same as homesteadAccess; it changes nothing about what the account can
+   * do, only how the seat reads to everyone else at the table.
+   */
+  adminBadge: boolean;
 }
 
 /**

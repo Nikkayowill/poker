@@ -19,6 +19,7 @@ function profileWith(overrides: Partial<PlayerProfile>): PlayerProfile {
     lastBackstopAt: null,
     isRegistered: true,
     homesteadAccess: false,
+    adminBadge: false,
     ...overrides,
   };
 }

@@ -230,6 +230,27 @@ export function AdminDashboard() {
     }
   };
 
+  const toggleAdminBadge = async (profile: AdminProfileSummary) => {
+    setPendingId(profile.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/admin-badge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: profile.id, shown: !profile.adminBadge }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not update that profile's admin tag.");
+      setProfiles((current) => current?.map((entry) => (
+        entry.id === profile.id ? { ...entry, adminBadge: !profile.adminBadge } : entry
+      )) ?? null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update that profile's admin tag.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
   const toggleHomestead = async (profile: AdminProfileSummary) => {
     setPendingId(profile.id);
     setError(null);
@@ -684,6 +705,7 @@ export function AdminDashboard() {
               <th>Adjust Gold</th>
               <th>Banned</th>
               <th>Homestead</th>
+              <th>Admin tag</th>
               <th />
               <th>Push</th>
               <th />
@@ -735,6 +757,7 @@ export function AdminDashboard() {
                   </td>
                   <td>{profile.banned ? "Yes" : "No"}</td>
                   <td>{profile.homesteadAccess ? "Yes" : "No"}</td>
+                  <td>{profile.adminBadge ? "Yes" : "No"}</td>
                   <td>
                     <button
                       type="button"
@@ -752,6 +775,15 @@ export function AdminDashboard() {
                       title="Lets this player into the StackChips Homestead while it is unreleased. It is the whole guest list -- there is no code."
                     >
                       {profile.homesteadAccess ? "Close Homestead" : "Open Homestead"}
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-toggle"
+                      disabled={bulkPending || pendingId === profile.id}
+                      onClick={() => void toggleAdminBadge(profile)}
+                      title="Shows an Admin tag above this player's seat at the poker table, styled like the dealer's label. Cosmetic only."
+                    >
+                      {profile.adminBadge ? "Remove Admin tag" : "Give Admin tag"}
                     </button>
                     <button
                       type="button"

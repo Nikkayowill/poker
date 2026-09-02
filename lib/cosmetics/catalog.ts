@@ -55,6 +55,22 @@ export interface Cosmetic {
    * rule as the signature tier below just gated on a lower bar.
    */
   unlock?: { handsWon: number } | { chipsWon: number };
+  /**
+   * Grants equip access to whoever holds the admin badge
+   * (`profile.adminBadge`, see lib/server/profile-store.ts), instead of a
+   * purchase or an unlock threshold. Never for sale (isPurchasable requires
+   * a positive price, so price stays null here same as the earned tier) and
+   * never shown to a player without the badge -- filtered out of the
+   * catalog payload in app/api/cosmetics/route.ts, so it never renders as a
+   * locked/preview card either. Also excluded from `botAvatarCosmetics` and
+   * from the random opponent-seat fallback pool
+   * (`lib/scene/seat-art.ts`'s `ADMIN_ONLY_CHARACTER_IDS`) -- a bot or a
+   * stranger's stale seat must never wear this face. Revoking the badge
+   * does not un-equip an avatar already chosen; it only stops a future
+   * equip from succeeding, the same posture every other admin flag here
+   * takes.
+   */
+  adminOnly?: boolean;
 }
 
 /**
@@ -218,7 +234,13 @@ const cardBackCosmetics: Cosmetic[] = [
  */
 const characterAvatarOffers: Record<
   string,
-  { name: string; description: string; price: number | null; unlock?: Cosmetic["unlock"] }
+  {
+    name: string;
+    description: string;
+    price: number | null;
+    unlock?: Cosmetic["unlock"];
+    adminOnly?: boolean;
+  }
 > = {
   character1: {
     name: "Amara Cole",
@@ -266,6 +288,15 @@ const characterAvatarOffers: Record<
   character29: { name: "Haruto Kessler", description: "Three decades at the table. Still the one to watch.", price: 3_530_000 },
   character30: { name: "Wren Ashby", description: "Ink on her skin, math in her head. Reads you both.", price: 3_800_000 },
   character31: { name: "Cade Osei", description: "Controller in one hand, your stack in the other.", price: 4_080_000 },
+  // Admin-only, not sold or earned -- see Cosmetic.adminOnly's own comment.
+  // Excluded from the priced ladder above and from every ladder/unlock test
+  // on purpose; see the dedicated "admin-only avatar" tests instead.
+  character32: {
+    name: "Kayo",
+    description: "Built the table.",
+    price: null,
+    adminOnly: true,
+  },
 };
 
 /**
@@ -550,12 +581,13 @@ export const characterAvatarCosmetics: Cosmetic[] = SEAT_ART_CHARACTERS.map((cha
     slot: "avatar",
     name: offer.name,
     description: offer.description,
-    // An earned character reads as `signature`, not as a `standard` starter.
-    // Deriving the tier from `price > 0` alone would put the whole earned
-    // ladder in the free bucket, since both carry no Gold price.
-    rarity: offer.unlock ? "signature" : offer.price ? "rare" : "standard",
+    // An earned OR admin-only character reads as `signature`, not as a
+    // `standard` starter. Deriving the tier from `price > 0` alone would put
+    // both in the free bucket, since neither carries a Gold price.
+    rarity: offer.unlock || offer.adminOnly ? "signature" : offer.price ? "rare" : "standard",
     price: offer.price,
     ...(offer.unlock ? { unlock: offer.unlock } : {}),
+    ...(offer.adminOnly ? { adminOnly: true } : {}),
   };
 });
 
@@ -628,9 +660,13 @@ export function botCardBackFor(position: number): string {
  * backs: it says the threshold buys you nothing anyone can see. Gold-priced
  * characters stay in on purpose: a bot wearing one advertises the store,
  * and it's a thing a player can go and get today rather than a claim about
- * their history at this table.
+ * their history at this table. Admin-only characters are excluded too, for
+ * an unrelated reason -- a bot wearing one is not "someone who could look
+ * like this," it's a random opponent wearing a specific real person's face.
  */
-export const botAvatarCosmetics: Cosmetic[] = characterAvatarCosmetics.filter((item) => !item.unlock);
+export const botAvatarCosmetics: Cosmetic[] = characterAvatarCosmetics.filter(
+  (item) => !item.unlock && !item.adminOnly,
+);
 
 /** Items granted to everyone -- free, so never held in the ownership table. */
 export function isFreeCosmetic(item: Cosmetic): boolean {

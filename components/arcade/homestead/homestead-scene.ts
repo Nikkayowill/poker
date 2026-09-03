@@ -143,6 +143,13 @@ export interface PlotScreenRect {
 export interface HomesteadSceneCallbacks {
   onTapPlot: (plotIndex: number) => void;
   onTapGround: () => void;
+  /**
+   * Fired once per plot, in crossing order, as a tool-sweep drag walks over
+   * it -- only for a plot the scene already knows the held tool can act on
+   * (`afford === "act"`); a plot it has no business with is skipped. The
+   * shell runs the same action a tap on that plot would.
+   */
+  onSweepPlot: (plotIndex: number) => void;
   /** Fired once the first frame with plots on it has been drawn. */
   onReady: () => void;
   /**
@@ -277,9 +284,15 @@ interface TrailPoint {
   y: number;
 }
 
-/** One finger down: a press until it has moved TAP_SLOP, a pan after that. */
+/**
+ * One finger down: a press until it has moved TAP_SLOP, then either a pan
+ * (the map moves) or a sweep (the held tool walks across every actionable
+ * plot the finger crosses) -- which one is decided once, at that moment, by
+ * whether the plot under the *original* press was one the tool had business
+ * with.
+ */
 interface DragGesture {
-  kind: "press" | "pan";
+  kind: "press" | "pan" | "sweep";
   id: number;
   x: number;
   y: number;
@@ -287,6 +300,15 @@ interface DragGesture {
   startY: number;
   /** The last ~80ms of movement, which is what the flick is measured from. */
   trail: TrailPoint[];
+  /** The plot under the finger at pointerdown, and what the held tool would
+   *  do there. `null`/`"none"` for a press that started on ground -- that
+   *  always pans, the same as it always has. */
+  startPlot: number | null;
+  startAfford: PlotAffordance["kind"];
+  /** Plots this sweep has already fired on. Only a sweep gesture has one;
+   *  set the moment `kind` becomes `"sweep"`, so re-crossing a plot later in
+   *  the same drag can never trigger it twice. */
+  visited?: Set<number>;
 }
 
 /** Two fingers down: zoom by the gap between them, pan by their midpoint. */
@@ -397,6 +419,13 @@ export class HomesteadScene extends Phaser.Scene {
   private ghost: Phaser.GameObjects.Image | null = null;
   private ghostRing: Phaser.GameObjects.Graphics | null = null;
 
+  /** The held tool's own picture, floating over a finger that is mid-sweep.
+   *  Unlike `ghost` it never snaps to a cell -- a sweep crosses many plots,
+   *  so it just follows the finger. */
+  private toolGhost: Phaser.GameObjects.Image | null = null;
+  private toolGhostTween: Phaser.Tweens.Tween | null = null;
+  private toolIconName: PainterName = "ico-look";
+
   private tracked: number | null = null;
   private trackedKey = "";
 
@@ -411,10 +440,12 @@ export class HomesteadScene extends Phaser.Scene {
 
   create(): void {
     // Every texture is drawn here, at boot: there is no preload and no
-    // network. The icons are skipped -- those are painted straight into DOM
-    // canvases by homestead-icon.tsx and never reach a Phaser texture.
+    // network. Most icons are still painted straight into DOM canvases by
+    // homestead-icon.tsx and never need a Phaser texture -- but the toolbelt
+    // set also has to exist here, as the picture `toolGhost` floats over a
+    // finger mid-sweep, so all of PAINTERS is baked now.
     for (const name of Object.keys(PAINTERS) as PainterName[]) {
-      if (!name.startsWith("ico-")) bakeTexture(this, name);
+      bakeTexture(this, name);
     }
     bakeGrass(this);
 
@@ -434,6 +465,12 @@ export class HomesteadScene extends Phaser.Scene {
       .image(0, 0, "hen", ART_FRAME)
       .setOrigin(0.5, 1)
       .setScale(1.3 / S)
+      .setDepth(9001)
+      .setVisible(false);
+    this.toolGhost = this.add
+      .image(0, 0, this.toolIconName, ART_FRAME)
+      .setOrigin(0.5, 1)
+      .setScale(1.5 / S)
       .setDepth(9001)
       .setVisible(false);
     for (let i = 0; i < 3; i += 1) {
@@ -1566,7 +1603,22 @@ export class HomesteadScene extends Phaser.Scene {
     const fingers = (): Finger[] => [...this.pts.values()];
     const gap = (a: Finger, b: Finger): number => Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
     const mid = (a: Finger, b: Finger): Finger => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-    const oneFinger = (id: number, at: Finger, kind: "press" | "pan"): DragGesture => ({
+    // The one seam a tap, a sweep and the placement ghost all resolve a
+    // finger through: CSS pixels -> device pixels -> scene space -> world
+    // space -> which plot (if any) is there.
+    const resolvePlot = (clientX: number, clientY: number): { index: number | null; scene: { x: number; y: number } } => {
+      const at = toGame(clientX, clientY);
+      const scene = this.cameras.main.getWorldPoint(at.x, at.y);
+      const world = isoUnproject(scene.x, scene.y);
+      return { index: plotIndexAt(world.x, world.y), scene: { x: scene.x, y: scene.y } };
+    };
+    const oneFinger = (
+      id: number,
+      at: Finger,
+      kind: "press" | "pan",
+      startPlot: number | null = null,
+      startAfford: PlotAffordance["kind"] = "none",
+    ): DragGesture => ({
       kind,
       id,
       x: at.x,
@@ -1574,7 +1626,31 @@ export class HomesteadScene extends Phaser.Scene {
       startX: at.x,
       startY: at.y,
       trail: [{ t: performance.now(), x: at.x, y: at.y }],
+      startPlot,
+      startAfford,
     });
+    // Walks every plot the pointer crossed between two screen points, firing
+    // the sweep callback once per newly-entered plot the held tool can act
+    // on. Sampled rather than resolved only at the two endpoints -- a fast
+    // swipe on a phone can put two pointermove events a tile-width or more
+    // apart, and a plot skipped between them would never see the tool.
+    const SWEEP_STEPS = 8;
+    const sweepSegment = (gesture: DragGesture, fromX: number, fromY: number, toX: number, toY: number): void => {
+      if (!gesture.visited) gesture.visited = new Set();
+      const visited = gesture.visited;
+      let last: number | null = null;
+      for (let i = 1; i <= SWEEP_STEPS; i += 1) {
+        const t = i / SWEEP_STEPS;
+        const { index } = resolvePlot(fromX + (toX - fromX) * t, fromY + (toY - fromY) * t);
+        if (index === null || index === last) continue;
+        last = index;
+        if (visited.has(index)) continue;
+        visited.add(index);
+        if (this.cellAfford(index) !== "act") continue;
+        this.pokePlot(index);
+        this.callbacks.onSweepPlot(index);
+      }
+    };
     const startPinch = (): void => {
       const [a, b] = fingers();
       if (!a || !b) return;
@@ -1602,7 +1678,17 @@ export class HomesteadScene extends Phaser.Scene {
       }
       this.pts.set(event.pointerId, { x: event.clientX, y: event.clientY });
       if (this.pts.size === 2) startPinch();
-      else this.gesture = oneFinger(event.pointerId, { x: event.clientX, y: event.clientY }, "press");
+      else {
+        const { index } = resolvePlot(event.clientX, event.clientY);
+        const afford = index === null ? "none" : this.cellAfford(index);
+        this.gesture = oneFinger(
+          event.pointerId,
+          { x: event.clientX, y: event.clientY },
+          "press",
+          index,
+          afford,
+        );
+      }
     };
 
     const move = (event: PointerEvent): void => {
@@ -1634,6 +1720,8 @@ export class HomesteadScene extends Phaser.Scene {
       }
 
       if (event.pointerId !== gesture.id) return;
+      const prevX = gesture.x;
+      const prevY = gesture.y;
       const dx = event.clientX - gesture.x;
       const dy = event.clientY - gesture.y;
       const now = performance.now();
@@ -1647,7 +1735,31 @@ export class HomesteadScene extends Phaser.Scene {
         if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) <= TAP_SLOP) {
           return;
         }
-        gesture.kind = "pan";
+        // A drag that started on a plot the held tool has business with
+        // sweeps that tool across every such plot it crosses, instead of
+        // panning the map -- the same "start on the target" rule a tap
+        // already follows, just given room to run.
+        if (gesture.startAfford === "none") {
+          gesture.kind = "pan";
+        } else {
+          gesture.kind = "sweep";
+          gesture.visited = new Set();
+          if (gesture.startPlot !== null) {
+            gesture.visited.add(gesture.startPlot);
+            if (gesture.startAfford === "act") {
+              this.pokePlot(gesture.startPlot);
+              this.callbacks.onSweepPlot(gesture.startPlot);
+            }
+          }
+          const start = resolvePlot(gesture.startX, gesture.startY);
+          this.showToolGhost(start.scene.x, start.scene.y);
+        }
+      }
+      if (gesture.kind === "sweep") {
+        sweepSegment(gesture, prevX, prevY, event.clientX, event.clientY);
+        const here = resolvePlot(event.clientX, event.clientY);
+        this.moveToolGhost(here.scene.x, here.scene.y);
+        return;
       }
       const cam = this.cameras.main;
       const zoom = this.zoomL();
@@ -1679,12 +1791,13 @@ export class HomesteadScene extends Phaser.Scene {
         if (!cancelled) this.flick(gesture);
         return;
       }
+      if (gesture.kind === "sweep") {
+        this.hideToolGhost();
+        return;
+      }
       // A cancel is a release that never taps.
       if (cancelled) return;
-      const at = toGame(event.clientX, event.clientY);
-      const scene = this.cameras.main.getWorldPoint(at.x, at.y);
-      const world = isoUnproject(scene.x, scene.y);
-      const index = plotIndexAt(world.x, world.y);
+      const { index } = resolvePlot(event.clientX, event.clientY);
       if (index === null) {
         this.callbacks.onTapGround();
         return;
@@ -1835,6 +1948,55 @@ export class HomesteadScene extends Phaser.Scene {
     ghost.setPosition(scene.x, scene.y + 6).setAlpha(0.65);
     ring.setVisible(false);
     return null;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Tool sweep                                                        */
+  /* ---------------------------------------------------------------- */
+
+  /** What the held tool would do at this plot, per the cell picture it was
+   *  last handed -- the same field bindInput's sweep reads to decide whether
+   *  a plot is worth firing on. */
+  private cellAfford(plotIndex: number): PlotAffordance["kind"] {
+    return this.nodes.get(plotIndex)?.cell.afford ?? "none";
+  }
+
+  /** Which tool's picture `toolGhost` shows once a sweep starts. Set from the
+   *  shell whenever the held tool changes; harmless to call before `create()`
+   *  has run, since nothing shows the picture until a sweep actually begins. */
+  setToolIcon(icon: PainterName): void {
+    this.toolIconName = icon;
+    this.toolGhost?.setTexture(icon, ART_FRAME);
+  }
+
+  /** Floats the held tool's own picture above a finger that just turned a
+   *  press into a sweep -- offset up, the way `setGhost` offsets down, so
+   *  the thumb dragging it never covers the art it is answering for. */
+  private showToolGhost(sceneX: number, sceneY: number): void {
+    const ghost = this.toolGhost;
+    if (!ghost) return;
+    ghost.setTexture(this.toolIconName, ART_FRAME).setPosition(sceneX, sceneY - 16).setAngle(0).setVisible(true);
+    if (this.options.reducedMotion || this.toolGhostTween) return;
+    this.toolGhostTween = this.tweens.add({
+      targets: ghost,
+      angle: { from: -7, to: 7 },
+      duration: 260,
+      delay: 260,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+  }
+
+  private moveToolGhost(sceneX: number, sceneY: number): void {
+    this.toolGhost?.setPosition(sceneX, sceneY - 16);
+  }
+
+  private hideToolGhost(): void {
+    this.toolGhost?.setVisible(false);
+    this.toolGhostTween?.stop();
+    this.toolGhostTween = null;
+    this.toolGhost?.setAngle(0);
   }
 
   /* ---------------------------------------------------------------- */

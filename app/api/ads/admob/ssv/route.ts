@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AdmobSsvVerificationError, processAdmobSsvCallback } from "@/lib/server/admob-ssv-service";
+import { enforceRateLimit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,13 @@ export const runtime = "nodejs";
  * Google's own redelivery try again after this server's key cache refreshes.
  */
 export async function GET(request: NextRequest) {
+  // Google's signature check below is the real gate; this is only defense
+  // in depth against a flood of junk requests forcing a signature-key
+  // fetch/verify per hit. Generous, since Google's own SSV traffic can
+  // burst from a shared IP range.
+  const limited = enforceRateLimit(request, "ads:admob:ssv", 120, 60 * 1000);
+  if (limited) return limited;
+
   const rawQuery = request.nextUrl.search.replace(/^\?/, "");
   try {
     const outcome = await processAdmobSsvCallback(rawQuery);

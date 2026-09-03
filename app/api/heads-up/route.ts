@@ -41,6 +41,9 @@ const inviteSchema = z.object({
 const bodySchema = z.discriminatedUnion("action", [quickPlaySchema, inviteSchema]);
 
 export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request, "heads-up:read", 120, 60 * 1000);
+  if (limited) return limited;
+
   const token = readOrCreateSessionToken(request);
   try {
     const mine = await readMyHeadsUpTable(token);

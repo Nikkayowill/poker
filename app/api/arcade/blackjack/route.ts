@@ -33,6 +33,9 @@ const dealSchema = z.union([
  * entirely and withholds the dealer's hole card until the dealer's turn.
  */
 export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request, "arcade:blackjack:read", 120, 60 * 1000);
+  if (limited) return limited;
+
   const token = readOrCreateSessionToken(request);
   try {
     const result = await readBlackjackRound(token);

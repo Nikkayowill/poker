@@ -28,6 +28,9 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
+  const limited = enforceRateLimit(request, "heads-up:table:read", 180, 60 * 1000);
+  if (limited) return limited;
+
   const token = readOrCreateSessionToken(request);
   try {
     const { id } = await context.params;

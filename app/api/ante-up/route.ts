@@ -24,6 +24,9 @@ const startSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request, "ante-up:read", 120, 60 * 1000);
+  if (limited) return limited;
+
   const token = readOrCreateSessionToken(request);
   try {
     return withRequestSessionCookie(request, NextResponse.json(await readAnteUpAttempt(token)), token);

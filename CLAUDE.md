@@ -46,6 +46,21 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Rate-limit coverage gaps closed across 21 routes (2026-09-03)
+An audit walked every `app/api/**/route.ts` against `lib/server/rate-limit.ts` and found two gap
+patterns, not the shared-store refactor the 2026-08-19 entry below already flags (that one's about the
+limiter's in-memory backend; this is about routes that had no limit at all). **Zero coverage**:
+`stripe/webhook`, `ads/admob/ssv`, and the three `cron/*` routes — each gated by a real
+signature/secret check, but nothing capped how often a caller could force that check to run. **A
+rate-limited mutation with an unlimited GET sibling in the same file**: 15 routes (the ante-up/arcade/
+cribbage/heads-up/pvp/sit-and-go lobby and table reads, plus `admin/session`'s GET/DELETE) — these
+don't move Gold but trust only a self-minted session cookie, so they were pollable without limit. Fixed
+with tight caps on the cron routes (they fire ~once/day legitimately), generous defense-in-depth caps
+on the two external callbacks (signature verification is the real gate), and read-tier limits on the 15
+GETs matching the existing `games:read`/`profile:read` convention. **No actual mutation was found
+uncapped** — the loose-looking 600–900/min move endpoints are deliberate, documented turn-frequency
+allowances with idempotent version guards, confirmed rather than assumed. PR #268, merged.
+
 ### Homestead collecting was also broken in production, same Phase 2 landing (2026-09-02)
 Immediately after the stocking fix below unblocked stocking, collecting hit the same class of bug:
 "Could not collect from that plot: Could not find the 'yieldQuantity' column of 'homestead_plots' in
@@ -1017,6 +1032,7 @@ settle once).
   or matching version stamps; see `[[reference_stackchips_migrations_not_auto_applied]]`.
 - Rate limiting is process-local and needs a shared-store refactor across 77 call sites (see the
   2026-08-19 public-launch-readiness entry above) — a real gap, deliberately left for a live-reviewed
-  pass rather than done unsupervised.
+  pass rather than done unsupervised. Separate from that: coverage gaps (routes with no limit at all)
+  were closed 2026-09-03, see below.
 
 Update this section when scope changes; keep `CLAUDE.md` synchronized.

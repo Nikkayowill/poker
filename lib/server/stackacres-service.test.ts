@@ -6,11 +6,13 @@ import {
   StackAcresRequestError,
   buyStackAcresFeed,
   buyStackAcresPlot,
+  buyStackAcresStock,
   clearStackAcresPlot,
   collectStackAcres,
   exchangeStackAcresBushels,
   feedStackAcres,
   readStackAcres,
+  retireStackAcresStock,
   sellStackAcresProduce,
   stockStackAcres,
 } from "./stackacres-service";
@@ -32,6 +34,7 @@ import {
   STACKACRES_PEN_CAP,
   stackacresPlotPrice,
 } from "@/lib/stackacres/catalogue";
+import { stackacresStockPrice } from "@/lib/stackacres/market";
 import {
   STACKACRES_GOLD_CEILING,
   STACKACRES_MAX_EXCHANGE_BUSHELS,
@@ -526,11 +529,23 @@ describe("acreage", () => {
     expect(await bushels(id)).toBe(purse);
   });
 
-  it("refuses to skip ahead in the ladder", async () => {
+  it("sells a plot with a gap beneath it", async () => {
+    // This used to assert the opposite: buying out of order was refused,
+    // because the price doubled per tile and skipping ahead would leave a
+    // cheap tile unbought under a dear one. The price is flat now, so there is
+    // nothing for an order to protect and the rule was removed. What has to
+    // stay true is that ownership may be discontiguous without anything
+    // downstream mis-reading it -- the snapshot walk in plots.ts assumed
+    // contiguity when it picked the single "next purchasable" tile.
     const { token } = await funded();
-    await expect(
-      buyStackAcresPlot(token, STACKACRES_FREE_PLOTS + 2, T0),
-    ).rejects.toBeInstanceOf(StackAcresRequestError);
+    const skipped = STACKACRES_FREE_PLOTS + 1;
+    const bought = STACKACRES_FREE_PLOTS + 2;
+
+    const view = await buyStackAcresPlot(token, bought, T0);
+
+    expect(view.plots[bought - 1].state).toBe("empty");
+    expect(view.plots[skipped - 1].state).toBe("locked");
+    expect(view.plots[skipped - 1].purchasable).toBe(true);
   });
 });
 
@@ -681,6 +696,14 @@ describe("the exchange window", () => {
  * there must be no way IN. A Gold -> Bushels path anywhere would make a round
  * trip through the capped window possible, and a round trip turns a ceiling
  * into a laundry.
+ *
+ * UPDATED when the Gold market shipped. A Gold -> stock -> Bushels path now
+ * exists, and the reasoning above is why it is safe rather than why it is
+ * forbidden: it is priced at 100 Gold per Bushel of seed against an exchange
+ * that pays 2, so the round trip loses on every tier (market.test.ts holds
+ * that) and the ceiling is untouched. The invariant these tests defend is
+ * therefore the DIRECTION, not the count -- Gold may be spent here freely, and
+ * may be paid out only by the exchange window under its flat daily ceiling.
  */
 describe("the currency wall", () => {
   const SERVICE = readFileSync(join(process.cwd(), "lib/server/stackacres-service.ts"), "utf8");
@@ -688,29 +711,49 @@ describe("the currency wall", () => {
 
   const calls = (source: string, fn: string) => source.split(`${fn}(`).length - 1;
 
-  it("moves Gold in exactly two places, both of them known", async () => {
-    // spendGoldByProfile: acreage, once. creditGoldByProfile: the acreage
-    // refund, and the exchange payout. A third call site of either is a new
-    // Gold path -- go and look at it rather than editing this number.
-    expect(calls(SERVICE, "spendGoldByProfile")).toBe(1);
-    expect(calls(SERVICE, "creditGoldByProfile")).toBe(2);
+  it("moves Gold in exactly the places we know about", async () => {
+    // spendGoldByProfile: acreage, and stock bought outright. Two SINKS.
+    // creditGoldByProfile: the acreage refund, the two refund paths in
+    // buyStackAcresStock, and the exchange payout -- so three refunds and one
+    // payout, and a refund can never hand back more than was just taken.
+    //
+    // A new call site of either is a new Gold path. Go and look at it rather
+    // than editing these numbers, and ask the only question that matters:
+    // which DIRECTION does it move Gold? A new spend is a sink. A new credit
+    // that is not a refund is a faucet, and that is the change to stop over.
+    expect(calls(SERVICE, "spendGoldByProfile")).toBe(2);
+    expect(calls(SERVICE, "creditGoldByProfile")).toBe(4);
   });
 
-  it("exposes no action that turns Gold into Bushels", () => {
+  it("exposes exactly one action that pays Gold out", () => {
     const actions = [...ROUTE.matchAll(/z\.literal\("([a-z-]+)"\)/g)].map((m) => m[1]).sort();
     // Adding an action means editing this list, which is the point: the
     // question to answer while doing it is "does this move Gold, and which
-    // way". Nothing here may pay OUT Bushels for Gold.
+    // way".
     expect(actions).toEqual([
       "buy-feed",
       "buy-plot",
+      "buy-stock",
       "clear",
       "collect",
       "exchange",
       "feed",
+      "retire",
       "sell",
       "stock",
     ]);
+
+    // The claim that actually matters, held separately from the list so it
+    // cannot be lost in a rename: `exchange` is the only action that pays a
+    // player Gold. `buy-plot` and `buy-stock` spend it; everything else moves
+    // Bushels or produce, neither of which leaves the farm.
+    const paysGold = ["exchange"];
+    const spendsGold = ["buy-plot", "buy-stock"];
+    for (const action of actions) {
+      if (paysGold.includes(action) || spendsGold.includes(action)) continue;
+      expect(SERVICE.includes(`"${action}"`)).toBe(false);
+    }
+    expect(actions).toEqual(expect.arrayContaining([...paysGold, ...spendsGold]));
   });
 
   it("never credits Bushels for spending Gold", async () => {
@@ -737,5 +780,282 @@ describe("the free grid", () => {
     const { token, id } = await funded(500_000, SPROUT.seedCost);
     await stockStackAcres(token, { plotIndex: 1, stock: "sprout" }, T0);
     expect(await bushels(id)).toBe(0);
+  });
+});
+
+/**
+ * BOUGHT STOCK. The Gold market added a second way for Gold to enter the farm,
+ * and these hold the two things that makes safe: the Gold genuinely leaves the
+ * purse (and comes back on every failure path), and buying an animal never
+ * pays anybody anything.
+ *
+ * The wall the rest of this file guards still stands and is asserted here from
+ * the other side: collecting from bought stock must not move Gold either. The
+ * ONLY action that credits Gold is the exchange window.
+ */
+describe("buying stock outright", () => {
+  it("charges the listed price and stands the animal on the plot", async () => {
+    const { token } = await funded();
+    const before = await balance(token);
+
+    const view = await buyStackAcresStock(token, { plotIndex: 1, stock: "hen" }, T0);
+
+    expect(await balance(token)).toBe(before - stackacresStockPrice("hen"));
+    const plot = view.plots[0];
+    expect(plot.state).toBe("working");
+    expect(plot.stock).toBe("hen");
+    expect(plot.permanent).toBe(true);
+  });
+
+  it("spends no Bushels: the seed price is the OTHER way to get one", async () => {
+    const { token, id } = await funded();
+    const before = await bushels(id);
+    await buyStackAcresStock(token, { plotIndex: 1, stock: "cattle" }, T0);
+    expect(await bushels(id)).toBe(before);
+  });
+
+  it("refuses when the purse is short, and charges nothing", async () => {
+    const { token } = await funded(stackacresStockPrice("cattle") - 1);
+    const before = await balance(token);
+
+    await expect(
+      buyStackAcresStock(token, { plotIndex: 1, stock: "cattle" }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(before);
+    expect((await readStackAcres(token, T0)).plots[0].state).toBe("empty");
+  });
+
+  it("refunds the Gold when the guarded write is lost", async () => {
+    const { token } = await funded();
+    const before = await balance(token);
+    vi.mocked(stockStackAcresPlot).mockResolvedValueOnce(null);
+
+    await expect(
+      buyStackAcresStock(token, { plotIndex: 1, stock: "cattle" }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("refunds the Gold when the database refuses outright", async () => {
+    // Stands in for the cap trigger raising, which the memory branch cannot
+    // do. The same gap once skipped a refund entirely on the Bushel path.
+    const { token } = await funded();
+    const before = await balance(token);
+    vi.mocked(stockStackAcresPlot).mockRejectedValueOnce(new Error("trigger said no"));
+
+    await expect(buyStackAcresStock(token, { plotIndex: 1, stock: "cattle" }, T0)).rejects.toThrow(
+      "trigger said no",
+    );
+
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("counts against the same pen cap a planting does, without charging", async () => {
+    const { token } = await funded();
+    for (let i = 1; i <= STACKACRES_PEN_CAP; i += 1) {
+      await buyStackAcresStock(token, { plotIndex: i, stock: "hen" }, T0);
+    }
+    const before = await balance(token);
+
+    await expect(
+      buyStackAcresStock(token, { plotIndex: STACKACRES_PEN_CAP + 1, stock: "hen" }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("will not stand stock on a plot that is not owned yet", async () => {
+    const { token } = await funded();
+    const locked = STACKACRES_FREE_PLOTS + 1;
+    const before = await balance(token);
+
+    await expect(
+      buyStackAcresStock(token, { plotIndex: locked, stock: "hen" }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(before);
+  });
+});
+
+describe("collecting from bought stock", () => {
+  it("re-sows itself instead of emptying the plot", async () => {
+    const { token } = await funded();
+    await buyStackAcresStock(token, { plotIndex: 1, stock: "hen" }, T0);
+
+    const view = await collectStackAcres(token, 1, HEN_READY);
+
+    const plot = view.plots[0];
+    expect(plot.state).toBe("working");
+    expect(plot.stock).toBe("hen");
+    expect(plot.permanent).toBe(true);
+    expect(plot.startedAt).toBe(HEN_READY.toISOString());
+    expect(plot.readyAt).toBe(new Date(HEN_READY.getTime() + HEN.durationMs).toISOString());
+  });
+
+  it("yields the same produce a sown plot would", async () => {
+    const { token, id } = await funded();
+    await buyStackAcresStock(token, { plotIndex: 1, stock: "hen" }, T0);
+
+    const before = await held(id, HEN_YIELD.item);
+    await collectStackAcres(token, 1, HEN_READY);
+
+    expect(await held(id, HEN_YIELD.item)).toBe(before + HEN_YIELD.quantity);
+  });
+
+  it("never mucks, however the dice fall", async () => {
+    // Muck is the cost of turning a field over between plantings and a bought
+    // animal is never between plantings. Forced to the worst roll so this is
+    // not passing by luck.
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      const { token } = await funded();
+      await buyStackAcresStock(token, { plotIndex: 1, stock: "hen" }, T0);
+      const view = await collectStackAcres(token, 1, HEN_READY);
+      expect(view.collected.mucked).toBe(false);
+      expect(view.plots[0].state).not.toBe("mucked");
+    } finally {
+      roll.mockRestore();
+    }
+  });
+
+  it("still moves no Gold, which is the wall this whole file guards", async () => {
+    const { token } = await funded();
+    await buyStackAcresStock(token, { plotIndex: 1, stock: "hen" }, T0);
+    const before = await balance(token);
+
+    await collectStackAcres(token, 1, HEN_READY);
+
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("keeps a sown plot emptying exactly as it always did", async () => {
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    try {
+      const { token } = await funded();
+      await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+      const view = await collectStackAcres(token, 1, HEN_READY);
+      expect(view.plots[0].state).toBe("empty");
+      expect(view.plots[0].permanent).toBe(false);
+    } finally {
+      roll.mockRestore();
+    }
+  });
+});
+
+describe("the harvest ledger", () => {
+  it("flags a bought plot, so its notional seed cost is not read as a real one", async () => {
+    // `stake` on a bought plot is the catalogue's Bushel price and NOBODY PAID
+    // IT -- the plot was bought once, in Gold. The column cannot be 0 (it
+    // carries check (stake > 0)), so the flag is the only thing standing
+    // between an economy dashboard and a systematic understatement of what the
+    // farm nets.
+    const { token } = await funded();
+    await buyStackAcresStock(token, { plotIndex: 1, stock: "hen" }, T0);
+    await collectStackAcres(token, 1, HEN_READY);
+
+    const [entry] = __stackacresHarvestsForTest();
+    expect(entry.permanent).toBe(true);
+    expect(entry.stake).toBe(HEN.seedCost);
+  });
+
+  it("leaves a sown plot unflagged, because its seed cost was real", async () => {
+    const { token } = await funded();
+    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+    await collectStackAcres(token, 1, HEN_READY);
+
+    const [entry] = __stackacresHarvestsForTest();
+    expect(entry.permanent).toBe(false);
+    expect(entry.stake).toBe(HEN.seedCost);
+  });
+});
+
+describe("retiring bought stock", () => {
+  it("frees the plot and refunds nothing", async () => {
+    const { token } = await funded();
+    await buyStackAcresStock(token, { plotIndex: 1, stock: "cattle" }, T0);
+    const spent = await balance(token);
+
+    const view = await retireStackAcresStock(token, 1, T0);
+
+    expect(view.plots[0].state).toBe("empty");
+    expect(view.plots[0].permanent).toBe(false);
+    expect(await balance(token)).toBe(spent);
+  });
+
+  it("lets a capped player swap what they keep", async () => {
+    const { token } = await funded();
+    for (let i = 1; i <= STACKACRES_PEN_CAP; i += 1) {
+      await buyStackAcresStock(token, { plotIndex: i, stock: "hen" }, T0);
+    }
+    await retireStackAcresStock(token, 1, T0);
+
+    const view = await buyStackAcresStock(token, { plotIndex: 1, stock: "cattle" }, T0);
+    expect(view.plots[0].stock).toBe("cattle");
+  });
+
+  it("will not touch a plot that was sown with Bushels", async () => {
+    // A planting has its seed already sunk into it and a harvest coming;
+    // retiring is for bought stock only.
+    const { token } = await funded();
+    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+
+    await expect(retireStackAcresStock(token, 1, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect((await readStackAcres(token, T0)).plots[0].state).toBe("working");
+  });
+
+  it("will not touch an empty plot", async () => {
+    const { token } = await funded();
+    await expect(retireStackAcresStock(token, 1, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+  });
+});
+
+describe("buying land", () => {
+  it("sells any locked plot, in any order", async () => {
+    // The ladder used to force strict order because the price doubled. Buying
+    // the last tile first is the whole point of flattening it.
+    const { token } = await funded();
+    const last = 16;
+    const before = await balance(token);
+
+    const view = await buyStackAcresPlot(token, last, T0);
+
+    expect(await balance(token)).toBe(before - (stackacresPlotPrice(last) ?? 0));
+    expect(view.plots[last - 1].state).toBe("empty");
+    // The tile below it is still locked and still for sale.
+    expect(view.plots[last - 2].state).toBe("locked");
+    expect(view.plots[last - 2].purchasable).toBe(true);
+  });
+
+  it("charges the same for the first bought plot as the last", async () => {
+    const { token } = await funded();
+    const first = STACKACRES_FREE_PLOTS + 1;
+
+    const beforeCheap = await balance(token);
+    await buyStackAcresPlot(token, first, T0);
+    const cheap = beforeCheap - (await balance(token));
+
+    const beforeDear = await balance(token);
+    await buyStackAcresPlot(token, 16, T0);
+    const dear = beforeDear - (await balance(token));
+
+    expect(cheap).toBe(dear);
+  });
+
+  it("still refuses to sell the same plot twice", async () => {
+    const { token } = await funded();
+    const index = STACKACRES_FREE_PLOTS + 1;
+    await buyStackAcresPlot(token, index, T0);
+    const before = await balance(token);
+
+    await expect(buyStackAcresPlot(token, index, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
   });
 });

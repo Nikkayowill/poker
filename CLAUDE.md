@@ -46,6 +46,44 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Gold finally buys something in StackAcres; daily ceiling 5k -> 15k (2026-09-03)
+Kayo: "if I were a regular user I'd feel frustrated I couldn't use the Gold I won from skills, ante up
+and poker tables." He was right -- Gold bought acreage and nothing else, so a player arriving with a
+season of winnings could buy an empty field and then had to grind Sprout Rows at 8 Bushels a cycle to
+put anything on it. Now every animal and crop is buyable outright for Gold at **one rule: 100 Gold per
+Bushel of its seed price** (Sprout 1,000 / Hen 2,500 / Cash Crop 6,000 / Sheep 15,000 / Cattle
+60,000). Deliberately NOT scaled by how many you own -- an earlier draft did that and made "how much
+is a cow" unanswerable without knowing your own farm, which is exactly the anxiety this design avoids.
+Land went flat at 10,000 a plot and is now buyable **in any order**: the old doubling ladder
+(2,500 -> 5.12M) was the only reason strict order existed, since without it a cheap tile could strand
+under a dear one. Bought stock is **permanent** -- it re-sows itself at collection, never empties,
+never mucks -- which is what makes 600 Bushels and 60,000 Gold honest prices for the same animal: one
+buys a cycle, the other buys the cow. Feeding still costs Bushels, so the tending loop survives.
+Each district sells its own shelf (cattle at the meadow, pigs at the wallow, cash crop at the ox
+fields, seed and hens in the yard), which is what finally gives the roads a destination. `retire`
+exists so three permanent cattle filling the pen cap is not a trap; it refunds nothing and says so
+twice before acting.
+
+**The rule that changed, and it is the one to read before touching this again.** `stackacres-service.ts`
+and the actions route both carried "there must never be a third Gold path -- a Gold->Bushels round trip
+would launder Gold through the capped window." That reasoning only holds when the inbound rate is at
+least as good as the outbound one. At 100 Gold/Bushel in against 2 Gold/Bushel out, every round trip
+returns under 10% on every tier (`market.test.ts` holds it). **The invariant is the DIRECTION, not the
+count: a new path that SPENDS Gold is a sink, a new one that PAYS Gold is the change to stop over.**
+The existing tripwire test that counts `spendGoldByProfile`/`creditGoldByProfile` call sites fired when
+this broke it, which is what it was for -- it was updated deliberately, not silenced.
+
+**Ceiling raised 5,000 -> 15,000/day** (migration `20260903130000`, APPLIED to prod 2026-09-03 along
+with `20260903120000`). The original 5,000 was sized against the other faucets because the farm had
+nothing to spend Gold on; now that a Cattle Pen is 60,000 it is a net sink for anyone building one, and
+5,000/day made payback long enough that buying looked irrational. **Flatness is still the invariant --
+it must never scale with land, stock, Bushels held, Gold held, or trading skill.** Honest arithmetic:
+3x per player per day, ~5.5M/yr for someone who maxes it daily and never misses. Safe to apply before
+the code deployed because `p_ceiling` can only tighten -- the old build passes 5000 and keeps the old
+limit until replaced. Also fixed in passing: `homestead_harvests.stake` would have recorded a notional
+600-Bushel seed cost nobody paid on bought plots, understating the farm in any economy dashboard; it
+cannot be 0 (`check (stake > 0)`), so a `permanent` flag travels on the ledger row instead.
+
 ### Homestead is renamed StackAcres everywhere, and the map got four districts (2026-09-03)
 
 Kayo: "isolate this into mainly nailing the map design so the world doesnt feel empty... change

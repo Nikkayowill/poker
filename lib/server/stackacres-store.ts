@@ -81,7 +81,7 @@ export class StackAcresPlotExists extends Error {
 }
 
 const PLOT_COLUMNS =
-  "id, profile_id, plot_index, status, stock, stake, yield_quantity, started_at, ready_at, last_fed_at, muck_fee, version, created_at";
+  "id, profile_id, plot_index, status, stock, stake, yield_quantity, started_at, ready_at, last_fed_at, muck_fee, permanent, version, created_at";
 
 interface PlotDbRow {
   id: string;
@@ -95,6 +95,7 @@ interface PlotDbRow {
   ready_at: string | null;
   last_fed_at: string | null;
   muck_fee: number | string | null;
+  permanent: boolean | null;
   version: number | string;
   created_at: string;
 }
@@ -118,6 +119,10 @@ function fromRow(row: PlotDbRow): StoredStackAcresPlot {
     readyAt: row.ready_at ? String(row.ready_at) : null,
     lastFedAt: row.last_fed_at ? String(row.last_fed_at) : null,
     muckFee: row.muck_fee === null ? null : Number(row.muck_fee),
+    // Coalesced rather than asserted: rows written before the column existed
+    // read back null, and a null there means "sown with Bushels", which is
+    // exactly what every pre-existing row was.
+    permanent: row.permanent === true,
     version: Number(row.version),
     createdAt: String(row.created_at),
   };
@@ -198,6 +203,7 @@ export async function createStackAcresPlot(
       readyAt: null,
       lastFedAt: null,
       muckFee: null,
+      permanent: false,
       version: 1,
       createdAt: now,
     };
@@ -264,6 +270,8 @@ export async function stockStackAcresPlot(
     startedAt: Date;
     readyAt: Date;
     lastFedAt: Date | null;
+    /** True when this was bought outright with Gold rather than sown. */
+    permanent?: boolean;
   },
 ): Promise<StoredStackAcresPlot | null> {
   const supabase = adminClient();
@@ -277,6 +285,7 @@ export async function stockStackAcresPlot(
     readyAt: entry.readyAt.toISOString(),
     lastFedAt: entry.lastFedAt ? entry.lastFedAt.toISOString() : null,
     muckFee: null,
+    permanent: entry.permanent === true,
     version,
   };
 
@@ -299,6 +308,7 @@ export async function stockStackAcresPlot(
       ready_at: next.readyAt,
       last_fed_at: next.lastFedAt,
       muck_fee: null,
+      permanent: next.permanent,
       version,
     })
     .eq("id", current.id)
@@ -363,24 +373,66 @@ export async function feedStackAcresPlot(
  * null sends it back to empty. Passed in rather than decided here so the roll
  * happens exactly once per settlement attempt that wins.
  */
+/**
+ * Settles a ready plot, exactly once, and decides what the tile becomes next.
+ *
+ * TWO OUTCOMES, and which one applies is the caller's decision, passed in
+ * rather than derived here:
+ *
+ *   * `restartReadyAt === null` -- the plot was SOWN with Bushels. Its seed is
+ *     consumed by its own harvest, so the tile goes back to empty, or to
+ *     mucked when the caller's roll says so. This is the behaviour that has
+ *     always existed and it is unchanged.
+ *   * `restartReadyAt` set -- the stock was BOUGHT OUTRIGHT with Gold. The
+ *     animal does not leave when you take the milk, so the row stays working,
+ *     keeps its stock, stake and yield, and simply starts its next cycle now.
+ *     `last_fed_at` is deliberately NOT touched: a cow collected at the end of
+ *     a 24h cycle is already hours past its last feed and should be hungry
+ *     immediately. Resetting it would hand out a free serving on every
+ *     collection and quietly delete the feed sink.
+ *
+ * The guard is identical in both branches and is what makes a double-tapped
+ * collection pay once: version, status and a database-side `ready_at` check,
+ * so a fast-forwarded phone clock settles nothing.
+ */
 export async function collectStackAcresPlot(
   current: StoredStackAcresPlot,
   now: Date,
   muckFee: number | null,
+  restartReadyAt: Date | null = null,
 ): Promise<StoredStackAcresPlot | null> {
   const supabase = adminClient();
   const version = current.version + 1;
-  const cleared = {
-    status: (muckFee === null ? "empty" : "mucked") as "empty" | "mucked",
-    stock: null,
-    stake: null,
-    yieldQuantity: null,
-    startedAt: null,
-    readyAt: null,
-    lastFedAt: null,
-    muckFee,
-    version,
-  };
+
+  // Permanent stock never mucks. Muck is the cost of turning a field over
+  // between plantings, and a bought animal is never between plantings -- so a
+  // caller passing both a restart and a fee is asking for something incoherent
+  // and the restart wins. The service does not do this; the coalesce is here
+  // so the row can never end up 'working' with a muck fee on it, which would
+  // break homestead_plots_muck_fee_matches_status.
+  const next = restartReadyAt
+    ? {
+        status: "working" as const,
+        stock: current.stock,
+        stake: current.stake,
+        yieldQuantity: current.yieldQuantity,
+        startedAt: now.toISOString(),
+        readyAt: restartReadyAt.toISOString(),
+        lastFedAt: current.lastFedAt,
+        muckFee: null,
+        version,
+      }
+    : {
+        status: (muckFee === null ? "empty" : "mucked") as "empty" | "mucked",
+        stock: null,
+        stake: null,
+        yieldQuantity: null,
+        startedAt: null,
+        readyAt: null,
+        lastFedAt: null,
+        muckFee,
+        version,
+      };
 
   if (!supabase) {
     const stored = memoryPlots.get(current.id);
@@ -393,7 +445,7 @@ export async function collectStackAcresPlot(
     ) {
       return null;
     }
-    const updated: StoredStackAcresPlot = { ...stored, ...cleared };
+    const updated: StoredStackAcresPlot = { ...stored, ...next };
     memoryPlots.set(current.id, clone(updated));
     return clone(updated);
   }
@@ -401,14 +453,14 @@ export async function collectStackAcresPlot(
   const { data, error } = await supabase
     .from("homestead_plots")
     .update({
-      status: cleared.status,
-      stock: null,
-      stake: null,
-      yield_quantity: null,
-      started_at: null,
-      ready_at: null,
-      last_fed_at: null,
-      muck_fee: muckFee,
+      status: next.status,
+      stock: next.stock,
+      stake: next.stake,
+      yield_quantity: next.yieldQuantity,
+      started_at: next.startedAt,
+      ready_at: next.readyAt,
+      last_fed_at: next.lastFedAt,
+      muck_fee: next.muckFee,
       version,
     })
     .eq("id", current.id)
@@ -418,6 +470,68 @@ export async function collectStackAcresPlot(
     .select(PLOT_COLUMNS)
     .maybeSingle();
   if (error) throw new Error(`Could not collect from that plot: ${error.message}`);
+  return data ? fromRow(data as PlotDbRow) : null;
+}
+
+/**
+ * Sends bought stock away and empties the plot. No refund -- see
+ * STACKACRES_RETIRE_REFUND.
+ *
+ * This exists so the pen cap can never trap anybody. Permanent stock occupies
+ * its plot forever by design, and three permanent cattle fill the livestock
+ * cap; without a way out, a player who bought three could never keep anything
+ * else, and the purchase would be a trap rather than a prize.
+ *
+ * Guarded on version and on the plot still being permanent, so it can never
+ * bulldoze a Bushel planting the player is mid-way through -- that has its own
+ * cost already sunk into it and its own harvest coming.
+ */
+export async function retireStackAcresPlot(
+  current: StoredStackAcresPlot,
+): Promise<StoredStackAcresPlot | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const stored = memoryPlots.get(current.id);
+    if (!stored || !stored.permanent || stored.version !== current.version) return null;
+    const updated: StoredStackAcresPlot = {
+      ...stored,
+      status: "empty",
+      stock: null,
+      stake: null,
+      yieldQuantity: null,
+      startedAt: null,
+      readyAt: null,
+      lastFedAt: null,
+      muckFee: null,
+      permanent: false,
+      version,
+    };
+    memoryPlots.set(current.id, clone(updated));
+    return clone(updated);
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_plots")
+    .update({
+      status: "empty",
+      stock: null,
+      stake: null,
+      yield_quantity: null,
+      started_at: null,
+      ready_at: null,
+      last_fed_at: null,
+      muck_fee: null,
+      permanent: false,
+      version,
+    })
+    .eq("id", current.id)
+    .eq("version", current.version)
+    .eq("permanent", true)
+    .select(PLOT_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not retire that stock: ${error.message}`);
   return data ? fromRow(data as PlotDbRow) : null;
 }
 
@@ -640,10 +754,18 @@ export interface StackAcresHarvestEntry {
   profileId: string;
   plotIndex: number;
   stock: StackAcresStock;
+  /**
+   * The seed cost in Bushels. NOTIONAL when `permanent` is true: bought stock
+   * pays nothing per cycle, so this is the catalogue's price rather than money
+   * that changed hands. It cannot simply be 0 -- the column carries
+   * `check (stake > 0)` -- which is exactly why the flag below exists.
+   */
   stake: number;
   payout: number;
   startedAt: string;
   collectedAt: string;
+  /** True when this came off stock bought outright with Gold. */
+  permanent: boolean;
 }
 
 /**
@@ -667,6 +789,7 @@ export async function recordStackAcresHarvest(entry: StackAcresHarvestEntry): Pr
     payout: entry.payout,
     started_at: entry.startedAt,
     collected_at: entry.collectedAt,
+    permanent: entry.permanent,
   });
   if (error) console.error("stackacres.harvest_ledger_failed", { entry, error });
 }

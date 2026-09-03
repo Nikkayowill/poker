@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { STACKACRES_CATALOGUE, STACKACRES_FREE_PLOTS, stackacresPlotPrice } from "./catalogue";
+import {
+  STACKACRES_CATALOGUE,
+  STACKACRES_FREE_PLOTS,
+  STACKACRES_GRID_PLOTS,
+  STACKACRES_PLOT_PRICE,
+  stackacresPlotPrice,
+} from "./catalogue";
 import { STACKACRES_STOCK, STACKACRES_YIELDS, netPerCycle, yieldValue } from "./items";
 import {
   hungryAtFor,
@@ -12,6 +18,24 @@ import {
 const T0 = new Date("2026-08-31T12:00:00.000Z");
 const CATTLE = STACKACRES_CATALOGUE.cattle;
 
+/** An owned but unplanted plot -- what buying acreage leaves behind. */
+function emptyRow(over: Partial<StackAcresPlotRow> = {}): StackAcresPlotRow {
+  return {
+    plotIndex: 1,
+    status: "empty",
+    stock: null,
+    stake: null,
+    yieldQuantity: null,
+    startedAt: null,
+    readyAt: null,
+    lastFedAt: null,
+    muckFee: null,
+    permanent: false,
+    version: 1,
+    ...over,
+  };
+}
+
 function workingRow(over: Partial<StackAcresPlotRow> = {}): StackAcresPlotRow {
   return {
     plotIndex: 1,
@@ -23,6 +47,7 @@ function workingRow(over: Partial<StackAcresPlotRow> = {}): StackAcresPlotRow {
     readyAt: new Date(T0.getTime() + CATTLE.durationMs).toISOString(),
     lastFedAt: T0.toISOString(),
     muckFee: null,
+    permanent: false,
     version: 1,
     ...over,
   };
@@ -40,10 +65,36 @@ describe("the grid", () => {
     expect(plots[STACKACRES_FREE_PLOTS].unlockPrice).toBe(stackacresPlotPrice(STACKACRES_FREE_PLOTS + 1));
   });
 
-  it("marks exactly one locked plot buyable, the cheapest unowned one", () => {
+  it("marks every locked plot buyable, in any order", () => {
+    // This used to assert exactly one was buyable -- the cheapest unowned tile
+    // -- because the price doubled per tile and an order was the only thing
+    // stopping a cheap plot being stranded under a dear one. The price is flat
+    // now, so every locked tile is for sale and a player can buy the corner
+    // they actually want.
     const plots = toStackAcresPlotSnapshots([], T0);
-    expect(plots.filter((plot) => plot.purchasable)).toHaveLength(1);
-    expect(plots.find((plot) => plot.purchasable)?.plotIndex).toBe(STACKACRES_FREE_PLOTS + 1);
+    const buyable = plots.filter((plot) => plot.purchasable);
+
+    expect(buyable).toHaveLength(STACKACRES_GRID_PLOTS - STACKACRES_FREE_PLOTS);
+    expect(buyable.every((plot) => plot.state === "locked")).toBe(true);
+    expect(buyable[0].plotIndex).toBe(STACKACRES_FREE_PLOTS + 1);
+    expect(buyable[buyable.length - 1].plotIndex).toBe(STACKACRES_GRID_PLOTS);
+
+    // A free plot is never "for sale": it is already yours.
+    expect(plots.slice(0, STACKACRES_FREE_PLOTS).some((plot) => plot.purchasable)).toBe(false);
+  });
+
+  it("keeps the rest of the grid for sale around a plot bought out of order", () => {
+    const owned = STACKACRES_FREE_PLOTS + 3;
+    const plots = toStackAcresPlotSnapshots(
+      [emptyRow({ plotIndex: owned })],
+      T0,
+    );
+
+    expect(plots[owned - 1].state).toBe("empty");
+    expect(plots[owned - 1].purchasable).toBe(false);
+    // The gap beneath it is still locked and still buyable.
+    expect(plots[owned - 2].state).toBe("locked");
+    expect(plots[owned - 2].purchasable).toBe(true);
   });
 
   it("surfaces a mucked plot with its fee and nothing else", () => {
@@ -127,10 +178,13 @@ describe("the catalogue's own arithmetic", () => {
     }
   });
 
-  it("doubles the acreage price per tile and sells nothing outside the grid", () => {
+  it("charges one flat price per tile and sells nothing outside the grid", () => {
     expect(stackacresPlotPrice(STACKACRES_FREE_PLOTS)).toBeNull();
     expect(stackacresPlotPrice(17)).toBeNull();
-    expect(stackacresPlotPrice(STACKACRES_FREE_PLOTS + 1)).toBe(2_500);
-    expect(stackacresPlotPrice(STACKACRES_FREE_PLOTS + 2)).toBe(5_000);
+    // Flat, not doubling: every locked tile is the same price, which is what
+    // lets them be bought in any order at all.
+    expect(stackacresPlotPrice(STACKACRES_FREE_PLOTS + 1)).toBe(STACKACRES_PLOT_PRICE);
+    expect(stackacresPlotPrice(STACKACRES_FREE_PLOTS + 2)).toBe(STACKACRES_PLOT_PRICE);
+    expect(stackacresPlotPrice(STACKACRES_GRID_PLOTS)).toBe(STACKACRES_PLOT_PRICE);
   });
 });

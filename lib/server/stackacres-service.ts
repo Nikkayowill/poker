@@ -37,6 +37,7 @@ import {
   stackacresExchangeDay,
   type StackAcresExchangeState,
 } from "@/lib/stackacres/exchange";
+import { stackacresStockPrice } from "@/lib/stackacres/market";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
@@ -56,6 +57,7 @@ import {
   readStackAcresInventory,
   recordStackAcresHarvest,
   reserveStackAcresExchange,
+  retireStackAcresPlot,
   stockStackAcresPlot,
   type StoredStackAcresPlot,
 } from "./stackacres-store";
@@ -69,25 +71,37 @@ import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profil
  *   * **Bushels** are the farm's own money. Seed, feed and muck are priced in
  *     them, produce sells for them, and they never leave the StackAcres. A bug
  *     in any of it costs a save state, not money.
- *   * **Gold** touches the farm in exactly TWO places, and there must never be
- *     a third: buyStackAcresPlot spends it on acreage, and
- *     exchangeStackAcresBushels pays it out at the daily window, under a flat
- *     per-player ceiling. Nothing else here may move Gold. If a future change
- *     adds a third Gold path, that is the thing to stop and think about,
- *     because the farm's maximum Gold output being a flat constant is what
- *     keeps this out of the category Ante Up was in when it printed money.
- *     There is deliberately no Gold -> Bushels path in either direction other
- *     than acreage: a round trip would let a player launder Gold through the
- *     capped window and back, which is a second faucet wearing a sink's coat.
+ *   * **Gold** moves in exactly THREE places, and the asymmetry between them
+ *     is the whole safety story. TWO SPEND: buyStackAcresPlot buys acreage and
+ *     buyStackAcresStock buys an animal or a crop outright. ONE PAYS:
+ *     exchangeStackAcresBushels, at the daily window, under a flat per-player
+ *     ceiling. Nothing else here may move Gold.
+ *
+ *     An earlier version of this comment said there must never be a third Gold
+ *     path at all, on the grounds that Gold -> Bushels would let a player
+ *     launder Gold through the capped window and back. That reasoning only
+ *     holds when the inbound rate is at least as good as the outbound one.
+ *     STACKACRES_GOLD_PER_SEED_BUSHEL is 100 against an exchange that pays 2,
+ *     so a round trip returns a fraction of what it cost on every tier --
+ *     market.test.ts holds that -- and the outbound ceiling is untouched. What
+ *     genuinely must never change is the direction of the asymmetry: adding a
+ *     path that PAYS Gold is the thing to stop over. Adding one that spends it
+ *     is a sink.
+ *
+ *     The honest consequence, worth knowing before tuning anything: bought
+ *     stock makes the existing 5,000/day ceiling reliably reachable where it
+ *     used to take constant attention. Nobody takes out more than they could
+ *     before; the ceiling is still what bounds every player's total draw.
  *
  * A StackAcres plot is a *guaranteed* win -- nothing here can lose your seed,
  * animals go hungry but never die -- so the ordering discipline every staked
  * service restates still applies, now mostly to Bushels:
  *
  *   1. **The money leaves the purse before the thing it pays for exists.**
- *      A plot purchase debits Gold before the row inserts; a planting debits
- *      Bushels before the guarded write; feed debits before the servings land.
- *      Either write failing refunds.
+ *      A plot purchase debits Gold before the row inserts; buying stock debits
+ *      Gold before the plot turns working; a planting debits Bushels before
+ *      the guarded write; feed debits before the servings land. Either write
+ *      failing refunds.
  *   2. **Produce is credited only after the version-guarded harvest write is
  *      confirmed.** collectStackAcresPlot returns null on a lost race, a stale
  *      version, or a not-actually-ready row, and null must never pay: the
@@ -106,7 +120,7 @@ import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profil
  * timestamps, and it lives in exactly one place: rollMuck, called once inside
  * collect, after the guarded write has confirmed which row settled. Rolling it
  * anywhere a read can reach would let a player reroll it by pulling to
- * refresh.
+ * refresh. Bought stock is not rolled at all -- see collectStackAcres.
  */
 
 /** Refuses a StackAcres request in a way the player can act on. */
@@ -164,9 +178,13 @@ export async function readStackAcres(token: string, now = new Date()): Promise<S
 }
 
 /**
- * Buys the next locked plot. Plots unlock strictly in ladder order -- the
- * doubling prices assume it -- so the request names the plot only to confirm
- * the player bought the tile they were looking at.
+ * Buys one locked plot, at the flat price, IN ANY ORDER.
+ *
+ * There used to be an order here: the loop below walked the ladder and refused
+ * a gap. That rule only ever existed because the price doubled per tile, so
+ * without it a cheap tile could be left unbought beneath a dear one. The price
+ * is flat now, nothing is left for an order to protect, and a player buying
+ * the corner of the grid they actually want is the point of the change.
  */
 export async function buyStackAcresPlot(
   token: string,
@@ -181,13 +199,6 @@ export async function buyStackAcresPlot(
 
   const owned = await listStackAcresPlots(profile.id);
   const ownedIndexes = new Set(owned.map((plot) => plot.plotIndex));
-  for (let index = STACKACRES_FREE_PLOTS + 1; index < plotIndex; index += 1) {
-    if (!ownedIndexes.has(index)) {
-      throw new StackAcresRequestError("Plots unlock in order. Buy the cheaper one first.", 409, {
-        round: toStackAcresPlotSnapshots(owned, now),
-      });
-    }
-  }
   if (ownedIndexes.has(plotIndex)) {
     throw new StackAcresRequestError("You already own this plot.", 409, {
       round: toStackAcresPlotSnapshots(owned, now),
@@ -215,6 +226,152 @@ export async function buyStackAcresPlot(
   }
 
   return view(debited, now);
+}
+
+/**
+ * Buys an animal or a crop OUTRIGHT, with Gold, and stands it on a plot.
+ *
+ * The difference from stockStackAcres, and the reason both exist: a planting
+ * costs Bushels and is CONSUMED by its own harvest, so the tile goes back to
+ * empty and you sow it again. Bought stock costs Gold, is permanent, and
+ * re-sows itself forever -- you own the cow, you do not own one cow-cycle.
+ * That is what makes 60,000 Gold and 600 Bushels honest prices for the same
+ * animal: they are not the same thing.
+ *
+ * Cash on the counter. Nothing here is financed, there is no balance and no
+ * credit -- the Gold either leaves the purse now or the sale does not happen.
+ *
+ * Rule 1 throughout: the Gold is debited before the plot turns working, and
+ * every failure path after that refunds it. A lost race refunds; a database
+ * refusal refunds; a cap violation is caught before the debit ever happens.
+ */
+export async function buyStackAcresStock(
+  token: string,
+  input: { plotIndex: number; stock: string },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const plotIndex = parsePlotIndex(input.plotIndex);
+  if (!isStackAcresStock(input.stock)) throw new StackAcresRequestError("Not a real stock.", 400);
+  const stock: StackAcresStock = input.stock;
+  const def = STACKACRES_CATALOGUE[stock];
+  const price = stackacresStockPrice(stock);
+  const profile = await ensureProfile(token);
+
+  const plot =
+    plotIndex <= STACKACRES_FREE_PLOTS
+      ? await ensureFreePlotRow(profile.id, plotIndex)
+      : await getStackAcresPlot(profile.id, plotIndex);
+  if (!plot) {
+    throw new StackAcresRequestError("Buy this plot first.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  if (plot.status === "mucked") {
+    throw new StackAcresRequestError("Clear this plot first.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  if (plot.status !== "empty") {
+    throw new StackAcresRequestError("Something is already working here.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Checked before the debit so a capped player is never charged, and enforced
+  // for real by the advisory-locked trigger, which two racing buys cannot
+  // squeeze past. Bought stock counts toward the same caps as a planting -- it
+  // stands on the same plot and eats the same hours.
+  const animal = isLivestock(stock);
+  const working = await countWorkingStackAcresPlots(profile.id, STACKACRES_LIVESTOCK, animal);
+  const cap = capFor(stock);
+  if (working >= cap) {
+    throw new StackAcresRequestError(
+      animal
+        ? `Your hands can only tend ${cap} pens at once. Retire one first.`
+        : `You can only have ${cap} fields growing at once. Harvest one first.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error --
+  // spendGoldByProfile is the authority.
+  const debited = await spendGoldByProfile(profile.id, price);
+  if (!debited) {
+    throw new StackAcresRequestError(`A ${def.label} costs ${price.toLocaleString()} Gold.`, 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const produce = STACKACRES_YIELDS[stock];
+  let stocked: StoredStackAcresPlot | null;
+  try {
+    stocked = await stockStackAcresPlot(plot, {
+      stock,
+      // The Bushel seed cost is still what lands in `stake`. Nothing reads it
+      // as money any more (payout went inert two migrations ago) and the
+      // column is required for a working row, so writing the catalogue's own
+      // figure keeps the ledger describing what is standing there. The Gold
+      // price is deliberately NOT stored: it is spent, gone, and re-derivable
+      // from the stock whenever it is needed.
+      stake: def.seedCost,
+      yieldQuantity: produce.quantity,
+      startedAt: now,
+      readyAt: new Date(now.getTime() + def.durationMs),
+      lastFedAt: def.hungerMs === null ? null : now,
+      permanent: true,
+    });
+  } catch (error) {
+    // The database refused and nothing came into existence, so the player must
+    // not have paid for it.
+    await creditGoldByProfile(profile.id, price).catch(() => null);
+    throw error;
+  }
+  if (!stocked) {
+    // Lost the guarded write: same rule, the Gold goes back.
+    await creditGoldByProfile(profile.id, price).catch(() => null);
+    throw new StackAcresRequestError("That plot moved on.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return view(debited, now);
+}
+
+/**
+ * Sends bought stock away and frees the plot. NO REFUND, and the UI has to say
+ * so before it asks -- see STACKACRES_RETIRE_REFUND.
+ *
+ * This is not an undo. It exists because permanent stock holds its plot
+ * forever and three permanent cattle fill the livestock cap: without a way
+ * out, buying three would lock a player out of ever keeping anything else and
+ * the prize would be a trap. Refunding would make a plot somewhere to park
+ * Gold and take it back out again, which is the one shape this subsystem is
+ * built not to have.
+ */
+export async function retireStackAcresStock(
+  token: string,
+  plotIndexInput: number,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const plotIndex = parsePlotIndex(plotIndexInput);
+  const profile = await ensureProfile(token);
+
+  const plot = await getStackAcresPlot(profile.id, plotIndex);
+  if (!plot || !plot.permanent) {
+    throw new StackAcresRequestError("There is nothing here to retire.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const retired = await retireStackAcresPlot(plot);
+  if (!retired) {
+    throw new StackAcresRequestError("That plot moved on.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return view(profile, now);
 }
 
 /**
@@ -671,9 +828,16 @@ export async function collectStackAcres(
   }
 
   const stock = plot.stock as StackAcresStock;
-  const muckFee = rollMuck(stock);
+  // Bought stock never mucks and never empties: the animal stays and starts
+  // its next cycle the moment you take what it made. Muck is the cost of
+  // turning a field over between plantings, and there is no gap between
+  // plantings here to charge for.
+  const muckFee = plot.permanent ? null : rollMuck(stock);
+  const restartReadyAt = plot.permanent
+    ? new Date(now.getTime() + STACKACRES_CATALOGUE[stock].durationMs)
+    : null;
 
-  const settled = await collectStackAcresPlot(plot, now, muckFee);
+  const settled = await collectStackAcresPlot(plot, now, muckFee, restartReadyAt);
   if (!settled) {
     // Rule 2: a lost race did not happen; whoever won it was paid instead.
     throw new StackAcresRequestError("That plot moved on.", 409, {
@@ -715,6 +879,10 @@ export async function collectStackAcres(
     payout: STACKACRES_ITEM_CATALOGUE[item].price * quantity,
     startedAt: plot.startedAt ?? now.toISOString(),
     collectedAt: now.toISOString(),
+    // Bought stock spends no Bushels per cycle, so `stake` above is notional
+    // for these rows. The flag is what lets a dashboard tell the difference
+    // rather than counting a seed price nobody paid.
+    permanent: plot.permanent,
   });
 
   return { ...(await view(profile, now)), collected };

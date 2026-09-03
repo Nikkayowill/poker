@@ -24,18 +24,34 @@
 /**
  * Gold a single player may take out of the farm in one UTC day.
  *
- * Sized against the faucets that already exist rather than against what the
- * farm can produce, because that is the comparison that matters: the daily
- * grant is 1,000 x up to a 2.5 streak multiplier, rewarded ads are 500 x 6 =
- * 3,000, and the backstop is 1,000 per 12h. 5,000 sits alongside those, and
- * below the ~7,500/day the pre-Bushels StackAcres paid out with no cap at all.
+ * FLAT, and that is the property worth defending -- not the number. It does
+ * not scale with land owned, stock owned, Bushels held, Gold held, or how well
+ * anybody traded. Skill decides how fast the day's bucket fills; nothing
+ * decides how big it is.
+ *
+ * Raised 5,000 -> 15,000 on 2026-09-03 (Kayo's call), when the Gold market
+ * gave the farm real prices to pay. The original 5,000 was sized purely
+ * against the other faucets -- the daily grant at 1,000 x up to a 2.5 streak
+ * multiplier, rewarded ads at 500 x 6 = 3,000, the backstop at 1,000 per 12h
+ * -- because at the time the farm had nothing to spend Gold ON and its output
+ * was pure addition to the money supply. That changed: a Cattle Pen is now
+ * 60,000 Gold and a full grid of land is 120,000, so the farm is a net SINK
+ * for anyone building one, and a 5,000/day outlet made the payback long enough
+ * that buying anything looked irrational.
+ *
+ * The trade it makes, stated plainly so nobody has to rediscover it: this is
+ * three times the Gold per player per day, up to ~5.5M a year for somebody who
+ * maxes it every single day. What bounds the damage is that it is still FLAT
+ * and still per-player -- a thousand players cannot each take more than one
+ * can, and no amount of farm makes any one of them take more than another.
  *
  * MIRRORED IN SQL. `reserve_homestead_exchange` carries its own copy as a hard
  * ceiling, so this constant can only ever tighten the limit, never raise it --
- * raising the farm's Gold faucet takes a deliberate migration. Keep the two in
- * step; the SQL one is the authority.
+ * raising the farm's Gold faucet takes a deliberate migration, which is why
+ * this change has one (20260903130000). Keep the two in step; the SQL one is
+ * the authority.
  */
-export const STACKACRES_GOLD_CEILING = 5_000;
+export const STACKACRES_GOLD_CEILING = 15_000;
 
 /**
  * Gold per Bushel at the window.

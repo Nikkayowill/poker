@@ -44,6 +44,7 @@ import {
   type StackAcresTool,
 } from "@/lib/stackacres/tools";
 import type { ZoneId } from "@/lib/stackacres/zones";
+import { STACKACRES_STALLS, stallShelf } from "@/lib/stackacres/market";
 import type { PainterName } from "./stackacres-art";
 import { StackAcresPlotList, StackAcresSeedStrip } from "./stackacres-grid";
 import { StackAcresIcon } from "./stackacres-icon";
@@ -128,6 +129,8 @@ interface StackAcresResponse {
 type Action =
   | { action: "buy-plot"; plotIndex: number }
   | { action: "stock"; plotIndex: number; stock: StackAcresStock }
+  | { action: "buy-stock"; plotIndex: number; stock: StackAcresStock }
+  | { action: "retire"; plotIndex: number }
   | { action: "collect"; plotIndex: number }
   | { action: "feed"; plotIndex: number }
   | { action: "clear"; plotIndex: number }
@@ -235,6 +238,9 @@ export function StackAcresFarm() {
    * and clears to null the moment they choose somewhere else.
    */
   const [place, setPlace] = useState<ZoneId | null>("farmstead");
+  // Which plot is mid-"are you sure" for retiring. Never a plain confirm():
+  // retiring refunds nothing, so it has to be two deliberate taps.
+  const [retiring, setRetiring] = useState<number | null>(null);
   const placement = useRef<Placement | null>(null);
   /** Plots a tool-sweep drag has crossed, waiting their turn at `act` -- see
    *  `drainSweep`. */
@@ -389,6 +395,12 @@ export function StackAcresFarm() {
   );
 
   const selectedPlot = selected === null ? null : (livePlots.find((p) => p.plotIndex === selected) ?? null);
+
+  // Disarm the retire confirmation the moment the selection moves, so it can
+  // never be left armed on a plot the player has since walked away from and
+  // come back to. Derived rather than stored in an effect: an armed plot that
+  // is no longer the selected one is simply not armed.
+  const retireArmed = retiring !== null && retiring === selected;
 
   /**
    * One tap, routed by the held tool. Look opens the panel; every other tool
@@ -873,7 +885,10 @@ export function StackAcresFarm() {
                   <h2>Buy acreage</h2>
                   {selectedPlot.purchasable && selectedPlot.unlockPrice !== null ? (
                     <>
-                      <p>Clear the thicket and push the fence line out. Land is permanent.</p>
+                      <p>
+                        Clear the thicket and push the fence line out. Every plot costs the same,
+                        and you can buy them in any order — take the corner you want.
+                      </p>
                       <button
                         type="button"
                         className="sa-cta"
@@ -887,7 +902,7 @@ export function StackAcresFarm() {
                       )}
                     </>
                   ) : (
-                    <p>Acreage sells in order. Buy the plot with the price on it first.</p>
+                    <p>This plot is not for sale.</p>
                   )}
                 </div>
               ) : selectedPlot.state === "mucked" ? (
@@ -917,8 +932,47 @@ export function StackAcresFarm() {
                     pick it and tap here. Fields and pens have their own limits.
                   </p>
                   <button type="button" className="sa-cta" onClick={() => pickTool("plant")}>
-                    Plant something
+                    Sow with Bushels
                   </button>
+
+                  {/* The Gold shelf. Only what THIS district sells, which is
+                      what gives the roads somewhere to go -- cattle are out in
+                      the meadow, pigs are in the wallow. Bought stock is
+                      permanent: it re-sows itself and never needs buying
+                      again, which is the difference the two prices are for. */}
+                  {place !== null && (
+                    <div className="sa-shelf">
+                      <h3 className="sa-shelf-head">{STACKACRES_STALLS[place].label}</h3>
+                      <p className="sa-shelf-blurb">{STACKACRES_STALLS[place].blurb}</p>
+                      {stallShelf(place).map((item) => (
+                        <button
+                          key={item.stock}
+                          type="button"
+                          className="sa-cta sa-cta-gold"
+                          disabled={busy || balance < item.price}
+                          onClick={() =>
+                            void act({
+                              action: "buy-stock",
+                              plotIndex: selectedPlot.plotIndex,
+                              stock: item.stock,
+                            })
+                          }
+                        >
+                          Buy {item.label} — {item.price.toLocaleString()} Gold
+                        </button>
+                      ))}
+                      <p className="sa-note">
+                        Bought outright and yours for good: it starts its next run the moment you
+                        collect, and never needs sowing again. Animals still want feeding.
+                      </p>
+                      {stallShelf(place).some((item) => balance < item.price) && (
+                        <GoldShortfallHint
+                          needed={Math.min(...stallShelf(place).map((item) => item.price))}
+                          compact
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : selectedPlot.state === "hungry" ? (
                 <div className="sa-panel">
@@ -964,6 +1018,47 @@ export function StackAcresFarm() {
                       Wants feeding in {countdownLabel(Date.parse(selectedPlot.hungryAt) - nowMs)}.
                     </p>
                   )}
+                  {selectedPlot.permanent && (
+                    <>
+                      <p className="sa-note sa-owned">
+                        Yours outright. It starts again on its own every time you collect.
+                      </p>
+                      {retireArmed ? (
+                        <>
+                          <p className="sa-note">
+                            Sending them away frees the plot and refunds nothing. You would have to
+                            buy again.
+                          </p>
+                          <button
+                            type="button"
+                            className="sa-cta sa-retire-confirm"
+                            disabled={busy}
+                            onClick={() => {
+                              setRetiring(null);
+                              void act({ action: "retire", plotIndex: selectedPlot.plotIndex });
+                            }}
+                          >
+                            Yes, send them away
+                          </button>
+                          <button
+                            type="button"
+                            className="sa-link-btn"
+                            onClick={() => { tapSound(); setRetiring(null); }}
+                          >
+                            Keep them
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="sa-link-btn"
+                          onClick={() => { tapSound(); setRetiring(selectedPlot.plotIndex); }}
+                        >
+                          Send them away to free the plot
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="sa-panel">
@@ -971,6 +1066,11 @@ export function StackAcresFarm() {
                   <p>
                     Goes straight into the barn. Sell it at the supply store whenever the
                     price suits you.
+                  </p>
+                  <p className="sa-note">
+                    {selectedPlot.permanent
+                      ? "Yours outright, so the plot starts its next run straight away — nothing to re-sow."
+                      : "The plot goes back to bare ground afterwards, ready to sow again."}
                   </p>
                   <button
                     type="button"

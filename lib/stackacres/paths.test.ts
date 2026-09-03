@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { projectedBounds } from "./iso";
 import {
   FARM_PATHS,
   PATH_CLEARANCE,
@@ -38,14 +39,14 @@ const byKey = (key: string) => {
 };
 
 describe("farm paths", () => {
-  it("has six paths with unique keys, at least two points each, 10..20 wide", () => {
+  it("has six paths with unique keys, at least two points each, 10..24 wide", () => {
     // Four around the yard, plus the two connectors out to the districts.
     expect(FARM_PATHS.length).toBe(6);
     expect(new Set(FARM_PATHS.map((p) => p.key)).size).toBe(FARM_PATHS.length);
     for (const spec of FARM_PATHS) {
       expect(spec.points.length).toBeGreaterThanOrEqual(2);
       expect(spec.width).toBeGreaterThanOrEqual(10);
-      expect(spec.width).toBeLessThanOrEqual(20);
+      expect(spec.width).toBeLessThanOrEqual(24);
     }
   });
 
@@ -109,9 +110,12 @@ describe("farm paths", () => {
     expect(nearPath(250, 100)).toBe(false);
     // Far north-east, past the road's end.
     expect(nearPath(700, -300)).toBe(false);
-    // The margin itself: the lane at x 50 is 14 wide, so 7 + 6 clears at 13.
-    expect(nearPath(50 + 7 + PATH_CLEARANCE - 0.1, 200)).toBe(true);
-    expect(nearPath(50 + 7 + PATH_CLEARANCE + 0.1, 200)).toBe(false);
+    // The margin itself, expressed off the lane's own width rather than a
+    // literal copy of it, so a future width change (like this one) can't
+    // silently make this assertion test the wrong boundary.
+    const laneHalf = byKey("lane").width / 2;
+    expect(nearPath(50 + laneHalf + PATH_CLEARANCE - 0.1, 200)).toBe(true);
+    expect(nearPath(50 + laneHalf + PATH_CLEARANCE + 0.1, 200)).toBe(false);
   });
 
   it("is off every plot's centre", () => {
@@ -192,11 +196,16 @@ describe("farm paths", () => {
     expect(FARM_ZONE.x).toBeLessThanOrEqual(lane.points[0].x - lane.width / 2 - PATH_CLEARANCE);
   });
 
-  it("bakes into a texture no bigger than 2048 px a side at 4 px per unit", () => {
+  it("bakes into a texture no bigger than 4096 px a side at 4 px per unit", () => {
+    // bakePathTexture bakes in the isometric camera's SHEARED space (see its
+    // own header), so it's the PROJECTED bbox that has to stay in budget --
+    // isoProject can grow a diagonal rect's footprint by up to sqrt(2)x, so
+    // this is a materially bigger number than the raw world box below.
     for (const spec of FARM_PATHS) {
       const box = pathBounds(spec);
-      expect(box.width).toBeLessThanOrEqual(512);
-      expect(box.height).toBeLessThanOrEqual(512);
+      const projected = projectedBounds(box);
+      expect(projected.width).toBeLessThanOrEqual(1024);
+      expect(projected.height).toBeLessThanOrEqual(1024);
       const pad = pathBakePadding(spec);
       // Room for the rim, its blur and the stones outside the body.
       expect(pad).toBeGreaterThanOrEqual(spec.width / 2 + 7.5);

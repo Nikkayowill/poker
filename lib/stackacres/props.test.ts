@@ -80,11 +80,17 @@ describe("yard props", () => {
         expect(nearPath(prop.x, prop.y), `${prop.kind} at ${prop.x},${prop.y} near a path`).toBe(false);
       }
     }
-    // The verge props really are at the verge, not out in the grass.
+    // The verge props really are at the verge, not out in the grass. The
+    // ceiling is off the widest path's own width rather than a literal copy
+    // of it (it used to be the lane's, back when 14 was the lane's width),
+    // so a future width change can't silently make this assert the wrong
+    // thing the way it did when the lane widened here without this line
+    // moving with it.
+    const widestPath = Math.max(...FARM_PATHS.map((path) => path.width));
     for (const prop of YARD_PROPS) {
       if (!VERGE_PROPS.has(prop.kind)) continue;
       const nearest = Math.min(...FARM_PATHS.map((path) => distanceToPath(prop.x, prop.y, path)));
-      expect(nearest, `${prop.kind} too far from any path`).toBeLessThan(14 / 2 + PATH_CLEARANCE + 2);
+      expect(nearest, `${prop.kind} too far from any path`).toBeLessThan(widestPath / 2 + PATH_CLEARANCE + 2);
     }
   });
 

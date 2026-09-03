@@ -732,17 +732,17 @@ export class StackAcresScene extends Phaser.Scene {
    * the junction it shares with an earlier one (see bakePathTexture), which
    * only works if the earlier one is underneath.
    */
-  // The baked texture is still the flat top-down ribbon it always was --
-  // reshaping it to the diamond grid's own edge directions is follow-up
-  // work (see the class doc), not done in this pass. Only its anchor is
-  // projected below, so it at least lands in the right place.
+  // The baked texture is drawn directly in projected (sheared) space now --
+  // see bakePathTexture's own header -- so `bake.x`/`bake.y` are already
+  // screen-space coordinates, the same space isoProject's own output lives
+  // in. No isoProject call here: doing that would project an already-
+  // projected point a second time.
   private paintPaths(): void {
     FARM_PATHS.forEach((spec, i) => {
       const bake = bakePathTexture(this, spec, FARM_PATHS.slice(0, i));
       if (!bake) return;
-      const s = isoProject(bake.x, bake.y);
       this.add
-        .image(s.x, s.y, bake.key, ART_FRAME)
+        .image(bake.x, bake.y, bake.key, ART_FRAME)
         .setOrigin(0)
         .setScale(1 / GRASS_PX)
         .setDepth(PATH_DEPTH);
@@ -759,8 +759,10 @@ export class StackAcresScene extends Phaser.Scene {
   private paintPond(): void {
     const bake = bakePondTexture(this);
     if (bake) {
-      // Same trade-off as paintPaths: the shore texture stays flat for now,
-      // only its anchor is projected.
+      // The paths were carrying this same trade-off until they were moved to
+      // a sheared bake (see art-paths.ts's bakePathTexture); the pond's own
+      // shore texture is still the flat top-down bake that leaves, only its
+      // anchor projected -- the same follow-up applies here, not done yet.
       const s = isoProject(bake.x, bake.y);
       this.add
         .image(s.x, s.y, bake.key, ART_FRAME)

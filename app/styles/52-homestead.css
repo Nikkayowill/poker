@@ -1009,7 +1009,20 @@
   opacity: 0;
 }
 
+/* Farm-at-dusk key art, built from the game's own painters -- see
+   homestead-cover-art.tsx. Positioned (not just painted first) so it stacks
+   under .hs-play-content regardless of paint-order edge cases. */
+.hs-play-cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
 .hs-play-content {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1018,12 +1031,10 @@
   text-align: center;
 }
 
-.hs-play-title {
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--neon-accent);
-  margin: 0;
-  letter-spacing: -0.5px;
+.hs-play-logo {
+  width: 260px;
+  height: auto;
+  filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.55));
 }
 
 .hs-play-subtitle {
@@ -1031,6 +1042,7 @@
   color: var(--neon-muted);
   margin: 0;
   font-weight: 400;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
 }
 
 .hs-play-prompt {
@@ -1043,9 +1055,13 @@
 
 .hs-play-text {
   font-size: 18px;
-  color: var(--neon-text);
+  /* --neon-text doesn't exist anywhere in the token set (was probably meant
+     as --neon-chalk); color is inherited, so the undefined var was silently
+     falling back to whatever ancestor color applied rather than erroring. */
+  color: var(--neon-chalk);
   font-weight: 500;
   letter-spacing: 0.5px;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
 }
 
 .hs-play-pulse {
@@ -1053,7 +1069,11 @@
   display: inline-block;
   width: 8px;
   height: 8px;
-  background: var(--neon-accent);
+  /* Same bug as above, but louder: --neon-accent doesn't exist either, and
+     background isn't inherited, so this reset to transparent -- the dot has
+     been invisible. --neon-yellow is the mark's own accent (see
+     stackacres-logo.tsx: "ACRES in marquee yellow"). */
+  background: var(--neon-yellow);
   border-radius: 50%;
   animation: hs-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

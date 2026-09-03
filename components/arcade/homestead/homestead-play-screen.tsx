@@ -4,13 +4,15 @@ import { useState } from "react";
 import clsx from "clsx";
 import { playHomesteadMusic } from "@/lib/audio/homestead-music";
 import { tapSound } from "@/lib/audio/ui-sounds";
+import { StackAcresLogo } from "@/components/brand/stackacres-logo";
+import { HomesteadCoverArt } from "./homestead-cover-art";
 
 interface HomesteadPlayScreenProps {
   onStart: () => void;
 }
 
 /**
- * A full-screen tap-to-play overlay that marks Homestead as its own
+ * A full-screen tap-to-play overlay that marks StackAcres as its own
  * distinct game experience within StackChips.
  *
  * On tap:
@@ -40,7 +42,7 @@ export function HomesteadPlayScreen({ onStart }: HomesteadPlayScreenProps) {
       onClick={handleTap}
       role="button"
       tabIndex={0}
-      aria-label="Tap to start the Homestead"
+      aria-label="Tap to start StackAcres"
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -48,8 +50,10 @@ export function HomesteadPlayScreen({ onStart }: HomesteadPlayScreenProps) {
         }
       }}
     >
+      <HomesteadCoverArt />
       <div className="hs-play-content">
-        <h1 className="hs-play-title">StackChips Homestead</h1>
+        <h1 className="sr-only">StackAcres</h1>
+        <StackAcresLogo className="hs-play-logo" aria-hidden="true" />
         <p className="hs-play-subtitle">Build your farm, grow your harvest</p>
 
         <div className="hs-play-prompt">

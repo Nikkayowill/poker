@@ -404,7 +404,7 @@ export async function collectHomesteadPlot(
       status: cleared.status,
       stock: null,
       stake: null,
-      yieldQuantity: null,
+      yield_quantity: null,
       started_at: null,
       ready_at: null,
       last_fed_at: null,

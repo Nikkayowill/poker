@@ -46,6 +46,19 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Homestead collecting was also broken in production, same Phase 2 landing (2026-09-02)
+Immediately after the stocking fix below unblocked stocking, collecting hit the same class of bug:
+"Could not collect from that plot: Could not find the 'yieldQuantity' column of 'homestead_plots' in
+the schema cache." `collectHomesteadPlot`'s Supabase `.update()` in `lib/server/homestead-store.ts`
+hand-lists its columns, and every other field in that object correctly uses the DB's snake_case name
+(`started_at`, `ready_at`, `muck_fee`) except one: `yieldQuantity: null` instead of `yield_quantity:
+null`, left over from copy-pasting the in-memory `cleared` object's JS field name into the Supabase
+payload. `stockHomesteadPlot`'s own update already had it right, so only the collect path was broken.
+PostgREST rejects an unknown column outright, so the loop was stock -> wait -> collect fails, since
+Phase 2 shipped. Fixed by renaming the one key; the memory-mode suite (167 homestead tests) can't
+catch this class of bug either, same lesson as the stocking fix. No Gold/Bushels/produce at risk --
+the write throws before anything is credited.
+
 ### Homestead stocking was broken in production since Phase 2 landed (2026-09-02)
 Kayo hit "Could not stock that plot" live. Root cause: `20260901180000_homestead_inventory.sql`
 made `payout` inert (collections yield produce via the new `yield_quantity` column, not Gold) and

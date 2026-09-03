@@ -15,6 +15,7 @@ import {
   BOARD_CARD_WIDTH_M,
   DEALER_HEAD_Y,
   FELT_TOP_Y,
+  MOBILE_LANDSCAPE_MAX_WIDTH_PX,
   SEAT_COUNT,
   SEAT_SETBACK,
   TABLE_OUTER,
@@ -367,6 +368,10 @@ export function RacetrackScene({
         engine.chipView.scaleAt(engine.space.pot()),
       );
       engine.chips.setChipRadius(engine.chipRadius);
+      // A landscape phone has no headroom above the board for a mound to
+      // climb into, so the pot lays flat instead -- see
+      // MOBILE_LANDSCAPE_MAX_WIDTH_PX's own comment.
+      engine.chips.setPotLayout(hostBox.width <= MOBILE_LANDSCAPE_MAX_WIDTH_PX ? "spread" : "mound");
       publishLayout();
       markChanged();
       // Not just `markChanged`. A resize is the one event that can arrive

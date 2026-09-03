@@ -18,6 +18,7 @@ import {
   BOARD_CARD_FLOP_OVERLAP_FRACTION,
   BOARD_CARD_REVEAL_GAP_FRACTION,
   DEALER_ANGLE_DEG,
+  MOBILE_LANDSCAPE_MAX_WIDTH_PX,
   SEAT_COUNT,
   seatAngleDeg,
 } from "@/lib/scene/table-anchors";
@@ -838,7 +839,7 @@ export function PokerTable({
     () => Math.max(0, game.pot - orderedSeats.reduce((sum, seat) => sum + seat.streetBet, 0)),
     [game.pot, orderedSeats],
   );
-  // How tall the mound RacetrackScene is about to draw for this pot actually
+  // How tall the pile RacetrackScene is about to draw for this pot actually
   // gets, in CSS pixels -- so the "Pot" pill can clear its peak instead of
   // guessing a flat offset that overlaps a real pile once it grows past a
   // couple of chips. Mirrors the same chip-count math the scene itself runs
@@ -847,13 +848,22 @@ export function PokerTable({
   // hard ceilings on a single chip's drawn size -- using them (rather than the
   // camera's actual, narrower scale at the pot) means this is always tall
   // enough, never a pixel short.
+  //
+  // A landscape phone (racetrackLayout.width, same threshold RacetrackScene
+  // itself picks the layout by) draws the pot as a flat spread instead of a
+  // mound -- see MOBILE_LANDSCAPE_MAX_WIDTH_PX and chip-stack.ts's
+  // `spreadSlots`. That shape never stacks, so its clearance is just one
+  // chip's own drawn height, not a column-height calculation.
   const potMoundClearancePx = useMemo(() => {
     const chipCount = chipBreakdown(centerPotAmount, game.bigBlind, MAX_POT_CHIPS).length;
     if (chipCount === 0) return 0;
+    if ((racetrackLayout?.width ?? Infinity) <= MOBILE_LANDSCAPE_MAX_WIDTH_PX) {
+      return MAX_WALL_PX + MAX_RADIUS_PX * 2;
+    }
     const columns = columnCount(chipCount, MAX_POT_COLUMNS);
     const tallestColumn = Math.max(...columnHeights(chipCount, columns));
     return (tallestColumn - 1) * MAX_WALL_PX + MAX_WALL_PX + MAX_RADIUS_PX * 2;
-  }, [centerPotAmount, game.bigBlind]);
+  }, [centerPotAmount, game.bigBlind, racetrackLayout?.width]);
   const sceneWinners = useMemo(
     () => (showFunnel
       ? game.winners

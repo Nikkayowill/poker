@@ -35,7 +35,11 @@ function context(over: Partial<AffordanceContext> = {}): AffordanceContext {
   return {
     bushels: 10_000,
     feed: 10,
-    selectedStock: "sprout",
+    // Matches plot()'s own default plotIndex 1, which is Hen-Coop-zoned now
+    // that pens are grouped by district (see lib/stackacres/world.ts) --
+    // "sprout" would be blocked for the zone rather than whatever a test
+    // that relies on this default actually means to check.
+    selectedStock: "hen",
     plots: [],
     ...over,
   };
@@ -72,8 +76,11 @@ describe("what a tool can do to a plot", () => {
 describe("blocked is not the same as inapplicable", () => {
   it("blocks planting on an empty plot when the Bushels are short, rather than going quiet", () => {
     const affordance = affordanceFor(
+      // Cattle plot: the default plot(1) is field-zoned now that pens are
+      // grouped by row (see lib/stackacres/world.ts), so cattle would be
+      // blocked for the zone rather than the Bushels this test means to check.
       "plant",
-      plot("empty"),
+      plot("empty", { plotIndex: 13 }),
       context({ bushels: 0, selectedStock: "cattle" }),
     );
     expect(affordance.kind).toBe("blocked");
@@ -100,6 +107,18 @@ describe("blocked is not the same as inapplicable", () => {
     // money -- the plot simply is not a planting target.
     expect(affordanceFor("plant", plot("ready"), context({ bushels: 0 })).kind).toBe("none");
   });
+
+  it("blocks the wrong stock on the wrong plot before it ever checks Bushels", () => {
+    // Plot 1 is Hen-Coop-zoned; a Cattle Pen lives in a different district
+    // entirely. Bushels are deliberately plentiful, so a Bushels-short block
+    // can never be the real reason here -- only the zone check can fire.
+    const affordance = affordanceFor(
+      "plant",
+      plot("empty"),
+      context({ bushels: 1_000_000, selectedStock: "cattle" }),
+    );
+    expect(affordance).toEqual({ kind: "blocked", reason: "This ground is fenced for the Hen Coops." });
+  });
 });
 
 describe("the caps", () => {
@@ -114,21 +133,29 @@ describe("the caps", () => {
 
   it("blocks a full pen track without touching the field track", () => {
     const plots = Array.from({ length: STACKACRES_PEN_CAP }, () => working("hen"));
+    // Plot 1 (Hen-Coop-zoned): the pen cap is full.
     expect(
-      affordanceFor("plant", plot("empty"), context({ plots, selectedStock: "hen" })).kind,
+      affordanceFor("plant", plot("empty", { plotIndex: 1 }), context({ plots, selectedStock: "hen" }))
+        .kind,
     ).toBe("blocked");
+    // Plot 5 (Crop-Field-zoned): the field track does not share the pens' cap.
     expect(
-      affordanceFor("plant", plot("empty"), context({ plots, selectedStock: "sprout" })).kind,
+      affordanceFor("plant", plot("empty", { plotIndex: 5 }), context({ plots, selectedStock: "sprout" }))
+        .kind,
     ).toBe("act");
   });
 
   it("blocks a full field track without touching the pen track", () => {
     const plots = Array.from({ length: STACKACRES_FIELD_CAP }, () => working("sprout"));
+    // Plot 5 (Crop-Field-zoned): the field cap is full.
     expect(
-      affordanceFor("plant", plot("empty"), context({ plots, selectedStock: "sprout" })).kind,
+      affordanceFor("plant", plot("empty", { plotIndex: 5 }), context({ plots, selectedStock: "sprout" }))
+        .kind,
     ).toBe("blocked");
+    // Plot 1 (Hen-Coop-zoned): the pen track does not share the fields' cap.
     expect(
-      affordanceFor("plant", plot("empty"), context({ plots, selectedStock: "hen" })).kind,
+      affordanceFor("plant", plot("empty", { plotIndex: 1 }), context({ plots, selectedStock: "hen" }))
+        .kind,
     ).toBe("act");
   });
 });

@@ -49,6 +49,8 @@ import {
   ownedBounds,
   penInterior,
   plotIndexAt,
+  plotNeighbor,
+  plotPenZone,
   scrollToKeepUnderPointer,
   seededRandom,
   spawnCritter,
@@ -1083,7 +1085,11 @@ export class StackAcresScene extends Phaser.Scene {
       this.pending = cells;
       return;
     }
-    const before = this.cells.length > 0 ? ownedBounds(this.cells) : null;
+    // How many plots were owned before this update, so a purchase can be
+    // detected below. Used to be "did the acreage bounding box grow" -- that
+    // stopped meaning anything once the districts scattered the plots across
+    // the whole map; a plain count survives that just fine.
+    const beforeOwned = this.cells.filter((c) => c.state !== "locked").length;
     this.cells = cells;
 
     for (const cell of cells) {
@@ -1103,10 +1109,10 @@ export class StackAcresScene extends Phaser.Scene {
       this.callbacks.onReady();
       return;
     }
-    // Land was bought: the acreage box grew. Glide to whatever just opened up.
-    const after = ownedBounds(cells);
-    if (before && (after.width > before.width || after.height > before.height)) {
-      const owned = cells.filter((c) => c.state !== "locked");
+    // Land was bought: more plots are owned than a moment ago. Glide to
+    // whatever just opened up -- it may be in a different district entirely.
+    const owned = cells.filter((c) => c.state !== "locked");
+    if (owned.length > beforeOwned) {
       const newest = owned[owned.length - 1];
       if (newest) this.focusPlot(newest.plotIndex, true);
     }
@@ -1173,8 +1179,16 @@ export class StackAcresScene extends Phaser.Scene {
         this.paintThicket(cell, img, shadow, container);
         break;
       case "empty":
-        this.paintGroundDiamond(container, "mown");
-        for (const item of clearedLayout(cell.plotIndex)) img(item.kind, item.x, item.y);
+        // A field-zoned plot is bare grass waiting to be tilled. A pen-zoned
+        // plot is a fenced, empty paddock -- it never looks like open lawn,
+        // because the whole point of the zoning is that the fence line is
+        // there whether or not anything is standing behind it yet.
+        if (plotPenZone(cell.plotIndex) === "field") {
+          this.paintGroundDiamond(container, "mown");
+          for (const item of clearedLayout(cell.plotIndex)) img(item.kind, item.x, item.y);
+        } else {
+          this.paintPenFence(container, cell, img);
+        }
         break;
       case "mucked":
         this.paintGroundDiamond(container, "muckbed");
@@ -1378,6 +1392,83 @@ export class StackAcresScene extends Phaser.Scene {
     return { x: pen.x + inset, y: pen.y, width: pen.width - inset * 2, height: pen.height };
   }
 
+  /**
+   * The rails that mark a pen-zoned plot, split into a back half (the far
+   * and side rails) and a front half (the near rail and gate) because the
+   * near rail has to paint OVER a working pen's animals -- see `paintPen`'s
+   * own call site. An empty pen has nothing to occlude, so `paintPenFence`
+   * below just calls both.
+   *
+   * Rails run along the diamond's own two edge directions, not screen
+   * horizontal/vertical -- see ISO_EDGE_ANGLE. `img` positions each rail's
+   * anchor correctly by itself; the rotation is what makes the sprite
+   * actually lie along that edge instead of floating flat at an angle.
+   *
+   * Each of the four rails is dropped wherever the plot on that side, in the
+   * SAME kind's 2x2 block (`plotNeighbor`), is also owned -- a plot outside
+   * the block (a different animal's pens, in a different district) can never
+   * be that neighbour, so this can never merge a Cattle Pen's fence into a
+   * Hen Coop's. Two owned neighbours inside one block share a rail; a block's
+   * own outer edge -- there being no neighbour past it -- never drops, which
+   * is what keeps every block read as one fenced area rather than open on a
+   * side. Four Cattle Pens in a block therefore read as one paddock with
+   * rails only around the outside, not four cramped boxes.
+   */
+  private paintPenRailsBack(
+    container: Phaser.GameObjects.Container,
+    cell: StackAcresSceneCell,
+    img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
+  ): void {
+    this.paintGroundDiamond(container, "straw");
+    const skipNorth = this.groupNeighborOwned(cell.plotIndex, 0, -1);
+    const skipWest = this.groupNeighborOwned(cell.plotIndex, -1, 0);
+    const skipEast = this.groupNeighborOwned(cell.plotIndex, 1, 0);
+    if (!skipNorth) {
+      for (let x = 0; x < CELL; x += 16) img("railH", x, 4).setRotation(ISO_EDGE_ANGLE.alongX);
+    }
+    for (let y = 12; y < CELL - 10; y += 16) {
+      if (!skipWest) img("railV", 0, y).setRotation(ISO_EDGE_ANGLE.alongY);
+      if (!skipEast) img("railV", CELL - 9, y).setRotation(ISO_EDGE_ANGLE.alongY);
+    }
+  }
+
+  private paintPenRailsFront(
+    cell: StackAcresSceneCell,
+    img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
+  ): void {
+    if (this.groupNeighborOwned(cell.plotIndex, 0, 1)) return;
+    for (let x = 0; x < CELL; x += 16) {
+      img(x === 32 ? "gate" : "railH", x, CELL - 9).setRotation(ISO_EDGE_ANGLE.alongX);
+    }
+  }
+
+  /** An unstocked pen-zoned plot: fenced and empty, nothing to occlude. */
+  private paintPenFence(
+    container: Phaser.GameObjects.Container,
+    cell: StackAcresSceneCell,
+    img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
+  ): void {
+    this.paintPenRailsBack(container, cell, img);
+    this.paintPenRailsFront(cell, img);
+  }
+
+  /**
+   * Whether the plot at this offset, inside the SAME kind's 2x2 block, is
+   * owned -- the merge test `paintPenRailsBack`/`Front` use to drop a shared
+   * rail. A locked neighbour is still thicket (see `paintThicket`), so the
+   * fence has to stay whole at that edge: rails hanging off the last owned
+   * plot into unclaimed forest would read as a gap rather than the edge of
+   * what has actually been bought. `plotNeighbor` already returns null for
+   * an offset that falls outside the block, which reads here as "no
+   * neighbour" -- exactly the block's own outer edge.
+   */
+  private groupNeighborOwned(plotIndex: number, deltaCol: number, deltaRow: number): boolean {
+    const neighborIndex = plotNeighbor(plotIndex, deltaCol, deltaRow);
+    if (neighborIndex === null) return false;
+    const neighbor = this.cells.find((c) => c.plotIndex === neighborIndex);
+    return !!neighbor && neighbor.state !== "locked";
+  }
+
   private paintPen(
     node: CellNode,
     cell: StackAcresSceneCell,
@@ -1385,16 +1476,7 @@ export class StackAcresScene extends Phaser.Scene {
     img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
     shadow: (x: number, y: number, sx?: number, sy?: number) => Phaser.GameObjects.Image,
   ): void {
-    this.paintGroundDiamond(node.container, "straw");
-    // Rails run along the diamond's own two edge directions, not screen
-    // horizontal/vertical -- see ISO_EDGE_ANGLE. `img` positions each rail's
-    // anchor correctly by itself; the rotation is what makes the sprite
-    // actually lie along that edge instead of floating flat at an angle.
-    for (let x = 0; x < CELL; x += 16) img("railH", x, 4).setRotation(ISO_EDGE_ANGLE.alongX);
-    for (let y = 12; y < CELL - 10; y += 16) {
-      img("railV", 0, y).setRotation(ISO_EDGE_ANGLE.alongY);
-      img("railV", CELL - 9, y).setRotation(ISO_EDGE_ANGLE.alongY);
-    }
+    this.paintPenRailsBack(node.container, cell, img);
     img(cell.state === "hungry" ? "troughEmpty" : "troughFull", 24, 12);
 
     const art = cell.stock ? STOCK_ART[cell.stock] : undefined;
@@ -1431,9 +1513,7 @@ export class StackAcresScene extends Phaser.Scene {
     }
 
     // The near fence paints over the animals, so it goes on last.
-    for (let x = 0; x < CELL; x += 16) {
-      img(x === 32 ? "gate" : "railH", x, CELL - 9).setRotation(ISO_EDGE_ANGLE.alongX);
-    }
+    this.paintPenRailsFront(cell, img);
     this.bob(node);
   }
 
@@ -1578,16 +1658,20 @@ export class StackAcresScene extends Phaser.Scene {
     this.cameras.main.setZoom(clampZoom(zoom) * DPR);
   }
 
-  /** "Home": the owned plots and the barn yard above them, framed together.
-   *  `box` is world space, same as before the camera tilted; `openingZoom`
-   *  needs the diamond's own screen-space bounding box, not the rect's own
-   *  width/height, to fit it to the viewport. The centre point does not need
-   *  a separate projected-bounds computation: `isoProject` is linear, so a
-   *  rect's own centre projects to exactly the centre of its diamond's
-   *  bounding box (iso.test.ts's additivity case is the same fact). */
+  /** "Home": the Farmstead's own Hen Coop plots and the barn yard above
+   *  them, framed together -- NOT every owned plot everywhere, now that the
+   *  other three kinds live in three other districts up to 800 units away.
+   *  "Home" is the Farmstead, the same place the destination rail's own
+   *  "home" entry means. `box` is world space, same as before the camera
+   *  tilted; `openingZoom` needs the diamond's own screen-space bounding
+   *  box, not the rect's own width/height, to fit it to the viewport. The
+   *  centre point does not need a separate projected-bounds computation:
+   *  `isoProject` is linear, so a rect's own centre projects to exactly the
+   *  centre of its diamond's bounding box (iso.test.ts's additivity case is
+   *  the same fact). */
   private homeView(): { zoom: number; x: number; y: number } {
-    const owned = this.cells.filter((c) => c.state !== "locked");
-    const farm = ownedBounds(owned.length > 0 ? owned : this.cells);
+    const hens = this.cells.filter((c) => plotPenZone(c.plotIndex) === "hen");
+    const farm = ownedBounds(hens.length > 0 ? hens : this.cells);
     const top = Math.min(farm.y, BARN_TOP);
     const box: WorldRect = {
       x: farm.x,

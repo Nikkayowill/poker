@@ -46,6 +46,54 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### The pens moved out into the districts: each animal has its own place on the map (2026-09-03)
+First cut of this got the ask backwards -- Kayo: "the zoning was meant to make the user have to visit
+each section we made... not to zone the middle part of the land." The four districts (Farmstead, Ox
+Fields, Long Meadow, Wallow) already existed from the map pass earlier the same day, mostly as
+scenery; the real ask was to stand each animal's actual pens IN its own district, so tending cattle
+means travelling to Ox Fields the way it would on a real farm, not just fencing a row back at the
+farmhouse. An abandoned first attempt zoned the OLD single grid by row instead (four rows, one kind
+each, all still at the Farmstead) -- reverted before it shipped; the real fix below replaces it, not
+sits beside it.
+
+**The plots are four separate physical blocks now, one per district, not one 4x4 grid.**
+`lib/stackacres/world.ts`'s `plotPenZone(plotIndex)` still names a plot's kind (unchanged API,
+`tools.ts` and the server routes needed no changes at all), but `cellOrigin`/`plotIndexAt` now place
+and hit-test each kind's own 2x2 block inside the district that kind lives in
+(`PEN_GROUP_ORIGIN`): plots 1-4 are **Hen Coops at the Farmstead** (the free starter tier, so the
+cheapest way in costs no trip), 5-8 are **Crop Fields at the Long Meadow**, 9-12 are **Sheep Pens at
+the Wallow**, 13-16 are **Cattle Pens at Ox Fields**. The two districts that already had an ambient,
+unownable wild herd (oxen at Ox Fields, hogs at the Wallow) had that herd retired outright -- Kayo's
+call, confirmed directly: the player's own pens are that district's life now, not a second thing
+beside it (`zones.ts`'s `HERDS` is an empty record, kept as a type for a future district that wants
+ambient life with nothing to tend yet). `zoneToolPolicy`'s four plot tools (`plant`/`harvest`/`feed`/
+`clear`) go from farmstead-only to all four districts, since a plot can be anywhere now.
+
+**The fence-merge idea survives from the abandoned row version, generalised from 1x4 to 2x2.** An
+unstocked pen-zoned plot is still straw-and-rails from the moment it's bought rather than bare lawn.
+The shared rail between two OWNED plots in the SAME block still drops (`world.ts`'s `plotNeighbor`,
+`stackacres-scene.ts`'s `groupNeighborOwned`) -- but a 2x2 block has four possible interior edges, not
+one row of three, so all four of a plot's rails (north/south/east/west) are independently conditional
+now, not just east/west. A block's own outer edge -- there being no neighbour past it -- never drops,
+which is what keeps four Cattle Pens reading as one paddock with rails only around the outside.
+
+**Real geometry collisions, found by the existing path/prop tests, not by screenshot.** Ox Fields' own
+road (`oxRoad`) and the Wallow's own track both run straight through the first-choice pen positions;
+`paths.test.ts`'s "keeps every path clear of the plot square" caught both before a screenshot was even
+taken, and the blocks moved (cattle 560,70 -> 680,70; pig -300,-390 -> -320,-390) until the whole suite
+was clean. The one thing only a screenshot caught: Ox Fields' own **approach point** (the camera's
+arrival framing) was still centred on the road's own end, not the new pen block 120 units east of it,
+so the Cattle Pens arrived crowded into the corner of the window -- moved to 720,150, centred on the
+block itself. `zones.ts`'s three district blurbs were also stale ("the oxen that cut them", "the hogs
+that will not leave it") and got rewritten for what's actually standing there now.
+
+Verified: full `npx vitest run` (2834/2835, the one red is the pre-existing `table-anchors`
+dealer-shoulder-room regression, confirmed unrelated), `npm run lint` and `npm run build` clean, and
+screenshotted end to end in memory mode across all four districts with real land and stock bought in
+each -- the Hen Coops at the Farmstead, Crop Fields at the Long Meadow, Sheep Pens at the Wallow, and
+Cattle Pens at Ox Fields, each framed correctly on arrival, each animal confirmed standing in its own
+district via the scene's own dev hook. Branch `feat/stackacres-pen-zoning`.
+
 ### App-wide loading screen lands, ported onto AppShell (2026-09-03)
 An older branch (`feat/app-loading-screens`) built the pieces before `AppShell` existed and before the
 3D table was deleted; this pass ported the surviving state (its own gathered-table-scene redesign was

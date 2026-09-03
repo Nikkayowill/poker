@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { STACKACRES_GRID_PLOTS } from "./catalogue";
+import { STACKACRES_GRID_PLOTS, STACKACRES_STOCK } from "./catalogue";
 import { nearPath } from "./paths";
 import type { StackAcresPlotSnapshot, StackAcresPlotState } from "./plots";
 import {
   FARM_ZONE,
   STACKACRES_CELL,
-  STACKACRES_CELL_TILES,
   STACKACRES_CHUNK,
-  STACKACRES_MARGIN,
-  STACKACRES_MARGIN_TILES,
-  STACKACRES_TILE,
   STACKACRES_ZOOM_MAX,
   STACKACRES_ZOOM_MIN,
   STACKACRES_ZOOM_OPEN_MAX,
@@ -22,15 +18,19 @@ import {
   inFarmZone,
   openingZoom,
   ownedBounds,
+  penGroupBounds,
   penInterior,
   plotIndexAt,
+  plotNeighbor,
+  plotPenZone,
   powerOfTwoCeil,
   scrollToKeepUnderPointer,
   seededRandom,
   spawnCritter,
   stepCritter,
+  STACKACRES_PEN_ZONES,
+  stockAllowedOnPlot,
   thicketLayout,
-  worldSize,
 } from "./world";
 
 function plot(
@@ -56,32 +56,38 @@ function plot(
   };
 }
 
-/** A farm with the first `owned` plots cleared and the next one for sale. */
-function farm(owned: number): StackAcresPlotSnapshot[] {
-  return Array.from({ length: STACKACRES_GRID_PLOTS }, (_, i) => {
-    const index = i + 1;
-    if (index <= owned) return plot(index, "empty");
-    return plot(index, "locked", { purchasable: index === owned + 1 });
-  });
+/** The first `owned` of the Farmstead's own four Hen Coop plots, cleared --
+ *  kept inside that one block rather than spanning all sixteen, since plots
+ *  5 and up now live in three other districts entirely (see "owned bounds"
+ *  below). */
+function henFarm(owned: number): StackAcresPlotSnapshot[] {
+  return Array.from({ length: owned }, (_, i) => plot(i + 1, "empty"));
+}
+
+function cellRectFor(plotIndex: number) {
+  const origin = cellOrigin(plotIndex);
+  return { x: origin.x, y: origin.y, width: STACKACRES_CELL, height: STACKACRES_CELL };
 }
 
 describe("plot placement", () => {
-  it("lays the sixteen plots out four across, reading order, inside the margin", () => {
-    expect(cellOrigin(1)).toEqual({ x: STACKACRES_MARGIN, y: STACKACRES_MARGIN });
-    expect(cellOrigin(4)).toEqual({ x: STACKACRES_MARGIN + 3 * STACKACRES_CELL, y: STACKACRES_MARGIN });
-    expect(cellOrigin(5)).toEqual({ x: STACKACRES_MARGIN, y: STACKACRES_MARGIN + STACKACRES_CELL });
-    expect(cellOrigin(16)).toEqual({
-      x: STACKACRES_MARGIN + 3 * STACKACRES_CELL,
-      y: STACKACRES_MARGIN + 3 * STACKACRES_CELL,
-    });
+  it("lays each kind's four plots out 2x2, reading order, inside its own block", () => {
+    const hen = penGroupBounds("hen");
+    expect(cellOrigin(1)).toEqual({ x: hen.x, y: hen.y });
+    expect(cellOrigin(2)).toEqual({ x: hen.x + STACKACRES_CELL, y: hen.y });
+    expect(cellOrigin(3)).toEqual({ x: hen.x, y: hen.y + STACKACRES_CELL });
+    expect(cellOrigin(4)).toEqual({ x: hen.x + STACKACRES_CELL, y: hen.y + STACKACRES_CELL });
   });
 
-  it("sizes the plot ladder's own footprint", () => {
-    const size = worldSize();
-    expect(size.width).toBe(2 * STACKACRES_MARGIN + 4 * STACKACRES_CELL);
-    expect(size.height).toBe(2 * STACKACRES_MARGIN + 4 * STACKACRES_CELL);
-    expect(STACKACRES_CELL).toBe(STACKACRES_TILE * STACKACRES_CELL_TILES);
-    expect(STACKACRES_MARGIN).toBe(STACKACRES_TILE * STACKACRES_MARGIN_TILES);
+  it("puts each kind's block in the district that kind now lives in", () => {
+    // 1-4 Hen Coops (Farmstead), 5-8 Crop Fields (Long Meadow), 9-12 Sheep
+    // Pens (Wallow), 13-16 Cattle Pens (Ox Fields) -- see plotPenZone's own
+    // header for why this order.
+    const field = penGroupBounds("field");
+    const pig = penGroupBounds("pig");
+    const cattle = penGroupBounds("cattle");
+    expect(cellOrigin(5)).toEqual({ x: field.x, y: field.y });
+    expect(cellOrigin(9)).toEqual({ x: pig.x, y: pig.y });
+    expect(cellOrigin(13)).toEqual({ x: cattle.x, y: cattle.y });
   });
 
   it("hit-tests every plot's centre back to itself", () => {
@@ -91,57 +97,123 @@ describe("plot placement", () => {
     }
   });
 
-  it("gives a plot's far edge to the next plot, and the last pixel to itself", () => {
+  it("gives a plot's far edge to the next plot within its own block, and the last pixel to itself", () => {
     const origin = cellOrigin(1);
     expect(plotIndexAt(origin.x, origin.y)).toBe(1);
     expect(plotIndexAt(origin.x + STACKACRES_CELL - 0.01, origin.y)).toBe(1);
     expect(plotIndexAt(origin.x + STACKACRES_CELL, origin.y)).toBe(2);
-    expect(plotIndexAt(origin.x, origin.y + STACKACRES_CELL)).toBe(5);
+    expect(plotIndexAt(origin.x, origin.y + STACKACRES_CELL)).toBe(3);
   });
 
-  it("returns null off the ladder in every direction", () => {
+  it("returns null off every block, including the open ground between two of them", () => {
     expect(plotIndexAt(0, 0)).toBeNull();
-    expect(plotIndexAt(STACKACRES_MARGIN - 1, STACKACRES_MARGIN + 10)).toBeNull();
-    expect(plotIndexAt(-5, 100)).toBeNull();
     expect(plotIndexAt(1_000_000, 100)).toBeNull();
+    // Between the Farmstead's Hen Coops and its own barn -- inside the
+    // district, not inside any plot.
+    expect(plotIndexAt(100, 0)).toBeNull();
+  });
+});
+
+describe("plot neighbours within a block", () => {
+  it("finds the three real neighbours of a corner plot", () => {
+    // Plot 1 is (col 0, row 0) of the Hen Coop block.
+    expect(plotNeighbor(1, 1, 0)).toBe(2); // east
+    expect(plotNeighbor(1, 0, 1)).toBe(3); // south
+    expect(plotNeighbor(1, -1, 0)).toBeNull(); // off the block's own west edge
+    expect(plotNeighbor(1, 0, -1)).toBeNull(); // off the block's own north edge
+    expect(plotNeighbor(1, 1, 1)).toBe(4); // the diagonal is in-bounds too, just unused by any real caller
+  });
+
+  it("never crosses into a different kind's block", () => {
+    // Plot 4 is the Hen block's own bottom-right corner; plot 5 is a
+    // different kind (Crop Fields) entirely, even though the numbers are
+    // sequential. Nothing about plotNeighbor may reach across that seam.
+    expect(plotNeighbor(4, 1, 0)).toBeNull();
+    expect(plotNeighbor(4, 0, 1)).toBeNull();
+  });
+});
+
+describe("pen zones", () => {
+  it("gives every one of the four blocks its own zone, in ladder order", () => {
+    expect([1, 2, 3, 4].map(plotPenZone)).toEqual(["hen", "hen", "hen", "hen"]);
+    expect([5, 6, 7, 8].map(plotPenZone)).toEqual(["field", "field", "field", "field"]);
+    expect([9, 10, 11, 12].map(plotPenZone)).toEqual(["pig", "pig", "pig", "pig"]);
+    expect([13, 14, 15, 16].map(plotPenZone)).toEqual(["cattle", "cattle", "cattle", "cattle"]);
+  });
+
+  it("names a zone for every plot on the ladder, with no gaps", () => {
+    for (let index = 1; index <= STACKACRES_GRID_PLOTS; index += 1) {
+      expect(STACKACRES_PEN_ZONES).toContain(plotPenZone(index));
+    }
+  });
+
+  it("lets a crop stand only on a field, and an animal only on its own pen", () => {
+    // Block 1 (hen): only the hen.
+    expect(stockAllowedOnPlot(1, "hen")).toBe(true);
+    expect(stockAllowedOnPlot(1, "pig")).toBe(false);
+    expect(stockAllowedOnPlot(1, "cattle")).toBe(false);
+    expect(stockAllowedOnPlot(1, "sprout")).toBe(false);
+    // Block 2 (field): both crops, neither animal.
+    expect(stockAllowedOnPlot(5, "sprout")).toBe(true);
+    expect(stockAllowedOnPlot(5, "cash_crop")).toBe(true);
+    expect(stockAllowedOnPlot(5, "hen")).toBe(false);
+    expect(stockAllowedOnPlot(5, "pig")).toBe(false);
+    expect(stockAllowedOnPlot(5, "cattle")).toBe(false);
+    // Block 3 (pig) and block 4 (cattle): the same shape, one species each.
+    expect(stockAllowedOnPlot(9, "pig")).toBe(true);
+    expect(stockAllowedOnPlot(9, "cattle")).toBe(false);
+    expect(stockAllowedOnPlot(13, "cattle")).toBe(true);
+    expect(stockAllowedOnPlot(13, "pig")).toBe(false);
+  });
+
+  it("gives every real stock exactly one home on the ladder", () => {
+    // Nothing in the catalogue is homeless or double-homed: a real farm has
+    // one right place for a given animal or crop, not zero and not two.
+    for (const stock of STACKACRES_STOCK) {
+      const homes = Array.from({ length: STACKACRES_GRID_PLOTS }, (_, i) => i + 1).filter((index) =>
+        stockAllowedOnPlot(index, stock),
+      );
+      expect(homes.length).toBeGreaterThan(0);
+      const zones = new Set(homes.map(plotPenZone));
+      expect(zones.size).toBe(1);
+    }
   });
 });
 
 describe("owned bounds", () => {
-  it("frames the owned plots plus the one for sale, no padding", () => {
-    const bounds = ownedBounds(farm(4));
-    // Top row owned + plot 5 for sale: the box spans the full width and two rows.
-    expect(bounds.x).toBe(STACKACRES_MARGIN);
-    expect(bounds.y).toBe(STACKACRES_MARGIN);
-    expect(bounds.width).toBe(4 * STACKACRES_CELL);
-    expect(bounds.height).toBe(2 * STACKACRES_CELL);
+  it("frames a subset of one block's plots, no padding", () => {
+    const bounds = ownedBounds(henFarm(2));
+    const hen = penGroupBounds("hen");
+    expect(bounds).toEqual({ x: hen.x, y: hen.y, width: 2 * STACKACRES_CELL, height: STACKACRES_CELL });
   });
 
-  it("grows when land is bought and never shrinks below the first row", () => {
-    const small = ownedBounds(farm(4));
-    const bigger = ownedBounds(farm(9));
-    expect(bigger.height).toBeGreaterThan(small.height);
-    expect(bigger.width).toBeGreaterThanOrEqual(small.width);
-    const all = ownedBounds(farm(16));
-    expect(all).toEqual({ x: STACKACRES_MARGIN, y: STACKACRES_MARGIN, width: 4 * STACKACRES_CELL, height: 4 * STACKACRES_CELL });
+  it("frames a whole block once every plot in it is owned", () => {
+    expect(ownedBounds(henFarm(4))).toEqual(penGroupBounds("hen"));
   });
 
-  it("frames the first cell when nothing is owned or for sale", () => {
-    const nothing = ownedBounds([]);
-    const first = cellRectFor(1);
-    expect(nothing).toEqual(first);
+  it("frames the plot list's own first entry when nothing is acreage", () => {
+    expect(ownedBounds([])).toEqual(cellRectFor(1));
   });
 
   it("does not count locked land that is not for sale", () => {
-    const bounds = ownedBounds([plot(1, "empty"), plot(16, "locked")]);
+    const bounds = ownedBounds([plot(1, "empty"), plot(4, "locked")]);
     expect(bounds).toEqual(cellRectFor(1));
   });
-});
 
-function cellRectFor(plotIndex: number) {
-  const origin = cellOrigin(plotIndex);
-  return { x: origin.x, y: origin.y, width: STACKACRES_CELL, height: STACKACRES_CELL };
-}
+  it("is zone-blind: given plots from two different kinds, it unions them honestly rather than assuming one place", () => {
+    // ownedBounds itself does not know or care that plot 1 (a Hen Coop, at
+    // the Farmstead) and plot 5 (a Crop Field, at the Long Meadow) are 800
+    // units apart -- it is up to a caller that wants "one place" to filter
+    // to one block's plots first, the way the scene's own home view does.
+    const bounds = ownedBounds([plot(1, "empty"), plot(5, "empty")]);
+    const hen = cellRectFor(1);
+    const field = cellRectFor(5);
+    expect(bounds.x).toBe(Math.min(hen.x, field.x));
+    expect(bounds.y).toBe(Math.min(hen.y, field.y));
+    expect(bounds.x + bounds.width).toBe(Math.max(hen.x + hen.width, field.x + field.width));
+    expect(bounds.y + bounds.height).toBe(Math.max(hen.y + hen.height, field.y + field.height));
+  });
+});
 
 describe("zoom", () => {
   it("holds fixed min/max now the camera is unbounded", () => {
@@ -152,14 +224,14 @@ describe("zoom", () => {
   });
 
   it("opens a small farm close but not so close a hen fills the screen", () => {
-    const bounds = ownedBounds(farm(4));
+    const bounds = ownedBounds(henFarm(4));
     const opening = openingZoom(bounds, 844, 390);
     expect(opening).toBeGreaterThanOrEqual(STACKACRES_ZOOM_MIN);
     expect(opening).toBeLessThanOrEqual(STACKACRES_ZOOM_OPEN_MAX);
   });
 
   it("never opens past the open-zoom cap even on a huge window", () => {
-    const bounds = ownedBounds(farm(4));
+    const bounds = ownedBounds(henFarm(4));
     expect(openingZoom(bounds, 4000, 3000)).toBe(STACKACRES_ZOOM_OPEN_MAX);
   });
 

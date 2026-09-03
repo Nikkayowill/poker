@@ -90,6 +90,22 @@ const SPROUT = STACKACRES_CATALOGUE.sprout;
 const HEN_READY = new Date(T0.getTime() + HEN.durationMs);
 const HEN_YIELD = STACKACRES_YIELDS.hen;
 
+// Plots are grouped by kind now, one physical block per district
+// (lib/stackacres/world.ts): 1-4 are the free Hen Coops at the Farmstead,
+// 5-8 are Crop Fields at the Long Meadow, 9-12 are Sheep Pens at the
+// Wallow, 13-16 are Cattle Pens at Ox Fields. HEN_PLOT.."+3" stays inside
+// that same block for the cap tests, same for CATTLE_PLOT.
+const HEN_PLOT = 1;
+const FIELD_PLOT = 5;
+const CATTLE_PLOT = 13;
+
+/** Buys the land at `plotIndex` first when it is not one of the four free
+ *  plots -- every pen-zoned plot most tests below want is a paid tile, where
+ *  the old plot 1 never needed a purchase. */
+async function owned(token: string, plotIndex: number, now = T0): Promise<void> {
+  if (plotIndex > STACKACRES_FREE_PLOTS) await buyStackAcresPlot(token, plotIndex, now);
+}
+
 /**
  * A profile with Gold for acreage and Bushels for everything else. The read is
  * what triggers the one-time starting grant, so it happens before the top-up.
@@ -147,15 +163,55 @@ describe("the starting grant", () => {
   });
 });
 
+describe("pen zoning", () => {
+  // Kayo: cattle standing next to hens is unrealistic, and the fix is that
+  // each row of the ladder is now fenced for one kind of stock (see
+  // lib/stackacres/world.ts's plotPenZone). Both routes onto a plot -- the
+  // Bushels planting and the Gold outright buy -- have to refuse the wrong
+  // stock, and refuse it before any money moves.
+
+  it("stockStackAcres refuses a cattle pen on a field plot, and spends nothing", async () => {
+    const { token, id } = await funded();
+    const before = await bushels(id);
+
+    await expect(
+      stockStackAcres(token, { plotIndex: 1, stock: "cattle" }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await bushels(id)).toBe(before);
+    expect((await getStackAcresPlot(id, 1))?.status ?? "empty").toBe("empty");
+  });
+
+  it("buyStackAcresStock refuses the same mismatch, and spends no Gold", async () => {
+    const { token } = await funded();
+    await owned(token, HEN_PLOT);
+    const before = await balance(token);
+
+    await expect(
+      buyStackAcresStock(token, { plotIndex: HEN_PLOT, stock: "cattle" }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("still lets the right stock stand in its own zone", async () => {
+    const { token, id } = await funded();
+    await owned(token, CATTLE_PLOT);
+    await stockStackAcres(token, { plotIndex: CATTLE_PLOT, stock: "cattle" }, T0);
+    expect((await getStackAcresPlot(id, CATTLE_PLOT))?.status).toBe("working");
+  });
+});
+
 describe("planting", () => {
   it("debits Bushels and snapshots the yield and readiness onto the plot", async () => {
     const { token, id } = await funded();
     const before = await bushels(id);
+    await owned(token, HEN_PLOT);
 
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
 
     expect(await bushels(id)).toBe(before - HEN.seedCost);
-    const row = await getStackAcresPlot(id, 1);
+    const row = await getStackAcresPlot(id, HEN_PLOT);
     expect(row?.status).toBe("working");
     expect(row?.stake).toBe(HEN.seedCost);
     expect(row?.yieldQuantity).toBe(HEN_YIELD.quantity);
@@ -164,35 +220,40 @@ describe("planting", () => {
 
   it("never touches Gold", async () => {
     const { token } = await funded();
+    await owned(token, CATTLE_PLOT);
     const before = await balance(token);
-    await stockStackAcres(token, { plotIndex: 1, stock: "cattle" }, T0);
+    await stockStackAcres(token, { plotIndex: CATTLE_PLOT, stock: "cattle" }, T0);
     expect(await balance(token)).toBe(before);
   });
 
   it("marks an animal fed on arrival and leaves a crop with no feed clock", async () => {
     const { token, id } = await funded();
+    await owned(token, HEN_PLOT);
 
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
-    await stockStackAcres(token, { plotIndex: 2, stock: "sprout" }, T0);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
+    await owned(token, FIELD_PLOT);
+    await stockStackAcres(token, { plotIndex: FIELD_PLOT, stock: "sprout" }, T0);
 
-    expect((await getStackAcresPlot(id, 1))?.lastFedAt).toBe(T0.toISOString());
-    expect((await getStackAcresPlot(id, 2))?.lastFedAt).toBeNull();
+    expect((await getStackAcresPlot(id, HEN_PLOT))?.lastFedAt).toBe(T0.toISOString());
+    expect((await getStackAcresPlot(id, FIELD_PLOT))?.lastFedAt).toBeNull();
   });
 
   it("refuses when the purse cannot cover the seed, and takes nothing", async () => {
     const { token, id } = await funded(500_000, HEN.seedCost - 1);
+    await owned(token, HEN_PLOT);
     await expect(
-      stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0),
+      stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
     expect(await bushels(id)).toBe(HEN.seedCost - 1);
   });
 
   it("refunds when the guarded write throws, standing in for the DB trigger", async () => {
     const { token, id } = await funded();
+    await owned(token, HEN_PLOT);
     const before = await bushels(id);
     vi.mocked(stockStackAcresPlot).mockRejectedValueOnce(new Error("trigger said no"));
 
-    await expect(stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0)).rejects.toThrow(
+    await expect(stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0)).rejects.toThrow(
       "trigger said no",
     );
     expect(await bushels(id)).toBe(before);
@@ -200,15 +261,20 @@ describe("planting", () => {
 
   it("counts crops and livestock against separate caps", async () => {
     const { token } = await funded();
-    for (let plot = 1; plot <= STACKACRES_PEN_CAP; plot += 1) {
+    for (let i = 0; i < STACKACRES_PEN_CAP; i += 1) {
+      const plot = HEN_PLOT + i;
+      await owned(token, plot);
       await stockStackAcres(token, { plotIndex: plot, stock: "hen" }, T0);
     }
     // The pen cap is full...
+    const capped = HEN_PLOT + STACKACRES_PEN_CAP;
+    await owned(token, capped);
     await expect(
-      stockStackAcres(token, { plotIndex: STACKACRES_PEN_CAP + 1, stock: "hen" }, T0),
+      stockStackAcres(token, { plotIndex: capped, stock: "hen" }, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
     // ...but a field still goes in, because the tracks do not share a budget.
-    await stockStackAcres(token, { plotIndex: STACKACRES_PEN_CAP + 1, stock: "sprout" }, T0);
+    await owned(token, FIELD_PLOT);
+    await stockStackAcres(token, { plotIndex: FIELD_PLOT, stock: "sprout" }, T0);
     const view = await readStackAcres(token, T0);
     expect(view.plots.filter((plot) => plot.state === "working")).toHaveLength(
       STACKACRES_PEN_CAP + 1,
@@ -221,28 +287,30 @@ describe("hunger", () => {
 
   it("freezes a pen past its feed window instead of letting it finish", async () => {
     const { token } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "cattle" }, T0);
+    await owned(token, CATTLE_PLOT);
+    await stockStackAcres(token, { plotIndex: CATTLE_PLOT, stock: "cattle" }, T0);
 
     // Well past readiness, but it went hungry long before that.
     const wayLater = new Date(T0.getTime() + CATTLE.durationMs + 60_000);
     const view = await readStackAcres(token, wayLater);
-    expect(view.plots[0].state).toBe("hungry");
+    expect(view.plots[CATTLE_PLOT - 1].state).toBe("hungry");
 
-    await expect(collectStackAcres(token, 1, wayLater)).rejects.toBeInstanceOf(
+    await expect(collectStackAcres(token, CATTLE_PLOT, wayLater)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
   });
 
   it("spends one serving and pushes readiness out by the time spent hungry", async () => {
     const { token, id } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "cattle" }, T0);
+    await owned(token, CATTLE_PLOT);
+    await stockStackAcres(token, { plotIndex: CATTLE_PLOT, stock: "cattle" }, T0);
     await adjustStackAcresFeed(id, 2);
 
-    const before = await getStackAcresPlot(id, 1);
+    const before = await getStackAcresPlot(id, CATTLE_PLOT);
     const fedAt = new Date(hungryAt.getTime() + 60_000);
-    await feedStackAcres(token, 1, fedAt);
+    await feedStackAcres(token, CATTLE_PLOT, fedAt);
 
-    const after = await getStackAcresPlot(id, 1);
+    const after = await getStackAcresPlot(id, CATTLE_PLOT);
     const starved = fedAt.getTime() - (T0.getTime() + (CATTLE.hungerMs ?? 0));
     expect(Date.parse(after?.readyAt ?? "")).toBe(Date.parse(before?.readyAt ?? "") + starved);
     expect(after?.lastFedAt).toBe(fedAt.toISOString());
@@ -251,27 +319,34 @@ describe("hunger", () => {
 
   it("refuses to feed with an empty barn, and spends nothing", async () => {
     const { token, id } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "cattle" }, T0);
+    await owned(token, CATTLE_PLOT);
+    await stockStackAcres(token, { plotIndex: CATTLE_PLOT, stock: "cattle" }, T0);
 
-    await expect(feedStackAcres(token, 1, hungryAt)).rejects.toBeInstanceOf(StackAcresRequestError);
+    await expect(feedStackAcres(token, CATTLE_PLOT, hungryAt)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
     expect(await readStackAcresFeed(id)).toBe(0);
   });
 
   it("never lets neglect cost produce: the snapshotted yield is untouched by feeding", async () => {
     const { token, id } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "cattle" }, T0);
+    await owned(token, CATTLE_PLOT);
+    await stockStackAcres(token, { plotIndex: CATTLE_PLOT, stock: "cattle" }, T0);
     await adjustStackAcresFeed(id, 1);
-    await feedStackAcres(token, 1, new Date(hungryAt.getTime() + 5 * 60 * 60 * 1000));
-    expect((await getStackAcresPlot(id, 1))?.yieldQuantity).toBe(STACKACRES_YIELDS.cattle.quantity);
+    await feedStackAcres(token, CATTLE_PLOT, new Date(hungryAt.getTime() + 5 * 60 * 60 * 1000));
+    expect((await getStackAcresPlot(id, CATTLE_PLOT))?.yieldQuantity).toBe(
+      STACKACRES_YIELDS.cattle.quantity,
+    );
   });
 });
 
 describe("harvesting", () => {
   it("puts the snapshotted yield in the bag exactly once", async () => {
     const { token, id } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+    await owned(token, HEN_PLOT);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
 
-    const result = await collectStackAcres(token, 1, HEN_READY);
+    const result = await collectStackAcres(token, HEN_PLOT, HEN_READY);
     expect(result.collected).toMatchObject({
       item: HEN_YIELD.item,
       quantity: HEN_YIELD.quantity,
@@ -279,7 +354,7 @@ describe("harvesting", () => {
     expect(await held(id, HEN_YIELD.item)).toBe(HEN_YIELD.quantity);
 
     // A replay finds nothing to settle and yields nothing more.
-    await expect(collectStackAcres(token, 1, HEN_READY)).rejects.toBeInstanceOf(
+    await expect(collectStackAcres(token, HEN_PLOT, HEN_READY)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
     expect(await held(id, HEN_YIELD.item)).toBe(HEN_YIELD.quantity);
@@ -287,11 +362,12 @@ describe("harvesting", () => {
 
   it("pays no Gold and no Bushels -- produce only", async () => {
     const { token, id } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+    await owned(token, HEN_PLOT);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
     const goldBefore = await balance(token);
     const bushelsBefore = await bushels(id);
 
-    await collectStackAcres(token, 1, HEN_READY);
+    await collectStackAcres(token, HEN_PLOT, HEN_READY);
 
     expect(await balance(token)).toBe(goldBefore);
     expect(await bushels(id)).toBe(bushelsBefore);
@@ -303,34 +379,37 @@ describe("harvesting", () => {
     // Standing in for that retune by editing the stored row directly, which is
     // the only way to make the two disagree.
     const { token, id } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+    await owned(token, HEN_PLOT);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
 
-    const plot = await getStackAcresPlot(id, 1);
+    const plot = await getStackAcresPlot(id, HEN_PLOT);
     const retuned = HEN_YIELD.quantity + 2;
     vi.mocked(getStackAcresPlot).mockResolvedValueOnce({
       ...(plot as NonNullable<typeof plot>),
       yieldQuantity: retuned,
     });
 
-    const result = await collectStackAcres(token, 1, HEN_READY);
+    const result = await collectStackAcres(token, HEN_PLOT, HEN_READY);
     expect(result.collected.quantity).toBe(retuned);
     expect(await held(id, HEN_YIELD.item)).toBe(retuned);
   });
 
   it("refuses before readiness", async () => {
     const { token, id } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+    await owned(token, HEN_PLOT);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
 
     await expect(
-      collectStackAcres(token, 1, new Date(HEN_READY.getTime() - 1000)),
+      collectStackAcres(token, HEN_PLOT, new Date(HEN_READY.getTime() - 1000)),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
     expect(await held(id, HEN_YIELD.item)).toBe(0);
   });
 
   it("records the harvest in the ledger, valued in Bushels", async () => {
     const { token } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
-    await collectStackAcres(token, 1, HEN_READY);
+    await owned(token, HEN_PLOT);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
+    await collectStackAcres(token, HEN_PLOT, HEN_READY);
     expect(__stackacresHarvestsForTest()).toHaveLength(1);
     expect(__stackacresHarvestsForTest()[0]).toMatchObject({
       stock: "hen",
@@ -341,13 +420,14 @@ describe("harvesting", () => {
 
   it("sends a mucked plot to mucked with the tier's fee, and never withholds the produce", async () => {
     const { token, id } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+    await owned(token, HEN_PLOT);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
 
     // Force the roll. It is the one piece of randomness in the feature and it
     // lives behind Math.random in exactly one function.
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
-      const result = await collectStackAcres(token, 1, HEN_READY);
+      const result = await collectStackAcres(token, HEN_PLOT, HEN_READY);
       expect(result.collected.mucked).toBe(true);
     } finally {
       random.mockRestore();
@@ -356,31 +436,33 @@ describe("harvesting", () => {
     // Yielded in full regardless: muck is a cost you choose to pay later,
     // never a deduction from what the plot already grew.
     expect(await held(id, HEN_YIELD.item)).toBe(HEN_YIELD.quantity);
-    const row = await getStackAcresPlot(id, 1);
+    const row = await getStackAcresPlot(id, HEN_PLOT);
     expect(row?.status).toBe("mucked");
     expect(row?.muckFee).toBe(HEN.muckFee);
   });
 
   it("leaves the plot empty when the roll comes up clean", async () => {
     const { token, id } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+    await owned(token, HEN_PLOT);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
     const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
     try {
-      await collectStackAcres(token, 1, HEN_READY);
+      await collectStackAcres(token, HEN_PLOT, HEN_READY);
     } finally {
       random.mockRestore();
     }
-    expect((await getStackAcresPlot(id, 1))?.status).toBe("empty");
+    expect((await getStackAcresPlot(id, HEN_PLOT))?.status).toBe("empty");
   });
 });
 
 describe("selling produce", () => {
   async function withProduce() {
     const { token, id } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+    await owned(token, HEN_PLOT);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
     const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
     try {
-      await collectStackAcres(token, 1, HEN_READY);
+      await collectStackAcres(token, HEN_PLOT, HEN_READY);
     } finally {
       random.mockRestore();
     }
@@ -440,10 +522,11 @@ describe("selling produce", () => {
 describe("muck", () => {
   async function mucked() {
     const { token, id } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+    await owned(token, HEN_PLOT);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
-      await collectStackAcres(token, 1, HEN_READY);
+      await collectStackAcres(token, HEN_PLOT, HEN_READY);
     } finally {
       random.mockRestore();
     }
@@ -453,7 +536,7 @@ describe("muck", () => {
   it("blocks planting until it is cleared", async () => {
     const { token } = await mucked();
     await expect(
-      stockStackAcres(token, { plotIndex: 1, stock: "hen" }, HEN_READY),
+      stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, HEN_READY),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
   });
 
@@ -462,22 +545,22 @@ describe("muck", () => {
     const before = await bushels(id);
     const gold = await balance(token);
 
-    await clearStackAcresPlot(token, 1, HEN_READY);
+    await clearStackAcresPlot(token, HEN_PLOT, HEN_READY);
 
     expect(await bushels(id)).toBe(before - HEN.muckFee);
     expect(await balance(token)).toBe(gold);
-    expect((await getStackAcresPlot(id, 1))?.status).toBe("empty");
+    expect((await getStackAcresPlot(id, HEN_PLOT))?.status).toBe("empty");
   });
 
   it("stays mucked when the fee cannot be paid, and takes nothing", async () => {
     const { token, id } = await mucked();
     await adjustStackAcresInventory(id, BUSHELS, -(await bushels(id)));
 
-    await expect(clearStackAcresPlot(token, 1, HEN_READY)).rejects.toBeInstanceOf(
+    await expect(clearStackAcresPlot(token, HEN_PLOT, HEN_READY)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
     expect(await bushels(id)).toBe(0);
-    expect((await getStackAcresPlot(id, 1))?.status).toBe("mucked");
+    expect((await getStackAcresPlot(id, HEN_PLOT))?.status).toBe("mucked");
   });
 
   it("keeps every tier's expected muck cost below what that tier earns", () => {
@@ -776,9 +859,13 @@ describe("the free grid", () => {
     expect(view.inventory).toEqual({});
   });
 
-  it("prices a Sprout Row as the cheapest way in", async () => {
-    const { token, id } = await funded(500_000, SPROUT.seedCost);
-    await stockStackAcres(token, { plotIndex: 1, stock: "sprout" }, T0);
+  it("prices a Hen Coop as the cheapest way in, since the free plots are Hen-zoned now", async () => {
+    // A Sprout Row is cheaper in Bushels (SPROUT.seedCost < HEN.seedCost),
+    // but it cannot stand on a free plot at all any more -- crops moved out
+    // to the Long Meadow, which costs Gold to reach. Hen is the true cheapest
+    // way onto the farm with nothing but starting Bushels.
+    const { token, id } = await funded(500_000, HEN.seedCost);
+    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
     expect(await bushels(id)).toBe(0);
   });
 });
@@ -796,12 +883,13 @@ describe("the free grid", () => {
 describe("buying stock outright", () => {
   it("charges the listed price and stands the animal on the plot", async () => {
     const { token } = await funded();
+    await owned(token, HEN_PLOT);
     const before = await balance(token);
 
-    const view = await buyStackAcresStock(token, { plotIndex: 1, stock: "hen" }, T0);
+    const view = await buyStackAcresStock(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
 
     expect(await balance(token)).toBe(before - stackacresStockPrice("hen"));
-    const plot = view.plots[0];
+    const plot = view.plots[HEN_PLOT - 1];
     expect(plot.state).toBe("working");
     expect(plot.stock).toBe("hen");
     expect(plot.permanent).toBe(true);
@@ -809,30 +897,33 @@ describe("buying stock outright", () => {
 
   it("spends no Bushels: the seed price is the OTHER way to get one", async () => {
     const { token, id } = await funded();
+    await owned(token, CATTLE_PLOT);
     const before = await bushels(id);
-    await buyStackAcresStock(token, { plotIndex: 1, stock: "cattle" }, T0);
+    await buyStackAcresStock(token, { plotIndex: CATTLE_PLOT, stock: "cattle" }, T0);
     expect(await bushels(id)).toBe(before);
   });
 
   it("refuses when the purse is short, and charges nothing", async () => {
     const { token } = await funded(stackacresStockPrice("cattle") - 1);
+    await owned(token, CATTLE_PLOT);
     const before = await balance(token);
 
     await expect(
-      buyStackAcresStock(token, { plotIndex: 1, stock: "cattle" }, T0),
+      buyStackAcresStock(token, { plotIndex: CATTLE_PLOT, stock: "cattle" }, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
 
     expect(await balance(token)).toBe(before);
-    expect((await readStackAcres(token, T0)).plots[0].state).toBe("empty");
+    expect((await readStackAcres(token, T0)).plots[CATTLE_PLOT - 1].state).toBe("empty");
   });
 
   it("refunds the Gold when the guarded write is lost", async () => {
     const { token } = await funded();
+    await owned(token, CATTLE_PLOT);
     const before = await balance(token);
     vi.mocked(stockStackAcresPlot).mockResolvedValueOnce(null);
 
     await expect(
-      buyStackAcresStock(token, { plotIndex: 1, stock: "cattle" }, T0),
+      buyStackAcresStock(token, { plotIndex: CATTLE_PLOT, stock: "cattle" }, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
 
     expect(await balance(token)).toBe(before);
@@ -842,25 +933,30 @@ describe("buying stock outright", () => {
     // Stands in for the cap trigger raising, which the memory branch cannot
     // do. The same gap once skipped a refund entirely on the Bushel path.
     const { token } = await funded();
+    await owned(token, CATTLE_PLOT);
     const before = await balance(token);
     vi.mocked(stockStackAcresPlot).mockRejectedValueOnce(new Error("trigger said no"));
 
-    await expect(buyStackAcresStock(token, { plotIndex: 1, stock: "cattle" }, T0)).rejects.toThrow(
-      "trigger said no",
-    );
+    await expect(
+      buyStackAcresStock(token, { plotIndex: CATTLE_PLOT, stock: "cattle" }, T0),
+    ).rejects.toThrow("trigger said no");
 
     expect(await balance(token)).toBe(before);
   });
 
   it("counts against the same pen cap a planting does, without charging", async () => {
     const { token } = await funded();
-    for (let i = 1; i <= STACKACRES_PEN_CAP; i += 1) {
-      await buyStackAcresStock(token, { plotIndex: i, stock: "hen" }, T0);
+    for (let i = 0; i < STACKACRES_PEN_CAP; i += 1) {
+      const plot = HEN_PLOT + i;
+      await owned(token, plot);
+      await buyStackAcresStock(token, { plotIndex: plot, stock: "hen" }, T0);
     }
+    const capped = HEN_PLOT + STACKACRES_PEN_CAP;
+    await owned(token, capped);
     const before = await balance(token);
 
     await expect(
-      buyStackAcresStock(token, { plotIndex: STACKACRES_PEN_CAP + 1, stock: "hen" }, T0),
+      buyStackAcresStock(token, { plotIndex: capped, stock: "hen" }, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
 
     expect(await balance(token)).toBe(before);
@@ -882,11 +978,12 @@ describe("buying stock outright", () => {
 describe("collecting from bought stock", () => {
   it("re-sows itself instead of emptying the plot", async () => {
     const { token } = await funded();
-    await buyStackAcresStock(token, { plotIndex: 1, stock: "hen" }, T0);
+    await owned(token, HEN_PLOT);
+    await buyStackAcresStock(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
 
-    const view = await collectStackAcres(token, 1, HEN_READY);
+    const view = await collectStackAcres(token, HEN_PLOT, HEN_READY);
 
-    const plot = view.plots[0];
+    const plot = view.plots[HEN_PLOT - 1];
     expect(plot.state).toBe("working");
     expect(plot.stock).toBe("hen");
     expect(plot.permanent).toBe(true);
@@ -896,10 +993,11 @@ describe("collecting from bought stock", () => {
 
   it("yields the same produce a sown plot would", async () => {
     const { token, id } = await funded();
-    await buyStackAcresStock(token, { plotIndex: 1, stock: "hen" }, T0);
+    await owned(token, HEN_PLOT);
+    await buyStackAcresStock(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
 
     const before = await held(id, HEN_YIELD.item);
-    await collectStackAcres(token, 1, HEN_READY);
+    await collectStackAcres(token, HEN_PLOT, HEN_READY);
 
     expect(await held(id, HEN_YIELD.item)).toBe(before + HEN_YIELD.quantity);
   });
@@ -911,10 +1009,11 @@ describe("collecting from bought stock", () => {
     const roll = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
       const { token } = await funded();
-      await buyStackAcresStock(token, { plotIndex: 1, stock: "hen" }, T0);
-      const view = await collectStackAcres(token, 1, HEN_READY);
+      await owned(token, HEN_PLOT);
+      await buyStackAcresStock(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
+      const view = await collectStackAcres(token, HEN_PLOT, HEN_READY);
       expect(view.collected.mucked).toBe(false);
-      expect(view.plots[0].state).not.toBe("mucked");
+      expect(view.plots[HEN_PLOT - 1].state).not.toBe("mucked");
     } finally {
       roll.mockRestore();
     }
@@ -922,10 +1021,11 @@ describe("collecting from bought stock", () => {
 
   it("still moves no Gold, which is the wall this whole file guards", async () => {
     const { token } = await funded();
-    await buyStackAcresStock(token, { plotIndex: 1, stock: "hen" }, T0);
+    await owned(token, HEN_PLOT);
+    await buyStackAcresStock(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
     const before = await balance(token);
 
-    await collectStackAcres(token, 1, HEN_READY);
+    await collectStackAcres(token, HEN_PLOT, HEN_READY);
 
     expect(await balance(token)).toBe(before);
   });
@@ -934,10 +1034,11 @@ describe("collecting from bought stock", () => {
     const roll = vi.spyOn(Math, "random").mockReturnValue(0.99);
     try {
       const { token } = await funded();
-      await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
-      const view = await collectStackAcres(token, 1, HEN_READY);
-      expect(view.plots[0].state).toBe("empty");
-      expect(view.plots[0].permanent).toBe(false);
+      await owned(token, HEN_PLOT);
+      await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
+      const view = await collectStackAcres(token, HEN_PLOT, HEN_READY);
+      expect(view.plots[HEN_PLOT - 1].state).toBe("empty");
+      expect(view.plots[HEN_PLOT - 1].permanent).toBe(false);
     } finally {
       roll.mockRestore();
     }
@@ -952,8 +1053,9 @@ describe("the harvest ledger", () => {
     // between an economy dashboard and a systematic understatement of what the
     // farm nets.
     const { token } = await funded();
-    await buyStackAcresStock(token, { plotIndex: 1, stock: "hen" }, T0);
-    await collectStackAcres(token, 1, HEN_READY);
+    await owned(token, HEN_PLOT);
+    await buyStackAcresStock(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
+    await collectStackAcres(token, HEN_PLOT, HEN_READY);
 
     const [entry] = __stackacresHarvestsForTest();
     expect(entry.permanent).toBe(true);
@@ -962,8 +1064,9 @@ describe("the harvest ledger", () => {
 
   it("leaves a sown plot unflagged, because its seed cost was real", async () => {
     const { token } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
-    await collectStackAcres(token, 1, HEN_READY);
+    await owned(token, HEN_PLOT);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
+    await collectStackAcres(token, HEN_PLOT, HEN_READY);
 
     const [entry] = __stackacresHarvestsForTest();
     expect(entry.permanent).toBe(false);
@@ -974,37 +1077,44 @@ describe("the harvest ledger", () => {
 describe("retiring bought stock", () => {
   it("frees the plot and refunds nothing", async () => {
     const { token } = await funded();
-    await buyStackAcresStock(token, { plotIndex: 1, stock: "cattle" }, T0);
+    await owned(token, CATTLE_PLOT);
+    await buyStackAcresStock(token, { plotIndex: CATTLE_PLOT, stock: "cattle" }, T0);
     const spent = await balance(token);
 
-    const view = await retireStackAcresStock(token, 1, T0);
+    const view = await retireStackAcresStock(token, CATTLE_PLOT, T0);
 
-    expect(view.plots[0].state).toBe("empty");
-    expect(view.plots[0].permanent).toBe(false);
+    expect(view.plots[CATTLE_PLOT - 1].state).toBe("empty");
+    expect(view.plots[CATTLE_PLOT - 1].permanent).toBe(false);
     expect(await balance(token)).toBe(spent);
   });
 
   it("lets a capped player swap what they keep", async () => {
     const { token } = await funded();
-    for (let i = 1; i <= STACKACRES_PEN_CAP; i += 1) {
-      await buyStackAcresStock(token, { plotIndex: i, stock: "hen" }, T0);
+    for (let i = 0; i < STACKACRES_PEN_CAP; i += 1) {
+      const plot = HEN_PLOT + i;
+      await owned(token, plot);
+      await buyStackAcresStock(token, { plotIndex: plot, stock: "hen" }, T0);
     }
-    await retireStackAcresStock(token, 1, T0);
+    // Retiring a hen frees the shared PEN CAP, not the plot's own zone (a hen
+    // plot cannot hold cattle) -- the swap has to land somewhere else.
+    await retireStackAcresStock(token, HEN_PLOT, T0);
 
-    const view = await buyStackAcresStock(token, { plotIndex: 1, stock: "cattle" }, T0);
-    expect(view.plots[0].stock).toBe("cattle");
+    await owned(token, CATTLE_PLOT);
+    const view = await buyStackAcresStock(token, { plotIndex: CATTLE_PLOT, stock: "cattle" }, T0);
+    expect(view.plots[CATTLE_PLOT - 1].stock).toBe("cattle");
   });
 
   it("will not touch a plot that was sown with Bushels", async () => {
     // A planting has its seed already sunk into it and a harvest coming;
     // retiring is for bought stock only.
     const { token } = await funded();
-    await stockStackAcres(token, { plotIndex: 1, stock: "hen" }, T0);
+    await owned(token, HEN_PLOT);
+    await stockStackAcres(token, { plotIndex: HEN_PLOT, stock: "hen" }, T0);
 
-    await expect(retireStackAcresStock(token, 1, T0)).rejects.toBeInstanceOf(
+    await expect(retireStackAcresStock(token, HEN_PLOT, T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
-    expect((await readStackAcres(token, T0)).plots[0].state).toBe("working");
+    expect((await readStackAcres(token, T0)).plots[HEN_PLOT - 1].state).toBe("working");
   });
 
   it("will not touch an empty plot", async () => {

@@ -218,6 +218,10 @@ export function HomesteadFarm() {
   const suggested = useRef(false);
   const world = useRef<HomesteadWorldApi | null>(null);
   const placement = useRef<Placement | null>(null);
+  /** Plots a tool-sweep drag has crossed, waiting their turn at `act` -- see
+   *  `drainSweep`. */
+  const sweepQueue = useRef<number[]>([]);
+  const sweeping = useRef(false);
   const detail = useRef<HTMLElement | null>(null);
   const controls = useRef<HTMLDivElement | null>(null);
   useEffect(() => () => { mounted.current = false; }, []);
@@ -408,6 +412,60 @@ export function HomesteadFarm() {
       }
     },
     [act, context, seed, tool],
+  );
+
+  /**
+   * Works the queue a tool-sweep drag fills, one plot at a time: `act` is
+   * one request in flight at a time, so a drag across four ready plots is
+   * four collections sent in the order the finger crossed them, never a
+   * burst that could land out of order. Each plot is re-checked against the
+   * held tool right before it goes -- an earlier plot in the same sweep may
+   * have just spent the last of the Bushels this one also needed.
+   */
+  const drainSweep = useCallback(async () => {
+    if (sweeping.current) return;
+    sweeping.current = true;
+    try {
+      while (sweepQueue.current.length > 0) {
+        const plotIndex = sweepQueue.current.shift();
+        if (plotIndex === undefined) break;
+        const plot = livePlots.find((p) => p.plotIndex === plotIndex);
+        if (!plot) continue;
+        const affordance = affordanceFor(tool, plot, context);
+        if (affordance.kind !== "act") continue;
+        switch (tool) {
+          case "plant":
+            if (seed) await act({ action: "stock", plotIndex, stock: seed });
+            break;
+          case "harvest":
+            await act({ action: "collect", plotIndex });
+            break;
+          case "feed":
+            await act({ action: "feed", plotIndex });
+            break;
+          case "clear":
+            await act({ action: "clear", plotIndex });
+            break;
+        }
+      }
+    } finally {
+      sweeping.current = false;
+    }
+  }, [act, context, livePlots, seed, tool]);
+
+  /**
+   * One plot a sweep drag just crossed. The scene has already checked the
+   * held tool has business here (`afford === "act"`) before ever calling
+   * this, so unlike `onPlotTap` there is no blocked/none branch to answer --
+   * only queue it and let `drainSweep` send it in its turn.
+   */
+  const onSweepPlot = useCallback(
+    (plot: HomesteadPlotSnapshot) => {
+      tapSound();
+      sweepQueue.current.push(plot.plotIndex);
+      void drainSweep();
+    },
+    [drainSweep],
   );
 
   /** A tap on grass or forest closes whatever panel was open. */
@@ -714,6 +772,7 @@ export function HomesteadFarm() {
               selected={selected}
               celebrate={celebrate}
               onPlotTap={onPlotTap}
+              onSweepPlot={onSweepPlot}
               onGroundTap={onGroundTap}
               onReady={onWorldReady}
               onTrackedRect={placeDetail}

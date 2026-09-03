@@ -3,7 +3,13 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, type Ref } from "react";
 import type { HomesteadStock } from "@/lib/homestead/catalogue";
 import type { HomesteadPlotSnapshot } from "@/lib/homestead/plots";
-import { affordanceFor, type AffordanceContext, type HomesteadTool } from "@/lib/homestead/tools";
+import {
+  HOMESTEAD_TOOL_DEFS,
+  affordanceFor,
+  type AffordanceContext,
+  type HomesteadTool,
+} from "@/lib/homestead/tools";
+import type { PainterName } from "./homestead-art";
 import type { HomesteadScene, HomesteadSceneCell, PlotScreenRect } from "./homestead-scene";
 
 export type { PlotScreenRect };
@@ -51,6 +57,13 @@ export interface HomesteadWorldProps {
   selected: number | null;
   celebrate: { plotIndex: number; nonce: number } | null;
   onPlotTap: (plot: HomesteadPlotSnapshot) => void;
+  /**
+   * Fired once per plot, in crossing order, as a drag that started on an
+   * actionable plot sweeps the held tool across every further one it
+   * crosses -- the same thing `onPlotTap` would do to that plot, just
+   * reached by dragging over it instead of tapping it alone.
+   */
+  onSweepPlot: (plot: HomesteadPlotSnapshot) => void;
   onGroundTap: () => void;
   onReady: () => void;
   /** The tracked plot's place on the canvas, whenever it moves. */
@@ -83,6 +96,7 @@ export function HomesteadWorld({
   selected,
   celebrate,
   onPlotTap,
+  onSweepPlot,
   onGroundTap,
   onReady,
   onTrackedRect,
@@ -96,15 +110,21 @@ export function HomesteadWorld({
   // it was when the game booted.
   const plotsRef = useRef(plots);
   const tapRef = useRef(onPlotTap);
+  const sweepRef = useRef(onSweepPlot);
   const groundRef = useRef(onGroundTap);
   const readyRef = useRef(onReady);
   const trackedRef = useRef(onTrackedRect);
+  // The tool's own picture, for the sweep ghost -- read at mount (before the
+  // scene exists to push it to) and again on every change afterward.
+  const toolIconRef = useRef<PainterName>(HOMESTEAD_TOOL_DEFS[tool].icon as PainterName);
   useEffect(() => {
     plotsRef.current = plots;
     tapRef.current = onPlotTap;
+    sweepRef.current = onSweepPlot;
     groundRef.current = onGroundTap;
     readyRef.current = onReady;
     trackedRef.current = onTrackedRect;
+    toolIconRef.current = HOMESTEAD_TOOL_DEFS[tool].icon as PainterName;
   });
 
   const cells = useMemo(() => toCells(plots, tool, context, selected), [plots, tool, context, selected]);
@@ -137,6 +157,10 @@ export function HomesteadWorld({
           onTapPlot: (plotIndex) => {
             const plot = plotsRef.current.find((p) => p.plotIndex === plotIndex);
             if (plot) tapRef.current(plot);
+          },
+          onSweepPlot: (plotIndex) => {
+            const plot = plotsRef.current.find((p) => p.plotIndex === plotIndex);
+            if (plot) sweepRef.current(plot);
           },
           onTapGround: () => groundRef.current(),
           onReady: () => readyRef.current(),
@@ -185,6 +209,7 @@ export function HomesteadWorld({
       sceneRef.current = scene;
       gameRef.current = game;
       scene.setPlots(cellsRef.current);
+      scene.setToolIcon(toolIconRef.current);
 
       // A handle for the gesture harness to read the camera through. Dev only:
       // production never gets a global.
@@ -247,6 +272,10 @@ export function HomesteadWorld({
   useEffect(() => {
     sceneRef.current?.setPlots(cells);
   }, [cells]);
+
+  useEffect(() => {
+    sceneRef.current?.setToolIcon(HOMESTEAD_TOOL_DEFS[tool].icon as PainterName);
+  }, [tool]);
 
   useEffect(() => {
     if (celebrate) sceneRef.current?.celebrateHarvest(celebrate.plotIndex);

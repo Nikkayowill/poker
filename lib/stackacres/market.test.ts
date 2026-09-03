@@ -142,17 +142,19 @@ describe("the stalls", () => {
     }
   });
 
-  it("put cattle out in the meadow and pigs in the wallow", () => {
-    // The districts were built with their own scenery and blurbs before
-    // anything was for sale in them; a shelf that ignores that would read as
-    // arbitrary. Held so a future reshuffle has to be deliberate.
-    expect(stallSelling("cattle")).toBe("meadow");
+  it("sell each pen's stock at the district it physically stands in", () => {
+    // world.ts's PEN_GROUP_ORIGIN puts the "field" block in the Long Meadow
+    // and "cattle" at Ox Fields; a stall that disagrees offers stock its own
+    // district's plots refuse (stockAllowedOnPlot rejects it server-side),
+    // so a buy button that always errors. Held so a future reshuffle of
+    // either table has to move both together.
+    expect(stallSelling("cash_crop")).toBe("meadow");
+    expect(stallSelling("cattle")).toBe("oxfields");
     expect(stallSelling("pig")).toBe("wallow");
-    expect(stallSelling("cash_crop")).toBe("oxfields");
   });
 
-  it("shows a shelf carrying both prices for the same animal", () => {
-    const shelf = stallShelf("meadow");
+  it("shows a shelf carrying both prices for the same stock", () => {
+    const shelf = stallShelf("oxfields");
     expect(shelf).toHaveLength(1);
     expect(shelf[0]).toMatchObject({
       stock: "cattle",

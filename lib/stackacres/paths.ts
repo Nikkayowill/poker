@@ -140,7 +140,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
    * inside it.
    *
    * `wallow` gets no connector at all: the track already ends at (-140,
-   * -260), which is inside the Wallow's own eastern corner. The road that
+   * -260), which is inside the Fold's own eastern corner. The road that
    * was already there arrives -- it just had nothing to arrive at.
    */
   {

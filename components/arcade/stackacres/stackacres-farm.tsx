@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { Coins, HelpCircle, LocateFixed, Store, ZoomIn, ZoomOut } from "lucide-react";
+import { Coins, HelpCircle, LocateFixed, ZoomIn, ZoomOut } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
@@ -821,14 +821,6 @@ export function StackAcresFarm() {
             <strong>{profile?.unlimitedGold ? "∞" : (profile?.goldBalance ?? 0).toLocaleString()}</strong>
           </span>
           <StackAcresMusicToggle />
-          <button
-            type="button"
-            className="sa-store-btn"
-            onClick={() => { tapSound(); setShowStore(true); }}
-          >
-            <Store size={13} aria-hidden="true" /> Store
-            {carrying > 0 && <span className="sa-store-badge">{carrying}</span>}
-          </button>
         </div>
       </header>
 
@@ -898,6 +890,8 @@ export function StackAcresFarm() {
               setPlace(zone);
               world.current?.focusZone(zone);
             }}
+            onOpenStore={() => { tapSound(); setShowStore(true); }}
+            carrying={carrying}
           />
 
           <div className="sa-camera" role="group" aria-label="Map view">

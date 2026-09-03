@@ -561,7 +561,7 @@ export class StackAcresScene extends Phaser.Scene {
     // straight into DOM canvases by stackacres-icon.tsx and never need a
     // Phaser texture -- but the toolbelt set also has to exist here, as the
     // picture `toolGhost` floats over a finger mid-sweep, so all of PAINTERS
-    // is baked now. The four image sprites are baked from what `preload`
+    // is baked now. The image sprites are baked from what `preload`
     // fetched; everything else from its painter.
     for (const name of Object.keys(PAINTERS) as PainterName[]) {
       bakeArt(this, name);

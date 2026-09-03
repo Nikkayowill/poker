@@ -52,6 +52,7 @@ import { StackAcresIcon } from "./stackacres-icon";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
+import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresWorld, type StackAcresWorldApi, type PlotScreenRect } from "./stackacres-world";
@@ -218,6 +219,33 @@ export function StackAcresFarm() {
   // real gesture, which also doubles as the autoplay-policy unlock every
   // browser requires before it will let audio start on its own.
   const [hasStarted, setHasStarted] = useState(false);
+  // Grandfather Ray's one-time hello, first visit only -- a plain localStorage
+  // flag rather than a profile field, since this is a hello, not a fact about
+  // the farm. Read only once `hasStarted` flips true, so it never flashes
+  // behind the tap-to-play splash.
+  const [showWelcome, setShowWelcome] = useState(false);
+  useEffect(() => {
+    if (!hasStarted) return;
+    // Deferred a tick, same reason install-prompt.tsx defers its own
+    // localStorage read -- react-hooks/set-state-in-effect rejects a
+    // synchronous setState in the effect body.
+    const timer = window.setTimeout(() => {
+      try {
+        if (!window.localStorage.getItem("sa-ray-welcomed")) setShowWelcome(true);
+      } catch {
+        // Private browsing or blocked storage: skip the intro rather than error.
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [hasStarted]);
+  const dismissWelcome = useCallback(() => {
+    setShowWelcome(false);
+    try {
+      window.localStorage.setItem("sa-ray-welcomed", "1");
+    } catch {
+      // Nothing to persist if storage is blocked; it just re-offers next visit.
+    }
+  }, []);
 
   useStackAcresMusic(hasStarted);
 
@@ -897,6 +925,10 @@ export function StackAcresFarm() {
           <section className="sa-detail" aria-live="polite" ref={detail}>
             {selectedPlot === null ? null : selectedPlot.state === "locked" ? (
                 <div className="sa-panel">
+                  <div className="sa-ray-row">
+                    <img src="/stackacres/sprites/grandfather-ray-portrait.png" alt="" className="sa-ray-portrait" />
+                    <span className="sa-ray-name">Grandfather Ray</span>
+                  </div>
                   <h2>Buy acreage</h2>
                   {selectedPlot.purchasable && selectedPlot.unlockPrice !== null ? (
                     <>
@@ -1120,7 +1152,13 @@ export function StackAcresFarm() {
         <div className="sa-sheet-scrim" role="dialog" aria-modal="true" aria-label="Supply store">
           <div className="sa-sheet">
             <header className="sa-sheet-head">
-              <h2>Supply store</h2>
+              <div>
+                <div className="sa-ray-row">
+                  <img src="/stackacres/sprites/grandfather-ray-portrait.png" alt="" className="sa-ray-portrait" />
+                  <span className="sa-ray-name">Grandfather Ray</span>
+                </div>
+                <h2>Supply store</h2>
+              </div>
               <button
                 type="button"
                 className="sa-sheet-close"
@@ -1314,6 +1352,8 @@ export function StackAcresFarm() {
           </ul>
         </HowToPlayModal>
       )}
+
+      {showWelcome && <StackAcresRayWelcome onClose={dismissWelcome} />}
     </main>
   );
 }

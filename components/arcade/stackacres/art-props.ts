@@ -35,6 +35,7 @@ export type PropPainterName =
   | "flowerBed"
   | "stoneWall"
   | "scarecrow"
+  | "grandfatherRay"
   | "log"
   | "mushroom"
   | "boulder";
@@ -566,6 +567,39 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     stroke(c, "rgba(90,60,20,.35)", 0.5);
     ell(c, 8.4, 1.9, 1.6, 0.6, -0.4);
     F(c, "rgba(255,255,255,.35)");
+  }),
+
+  // Grandfather Ray's fallback, drawn only until his own generated portrait
+  // loads (see spriteBacked in stackacres-art.ts): straw hat, tan shirt,
+  // brown bib overalls, boots -- tall and slender rather than square, the
+  // one silhouette here built as a person rather than scenery.
+  grandfatherRay: painter(20, 40, (c) => {
+    for (const x of [6.4, 13.6]) {
+      rr(c, x - 1.8, 37, 3.6, 3, 1.2);
+      F(c, "#4a3324");
+    }
+    for (const x of [6.4, 13.6]) {
+      rr(c, x - 1.9, 26, 3.8, 12, 1.4);
+      F(c, "#6b4a30");
+    }
+    rr(c, 4.4, 15, 11.2, 13, 2.6);
+    F(c, "#6b4a30");
+    rr(c, 6.4, 12.4, 7.2, 5.6, 1.8);
+    F(c, "#7a563a");
+    for (const x of [3, 13.6]) {
+      rr(c, x, 13.6, 3.4, 9, 1.6);
+      F(c, "#e8dcc0");
+    }
+    for (const x of [6.6, 12.2]) {
+      rr(c, x, 12.4, 1.2, 4, 0.5);
+      F(c, "#5a3d26");
+    }
+    ell(c, 10, 8.2, 3.6, 4);
+    F(c, "#8a5a3e");
+    ell(c, 10, 5.6, 5.6, 1.7);
+    F(c, "#d8b866");
+    rr(c, 7.2, 1.6, 5.6, 4.4, 2.2);
+    F(c, "#e6c878");
   }),
 
   /* ---- the woodland floor's litter, scattered by chunkScenery ---- */

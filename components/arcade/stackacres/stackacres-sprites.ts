@@ -1,23 +1,26 @@
 /**
- * The four sprites that ship as images rather than as painter code.
+ * The sprites that ship as images rather than as painter code.
  *
  * WHY THIS EXISTS. Everything else in StackAcres is drawn by a function in
  * stackacres-art.ts, and that is still the default: a painter is on the
  * `RAMPS` palette by construction, recolours by swapping a ramp (which is how
  * `tree1/2/3` are one painter and three ramps), and costs nothing to ship.
- * These four are the exception, generated rather than drawn, and they buy a
+ * These are the exception, generated rather than drawn, and they buy a
  * silhouette the painters were not getting -- the cow and the hen especially,
- * which were circles with rounded-rect legs.
+ * which were circles with rounded-rect legs. `sheep`, `ox` and `hog` are the
+ * same trade for the same reason (see the FLUX bake-off Kayo signed off on);
+ * `grandfatherRay` is not an animal at all but is drawn the identical way,
+ * since he is a character sprite standing in the world, not a UI portrait.
  *
  * WHAT THEY COST, so nobody has to rediscover it: they are off `RAMPS`, they
  * carry gradients where the rest of the farm is flat, and they cannot be
  * recoloured. Do not reach for this module to add a variant. A new animal in
- * a different colour is a painter, not a fifth PNG.
+ * a different colour is a painter, not another PNG.
  *
  * HOW THEY REACH A CANVAS. Every surface in StackAcres draws a painter into a
  * 2D context -- the Phaser world through `bakeTexture`, the toolbelt and seed
  * strip through `paintIcon`, the lobby card through stackacres-cover-art.tsx.
- * So these are exposed the same way: stackacres-art.ts wraps each of the four
+ * So these are exposed the same way: stackacres-art.ts wraps each of these
  * painters so it draws the image once the image is here and its own shapes
  * until then. Nothing at a draw site had to change.
  *
@@ -28,8 +31,12 @@
 export const SPRITE_ART = {
   cow: "/stackacres/sprites/cow.png",
   hen: "/stackacres/sprites/hen.png",
+  sheep: "/stackacres/sprites/sheep.png",
+  ox: "/stackacres/sprites/ox.png",
+  hog: "/stackacres/sprites/hog.png",
   barn: "/stackacres/sprites/barn.png",
   windmill: "/stackacres/sprites/windmill.png",
+  grandfatherRay: "/stackacres/sprites/grandfather-ray.png",
 } as const;
 
 export type SpriteName = keyof typeof SPRITE_ART;
@@ -53,8 +60,8 @@ const waiting = new Set<() => void>();
 let started = false;
 
 /**
- * Starts fetching all four. Safe to call from anywhere and any number of
- * times; a no-op on the server and after the first call.
+ * Starts fetching every one of them. Safe to call from anywhere and any
+ * number of times; a no-op on the server and after the first call.
  */
 export function loadSprites(): void {
   if (started || typeof window === "undefined" || typeof Image === "undefined") return;

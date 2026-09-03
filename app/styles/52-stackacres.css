@@ -8,13 +8,14 @@
  *
  * Two layers. The world is a Phaser canvas (stackacres-world.tsx) that fills
  * .sa-field and moves when the player drags it. Everything else on the screen
- * -- the title pill, the toolbelt, the seed strip, the detail panel, the zoom
- * buttons, the hint -- is DOM absolutely positioned over that canvas and never
- * moves. Each overlay wrapper is pointer-events: none with its controls set
- * back to auto, so a drag that starts in the gap between two buttons reaches
- * the map underneath. The whole page is a fixed-height column for the same
- * reason the table is: the map needs a definite height to fill, and a page
- * that scrolls under a map that also scrolls is two things fighting for one
+ * -- the .floor-bar header (back link, How to play, Bushels/Gold), the title
+ * pill, the toolbelt, the seed strip, the detail panel, the zoom buttons, the
+ * hint -- is DOM absolutely positioned over that canvas and never moves. Each
+ * overlay wrapper is pointer-events: none with its controls set back to auto,
+ * so a drag that starts in the gap between two buttons reaches the map
+ * underneath. The whole page is a fixed-height column for the same reason
+ * the table is: the map needs a definite height to fill, and a page that
+ * scrolls under a map that also scrolls is two things fighting for one
  * finger.
  *
  * The state and affordance rings that used to be CSS on grid buttons are now
@@ -61,6 +62,15 @@
   --sa-zone-oxfields: #7a5a34;
   --sa-zone-wallow: #54402c;
 
+  /* The title pill, the toolbelt and the district nav below all anchor a
+     `top` offset to this rather than to 0 -- .floor-bar is chrome pinned
+     over the same top-left corner now, and without it they'd sit under the
+     header instead of below it. 44px is .floor-bar's own min-height
+     (22-arcade.css), which -- border-box, and content that never exceeds
+     it -- is also its real height at every breakpoint this file has, safe
+     area aside. */
+  --sa-header-h: 44px;
+
   /* A fixed viewport, not a page. .duel-shell gives min-height and a gap
      sized for a scrolling lobby; the map needs a hard height to fill.
      .duel-shell's own width cap and padding are sized for a card of lobby
@@ -68,23 +78,40 @@
      browser too) uses the whole screen, so this opts all the way out of
      that shared shell rather than just narrowing it. Safe-area insets still
      apply -- a notch or a rounded corner is real hardware -- nothing else
-     from .duel-shell does. */
+     from .duel-shell does. Positioned so .floor-bar below has something to
+     pin itself to. */
+  position: relative;
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
-  gap: 10px;
   width: 100%;
   margin: 0;
   padding: calc(6px + var(--safe-top)) var(--safe-right) var(--safe-bottom) var(--safe-left);
 }
 
-/* The header row keeps its own small inset -- the shell above has none, so
-   without this the back link and wallet chip sit flush against a curved
-   screen corner or a notch. */
+/* The header row used to be a flex sibling above .sa-main, taking a real row
+   of its own out of the map -- the back link, "How to play", Bushels and
+   Gold sat in a band the game could never draw under. It is chrome pinned
+   over the canvas now, the same overlay treatment as .sa-scoreline and
+   .sa-controls below: .sa-main goes back to being the shell's only flex
+   child and stretches to fill the space this bar used to reserve. The scrim
+   is what keeps light text readable now that grass, not --brand-room, is
+   what's behind it; z-index is explicit because .sa-main is also a
+   `position: relative` sibling with z-index: auto -- without this the two
+   would stack in DOM order and the map would paint over the header, not
+   under it. */
 .sa-shell .floor-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
   margin-bottom: 0;
-  padding: 0 max(10px, var(--safe-right)) 0 max(10px, var(--safe-left));
+  padding: max(8px, var(--safe-top)) max(10px, var(--safe-right)) 16px max(10px, var(--safe-left));
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--brand-ink) 60%, transparent), transparent);
+  pointer-events: none;
 }
+.sa-shell .floor-bar > * { pointer-events: auto; }
 
 .sa-main {
   position: relative;
@@ -160,7 +187,7 @@
    above it: on a phone that band was a fifth of the height the map now has. */
 .sa-scoreline {
   position: absolute;
-  top: 8px;
+  top: calc(var(--sa-header-h) + 8px);
   left: 8px;
   width: auto;
   align-items: baseline;
@@ -196,7 +223,7 @@
    Side by side, each column fits with room to spare. */
 .sa-controls {
   position: absolute;
-  top: 8px;
+  top: calc(var(--sa-header-h) + 8px);
   right: 8px;
   bottom: 48px;
   display: flex;
@@ -388,7 +415,7 @@
 .sa-destinations {
   position: absolute;
   left: 8px;
-  top: 52px;
+  top: calc(var(--sa-header-h) + 52px);
   display: flex;
   gap: 4px;
   /* Stops short of the seed strip and the toolbelt down the right. */
@@ -1291,17 +1318,12 @@
    map comes straight out of the map. The layout is the same fixed column as
    everywhere else; this block only shrinks what sits over and above it. */
 @media (orientation: landscape) and (max-height: 520px) {
-  .sa-shell {
-    gap: 6px;
-  }
-
   /* Every band above the field gives back what it can: the chrome is worth
-     less here than the picture it is sitting on top of. Full-bleed and the
-     header's own inset are unconditional (above) -- this block only shrinks
-     what's left. */
+     less here than the picture it is sitting on top of. The header is
+     already an overlay pinned over the map (above) -- this block only
+     shrinks its own scrim padding and the icons inside it. */
   .sa-shell .floor-bar {
-    min-height: 34px;
-    margin-bottom: 6px;
+    padding-bottom: 8px;
   }
   .sa-shell .ante-lobby-heading h1 { font-size: 16px; }
   .sa-shell .sa-heading-logo { width: 150px; }

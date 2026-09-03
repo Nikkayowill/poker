@@ -1280,14 +1280,33 @@
 @media (orientation: landscape) and (max-height: 520px) {
   .sa-shell {
     gap: 6px;
-    padding-top: calc(6px + var(--safe-top));
+    /* .duel-shell's own padding (and its width: min(960px, 100%) cap) is
+       sized for a scrolling card of lobby text, not a game viewport -- on a
+       real phone it read as a rounded box floating on the screen instead of
+       the screen itself. Safe-area insets still apply (a notch or a rounded
+       corner is real hardware), everything else does not. */
+    width: 100%;
+    margin: 0;
+    padding: calc(6px + var(--safe-top)) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  }
+
+  /* Same reasoning: the card look (rounded corners, drop shadow) is right
+     for a boxed preview sitting in a page, wrong for the one thing on the
+     screen. */
+  .sa-field {
+    border-radius: 0;
+    box-shadow: none;
   }
 
   /* Every band above the field gives back what it can: the chrome is worth
-     less here than the picture it is sitting on top of. */
+     less here than the picture it is sitting on top of. The shell itself is
+     edge-to-edge now (above), so the header keeps its own small inset --
+     otherwise the back link and wallet chip sit flush against a curved
+     screen corner. */
   .sa-shell .floor-bar {
     min-height: 34px;
     margin-bottom: 6px;
+    padding: 0 max(10px, var(--safe-right)) 0 max(10px, var(--safe-left));
   }
   .sa-shell .ante-lobby-heading h1 { font-size: 16px; }
   .sa-shell .sa-heading-logo { width: 150px; }

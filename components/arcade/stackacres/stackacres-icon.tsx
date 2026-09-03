@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import clsx from "clsx";
 import { paintIcon, type PainterName } from "./stackacres-art";
+import { allSpritesReady, onSpriteReady } from "./stackacres-sprites";
 
 /**
  * One of the StackAcres's vector painters, drawn into a small DOM canvas.
@@ -33,6 +34,12 @@ export function StackAcresIcon({ name, size = 24, className }: StackAcresIconPro
     const canvas = ref.current;
     if (!canvas) return;
     paintIcon(canvas, name, size);
+    // Four of the painters draw an image once it has arrived (the seed strip
+    // reaches two of them, `cow` and `hen`), so paint again when it does --
+    // otherwise the strip keeps the drawn cow while the world shows the
+    // generated one, which is exactly the kind of mismatch that gets noticed.
+    if (allSpritesReady()) return;
+    return onSpriteReady(() => paintIcon(canvas, name, size));
   }, [name, size]);
 
   return <canvas ref={ref} className={clsx("sa-ico", className)} aria-hidden="true" />;

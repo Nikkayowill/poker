@@ -84,6 +84,50 @@ limit until replaced. Also fixed in passing: `homestead_harvests.stake` would ha
 600-Bushel seed cost nobody paid on bought plots, understating the farm in any economy dashboard; it
 cannot be 0 (`check (stake > 0)`), so a `permanent` flag travels on the ledger row instead.
 
+### Four generated sprites ship as images; the rest of the farm is still drawn (2026-09-03)
+Kayo's call after a FLUX.1-schnell bake-off on the laptop's own GPU
+(https://claude.ai/code/artifact/78d2c1a4-cc71-41fc-bc29-e51a099efa9c): put **all four** in --
+`cow`, `hen`, `barn`, `windmill` -- knowing the trade, which the artifact measures. They are off
+`RAMPS` (11 of 24 dominant colours sit >deltaE 10 from the nearest ramp tone), they carry gradients
+where the rest of the farm is flat, and **they cannot be recoloured**, so nothing here is a template
+for a variant: a new animal in a new colour is a painter, not a fifth PNG. The win is silhouette --
+the drawn cow and hen were circles with rounded-rect legs. These are the **first files StackAcres
+fetches**; everything else is still drawn at boot.
+
+**The discovery worth keeping: two of the four never reach the world.** The 2026-09-03 isometric pass
+replaced the barn, silo and windmill with Phaser Graphics volumes (`drawIsoWalls`/`drawIsoGableRoof`),
+so the `barn` and `windmill` PAINTERS are no longer drawn on the map at all -- they now only appear on
+the play-screen cover and in store/HUD icons. That is also why substituting them into the world would
+be wrong rather than merely unfinished: the generated barn is a **straight-on elevation** and the
+world is isometric, so it would be the one object in the scene not in perspective. `cow` and `hen` DO
+reach the world, as pen animals.
+
+Plumbing, all through one seam: `stackacres-sprites.ts` holds the registry and a DOM image cache, and
+`spriteBacked()` in stackacres-art.ts wraps each of the four painters so it draws the image once the
+image is here and its own shapes until then. **No draw site changed** -- every surface already drew a
+painter into a 2D context (`bakeTexture` for the world, `paintIcon` for icons, the cover art), so all
+three picked the sprites up for free, and the drawn version remains the SSR/first-paint/404 fallback.
+The scene gained its first `preload()` so the world never bakes a painter cow and then swaps it.
+Boxes (`w`/`h`/`ax`/`ay`) are unchanged and the assets were fitted TO them, so `PROP_SIZE`,
+`PROP_SHADOW`, `WINDMILL_HUB`, `propRect` and props.test.ts's cross-check all still hold.
+`bakeSpriteTexture` still bakes through a power-of-two canvas for the same mipmap reason
+`bakeTexture` does -- an unmipped 192x144 cow shimmers at the zoomed-out farm's ~6x minification.
+
+Asset prep (`prep_assets.py`, kept with the venv at `~/.local/share/flux-sprite-test`) has two
+non-obvious rules. **The silhouette is a background flood-fill, not distance-to-white**: alpha from
+distance-to-white makes a near-white subject near-transparent, and the cow and hen rendered as ghosts
+the moment they stood on grass rather than on a white page -- invisible in every check done against a
+white background. **The baked shadow and the windmill's turf pad are stripped BEFORE that fill**, not
+after: the shadow seals the gap between the cow's legs, so a fill that runs first treats the gap as
+enclosed and leaves a white slab behind when the shadow goes. Stripping matters because the scene
+draws its own `shadow` pool under every prop from `PROP_SHADOW` -- a baked one doubles up.
+
+Verified end to end in memory mode at 1280x800: hens rendering in a real stocked Hen Coop on the
+game's own single shadow, the seed strip's hen and cattle icons showing the generated art beside the
+still-drawn sheep, and the cover art carrying the generated barn, cow and hen. Full `npx vitest run`
+2768/2769 (the one red is the pre-existing PR #163 `table-anchors` regression), `npm run lint` and
+`npm run build` clean. Branch `feat/stackacres-generated-sprites`.
+
 ### Homestead is renamed StackAcres everywhere, and the map got four districts (2026-09-03)
 
 Kayo: "isolate this into mainly nailing the map design so the world doesnt feel empty... change

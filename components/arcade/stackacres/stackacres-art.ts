@@ -30,6 +30,7 @@ import { RAMPS, tint, type Ramp } from "./art-palette";
 import { PROP_PAINTERS, type PropPainterName } from "./art-props";
 import { WATER_PAINTERS, type WaterPainterName } from "./art-water";
 import { ZONE_PAINTERS, type ZonePainterName } from "./art-zones";
+import { isSpriteName, spriteImage, spriteLoadKey, type SpriteName } from "./stackacres-sprites";
 
 export type { Painter } from "./art-kit";
 // The bake constants live in art-kit.ts so a per-area art module can read
@@ -209,10 +210,13 @@ function glass(c: Ctx, x: number, y: number, w: number, h: number): void {
 
 const CELL = STACKACRES_CELL;
 
-/** Every painter, by name. A record literal rather than a table built by
- *  mutation, so a name added to `PainterName` without a painter is a compile
- *  error instead of an undefined texture at boot. */
-export const PAINTERS: Record<PainterName, Painter> = {
+/** Every painter, by name, as drawn code. A record literal rather than a
+ *  table built by mutation, so a name added to `PainterName` without a
+ *  painter is a compile error instead of an undefined texture at boot.
+ *
+ *  Exported as `PAINTERS` below, with the four image-backed sprites wrapped
+ *  over the top of their drawn versions. */
+const DRAWN: Record<PainterName, Painter> = {
   ...WATER_PAINTERS,
   ...PROP_PAINTERS,
   ...ZONE_PAINTERS,
@@ -889,6 +893,41 @@ export const PAINTERS: Record<PainterName, Painter> = {
 };
 
 /**
+ * A painter that draws its image once the image is here, and its own shapes
+ * until then.
+ *
+ * Keeping the drawn version as the fallback is not just defensive: it is what
+ * the server renders, what the first frame shows, and what is left if the
+ * file 404s. The box (`w`, `h`, `ax`, `ay`) is the drawn painter's, unchanged,
+ * because `PROP_SIZE`, `PROP_SHADOW`, `WINDMILL_HUB` and `propRect` are all
+ * written against it -- the asset was fitted to that box, rather than the box
+ * moved to the asset.
+ */
+function spriteBacked(name: SpriteName, drawn: Painter): Painter {
+  const p = ((c: Ctx) => {
+    const img = spriteImage(name);
+    if (img) c.drawImage(img, 0, 0, drawn.w, drawn.h);
+    else drawn(c);
+  }) as Painter;
+  p.w = drawn.w;
+  p.h = drawn.h;
+  p.ax = drawn.ax;
+  p.ay = drawn.ay;
+  return p;
+}
+
+/** Every painter, by name, with the four generated sprites standing in front
+ *  of the code that used to draw them. See stackacres-sprites.ts for what
+ *  those four cost and why there are only four. */
+export const PAINTERS: Record<PainterName, Painter> = {
+  ...DRAWN,
+  cow: spriteBacked("cow", DRAWN.cow),
+  hen: spriteBacked("hen", DRAWN.hen),
+  barn: spriteBacked("barn", DRAWN.barn),
+  windmill: spriteBacked("windmill", DRAWN.windmill),
+};
+
+/**
  * Draws the named painter into a CanvasTexture and returns its key. No-op if
  * the texture already exists.
  *
@@ -903,6 +942,41 @@ export const PAINTERS: Record<PainterName, Painter> = {
  * map pans. The painter's own region is registered as `ART_FRAME` so the
  * padding never shows.
  */
+/**
+ * Bakes one of the four image sprites, from the file the scene preloaded.
+ *
+ * Drawn through the same power-of-two canvas as `bakeTexture` rather than
+ * used as a texture directly, and for the same reason: Phaser 3.90 on WebGL1
+ * only builds mipmaps for power-of-two sides, and the fully zoomed-out farm
+ * minifies about 6x, so an unmipped 192x144 cow shimmers as the map pans.
+ * Baking also means the painter's name still resolves to a canvas texture
+ * with an `ART_FRAME` frame, so no `add.image(..., ART_FRAME)` call site had
+ * to learn the difference.
+ *
+ * Falls back to painting the drawn version if the file never arrived.
+ */
+export function bakeSpriteTexture(scene: Phaser.Scene, name: SpriteName): string {
+  if (scene.textures.exists(name)) return name;
+  const source = scene.textures.exists(spriteLoadKey(name))
+    ? (scene.textures.get(spriteLoadKey(name)).getSourceImage() as CanvasImageSource)
+    : null;
+  if (!source) return bakeTexture(scene, name);
+  const p = PAINTERS[name];
+  const width = Math.ceil(p.w * ART_SCALE);
+  const height = Math.ceil(p.h * ART_SCALE);
+  const texture = scene.textures.createCanvas(name, powerOfTwoCeil(width), powerOfTwoCeil(height));
+  if (!texture) return name;
+  texture.context.drawImage(source, 0, 0, width, height);
+  texture.add(ART_FRAME, 0, 0, 0, width, height);
+  texture.refresh();
+  return name;
+}
+
+/** Bakes whichever of the two the name is. */
+export function bakeArt(scene: Phaser.Scene, name: PainterName): string {
+  return isSpriteName(name) ? bakeSpriteTexture(scene, name) : bakeTexture(scene, name);
+}
+
 export function bakeTexture(scene: Phaser.Scene, name: PainterName): string {
   if (scene.textures.exists(name)) return name;
   const p = PAINTERS[name];

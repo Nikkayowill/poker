@@ -3,9 +3,18 @@
 // from "phaser"` fails at build time with "export default doesn't exist".
 import * as Phaser from "phaser";
 import { isLivestock, type HomesteadStock } from "@/lib/homestead/catalogue";
+import {
+  ISO_EDGE_ANGLE,
+  isoProject,
+  isoUnproject,
+  projectedBounds,
+  projectedCorners,
+  unprojectBoundsApprox,
+  type DiamondCorners,
+} from "@/lib/homestead/iso";
 import { FARM_PATHS } from "@/lib/homestead/paths";
 import type { HomesteadPlotState } from "@/lib/homestead/plots";
-import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS } from "@/lib/homestead/props";
+import { PROP_SHADOW, WINDMILL_SPEED, YARD_PROPS } from "@/lib/homestead/props";
 import type { PlotAffordance } from "@/lib/homestead/tools";
 import { DOCK, DUCK_ORBIT, LILY_PADS, POND, REEDS, RIPPLE_SPOTS } from "@/lib/homestead/water";
 import {
@@ -79,13 +88,33 @@ import { bakePondTexture } from "./art-water";
  * is read straight off the host element with native pointer events. See
  * `bindInput` for why that matters more than tidiness.
  *
- * Two coordinate systems meet here and it matters which one is in hand. The
- * canvas is DPR times denser than the screen (that density is what makes the
- * vector art crisp), so Phaser's camera width and zoom are in device pixels,
- * while a pointer event and everything the DOM shell hands over or gets back
- * -- the ghost's position, the tracked plot's rectangle -- are in CSS pixels.
- * The `viewW`/`viewH`/`zoomL`/`toScreen` helpers are the CSS-pixel side; the
- * `cam.*` values are the device-pixel side.
+ * Three coordinate systems meet here and it matters which one is in hand.
+ *
+ * `world.ts` space is the true Cartesian plane every game rule lives in: a
+ * plot is a CELL-square at `cellOrigin(index)`, an animal walks a rectangle,
+ * `plotIndexAt` is a plain divide. Nothing in that file, or in `paths.ts` /
+ * `water.ts` / `props.ts`, knows the camera is isometric -- it never has to.
+ *
+ * `iso.ts` is the seam: `isoProject` turns a world point into the sheared,
+ * diamond-tiled space this scene actually draws into ("scene space" below),
+ * and `isoUnproject` is its exact inverse. Every literal world-space number
+ * this file reads from `world.ts`/`paths.ts`/`water.ts`/`props.ts` -- a
+ * plot's origin, a prop's feet, an animal's walk position -- goes through
+ * `isoProject` before it becomes a Phaser position or a depth key. Every
+ * point Phaser hands back (a pointer's world point, `cam.getWorldPoint`)
+ * goes through `isoUnproject` before it is allowed near `plotIndexAt` or any
+ * other `world.ts` function. `put()` and `buildCell`'s cell-local `img`/
+ * `shadow` closures do this once, at the seam, so most of the file below
+ * just calls them with plain world-space numbers exactly as it did before
+ * the camera tilted.
+ *
+ * On top of that, the canvas is DPR times denser than the screen (that
+ * density is what makes the vector art crisp), so Phaser's camera width and
+ * zoom are in device pixels, while a pointer event and everything the DOM
+ * shell hands over or gets back -- the ghost's position, the tracked plot's
+ * rectangle -- are in CSS pixels. The `viewW`/`viewH`/`zoomL`/`toScreen`
+ * helpers are the CSS-pixel side; the `cam.*` values are the device-pixel
+ * side. `toScreen`'s own input is scene space, same as `cam.*`.
  */
 
 export interface HomesteadSceneCell {
@@ -199,6 +228,20 @@ const GHOST_ART: Record<HomesteadStock, PainterName> = {
   sprout: "carrot2",
   cash_crop: "corn2",
 };
+
+/** A Phaser packed colour, lightened (positive) or darkened (negative) by a
+ *  flat channel amount. The one-sun shading every isometric structure below
+ *  uses: a roof lit from directly above, a left wall toward the light, a
+ *  right wall away from it -- the same three-tone convention `litMass` uses
+ *  elsewhere in this codebase, done by hand because these are one-off
+ *  Graphics shapes rather than a baked painter. */
+function shadeColor(hex: number, amt: number): number {
+  const clamp = (v: number) => Math.max(0, Math.min(255, v));
+  const r = clamp(((hex >> 16) & 0xff) + amt);
+  const g = clamp(((hex >> 8) & 0xff) + amt);
+  const b = clamp((hex & 0xff) + amt);
+  return (r << 16) | (g << 8) | b;
+}
 
 /** Only things with height get a shadow: a canopy, a fallen log, a boulder.
  *  A rock, a tuft or a mushroom sitting on a smudge of its own reads as
@@ -421,15 +464,29 @@ export class HomesteadScene extends Phaser.Scene {
     }
   }
 
-  /** One painter, placed by its own anchor and sorted by the ground it stands
-   *  on. Everything in the world goes through here. */
+  /**
+   * The scene-space depth key for a world point: the projected y, which is
+   * monotonic in (worldX + worldY) by construction (see iso.ts), so it is
+   * the correct isometric near/far ordering and not just a stand-in for one.
+   * `nudge` is a small scene-space tie-breaker for two things anchored at
+   * the same point -- it is added AFTER projection, never before, because a
+   * tie-break has no direction in world space to be projected from.
+   */
+  private depthAt(x: number, y: number, nudge = 0): number {
+    return isoProject(x, y).y + nudge;
+  }
+
+  /** One painter, placed at a world-space anchor (projected here, the one
+   *  place callers do not have to think about it) and sorted by the ground
+   *  it stands on. Everything in the world goes through here. */
   private put(name: PainterName, x: number, y: number, depth?: number): Phaser.GameObjects.Image {
     const p = PAINTERS[name];
+    const s = isoProject(x, y);
     return this.add
-      .image(x, y, name, ART_FRAME)
+      .image(s.x, s.y, name, ART_FRAME)
       .setOrigin(p.ax, p.ay)
       .setScale(1 / S)
-      .setDepth(depth ?? y);
+      .setDepth(depth ?? s.y);
   }
 
   /**
@@ -439,12 +496,17 @@ export class HomesteadScene extends Phaser.Scene {
    * the junction it shares with an earlier one (see bakePathTexture), which
    * only works if the earlier one is underneath.
    */
+  // The baked texture is still the flat top-down ribbon it always was --
+  // reshaping it to the diamond grid's own edge directions is follow-up
+  // work (see the class doc), not done in this pass. Only its anchor is
+  // projected below, so it at least lands in the right place.
   private paintPaths(): void {
     FARM_PATHS.forEach((spec, i) => {
       const bake = bakePathTexture(this, spec, FARM_PATHS.slice(0, i));
       if (!bake) return;
+      const s = isoProject(bake.x, bake.y);
       this.add
-        .image(bake.x, bake.y, bake.key, ART_FRAME)
+        .image(s.x, s.y, bake.key, ART_FRAME)
         .setOrigin(0)
         .setScale(1 / GRASS_PX)
         .setDepth(PATH_DEPTH);
@@ -461,8 +523,11 @@ export class HomesteadScene extends Phaser.Scene {
   private paintPond(): void {
     const bake = bakePondTexture(this);
     if (bake) {
+      // Same trade-off as paintPaths: the shore texture stays flat for now,
+      // only its anchor is projected.
+      const s = isoProject(bake.x, bake.y);
       this.add
-        .image(bake.x, bake.y, bake.key, ART_FRAME)
+        .image(s.x, s.y, bake.key, ART_FRAME)
         .setOrigin(0)
         .setScale(1 / GRASS_PX)
         .setDepth(POND_DEPTH);
@@ -500,20 +565,27 @@ export class HomesteadScene extends Phaser.Scene {
     }
     // The duck's depth is fixed at the bottom of its loop rather than set
     // every frame; nothing else floats inside the loop.
-    this.duck = this.put("duck", DUCK_ORBIT.x + DUCK_ORBIT.rx, DUCK_ORBIT.y, DUCK_ORBIT.y + DUCK_ORBIT.ry + 1);
+    this.duck = this.put(
+      "duck",
+      DUCK_ORBIT.x + DUCK_ORBIT.rx,
+      DUCK_ORBIT.y,
+      this.depthAt(DUCK_ORBIT.x, DUCK_ORBIT.y + DUCK_ORBIT.ry, 1),
+    );
 
-    this.put("dock", DOCK.x, DOCK.y, DOCK.y);
+    this.put("dock", DOCK.x, DOCK.y, this.depthAt(DOCK.x, DOCK.y));
     for (const reed of REEDS) {
-      this.put("shadow", reed.x, reed.y + 1, reed.y - 0.5)
+      this.put("shadow", reed.x, reed.y + 1, this.depthAt(reed.x, reed.y, -0.5))
         .setScale(0.4 / S, 0.5 / S)
         .setAlpha(0.7);
-      this.put("reeds", reed.x, reed.y, reed.y);
+      this.put("reeds", reed.x, reed.y, this.depthAt(reed.x, reed.y));
     }
     LILY_PADS.forEach((pad, i) => {
-      this.lilies.push(this.put("lily", pad.x, pad.y, pad.y));
+      this.lilies.push(this.put("lily", pad.x, pad.y, this.depthAt(pad.x, pad.y)));
       this.lilyBaseY.push(pad.y);
       if (pad.flower) {
-        this.lilyFlowers.push(this.put("lilyFlower", pad.x - 0.8, pad.y - 1.4, pad.y + 0.1));
+        this.lilyFlowers.push(
+          this.put("lilyFlower", pad.x - 0.8, pad.y - 1.4, this.depthAt(pad.x, pad.y, 0.1)),
+        );
         this.lilyFlowerPad.push(i);
       }
     });
@@ -530,34 +602,46 @@ export class HomesteadScene extends Phaser.Scene {
   /**
    * Where glint `i` is at fraction `p` of its run: a chord across the sun
    * side of the water, east to west, on a shallow sine, fading in and out
-   * at the ends so a run never pops.
+   * at the ends so a run never pops. Computed in world space, projected once
+   * at the end -- everything upstream of the final `isoProject` here is the
+   * same world-space ellipse math the flat camera used.
    */
   private placeGlint(i: number, p: number): void {
     const glint = this.glints[i];
     const y = POND.y - 32 + i * 8 + Math.sin(p * Math.PI * 3 + i) * 1.5;
     const dy = (y - POND.y) / POND.ry;
     const half = POND.rx * Math.sqrt(Math.max(0, 1 - dy * dy));
-    glint.setPosition(POND.x + half * (0.3 - 1.1 * p), y);
+    const world = isoProject(POND.x + half * (0.3 - 1.1 * p), y);
+    glint.setPosition(world.x, world.y);
     glint.setAlpha(Math.sin(p * Math.PI) ** 2 * 0.85);
   }
 
   /** Sun drifting across the water, pads bobbing, the duck on its loop.
-   *  Indexed loops over arrays built once: nothing here allocates. */
+   *  Indexed loops over arrays built once: nothing here allocates. All of it
+   *  is world-space math, same as the flat camera had, projected only at the
+   *  point each sprite's position is actually set. */
   private animatePond(time: number): void {
     for (let i = 0; i < this.glints.length; i += 1) {
       this.placeGlint(i, (time * 0.00004 + i * 0.2) % 1);
     }
     for (let i = 0; i < this.lilies.length; i += 1) {
-      this.lilies[i].y = this.lilyBaseY[i] + Math.sin(time * 0.0012 + i * 1.3) * 0.4;
+      const worldY = this.lilyBaseY[i] + Math.sin(time * 0.0012 + i * 1.3) * 0.4;
+      const s = isoProject(LILY_PADS[i].x, worldY);
+      this.lilies[i].setPosition(s.x, s.y);
     }
     for (let j = 0; j < this.lilyFlowers.length; j += 1) {
-      this.lilyFlowers[j].y = this.lilies[this.lilyFlowerPad[j]].y - 1.4;
+      const padIndex = this.lilyFlowerPad[j];
+      const worldY = this.lilyBaseY[padIndex] + Math.sin(time * 0.0012 + padIndex * 1.3) * 0.4 - 1.4;
+      const s = isoProject(LILY_PADS[padIndex].x - 0.8, worldY);
+      this.lilyFlowers[j].setPosition(s.x, s.y);
     }
     const duck = this.duck;
     if (duck) {
       const t = time * 0.00022;
-      duck.x = DUCK_ORBIT.x + Math.cos(t) * DUCK_ORBIT.rx;
-      duck.y = DUCK_ORBIT.y + Math.sin(t) * DUCK_ORBIT.ry + Math.sin(time * 0.003) * 0.3;
+      const worldX = DUCK_ORBIT.x + Math.cos(t) * DUCK_ORBIT.rx;
+      const worldY = DUCK_ORBIT.y + Math.sin(t) * DUCK_ORBIT.ry + Math.sin(time * 0.003) * 0.3;
+      const s = isoProject(worldX, worldY);
+      duck.setPosition(s.x, s.y);
       // Heading west while x is falling; the art faces east.
       const west = Math.sin(t) > 0;
       if (west !== this.duckWest) {
@@ -568,41 +652,245 @@ export class HomesteadScene extends Phaser.Scene {
   }
 
   /**
+   * A footprint's four corners, isometrically projected and raised by
+   * `wallH` -- the shared shape every volumetric structure below (the barn,
+   * the silo, the windmill tower) is built from. `cx`/`cy` are the
+   * footprint's own world-space centre, `w`/`h` its world-space size.
+   */
+  private isoFootprint(cx: number, cy: number, w: number, h: number): DiamondCorners {
+    return projectedCorners({ x: cx - w / 2, y: cy - h / 2, width: w, height: h });
+  }
+
+  /**
+   * The two visible walls of an isometric box: the near-left face (between
+   * the W and S footprint corners) and the near-right face (S and E). The
+   * far two faces are never drawn -- they are permanently behind the
+   * building, the same reason a flat top-down icon never drew a back wall
+   * either. Returns the raised top plate for a roof to sit on.
+   */
+  private drawIsoWalls(
+    g: Phaser.GameObjects.Graphics,
+    footprint: DiamondCorners,
+    wallH: number,
+    wallColor: number,
+  ): DiamondCorners {
+    const lift = (p: WorldPoint): WorldPoint => ({ x: p.x, y: p.y - wallH });
+    const top: DiamondCorners = {
+      n: lift(footprint.n),
+      e: lift(footprint.e),
+      s: lift(footprint.s),
+      w: lift(footprint.w),
+    };
+    const quad = (a: WorldPoint, b: WorldPoint, c: WorldPoint, d: WorldPoint, color: number): void => {
+      g.fillStyle(color, 1);
+      g.beginPath();
+      g.moveTo(a.x, a.y);
+      g.lineTo(b.x, b.y);
+      g.lineTo(c.x, c.y);
+      g.lineTo(d.x, d.y);
+      g.closePath();
+      g.fillPath();
+    };
+    quad(footprint.w, footprint.s, top.s, top.w, shadeColor(wallColor, -30));
+    quad(footprint.s, footprint.e, top.e, top.s, shadeColor(wallColor, -68));
+    return top;
+  }
+
+  /** A flat roof plate: the top face lit brightest (it faces the one sun
+   *  most directly of anything on the building), edged in its own shadow. */
+  private drawIsoFlatRoof(g: Phaser.GameObjects.Graphics, top: DiamondCorners, roofColor: number): void {
+    g.fillStyle(shadeColor(roofColor, 18), 1);
+    g.beginPath();
+    g.moveTo(top.n.x, top.n.y);
+    g.lineTo(top.e.x, top.e.y);
+    g.lineTo(top.s.x, top.s.y);
+    g.lineTo(top.w.x, top.w.y);
+    g.closePath();
+    g.fillPath();
+    g.lineStyle(1.4, shadeColor(roofColor, -30), 1);
+    g.strokePath();
+  }
+
+  /** A gable roof over an isometric box: two ridge-facing slopes and two
+   *  gable-end slopes, each its own tone off the one sun, same shape as the
+   *  camera-preview mockup this pass was built against. */
+  private drawIsoGableRoof(
+    g: Phaser.GameObjects.Graphics,
+    top: DiamondCorners,
+    ridgeH: number,
+    roofColor: number,
+  ): void {
+    const mid1: WorldPoint = { x: (top.n.x + top.e.x) / 2, y: (top.n.y + top.e.y) / 2 - ridgeH };
+    const mid2: WorldPoint = { x: (top.w.x + top.s.x) / 2, y: (top.w.y + top.s.y) / 2 - ridgeH };
+    const face = (pts: readonly WorldPoint[], color: number): void => {
+      g.fillStyle(color, 1);
+      g.beginPath();
+      g.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i += 1) g.lineTo(pts[i].x, pts[i].y);
+      g.closePath();
+      g.fillPath();
+    };
+    face([top.n, top.e, mid1], shadeColor(roofColor, 14));
+    face([top.e, top.s, mid2, mid1], shadeColor(roofColor, -18));
+    face([top.s, top.w, mid2], shadeColor(roofColor, -34));
+    face([top.w, top.n, mid1, mid2], shadeColor(roofColor, 2));
+    g.lineStyle(1.6, shadeColor(roofColor, 34), 1);
+    g.beginPath();
+    g.moveTo(mid1.x, mid1.y);
+    g.lineTo(mid2.x, mid2.y);
+    g.strokePath();
+  }
+
+  /**
    * A barn, a silo and some clutter in the margin above the first row, so the
    * farm has a home rather than a top-left corner. It is the one fixed
    * landmark out here: the opening shot frames it along with the plots.
+   *
+   * Unlike the rest of the world's art, the barn and silo are not baked
+   * painters: they are the two structures closest to the camera and the
+   * ones a flat plan icon read worst on ("basic poly" was mostly this), so
+   * they are drawn here as real isometric volumes -- walls, a roof, a door
+   * and a window -- direct with Phaser Graphics, matching the mockup this
+   * pass was previewed and approved against.
    */
   private paintBarn(): void {
-    this.put("shadow", BARN_X, BARN_Y + 1, BARN_Y - 100)
-      .setScale(2.6 / S, 1.2 / S)
+    this.put("shadow", BARN_X, BARN_Y + 1, this.depthAt(BARN_X, BARN_Y, -100))
+      .setScale(3.4 / S, 1.6 / S)
       .setAlpha(0.9);
-    this.put("barn", BARN_X, BARN_Y, BARN_Y);
-    this.put("silo", BARN_X + 46, BARN_Y, BARN_Y);
-    this.put("hay", BARN_X + 58, BARN_Y - 11, BARN_Y + 0.5);
-    this.put("hay", BARN_X + 66, BARN_Y - 11, BARN_Y + 0.6);
-    this.put("barrel", BARN_X - 48, BARN_Y - 14, BARN_Y + 0.4);
+
+    const g = this.add.graphics().setDepth(this.depthAt(BARN_X, BARN_Y + 17));
+    const barnColor = 0xc14b3d;
+    const barnFootprint = this.isoFootprint(BARN_X, BARN_Y, 46, 34);
+    const barnTop = this.drawIsoWalls(g, barnFootprint, 42, barnColor);
+
+    // Door: a filled quad on the near-left wall, a third of the way along
+    // it, running from the ground to two-thirds of the wall's own height.
+    const mix = (a: WorldPoint, b: WorldPoint, k: number): WorldPoint => ({
+      x: a.x + (b.x - a.x) * k,
+      y: a.y + (b.y - a.y) * k,
+    });
+    const doorBaseA = mix(barnFootprint.w, barnFootprint.s, 0.38);
+    const doorBaseB = mix(barnFootprint.w, barnFootprint.s, 0.62);
+    const doorTopA = mix(barnTop.w, barnTop.s, 0.38);
+    const doorTopB = mix(barnTop.w, barnTop.s, 0.62);
+    const doorMidA = mix(doorBaseA, doorTopA, 0.62);
+    const doorMidB = mix(doorBaseB, doorTopB, 0.62);
+    g.fillStyle(0x3a241c, 1);
+    g.beginPath();
+    g.moveTo(doorBaseA.x, doorBaseA.y);
+    g.lineTo(doorBaseB.x, doorBaseB.y);
+    g.lineTo(doorMidB.x, doorMidB.y);
+    g.lineTo(doorMidA.x, doorMidA.y);
+    g.closePath();
+    g.fillPath();
+
+    // Window: a small pale quad on the near-right wall.
+    const winBaseA = mix(barnFootprint.s, barnFootprint.e, 0.2);
+    const winBaseB = mix(barnFootprint.s, barnFootprint.e, 0.4);
+    const winTopA = mix(barnTop.s, barnTop.e, 0.2);
+    const winTopB = mix(barnTop.s, barnTop.e, 0.4);
+    const winLoA = mix(winBaseA, winTopA, 0.35);
+    const winLoB = mix(winBaseB, winTopB, 0.35);
+    const winHiA = mix(winBaseA, winTopA, 0.75);
+    const winHiB = mix(winBaseB, winTopB, 0.75);
+    g.fillStyle(0xbfe6f2, 1);
+    g.beginPath();
+    g.moveTo(winLoA.x, winLoA.y);
+    g.lineTo(winLoB.x, winLoB.y);
+    g.lineTo(winHiB.x, winHiB.y);
+    g.lineTo(winHiA.x, winHiA.y);
+    g.closePath();
+    g.fillPath();
+
+    this.drawIsoGableRoof(g, barnTop, 20, shadeColor(barnColor, -46));
+
+    // Silo: a plain cylinder-ish box (no gable) with a shallow domed cap,
+    // standing where the flat barn's own silo painter used to.
+    const siloCentre = { x: BARN_X + 40, y: BARN_Y - 4 };
+    const siloFootprint = this.isoFootprint(siloCentre.x, siloCentre.y, 20, 20);
+    const siloTop = this.drawIsoWalls(g, siloFootprint, 50, 0xc7cdd4);
+    const capCentre = mix(siloTop.n, siloTop.s, 0.5);
+    const capRx = Math.abs(siloTop.e.x - siloTop.w.x) / 2;
+    const capRy = Math.abs(siloTop.s.y - siloTop.n.y) / 2;
+    g.fillStyle(0xe6e9ec, 1);
+    g.fillEllipse(capCentre.x, capCentre.y, capRx * 2, Math.max(capRy * 2, 6));
+    g.lineStyle(1.2, 0x8d949c, 1);
+    g.strokeEllipse(capCentre.x, capCentre.y, capRx * 2, Math.max(capRy * 2, 6));
+    g.fillStyle(0xb23327, 1);
+    g.beginPath();
+    g.moveTo(siloTop.w.x, siloTop.w.y);
+    g.lineTo(siloTop.n.x, siloTop.n.y);
+    g.lineTo(siloTop.e.x, siloTop.e.y);
+    g.lineTo(capCentre.x, capCentre.y - 16);
+    g.closePath();
+    g.fillPath();
+
+    this.put("hay", BARN_X + 58, BARN_Y - 11, this.depthAt(BARN_X, BARN_Y, 0.5));
+    this.put("hay", BARN_X + 66, BARN_Y - 11, this.depthAt(BARN_X, BARN_Y, 0.6));
+    this.put("barrel", BARN_X - 48, BARN_Y - 14, this.depthAt(BARN_X - 48, BARN_Y - 14));
   }
 
   /**
    * The yard's fixed props and the lamps down the lane (lib/homestead/
    * props.ts), each on a soft ground shadow and sorted by its feet like
-   * everything else. The windmill's sails are their own sprite pinned at
-   * the hub, half a step in front of the tower: the hub is far above the
-   * feet, so left to `put`'s default depth they would sort behind the tower
-   * and vanish. update() turns them.
+   * everything else. The windmill is the one prop drawn as an isometric
+   * volume rather than the flat baked painter (see `paintWindmill`) -- its
+   * tower is the second-tallest thing in the yard after the barn, so a flat
+   * plan icon read just as wrong on it.
    */
   private paintProps(): void {
     for (const prop of YARD_PROPS) {
       const pool = PROP_SHADOW[prop.kind];
       // The shadow painter's pool is 33 by 13 units at scale 1.
-      this.put("shadow", prop.x, prop.y + 1, prop.y - 0.5)
+      this.put("shadow", prop.x, prop.y + 1, this.depthAt(prop.x, prop.y, -0.5))
         .setScale(pool.w / 33 / S, pool.h / 13 / S)
         .setAlpha(0.8);
-      this.put(prop.kind, prop.x, prop.y, prop.y);
       if (prop.kind === "windmill") {
-        this.blades = this.put("windmillBlades", prop.x + WINDMILL_HUB.x, prop.y + WINDMILL_HUB.y, prop.y + 0.5);
+        this.paintWindmill(prop.x, prop.y);
+        continue;
       }
+      this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
     }
+  }
+
+  /**
+   * A volumetric tower standing in for the flat windmill painter, with the
+   * existing baked `windmillBlades` sprite pinned to its cap so update()'s
+   * per-frame rotation still just works. The blades' screen position is
+   * computed straight from the tower's own already-projected cap -- not fed
+   * through `put()`'s projection a second time -- because "56 units above
+   * the feet" is a vertical offset in screen terms, and shearing it through
+   * `isoProject` the way a ground-plane offset needs to would also drag it
+   * sideways by exactly as much (see the class doc's note on the three
+   * coordinate systems).
+   */
+  private paintWindmill(x: number, y: number): void {
+    const g = this.add.graphics().setDepth(this.depthAt(x, y, 0.4));
+    const footprint = this.isoFootprint(x, y, 20, 20);
+    const top = this.drawIsoWalls(g, footprint, 62, 0xe8dcc0);
+    const capCentre: WorldPoint = { x: (top.n.x + top.s.x) / 2, y: (top.n.y + top.s.y) / 2 };
+    const peak: WorldPoint = { x: capCentre.x, y: capCentre.y - 22 };
+    g.fillStyle(0x5a4530, 1);
+    g.beginPath();
+    g.moveTo(top.n.x, top.n.y);
+    g.lineTo(top.e.x, top.e.y);
+    g.lineTo(peak.x, peak.y);
+    g.closePath();
+    g.fillPath();
+    g.fillStyle(0x3c2e1f, 1);
+    g.beginPath();
+    g.moveTo(top.e.x, top.e.y);
+    g.lineTo(top.s.x, top.s.y);
+    g.lineTo(peak.x, peak.y);
+    g.closePath();
+    g.fillPath();
+
+    const bladeFrame = PAINTERS.windmillBlades;
+    this.blades = this.add
+      .image(capCentre.x, capCentre.y - 12, "windmillBlades", ART_FRAME)
+      .setOrigin(bladeFrame.ax, bladeFrame.ay)
+      .setScale(1 / S)
+      .setDepth(this.depthAt(x, y, 0.5));
   }
 
   /* ---------------------------------------------------------------- */
@@ -658,7 +946,10 @@ export class HomesteadScene extends Phaser.Scene {
         : [];
     if (previous) this.destroyNode(previous);
 
-    const container = this.add.container(origin.x, origin.y).setDepth(origin.y + CELL);
+    const originScreen = isoProject(origin.x, origin.y);
+    const container = this.add
+      .container(originScreen.x, originScreen.y)
+      .setDepth(this.depthAt(origin.x + CELL, origin.y + CELL));
     const node: CellNode = {
       container,
       ring: this.add.graphics(),
@@ -676,11 +967,16 @@ export class HomesteadScene extends Phaser.Scene {
       cell,
     };
 
-    // Cell-local placement: the container already sits at the plot's origin.
+    // Cell-local placement: the container already sits at the plot's
+    // projected origin, and a cell-local (x, y) is projected here the same
+    // way -- `isoProject` is additive (iso.test.ts), so the two compose to
+    // exactly where a caller means, without either side having to know
+    // about the other's offset.
     const img = (name: PainterName, x: number, y: number): Phaser.GameObjects.Image => {
       const p = PAINTERS[name];
+      const s = isoProject(x, y);
       const image = this.add
-        .image(x, y, name, ART_FRAME)
+        .image(s.x, s.y, name, ART_FRAME)
         .setOrigin(p.ax, p.ay)
         .setScale(1 / S);
       container.add(image);
@@ -696,11 +992,11 @@ export class HomesteadScene extends Phaser.Scene {
         this.paintThicket(cell, img, shadow, container);
         break;
       case "empty":
-        img("mown", 0, 0);
+        this.paintGroundDiamond(container, "mown");
         for (const item of clearedLayout(cell.plotIndex)) img(item.kind, item.x, item.y);
         break;
       case "mucked":
-        img("muckbed", 0, 0);
+        this.paintGroundDiamond(container, "muckbed");
         img("puddle", 26, 30);
         img("rock", 52, 44);
         img("rock", 20, 62);
@@ -725,6 +1021,76 @@ export class HomesteadScene extends Phaser.Scene {
     node.container.destroy(true);
   }
 
+  /**
+   * A cell's own ground, as a diamond fill rather than the flat baked
+   * rectangle painter used before: `mown`, `soil`, `straw` and `muckbed` are
+   * each a whole CELL square, and a square texture repositioned onto a
+   * diamond footprint would still render as a square, just floating at the
+   * wrong angle. Colours are lifted from the flat painters of the same name
+   * in homestead-art.ts, so a plot reads as the same material, only tilted.
+   * Drawn as the container's first child, same as the `img("mown", 0, 0)`
+   * call it replaces, so everything else in the cell paints over it.
+   */
+  private paintGroundDiamond(
+    container: Phaser.GameObjects.Container,
+    kind: "mown" | "soil" | "straw" | "muckbed" | "wild",
+  ): void {
+    const corners = projectedCorners({ x: 0, y: 0, width: CELL, height: CELL });
+    const g = this.add.graphics();
+    const diamond = (fill: number, alpha: number, edge?: number): void => {
+      g.fillStyle(fill, alpha);
+      g.beginPath();
+      g.moveTo(corners.n.x, corners.n.y);
+      g.lineTo(corners.e.x, corners.e.y);
+      g.lineTo(corners.s.x, corners.s.y);
+      g.lineTo(corners.w.x, corners.w.y);
+      g.closePath();
+      g.fillPath();
+      if (edge !== undefined) {
+        g.lineStyle(1, edge, 0.55);
+        g.strokePath();
+      }
+    };
+    switch (kind) {
+      case "mown":
+        // A pale wash over the grass beneath, not a solid fill -- the flat
+        // painter was translucent for the same reason (a lawn just mown).
+        diamond(0xfffbe0, 0.18);
+        break;
+      case "soil":
+        diamond(0x96693f, 1, 0x462a12);
+        this.paintFurrows(g);
+        break;
+      case "straw":
+        diamond(0xd6c58c, 1, 0x785a28);
+        break;
+      case "muckbed":
+        diamond(0x5c3f27, 1, 0x241609);
+        break;
+      case "wild":
+        diamond(0x143c14, 0.12);
+        break;
+    }
+    container.add(g);
+  }
+
+  /** Three furrow lines across a tilled plot, cell-local, drawn along the
+   *  diamond's own grain so they read as rows rather than as stripes painted
+   *  over the top of it. */
+  private paintFurrows(g: Phaser.GameObjects.Graphics): void {
+    const rows = 3;
+    for (let r = 1; r <= rows; r += 1) {
+      const k = r / (rows + 1);
+      const a = isoProject(6, 6 + k * (CELL - 12));
+      const b = isoProject(CELL - 6, 6 + k * (CELL - 12));
+      g.lineStyle(1.1, 0x000000, 0.16);
+      g.beginPath();
+      g.moveTo(a.x, a.y);
+      g.lineTo(b.x, b.y);
+      g.strokePath();
+    }
+  }
+
   /** Land nobody has cleared yet: trees, and a price sign on the one for sale. */
   private paintThicket(
     cell: HomesteadSceneCell,
@@ -732,7 +1098,7 @@ export class HomesteadScene extends Phaser.Scene {
     shadow: (x: number, y: number, sx?: number, sy?: number) => Phaser.GameObjects.Image,
     container: Phaser.GameObjects.Container,
   ): void {
-    img("wild", 0, 0);
+    this.paintGroundDiamond(container, "wild");
     // The layout is already sorted by y, litter interleaved with trees: sort
     // them separately and a pebble at the back paints over a tree in front.
     for (const item of thicketLayout(cell.plotIndex, cell.purchasable)) {
@@ -774,7 +1140,8 @@ export class HomesteadScene extends Phaser.Scene {
         resolution: 8,
       })
       .setOrigin(0.5);
-    const tag = this.add.container(CELL / 2, CELL / 2 + 18, [sign, label]);
+    const anchor = isoProject(CELL / 2, CELL / 2 + 18);
+    const tag = this.add.container(anchor.x, anchor.y, [sign, label]);
     if (!this.options.reducedMotion) {
       this.pendingTweens.push(
         this.tweens.add({
@@ -795,7 +1162,7 @@ export class HomesteadScene extends Phaser.Scene {
     cell: HomesteadSceneCell,
     img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
   ): void {
-    img("soil", 0, 0);
+    this.paintGroundDiamond(node.container, "soil");
     const stage = growthStage(cell.progress, cell.state === "ready");
     const crop = cell.stock === "cash_crop" ? "corn" : "carrot";
     const frame = `${crop}${stage}` as PainterName;
@@ -830,11 +1197,15 @@ export class HomesteadScene extends Phaser.Scene {
     img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
     shadow: (x: number, y: number, sx?: number, sy?: number) => Phaser.GameObjects.Image,
   ): void {
-    img("straw", 0, 0);
-    for (let x = 0; x < CELL; x += 16) img("railH", x, 4);
+    this.paintGroundDiamond(node.container, "straw");
+    // Rails run along the diamond's own two edge directions, not screen
+    // horizontal/vertical -- see ISO_EDGE_ANGLE. `img` positions each rail's
+    // anchor correctly by itself; the rotation is what makes the sprite
+    // actually lie along that edge instead of floating flat at an angle.
+    for (let x = 0; x < CELL; x += 16) img("railH", x, 4).setRotation(ISO_EDGE_ANGLE.alongX);
     for (let y = 12; y < CELL - 10; y += 16) {
-      img("railV", 0, y);
-      img("railV", CELL - 9, y);
+      img("railV", 0, y).setRotation(ISO_EDGE_ANGLE.alongY);
+      img("railV", CELL - 9, y).setRotation(ISO_EDGE_ANGLE.alongY);
     }
     img(cell.state === "hungry" ? "troughEmpty" : "troughFull", 24, 12);
 
@@ -872,7 +1243,9 @@ export class HomesteadScene extends Phaser.Scene {
     }
 
     // The near fence paints over the animals, so it goes on last.
-    for (let x = 0; x < CELL; x += 16) img(x === 32 ? "gate" : "railH", x, CELL - 9);
+    for (let x = 0; x < CELL; x += 16) {
+      img(x === 32 ? "gate" : "railH", x, CELL - 9).setRotation(ISO_EDGE_ANGLE.alongX);
+    }
     this.bob(node);
   }
 
@@ -889,6 +1262,25 @@ export class HomesteadScene extends Phaser.Scene {
         ease: "Sine.easeInOut",
       }),
     );
+  }
+
+  /** Traces a diamond -- the cell footprint inset by `inset` on every side,
+   *  projected -- into a Graphics object's current path. Sharp corners, not
+   *  rounded: a diamond's corners are the point of the shape, and rounding
+   *  them reads as a square with clipped corners rather than a tile. Callers
+   *  still own `beginPath`/`fillPath`/`strokePath` around this. */
+  private tracePlotDiamond(g: Phaser.GameObjects.Graphics, inset: number): void {
+    const c = projectedCorners({
+      x: inset,
+      y: inset,
+      width: CELL - inset * 2,
+      height: CELL - inset * 2,
+    });
+    g.moveTo(c.n.x, c.n.y);
+    g.lineTo(c.e.x, c.e.y);
+    g.lineTo(c.s.x, c.s.y);
+    g.lineTo(c.w.x, c.w.y);
+    g.closePath();
   }
 
   private paintRings(node: CellNode, cell: HomesteadSceneCell): void {
@@ -909,10 +1301,14 @@ export class HomesteadScene extends Phaser.Scene {
     if (stateColour !== null) {
       if (cell.state === "ready" && !cell.selected) {
         ring.lineStyle(5, GOLD, 0.22);
-        ring.strokeRoundedRect(-1, -1, CELL + 2, CELL + 2, 9);
+        ring.beginPath();
+        this.tracePlotDiamond(ring, -1);
+        ring.strokePath();
       }
       ring.lineStyle(2.2, stateColour, 1);
-      ring.strokeRoundedRect(1.5, 1.5, CELL - 3, CELL - 3, 7.5);
+      ring.beginPath();
+      this.tracePlotDiamond(ring, 1.5);
+      ring.strokePath();
     }
 
     const afford = node.afford;
@@ -920,9 +1316,13 @@ export class HomesteadScene extends Phaser.Scene {
     afford.setAlpha(1);
     if (cell.afford === "act") {
       afford.fillStyle(VIOLET, 0.14);
-      afford.fillRoundedRect(4, 4, CELL - 8, CELL - 8, 6);
+      afford.beginPath();
+      this.tracePlotDiamond(afford, 4);
+      afford.fillPath();
       afford.lineStyle(2, VIOLET, 1);
-      afford.strokeRoundedRect(4, 4, CELL - 8, CELL - 8, 6);
+      afford.beginPath();
+      this.tracePlotDiamond(afford, 4);
+      afford.strokePath();
       if (!this.options.reducedMotion) {
         node.tweens.push(
           this.tweens.add({
@@ -937,7 +1337,9 @@ export class HomesteadScene extends Phaser.Scene {
       }
     } else if (cell.afford === "blocked") {
       afford.lineStyle(2, RED, 1);
-      afford.strokeRoundedRect(4, 4, CELL - 8, CELL - 8, 6);
+      afford.beginPath();
+      this.tracePlotDiamond(afford, 4);
+      afford.strokePath();
     }
   }
 
@@ -949,9 +1351,15 @@ export class HomesteadScene extends Phaser.Scene {
     const g = node.progress;
     g.clear();
     if (!show) return;
-    const x = 10;
-    const y = CELL - 8;
-    const track = CELL - 20;
+    // A screen-flat bar, not a diamond-following one: a mini progress bar
+    // reads as UI everywhere else in this codebase's own conventions, and a
+    // sheared one under a tilted camera would look like a rendering bug
+    // rather than a bar. Anchored under the diamond's own nearest (south)
+    // corner, which is where "the front of the plot" now actually is.
+    const near = isoProject(CELL, CELL);
+    const track = CELL * 0.62;
+    const x = near.x - track / 2;
+    const y = near.y + 7;
     const fill = Math.max(3.6, track * Math.max(0, value));
     g.fillStyle(0x000000, 0.45);
     g.fillRoundedRect(x, y, track, 3.6, 1.8);
@@ -982,7 +1390,13 @@ export class HomesteadScene extends Phaser.Scene {
     this.cameras.main.setZoom(clampZoom(zoom) * DPR);
   }
 
-  /** "Home": the owned plots and the barn yard above them, framed together. */
+  /** "Home": the owned plots and the barn yard above them, framed together.
+   *  `box` is world space, same as before the camera tilted; `openingZoom`
+   *  needs the diamond's own screen-space bounding box, not the rect's own
+   *  width/height, to fit it to the viewport. The centre point does not need
+   *  a separate projected-bounds computation: `isoProject` is linear, so a
+   *  rect's own centre projects to exactly the centre of its diamond's
+   *  bounding box (iso.test.ts's additivity case is the same fact). */
   private homeView(): { zoom: number; x: number; y: number } {
     const owned = this.cells.filter((c) => c.state !== "locked");
     const farm = ownedBounds(owned.length > 0 ? owned : this.cells);
@@ -993,10 +1407,12 @@ export class HomesteadScene extends Phaser.Scene {
       width: farm.width,
       height: farm.y + farm.height - top,
     };
+    const screenBox = projectedBounds(box);
+    const centre = isoProject(box.x + box.width / 2, box.y + box.height / 2);
     return {
-      zoom: openingZoom(box, this.viewW(), this.viewH()),
-      x: box.x + box.width / 2,
-      y: box.y + box.height / 2,
+      zoom: openingZoom(screenBox, this.viewW(), this.viewH()),
+      x: centre.x,
+      y: centre.y,
     };
   }
 
@@ -1070,7 +1486,8 @@ export class HomesteadScene extends Phaser.Scene {
     if (!this.created) return;
     this.glide = null;
     const cam = this.cameras.main;
-    const centre = cellCenter(plotIndex);
+    const world = cellCenter(plotIndex);
+    const centre = isoProject(world.x, world.y);
     if (!force) {
       const { x: sx, y: sy } = this.toScreen(centre.x, centre.y);
       const clear = sx > 40 && sx < this.viewW() - 150 && sy > 60 && sy < this.viewH() - 40;
@@ -1093,14 +1510,19 @@ export class HomesteadScene extends Phaser.Scene {
     // a plot the moment it renders, which is before the engine has booted.
     if (this.tracked === null || !this.created) return;
     const rect = cellRect(this.tracked);
-    const tl = this.toScreen(rect.x, rect.y);
-    const size = CELL * this.zoomL();
+    // The diamond's own screen-space bounding box -- wider than it is tall
+    // now, not the square `size` a flat cell used to report on both axes.
+    const screenBox = projectedBounds(rect);
+    const tl = this.toScreen(screenBox.x, screenBox.y);
+    const zoom = this.zoomL();
+    const width = screenBox.width * zoom;
+    const height = screenBox.height * zoom;
     const viewWidth = this.viewW();
     const viewHeight = this.viewH();
-    const key = `${Math.round(tl.x)}:${Math.round(tl.y)}:${Math.round(size)}:${viewWidth}:${viewHeight}`;
+    const key = `${Math.round(tl.x)}:${Math.round(tl.y)}:${Math.round(width)}:${Math.round(height)}:${viewWidth}:${viewHeight}`;
     if (key === this.trackedKey) return;
     this.trackedKey = key;
-    this.callbacks.onTrackedRect({ x: tl.x, y: tl.y, width: size, height: size, viewWidth, viewHeight });
+    this.callbacks.onTrackedRect({ x: tl.x, y: tl.y, width, height, viewWidth, viewHeight });
   }
 
   /* ---------------------------------------------------------------- */
@@ -1260,7 +1682,8 @@ export class HomesteadScene extends Phaser.Scene {
       // A cancel is a release that never taps.
       if (cancelled) return;
       const at = toGame(event.clientX, event.clientY);
-      const world = this.cameras.main.getWorldPoint(at.x, at.y);
+      const scene = this.cameras.main.getWorldPoint(at.x, at.y);
+      const world = isoUnproject(scene.x, scene.y);
       const index = plotIndexAt(world.x, world.y);
       if (index === null) {
         this.callbacks.onTapGround();
@@ -1378,21 +1801,38 @@ export class HomesteadScene extends Phaser.Scene {
       return null;
     }
     ghost.setTexture(GHOST_ART[stock], ART_FRAME).setVisible(true);
-    const world = this.cameras.main.getWorldPoint(cssX * DPR, cssY * DPR);
+    // `scene` is what the pointer is actually over on screen; `world` is the
+    // same point translated back to world.ts's plane, which is the only
+    // space `plotIndexAt` understands.
+    const scene = this.cameras.main.getWorldPoint(cssX * DPR, cssY * DPR);
+    const world = isoUnproject(scene.x, scene.y);
     const index = plotIndexAt(world.x, world.y);
     const cell = index === null ? null : this.cells.find((c) => c.plotIndex === index);
     if (index !== null && cell && cell.state === "empty") {
-      const centre = cellCenter(index);
-      const origin = cellOrigin(index);
+      const worldCentre = cellCenter(index);
+      const centre = isoProject(worldCentre.x, worldCentre.y);
       ghost.setPosition(centre.x, centre.y + 10).setAlpha(1);
       ring.clear().setVisible(true);
+      const origin = cellOrigin(index);
+      const diamond = projectedCorners({ x: origin.x + 3, y: origin.y + 3, width: CELL - 6, height: CELL - 6 });
+      const trace = (): void => {
+        ring.moveTo(diamond.n.x, diamond.n.y);
+        ring.lineTo(diamond.e.x, diamond.e.y);
+        ring.lineTo(diamond.s.x, diamond.s.y);
+        ring.lineTo(diamond.w.x, diamond.w.y);
+        ring.closePath();
+      };
       ring.fillStyle(VIOLET, 0.2);
-      ring.fillRoundedRect(origin.x + 3, origin.y + 3, CELL - 6, CELL - 6, 7);
+      ring.beginPath();
+      trace();
+      ring.fillPath();
       ring.lineStyle(2.2, VIOLET, 1);
-      ring.strokeRoundedRect(origin.x + 3, origin.y + 3, CELL - 6, CELL - 6, 7);
+      ring.beginPath();
+      trace();
+      ring.strokePath();
       return index;
     }
-    ghost.setPosition(world.x, world.y + 6).setAlpha(0.65);
+    ghost.setPosition(scene.x, scene.y + 6).setAlpha(0.65);
     ring.setVisible(false);
     return null;
   }
@@ -1467,7 +1907,8 @@ export class HomesteadScene extends Phaser.Scene {
   }
 
   celebrateHarvest(plotIndex: number): void {
-    const centre = cellCenter(plotIndex);
+    const world = cellCenter(plotIndex);
+    const centre = isoProject(world.x, world.y);
     const burst = this.add.graphics().setDepth(8500);
     burst.fillStyle(0xffe98a, 0.85);
     burst.fillCircle(0, 0, CELL * 0.45);
@@ -1549,6 +1990,9 @@ export class HomesteadScene extends Phaser.Scene {
     const view = this.viewRect();
     // The tile sprite is snapped to a 256-unit lattice and its tile offset
     // moved with it, so the grass never appears to slide against the world.
+    // This is pure screen-space decoration -- a flat backdrop under the
+    // diamond-tiled foreground, same as the reference art -- so it fits the
+    // camera's own rectangular view directly and never touches world.ts.
     const gx = Math.floor((view.x - 256) / 256) * 256;
     const gy = Math.floor((view.y - 256) / 256) * 256;
     grass.setPosition(gx, gy);
@@ -1556,10 +2000,17 @@ export class HomesteadScene extends Phaser.Scene {
     grass.tilePositionX = gx * GRASS_PX;
     grass.tilePositionY = gy * GRASS_PX;
 
-    const cx0 = Math.floor((view.x - HOMESTEAD_CHUNK) / HOMESTEAD_CHUNK);
-    const cy0 = Math.floor((view.y - HOMESTEAD_CHUNK) / HOMESTEAD_CHUNK);
-    const cx1 = Math.floor((view.x + view.width + HOMESTEAD_CHUNK) / HOMESTEAD_CHUNK);
-    const cy1 = Math.floor((view.y + view.height + HOMESTEAD_CHUNK) / HOMESTEAD_CHUNK);
+    // Scenery chunks are keyed in world.ts's true Cartesian space, so the
+    // camera's screen-space view rect has to come back through
+    // `isoUnproject` first. A rectangular screen view unprojects to a
+    // rotated parallelogram in world space; this is that parallelogram's own
+    // axis-aligned box, which only ever over-includes a chunk or two --
+    // harmless, and already inside the two-chunk prune margin below.
+    const worldView = unprojectBoundsApprox(view);
+    const cx0 = Math.floor((worldView.x - HOMESTEAD_CHUNK) / HOMESTEAD_CHUNK);
+    const cy0 = Math.floor((worldView.y - HOMESTEAD_CHUNK) / HOMESTEAD_CHUNK);
+    const cx1 = Math.floor((worldView.x + worldView.width + HOMESTEAD_CHUNK) / HOMESTEAD_CHUNK);
+    const cy1 = Math.floor((worldView.y + worldView.height + HOMESTEAD_CHUNK) / HOMESTEAD_CHUNK);
     const keep = new Set<string>();
     for (let cy = cy0; cy <= cy1; cy += 1) {
       for (let cx = cx0; cx <= cx1; cx += 1) {
@@ -1619,9 +2070,11 @@ export class HomesteadScene extends Phaser.Scene {
     let moved = false;
     for (let i = 1; i < n; i += 1) {
       const index = order[i];
-      const y = critters[index].state.y;
+      // (x + y) is the isometric depth key -- see iso.ts -- not y alone,
+      // which was only ever the right key under the flat top-down camera.
+      const depth = critters[index].state.x + critters[index].state.y;
       let j = i - 1;
-      while (j >= 0 && critters[order[j]].state.y > y) {
+      while (j >= 0 && critters[order[j]].state.x + critters[order[j]].state.y > depth) {
         order[j + 1] = order[j];
         j -= 1;
       }
@@ -1674,10 +2127,14 @@ export class HomesteadScene extends Phaser.Scene {
         critter.state = stepCritter(critter.state, pen, speed, delta, this.random);
         const walking = critter.state.mode === "walk";
         const hop = walking ? Math.abs(Math.sin(time / 90 + critter.phase)) * 1.2 : 0;
-        critter.sprite.x = critter.state.x - origin.x;
-        critter.sprite.y = critter.state.y - origin.y - hop - critter.lift;
-        critter.shadow.x = critter.sprite.x;
-        critter.shadow.y = critter.state.y - origin.y + 1;
+        // World-space local offset, projected once here every frame -- the
+        // one-time `img()` projection at construction only covers a sprite's
+        // starting position, and this one walks.
+        const local = isoProject(critter.state.x - origin.x, critter.state.y - origin.y);
+        critter.sprite.x = local.x;
+        critter.sprite.y = local.y - hop - critter.lift;
+        critter.shadow.x = local.x;
+        critter.shadow.y = local.y + 1;
         // The shadow thins as the animal leaves the ground.
         critter.shadow.alpha = 0.8 / (1 + critter.lift * 0.18);
         critter.sprite.setFlipX(critter.state.facing === 1);

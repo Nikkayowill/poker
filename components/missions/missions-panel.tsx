@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { ChevronRight, ClipboardList } from "lucide-react";
 import { tapSound } from "@/lib/audio/ui-sounds";
+import { FadeSwap } from "@/components/loading/fade-swap";
+import { Skeleton } from "@/components/loading/skeleton";
 import { MissionToast } from "./mission-toast";
-import { useMissions } from "./use-missions";
+import { useMissions, type MissionsState } from "./use-missions";
 
 /**
  * The lobby's door into /challenges.
@@ -13,13 +15,41 @@ import { useMissions } from "./use-missions";
  * rows below the rank strip -- the same "big list stuck in a strip" shape the
  * arcade tile used to be before /games got its own route (see arcade-panel.tsx's
  * header). Same fix: a one-line summary and a link, with the catalogue moved
- * to its own page. Still the same slot and "renders nothing until it has
- * something to say" contract as RankStrip/FirstRunStrip -- see rank-strip.tsx.
+ * to its own page.
+ *
+ * `ready` (has the first fetch landed) and "has anything to show" are two
+ * different questions -- the skeleton below only answers the first. A
+ * player with genuinely no missions still sees nothing once ready, same as
+ * before; what changed is that a player who DOES have missions no longer
+ * watches them pop in from nothing (see rank-strip.tsx's FadeSwap for the
+ * same fix applied there first).
  */
-export function MissionsPanel() {
-  const { data, justCompleted, clearCompleted } = useMissions();
+function MissionsPanelSkeleton() {
+  return (
+    <div className="missions-panel" aria-hidden="true">
+      <Skeleton className="skeleton-missions-icon" />
+      <span className="missions-panel-copy">
+        <Skeleton className="skeleton-missions-line" />
+      </span>
+    </div>
+  );
+}
 
-  if (!data || (data.daily.length === 0 && data.weekly.length === 0)) return null;
+export function MissionsPanel() {
+  const missions = useMissions();
+  const { data } = missions;
+  const hasMissions = Boolean(data && (data.daily.length > 0 || data.weekly.length > 0));
+
+  return (
+    <FadeSwap ready={data !== null} skeleton={<MissionsPanelSkeleton />}>
+      {hasMissions && <MissionsPanelContent missions={missions} />}
+    </FadeSwap>
+  );
+}
+
+function MissionsPanelContent({ missions }: { missions: MissionsState }) {
+  const { data, justCompleted, clearCompleted } = missions;
+  if (!data) return null;
 
   const dailyDone = data.daily.filter((mission) => mission.completed).length;
   const weeklyDone = data.weekly.filter((mission) => mission.completed).length;

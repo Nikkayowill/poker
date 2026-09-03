@@ -9,6 +9,8 @@ import { formatRecord, formatStreak, leaderboardTabs } from "@/lib/leaderboard/c
 import { selectSound } from "@/lib/audio/ui-sounds";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import type { AvatarPreset } from "@/lib/profile/types";
+import { Skeleton } from "@/components/loading/skeleton";
+import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
 
 /** The extra identity fields a top-3 row needs to render ProfileAvatar's real portrait instead of the initials disc. Every rank still carries these; only rank <= 3 uses them. */
 interface RankedAvatarIdentity {
@@ -241,6 +243,30 @@ function GenericRow({ entry, mine, columns }: { entry: GenericEntry; mine: boole
   );
 }
 
+/**
+ * Rows shown while a tab's own entries are still loading -- filling the gap
+ * where nothing rendered at all before (neither the table, the empty state,
+ * nor an error, since `empty` is defined as `!loading && !error && count ===
+ * 0`). Not shaped per-tab: five bars reads close enough to any of the real
+ * row shapes for the beat it's on screen, and a mismatched column count
+ * would be more code than the difference is worth.
+ */
+function LeaderboardRowsSkeleton({ fading }: { fading: boolean }) {
+  return (
+    <div className={clsx("leaderboard-table", fading && "leaderboard-table-fading")} aria-hidden="true">
+      {Array.from({ length: 5 }, (_, index) => (
+        <div key={index} className="leaderboard-row leaderboard-row-generic leaderboard-row-generic-2">
+          <Skeleton className="skeleton-leaderboard-rank" />
+          <Skeleton className="skeleton-leaderboard-avatar" />
+          <Skeleton className="skeleton-leaderboard-name" />
+          <Skeleton className="skeleton-leaderboard-stat" />
+          <Skeleton className="skeleton-leaderboard-stat" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function GlobalRow({ entry, mine }: { entry: GlobalEntry; mine: boolean }) {
   return (
     <div className={clsx("leaderboard-row", "leaderboard-row-generic", "leaderboard-row-generic-2", mine && "leaderboard-row-mine")}>
@@ -332,6 +358,13 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
   const entryCount = game === "friends" ? friendEntries.length : rankedEntries.length;
   const empty = !loading && !error && entryCount === 0;
 
+  // Nothing rendered here at all while a tab's first fetch was in flight --
+  // `empty` requires `!loading`, so switching tabs used to show a blank gap
+  // until the response landed. The hold keeps a same-tab reload (already
+  // cached, resolves almost instantly) from flashing the skeleton for a
+  // single frame.
+  const rowsPhase = useMinHoldFade(loading && entryCount === 0, { minMs: 300, fadeMs: 200 });
+
   const Shell = embedded ? "div" : "main";
   const Heading = embedded ? "h2" : "h1";
 
@@ -400,6 +433,8 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
       )}
 
       {error && <p className="leaderboard-error">{error}</p>}
+
+      {rowsPhase !== "hidden" && <LeaderboardRowsSkeleton fading={rowsPhase === "hiding"} />}
 
       {empty && (
         <p className="leaderboard-empty">

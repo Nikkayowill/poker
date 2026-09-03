@@ -44,6 +44,7 @@ import {
 } from "@/lib/audio/sound-preference";
 import { parseEnabledFlag } from "@/lib/profile/stored-preference";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { LoadingScreen } from "@/components/loading/loading-screen";
 import { PersistentChrome } from "@/components/shell/persistent-chrome";
 import { useAndroidBackButton } from "@/components/shell/use-android-back-button";
 import {
@@ -291,6 +292,24 @@ export function AppShell({ children }: { children: ReactNode }) {
     <AppShellContext.Provider value={value}>
       {children}
       <PersistentChrome />
+      {/*
+       * The cold-boot wait before a profile exists to render anything from --
+       * covers every route this shell wraps, not just the lobby, since a deep
+       * link can land a fresh visitor straight on /games/* or /leaderboard
+       * before the initial GET /api/profile above has settled. Gated on
+       * `!profile` (the cache-or-loaded value computed above, not
+       * `loadedProfile` directly) AND `profileLoading`, deliberately both:
+       * `profile` alone would never clear for a signed-out guest with no
+       * session (a real `null` profile, not a pending one), and
+       * `profileLoading` alone would flash this over a returning tab's own
+       * cached profile, which `profile` already serves instantly via
+       * useSyncExternalStore. Mounted unconditionally (never behind an `if`)
+       * so useMinHoldFade's own hold-then-fade gets to run instead of being
+       * unmounted out from under itself the instant profileLoading flips --
+       * table-loading-splash.tsx and Lobby's own former copy of this bug are
+       * the precedent.
+       */}
+      <LoadingScreen active={profileLoading && !profile} error={profileError} />
     </AppShellContext.Provider>
   );
 }

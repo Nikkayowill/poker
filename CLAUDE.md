@@ -46,6 +46,40 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### App-wide loading screen lands, ported onto AppShell (2026-09-03)
+An older branch (`feat/app-loading-screens`) built the pieces before `AppShell` existed and before the
+3D table was deleted; this pass ported the surviving state (its own gathered-table-scene redesign was
+already tried and reverted on that branch, and stays reverted here) onto current main. New:
+`useMinHoldFade` (`lib/loading/min-hold-fade.ts` + a React wrapper at `components/loading/
+use-min-hold-fade.ts`) drives every fade in this system through one hidden/visible/hiding state
+machine with a minimum hold, so a fetch fast enough to beat the network can't skip the loading state
+entirely — the whole reason it exists, argued in the pure module's own header. `LoadingScreen`
+(`components/loading/loading-screen.tsx`) is the full-screen "preparing your seat" beat, styled on
+Claira's existing cutout (`DEALER_ART_SRC`) under moodier lighting, PlayPokerGO-referenced per Kayo's
+original ask; `FadeSwap`/`Skeleton` (`components/loading/`) crossfade a skeleton into real content
+once a panel's own fetch resolves, now wired into `RankStrip`, `MissionsPanel` and `Leaderboard`'s row
+list (`RankStrip`/`MissionsPanel` gained a real skeleton where they used to `return null` until data
+existed — see their own doc comments for why that was backwards). `table-loading-splash.tsx` (now at
+its post-3D-deletion path) was refactored to reuse `useMinHoldFade` instead of its own hand-rolled
+phase state machine, keeping its 11s auto-hide backstop as a local override of `active` layered on top.
+New stylesheet `54-loading.css` (47 was already taken by `47-site-info.css` on current main).
+
+**Mount point, decided fresh rather than ported**: the old branch mounted `LoadingScreen` inside
+`Lobby`'s own `!profile` branch, replacing an early-return that unmounted it before its own fade could
+run (a bug that branch found and fixed in place). `AppShell` (`components/shell/app-shell.tsx`) didn't
+exist yet when that branch was written and now owns exactly the signal this needs —
+`profile`/`profileLoading`/`profileError` — computed once, above every route it wraps. Mounted there
+instead, gated on `profileLoading && !profile` (both terms matter: `profile` alone never clears for a
+genuinely signed-out visitor once the fetch settles, and `profileLoading` alone would flash the
+overlay over a returning tab's own cached profile, which `AppShell`'s `profile` already serves
+instantly from sessionStorage). This makes the cold-boot cover genuinely app-wide — a deep link into
+`/games/*` or `/leaderboard` before the first `GET /api/profile` settles gets covered too, not just a
+visit to `/`. `Lobby`'s own pre-existing `if (!profile)` fallback is untouched underneath it, now just
+rendered behind the overlay rather than being the only thing covering the gap.
+
+Verified: full `npx vitest run` (2823/2824 — the one red is the pre-existing PR #163 `table-anchors`
+dealer-shoulder-room regression, unrelated), `npm run lint` and `npm run build` clean.
+
 ### Gold finally buys something in StackAcres; daily ceiling 5k -> 15k (2026-09-03)
 Kayo: "if I were a regular user I'd feel frustrated I couldn't use the Gold I won from skills, ante up
 and poker tables." He was right -- Gold bought acreage and nothing else, so a player arriving with a

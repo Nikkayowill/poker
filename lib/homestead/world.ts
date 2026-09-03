@@ -22,7 +22,13 @@
  */
 
 import { HOMESTEAD_GRID_PLOTS, type HomesteadStock } from "./catalogue";
+// paths.ts imports only TYPES back from this module, so the cycle is
+// harmless; a value import there would be read before this file finished
+// evaluating and throw.
+import { nearPath } from "./paths";
 import type { HomesteadPlotSnapshot } from "./plots";
+// Same arrangement as ./paths: water.ts imports only types from here.
+import { inPondZone } from "./water";
 
 /** One art unit, in device pixels of the baked vector art at zoom 1. */
 export const HOMESTEAD_TILE = 16;
@@ -134,6 +140,16 @@ export function ownedBounds(
 
 /** Old name for `ownedBounds`, kept as an alias for anything not yet ported. */
 export const acreageBounds = ownedBounds;
+
+/**
+ * The smallest power of two that is at least `n` (and at least 1). Baked art
+ * is padded to this on each side because the renderer only builds mipmaps
+ * for power-of-two textures; see `bakeTexture` in homestead-art.ts.
+ */
+export function powerOfTwoCeil(n: number): number {
+  if (!Number.isFinite(n) || n <= 1) return 1;
+  return 2 ** Math.ceil(Math.log2(n));
+}
 
 /** How far in and out the camera may go. Fixed now that the camera is
  *  unbounded -- there is no roamable area left to fit, only a floor so the
@@ -340,13 +356,19 @@ export function seededRandom(seed: number): Random {
 /** How wide the open world's procedural-scenery chunks are, in world units. */
 export const HOMESTEAD_CHUNK = 160;
 
-/** The rectangle kept clear of wild scenery: the plot ladder plus a little
- *  air, so a tree can never grow inside the farm or lean over its fence. */
+/**
+ * The rectangle kept clear of wild scenery: x 28..440, y -60..410. The plot
+ * ladder (64..384 both ways), the barn yard north of it (barn feet on y 34,
+ * roof to -28, a stone wall at -50..-40), the lane down the west verge with
+ * its lamps at x 40, and the mailbox at the lane's end (y 402) -- with air
+ * around all of it, so a tree can never grow on the roof or lean its canopy
+ * over the lane.
+ */
 export const FARM_ZONE: WorldRect = {
-  x: HOMESTEAD_MARGIN - 24,
-  y: -8,
-  width: HOMESTEAD_WORLD_COLUMNS * HOMESTEAD_CELL + 48,
-  height: HOMESTEAD_MARGIN + HOMESTEAD_WORLD_ROWS * HOMESTEAD_CELL + 24,
+  x: HOMESTEAD_MARGIN - 36,
+  y: -60,
+  width: HOMESTEAD_WORLD_COLUMNS * HOMESTEAD_CELL + 92,
+  height: 60 + HOMESTEAD_MARGIN + HOMESTEAD_WORLD_ROWS * HOMESTEAD_CELL + 26,
 };
 
 export function inFarmZone(x: number, y: number): boolean {
@@ -372,7 +394,10 @@ export type SceneryKind =
   | "tuft"
   | "flower1"
   | "flower2"
-  | "flower3";
+  | "flower3"
+  | "log"
+  | "mushroom"
+  | "boulder";
 
 export interface SceneryItem {
   kind: SceneryKind;
@@ -382,6 +407,9 @@ export interface SceneryItem {
   y: number;
 }
 
+// The woodland floor's own litter -- a fallen log, a clutch of mushrooms,
+// a boulder -- is in the pool once each, so a chunk grows one of them now
+// and then rather than a forest of them.
 const CHUNK_WOOD_KINDS: readonly SceneryKind[] = [
   "tree1",
   "tree2",
@@ -391,6 +419,9 @@ const CHUNK_WOOD_KINDS: readonly SceneryKind[] = [
   "bush",
   "bush",
   "rock",
+  "log",
+  "mushroom",
+  "boulder",
 ];
 const GROUND_KINDS: readonly SceneryKind[] = ["flower1", "flower2", "flower3"];
 const THICKET_WOOD_KINDS: readonly SceneryKind[] = ["tree1", "tree2", "tree3", "pine", "pine", "bush"];
@@ -400,8 +431,10 @@ const THICKET_WOOD_KINDS: readonly SceneryKind[] = ["tree1", "tree2", "tree3", "
  * so the same chunk regrows the same trees every time the camera returns to
  * it. Denser near the farm (it reads as the woodland the farm was cut out
  * of) and thinner far out, where it exists only so the horizon is never
- * bare. Anything that would land inside `FARM_ZONE` is dropped rather than
- * shifted, so the farm's own edge stays exactly where the plot ladder ends.
+ * bare. Anything that would land inside `FARM_ZONE`, on a path (see
+ * ./paths.ts) or in the pond's clearing (see ./water.ts) is dropped rather
+ * than shifted, so the farm's own edge stays exactly where the plot ladder
+ * ends, the road out stays a road and no tree stands in the water.
  */
 export function chunkScenery(cx: number, cy: number): SceneryItem[] {
   const random = seededRandom((cx * 73856093) ^ (cy * 19349663) ^ 0x5bd1e995);
@@ -419,13 +452,13 @@ export function chunkScenery(cx: number, cy: number): SceneryItem[] {
   for (let i = 0; i < woods; i += 1) {
     const x = x0 + random() * HOMESTEAD_CHUNK;
     const y = y0 + random() * HOMESTEAD_CHUNK;
-    if (inFarmZone(x, y)) continue;
+    if (inFarmZone(x, y) || nearPath(x, y) || inPondZone(x, y)) continue;
     items.push({ kind: CHUNK_WOOD_KINDS[Math.floor(random() * CHUNK_WOOD_KINDS.length)], x, y });
   }
   for (let i = 0; i < 10; i += 1) {
     const x = x0 + random() * HOMESTEAD_CHUNK;
     const y = y0 + random() * HOMESTEAD_CHUNK;
-    if (inFarmZone(x, y)) continue;
+    if (inFarmZone(x, y) || nearPath(x, y) || inPondZone(x, y)) continue;
     const kind: SceneryKind =
       random() < 0.55 ? "tuft" : GROUND_KINDS[Math.floor(random() * GROUND_KINDS.length)];
     items.push({ kind, x, y });

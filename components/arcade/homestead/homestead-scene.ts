@@ -3,8 +3,11 @@
 // from "phaser"` fails at build time with "export default doesn't exist".
 import * as Phaser from "phaser";
 import { isLivestock, type HomesteadStock } from "@/lib/homestead/catalogue";
+import { FARM_PATHS } from "@/lib/homestead/paths";
 import type { HomesteadPlotState } from "@/lib/homestead/plots";
+import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS } from "@/lib/homestead/props";
 import type { PlotAffordance } from "@/lib/homestead/tools";
+import { DOCK, DUCK_ORBIT, LILY_PADS, POND, REEDS, RIPPLE_SPOTS } from "@/lib/homestead/water";
 import {
   HOMESTEAD_CELL,
   HOMESTEAD_CHUNK,
@@ -32,7 +35,18 @@ import {
   type WorldPoint,
   type WorldRect,
 } from "@/lib/homestead/world";
-import { ART_SCALE, GRASS_PX, PAINTERS, bakeGrass, bakeTexture, type PainterName } from "./homestead-art";
+import {
+  ART_FRAME,
+  ART_SCALE,
+  GRASS_PX,
+  PAINTERS,
+  bakeGrass,
+  bakeTexture,
+  bakeVignette,
+  type PainterName,
+} from "./homestead-art";
+import { bakePathTexture } from "./art-paths";
+import { bakePondTexture } from "./art-water";
 
 /**
  * The farm as a place you look around in.
@@ -152,11 +166,23 @@ const FLICK_SPEED_MIN = 0.12;
 const GLIDE_DECAY = 0.92;
 const GLIDE_STOP = 0.02;
 
-// The barn yard stands just north of the first row of plots; its roof reaches
+// The barn stands north of the first row of plots with a yard between: its
+// feet are on y 34, thirty units above the plot square, and the lane and
+// road (lib/homestead/paths.ts) run through that gap. Its roof reaches
 // BARN_TOP, which is what "home" has to frame as well as the plots themselves.
 const BARN_X = HOMESTEAD_MARGIN + 44;
-const BARN_Y = HOMESTEAD_MARGIN - 4;
+const BARN_Y = HOMESTEAD_MARGIN - 30;
 const BARN_TOP = BARN_Y - 66;
+
+// Ground art sits just above the grass and well below anything with feet:
+// the paths at -1e8, the pond one above them so its sand paints over the
+// spur's end cap, and the water's surface (glints, ripples) one above that.
+const PATH_DEPTH = -1e8;
+const POND_DEPTH = PATH_DEPTH + 1;
+const POND_SURFACE_DEPTH = PATH_DEPTH + 2;
+
+/** How many glints drift across the pond at once. */
+const GLINT_COUNT = 5;
 
 /** Which animal stands in which pen. */
 const STOCK_ART: Partial<Record<HomesteadStock, PainterName>> = {
@@ -174,10 +200,26 @@ const GHOST_ART: Record<HomesteadStock, PainterName> = {
   cash_crop: "corn2",
 };
 
-/** Only things with a canopy get a shadow. A rock or a tuft sitting on a
- *  smudge of its own reads as hovering, not as standing. */
+/** Only things with height get a shadow: a canopy, a fallen log, a boulder.
+ *  A rock, a tuft or a mushroom sitting on a smudge of its own reads as
+ *  hovering, not as standing. */
 function castsShadow(kind: SceneryKind): boolean {
-  return kind.startsWith("tree") || kind === "pine" || kind === "bush";
+  return kind.startsWith("tree") || kind === "pine" || kind === "bush" || kind === "log" || kind === "boulder";
+}
+
+/** How wide and tall a wild thing's ground shadow is, as a scale of the
+ *  36x16 `shadow` painter: a tree's pool is most of it, a log's a low slot. */
+function sceneryShadowScale(kind: SceneryKind): readonly [number, number] {
+  switch (kind) {
+    case "bush":
+      return [0.6, 0.9];
+    case "log":
+      return [0.7, 0.5];
+    case "boulder":
+      return [0.85, 0.7];
+    default:
+      return [0.9, 0.9];
+  }
 }
 
 /** A finger this map is currently holding, in CSS pixels. */
@@ -218,6 +260,12 @@ interface CritterNode {
   sprite: Phaser.GameObjects.Image;
   shadow: Phaser.GameObjects.Image;
   state: Critter;
+  /** How far off the ground a tap has bounced it, in world units. Tweened;
+   *  update() folds it into the sprite's y, which it otherwise owns. */
+  lift: number;
+  /** Offsets this animal's gait and breathing so a pen never moves in
+   *  lockstep. */
+  phase: number;
 }
 
 interface CellNode {
@@ -229,8 +277,17 @@ interface CellNode {
   progress: Phaser.GameObjects.Graphics;
   progressValue: number;
   critters: CritterNode[];
+  /** Index in the container's list where the first animal sprite sits; the
+   *  sprites are a contiguous block from there, re-ordered by y each frame. */
+  spriteSlot: number;
+  /** The draw order the animals were last put in, as critter indexes. */
+  order: number[];
+  /** Every plant in a field, for the tap ripple. */
+  plants: Phaser.GameObjects.Image[];
   bobbing: Phaser.GameObjects.GameObject[];
   tweens: Phaser.Tweens.Tween[];
+  /** Scene time until which a tap's bounce owns the sprites' scale. */
+  juiceUntil: number;
   signature: string;
   cell: HomesteadSceneCell;
 }
@@ -270,8 +327,29 @@ export class HomesteadScene extends Phaser.Scene {
 
   private grass: Phaser.GameObjects.TileSprite | null = null;
   private clouds: Phaser.GameObjects.Image[] = [];
+  /** The screen-pinned wash over everything: darker corners, warm sun corner. */
+  private vignette: Phaser.GameObjects.Image | null = null;
+  /** Scene time as of the last update(), for anything a pointer event starts. */
+  private now = 0;
   /** Grown scenery, by "cx:cy". The open world, one chunk at a time. */
   private chunks = new Map<string, Phaser.GameObjects.Image[]>();
+
+  /** The pond's surface, built once in paintPond and walked by index in
+   *  update() so a frame allocates nothing: the drifting glints, the lily
+   *  pads with their resting y beside them, the flowers with the index of
+   *  the pad each rides, and the duck. */
+  private glints: Phaser.GameObjects.Image[] = [];
+  private lilies: Phaser.GameObjects.Image[] = [];
+  private lilyBaseY: number[] = [];
+  private lilyFlowers: Phaser.GameObjects.Image[] = [];
+  private lilyFlowerPad: number[] = [];
+  private duck: Phaser.GameObjects.Image | null = null;
+  private duckWest = false;
+  /** The ripples' looping tweens, removed on shutdown. */
+  private pondTweens: Phaser.Tweens.Tween[] = [];
+
+  /** The windmill's sails, turned in update(); still under reduced motion. */
+  private blades: Phaser.GameObjects.Image | null = null;
 
   private ghost: Phaser.GameObjects.Image | null = null;
   private ghostRing: Phaser.GameObjects.Graphics | null = null;
@@ -303,11 +381,14 @@ export class HomesteadScene extends Phaser.Scene {
     this.grass.tileScaleX = 1 / GRASS_PX;
     this.grass.tileScaleY = 1 / GRASS_PX;
 
+    this.paintPaths();
+    this.paintPond();
     this.paintBarn();
+    this.paintProps();
 
     this.ghostRing = this.add.graphics().setDepth(9000).setVisible(false);
     this.ghost = this.add
-      .image(0, 0, "hen")
+      .image(0, 0, "hen", ART_FRAME)
       .setOrigin(0.5, 1)
       .setScale(1.3 / S)
       .setDepth(9001)
@@ -315,12 +396,20 @@ export class HomesteadScene extends Phaser.Scene {
     for (let i = 0; i < 3; i += 1) {
       this.clouds.push(
         this.add
-          .image(0, 0, "cloud")
+          .image(0, 0, "cloud", ART_FRAME)
           .setScale(1 / S)
           .setDepth(8000)
           .setAlpha(this.options.reducedMotion ? 0 : 1),
       );
     }
+    // Pinned to the screen, not the world, and above every world object
+    // (the DOM chrome is a separate layer entirely, so nothing of the
+    // player's is under it). Sized to the camera in update().
+    this.vignette = this.add
+      .image(0, 0, bakeVignette(this))
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1e9);
 
     this.bindInput();
 
@@ -337,10 +426,145 @@ export class HomesteadScene extends Phaser.Scene {
   private put(name: PainterName, x: number, y: number, depth?: number): Phaser.GameObjects.Image {
     const p = PAINTERS[name];
     return this.add
-      .image(x, y, name)
+      .image(x, y, name, ART_FRAME)
       .setOrigin(p.ax, p.ay)
       .setScale(1 / S)
       .setDepth(depth ?? y);
+  }
+
+  /**
+   * The dirt paths, as ground art just above the grass: lane, road, track,
+   * in that order. Phaser's depth sort is stable, so three images at one
+   * depth draw in creation order, and each path after the first repaints
+   * the junction it shares with an earlier one (see bakePathTexture), which
+   * only works if the earlier one is underneath.
+   */
+  private paintPaths(): void {
+    FARM_PATHS.forEach((spec, i) => {
+      const bake = bakePathTexture(this, spec, FARM_PATHS.slice(0, i));
+      if (!bake) return;
+      this.add
+        .image(bake.x, bake.y, bake.key, ART_FRAME)
+        .setOrigin(0)
+        .setScale(1 / GRASS_PX)
+        .setDepth(PATH_DEPTH);
+    });
+  }
+
+  /**
+   * The pond on the west verge: the water and its sand as ground art just
+   * above the paths (so the shore paints over the spur's end cap), then the
+   * dock, the reeds and the lily pads sorted by their feet like everything
+   * else. The surface is a handful of sprites -- glints, ripples, a duck --
+   * kept in plain arrays for update() to move.
+   */
+  private paintPond(): void {
+    const bake = bakePondTexture(this);
+    if (bake) {
+      this.add
+        .image(bake.x, bake.y, bake.key, ART_FRAME)
+        .setOrigin(0)
+        .setScale(1 / GRASS_PX)
+        .setDepth(POND_DEPTH);
+    }
+    const still = this.options.reducedMotion;
+
+    // Sun on the water. Five drift east to west across the sun side; under
+    // reduced motion they simply lie there, each at a different point of its
+    // run (all five at mid-run stack into one dotted column).
+    for (let i = 0; i < GLINT_COUNT; i += 1) {
+      this.glints.push(this.put("glint", 0, 0, POND_SURFACE_DEPTH));
+      this.placeGlint(i, 0.28 + i * 0.11);
+    }
+    // Ripples spread and fade on a loop. None at all when motion is reduced.
+    if (!still) {
+      RIPPLE_SPOTS.forEach((spot, i) => {
+        // Scales are in the painter's own unit (1 / S), the way pokePlot's
+        // squash is: a bare 0.4 would be three times the painted size.
+        const ripple = this.put("ripple", spot.x, spot.y, POND_SURFACE_DEPTH)
+          .setScale(0.35 / S)
+          .setAlpha(0.45);
+        this.pondTweens.push(
+          this.tweens.add({
+            targets: ripple,
+            scaleX: 1.1 / S,
+            scaleY: 1.1 / S,
+            alpha: 0,
+            duration: 2_600,
+            delay: i * 870,
+            repeat: -1,
+            ease: "Sine.easeOut",
+          }),
+        );
+      });
+    }
+    // The duck's depth is fixed at the bottom of its loop rather than set
+    // every frame; nothing else floats inside the loop.
+    this.duck = this.put("duck", DUCK_ORBIT.x + DUCK_ORBIT.rx, DUCK_ORBIT.y, DUCK_ORBIT.y + DUCK_ORBIT.ry + 1);
+
+    this.put("dock", DOCK.x, DOCK.y, DOCK.y);
+    for (const reed of REEDS) {
+      this.put("shadow", reed.x, reed.y + 1, reed.y - 0.5)
+        .setScale(0.4 / S, 0.5 / S)
+        .setAlpha(0.7);
+      this.put("reeds", reed.x, reed.y, reed.y);
+    }
+    LILY_PADS.forEach((pad, i) => {
+      this.lilies.push(this.put("lily", pad.x, pad.y, pad.y));
+      this.lilyBaseY.push(pad.y);
+      if (pad.flower) {
+        this.lilyFlowers.push(this.put("lilyFlower", pad.x - 0.8, pad.y - 1.4, pad.y + 0.1));
+        this.lilyFlowerPad.push(i);
+      }
+    });
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.releasePond, this);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.releasePond, this);
+  }
+
+  private releasePond(): void {
+    for (const tween of this.pondTweens) tween.remove();
+    this.pondTweens = [];
+  }
+
+  /**
+   * Where glint `i` is at fraction `p` of its run: a chord across the sun
+   * side of the water, east to west, on a shallow sine, fading in and out
+   * at the ends so a run never pops.
+   */
+  private placeGlint(i: number, p: number): void {
+    const glint = this.glints[i];
+    const y = POND.y - 32 + i * 8 + Math.sin(p * Math.PI * 3 + i) * 1.5;
+    const dy = (y - POND.y) / POND.ry;
+    const half = POND.rx * Math.sqrt(Math.max(0, 1 - dy * dy));
+    glint.setPosition(POND.x + half * (0.3 - 1.1 * p), y);
+    glint.setAlpha(Math.sin(p * Math.PI) ** 2 * 0.85);
+  }
+
+  /** Sun drifting across the water, pads bobbing, the duck on its loop.
+   *  Indexed loops over arrays built once: nothing here allocates. */
+  private animatePond(time: number): void {
+    for (let i = 0; i < this.glints.length; i += 1) {
+      this.placeGlint(i, (time * 0.00004 + i * 0.2) % 1);
+    }
+    for (let i = 0; i < this.lilies.length; i += 1) {
+      this.lilies[i].y = this.lilyBaseY[i] + Math.sin(time * 0.0012 + i * 1.3) * 0.4;
+    }
+    for (let j = 0; j < this.lilyFlowers.length; j += 1) {
+      this.lilyFlowers[j].y = this.lilies[this.lilyFlowerPad[j]].y - 1.4;
+    }
+    const duck = this.duck;
+    if (duck) {
+      const t = time * 0.00022;
+      duck.x = DUCK_ORBIT.x + Math.cos(t) * DUCK_ORBIT.rx;
+      duck.y = DUCK_ORBIT.y + Math.sin(t) * DUCK_ORBIT.ry + Math.sin(time * 0.003) * 0.3;
+      // Heading west while x is falling; the art faces east.
+      const west = Math.sin(t) > 0;
+      if (west !== this.duckWest) {
+        this.duckWest = west;
+        duck.setFlipX(west);
+      }
+    }
   }
 
   /**
@@ -357,6 +581,28 @@ export class HomesteadScene extends Phaser.Scene {
     this.put("hay", BARN_X + 58, BARN_Y - 11, BARN_Y + 0.5);
     this.put("hay", BARN_X + 66, BARN_Y - 11, BARN_Y + 0.6);
     this.put("barrel", BARN_X - 48, BARN_Y - 14, BARN_Y + 0.4);
+  }
+
+  /**
+   * The yard's fixed props and the lamps down the lane (lib/homestead/
+   * props.ts), each on a soft ground shadow and sorted by its feet like
+   * everything else. The windmill's sails are their own sprite pinned at
+   * the hub, half a step in front of the tower: the hub is far above the
+   * feet, so left to `put`'s default depth they would sort behind the tower
+   * and vanish. update() turns them.
+   */
+  private paintProps(): void {
+    for (const prop of YARD_PROPS) {
+      const pool = PROP_SHADOW[prop.kind];
+      // The shadow painter's pool is 33 by 13 units at scale 1.
+      this.put("shadow", prop.x, prop.y + 1, prop.y - 0.5)
+        .setScale(pool.w / 33 / S, pool.h / 13 / S)
+        .setAlpha(0.8);
+      this.put(prop.kind, prop.x, prop.y, prop.y);
+      if (prop.kind === "windmill") {
+        this.blades = this.put("windmillBlades", prop.x + WINDMILL_HUB.x, prop.y + WINDMILL_HUB.y, prop.y + 0.5);
+      }
+    }
   }
 
   /* ---------------------------------------------------------------- */
@@ -420,8 +666,12 @@ export class HomesteadScene extends Phaser.Scene {
       progress: this.add.graphics(),
       progressValue: -1,
       critters: [],
+      spriteSlot: -1,
+      order: [],
+      plants: [],
       bobbing: [],
       tweens: [],
+      juiceUntil: 0,
       signature,
       cell,
     };
@@ -430,7 +680,7 @@ export class HomesteadScene extends Phaser.Scene {
     const img = (name: PainterName, x: number, y: number): Phaser.GameObjects.Image => {
       const p = PAINTERS[name];
       const image = this.add
-        .image(x, y, name)
+        .image(x, y, name, ART_FRAME)
         .setOrigin(p.ax, p.ay)
         .setScale(1 / S);
       container.add(image);
@@ -511,7 +761,7 @@ export class HomesteadScene extends Phaser.Scene {
 
   /** "2,500 Gold" on a wooden sign, planted on the plot that is for sale. */
   private priceSign(price: number): Phaser.GameObjects.Container {
-    const sign = this.add.image(0, 0, "sign").setOrigin(0.5, 1).setScale(1 / S);
+    const sign = this.add.image(0, 0, "sign", ART_FRAME).setOrigin(0.5, 1).setScale(1 / S);
     // A 6.5px font would be a smear at any zoom past 1; `resolution` renders
     // the glyphs 8x oversized and lets the camera scale them down, the same
     // trick the rest of the art gets from being baked at ART_SCALE.
@@ -552,6 +802,7 @@ export class HomesteadScene extends Phaser.Scene {
     for (const rowY of [19.5, 35.5, 51.5, 67.5]) {
       for (let i = 0; i < 5; i += 1) {
         const plant = img(frame, 14 + i * 13, rowY);
+        node.plants.push(plant);
         if (cell.state === "ready") node.bobbing.push(plant);
       }
     }
@@ -591,19 +842,32 @@ export class HomesteadScene extends Phaser.Scene {
     if (art) {
       const pen = this.penFor(cell);
       const origin = cellOrigin(cell.plotIndex);
-      for (let i = 0; i < critterCount(cell.stock); i += 1) {
+      const count = critterCount(cell.stock);
+      const states: Critter[] = [];
+      // Every shadow first, then every animal, so the animals are one
+      // contiguous block the per-frame depth sort can shuffle by y without
+      // ever lifting one above the near fence or dropping it under the straw.
+      const casts: Phaser.GameObjects.Image[] = [];
+      for (let i = 0; i < count; i += 1) {
         const state = carried[i] ?? spawnCritter(pen, this.random);
-        const cast = shadow(
-          state.x - origin.x,
-          state.y - origin.y,
-          art === "cow" ? 0.75 : art === "sheep" ? 0.6 : 0.45,
-          art === "hen" ? 0.5 : 0.7,
+        states.push(state);
+        casts.push(
+          shadow(
+            state.x - origin.x,
+            state.y - origin.y,
+            art === "cow" ? 0.75 : art === "sheep" ? 0.6 : 0.45,
+            art === "hen" ? 0.5 : 0.7,
+          ),
         );
+      }
+      for (let i = 0; i < count; i += 1) {
+        const state = states[i];
         const sprite = img(art, state.x - origin.x, state.y - origin.y).setFlipX(state.facing === 1);
         if (cell.state === "hungry") sprite.setTint(0xb9b4ae);
+        if (i === 0) node.spriteSlot = node.container.getIndex(sprite);
         // Animals are never bobbed: the tween would own y, update() owns the
         // shadow's y, and the two drift apart. A ready pen has its gold ring.
-        node.critters.push({ sprite, shadow: cast, state });
+        node.critters.push({ sprite, shadow: casts[i], state, lift: 0, phase: i * 2.1 });
       }
     }
 
@@ -998,8 +1262,14 @@ export class HomesteadScene extends Phaser.Scene {
       const at = toGame(event.clientX, event.clientY);
       const world = this.cameras.main.getWorldPoint(at.x, at.y);
       const index = plotIndexAt(world.x, world.y);
-      if (index === null) this.callbacks.onTapGround();
-      else this.callbacks.onTapPlot(index);
+      if (index === null) {
+        this.callbacks.onTapGround();
+        return;
+      }
+      // The picture answers the finger before the rules do: whatever the
+      // shell decides the tap meant, the animals noticed it.
+      this.pokePlot(index);
+      this.callbacks.onTapPlot(index);
     };
 
     const onUp = (event: PointerEvent): void => up(event, false);
@@ -1107,7 +1377,7 @@ export class HomesteadScene extends Phaser.Scene {
       ring.setVisible(false);
       return null;
     }
-    ghost.setTexture(GHOST_ART[stock]).setVisible(true);
+    ghost.setTexture(GHOST_ART[stock], ART_FRAME).setVisible(true);
     const world = this.cameras.main.getWorldPoint(cssX * DPR, cssY * DPR);
     const index = plotIndexAt(world.x, world.y);
     const cell = index === null ? null : this.cells.find((c) => c.plotIndex === index);
@@ -1130,6 +1400,71 @@ export class HomesteadScene extends Phaser.Scene {
   /* ---------------------------------------------------------------- */
   /* Effects                                                           */
   /* ---------------------------------------------------------------- */
+
+  /**
+   * The tap's own answer, before any rule runs: a pen's animals squash and
+   * spring up one after another, a field's plants ripple across in waves.
+   * Squash-and-stretch keeps rough volume (1.22 wide is 0.8 tall), which is
+   * what makes it read as a body flexing rather than the picture stretching.
+   * Scale only: update() owns every animal's y, so the hop goes through
+   * `lift`, which update() folds in. One bounce at a time per plot; a second
+   * tap mid-bounce is ignored rather than stacked.
+   */
+  pokePlot(plotIndex: number): void {
+    if (this.options.reducedMotion) return;
+    const node = this.nodes.get(plotIndex);
+    if (!node || node.juiceUntil > this.now) return;
+    const base = 1 / S;
+    // Finished tweens have already left the manager; keep the list to the
+    // live ones so destroyNode never removes a tween twice.
+    node.tweens = node.tweens.filter((t) => !t.isDestroyed());
+    const own = (tween: Phaser.Tweens.Tween) => node.tweens.push(tween);
+    const squash = (target: object, delay: number, wide: number, tall: number, ms: number) =>
+      own(
+        this.tweens.add({
+          targets: target,
+          scaleX: base * wide,
+          scaleY: base * tall,
+          duration: ms,
+          delay,
+          yoyo: true,
+          ease: "Quad.easeOut",
+        }),
+      );
+
+    if (node.critters.length > 0) {
+      node.juiceUntil = this.now + 520 + node.critters.length * 70;
+      node.critters.forEach((critter, i) => {
+        const delay = i * 70;
+        squash(critter.sprite, delay, 1.22, 0.8, 70);
+        squash(critter.sprite, delay + 140, 0.9, 1.14, 110);
+        own(
+          this.tweens.add({
+            targets: critter,
+            lift: 4,
+            duration: 130,
+            delay: delay + 140,
+            yoyo: true,
+            ease: "Sine.easeOut",
+          }),
+        );
+        squash(critter.sprite, delay + 400, 1.08, 0.94, 55);
+      });
+      return;
+    }
+    if (node.plants.length > 0) {
+      // Last plant's delay tops out at 180ms (row 3, col 4: 4*36 + 3*12), then
+      // the two chained squash tweens (80ms + 90ms, both yoyo'd so doubled)
+      // add another 340ms -- guard must cover the full 180 + 340 = 520ms, not
+      // just the first tween's span, or a re-tap lands mid squash-back.
+      node.juiceUntil = this.now + 520;
+      node.plants.forEach((plant, i) => {
+        const delay = (i % 5) * 36 + Math.floor(i / 5) * 12;
+        squash(plant, delay, 1.18, 0.84, 80);
+        squash(plant, delay + 160, 0.94, 1.1, 90);
+      });
+    }
+  }
 
   celebrateHarvest(plotIndex: number): void {
     const centre = cellCenter(plotIndex);
@@ -1176,9 +1511,10 @@ export class HomesteadScene extends Phaser.Scene {
     const items: Phaser.GameObjects.Image[] = [];
     for (const item of chunkScenery(cx, cy)) {
       if (castsShadow(item.kind)) {
+        const [wide, tall] = sceneryShadowScale(item.kind);
         items.push(
           this.put("shadow", item.x, item.y + 1, item.y - 0.5)
-            .setScale((item.kind === "bush" ? 0.6 : 0.9) / S, 0.9 / S)
+            .setScale(wide / S, tall / S)
             .setAlpha(0.8),
         );
       }
@@ -1246,11 +1582,70 @@ export class HomesteadScene extends Phaser.Scene {
   /* The animals' day                                                   */
   /* ---------------------------------------------------------------- */
 
+  /**
+   * Keeps the vignette over the whole screen. A scroll factor of zero pins
+   * it against scrolling but not against zoom -- the camera scales every
+   * object about its own centre -- so it is centred there and sized to the
+   * view divided by the zoom.
+   */
+  private fitVignette(): void {
+    const vignette = this.vignette;
+    if (!vignette) return;
+    const cam = this.cameras.main;
+    vignette.setPosition(cam.width / 2, cam.height / 2);
+    vignette.setDisplaySize(cam.width / cam.zoom + 2, cam.height / cam.zoom + 2);
+  }
+
+  /**
+   * Front-to-back order inside one pen: the animal standing furthest south
+   * draws last, so a hen walking in front of another is in front of it. The
+   * sprites are a contiguous block of the container's list (see paintPen),
+   * so this only ever permutes within that block -- the near fence stays
+   * above them and the straw below -- and only touches the list at all when
+   * the order actually changed.
+   */
+  private sortPen(node: CellNode): void {
+    const critters = node.critters;
+    const n = critters.length;
+    if (node.spriteSlot < 0 || n < 2) return;
+    // An in-place insertion sort of the persistent index array: two or three
+    // animals a pen, so it is a handful of compares, and unlike map().sort()
+    // it allocates nothing on a frame where nobody overtook anybody.
+    const order = node.order;
+    if (order.length !== n) {
+      order.length = 0;
+      for (let i = 0; i < n; i += 1) order.push(i);
+    }
+    let moved = false;
+    for (let i = 1; i < n; i += 1) {
+      const index = order[i];
+      const y = critters[index].state.y;
+      let j = i - 1;
+      while (j >= 0 && critters[order[j]].state.y > y) {
+        order[j + 1] = order[j];
+        j -= 1;
+      }
+      if (j + 1 !== i) {
+        order[j + 1] = index;
+        moved = true;
+      }
+    }
+    if (!moved) return;
+    for (let slot = 0; slot < n; slot += 1) {
+      node.container.moveTo(critters[order[slot]].sprite, node.spriteSlot + slot);
+    }
+  }
+
   update(time: number, delta: number): void {
+    this.now = time;
     this.coast(delta);
     this.reportTracked();
     this.tendWorld();
+    this.fitVignette();
     if (this.options.reducedMotion) return;
+
+    this.animatePond(time);
+    if (this.blades) this.blades.rotation = time * WINDMILL_SPEED;
 
     // Cloud shadows, drifting across whatever the camera is looking at. They
     // are placed against the view rather than the world: there is no world
@@ -1274,15 +1669,27 @@ export class HomesteadScene extends Phaser.Scene {
       const pen = this.penFor(cell);
       const origin = cellOrigin(cell.plotIndex);
       const speed = critterSpeed(cell.stock);
+      const bouncing = node.juiceUntil > time;
       for (const critter of node.critters) {
         critter.state = stepCritter(critter.state, pen, speed, delta, this.random);
-        const hop = critter.state.mode === "walk" ? Math.abs(Math.sin(time / 90)) * 1.2 : 0;
+        const walking = critter.state.mode === "walk";
+        const hop = walking ? Math.abs(Math.sin(time / 90 + critter.phase)) * 1.2 : 0;
         critter.sprite.x = critter.state.x - origin.x;
-        critter.sprite.y = critter.state.y - origin.y - hop;
+        critter.sprite.y = critter.state.y - origin.y - hop - critter.lift;
         critter.shadow.x = critter.sprite.x;
         critter.shadow.y = critter.state.y - origin.y + 1;
+        // The shadow thins as the animal leaves the ground.
+        critter.shadow.alpha = 0.8 / (1 + critter.lift * 0.18);
         critter.sprite.setFlipX(critter.state.facing === 1);
+        // A standing animal breathes, slowly and out of step with its
+        // neighbours. A tap's bounce owns the scale until it is done, and a
+        // walking animal is simply its own size.
+        if (!bouncing) {
+          const breath = walking ? 0 : Math.sin(time / 420 + critter.phase) * 0.022;
+          critter.sprite.setScale((1 - breath * 0.5) / S, (1 + breath) / S);
+        }
       }
+      this.sortPen(node);
       // The rings and the progress bar sit over everything in the cell,
       // including the near fence the animals walk behind.
       node.container.bringToTop(node.ring);

@@ -3,7 +3,34 @@
 // download the engine for a toolbelt icon; Phaser enters only through
 // homestead-world.tsx's dynamic import of the scene.
 import type * as Phaser from "phaser";
-import { HOMESTEAD_CELL, seededRandom } from "@/lib/homestead/world";
+import { HOMESTEAD_CELL, powerOfTwoCeil, seededRandom } from "@/lib/homestead/world";
+import {
+  ART_FRAME,
+  ART_SCALE,
+  GRASS_PX,
+  ell,
+  F,
+  leaf,
+  lin,
+  litMass,
+  painter,
+  poly,
+  rad,
+  rr,
+  stroke,
+  type Ctx,
+  type Paint,
+  type Painter,
+} from "./art-kit";
+import { PROP_PAINTERS, type PropPainterName } from "./art-props";
+import { WATER_PAINTERS, type WaterPainterName } from "./art-water";
+
+export type { Painter } from "./art-kit";
+// The bake constants live in art-kit.ts so a per-area art module can read
+// them without importing this file back (this file spreads those modules'
+// painters into PAINTERS at evaluation time); re-exported here because the
+// scene and the icons have always taken them from this module.
+export { ART_FRAME, ART_SCALE, GRASS_PX } from "./art-kit";
 
 /**
  * The Homestead's art, drawn rather than downloaded.
@@ -26,8 +53,12 @@ import { HOMESTEAD_CELL, seededRandom } from "@/lib/homestead/world";
  */
 
 /** Every picture the Homestead's vector art can draw: scenery, crops,
- *  animals, buildings, and the `ico-*` toolbelt/HUD/barn icons. */
-export type PainterName =
+ *  animals, buildings, and the `ico-*` toolbelt/HUD/barn icons, plus each
+ *  area module's own set (the water's dock, lilies and reeds; the yard's
+ *  windmill, well and lamps, and the woodland's logs and mushrooms). */
+export type PainterName = CorePainterName | WaterPainterName | PropPainterName;
+
+type CorePainterName =
   | "shadow"
   | "cloud"
   | "tree1"
@@ -79,97 +110,9 @@ export type PainterName =
   | "ico-carrot"
   | "ico-corn";
 
-/** A painter draws itself into a canvas 2D context in unit coordinates,
- *  scaled up by the caller. `w`/`h` are its natural size in units; `ax`/`ay`
- *  are its origin as a fraction of that box (art elsewhere anchors most
- *  things by their feet: ax .5, ay 1). */
-export interface Painter {
-  (ctx: CanvasRenderingContext2D): void;
-  w: number;
-  h: number;
-  ax: number;
-  ay: number;
-}
-
-/** Device pixels per world unit in a baked texture. Eight is enough that the
- *  camera's 5x ceiling still samples the texture down rather than up. */
-export const ART_SCALE = 8;
-
-/** Device pixels per world unit in the grass tile. Lower than ART_SCALE
- *  because the tile is 256 units square and only ever seen as a backdrop. */
-export const GRASS_PX = 4;
-
-type Ctx = CanvasRenderingContext2D;
-type Paint = (ctx: Ctx) => void;
-type Stop = readonly [number, string];
-type Point = readonly [number, number];
-
-/* ---- drawing shorthands ------------------------------------------------ */
-
-/** Rounded rect, corner radius clamped so a fat radius on a thin box does not
- *  invert the arcs. */
-function rr(c: Ctx, x: number, y: number, w: number, h: number, r: number): void {
-  const k = Math.min(r, w / 2, h / 2);
-  c.beginPath();
-  c.moveTo(x + k, y);
-  c.arcTo(x + w, y, x + w, y + h, k);
-  c.arcTo(x + w, y + h, x, y + h, k);
-  c.arcTo(x, y + h, x, y, k);
-  c.arcTo(x, y, x + w, y, k);
-  c.closePath();
-}
-
-function ell(c: Ctx, cx: number, cy: number, rx: number, ry: number, rot = 0): void {
-  c.beginPath();
-  c.ellipse(cx, cy, rx, ry, rot, 0, Math.PI * 2);
-  c.closePath();
-}
-
-function lin(c: Ctx, x0: number, y0: number, x1: number, y1: number, stops: readonly Stop[]) {
-  const g = c.createLinearGradient(x0, y0, x1, y1);
-  for (const [offset, colour] of stops) g.addColorStop(offset, colour);
-  return g;
-}
-
-function rad(c: Ctx, x: number, y: number, r0: number, r1: number, stops: readonly Stop[]) {
-  const g = c.createRadialGradient(x, y, r0, x, y, r1);
-  for (const [offset, colour] of stops) g.addColorStop(offset, colour);
-  return g;
-}
-
-function F(c: Ctx, colour: string | CanvasGradient): void {
-  c.fillStyle = colour;
-  c.fill();
-}
-
-function poly(c: Ctx, points: readonly Point[]): void {
-  c.beginPath();
-  points.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
-  c.closePath();
-}
-
-function stroke(c: Ctx, colour: string, width: number, cap: CanvasLineCap = "round"): void {
-  c.strokeStyle = colour;
-  c.lineWidth = width;
-  c.lineCap = cap;
-  c.lineJoin = "round";
-  c.stroke();
-}
-
-function leaf(c: Ctx, x: number, y: number, w: number, h: number, rot: number, colour: string): void {
-  ell(c, x, y, w, h, rot);
-  F(c, colour);
-}
-
-/** Hangs a painter's box and anchor off the draw function itself. */
-function painter(w: number, h: number, paint: Paint, ax = 0.5, ay = 1): Painter {
-  const p = paint as Painter;
-  p.w = w;
-  p.h = h;
-  p.ax = ax;
-  p.ay = ay;
-  return p;
-}
+// The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)
+// and the shared light (litMass) live in ./art-kit.ts, so the per-area art
+// modules this file spreads into PAINTERS can use them without a cycle.
 
 /* ---- scenery ----------------------------------------------------------- */
 
@@ -179,16 +122,24 @@ const treeRound =
   (dark: string, mid: string, light: string): Paint =>
   (c) => {
     rr(c, 10.2, 17, 3.8, 12, 1.6);
-    F(c, lin(c, 10, 0, 14, 0, [[0, "#9a6535"], [1, "#6a4321"]]));
-    ell(c, 12.2, 12.5, 11.2, 10.4);
+    F(c, lin(c, 10, 0, 14, 0, [[0, "#a46e3c"], [0.55, "#7d4f27"], [1, "#4b2d15"]]));
+    // One dark mass with three lobes on it, then lit as a whole so the lobes
+    // read as one canopy catching the sun rather than three stacked coins.
+    ell(c, 12.2, 12.6, 11.2, 10.4);
     F(c, dark);
-    ell(c, 11.2, 11.2, 9.2, 8.6);
-    F(c, mid);
-    ell(c, 8.8, 8.6, 5.2, 4.6);
-    F(c, light);
-    for (const [x, y] of [[16.5, 14.5], [13.5, 18.5], [7.5, 15.5]] as const) {
-      ell(c, x, y, 2.1, 1.6);
-      F(c, "rgba(30,80,30,.28)");
+    for (const [x, y, rx, ry] of [[7.6, 12.6, 6.4, 5.6], [16.4, 13, 6.2, 5.4], [11.6, 7.8, 6.8, 5.8]] as const) {
+      ell(c, x, y, rx, ry);
+      F(c, mid);
+    }
+    ell(c, 12.2, 12.6, 11.2, 10.4);
+    litMass(c, 12.2, 12.6, 11.2, 10.4, "rgba(8,45,22,.46)", light);
+    for (const [x, y] of [[16.5, 15.5], [12.5, 18.5], [7.5, 16.5]] as const) {
+      ell(c, x, y, 2.1, 1.5);
+      F(c, "rgba(20,70,25,.24)");
+    }
+    for (const [x, y] of [[7.2, 6.4], [10.6, 4.6]] as const) {
+      ell(c, x, y, 1.9, 1.2, -0.5);
+      F(c, "rgba(238,255,205,.5)");
     }
   };
 
@@ -262,10 +213,34 @@ const CELL = HOMESTEAD_CELL;
  *  mutation, so a name added to `PainterName` without a painter is a compile
  *  error instead of an undefined texture at boot. */
 export const PAINTERS: Record<PainterName, Painter> = {
-  shadow: painter(32, 14, (c) => {
-    ell(c, 16, 7, 15, 6);
-    F(c, rad(c, 16, 7, 0, 15, [[0, "rgba(20,50,15,.32)"], [1, "rgba(20,50,15,0)"]]));
-  }),
+  ...WATER_PAINTERS,
+  ...PROP_PAINTERS,
+
+  // The ground shadow of whatever stands on it. Anchored at its own centre
+  // rather than its bottom edge, so a caller placing it at a thing's feet
+  // puts the pool UNDER the feet instead of hidden up behind the trunk; the
+  // pool itself sits three units right of the anchor, the way a high sun to
+  // the upper-left throws it. The tighter dark core at the contact point is
+  // what stops a tree from reading as hovering over its own shadow.
+  shadow: painter(
+    36,
+    16,
+    (c) => {
+      ell(c, 19, 8, 16.5, 6.6);
+      F(
+        c,
+        rad(c, 19, 8, 0, 16.5, [
+          [0, "rgba(15,45,15,.30)"],
+          [0.55, "rgba(15,45,15,.18)"],
+          [1, "rgba(15,45,15,0)"],
+        ]),
+      );
+      ell(c, 17.5, 8, 7.5, 3);
+      F(c, rad(c, 17.5, 8, 0, 7.5, [[0, "rgba(10,35,10,.24)"], [1, "rgba(10,35,10,0)"]]));
+    },
+    16 / 36,
+    0.5,
+  ),
 
   cloud: painter(160, 90, (c) => {
     for (const [x, y, r] of [[60, 45, 40], [95, 40, 36], [120, 52, 28], [40, 55, 26]] as const) {
@@ -297,6 +272,9 @@ export const PAINTERS: Record<PainterName, Painter> = {
       c.lineWidth = 2.2;
       c.stroke();
       F(c, colour);
+      // The half of each skirt facing away from the sun.
+      poly(c, [[10, y0], [10 + hw + 1, y1 + 1], [10, y1 + 1]]);
+      F(c, "rgba(5,40,30,.24)");
     };
     layer(10, 27, 9, "#2f7a4d");
     layer(5, 20, 7.4, "#3a9058");
@@ -314,15 +292,17 @@ export const PAINTERS: Record<PainterName, Painter> = {
     F(c, "#5aa84f");
     ell(c, 10.4, 6.6, 4.6, 3.6);
     F(c, "#4f9d46");
-    ell(c, 5, 4.6, 2.6, 1.8);
-    F(c, "rgba(180,235,150,.55)");
+    ell(c, 8, 7.4, 7.6, 4.6);
+    litMass(c, 8, 7.4, 7.6, 4.6, "rgba(8,45,22,.42)", "rgba(190,240,160,.55)");
   }),
 
   rock: painter(14, 10, (c) => {
     poly(c, [[1, 8.2], [2.6, 3.4], [6.8, 1], [11, 2.4], [13, 6.8], [11.2, 9.6], [3, 9.6]]);
-    F(c, lin(c, 0, 0, 0, 10, [[0, "#b0b8bd"], [1, "#6b757b"]]));
-    ell(c, 5.2, 4.2, 2.6, 1.5, -0.4);
-    F(c, "rgba(255,255,255,.35)");
+    F(c, lin(c, 2, 1, 12, 10, [[0, "#c3cacf"], [0.5, "#98a2a8"], [1, "#5f6a70"]]));
+    poly(c, [[1, 8.2], [2.6, 3.4], [6.8, 1], [11, 2.4], [13, 6.8], [11.2, 9.6], [3, 9.6]]);
+    litMass(c, 7, 5.5, 6.2, 4.5, "rgba(20,30,40,.4)", "rgba(255,255,255,.3)");
+    ell(c, 5.2, 4, 2.6, 1.4, -0.4);
+    F(c, "rgba(255,255,255,.4)");
   }),
 
   flower1: painter(6, 8, flower("#ff7eb6")),
@@ -356,37 +336,75 @@ export const PAINTERS: Record<PainterName, Painter> = {
 
   /* ---- the cell beds: one painter covers a whole plot ---- */
 
+  // A cleared lot: mown a shade lighter than the lawn, with a cream dotted
+  // rim the way a cozy farm marks land you can build on. The rim is what lets
+  // an empty plot read as a plot with no ring on it at all.
   mown: painter(
     CELL,
     CELL,
     (c) => {
       rr(c, 2, 2, 76, 76, 7);
-      F(c, "rgba(255,255,255,.12)");
+      F(c, lin(c, 2, 2, 78, 78, [[0, "rgba(255,255,220,.24)"], [1, "rgba(255,255,220,.06)"]]));
       for (let i = 1; i < 8; i += 2) {
         rr(c, 2, 2 + i * 9.5, 76, 9.5, 0);
-        F(c, "rgba(255,255,255,.055)");
+        F(c, "rgba(255,255,255,.06)");
       }
+      rr(c, 4.5, 4.5, 71, 71, 5.5);
+      c.setLineDash([2.6, 2.4]);
+      stroke(c, "rgba(255,252,235,.72)", 1);
+      c.setLineDash([]);
       rr(c, 2, 2, 76, 76, 7);
-      stroke(c, "rgba(35,80,30,.22)", 0.9);
+      stroke(c, "rgba(35,80,30,.2)", 0.9);
     },
     0,
     0,
   ),
 
+  // Tilled earth: a raised bed lit along its top and left lips and shadowed
+  // along the bottom and right, four furrows each with a sunlit ridge above
+  // its trough, and clods scattered over the lot.
   soil: painter(
     CELL,
     CELL,
     (c) => {
       rr(c, 2, 2, 76, 76, 7);
-      F(c, lin(c, 0, 2, 0, 78, [[0, "#b27d4c"], [1, "#8d5e36"]]));
+      F(c, lin(c, 2, 2, 78, 78, [[0, "#bd8956"], [1, "#82502c"]]));
+      rr(c, 2, 2, 76, 76, 7);
+      c.save();
+      c.clip();
+      c.fillStyle = lin(c, 0, 2, 0, 11, [[0, "rgba(255,228,185,.34)"], [1, "rgba(255,228,185,0)"]]);
+      c.fillRect(2, 2, 76, 9);
+      c.fillStyle = lin(c, 2, 0, 11, 0, [[0, "rgba(255,228,185,.2)"], [1, "rgba(255,228,185,0)"]]);
+      c.fillRect(2, 2, 9, 76);
+      c.fillStyle = lin(c, 0, 69, 0, 78, [[0, "rgba(40,18,4,0)"], [1, "rgba(40,18,4,.34)"]]);
+      c.fillRect(2, 69, 76, 9);
+      c.fillStyle = lin(c, 69, 0, 78, 0, [[0, "rgba(40,18,4,0)"], [1, "rgba(40,18,4,.24)"]]);
+      c.fillRect(69, 2, 9, 76);
+      c.restore();
       for (const y of [13, 29, 45, 61]) {
+        rr(c, 8, y - 1.8, 64, 2.4, 1.2);
+        F(c, "rgba(255,218,165,.3)");
         rr(c, 8, y, 64, 6.5, 3.2);
-        F(c, "#75492a");
+        F(c, lin(c, 0, y, 0, y + 6.5, [[0, "#5b3719"], [1, "#7b4d2a"]]));
         rr(c, 8, y + 6.5, 64, 1.4, 0.7);
-        F(c, "rgba(255,205,150,.2)");
+        F(c, "rgba(255,205,150,.22)");
+      }
+      const r = seededRandom(31);
+      for (let i = 0; i < 14; i += 1) {
+        const x = 6 + r() * 68;
+        const y = 4 + r() * 72;
+        const k = 0.8 + r() * 1.2;
+        ell(c, x, y, k * 1.4, k);
+        F(
+          c,
+          rad(c, x - k * 0.4, y - k * 0.4, 0, k * 1.6, [
+            [0, "rgba(220,175,125,.55)"],
+            [1, "rgba(80,48,20,.4)"],
+          ]),
+        );
       }
       rr(c, 2, 2, 76, 76, 7);
-      stroke(c, "rgba(255,225,190,.28)", 0.9);
+      stroke(c, "rgba(70,40,15,.4)", 1);
     },
     0,
     0,
@@ -397,7 +415,7 @@ export const PAINTERS: Record<PainterName, Painter> = {
     CELL,
     (c) => {
       rr(c, 2, 2, 76, 76, 7);
-      F(c, "#d8c78f");
+      F(c, lin(c, 2, 2, 78, 78, [[0, "#e2d29c"], [1, "#c9b67c"]]));
       const r = seededRandom(77);
       for (let i = 0; i < 9; i += 1) {
         ell(c, 8 + r() * 64, 8 + r() * 64, 5 + r() * 6, 2.5 + r() * 3);
@@ -411,8 +429,17 @@ export const PAINTERS: Record<PainterName, Painter> = {
         c.lineTo(x + 3 + r() * 3, y - 1 + r() * 2);
         stroke(c, "rgba(255,245,200,.55)", 0.6);
       }
+      // The fence along the bottom and right shades the straw inside it.
       rr(c, 2, 2, 76, 76, 7);
-      stroke(c, "rgba(120,90,40,.25)", 0.9);
+      c.save();
+      c.clip();
+      c.fillStyle = lin(c, 0, 66, 0, 78, [[0, "rgba(110,80,30,0)"], [1, "rgba(110,80,30,.26)"]]);
+      c.fillRect(2, 66, 76, 12);
+      c.fillStyle = lin(c, 68, 0, 78, 0, [[0, "rgba(110,80,30,0)"], [1, "rgba(110,80,30,.18)"]]);
+      c.fillRect(68, 2, 10, 76);
+      c.restore();
+      rr(c, 2, 2, 76, 76, 7);
+      stroke(c, "rgba(120,90,40,.28)", 0.9);
     },
     0,
     0,
@@ -667,36 +694,60 @@ export const PAINTERS: Record<PainterName, Painter> = {
 
   /* ---- the yard ---- */
 
+  // Volume without changing the silhouette: the wall is lit from the left
+  // and falls into shade on the right, the eave throws a band of shadow onto
+  // it, the door is recessed, and the gable's two slopes are lit unequally
+  // with a bright ridge cap between them.
   barn: painter(74, 62, (c) => {
-    rr(c, 7, 26, 60, 36, 3);
-    F(c, lin(c, 0, 26, 0, 62, [[0, "#dd5747"], [1, "#b03a2e"]]));
+    rr(c, 6, 58, 62, 4, 1.2);
+    F(c, "#4f3a2e");
+    rr(c, 7, 26, 60, 35, 3);
+    F(c, lin(c, 7, 0, 67, 0, [[0, "#e7634f"], [0.5, "#d04b3b"], [1, "#a03226"]]));
+    for (const y of [35, 43, 51]) {
+      rr(c, 7, y, 60, 0.7, 0.3);
+      F(c, "rgba(80,15,8,.16)");
+    }
+    rr(c, 7, 26, 60, 8, 0);
+    F(c, lin(c, 0, 26, 0, 34, [[0, "rgba(40,8,4,.42)"], [1, "rgba(40,8,4,0)"]]));
     rr(c, 7, 26, 60, 2.2, 0);
     F(c, "#f7efe6");
-    // The door was the one flat-fill panel on an otherwise gradient-shaded
-    // wall; give it the same top-lit gradient so it doesn't read as a cutout.
-    rr(c, 29, 38, 16, 24, 2);
-    F(c, lin(c, 29, 38, 29, 62, [[0, "#8a4834"], [1, "#682f1f"]]));
+    rr(c, 29, 38, 16, 23, 2);
+    F(c, lin(c, 29, 38, 29, 61, [[0, "#6b3323"], [1, "#4a2112"]]));
+    rr(c, 29, 38, 16, 4.5, 0);
+    F(c, "rgba(0,0,0,.28)");
     c.beginPath();
     c.moveTo(30, 39);
-    c.lineTo(44, 61);
+    c.lineTo(44, 60);
     c.moveTo(44, 39);
-    c.lineTo(30, 61);
+    c.lineTo(30, 60);
     stroke(c, "#f7efe6", 1.2);
-    rr(c, 29, 38, 16, 24, 2);
+    rr(c, 29, 38, 16, 23, 2);
     stroke(c, "#f7efe6", 1);
     for (const x of [12, 52]) {
       rr(c, x, 34, 10, 8, 1.5);
       F(c, "#f7efe6");
       glass(c, x + 1.2, 35.2, 7.6, 5.6);
+      rr(c, x, 42, 10, 1.6, 0.6);
+      F(c, "rgba(40,8,4,.28)");
     }
     poly(c, [[1, 28], [37, 3], [73, 28]]);
-    F(c, lin(c, 0, 3, 0, 28, [[0, "#7a6262"], [1, "#4e3a3a"]]));
-    poly(c, [[1, 28], [37, 3], [37, 8], [7, 28]]);
-    F(c, "rgba(255,255,255,.08)");
+    F(c, lin(c, 0, 3, 0, 28, [[0, "#846c6c"], [1, "#4a3737"]]));
+    poly(c, [[1, 28], [37, 3], [37, 28]]);
+    F(c, "rgba(255,240,230,.12)");
+    poly(c, [[37, 3], [73, 28], [37, 28]]);
+    F(c, "rgba(20,8,8,.2)");
+    for (const t of [0.28, 0.52, 0.76]) {
+      c.beginPath();
+      c.moveTo(1 + 36 * t, 28 - 25 * t);
+      c.lineTo(73 - 36 * t, 28 - 25 * t);
+      stroke(c, "rgba(0,0,0,.16)", 0.6, "butt");
+    }
+    poly(c, [[35.4, 3.8], [37, 2.4], [38.6, 3.8], [37, 5]]);
+    F(c, "rgba(255,255,255,.4)");
     rr(c, 0, 26.5, 74, 3, 1.4);
-    F(c, "#5e4646");
+    F(c, lin(c, 0, 26.5, 0, 29.5, [[0, "#6e5252"], [1, "#4a3636"]]));
     rr(c, 0, 29.5, 74, 1.4, 0.7);
-    F(c, "rgba(0,0,0,.18)");
+    F(c, "rgba(0,0,0,.22)");
     rr(c, 33, 12, 8, 7, 1.5);
     F(c, "#f7efe6");
     glass(c, 34.2, 13.2, 5.6, 4.6);
@@ -704,15 +755,19 @@ export const PAINTERS: Record<PainterName, Painter> = {
 
   silo: painter(22, 62, (c) => {
     rr(c, 3, 12, 16, 50, 3.5);
-    F(c, lin(c, 3, 0, 19, 0, [[0, "#ece6db"], [0.6, "#cfc6b8"], [1, "#a79e91"]]));
-    ell(c, 11, 12, 8.2, 7);
-    F(c, lin(c, 3, 5, 19, 12, [[0, "#d9d1c5"], [1, "#b2a99b"]]));
+    F(c, lin(c, 3, 0, 19, 0, [[0, "#f1ebe0"], [0.5, "#d3cabc"], [0.82, "#a89f92"], [1, "#857c70"]]));
     for (const y of [24, 36, 48]) {
       rr(c, 3, y, 16, 1.2, 0.6);
       F(c, "rgba(0,0,0,.14)");
     }
     rr(c, 5, 16, 3, 40, 1.4);
-    F(c, "rgba(255,255,255,.28)");
+    F(c, "rgba(255,255,255,.3)");
+    ell(c, 11, 12, 8.2, 7);
+    F(c, lin(c, 3, 5, 19, 14, [[0, "#e6ded2"], [0.6, "#bfb6a8"], [1, "#8e8578"]]));
+    ell(c, 11, 12, 8.2, 7);
+    litMass(c, 11, 12, 8.2, 7, "rgba(40,30,20,.3)", "rgba(255,255,255,.45)");
+    rr(c, 3, 17, 16, 3, 0);
+    F(c, lin(c, 0, 17, 0, 20, [[0, "rgba(0,0,0,.2)"], [1, "rgba(0,0,0,0)"]]));
   }),
 
   hay: painter(
@@ -895,24 +950,63 @@ export const PAINTERS: Record<PainterName, Painter> = {
   }),
 };
 
-/** Creates a CanvasTexture at `w*ART_SCALE x h*ART_SCALE` and draws the named
- *  painter into it. No-op if the texture already exists. */
+/**
+ * Draws the named painter into a CanvasTexture and returns its key. No-op if
+ * the texture already exists.
+ *
+ * The canvas is padded out to a power of two on each side, and that padding
+ * is what makes the art smooth when the camera is zoomed OUT. The game config
+ * asks for `LINEAR_MIPMAP_LINEAR`, but Phaser 3.90 only builds mipmaps for
+ * textures whose sides are powers of two (`WebGLTextureWrapper.update` guards
+ * `gl.generateMipmap` with `IsSizePowerOfTwo`, and WebGL1 -- the only context
+ * the renderer requests -- cannot mip an NPOT texture at all); anything else
+ * silently drops to plain bilinear, which at the 6x minification of the
+ * fully zoomed-out farm samples one texel in every forty and shimmers as the
+ * map pans. The painter's own region is registered as `ART_FRAME` so the
+ * padding never shows.
+ */
 export function bakeTexture(scene: Phaser.Scene, name: PainterName): string {
   if (scene.textures.exists(name)) return name;
   const p = PAINTERS[name];
-  const texture = scene.textures.createCanvas(
-    name,
-    Math.ceil(p.w * ART_SCALE),
-    Math.ceil(p.h * ART_SCALE),
-  );
+  const width = Math.ceil(p.w * ART_SCALE);
+  const height = Math.ceil(p.h * ART_SCALE);
+  const texture = scene.textures.createCanvas(name, powerOfTwoCeil(width), powerOfTwoCeil(height));
   if (!texture) return name;
   const ctx = texture.context;
   ctx.save();
   ctx.scale(ART_SCALE, ART_SCALE);
   p(ctx);
   ctx.restore();
+  texture.add(ART_FRAME, 0, 0, 0, width, height);
   texture.refresh();
   return name;
+}
+
+/**
+ * A screen-sized wash the scene pins over the world: the corners fall off
+ * into a soft green-black and the sun's corner carries a warm glow. Baked
+ * small (it is only gradients) and stretched to whatever the camera is; a
+ * power of two so it is mipped like everything else.
+ */
+export function bakeVignette(scene: Phaser.Scene): string {
+  const key = "vignette";
+  if (scene.textures.exists(key)) return key;
+  const px = 256;
+  const texture = scene.textures.createCanvas(key, px, px);
+  if (!texture) return key;
+  const c = texture.context;
+  const edge = c.createRadialGradient(px / 2, px / 2, px * 0.26, px / 2, px / 2, px * 0.8);
+  edge.addColorStop(0, "rgba(18,40,18,0)");
+  edge.addColorStop(1, "rgba(18,40,18,.32)");
+  c.fillStyle = edge;
+  c.fillRect(0, 0, px, px);
+  const sun = c.createRadialGradient(px * 0.08, px * 0.04, 0, px * 0.08, px * 0.04, px * 0.95);
+  sun.addColorStop(0, "rgba(255,238,170,.17)");
+  sun.addColorStop(1, "rgba(255,238,170,0)");
+  c.fillStyle = sun;
+  c.fillRect(0, 0, px, px);
+  texture.refresh();
+  return key;
 }
 
 /** The ground: one 256-unit tile that repeats seamlessly in every direction,
@@ -943,8 +1037,29 @@ export function bakeGrass(scene: Phaser.Scene): void {
       }
     }
   };
-  // Smaller, more numerous patches read as mottling; a handful of huge ones
-  // (radius up to 62) tiled visibly into a "stained" pattern once zoomed out.
+  // A layer of broad, faint patches first: the lawn is not one green, it is
+  // sunlit sweeps and cooler hollows. Kept under radius 40 and very faint --
+  // a few huge ones (radius 62) tiled visibly into a "stained" pattern once
+  // zoomed out, which is the same trap a stronger alpha would fall into.
+  for (let i = 0; i < 16; i += 1) {
+    const x = r() * units;
+    const y = r() * units;
+    const rx = 24 + r() * 16;
+    const ry = rx * (0.5 + r() * 0.4);
+    const rot = r() * 3;
+    const light = r() < 0.55;
+    wrapped(() => {
+      ell(c, x, y, rx, ry, rot);
+      F(
+        c,
+        rad(c, x, y, 0, rx, [
+          [0, light ? "rgba(255,255,215,.09)" : "rgba(25,95,35,.08)"],
+          [1, "rgba(0,0,0,0)"],
+        ]),
+      );
+    });
+  }
+  // Smaller, more numerous patches read as mottling.
   for (let i = 0; i < 46; i += 1) {
     const x = r() * units;
     const y = r() * units;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HOMESTEAD_GRID_PLOTS } from "./catalogue";
+import { nearPath } from "./paths";
 import type { HomesteadPlotSnapshot, HomesteadPlotState } from "./plots";
 import {
   FARM_ZONE,
@@ -23,6 +24,7 @@ import {
   ownedBounds,
   penInterior,
   plotIndexAt,
+  powerOfTwoCeil,
   scrollToKeepUnderPointer,
   seededRandom,
   spawnCritter,
@@ -275,6 +277,29 @@ describe("open-world scenery", () => {
     }
   });
 
+  it("keeps the barn yard, the lane's verge and the mailbox inside the farm zone", () => {
+    // Roof peak of the barn, the stone wall's sprite top, the lane's lamps
+    // on the west verge, and the mailbox at the lane's end.
+    expect(inFarmZone(108, -28)).toBe(true);
+    expect(inFarmZone(160, -50)).toBe(true);
+    expect(inFarmZone(36, 300)).toBe(true);
+    expect(inFarmZone(46, 404)).toBe(true);
+    // And not the woods a chunk away.
+    expect(inFarmZone(-100, 100)).toBe(false);
+    expect(inFarmZone(200, -100)).toBe(false);
+  });
+
+  it("never grows scenery on a path", () => {
+    // The chunks the track crosses on its way out, the ones the road curves
+    // through, and the one holding the lane's verge: every candidate near a
+    // path is dropped rather than shifted.
+    for (const [cx, cy] of [[-1, -1], [-1, -2], [0, -1], [0, 0], [0, 1], [0, 2], [2, -1], [3, -1]]) {
+      for (const piece of chunkScenery(cx, cy)) {
+        expect(nearPath(piece.x, piece.y), `${cx}:${cy} ${piece.kind} at ${piece.x},${piece.y}`).toBe(false);
+      }
+    }
+  });
+
   it("sorts a chunk's scenery by y, for correct draw order", () => {
     const items = chunkScenery(3, 8);
     for (let i = 1; i < items.length; i += 1) {
@@ -316,6 +341,28 @@ describe("locked-plot thicket", () => {
     const items = thicketLayout(11, false);
     for (let i = 1; i < items.length; i += 1) {
       expect(items[i].y).toBeGreaterThanOrEqual(items[i - 1].y);
+    }
+  });
+});
+
+describe("powerOfTwoCeil", () => {
+  it("rounds a texture side up to the next power of two, never down", () => {
+    expect(powerOfTwoCeil(1)).toBe(1);
+    expect(powerOfTwoCeil(2)).toBe(2);
+    expect(powerOfTwoCeil(3)).toBe(4);
+    expect(powerOfTwoCeil(112)).toBe(128);
+    expect(powerOfTwoCeil(128)).toBe(128);
+    expect(powerOfTwoCeil(640)).toBe(1024);
+    expect(powerOfTwoCeil(0)).toBe(1);
+    expect(powerOfTwoCeil(Number.NaN)).toBe(1);
+  });
+
+  it("makes every painter side a power of two once scaled", () => {
+    // The whole point: the renderer only mips power-of-two textures.
+    for (const side of [12, 14, 16, 20, 22, 24, 30, 34, 62, 74, 80, 160]) {
+      const px = powerOfTwoCeil(Math.ceil(side * 8));
+      expect(Math.log2(px) % 1).toBe(0);
+      expect(px).toBeGreaterThanOrEqual(side * 8);
     }
   });
 });

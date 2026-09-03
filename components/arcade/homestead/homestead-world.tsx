@@ -155,7 +155,13 @@ export function HomesteadWorld({
         type: Phaser.AUTO,
         parent: host,
         // Smoothing on, everywhere: the world is baked vector art rather than
-        // pixel art, and it is drawn oversized and scaled down.
+        // pixel art, and it is drawn oversized and scaled down. `pixelArt`
+        // must stay false -- true would force roundPixels on and nearest-
+        // neighbour sampling, which is the blocky look this pass exists to
+        // avoid. `roundPixels: false` keeps sub-pixel camera positions, so a
+        // slow pan glides instead of stepping. The mipmap filter only takes
+        // effect on power-of-two textures, which is why bakeTexture pads
+        // every painter's canvas out to one (see homestead-art.ts).
         pixelArt: false,
         render: { antialias: true, mipmapFilter: "LINEAR_MIPMAP_LINEAR", roundPixels: false },
         backgroundColor: "#86c96e",

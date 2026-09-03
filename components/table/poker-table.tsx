@@ -10,6 +10,8 @@ import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
 import { betFlightKind, type BetFlight } from "@/lib/scene/chips/bet-flight";
 import type { ChipMoveKind } from "@/lib/scene/chips/chip-motion";
+import { chipBreakdown, columnCount, columnHeights, MAX_POT_CHIPS, MAX_POT_COLUMNS } from "@/lib/scene/chips/chip-stack";
+import { MAX_RADIUS_PX, MAX_WALL_PX } from "@/lib/scene/chips/chip-spec";
 import { DEALER_ART_SRC, dealerSlotBox } from "@/lib/scene/table-dealer";
 import { DEALER_BOX } from "@/lib/scene/dealer-art.generated";
 import {
@@ -836,6 +838,22 @@ export function PokerTable({
     () => Math.max(0, game.pot - orderedSeats.reduce((sum, seat) => sum + seat.streetBet, 0)),
     [game.pot, orderedSeats],
   );
+  // How tall the mound RacetrackScene is about to draw for this pot actually
+  // gets, in CSS pixels -- so the "Pot" pill can clear its peak instead of
+  // guessing a flat offset that overlaps a real pile once it grows past a
+  // couple of chips. Mirrors the same chip-count math the scene itself runs
+  // (chip-scene.ts's syncPile) rather than measuring the canvas, which this
+  // component never touches. MAX_RADIUS_PX/MAX_WALL_PX are chip-spec.ts's own
+  // hard ceilings on a single chip's drawn size -- using them (rather than the
+  // camera's actual, narrower scale at the pot) means this is always tall
+  // enough, never a pixel short.
+  const potMoundClearancePx = useMemo(() => {
+    const chipCount = chipBreakdown(centerPotAmount, game.bigBlind, MAX_POT_CHIPS).length;
+    if (chipCount === 0) return 0;
+    const columns = columnCount(chipCount, MAX_POT_COLUMNS);
+    const tallestColumn = Math.max(...columnHeights(chipCount, columns));
+    return (tallestColumn - 1) * MAX_WALL_PX + MAX_WALL_PX + MAX_RADIUS_PX * 2;
+  }, [centerPotAmount, game.bigBlind]);
   const sceneWinners = useMemo(
     () => (showFunnel
       ? game.winners
@@ -1332,6 +1350,11 @@ export function PokerTable({
                   // 42-racetrack-table.css's own note on this). Negative
                   // here means "toward the dealer, above the board".
                   "--pot-y-delta-px": `${(racetrackLayout.pot.y - racetrackLayout.board.y).toFixed(1)}px`,
+                  // How far above the pot anchor the mound itself actually
+                  // reaches, so the "Pot" pill can clear its peak instead of
+                  // a flat clearance that overlaps a real pile. See
+                  // potMoundClearancePx above.
+                  "--pot-mound-clearance-px": `${potMoundClearancePx.toFixed(1)}px`,
                 }
                 : {}),
             } as React.CSSProperties}

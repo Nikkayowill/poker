@@ -10,6 +10,7 @@ import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { useLandscape } from "@/components/use-landscape";
+import { useAppShell } from "@/components/shell/app-shell";
 import { tapSound } from "@/lib/audio/ui-sounds";
 import {
   STACKACRES_CATALOGUE,
@@ -219,6 +220,20 @@ export function StackAcresFarm() {
   const [hasStarted, setHasStarted] = useState(false);
 
   useStackAcresMusic(hasStarted);
+
+  // Every other live-money screen (poker-app.tsx, blackjack-table.tsx,
+  // duel-shell.tsx, the Ante Up games) tells the persistent shell to pause
+  // its own ambient menu music while it's on screen -- this one never did,
+  // so the lobby track kept playing underneath StackAcres' own music the
+  // whole time you played, most audible on the phone where the tap-to-play
+  // splash and the farm are the only things on screen. Tied to `hasStarted`
+  // to match exactly what already gates this screen's own music above: the
+  // orientation gate and the splash still get the ambient lobby bed, only
+  // the farm itself goes immersive.
+  const { setImmersive } = useAppShell();
+  useEffect(() => {
+    setImmersive(hasStarted);
+  }, [hasStarted, setImmersive]);
 
   // Landscape-only, same posture and same hook as the poker table (see
   // poker-table.tsx) rather than a second orientation check invented here:

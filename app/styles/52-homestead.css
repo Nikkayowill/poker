@@ -962,6 +962,117 @@
 
 .hs-exchange-done { color: var(--brand-gold-light) !important; }
 
+/* ---- Music toggle button in HUD -------- */
+
+.hs-music-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--neon-border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--neon-text);
+  cursor: pointer;
+  transition: all 200ms;
+}
+
+.hs-music-toggle:hover {
+  background: var(--neon-surface-hover);
+  color: var(--neon-accent);
+}
+
+.hs-music-toggle:active {
+  transform: scale(0.95);
+}
+
+/* ---- Tap-to-play screen (covers whole viewport) ------ */
+
+.hs-play-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--brand-ink);
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 300ms ease-out;
+  opacity: 1;
+  z-index: 9999;
+}
+
+.hs-play-screen.is-fading {
+  pointer-events: none;
+  opacity: 0;
+}
+
+.hs-play-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.hs-play-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--neon-accent);
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+
+.hs-play-subtitle {
+  font-size: 16px;
+  color: var(--neon-muted);
+  margin: 0;
+  font-weight: 400;
+}
+
+.hs-play-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.hs-play-text {
+  font-size: 18px;
+  color: var(--neon-text);
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.hs-play-pulse {
+  position: relative;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--neon-accent);
+  border-radius: 50%;
+  animation: hs-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes hs-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hs-play-pulse { animation: none; opacity: 1; }
+}
+
 /* Motion in the DOM layer is the toast only; the map's own motion (animals,
    the ripe bob, the affordance pulse) is switched off inside the scene from
    the same media query. */

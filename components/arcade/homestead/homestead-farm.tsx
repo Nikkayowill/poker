@@ -46,7 +46,10 @@ import {
 import type { PainterName } from "./homestead-art";
 import { HomesteadPlotList, HomesteadSeedStrip } from "./homestead-grid";
 import { HomesteadIcon } from "./homestead-icon";
+import { HomesteadMusicToggle } from "./homestead-music-toggle";
+import { HomesteadPlayScreen } from "./homestead-play-screen";
 import { HomesteadToolbelt } from "./homestead-toolbelt";
+import { useHomesteadMusic } from "./use-homestead-music";
 import { HomesteadWorld, type HomesteadWorldApi, type PlotScreenRect } from "./homestead-world";
 
 /**
@@ -197,6 +200,12 @@ export function HomesteadFarm() {
   const [celebrate, setCelebrate] = useState<{ plotIndex: number; nonce: number } | null>(null);
   const [lastCollect, setLastCollect] = useState<{ text: string; nonce: number } | null>(null);
   const [placing, setPlacing] = useState<HomesteadStock | null>(null);
+  // Gates a tap-to-play splash: nothing plays until the player has made a
+  // real gesture, which also doubles as the autoplay-policy unlock every
+  // browser requires before it will let audio start on its own.
+  const [hasStarted, setHasStarted] = useState(false);
+
+  useHomesteadMusic(hasStarted);
 
   // Landscape-only, same posture and same hook as the poker table (see
   // poker-table.tsx) rather than a second orientation check invented here:
@@ -635,6 +644,16 @@ export function HomesteadFarm() {
     );
   }
 
+  // Same full-replacement posture as the orientation gate above, and it runs
+  // after that check on purpose: a portrait phone sees "turn sideways" first,
+  // and the splash's own gesture only needs to happen once the farm can
+  // actually render. Data keeps loading underneath it (the fetch effect
+  // already ran on mount), so the farm is ready the instant a player taps
+  // through rather than waiting on the splash's own fade.
+  if (!hasStarted) {
+    return <HomesteadPlayScreen onStart={() => setHasStarted(true)} />;
+  }
+
   const hint = busy
     ? "Working…"
     : placing
@@ -670,6 +689,7 @@ export function HomesteadFarm() {
             <Coins size={13} aria-hidden="true" />
             <strong>{profile?.unlimitedGold ? "∞" : (profile?.goldBalance ?? 0).toLocaleString()}</strong>
           </span>
+          <HomesteadMusicToggle />
           <button
             type="button"
             className="hs-store-btn"

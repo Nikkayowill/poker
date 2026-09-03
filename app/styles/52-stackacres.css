@@ -76,17 +76,26 @@
      .duel-shell's own width cap and padding are sized for a card of lobby
      text, not a game -- every mobile game (and this one, on a desktop
      browser too) uses the whole screen, so this opts all the way out of
-     that shared shell rather than just narrowing it. Safe-area insets still
-     apply -- a notch or a rounded corner is real hardware -- nothing else
-     from .duel-shell does. Positioned so .floor-bar below has something to
-     pin itself to. */
+     that shared shell rather than just narrowing it. Positioned so
+     .floor-bar below has something to pin itself to.
+
+     No left/right safe-area inset here, unlike top/bottom -- this game is
+     landscape-only, and landscape is exactly where a notch or the home
+     indicator sits on a SIDE rather than top/bottom, on whichever edge
+     depends on which way the phone is held. A blanket inset here can only
+     guess, and guessing wrong still leaves a bare margin on the edge that
+     had no notch. The canvas bleeding under a notch it can't see costs
+     nothing (it's a picture); every overlay that actually needs protecting
+     -- .floor-bar, .sa-scoreline, .sa-destinations, .sa-controls,
+     .sa-camera, .sa-side -- reads var(--safe-left)/var(--safe-right)
+     itself instead. */
   position: relative;
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
   width: 100%;
   margin: 0;
-  padding: calc(6px + var(--safe-top)) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  padding: calc(6px + var(--safe-top)) 0 var(--safe-bottom) 0;
 }
 
 /* The header row used to be a flex sibling above .sa-main, taking a real row
@@ -188,7 +197,7 @@
 .sa-scoreline {
   position: absolute;
   top: calc(var(--sa-header-h) + 8px);
-  left: 8px;
+  left: max(8px, var(--safe-left));
   width: auto;
   align-items: baseline;
   gap: 10px;
@@ -224,7 +233,7 @@
 .sa-controls {
   position: absolute;
   top: calc(var(--sa-header-h) + 8px);
-  right: 8px;
+  right: max(8px, var(--safe-right));
   bottom: 48px;
   display: flex;
   flex-direction: row-reverse;
@@ -373,7 +382,7 @@
    column, which stops 48px short of the bottom to leave this room. */
 .sa-camera {
   position: absolute;
-  right: 8px;
+  right: max(8px, var(--safe-right));
   bottom: 8px;
   display: flex;
   gap: 4px;
@@ -414,7 +423,7 @@
 
 .sa-destinations {
   position: absolute;
-  left: 8px;
+  left: max(8px, var(--safe-left));
   top: calc(var(--sa-header-h) + 52px);
   display: flex;
   gap: 4px;
@@ -549,7 +558,7 @@
 /* The error line floats over the map's bottom-left, above the hint pill. */
 .sa-side {
   position: absolute;
-  left: 8px;
+  left: max(8px, var(--safe-left));
   bottom: 44px;
   width: min(320px, 52%);
   pointer-events: none;

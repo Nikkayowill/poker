@@ -22,6 +22,7 @@ import {
   canCoverStake,
   handTotal,
   outcomeLabel,
+  outcomeResult,
   type BlackjackSnapshot,
 } from "@/lib/arcade/blackjack";
 
@@ -232,11 +233,12 @@ export function BlackjackTable() {
   // A round's own baseStake, not the live toggle, is what marks a settled
   // hand as practice: the toggle can move on before a result is read.
   const isPracticeRound = round?.baseStake === 0;
-  const outcomeWon = round?.outcome === "player-blackjack"
-    || round?.outcome === "player-win"
-    || round?.outcome === "dealer-bust";
-  const outcomeLost = round?.outcome === "dealer-win" || round?.outcome === "player-bust"
-    || round?.outcome === "player-resign";
+  // outcomeResult is exhaustive over BlackjackOutcome, so a new outcome added
+  // to the engine fails the build here instead of silently rendering the
+  // verdict pill unstyled (neither win nor loss).
+  const result = round?.outcome ? outcomeResult(round.outcome) : null;
+  const outcomeWon = result === "win";
+  const outcomeLost = result === "loss";
 
   const deal = () => {
     if (!cover.open || busy) return;

@@ -1,9 +1,9 @@
 import "server-only";
 import { leaderboardGame, type LeaderboardStats } from "@/lib/leaderboard/contract";
 import type { AvatarPreset } from "@/lib/profile/types";
-import { DEFAULT_AVATAR_COSMETIC } from "@/lib/cosmetics/catalog";
 import { listFriendIds } from "./friends-store";
 import { getHeadToHeadSummaries, recordHeadToHeadDuel, recordHeadToHeadTable } from "./head-to-head-store";
+import { decorateRankedRows } from "./leaderboard-identity";
 import { getPublicProfilesByIds } from "./profile-store";
 import { __memoryPlayerStatsForGlobalBlend } from "./stats-store";
 import { adminClient } from "./supabase-admin";
@@ -278,43 +278,10 @@ async function allGameRows(gameId: string): Promise<ScoredRow[]> {
   return scoredRows(gameId, await rawGameRows(gameId));
 }
 
-/**
- * Attaches rank and public-profile identity (name, avatar, accent, with the
- * same "Player" / null / gold fallbacks every board uses) to an already-
- * sorted row list. Shared by decorateGameRows and decorateGlobalRows, so the
- * two can't drift on the fallback values by building the same shape twice.
- */
-type RankedIdentity = {
-  profileId: string;
-  rank: number;
-  displayName: string;
-  initials: string;
-  avatarUrl: string | null;
-  avatarPreset: AvatarPreset;
-  avatarCosmetic: string;
-  accent: string;
-};
-
-async function decorateRankedRows<Row extends { profileId: string }, Extra>(
-  rows: Row[],
-  extra: (row: Row) => Extra,
-): Promise<(RankedIdentity & Extra)[]> {
-  const profiles = await getPublicProfilesByIds(rows.map((row) => row.profileId));
-  return rows.map((row, index) => {
-    const profile = profiles.get(row.profileId);
-    return {
-      profileId: row.profileId,
-      rank: index + 1,
-      displayName: profile?.displayName ?? "Player",
-      initials: profile?.initials ?? "??",
-      avatarUrl: profile?.avatarUrl ?? null,
-      avatarPreset: profile?.avatarPreset ?? "ace",
-      avatarCosmetic: profile?.avatarCosmetic ?? DEFAULT_AVATAR_COSMETIC,
-      accent: profile?.accent ?? "#e7c66a",
-      ...extra(row),
-    };
-  });
-}
+// decorateRankedRows lives in ./leaderboard-identity: shared by decorateGameRows
+// and decorateGlobalRows below, and by stats-store.ts's own poker board, so
+// none of the three can drift on the fallback values by building the same
+// shape twice.
 
 async function decorateGameRows(gameId: string, rows: ScoredRow[]): Promise<LeaderboardEntry[]> {
   const contract = leaderboardGame(gameId);

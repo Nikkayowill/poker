@@ -143,7 +143,18 @@ async function settleIfStale(
   const staleFor = now.getTime() - Date.parse(stored.updatedAt);
   if (stored.round.phase !== "player-turn" || staleFor < STALE_ROUND_TIMEOUT_MS) return stored;
 
-  const advanced = await advanceBlackjackRound(stored, resign(stored.round));
+  let advanced: StoredBlackjackRound | null;
+  try {
+    advanced = await advanceBlackjackRound(stored, resign(stored.round));
+  } catch (error) {
+    // Genuinely never throws, matching the doc comment: this sweep piggybacks
+    // on what is documented elsewhere as a passive read (readBlackjackRound,
+    // used to restore the felt after a refresh), so a transient write failure
+    // here must not turn an ordinary page load into a 500. Leave the round as
+    // still active -- the sweep just tries again on the next read.
+    console.error("blackjack.stale_sweep_failed", { roundId: stored.id, profileId, error });
+    return stored;
+  }
   // A successful advance means the sweep just force-settled this round, so
   // there is nothing active left for the caller -- same as if it had never
   // existed. A lost race (null) means a real action landed in the same

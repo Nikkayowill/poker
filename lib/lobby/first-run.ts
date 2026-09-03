@@ -26,7 +26,7 @@
  * is decoration.
  */
 
-import { ARCADE_GAMES } from "@/lib/arcade/games";
+import { ARCADE_GAMES, arcadeFloorSummary } from "@/lib/arcade/games";
 
 /**
  * How many games cost nothing to start, counted rather than written down.
@@ -44,10 +44,13 @@ import { ARCADE_GAMES } from "@/lib/arcade/games";
  * read was literally "0 puzzles are free every day". A wager row is free to
  * open (the stake is a choice made on the game's own page), so it is what this
  * count has to mean.
+ *
+ * Reuses `arcadeFloorSummary`'s own `free` count rather than re-filtering
+ * ARCADE_GAMES here -- the hub tile computes the identical number from the
+ * same function, and this file's whole point is that a count written down
+ * twice is a count that drifts.
  */
-export const FREE_TO_PLAY_COUNT = ARCADE_GAMES.filter(
-  (game) => (game.kind === "puzzle" || game.kind === "wager") && game.status === "live",
-).length;
+export const FREE_TO_PLAY_COUNT = arcadeFloorSummary(ARCADE_GAMES).free;
 
 /** Every game not behind Hold'em, for the step that opens the door to them. */
 export const ARCADE_GAME_COUNT = ARCADE_GAMES.filter((game) => game.status === "live").length;

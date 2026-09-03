@@ -46,6 +46,25 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Homestead stocking was broken in production since Phase 2 landed (2026-09-02)
+Kayo hit "Could not stock that plot" live. Root cause: `20260901180000_homestead_inventory.sql`
+made `payout` inert (collections yield produce via the new `yield_quantity` column, not Gold) and
+re-pointed the stocking trigger's ceiling at `yield_quantity` -- but missed the original migration's
+CHECK constraint, `homestead_plots_stock_matches_status`, which still required `payout is not null`
+for a working plot. Nothing has written `payout` since that day, so every stocking UPDATE has set
+status = 'working' with payout still null and the CHECK rejected it outright -- **every stock attempt
+has failed since 2026-09-01**, never caught by the memory-mode suite (it doesn't exercise a real SQL
+CHECK) and apparently never actually attempted in production until now. No Gold/Bushels were at risk:
+`stockHomestead`'s catch block already refunds the seed cost when the database throws. Fixed by
+swapping the constraint's dependency from `payout` to `yield_quantity`
+(`20260902130000_fix_homestead_plot_stock_check.sql`), applied directly to production and verified
+there with a self-cleaning insert/delete against a real row before landing the file. Also fixes a
+smaller trap for next time: a verification INSERT wrapped in a `WITH ... AS (INSERT ... RETURNING)
+DELETE ... WHERE id IN (...)` CTE did not actually delete the row it inserted (left one real test row
+on a real player's profile, caught and cleaned up by hand) -- for a self-cleaning check against a real
+table, verify the leftover count directly rather than trusting the CTE's own RETURNING silently
+returning nothing.
+
 ### Homestead: paths, a pond and yard props close out the art-volume gap (2026-09-02)
 The "still open" line at the end of the StackAcres premium pass entry below named the honest gap to
 the FarmVille bar as "art volume (paths, water, props, a character)". Paths, water and props are done
@@ -76,14 +95,9 @@ rendered art for a nit-level dedup, not a free win.
 
 **Still open, unchanged by this pass:** the wild-plot tint (`wild` painter in `homestead-art.ts`) still
 reads as a flat grey rectangle when zoomed out — confirmed byte-for-byte untouched by this diff, same
-gap the premium-pass entry called out. **A production DB bug was found sitting in this worktree,
-unrelated to the art pass and not yet applied**: `supabase/migrations/20260902130000_fix_homestead_plot_stock_check.sql`
-fixes `homestead_plots_stock_matches_status`, whose CHECK still required the now-inert `payout` column
-— every stocking attempt has been failing since `20260901180000_homestead_inventory.sql` re-pointed
-the trigger at `yield_quantity` without updating this CHECK to match (no Gold/Bushels at risk;
-`stockHomestead`'s catch block already refunds on a DB throw, per that migration's own comment). This
-migration is **unapplied** — apply it before/alongside this branch's own migrations; see
-`[[reference_stackchips_migrations_not_auto_applied]]`.
+gap the premium-pass entry called out. The stocking CHECK-constraint bug this worktree independently
+found in the same window is covered by the entry above -- it landed on main and production first, so
+that copy is canonical; this branch's own copy of the migration was reconciled to match it on merge.
 
 ### Homestead: the grid became a 2D sandbox viewport (2026-09-01)
 Kayo's brief: "a major evolution", not a new game -- take the economics as they are (acreage, crops,

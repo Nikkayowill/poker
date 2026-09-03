@@ -1,8 +1,8 @@
 import "server-only";
 import { randomUUID } from "crypto";
 import type { AvatarPreset } from "@/lib/profile/types";
-import { DEFAULT_AVATAR_COSMETIC } from "@/lib/cosmetics/catalog";
-import { ensureProfile, getPublicProfilesByIds } from "./profile-store";
+import { decorateRankedRows } from "./leaderboard-identity";
+import { ensureProfile } from "./profile-store";
 import { adminClient } from "./supabase-admin";
 import type { GameState } from "@/lib/game/types";
 
@@ -214,20 +214,7 @@ export async function getActiveSeason(): Promise<SeasonInfo | null> {
 }
 
 async function decorate(rows: PlayerStats[]): Promise<LeaderboardEntry[]> {
-  const profiles = await getPublicProfilesByIds(rows.map((row) => row.profileId));
-  return rows.map((row, index) => {
-    const profile = profiles.get(row.profileId);
-    return {
-      ...row,
-      rank: index + 1,
-      displayName: profile?.displayName ?? "Player",
-      initials: profile?.initials ?? "??",
-      avatarUrl: profile?.avatarUrl ?? null,
-      avatarPreset: profile?.avatarPreset ?? "ace",
-      avatarCosmetic: profile?.avatarCosmetic ?? DEFAULT_AVATAR_COSMETIC,
-      accent: profile?.accent ?? "#e7c66a",
-    };
-  });
+  return decorateRankedRows(rows, (row) => row);
 }
 
 export async function getLeaderboard(scope: LeaderboardScope, limit = 10): Promise<LeaderboardEntry[]> {

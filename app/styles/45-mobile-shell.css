@@ -133,11 +133,11 @@
     flex-direction: column;
     flex-grow: 1;
     min-height: 0;
-    /* The tab bar's total height (its 44px row plus the real safe-area
-       strip), named once so the bar itself, the panes that must not scroll
-       content under it, and the install nudge that sits just above it all
-       agree on the same number. */
-    --mshell-nav-h: calc(44px + max(var(--safe-bottom), 4px));
+    /* The tab bar's total footprint -- its 58px pill plus the gap it floats
+       above the safe area -- named once so the bar itself, the panes that
+       must not scroll content under it, and the install nudge that sits
+       just above it all agree on the same number. */
+    --mshell-nav-h: calc(58px + max(var(--safe-bottom), 10px) + 10px);
   }
 
   /* ---- the swipe track ------------------------------------------------ */
@@ -643,20 +643,22 @@
 
   /* ---- the tab bar ----------------------------------------------------- */
 
-  /* Built to the shape TikTok/Quora actually use: a ~44px row, icon tight over
-     label, sitting directly on the safe-area strip with nothing between it and
-     the pane above.
+  /* A floating glass pill, not the TikTok-style bar this replaces (that
+     shape lived here as a ~44px row flush against the safe-area strip --
+     see git history if it needs resurrecting). It no longer touches any
+     edge: it floats `--safe-bottom` (or a 10px floor) plus another 10px
+     above the bottom, inset from the sides, fully rounded via
+     `--radius-pill`. Nothing paints under it, so unlike the old bar there
+     is no safe-area padding baked into the shape itself -- the floating gap
+     already clears the home indicator.
 
      `position: fixed` rather than a flex sibling sized by `.lobby.lobby-shell`'s
-     own `100dvh` calc: on an installed iOS PWA (standalone), `100dvh` measures
-     short of the true screen bottom by roughly the home-indicator inset --
-     Safari-tab and standalone WKWebView disagree here even though both report
-     the same `--safe-bottom` -- so a height-derived bar sat a home-indicator's
-     width above the edge with a strip of bare room colour showing beneath it.
-     Fixed to the real viewport sidesteps the mismatch outright rather than
-     chasing the exact right dvh math for a container it doesn't need to fill.
-     `.mshell-pane`'s bottom padding and `.install-strip`'s offset both key off
-     `--mshell-nav-h` (declared on `.mshell`) to still clear it correctly.
+     own `100dvh` calc, for the same reason the flush bar was: on an installed
+     iOS PWA (standalone), `100dvh` measures short of the true screen bottom by
+     roughly the home-indicator inset, so a height-derived bar drifts. Fixed to
+     the real viewport sidesteps that. `.mshell-pane`'s bottom padding and
+     `.install-strip`'s offset both key off `--mshell-nav-h` (declared on
+     `.mshell`) to clear the pill's new footprint.
 
      No JS anywhere in this rule or the ones below it -- `--safe-bottom` is
      read live, same as every other fixed bottom layer in this app. See the
@@ -665,33 +667,40 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    left: 14px;
+    right: 14px;
+    bottom: calc(max(var(--safe-bottom), 10px) + 10px);
     z-index: var(--z-status-overlay);
-    /* The safe-area strip is part of the bar, not a gap under it -- otherwise
-       iOS paints the document colour beneath the home indicator. The 4px floor
-       is for everything that reports no inset (Android, any desktop browser at
-       this width). */
-    padding-bottom: max(var(--safe-bottom), 4px);
-    background: rgba(22, 27, 38, .94);
-    box-shadow: 0 -1px 0 rgba(182, 166, 219, .1), 0 -4px 12px rgba(0, 0, 0, .3);
+    padding: 0 4px;
+    border-radius: var(--radius-pill);
+    /* Neon Marquee's own chrome tint (--neon-ground/-lift), not a flat black
+       glass -- low enough opacity that the pane scrolling underneath still
+       ghosts through the blur. */
+    background: linear-gradient(165deg, rgba(44, 24, 84, .58), rgba(21, 10, 43, .68));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, .16),
+      inset 0 0 0 1px rgba(192, 123, 255, .18),
+      0 16px 40px rgba(5, 2, 14, .55),
+      0 4px 14px rgba(0, 0, 0, .35);
   }
 
-  @supports (backdrop-filter: blur(18px)) {
-    .mshell-nav { backdrop-filter: blur(18px); }
+  @supports (backdrop-filter: blur(20px)) {
+    .mshell-nav {
+      backdrop-filter: blur(20px) saturate(1.7);
+      -webkit-backdrop-filter: blur(20px) saturate(1.7);
+    }
   }
 
   .mshell-nav-item {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 2px;
-    /* 44px is the hit-target floor the rest of this shell is built to --
-       TikTok/Quora's own bars sit right at it, not the 50-56px a desktop-style
-       Material bar uses. */
-    height: 44px;
+    /* Taller than the old 44px floor -- a floating pill reads cramped at the
+       bare hit-target minimum the flush bar could get away with. */
+    height: 58px;
     border: 0;
     background: transparent;
     color: #7f8ba4;
@@ -704,11 +713,43 @@
     transition: color var(--duration-base, .15s) linear;
   }
 
+  /* A soft highlight behind the icon on press, independent of the icon's own
+     scale/rotate -- rendered first so every later child (the icon wrapper,
+     the label) paints over it without needing z-index. */
+  .mshell-nav-item::before {
+    content: "";
+    position: absolute;
+    inset: 4px 10px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0);
+    transition: background .2s ease;
+  }
+
+  .mshell-nav-item:active::before {
+    background: rgba(255, 255, 255, .07);
+  }
+
+  /* The tap feedback: a micro scale-down plus a slight rotation on press,
+     then a spring back on release -- the overshoot easing (past 1, then
+     settling) is what reads as "spring" rather than a plain linear return.
+     Scoped to the icon alone, not the whole button, so the label underneath
+     never moves. */
+  .mshell-nav-icon {
+    display: flex;
+    transition: transform .32s cubic-bezier(.34, 1.56, .64, 1);
+  }
+
+  .mshell-nav-item:active .mshell-nav-icon {
+    transform: scale(.82) rotate(-8deg);
+  }
+
   /* Defensive, not descriptive of anything currently in PAGES: the four tab
      labels ("Play"/"Ante Up"/"Leaderboard"/"Profile") never come close to
      needing this, but a bar mixing more/longer labels later shouldn't grow
-     taller than its shortest tabs while it finds that out. */
-  .mshell-nav-item span {
+     taller than its shortest tabs while it finds that out. Scoped to the
+     label specifically, not `span` in general -- the icon wrapper
+     (.mshell-nav-icon) is a span too, and has no text to ellipsize. */
+  .mshell-nav-label {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -722,15 +763,15 @@
   .mshell-nav-on svg { filter: drop-shadow(0 2px 8px rgba(255, 210, 63, .45)); }
 
   /* Profile's tab is the player's own avatar (see mobile-shell.tsx), sized to
-     sit level with the other two tabs' 20px icons. Unlike an outline/filled
+     sit level with the other two tabs' 22px icons. Unlike an outline/filled
      icon swap, a photo has no "filled" state to toggle, so the active cue is
      a gold ring instead -- still color plus a second, non-color cue (a ring
      appearing is a shape change, not just a hue shift), matching the glow the
      other two icons get. */
   .mshell-nav-avatar {
-    width: 20px !important;
-    height: 20px !important;
-    font-size: 8px !important;
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 9px !important;
   }
 
   .mshell-nav-on .mshell-nav-avatar {
@@ -747,6 +788,7 @@
     .mshell-tile:active,
     .mshell-row:active,
     .mshell-hero:active,
-    .mshell-primary:not(:disabled):active { transform: none; }
+    .mshell-primary:not(:disabled):active,
+    .mshell-nav-item:active .mshell-nav-icon { transform: none; }
   }
 }

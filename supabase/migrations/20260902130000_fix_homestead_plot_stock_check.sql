@@ -17,6 +17,10 @@
 --
 -- The fix: swap the invariant's dependency from the now-inert payout column
 -- to the column that actually gets set, yield_quantity. Same shape otherwise.
+--
+-- Applied directly to production 2026-09-02 ahead of this file landing on
+-- main, since a broken stocking path was live and blocking every player;
+-- verified there with a self-cleaning insert/delete against a real row.
 alter table public.homestead_plots
   drop constraint homestead_plots_stock_matches_status;
 

@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 /**
  * Puts the "Admin" tag above one player's poker seat, or takes it off.
  *
- * Same shape as the ban, unlimited-Gold and Homestead toggles beside it:
+ * Same shape as the ban, unlimited-Gold and StackAcres toggles beside it:
  * admin cookie, one profile, one boolean. The tag is cosmetic -- it grants
  * nothing, and the admin portal itself never reads it.
  */

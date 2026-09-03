@@ -101,10 +101,10 @@ describe("arcade catalogue", () => {
     }
   });
 
-  it("keeps the idle bucket empty now that the Homestead has its own card in the play area", () => {
-    // The Homestead moved off this floor entirely -- it has its own tile in
+  it("keeps the idle bucket empty now that the StackAcres has its own card in the play area", () => {
+    // The StackAcres moved off this floor entirely -- it has its own tile in
     // the main lobby now, under Texas Hold'em (components/lobby/lobby.tsx,
-    // components/lobby/mobile-shell.tsx), gated on profile.homesteadAccess
+    // components/lobby/mobile-shell.tsx), gated on profile.stackacresAccess
     // rather than being a catalog row players can even see before they're
     // let in. `kind: "idle"` and its `floor.idle` bucket stay in the catalog
     // machinery for whichever future row is genuinely "nothing to lose,

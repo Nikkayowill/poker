@@ -1,0 +1,1251 @@
+/* StackAcres, on the floor. The name runs all the way down now -- the route,
+ * components/arcade/stackacres/, lib/stackacres/ and the sa- class prefix.
+ * Only the database still says "homestead"; see stackacres-farm.tsx.
+ *
+ * After 22-arcade.css and 36-duels.css: the shell, header bar and error line
+ * all come from those, so what is here is the world, the chrome pinned over
+ * it, and the store sheet.
+ *
+ * Two layers. The world is a Phaser canvas (stackacres-world.tsx) that fills
+ * .sa-field and moves when the player drags it. Everything else on the screen
+ * -- the title pill, the toolbelt, the seed strip, the detail panel, the zoom
+ * buttons, the hint -- is DOM absolutely positioned over that canvas and never
+ * moves. Each overlay wrapper is pointer-events: none with its controls set
+ * back to auto, so a drag that starts in the gap between two buttons reaches
+ * the map underneath. The whole page is a fixed-height column for the same
+ * reason the table is: the map needs a definite height to fill, and a page
+ * that scrolls under a map that also scrolls is two things fighting for one
+ * finger.
+ *
+ * The state and affordance rings that used to be CSS on grid buttons are now
+ * drawn in the canvas by stackacres-scene.ts, in the same colours: gold for
+ * ripe, amber for hungry, brown for weather-worn, chalk for selected, violet
+ * for "the held tool can act here" and red for "it could, but you cannot pay".
+ * The palette reasoning is unchanged -- the affordance tint is violet rather
+ * than green because green is what the art already is -- and lives in that
+ * file's colour table.
+ *
+ * The world is vector art now, not a tile sheet: every sprite is a Canvas2D
+ * painter (components/arcade/stackacres/stackacres-art.ts) baked into a Phaser
+ * texture at boot and drawn at the browser's own device pixel ratio, so it is
+ * smooth at every zoom rather than a grid of fixed-size squares. Nothing is
+ * downloaded for it. `--sa-grass` matches the grass painter's own fill colour
+ * so the DOM frame and the canvas background read as one continuous lawn.
+ * --sa-hungry and --sa-muck are the same state colours the scene draws with,
+ * kept here for the keyboard plot list. The chrome's own icons
+ * (`.sa-ico`, below) are the same painters, drawn into a small DOM canvas by
+ * `<StackAcresIcon>` rather than loaded as PNGs.
+ *
+ * The landscape @media block MUST stay last in this file. It overrides base
+ * rules at equal specificity, so source order is the only thing deciding the
+ * winner.
+ */
+
+.sa-shell {
+  /* Sprite colours, not chrome: they exist to agree with artwork the palette
+     knows nothing about, and none of them is used outside the field.
+     --sa-grass matches the grass painter's own fill. */
+  --sa-grass: #86c96e;
+  --sa-hungry: #ff8a3d;
+  --sa-muck: #785830;
+
+  /* The districts' ground, one token each, matching the `ground.base` values
+     in lib/stackacres/zones.ts. Same rule as --sa-grass and the same reason
+     for being here rather than in the palette: they are the colour of dirt
+     and grass in a drawing, not a decision the design system gets to make.
+     They are hand-copied from that module and nothing enforces the two
+     agreeing, so recolour a district in both places -- the signpost's swatch
+     is what a reader would notice going wrong. */
+  --sa-zone-farmstead: var(--sa-grass);
+  --sa-zone-meadow: #8fce66;
+  --sa-zone-oxfields: #7a5a34;
+  --sa-zone-wallow: #54402c;
+
+  /* A fixed viewport, not a page. .duel-shell gives min-height and a gap
+     sized for a scrolling lobby; the map needs a hard height to fill. */
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  gap: 10px;
+  padding-bottom: max(10px, var(--safe-bottom));
+}
+
+.sa-shell .floor-bar { margin-bottom: 0; }
+
+.sa-main {
+  position: relative;
+  flex: 1;
+  /* Without this a flex child refuses to shrink below its content and the
+     column grows the shell back past the viewport. */
+  min-height: 0;
+}
+
+/* ---- the world ------------------------------------------------------- */
+
+.sa-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--sa-grass);
+  box-shadow: var(--elevation-2);
+}
+
+/* The canvas host, and the element every gesture is read off (see
+   stackacres-scene.ts's bindInput). touch-action: none hands every touch to the
+   map -- the browser would otherwise claim a two-finger move as page zoom and
+   a one-finger move as scroll, and the map would get neither.
+   -webkit-touch-callout stops iOS turning a held thumb into a callout menu,
+   which cancels the touch and abandons the pan mid-drag. */
+.sa-world {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.sa-world canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.sa-shell.is-placing .sa-world { cursor: copy; }
+
+/* ---- the icon painters ------------------------------------------------ */
+
+/* Every icon on this screen -- tool, seed chip, HUD purse/feed, barn row --
+   is a <StackAcresIcon>: a vector painter drawn into a small DOM canvas
+   rather than a pixel-art PNG. This is the fallback size; every context
+   below sets its own, the same contract the old <img> icons had. */
+.sa-ico {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+
+.sa-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  background: var(--sa-grass);
+  color: var(--brand-ink);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+/* ---- the title pill -------------------------------------------------- */
+
+/* The heading sits over the map's top-left corner rather than in a band
+   above it: on a phone that band was a fifth of the height the map now has. */
+.sa-scoreline {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: auto;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--brand-ink) 78%, transparent);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.sa-scoreline .ante-lobby-heading h1 { font-size: 16px; }
+
+.sa-cap {
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The heading's real name is the logo (components/brand/stackacres-logo.tsx);
+   the <h1> beside it is sr-only, kept for the a11y tree only. This has room
+   to be the widest the mark ships anywhere -- it's the game's own masthead,
+   not a tile competing with a chevron and a blurb. */
+.sa-heading-logo { width: 210px; height: auto; }
+/* ---- the toolbelt ---------------------------------------------------- */
+
+/* Pinned down the right edge, where a thumb wrapped around a phone held
+   sideways already is. The seed strip stands to its LEFT rather than under it
+   (row-reverse), because five tools plus five seeds stacked in one column
+   outgrow a 390px-tall screen and the bottom of the list becomes unreachable.
+   Side by side, each column fits with room to spare. */
+.sa-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 48px;
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.sa-toolbelt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 100%;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
+  box-shadow: var(--elevation-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  pointer-events: auto;
+}
+
+.sa-tool {
+  position: relative;
+  flex: none;
+  width: 62px;
+  /* 44px is the touch-target floor; the dock is the one thing on this screen
+     that is always in use, so it does not get to dip under it. */
+  min-height: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 5px 2px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--neon-muted);
+  cursor: pointer;
+  transition: background var(--duration-fast, .12s) ease, color var(--duration-fast, .12s) ease;
+}
+
+.sa-tool .sa-ico {
+  width: 22px;
+  height: 22px;
+}
+
+.sa-tool-label {
+  font-size: 11px;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
+.sa-tool:hover { background: var(--brand-surface-2); }
+
+/* Inset ring plus glow rather than a border, so holding a tool adds no layout
+   box and the dock does not reflow by a pixel as you move across it. */
+.sa-tool.is-held {
+  background: var(--brand-surface-2);
+  box-shadow: var(--accent-edge), var(--accent-glow);
+  color: var(--neon-chalk);
+}
+
+.sa-tool:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+}
+
+.sa-tool-count {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-gold);
+  color: var(--brand-ink);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- what to plant --------------------------------------------------- */
+
+.sa-seeds {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 100%;
+  padding: 6px;
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
+  box-shadow: var(--elevation-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  pointer-events: auto;
+}
+
+/* pan-y, not none: the strip scrolls vertically when it has to, and the drag
+   that places a chip on the map is a sideways one. Anything vertical stays
+   the browser's; anything else is ours. */
+.sa-seed {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 5px 10px 5px 6px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-muted);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sa-seed .sa-ico { width: 22px; height: 22px; }
+
+.sa-seed.is-picked {
+  background: var(--brand-surface-2);
+  box-shadow: inset 0 0 0 1px var(--brand-gold), var(--accent-glow-gold);
+  color: var(--neon-chalk);
+}
+
+/* Full is not disabled: picking a full track is how you find out it is full,
+   and the map then explains it in red rather than the chip refusing a tap. */
+.sa-seed[data-full] { opacity: .55; }
+
+.sa-seed:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+}
+
+/* ---- zoom buttons ---------------------------------------------------- */
+
+/* For a mouse, which has no pinch. Bottom-right, under the toolbelt's
+   column, which stops 48px short of the bottom to leave this room. */
+.sa-camera {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
+  box-shadow: var(--elevation-2);
+}
+
+.sa-camera-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--neon-muted);
+  cursor: pointer;
+}
+
+.sa-camera-btn:hover { background: var(--brand-surface-2); color: var(--neon-chalk); }
+.sa-camera-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+/* ---- the signpost ---------------------------------------------------- */
+/* Under the masthead, top-left. Bottom-left was the first choice and it was
+   wrong: `.sa-tool-hint` is centred on the bottom edge and long enough at
+   most tool hints to run straight through a four-entry rail, so the last
+   destination sat behind the hint text. Nothing else claims the band under
+   the scoreline, and a signpost beside the name of the place reads better
+   than one tucked at the floor anyway.
+
+   Horizontal, ordered outward from the farm, so it scans as a road rather
+   than a menu. The detail card is a popover that may be hung over this
+   corner -- it has its own elevation and is meant to sit on top, so the rail
+   deliberately does not fight it for the space. */
+
+.sa-destinations {
+  position: absolute;
+  left: 8px;
+  top: 52px;
+  display: flex;
+  gap: 4px;
+  /* Stops short of the seed strip and the toolbelt down the right. */
+  max-width: calc(100% - 300px);
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
+  box-shadow: var(--elevation-2);
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.sa-destinations::-webkit-scrollbar { display: none; }
+
+.sa-dest {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  padding: 4px 10px 4px 7px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--neon-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.sa-dest:hover { background: var(--brand-surface-2); color: var(--neon-chalk); }
+.sa-dest:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+/* Where you last chose to go. Gold, the one saturated fill in the system,
+   spent here because this is the map's "you are here". */
+.sa-dest.is-there {
+  background: var(--brand-surface-2);
+  color: var(--brand-gold-light);
+  box-shadow: inset 0 0 0 1px var(--brand-gold);
+}
+
+/* Each district's own ground colour, so the rail is colour-keyed to what the
+   player is looking at. These are the same values lib/stackacres/zones.ts
+   paints the ground with -- a district that gets recoloured has to be
+   recoloured in both places, and the swatch is the reason anyone would
+   notice. */
+.sa-dest-swatch {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 35%);
+}
+
+.sa-dest-farmstead .sa-dest-swatch { background: var(--sa-zone-farmstead); }
+.sa-dest-meadow    .sa-dest-swatch { background: var(--sa-zone-meadow); }
+.sa-dest-oxfields  .sa-dest-swatch { background: var(--sa-zone-oxfields); }
+.sa-dest-wallow    .sa-dest-swatch { background: var(--sa-zone-wallow); }
+
+.sa-dest-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.sa-dest-name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The compass reading. Small, quiet and lower-case: it is the thing you need
+   once (to know which way to drag) and never again. */
+.sa-dest-way {
+  color: var(--neon-muted);
+  font-size: 10px;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+.sa-dest.is-there .sa-dest-way { color: color-mix(in srgb, var(--brand-gold-light) 70%, transparent); }
+
+/* ---- the hint -------------------------------------------------------- */
+
+.sa-tool-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  max-width: min(60%, 520px);
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--brand-ink) 78%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--neon-muted);
+  font-size: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.sa-tool-hint.is-busy { color: var(--brand-gold-light); }
+
+.sa-toast {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-ink);
+  box-shadow: inset 0 0 0 1px var(--brand-gold), var(--accent-glow-gold);
+  color: var(--brand-gold-light);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: sa-toast 1.8s ease-out forwards;
+}
+
+@keyframes sa-toast {
+  0% { opacity: 0; transform: translate(-50%, 8px); }
+  18% { opacity: 1; transform: translate(-50%, 0); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -12px); }
+}
+
+/* ---- the error line and the detail card ------------------------------ */
+
+/* The error line floats over the map's bottom-left, above the hint pill. */
+.sa-side {
+  position: absolute;
+  left: 8px;
+  bottom: 44px;
+  width: min(320px, 52%);
+  pointer-events: none;
+}
+
+.sa-side > * { pointer-events: auto; }
+
+/* The detail card hangs beside the plot it is about. Its position is set
+   on the node by stackacres-farm.tsx's placeDetail, from the plot's place on
+   the canvas, so the card follows the plot through a pan or a zoom; the
+   stylesheet only says how big it may be. Hidden until the first position
+   arrives, so it never flashes at the corner. */
+.sa-detail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: min(300px, 46%);
+  margin: 0;
+  visibility: hidden;
+  will-change: transform;
+}
+
+.sa-detail:empty { display: none; }
+
+/* The shared error line is a translucent wash, tuned for a dark page. Over
+   bright grass it turns to mud and the words go with it; give it the panel's
+   own solid ground here. */
+.sa-side .duel-error {
+  background: color-mix(in srgb, var(--brand-red) 22%, var(--brand-ink-lift));
+  box-shadow: var(--elevation-4);
+}
+
+.sa-hint {
+  margin: 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+}
+
+.sa-panel {
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--accent-edge), var(--elevation-4);
+}
+
+.sa-panel h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: var(--neon-chalk);
+}
+
+.sa-panel > p { margin: 6px 0; color: var(--neon-muted); font-size: 14px; }
+
+.sa-countdown {
+  color: var(--brand-gold-light) !important;
+  font-size: 16px !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-note { font-size: 14px !important; opacity: .85; }
+
+.sa-stock-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.sa-stock-card {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface-2);
+}
+
+.sa-stock-card h3 { margin: 0; font-size: 15px; }
+
+.sa-stock-terms {
+  margin: 3px 0 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+}
+
+.sa-stock-yield {
+  margin: 3px 0 0;
+  color: var(--neon-chalk);
+  font-size: 14px;
+}
+
+.sa-stock-yield span { color: var(--brand-gold-light); }
+
+.sa-cta {
+  margin-top: 8px;
+  min-height: 44px;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
+  box-shadow: var(--button-primary-glow, 0 16px 38px rgba(255, 210, 63, .3), inset 0 1px rgba(255, 255, 255, .45));
+  color: #1c1305;
+  font-size: 15px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: filter var(--duration-fast, .12s) ease, transform var(--duration-fast, .12s) ease;
+}
+
+.sa-cta:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+
+.sa-cta:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.sa-cta:focus-visible {
+  outline: 0;
+  box-shadow: var(--brand-focus);
+}
+
+.sa-sell-btn { font-size: 15px; padding: 10px 22px; }
+
+/* ---- the keyboard plot list ------------------------------------------ */
+
+/* Invisible until something in it has focus, then a strip of numbered plot
+   buttons over the bottom of the map. A canvas cannot be tabbed into; this
+   is how the keyboard gets the same sixteen taps a finger has. */
+.sa-plot-list {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.sa-plot-list:focus-within {
+  left: 50%;
+  bottom: 44px;
+  width: auto;
+  height: auto;
+  max-width: calc(100% - 16px);
+  padding: 8px 10px;
+  transform: translateX(-50%);
+  clip-path: none;
+  border-radius: var(--radius-card);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--elevation-4);
+  white-space: normal;
+}
+
+.sa-plot-list-hint {
+  margin: 0 0 6px;
+  color: var(--neon-muted);
+  font-size: 12px;
+}
+
+.sa-plot-list ul {
+  display: grid;
+  grid-template-columns: repeat(8, 32px);
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-plot-item {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  color: var(--neon-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.sa-plot-item[data-state="locked"] { opacity: .5; }
+.sa-plot-item[data-state="ready"] { box-shadow: inset 0 0 0 2px var(--brand-gold); }
+.sa-plot-item[data-state="hungry"] { box-shadow: inset 0 0 0 2px var(--sa-hungry); }
+.sa-plot-item[data-state="mucked"] { box-shadow: inset 0 0 0 2px var(--sa-muck); }
+.sa-plot-item[data-afford="act"] { color: var(--neon-chalk); background: var(--neon-purple-deep); }
+.sa-plot-item[data-afford="blocked"] { box-shadow: inset 0 0 0 2px var(--brand-red); }
+.sa-plot-item.is-selected { color: var(--neon-chalk); box-shadow: inset 0 0 0 2px var(--neon-chalk); }
+
+.sa-plot-item:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+}
+
+/* ---- HUD and store --------------------------------------------------- */
+
+.sa-hud {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Screen-reader-only. There is no shared utility for this in the codebase --
+   every component inlines the pattern -- so it is inlined here too. */
+.sa-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The farm's own purse, and the first thing in the HUD: everything on this
+   screen is bought with Bushels, and Gold only ever buys acreage. */
+.sa-purse {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--neon-chalk);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-purse .sa-ico,
+.sa-feed .sa-ico {
+  width: 16px;
+  height: 16px;
+}
+
+.sa-store-badge {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-gold);
+  color: var(--brand-ink);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the barn -------------------------------------------------------- */
+
+.sa-barn {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sa-barn-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface-2);
+}
+
+.sa-barn-row > .sa-ico {
+  width: 28px;
+  height: 28px;
+}
+
+.sa-barn-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.sa-barn-name strong {
+  color: var(--neon-chalk);
+  font-size: 14px;
+}
+
+/* Never wraps. A second line here pushes the sell buttons out of alignment
+   with the rows above, and the barn stops reading as a list. */
+.sa-barn-name > span {
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sa-barn-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+/* The sell buttons are the one place a screen gets more than one gold fill.
+   They are the same action repeated at two quantities rather than competing
+   choices, so they read as a pair, not as two primaries. */
+.sa-cta-small {
+  margin-top: 0;
+  min-height: 36px;
+  padding: 5px 11px;
+  font-size: 14px;
+  box-shadow: none;
+}
+
+.sa-feed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-store-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.sa-store-btn:hover { background: var(--brand-surface-2); }
+.sa-store-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+.sa-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, .7);
+  padding: 12px;
+}
+
+.sa-sheet {
+  width: min(100%, 520px);
+  max-height: 80dvh;
+  overflow-y: auto;
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--elevation-4);
+}
+
+.sa-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.sa-sheet-head h2 { margin: 0; font-size: 16px; }
+
+.sa-sheet-close {
+  min-height: 44px;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-chalk);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.sa-sheet-close:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+.sa-sheet-note {
+  margin: 8px 0 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+}
+
+.sa-sheet-note strong { color: var(--neon-chalk); }
+
+.sa-link-btn {
+  display: block;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--neon-purple-bright);
+  font-size: 14px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.sa-link-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+/* ---- the gate --------------------------------------------------------- */
+
+.sa-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 24px 12px;
+}
+
+.sa-gate-card {
+  width: min(100%, 380px);
+  padding: 22px 20px;
+  border-radius: var(--radius-card);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--accent-edge), var(--elevation-4);
+  text-align: center;
+}
+
+/* The gate card is centered text (see .sa-gate-card above); the logo is a
+   grid item with a fixed width, so it needs its own centering rather than
+   inheriting text-align. */
+.sa-gate-card .sa-heading-logo { margin: 0 auto; }
+
+.sa-gate-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface-2);
+  color: var(--brand-gold-light);
+}
+
+.sa-gate-card p {
+  margin: 8px 0 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+}
+
+/* The player id, for someone who has to go and ask to be let in. Selectable
+   and allowed to wrap: a uuid is wider than this card on a phone, and an id
+   that overflows its own box cannot be read out or copied.
+   Qualified by .sa-gate-card so it outranks that block's own `p` rule above,
+   which would otherwise win on specificity and reset the colour and size. */
+.sa-gate-card .sa-gate-id {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+  color: var(--neon-muted-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.sa-gate-id code {
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  color: var(--neon-chalk);
+  font-size: 13px;
+  letter-spacing: .02em;
+  text-transform: none;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* ---- the exchange window --------------------------------------------- */
+
+/* The store sheet's shelf headings. These shipped with no rule at all in phase
+   2, so all three groups read as one wall of body copy. A kicker rather than a
+   heading: it labels a shelf, it is not a title. */
+.sa-group-label {
+  margin: 16px 0 0;
+  color: var(--neon-muted-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* The only place on this screen where the farm touches real money, so it is
+   the only block with its own surface and a gold edge. That edge is marking a
+   boundary, not decorating a card -- everything above it is the farm's own
+   currency going round in a circle. */
+.sa-exchange {
+  margin-top: 6px;
+  padding: 12px;
+  border-radius: var(--radius-card);
+  background: var(--brand-surface-2);
+  box-shadow: inset 0 0 0 1px rgba(255, 210, 63, .18);
+}
+
+.sa-exchange > .sa-sheet-note:first-child { margin-top: 0; }
+.sa-exchange .sa-cta { width: 100%; }
+
+.sa-exchange-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 10px 0 0;
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-exchange-meter strong { color: var(--brand-gold-light); }
+
+/* Drains rather than fills: the bar is what is LEFT of the day, matching the
+   number under it. Filled-as-spent shipped for one screenshot and put a full
+   gold bar directly above the words "0 of 5,000 Gold left today". */
+.sa-exchange-bar {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  overflow: hidden;
+}
+
+/* Scaled, not resized: the fill is full-width and squashed by a transform, so
+   the tween stays off the layout path. The gradient scales with it, which on a
+   6px bar is the same picture. */
+.sa-exchange-bar > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--brand-gold) 0%, var(--brand-gold-light) 100%);
+  transition: transform var(--duration-slow, .22s) ease;
+}
+
+.sa-exchange-amounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+/* Violet, not gold: the chips choose an amount, and the gold fill on this
+   screen belongs to the one button that actually moves money. */
+.sa-amount {
+  min-height: 44px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.sa-amount.is-on {
+  background: var(--neon-purple-deep);
+  box-shadow: var(--accent-edge), var(--accent-glow);
+  color: var(--neon-chalk);
+}
+
+.sa-amount:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+
+.sa-exchange-done { color: var(--brand-gold-light) !important; }
+
+/* ---- Music toggle button in HUD -------- */
+
+.sa-music-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--neon-border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--neon-text);
+  cursor: pointer;
+  transition: all 200ms;
+}
+
+.sa-music-toggle:hover {
+  background: var(--neon-surface-hover);
+  color: var(--neon-accent);
+}
+
+.sa-music-toggle:active {
+  transform: scale(0.95);
+}
+
+/* ---- Tap-to-play screen (covers whole viewport) ------ */
+
+.sa-play-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--brand-ink);
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 300ms ease-out;
+  opacity: 1;
+  z-index: 9999;
+}
+
+.sa-play-screen.is-fading {
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* Farm-at-dusk key art, built from the game's own painters -- see
+   stackacres-cover-art.tsx. Positioned (not just painted first) so it stacks
+   under .sa-play-content regardless of paint-order edge cases. */
+.sa-play-cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+.sa-play-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.sa-play-logo {
+  width: 260px;
+  height: auto;
+  filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.55));
+}
+
+.sa-play-subtitle {
+  font-size: 16px;
+  color: var(--neon-muted);
+  margin: 0;
+  font-weight: 400;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+}
+
+.sa-play-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.sa-play-text {
+  font-size: 18px;
+  /* --neon-text doesn't exist anywhere in the token set (was probably meant
+     as --neon-chalk); color is inherited, so the undefined var was silently
+     falling back to whatever ancestor color applied rather than erroring. */
+  color: var(--neon-chalk);
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+}
+
+.sa-play-pulse {
+  position: relative;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  /* Same bug as above, but louder: --neon-accent doesn't exist either, and
+     background isn't inherited, so this reset to transparent -- the dot has
+     been invisible. --neon-yellow is the mark's own accent (see
+     stackacres-logo.tsx: "ACRES in marquee yellow"). */
+  background: var(--neon-yellow);
+  border-radius: 50%;
+  animation: sa-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes sa-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-play-pulse { animation: none; opacity: 1; }
+}
+
+/* Motion in the DOM layer is the toast only; the map's own motion (animals,
+   the ripe bob, the affordance pulse) is switched off inside the scene from
+   the same media query. */
+@media (prefers-reduced-motion: reduce) {
+  .sa-toast { animation: none; opacity: 1; }
+  .sa-cta { transition: none; }
+  .sa-exchange-bar > span { transition: none; }
+}
+
+/* ---- landscape phones (MUST STAY LAST) -------------------------------
+   Height is the scarce axis here: at 844x390 every band of chrome above the
+   map comes straight out of the map. The layout is the same fixed column as
+   everywhere else; this block only shrinks what sits over and above it. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .sa-shell {
+    gap: 6px;
+    padding-top: calc(6px + var(--safe-top));
+  }
+
+  /* Every band above the field gives back what it can: the chrome is worth
+     less here than the picture it is sitting on top of. */
+  .sa-shell .floor-bar {
+    min-height: 34px;
+    margin-bottom: 6px;
+  }
+  .sa-shell .ante-lobby-heading h1 { font-size: 16px; }
+  .sa-shell .sa-heading-logo { width: 150px; }
+  .sa-shell .sa-cap { font-size: 14px; }
+
+  .sa-scoreline { padding: 3px 10px; }
+  .sa-scoreline .ante-lobby-heading h1 { font-size: 14px; }
+  .sa-shell .sa-cap { font-size: 12px; }
+
+  .sa-tool { width: 56px; min-height: 42px; }
+  .sa-tool .sa-ico { width: 20px; height: 20px; }
+
+  .sa-seed { padding: 4px 9px 4px 5px; min-height: 36px; }
+  .sa-seed .sa-ico { width: 18px; height: 18px; }
+
+  .sa-panel { padding: 10px 12px; }
+  .sa-panel h2 { font-size: 15px; margin-bottom: 4px; }
+  .sa-panel > p { font-size: 14px; margin: 4px 0; }
+  .sa-countdown { font-size: 15px !important; }
+
+  .sa-tool-hint { font-size: 12px; max-width: 50%; }
+}

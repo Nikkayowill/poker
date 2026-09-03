@@ -251,22 +251,22 @@ export function AdminDashboard() {
     }
   };
 
-  const toggleHomestead = async (profile: AdminProfileSummary) => {
+  const toggleStackAcres = async (profile: AdminProfileSummary) => {
     setPendingId(profile.id);
     setError(null);
     try {
-      const response = await fetch("/api/admin/homestead-access", {
+      const response = await fetch("/api/admin/stackacres-access", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId: profile.id, allowed: !profile.homesteadAccess }),
+        body: JSON.stringify({ profileId: profile.id, allowed: !profile.stackacresAccess }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not update that profile's Homestead access.");
+      if (!response.ok) throw new Error(data.error ?? "Could not update that profile's StackAcres access.");
       setProfiles((current) => current?.map((entry) => (
-        entry.id === profile.id ? { ...entry, homesteadAccess: !profile.homesteadAccess } : entry
+        entry.id === profile.id ? { ...entry, stackacresAccess: !profile.stackacresAccess } : entry
       )) ?? null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not update that profile's Homestead access.");
+      setError(caught instanceof Error ? caught.message : "Could not update that profile's StackAcres access.");
     } finally {
       setPendingId(null);
     }
@@ -704,7 +704,7 @@ export function AdminDashboard() {
               <th>Unlimited</th>
               <th>Adjust Gold</th>
               <th>Banned</th>
-              <th>Homestead</th>
+              <th>StackAcres</th>
               <th>Admin tag</th>
               <th />
               <th>Push</th>
@@ -756,7 +756,7 @@ export function AdminDashboard() {
                     />
                   </td>
                   <td>{profile.banned ? "Yes" : "No"}</td>
-                  <td>{profile.homesteadAccess ? "Yes" : "No"}</td>
+                  <td>{profile.stackacresAccess ? "Yes" : "No"}</td>
                   <td>{profile.adminBadge ? "Yes" : "No"}</td>
                   <td>
                     <button
@@ -771,10 +771,10 @@ export function AdminDashboard() {
                       type="button"
                       className="admin-toggle"
                       disabled={bulkPending || pendingId === profile.id}
-                      onClick={() => void toggleHomestead(profile)}
-                      title="Lets this player into StackAcres (the farm game, formerly labeled 'Homestead' here) while it is unreleased. It is the whole guest list -- there is no code."
+                      onClick={() => void toggleStackAcres(profile)}
+                      title="Lets this player into StackAcres (the farm game, formerly labeled 'StackAcres' here) while it is unreleased. It is the whole guest list -- there is no code."
                     >
-                      {profile.homesteadAccess ? "Close StackAcres" : "Open StackAcres"}
+                      {profile.stackacresAccess ? "Close StackAcres" : "Open StackAcres"}
                     </button>
                     <button
                       type="button"

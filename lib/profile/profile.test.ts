@@ -22,7 +22,7 @@ describe("profile appearance", () => {
       lastDailyClaimAt: null,
       lastBackstopAt: null,
       isRegistered: false,
-      homesteadAccess: false,
+      stackacresAccess: false,
       adminBadge: false,
     };
     const snapshot = toSnapshot(createGame(token, profile.displayName, profile), token);

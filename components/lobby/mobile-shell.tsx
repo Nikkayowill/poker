@@ -561,17 +561,17 @@ function PlayPane({
 
       {/* Right under Texas Hold'em -- see the desktop hub tile's own comment
           for why this moved off the Ante Up floor. Named StackAcres now, not
-          "Homestead" (Kayo's call; see components/brand/stackacres-logo.tsx)
+          "StackAcres" (Kayo's call; see components/brand/stackacres-logo.tsx)
           -- the row's own logo is decorative at this size rather than
           spelling the name (the bold text next to it does that), same as
           the old StackChips mark it replaces here. Locked by default:
-          homesteadAccess is granted per player from the admin dashboard
+          stackacresAccess is granted per player from the admin dashboard
           while the game is still being tried out, so a card nobody can open
           renders as an inert row instead of a disabled link pretending to
           be a live door. */}
-      {profile.homesteadAccess ? (
-        <Link className="mshell-card mshell-row mshell-homestead-row" href="/games/homestead" onClick={tapSound}>
-          <StackAcresLogo className="mshell-homestead-logo" />
+      {profile.stackacresAccess ? (
+        <Link className="mshell-card mshell-row mshell-stackacres-row" href="/games/stackacres" onClick={tapSound}>
+          <StackAcresLogo className="mshell-stackacres-logo" />
           <span className="mshell-row-body">
             <strong>StackAcres</strong>
             <small>Raise crops and livestock, sell what they make</small>
@@ -579,11 +579,11 @@ function PlayPane({
           <ChevronRight size={18} aria-hidden="true" />
         </Link>
       ) : (
-        <div className="mshell-card mshell-row mshell-homestead-row mshell-row-locked" aria-disabled="true">
-          <StackAcresLogo className="mshell-homestead-logo" />
+        <div className="mshell-card mshell-row mshell-stackacres-row mshell-row-locked" aria-disabled="true">
+          <StackAcresLogo className="mshell-stackacres-logo" />
           <span className="mshell-row-body">
             <strong>StackAcres</strong>
-            <small className="mshell-homestead-soon">Coming soon</small>
+            <small className="mshell-stackacres-soon">Coming soon</small>
           </span>
         </div>
       )}

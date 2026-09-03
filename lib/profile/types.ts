@@ -54,18 +54,18 @@ export interface PlayerProfile {
    */
   isRegistered: boolean;
   /**
-   * Admin-granted access to the Homestead while it is unreleased -- see
-   * lib/server/homestead-access.ts. Safe to expose here even though it's
+   * Admin-granted access to the StackAcres while it is unreleased -- see
+   * lib/server/stackacres-access.ts. Safe to expose here even though it's
    * assigned in the admin dashboard: it says nothing about anyone but the
    * profile it belongs to, which is exactly who's asking. This is what lets
-   * the Homestead tile grey itself out client-side instead of every visitor
+   * the StackAcres tile grey itself out client-side instead of every visitor
    * round-tripping to find out.
    */
-  homesteadAccess: boolean;
+  stackacresAccess: boolean;
   /**
    * Whether this player's seat carries an "Admin" tag at the poker table,
    * styled like the dealer's own label. Granted from the admin dashboard,
-   * same as homesteadAccess; it changes nothing about what the account can
+   * same as stackacresAccess; it changes nothing about what the account can
    * do, only how the seat reads to everyone else at the table.
    */
   adminBadge: boolean;

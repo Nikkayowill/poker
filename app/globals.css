@@ -91,9 +91,9 @@
 /* Othello's board. After 36-duels.css, whose lobby, match frame and result
    card it narrows, the same relationship 37/38/39/40 have. */
 @import "./styles/51-othello.css";
-/* The Homestead. Self-contained -- it shares no classes with any sheet above,
+/* The StackAcres. Self-contained -- it shares no classes with any sheet above,
    so its number is just the next one free. */
-@import "./styles/52-homestead.css";
+@import "./styles/52-stackacres.css";
 /* The persistent desktop header, components/shell/desktop-header.tsx. Its
    own number, not folded into 02-app-shell.css's two existing headers: it
    deliberately shares no classes with either. */

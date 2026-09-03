@@ -91,9 +91,9 @@ export type ArcadeGameId =
  */
 /**
  * `idle` is its own kind rather than a flavour of `wager`, because the floor
- * groups by what a row IS and the Homestead is not a contest. Every `wager`
+ * groups by what a row IS and the StackAcres is not a contest. Every `wager`
  * row is a board you can lose Gold on, which is what its section note
- * promises in as many words; the Homestead has no opponent, no clock and no
+ * promises in as many words; the StackAcres has no opponent, no clock and no
  * losing branch, so filing it there would make that note a lie about one of
  * the rows underneath it.
  */
@@ -337,7 +337,7 @@ export function arcadeEntryLabel(game: ArcadeGame): string {
   // above. The exact wording still differs by the two sub-shapes described
   // there: Sudoku/Memory Match are unlimited (no daily identity to name),
   // Word Stack/Connections are still the one shared puzzle for the day.
-  // The Homestead's zero is a third meaning again: nothing is staked here at
+  // The StackAcres's zero is a third meaning again: nothing is staked here at
   // all. Its entryCost is 0 so the floor never wallet-gates the door to a
   // harvest (see its own catalog comment), and what it earns is Bushels --
   // Gold only ever leaves it through the capped daily exchange, so "sell for
@@ -425,7 +425,7 @@ export function arcadeFloorSummary(games: readonly ArcadeGame[] = ARCADE_GAMES):
     // "0 free every day" on the hub tile. A wager row is genuinely free to
     // open -- the stake is a choice made on the game's own page -- so it
     // belongs on this side of the line.
-    // `idle` is deliberately in neither count. The Homestead is free to open
+    // `idle` is deliberately in neither count. The StackAcres is free to open
     // in the sense of costing no Gold, but it is behind an access code, so
     // counting it in "N free every day" promises the reader something most of
     // them cannot open -- the exact class of wrong number this file's header

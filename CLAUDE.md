@@ -46,6 +46,102 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### Homestead is renamed StackAcres everywhere, and the map got four districts (2026-09-03)
+
+Kayo: "isolate this into mainly nailing the map design so the world doesnt feel empty... change
+everything and the routes to stackacres. its not homestead." Two passes in one branch
+(`feat/stackacres-map-zones`).
+
+**The rename is the plumbing one this codebase kept deferring** -- `stackacres-farm.tsx`'s own doc
+comment used to say "a display rename only... that's a bigger, deliberate pass of its own". Done:
+~1,600 identifiers across 70 files (`HOMESTEAD_` -> `STACKACRES_`, `Homestead` -> `StackAcres`,
+`homestead` -> `stackacres`, CSS prefix `hs-` -> `sa-`, which had zero collisions outside the
+feature), every directory and file (`lib/homestead/` -> `lib/stackacres/`, `components/arcade/
+homestead/` -> `.../stackacres/`, `52-homestead.css` -> `52-stackacres.css`, `public/homestead/` and
+`public/audio/homestead/`), and every route: **`/games/homestead` -> `/games/stackacres`,
+`/api/homestead[/actions]` -> `/api/stackacres[/actions]`, `/api/admin/homestead-access` ->
+`/api/admin/stackacres-access`.**
+
+**The DATABASE deliberately did not move**, and this is the thing not to "finish" later:
+`homestead_plots`, `homestead_inventory`, `homestead_harvests`, `homestead_feed`,
+`homestead_exchanges`, `profiles.homestead_access` and the four RPCs keep their names. They are live
+objects in a production schema, and renaming them is a data migration to fix a caption -- the same
+call `catalogue.ts` already makes about the `pig` stock id, and the rule this file states for the
+`river_*` legacy identifiers. Two traps hit while doing it, both worth knowing for the next mass
+rename here: (1) a sentinel that CONTAINS the string being replaced is not a sentinel -- the
+`@@DB_homestead_plots@@` guards were themselves rewritten to `@@DB_stackacres_plots@@` and the
+restore pass then matched nothing, silently renaming every DB identifier; (2) a
+`git ls-files | grep` rename loop caught **`supabase/migrations/*.sql`**, whose filenames are part of
+the applied migration history and must never change. Both were caught by auditing for leftovers
+rather than by trusting the script. Also worth catching by eye afterwards: a blind sed rewrites
+sentences ABOUT the old name into nonsense -- the play screen shipped reading "StackChips
+StackAcres" (the exact double-branding Kayo had already rejected), and half a dozen comments
+recording "replaced StackChips Homestead" started claiming they replaced themselves.
+
+**The map: four districts, hung off the three roads that already left the yard and ended in trees.**
+The world had been unbounded and procedurally wooded since 2026-09-02, which is precisely why it felt
+empty -- panning any distance found more of exactly what was already on screen. `lib/stackacres/
+zones.ts` (pure, 35 tests) adds `farmstead` (the existing farm, its rect pinned equal to `FARM_ZONE`
+by a test so the two can't drift), **the Long Meadow** south down the lane, **the Ox Fields** east
+along the road, and **the Wallow** north-west at the end of the track. No road was invented: two
+short connector specs (`meadowLane`, `oxRoad`) fork out of existing path bodies, and the track
+already ended inside the Wallow. Connectors are separate `PathSpec`s rather than extra points on
+`lane`/`road` because `pathBounds` bakes a spec's whole polyline into one texture and paths.test.ts
+caps that at 512 units a side -- one continuous road to the ox fields would span ~730 and blow
+through it. `chunkScenery`'s exclusion list gained `inOuterZone`, so the woodland never grows inside
+a district; each district grows its own furniture instead (`zoneScenery`), on the same chunk lattice
+so one grow and one prune covers both.
+
+Things that had to be got right and were only discovered by looking at it:
+- **District ground is Phaser Graphics diamonds, never a baked rectangle.** The known open gap about
+  the path/pond bakes still being flat squares is survivable at a path's width and would be the most
+  obviously broken object on the map at a district's.
+- **A contrasting second ground colour is a chessboard, not mottling.** The first cut dealt `alt` at
+  real contrast to a third of the tiles and the Wallow rendered as a literal checkerboard. `alt` now
+  sits within a shade of `base`; a separate small always-on `mottle` roll does the grain.
+- **Do not overlap translucent tiles.** Oversizing each diamond by 0.75u to hide seams composited the
+  alpha twice in every overlap and drew a bright lattice over each district -- the tile grid made
+  visible by the thing meant to hide it. They abut exactly now.
+- **An alpha ramp around a rectangle still reads as a rectangle** (a vignetted stage with square
+  corners). The outer band is now also punched through at random, so the boundary breaks up. Corner
+  tiles fall under the drop threshold and vanish entirely, which needed the inset ramp to be squared
+  rather than linear.
+- Ground-hugging art (furrows, mud pools) is only scattered well inside a district, or it lands out
+  on bare lawn in the feathered border and reads as a dropped plank.
+
+**The scythe is the first tool whose target is the GROUND rather than a plot**, so it is the first
+one needing `zoneToolPolicy`/`isActionValidInZone` -- every earlier tool is farmstead-only for free
+because `plotIndexAt` returns null elsewhere. The meadow is a density field (0-3 per 16-unit tile,
+each level a different painter), not a scatter, because it is the one piece of the map the player
+changes; `mowStroke` samples the segment so a fast swipe cuts an unbroken swathe rather than a dotted
+line. A drag mows only when the scythe is held AND the press began on standing grass -- gating on the
+tool alone would make the meadow un-pannable. Regrowth is capped at the tile's own base density so
+mowing flat and waiting cannot erase the field's grain. **Mowing is deliberately visual: it yields
+nothing.** Cut hay flowing into the barn as a sellable item is a new inventory item, a new action and
+a ceiling review, and it belongs in its own pass rather than riding along with a map -- `mown` is
+client-side and resets on reload, which is the honest cost of that choice. The oxen and hogs reuse
+`stepCritter` unchanged, in absolute world space rather than cell-local: a new picture, not a new
+system.
+
+Chrome: `stackacres-destinations.tsx`, a signpost rail ordered outward from the farm, tapping which
+eases the camera to that district's *gate* (a fixed-size window on the approach point, so a big
+district and a small one both arrive at a readable zoom). It sits top-left under the masthead --
+bottom-left was tried first and `.sa-tool-hint` is centred on the bottom edge and ran straight
+through it. Its swatches are `--sa-zone-*` tokens cross-checked against `zones.ts` by a test, the
+same guard `props.test.ts` puts on `PROP_SIZE`.
+
+**Still open, unchanged by this pass:** the first-run "four red rings" (Plant held with no seed) is
+now the first thing a new player sees on a map with a signpost on it, and it looks worse for the
+company. The Ox Fields and the Wallow have no action of their own -- they are places with life in
+them, not places you do something, and giving them one means touching the economy.
+
+Verified: full `npx vitest run` 2768/2769 (the one red is the pre-existing PR #163 `table-anchors`
+dealer-shoulder-room regression, untouched here), `npm run lint` and `npm run build` clean, and
+screenshotted end to end in memory mode at 900x460 -- all four districts, the signpost, the oxen and
+hogs walking, and a real mown swathe cut through the meadow with the actual pointer. Preview built
+before the build per Kayo's own standing instruction for map/camera changes:
+https://claude.ai/code/artifact/e6d5b113-3e78-4c1d-8c1e-7bc268d9f79c
+
 ### StackAcres camera went isometric: real depth, not just repositioning (2026-09-03)
 Kayo: the farm "looks like basic poly" and "the camera is still overtop 2d," expecting "2d5 with
 depth like farmville" -- two references given, a FarmVille screen and a mobile isometric farm game
@@ -57,12 +153,12 @@ https://claude.ai/code/artifact/7dc4bdfc-7be4-4a2c-a1c6-1d9df882c996 -- **build 
 forward** is Kayo's own instruction here, worth reusing whenever a camera/projection change is on the
 table again.
 
-**The architecture that made this safe: `lib/homestead/world.ts` never changed.** A plot is still a
+**The architecture that made this safe: `lib/stackacres/world.ts` never changed.** A plot is still a
 CELL-square at `cellOrigin(index)`, `plotIndexAt` is still a plain divide, `stepCritter` still walks a
 rectangle -- none of it knows the camera tilted. The isometric shear is a new, pure, tested seam,
-`lib/homestead/iso.ts` (`isoProject`/`isoUnproject`, exact inverses, additive by construction so a
+`lib/stackacres/iso.ts` (`isoProject`/`isoUnproject`, exact inverses, additive by construction so a
 container at a projected origin composes correctly with children placed at their own projected
-cell-local offsets). Every world-space number `homestead-scene.ts` reads goes through `isoProject`
+cell-local offsets). Every world-space number `stackacres-scene.ts` reads goes through `isoProject`
 before becoming a Phaser position or a depth key; every point Phaser hands back (a pointer's world
 point) goes through `isoUnproject` before it is allowed near `plotIndexAt` or any other world.ts
 function. Depth sort needed no new mechanism: projected y is monotonic in (worldX + worldY) by
@@ -94,7 +190,7 @@ future pass giving them the same volume/rotation treatment as the barn is the ne
 the FarmVille bar, not a correctness gap.
 
 Verified: `iso.ts`'s round-trip/additivity/edge-angle properties in `iso.test.ts` (11 tests), the full
-existing 121-test homestead suite unchanged and green (world.ts's own contract never moved), full
+existing 121-test stackacres suite unchanged and green (world.ts's own contract never moved), full
 `npx vitest run` (2732/2733 -- the one red is the pre-existing PR #163 `table-anchors` dealer-shoulder-
 room regression, confirmed unrelated), `npm run lint` and `npm run build` clean. Screenshotted in
 memory mode end-to-end, including stocking a real Hen Coop through the actual toolbelt+canvas flow (not
@@ -102,20 +198,20 @@ just the empty farm): fence rails trace the diamond correctly, hens scatter insi
 depth sorts correctly. Branch `feat/stackacres-2-5d-visuals`, PR not yet opened at the time this entry
 was written.
 
-### Homestead collecting was also broken in production, same Phase 2 landing (2026-09-02)
+### StackAcres collecting was also broken in production, same Phase 2 landing (2026-09-02)
 Immediately after the stocking fix below unblocked stocking, collecting hit the same class of bug:
 "Could not collect from that plot: Could not find the 'yieldQuantity' column of 'homestead_plots' in
-the schema cache." `collectHomesteadPlot`'s Supabase `.update()` in `lib/server/homestead-store.ts`
+the schema cache." `collectStackAcresPlot`'s Supabase `.update()` in `lib/server/stackacres-store.ts`
 hand-lists its columns, and every other field in that object correctly uses the DB's snake_case name
 (`started_at`, `ready_at`, `muck_fee`) except one: `yieldQuantity: null` instead of `yield_quantity:
 null`, left over from copy-pasting the in-memory `cleared` object's JS field name into the Supabase
-payload. `stockHomesteadPlot`'s own update already had it right, so only the collect path was broken.
+payload. `stockStackAcresPlot`'s own update already had it right, so only the collect path was broken.
 PostgREST rejects an unknown column outright, so the loop was stock -> wait -> collect fails, since
-Phase 2 shipped. Fixed by renaming the one key; the memory-mode suite (167 homestead tests) can't
+Phase 2 shipped. Fixed by renaming the one key; the memory-mode suite (167 stackacres tests) can't
 catch this class of bug either, same lesson as the stocking fix. No Gold/Bushels/produce at risk --
 the write throws before anything is credited.
 
-### Homestead stocking was broken in production since Phase 2 landed (2026-09-02)
+### StackAcres stocking was broken in production since Phase 2 landed (2026-09-02)
 Kayo hit "Could not stock that plot" live. Root cause: `20260901180000_homestead_inventory.sql`
 made `payout` inert (collections yield produce via the new `yield_quantity` column, not Gold) and
 re-pointed the stocking trigger's ceiling at `yield_quantity` -- but missed the original migration's
@@ -124,7 +220,7 @@ for a working plot. Nothing has written `payout` since that day, so every stocki
 status = 'working' with payout still null and the CHECK rejected it outright -- **every stock attempt
 has failed since 2026-09-01**, never caught by the memory-mode suite (it doesn't exercise a real SQL
 CHECK) and apparently never actually attempted in production until now. No Gold/Bushels were at risk:
-`stockHomestead`'s catch block already refunds the seed cost when the database throws. Fixed by
+`stockStackAcres`'s catch block already refunds the seed cost when the database throws. Fixed by
 swapping the constraint's dependency from `payout` to `yield_quantity`
 (`20260902130000_fix_homestead_plot_stock_check.sql`), applied directly to production and verified
 there with a self-cleaning insert/delete against a real row before landing the file. Also fixes a
@@ -134,13 +230,13 @@ on a real player's profile, caught and cleaned up by hand) -- for a self-cleanin
 table, verify the leftover count directly rather than trusting the CTE's own RETURNING silently
 returning nothing.
 
-### Homestead: paths, a pond and yard props close out the art-volume gap (2026-09-02)
+### StackAcres: paths, a pond and yard props close out the art-volume gap (2026-09-02)
 The "still open" line at the end of the StackAcres premium pass entry below named the honest gap to
 the FarmVille bar as "art volume (paths, water, props, a character)". Paths, water and props are done
 here; **a character is deliberately deferred** — Kayo's call: it makes no sense to draw a farmhand
-before the map itself is settled. `art-paths.ts`/`lib/homestead/paths.ts` lay a dirt road and a lane
-with damp rims and a worn centre band; `art-water.ts`/`lib/homestead/water.ts` add a pond (lily pads,
-reeds, a dock, wandering ducks, rippling); `art-props.ts`/`lib/homestead/props.ts` scatter a windmill,
+before the map itself is settled. `art-paths.ts`/`lib/stackacres/paths.ts` lay a dirt road and a lane
+with damp rims and a worn centre band; `art-water.ts`/`lib/stackacres/water.ts` add a pond (lily pads,
+reeds, a dock, wandering ducks, rippling); `art-props.ts`/`lib/stackacres/props.ts` scatter a windmill,
 well, wheelbarrow, crate stack, log pile, mailbox, signpost, three lamps, a flower bed, a broken stone
 wall and a scarecrow through the yard, plus woodland litter (fallen logs, mushrooms, boulders) in the
 open world beyond the farm. All three new art modules follow the existing painter conventions (one
@@ -152,7 +248,7 @@ chained squash-tween for a field's last plant (row 3, col 4) runs to 180ms delay
 520ms — a re-tap in that 60ms gap started a second squash tween fighting the first's yoyo-back for a
 frame, a visible jitter on fast re-tapping. Now `this.now + 520`, with the geometry spelled out in a
 comment so a future field-size change doesn't quietly reopen the gap. Second: `PROP_SIZE`
-(`lib/homestead/props.ts`) hand-restates each prop's painted box that `art-props.ts`'s `PROP_PAINTERS`
+(`lib/stackacres/props.ts`) hand-restates each prop's painted box that `art-props.ts`'s `PROP_PAINTERS`
 already carries as its own `w`/`h` — nothing enforced the two agreeing, the exact "drifted hand-written
 copies" pattern this file's own history has hit before (STAKES_TIERS, the wager ladders). Added a
 one-off cross-check in `props.test.ts` (test-only import of the painter module, not a production
@@ -162,24 +258,24 @@ left alone: the two aren't actually pixel-identical (different overlay alphas, s
 the barn's own diamond ridge finial vs the helper's line highlight), so unifying them would change the
 rendered art for a nit-level dedup, not a free win.
 
-**Still open, unchanged by this pass:** the wild-plot tint (`wild` painter in `homestead-art.ts`) still
+**Still open, unchanged by this pass:** the wild-plot tint (`wild` painter in `stackacres-art.ts`) still
 reads as a flat grey rectangle when zoomed out — confirmed byte-for-byte untouched by this diff, same
 gap the premium-pass entry called out. The stocking CHECK-constraint bug this worktree independently
 found in the same window is covered by the entry above -- it landed on main and production first, so
 that copy is canonical; this branch's own copy of the migration was reconciled to match it on merge.
 
-### Homestead: the grid became a 2D sandbox viewport (2026-09-01)
+### StackAcres: the grid became a 2D sandbox viewport (2026-09-01)
 Kayo's brief: "a major evolution", not a new game -- take the economics as they are (acreage, crops,
 pens) and move them into a fluid world the player drags, zooms and places things in, with the menu
-layer pinned to the screen. **Phaser is back for the Homestead** (`phaser` 3.90.0, exact), which
+layer pinned to the screen. **Phaser is back for the StackAcres** (`phaser` 3.90.0, exact), which
 reverses his 2026-09-01 "DOM grid, drop Phaser" call; that call was made when the field was a 4x4 of
 buttons, this brief explicitly asks for Phaser scenes. Two layers that never mix: the world is ONE
-Phaser scene (`components/arcade/homestead/homestead-scene.ts`) that fills `.hs-field` and moves when
+Phaser scene (`components/arcade/stackacres/stackacres-scene.ts`) that fills `.sa-field` and moves when
 dragged; the header, toolbelt, seed strip, detail card, store sheet and modals are all still DOM,
-absolutely positioned over the canvas by `52-homestead.css` -- a `<button>` is reachable by a screen
+absolutely positioned over the canvas by `52-stackacres.css` -- a `<button>` is reachable by a screen
 reader and a thumb, a Phaser Text is neither. The brief's "UIScene" is that DOM layer, not a second
 Phaser scene. **Nothing on the server changed.** A plot is still `plotIndex` 1-16 bought in ladder
-order; `lib/homestead/world.ts` (pure, 22 tests) only decides WHERE index N is drawn (a 5x5-tile
+order; `lib/stackacres/world.ts` (pure, 22 tests) only decides WHERE index N is drawn (a 5x5-tile
 square, 4 across, inside a 4-tile forest ring), which plot a world point hits, how far the camera may
 roam, and how the animals wander. "Place the coop anywhere" is therefore "drop it on any empty plot":
 a chip dragged out of the seed strip becomes a ghost that snaps to the empty plot under the finger
@@ -192,15 +288,15 @@ State/affordance rings, progress bars and the harvest burst are all drawn in the
 colours the CSS used. Things worth keeping: (1) `import * as Phaser` -- the package's ESM build has no
 default export, and `import Phaser from "phaser"` fails only at bundle time; (2) Phaser's own input
 system is switched off entirely (`input: {mouse:false, touch:false, keyboard:false}` in
-`homestead-world.tsx`) and every gesture is read off native `pointerdown/move/up/cancel` listeners
+`stackacres-world.tsx`) and every gesture is read off native `pointerdown/move/up/cancel` listeners
 bound straight to the host element instead — two input layers on one surface would double-handle
 every press; (3) the detail card is a popover hung beside the selected plot -- the scene reports the plot's screen
 rect every frame it moves (`trackPlot`) and `placeDetail` positions the node directly, no state --
 because at phone zoom the map is barely wider than the screen and any fixed corner panel covers plots
 that can never be scrolled out from under it; a `ResizeObserver` re-places it when its own content
 grows (a bought plot's card gets taller on the same spot). Keyboard/screen-reader path is
-`HomesteadPlotList`, sixteen real buttons hidden until focused. The whole packed Tiny Farm sheet
-ships as `public/homestead/tilemap_packed.png` (CC0); frame meanings are `FRAME` in `world.ts`.
+`StackAcresPlotList`, sixteen real buttons hidden until focused. The whole packed Tiny Farm sheet
+ships as `public/stackacres/tilemap_packed.png` (CC0); frame meanings are `FRAME` in `world.ts`.
 Verified with the memory-mode harness from `[[project_stackchips_homestead_farmhand_adoption]]`
 (`next dev` + minted cookie + admin grant; `localhost`, not `127.0.0.1`, or middleware's origin check
 403s every POST) at 844x390 and 1280x800: tap, drag-place, pan, wheel/button/pinch zoom, buy, reload.
@@ -210,10 +306,10 @@ first thing on screen is two red "blocked" rings -- pre-existing behaviour, now 
 
 ### StackAcres premium pass: mipmaps that actually exist, one sun, tap juice (2026-09-02)
 Kayo brought a five-file Phaser "mandate" (EngineConfig / PremiumCameraController /
-DynamicGridManager / TactileJuiceEngine / HomesteadViewportScene, plain `.js` under a `src/` tree
+DynamicGridManager / TactileJuiceEngine / StackAcresViewportScene, plain `.js` under a `src/` tree
 this repo does not have) plus a FarmVille 3 screen recording as the bar, with "don't take everything
 I provide as law." None of the five files was dropped in: the config half was already in
-`homestead-world.tsx` (`pixelArt: false`, `antialias: true`, `roundPixels: false`), and the rest
+`stackacres-world.tsx` (`pixelArt: false`, `antialias: true`, `roundPixels: false`), and the rest
 would have re-opened bugs this branch had already closed -- the camera controller runs on Phaser's
 own pointer bookkeeping (the phantom-finger pinch bug from Kayo's iPhone), its `wheel` listener is on
 `window` with `preventDefault` and never removed, its inertia is `v *= 0.9` per frame (twice as fast
@@ -243,28 +339,28 @@ grey rectangle when zoomed out; the first-run "four red rings" (Plant held with 
 2026-09-01 entry; and the honest gap to the FarmVille bar is now art volume (paths, water, props, a
 character), not engine settings.
 
-### Homestead art went vector and the map went open-world (2026-09-02)
+### StackAcres art went vector and the map went open-world (2026-09-02)
 Kayo's brief: "it's 2026, Gameboy graphics aren't it" -- better graphics, keep the smoothness the
 racetrack has, nothing downloaded. Every sprite on the map and every icon in the chrome (toolbelt,
 seed chips, HUD purse/feed, store barn rows) is now a Canvas2D painter
-(`components/arcade/homestead/homestead-art.ts`), baked into a Phaser texture at boot and rendered at
+(`components/arcade/stackacres/stackacres-art.ts`), baked into a Phaser texture at boot and rendered at
 the browser's own device pixel ratio -- smooth at every zoom, nothing is a pixel and nothing is a
 downloaded asset. `tilemap_packed.png` (the Kenney Tiny Farm sheet) is deleted; the cut PNG tiles under
-`public/homestead/tiles/` stay on disk only because another branch's lobby card reads `cattle.png`
+`public/stackacres/tiles/` stay on disk only because another branch's lobby card reads `cattle.png`
 directly, and nothing in these components references them any more. The map also became genuinely
 open-world: the camera is no longer fenced to the acreage plus a forest ring. Roaming past the farm in
-any direction grows procedural scenery in `HOMESTEAD_CHUNK`-wide chunks (`chunkScenery`, deterministic
+any direction grows procedural scenery in `STACKACRES_CHUNK`-wide chunks (`chunkScenery`, deterministic
 per chunk so it regrows the same trees on return), denser near the farm and thinner far out, with a
 `FARM_ZONE` rectangle kept permanently clear so nothing can grow inside the plot ladder or lean over
-its fence. `lib/homestead/world.ts`'s `acreageBounds` is renamed `ownedBounds` and lost its role as a
+its fence. `lib/stackacres/world.ts`'s `acreageBounds` is renamed `ownedBounds` and lost its role as a
 camera fence -- it only frames the opening shot and "back to the farm" now; zoom limits became fixed
-constants (`HOMESTEAD_ZOOM_MIN`/`MAX`) instead of a function of the roamable area, since there is no
+constants (`STACKACRES_ZOOM_MIN`/`MAX`) instead of a function of the roamable area, since there is no
 longer a roamable area to fit. The plots, the economy and every server rule are untouched -- this pass
 touched only where things are drawn and what draws them. One trap worth keeping, found shooting the
 QA screenshots: Phaser hears pointer events on the *window*, so a drag that starts on a seed chip and
 then crosses the map would pan the camera out from under its own drop target if it were handled
 through Phaser's own input. Rather than patch that with a target/pointer-id check layered onto
-Phaser's events, `bindInput()` (`homestead-scene.ts`) switches Phaser's input off entirely and reads
+Phaser's events, `bindInput()` (`stackacres-scene.ts`) switches Phaser's input off entirely and reads
 every gesture -- including its own pointer-id bookkeeping, since a stray third finger must be
 rejected and capture/cancel handled by hand -- off native pointer events bound to the host element
 directly. This *replaced* an earlier target-check design built on Phaser's own pointer bookkeeping,
@@ -292,9 +388,9 @@ database backstop, only the TypeScript check — fixed, plus a test that reads t
 definition off the migration files and fails if a future game's TS ceiling and DB ceiling ever drift
 apart again.
 
-### The Homestead is being rebuilt to match `jeremyckahn/farmhand` (2026-09-01)
+### The StackAcres is being rebuilt to match `jeremyckahn/farmhand` (2026-09-01)
 Kayo brought that repo as the target -- "it matches what I want it to look like and how I want it to
-be on mobile... I want our homestead to adopt most of if not all of the game here". **Its code is
+be on mobile... I want our stackacres to adopt most of if not all of the game here". **Its code is
 GPL-2.0-or-later and its art is CC BY-NC-SA 4.0; the NonCommercial term rules the art out outright
 because StackChips sells Gold. Reimplement from the design, never copy a file.** Full teardown and
 the phase plan: https://claude.ai/code/artifact/482f085c-851f-4941-8070-0715c3feddc7
@@ -313,7 +409,7 @@ there is any variance behind it. Phases 1-3 are built (see below); phase 4 is ne
 closed valve in front of it.
 
 ### Phase 1 shipped the farmhand feel; Phaser is gone (2026-09-01)
-Branch `feat/homestead-farmhand-feel` off main. **The Phaser canvas and `iso.ts` are deleted** --
+Branch `feat/stackacres-farmhand-feel` off main. **The Phaser canvas and `iso.ts` are deleted** --
 Kayo's call, reversing his own earlier "use Phaser.js and 2d elements" (which was made against a 3D
 proposal, not against DOM). The field is now a plain CSS grid of buttons, one per plot, each a stack
 of 16x16 pixel-art tiles under `image-rendering: pixelated`. That deletes the whole coordinate-twinning
@@ -321,7 +417,7 @@ arrangement `iso.ts` existed for: a canvas is invisible to a screen reader, so e
 needed an invisible DOM copy kept in sync. **The tile is the button now.** Also removes the `phaser`
 dependency and its 1.2MB chunk.
 Interaction is **tool-first**: hold a tool from the dock, and every plot it can act on lights up.
-`lib/homestead/tools.ts` owns all of it (`affordanceFor` returns `act | blocked | none`) so it is
+`lib/stackacres/tools.ts` owns all of it (`affordanceFor` returns `act | blocked | none`) so it is
 testable; the components render what it returns and own no rules. **`blocked` is deliberately
 distinct from `none`** -- a plot that IS the tool's target but lacks Gold, feed or a free slot lights
 red, because collapsing it into "not tappable" hides the reason the farm has stopped.
@@ -336,25 +432,25 @@ Three things found by actually screenshotting it, none of which reasoning caught
    the art. It is violet now (`--accent-edge`/`--accent-glow`) -- highest contrast against grass and
    soil, and already the system's own accent spent as a ring and a glow rather than a fill.
 3. **The plots needed a shared bed.** Sixteen sprites on the violet chrome read as islands; the grid
-   now carries `--hs-grass: #84c669`, sampled from the tiles' own grass, so the 2px gap between
+   now carries `--sa-grass: #84c669`, sampled from the tiles' own grass, so the 2px gap between
    tiles becomes lawn and the field reads as one field.
-Art is Kenney's **CC0** Tiny Farm pack (`public/homestead/tiles/`, see its `CREDITS.txt`);
-`scripts/extract-homestead-tiles.py` records which source tile became which file, so swapping packs
+Art is Kenney's **CC0** Tiny Farm pack (`public/stackacres/tiles/`, see its `CREDITS.txt`);
+`scripts/extract-stackacres-tiles.py` records which source tile became which file, so swapping packs
 is a re-run. **The pack has no pig:** the middle tier keeps its `pig` stock id (it is on live rows;
 renaming it would be a data migration to fix a caption) and is labelled **"Sheep Pen"**.
 
 ### The access code is gone; access is a switch in the admin portal (2026-09-01)
-Kayo: "the code into homestead is done. scrap it and just allow me to assign access to ppl in admin
-portal" -- and, separately, "the code to get into homestead doesnt even work", which is what a code
+Kayo: "the code into stackacres is done. scrap it and just allow me to assign access to ppl in admin
+portal" -- and, separately, "the code to get into stackacres doesnt even work", which is what a code
 that was never set in the environment it shipped to looks like from outside. Both the code and the
 account allowlist before it kept the guest list **in a deploy**, and both fail silently the same way:
 an unset variable is indistinguishable from a broken feature. A row in a table cannot fail that way.
 **`profiles.homestead_access`, one boolean per player, toggled from the admin dashboard** beside the
 ban and unlimited-Gold switches it deliberately copies. Migration
 `20260901200000_homestead_access.sql`, **UNAPPLIED** -- and it must land BEFORE the code, or the
-gate's `select` throws and every Homestead route 500s instead of refusing politely.
-`POST /api/admin/homestead-access` grants and revokes; `HOMESTEAD_ACCESS_CODE`,
-`POST /api/homestead/unlock`, the pass cookie and the code prompt are all deleted.
+gate's `select` throws and every StackAcres route 500s instead of refusing politely.
+`POST /api/admin/stackacres-access` grants and revokes; `STACKACRES_ACCESS_CODE`,
+`POST /api/stackacres/unlock`, the pass cookie and the code prompt are all deleted.
 **Keyed on the profile, not the auth account**, because a profile is what the dashboard lists, what a
 session cookie resolves to, and what a guest has -- so a guest can be let in exactly like a
 registered player. Fail closed: the column defaults false, so nobody is in until somebody is named,
@@ -364,7 +460,7 @@ AFTER the rate limiter (gating first hands an unauthenticated flood a query ampl
 the session cookie with `readSessionToken`, **never** `readOrCreateSessionToken` -- a refusal must not
 hand a prober an identity, and a freshly minted token could never be on the list anyway. That also
 removes the read route's old tokenless preview of the farm: with no cookie there is no profile a
-grant could have been made to. `homestead-access.test.ts` still walks `app/api/homestead` so a route
+grant could have been made to. `stackacres-access.test.ts` still walks `app/api/stackacres` so a route
 added tomorrow cannot skip the gate, and now also asserts no route mints a session at all.
 The locked page shows the visitor **their own player id**, because granting means finding them in a
 dashboard whose search box matches exactly that string.
@@ -378,8 +474,8 @@ local HTTP verification without Supabase credentials has to be `next dev`.
 
 ### SUPERSEDED by the entry above: the account allowlist became an access code (2026-09-01)
 Kayo: "just [make] it available in the UI but u can only get in through a code." Replaced
-`HOMESTEAD_ALLOWED_USER_IDS` with **`HOMESTEAD_ACCESS_CODE`** — one shared code, entered at
-`/games/homestead`, traded for a pass cookie at `POST /api/homestead/unlock`. The allowlist worked
+`STACKACRES_ALLOWED_USER_IDS` with **`STACKACRES_ACCESS_CODE`** — one shared code, entered at
+`/games/stackacres`, traded for a pass cookie at `POST /api/stackacres/unlock`. The allowlist worked
 but made "let a friend look at it" a deploy; a code is what was actually wanted.
 **The cookie holds an HMAC of the code, never the code**, which buys three things at once: a stolen
 cookie is worth no more than the code it came from, **rotating the code revokes every pass with no
@@ -392,7 +488,7 @@ Answers **401 now, not 404**: the old 404 hid the feature's existence, and a til
 announces it, so hiding the route only makes a locked door look broken.
 **The tile is `live` and got its own floor section, "Keep something growing", under a new
 `kind: "idle"`.** Not `wager`: that section's own note promises you can lose the Gold you stake, and
-the Homestead has no stake and no losing branch, so filing it there would make the note false about a
+the StackAcres has no stake and no losing branch, so filing it there would make the note false about a
 row beneath it. It is deliberately **left out of the hub tile's "N free every day" count** — free of
 Gold but behind a code, so counting it promises something most readers cannot open. Opening the game
 to everyone is now deleting one variable; no catalog edit.
@@ -407,13 +503,13 @@ Same branch. **Bushels -> Gold at 2 Gold each, capped at a flat 5,000 Gold per p
 player reaches the ceiling sooner and banks the rest, which is the shape to keep when phase 4 starts
 moving prices. Sized against the faucets that already exist rather than against what the farm can
 grow: daily grant 1,000 x2.5 streak, ads 500x6, backstop 1,000/12h, and below the ~7,500/day the
-pre-Bushels Homestead paid uncapped.
+pre-Bushels StackAcres paid uncapped.
 **The invariant, and the whole review question: the ceiling is a constant.** Not a percentage, not
 scaled by acreage, bankroll or trading skill. Skill decides how fast the day's bucket fills, never
-how big it is. `lib/homestead/exchange.ts` holds it as a bare number on purpose, and
+how big it is. `lib/stackacres/exchange.ts` holds it as a bare number on purpose, and
 `exchange.test.ts` asserts it is one; a service test drains the window on a bare farm and on a
 six-plot one and asserts both get exactly 5,000.
-**Gold now moves in exactly two places** (`buyHomesteadPlot` spends, `exchangeHomesteadBushels`
+**Gold now moves in exactly two places** (`buyStackAcresPlot` spends, `exchangeStackAcresBushels`
 pays) and a source-scanning test counts the `spendGoldByProfile`/`creditGoldByProfile` call sites so
 a third fails rather than ships. A second test pins the route's action list, because the change that
 would actually break this is a Gold->Bushels action: a round trip turns a ceiling into a laundry.
@@ -432,10 +528,10 @@ UI is a gold-edged block at the BOTTOM of the supply store sheet (everything abo
 own money going round; this is where it leaves, and it should be a thing you go and do). One bug the
 screenshots caught again: **the allowance bar filled as the day was spent, which put a full gold bar
 directly above the words "0 of 5,000 Gold left today"**. It drains now. Also fixed in passing:
-`.hs-group-label` had no CSS rule at all, so phase 2's three store headings rendered as body copy.
+`.sa-group-label` had no CSS rule at all, so phase 2's three store headings rendered as body copy.
 
 ### Phase 2: Bushels, produce and the store (2026-09-01)
-Same branch. **Every Homestead table was verified EMPTY in production first** (`homestead_plots`,
+Same branch. **Every StackAcres table was verified EMPTY in production first** (`homestead_plots`,
 `homestead_feed`, `homestead_harvests` all 0 rows -- nobody has ever played it, since the gate allows
 nobody), which is what made a free reshape of the economy possible; re-verify before applying the
 migration anywhere that has since been played.
@@ -443,14 +539,14 @@ migration anywhere that has since been played.
 **The loop is now farmhand's.** Harvesting no longer pays anything -- it puts PRODUCE in a barn, and
 selling that produce at the supply store is what earns **Bushels**. That split is not cosmetic: a
 market can only swing a price if there is something you are holding while it swings, which is exactly
-what phase 4 needs. `collectHomestead` moves no money at all now, and nothing should ever add money
+what phase 4 needs. `collectStackAcres` moves no money at all now, and nothing should ever add money
 back to it.
 
 **Currency wall, and the thing to defend in review: only `buy-plot` moves Gold.** Seed, feed, muck and
 produce are all Bushels or items, and they never leave the farm. Land stays Gold (Kayo's call) so the
 2,500-doubling ladder survives as a sink and Gold has a reason to enter at all. Several service tests
 assert a Gold balance is *unchanged* across an action purely to catch a second Gold path being added.
-New farms get `HOMESTEAD_STARTING_BUSHELS` (150) exactly once via
+New farms get `STACKACRES_STARTING_BUSHELS` (150) exactly once via
 `grant_homestead_starting_bushels` -- `INSERT ... ON CONFLICT DO NOTHING` makes the **primary key the
 idempotency guard**, so a player who spends it all does not get another by refreshing.
 
@@ -464,7 +560,7 @@ line before a faucet: inflated yield -> produce -> Bushels -> phase 3's exchange
 **`bushels` shares a table with produce, so the `sell` action's item enum is the only thing between a
 request and infinite money** -- there is a test for exactly that.
 
-### Homestead migration applied, and a revoke that wasn't revoking (2026-09-01)
+### StackAcres migration applied, and a revoke that wasn't revoking (2026-09-01)
 `20260831150000_homestead_plots.sql` is **applied to production**, verified against real Postgres with
 a self-rolling-back `DO` block rather than trusted from the memory-mode tests (which cannot exercise a
 SQL CHECK at all): payout ceilings, both caps of 3 counted separately, the guarded collection paying
@@ -478,12 +574,12 @@ feed balance, and feed is bought with Gold. Exactly what
 `from public, anon, authenticated` and all three names matter -- copy it from `credit_gold`, and check
 `proacl` afterwards rather than re-reading the migration (a correct one has no bare `=X/postgres`).
 Supabase's advisor catches the SECURITY DEFINER case, so run `get_advisors` after applying anything
-that adds a function. Also this pass: `50-homestead.css` renumbered to **52** (main's Nonogram and
+that adds a function. Also this pass: `50-stackacres.css` renumbered to **52** (main's Nonogram and
 Othello took 50 and 51 while the branch was open).
 
-### Homestead ships to prod gated on one account, by env not by code (2026-09-01)
+### StackAcres ships to prod gated on one account, by env not by code (2026-09-01)
 Kayo wants it on production but visible only to his own account. The gate is an allowlist of Supabase
-auth account ids in **`HOMESTEAD_ALLOWED_USER_IDS`**, checked in `lib/server/homestead-access.ts`.
+auth account ids in **`STACKACRES_ALLOWED_USER_IDS`**, checked in `lib/server/stackacres-access.ts`.
 **Ids, not emails:** the session cookie already resolves to `profiles.user_id`, so an id costs a
 lookup we make anyway, where matching an email would mean a Supabase auth-admin call on every read.
 **Env, not committed:** `Nikkayowill/poker` is a PUBLIC repo -- an email is personal data and an
@@ -497,20 +593,20 @@ the player session cookie is `path=/`, so a server component reads it via `next/
 the API refuse" compromise. Still 404 everywhere, never 403. **The rate limiter now runs BEFORE the
 gate, reversing the old order**: the admin check was a free signature check worth running first, but
 this one costs a database read, and gating ahead of the limiter hands an unauthenticated flood a query
-amplifier. `homestead-access.test.ts` walks `app/api/homestead` so a route added tomorrow cannot skip
+amplifier. `stackacres-access.test.ts` walks `app/api/stackacres` so a route added tomorrow cannot skip
 the gate, and asserts the gate precedes `readOrCreateSessionToken`. That ordering test **failed on its
 first run against correct code**: it string-matched bare names, and the comment explaining the
 ordering names the very function whose position it measures -- it now strips comments and matches
 calls (`name(`). Releasing means flipping `status` to `live` AND clearing the variable; either alone
 still hides it.
 
-### The staff gate is gone; the Homestead is unlisted, not closed (2026-09-01)
+### The staff gate is gone; the StackAcres is unlisted, not closed (2026-09-01)
 Reverses the entry below, on Kayo's call: "scrap the whole admin access. just let me look at it." The
 gate worked but made the game hard to even open -- `ADMIN_SESSION_COOKIE` is per-origin, so the prod
 passcode does nothing on a preview deploy, and `ADMIN_SECRET` is scoped per Vercel environment, so a
 Preview build without it locks staff out along with everyone else. Deleted `lib/server/staff-gate.ts`
-and its test; routes moved back to `/api/homestead[/actions]` (the cookie path no longer constrains
-where they live), page to `/games/homestead` beside every other game, and the "Admin session required"
+and its test; routes moved back to `/api/stackacres[/actions]` (the cookie path no longer constrains
+where they live), page to `/games/stackacres` beside every other game, and the "Admin session required"
 locked state went with them. `ArcadeGameStatus`'s fourth value is renamed **`staff-only` ->
 `unlisted`**, because with no gate left the old name was a lie. **Know exactly what `unlisted` buys:
 `splitArcadeFloor` still shows only `live` rows, so it stays off the floor -- and that is ALL it does.
@@ -523,21 +619,21 @@ a status value. Also worth keeping: **`npm run dev` cannot verify this page at l
 then no client component mounts -- dead canvas, dead buttons, nothing in the console. Build and
 `next start` instead; see `[[reference_stackchips_local_testing]]`.
 
-### SUPERSEDED by the entry above: the Homestead was staff-only under /admin (2026-09-01)
+### SUPERSEDED by the entry above: the StackAcres was staff-only under /admin (2026-09-01)
 Kayo: finished but not for the public yet, reachable only through the admin portal. New
 `ArcadeGameStatus` value **`staff-only`** -- a fourth state, not a flavour of the other three: built,
 mounted, moving real Gold, just not offered. `splitArcadeFloor` shows only `live` rows so it never
 reaches the floor, and per `lib/arcade/retired.ts`'s lesson the routes carry their own gate rather
 than relying on a hidden catalog row. **The load-bearing discovery, found by curl and not by
-reasoning:** `ADMIN_SESSION_COOKIE` is scoped `path=/api/admin`, so mounted at `/api/homestead` the
+reasoning:** `ADMIN_SESSION_COOKIE` is scoped `path=/api/admin`, so mounted at `/api/stackacres` the
 gate could not see the cookie that authorises it and 404'd staff as well as strangers. Widening the
 cookie to `/` was rejected (the narrow path is what keeps an admin credential off ordinary traffic,
 the same reasoning that moved admin auth off a request header) -- the game moved instead:
-`/api/admin/homestead[/actions]`, page at `/admin/homestead`, catalog href to match. The PAGE is
+`/api/admin/stackacres[/actions]`, page at `/admin/stackacres`, catalog href to match. The PAGE is
 deliberately ungated and cannot be gated, for the same path reason; it matches how `/admin` already
 works -- renders for anyone, API behind it refuses, stranger gets a locked state. Everything answers
 **404, never 403**: a 403 confirms the feature exists. `staff-gate.test.ts` walks
-`app/api/admin/homestead` on the filesystem so a route added tomorrow cannot skip the gate, and
+`app/api/admin/stackacres` on the filesystem so a route added tomorrow cannot skip the gate, and
 asserts the gate runs before `readOrCreateSessionToken` (or probing it hands the prober a session
 cookie). Verified live: anonymous 404s on every surface including the old public URLs, admin session
 gets 200 and the real service runs.
@@ -580,8 +676,9 @@ says so. Solve-rate data from real attempts is the honest input; `ante-up-stakes
 the damage until then.
 
 ### The Mint became the StackChips Homestead: crops, feed, muck, three times of day (2026-08-31)
-Kayo's expansion spec (his own, written in the homestead branch's register) plus the rename:
-`sovereign-mint` -> `homestead`, `mint_plots` -> `homestead_plots`,
+Kayo's expansion spec (his own, written in the stackacres branch's register) plus the rename:
+`sovereign-mint` -> `homestead` (renamed again to `stackacres` on 2026-09-03),
+`mint_plots` -> `homestead_plots`,
 node types `pulse|core|matrix` -> `hen|pig|cattle`. Free to do because the migration was still
 unapplied; after it lands this is a data migration, not a find-and-replace. Five plot states now
 (`locked|empty|working|hungry|ready|mucked`) across two tracks with **separate caps** -- 3 pens and 3
@@ -590,7 +687,7 @@ fields -- because crops sharing the livestock budget makes them just a cheaper a
 impossible here: at 20% muck and a flat 1,500, a Hen Coop's +50 net becomes **-250 a cycle**, so the
 tier new players start on is a guaranteed loser. `muckFee` is now 2x the tier's net bonus, holding
 expected muck cost at 40% of what the plot earned on every tier -- there is a test asserting exactly
-this. (2) Its `#1A1A1D`/`#222226` are the homestead demo's near-black stage, which Kayo had already
+this. (2) Its `#1A1A1D`/`#222226` are the stackacres demo's near-black stage, which Kayo had already
 ruled out ("DONT COPY THE BACKGROUND"); states map onto our dusk palette instead. (3) **A 20% roll
 cannot be computed on read.** Everything else here is a pure function of timestamps, which is why the
 feature needs no background jobs; a dice roll evaluated on read re-rolls on every refetch and a player
@@ -629,7 +726,7 @@ destroyed. **The landscape breakpoint was broken and the number was the bug**: `
 assumed 128px of chrome where the real total (safe area, floor bar plus its `clamp()`ed margin,
 scoreline, two shell gaps) measures ~160px at 844x390, hanging the diorama 30px below the fold on the
 exact device the breakpoint exists for. The shell is now a fixed-height flex column and the stage
-takes what is left, no magic number. Its `@media` block **must stay last in `52-homestead.css`** -- it
+takes what is left, no magic number. Its `@media` block **must stay last in `52-stackacres.css`** -- it
 overrides base rules at equal specificity, and it silently lost every panel rule while it sat above
 them. Node cards go 2x2 grid there (name/terms, yield/button); three portrait cards are ~300px
 against ~260px of height, and a wrapping flex row broke each card at a different word. Verified by

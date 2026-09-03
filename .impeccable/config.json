@@ -319,7 +319,7 @@
         "rule": "design-system-font-size",
         "value": "7px",
         "createdAt": "2026-09-02T00:35:00.415Z",
-        "reason": "Phaser world-space Text in homestead-scene.ts: 7 world units render at 14-42px on screen under the camera zoom, not a DOM type step"
+        "reason": "Phaser world-space Text in stackacres-scene.ts: 7 world units render at 14-42px on screen under the camera zoom, not a DOM type step"
       },
       {
         "rule": "overused-font",
@@ -337,13 +337,13 @@
         "rule": "design-system-font-size",
         "value": "6.5px",
         "createdAt": "2026-09-02T04:54:05.238Z",
-        "reason": "Phaser world-space Text on the wooden price sign in homestead-scene.ts: 6.5 world units scaled by the camera, not a DOM type step"
+        "reason": "Phaser world-space Text on the wooden price sign in stackacres-scene.ts: 6.5 world units scaled by the camera, not a DOM type step"
       },
       {
         "rule": "design-system-color",
         "value": "#3d2a14",
         "createdAt": "2026-09-02T04:54:05.369Z",
-        "reason": "Painted ink colour on the wooden price sign inside the Phaser canvas (homestead-scene.ts), part of the vector art palette, not chrome"
+        "reason": "Painted ink colour on the wooden price sign inside the Phaser canvas (stackacres-scene.ts), part of the vector art palette, not chrome"
       },
       {
         "rule": "design-system-font-size",

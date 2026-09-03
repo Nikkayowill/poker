@@ -490,15 +490,15 @@
      wordmark itself (components/brand/stackacres-logo.tsx), decorative at
      this size rather than legible; the bold "StackAcres" beside it carries
      the name. */
-  .mshell-homestead-logo { flex-shrink: 0; width: 58px; height: auto; }
-  .mshell-homestead-soon {
+  .mshell-stackacres-logo { flex-shrink: 0; width: 58px; height: auto; }
+  .mshell-stackacres-soon {
     color: #93a1bb;
     font-size: 10px;
     font-weight: 650;
     letter-spacing: .18em;
     text-transform: uppercase;
   }
-  /* Locked-by-default: homesteadAccess is granted per player from the admin
+  /* Locked-by-default: stackacresAccess is granted per player from the admin
      dashboard, so a row nobody can open renders as an inert <div>, not a
      disabled control. Same treatment .hub-tile-locked gives the desktop
      tile -- dimmed, no chevron, no press feedback. */

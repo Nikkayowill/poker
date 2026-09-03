@@ -377,7 +377,7 @@ input[type="range"] { touch-action: pan-x; }
 
 /* Visually hidden, still in the a11y tree: for a real heading whose visible
    surface is a decorative mark rather than typed text (see StackAcres' own
-   logo header in 52-homestead.css) -- the standard clip-rect recipe, not
+   logo header in 52-stackacres.css) -- the standard clip-rect recipe, not
    `display: none`, which would remove it from the tree entirely. */
 .sr-only {
   position: absolute;

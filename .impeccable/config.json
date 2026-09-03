@@ -356,6 +356,30 @@
         "value": "18px",
         "createdAt": "2026-09-03T02:18:13.235Z",
         "reason": "intentional: action prompt on splash screen"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#ff8a86",
+        "createdAt": "2026-09-03T18:47:30.149Z",
+        "reason": "pre-existing .sa-retire-confirm gradient in app/styles/52-stackacres.css, in-file comment marks it deliberate: the one warning colour in the system, not the gold every other action wears"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#ff6f6b",
+        "createdAt": "2026-09-03T18:47:30.149Z",
+        "reason": "pre-existing .sa-retire-confirm gradient in app/styles/52-stackacres.css, same deliberate warning-colour exception"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#b3312d",
+        "createdAt": "2026-09-03T18:47:30.149Z",
+        "reason": "pre-existing .sa-retire-confirm gradient in app/styles/52-stackacres.css, same deliberate warning-colour exception"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#2a0d0c",
+        "createdAt": "2026-09-03T18:47:30.149Z",
+        "reason": "pre-existing .sa-retire-confirm text colour in app/styles/52-stackacres.css, paired with the same deliberate warning gradient"
       }
     ]
   }

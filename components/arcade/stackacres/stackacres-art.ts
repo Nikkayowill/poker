@@ -8,6 +8,10 @@ import {
   ART_FRAME,
   ART_SCALE,
   GRASS_PX,
+  blades,
+  blob,
+  bloom,
+  canopy,
   ell,
   F,
   leaf,
@@ -22,6 +26,7 @@ import {
   type Paint,
   type Painter,
 } from "./art-kit";
+import { RAMPS, tint, type Ramp } from "./art-palette";
 import { PROP_PAINTERS, type PropPainterName } from "./art-props";
 import { WATER_PAINTERS, type WaterPainterName } from "./art-water";
 import { ZONE_PAINTERS, type ZonePainterName } from "./art-zones";
@@ -122,30 +127,25 @@ type CorePainterName =
 /* ---- scenery ----------------------------------------------------------- */
 
 /** The three broadleaves differ only in their greens, so a stand of them
- *  reads as a wood rather than as one tree stamped repeatedly. */
+ *  reads as a wood rather than as one tree stamped repeatedly. Flat vector:
+ *  the crown is a canopy of puffs shaded in two passes (see `canopy`), not a
+ *  mass under a radial light. */
 const treeRound =
-  (dark: string, mid: string, light: string): Paint =>
+  (mat: Ramp): Paint =>
   (c) => {
     rr(c, 10.2, 17, 3.8, 12, 1.6);
-    F(c, lin(c, 10, 0, 14, 0, [[0, "#a46e3c"], [0.55, "#7d4f27"], [1, "#4b2d15"]]));
-    // One dark mass with three lobes on it, then lit as a whole so the lobes
-    // read as one canopy catching the sun rather than three stacked coins.
-    ell(c, 12.2, 12.6, 11.2, 10.4);
-    F(c, dark);
-    for (const [x, y, rx, ry] of [[7.6, 12.6, 6.4, 5.6], [16.4, 13, 6.2, 5.4], [11.6, 7.8, 6.8, 5.8]] as const) {
-      ell(c, x, y, rx, ry);
-      F(c, mid);
-    }
-    ell(c, 12.2, 12.6, 11.2, 10.4);
-    litMass(c, 12.2, 12.6, 11.2, 10.4, "rgba(8,45,22,.46)", light);
-    for (const [x, y] of [[16.5, 15.5], [12.5, 18.5], [7.5, 16.5]] as const) {
-      ell(c, x, y, 2.1, 1.5);
-      F(c, "rgba(20,70,25,.24)");
-    }
-    for (const [x, y] of [[7.2, 6.4], [10.6, 4.6]] as const) {
-      ell(c, x, y, 1.9, 1.2, -0.5);
-      F(c, "rgba(238,255,205,.5)");
-    }
+    F(c, RAMPS.wood.side);
+    rr(c, 12.1, 17, 1.9, 12, 0.9);
+    F(c, RAMPS.wood.rim);
+    canopy(
+      c,
+      [
+        [7.4, 13.2, 6.6],
+        [16.8, 13.2, 6.6],
+        [12.1, 7.4, 7.8],
+      ],
+      mat,
+    );
   };
 
 const flower =
@@ -153,49 +153,44 @@ const flower =
   (c) => {
     c.beginPath();
     c.moveTo(3, 8);
-    c.lineTo(3.2, 4.2);
-    stroke(c, "#4f9d46", 0.9);
-    for (let k = 0; k < 5; k += 1) {
-      const a = (k / 5) * Math.PI * 2;
-      ell(c, 3 + Math.cos(a) * 1.7, 3 + Math.sin(a) * 1.7, 1.25, 1.25);
-      F(c, colour);
-    }
-    ell(c, 3, 3, 0.95, 0.95);
-    F(c, "#f7d774");
+    c.lineTo(3.2, 4.4);
+    stroke(c, RAMPS.leaf.side, 0.9);
+    bloom(c, 3, 3, 2.6, colour, RAMPS.corn.side);
   };
 
 /* ---- crops ------------------------------------------------------------- */
 // Hoisted because the seed-strip icons draw the ripe frame directly.
 
 const carrot2 = painter(12, 16, (c) => {
-  leaf(c, 3, 9.6, 1.9, 4.8, -0.7, "#4fae47");
-  leaf(c, 6, 8.2, 1.9, 5.4, 0, "#6cc25f");
-  leaf(c, 9, 9.6, 1.9, 4.8, 0.7, "#4fae47");
-  rr(c, 3.2, 11.6, 5.6, 4.6, 2.6);
-  F(c, lin(c, 0, 11, 0, 16, [[0, "#ff9f3c"], [1, "#e2711d"]]));
-  ell(c, 5, 12.8, 1.2, 0.6);
-  F(c, "rgba(255,255,255,.4)");
+  for (const i of [-1, 0, 1]) {
+    c.beginPath();
+    c.moveTo(6, 12);
+    c.quadraticCurveTo(6 + i * 2.4, 8.4, 6 + i * 3.6, 5.2);
+    stroke(c, i === 0 ? RAMPS.leaf.top : RAMPS.leaf.side, 1.5);
+  }
+  rr(c, 3.2, 11.4, 5.6, 4.8, 2.6);
+  F(c, RAMPS.carrot.top);
+  rr(c, 6.2, 11.4, 2.6, 4.8, 1.3);
+  F(c, RAMPS.carrot.side);
+  rr(c, 3.2, 11.4, 5.6, 4.8, 2.6);
+  stroke(c, RAMPS.carrot.rim, 0.7);
 });
 
 const corn2 = painter(12, 22, (c) => {
   c.beginPath();
   c.moveTo(6, 22);
-  c.lineTo(6, 3);
-  stroke(c, "#5aa84f", 1.4);
-  leaf(c, 3, 17, 1.5, 4.8, -0.9, "#5cb851");
-  leaf(c, 9.2, 15, 1.5, 4.8, 0.9, "#5cb851");
-  leaf(c, 3.4, 10.5, 1.3, 4, -0.8, "#6cc25f");
-  rr(c, 6.6, 7.5, 3.6, 8.5, 1.8);
-  F(c, lin(c, 6, 0, 10, 0, [[0, "#ffd75a"], [1, "#e8b62e"]]));
-  leaf(c, 9.6, 12.5, 1.1, 4.2, 0.35, "#4fae47");
-  for (const y of [1.5, 2.2]) {
-    c.beginPath();
-    c.moveTo(6, 3.4);
-    c.lineTo(4.4, y);
-    c.moveTo(6, 3.4);
-    c.lineTo(7.6, y);
-    stroke(c, "#d9c57a", 0.7);
+  c.lineTo(6, 4);
+  stroke(c, RAMPS.leaf.side, 1.6);
+  for (const [x, y, rx] of [[3.2, 16.5, 3.2], [9, 14.2, 3.2], [3.6, 10.6, 2.6]] as const) {
+    ell(c, x, y, rx, 1.3);
+    F(c, RAMPS.leaf.top);
   }
+  rr(c, 6.3, 7, 3.8, 8.8, 1.9);
+  F(c, RAMPS.corn.top);
+  rr(c, 8.4, 7, 1.7, 8.8, 0.85);
+  F(c, RAMPS.corn.side);
+  rr(c, 6.3, 7, 3.8, 8.8, 1.9);
+  stroke(c, RAMPS.corn.rim, 0.6);
 });
 
 /** Glass with a gradient and a diagonal streak; a flat fill reads as a hole
@@ -228,21 +223,20 @@ export const PAINTERS: Record<PainterName, Painter> = {
   // pool itself sits three units right of the anchor, the way a high sun to
   // the upper-left throws it. The tighter dark core at the contact point is
   // what stops a tree from reading as hovering over its own shadow.
+  // The ground shadow of whatever stands on it. Anchored at its own centre
+  // rather than its bottom edge, so a caller placing it at a thing's feet
+  // puts the pool UNDER the feet instead of hidden up behind the trunk.
+  // Kept as two flat ellipses rather than a radial gradient: a soft pool is
+  // the one place the old render look survived a flat pass, and it read as
+  // blur against everything else's hard edge.
   shadow: painter(
     36,
     16,
     (c) => {
       ell(c, 19, 8, 16.5, 6.6);
-      F(
-        c,
-        rad(c, 19, 8, 0, 16.5, [
-          [0, "rgba(15,45,15,.30)"],
-          [0.55, "rgba(15,45,15,.18)"],
-          [1, "rgba(15,45,15,0)"],
-        ]),
-      );
-      ell(c, 17.5, 8, 7.5, 3);
-      F(c, rad(c, 17.5, 8, 0, 7.5, [[0, "rgba(10,35,10,.24)"], [1, "rgba(10,35,10,0)"]]));
+      F(c, tint(RAMPS.wild.rim, 0.2));
+      ell(c, 17.5, 8, 9, 3.6);
+      F(c, tint(RAMPS.wild.rim, 0.16));
     },
     16 / 36,
     0.5,
@@ -251,64 +245,51 @@ export const PAINTERS: Record<PainterName, Painter> = {
   cloud: painter(160, 90, (c) => {
     for (const [x, y, r] of [[60, 45, 40], [95, 40, 36], [120, 52, 28], [40, 55, 26]] as const) {
       ell(c, x, y, r, r * 0.62);
-      F(
-        c,
-        rad(c, x, y, 0, r, [
-          [0, "rgba(15,40,15,.16)"],
-          [0.7, "rgba(15,40,15,.10)"],
-          [1, "rgba(15,40,15,0)"],
-        ]),
-      );
+      F(c, "rgba(255,255,255,.86)");
+    }
+    for (const [x, y, r] of [[62, 41, 34], [96, 36, 30], [42, 51, 21]] as const) {
+      ell(c, x, y, r, r * 0.58);
+      F(c, "#ffffff");
     }
   }),
 
-  tree1: painter(24, 30, treeRound("#3f8a3c", "#57a94f", "rgba(160,225,135,.65)")),
-  tree2: painter(24, 30, treeRound("#347a48", "#4a9b5a", "rgba(150,220,150,.6)")),
-  tree3: painter(24, 30, treeRound("#4f8f34", "#6ab04a", "rgba(190,235,140,.6)")),
+  tree1: painter(24, 30, treeRound(RAMPS.leaf)),
+  tree2: painter(24, 30, treeRound({ top: "#7acb46", side: "#5ca632", rim: "#3f7620" })),
+  tree3: painter(24, 30, treeRound({ top: "#4fae55", side: "#3a8840", rim: "#27622c" })),
 
   pine: painter(20, 34, (c) => {
-    rr(c, 8.4, 26, 3.2, 8, 1.2);
-    F(c, "#7a4f2c");
-    // Each skirt is stroked as well as filled, so the needles keep a soft
-    // outline instead of a razor edge where two layers meet.
-    const layer = (y0: number, y1: number, hw: number, colour: string) => {
+    rr(c, 8.4, 24, 3.2, 10, 1.2);
+    F(c, RAMPS.wood.side);
+    // Three skirts, each split down the middle: lit half toward the sun, dark
+    // half away. Flat triangles, no stroke -- the tone step IS the edge.
+    for (const [y0, y1, hw] of [[10, 27, 9], [5.5, 20, 7.4], [1.5, 13.5, 5.6]] as const) {
+      poly(c, [[10 - hw, y1], [10, y0], [10, y1]]);
+      F(c, RAMPS.pine.top);
+      poly(c, [[10, y0], [10 + hw, y1], [10, y1]]);
+      F(c, RAMPS.pine.side);
       poly(c, [[10 - hw, y1], [10, y0], [10 + hw, y1]]);
-      c.lineJoin = "round";
-      c.strokeStyle = colour;
-      c.lineWidth = 2.2;
-      c.stroke();
-      F(c, colour);
-      // The half of each skirt facing away from the sun.
-      poly(c, [[10, y0], [10 + hw + 1, y1 + 1], [10, y1 + 1]]);
-      F(c, "rgba(5,40,30,.24)");
-    };
-    layer(10, 27, 9, "#2f7a4d");
-    layer(5, 20, 7.4, "#3a9058");
-    layer(1, 13.5, 5.6, "#4aa668");
-    poly(c, [[10, 2], [4.6, 13], [10, 12]]);
-    F(c, "rgba(190,240,190,.22)");
-    poly(c, [[10, 7], [3.2, 20], [10, 19]]);
-    F(c, "rgba(190,240,190,.16)");
+      stroke(c, RAMPS.pine.rim, 0.7);
+    }
   }),
 
   bush: painter(16, 12, (c) => {
-    ell(c, 8, 7.8, 7.6, 4.2);
-    F(c, "#3f8a3c");
-    ell(c, 6, 6.2, 5, 4);
-    F(c, "#5aa84f");
-    ell(c, 10.4, 6.6, 4.6, 3.6);
-    F(c, "#4f9d46");
-    ell(c, 8, 7.4, 7.6, 4.6);
-    litMass(c, 8, 7.4, 7.6, 4.6, "rgba(8,45,22,.42)", "rgba(190,240,160,.55)");
+    canopy(
+      c,
+      [
+        [5.2, 8, 4.6],
+        [10.8, 8, 4.6],
+        [8, 5.4, 5.2],
+      ],
+      RAMPS.leaf,
+    );
   }),
 
   rock: painter(14, 10, (c) => {
-    poly(c, [[1, 8.2], [2.6, 3.4], [6.8, 1], [11, 2.4], [13, 6.8], [11.2, 9.6], [3, 9.6]]);
-    F(c, lin(c, 2, 1, 12, 10, [[0, "#c3cacf"], [0.5, "#98a2a8"], [1, "#5f6a70"]]));
-    poly(c, [[1, 8.2], [2.6, 3.4], [6.8, 1], [11, 2.4], [13, 6.8], [11.2, 9.6], [3, 9.6]]);
-    litMass(c, 7, 5.5, 6.2, 4.5, "rgba(20,30,40,.4)", "rgba(255,255,255,.3)");
-    ell(c, 5.2, 4, 2.6, 1.4, -0.4);
-    F(c, "rgba(255,255,255,.4)");
+    blob(c, 7, 6, 6.2, 4.2, RAMPS.stone);
+    poly(c, [[3.4, 4.6], [6.6, 1.6], [10.6, 4.8]]);
+    F(c, RAMPS.stone.top);
+    ell(c, 7, 6, 6.2, 4.2);
+    stroke(c, RAMPS.stone.rim, 0.6);
   }),
 
   flower1: painter(6, 8, flower("#ff7eb6")),
@@ -316,28 +297,23 @@ export const PAINTERS: Record<PainterName, Painter> = {
   flower3: painter(6, 8, flower("#ffb347")),
 
   tuft: painter(8, 6, (c) => {
-    for (const [x0, x1] of [[2, 1.2], [4, 4], [6, 6.8]] as const) {
-      c.beginPath();
-      c.moveTo(x0, 6);
-      c.quadraticCurveTo(x0, 3, x1, 0.8);
-      stroke(c, "#5fae52", 0.9);
-    }
+    blades(c, 4, 6, 5.6, RAMPS.lawn, 0.85);
   }),
 
   stump: painter(10, 8, (c) => {
     rr(c, 1, 2.6, 8, 5.4, 2);
-    F(c, "#8b5a2b");
+    F(c, RAMPS.wood.side);
     ell(c, 5, 2.8, 4, 1.9);
-    F(c, "#d9b27a");
-    ell(c, 5, 2.8, 2.2, 1);
-    stroke(c, "#b8905a", 0.5);
+    F(c, RAMPS.wood.top);
+    ell(c, 5, 2.8, 2.1, 1);
+    F(c, RAMPS.wood.rim);
   }),
 
   puddle: painter(18, 8, (c) => {
     ell(c, 9, 4, 8.6, 3.4);
-    F(c, "rgba(110,150,170,.75)");
-    ell(c, 6.5, 3.2, 3, 1.1);
-    F(c, "rgba(255,255,255,.35)");
+    F(c, RAMPS.water.side);
+    ell(c, 7.6, 3.2, 5.6, 2);
+    F(c, RAMPS.water.top);
   }),
 
   /* ---- the cell beds: one painter covers a whole plot ---- */
@@ -349,18 +325,13 @@ export const PAINTERS: Record<PainterName, Painter> = {
     CELL,
     CELL,
     (c) => {
-      rr(c, 2, 2, 76, 76, 7);
-      F(c, lin(c, 2, 2, 78, 78, [[0, "rgba(255,255,220,.24)"], [1, "rgba(255,255,220,.06)"]]));
-      for (let i = 1; i < 8; i += 2) {
-        rr(c, 2, 2 + i * 9.5, 76, 9.5, 0);
-        F(c, "rgba(255,255,255,.06)");
+      rr(c, 2, 2, CELL - 4, CELL - 4, 7);
+      F(c, RAMPS.lawn.top);
+      for (const [x, y] of [[18, 22], [46, 30], [30, 54], [58, 60]] as const) {
+        blades(c, x, y, 7, RAMPS.grass, 0.9);
       }
-      rr(c, 4.5, 4.5, 71, 71, 5.5);
-      c.setLineDash([2.6, 2.4]);
-      stroke(c, "rgba(255,252,235,.72)", 1);
-      c.setLineDash([]);
-      rr(c, 2, 2, 76, 76, 7);
-      stroke(c, "rgba(35,80,30,.2)", 0.9);
+      rr(c, 2, 2, CELL - 4, CELL - 4, 7);
+      stroke(c, RAMPS.lawn.rim, 1.2);
     },
     0,
     0,
@@ -373,44 +344,14 @@ export const PAINTERS: Record<PainterName, Painter> = {
     CELL,
     CELL,
     (c) => {
-      rr(c, 2, 2, 76, 76, 7);
-      F(c, lin(c, 2, 2, 78, 78, [[0, "#bd8956"], [1, "#82502c"]]));
-      rr(c, 2, 2, 76, 76, 7);
-      c.save();
-      c.clip();
-      c.fillStyle = lin(c, 0, 2, 0, 11, [[0, "rgba(255,228,185,.34)"], [1, "rgba(255,228,185,0)"]]);
-      c.fillRect(2, 2, 76, 9);
-      c.fillStyle = lin(c, 2, 0, 11, 0, [[0, "rgba(255,228,185,.2)"], [1, "rgba(255,228,185,0)"]]);
-      c.fillRect(2, 2, 9, 76);
-      c.fillStyle = lin(c, 0, 69, 0, 78, [[0, "rgba(40,18,4,0)"], [1, "rgba(40,18,4,.34)"]]);
-      c.fillRect(2, 69, 76, 9);
-      c.fillStyle = lin(c, 69, 0, 78, 0, [[0, "rgba(40,18,4,0)"], [1, "rgba(40,18,4,.24)"]]);
-      c.fillRect(69, 2, 9, 76);
-      c.restore();
-      for (const y of [13, 29, 45, 61]) {
-        rr(c, 8, y - 1.8, 64, 2.4, 1.2);
-        F(c, "rgba(255,218,165,.3)");
-        rr(c, 8, y, 64, 6.5, 3.2);
-        F(c, lin(c, 0, y, 0, y + 6.5, [[0, "#5b3719"], [1, "#7b4d2a"]]));
-        rr(c, 8, y + 6.5, 64, 1.4, 0.7);
-        F(c, "rgba(255,205,150,.22)");
+      rr(c, 2, 2, CELL - 4, CELL - 4, 7);
+      F(c, RAMPS.soil.top);
+      for (const y of [22, 40, 58]) {
+        rr(c, 8, y, CELL - 16, 3.4, 1.7);
+        F(c, RAMPS.soil.rim);
       }
-      const r = seededRandom(31);
-      for (let i = 0; i < 14; i += 1) {
-        const x = 6 + r() * 68;
-        const y = 4 + r() * 72;
-        const k = 0.8 + r() * 1.2;
-        ell(c, x, y, k * 1.4, k);
-        F(
-          c,
-          rad(c, x - k * 0.4, y - k * 0.4, 0, k * 1.6, [
-            [0, "rgba(220,175,125,.55)"],
-            [1, "rgba(80,48,20,.4)"],
-          ]),
-        );
-      }
-      rr(c, 2, 2, 76, 76, 7);
-      stroke(c, "rgba(70,40,15,.4)", 1);
+      rr(c, 2, 2, CELL - 4, CELL - 4, 7);
+      stroke(c, RAMPS.soil.rim, 1.2);
     },
     0,
     0,
@@ -420,32 +361,19 @@ export const PAINTERS: Record<PainterName, Painter> = {
     CELL,
     CELL,
     (c) => {
-      rr(c, 2, 2, 76, 76, 7);
-      F(c, lin(c, 2, 2, 78, 78, [[0, "#e2d29c"], [1, "#c9b67c"]]));
-      const r = seededRandom(77);
-      for (let i = 0; i < 9; i += 1) {
-        ell(c, 8 + r() * 64, 8 + r() * 64, 5 + r() * 6, 2.5 + r() * 3);
-        F(c, "rgba(170,140,80,.28)");
-      }
-      for (let i = 0; i < 26; i += 1) {
-        const x = 6 + r() * 68;
-        const y = 6 + r() * 68;
+      rr(c, 2, 2, CELL - 4, CELL - 4, 7);
+      F(c, RAMPS.straw.top);
+      for (let i = 0; i < 10; i += 1) {
+        const a = i * 1.7;
+        const x = 40 + Math.cos(a) * 24;
+        const y = 40 + Math.sin(a) * 24;
         c.beginPath();
-        c.moveTo(x, y);
-        c.lineTo(x + 3 + r() * 3, y - 1 + r() * 2);
-        stroke(c, "rgba(255,245,200,.55)", 0.6);
+        c.moveTo(x - 4, y);
+        c.lineTo(x + 4, y - 1.6);
+        stroke(c, RAMPS.straw.rim, 1.2);
       }
-      // The fence along the bottom and right shades the straw inside it.
-      rr(c, 2, 2, 76, 76, 7);
-      c.save();
-      c.clip();
-      c.fillStyle = lin(c, 0, 66, 0, 78, [[0, "rgba(110,80,30,0)"], [1, "rgba(110,80,30,.26)"]]);
-      c.fillRect(2, 66, 76, 12);
-      c.fillStyle = lin(c, 68, 0, 78, 0, [[0, "rgba(110,80,30,0)"], [1, "rgba(110,80,30,.18)"]]);
-      c.fillRect(68, 2, 10, 76);
-      c.restore();
-      rr(c, 2, 2, 76, 76, 7);
-      stroke(c, "rgba(120,90,40,.28)", 0.9);
+      rr(c, 2, 2, CELL - 4, CELL - 4, 7);
+      stroke(c, RAMPS.straw.rim, 1.2);
     },
     0,
     0,
@@ -455,10 +383,13 @@ export const PAINTERS: Record<PainterName, Painter> = {
     CELL,
     CELL,
     (c) => {
-      rr(c, 2, 2, 76, 76, 7);
-      F(c, lin(c, 0, 2, 0, 78, [[0, "#6e4a2e"], [1, "#4f3420"]]));
-      rr(c, 2, 2, 76, 76, 7);
-      stroke(c, "rgba(0,0,0,.18)", 0.9);
+      rr(c, 2, 2, CELL - 4, CELL - 4, 7);
+      F(c, RAMPS.muck.top);
+      for (const [x, y] of [[24, 28], [52, 36], [34, 56]] as const) {
+        blob(c, x, y, 7, 4, { top: RAMPS.muck.side, side: RAMPS.muck.rim, rim: RAMPS.muck.rim });
+      }
+      rr(c, 2, 2, CELL - 4, CELL - 4, 7);
+      stroke(c, RAMPS.muck.rim, 1.2);
     },
     0,
     0,
@@ -466,12 +397,19 @@ export const PAINTERS: Record<PainterName, Painter> = {
 
   // Square, not rounded: wild cells tile edge to edge, and rounded corners
   // leave a four-pointed gap of bright grass everywhere four of them meet.
+  // Square, not rounded: wild cells tile edge to edge, and rounded corners
+  // leave a four-pointed gap of bright grass everywhere four of them meet.
+  // No longer a flat grey wash -- it is a real darker green with tall blades,
+  // which closes the "wild plot reads as a grey rectangle" gap.
   wild: painter(
     CELL,
     CELL,
     (c) => {
-      c.fillStyle = "rgba(20,60,20,.10)";
+      c.fillStyle = RAMPS.wild.top;
       c.fillRect(0, 0, CELL, CELL);
+      for (const [x, y] of [[14, 26], [34, 18], [56, 30], [22, 52], [46, 60], [64, 48]] as const) {
+        blades(c, x, y, 12, RAMPS.grass, 1.1);
+      }
     },
     0,
     0,
@@ -483,13 +421,17 @@ export const PAINTERS: Record<PainterName, Painter> = {
     16,
     9,
     (c) => {
-      rr(c, 0, 0, 3.2, 9, 1.2);
-      F(c, lin(c, 0, 0, 3, 0, [[0, "#d7a062"], [1, "#9b6a38"]]));
-      for (const y of [1.8, 5.2]) {
-        rr(c, 2.4, y, 14, 1.8, 0.9);
-        F(c, "#c98a4b");
-        rr(c, 2.4, y + 1.2, 14, 0.6, 0.3);
-        F(c, "rgba(0,0,0,.14)");
+      for (const y of [2.2, 5.4]) {
+        rr(c, 0, y, 16, 1.6, 0.8);
+        F(c, RAMPS.cream.side);
+      }
+      for (const x of [1.4, 8, 14.6]) {
+        rr(c, x - 1.5, 0.6, 3, 8, 1.2);
+        F(c, RAMPS.cream.top);
+        rr(c, x + 0.1, 0.6, 1.4, 8, 0.6);
+        F(c, RAMPS.cream.side);
+        rr(c, x - 1.5, 0.6, 3, 8, 1.2);
+        stroke(c, RAMPS.cream.rim, 0.5);
       }
     },
     0,
@@ -500,13 +442,17 @@ export const PAINTERS: Record<PainterName, Painter> = {
     9,
     16,
     (c) => {
-      rr(c, 2.9, 0, 3.2, 3.6, 1.2);
-      F(c, lin(c, 3, 0, 6, 0, [[0, "#d7a062"], [1, "#9b6a38"]]));
-      for (const x of [1.3, 5.6]) {
-        rr(c, x, 2.4, 1.8, 14, 0.9);
-        F(c, "#c98a4b");
-        rr(c, x + 1.2, 2.4, 0.6, 14, 0.3);
-        F(c, "rgba(0,0,0,.14)");
+      for (const x of [2.2, 5.4]) {
+        rr(c, x, 0, 1.6, 16, 0.8);
+        F(c, RAMPS.cream.side);
+      }
+      for (const y of [1.4, 8, 14.6]) {
+        rr(c, 0.6, y - 1.5, 8, 3, 1.2);
+        F(c, RAMPS.cream.top);
+        rr(c, 0.6, y + 0.1, 8, 1.4, 0.6);
+        F(c, RAMPS.cream.side);
+        rr(c, 0.6, y - 1.5, 8, 3, 1.2);
+        stroke(c, RAMPS.cream.rim, 0.5);
       }
     },
     0,
@@ -517,16 +463,18 @@ export const PAINTERS: Record<PainterName, Painter> = {
     16,
     9,
     (c) => {
-      for (const y of [1.8, 5.2]) {
-        rr(c, 0, y, 16, 1.8, 0.9);
-        F(c, "#c98a4b");
+      for (const y of [2.2, 5.4]) {
+        rr(c, 0, y, 16, 1.6, 0.8);
+        F(c, RAMPS.cream.top);
       }
       c.beginPath();
-      c.moveTo(1, 2.5);
-      c.lineTo(15, 6.5);
-      c.moveTo(15, 2.5);
-      c.lineTo(1, 6.5);
-      stroke(c, "#b3743a", 1.1);
+      c.moveTo(1, 6.6);
+      c.lineTo(15, 2.2);
+      stroke(c, RAMPS.cream.side, 1.4);
+      for (const x of [0.4, 14.2]) {
+        rr(c, x, 0, 1.8, 9, 0.8);
+        F(c, RAMPS.wood.side);
+      }
     },
     0,
     0,
@@ -536,16 +484,20 @@ export const PAINTERS: Record<PainterName, Painter> = {
     30,
     13,
     (c) => {
+      // Body, then the hollow, then the near lip drawn OVER the contents --
+      // without that lip the feed reads as painted onto a plank.
+      rr(c, 0, 2.6, 30, 10.4, 2.4);
+      F(c, RAMPS.wood.top);
+      rr(c, 1.4, 3.6, 27.2, 6.2, 1.6);
+      F(c, RAMPS.muck.rim);
+      rr(c, 2.2, 4, 25.6, 4.4, 1.4);
+      F(c, RAMPS.corn.top);
+      rr(c, 2.2, 6, 25.6, 2.4, 1.2);
+      F(c, RAMPS.corn.side);
+      rr(c, 0, 9.4, 30, 3.6, 1.8);
+      F(c, RAMPS.wood.side);
       rr(c, 0, 3, 30, 10, 2.2);
-      F(c, lin(c, 0, 3, 0, 13, [[0, "#b57a45"], [1, "#82552b"]]));
-      rr(c, 2, 4.6, 26, 6.4, 1.4);
-      F(c, "#5a3d22");
-      rr(c, 3, 4.2, 24, 4.8, 1.4);
-      F(c, "#f2c94c");
-      for (let i = 0; i < 10; i += 1) {
-        ell(c, 5 + i * 2.3, 5.2 + (i % 2) * 1.4, 0.8, 0.6);
-        F(c, "#e0a92c");
-      }
+      stroke(c, RAMPS.wood.rim, 0.7);
     },
     0,
     0,
@@ -555,10 +507,14 @@ export const PAINTERS: Record<PainterName, Painter> = {
     30,
     13,
     (c) => {
+      rr(c, 0, 2.6, 30, 10.4, 2.4);
+      F(c, RAMPS.wood.top);
+      rr(c, 1.4, 3.6, 27.2, 6.2, 1.6);
+      F(c, RAMPS.muck.rim);
+      rr(c, 0, 9.4, 30, 3.6, 1.8);
+      F(c, RAMPS.wood.side);
       rr(c, 0, 3, 30, 10, 2.2);
-      F(c, lin(c, 0, 3, 0, 13, [[0, "#b57a45"], [1, "#82552b"]]));
-      rr(c, 2, 4.6, 26, 6.4, 1.4);
-      F(c, "#4a3018");
+      stroke(c, RAMPS.wood.rim, 0.7);
     },
     0,
     0,
@@ -567,33 +523,43 @@ export const PAINTERS: Record<PainterName, Painter> = {
   /* ---- crops, three frames each ---- */
 
   carrot0: painter(12, 16, (c) => {
-    leaf(c, 4.6, 12.6, 1.5, 2.8, -0.5, "#6cc25f");
-    leaf(c, 7.4, 12.6, 1.5, 2.8, 0.5, "#6cc25f");
+    for (const i of [-1, 0, 1]) {
+      c.beginPath();
+      c.moveTo(6, 15);
+      c.quadraticCurveTo(6 + i * 1.2, 13, 6 + i * 1.8, 11);
+      stroke(c, i === 0 ? RAMPS.leaf.top : RAMPS.leaf.side, 1.2);
+    }
   }),
 
   carrot1: painter(12, 16, (c) => {
-    leaf(c, 3.6, 11.4, 1.7, 4, -0.6, "#5cb851");
-    leaf(c, 6, 10.4, 1.7, 4.6, 0, "#6cc25f");
-    leaf(c, 8.4, 11.4, 1.7, 4, 0.6, "#5cb851");
-    ell(c, 6, 15.2, 2.6, 1.2);
-    F(c, "#f28c28");
+    for (const i of [-1, 0, 1]) {
+      c.beginPath();
+      c.moveTo(6, 15);
+      c.quadraticCurveTo(6 + i * 2.2, 11, 6 + i * 3.2, 7.6);
+      stroke(c, i === 0 ? RAMPS.leaf.top : RAMPS.leaf.side, 1.4);
+    }
   }),
 
   carrot2,
 
   corn0: painter(12, 22, (c) => {
-    leaf(c, 4.8, 19, 1.4, 3, -0.5, "#6cc25f");
-    leaf(c, 7.2, 19, 1.4, 3, 0.5, "#6cc25f");
+    c.beginPath();
+    c.moveTo(6, 22);
+    c.lineTo(6, 16);
+    stroke(c, RAMPS.leaf.top, 1.3);
+    ell(c, 4.4, 17.2, 2, 0.9);
+    F(c, RAMPS.leaf.top);
   }),
 
   corn1: painter(12, 22, (c) => {
     c.beginPath();
     c.moveTo(6, 22);
-    c.lineTo(6, 8);
-    stroke(c, "#5aa84f", 1.3);
-    leaf(c, 3.4, 16, 1.4, 4.4, -0.9, "#6cc25f");
-    leaf(c, 8.6, 13, 1.4, 4.4, 0.9, "#5cb851");
-    leaf(c, 3.8, 11, 1.2, 3.6, -0.8, "#6cc25f");
+    c.lineTo(6, 10);
+    stroke(c, RAMPS.leaf.side, 1.5);
+    for (const [x, y, rx] of [[3.4, 15, 2.8], [8.6, 13, 2.8]] as const) {
+      ell(c, x, y, rx, 1.2);
+      F(c, RAMPS.leaf.top);
+    }
   }),
 
   corn2,
@@ -601,101 +567,57 @@ export const PAINTERS: Record<PainterName, Painter> = {
   /* ---- animals ---- */
 
   hen: painter(14, 14, (c) => {
-    ell(c, 6.4, 8.6, 5, 4.1);
-    F(c, lin(c, 0, 4, 0, 13, [[0, "#fffdf7"], [1, "#eee4d0"]]));
-    ell(c, 2, 6.4, 2.1, 2.9, 0.5);
-    F(c, "#e9dcc3");
-    ell(c, 6.2, 9.4, 3, 1.9, 0.2);
-    F(c, "#f3ecdc");
-    ell(c, 10.4, 5, 2.9, 2.9);
-    F(c, "#fffdf7");
-    for (const [x, y] of [[9.2, 2.3], [10.5, 1.6], [11.8, 2.4]] as const) {
-      ell(c, x, y, 1, 1);
-      F(c, "#e63946");
+    blob(c, 7, 8.4, 4.6, 4.2, RAMPS.chalk);
+    blob(c, 7, 4.6, 3.2, 2.9, RAMPS.chalk);
+    poly(c, [[9.6, 4.2], [12, 5], [9.6, 5.8]]);
+    F(c, RAMPS.carrot.top);
+    ell(c, 8.4, 3.9, 0.7, 0.8);
+    F(c, RAMPS.iron.rim);
+    for (const x of [6, 7.8]) {
+      ell(c, x, 1.9, 1.1, 1.2);
+      F(c, RAMPS.roof.top);
     }
-    ell(c, 11.2, 7.4, 0.8, 1.1);
-    F(c, "#e63946");
-    poly(c, [[13, 4.7], [14.2, 5.6], [13, 6.4]]);
-    F(c, "#f4a261");
-    ell(c, 11.3, 4.6, 0.5, 0.5);
-    F(c, "#2b2b2b");
-    for (const x of [4.8, 7.6]) {
-      c.beginPath();
-      c.moveTo(x, 12.4);
-      c.lineTo(x, 14);
-      c.moveTo(x - 0.9, 14);
-      c.lineTo(x + 0.9, 14);
-      stroke(c, "#f4a261", 0.7);
-    }
+    poly(c, [[6, 12.4], [5.2, 14], [7, 14]]);
+    F(c, RAMPS.carrot.side);
   }),
 
   sheep: painter(20, 16, (c) => {
-    for (const x of [4, 7.5, 11, 14]) {
-      rr(c, x, 10.8, 1.8, 5, 0.9);
-      F(c, "#4a4040");
+    for (const [x, y, r] of [[6.4, 9, 4.4], [13.4, 9, 4.4], [10, 6.4, 4.8], [10, 10.6, 4.2]] as const) {
+      ell(c, x, y, r, r * 0.86);
+      F(c, RAMPS.chalk.side);
     }
-    // Each wool clump gets its own tone plus a soft outline, so the puff reads
-    // as several curls instead of merging into one flat undefined oval.
-    const clumps = [
-      [9, 8, 8.2, 5.6, "#efe7d6"],
-      [4.6, 6, 4.1, 3.6, "#e2d9c4"],
-      [9, 4.4, 4.7, 3.6, "#fbf8f1"],
-      [13.6, 6, 4.1, 3.6, "#ece3ce"],
-    ] as const;
-    for (const [x, y, rx, ry, tone] of clumps) {
-      ell(c, x, y, rx, ry);
-      F(c, tone);
-      stroke(c, "rgba(150,132,100,.35)", 0.5);
+    for (const [x, y, r] of [[6.4, 8.2, 3.6], [13.4, 8.2, 3.6], [10, 5.6, 3.9]] as const) {
+      ell(c, x, y, r, r * 0.8);
+      F(c, RAMPS.chalk.top);
     }
-    ell(c, 9, 10.4, 6.4, 2.6);
-    F(c, "rgba(60,50,40,.09)");
-    ell(c, 16.6, 7.6, 3, 3.2);
-    F(c, "#4a4040");
-    ell(c, 14.9, 6.2, 1.5, 0.8, -0.4);
-    F(c, "#4a4040");
-    ell(c, 16.2, 4.7, 2.3, 1.6);
-    F(c, "#f6f2ea");
-    ell(c, 17.5, 7.1, 0.5, 0.5);
-    F(c, "#2b2b2b");
-    ell(c, 17.7, 6.9, 0.18, 0.18);
-    F(c, "#fff");
+    blob(c, 4.6, 5.6, 3, 2.6, { top: "#4a4640", side: "#332f2a", rim: "#1e1b18" });
+    ell(c, 3.6, 5.2, 0.6, 0.7);
+    F(c, RAMPS.iron.rim);
+    for (const x of [7, 12.4]) {
+      rr(c, x, 12.6, 1.6, 3.2, 0.7);
+      F(c, RAMPS.iron.side);
+    }
   }),
 
   cow: painter(24, 18, (c) => {
-    for (const x of [4, 7.6, 12.4, 16]) {
-      rr(c, x, 12, 2.2, 5.6, 1);
-      F(c, "#f0eae0");
-      rr(c, x, 16.4, 2.2, 1.6, 0.8);
-      F(c, "#3a2f2f");
+    blob(c, 12, 9, 8, 5.6, RAMPS.chalk);
+    for (const [x, y, r] of [[9, 7, 2.4], [15, 10.4, 1.9], [11.4, 11.4, 1.5]] as const) {
+      ell(c, x, y, r, r * 0.7);
+      F(c, "#3e3a34");
     }
-    rr(c, 2, 4, 17.5, 10, 5);
-    F(c, lin(c, 0, 4, 0, 14, [[0, "#fdfbf6"], [1, "#eae2d4"]]));
-    ell(c, 7.2, 8, 3.6, 2.9, 0.2);
-    F(c, "#3a2f2f");
-    ell(c, 13.6, 11, 2.9, 2.2, -0.3);
-    F(c, "#3a2f2f");
-    ell(c, 15.5, 6, 1.6, 1.2);
-    F(c, "#3a2f2f");
-    rr(c, 16, 5, 7.4, 7.2, 3);
-    F(c, "#fdfbf6");
-    rr(c, 18.4, 9, 5.2, 3.3, 1.6);
-    F(c, "#f2b5b5");
-    for (const x of [19.6, 21.8]) {
-      ell(c, x, 10.7, 0.45, 0.45);
-      F(c, "#c98484");
+    blob(c, 5.4, 5.6, 3.6, 3.2, RAMPS.chalk);
+    ell(c, 4.2, 6.6, 1.6, 1.2);
+    F(c, "#f2a6a0");
+    ell(c, 4.4, 4.9, 0.6, 0.7);
+    F(c, RAMPS.iron.rim);
+    for (const x of [2.8, 7.4]) {
+      poly(c, [[x, 3.2], [x - 0.6, 1.4], [x + 1.2, 2.8]]);
+      F(c, RAMPS.cream.side);
     }
-    ell(c, 16.1, 4.6, 1.7, 0.9, -0.3);
-    F(c, "#e8d9b8");
-    ell(c, 15.4, 5.8, 1.4, 0.8, 0.3);
-    F(c, "#3a2f2f");
-    ell(c, 20.4, 7.2, 0.5, 0.5);
-    F(c, "#2b2b2b");
-    ell(c, 11, 14.2, 2.4, 1.2);
-    F(c, "#f2b5b5");
-    c.beginPath();
-    c.moveTo(2.4, 6);
-    c.quadraticCurveTo(0, 8, 1.2, 11.5);
-    stroke(c, "#e0d6c6", 0.8);
+    for (const x of [8, 15]) {
+      rr(c, x, 13.6, 1.9, 4.2, 0.9);
+      F(c, "#3e3a34");
+    }
   }),
 
   /* ---- the yard ---- */
@@ -706,19 +628,19 @@ export const PAINTERS: Record<PainterName, Painter> = {
   // with a bright ridge cap between them.
   barn: painter(74, 62, (c) => {
     rr(c, 6, 58, 62, 4, 1.2);
-    F(c, "#4f3a2e");
+    F(c, RAMPS.wood.rim);
     rr(c, 7, 26, 60, 35, 3);
-    F(c, lin(c, 7, 0, 67, 0, [[0, "#e7634f"], [0.5, "#d04b3b"], [1, "#a03226"]]));
+    F(c, RAMPS.roof.top);
     for (const y of [35, 43, 51]) {
       rr(c, 7, y, 60, 0.7, 0.3);
       F(c, "rgba(80,15,8,.16)");
     }
     rr(c, 7, 26, 60, 8, 0);
-    F(c, lin(c, 0, 26, 0, 34, [[0, "rgba(40,8,4,.42)"], [1, "rgba(40,8,4,0)"]]));
+    F(c, tint(RAMPS.roof.rim, 0.3));
     rr(c, 7, 26, 60, 2.2, 0);
-    F(c, "#f7efe6");
+    F(c, RAMPS.cream.top);
     rr(c, 29, 38, 16, 23, 2);
-    F(c, lin(c, 29, 38, 29, 61, [[0, "#6b3323"], [1, "#4a2112"]]));
+    F(c, RAMPS.wood.rim);
     rr(c, 29, 38, 16, 4.5, 0);
     F(c, "rgba(0,0,0,.28)");
     c.beginPath();
@@ -731,13 +653,13 @@ export const PAINTERS: Record<PainterName, Painter> = {
     stroke(c, "#f7efe6", 1);
     for (const x of [12, 52]) {
       rr(c, x, 34, 10, 8, 1.5);
-      F(c, "#f7efe6");
+      F(c, RAMPS.cream.top);
       glass(c, x + 1.2, 35.2, 7.6, 5.6);
       rr(c, x, 42, 10, 1.6, 0.6);
       F(c, "rgba(40,8,4,.28)");
     }
     poly(c, [[1, 28], [37, 3], [73, 28]]);
-    F(c, lin(c, 0, 3, 0, 28, [[0, "#846c6c"], [1, "#4a3737"]]));
+    F(c, RAMPS.cream.top);
     poly(c, [[1, 28], [37, 3], [37, 28]]);
     F(c, "rgba(255,240,230,.12)");
     poly(c, [[37, 3], [73, 28], [37, 28]]);
@@ -751,11 +673,11 @@ export const PAINTERS: Record<PainterName, Painter> = {
     poly(c, [[35.4, 3.8], [37, 2.4], [38.6, 3.8], [37, 5]]);
     F(c, "rgba(255,255,255,.4)");
     rr(c, 0, 26.5, 74, 3, 1.4);
-    F(c, lin(c, 0, 26.5, 0, 29.5, [[0, "#6e5252"], [1, "#4a3636"]]));
+    F(c, RAMPS.cream.side);
     rr(c, 0, 29.5, 74, 1.4, 0.7);
     F(c, "rgba(0,0,0,.22)");
     rr(c, 33, 12, 8, 7, 1.5);
-    F(c, "#f7efe6");
+    F(c, RAMPS.cream.top);
     glass(c, 34.2, 13.2, 5.6, 4.6);
   }),
 
@@ -781,15 +703,17 @@ export const PAINTERS: Record<PainterName, Painter> = {
     10,
     (c) => {
       rr(c, 0, 0, 14, 10, 2.2);
-      F(c, lin(c, 0, 0, 0, 10, [[0, "#f0cc62"], [1, "#d0a83c"]]));
-      for (const y of [2.5, 5, 7.5]) {
+      F(c, RAMPS.straw.top);
+      rr(c, 0, 5.4, 14, 4.6, 2.2);
+      F(c, RAMPS.straw.side);
+      for (const y of [2.6, 5.2, 7.8]) {
         c.beginPath();
-        c.moveTo(1, y);
-        c.lineTo(13, y);
-        stroke(c, "rgba(150,110,30,.35)", 0.6);
+        c.moveTo(1.2, y);
+        c.lineTo(12.8, y);
+        stroke(c, RAMPS.straw.rim, 0.55);
       }
       rr(c, 0, 0, 14, 10, 2.2);
-      stroke(c, "#b98f2c", 0.6);
+      stroke(c, RAMPS.straw.rim, 0.7);
     },
     0,
     0,
@@ -800,13 +724,17 @@ export const PAINTERS: Record<PainterName, Painter> = {
     13,
     (c) => {
       rr(c, 0, 0, 10, 13, 3);
-      F(c, lin(c, 0, 0, 10, 0, [[0, "#b17a46"], [1, "#6e4421"]]));
+      F(c, RAMPS.wood.side);
+      rr(c, 5.4, 0, 4.6, 13, 3);
+      F(c, RAMPS.wood.rim);
       for (const y of [3, 9.4]) {
         rr(c, 0, y, 10, 1.4, 0.7);
-        F(c, "#4f321a");
+        F(c, RAMPS.iron.side);
       }
       ell(c, 5, 1.6, 4.4, 1.5);
-      F(c, "#c4915b");
+      F(c, RAMPS.wood.top);
+      rr(c, 0, 0, 10, 13, 3);
+      stroke(c, RAMPS.wood.rim, 0.6);
     },
     0,
     0,
@@ -814,14 +742,18 @@ export const PAINTERS: Record<PainterName, Painter> = {
 
   sign: painter(30, 24, (c) => {
     rr(c, 13.2, 9, 3.6, 15, 1.2);
-    F(c, lin(c, 13, 0, 17, 0, [[0, "#b07a45"], [1, "#7d5028"]]));
+    F(c, RAMPS.wood.side);
+    rr(c, 15, 9, 1.8, 15, 0.8);
+    F(c, RAMPS.wood.rim);
     rr(c, 0, 0, 30, 13, 2.6);
-    F(c, lin(c, 0, 0, 0, 13, [[0, "#f0cb84"], [1, "#d1a35b"]]));
+    F(c, RAMPS.wood.top);
+    rr(c, 0, 8.4, 30, 4.6, 2.6);
+    F(c, RAMPS.wood.side);
     rr(c, 0, 0, 30, 13, 2.6);
-    stroke(c, "#8c6432", 0.9);
-    for (const x of [2.6, 27.4]) {
-      ell(c, x, 2.6, 0.7, 0.7);
-      F(c, "#7a5230");
+    stroke(c, RAMPS.wood.rim, 0.9);
+    for (const y of [3.4, 6.2]) {
+      rr(c, 4, y, 22, 1.4, 0.7);
+      F(c, RAMPS.wood.rim);
     }
   }),
 
@@ -1027,7 +959,7 @@ export function bakeGrass(scene: Phaser.Scene): void {
   if (!texture) return;
   const c = texture.context;
   c.scale(GRASS_PX, GRASS_PX);
-  c.fillStyle = "#86c96e";
+  c.fillStyle = RAMPS.grass.top;
   c.fillRect(0, 0, units, units);
   const r = seededRandom(9001);
   // Every mark is drawn nine times, once per neighbouring tile, so a mark that
@@ -1092,7 +1024,7 @@ export function bakeGrass(scene: Phaser.Scene): void {
         c.beginPath();
         c.moveTo(x + x0, y);
         c.quadraticCurveTo(x + x0, y - 1.6, x + x1, y - 3.2);
-        stroke(c, "rgba(70,150,60,.55)", 0.5);
+        stroke(c, tint(RAMPS.grass.side, 0.62), 0.5);
       }
     });
   }

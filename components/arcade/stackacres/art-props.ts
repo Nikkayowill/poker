@@ -1,6 +1,7 @@
 // No Phaser here at all, not even a type: these are plain Canvas2D painters
 // (see the note at the top of stackacres-art.ts).
-import { ell, F, leaf, lin, litMass, painter, poly, rad, rr, stroke, type Ctx, type Painter } from "./art-kit";
+import { ell, F, leaf, lin, painter, poly, rad, rr, stroke, type Ctx, type Painter } from "./art-kit";
+import { RAMPS } from "./art-palette";
 
 /**
  * The farm's props: the windmill and its blades, the well, the clutter by
@@ -43,16 +44,15 @@ const TAU = Math.PI * 2;
 /** A wooden member lit from the left: pale on its left edge, dark on its right. */
 function timber(c: Ctx, x: number, y: number, w: number, h: number, r: number): void {
   rr(c, x, y, w, h, r);
-  F(c, lin(c, x, 0, x + w, 0, [[0, "#d9a35f"], [0.5, "#b8813f"], [1, "#6b4120"]]));
+  F(c, RAMPS.wood.top);
 }
 
 /** A field stone: grey mass lit upper-left, a soft outline. */
 function stone(c: Ctx, x: number, y: number, w: number, h: number): void {
   const r = Math.min(w, h) * 0.42;
   rr(c, x, y, w, h, r);
-  F(c, lin(c, x, y, x + w, y + h, [[0, "#dde3e6"], [0.5, "#a4afb6"], [1, "#5a656c"]]));
+  F(c, RAMPS.metal.top);
   rr(c, x, y, w, h, r);
-  litMass(c, x + w / 2, y + h / 2, w / 2, h / 2, "rgba(20,30,40,.4)", "rgba(255,255,255,.42)");
   rr(c, x, y, w, h, r);
   stroke(c, "rgba(30,40,50,.45)", 0.5);
 }
@@ -106,7 +106,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
   windmill: painter(30, 70, (c) => {
     const tower = () => poly(c, [[9.5, 15], [20.5, 15], [27, 70], [3, 70]]);
     tower();
-    F(c, lin(c, 3, 0, 27, 0, [[0, "#f8f0e3"], [0.42, "#e7dac6"], [0.78, "#bfae95"], [1, "#8e7c65"]]));
+    F(c, RAMPS.wood.top);
     tower();
     c.save();
     c.clip();
@@ -135,11 +135,11 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     rr(c, 12.6, 30, 4.8, 6.2, 1.6);
     F(c, "#5e4030");
     rr(c, 13.2, 30.6, 3.6, 5, 1.2);
-    F(c, lin(c, 0, 30, 0, 36, [[0, "#c8ecfb"], [1, "#5b9dc2"]]));
+    F(c, RAMPS.water.top);
     rr(c, 11.4, 55.5, 7.2, 14.5, 3.4);
     F(c, "#5e4030");
     rr(c, 12.1, 56.2, 5.8, 13.8, 2.8);
-    F(c, lin(c, 0, 56, 0, 70, [[0, "#a06f3e"], [1, "#5f3a1c"]]));
+    F(c, RAMPS.soil.side);
     for (const x of [14, 16]) {
       c.beginPath();
       c.moveTo(x, 57.4);
@@ -156,7 +156,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     F(c, "#d9b25a");
     // The hub boss the sails pin to.
     ell(c, 15, 14, 2.7, 2.7);
-    F(c, rad(c, 14.2, 13.2, 0, 3.2, [[0, "#8a6a4a"], [1, "#3f2a1c"]]));
+    F(c, RAMPS.hide.top);
   }),
 
   // Four sails on a hub, anchored at the hub. Each is a spar with a canvas
@@ -172,7 +172,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
         c.save();
         c.rotate((k * Math.PI) / 2);
         poly(c, [[0.8, -6.5], [6.4, -7.6], [5.8, -20.6], [0.8, -21.2]]);
-        F(c, lin(c, 0, 0, 7, 0, [[0, "#fbf3e1"], [1, "#d6c39c"]]));
+        F(c, RAMPS.path.top);
         for (const y of [-9.6, -12.6, -15.6, -18.6]) {
           c.beginPath();
           c.moveTo(0.8, y);
@@ -184,11 +184,11 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
         c.lineTo(5.8, -20.6);
         stroke(c, "#a8763f", 0.6);
         rr(c, -1, -21.6, 2, 22.6, 1);
-        F(c, lin(c, -1, 0, 1, 0, [[0, "#d8a05a"], [0.5, "#a86f38"], [1, "#6b4120"]]));
+        F(c, RAMPS.wood.top);
         c.restore();
       }
       ell(c, 0, 0, 3.5, 3.5);
-      F(c, rad(c, -1.1, -1.1, 0, 4.2, [[0, "#e4bd7c"], [0.6, "#a06f3c"], [1, "#5a3618"]]));
+      F(c, RAMPS.cream.rim);
       ell(c, 0, 0, 1.1, 1.1);
       F(c, "#3d2612");
       c.restore();
@@ -202,19 +202,19 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
   well: painter(28, 32, (c) => {
     for (const x of [4.4, 21]) timber(c, x, 10, 2.6, 15, 1);
     rr(c, 3.4, 11.4, 21.2, 1.8, 0.9);
-    F(c, lin(c, 0, 11, 0, 13.4, [[0, "#cf9c60"], [1, "#7d5028"]]));
+    F(c, RAMPS.soil.top);
     c.beginPath();
     c.moveTo(14, 13);
     c.lineTo(14, 16.4);
     stroke(c, "#8a6a44", 0.55);
     rr(c, 11.4, 16, 5.2, 4.6, 1.2);
-    F(c, lin(c, 11.4, 0, 16.6, 0, [[0, "#c39258"], [1, "#6f4520"]]));
+    F(c, RAMPS.soil.top);
     rr(c, 11.4, 16, 5.2, 1.2, 0.6);
     F(c, "rgba(0,0,0,.22)");
     // The drum, then its stones and the shade under the rim.
     const drum = () => rr(c, 3, 19.6, 22, 12.4, 6);
     drum();
-    F(c, lin(c, 3, 0, 25, 0, [[0, "#d1d7da"], [0.45, "#a5afb5"], [0.8, "#6f7a80"], [1, "#4f585e"]]));
+    F(c, RAMPS.metal.top);
     drum();
     c.save();
     c.clip();
@@ -240,11 +240,11 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     c.restore();
     // The rim, the dark mouth and a glint of water down it.
     ell(c, 14, 20, 11.2, 3.7);
-    F(c, lin(c, 3, 0, 25, 0, [[0, "#e4e9eb"], [1, "#8d979d"]]));
+    F(c, RAMPS.metal.top);
     ell(c, 14, 20.2, 8.7, 2.6);
     F(c, "#23262b");
     ell(c, 14, 20.6, 7.2, 1.8);
-    F(c, rad(c, 14, 20.6, 0, 7, [[0, "#3f6f88"], [1, "#1c3140"]]));
+    F(c, RAMPS.metal.rim);
     ell(c, 11.4, 20.2, 2.2, 0.5);
     F(c, "rgba(255,255,255,.35)");
     // The roof last: fascia, then the shingled pitch.
@@ -260,7 +260,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     ell(c, 6, 13.6, 4.3, 4.3);
     F(c, "#3b3230");
     ell(c, 6, 13.6, 3.2, 3.2);
-    F(c, lin(c, 3, 10, 9, 17, [[0, "#cf9c60"], [1, "#7d5028"]]));
+    F(c, RAMPS.soil.top);
     for (let k = 0; k < 3; k += 1) {
       const a = (k / 3) * Math.PI;
       c.beginPath();
@@ -274,7 +274,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     F(c, "rgba(255,255,255,.3)");
     // The tub, wider at the top, its planks and its iron band.
     poly(c, [[6, 4.4], [24.6, 4.4], [22.6, 13], [8.6, 13]]);
-    F(c, lin(c, 6, 0, 24.6, 0, [[0, "#dba660"], [0.55, "#b57f42"], [1, "#7c4f26"]]));
+    F(c, RAMPS.wood.top);
     for (const y of [7.3, 10.2]) {
       c.beginPath();
       c.moveTo(7.2, y);
@@ -284,10 +284,10 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     rr(c, 8.3, 12.1, 14.6, 1.2, 0.6);
     F(c, "rgba(55,45,40,.6)");
     rr(c, 5.4, 3.4, 19.8, 1.8, 0.9);
-    F(c, lin(c, 0, 3.4, 0, 5.2, [[0, "#e9bd7c"], [1, "#b57f42"]]));
+    F(c, RAMPS.wood.top);
     // Hay heaped over the top board.
     ell(c, 15.2, 3.4, 8.6, 2.7);
-    F(c, lin(c, 0, 0.8, 0, 6, [[0, "#f6d56d"], [1, "#d3a63a"]]));
+    F(c, RAMPS.gold.top);
     ell(c, 12.6, 2.5, 3.4, 1.3);
     F(c, "rgba(255,246,205,.5)");
     for (const [x0, x1, y] of [[9, 12, 4.2], [14, 17.5, 3.2], [18, 21.5, 4.4]] as const) {
@@ -310,9 +310,9 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
   // A slatted crate with its lid face catching the sun.
   crate: painter(16, 14, (c) => {
     poly(c, [[2.2, 0.5], [13.8, 0.5], [15.5, 3.6], [0.5, 3.6]]);
-    F(c, lin(c, 0, 0, 0, 4, [[0, "#efca90"], [1, "#d9a866"]]));
+    F(c, RAMPS.path.top);
     rr(c, 0.5, 3.6, 15, 10.2, 1);
-    F(c, lin(c, 0.5, 0, 15.5, 0, [[0, "#d09c5c"], [0.6, "#b37d40"], [1, "#8a5a2c"]]));
+    F(c, RAMPS.wood.top);
     for (const x of [5.4, 10.3]) {
       c.beginPath();
       c.moveTo(x, 4.6);
@@ -347,9 +347,9 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     F(c, "#4e2f14");
     const log = (x: number, y: number, r: number) => {
       ell(c, x, y, r, r);
-      F(c, lin(c, x - r, y - r, x + r, y + r, [[0, "#ad7343"], [1, "#5a3618"]]));
+      F(c, RAMPS.muck.top);
       ell(c, x, y, r * 0.74, r * 0.74);
-      F(c, lin(c, x - r, y - r, x + r, y + r, [[0, "#f3dcab"], [1, "#c59c66"]]));
+      F(c, RAMPS.path.top);
       ell(c, x, y, r * 0.46, r * 0.46);
       stroke(c, "rgba(140,100,50,.5)", 0.4);
       ell(c, x, y, r * 0.2, r * 0.2);
@@ -376,7 +376,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
       c.closePath();
     };
     box();
-    F(c, lin(c, 1, 0, 11, 0, [[0, "#86a9c9"], [0.5, "#5b86ad"], [1, "#35577a"]]));
+    F(c, RAMPS.metal.side);
     box();
     c.save();
     c.clip();
@@ -410,7 +410,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
           ? [[0.6, y + h / 2], [3.4, y], [16.6, y], [16.6, y + h], [3.4, y + h]]
           : [[17.4, y + h / 2], [14.6, y], [1.4, y], [1.4, y + h], [14.6, y + h]];
       poly(c, pts);
-      F(c, lin(c, 0, y, 0, y + h, [[0, "#f2cf8a"], [1, "#cf9f56"]]));
+      F(c, RAMPS.path.top);
       poly(c, pts);
       stroke(c, "#8c6432", 0.7);
       c.beginPath();
@@ -432,15 +432,15 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     ell(c, 4.5, 6.6, 4.5, 4.5);
     F(c, rad(c, 4.5, 6.6, 0, 4.5, [[0, "rgba(255,214,120,.34)"], [1, "rgba(255,214,120,0)"]]));
     rr(c, 2.2, 30.4, 4.6, 3.6, 1.2);
-    F(c, lin(c, 2.2, 0, 6.8, 0, [[0, "#5e5e6c"], [1, "#2a2a32"]]));
+    F(c, RAMPS.metal.rim);
     rr(c, 3, 28.6, 3, 2.4, 0.8);
     F(c, "#3c3c46");
     rr(c, 3.7, 10, 1.6, 19.5, 0.8);
-    F(c, lin(c, 3.7, 0, 5.3, 0, [[0, "#70707e"], [0.5, "#3a3a44"], [1, "#20202a"]]));
+    F(c, RAMPS.metal.rim);
     rr(c, 2.8, 10.2, 3.4, 1.2, 0.6);
     F(c, "#3a3a44");
     rr(c, 1.6, 3.2, 5.8, 7.2, 1.2);
-    F(c, lin(c, 1.6, 3, 7.4, 10, [[0, "#fff3c8"], [0.5, "#ffd76e"], [1, "#e89b34"]]));
+    F(c, RAMPS.gold.top);
     rr(c, 2.3, 3.9, 1.6, 4.6, 0.7);
     F(c, "rgba(255,255,255,.45)");
     rr(c, 1.6, 3.2, 5.8, 7.2, 1.2);
@@ -450,7 +450,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     c.lineTo(4.5, 10.2);
     stroke(c, "rgba(42,42,50,.55)", 0.45, "butt");
     poly(c, [[0.8, 3.4], [4.5, 0.6], [8.2, 3.4]]);
-    F(c, lin(c, 0, 0.6, 0, 3.4, [[0, "#6a6a78"], [1, "#2a2a32"]]));
+    F(c, RAMPS.metal.rim);
     ell(c, 4.5, 0.7, 0.7, 0.7);
     F(c, "#70707e");
   }),
@@ -460,7 +460,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     // A low mound of turned earth, not a trough: lit along its top lip,
     // falling into shade at the bottom with no hard edge there.
     ell(c, 14, 9.2, 13.4, 2.8);
-    F(c, lin(c, 0, 6.4, 0, 12, [[0, "#a5734a"], [0.55, "#7d4f27"], [1, "#4f2f14"]]));
+    F(c, RAMPS.muck.top);
     ell(c, 14, 8.2, 12.4, 1.6);
     F(c, "rgba(255,225,180,.24)");
     for (let i = 0; i < 8; i += 1) {
@@ -521,7 +521,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     rr(c, 11.6, 13.4, 5.8, 4.4, 1.8);
     F(c, "#3e6bb0");
     rr(c, 5.6, 12.6, 8.8, 12, 3);
-    F(c, lin(c, 5.6, 0, 14.4, 0, [[0, "#5f8fd9"], [0.6, "#4372bd"], [1, "#2b4f8a"]]));
+    F(c, RAMPS.water.top);
     for (const x of [8.2, 11.8]) {
       c.beginPath();
       c.moveTo(x, 13.2);
@@ -547,9 +547,8 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     rr(c, 8.4, 12, 3.2, 1.2, 0.6);
     F(c, "#c9443c");
     ell(c, 10, 8.4, 4.2, 4.4);
-    F(c, lin(c, 6, 4, 14, 13, [[0, "#f2dcac"], [1, "#c9a76a"]]));
+    F(c, RAMPS.path.top);
     ell(c, 10, 8.4, 4.2, 4.4);
-    litMass(c, 10, 8.4, 4.2, 4.4, "rgba(90,60,20,.3)", "rgba(255,255,255,.35)");
     for (const x of [8.5, 11.5]) {
       ell(c, x, 8.2, 0.45, 0.45);
       F(c, "#3d2a14");
@@ -558,9 +557,9 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     c.arc(10, 9.4, 1.5, Math.PI * 0.2, Math.PI * 0.8);
     stroke(c, "#3d2a14", 0.45);
     ell(c, 10, 5.4, 7.2, 1.8);
-    F(c, lin(c, 3, 0, 17, 0, [[0, "#e9c66c"], [1, "#a3803a"]]));
+    F(c, RAMPS.path.side);
     rr(c, 6.2, 0.8, 7.6, 5, 2.4);
-    F(c, lin(c, 6.2, 0, 13.8, 0, [[0, "#ecce74"], [0.6, "#cfa84c"], [1, "#9a7a32"]]));
+    F(c, RAMPS.path.side);
     rr(c, 6.2, 3.6, 7.6, 1.3, 0.6);
     F(c, "#c9443c");
     ell(c, 10, 5.4, 7.2, 1.8);
@@ -574,7 +573,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
   // A fallen log lying left to right with its sawn end toward the light.
   log: painter(22, 10, (c) => {
     rr(c, 0, 2.2, 19.5, 7.3, 3.6);
-    F(c, lin(c, 0, 2, 0, 9.5, [[0, "#ad7343"], [0.5, "#7d4f27"], [1, "#4b2d15"]]));
+    F(c, RAMPS.muck.top);
     for (const y of [4.3, 6.1, 7.9]) {
       c.beginPath();
       c.moveTo(2, y);
@@ -590,7 +589,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     ell(c, 12, 2.9, 3.6, 1);
     F(c, "rgba(90,150,55,.6)");
     ell(c, 19, 5.9, 2.8, 3.6);
-    F(c, lin(c, 16, 2, 22, 9, [[0, "#eccca0"], [1, "#b98a50"]]));
+    F(c, RAMPS.wood.top);
     ell(c, 19, 5.9, 1.7, 2.2);
     stroke(c, "rgba(140,100,50,.5)", 0.45);
     ell(c, 19, 5.9, 0.7, 0.9);
@@ -603,12 +602,11 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
   mushroom: painter(12, 10, (c) => {
     const shroom = (x: number, base: number, r: number, tall: number) => {
       rr(c, x - r * 0.42, base - tall, r * 0.84, tall, r * 0.3);
-      F(c, lin(c, x - r * 0.42, 0, x + r * 0.42, 0, [[0, "#fbf3e4"], [1, "#c9b591"]]));
+      F(c, RAMPS.path.top);
       const cy = base - tall + r * 0.1;
       ell(c, x, cy, r, r * 0.62);
-      F(c, lin(c, x - r, cy - r, x + r, cy + r, [[0, "#f26244"], [0.5, "#d63b26"], [1, "#8e1e12"]]));
+      F(c, RAMPS.roof.top);
       ell(c, x, cy, r, r * 0.62);
-      litMass(c, x, cy, r, r * 0.62, "rgba(80,10,5,.32)", "rgba(255,255,255,.28)");
       for (const [dx, dy, dr] of [[-0.45, -0.15, 0.22], [0.25, -0.4, 0.2], [0.5, 0.12, 0.16]] as const) {
         ell(c, x + dx * r, cy + dy * r, dr * r, dr * r * 0.8);
         F(c, "#fff3e6");
@@ -625,9 +623,8 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     const shape = () =>
       poly(c, [[1.5, 14.5], [2.5, 8], [6.5, 3], [13, 1], [20, 2.4], [24.5, 7], [25, 13], [22, 17], [6, 17.4]]);
     shape();
-    F(c, lin(c, 3, 2, 24, 17, [[0, "#d3dade"], [0.45, "#a0abb2"], [0.8, "#66727a"], [1, "#48525a"]]));
+    F(c, RAMPS.metal.top);
     shape();
-    litMass(c, 13, 9.5, 12, 8, "rgba(20,30,40,.42)", "rgba(255,255,255,.32)");
     c.beginPath();
     c.moveTo(15, 3.5);
     c.lineTo(13.5, 7.5);

@@ -1,6 +1,7 @@
 // Types only: the Phaser runtime must not enter an art module (see the note
 // at the top of stackacres-art.ts).
 import type * as Phaser from "phaser";
+import { ISO_K, projectedBounds } from "@/lib/stackacres/iso";
 import { distanceToPath, pathBounds, type PathSpec } from "@/lib/stackacres/paths";
 import { powerOfTwoCeil, seededRandom, type WorldPoint } from "@/lib/stackacres/world";
 import { ART_FRAME, GRASS_PX, ell, F, lin, type Ctx } from "./art-kit";
@@ -12,7 +13,11 @@ import { ART_FRAME, GRASS_PX, ell, F, lin, type Ctx } from "./art-kit";
  * to tile it from, so each one is baked ONCE into its own texture at
  * GRASS_PX (4) device pixels per unit -- the grass tile's density, since a
  * path is only ever seen as ground -- padded to a power of two like every
- * other texture here, and placed at its world bbox at 1/GRASS_PX scale.
+ * other texture here, and placed at its PROJECTED bbox at 1/GRASS_PX scale.
+ * The bake itself happens in the camera's sheared space (see
+ * `bakePathTexture`'s own header), not in the path's flat top-down layout,
+ * so the strip agrees with the diamond-tiled ground it sits on rather than
+ * being a flat sticker laid over a tilted world.
  *
  * The look is FarmVille's: a warm tan strip with a soft damp rim, a worn
  * lighter centre, dark grass lapping over both edges, and a row of round
@@ -364,18 +369,43 @@ function paintStones(c: Ctx, spec: PathSpec, curve: readonly CurvePoint[], r: ()
  * Bakes one path into a power-of-two texture and returns where to place it.
  * `under` is every path drawn before this one that it may branch off; their
  * bodies are repainted around this path's start so no rim lands on them.
- * Returns null only if the bake would exceed 2048 px a side, which
+ * Returns null only if the bake would exceed 4096 px a side, which
  * paths.test.ts rules out for FARM_PATHS.
+ *
+ * The canvas is baked directly in the isometric camera's SHEARED space, not
+ * in the path's own flat top-down coordinates. Every draw call below still
+ * hands in plain world (x, y) -- the curve, the stones, the tufts, all of it
+ * -- exactly as before; what changed is a single `c.transform` inserted
+ * ahead of them that carries `isoProject`'s own shear (see ./iso.ts) into
+ * the canvas's transform matrix, so the rasterizer projects each shape as it
+ * draws it. That is what makes this path agree with the diamond-tiled ground
+ * and every other object in the scene instead of sitting on top of them as a
+ * flat, un-tilted sticker -- the flat bake was what read as the path
+ * "wandering": its screen-space angles didn't correspond to the world's real
+ * (sheared) directions at all, most visibly wherever the polyline turned.
+ * `pathBounds`' own padding maths (world-space, unaffected by this) stays
+ * valid under the shear: an offset of at most `pad` along a unit normal
+ * changes world x and y by at most `pad` each, and isoProject is linear, so
+ * bounding the pre-shear rect is still a safe bound after it.
+ *
+ * The projected footprint of a padded world rect can be noticeably bigger
+ * than the rect itself -- isoProject's matrix has singular values sqrt(2)
+ * and 1/sqrt(2), so a diagonal running close to its stretched eigen-
+ * direction (world (1,-1)) can grow by up to sqrt(2)x on screen. `road`'s
+ * own north-east curve runs close to exactly that direction, which is why
+ * the cap here is 4096 rather than the 2048 the flat bake got away with --
+ * comfortably inside what WebGL guarantees, and still a fraction of what any
+ * of this scene's other baked textures cost.
  */
 export function bakePathTexture(scene: Phaser.Scene, spec: PathSpec, under: readonly PathSpec[]): PathBake | null {
   const key = pathTextureKey(spec);
-  const box = pathBounds(spec);
+  const box = projectedBounds(pathBounds(spec));
   if (scene.textures.exists(key)) return { key, x: box.x, y: box.y };
   const wpx = Math.ceil(box.width * GRASS_PX);
   const hpx = Math.ceil(box.height * GRASS_PX);
   const texW = powerOfTwoCeil(wpx);
   const texH = powerOfTwoCeil(hpx);
-  if (texW > 2048 || texH > 2048) {
+  if (texW > 4096 || texH > 4096) {
     console.warn(`stackacres: path ${spec.key} would bake at ${texW}x${texH}; skipped`);
     return null;
   }
@@ -385,6 +415,11 @@ export function bakePathTexture(scene: Phaser.Scene, spec: PathSpec, under: read
   c.save();
   c.scale(GRASS_PX, GRASS_PX);
   c.translate(-box.x, -box.y);
+  // isoProject(x, y) = ((x - y) * ISO_K, (x + y) * ISO_K / 2) -- the same
+  // matrix, applied to the canvas's transform instead of to each point by
+  // hand, so every subsequent draw call below (still expressed in plain
+  // world coordinates) lands where isoProject would put it.
+  c.transform(ISO_K, ISO_K / 2, -ISO_K, ISO_K / 2, 0, 0);
 
   const curve = pathCurve(spec);
   const clear = (x: number, y: number) => under.every((u) => distanceToPath(x, y, u) >= u.width / 2 + 3);

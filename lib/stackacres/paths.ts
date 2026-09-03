@@ -22,7 +22,7 @@ import type { WorldPoint, WorldRect } from "./world";
 export interface PathSpec {
   /** Texture key suffix and the seed for this path's wobble. */
   key: string;
-  /** Body width in world units, 10..20. */
+  /** Body width in world units, 10..24. */
   width: number;
   /** The polyline, in world units. The renderer smooths it through the
    *  midpoints of its segments, so a vertex is a control point, not a place
@@ -50,16 +50,18 @@ export const PATH_CLEARANCE = 6;
  *
  * `lane`: out of the barn door, a short leg south, then west and down the
  * verge between the plots and the woods, ending where the mailbox will stand.
- * At x 50 its body spans 43..57 and its damp rim 40..60: clear of the plot
+ * At x 50 its body spans 40..60 and its damp rim 35..65: clear of the plot
  * square at 64, with the lamp posts standing on its west verge.
  *
  * `road`: from the lane's corner east along the front of the barn yard at
- * y 46 (body 38..54; the barn's feet are on 34), then curving north-east out
+ * y 46 (body 34..58; the barn's feet are on 34), then curving north-east out
  * of the home frame, so the map invites a pan. It starts inside the lane's
  * body so the two read as one T-junction, not two strips near each other.
+ * Widest of the six -- it is the road, not a path -- so a district reached
+ * by it reads as somewhere worth a road rather than a track.
  *
  * `track`: the way out of the farm, forking off the lane's corner north-west
- * into the woods. Narrower; a track, not a road.
+ * into the woods. Narrower than the road and the lane; a track, not a road.
  *
  * `spur`: a few steps west off the lane to the dock on the pond (see
  * ./water.ts): it starts inside the lane's body and ends on the sand beside
@@ -73,7 +75,7 @@ export const PATH_CLEARANCE = 6;
 export const FARM_PATHS: readonly PathSpec[] = [
   {
     key: "lane",
-    width: 14,
+    width: 18,
     points: [
       { x: 108, y: 36 },
       { x: 108, y: 50 },
@@ -87,7 +89,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
   },
   {
     key: "road",
-    width: 16,
+    width: 20,
     points: [
       { x: 108, y: 46 },
       { x: 150, y: 47 },
@@ -102,7 +104,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
   },
   {
     key: "track",
-    width: 12,
+    width: 15,
     points: [
       { x: 60, y: 46 },
       { x: 20, y: -14 },
@@ -143,12 +145,18 @@ export const FARM_PATHS: readonly PathSpec[] = [
    */
   {
     // Out of the lane's end at the mailbox, south into the Long Meadow.
-    // Starts at y 394 (the lane's body runs to 402) and never touches the
-    // plot square, which ends at y 384.
+    // Starts exactly at y 402, the lane's own last vertex, rather than a few
+    // units short of it: that is what buys this connector's body room to be
+    // as wide as the lane's -- starting at the old y 394 left only 10 units
+    // to the plot square's edge at y 384, which caps the width the plot-
+    // square-clearance test allows well below a road's. Starting at the
+    // lane's exact end instead of just before it costs nothing (the curve
+    // still smooths through it the same way every other junction here does)
+    // and buys back the other 8.
     key: "meadowLane",
-    width: 12,
+    width: 18,
     points: [
-      { x: 50, y: 394 },
+      { x: 50, y: 402 },
       { x: 56, y: 460 },
       { x: 78, y: 520 },
       { x: 120, y: 566 },
@@ -162,7 +170,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
     // leg is deliberately left running off the map: a world that visibly
     // continues past its last destination is the point of an open map.
     key: "oxRoad",
-    width: 14,
+    width: 20,
     points: [
       { x: 426, y: 45 },
       { x: 470, y: 70 },

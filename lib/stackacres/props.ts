@@ -14,7 +14,7 @@
  * the same fixed geometry -- the plot square at x 64..384, y 64..384, the
  * barn's feet on y 34 (barn x 71..145, silo 143..165, hay 166..188 at
  * y 23..33, barrel 60..70 at y 20..33), the road centred on y 46 (body
- * 38..54, damp rim to ~35), the lane at x 50 (body 43..57), the track
+ * 36..56, damp rim to ~33), the lane at x 50 (body 41..59), the track
  * leaving (60,46) north-west and the pond at x -84..20, y 80..160 -- and
  * props.test.ts is what holds them to it.
  *
@@ -57,11 +57,14 @@ export const YARD_PROPS: readonly PropPlacement[] = [
   { kind: "windmill", x: 330, y: 28 },
 
   // Clutter east of the silo and the hay, against the road's north rim.
+  // The second crate and the wheelbarrow sit a few units further off the
+  // road than the rest of the cluster -- widening the road (2026-09-03,
+  // see lib/stackacres/paths.ts) pushed its rim out from under them.
   { kind: "crate", x: 200, y: 26 },
-  { kind: "crate", x: 211, y: 31 },
+  { kind: "crate", x: 211, y: 24 },
   { kind: "logPile", x: 182, y: 2 },
   { kind: "well", x: 238, y: 30 },
-  { kind: "wheelbarrow", x: 284, y: 31 },
+  { kind: "wheelbarrow", x: 284, y: 24 },
   { kind: "flowerBed", x: 270, y: 6 },
   { kind: "flowerBed", x: 302, y: 6 },
 
@@ -69,10 +72,13 @@ export const YARD_PROPS: readonly PropPlacement[] = [
   { kind: "signpost", x: 38, y: 42 },
 
   // Down the lane's west verge, on the stone line, ending at the mailbox.
-  { kind: "lampPost", x: 40, y: 80 },
-  { kind: "lampPost", x: 40, y: 190 },
-  { kind: "lampPost", x: 40, y: 300 },
-  { kind: "mailbox", x: 39, y: 404 },
+  // A little further off the centreline than the lane's own doc comment
+  // above once had them (2026-09-03: widening the lane pushed its body out
+  // from under the old x 40/39).
+  { kind: "lampPost", x: 38, y: 80 },
+  { kind: "lampPost", x: 38, y: 190 },
+  { kind: "lampPost", x: 38, y: 300 },
+  { kind: "mailbox", x: 36, y: 404 },
 
   // Field wall north of the yard: three broken lengths, not a fence line.
   { kind: "stoneWall", x: 176, y: -46 },

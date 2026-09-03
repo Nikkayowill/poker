@@ -54,7 +54,10 @@ export function StackAcresPlayScreen({ onStart }: StackAcresPlayScreenProps) {
       <div className="sa-play-content">
         <h1 className="sr-only">StackAcres</h1>
         <StackAcresLogo className="sa-play-logo" aria-hidden="true" />
-        <p className="sa-play-subtitle">Build your farm, grow your harvest</p>
+        <p className="sa-play-subtitle">
+          After a long grind at the tables, put your gold to work. Build a
+          farm and watch it grow.
+        </p>
 
         <div className="sa-play-prompt">
           <span className="sa-play-text">Tap to play</span>

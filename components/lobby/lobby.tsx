@@ -386,35 +386,35 @@ export function Lobby({
               Named StackAcres now, not "StackChips Homestead" -- Kayo's
               call, a name that reads as its own game on the floor rather
               than a StackChips sub-page (components/brand/stackacres-logo.
-              tsx has the full reasoning). The route/module/CSS-class name
-              is still "homestead" throughout -- a display rename, not a
-              plumbing one; see that file's own doc comment before
-              renaming any of that. Locked-by-default: `homesteadAccess` is
+              tsx has the full reasoning). The route, modules and CSS
+              classes were renamed to match in the district-map pass; only
+              the database still says "homestead", deliberately -- see
+              stackacres-farm.tsx's doc comment. Locked-by-default: `stackacresAccess` is
               granted per player from the admin dashboard while the game is
               still being tried out, and a card nobody can open should say
               so plainly rather than pretend to be a live door -- so it
               renders as an inert <div>, not a disabled button dressed as a
               link. */}
-          {profile.homesteadAccess ? (
+          {profile.stackacresAccess ? (
             <Link
-              className="hub-tile hub-tile-homestead"
-              href="/games/homestead"
+              className="hub-tile hub-tile-stackacres"
+              href="/games/stackacres"
               style={tileIndexStyle(1)}
               onClick={tapSound}
             >
               <span className="hub-tile-body">
-                <StackAcresLogo className="hub-tile-homestead-logo" />
+                <StackAcresLogo className="hub-tile-stackacres-logo" />
                 <small>Raise crops and livestock, sell what they make</small>
               </span>
             </Link>
           ) : (
             <div
-              className="hub-tile hub-tile-homestead hub-tile-locked"
+              className="hub-tile hub-tile-stackacres hub-tile-locked"
               style={tileIndexStyle(1)}
               aria-disabled="true"
             >
               <span className="hub-tile-body">
-                <StackAcresLogo className="hub-tile-homestead-logo" />
+                <StackAcresLogo className="hub-tile-stackacres-logo" />
                 <small className="hub-tile-soon">Coming soon</small>
               </span>
             </div>

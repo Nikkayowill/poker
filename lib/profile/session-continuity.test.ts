@@ -61,7 +61,7 @@ const profile: PlayerProfile = {
   lastDailyClaimAt: null,
   lastBackstopAt: null,
   isRegistered: true,
-  homesteadAccess: false,
+  stackacresAccess: false,
   adminBadge: false,
 };
 

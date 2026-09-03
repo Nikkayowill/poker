@@ -19,15 +19,15 @@ interface StoredProfile extends Omit<PlayerProfile, "isRegistered"> {
   /** Admin-only moderation fields, never present in publicProfile()'s shape. */
   banned: boolean;
   lastSeenIp: string | null;
-  /** Admin-granted access to the Homestead while it is unreleased. */
-  homesteadAccess: boolean;
+  /** Admin-granted access to the StackAcres while it is unreleased. */
+  stackacresAccess: boolean;
   /** Shows "Admin" above this player's seat at the table. Dashboard-granted. */
   adminBadge: boolean;
 }
 
 /**
  * The admin dashboard's view of a profile: adds the moderation fields
- * publicProfile() omits from every player-facing response. homesteadAccess
+ * publicProfile() omits from every player-facing response. stackacresAccess
  * is NOT one of them any more -- publicProfile() now carries it too, since
  * telling a player their own access flag isn't a moderation leak the way
  * banned/lastSeenIp would be. It stays listed on StoredProfile itself only.
@@ -95,7 +95,7 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     lastDailyClaimAt: profile.lastDailyClaimAt,
     lastBackstopAt: profile.lastBackstopAt,
     isRegistered: profile.userId !== null,
-    homesteadAccess: profile.homesteadAccess,
+    stackacresAccess: profile.stackacresAccess,
     adminBadge: profile.adminBadge,
   };
 }
@@ -132,7 +132,7 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     userId: null,
     banned: false,
     lastSeenIp: null,
-    homesteadAccess: false,
+    stackacresAccess: false,
     adminBadge: false,
     lastBackstopAt: null,
   };
@@ -156,7 +156,7 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     userId: row.user_id ? String(row.user_id) : null,
     banned: Boolean(row.banned),
     lastSeenIp: row.last_seen_ip ? String(row.last_seen_ip) : null,
-    homesteadAccess: Boolean(row.homestead_access),
+    stackacresAccess: Boolean(row.homestead_access),
     adminBadge: Boolean(row.admin_badge),
     lastBackstopAt: row.last_backstop_at ? String(row.last_backstop_at) : null,
   };
@@ -807,34 +807,34 @@ export async function banProfile(profileId: string, banned: boolean): Promise<vo
 }
 
 /**
- * Whether this session's profile has been let into the Homestead.
+ * Whether this session's profile has been let into the StackAcres.
  *
  * Reads by session token rather than profile id, the same shape isBanned()
  * uses, because the caller of a game route holds a cookie and nothing else.
  * A token with no profile behind it is not an error here -- it is simply
  * somebody who has never played, and they are not on the list.
  */
-export async function hasHomesteadAccess(token: string): Promise<boolean> {
+export async function hasStackAcresAccess(token: string): Promise<boolean> {
   const supabase = adminClient();
-  if (!supabase) return memoryProfiles.get(token)?.homesteadAccess ?? false;
+  if (!supabase) return memoryProfiles.get(token)?.stackacresAccess ?? false;
   const { data, error } = await supabase
     .from("profiles")
     .select("homestead_access")
     .eq("session_token", token)
     .maybeSingle();
-  if (error) throw new Error(`Could not check Homestead access: ${error.message}`);
+  if (error) throw new Error(`Could not check StackAcres access: ${error.message}`);
   return Boolean(data?.homestead_access);
 }
 
-/** Lets a specific profile into (or back out of) the Homestead while it is unreleased. */
-export async function setHomesteadAccess(profileId: string, allowed: boolean): Promise<void> {
+/** Lets a specific profile into (or back out of) the StackAcres while it is unreleased. */
+export async function setStackAcresAccess(profileId: string, allowed: boolean): Promise<void> {
   const supabase = adminClient();
   const now = new Date().toISOString();
   if (!supabase) {
     const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
     if (!entry) throw new Error("Profile not found.");
     const [token, current] = entry;
-    memoryProfiles.set(token, { ...current, homesteadAccess: allowed, updatedAt: now });
+    memoryProfiles.set(token, { ...current, stackacresAccess: allowed, updatedAt: now });
     return;
   }
   const { data, error } = await supabase
@@ -842,7 +842,7 @@ export async function setHomesteadAccess(profileId: string, allowed: boolean): P
     .update({ homestead_access: allowed, updated_at: now })
     .eq("id", profileId)
     .select("id");
-  if (error) throw new Error(`Could not update Homestead access: ${error.message}`);
+  if (error) throw new Error(`Could not update StackAcres access: ${error.message}`);
   if (!data || data.length === 0) throw new Error("Profile not found.");
 }
 

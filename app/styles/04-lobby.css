@@ -1776,19 +1776,19 @@ button:disabled { cursor: wait; opacity: .62; }
    its own logo rather than typed text -- sized up from the 104px a
    single-line wordmark elsewhere in the app gets away with, since this one
    carries two words at comparable weight and goes soft below ~130px.
-   The route/module/CSS-class name is still "homestead" throughout -- a
-   display rename, not a plumbing one. cattle.png is a real corner of the
-   game's own pixel-art tileset (public/homestead/tiles/), bled off the
+   Route, module and CSS-class names all read "stackacres" too since the
+   district-map pass; only the database still says "homestead". cattle.png is a real corner of the
+   game's own pixel-art tileset (public/stackacres/tiles/), bled off the
    corner the same way every other tile here anchors its art -- pixelated
    on purpose, it's a 16x16 sprite. */
-.hub-tile-homestead {
-  --tile-art: url("/homestead/tiles/cattle.png");
+.hub-tile-stackacres {
+  --tile-art: url("/stackacres/tiles/cattle.png");
   --tile-tint: rgba(255,255,255,.02);
   background-size: auto, auto, 60px, auto;
   background-position: center, center, right 16px bottom 14px, center;
   image-rendering: pixelated;
 }
-.hub-tile-homestead-logo { width: 150px; height: auto; margin-bottom: 1px; }
+.hub-tile-stackacres-logo { width: 150px; height: auto; margin-bottom: 1px; }
 /* Same 10px kicker voice the hero's category line uses (.hub-tile-kicker),
    standing in for the blurb on a tile nobody can open yet. */
 .hub-tile-soon { color: #9d93b8 !important; font-weight: 650; letter-spacing: .2em; text-transform: uppercase; }

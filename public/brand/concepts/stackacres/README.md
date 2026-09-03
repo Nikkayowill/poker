@@ -20,7 +20,7 @@ itself does for the app as a whole.
 
 ## How it was built
 
-Same technique as the StackChips wordmark and the Homestead signature before
+Same technique as the StackChips wordmark and the StackAcres signature before
 it: outlined straight from the real **Bungee-Regular** TTF with `fontTools`
 (`SVGPathPen` off a resolved `glyphSet`, not the raw `glyf` table -- Bungee's
 `A` is a composite glyph and raw-table drawing chokes on components; a

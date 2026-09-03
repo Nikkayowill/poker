@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { PAINTERS } from "./stackacres-art";
+import { allSpritesReady, onSpriteReady } from "./stackacres-sprites";
 import { F, ell, lin, rad, type Ctx, type Painter } from "./art-kit";
 
 /**
@@ -44,8 +45,12 @@ export function StackAcresCoverArt() {
       frame = requestAnimationFrame(draw);
     };
     window.addEventListener("resize", onResize);
+    // The barn, cow and hen in this scene draw an image once it arrives, so
+    // redraw then -- the same reason the card redraws on resize.
+    const stopWatching = allSpritesReady() ? undefined : onSpriteReady(onResize);
     return () => {
       window.removeEventListener("resize", onResize);
+      stopWatching?.();
       cancelAnimationFrame(frame);
     };
   }, []);

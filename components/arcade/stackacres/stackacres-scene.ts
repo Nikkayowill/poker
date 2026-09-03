@@ -64,11 +64,12 @@ import {
   ART_SCALE,
   GRASS_PX,
   PAINTERS,
+  bakeArt,
   bakeGrass,
-  bakeTexture,
   bakeVignette,
   type PainterName,
 } from "./stackacres-art";
+import { SPRITE_ART, SPRITE_NAMES, spriteLoadKey } from "./stackacres-sprites";
 import { rampHex } from "./art-palette";
 import { bakePathTexture } from "./art-paths";
 import { bakePondTexture } from "./art-water";
@@ -543,14 +544,27 @@ export class StackAcresScene extends Phaser.Scene {
     this.options = options;
   }
 
+  /** The only files StackAcres fetches: the four generated sprites (see
+   *  stackacres-sprites.ts). Everything else is still drawn at boot. Loading
+   *  them here rather than letting the painters pick them up asynchronously
+   *  is what stops the world baking a cow, then a different cow a moment
+   *  later -- Phaser guarantees `preload` finishes before `create`. A file
+   *  that fails to load is not fatal: `bakeArt` paints the drawn version. */
+  preload(): void {
+    for (const name of SPRITE_NAMES) {
+      this.load.image(spriteLoadKey(name), SPRITE_ART[name]);
+    }
+  }
+
   create(): void {
-    // Every texture is drawn here, at boot: there is no preload and no
-    // network. Most icons are still painted straight into DOM canvases by
-    // stackacres-icon.tsx and never need a Phaser texture -- but the toolbelt
-    // set also has to exist here, as the picture `toolGhost` floats over a
-    // finger mid-sweep, so all of PAINTERS is baked now.
+    // Every texture is drawn here, at boot. Most icons are still painted
+    // straight into DOM canvases by stackacres-icon.tsx and never need a
+    // Phaser texture -- but the toolbelt set also has to exist here, as the
+    // picture `toolGhost` floats over a finger mid-sweep, so all of PAINTERS
+    // is baked now. The four image sprites are baked from what `preload`
+    // fetched; everything else from its painter.
     for (const name of Object.keys(PAINTERS) as PainterName[]) {
-      bakeTexture(this, name);
+      bakeArt(this, name);
     }
     bakeGrass(this);
 

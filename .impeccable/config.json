@@ -344,6 +344,18 @@
         "value": "#3d2a14",
         "createdAt": "2026-09-02T04:54:05.369Z",
         "reason": "Painted ink colour on the wooden price sign inside the Phaser canvas (homestead-scene.ts), part of the vector art palette, not chrome"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "32px",
+        "createdAt": "2026-09-03T02:18:13.135Z",
+        "reason": "intentional: large splash-screen title to feel premium and distinct"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "18px",
+        "createdAt": "2026-09-03T02:18:13.235Z",
+        "reason": "intentional: action prompt on splash screen"
       }
     ]
   }

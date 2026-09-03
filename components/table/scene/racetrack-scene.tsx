@@ -40,7 +40,7 @@ import {
   SLEEPING,
   type SchedulerState,
 } from "@/lib/scene/render-scheduler";
-import { paintChip, paintChipShadow } from "./chip-painter";
+import { paintChip } from "./chip-painter";
 import { paintRoom } from "./paint-room";
 
 /**
@@ -507,8 +507,6 @@ export function RacetrackScene({
       // chips first, so a stack occludes itself correctly.
       const drawList = engine.chips.drawList()
         .sort((a, b) => a.position.z - b.position.z || a.stackIndex - b.stackIndex);
-      // Two passes: every shadow down before any chip, or the near chips'
-      // shadows land across the far chips' faces. See `chip-painter.ts`.
       // Keep the authoritative table pass drawing every chip. The local bet
       // is repeated in the optional foreground pass below; making this pass
       // depend on that second canvas being mounted caused a visibility gap
@@ -519,20 +517,14 @@ export function RacetrackScene({
       const materialFor = (chip: (typeof drawList)[number]) =>
         chip.ownerSlot !== undefined ? engine.seatChipMaterials[chip.ownerSlot]?.[chip.denomination] : undefined;
       for (const chip of drawList) {
-        paintChipShadow(engine.ctx, engine.chipView, engine.space, chip, engine.chipRadius);
-      }
-      for (const chip of drawList) {
-        paintChip(engine.ctx, engine.chipView, engine.space, chip, engine.chipRadius, materialFor(chip));
+        paintChip(engine.ctx, engine.chipView, chip, engine.chipRadius, materialFor(chip));
       }
       if (engine.foregroundCtx && engine.foregroundCanvas) {
         engine.foregroundCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
         engine.foregroundCtx.clearRect(0, 0, engine.size.width, engine.size.height);
         const localBetChips = engine.chips.drawListForOwner(0);
         for (const chip of localBetChips) {
-          paintChipShadow(engine.foregroundCtx, engine.chipView, engine.space, chip, engine.chipRadius);
-        }
-        for (const chip of localBetChips) {
-          paintChip(engine.foregroundCtx, engine.chipView, engine.space, chip, engine.chipRadius, materialFor(chip));
+          paintChip(engine.foregroundCtx, engine.chipView, chip, engine.chipRadius, materialFor(chip));
         }
       }
       engine.frames += 1;

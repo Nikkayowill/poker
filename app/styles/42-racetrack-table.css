@@ -339,16 +339,28 @@
    at that same point regardless of the stack's height, and adding
    `--pot-y-delta-px` (poker-table.tsx: the real, signed, pot-minus-board
    pixel delta -- no board height involved) lands it exactly on the pot
-   anchor. `translate(-50%, -50%)` centres the pill there the same
-   H-independent way the bet labels above do; the extra `-6px` is the
-   classic room's own clearance, so the label sits just above the pile
-   rather than dead centre on it. */
+   anchor -- the mound's own ground level, not its peak.
+
+   THE OVERLAP BUG. A flat clearance past that ground level (this used to be
+   a classic-room-style `-6px`) is only enough to clear a one- or two-chip
+   pot. `syncPile` stacks a real pot up to nine chips in a column, and past a
+   few big blinds the pile's peak rose right through that fixed 6px and the
+   label sat on top of the chips it was supposed to be naming. Fixed by
+   reading `--pot-mound-clearance-px` instead: poker-table.tsx runs the same
+   chip-count math `chip-scene.ts`'s `syncPile` does (chip-stack.ts's
+   `chipBreakdown`/`columnCount`/`columnHeights`) against the live pot and
+   converts the tallest column's chip count into the pile's actual worst-case
+   height in CSS pixels, via chip-spec.ts's own `MAX_WALL_PX`/`MAX_RADIUS_PX`
+   ceilings -- the same numbers the canvas painter is clamped to, so this
+   never draws a shorter pile than it clears for. `translate(-50%, -50%)`
+   centres the pill there the same H-independent way the bet labels above
+   do. */
 .scene-room-racetrack .center-pot-amount {
   position: absolute;
   left: 50%;
   top: calc(50% + var(--pot-y-delta-px, -22px));
   z-index: 3;
-  transform: translate(-50%, calc(-50% - 6px));
+  transform: translate(-50%, calc(-50% - var(--pot-mound-clearance-px, 6px) - 8px));
 }
 
 /* Landscape phones have less vertical room and a proportionally taller card
@@ -359,7 +371,11 @@
   .scene-room-racetrack .center-pot-amount {
     gap: 4px;
     padding: 2px 7px;
-    transform: translate(-50%, calc(-50% - 10px));
+    /* Same mound-clearance variable as the base rule above -- this used to
+       override it with a flat 10px, which put the label straight back on
+       top of the pile on every phone, the one place this table always
+       renders. */
+    transform: translate(-50%, calc(-50% - var(--pot-mound-clearance-px, 6px) - 4px));
   }
 
   .scene-room-racetrack .center-pot-amount span { font-size: 8px; }

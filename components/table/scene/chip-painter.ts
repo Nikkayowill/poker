@@ -1,7 +1,7 @@
 /**
  * A chip, drawn.
  *
- * FOUR LAYERS, AND THE SECOND ONE IS THE WHOLE JOB.
+ * THREE LAYERS, AND THE FIRST ONE IS THE WHOLE JOB.
  *
  *   1. The side wall — the band of cylinder between the chip's bottom face and
  *      its top. Shaded across its width rather than down its height, because
@@ -13,19 +13,19 @@
  *   3. The rim highlights — a lit arc along the top edge and a dark contact
  *      line along the bottom, which is also the shadow the chip above casts on
  *      the chip below.
- *   4. The shadows — contact, stack and flight, drawn in their own pass.
  *
  * The side wall is first in that list and first in importance. A chip without
  * one is a circle: no thickness, no weight, nothing to say the object is
  * cylindrical rather than printed. `chip-spec.ts` guarantees it 3–5 CSS pixels
  * at every breakpoint, which is why the sizing lives there and not here.
  *
- * WHY THE SHADOWS ARE A SEPARATE PASS. A shadow belongs to the felt, not to
- * the chip that casts it, so it has to be under *every* chip rather than under
- * the ones drawn after it. Painting each chip's shadow immediately before that
- * chip puts the near chips' shadows over the far chips' faces — a grey smear
- * across the top of the mound, which is precisely what a pot rendered
- * chip-by-chip looks like when nobody has separated the passes.
+ * There used to be a fourth pass here — a cloth/contact/flight shadow drawn
+ * under every chip. Kayo cut it outright (2026-09-03): on a crowded pot or a
+ * seat's own stack it read as a dark smear across the chips rather than a
+ * depth cue, and it cost more to see everyone's chips than it bought in
+ * realism. `paintWall`'s own dark contact line (layer 3's lower half, where
+ * one stacked chip meets the one under it) is the only shadow left, and it's
+ * load-bearing for the cylinder illusion rather than a depth effect.
  *
  * WHY THE STACK HEIGHT IS SCREEN-SPACE. The scene hands over a ground position
  * and an integer stack index rather than a world Y. The painter multiplies the
@@ -39,7 +39,6 @@
  * world points arrive through `SceneProjection`.
  */
 
-import type { ChipSpace } from "@/lib/scene/chip-space";
 import type { SceneProjection } from "@/lib/scene/scene-projection";
 import type { RenderChip } from "@/lib/scene/chips/chip-scene";
 import {
@@ -78,9 +77,6 @@ interface Placement {
   scaleY: number;
   /** Face pattern orientation — chips in a stack are not aligned. */
   spin: number;
-  /** Where the chip's column meets the cloth, for the shadow pass. */
-  groundX: number;
-  groundY: number;
 }
 
 /**
@@ -96,7 +92,6 @@ interface Placement {
  */
 function place(
   projection: SceneProjection,
-  space: ChipSpace,
   chip: RenderChip,
   chipRadius: number,
 ): Placement {
@@ -117,9 +112,6 @@ function place(
     variance.sizeScale,
   );
 
-  // The cloth directly under this chip: where its shadow lives, and the point
-  // the whole column is measured up from.
-  const ground = projection.project({ x: base.x, y: space.feltY, z: base.z });
   // Chip 0 rests its bottom face on the cloth, so its *top* face is one wall
   // up. Chip i's is (i + 1) walls up.
   const stackPx = (chip.stackIndex + 1) * metrics.pitchPx;
@@ -134,86 +126,16 @@ function place(
     scaleX: chip.scaleX,
     scaleY: chip.scaleY,
     spin: variance.spinRad,
-    groundX: ground.x + chip.driftXPx,
-    groundY: ground.y,
   };
 }
 
 /* ------------------------------------------------------------------ *
- * Pass one: shadows.
- * ------------------------------------------------------------------ */
-
-/**
- * The chip's shadow on the cloth.
- *
- * Two of the three shadows in the system live here; the third (the contact
- * line between two stacked chips) is drawn as part of the chip itself, because
- * it falls on a chip rather than on the felt.
- *
- * THE FLIGHT SHADOW IS DECOUPLED FROM THE CHIP and that is the point of it: it
- * tracks the cloth under the chip while the chip climbs away from it, which is
- * the only honest depth cue a room with no perspective on height has. As the
- * chip rises the pool tightens, fades and softens; as it comes down the pool
- * hardens and darkens under it. That exchange is what makes a thrown chip read
- * as an object above a table rather than a sprite sliding across one.
- *
- * THE CONTACT SHADOW is drawn once per column, not once per chip. Nine chips
- * each dropping their own pool onto the same spot compounds into a black disc
- * with a hard edge, which reads as a hole in the felt.
- *
- * Drawn as radial gradients rather than `ctx.filter = "blur()"`: a per-chip
- * filter forces an intermediate compositing layer, which is real money on the
- * phones this canvas is already DPI-upscaled for.
- */
-export function paintChipShadow(
-  ctx: CanvasRenderingContext2D,
-  projection: SceneProjection,
-  space: ChipSpace,
-  chip: RenderChip,
-  chipRadius: number,
-): void {
-  const opacity = clamp(chip.opacity, 0, 1);
-  if (opacity <= 0.01) return;
-  const spot = place(projection, space, chip, chipRadius);
-  const resting = !chip.airborne;
-  // Only the chip on the bottom of a column shadows the cloth. `stackIndex` is
-  // fractional mid-flight, so this is a threshold rather than an equality.
-  if (resting && chip.stackIndex > 0.5) return;
-
-  // 0 on the cloth, 1 at the apex of the tallest arc in the system.
-  const height = clamp(chip.lift, 0, 1);
-  const spread = spot.rx * (resting ? 1.02 : 1.02 - height * 0.42);
-  // The shadow fades with the chip. A paid chip that dissolved while its
-  // shadow stayed put would leave a dark smudge on the felt.
-  const alpha = (resting ? 0.3 : 0.3 * (1 - height * 0.6)) * opacity;
-  if (spread <= 0.2 || alpha <= 0.01) return;
-
-  // The core's share of the radius: a tight, hard pool under a chip about to
-  // land, a diffuse one under a chip at its apex.
-  const core = resting ? 0.62 : Math.max(0.05, 0.62 - height * 0.5);
-
-  ctx.save();
-  ctx.translate(spot.groundX, spot.groundY);
-  ctx.scale(1, Math.max(0.15, projection.groundSquash));
-  const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, spread);
-  pool.addColorStop(0, `rgba(0, 0, 0, ${alpha})`);
-  pool.addColorStop(core, `rgba(0, 0, 0, ${alpha * 0.72})`);
-  pool.addColorStop(1, "rgba(0, 0, 0, 0)");
-  ctx.fillStyle = pool;
-  ctx.beginPath();
-  ctx.arc(0, 0, spread, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-/* ------------------------------------------------------------------ *
- * Pass two: the chip.
+ * The chip itself.
  * ------------------------------------------------------------------ */
 
 export function paintChip(
   ctx: CanvasRenderingContext2D,
   projection: SceneProjection,
-  space: ChipSpace,
   chip: RenderChip,
   chipRadius: number,
   /**
@@ -226,7 +148,7 @@ export function paintChip(
 ): void {
   const opacity = clamp(chip.opacity, 0, 1);
   if (opacity <= 0.01) return;
-  const spot = place(projection, space, chip, chipRadius);
+  const spot = place(projection, chip, chipRadius);
   if (!Number.isFinite(spot.x) || !Number.isFinite(spot.y) || spot.rx <= 0) return;
 
   const material = materialOverride ?? chipMaterial(chip.denomination);

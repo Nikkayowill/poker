@@ -8,15 +8,12 @@ import { PROP_SHADOW, PROP_SIZE, VERGE_PROPS, WINDMILL_HUB, YARD_PROPS, propRect
 import { PROP_PAINTERS } from "@/components/arcade/stackacres/art-props";
 import { FARM_PATHS, PATH_CLEARANCE, distanceToPath, nearPath } from "./paths";
 import { POND, POND_SAND, pondRadial } from "./water";
-import { FARM_ZONE, STACKACRES_CELL, STACKACRES_MARGIN, STACKACRES_WORLD_COLUMNS, STACKACRES_WORLD_ROWS, inFarmZone } from "./world";
+import { FARM_ZONE, inFarmZone, penGroupBounds } from "./world";
 
-/** The plot square: x 64..384, y 64..384. */
-const PLOTS = {
-  x: STACKACRES_MARGIN,
-  y: STACKACRES_MARGIN,
-  width: STACKACRES_WORLD_COLUMNS * STACKACRES_CELL,
-  height: STACKACRES_WORLD_ROWS * STACKACRES_CELL,
-};
+/** The Farmstead's own plots now: the Hen Coop block, x 170..330, y 200..360
+ *  -- not the old 4x4 square, which is what "the plot square" meant before
+ *  the other three kinds moved out to their own districts. */
+const PLOTS = penGroupBounds("hen");
 
 /** What paintBarn stands in the yard, as boxes (see stackacres-scene.ts). */
 const BARN_PIECES = [
@@ -107,9 +104,13 @@ describe("yard props", () => {
 
   it("keeps the yard props north of the road, with their feet clear of its rim", () => {
     // The road's body is y 38..54 and its rim reaches ~35 between the lane
-    // and x 430; anything in the yard band stands north of that.
+    // and x 430; anything in the yard band stands north of that. The cutoff
+    // is the road's own geometry, not PLOTS -- the scarecrow (still watching
+    // over where the fields used to be, at y 110) is south of the road on
+    // purpose and was never part of the yard band this check means.
+    const SOUTH_OF_ROAD = 60;
     for (const prop of YARD_PROPS) {
-      if (prop.y >= PLOTS.y || prop.x < 150 || prop.x > 430) continue;
+      if (prop.y >= SOUTH_OF_ROAD || prop.x < 150 || prop.x > 430) continue;
       expect(prop.y, `${prop.kind} at ${prop.x},${prop.y}`).toBeLessThanOrEqual(32);
     }
   });

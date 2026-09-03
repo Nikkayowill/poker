@@ -38,6 +38,7 @@ import {
   type StackAcresExchangeState,
 } from "@/lib/stackacres/exchange";
 import { stackacresStockPrice } from "@/lib/stackacres/market";
+import { penZoneLabel, plotPenZone, stockAllowedOnPlot } from "@/lib/stackacres/world";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
@@ -253,6 +254,9 @@ export async function buyStackAcresStock(
   const plotIndex = parsePlotIndex(input.plotIndex);
   if (!isStackAcresStock(input.stock)) throw new StackAcresRequestError("Not a real stock.", 400);
   const stock: StackAcresStock = input.stock;
+  if (!stockAllowedOnPlot(plotIndex, stock)) {
+    throw new StackAcresRequestError(`This ground is fenced for ${penZoneLabel(plotPenZone(plotIndex))}.`, 400);
+  }
   const def = STACKACRES_CATALOGUE[stock];
   const price = stackacresStockPrice(stock);
   const profile = await ensureProfile(token);
@@ -406,6 +410,9 @@ export async function stockStackAcres(
   const plotIndex = parsePlotIndex(input.plotIndex);
   if (!isStackAcresStock(input.stock)) throw new StackAcresRequestError("Not a real stock.", 400);
   const stock: StackAcresStock = input.stock;
+  if (!stockAllowedOnPlot(plotIndex, stock)) {
+    throw new StackAcresRequestError(`This ground is fenced for ${penZoneLabel(plotPenZone(plotIndex))}.`, 400);
+  }
   const def = STACKACRES_CATALOGUE[stock];
   const profile = await ensureProfile(token);
 

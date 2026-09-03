@@ -9,30 +9,25 @@ import {
 } from "./paths";
 import {
   FARM_ZONE,
-  STACKACRES_CELL,
-  STACKACRES_MARGIN,
-  STACKACRES_WORLD_COLUMNS,
-  STACKACRES_WORLD_ROWS,
+  STACKACRES_PEN_ZONES,
   cellCenter,
   inFarmZone,
+  penGroupBounds,
 } from "./world";
 import { STACKACRES_GRID_PLOTS } from "./catalogue";
 import { zoneAt } from "./zones";
 
-/** The plot square: x 64..384, y 64..384. */
-const PLOTS = {
-  x: STACKACRES_MARGIN,
-  y: STACKACRES_MARGIN,
-  width: STACKACRES_WORLD_COLUMNS * STACKACRES_CELL,
-  height: STACKACRES_WORLD_ROWS * STACKACRES_CELL,
-};
+/** Every kind's own 2x2 pen block -- the plots are four separate small
+ *  squares now, one per district, not one 4x4 square at the Farmstead. */
+const PLOT_BLOCKS = STACKACRES_PEN_ZONES.map(penGroupBounds);
 
 function insidePlots(x: number, y: number, margin = 0): boolean {
-  return (
-    x >= PLOTS.x - margin &&
-    x <= PLOTS.x + PLOTS.width + margin &&
-    y >= PLOTS.y - margin &&
-    y <= PLOTS.y + PLOTS.height + margin
+  return PLOT_BLOCKS.some(
+    (block) =>
+      x >= block.x - margin &&
+      x <= block.x + block.width + margin &&
+      y >= block.y - margin &&
+      y <= block.y + block.height + margin,
   );
 }
 

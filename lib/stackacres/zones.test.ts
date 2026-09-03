@@ -159,9 +159,9 @@ describe("zone tool policy", () => {
     }
   });
 
-  it("keeps all four plot tools on the farmstead, where the plots are", () => {
+  it("lets all four plot tools work in every district, since a plot can be in any of them now", () => {
     for (const tool of ["plant", "harvest", "feed", "clear"] as const) {
-      expect(zoneToolPolicy[tool]).toEqual(["farmstead"]);
+      expect(zoneToolPolicy[tool]).toEqual([...ZONE_IDS]);
     }
   });
 
@@ -403,14 +403,16 @@ describe("the scythe's stroke", () => {
 });
 
 describe("the herds", () => {
-  it("gives the two animal districts a herd and the other two none", () => {
-    expect(zoneHerd("oxfields")).not.toBeNull();
-    expect(zoneHerd("wallow")).not.toBeNull();
-    expect(zoneHerd("meadow")).toBeNull();
-    expect(zoneHerd("farmstead")).toBeNull();
+  it("has no ambient herd anywhere -- the player's own pens replaced them", () => {
+    // Ox Fields and the Wallow each had a wild, unownable herd before real
+    // Cattle Pens and Sheep Pens moved in; Kayo's call was to replace it, not
+    // keep both. HERDS staying an empty record (rather than deleted outright)
+    // is what leaves room for a future district to get ambient life of its
+    // own with nothing to tend yet.
+    for (const id of ZONE_IDS) expect(zoneHerd(id)).toBeNull();
   });
 
-  it("keeps every herd's range well inside its own district", () => {
+  it("keeps every herd's range well inside its own district, if one is ever added back", () => {
     for (const id of ZONE_IDS) {
       const herd = zoneHerd(id);
       if (!herd) continue;

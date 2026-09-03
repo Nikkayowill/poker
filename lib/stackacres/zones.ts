@@ -33,11 +33,13 @@
  * the middle of a meadow), so a runtime import back of any of its constants
  * would be read before world.ts finished evaluating and throw -- the same
  * arrangement ./paths.ts and ./water.ts already have with it. The numbers
- * this file is measured against, restated once here: the plot ladder is
- * x 64..384, y 64..384; `FARM_ZONE` is x 28..440, y -60..410; the lane ends
- * at the mailbox (50, 402); the road's east leg runs along y ~46 and turns
- * north-east at x 430; the track leaves (60, 46) and ends at (-140, -260);
- * the pond spans x -84..20, y 80..160.
+ * this file is measured against, restated once here: the Farmstead's Hen
+ * Coop block is x 170..330, y 200..360; `FARM_ZONE` is x 28..440, y -60..410;
+ * the lane ends at the mailbox (50, 402); the road's east leg runs along
+ * y ~46 and turns north-east at x 430; the track leaves (60, 46) and ends at
+ * (-140, -260); the pond spans x -84..20, y 80..160. `PEN_BLOCKS` below
+ * restates the other three kinds' own 2x2 blocks (their real definition is
+ * `PEN_GROUP_ORIGIN` in ./world.ts) for the same reason.
  */
 
 import type { WorldPoint, WorldRect } from "./world";
@@ -125,7 +127,7 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   farmstead: {
     id: "farmstead",
     label: "The Farmstead",
-    blurb: "Your fields, your pens, the barn and the pond.",
+    blurb: "Home base -- your Hen Coops, the barn and the pond.",
     bounds: { x: 28, y: -60, width: 412, height: 470 },
     // Cover 0: the farmstead paints no ground of its own. The lawn, the plot
     // diamonds, the paths and the pond are already the whole picture there,
@@ -134,13 +136,13 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     approach: { x: 224, y: 174 },
   },
 
-  // South, down the lane past the mailbox. Open hay meadow: the one district
-  // with nothing built in it, which is the point -- it is the place you go to
-  // find grass rather than the place you go to find a building.
+  // South, down the lane past the mailbox. Open hay meadow, and now the real
+  // Crop Fields standing in it -- the one district that was nothing but
+  // grass before a pen block ever moved in.
   meadow: {
     id: "meadow",
     label: "The Long Meadow",
-    blurb: "Waist-high grass, clover and buttercups. Bring the scythe.",
+    blurb: "Waist-high grass, clover, buttercups, and your Crop Fields.",
     bounds: { x: 24, y: 448, width: 380, height: 320 },
     ground: { base: 0x8fce66, alt: 0x9ed473, cover: 0.42 },
     // The lane's own end, carried a little into the field.
@@ -148,22 +150,26 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   },
 
   // East, along the road past the windmill. Heavy, rustic, worked: mud
-  // furrows, hitching posts, the oxen standing about in them.
+  // furrows, hitching posts, and now the real Cattle Pens standing in them.
   oxfields: {
     id: "oxfields",
     label: "The Ox Fields",
-    blurb: "Ploughed furrows, hitching posts and the oxen that cut them.",
+    blurb: "Ploughed furrows, hitching posts, and the cattle you keep here.",
     bounds: { x: 500, y: 20, width: 360, height: 280 },
     ground: { base: 0x7a5a34, alt: 0x6f5230, cover: 0.86 },
-    approach: { x: 560, y: 96 },
+    // Framed on the Cattle Pen block itself (world.ts's PEN_GROUP_ORIGIN.cattle,
+    // x 680..840, y 70..230) rather than on the road's own end -- the arrival
+    // shot exists to show what you came here to do, and a gate framed on the
+    // road alone left the pens crowded into the corner of the window.
+    approach: { x: 720, y: 150 },
   },
 
   // North-west, at the end of the track. Wet, low and shaded: the mud
-  // wallow, a shade canopy and the hogs.
+  // wallow, a shade canopy, and now the real Sheep Pens standing in it.
   wallow: {
     id: "wallow",
     label: "The Wallow",
-    blurb: "A shaded mud hollow, and the hogs that will not leave it.",
+    blurb: "A shaded mud hollow, and the Sheep Pens that live in it.",
     // The smallest district, and its short side is what sets the floor on
     // `ZONE_FEATHER`: a district narrower than two feather-widths has no
     // full-strength ground left in the middle of it at all.
@@ -219,22 +225,23 @@ export function inOuterZone(x: number, y: number): boolean {
 /**
  * Which districts each tool is allowed to act in.
  *
- * The four original tools are farmstead-only and always were -- they act on a
- * plot, and `plotIndexAt` already returns null everywhere else, so this table
- * does not gate them so much as write down the rule that was implicit. The
- * scythe is the first tool whose target is the GROUND, so it is the first one
- * that needed the rule stated.
- *
- * Stating it buys the thing silence cannot: a tool held in the wrong district
- * can say why nothing is happening. "The scythe only cuts in the Long Meadow"
- * is a signpost; a scythe that swings at nothing is a bug report.
+ * The five plot tools used to be farmstead-only, back when the farmstead was
+ * the only district with any plots in it -- `plotIndexAt` returned null
+ * everywhere else, so this table just wrote down a rule that was already
+ * implicit. It is not implicit any more: a Hen Coop's plots resolve at the
+ * Farmstead, a Cattle Pen's at Ox Fields, a Sheep Pen's at the Wallow, a crop
+ * plot's at the Long Meadow, so every plot tool has real business in all
+ * four now -- `plotIndexAt` itself already refuses a tap that lands nowhere,
+ * so this table is what lets a refusal name the reason rather than just
+ * staying quiet. The scythe alone stays Long-Meadow-only: its target is the
+ * GROUND, not a plot, and mowing has no reason to exist anywhere else.
  */
 export const zoneToolPolicy: Readonly<Record<StackAcresTool, readonly ZoneId[]>> = {
   inspect: ZONE_IDS,
-  plant: ["farmstead"],
-  harvest: ["farmstead"],
-  feed: ["farmstead"],
-  clear: ["farmstead"],
+  plant: ZONE_IDS,
+  harvest: ZONE_IDS,
+  feed: ZONE_IDS,
+  clear: ZONE_IDS,
   scythe: ["meadow"],
 };
 
@@ -449,6 +456,28 @@ function deepInZone(id: ZoneId, x: number, y: number): boolean {
   return Math.min(dx, dy) > ZONE_FEATHER * 0.7;
 }
 
+/**
+ * The pen block a district's real, player-owned plots stand in, restated
+ * here as a literal -- see world.ts's `PEN_GROUP_ORIGIN`, which this has to
+ * match by hand for the same reason `FARM_ZONE` is restated rather than
+ * imported: world.ts imports THIS module as a value, so the reverse would
+ * read a constant before world.ts finishes evaluating. Kept out of the
+ * ambient scatter so a furrow, a mud pool or a stray clover patch can never
+ * spawn on top of a fence or a crop row. The Farmstead has none: its own
+ * scatter list is already empty, so there is nothing to exclude.
+ */
+const PEN_BLOCKS: Readonly<Partial<Record<ZoneId, WorldRect>>> = {
+  meadow: { x: 220, y: 560, width: 160, height: 160 },
+  oxfields: { x: 680, y: 70, width: 160, height: 160 },
+  wallow: { x: -320, y: -390, width: 160, height: 160 },
+};
+
+function inPenBlock(id: ZoneId, x: number, y: number): boolean {
+  const block = PEN_BLOCKS[id];
+  if (!block) return false;
+  return x >= block.x && x <= block.x + block.width && y >= block.y && y <= block.y + block.height;
+}
+
 export function zoneScenery(cx: number, cy: number): ZoneSceneryItem[] {
   const random = seeded((cx * 0x2545f491) ^ (cy * 0x9e3779b1) ^ 0x1b873593);
   const x0 = cx * ZONE_CHUNK;
@@ -470,6 +499,7 @@ export function zoneScenery(cx: number, cy: number): ZoneSceneryItem[] {
     // exclusion the woodland respects applies here: a hay bale in the middle
     // of the road stops it reading as a road.
     if (nearPath(x, y)) continue;
+    if (inPenBlock(id, x, y)) continue;
     const pool = ZONE_SCATTER[id];
     if (pool.length === 0) continue;
     const kind = pool[Math.floor(roll * pool.length)];
@@ -625,9 +655,17 @@ export function mowStroke(from: WorldPoint, to: WorldPoint): { tx: number; ty: n
 /* ------------------------------------------------------------------ */
 
 /**
- * A district's own animals: not livestock, not stocked, not worth anything.
- * They are there so the place is inhabited -- an empty mud wallow is a brown
- * rectangle, and two hogs in it is a pig pen.
+ * A district's own AMBIENT animals: not livestock, not stocked, not worth
+ * anything -- scenery, the way `zoneScenery`'s furrows and mud pools are
+ * scenery. They exist so an unclaimed district reads as inhabited rather
+ * than an empty coloured rectangle.
+ *
+ * Ox Fields and the Wallow HAD one of these each (wild oxen, wild hogs) until
+ * the pens moved in. Kayo: those pens should REPLACE the ambient herd, not
+ * sit beside it -- the player's own Cattle Pens and Sheep Pens are that
+ * district's life now, the same way the Hen Coops are the Farmstead's. So
+ * `HERDS` is empty; the interface and `zoneHerd` stay, for a future district
+ * that wants ambient life of its own with nothing to tend yet.
  *
  * They reuse ./world.ts's `stepCritter` exactly as the pens' animals do (it
  * takes a rectangle and a speed and knows nothing about plots), so this is a
@@ -644,20 +682,7 @@ export interface ZoneHerd {
   range: WorldRect;
 }
 
-const HERDS: Readonly<Partial<Record<ZoneId, ZoneHerd>>> = {
-  oxfields: {
-    art: "ox",
-    count: 4,
-    speed: 5,
-    range: { x: 560, y: 70, width: 250, height: 190 },
-  },
-  wallow: {
-    art: "hog",
-    count: 5,
-    speed: 11,
-    range: { x: -310, y: -380, width: 170, height: 130 },
-  },
-};
+const HERDS: Readonly<Partial<Record<ZoneId, ZoneHerd>>> = {};
 
 export function zoneHerd(id: ZoneId): ZoneHerd | null {
   return HERDS[id] ?? null;

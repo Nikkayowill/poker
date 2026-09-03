@@ -27,6 +27,7 @@ import {
   type StackAcresStock,
 } from "./catalogue";
 import type { StackAcresPlotSnapshot } from "./plots";
+import { penZoneLabel, plotPenZone, stockAllowedOnPlot } from "./world";
 
 export const STACKACRES_TOOLS = ["inspect", "plant", "harvest", "feed", "clear", "scythe"] as const;
 
@@ -147,6 +148,12 @@ export function affordanceFor(
       if (plot.state !== "empty") return NONE;
       const stock = context.selectedStock;
       if (!stock) return { kind: "blocked", reason: "Pick something to plant first." };
+      if (!stockAllowedOnPlot(plot.plotIndex, stock)) {
+        return {
+          kind: "blocked",
+          reason: `This ground is fenced for ${penZoneLabel(plotPenZone(plot.plotIndex))}.`,
+        };
+      }
       const def = STACKACRES_CATALOGUE[stock];
       const livestock = isLivestock(stock);
       if (occupiedCount(context.plots, livestock) >= capFor(stock)) {

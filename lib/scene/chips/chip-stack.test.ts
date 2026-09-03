@@ -10,6 +10,7 @@ import {
   MAX_POT_COLUMNS,
   pileSlots,
   spraySequence,
+  spreadSlots,
 } from "./chip-stack";
 import { POT_CHIP_DENOMINATIONS_BB } from "@/lib/game/pot-chips";
 
@@ -155,6 +156,50 @@ describe("the mound", () => {
 
   it("is empty for an empty pot", () => {
     expect(pileSlots(0, RADIUS, MAX_POT_COLUMNS)).toEqual([]);
+  });
+});
+
+describe("the spread", () => {
+  it("never stacks — every chip rests directly on the felt", () => {
+    for (const chips of [1, 8, 9, 30, MAX_POT_CHIPS]) {
+      for (const slot of spreadSlots(chips, RADIUS, MAX_POT_CHIPS)) {
+        expect(slot.index).toBe(0);
+      }
+    }
+  });
+
+  it("gives every chip its own slot — no two chips inside each other", () => {
+    for (const chips of [1, 8, 9, 30, MAX_POT_CHIPS]) {
+      const slots = spreadSlots(chips, RADIUS, MAX_POT_CHIPS);
+      expect(slots).toHaveLength(chips);
+      const seen = new Set(slots.map((slot) => `${slot.offsetX}:${slot.offsetZ}`));
+      expect(seen.size).toBe(chips);
+    }
+  });
+
+  it("centres a single row on the pile's own spot", () => {
+    const offsets = spreadSlots(8, RADIUS, MAX_POT_CHIPS).map((slot) => slot.offsetX);
+    const sum = offsets.reduce((total, offset) => total + offset, 0);
+    expect(sum).toBeCloseTo(0, 9);
+  });
+
+  it("tucks an overflow row behind the front one, never in front of it", () => {
+    // Toward the viewer is positive Z (MOUND_SHAPES' own convention); an
+    // overflow row spilling toward the camera would cover the community
+    // cards the spread sits above instead of receding behind them.
+    const slots = spreadSlots(20, RADIUS, MAX_POT_CHIPS);
+    const rows = [...new Set(slots.map((slot) => slot.offsetZ))].sort((a, b) => a - b);
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows[0]).toBeLessThan(0);
+    expect(rows[rows.length - 1]).toBe(0);
+  });
+
+  it("stops growing at the cap handed in, same as the mound", () => {
+    expect(spreadSlots(10_000, RADIUS, MAX_POT_CHIPS)).toHaveLength(MAX_POT_CHIPS);
+  });
+
+  it("is empty for an empty pot", () => {
+    expect(spreadSlots(0, RADIUS, MAX_POT_CHIPS)).toEqual([]);
   });
 });
 

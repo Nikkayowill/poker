@@ -399,6 +399,19 @@ export function potAnchor(): Vec3 {
 }
 
 /**
+ * Above this the pot mounds up the way every other plate's does; at or below
+ * it -- a landscape phone, since this table has no portrait mode to worry
+ * about -- `racetrack-scene.tsx` lays the pot out as a flat spread instead
+ * (`spreadSlots`, chip-stack.ts), because a nine-high column has nowhere to
+ * climb into on a plate this short before it fights the board caption
+ * sitting right above it. Same number `42-racetrack-table.css`'s own
+ * `(max-width: 900px) and (orientation: landscape)` breakpoint uses for the
+ * same "this is a phone" boundary -- a media query can't read a JS constant,
+ * so the two are kept in sync by hand.
+ */
+export const MOBILE_LANDSCAPE_MAX_WIDTH_PX = 900;
+
+/**
  * Where a seat's bet sits once it is out on the cloth.
  *
  * THIS IS THE ONE PLACE TO EDIT A BET LABEL'S ACTUAL ON-SCREEN POSITION.

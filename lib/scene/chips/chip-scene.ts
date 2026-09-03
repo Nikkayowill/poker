@@ -49,6 +49,7 @@ import {
   MAX_POT_COLUMNS,
   pileSlots,
   spraySequence,
+  spreadSlots,
   type StackSlot,
 } from "./chip-stack";
 import {
@@ -253,6 +254,14 @@ export class ChipScene {
    */
   private chipRadius = CHIP_RADIUS;
   /**
+   * Which shape the centre pile lays its chips out in -- a mound everywhere
+   * the felt has room to spare, or a flat spread on a landscape phone
+   * (`MOBILE_LANDSCAPE_MAX_WIDTH_PX`, table-anchors.ts) where a mound's
+   * height has nowhere to climb before it fights the board caption sitting
+   * right above it.
+   */
+  private potLayout: "mound" | "spread" = "mound";
+  /**
    * Milliseconds until the street sweep currently in the air has landed.
    *
    * Chips joining the pot wait this out before they drop, so the mound builds
@@ -296,6 +305,16 @@ export class ChipScene {
     this.betStyle = style;
   }
 
+  /**
+   * Choose the centre pile's shape for this fit. Same "next sync, not now"
+   * timing as `setChipRadius`: a resize is not a game event, and re-homing a
+   * settled pile mid-hand for it would read as the pot twitching, so this
+   * only takes effect the next time `syncPile` runs on its own.
+   */
+  setPotLayout(layout: "mound" | "spread"): void {
+    this.potLayout = layout;
+  }
+
   /* ---------------------------------------------------------------- *
    * The permanent populations.
    * ---------------------------------------------------------------- */
@@ -337,7 +356,9 @@ export class ChipScene {
      */
     if (paying) return;
     const units = chipBreakdown(pot, bigBlind, MAX_POT_CHIPS);
-    const slots = pileSlots(units.length, this.chipRadius, MAX_POT_COLUMNS);
+    const slots = this.potLayout === "spread"
+      ? spreadSlots(units.length, this.chipRadius, MAX_POT_CHIPS)
+      : pileSlots(units.length, this.chipRadius, MAX_POT_COLUMNS);
     const centre = this.space.pot();
     const wanted = new Set<string>();
 

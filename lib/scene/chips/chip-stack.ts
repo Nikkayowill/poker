@@ -246,6 +246,62 @@ export function pileSlots(chipCount: number, chipRadius: number, maxColumns: num
 }
 
 /**
+ * How many chips one row of the flat "spread" layout holds before a
+ * second row opens behind it.
+ *
+ * Tuned to roughly the community-card row's own footprint rather than
+ * derived from it: the row is five 63mm cards wide (`BOARD_CARD_WIDTH_M`,
+ * table-anchors.ts) and a landscape-phone chip floors at a legible 6px
+ * radius (`MIN_RADIUS_PX`, chip-spec.ts) rather than shrinking further, so
+ * about this many chips fit across that same span before a row would run
+ * wider than the cards it's spreading above. A future pass could size this
+ * from the live board width the way `board-clearance.ts` sizes the cards
+ * themselves; this is the by-eye number until that's worth building.
+ */
+const SPREAD_ROW_CHIPS = 8;
+
+/**
+ * The pot laid out as a flat spread along the felt rather than a mound
+ * rising off it: every chip gets its own spot, one row wide until a row
+ * fills, then a shorter row drawn just behind it. `index` is always 0 --
+ * nothing in this layout ever sits on top of anything else.
+ *
+ * This is the landscape-phone alternative to `pileSlots`
+ * (`MOBILE_LANDSCAPE_MAX_WIDTH_PX`, table-anchors.ts): that camera sits
+ * close enough to the felt that a nine-high column climbs into the board
+ * caption sitting right above it, and there is no clearance to give it back.
+ * A flat spread has no "how tall is the tallest column" question, which is
+ * also what let the pot pill's own mound-clearance math stop guessing.
+ */
+export function spreadSlots(chipCount: number, chipRadius: number, maxChips: number): StackSlot[] {
+  const count = Math.min(Math.max(0, Math.floor(chipCount)), maxChips);
+  if (count === 0) return [];
+
+  const slots: StackSlot[] = [];
+  let remaining = count;
+  let row = 0;
+  while (remaining > 0) {
+    const rowCount = Math.min(remaining, SPREAD_ROW_CHIPS);
+    remaining -= rowCount;
+    const span = (rowCount - 1) * COLUMN_SPACING * chipRadius;
+    for (let column = 0; column < rowCount; column += 1) {
+      slots.push({
+        offsetX: -span / 2 + column * COLUMN_SPACING * chipRadius,
+        // Each overflow row recedes toward the dealer (MOUND_SHAPES' own
+        // "positive row is toward the viewer" convention, negated), so an
+        // outsized pot tucks its overflow behind the front row instead of
+        // spilling it forward over the community cards.
+        offsetZ: -row * ROW_SPACING * chipRadius,
+        index: 0,
+        column,
+      });
+    }
+    row += 1;
+  }
+  return slots;
+}
+
+/**
  * A standing bet's slots: one cut stack, widening only when it has to.
  *
  * Deliberately not the mound. A bet is a gesture by one player at one spot on

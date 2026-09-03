@@ -93,7 +93,7 @@ const HEN_YIELD = STACKACRES_YIELDS.hen;
 // Plots are grouped by kind now, one physical block per district
 // (lib/stackacres/world.ts): 1-4 are the free Hen Coops at the Farmstead,
 // 5-8 are Crop Fields at the Long Meadow, 9-12 are Sheep Pens at the
-// Wallow, 13-16 are Cattle Pens at Ox Fields. HEN_PLOT.."+3" stays inside
+// Fold, 13-16 are Cattle Pens at Ox Fields. HEN_PLOT.."+3" stays inside
 // that same block for the cap tests, same for CATTLE_PLOT.
 const HEN_PLOT = 1;
 const FIELD_PLOT = 5;

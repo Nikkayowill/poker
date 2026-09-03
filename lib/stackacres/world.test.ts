@@ -80,7 +80,7 @@ describe("plot placement", () => {
 
   it("puts each kind's block in the district that kind now lives in", () => {
     // 1-4 Hen Coops (Farmstead), 5-8 Crop Fields (Long Meadow), 9-12 Sheep
-    // Pens (Wallow), 13-16 Cattle Pens (Ox Fields) -- see plotPenZone's own
+    // Pens (the Fold), 13-16 Cattle Pens (Ox Fields) -- see plotPenZone's own
     // header for why this order.
     const field = penGroupBounds("field");
     const pig = penGroupBounds("pig");

@@ -18,7 +18,7 @@
  * THE PLOTS ARE NOT ONE GRID ANY MORE. Kayo: "the zoning was meant to make
  * the user have to visit each section we made" -- the four districts
  * ./zones.ts already built (the Farmstead, the Long Meadow, Ox Fields, the
- * Wallow) are where the pens physically live now, one kind of pen per
+ * Fold) are where the pens physically live now, one kind of pen per
  * district, four plots each. A Hen Coop plot is drawn at the Farmstead, a
  * Cattle Pen plot at Ox Fields, and so on -- see `PEN_GROUP_ORIGIN`. Tending
  * a Cattle Pen means travelling to Ox Fields, the way it would on a real
@@ -82,7 +82,7 @@ export interface WorldPoint {
  *
  *   hen    -- the Farmstead (home base -- the cheap starter tier, no travel)
  *   field  -- the Long Meadow ("Crop Fields")
- *   pig    -- the Wallow (its wild hogs retired for real, ownable Sheep Pens)
+ *   pig    -- the Fold (its wild hogs retired for real, ownable Sheep Pens)
  *   cattle -- Ox Fields (its wild oxen retired for real, ownable Cattle Pens)
  *
  * Kayo: "the zoning was meant to make the user have to visit each section
@@ -130,7 +130,7 @@ const PEN_GROUP_SIZE = PEN_GROUP_COLUMNS * PEN_GROUP_ROWS;
  *   hen    -- south-east of the pond, clear of the barn and the yard clutter
  *   field  -- the Long Meadow's open grass, east of the lane on its west edge
  *   cattle -- Ox Fields, roughly where the wild ox herd used to range
- *   pig    -- the Wallow, roughly where the wild hogs used to range
+ *   pig    -- the Fold, roughly where the wild hogs used to range
  *
  * Exact fit against each district's own props/scatter is a build-and-
  * screenshot job, not an arithmetic one -- see the district passes in

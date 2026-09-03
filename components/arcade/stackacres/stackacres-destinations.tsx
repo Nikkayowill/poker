@@ -4,24 +4,31 @@ import clsx from "clsx";
 import { zonesByDistance, type ZoneId } from "@/lib/stackacres/zones";
 
 /**
- * The signpost: where else there is to go.
+ * The signpost: where else there is to go, and where to spend what you made.
  *
  * The map has been roamable in every direction for a while, but roaming is
  * only worth doing if you know something is out there -- and a world whose
  * districts you can only find by dragging far enough in the right direction
  * is a world most players never see past the fence of. This is the one piece
- * of chrome that exists purely to answer "where else?", and tapping an entry
- * flies the camera to that district's gate.
+ * of chrome that exists purely to answer "where else?", and tapping a
+ * district entry flies the camera to that district's gate.
  *
  * Ordered outward from the farm (`zonesByDistance`), so it reads as a journey
  * rather than as an alphabetised menu, and the farm itself is first because
- * it is both where you start and what "back" means.
+ * it is both where you start and what "back" means. Grandfather Ray sits
+ * last, after every district: he is not somewhere further out, he is who you
+ * see once you have something to spend.
  *
- * It is deliberately NOT a map, a minimap or a fast-travel menu with costs and
- * cooldowns. It is a signpost at a junction: four names and the direction
- * each one is in. The travelling is still done by the camera, over ground the
- * player watches go past, which is most of what makes four rectangles feel
- * like one place.
+ * The district entries are deliberately NOT a map, a minimap or a fast-travel
+ * menu with costs and cooldowns -- four names and the direction each one is
+ * in, and the travelling is still done by the camera, over ground the player
+ * watches go past. Ray's entry breaks that pattern on purpose: he is already
+ * standing at the Farmstead (see props.ts), so there is nowhere for the
+ * camera to fly to, and tapping him opens the supply store directly instead.
+ * That used to be its own "Store" button in the header; folding it in here
+ * is what makes "go to him to buy anything" literally true rather than a
+ * turn of phrase -- there is no purchase path left that does not start by
+ * picking Ray off this list.
  */
 
 /** Which way each district lies from the farmyard, on screen. Written down
@@ -41,9 +48,19 @@ export interface StackAcresDestinationsProps {
    *  on its own -- panning away is not arriving anywhere. */
   active: ZoneId | null;
   onTravel: (zone: ZoneId) => void;
+  /** Opens the supply store. Ray's own entry, not a travel target. */
+  onOpenStore: () => void;
+  /** Produce sitting in the barn, unsold -- shown as a badge on Ray's entry
+   *  the same way it used to sit on the header's own Store button. */
+  carrying: number;
 }
 
-export function StackAcresDestinations({ active, onTravel }: StackAcresDestinationsProps) {
+export function StackAcresDestinations({
+  active,
+  onTravel,
+  onOpenStore,
+  carrying,
+}: StackAcresDestinationsProps) {
   return (
     <nav className="sa-destinations" aria-label="Places">
       {zonesByDistance().map((zone) => (
@@ -66,6 +83,31 @@ export function StackAcresDestinations({ active, onTravel }: StackAcresDestinati
           </span>
         </button>
       ))}
+      <button
+        type="button"
+        className="sa-dest sa-dest-ray"
+        title="Sell produce, buy feed, and exchange Bushels for Gold."
+        aria-label="Buy from Ray — sell produce, buy feed, and exchange Bushels for Gold."
+        onClick={onOpenStore}
+      >
+        <img
+          src="/stackacres/sprites/grandfather-ray-portrait.png"
+          alt=""
+          className="sa-dest-ray-portrait"
+          aria-hidden="true"
+        />
+        <span className="sa-dest-text">
+          <span className="sa-dest-name">Buy from Ray</span>
+          <span className="sa-dest-way" aria-hidden="true">
+            supplies
+          </span>
+        </span>
+        {carrying > 0 && (
+          <span className="sa-dest-badge" aria-hidden="true">
+            {carrying}
+          </span>
+        )}
+      </button>
     </nav>
   );
 }

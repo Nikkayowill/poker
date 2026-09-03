@@ -95,22 +95,30 @@ export const STACKACRES_STALLS: Readonly<Record<ZoneId, StackAcresStall>> = {
     blurb: "Seed trays and the hen house. Where everybody starts.",
     stock: ["sprout", "hen"],
   },
+  // Sells the Crop Fields' own stock -- world.ts's PEN_GROUP_ORIGIN puts the
+  // "field" pen block physically in the Long Meadow, and a stall has to
+  // match the plots standing in its own district or the buy button offers
+  // stock that plot refuses (stockAllowedOnPlot, checked server-side) and
+  // always errors. This stall sold "cattle" until that drift was caught.
   meadow: {
     zone: "meadow",
-    label: "The Hay Market",
-    blurb: "Grass deep enough to keep cattle standing in it.",
-    stock: ["cattle"],
+    label: "The Seed Barrow",
+    blurb: "Cash Crop seed, ready for the Long Meadow's own fields.",
+    stock: ["cash_crop"],
   },
+  // Sells the Cattle Pens' own stock -- PEN_GROUP_ORIGIN.cattle is the block
+  // physically standing at Ox Fields. Sold "cash_crop" until the same drift
+  // that hit meadow (above) was fixed alongside it.
   oxfields: {
     zone: "oxfields",
-    label: "The Draught Yard",
-    blurb: "Ploughed ground, and the crop that pays for ploughing it.",
-    stock: ["cash_crop"],
+    label: "The Stockyard",
+    blurb: "Where a Cattle Pen starts, if you'd rather not wait on a calf.",
+    stock: ["cattle"],
   },
   wallow: {
     zone: "wallow",
-    label: "The Sty",
-    blurb: "Mud, shade, and stock that wants both.",
+    label: "The Shearing Shed",
+    blurb: "Wool and mud, and the Sheep Pens that call the Fold home.",
     stock: ["pig"],
   },
 };

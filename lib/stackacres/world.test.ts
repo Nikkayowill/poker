@@ -49,6 +49,7 @@ function plot(
     progress: null,
     hungryAt: null,
     muckFee: null,
+    permanent: false,
     unlockPrice: null,
     purchasable: false,
     ...over,

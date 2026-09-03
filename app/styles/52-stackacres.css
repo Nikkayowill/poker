@@ -631,6 +631,67 @@
 
 .sa-sell-btn { font-size: 15px; padding: 10px 22px; }
 
+/* ---- the Gold shelf --------------------------------------------------- */
+/*
+ * Sits under the Bushel "sow" button on an empty plot and sells the same stock
+ * outright for Gold. The rule is separation, not decoration: the two prices buy
+ * genuinely different things (one cycle versus the animal), so the shelf reads
+ * as a second counter rather than a second button.
+ *
+ * The district's own name heads it, because each district sells a different
+ * part of the catalogue -- cattle out in the meadow, pigs in the wallow -- and
+ * without the name a player has no way to know why the shelf changed.
+ */
+
+.sa-shelf {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sa-panel-rule, rgba(182, 166, 219, .18));
+}
+
+.sa-shelf-head {
+  margin: 0;
+  color: var(--brand-gold-light);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.sa-shelf-blurb {
+  margin: 2px 0 0;
+  font-size: 13px !important;
+  opacity: .8;
+}
+
+/* One step quieter than the primary gold CTA above it: an outright purchase is
+   the bigger commitment, so it must not be the loudest thing on the card. */
+.sa-cta-gold {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--brand-gold);
+  box-shadow: none;
+  color: var(--brand-gold-light);
+}
+
+.sa-cta-gold:hover:not(:disabled) {
+  background: rgba(255, 210, 63, .1);
+  filter: none;
+}
+
+.sa-owned {
+  color: var(--brand-gold-light);
+  opacity: 1 !important;
+}
+
+/* Destructive and unrefundable, so it takes the one warning colour in the
+   system rather than the gold every other action here wears. */
+.sa-retire-confirm {
+  background: linear-gradient(152deg, #ff8a86 0%, #ff6f6b 55%, #b3312d 100%);
+  box-shadow: none;
+  color: #2a0d0c;
+}
+
 /* ---- the keyboard plot list ------------------------------------------ */
 
 /* Invisible until something in it has focus, then a strip of numbered plot

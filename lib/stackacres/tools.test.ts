@@ -24,6 +24,7 @@ function plot(
     progress: null,
     hungryAt: null,
     muckFee: state === "mucked" ? 1_200 : null,
+    permanent: false,
     unlockPrice: null,
     purchasable: false,
     ...over,

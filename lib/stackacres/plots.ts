@@ -42,6 +42,13 @@ export interface StackAcresPlotRow {
   lastFedAt: string | null;
   /** What clearing this plot costs while it is mucked. */
   muckFee: number | null;
+  /**
+   * True when the stock on this plot was bought outright with Gold. A
+   * permanent plot restarts its own cycle at collection instead of emptying,
+   * and never mucks -- see `collectStackAcresPlot`. False for anything sown
+   * with Bushels, which is consumed by its own harvest exactly as before.
+   */
+  permanent: boolean;
   version: number;
 }
 
@@ -77,6 +84,8 @@ export interface StackAcresPlotSnapshot {
   hungryAt: string | null;
   /** What clearing this plot costs. Null unless mucked. */
   muckFee: number | null;
+  /** True when this plot's stock was bought outright and re-sows itself. */
+  permanent: boolean;
   /** What unlocking this locked plot costs. Null unless locked. */
   unlockPrice: number | null;
   /**
@@ -144,15 +153,12 @@ export function toStackAcresPlotSnapshots(
 ): StackAcresPlotSnapshot[] {
   const byIndex = new Map(rows.map((row) => [row.plotIndex, row]));
 
-  // The lowest locked index is the one buyable next; ownership is contiguous
-  // because buyStackAcresPlot only ever sells that plot.
-  let nextPurchasable = 0;
-  for (let index = STACKACRES_FREE_PLOTS + 1; index <= STACKACRES_GRID_PLOTS; index += 1) {
-    if (!byIndex.has(index)) {
-      nextPurchasable = index;
-      break;
-    }
-  }
+  // Every locked plot is buyable, in any order. There used to be a "next
+  // purchasable" walk here, and it existed solely because the old price
+  // doubled per tile: without an order, a cheap tile could be left unbought
+  // beneath a dear one. The price is flat now (STACKACRES_PLOT_PRICE), so
+  // there is nothing left for an order to protect, and a player buying the
+  // corner they actually want is the whole point of the change.
 
   const idle = (index: number): StackAcresPlotSnapshot => {
     const locked = index > STACKACRES_FREE_PLOTS;
@@ -167,8 +173,9 @@ export function toStackAcresPlotSnapshots(
       progress: null,
       hungryAt: null,
       muckFee: null,
+      permanent: false,
       unlockPrice: locked ? stackacresPlotPrice(index) : null,
-      purchasable: locked && index === nextPurchasable,
+      purchasable: locked,
     };
   };
 
@@ -187,6 +194,7 @@ export function toStackAcresPlotSnapshots(
         unlockPrice: null,
         purchasable: false,
         muckFee: row.muckFee,
+        permanent: row.permanent,
       });
       continue;
     }
@@ -211,6 +219,7 @@ export function toStackAcresPlotSnapshots(
       progress: progressOf(row.startedAt as string, row.readyAt as string, now),
       hungryAt: hungryAtFor(row),
       muckFee: null,
+      permanent: row.permanent,
       unlockPrice: null,
       purchasable: false,
     });

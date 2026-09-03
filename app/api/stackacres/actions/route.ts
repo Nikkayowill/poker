@@ -10,10 +10,12 @@ import { STACKACRES_ITEMS } from "@/lib/stackacres/items";
 import {
   buyStackAcresFeed,
   buyStackAcresPlot,
+  buyStackAcresStock,
   clearStackAcresPlot,
   collectStackAcres,
   exchangeStackAcresBushels,
   feedStackAcres,
+  retireStackAcresStock,
   sellStackAcresProduce,
   stockStackAcres,
   toStackAcresErrorResponse,
@@ -31,12 +33,18 @@ export const runtime = "nodejs";
  * lib/server/stackacres-service.ts -- and `collect` yields a settled plot's
  * produce exactly once, guarded by version.
  *
- * Exactly two actions move GOLD: `buy-plot` spends it on acreage, and
- * `exchange` pays it out at the daily window under a flat per-player ceiling.
- * Everything else is denominated in Bushels or produce, both of which stay
- * inside the farm. Adding a THIRD Gold path here is the change worth stopping
- * over -- and a Gold-to-Bushels action in particular, which would make a round
- * trip through the capped window possible, is the one that must never exist.
+ * Three actions move GOLD, and the asymmetry between them is what keeps this
+ * safe: `buy-plot` and `buy-stock` SPEND it, `exchange` PAYS it out at the
+ * daily window under a flat per-player ceiling. Everything else is denominated
+ * in Bushels or produce, both of which stay inside the farm.
+ *
+ * This comment used to say a third Gold path must never exist, because a
+ * Gold-to-Bushels round trip could launder Gold through the capped window.
+ * That holds only when the inbound rate is as good as the outbound one: stock
+ * costs 100 Gold per Bushel of its seed price against an exchange that pays 2,
+ * so no round trip has ever returned a profit and market.test.ts holds it. The
+ * rule that actually matters is the direction -- an action that PAYS Gold is
+ * the change worth stopping over. One that spends it is a sink.
  *
  * No `version` field in any action: each handler reads the live row itself and
  * the guarded write settles at most once, so a stale client gets a 409
@@ -55,6 +63,12 @@ const bodySchema = z.discriminatedUnion("action", [
     plotIndex: plotIndexSchema,
     stock: z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]),
   }),
+  z.object({
+    action: z.literal("buy-stock"),
+    plotIndex: plotIndexSchema,
+    stock: z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]),
+  }),
+  z.object({ action: z.literal("retire"), plotIndex: plotIndexSchema }),
   z.object({ action: z.literal("collect"), plotIndex: plotIndexSchema }),
   z.object({ action: z.literal("feed"), plotIndex: plotIndexSchema }),
   z.object({ action: z.literal("clear"), plotIndex: plotIndexSchema }),
@@ -91,6 +105,10 @@ function run(token: string, action: StackAcresAction) {
       return buyStackAcresPlot(token, action.plotIndex);
     case "stock":
       return stockStackAcres(token, { plotIndex: action.plotIndex, stock: action.stock });
+    case "buy-stock":
+      return buyStackAcresStock(token, { plotIndex: action.plotIndex, stock: action.stock });
+    case "retire":
+      return retireStackAcresStock(token, action.plotIndex);
     case "collect":
       return collectStackAcres(token, action.plotIndex);
     case "feed":

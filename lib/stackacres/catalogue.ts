@@ -176,19 +176,41 @@ export const STACKACRES_GRID_PLOTS = 16;
 export const STACKACRES_FREE_PLOTS = 4;
 
 /**
- * What unlocking a plot costs, in GOLD -- the one number in this file that is
- * not Bushels, and the farm's only Gold inlet. Kayo's call: keeping the ladder
- * on Gold preserves a sink the wider economy already leans on, and gives Gold
- * a reason to enter the StackAcres at all rather than only ever leaving it
- * through phase 3's exchange window.
+ * What one locked plot costs, in GOLD -- the only number in this file that is
+ * not Bushels.
  *
- * Doubles per tile from 2,500, so the last tile is aspirational (5.12M) the
- * way the top of the character ladder is. Sunk Gold, never returned: plots are
- * progression, not principal. Note this buys LAND ONLY -- more acreage is more
- * room, never more income, because the two caps bound how much can run at once.
+ * Sized against what land is actually FOR. The caps are three pens and three
+ * fields, so six plots is everything a player can run at once, and the four
+ * free ones do not reach it. Plots five and six are the ones that matter and
+ * cost 20,000 together; every plot above six is room to arrange a farm you
+ * like looking at rather than more income.
+ *
+ * Lives here rather than in market.ts because market.ts reads this module and
+ * the reverse would be a cycle. market.ts re-exports it, so the Gold prices
+ * can still all be read in one place.
+ */
+export const STACKACRES_PLOT_PRICE = 10_000;
+
+/**
+ * What unlocking a plot costs, in GOLD. Flat: every locked plot is the same
+ * price, and they may be bought in any order.
+ *
+ * This replaced a ladder that doubled from 2,500 to 5.12 million. Two things
+ * were wrong with it, and they were the same thing twice. The doubling made
+ * the top of the grid unreachable rather than aspirational, and it FORCED the
+ * strict purchase order -- `buyStackAcresPlot` had to walk the ladder and
+ * refuse a gap, purely so a cheap tile could not go unbought beneath a dear
+ * one. Nobody wanted that rule; it was an artefact of the pricing. Flatten the
+ * price and it dissolves, which is why `plots.ts` now marks every locked plot
+ * purchasable.
+ *
+ * The price itself lives in market.ts with the rest of the Gold prices, so
+ * there is one file to read when the question is "what does Gold buy here".
+ * Still sunk, never returned: land is progression, not principal, and it buys
+ * ROOM rather than income -- the two caps bound how much can run at once.
  */
 export function stackacresPlotPrice(plotIndex: number): number | null {
   if (!Number.isInteger(plotIndex)) return null;
   if (plotIndex <= STACKACRES_FREE_PLOTS || plotIndex > STACKACRES_GRID_PLOTS) return null;
-  return 2_500 * 2 ** (plotIndex - STACKACRES_FREE_PLOTS - 1);
+  return STACKACRES_PLOT_PRICE;
 }

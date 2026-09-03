@@ -9,6 +9,7 @@ import {
   stackacresExchangeDay,
   msUntilNextExchangeDay,
 } from "./exchange";
+import { stackacresStockPrice } from "./market";
 
 /**
  * The exchange window's arithmetic. Most of what matters about this feature is
@@ -23,15 +24,19 @@ describe("the daily ceiling", () => {
     // the change that turns the StackAcres back into a scaling faucet, and it
     // should have to delete this test to happen.
     expect(typeof STACKACRES_GOLD_CEILING).toBe("number");
-    expect(STACKACRES_GOLD_CEILING).toBe(5_000);
+    expect(STACKACRES_GOLD_CEILING).toBe(15_000);
   });
 
-  it("sits alongside the faucets that already exist, not above them", () => {
-    // Daily grant 1,000 x 2.5 streak = 2,500; rewarded ads 500 x 6 = 3,000.
-    // The farm is allowed to be the biggest of the three and nothing like the
-    // ~7,500/day the uncapped Gold StackAcres paid.
+  it("stays inside what the farm can actually spend it on", () => {
+    // The original bound here was "sits alongside the other faucets" -- daily
+    // grant 2,500, rewarded ads 3,000 -- and it was the right test while the
+    // farm had nothing to buy, because its output was pure addition to the
+    // money supply. Now that Gold buys stock and land, the number that keeps
+    // this honest is the SINK on the other side: a single day's ceiling must
+    // stay well under what a Cattle Pen costs, or the farm pays for its own
+    // upgrades in a day and stops being a sink at all.
     expect(STACKACRES_GOLD_CEILING).toBeGreaterThan(3_000);
-    expect(STACKACRES_GOLD_CEILING).toBeLessThan(7_500);
+    expect(STACKACRES_GOLD_CEILING * 3).toBeLessThan(stackacresStockPrice("cattle"));
   });
 
   it("bounds a request at exactly one day's worth of Bushels", () => {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
+import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
 
 /**
  * The full-screen "entering the room" beat over the racetrack table.
@@ -20,6 +21,10 @@ import { StackChipsMark } from "@/components/brand/stackchips-mark";
  * interactive for that one frame before the room painted in behind them.
  * `sceneReady` from poker-table.tsx reflects that readiness; this component
  * owns none of the decision, only the presentation of it.
+ *
+ * Phase timing (hidden/visible/hiding, plus the minimum hold before a hide
+ * is allowed to start) is shared with every other loading treatment in the
+ * app via useMinHoldFade -- see that hook for why the hold exists.
  */
 
 const FLAVOR_LINES = [
@@ -30,6 +35,7 @@ const FLAVOR_LINES = [
 ] as const;
 
 const FLAVOR_INTERVAL_MS = 1800;
+const MIN_VISIBLE_MS = 450;
 const FADE_MS = 350;
 
 /**
@@ -40,48 +46,33 @@ const FADE_MS = 350;
  * over a DOM fallback table that is already working fine. Set past the
  * scene-side timeout so the natural path wins first whenever the room is
  * merely slow, not broken.
+ *
+ * Implemented as a local override of `active` (see `effectiveActive` below)
+ * rather than inside the phase hook -- the hook only knows hidden/visible/
+ * hiding, it has no concept of "force-hide even though the caller still says
+ * active."
  */
 const AUTO_HIDE_MS = 11_000;
 
-type Phase = "hidden" | "visible" | "hiding";
-
 export function TableLoadingSplash({ active }: { active: boolean }) {
-  const [phase, setPhase] = useState<Phase>(active ? "visible" : "hidden");
-  const [prevActive, setPrevActive] = useState(active);
+  const [backstopExpired, setBackstopExpired] = useState(false);
+  const effectiveActive = active && !backstopExpired;
+  const phase = useMinHoldFade(effectiveActive, { minMs: MIN_VISIBLE_MS, fadeMs: FADE_MS });
   const [flavorIndex, setFlavorIndex] = useState(0);
 
-  // React's own documented pattern for "adjust state when a prop changes":
-  // compared and set during render, not synced from an effect. A fresh load
-  // (renderer switched back to 3D after leaving it) always gets its own full
-  // "visible" phase; a load finishing (or failing, via the DOM fallback
-  // already taking over) starts the fade unless nothing was ever shown.
-  if (active !== prevActive) {
-    setPrevActive(active);
-    if (active) {
-      setPhase("visible");
-    } else if (phase !== "hidden") {
-      const reduceMotion =
-        typeof window !== "undefined" &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      setPhase(reduceMotion ? "hidden" : "hiding");
+  // Resets whenever a fresh load starts, so a second wait gets its own full
+  // backstop window rather than inheriting whatever was left of the last one.
+  // Deferred a macrotask rather than called synchronously in the effect body
+  // -- same `window.setTimeout(fn, 0)` shape useMinHoldFade uses, required by
+  // this codebase's react-hooks/set-state-in-effect lint.
+  useEffect(() => {
+    if (!active) {
+      const timer = window.setTimeout(() => setBackstopExpired(false), 0);
+      return () => window.clearTimeout(timer);
     }
-  }
-
-  // The fade-out's own duration: a genuine timer, not derived state.
-  useEffect(() => {
-    if (phase !== "hiding") return;
-    const timer = setTimeout(() => setPhase("hidden"), FADE_MS);
-    return () => clearTimeout(timer);
-  }, [phase]);
-
-  // The auto-hide backstop described above.
-  useEffect(() => {
-    if (phase !== "visible") return;
-    const timer = setTimeout(() => {
-      setPhase((current) => (current === "visible" ? "hiding" : current));
-    }, AUTO_HIDE_MS);
-    return () => clearTimeout(timer);
-  }, [phase]);
+    const timer = window.setTimeout(() => setBackstopExpired(true), AUTO_HIDE_MS);
+    return () => window.clearTimeout(timer);
+  }, [active]);
 
   useEffect(() => {
     if (phase === "hidden") return;

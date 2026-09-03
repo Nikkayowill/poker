@@ -11,7 +11,7 @@ import type { MissionsPayload, MissionView } from "@/lib/missions/types";
  */
 const POLL_MS = 15_000;
 
-interface MissionsState {
+export interface MissionsState {
   data: MissionsPayload | null;
   /** Missions that flipped to completed since the last successful poll. */
   justCompleted: MissionView[];

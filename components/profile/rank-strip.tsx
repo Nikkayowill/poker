@@ -1,6 +1,9 @@
 "use client";
 
 import { Flame, TrendingUp } from "lucide-react";
+import type { ProgressionPayload } from "@/lib/progression/types";
+import { FadeSwap } from "@/components/loading/fade-swap";
+import { Skeleton } from "@/components/loading/skeleton";
 import { useProgression } from "./use-progression";
 
 /**
@@ -15,16 +18,39 @@ import { useProgression } from "./use-progression";
  * Fetch lives in `useProgression`, shared with the 3D table's corner HUD --
  * both are a level/XP/streak readout beside a screen full of working
  * controls, and both fail the same way (silently).
+ *
+ * Used to `return null` until data existed, on the reasoning that a skeleton
+ * would push the hub grid down and then move it back. That reasoning had it
+ * backwards -- a skeleton sized to this section's own real footprint
+ * reserves the space from the first frame, so nothing moves when the real
+ * strip swaps in. `RankStripSkeleton` below is that footprint; `FadeSwap`
+ * crossfades the two once `useProgression` resolves.
  */
+
+function RankStripSkeleton() {
+  return (
+    <div className="rank-strip" aria-hidden="true">
+      <Skeleton className="skeleton-rank-badge" />
+      <div className="rank-body">
+        <Skeleton className="skeleton-rank-line" />
+        <Skeleton className="skeleton-rank-track" />
+        <Skeleton className="skeleton-rank-next" />
+      </div>
+    </div>
+  );
+}
 
 export function RankStrip() {
   const data = useProgression();
 
-  // Renders nothing until it knows something. A skeleton here would push the
-  // hub grid down and then move it back, on the one screen where the tiles'
-  // position is the thing a returning player is reaching for.
-  if (!data) return null;
+  return (
+    <FadeSwap ready={data !== null} skeleton={<RankStripSkeleton />}>
+      {data && <RankStripContent data={data} />}
+    </FadeSwap>
+  );
+}
 
+function RankStripContent({ data }: { data: ProgressionPayload }) {
   const { progression, daily } = data;
   const atCap = progression.levelSpan === 0;
 

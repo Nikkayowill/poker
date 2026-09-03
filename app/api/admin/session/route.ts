@@ -16,6 +16,9 @@ const bodySchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request, "admin:session:read", 60, 60 * 1000);
+  if (limited) return limited;
+
   if (!isAdminAuthorized(request)) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
@@ -43,7 +46,10 @@ export async function POST(request: NextRequest) {
   return response;
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
+  const limited = enforceRateLimit(request, "admin:session:clear", 30, 60 * 1000);
+  if (limited) return limited;
+
   const response = NextResponse.json({ authenticated: false });
   response.cookies.set({
     name: ADMIN_SESSION_COOKIE,

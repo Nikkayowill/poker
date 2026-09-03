@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/server/admin-auth";
 import { isSameUtcDay } from "@/lib/profile/daily-gold";
 import { pickComeBackPushCopy } from "@/lib/push/copy";
+import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { sendPushToSubscription } from "@/lib/server/push-service";
 import {
   markPushSubscriptionNotified,
@@ -24,6 +25,12 @@ export const runtime = "nodejs";
  * fix this here.
  */
 export async function GET(request: NextRequest) {
+  // Vercel's own scheduler calls this at most once a day; a tight cap is
+  // pure defense-in-depth against someone flooding the URL to guess
+  // CRON_SECRET, not something legitimate traffic could ever brush against.
+  const limited = enforceRateLimit(request, "cron:notify-inactive-players", 10, 60 * 1000);
+  if (limited) return limited;
+
   if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: "Not authorized." }, { status: 401 });
   }

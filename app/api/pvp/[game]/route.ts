@@ -46,6 +46,9 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ game: string }> },
 ) {
+  const limited = enforceRateLimit(request, "pvp:read", 120, 60 * 1000);
+  if (limited) return limited;
+
   const game = resolveGame((await context.params).game);
   const token = readOrCreateSessionToken(request);
   if (!game) {

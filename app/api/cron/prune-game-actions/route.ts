@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/server/admin-auth";
 import { pruneGameActions } from "@/lib/server/game-store";
+import { enforceRateLimit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,11 @@ export const runtime = "nodejs";
  * table just returns { deleted: 0 }.
  */
 export async function GET(request: NextRequest) {
+  // Same posture as the other cron routes: a tight per-IP cap, purely to
+  // blunt a flood of guesses at CRON_SECRET.
+  const limited = enforceRateLimit(request, "cron:prune-game-actions", 10, 60 * 1000);
+  if (limited) return limited;
+
   if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: "Not authorized." }, { status: 401 });
   }

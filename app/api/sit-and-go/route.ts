@@ -34,6 +34,9 @@ const openSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request, "sit-and-go:read", 120, 60 * 1000);
+  if (limited) return limited;
+
   const token = readOrCreateSessionToken(request);
   try {
     const lobby = await readSitAndGoLobby(token);

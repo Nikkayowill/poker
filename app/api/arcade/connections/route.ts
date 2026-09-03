@@ -39,6 +39,9 @@ export const runtime = "nodejs";
  * it, the same read-never-writes rule as the no-day path.
  */
 export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request, "arcade:connections:read", 120, 60 * 1000);
+  if (limited) return limited;
+
   const token = readOrCreateSessionToken(request);
   const dayParam = request.nextUrl.searchParams.get("day");
   if (dayParam && !DAY_PATTERN.test(dayParam)) {

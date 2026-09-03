@@ -2,10 +2,11 @@
  * Where the farm's fixed props stand.
  *
  * Pure layout: the windmill, the well, the clutter by the silo, the lamps
- * down the lane and the rest, each as a kind and the world point its feet
- * are on. The renderer (components/arcade/stackacres/art-props.ts) paints
- * them; the scene places each one by its feet with a soft ground shadow
- * under it and sorts it by that y like everything else with height.
+ * down the lane, Grandfather Ray and the rest, each as a kind and the world
+ * point its feet are on. The renderer (components/arcade/stackacres/
+ * art-props.ts) paints them; the scene places each one by its feet with a
+ * soft ground shadow under it and sorts it by that y like everything else
+ * with height.
  *
  * Every number here is a literal and only types come in from ./world and
  * ./paths, the arrangement those modules have with each other: this file is
@@ -37,7 +38,8 @@ export type PropKind =
   | "lampPost"
   | "flowerBed"
   | "stoneWall"
-  | "scarecrow";
+  | "scarecrow"
+  | "grandfatherRay";
 
 export interface PropPlacement extends WorldPoint {
   kind: PropKind;
@@ -79,6 +81,9 @@ export const YARD_PROPS: readonly PropPlacement[] = [
 
   // Watching the first row of fields from the east verge.
   { kind: "scarecrow", x: 402, y: 110 },
+
+  // Grandfather Ray, at his post beside the barn door -- the front desk.
+  { kind: "grandfatherRay", x: 175, y: 20 },
 ];
 
 /**
@@ -109,6 +114,7 @@ export const PROP_SIZE: Record<PropKind, PropSize> = {
   flowerBed: { w: 28, h: 12 },
   stoneWall: { w: 32, h: 10 },
   scarecrow: { w: 20, h: 36 },
+  grandfatherRay: { w: 20, h: 40 },
 };
 
 /**
@@ -128,6 +134,7 @@ export const PROP_SHADOW: Record<PropKind, PropSize> = {
   flowerBed: { w: 30, h: 6 },
   stoneWall: { w: 34, h: 5 },
   scarecrow: { w: 24, h: 7 },
+  grandfatherRay: { w: 22, h: 7 },
 };
 
 /**

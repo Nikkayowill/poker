@@ -602,6 +602,49 @@
   color: var(--neon-chalk);
 }
 
+/* Grandfather Ray's byline: his portrait plus his name, wherever a panel is
+   his -- buying land and the supply store, both his in the fiction. A plain
+   row, not a speech-bubble affordance; he doesn't have dialogue everywhere,
+   just a face on the two things he actually does. */
+.sa-ray-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.sa-ray-portrait {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top center;
+  background: var(--brand-ink);
+  box-shadow: var(--accent-edge);
+}
+
+.sa-ray-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--neon-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* The one-time welcome (stackacres-ray-welcome.tsx): his portrait, centred
+   and a good deal bigger than the panel byline above, since this is the one
+   place he's the whole point of the screen rather than a small attribution. */
+.sa-ray-welcome-portrait {
+  width: 96px;
+  height: 96px;
+  margin: 0 auto;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top center;
+  background: var(--brand-ink);
+  box-shadow: var(--accent-edge), var(--elevation-4);
+}
+
 .sa-panel > p { margin: 6px 0; color: var(--neon-muted); font-size: 14px; }
 
 .sa-countdown {

@@ -916,15 +916,19 @@ function spriteBacked(name: SpriteName, drawn: Painter): Painter {
   return p;
 }
 
-/** Every painter, by name, with the four generated sprites standing in front
- *  of the code that used to draw them. See stackacres-sprites.ts for what
- *  those four cost and why there are only four. */
+/** Every painter, by name, with the generated sprites standing in front of
+ *  the code that used to draw them. See stackacres-sprites.ts for what they
+ *  cost and why there are only this many. */
 export const PAINTERS: Record<PainterName, Painter> = {
   ...DRAWN,
   cow: spriteBacked("cow", DRAWN.cow),
   hen: spriteBacked("hen", DRAWN.hen),
+  sheep: spriteBacked("sheep", DRAWN.sheep),
+  ox: spriteBacked("ox", DRAWN.ox),
+  hog: spriteBacked("hog", DRAWN.hog),
   barn: spriteBacked("barn", DRAWN.barn),
   windmill: spriteBacked("windmill", DRAWN.windmill),
+  grandfatherRay: spriteBacked("grandfatherRay", DRAWN.grandfatherRay),
 };
 
 /**

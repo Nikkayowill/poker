@@ -46,6 +46,62 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### StackAcres camera went isometric: real depth, not just repositioning (2026-09-03)
+Kayo: the farm "looks like basic poly" and "the camera is still overtop 2d," expecting "2d5 with
+depth like farmville" -- two references given, a FarmVille screen and a mobile isometric farm game
+screenshot. Both complaints are the same root cause: a building only reads as three-dimensional once
+the camera actually views it from an angle, and the camera was a dead flat bird's-eye view (plots were
+axis-aligned rectangles, buildings were plan-view icons). Before building, a slider-driven Canvas
+mockup was published and approved (classic 2:1 isometric, the FarmVille/Clash-of-Clans tile ratio) --
+https://claude.ai/code/artifact/7dc4bdfc-7be4-4a2c-a1c6-1d9df882c996 -- **build a preview before moving
+forward** is Kayo's own instruction here, worth reusing whenever a camera/projection change is on the
+table again.
+
+**The architecture that made this safe: `lib/homestead/world.ts` never changed.** A plot is still a
+CELL-square at `cellOrigin(index)`, `plotIndexAt` is still a plain divide, `stepCritter` still walks a
+rectangle -- none of it knows the camera tilted. The isometric shear is a new, pure, tested seam,
+`lib/homestead/iso.ts` (`isoProject`/`isoUnproject`, exact inverses, additive by construction so a
+container at a projected origin composes correctly with children placed at their own projected
+cell-local offsets). Every world-space number `homestead-scene.ts` reads goes through `isoProject`
+before becoming a Phaser position or a depth key; every point Phaser hands back (a pointer's world
+point) goes through `isoUnproject` before it is allowed near `plotIndexAt` or any other world.ts
+function. Depth sort needed no new mechanism: projected y is monotonic in (worldX + worldY) by
+construction, so the existing "depth = y of feet" convention is still exactly right, just fed a
+projected y now (`depthAt`). One real per-frame bug this caught: `sortPen`'s within-pen depth
+comparator sorted by `state.y` alone, correct only under the old flat camera -- now sorts by
+`state.x + state.y`, the real isometric key.
+
+**What got redrawn, not just repositioned:** a square texture repositioned onto a diamond footprint
+still renders as a square floating at the wrong angle, so the four flat ground-plate painters
+(mown/soil/straw/muckbed) became diamond Graphics fills (`paintGroundDiamond`, colours lifted from the
+flat painters of the same name so a plot reads as the same material, just tilted); the barn, silo and
+windmill -- the three biggest "basic poly" offenders -- became real isometric volumes drawn straight
+with Phaser Graphics (`drawIsoWalls`/`drawIsoFlatRoof`/`drawIsoGableRoof`, one-sun three-tone shading:
+roof lightest, left wall medium, right wall darkest) rather than baked painters; fence rails and the
+pen gate are rotated to the diamond's own two edge directions (`ISO_EDGE_ANGLE`, derived from the
+projection itself, not eyeballed) instead of lying screen-horizontal/vertical. Selection/afford rings
+became diamond outlines (`tracePlotDiamond`) instead of rounded rects; the progress bar stays a plain
+screen-flat UI bar anchored under the diamond's nearest corner, deliberately not sheared -- a mini
+progress bar reads as UI everywhere else in this codebase, and a tilted one would look like a bug.
+
+**What shipped repositioned but still visually flat, on purpose -- the honest remaining gap, same
+shape as the 2026-09-02 "art volume" entries below:** the baked path and pond shore textures, and every
+smaller yard prop (well, wheelbarrow, crates, log pile, mailbox, signpost, lamps, flower bed, stone
+wall, scarecrow, the thicket/woodland trees). Their anchors are projected so they sit in the right
+place; their own shape is not yet redrawn for the tilt. Small round/symmetric things (a tree canopy, an
+animal, a rock) read fine under repositioning alone -- nothing here reads as obviously wrong -- but a
+future pass giving them the same volume/rotation treatment as the barn is the next honest step toward
+the FarmVille bar, not a correctness gap.
+
+Verified: `iso.ts`'s round-trip/additivity/edge-angle properties in `iso.test.ts` (11 tests), the full
+existing 121-test homestead suite unchanged and green (world.ts's own contract never moved), full
+`npx vitest run` (2732/2733 -- the one red is the pre-existing PR #163 `table-anchors` dealer-shoulder-
+room regression, confirmed unrelated), `npm run lint` and `npm run build` clean. Screenshotted in
+memory mode end-to-end, including stocking a real Hen Coop through the actual toolbelt+canvas flow (not
+just the empty farm): fence rails trace the diamond correctly, hens scatter inside the pen footprint,
+depth sorts correctly. Branch `feat/stackacres-2-5d-visuals`, PR not yet opened at the time this entry
+was written.
+
 ### Homestead collecting was also broken in production, same Phase 2 landing (2026-09-02)
 Immediately after the stocking fix below unblocked stocking, collecting hit the same class of bug:
 "Could not collect from that plot: Could not find the 'yieldQuantity' column of 'homestead_plots' in

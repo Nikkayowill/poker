@@ -14,7 +14,7 @@ import {
 } from "@/lib/stackacres/iso";
 import { FARM_PATHS } from "@/lib/stackacres/paths";
 import type { StackAcresPlotState } from "@/lib/stackacres/plots";
-import { PROP_SHADOW, WINDMILL_SPEED, YARD_PROPS } from "@/lib/stackacres/props";
+import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS } from "@/lib/stackacres/props";
 import type { PlotAffordance, StackAcresTool } from "@/lib/stackacres/tools";
 import { DOCK, DUCK_ORBIT, LILY_PADS, POND, REEDS, RIPPLE_SPOTS } from "@/lib/stackacres/water";
 import {
@@ -980,66 +980,31 @@ export class StackAcresScene extends Phaser.Scene {
    * farm has a home rather than a top-left corner. It is the one fixed
    * landmark out here: the opening shot frames it along with the plots.
    *
-   * Unlike the rest of the world's art, the barn and silo are not baked
-   * painters: they are the two structures closest to the camera and the
-   * ones a flat plan icon read worst on ("basic poly" was mostly this), so
-   * they are drawn here as real isometric volumes -- walls, a roof, a door
-   * and a window -- direct with Phaser Graphics, matching the mockup this
-   * pass was previewed and approved against.
+   * The barn is the generated sprite (`PAINTERS.barn`, a straight-on
+   * elevation) placed flat, the same `put()` every yard prop already uses
+   * in this isometric world -- Kayo's call, over the earlier isometric-
+   * volume treatment this function used to draw by hand: it is a known,
+   * accepted tradeoff pending a proper isometric repaint of the sprite kit.
+   * The silo has no generated art of its own, so it stays a hand-drawn
+   * isometric volume, matching the mockup this pass was previewed against.
    */
   private paintBarn(): void {
     this.put("shadow", BARN_X, BARN_Y + 1, this.depthAt(BARN_X, BARN_Y, -100))
       .setScale(3.4 / S, 1.6 / S)
       .setAlpha(0.9);
 
-    const g = this.add.graphics().setDepth(this.depthAt(BARN_X, BARN_Y + 17));
-    const barnColor = rampHex("roof").side;
-    const barnFootprint = this.isoFootprint(BARN_X, BARN_Y, 46, 34);
-    const barnTop = this.drawIsoWalls(g, barnFootprint, 42, barnColor);
+    // Same depth nudge the combined structure used before the barn became a
+    // flat sprite, so it keeps sorting against nearby world objects the way
+    // the approved mockup did.
+    this.put("barn", BARN_X, BARN_Y, this.depthAt(BARN_X, BARN_Y + 17));
 
-    // Door: a filled quad on the near-left wall, a third of the way along
-    // it, running from the ground to two-thirds of the wall's own height.
+    // Silo: a plain cylinder-ish box (no gable) with a shallow domed cap,
+    // standing where the flat barn's own silo painter used to.
+    const g = this.add.graphics().setDepth(this.depthAt(BARN_X, BARN_Y + 17));
     const mix = (a: WorldPoint, b: WorldPoint, k: number): WorldPoint => ({
       x: a.x + (b.x - a.x) * k,
       y: a.y + (b.y - a.y) * k,
     });
-    const doorBaseA = mix(barnFootprint.w, barnFootprint.s, 0.38);
-    const doorBaseB = mix(barnFootprint.w, barnFootprint.s, 0.62);
-    const doorTopA = mix(barnTop.w, barnTop.s, 0.38);
-    const doorTopB = mix(barnTop.w, barnTop.s, 0.62);
-    const doorMidA = mix(doorBaseA, doorTopA, 0.62);
-    const doorMidB = mix(doorBaseB, doorTopB, 0.62);
-    g.fillStyle(rampHex("muck").rim, 1);
-    g.beginPath();
-    g.moveTo(doorBaseA.x, doorBaseA.y);
-    g.lineTo(doorBaseB.x, doorBaseB.y);
-    g.lineTo(doorMidB.x, doorMidB.y);
-    g.lineTo(doorMidA.x, doorMidA.y);
-    g.closePath();
-    g.fillPath();
-
-    // Window: a small pale quad on the near-right wall.
-    const winBaseA = mix(barnFootprint.s, barnFootprint.e, 0.2);
-    const winBaseB = mix(barnFootprint.s, barnFootprint.e, 0.4);
-    const winTopA = mix(barnTop.s, barnTop.e, 0.2);
-    const winTopB = mix(barnTop.s, barnTop.e, 0.4);
-    const winLoA = mix(winBaseA, winTopA, 0.35);
-    const winLoB = mix(winBaseB, winTopB, 0.35);
-    const winHiA = mix(winBaseA, winTopA, 0.75);
-    const winHiB = mix(winBaseB, winTopB, 0.75);
-    g.fillStyle(rampHex("cream").top, 1);
-    g.beginPath();
-    g.moveTo(winLoA.x, winLoA.y);
-    g.lineTo(winLoB.x, winLoB.y);
-    g.lineTo(winHiB.x, winHiB.y);
-    g.lineTo(winHiA.x, winHiA.y);
-    g.closePath();
-    g.fillPath();
-
-    this.drawIsoGableRoof(g, barnTop, 20, rampHex("cream").top);
-
-    // Silo: a plain cylinder-ish box (no gable) with a shallow domed cap,
-    // standing where the flat barn's own silo painter used to.
     const siloCentre = { x: BARN_X + 40, y: BARN_Y - 4 };
     const siloFootprint = this.isoFootprint(siloCentre.x, siloCentre.y, 20, 20);
     const siloTop = this.drawIsoWalls(g, siloFootprint, 50, rampHex("metal").side);
@@ -1067,10 +1032,11 @@ export class StackAcresScene extends Phaser.Scene {
   /**
    * The yard's fixed props and the lamps down the lane (lib/stackacres/
    * props.ts), each on a soft ground shadow and sorted by its feet like
-   * everything else. The windmill is the one prop drawn as an isometric
-   * volume rather than the flat baked painter (see `paintWindmill`) -- its
-   * tower is the second-tallest thing in the yard after the barn, so a flat
-   * plan icon read just as wrong on it.
+   * everything else. The windmill still routes through its own method (see
+   * `paintWindmill`) because its blades need pinning on top of the tower --
+   * not because the tower itself is drawn any differently: it is
+   * `PAINTERS.windmill`, the generated sprite, placed flat like every other
+   * prop here.
    */
   private paintProps(): void {
     for (const prop of YARD_PROPS) {
@@ -1088,40 +1054,21 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * A volumetric tower standing in for the flat windmill painter, with the
-   * existing baked `windmillBlades` sprite pinned to its cap so update()'s
-   * per-frame rotation still just works. The blades' screen position is
-   * computed straight from the tower's own already-projected cap -- not fed
-   * through `put()`'s projection a second time -- because "56 units above
-   * the feet" is a vertical offset in screen terms, and shearing it through
-   * `isoProject` the way a ground-plane offset needs to would also drag it
-   * sideways by exactly as much (see the class doc's note on the three
-   * coordinate systems).
+   * The windmill tower, placed flat like any other prop, plus the existing
+   * baked `windmillBlades` sprite pinned to its cap so update()'s per-frame
+   * rotation still just works. The pin uses `WINDMILL_HUB` -- an offset from
+   * the tower's own feet, added directly to the tower's already-projected
+   * screen point rather than fed through `isoProject` a second time, because
+   * a vertical offset in screen terms would be dragged sideways by shearing
+   * it the way a ground-plane offset needs to (see the class doc's note on
+   * the three coordinate systems).
    */
   private paintWindmill(x: number, y: number): void {
-    const g = this.add.graphics().setDepth(this.depthAt(x, y, 0.4));
-    const footprint = this.isoFootprint(x, y, 20, 20);
-    const top = this.drawIsoWalls(g, footprint, 62, rampHex("cream").side);
-    const capCentre: WorldPoint = { x: (top.n.x + top.s.x) / 2, y: (top.n.y + top.s.y) / 2 };
-    const peak: WorldPoint = { x: capCentre.x, y: capCentre.y - 22 };
-    g.fillStyle(0x5a4530, 1);
-    g.beginPath();
-    g.moveTo(top.n.x, top.n.y);
-    g.lineTo(top.e.x, top.e.y);
-    g.lineTo(peak.x, peak.y);
-    g.closePath();
-    g.fillPath();
-    g.fillStyle(0x3c2e1f, 1);
-    g.beginPath();
-    g.moveTo(top.e.x, top.e.y);
-    g.lineTo(top.s.x, top.s.y);
-    g.lineTo(peak.x, peak.y);
-    g.closePath();
-    g.fillPath();
-
+    this.put("windmill", x, y, this.depthAt(x, y, 0.4));
+    const s = isoProject(x, y);
     const bladeFrame = PAINTERS.windmillBlades;
     this.blades = this.add
-      .image(capCentre.x, capCentre.y - 12, "windmillBlades", ART_FRAME)
+      .image(s.x + WINDMILL_HUB.x, s.y + WINDMILL_HUB.y, "windmillBlades", ART_FRAME)
       .setOrigin(bladeFrame.ax, bladeFrame.ay)
       .setScale(1 / S)
       .setDepth(this.depthAt(x, y, 0.5));

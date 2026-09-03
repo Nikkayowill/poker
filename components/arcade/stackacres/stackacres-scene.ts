@@ -1278,6 +1278,122 @@ export class StackAcresScene extends Phaser.Scene {
     container.add(g);
   }
 
+  /**
+   * A filled diamond with the option to leave some of its four edges
+   * unstroked -- what `paintPenGround` needs and `paintGroundDiamond` does
+   * not, so it lives separately rather than growing that method a parameter
+   * every other caller has to ignore.
+   *
+   * `edges` names each side by the world edge it is (matching
+   * `groupNeighborOwned`'s own deltas): `n` is the N->E segment of the
+   * diamond (world y = rect.y, the "north" edge), `e` is E->S (world x =
+   * rect.x + width, "east"), `s` is S->W (world y = rect.y + height,
+   * "south"), `w` is W->N (world x = rect.x, "west") -- see iso.ts's
+   * `projectedCorners` for why the corners fall in that order. Missing keys
+   * default true, so an ordinary caller that wants every edge just omits the
+   * argument.
+   */
+  private fillDiamond(
+    container: Phaser.GameObjects.Container,
+    rect: WorldRect,
+    fill: number,
+    alpha: number,
+    edgeColor?: number,
+    edges: { n?: boolean; e?: boolean; s?: boolean; w?: boolean } = {},
+  ): Phaser.GameObjects.Graphics {
+    const c = projectedCorners(rect);
+    const g = this.add.graphics();
+    g.fillStyle(fill, alpha);
+    g.beginPath();
+    g.moveTo(c.n.x, c.n.y);
+    g.lineTo(c.e.x, c.e.y);
+    g.lineTo(c.s.x, c.s.y);
+    g.lineTo(c.w.x, c.w.y);
+    g.closePath();
+    g.fillPath();
+    if (edgeColor !== undefined) {
+      const { n = true, e = true, s = true, w = true } = edges;
+      g.lineStyle(1, edgeColor, 0.55);
+      const seg = (a: WorldPoint, b: WorldPoint): void => {
+        g.beginPath();
+        g.moveTo(a.x, a.y);
+        g.lineTo(b.x, b.y);
+        g.strokePath();
+      };
+      if (n) seg(c.n, c.e);
+      if (e) seg(c.e, c.s);
+      if (s) seg(c.s, c.w);
+      if (w) seg(c.w, c.n);
+    }
+    container.add(g);
+    return g;
+  }
+
+  /**
+   * A pen-zoned plot's own ground. This used to be `paintGroundDiamond(...,
+   * "straw")` for every kind of pen, unconditionally, with all four edges
+   * always stroked -- which is what made a full block of owned pens read as
+   * "a bunch of squares next to each other" rather than one paddock: every
+   * cell drew its own identical pale-straw diamond with its own outline,
+   * whether or not the fence between it and its neighbour had already been
+   * dropped.
+   *
+   * Two fixes, both here. First, the ground now matches what the zone
+   * actually is instead of defaulting to barn straw everywhere: churned
+   * dirt for a Cattle Pen (Ox Fields is worked soil, not a barn floor --
+   * see `zones.ts`'s own ground colours for that district), trodden mud for
+   * a Sheep Pen (the Wallow is wet ground), and straw only for a Hen Coop,
+   * the one pen that genuinely is barnyard bedding. Second, `edges` is
+   * threaded through from the caller's own `groupNeighborOwned` checks, so a
+   * side merged into an owned neighbour gets no outline at all -- the real
+   * fence-rail sprites already mark every side that IS a boundary, so
+   * nothing is lost by dropping the ground's own redundant line there.
+   *
+   * On top of the base fill, a scatter of small worn patches -- heaviest
+   * near the trough and the gate, where the animals actually spend their
+   * time -- breaks up what would otherwise still be one flat-coloured
+   * rectangle once the outlines are gone. Seeded by plotIndex so a pen's
+   * wear pattern is fixed rather than reshuffling every render.
+   */
+  private paintPenGround(
+    container: Phaser.GameObjects.Container,
+    cell: StackAcresSceneCell,
+    edges: { n?: boolean; e?: boolean; s?: boolean; w?: boolean },
+  ): void {
+    const zone = plotPenZone(cell.plotIndex);
+    const base = zone === "cattle" ? rampHex("soil") : zone === "pig" ? rampHex("muck") : rampHex("straw");
+    this.fillDiamond(container, { x: 0, y: 0, width: CELL, height: CELL }, base.top, 1, base.rim, edges);
+
+    const random = seededRandom(cell.plotIndex * 5039 + 11);
+    const wear = zone === "cattle" || zone === "pig" ? rampHex("muck").rim : rampHex("straw").rim;
+    const dry = rampHex("straw").top;
+    // Two hotspots -- the trough (24, 12ish) and the gate (32, the south
+    // edge) -- get most of the wear; the rest of the pen gets a light,
+    // even scatter so it never looks swept.
+    const hotspots: readonly [number, number][] = [
+      [24, 16],
+      [32, CELL - 16],
+    ];
+    const spots: [number, number][] = [];
+    for (const [hx, hy] of hotspots) {
+      for (let i = 0; i < 4; i += 1) {
+        spots.push([hx + (random() - 0.5) * 26, hy + (random() - 0.5) * 18]);
+      }
+    }
+    for (let i = 0; i < 3; i += 1) {
+      spots.push([10 + random() * (CELL - 20), 20 + random() * (CELL - 36)]);
+    }
+    const g = this.add.graphics();
+    for (const [sx, sy] of spots) {
+      const p = isoProject(sx, sy);
+      const r = 3.5 + random() * 3;
+      const dryFleck = random() < 0.28;
+      g.fillStyle(dryFleck ? dry : wear, dryFleck ? 0.4 : 0.28);
+      g.fillEllipse(p.x, p.y, r * 2, r);
+    }
+    container.add(g);
+  }
+
   /** Three furrow lines across a tilled plot, cell-local, drawn along the
    *  diamond's own grain so they read as rows rather than as stripes painted
    *  over the top of it. */
@@ -1421,10 +1537,16 @@ export class StackAcresScene extends Phaser.Scene {
     cell: StackAcresSceneCell,
     img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
   ): void {
-    this.paintGroundDiamond(container, "straw");
     const skipNorth = this.groupNeighborOwned(cell.plotIndex, 0, -1);
     const skipWest = this.groupNeighborOwned(cell.plotIndex, -1, 0);
     const skipEast = this.groupNeighborOwned(cell.plotIndex, 1, 0);
+    const skipSouth = this.groupNeighborOwned(cell.plotIndex, 0, 1);
+    this.paintPenGround(container, cell, {
+      n: !skipNorth,
+      e: !skipEast,
+      s: !skipSouth,
+      w: !skipWest,
+    });
     if (!skipNorth) {
       for (let x = 0; x < CELL; x += 16) img("railH", x, 4).setRotation(ISO_EDGE_ANGLE.alongX);
     }

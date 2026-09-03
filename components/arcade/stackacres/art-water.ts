@@ -10,7 +10,6 @@ import {
   F,
   leaf,
   lin,
-  litMass,
   painter,
   poly,
   rr,
@@ -18,6 +17,7 @@ import {
   type Ctx,
   type Painter,
 } from "./art-kit";
+import { RAMPS } from "./art-palette";
 
 /**
  * The pond, and everything that lives on it.
@@ -287,12 +287,7 @@ export const WATER_PAINTERS: Record<WaterPainterName, Painter> = {
       ell(c, 4, 1.25, 4, 1.25);
       F(
         c,
-        lin(c, 0, 0, 8, 0, [
-          [0, "rgba(223,248,255,0)"],
-          [0.35, "#dff8ff"],
-          [0.65, "#dff8ff"],
-          [1, "rgba(223,248,255,0)"],
-        ]),
+        RAMPS.water.top,
       );
     },
     0.5,
@@ -328,7 +323,6 @@ export const WATER_PAINTERS: Record<WaterPainterName, Painter> = {
       padPath(c, cx, cy, rx, ry);
       F(c, "#6fbf45");
       padPath(c, cx, cy, rx, ry);
-      litMass(c, cx, cy, rx, ry, "rgba(25,80,20,.42)", "rgba(225,255,180,.6)");
       for (const a of [-2.3, -1.2, 0.2, 1.3]) {
         c.beginPath();
         c.moveTo(cx, cy);
@@ -358,7 +352,6 @@ export const WATER_PAINTERS: Record<WaterPainterName, Painter> = {
       F(c, "#ffd23f");
       // The petals facing away from the sun.
       ell(c, 3, 3, 3, 3);
-      litMass(c, 3, 3, 3, 3, "rgba(150,40,90,.3)", "rgba(255,255,255,.3)");
     },
     0.5,
     0.5,
@@ -383,7 +376,7 @@ export const WATER_PAINTERS: Record<WaterPainterName, Painter> = {
         c.quadraticCurveTo(x - 0.5, top + 12, x, top + hh);
         stroke(c, "#8aa63a", 0.6);
         rr(c, x - 0.7, top, 1.4, hh, 0.7);
-        F(c, lin(c, x - 0.7, 0, x + 0.7, 0, [[0, "#8c5a2c"], [1, "#5e3618"]]));
+        F(c, RAMPS.soil.rim);
         rr(c, x - 0.45, top + 0.3, 0.45, hh * 0.55, 0.25);
         F(c, "rgba(255,220,180,.35)");
       }
@@ -405,7 +398,7 @@ export const WATER_PAINTERS: Record<WaterPainterName, Painter> = {
       F(c, "rgba(20,50,60,.35)");
       for (const x of [3, 17, 31]) {
         rr(c, x - 1.5, 12, 3, 10, 1.2);
-        F(c, lin(c, x - 1.5, 0, x + 1.5, 0, [[0, "#8f5d32"], [1, "#5e3a1c"]]));
+        F(c, RAMPS.soil.rim);
         rr(c, x - 1.8, 20.4, 3.6, 1.8, 0.9);
         F(c, "rgba(15,40,50,.35)");
       }
@@ -439,7 +432,7 @@ export const WATER_PAINTERS: Record<WaterPainterName, Painter> = {
       ell(c, 4.6, 5.4, 2.6, 1);
       F(c, "rgba(60,30,10,.25)");
       rr(c, 1.5, 0, 3, 7.4, 1.2);
-      F(c, lin(c, 1.5, 0, 4.5, 0, [[0, "#a86f3c"], [1, "#6a4322"]]));
+      F(c, RAMPS.soil.side);
       ell(c, 3, 0.7, 1.5, 0.7);
       F(c, "#c08650");
     },
@@ -460,17 +453,15 @@ export const WATER_PAINTERS: Record<WaterPainterName, Painter> = {
       poly(c, [[1.6, 6.2], [0.2, 3.4], [3.4, 6.6]]);
       F(c, "#f2efe4");
       ell(c, 6.2, 7.2, 5.2, 2.9);
-      F(c, lin(c, 0, 4, 0, 10.2, [[0, "#fefefa"], [1, "#d8d4c4"]]));
+      F(c, RAMPS.cream.top);
       ell(c, 5.6, 7.5, 3.1, 1.6, -0.15);
       F(c, "rgba(120,120,100,.2)");
       ell(c, 6.2, 7.2, 5.2, 2.9);
-      litMass(c, 6.2, 7.2, 5.2, 2.9, "rgba(90,90,70,.28)", "rgba(255,255,255,.55)");
       rr(c, 9.2, 3.6, 2.4, 4.4, 1.1);
       F(c, "#f6f4ec");
       ell(c, 10.6, 3.4, 2.5, 2.3);
       F(c, "#fefefa");
       ell(c, 10.6, 3.4, 2.5, 2.3);
-      litMass(c, 10.6, 3.4, 2.5, 2.3, "rgba(90,90,70,.3)", "rgba(255,255,255,.5)");
       poly(c, [[12.6, 2.9], [14, 3.9], [12.6, 4.8]]);
       F(c, "#f4a020");
       ell(c, 11.5, 2.9, 0.45, 0.45);

@@ -69,6 +69,7 @@ import {
   bakeVignette,
   type PainterName,
 } from "./stackacres-art";
+import { rampHex } from "./art-palette";
 import { bakePathTexture } from "./art-paths";
 import { bakePondTexture } from "./art-water";
 
@@ -978,7 +979,7 @@ export class StackAcresScene extends Phaser.Scene {
       .setAlpha(0.9);
 
     const g = this.add.graphics().setDepth(this.depthAt(BARN_X, BARN_Y + 17));
-    const barnColor = 0xc14b3d;
+    const barnColor = rampHex("roof").side;
     const barnFootprint = this.isoFootprint(BARN_X, BARN_Y, 46, 34);
     const barnTop = this.drawIsoWalls(g, barnFootprint, 42, barnColor);
 
@@ -994,7 +995,7 @@ export class StackAcresScene extends Phaser.Scene {
     const doorTopB = mix(barnTop.w, barnTop.s, 0.62);
     const doorMidA = mix(doorBaseA, doorTopA, 0.62);
     const doorMidB = mix(doorBaseB, doorTopB, 0.62);
-    g.fillStyle(0x3a241c, 1);
+    g.fillStyle(rampHex("muck").rim, 1);
     g.beginPath();
     g.moveTo(doorBaseA.x, doorBaseA.y);
     g.lineTo(doorBaseB.x, doorBaseB.y);
@@ -1012,7 +1013,7 @@ export class StackAcresScene extends Phaser.Scene {
     const winLoB = mix(winBaseB, winTopB, 0.35);
     const winHiA = mix(winBaseA, winTopA, 0.75);
     const winHiB = mix(winBaseB, winTopB, 0.75);
-    g.fillStyle(0xbfe6f2, 1);
+    g.fillStyle(rampHex("cream").top, 1);
     g.beginPath();
     g.moveTo(winLoA.x, winLoA.y);
     g.lineTo(winLoB.x, winLoB.y);
@@ -1021,21 +1022,21 @@ export class StackAcresScene extends Phaser.Scene {
     g.closePath();
     g.fillPath();
 
-    this.drawIsoGableRoof(g, barnTop, 20, shadeColor(barnColor, -46));
+    this.drawIsoGableRoof(g, barnTop, 20, rampHex("cream").top);
 
     // Silo: a plain cylinder-ish box (no gable) with a shallow domed cap,
     // standing where the flat barn's own silo painter used to.
     const siloCentre = { x: BARN_X + 40, y: BARN_Y - 4 };
     const siloFootprint = this.isoFootprint(siloCentre.x, siloCentre.y, 20, 20);
-    const siloTop = this.drawIsoWalls(g, siloFootprint, 50, 0xc7cdd4);
+    const siloTop = this.drawIsoWalls(g, siloFootprint, 50, rampHex("metal").side);
     const capCentre = mix(siloTop.n, siloTop.s, 0.5);
     const capRx = Math.abs(siloTop.e.x - siloTop.w.x) / 2;
     const capRy = Math.abs(siloTop.s.y - siloTop.n.y) / 2;
-    g.fillStyle(0xe6e9ec, 1);
+    g.fillStyle(rampHex("metal").top, 1);
     g.fillEllipse(capCentre.x, capCentre.y, capRx * 2, Math.max(capRy * 2, 6));
-    g.lineStyle(1.2, 0x8d949c, 1);
+    g.lineStyle(1.2, rampHex("metal").rim, 1);
     g.strokeEllipse(capCentre.x, capCentre.y, capRx * 2, Math.max(capRy * 2, 6));
-    g.fillStyle(0xb23327, 1);
+    g.fillStyle(rampHex("roof").top, 1);
     g.beginPath();
     g.moveTo(siloTop.w.x, siloTop.w.y);
     g.lineTo(siloTop.n.x, siloTop.n.y);
@@ -1086,7 +1087,7 @@ export class StackAcresScene extends Phaser.Scene {
   private paintWindmill(x: number, y: number): void {
     const g = this.add.graphics().setDepth(this.depthAt(x, y, 0.4));
     const footprint = this.isoFootprint(x, y, 20, 20);
-    const top = this.drawIsoWalls(g, footprint, 62, 0xe8dcc0);
+    const top = this.drawIsoWalls(g, footprint, 62, rampHex("cream").side);
     const capCentre: WorldPoint = { x: (top.n.x + top.s.x) / 2, y: (top.n.y + top.s.y) / 2 };
     const peak: WorldPoint = { x: capCentre.x, y: capCentre.y - 22 };
     g.fillStyle(0x5a4530, 1);
@@ -1270,24 +1271,31 @@ export class StackAcresScene extends Phaser.Scene {
         g.strokePath();
       }
     };
+    // Colours come from art-palette.ts, the same ramps the Canvas2D painters
+    // bake with, so a plot's diamond and the props standing on it cannot
+    // drift apart -- see that file's header for why one table and not two.
     switch (kind) {
       case "mown":
-        // A pale wash over the grass beneath, not a solid fill -- the flat
-        // painter was translucent for the same reason (a lawn just mown).
-        diamond(0xfffbe0, 0.18);
+        // Solid now, not a wash. A cleared plot has to be the warmest, most
+        // inviting thing in frame, and a translucent tint over the world
+        // grass could only ever be a shade of whatever it sat on.
+        diamond(rampHex("lawn").top, 1, rampHex("lawn").rim);
         break;
       case "soil":
-        diamond(0x96693f, 1, 0x462a12);
+        diamond(rampHex("soil").top, 1, rampHex("soil").rim);
         this.paintFurrows(g);
         break;
       case "straw":
-        diamond(0xd6c58c, 1, 0x785a28);
+        diamond(rampHex("straw").top, 1, rampHex("straw").rim);
         break;
       case "muckbed":
-        diamond(0x5c3f27, 1, 0x241609);
+        diamond(rampHex("muck").top, 1, rampHex("muck").rim);
         break;
       case "wild":
-        diamond(0x143c14, 0.12);
+        // Was a 12%-alpha near-black wash, which is what made an uncleared
+        // plot read as a flat grey rectangle when zoomed out -- the open gap
+        // CLAUDE.md has carried since the premium pass. It is a real green.
+        diamond(rampHex("wild").top, 1, rampHex("wild").rim);
         break;
     }
     container.add(g);

@@ -1082,7 +1082,11 @@ export function StackAcresFarm() {
           )}
           <span className="gold-balance floor-wallet" title="Gold">
             <Coins size={13} aria-hidden="true" />
-            <strong>{profile?.unlimitedGold ? "∞" : (profile?.goldBalance ?? 0).toLocaleString()}</strong>
+            {/* A profile that never arrived (the paired land/unit fetch threw,
+                so the whole /api/stackacres response was discarded) is "we
+                don't know yet," not "zero" -- this once read as broke for a
+                fully funded account. */}
+            <strong>{profile?.unlimitedGold ? "∞" : profile ? profile.goldBalance.toLocaleString() : "—"}</strong>
           </span>
           <StackAcresMusicToggle />
         </div>

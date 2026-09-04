@@ -281,7 +281,9 @@ export function AnteUpSudoku() {
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
           <strong>
-            {!loaded ? "—" : profile?.unlimitedGold ? "Unlimited" : (profile?.goldBalance ?? 0).toLocaleString()}
+            {/* profile null means "we don't know yet" (still loading, or the
+                fetch that would have set it failed) -- never "zero". */}
+            {profile ? (profile.unlimitedGold ? "Unlimited" : profile.goldBalance.toLocaleString()) : "—"}
           </strong>
         </span>
       </header>

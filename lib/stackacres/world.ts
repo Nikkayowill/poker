@@ -132,6 +132,35 @@ const GROW_AREA: Readonly<Record<ZoneId, WorldRect>> = {
   wallow: { x: -320, y: -390, width: 160, height: 160 },
 };
 
+/**
+ * The barn's own picture box, in the same feet-anchored convention
+ * props.ts's `propRect` uses (x/y is the top-left corner, y extending
+ * UP from the feet rather than down): x 71..145, feet on y 34, 62 tall --
+ * lifted straight from `paintBarn`'s `BARN_X`/`BARN_Y` (`STACKACRES_MARGIN`
+ * + 44 / - 30) and matched by props.test.ts's own `BARN_PIECES` fixture, not
+ * re-derived, since both already agree with the shipped art.
+ *
+ * A flat ground-plane rect rather than the sprite's true picture silhouette
+ * (the way `unitAt` in stackacres-scene.ts tests a unit's actual drawn art
+ * in scene space): the barn never moves, so a fixed, slightly generous box
+ * is worth the small imprecision it trades for staying a pure, testable
+ * function that needs no renderer -- the same tradeoff `GROW_AREA`'s own
+ * flat district boxes already make.
+ */
+export const BARN_FOOTPRINT: WorldRect = { x: 71, y: -28, width: 74, height: 62 };
+
+/** Whether a tapped ground point (post `isoUnproject`, the same space
+ *  `growAreaAt` and every `PropPlacement` live in) lands on the barn --
+ *  StackAcres' entryway into Ray's Museum. */
+export function barnHitAt(x: number, y: number): boolean {
+  return (
+    x >= BARN_FOOTPRINT.x &&
+    x <= BARN_FOOTPRINT.x + BARN_FOOTPRINT.width &&
+    y >= BARN_FOOTPRINT.y &&
+    y <= BARN_FOOTPRINT.y + BARN_FOOTPRINT.height
+  );
+}
+
 /** Where a district's units stand: the fenced boundary the scene draws once
  *  per district, and the box every one of that district's animals wanders
  *  inside (crops sit at a fixed spot within the same box). */

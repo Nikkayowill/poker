@@ -24,8 +24,10 @@ import {
   adjustStackAcresInventory,
   createStackAcresUnit,
   getStackAcresUnit,
+  markStackAcresDonated,
   readStackAcresFeed,
   readStackAcresInventory,
+  readStackAcresMuseum,
 } from "./stackacres-store";
 import { adjustGold, ensureProfile } from "./profile-store";
 import {
@@ -50,6 +52,7 @@ import {
   STACKACRES_YIELDS,
   netPerCycle,
 } from "@/lib/stackacres/items";
+import { emptyMuseumRegistry, museumDiscoveryBonus } from "@/lib/stackacres/museum";
 
 // Passthrough by default; one test swaps createStackAcresUnit's next call for
 // a thrown error, standing in for the DB trigger raising (which the memory
@@ -64,6 +67,9 @@ vi.mock("./stackacres-store", async (importOriginal) => {
     // disagrees with the live catalogue. Nothing else can make those two
     // differ, because the guarded write refuses to re-settle a working unit.
     getStackAcresUnit: vi.fn(actual.getStackAcresUnit),
+    // Passthrough spy, so one test can stand in for a museum write failing --
+    // the memory branch has no DB to fail for real.
+    markStackAcresDonated: vi.fn(actual.markStackAcresDonated),
   };
 });
 
@@ -138,6 +144,9 @@ beforeEach(() => {
   );
   vi.mocked(getStackAcresUnit).mockImplementation(
     vi.mocked(getStackAcresUnit).getMockImplementation() ?? getStackAcresUnit,
+  );
+  vi.mocked(markStackAcresDonated).mockImplementation(
+    vi.mocked(markStackAcresDonated).getMockImplementation() ?? markStackAcresDonated,
   );
 });
 
@@ -307,6 +316,11 @@ describe("harvesting", () => {
     const { token, id } = await funded();
     const view = await stockStackAcres(token, { stock: "hen" }, T0);
     const unitId = unitOf(view, "hen").id;
+    // Pre-donate: this test is about the ONGOING harvest loop, not the
+    // one-time "New Discovery!" bonus (see the "Ray's Museum" describe
+    // block below), so a fresh museum registry must not leak a bonus into
+    // this assertion.
+    await markStackAcresDonated(id, HEN_YIELD.item);
     const goldBefore = await balance(token);
     const bushelsBefore = await bushels(id);
 
@@ -395,6 +409,71 @@ describe("harvesting", () => {
       random.mockRestore();
     }
     expect(await getStackAcresUnit(id, unitId)).toBeNull();
+  });
+});
+
+describe("Ray's Museum", () => {
+  it("flags an item donated and pays the discovery bonus on its first-ever harvest", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    const unitId = unitOf(view, "hen").id;
+    const before = await bushels(id);
+
+    const result = await collectStackAcres(token, unitId, HEN_READY);
+
+    const bonus = museumDiscoveryBonus(HEN_YIELD.item, HEN_YIELD.quantity);
+    expect(result.collected.discovery).toEqual({ item: HEN_YIELD.item, bonus });
+    expect(await bushels(id)).toBe(before + bonus);
+    expect(await readStackAcresMuseum(id)).toContain(HEN_YIELD.item);
+    expect(result.museum[HEN_YIELD.item]).toBe(true);
+  });
+
+  it("never pays the bonus twice -- a duplicate harvest of the same item earns nothing extra", async () => {
+    const { token, id } = await funded();
+    await markStackAcresDonated(id, HEN_YIELD.item);
+
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    const unitId = unitOf(view, "hen").id;
+    const before = await bushels(id);
+
+    const result = await collectStackAcres(token, unitId, HEN_READY);
+
+    expect(result.collected.discovery).toBeNull();
+    // Produce still lands in full -- only the one-time bonus is withheld.
+    expect(await bushels(id)).toBe(before);
+    expect(await held(id, HEN_YIELD.item)).toBe(HEN_YIELD.quantity);
+  });
+
+  it("tracks each item independently -- donating one never flags another", async () => {
+    const { token } = await funded();
+    const hen = await stockStackAcres(token, { stock: "hen" }, T0);
+    await collectStackAcres(token, unitOf(hen, "hen").id, HEN_READY);
+
+    const registry = (await readStackAcres(token, HEN_READY)).museum;
+    expect(registry[HEN_YIELD.item]).toBe(true);
+    for (const item of Object.keys(registry) as (keyof typeof registry)[]) {
+      if (item !== HEN_YIELD.item) expect(registry[item]).toBe(false);
+    }
+  });
+
+  it("starts a fresh farm with nothing donated", async () => {
+    const { token } = await funded();
+    expect((await readStackAcres(token, T0)).museum).toEqual(emptyMuseumRegistry());
+  });
+
+  it("does not let a museum failure turn a settled harvest into an error", async () => {
+    // The produce and the settlement are already durable by the time the
+    // museum write runs -- same posture as yield_credit_failed just above
+    // it in the service. A throw here must be swallowed, not surfaced.
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    const unitId = unitOf(view, "hen").id;
+    vi.mocked(markStackAcresDonated).mockRejectedValueOnce(new Error("boom"));
+
+    const result = await collectStackAcres(token, unitId, HEN_READY);
+
+    expect(result.collected.discovery).toBeNull();
+    expect(await held(id, HEN_YIELD.item)).toBe(HEN_YIELD.quantity);
   });
 });
 

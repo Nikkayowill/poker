@@ -46,6 +46,7 @@ import {
   itemLabel,
   type StackAcresItem,
 } from "@/lib/stackacres/items";
+import { emptyMuseumRegistry, type MuseumRegistry } from "@/lib/stackacres/museum";
 import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
@@ -55,6 +56,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import type { PainterName } from "./stackacres-art";
 import { StackAcresBuySection, StackAcresUnitRows } from "./stackacres-district-panel";
 import { StackAcresIcon } from "./stackacres-icon";
+import { StackAcresMuseum } from "./stackacres-museum";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
@@ -112,7 +114,14 @@ interface StackAcresResponse {
   inventory: Record<string, number>;
   bushels: number;
   exchange: StackAcresExchangeState;
-  collected?: { stock: StackAcresStock; item: StackAcresItem; quantity: number; mucked: boolean };
+  museum: MuseumRegistry;
+  collected?: {
+    stock: StackAcresStock;
+    item: StackAcresItem;
+    quantity: number;
+    mucked: boolean;
+    discovery: { item: StackAcresItem; bonus: number } | null;
+  };
   sold?: { item: StackAcresItem; quantity: number; bushels: number };
   exchanged?: { bushels: number; gold: number };
   error?: string;
@@ -206,8 +215,10 @@ export function StackAcresFarm() {
   const [error, setError] = useState<string | null>(null);
   const [tool, setTool] = useState<StackAcresTool>("inspect");
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [museum, setMuseum] = useState<MuseumRegistry>(() => emptyMuseumRegistry());
   const [showHelp, setShowHelp] = useState(false);
   const [showStore, setShowStore] = useState(false);
+  const [showMuseum, setShowMuseum] = useState(false);
   const [celebrate, setCelebrate] = useState<{ unitId: string; nonce: number } | null>(null);
   const [lastCollect, setLastCollect] = useState<{ text: string; nonce: number } | null>(null);
   // Gates a tap-to-play splash: nothing plays until the player has made a
@@ -358,6 +369,7 @@ export function StackAcresFarm() {
     if (data.inventory) setInventory(data.inventory);
     if (typeof data.bushels === "number") setBushels(data.bushels);
     if (data.exchange) setExchange(data.exchange);
+    if (data.museum) setMuseum(data.museum);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -466,8 +478,14 @@ export function StackAcresFarm() {
           const unit = unitsRef.current.find((candidate) => candidate.id === body.unitId);
           if (unit) collectSound(unit.stock);
           setCelebrate({ unitId: body.unitId, nonce: Date.now() });
+          // A first-ever donation rides on the same toast rather than a
+          // second one stacked on top of it -- one thing landed, one thing
+          // to read.
+          const discovery = data.collected.discovery;
           setLastCollect({
-            text: `+${itemLabel(data.collected.item, data.collected.quantity)}`,
+            text: discovery
+              ? `+${itemLabel(data.collected.item, data.collected.quantity)} · New Discovery! +${discovery.bonus.toLocaleString()} Bushels`
+              : `+${itemLabel(data.collected.item, data.collected.quantity)}`,
             nonce: Date.now(),
           });
           if (anchor) {
@@ -646,6 +664,16 @@ export function StackAcresFarm() {
     tapSound();
     setPlace(zone);
     setRadial({ zone, at });
+  }, []);
+
+  /** A finger landed on the barn -- Ray's Museum's own entryway. Opens the
+   *  same way tapping "Buy from Ray" on the signpost opens the supply store:
+   *  a sound on the press, a sheet over the map, nothing sent to the server
+   *  (the museum registry already lives in this component's own state). */
+  const onWorldBarnTap = useCallback(() => {
+    setRadial(null);
+    panelSound();
+    setShowMuseum(true);
   }, []);
 
   /** Seeding straight out of the radial menu. Closes first: the menu's
@@ -829,6 +857,7 @@ export function StackAcresFarm() {
               onReady={onWorldReady}
               onUnitTap={onWorldUnitTap}
               onGroundTap={onWorldGroundTap}
+              onBarnTap={onWorldBarnTap}
               onViewMoved={closeRadial}
               api={world}
             />
@@ -1223,6 +1252,9 @@ export function StackAcresFarm() {
       )}
 
       {showWelcome && <StackAcresRayWelcome onClose={dismissWelcome} />}
+      {showMuseum && (
+        <StackAcresMuseum museum={museum} onClose={() => { panelSound(); setShowMuseum(false); }} />
+      )}
     </main>
   );
 }

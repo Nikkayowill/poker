@@ -35,6 +35,7 @@ import {
   type StackAcresExchangeState,
 } from "@/lib/stackacres/exchange";
 import { stackacresStockPrice } from "@/lib/stackacres/market";
+import { emptyMuseumRegistry, museumDiscoveryBonus, type MuseumRegistry } from "@/lib/stackacres/museum";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
@@ -49,10 +50,12 @@ import {
   getStackAcresUnit,
   grantStartingBushels,
   listStackAcresUnits,
+  markStackAcresDonated,
   readStackAcresCapacity,
   readStackAcresExchanged,
   readStackAcresFeed,
   readStackAcresInventory,
+  readStackAcresMuseum,
   recordStackAcresHarvest,
   reserveStackAcresExchange,
   retireStackAcresUnit,
@@ -132,6 +135,9 @@ export interface StackAcresView {
   bushels: number;
   /** Today's exchange window: the rate, the flat ceiling, what is left of it. */
   exchange: StackAcresExchangeState;
+  /** Ray's Museum: which produce items this player has ever donated. Total
+   *  over every item, never partial -- see emptyMuseumRegistry. */
+  museum: MuseumRegistry;
 }
 
 function parseUnitId(value: unknown): string {
@@ -145,17 +151,36 @@ async function snapshots(profileId: string, now: Date): Promise<StackAcresUnitSn
   return toStackAcresUnitSnapshots(await listStackAcresUnits(profileId), now);
 }
 
+async function museumView(profileId: string): Promise<MuseumRegistry> {
+  const donated = await readStackAcresMuseum(profileId);
+  const registry = { ...emptyMuseumRegistry() } as Record<string, boolean>;
+  for (const itemId of donated) {
+    if (itemId in registry) registry[itemId] = true;
+  }
+  return registry as MuseumRegistry;
+}
+
 async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> {
-  const [units, feed, capacity, held, exchanged] = await Promise.all([
+  const [units, feed, capacity, held, exchanged, museum] = await Promise.all([
     snapshots(profile.id, now),
     readStackAcresFeed(profile.id),
     readStackAcresCapacity(profile.id),
     readStackAcresInventory(profile.id),
     readStackAcresExchanged(profile.id, stackacresExchangeDay(now)),
+    museumView(profile.id),
   ]);
 
   const { [BUSHELS]: bushels = 0, ...inventory } = held;
-  return { units, profile, feed, capacity, inventory, bushels, exchange: exchangeState(exchanged, now) };
+  return {
+    units,
+    profile,
+    feed,
+    capacity,
+    inventory,
+    bushels,
+    exchange: exchangeState(exchanged, now),
+    museum,
+  };
 }
 
 /**
@@ -702,10 +727,13 @@ function rollMuck(stock: StackAcresStock): number | null {
  * crop inside a suspended account's farm forever is a punishment nobody
  * designed.
  *
- * NOTE this no longer pays anything. It moves produce into the inventory and
- * that is all; turning produce into Bushels is sellStackAcresProduce, and
- * turning Bushels into Gold is the exchange. No Gold moves in this function,
- * and none should ever be added to it.
+ * NOTE this does not pay Gold, and none should ever be added to it. It moves
+ * produce into the inventory; turning produce into Bushels is
+ * sellStackAcresProduce, and turning Bushels into Gold is the exchange. The
+ * one thing it does credit directly is Ray's Museum's own "New Discovery!"
+ * bonus (see markStackAcresDonated below) -- Bushels only, exactly once per
+ * item ever, and strictly smaller than what the item would earn at the
+ * store, so it stays a bonus rather than a second sale.
  */
 export async function collectStackAcres(
   token: string,
@@ -718,6 +746,9 @@ export async function collectStackAcres(
       item: StackAcresItem;
       quantity: number;
       mucked: boolean;
+      /** Set only the FIRST time this player ever collects this item -- see
+       *  the donation write below. Null on every collection after that. */
+      discovery: { item: StackAcresItem; bonus: number } | null;
     };
   }
 > {
@@ -767,7 +798,6 @@ export async function collectStackAcres(
   // not change what the player agreed to stock.
   const item = STACKACRES_YIELDS[stock].item;
   const quantity = unit.yieldQuantity;
-  const collected = { stock, item, quantity, mucked: muckFee !== null };
 
   // Rule 2 satisfied: the produce lands only after the guarded write. Never
   // throws -- the unit is already durably settled, and a failure here must
@@ -784,6 +814,37 @@ export async function collectStackAcres(
       error,
     });
   }
+
+  // Ray's Museum: donation is automatic, not a player action, and it happens
+  // exactly once per item, ever -- markStackAcresDonated is the idempotency
+  // guard, the same primary-key shape grantStartingBushels already uses. Only
+  // the write that actually donates this item for the first time pays the
+  // "New Discovery!" bonus; a duplicate harvest of an already-donated item
+  // returns false and nothing extra is credited. The bonus is BUSHELS, never
+  // Gold -- collectStackAcres's own module doc says no Gold moves in here and
+  // none should ever be added, so a first-time bonus has to be the same
+  // currency the rest of a harvest already is. Best-effort like the produce
+  // credit just above: the harvest is already settled and paid, and a museum
+  // hiccup must not turn that into an error response.
+  let discovery: { item: StackAcresItem; bonus: number } | null = null;
+  try {
+    const firstDiscovery = await markStackAcresDonated(profile.id, item);
+    if (firstDiscovery) {
+      const bonus = museumDiscoveryBonus(item, quantity);
+      await adjustStackAcresInventory(profile.id, BUSHELS, bonus);
+      discovery = { item, bonus };
+    }
+  } catch (error) {
+    console.error("stackacres.museum_donation_failed", {
+      profileId: profile.id,
+      unitId,
+      item,
+      quantity,
+      error,
+    });
+  }
+
+  const collected = { stock, item, quantity, mucked: muckFee !== null, discovery };
 
   await recordStackAcresHarvest({
     profileId: profile.id,

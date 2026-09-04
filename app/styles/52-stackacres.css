@@ -1947,6 +1947,90 @@
   box-shadow: var(--sa-drop-lg);
 }
 
+/* Ray's Museum (stackacres-museum.tsx), reached by tapping the barn. */
+.sa-museum-intro {
+  margin: 0 0 4px;
+  color: var(--sa-ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.sa-museum-exhibit-blurb {
+  margin: 2px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sa-museum-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-museum-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  text-align: center;
+}
+
+/* Found: the same warm wood badge a store shelf uses. */
+.sa-museum-item.is-found {
+  background: var(--sa-wood);
+  box-shadow: 0 3px 0 var(--sa-wood-rim);
+}
+
+/* Not yet found: dimmed and dashed, deliberately unlike a disabled control --
+   there is nothing to press here, only something left to discover. */
+.sa-museum-item.is-unfound {
+  border-style: dashed;
+  background: var(--sa-cream-rim);
+  opacity: .6;
+}
+
+.sa-museum-item-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+}
+
+.sa-museum-item.is-unfound .sa-museum-item-badge { filter: grayscale(1); }
+
+.sa-museum-item-name {
+  color: var(--sa-ink);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sa-museum-item-status {
+  color: var(--sa-ink-soft);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.sa-museum-hint {
+  margin: 20px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  text-wrap: pretty;
+}
+
 /* His welcome and the how-to-play modal are the shared .profile-modal chrome
    (a violet-black card), which is right everywhere else in the app and wrong
    sitting on a farm. Re-boarded here only -- qualified by .sa-theme, so the

@@ -42,6 +42,7 @@ import {
   STACKACRES_CHUNK,
   STACKACRES_MARGIN,
   WORLD_BOUND_MARGIN,
+  barnHitAt,
   chunkScenery,
   clampZoom,
   critterSpeed,
@@ -192,6 +193,13 @@ export interface StackAcresSceneCallbacks {
    * seed something there, answered by the radial menu in stackacres-farm.tsx.
    */
   onGroundTap: (zone: ZoneId, at: TapPoint) => void;
+  /**
+   * A tap that landed on the barn -- Ray's Museum's own entryway. Checked
+   * after a unit (a unit's own picture always wins over the structure
+   * standing behind it) and before the district ground fallback, the same
+   * ordering `unitAt` already documents for "the farm itself" taps.
+   */
+  onBarnTap: () => void;
   /**
    * The view moved under whatever the shell has pinned to it. A menu dropped
    * at a finger is anchored to the screen, not to the world, so it has to go
@@ -1824,6 +1832,14 @@ export class StackAcresScene extends Phaser.Scene {
         return;
       }
       const ground = resolveWorld(event.clientX, event.clientY);
+      // The barn -- Ray's Museum's own entryway -- checked before the
+      // district ground fallback: it stands north of every grow area (see
+      // BARN_FOOTPRINT's own doc comment), so the two never compete for the
+      // same tap, but a unit always wins over the structure behind it.
+      if (barnHitAt(ground.x, ground.y)) {
+        this.callbacks.onBarnTap();
+        return;
+      }
       const zone = growAreaAt(ground.x, ground.y);
       if (zone) this.callbacks.onGroundTap(zone, local);
     };
@@ -2084,6 +2100,32 @@ export class StackAcresScene extends Phaser.Scene {
         node.pop = null;
       },
     });
+  }
+
+  /**
+   * The exact inverse of `resolveWorld` in `bindInput`: given a true WORLD
+   * point, the client (CSS pixel) coordinate a real pointer event would have
+   * to land on to hit it right now, under whatever the camera's current
+   * pan/zoom happens to be.
+   *
+   * Test/dev use only -- nothing in the scene calls this, and no production
+   * code needs to invert its own projection. It exists so an e2e spec can
+   * dispatch a real PointerEvent at the barn (or any other fixed landmark)
+   * without hand-deriving the camera's own transform a second time; see
+   * `window.__stackacres` in stackacres-world.tsx, the same dev-only handle
+   * the gesture harness already reads the camera through.
+   *
+   * `worldView` is Phaser's own already-computed visible-world rectangle for
+   * this frame, so this needs no camera-rotation math of its own: this scene
+   * never rotates its camera, so the transform is the plain affine one
+   * `worldView` already encodes.
+   */
+  screenPointFor(worldX: number, worldY: number): TapPoint {
+    const cam = this.cameras.main;
+    const scene = isoProject(worldX, worldY);
+    const gameX = (scene.x - cam.worldView.x) * cam.zoom;
+    const gameY = (scene.y - cam.worldView.y) * cam.zoom;
+    return { x: this.hostOrigin.left + gameX / DPR, y: this.hostOrigin.top + gameY / DPR };
   }
 
   /**

@@ -45,6 +45,7 @@ declare global {
   var __riverRoomStackAcresInventory: Map<string, StackAcresInventory> | undefined;
   var __riverRoomStackAcresExchanges: Map<string, number> | undefined;
   var __riverRoomStackAcresHarvests: StackAcresHarvestEntry[] | undefined;
+  var __riverRoomStackAcresMuseum: Map<string, Set<string>> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -68,6 +69,12 @@ globalThis.__riverRoomStackAcresExchanges = memoryExchanges;
 const memoryHarvests = globalThis.__riverRoomStackAcresHarvests ?? [];
 globalThis.__riverRoomStackAcresHarvests = memoryHarvests;
 
+/** Ray's Museum: which produce items a player has ever donated (see
+ *  markStackAcresDonated below). Keyed by profileId, value the set of
+ *  item ids -- there is no "undonate", so a Set is the whole model. */
+const memoryMuseum = globalThis.__riverRoomStackAcresMuseum ?? new Map<string, Set<string>>();
+globalThis.__riverRoomStackAcresMuseum = memoryMuseum;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
@@ -76,6 +83,7 @@ export function __resetStackAcresForTest(): void {
   memoryInventory.clear();
   memoryExchanges.clear();
   memoryHarvests.length = 0;
+  memoryMuseum.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -757,6 +765,51 @@ export interface StackAcresHarvestEntry {
   collectedAt: string;
   /** True when this came off stock bought outright with Gold. */
   permanent: boolean;
+}
+
+/* ------------------------------------------------------------------ */
+/* Ray's Museum                                                        */
+/* ------------------------------------------------------------------ */
+
+/** Every item id this player has ever donated to the museum. There is no
+ *  "undonate", so this is the whole registry -- the service layer overlays
+ *  it onto lib/stackacres/museum.ts's `emptyMuseumRegistry()`. */
+export async function readStackAcresMuseum(profileId: string): Promise<string[]> {
+  const supabase = adminClient();
+  if (!supabase) return [...(memoryMuseum.get(profileId) ?? new Set())];
+
+  const { data, error } = await supabase
+    .from("homestead_museum_donations")
+    .select("item_id")
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not read the museum register: ${error.message}`);
+  return (data as { item_id: string }[]).map((row) => row.item_id);
+}
+
+/**
+ * Flags one item as donated, exactly once, ever. Returns true only on the
+ * write that actually donated it -- same idempotency shape as
+ * grantStartingBushels: the (profile, item) pair is the primary key, so a
+ * second call for an item already in the register is a no-op that reports
+ * false, which is exactly how the caller tells a genuine first discovery
+ * from a duplicate harvest.
+ */
+export async function markStackAcresDonated(profileId: string, itemId: string): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const donated = memoryMuseum.get(profileId) ?? new Set<string>();
+    if (donated.has(itemId)) return false;
+    donated.add(itemId);
+    memoryMuseum.set(profileId, donated);
+    return true;
+  }
+
+  const { data, error } = await supabase.rpc("mark_homestead_museum_donation", {
+    p_profile_id: profileId,
+    p_item_id: itemId,
+  });
+  if (error) throw new Error(`Could not reach Ray's Museum: ${error.message}`);
+  return data === true;
 }
 
 /**

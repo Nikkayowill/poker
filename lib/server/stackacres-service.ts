@@ -80,7 +80,23 @@ import {
   reserveStackAcresExchange,
   retireStackAcresUnit,
   waterStackAcresUnit,
+  createStackAcresContract,
+  createStackAcresMachine,
+  createStackAcresWheatPlot,
+  collectStackAcresMachine,
+  collectStackAcresWheatPlot,
+  fulfillStackAcresContract as settleStackAcresContract,
+  listStackAcresMachines,
+  listStackAcresWheatPlots,
+  readStackAcresInfluence,
+  readStackAcresInventory,
+  readStackAcresOpenContract,
+  adjustStackAcresInfluence,
+  adjustStackAcresInventory,
+  startStackAcresMachine,
   type StoredStackAcresUnit,
+  type StoredContract,
+  type StoredWheatPlot,
 } from "./stackacres-store";
 import {
   claimStackAcresIntent,
@@ -96,6 +112,27 @@ import {
   toolUpgradePrice,
   type StackAcresToolTier,
 } from "@/lib/stackacres/equipment";
+import { machineItemLabel } from "@/lib/stackacres/machine-items";
+import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
+import {
+  WHEAT_DURATION_MS,
+  WHEAT_PLOT_CAP,
+  WHEAT_SEED_COST,
+  WHEAT_YIELD_QUANTITY,
+  toWheatPlotSnapshot,
+  type StackAcresWheatPlotSnapshot,
+} from "@/lib/stackacres/wheat-plot";
+import {
+  MACHINE_CAP,
+  MACHINE_CATALOGUE,
+  canStartMachine,
+  isMachineDone,
+  isMachineKind,
+  toMachineSnapshot,
+  type MachineKind,
+  type StackAcresMachineSnapshot,
+} from "@/lib/stackacres/machines";
+import { canFulfillContract, drawContract, type StackAcresContractRow } from "@/lib/stackacres/contracts";
 
 /**
  * Everything between a StackAcres request and the player's purse.
@@ -117,13 +154,21 @@ import {
  *
  * THE GOLD PATHS, and the asymmetry that is the whole safety story:
  *
- *   * SIX SPEND. `expandStackAcresCapacity` buys a slot, `buyStackAcresStock`
+ *   * EIGHT SPEND. `expandStackAcresCapacity` buys a slot, `buyStackAcresStock`
  *     buys stock outright, `stockStackAcres` buys a cycle's seed,
  *     `buyStackAcresFeed` buys a shipment, `clearStackAcresUnit` pays a muck
- *     fee, `upgradeStackAcresTool` buys a rung of the equipment ladder. All
- *     sinks.
- *   * ONE PAYS. `harvestStackAcres`, under the flat daily ceiling, net of
- *     Land Maintenance. Nothing else here may credit Gold.
+ *     fee, `upgradeStackAcresTool` buys a rung of the equipment ladder,
+ *     `sowStackAcresWheat` buys wheat seed, `placeStackAcresMachine` buys a
+ *     machine outright. All sinks.
+ *   * TWO PAY, and both are gated by `STACKACRES_GOLD_CEILING`, the SAME flat
+ *     daily reservation, through the SAME `reserveStackAcresExchange`/
+ *     `releaseStackAcresExchange` pair: `harvestStackAcres`, net of Land
+ *     Maintenance, and `fulfillStackAcresTownContract`, which trades
+ *     processed goods for Gold and Town Influence. Nothing else here may
+ *     credit Gold. A second payer is exactly the kind of change this comment
+ *     exists to make a reviewer stop over -- see lib/stackacres/contracts.ts's
+ *     own header for why routing it through the harvest's own ceiling, rather
+ *     than inventing a second one, is what keeps it safe.
  *
  * THE CRITICAL HARVEST does not break that count, and the way it avoids
  * doing so is the point. The equipment ladder makes a sweep sometimes come up
@@ -135,12 +180,13 @@ import {
  * for a unit that loses its race.
  *
  * Every refund goes through `refundGold` rather than calling
- * `creditGoldByProfile` directly, so that the credit function has exactly TWO
- * call sites in this file: the refund helper, and the harvest payout. That is
- * not a style preference -- it is what lets a test state the real invariant
- * ("there is one payout") instead of counting call sites that grow with every
- * new refund. A new direct `creditGoldByProfile` is a new faucet and is the
- * change to stop over.
+ * `creditGoldByProfile` directly, so that the credit function has exactly
+ * THREE call sites in this file: the refund helper, the harvest payout, and
+ * the contract payout. That is not a style preference -- it is what lets a
+ * test state the real invariant ("Gold is credited only by a payer that
+ * reserves against the ceiling first") instead of counting call sites that
+ * grow with every new refund. A new direct `creditGoldByProfile` that does
+ * NOT reserve first is the change to stop over.
  *
  * RAY'S MUSEUM rides inside that one payout rather than beside it. The first
  * time this player ever harvests a given item, `harvestStackAcres` folds a
@@ -227,6 +273,17 @@ export interface StackAcresView {
   /** The equipment rung this player holds. Never null -- a player who has
    *  bought nothing holds the free starting Trowel. */
   tool: StackAcresToolTier;
+  /** Wheat growing toward a Mill. See lib/stackacres/wheat-plot.ts's header
+   *  for why this is not part of `units`. */
+  wheatPlots: StackAcresWheatPlotSnapshot[];
+  /** Processing buildings placed on the farm. */
+  machines: (StackAcresMachineSnapshot & { canStart: boolean })[];
+  /** What a wheat plot's harvest and a Mill's output sit as. */
+  inventory: StackAcresInventory;
+  /** The town's one open request, or null when there is not one. */
+  contract: StackAcresContractRow | null;
+  /** Town Influence earned to date, total. */
+  influence: number;
 }
 
 function parseUnitId(value: unknown): string {
@@ -251,9 +308,38 @@ async function museumView(profileId: string): Promise<MuseumRegistry> {
   return registry as MuseumRegistry;
 }
 
+/** Strips the profile id off a stored contract row -- the client-safe shape
+ *  every other view already follows (StoredStackAcresUnit -> StackAcresUnitSnapshot
+ *  does the same thing). */
+function toContractView(contract: StoredContract): StackAcresContractRow {
+  return {
+    id: contract.id,
+    item: contract.item,
+    quantity: contract.quantity,
+    goldReward: contract.goldReward,
+    influenceReward: contract.influenceReward,
+    status: contract.status,
+    createdAt: contract.createdAt,
+  };
+}
+
 async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> {
   const day = stackacresExchangeDay(now);
-  const [rows, feed, capacity, exchanged, cleared, upkeepPaid, museum, tool] = await Promise.all([
+  const [
+    rows,
+    feed,
+    capacity,
+    exchanged,
+    cleared,
+    upkeepPaid,
+    museum,
+    tool,
+    wheatRows,
+    machineRows,
+    inventory,
+    contract,
+    influence,
+  ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
     readStackAcresCapacity(profile.id),
@@ -262,6 +348,11 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readStackAcresUpkeep(profile.id, day),
     museumView(profile.id),
     readStackAcresToolTier(profile.id),
+    listStackAcresWheatPlots(profile.id),
+    listStackAcresMachines(profile.id),
+    readStackAcresInventory(profile.id),
+    readStackAcresOpenContract(profile.id),
+    readStackAcresInfluence(profile.id),
   ]);
 
   const units = toStackAcresUnitSnapshots(rows, now);
@@ -278,6 +369,14 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     // charge happens inside a harvest, netted out of what it pays.
     upkeep: upkeepState(unlockedPlotCount(sectors, capacity), upkeepPaid),
     tool,
+    wheatPlots: wheatRows.map((row) => toWheatPlotSnapshot(row, now)),
+    machines: machineRows.map((row) => ({
+      ...toMachineSnapshot(row, now),
+      canStart: row.status === "idle" && canStartMachine(inventory, row.kind),
+    })),
+    inventory,
+    contract: contract ? toContractView(contract) : null,
+    influence,
   };
 }
 
@@ -1409,6 +1508,340 @@ async function releaseReservation(profileId: string, day: string, gold: number):
     console.error("stackacres.allowance_release_failed", { profileId, day, gold, error });
     return null;
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* Processing: wheat, machines, Town Contracts                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Sows one wheat plot, with Gold. A pure sink, same category as
+ * `stockStackAcres`'s seed -- see lib/stackacres/wheat-plot.ts's header for
+ * why this cannot simply be a sixth `StackAcresStock`.
+ */
+export async function sowStackAcresWheat(token: string, now = new Date()): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+
+  const plots = await listStackAcresWheatPlots(profile.id);
+  if (plots.length >= WHEAT_PLOT_CAP) {
+    throw new StackAcresRequestError(
+      `You already have ${WHEAT_PLOT_CAP} Wheat plots growing. Wait for one to ripen.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  // Rule 1: the Gold leaves first.
+  const debited = await spendGoldByProfile(profile.id, WHEAT_SEED_COST);
+  if (!debited) {
+    throw new StackAcresRequestError(
+      `Wheat seed costs ${WHEAT_SEED_COST.toLocaleString()} Gold.`,
+      400,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  try {
+    await createStackAcresWheatPlot(profile.id, {
+      startedAt: now,
+      readyAt: new Date(now.getTime() + WHEAT_DURATION_MS),
+    });
+  } catch (error) {
+    await refundGold(profile.id, WHEAT_SEED_COST);
+    throw error;
+  }
+
+  return view(debited, now);
+}
+
+/** Places a machine outright, with Gold. A pure sink, never sold back --
+ *  same category as `expandStackAcresCapacity`. */
+export async function placeStackAcresMachine(
+  token: string,
+  kindInput: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!isMachineKind(kindInput)) throw new StackAcresRequestError("Not a real machine.", 400);
+  const kind: MachineKind = kindInput;
+  const def = MACHINE_CATALOGUE[kind];
+  const profile = await ensureProfile(token);
+
+  const machines = await listStackAcresMachines(profile.id);
+  if (machines.length >= MACHINE_CAP) {
+    throw new StackAcresRequestError(
+      `You already have ${MACHINE_CAP} machines placed. That is all the room there is for now.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  // Rule 1: the Gold leaves first.
+  const debited = await spendGoldByProfile(profile.id, def.placeCost);
+  if (!debited) {
+    throw new StackAcresRequestError(`A ${def.label} costs ${def.placeCost.toLocaleString()} Gold.`, 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  try {
+    await createStackAcresMachine(profile.id, kind);
+  } catch (error) {
+    await refundGold(profile.id, def.placeCost);
+    throw error;
+  }
+
+  return view(debited, now);
+}
+
+/**
+ * The idle-worker pass: brings in every ripe wheat plot, starts every idle
+ * machine that now has enough input, and collects every machine that has
+ * finished. NO GOLD MOVES HERE AT ALL -- everything below is inventory only.
+ *
+ * THIS IS THE WORKER'S WHOLE "TASK QUEUE" for now, and the shape is
+ * deliberate. StackAcres has never run a background job -- every clock in it
+ * (a crop's growth, an animal's hunger, a Mill's own countdown) is a pure
+ * function of `now`, settled lazily by whichever request happens to touch it
+ * next; see ./units.ts's header. A literal ticking queue that assigns a
+ * worker to a task and waits on it would be the first exception to that in
+ * the whole feature. So instead: the client calls this action periodically
+ * (a short poll, the same shape the PvP duel and cribbage shells already run
+ * as a Realtime backup), and each call does every piece of work that has
+ * become possible since the last one, all at once, all idempotent. A second
+ * call a moment later simply finds nothing left to do.
+ *
+ * `farmhand.ts`'s own FSM (in flight on a sibling branch as this was
+ * written) is PRESENTATION for exactly this: once it lands, the client can
+ * read what this call actually settled and play a walk-and-carry animation
+ * for it, without this function's own authority changing at all -- the same
+ * relationship it already has with a harvest.
+ *
+ * Every step here is its own guarded, at-most-once settlement, and a step
+ * failing (a lost race to a second tab, most likely) never blocks the steps
+ * after it -- there is no reservation to release and no Gold to refund,
+ * since nothing here spends any.
+ */
+export interface StackAcresWorkResult {
+  wheatCollected: number;
+  machinesStarted: number;
+  machinesCollected: number;
+}
+
+export async function workStackAcres(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView & { work: StackAcresWorkResult }> {
+  const profile = await ensureProfile(token);
+
+  let wheatCollected = 0;
+  const wheatPlots = await listStackAcresWheatPlots(profile.id);
+  for (const plot of wheatPlots) {
+    if (!isWheatPlotReadyRow(plot, now)) continue;
+    const settled = await collectStackAcresWheatPlot(plot, now);
+    if (!settled) continue; // Lost race to a concurrent call; nothing to credit.
+    try {
+      await adjustStackAcresInventory(profile.id, "wheat", WHEAT_YIELD_QUANTITY);
+      wheatCollected += 1;
+    } catch (error) {
+      console.error("stackacres.wheat_credit_failed", { profileId: profile.id, plotId: plot.id, error });
+    }
+  }
+
+  let machinesStarted = 0;
+  let machinesCollected = 0;
+  const machines = await listStackAcresMachines(profile.id);
+  for (const machine of machines) {
+    if (machine.status === "idle") {
+      const def = MACHINE_CATALOGUE[machine.kind];
+      // Rule 1: the input leaves inventory first. `adjustStackAcresInventory`
+      // is the real, atomic guard -- a prior read of the inventory (in
+      // `view`) can be stale, but this call cannot be.
+      const afterDebit = await adjustStackAcresInventory(
+        profile.id,
+        def.input.item,
+        -def.input.quantity,
+      );
+      if (afterDebit === null) continue; // Not enough on hand; try next pass.
+      const started = await startStackAcresMachine(
+        machine,
+        now,
+        new Date(now.getTime() + def.processingMs),
+      );
+      if (!started) {
+        // Lost the race to start this exact machine (a concurrent call got
+        // there first): give the input back, exactly like `feedStackAcres`
+        // refunds a spent serving on a lost race.
+        await adjustStackAcresInventory(profile.id, def.input.item, def.input.quantity).catch(
+          () => null,
+        );
+        continue;
+      }
+      machinesStarted += 1;
+    } else if (isMachineDone(machine, now)) {
+      const def = MACHINE_CATALOGUE[machine.kind];
+      const settled = await collectStackAcresMachine(machine, now);
+      if (!settled) continue; // Lost race; nothing to credit.
+      try {
+        await adjustStackAcresInventory(profile.id, def.output.item, def.output.quantity);
+        machinesCollected += 1;
+      } catch (error) {
+        console.error("stackacres.machine_output_credit_failed", {
+          profileId: profile.id,
+          machineId: machine.id,
+          error,
+        });
+      }
+    }
+  }
+
+  return {
+    ...(await view(profile, now)),
+    work: { wheatCollected, machinesStarted, machinesCollected },
+  };
+}
+
+/** ./wheat-plot.ts's own `isWheatPlotReady`, restated under a name that does
+ *  not collide with the store's row type in this file's import list. */
+function isWheatPlotReadyRow(row: Pick<StoredWheatPlot, "readyAt">, now: Date): boolean {
+  return Date.parse(row.readyAt) <= now.getTime();
+}
+
+/** Posts a new open Town Contract, if this player does not already have one.
+ *  Spends and moves nothing -- see lib/stackacres/contracts.ts's header for
+ *  why there is ever only one. */
+export async function requestStackAcresContract(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+
+  const existing = await readStackAcresOpenContract(profile.id);
+  if (existing) {
+    throw new StackAcresRequestError("The town already has a contract open for you.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const def = drawContract(Math.random);
+  // A null here means a concurrent tab posted one first -- not an error, the
+  // view below simply shows whichever one won.
+  await createStackAcresContract(profile.id, def);
+
+  return view(profile, now);
+}
+
+/**
+ * Trades a fulfilled contract's processed goods for Gold and Town Influence.
+ * THE SECOND (and only other) GOLD PAYER IN THIS FILE -- see the module
+ * header. Ordered the same way as every other spend-then-settle action here:
+ *
+ *   1. The goods leave inventory first (rule 1, applied to items instead of
+ *      Gold, exactly as `harvestStackAcres` applies it to Gold before the
+ *      write it pays for).
+ *   2. Gold is reserved against the SAME flat daily ceiling a harvest
+ *      reserves against, before the contract is marked settled -- so a full
+ *      day refuses before the goods are gone, not after. A refusal here
+ *      refunds the goods.
+ *   3. The contract is marked fulfilled under a guard that can settle it at
+ *      most once. Losing that race refunds both the goods and the
+ *      reservation -- nothing here can pay out for a contract someone else
+ *      already collected.
+ *   4. Gold and Influence are credited only once step 3 is durable.
+ */
+export async function fulfillStackAcresTownContract(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView & { contractReward: { gold: number; influence: number } }> {
+  const profile = await ensureProfile(token);
+
+  const contract = await readStackAcresOpenContract(profile.id);
+  if (!contract) {
+    throw new StackAcresRequestError("There is no contract open right now.", 404, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const inventory = await readStackAcresInventory(profile.id);
+  if (!canFulfillContract(inventoryQuantity(inventory, contract.item), contract)) {
+    throw new StackAcresRequestError(
+      `This contract needs ${machineItemLabel(contract.item, contract.quantity)}.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  // Step 1: the goods leave first.
+  const afterDeduct = await adjustStackAcresInventory(profile.id, contract.item, -contract.quantity);
+  if (afterDeduct === null) {
+    throw new StackAcresRequestError("Not enough on hand.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Step 2: reserve against the harvest's own ceiling, before the contract
+  // is marked settled.
+  const day = stackacresExchangeDay(now);
+  let reserved = 0;
+  if (contract.goldReward > 0) {
+    const taken = await reserveStackAcresExchange(
+      profile.id,
+      day,
+      contract.goldReward,
+      STACKACRES_GOLD_CEILING,
+    );
+    if (taken === null) {
+      await adjustStackAcresInventory(profile.id, contract.item, contract.quantity).catch(() => null);
+      const state = exchangeState(await readStackAcresExchanged(profile.id, day), now);
+      throw new StackAcresRequestError(
+        state.remaining > 0
+          ? `The town can pay out ${state.remaining.toLocaleString()} more Gold today, and this contract pays ${contract.goldReward.toLocaleString()}. Come back after midnight UTC.`
+          : "This farm has sent out all the Gold it can today. This contract keeps until midnight UTC.",
+        409,
+        { round: await snapshots(profile.id, now) },
+      );
+    }
+    reserved = contract.goldReward;
+  }
+
+  // Step 3: settle the contract itself, exactly once.
+  const settled = await settleStackAcresContract(contract);
+  if (!settled) {
+    await releaseReservation(profile.id, day, reserved);
+    await adjustStackAcresInventory(profile.id, contract.item, contract.quantity).catch(() => null);
+    throw new StackAcresRequestError("That contract was already settled.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Step 4: pay, only now that step 3 is durable.
+  let paid: PlayerProfile | null = null;
+  if (contract.goldReward > 0) {
+    try {
+      paid = await creditGoldByProfile(profile.id, contract.goldReward);
+    } catch (error) {
+      console.error("stackacres.contract_credit_failed", {
+        profileId: profile.id,
+        contractId: contract.id,
+        gold: contract.goldReward,
+        error,
+      });
+    }
+  }
+
+  if (contract.influenceReward > 0) {
+    await adjustStackAcresInfluence(profile.id, contract.influenceReward).catch((error) => {
+      console.error("stackacres.contract_influence_failed", {
+        profileId: profile.id,
+        contractId: contract.id,
+        error,
+      });
+    });
+  }
+
+  return {
+    ...(await view(paid ?? (await ensureProfile(token)), now)),
+    contractReward: { gold: contract.goldReward, influence: contract.influenceReward },
+  };
 }
 
 /** Maps a thrown error to the response every StackAcres route sends. */

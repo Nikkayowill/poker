@@ -17,6 +17,11 @@ import {
   stockStackAcres,
   upgradeStackAcresTool,
   waterStackAcres,
+  sowStackAcresWheat,
+  placeStackAcresMachine,
+  workStackAcres,
+  requestStackAcresContract,
+  fulfillStackAcresTownContract,
   type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
@@ -76,6 +81,13 @@ import {
 } from "@/lib/stackacres/items";
 import { STACKACRES_UPKEEP_FREE_PLOTS, stackacresUpkeepFee } from "@/lib/stackacres/upkeep";
 import { emptyMuseumRegistry, museumDiscoveryBonus } from "@/lib/stackacres/museum";
+import {
+  WHEAT_DURATION_MS,
+  WHEAT_PLOT_CAP,
+  WHEAT_SEED_COST,
+  WHEAT_YIELD_QUANTITY,
+} from "@/lib/stackacres/wheat-plot";
+import { MACHINE_CAP, MACHINE_CATALOGUE } from "@/lib/stackacres/machines";
 
 // Passthrough by default; one test swaps createStackAcresUnit's next call for
 // a thrown error, standing in for the DB trigger raising (which the memory
@@ -1536,22 +1548,27 @@ describe("the currency wall", () => {
 
   const calls = (source: string, fn: string) => source.split(`${fn}(`).length - 1;
 
-  it("credits Gold in exactly two places: the refund helper, and the payout", async () => {
-    // If this is 3, go and look at the new one and ask the only question that
-    // matters: which DIRECTION does it move Gold? A refund belongs inside
-    // `refundGold`. A credit that is not a refund is a faucet, and that is the
-    // change to stop over.
+  it("credits Gold in exactly three places: the refund helper, and two payouts", async () => {
+    // If this is 4, go and look at the new one and ask the only question that
+    // matters: which DIRECTION does it move Gold, and if it pays, does it
+    // reserve against STACKACRES_GOLD_CEILING first? A refund belongs inside
+    // `refundGold`. A credit that is not a refund is a faucet, and a faucet
+    // that does not reserve first is the change to stop over.
     //
     // This used to be a count of five -- four refunds plus one payout -- and
     // it had to be edited every time a spend path added its own refund.
     // Routing every refund through one helper is what makes the number mean
     // something: no amount of new refunds can move it, and only a new PAYOUT
-    // can.
-    expect(calls(SERVICE, "creditGoldByProfile")).toBe(2);
-    // One of the two is the helper, whose whole body is that call.
+    // can. It grew from two to three when Town Contracts added a second payer
+    // (see the module header) -- both payers reserve against the identical
+    // ceiling before they settle, which is what is actually being guarded.
+    expect(calls(SERVICE, "creditGoldByProfile")).toBe(3);
+    // One of the three is the helper, whose whole body is that call.
     expect(SERVICE).toContain("async function refundGold(");
-    // And the other is the harvest, which is the only payout there may be.
+    // And the other two are the harvest and the contract payout -- the only
+    // two payouts there may be, and both reserve against the same ceiling.
     expect(SERVICE).toContain("paid = await creditGoldByProfile(profile.id, gold)");
+    expect(SERVICE).toContain("paid = await creditGoldByProfile(profile.id, contract.goldReward)");
   });
 
   it("spends Gold freely, which is the direction that is allowed", async () => {
@@ -1561,7 +1578,7 @@ describe("the currency wall", () => {
     expect(calls(SERVICE, "spendGoldByProfile")).toBeGreaterThan(1);
   });
 
-  it("exposes exactly one action that pays Gold out", () => {
+  it("exposes exactly two actions that pay Gold out, both ceiling-gated", () => {
     const actions = [...ROUTE.matchAll(/z\.literal\("([a-z-]+)"\)/g)].map((m) => m[1]).sort();
     // Adding an action means editing this list, which is the point: the
     // question to answer while doing it is "does this move Gold, and which
@@ -1574,21 +1591,34 @@ describe("the currency wall", () => {
       "collect",
       "expand-capacity",
       "feed",
+      "fulfill-contract",
+      "place-machine",
+      "request-contract",
       "retire",
+      "sow-wheat",
       "stock",
       "upgrade-tool",
       "water",
+      "work",
     ]);
 
     // The claim that actually matters, held separately from the list so it
-    // cannot be lost in a rename: `collect` is the only action that pays a
-    // player Gold. Everything else on that list either spends it or moves no
-    // money at all -- `upgrade-tool` included, which is a pure sink, and the
-    // critical harvest it buys is paid BY `collect` out of the same
-    // reservation rather than being a second payer.
-    const paysGold = ["collect"];
+    // cannot be lost in a rename: `collect` and `fulfill-contract` are the
+    // only two actions that pay a player Gold. Everything else on that list
+    // either spends it or moves no money at all -- `upgrade-tool` included,
+    // which is a pure sink, and the critical harvest it buys is paid BY
+    // `collect` out of the same reservation rather than being a third payer;
+    // `work` and `request-contract` included, which move inventory only.
+    const paysGold = ["collect", "fulfill-contract"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
     expect(ROUTE).toContain("harvestStackAcres(token, { unitIds: action.unitIds })");
+    expect(ROUTE).toContain("fulfillStackAcresTownContract(token)");
+    // Both payers reserve against the exact same daily ceiling -- this is
+    // the property that makes a second payer safe rather than a second
+    // faucet. See lib/stackacres/exchange.ts. (STACKACRES_GOLD_CEILING is a
+    // constant, not a call, hence counting occurrences directly rather than
+    // through the `calls` helper above.)
+    expect(SERVICE.split("STACKACRES_GOLD_CEILING").length - 1).toBeGreaterThanOrEqual(3);
   });
 
   it("hands back no Gold at all for spending Gold", async () => {
@@ -2203,5 +2233,184 @@ describe("idempotency keys", () => {
     );
 
     expect(other.units.filter((u) => u.stock === "sprout")).toHaveLength(1);
+  });
+});
+
+/**
+ * PROCESSING: wheat, machines, Town Contracts. Wheat never appears in
+ * `view.units` and never pays Gold at harvest -- see
+ * lib/stackacres/machine-items.ts's header for why it is not a sixth
+ * StackAcresStock. Everything here is inventory until a fulfilled contract
+ * turns it back into Gold, through the SAME flat daily ceiling a harvest
+ * uses.
+ */
+describe("wheat and machines", () => {
+  it("sows a wheat plot for the listed Gold price", async () => {
+    const { token } = await funded();
+    const before = await balance(token);
+    const view = await sowStackAcresWheat(token, T0);
+    expect(await balance(token)).toBe(before - WHEAT_SEED_COST);
+    expect(view.wheatPlots).toHaveLength(1);
+    expect(view.wheatPlots[0].ready).toBe(false);
+  });
+
+  it("refuses and refunds once the wheat cap is reached", async () => {
+    const { token } = await funded();
+    for (let i = 0; i < WHEAT_PLOT_CAP; i += 1) await sowStackAcresWheat(token, T0);
+    const before = await balance(token);
+    await expect(sowStackAcresWheat(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("places a machine for its listed Gold price, idle", async () => {
+    const { token } = await funded();
+    const before = await balance(token);
+    const view = await placeStackAcresMachine(token, "mill", T0);
+    expect(await balance(token)).toBe(before - MACHINE_CATALOGUE.mill.placeCost);
+    expect(view.machines).toHaveLength(1);
+    expect(view.machines[0]).toMatchObject({ kind: "mill", status: "idle" });
+  });
+
+  it("refuses and refunds once the machine cap is reached", async () => {
+    const { token } = await funded();
+    for (let i = 0; i < MACHINE_CAP; i += 1) await placeStackAcresMachine(token, "mill", T0);
+    const before = await balance(token);
+    await expect(placeStackAcresMachine(token, "mill", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("moves no Gold at all, in either direction", async () => {
+    const { token } = await funded();
+    await sowStackAcresWheat(token, T0);
+    await placeStackAcresMachine(token, "mill", T0);
+    const before = await balance(token);
+    await workStackAcres(token, new Date(T0.getTime() + WHEAT_DURATION_MS));
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("runs the whole loop: ripe wheat into inventory, an idle mill starting, then finishing into flour", async () => {
+    const { token } = await funded();
+    await sowStackAcresWheat(token, T0);
+    await placeStackAcresMachine(token, "mill", T0);
+
+    // Wheat ripens (yield 4) but is not yet ready: nothing moves.
+    const early = await workStackAcres(token, new Date(T0.getTime() + 1));
+    expect(early.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 0 });
+    expect(early.inventory.wheat ?? 0).toBe(0);
+
+    // Ripe: collected into inventory, and the same pass starts the mill
+    // (input 3, so 4 - 3 = 1 Wheat left over).
+    const ripenedAt = new Date(T0.getTime() + WHEAT_DURATION_MS);
+    const ripe = await workStackAcres(token, ripenedAt);
+    expect(ripe.work).toEqual({ wheatCollected: 1, machinesStarted: 1, machinesCollected: 0 });
+    expect(ripe.inventory.wheat).toBe(WHEAT_YIELD_QUANTITY - MACHINE_CATALOGUE.mill.input.quantity);
+    expect(ripe.machines[0].status).toBe("working");
+    expect(ripe.wheatPlots).toHaveLength(0);
+
+    // Not done yet: another pass mid-run changes nothing.
+    const midRun = await workStackAcres(
+      token,
+      new Date(ripenedAt.getTime() + MACHINE_CATALOGUE.mill.processingMs - 1),
+    );
+    expect(midRun.work.machinesCollected).toBe(0);
+    expect(midRun.inventory.flour ?? 0).toBe(0);
+
+    // Done: the run settles into Flour, and the mill goes back to idle.
+    const finishedAt = new Date(ripenedAt.getTime() + MACHINE_CATALOGUE.mill.processingMs);
+    const done = await workStackAcres(token, finishedAt);
+    expect(done.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 1 });
+    expect(done.inventory.flour).toBe(MACHINE_CATALOGUE.mill.output.quantity);
+    expect(done.machines[0].status).toBe("idle");
+  });
+
+  it("does not start a mill short of its full input batch", async () => {
+    const { token } = await funded();
+    await placeStackAcresMachine(token, "mill", T0);
+    // One wheat plot yields fewer than the mill's own input requirement, so
+    // it must sit in inventory rather than starting a run.
+    expect(WHEAT_YIELD_QUANTITY).toBeLessThan(MACHINE_CATALOGUE.mill.input.quantity * 2);
+    const view = await workStackAcres(token, new Date(T0.getTime() + WHEAT_DURATION_MS));
+    expect(view.machines[0].status).toBe("idle");
+  });
+});
+
+describe("Town Contracts", () => {
+  /** Grows and mills enough Flour to fulfil whatever contract this player is
+   *  holding, regardless of which rung was drawn. */
+  async function stockpileFlour(token: string, flour: number, at = T0): Promise<Date> {
+    let now = at;
+    await placeStackAcresMachine(token, "mill", now);
+    let made = 0;
+    while (made < flour) {
+      await sowStackAcresWheat(token, now);
+      now = new Date(now.getTime() + WHEAT_DURATION_MS);
+      await workStackAcres(token, now); // collects wheat, starts the mill
+      now = new Date(now.getTime() + MACHINE_CATALOGUE.mill.processingMs);
+      await workStackAcres(token, now); // collects the run into inventory
+      made += MACHINE_CATALOGUE.mill.output.quantity;
+    }
+    return now;
+  }
+
+  it("posts one open contract and refuses a second while one is open", async () => {
+    const { token } = await funded();
+    const view = await requestStackAcresContract(token, T0);
+    expect(view.contract).not.toBeNull();
+    expect(view.contract!.status).toBe("open");
+
+    await expect(requestStackAcresContract(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+
+  it("fulfilling pays Gold and Influence, deducts the goods, and closes the contract", async () => {
+    const { token } = await funded();
+    const opened = await requestStackAcresContract(token, T0);
+    const contract = opened.contract!;
+    const now = await stockpileFlour(token, contract.quantity, T0);
+
+    const before = await balance(token);
+    const result = await fulfillStackAcresTownContract(token, now);
+
+    expect(result.contractReward).toEqual({
+      gold: contract.goldReward,
+      influence: contract.influenceReward,
+    });
+    expect(await balance(token)).toBe(before + contract.goldReward);
+    expect(result.influence).toBe(contract.influenceReward);
+    expect(result.inventory.flour ?? 0).toBe(0);
+    expect(result.contract).toBeNull();
+  });
+
+  it("refuses fulfilment without enough of the goods on hand, spending nothing", async () => {
+    const { token } = await funded();
+    await requestStackAcresContract(token, T0);
+    const before = await balance(token);
+    await expect(fulfillStackAcresTownContract(token, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("refuses when the day's Gold ceiling has no room, and refunds the goods it had already taken", async () => {
+    const { token, id } = await funded();
+    const opened = await requestStackAcresContract(token, T0);
+    const contract = opened.contract!;
+    const now = await stockpileFlour(token, contract.quantity, T0);
+
+    // Leave less headroom today than this contract pays.
+    await burnAllowance(id, STACKACRES_GOLD_CEILING - contract.goldReward + 1, now);
+
+    const before = await balance(token);
+    await expect(fulfillStackAcresTownContract(token, now)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+
+    // The goods it took in step 1 came back, and the contract is still open
+    // for whenever there is room again.
+    const after = await readStackAcres(token, now);
+    expect(after.inventory.flour).toBe(contract.quantity);
+    expect(after.contract?.status).toBe("open");
   });
 });

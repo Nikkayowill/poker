@@ -8,6 +8,15 @@ import {
   toStackAcresToolTier,
   type StackAcresToolTier,
 } from "@/lib/stackacres/equipment";
+import {
+  isMachineItem,
+  isMachineProcessedItem,
+  type MachineItemId,
+  type MachineProcessedItem,
+} from "@/lib/stackacres/machine-items";
+import type { StackAcresInventory } from "@/lib/stackacres/inventory";
+import type { StackAcresWheatPlotRow } from "@/lib/stackacres/wheat-plot";
+import { isMachineKind, type MachineKind, type StackAcresMachineRow } from "@/lib/stackacres/machines";
 import { adminClient } from "./supabase-admin";
 
 /**
@@ -62,6 +71,11 @@ declare global {
   var __riverRoomStackAcresMuseum: Map<string, Set<string>> | undefined;
   var __riverRoomStackAcresSectors: Map<string, string> | undefined;
   var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
+  var __riverRoomStackAcresWheatPlots: Map<string, StoredWheatPlot> | undefined;
+  var __riverRoomStackAcresInventory: Map<string, number> | undefined;
+  var __riverRoomStackAcresMachines: Map<string, StoredMachine> | undefined;
+  var __riverRoomStackAcresContracts: Map<string, StoredContract> | undefined;
+  var __riverRoomStackAcresInfluence: Map<string, number> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -105,6 +119,28 @@ globalThis.__riverRoomStackAcresSectors = memorySectors;
 const memoryUpkeep = globalThis.__riverRoomStackAcresUpkeep ?? new Map<string, number>();
 globalThis.__riverRoomStackAcresUpkeep = memoryUpkeep;
 
+/** Wheat plots, keyed by row id. */
+const memoryWheatPlots =
+  globalThis.__riverRoomStackAcresWheatPlots ?? new Map<string, StoredWheatPlot>();
+globalThis.__riverRoomStackAcresWheatPlots = memoryWheatPlots;
+
+/** Processing-track inventory, keyed `${profileId}:${item}`. A missing entry
+ *  is 0, same convention as memoryFeed. */
+const memoryInventory = globalThis.__riverRoomStackAcresInventory ?? new Map<string, number>();
+globalThis.__riverRoomStackAcresInventory = memoryInventory;
+
+/** Machines, keyed by row id. */
+const memoryMachines = globalThis.__riverRoomStackAcresMachines ?? new Map<string, StoredMachine>();
+globalThis.__riverRoomStackAcresMachines = memoryMachines;
+
+/** Contracts, keyed by row id. */
+const memoryContracts = globalThis.__riverRoomStackAcresContracts ?? new Map<string, StoredContract>();
+globalThis.__riverRoomStackAcresContracts = memoryContracts;
+
+/** Town Influence, keyed by profileId. A missing entry is 0. */
+const memoryInfluence = globalThis.__riverRoomStackAcresInfluence ?? new Map<string, number>();
+globalThis.__riverRoomStackAcresInfluence = memoryInfluence;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
@@ -116,6 +152,11 @@ export function __resetStackAcresForTest(): void {
   memoryHarvests.length = 0;
   memoryMuseum.clear();
   memorySectors.clear();
+  memoryWheatPlots.clear();
+  memoryInventory.clear();
+  memoryMachines.clear();
+  memoryContracts.clear();
+  memoryInfluence.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -1107,4 +1148,612 @@ export async function recordStackAcresHarvest(entry: StackAcresHarvestEntry): Pr
     permanent: entry.permanent,
   });
   if (error) console.error("stackacres.harvest_ledger_failed", { entry, error });
+}
+
+/* ------------------------------------------------------------------ */
+/* Wheat: the raw crop grown for a Mill, never for Gold                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A DELIBERATELY SEPARATE TABLE FROM homestead_units. See
+ * lib/stackacres/machine-items.ts's header: `harvestStackAcres` sweeps every
+ * ready homestead_units row into one Gold payout with no per-row opt-out, so
+ * a raw-material crop that must never pay Gold cannot live there. Same
+ * version-guarded shape as everything else in this file, just with nothing
+ * to feed, water or muck.
+ */
+export interface StoredWheatPlot extends StackAcresWheatPlotRow {
+  profileId: string;
+  createdAt: string;
+}
+
+const WHEAT_PLOT_COLUMNS = "id, profile_id, started_at, ready_at, version, created_at";
+
+interface WheatPlotDbRow {
+  id: string;
+  profile_id: string;
+  started_at: string;
+  ready_at: string;
+  version: number | string;
+  created_at: string;
+}
+
+function wheatPlotFromRow(row: WheatPlotDbRow): StoredWheatPlot {
+  return {
+    id: String(row.id),
+    profileId: String(row.profile_id),
+    startedAt: String(row.started_at),
+    readyAt: String(row.ready_at),
+    version: Number(row.version),
+    createdAt: String(row.created_at),
+  };
+}
+
+export async function listStackAcresWheatPlots(profileId: string): Promise<StoredWheatPlot[]> {
+  const supabase = adminClient();
+  if (!supabase) {
+    return [...memoryWheatPlots.values()]
+      .filter((plot) => plot.profileId === profileId)
+      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+      .map((plot) => ({ ...plot }));
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_wheat_plots")
+    .select(WHEAT_PLOT_COLUMNS)
+    .eq("profile_id", profileId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`Could not load your wheat: ${error.message}`);
+  return (data as WheatPlotDbRow[]).map(wheatPlotFromRow);
+}
+
+export async function getStackAcresWheatPlot(
+  profileId: string,
+  plotId: string,
+): Promise<StoredWheatPlot | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const found = memoryWheatPlots.get(plotId);
+    return found && found.profileId === profileId ? { ...found } : null;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_wheat_plots")
+    .select(WHEAT_PLOT_COLUMNS)
+    .eq("id", plotId)
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not load that plot: ${error.message}`);
+  return data ? wheatPlotFromRow(data as WheatPlotDbRow) : null;
+}
+
+/** Sows one wheat plot. The database's own `homestead_wheat_plots_cap`
+ *  trigger is the real cap guard (advisory-locked, same shape as
+ *  `homestead_units_enforce_stock_shape`); the service checks the cap ahead
+ *  of the debit purely for a clean 409 rather than a raw constraint 500. */
+export async function createStackAcresWheatPlot(
+  profileId: string,
+  entry: { startedAt: Date; readyAt: Date },
+): Promise<StoredWheatPlot> {
+  const supabase = adminClient();
+  const now = new Date().toISOString();
+
+  if (!supabase) {
+    const plot: StoredWheatPlot = {
+      id: randomUUID(),
+      profileId,
+      startedAt: entry.startedAt.toISOString(),
+      readyAt: entry.readyAt.toISOString(),
+      version: 1,
+      createdAt: now,
+    };
+    memoryWheatPlots.set(plot.id, { ...plot });
+    return { ...plot };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_wheat_plots")
+    .insert({
+      profile_id: profileId,
+      started_at: entry.startedAt.toISOString(),
+      ready_at: entry.readyAt.toISOString(),
+      version: 1,
+    })
+    .select(WHEAT_PLOT_COLUMNS)
+    .single();
+  if (error) throw new Error(`Could not sow that: ${error.message}`);
+  return wheatPlotFromRow(data as WheatPlotDbRow);
+}
+
+/**
+ * Collects a ready wheat plot, once. Guarded on version and on the
+ * database's own `ready_at`, exactly like `collectStackAcresUnit`'s clean
+ * path -- a lost race, a stale version or an early call all return null, and
+ * null must never credit inventory: the caller only adds the yield to
+ * inventory after this confirms.
+ */
+export async function collectStackAcresWheatPlot(
+  current: StoredWheatPlot,
+  now: Date,
+): Promise<StoredWheatPlot | null> {
+  const supabase = adminClient();
+
+  if (!supabase) {
+    const stored = memoryWheatPlots.get(current.id);
+    if (
+      !stored ||
+      stored.version !== current.version ||
+      Date.parse(stored.readyAt) > now.getTime()
+    ) {
+      return null;
+    }
+    memoryWheatPlots.delete(current.id);
+    return { ...stored };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_wheat_plots")
+    .delete()
+    .eq("id", current.id)
+    .eq("version", current.version)
+    .lte("ready_at", now.toISOString())
+    .select(WHEAT_PLOT_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not collect that wheat: ${error.message}`);
+  return data ? wheatPlotFromRow(data as WheatPlotDbRow) : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Inventory: what a wheat plot's harvest and a Mill's output sit as    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * NOT `homestead_inventory` -- that table already exists, from the barn era
+ * CLAUDE.md's items.ts header describes ("left in place, inert" once a
+ * harvest started paying Gold in one step). It still has its own
+ * `adjust_homestead_inventory(uuid, text, integer)` RPC live in the
+ * database, same signature this would have wanted. Reusing either name would
+ * have silently pointed this feature's own item table, or its own RPC, at a
+ * decade-dead one -- caught by querying the live schema before writing the
+ * migration, not by reading this file. `homestead_processing_inventory` /
+ * `adjust_homestead_processing_inventory` are this feature's own, unrelated
+ * to that table and never read by anything that still touches it.
+ */
+
+/** Every processing-track item this player holds. A missing key is 0, same
+ *  convention `readStackAcresCapacity` uses for a stock kind nobody has
+ *  bought a slot for. */
+export async function readStackAcresInventory(profileId: string): Promise<StackAcresInventory> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const out: StackAcresInventory = {};
+    for (const [key, quantity] of memoryInventory) {
+      const [id, item] = key.split(":");
+      if (id === profileId && isMachineItem(item)) out[item] = quantity;
+    }
+    return out;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_processing_inventory")
+    .select("item, quantity")
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not read your stores: ${error.message}`);
+  const out: StackAcresInventory = {};
+  for (const row of (data ?? []) as { item: string; quantity: number | string }[]) {
+    if (isMachineItem(row.item)) out[row.item] = Number(row.quantity);
+  }
+  return out;
+}
+
+/**
+ * Moves one item's quantity by `delta`, refusing to go negative. Returns the
+ * new quantity, or null when there was not enough to spend -- the caller
+ * treats that exactly like `adjustStackAcresFeed`'s null: a refusal or a
+ * lost race, and null must never be treated as a successful spend.
+ */
+export async function adjustStackAcresInventory(
+  profileId: string,
+  item: MachineItemId,
+  delta: number,
+): Promise<number | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${item}`;
+    const current = memoryInventory.get(key) ?? 0;
+    const next = current + delta;
+    if (next < 0) return null;
+    memoryInventory.set(key, next);
+    return next;
+  }
+
+  const { data, error } = await supabase.rpc("adjust_homestead_processing_inventory", {
+    p_profile_id: profileId,
+    p_item: item,
+    p_delta: delta,
+  });
+  if (error) {
+    if (error.code === "23514") return null;
+    throw new Error(`Could not update your stores: ${error.message}`);
+  }
+  return data === null ? null : Number(data);
+}
+
+/* ------------------------------------------------------------------ */
+/* Machines                                                            */
+/* ------------------------------------------------------------------ */
+
+export interface StoredMachine extends StackAcresMachineRow {
+  profileId: string;
+  createdAt: string;
+}
+
+const MACHINE_COLUMNS = "id, profile_id, kind, status, started_at, ready_at, version, created_at";
+
+interface MachineDbRow {
+  id: string;
+  profile_id: string;
+  kind: string;
+  status: string;
+  started_at: string | null;
+  ready_at: string | null;
+  version: number | string;
+  created_at: string;
+}
+
+function machineFromRow(row: MachineDbRow): StoredMachine {
+  return {
+    id: String(row.id),
+    profileId: String(row.profile_id),
+    kind: (isMachineKind(row.kind) ? row.kind : "mill") as MachineKind,
+    status: row.status === "working" ? "working" : "idle",
+    startedAt: row.started_at ? String(row.started_at) : null,
+    readyAt: row.ready_at ? String(row.ready_at) : null,
+    version: Number(row.version),
+    createdAt: String(row.created_at),
+  };
+}
+
+export async function listStackAcresMachines(profileId: string): Promise<StoredMachine[]> {
+  const supabase = adminClient();
+  if (!supabase) {
+    return [...memoryMachines.values()]
+      .filter((machine) => machine.profileId === profileId)
+      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+      .map((machine) => ({ ...machine }));
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_machines")
+    .select(MACHINE_COLUMNS)
+    .eq("profile_id", profileId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`Could not load your machines: ${error.message}`);
+  return (data as MachineDbRow[]).map(machineFromRow);
+}
+
+export async function getStackAcresMachine(
+  profileId: string,
+  machineId: string,
+): Promise<StoredMachine | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const found = memoryMachines.get(machineId);
+    return found && found.profileId === profileId ? { ...found } : null;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_machines")
+    .select(MACHINE_COLUMNS)
+    .eq("id", machineId)
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not load that machine: ${error.message}`);
+  return data ? machineFromRow(data as MachineDbRow) : null;
+}
+
+/** Places a new machine, idle. The database's own `homestead_machines_cap`
+ *  trigger is the real cap guard; the service checks ahead of the debit for
+ *  a clean 409, same posture as every other placed-thing cap in this file. */
+export async function createStackAcresMachine(
+  profileId: string,
+  kind: MachineKind,
+): Promise<StoredMachine> {
+  const supabase = adminClient();
+  const now = new Date().toISOString();
+
+  if (!supabase) {
+    const machine: StoredMachine = {
+      id: randomUUID(),
+      profileId,
+      kind,
+      status: "idle",
+      startedAt: null,
+      readyAt: null,
+      version: 1,
+      createdAt: now,
+    };
+    memoryMachines.set(machine.id, { ...machine });
+    return { ...machine };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_machines")
+    .insert({ profile_id: profileId, kind, status: "idle", version: 1 })
+    .select(MACHINE_COLUMNS)
+    .single();
+  if (error) throw new Error(`Could not place that: ${error.message}`);
+  return machineFromRow(data as MachineDbRow);
+}
+
+/** Starts an idle machine's run. Guarded on version and on `status = 'idle'`,
+ *  so two racing "work" calls cannot both start the same machine and consume
+ *  its input twice -- the caller debits inventory first (rule 1) and this is
+ *  the write that confirms the debit was not wasted. */
+export async function startStackAcresMachine(
+  current: StoredMachine,
+  startedAt: Date,
+  readyAt: Date,
+): Promise<StoredMachine | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const stored = memoryMachines.get(current.id);
+    if (!stored || stored.status !== "idle" || stored.version !== current.version) return null;
+    const updated: StoredMachine = {
+      ...stored,
+      status: "working",
+      startedAt: startedAt.toISOString(),
+      readyAt: readyAt.toISOString(),
+      version,
+    };
+    memoryMachines.set(current.id, { ...updated });
+    return { ...updated };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_machines")
+    .update({
+      status: "working",
+      started_at: startedAt.toISOString(),
+      ready_at: readyAt.toISOString(),
+      version,
+    })
+    .eq("id", current.id)
+    .eq("version", current.version)
+    .eq("status", "idle")
+    .select(MACHINE_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not start that machine: ${error.message}`);
+  return data ? machineFromRow(data as MachineDbRow) : null;
+}
+
+/** Collects a finished run and returns the machine to idle. Guarded on
+ *  version, `status = 'working'` and the database's own `ready_at`, the same
+ *  three-part guard `collectStackAcresUnit` uses -- null means a lost race
+ *  or an early call, and null must never credit the output to inventory. */
+export async function collectStackAcresMachine(
+  current: StoredMachine,
+  now: Date,
+): Promise<StoredMachine | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const stored = memoryMachines.get(current.id);
+    if (
+      !stored ||
+      stored.status !== "working" ||
+      stored.version !== current.version ||
+      !stored.readyAt ||
+      Date.parse(stored.readyAt) > now.getTime()
+    ) {
+      return null;
+    }
+    const updated: StoredMachine = {
+      ...stored,
+      status: "idle",
+      startedAt: null,
+      readyAt: null,
+      version,
+    };
+    memoryMachines.set(current.id, { ...updated });
+    return { ...updated };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_machines")
+    .update({ status: "idle", started_at: null, ready_at: null, version })
+    .eq("id", current.id)
+    .eq("version", current.version)
+    .eq("status", "working")
+    .lte("ready_at", now.toISOString())
+    .select(MACHINE_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not collect that machine's run: ${error.message}`);
+  return data ? machineFromRow(data as MachineDbRow) : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Town Contracts                                                      */
+/* ------------------------------------------------------------------ */
+
+export interface StoredContract {
+  id: string;
+  profileId: string;
+  item: MachineProcessedItem;
+  quantity: number;
+  goldReward: number;
+  influenceReward: number;
+  status: "open" | "fulfilled";
+  createdAt: string;
+}
+
+const CONTRACT_COLUMNS =
+  "id, profile_id, item, quantity, gold_reward, influence_reward, status, created_at";
+
+interface ContractDbRow {
+  id: string;
+  profile_id: string;
+  item: string;
+  quantity: number | string;
+  gold_reward: number | string;
+  influence_reward: number | string;
+  status: string;
+  created_at: string;
+}
+
+function contractFromRow(row: ContractDbRow): StoredContract {
+  return {
+    id: String(row.id),
+    profileId: String(row.profile_id),
+    item: (isMachineProcessedItem(row.item) ? row.item : "flour") as MachineProcessedItem,
+    quantity: Number(row.quantity),
+    goldReward: Number(row.gold_reward),
+    influenceReward: Number(row.influence_reward),
+    status: row.status === "fulfilled" ? "fulfilled" : "open",
+    createdAt: String(row.created_at),
+  };
+}
+
+/** This player's OPEN contract, or null when there is not one -- the board
+ *  is one slot, never a list; see lib/stackacres/contracts.ts's header. */
+export async function readStackAcresOpenContract(profileId: string): Promise<StoredContract | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    for (const contract of memoryContracts.values()) {
+      if (contract.profileId === profileId && contract.status === "open") return { ...contract };
+    }
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_contracts")
+    .select(CONTRACT_COLUMNS)
+    .eq("profile_id", profileId)
+    .eq("status", "open")
+    .maybeSingle();
+  if (error) throw new Error(`Could not read the town board: ${error.message}`);
+  return data ? contractFromRow(data as ContractDbRow) : null;
+}
+
+/**
+ * Posts a new open contract. Returns null when this player already has one
+ * open -- the database's own partial unique index on `(profile_id) where
+ * status = 'open'` is the real guard against two racing tabs both posting
+ * one; this is treated exactly like a lost race, never an error.
+ */
+export async function createStackAcresContract(
+  profileId: string,
+  def: { item: MachineProcessedItem; quantity: number; goldReward: number; influenceReward: number },
+): Promise<StoredContract | null> {
+  const supabase = adminClient();
+  const now = new Date().toISOString();
+
+  if (!supabase) {
+    const existing = [...memoryContracts.values()].some(
+      (contract) => contract.profileId === profileId && contract.status === "open",
+    );
+    if (existing) return null;
+    const contract: StoredContract = {
+      id: randomUUID(),
+      profileId,
+      item: def.item,
+      quantity: def.quantity,
+      goldReward: def.goldReward,
+      influenceReward: def.influenceReward,
+      status: "open",
+      createdAt: now,
+    };
+    memoryContracts.set(contract.id, { ...contract });
+    return { ...contract };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_contracts")
+    .insert({
+      profile_id: profileId,
+      item: def.item,
+      quantity: def.quantity,
+      gold_reward: def.goldReward,
+      influence_reward: def.influenceReward,
+      status: "open",
+    })
+    .select(CONTRACT_COLUMNS);
+  if (error) {
+    // 23505: the partial unique index refused a second open contract for
+    // this profile. Not an error -- the caller treats it exactly like a
+    // lost race.
+    if (error.code === "23505") return null;
+    throw new Error(`Could not post that contract: ${error.message}`);
+  }
+  return data && data.length > 0 ? contractFromRow(data[0] as ContractDbRow) : null;
+}
+
+/**
+ * Marks a contract fulfilled, exactly once. Guarded on `status = 'open'`, so
+ * a double-tapped fulfil (or two tabs racing the same contract) settles
+ * once -- the caller deducts inventory and reserves Gold BEFORE this call
+ * (rule 1) and refunds both if this returns null.
+ */
+export async function fulfillStackAcresContract(current: StoredContract): Promise<StoredContract | null> {
+  const supabase = adminClient();
+
+  if (!supabase) {
+    const stored = memoryContracts.get(current.id);
+    if (!stored || stored.status !== "open") return null;
+    const updated: StoredContract = { ...stored, status: "fulfilled" };
+    memoryContracts.set(current.id, { ...updated });
+    return { ...updated };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_contracts")
+    .update({ status: "fulfilled" })
+    .eq("id", current.id)
+    .eq("status", "open")
+    .select(CONTRACT_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not settle that contract: ${error.message}`);
+  return data ? contractFromRow(data as ContractDbRow) : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Town Influence                                                      */
+/* ------------------------------------------------------------------ */
+
+/** How much Town Influence this player has earned, total. Never spent
+ *  anywhere in this feature, so unlike Gold it carries no ceiling. */
+export async function readStackAcresInfluence(profileId: string): Promise<number> {
+  const supabase = adminClient();
+  if (!supabase) return memoryInfluence.get(profileId) ?? 0;
+
+  const { data, error } = await supabase
+    .from("homestead_town_influence")
+    .select("influence")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your standing in town: ${error.message}`);
+  return data ? Number((data as { influence: number | string }).influence) : 0;
+}
+
+/** Adds to this player's Town Influence, atomically. Additive only -- there
+ *  is no spend path to guard against going negative, unlike every other
+ *  adjuster in this file. */
+export async function adjustStackAcresInfluence(profileId: string, delta: number): Promise<number> {
+  if (delta <= 0) return readStackAcresInfluence(profileId);
+  const supabase = adminClient();
+  if (!supabase) {
+    const next = (memoryInfluence.get(profileId) ?? 0) + delta;
+    memoryInfluence.set(profileId, next);
+    return next;
+  }
+
+  const { data, error } = await supabase.rpc("adjust_homestead_influence", {
+    p_profile_id: profileId,
+    p_delta: delta,
+  });
+  if (error) throw new Error(`Could not update your standing in town: ${error.message}`);
+  return Number(data);
 }

@@ -114,8 +114,31 @@ edge (carrot0/carrot1, whose leaves spring from y 15 in a 16-tall box) FLOATS on
 drawn to its baseline; and the tap footprint (`unitFootprintHalf`, previously a flat 12 for crops)
 now tracks the sprite but keeps 12 as a FLOOR, since 1.6x of a 6-unit half is 9.6 and shrinking the
 target of the hardest crop to see would be exactly backwards. Verified live in memory-mode `next dev`
-against a real browser, not just in tests. **Migration `20260904120000_stackacres_soil_watering.sql`
-is written but NOT applied** -- see `[[reference_stackchips_migrations_not_auto_applied]]`.
+against a real browser, not just in tests.
+
+**Migration applied 2026-09-04** (`stackacres_soil_watering`, remote version 20260904123755) --
+verified by querying `information_schema` before and after, with a clean `get_advisors` security pass
+(everything it reports is pre-existing: this app's deliberate service-role-only
+`rls_enabled_no_policy` posture, and the known leaked-password warning). Applied BEFORE the code
+merged, which is the safe direction *here and only here*: the column is additive and nullable, and
+the deployed `UNIT_COLUMNS` names every column explicitly rather than selecting `*`, so a running
+production build could not see it. Both column lists -- the old deployed one and this branch's -- were
+run against the live table to prove it.
+
+**It was closer than it should have been, and the lesson is worth keeping.** PR #303 was merged at
+12:36:35Z while the migration was still being applied at 12:37:55Z -- an 80-second window in which
+`main` held code selecting a column that did not exist. No outage happened only because Vercel's
+production deployment for that merge was not created until 12:38:35Z, 40s after the column landed
+(confirmed: zero ERROR/FATAL rows in `postgres_logs` across the window, live site 200, and
+`/api/stackacres` returning its 401 access lock rather than a 500). The deploy-checklist rule "a
+migration and the code that calls it are one change" means APPLY FIRST, THEN MERGE, and the gap was
+luck rather than sequencing -- the merge was not this session's to time.
+
+**Live schema drift found while applying this**: the remote carries a migration
+`stackacres_units_fix_extra_slots_ambiguous` (version 20260904023339) with NO file in
+`supabase/migrations/`. Someone applied a fix directly without committing it, so a database rebuilt
+from this repo alone would not have it. Unrelated to this pass and deliberately left alone -- but it
+wants its own file. See `[[reference_stackchips_migrations_not_auto_applied]]`.
 ### StackAcres got a soundscape: a synthesised ASMR bed, farm SFX, real animals (2026-09-04)
 Kayo: "better sound effects and music... animal noises and just ambient noise around the farm thats
 more ASMR like. not beats." The farm had **three music tracks and nothing else** -- every action on

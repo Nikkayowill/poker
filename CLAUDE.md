@@ -83,6 +83,56 @@ worth off the same `unitRowAction` the sidebar rows use, so the two surfaces can
 fenced ground, not anywhere inside a district's generous box. Live-verified against a real
 `next dev` in memory mode, before and again after the rebase onto the new chrome.
 
+### The woodland became forest: a world-space field, bigger trees, lanes through it (2026-09-04)
+Kayo, in two passes. First: the map read as empty "because trees aren't bundled together" and the
+tree art was "complete dog shit" (grass too), all on the 4050. Then, on seeing the result: still
+empty, trees "so small", "some need to be taller than others", and -- the part that changed the
+design -- "IRL there's a ton of grass and then u get to a point where there's miles of just straight
+forest ... gaps in between each set of trees like its a maze".
+**Placement is now a WORLD-SPACE field, not a per-chunk roll** (`forestDensityAt`, lib/stackacres/
+world.ts), and that is the load-bearing change. Two earlier versions both grew trees from each
+chunk's own seeded RNG -- independent uniform points (confetti), then per-chunk groves and treelines
+(clumps, but every one stopped at its own chunk). Neither can produce open country that runs for a
+long way and then becomes unbroken forest, because neither knows anything outside its own 160 units.
+Smooth value noise sampled in world units has no chunk boundary in it, so a stand spans as many
+chunks as it likes. Three layers: a broad field (520-unit cells) roughened by a finer one and
+thresholded into a mass; a threshold that falls with distance from the farm, interpolated not
+stepped, so home keeps its air and the deep world closes in; and two families of winding lanes cut
+back OUT of the mass where a second and third field cross their own mid-line -- those are the maze
+gaps, they run for hundreds of units and they cross. Trees plant on a jittered 44-unit lattice
+(uniform random points clump and leave holes at forest density), thinned by the field's own value so
+an edge feathers instead of ending on a line. Conifer-vs-broadleaf is its own slow field, so a pine
+stand is a place rather than a per-tree coin flip.
+**Trees are much bigger and each its own height.** Grown twice in the same pass, on sight of each
+result: `tree1/2/3` painter(24,30) -> (42,52) -> (64,80), `pine` (20,34) -> (34,58) -> (52,88),
+`bush` (16,12) -> (20,15) -> (26,20). The barn is 74x62, so a tree now stands taller than it, and
+both smaller sizes still read as scrub beside one. `FOREST_SPACING` grew with them but deliberately
+by less (34 -> 44, against roughly 1.5x on the trees), so the canopy closes up rather than merely
+keeping pace: fewer planting points per chunk, far more cover. `SceneryItem` carries a `scale`
+(0.78x-1.36x per tree, litter near 1) that the scene applies to the sprite AND its shadow. The drawn
+fallbacks are authored in their original 24x30-era boxes and scaled into whatever box the painter now
+declares by `grown()` rather than re-typed coordinate by coordinate; `sceneryShadowScale`'s tree
+default tracked the canopy, 0.9 -> [2.05, 1.75].
+**Art**: `tree1/2/3`, `pine`, `bush` are FLUX-generated PNGs behind `spriteBacked`, same trade the
+animals took, drawn painters kept as the SSR/first-paint/404 fallback. The three broadleaves were one
+`treeRound` shape in three ramps; a PNG cannot be recoloured, so the variety moved into the art as
+three different canopies -- which is why stackacres-sprites.ts's module doc no longer opens by
+holding the trees up as the case FOR painters. Assets were RE-FITTED from the 816x1024 renders when
+the boxes grew, never upscaled. **Grass**: `bakeGrass` draws a generated seamless tile when the scene
+preloaded one, at its own pixel size repeated 2x2 inside the bake canvas rather than stretched --
+that repeat is what sets the scale; stretched to the full 256-unit canvas the tufts would stand ~8
+world units against a 30-unit tree. Falls back to its own five passes untouched.
+Pipeline at `~/.local/share/flux-sprite-test/task-trees/` (not in git, same as the earlier batches);
+the asset-prep and seamless-tiling traps that cost real attempts are in
+`[[reference_stackchips_flux_texture_and_cutout_prep]]` -- worth reading before the next texture,
+particularly that a ground pad TOUCHING the subject defeats every blob-based strip, and that a tile
+must not be rolled by half.
+Verified live at three zooms on a real dev server in memory mode, plus vitest/lint/tsc/build. The
+world.test.ts density caps were replaced by tests of what now matters: that dense wood AND open
+ground both exist across a 25x25 chunk sweep, and that lanes actually return the field to zero inside
+otherwise-wooded country. The one `lib/scene/table-anchors.test.ts` red is the pre-existing heads-up
+geometry regression, untouched. Branch `feat/stackacres-tree-clusters-flux-art`, off
+`feat/stackacres-bounded-world-visuals`. Not committed -- working tree only.
 ### StackAcres' chrome is its own visual world now, not Neon Marquee over grass (2026-09-04)
 Kayo's brief: the farm's GUI "looks too much like a flat, generic web app sidebar" and wants the
 chunky, tactile feel of a casual mobile farm game. It was literally that -- every panel, pill and

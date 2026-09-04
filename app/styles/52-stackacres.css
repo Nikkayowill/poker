@@ -273,17 +273,26 @@
      .duel-shell's own width cap and padding are sized for a card of lobby
      text, not a game -- every mobile game (and this one, on a desktop
      browser too) uses the whole screen, so this opts all the way out of
-     that shared shell rather than just narrowing it. Safe-area insets still
-     apply -- a notch or a rounded corner is real hardware -- nothing else
-     from .duel-shell does. Positioned so .floor-bar below has something to
-     pin itself to. */
+     that shared shell rather than just narrowing it. Positioned so
+     .floor-bar below has something to pin itself to.
+
+     No left/right safe-area inset here, unlike top/bottom -- this game is
+     landscape-only, and landscape is exactly where a notch or the home
+     indicator sits on a SIDE rather than top/bottom, on whichever edge
+     depends on which way the phone is held. A blanket inset here can only
+     guess, and guessing wrong still leaves a bare margin on the edge that
+     had no notch. The canvas bleeding under a notch it can't see costs
+     nothing (it's a picture); every overlay that actually needs protecting
+     -- .floor-bar, .sa-controls, .sa-camera, .sa-destinations, .sa-side,
+     .sa-district-panel, .sa-panel-tab -- reads
+     var(--safe-left)/var(--safe-right) itself instead. */
   position: relative;
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
   width: 100%;
   margin: 0;
-  padding: calc(6px + var(--safe-top)) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  padding: calc(6px + var(--safe-top)) 0 var(--safe-bottom) 0;
   /* The safe-area padding above leaves a band the field cannot reach, and the
      app's own violet-black `body` was showing through it -- a 6px bruise along
      the top of a farm. The shell takes the lawn's own colour so the band reads
@@ -617,7 +626,7 @@
    drawer. */
 .sa-controls {
   position: absolute;
-  left: 10px;
+  left: max(10px, var(--safe-left));
   bottom: 10px;
   display: flex;
   align-items: flex-end;
@@ -689,7 +698,7 @@
    other. */
 .sa-camera {
   position: absolute;
-  right: 10px;
+  right: max(10px, var(--safe-right));
   bottom: 10px;
   z-index: 3;
   display: flex;
@@ -730,7 +739,7 @@
 
 .sa-destinations {
   position: absolute;
-  left: 10px;
+  left: max(10px, var(--safe-left));
   top: calc(var(--sa-header-h) + 10px);
   display: flex;
   flex-wrap: wrap;
@@ -934,7 +943,7 @@
    and a banner that lands under it is a banner nobody reads. */
 .sa-side {
   position: absolute;
-  left: 10px;
+  left: max(10px, var(--safe-left));
   bottom: calc(var(--sa-tap) + 22px);
   width: min(330px, 52%);
   pointer-events: none;
@@ -1130,7 +1139,7 @@
 .sa-district-panel {
   position: absolute;
   top: calc(var(--sa-header-h) + 10px);
-  right: 10px;
+  right: max(10px, var(--safe-right));
   /* Clears the zoom keys in the corner below, so both stay usable at once. */
   bottom: calc(var(--sa-tap) + 22px);
   z-index: 3;
@@ -1218,7 +1227,9 @@
 .sa-panel-tab {
   position: absolute;
   top: 50%;
-  right: 0;
+  /* Docked flush at the true edge normally (env() is never negative, so this
+     is a no-op there) -- but sitting under a landscape notch, not just at 0. */
+  right: var(--safe-right);
   z-index: 3;
   display: inline-flex;
   align-items: center;

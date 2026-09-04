@@ -62,6 +62,7 @@ import {
   type WorldRect,
 } from "@/lib/stackacres/world";
 import { FENCE_BAY } from "@/lib/stackacres/fence";
+import { spawnGait, stepGait, type Gait } from "@/lib/stackacres/gait";
 import {
   ART_FRAME,
   ART_SCALE,
@@ -292,6 +293,28 @@ const STOCK_ART: Readonly<Record<StackAcresLivestock, PainterName>> = {
   pig: "sheep",
   cattle: "cow",
 };
+
+/**
+ * Which way each animal's own art already faces, before anything mirrors it.
+ * Only the exceptions are listed; everything else was drawn facing right.
+ *
+ * The sheep is the one that came back from the sprite batch (see
+ * stackacres-sprites.ts) facing the other way, and it was kept as drawn --
+ * so which way to mirror is a fact about the picture, not a constant. Both
+ * animal draw sites used to hard-code it, and hard-code it differently: the
+ * pens flipped on one sign and the districts' herds on the other, which meant
+ * one of the two had every animal walking backwards. This is the single
+ * answer both of them now ask.
+ */
+const ART_FACES: Readonly<Partial<Record<PainterName, 1 | -1>>> = { sheep: -1 };
+
+/** The sprite x-scale sign that turns `art` to face `heading` (`Critter.facing`
+ *  -- 1 for screen-right). A mirror is a negative x scale rather than
+ *  `setFlipX` so it composes with the breathing scale in one call. */
+function mirrorFor(art: PainterName, heading: 1 | -1): 1 | -1 {
+  return heading === (ART_FACES[art] ?? 1) ? 1 : -1;
+}
+
 /** A Phaser packed colour, lightened (positive) or darkened (negative) by a
  *  flat channel amount. The one-sun shading every isometric structure below
  *  uses: a roof lit from directly above, a left wall toward the light, a
@@ -413,9 +436,12 @@ interface ChunkContent {
 interface HerdSprite {
   sprite: Phaser.GameObjects.Image;
   shadow: Phaser.GameObjects.Image;
+  /** Which painter this one is drawn with, so its walk knows which way the
+   *  art already faces. */
+  art: PainterName;
   state: Critter;
-  /** Out-of-phase idle breathing, so four oxen do not pulse in unison. */
-  phase: number;
+  /** The weight shift it walks with. See lib/stackacres/gait.ts. */
+  gait: Gait;
 }
 
 /** Two fingers down: zoom by the gap between them, pan by their midpoint. */
@@ -445,9 +471,13 @@ interface UnitNode {
    * stopped wandering along with everything else it was doing.
    */
   critter: Critter | null;
-  /** Out-of-phase gait/breathing offset, so units of the same kind never
-   *  move in lockstep. */
+  /** Out-of-phase breathing offset, so units of the same kind never pulse in
+   *  lockstep. */
   phase: number;
+  /** The weight shift this one walks with, null for anything that does not
+   *  walk. Carried across a rebuild alongside `critter`, so an animal whose
+   *  picture is redrawn mid-stride does not snap back to level. */
+  gait: Gait | null;
   tweens: Phaser.Tweens.Tween[];
   /** The squash-and-stretch answering the last tap on this unit, if it is
    *  still running. Held on its own rather than pushed onto `tweens`: a unit
@@ -773,7 +803,7 @@ export class StackAcresScene extends Phaser.Scene {
         const shadow = this.put("shadow", state.x, state.y + 1, 0).setAlpha(0.75);
         shadow.setScale((herd.art === "ox" ? 0.85 : 0.55) / S, (herd.art === "ox" ? 0.5 : 0.4) / S);
         const sprite = this.put(art, state.x, state.y, 0);
-        this.herds.push({ sprite, shadow, state, phase: random() * Math.PI * 2 });
+        this.herds.push({ sprite, shadow, art, state, gait: spawnGait(random() * Math.PI * 2) });
       }
     }
   }
@@ -1217,6 +1247,7 @@ export class StackAcresScene extends Phaser.Scene {
     // `buildCell` used to give a pen's animals, just one critter instead of
     // several sharing a pen.
     const carriedCritter = previous?.critter ?? null;
+    const carriedGait = previous?.gait ?? null;
     if (previous) this.destroyNode(previous);
 
     const container = this.add.container(0, 0);
@@ -1264,12 +1295,14 @@ export class StackAcresScene extends Phaser.Scene {
     const ring = this.add.graphics();
     container.add(ring);
 
+    const phase = this.random() * Math.PI * 2;
     const node: UnitNode = {
       container,
       ring,
       sprite,
       critter,
-      phase: this.random() * Math.PI * 2,
+      phase,
+      gait: critter ? (carriedGait ?? spawnGait(phase)) : null,
       tweens: [],
       pop: null,
       signature,
@@ -2418,18 +2451,20 @@ export class StackAcresScene extends Phaser.Scene {
    * every frame because unlike a pen's animals these are not inside a
    * container whose own depth already places them.
    */
-  private walkHerds(time: number, delta: number): void {
+  private walkHerds(delta: number): void {
     for (const animal of this.herds) {
       const herd = this.herdFor(animal);
       if (!herd) continue;
       animal.state = stepCritter(animal.state, herd.range, herd.speed, delta, this.random);
-      const walking = animal.state.mode === "walk";
-      // An ox is heavy: its stride is a slower, shallower bob than a hen's.
-      const bob = walking ? Math.abs(Math.sin(time / 150 + animal.phase)) * 0.8 : 0;
+      animal.gait = stepGait(animal.gait, animal.state.mode === "walk", herd.speed, delta);
+      // The sprite sits exactly on its own shadow, walking or not. Everything
+      // the stride reads as is in the roll, which turns about the animal's
+      // feet (every animal painter anchors at (0.5, 1)).
       const at = isoProject(animal.state.x, animal.state.y);
-      animal.sprite.setPosition(at.x, at.y - bob);
+      animal.sprite.setPosition(at.x, at.y);
       animal.sprite.setDepth(at.y);
-      animal.sprite.setFlipX(animal.state.facing < 0);
+      animal.sprite.setRotation(animal.gait.roll);
+      animal.sprite.setScale(mirrorFor(animal.art, animal.state.facing) / S, 1 / S);
       animal.shadow.setPosition(at.x, at.y + 1);
       animal.shadow.setDepth(at.y - 0.5);
     }
@@ -2632,7 +2667,7 @@ export class StackAcresScene extends Phaser.Scene {
     if (this.options.reducedMotion) return;
 
     this.animatePond(time);
-    this.walkHerds(time, delta);
+    this.walkHerds(delta);
     this.regrowMeadow();
     if (this.blades) this.blades.rotation = time * WINDMILL_SPEED;
 
@@ -2642,28 +2677,38 @@ export class StackAcresScene extends Phaser.Scene {
     // depth sort left to do (the old `sortPen` is gone with it).
     for (const node of this.nodes.values()) {
       const critter = node.critter;
-      if (!critter) continue; // a crop, or a mucked unit: nothing wanders.
-      // A hungry animal has stopped. Standing still is the picture of that.
-      if (node.unit.state === "hungry") continue;
-      const zone = stockZone(node.unit.stock);
-      const bounds = growAreaInterior(zone);
-      const speed = critterSpeed(node.unit.stock);
-      node.critter = stepCritter(critter, bounds, speed, delta, this.random);
+      const gait = node.gait;
+      const stock = node.unit.stock;
+      // A crop, or a mucked unit: nothing wanders. The `isLivestock` check is
+      // what narrows `stock` for STOCK_ART below; the other two are the real
+      // test and hold for exactly the same units.
+      if (!critter || !gait || !isLivestock(stock)) continue;
+      const speed = critterSpeed(stock);
+      if (node.unit.state === "hungry") {
+        // A hungry animal has stopped, and standing still is the picture of
+        // that -- it does not even breathe. Its gait is still stepped, so a
+        // lean it went hungry in eases out instead of freezing at an angle.
+        node.gait = stepGait(gait, false, speed, delta);
+        node.sprite.setRotation(node.gait.roll);
+        continue;
+      }
+      node.critter = stepCritter(critter, growAreaInterior(stockZone(stock)), speed, delta, this.random);
       const walking = node.critter.mode === "walk";
-      const hop = walking ? Math.abs(Math.sin(time / 90 + node.phase)) * 1.2 : 0;
+      node.gait = stepGait(gait, walking, speed, delta);
+      // The container tracks the animal's true ground position and the sprite
+      // sits at the container's own origin -- no vertical offset anywhere, so
+      // the animal never leaves the grass or its shadow (a fixed local child,
+      // see `buildUnit`). The stride is the roll instead, turning about the
+      // feet the painter anchors it by.
       const at = isoProject(node.critter.x, node.critter.y);
-      // The container tracks the animal's true ground position; the hop is
-      // a screen-space bounce applied only to the sprite's own local
-      // offset, so the shadow (a fixed local child, see `buildUnit`) never
-      // bounces with it.
       node.container.setPosition(at.x, at.y);
       node.container.setDepth(this.depthAt(node.critter.x, node.critter.y));
-      node.sprite.setPosition(0, -hop);
-      node.sprite.setFlipX(node.critter.facing === 1);
+      node.sprite.setRotation(node.gait.roll);
       // A standing animal breathes, slowly and out of step with its
       // neighbours; a walking one is simply its own size.
       const breath = walking ? 0 : Math.sin(time / 420 + node.phase) * 0.022;
-      node.sprite.setScale((1 - breath * 0.5) / S, (1 + breath) / S);
+      const mirror = mirrorFor(STOCK_ART[stock], node.critter.facing);
+      node.sprite.setScale((mirror * (1 - breath * 0.5)) / S, (1 + breath) / S);
     }
   }
 }

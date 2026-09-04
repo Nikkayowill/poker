@@ -274,7 +274,15 @@ export interface Critter {
   mode: "idle" | "walk";
   /** Milliseconds left standing about before the next wander. */
   waitMs: number;
-  /** 1 faces the art's own way, -1 is mirrored. */
+  /**
+   * Which way along the SCREEN's x axis this animal is heading: 1 right, -1
+   * left. Screen rather than world because that is the only axis a mirrored
+   * sprite can express, and the two are not the same thing here -- the iso
+   * projection puts screen x at (world x - world y), so an animal walking
+   * due +y is walking to the LEFT of the picture however its world x reads.
+   * Which way the art itself faces before being mirrored is the scene's
+   * business, not this module's; see `ART_FACES` there.
+   */
   facing: 1 | -1;
 }
 
@@ -290,6 +298,18 @@ function pointWithin(bounds: WorldRect, random: Random): WorldPoint {
     x: bounds.x + random() * bounds.width,
     y: bounds.y + random() * bounds.height,
   };
+}
+
+/**
+ * Which way a walk from here to there reads on screen. A step that is equal
+ * parts +x and +y goes straight up the picture and is not a turn either way,
+ * so a tie keeps the facing the animal already had rather than flipping it to
+ * some default every time it happens to pick a target on the diagonal.
+ */
+function headingTo(dx: number, dy: number, current: 1 | -1): 1 | -1 {
+  const along = dx - dy;
+  if (along === 0) return current;
+  return along > 0 ? 1 : -1;
 }
 
 export function spawnCritter(bounds: WorldRect, random: Random): Critter {
@@ -330,7 +350,7 @@ export function stepCritter(
         mode: "walk",
         targetX: target.x,
         targetY: target.y,
-        facing: target.x >= next.x ? -1 : 1,
+        facing: headingTo(target.x - next.x, target.y - next.y, next.facing),
       };
     }
   } else {

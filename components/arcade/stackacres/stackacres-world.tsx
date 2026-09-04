@@ -3,6 +3,7 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, type Ref } from "react";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
+import type { SectorId } from "@/lib/stackacres/sectors";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
@@ -66,6 +67,12 @@ export interface StackAcresWorldProps {
   onGroundTap: (zone: ZoneId, at: TapPoint) => void;
   /** A finger landed on the barn -- Ray's Museum's own entryway. */
   onBarnTap: () => void;
+  /** Land the player may work (lib/stackacres/sectors.ts). Everything else
+   *  is drawn as wild growth and has no farm on it to tap. */
+  sectors: SectorId[];
+  /** A finger landed anywhere on land that has not been cleared -- the offer
+   *  to buy it, answered by the clearing modal in stackacres-farm.tsx. */
+  onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
   /** The camera moved, so anything the shell pinned to a screen position is
    *  now pointing at the wrong part of the world. */
   onViewMoved: () => void;
@@ -90,6 +97,8 @@ export function StackAcresWorld({
   onUnitTap,
   onGroundTap,
   onBarnTap,
+  sectors,
+  onLockedSectorTap,
   onViewMoved,
   api,
 }: StackAcresWorldProps) {
@@ -103,6 +112,7 @@ export function StackAcresWorld({
   const unitTapRef = useRef(onUnitTap);
   const groundTapRef = useRef(onGroundTap);
   const barnTapRef = useRef(onBarnTap);
+  const lockedTapRef = useRef(onLockedSectorTap);
   const viewMovedRef = useRef(onViewMoved);
   // The tool's own picture, for the mow-drag ghost -- read at mount (before
   // the scene exists to push it to) and again on every change afterward.
@@ -116,6 +126,7 @@ export function StackAcresWorld({
     unitTapRef.current = onUnitTap;
     groundTapRef.current = onGroundTap;
     barnTapRef.current = onBarnTap;
+    lockedTapRef.current = onLockedSectorTap;
     viewMovedRef.current = onViewMoved;
     toolIconRef.current = STACKACRES_TOOL_DEFS[tool].icon as PainterName;
     toolRef.current = tool;
@@ -123,8 +134,10 @@ export function StackAcresWorld({
 
   const sceneUnits = useMemo(() => toUnits(units), [units]);
   const unitsRef = useRef(sceneUnits);
+  const sectorsRef = useRef(sectors);
   useEffect(() => {
     unitsRef.current = sceneUnits;
+    sectorsRef.current = sectors;
   });
 
   useEffect(() => {
@@ -152,6 +165,7 @@ export function StackAcresWorld({
           onUnitTap: (unitId, at) => unitTapRef.current(unitId, at),
           onGroundTap: (zone, at) => groundTapRef.current(zone, at),
           onBarnTap: () => barnTapRef.current(),
+          onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),
         },
         { reducedMotion, host },
@@ -197,6 +211,11 @@ export function StackAcresWorld({
       sceneRef.current = scene;
       gameRef.current = game;
       scene.setUnits(unitsRef.current);
+      // Before the units, in spirit if not in order: which land is cleared
+      // decides whether a district is drawn as a farm at all, and the scene's
+      // own default is "all wild" (see its `locked` field) precisely so the
+      // gap between boot and this call never shows a pen that is not there.
+      scene.setSectors(sectorsRef.current);
       scene.setToolIcon(toolIconRef.current);
       scene.setTool(toolRef.current);
 
@@ -259,6 +278,12 @@ export function StackAcresWorld({
   useEffect(() => {
     sceneRef.current?.setUnits(sceneUnits);
   }, [sceneUnits]);
+
+  // Cheap to call on every render: the scene diffs against what it has
+  // already drawn and repaints nothing when the answer has not moved.
+  useEffect(() => {
+    sceneRef.current?.setSectors(sectors);
+  }, [sectors]);
 
   useEffect(() => {
     sceneRef.current?.setToolIcon(STACKACRES_TOOL_DEFS[tool].icon as PainterName);

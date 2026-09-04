@@ -2,13 +2,21 @@ import "server-only";
 import { randomUUID } from "crypto";
 import type { StackAcresUnitRow } from "@/lib/stackacres/units";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
-import { BUSHELS } from "@/lib/stackacres/items";
+import type { SectorId } from "@/lib/stackacres/sectors";
 import { adminClient } from "./supabase-admin";
 
 /**
  * Persistence for StackAcres: one row per owned unit (an animal or a crop,
- * no plot underneath it), plus the player's feed balance, purchased capacity
- * and Bushels.
+ * no plot underneath it), plus the player's feed balance, purchased capacity,
+ * the Gold the farm has paid out today and the Land Maintenance that day has
+ * collected.
+ *
+ * THE BARN IS GONE. There used to be a `homestead_inventory` layer here
+ * holding produce and Bushels between a harvest and a sale. A harvest is
+ * valued and paid in one step now, so there is nothing to hold: the table is
+ * left in place and simply unread, the same posture `homestead_plots` has had
+ * since units replaced plots. Migrations here are append-only and a dropped
+ * table takes its history with it.
  *
  * Same twin-branch shape as ante-up-store.ts (Supabase when configured, an
  * in-process Map otherwise), and the same core invariant: a version that only
@@ -42,10 +50,12 @@ declare global {
   var __riverRoomStackAcresUnits: Map<string, StoredStackAcresUnit> | undefined;
   var __riverRoomStackAcresCapacity: Map<string, number> | undefined;
   var __riverRoomStackAcresFeed: Map<string, number> | undefined;
-  var __riverRoomStackAcresInventory: Map<string, StackAcresInventory> | undefined;
   var __riverRoomStackAcresExchanges: Map<string, number> | undefined;
+  var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
   var __riverRoomStackAcresHarvests: StackAcresHarvestEntry[] | undefined;
   var __riverRoomStackAcresMuseum: Map<string, Set<string>> | undefined;
+  var __riverRoomStackAcresSectors: Map<string, string> | undefined;
+  var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -57,10 +67,6 @@ globalThis.__riverRoomStackAcresCapacity = memoryCapacity;
 
 const memoryFeed = globalThis.__riverRoomStackAcresFeed ?? new Map<string, number>();
 globalThis.__riverRoomStackAcresFeed = memoryFeed;
-
-const memoryInventory =
-  globalThis.__riverRoomStackAcresInventory ?? new Map<string, StackAcresInventory>();
-globalThis.__riverRoomStackAcresInventory = memoryInventory;
 
 /** Gold taken out of the farm, keyed `${profileId}:${YYYY-MM-DD}`. */
 const memoryExchanges = globalThis.__riverRoomStackAcresExchanges ?? new Map<string, number>();
@@ -75,15 +81,28 @@ globalThis.__riverRoomStackAcresHarvests = memoryHarvests;
 const memoryMuseum = globalThis.__riverRoomStackAcresMuseum ?? new Map<string, Set<string>>();
 globalThis.__riverRoomStackAcresMuseum = memoryMuseum;
 
+/** Land cleared, keyed `${profileId}:${sector}` and holding the ISO moment it
+ *  was cleared. A missing key is land still under growth. */
+const memorySectors = globalThis.__riverRoomStackAcresSectors ?? new Map<string, string>();
+globalThis.__riverRoomStackAcresSectors = memorySectors;
+
+/** Gold paid TOWARD land maintenance so far today, keyed
+ *  `${profileId}:${YYYY-MM-DD}`. A running total rather than a one-shot flag,
+ *  because the day's bill can rise under a player who buys more room at noon
+ *  -- see `raiseStackAcresUpkeep`. */
+const memoryUpkeep = globalThis.__riverRoomStackAcresUpkeep ?? new Map<string, number>();
+globalThis.__riverRoomStackAcresUpkeep = memoryUpkeep;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
   memoryCapacity.clear();
   memoryFeed.clear();
-  memoryInventory.clear();
   memoryExchanges.clear();
+  memoryUpkeep.clear();
   memoryHarvests.length = 0;
   memoryMuseum.clear();
+  memorySectors.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -92,7 +111,7 @@ export function __stackacresHarvestsForTest(): readonly StackAcresHarvestEntry[]
 }
 
 const UNIT_COLUMNS =
-  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, muck_fee, permanent, version, created_at";
+  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at";
 
 interface UnitDbRow {
   id: string;
@@ -104,6 +123,7 @@ interface UnitDbRow {
   started_at: string;
   ready_at: string;
   last_fed_at: string | null;
+  last_watered_at: string | null;
   muck_fee: number | string | null;
   permanent: boolean | null;
   version: number | string;
@@ -121,6 +141,7 @@ function fromRow(row: UnitDbRow): StoredStackAcresUnit {
     startedAt: String(row.started_at),
     readyAt: String(row.ready_at),
     lastFedAt: row.last_fed_at ? String(row.last_fed_at) : null,
+    lastWateredAt: row.last_watered_at ? String(row.last_watered_at) : null,
     muckFee: row.muck_fee === null ? null : Number(row.muck_fee),
     permanent: row.permanent === true,
     version: Number(row.version),
@@ -223,6 +244,9 @@ export async function createStackAcresUnit(
     startedAt: Date;
     readyAt: Date;
     lastFedAt: Date | null;
+    /** Crops only: sowing waters the ground, so a new crop starts wet. Null
+     *  for livestock, which never runs dry. */
+    lastWateredAt: Date | null;
     /** True when this was bought outright with Gold rather than sown. */
     permanent: boolean;
   },
@@ -241,6 +265,7 @@ export async function createStackAcresUnit(
       startedAt: entry.startedAt.toISOString(),
       readyAt: entry.readyAt.toISOString(),
       lastFedAt: entry.lastFedAt ? entry.lastFedAt.toISOString() : null,
+      lastWateredAt: entry.lastWateredAt ? entry.lastWateredAt.toISOString() : null,
       muckFee: null,
       permanent: entry.permanent,
       version: 1,
@@ -261,6 +286,7 @@ export async function createStackAcresUnit(
       started_at: entry.startedAt.toISOString(),
       ready_at: entry.readyAt.toISOString(),
       last_fed_at: entry.lastFedAt ? entry.lastFedAt.toISOString() : null,
+      last_watered_at: entry.lastWateredAt ? entry.lastWateredAt.toISOString() : null,
       permanent: entry.permanent,
       version: 1,
     })
@@ -310,6 +336,51 @@ export async function feedStackAcresUnit(
 }
 
 /**
+ * Waters a dry crop: pushes ready_at forward by however long the soil stood
+ * dry, so the clock genuinely stopped. Deliberately the same shape as
+ * `feedStackAcresUnit` -- same version/status guard, same null-means-lost-race
+ * contract -- because it is the same freeze-and-resume mechanic on the other
+ * track. It differs in one way only, and the difference is upstream: watering
+ * spends nothing, so a caller has nothing to refund when this returns null.
+ */
+export async function waterStackAcresUnit(
+  current: StoredStackAcresUnit,
+  wateredAt: Date,
+  newReadyAt: Date,
+): Promise<StoredStackAcresUnit | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const stored = memoryUnits.get(current.id);
+    if (!stored || stored.status !== "working" || stored.version !== current.version) return null;
+    const updated: StoredStackAcresUnit = {
+      ...stored,
+      lastWateredAt: wateredAt.toISOString(),
+      readyAt: newReadyAt.toISOString(),
+      version,
+    };
+    memoryUnits.set(current.id, clone(updated));
+    return clone(updated);
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_units")
+    .update({
+      last_watered_at: wateredAt.toISOString(),
+      ready_at: newReadyAt.toISOString(),
+      version,
+    })
+    .eq("id", current.id)
+    .eq("version", current.version)
+    .eq("status", "working")
+    .select(UNIT_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not water that: ${error.message}`);
+  return data ? fromRow(data as UnitDbRow) : null;
+}
+
+/**
  * Settles a ready unit, exactly once. THREE OUTCOMES, decided by the caller
  * and passed in rather than derived here:
  *
@@ -342,11 +413,27 @@ export async function collectStackAcresUnit(
   const version = current.version + 1;
 
   if (restartReadyAt) {
+    // A re-sown crop goes into watered ground, exactly as a freshly stocked
+    // one does. `last_fed_at` deliberately does NOT get this treatment (see
+    // the doc comment above) and the asymmetry is the point: an animal can be
+    // fed at any time, so being hungry the moment it restarts costs the
+    // player a serving and nothing else. A crop cannot be watered until it is
+    // actually dry, so carrying the old cycle's watering across would restart
+    // it dry at progress 0 AND make the only available fix -- one Water tap --
+    // add the whole stale gap to ready_at, turning a 15-minute cycle into
+    // however long the unit sat ripe before anyone collected it.
+    //
+    // Keyed off the row's own value rather than the catalogue, so this needs
+    // no import: livestock is null and stays null. A legacy crop row still
+    // null here is correct either way, since `thirstyAtFor` falls back to
+    // startedAt, which this branch has just reset to `now`.
+    const restartWatered = current.lastWateredAt === null ? null : now.toISOString();
     const next: StoredStackAcresUnit = {
       ...current,
       status: "working",
       startedAt: now.toISOString(),
       readyAt: restartReadyAt.toISOString(),
+      lastWateredAt: restartWatered,
       muckFee: null,
       version,
     };
@@ -369,6 +456,7 @@ export async function collectStackAcresUnit(
         status: "working",
         started_at: next.startedAt,
         ready_at: next.readyAt,
+        last_watered_at: next.lastWateredAt,
         muck_fee: null,
         version,
       })
@@ -562,6 +650,146 @@ export async function adjustStackAcresCapacity(
 }
 
 /* ------------------------------------------------------------------ */
+/* Cleared land                                                        */
+/* ------------------------------------------------------------------ */
+
+/** Every sector this player has paid to clear. NOT the whole answer to "what
+ *  may they work" -- lib/stackacres/sectors.ts's `unlockedSectors` also
+ *  counts any district they already keep stock in, which is what carries
+ *  farms that predate this feature. */
+export async function readStackAcresSectors(profileId: string): Promise<SectorId[]> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const out: SectorId[] = [];
+    for (const key of memorySectors.keys()) {
+      const [id, sector] = key.split(":");
+      if (id === profileId) out.push(sector as SectorId);
+    }
+    return out;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_sectors")
+    .select("sector")
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not read your land: ${error.message}`);
+  return ((data ?? []) as { sector: string }[]).map((row) => row.sector as SectorId);
+}
+
+/**
+ * Records a sector as cleared, exactly once.
+ *
+ * Returns false when this player had already cleared it, which the caller
+ * must treat as a lost race and REFUND on -- the same posture every other
+ * write here takes, and it matters more than usual because the thing being
+ * bought is permanent and the Gold has already left. Two tabs clearing the
+ * Long Meadow together must pay for it once.
+ *
+ * The primary key is what makes that true; there is no read-then-write here
+ * to race against.
+ */
+export async function recordStackAcresSectorCleared(
+  profileId: string,
+  sector: SectorId,
+  clearedAt: Date,
+): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${sector}`;
+    if (memorySectors.has(key)) return false;
+    memorySectors.set(key, clearedAt.toISOString());
+    return true;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_sectors")
+    .upsert(
+      { profile_id: profileId, sector, cleared_at: clearedAt.toISOString() },
+      { onConflict: "profile_id,sector", ignoreDuplicates: true },
+    )
+    .select("sector");
+  if (error) throw new Error(`Could not clear that land: ${error.message}`);
+  // `ignoreDuplicates` returns no row for a conflict, which is exactly the
+  // "somebody else got here first" signal the caller needs.
+  return (data ?? []).length > 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Land maintenance                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Gold already taken for land maintenance on this UTC day. Read-only and
+ * advisory, the same caveat `readStackAcresExchanged` carries: it is what the
+ * HUD shows, never what a charge is decided on. The decision is made inside
+ * `raiseStackAcresUpkeep`, atomically, because anything read first can be
+ * raced by a second tab.
+ *
+ * THE COLUMN IS STILL CALLED `bushels` and the table `homestead_upkeep`. Both
+ * are legacy compatibility ids now, exactly like `river_*` and every other
+ * `homestead_*` object here: the farm's own currency is gone, the number is
+ * Gold, and renaming a live column to fix a caption is a data migration
+ * nobody needs.
+ */
+export async function readStackAcresUpkeep(profileId: string, day: string): Promise<number> {
+  const supabase = adminClient();
+  if (!supabase) return memoryUpkeep.get(`${profileId}:${day}`) ?? 0;
+
+  const { data, error } = await supabase
+    .from("homestead_upkeep")
+    .select("bushels")
+    .eq("profile_id", profileId)
+    .eq("day", day)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read today's land fee: ${error.message}`);
+  return data ? Number((data as { bushels: number | string }).bushels) : 0;
+}
+
+/**
+ * Raises today's paid total to `target`, and says whether this call is the
+ * one that moved it.
+ *
+ * RAISE-TO, NOT ADD, and that is the whole reason this is not shaped like
+ * `reserveStackAcresExchange`. A day's bill is not fixed when the day starts:
+ * a player who buys a capacity slot at noon owes more for the afternoon than
+ * they did for the morning, so the ledger has to hold "what has been paid
+ * toward today" and the caller has to settle the DIFFERENCE. A plain
+ * insert-once would charge the morning's bill and never the rise; a plain add
+ * would charge the whole afternoon bill on top of the morning's.
+ *
+ * The conditional update is what makes it safe to race: two requests that
+ * both find today unpaid will both debit, one will raise the total and the
+ * other gets false and refunds. Two racing on DIFFERENT targets (a capacity
+ * purchase landed between them) settle at the higher, and the lower's refund
+ * leaves the day slightly under-collected until the next action re-reads it
+ * -- a rounding error in the player's favour, not a double charge.
+ *
+ * The caller debits BEFORE calling this (rule 1) and refunds on false,
+ * exactly like `reserveStackAcresExchange`'s null.
+ */
+export async function raiseStackAcresUpkeep(
+  profileId: string,
+  day: string,
+  target: number,
+): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${day}`;
+    if ((memoryUpkeep.get(key) ?? 0) >= target) return false;
+    memoryUpkeep.set(key, target);
+    return true;
+  }
+
+  const { data, error } = await supabase.rpc("raise_homestead_upkeep", {
+    p_profile_id: profileId,
+    p_day: day,
+    p_target: target,
+  });
+  if (error) throw new Error(`Could not settle today's land fee: ${error.message}`);
+  return data === true;
+}
+
+/* ------------------------------------------------------------------ */
 /* Feed                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -605,87 +833,7 @@ export async function adjustStackAcresFeed(profileId: string, delta: number): Pr
 }
 
 /* ------------------------------------------------------------------ */
-/* Inventory and Bushels                                               */
-/* ------------------------------------------------------------------ */
-
-/** Every held line for one player, keyed by item id. Bushels are one of them. */
-export type StackAcresInventory = Record<string, number>;
-
-export async function readStackAcresInventory(profileId: string): Promise<StackAcresInventory> {
-  const supabase = adminClient();
-  if (!supabase) return { ...(memoryInventory.get(profileId) ?? {}) };
-
-  const { data, error } = await supabase
-    .from("homestead_inventory")
-    .select("item_id, quantity")
-    .eq("profile_id", profileId);
-  if (error) throw new Error(`Could not read your barn: ${error.message}`);
-
-  const inventory: StackAcresInventory = {};
-  for (const row of (data ?? []) as { item_id: string; quantity: number | string }[]) {
-    inventory[row.item_id] = Number(row.quantity);
-  }
-  return inventory;
-}
-
-/**
- * Moves one inventory line by `delta`, refusing to go negative. Returns the new
- * quantity, or null when there was not enough to spend -- which the caller must
- * treat exactly like a lost race, because it is one. Same posture as
- * adjustStackAcresFeed and, above it, credit_gold.
- */
-export async function adjustStackAcresInventory(
-  profileId: string,
-  itemId: string,
-  delta: number,
-): Promise<number | null> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const held = memoryInventory.get(profileId) ?? {};
-    const next = (held[itemId] ?? 0) + delta;
-    if (next < 0) return null;
-    memoryInventory.set(profileId, { ...held, [itemId]: next });
-    return next;
-  }
-
-  const { data, error } = await supabase.rpc("adjust_homestead_inventory", {
-    p_profile_id: profileId,
-    p_item_id: itemId,
-    p_delta: delta,
-  });
-  if (error) {
-    if (error.code === "23514") return null;
-    throw new Error(`Could not update your barn: ${error.message}`);
-  }
-  return data === null ? null : Number(data);
-}
-
-/**
- * Seeds a new farm's Bushels exactly once. Returns true only on the write that
- * actually created the row -- a profile whose bushels row already exists is
- * never topped up, even sitting at zero, because the primary key is the
- * idempotency guard rather than a balance check. A player who spends the grant
- * does not get another by clearing their farm.
- */
-export async function grantStartingBushels(profileId: string, amount: number): Promise<boolean> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const held = memoryInventory.get(profileId);
-    if (held && BUSHELS in held) return false;
-    memoryInventory.set(profileId, { ...(held ?? {}), [BUSHELS]: Math.max(amount, 0) });
-    return true;
-  }
-
-  const { data, error } = await supabase.rpc("grant_homestead_starting_bushels", {
-    p_profile_id: profileId,
-    p_amount: amount,
-  });
-  if (error) throw new Error(`Could not open your barn: ${error.message}`);
-  return data === true;
-}
-
-/* ------------------------------------------------------------------ */
-/* The exchange window                                                  */
+/* The daily Gold allowance, and Land Maintenance                       */
 /* ------------------------------------------------------------------ */
 
 /**
@@ -711,6 +859,11 @@ export async function readStackAcresExchanged(profileId: string, day: string): P
 /**
  * Reserves `gold` against today's ceiling, atomically, and returns the day's
  * new total -- or null when the reservation would break the ceiling.
+ *
+ * Called by the harvest now rather than by an exchange window, and called
+ * BEFORE any unit is settled, so that a full day refuses while the crops are
+ * still standing. `releaseStackAcresExchange` below is the other half of that
+ * order.
  *
  * Null is the whole point of this function. It is the same posture every other
  * write here takes: a null is a refusal or a lost race, the two are
@@ -745,6 +898,55 @@ export async function reserveStackAcresExchange(
     p_ceiling: ceiling,
   });
   if (error) throw new Error(`Could not reach the exchange window: ${error.message}`);
+  return data === null ? null : Number(data);
+}
+
+/**
+ * Hands part of a reservation back, when a sweep settled fewer units than it
+ * reserved for.
+ *
+ * WHY THIS EXISTS AT ALL. A harvest reserves against the day's allowance
+ * BEFORE it settles any unit, because the reservation is the thing that can
+ * refuse -- refusing after the crops are gone would consume a harvest and pay
+ * nothing for it. The cost of that order is this function: if a second tab won
+ * the race for some of the units, the sweep must give back the part of the
+ * allowance it did not use, or a double-tap would quietly burn a day's Gold.
+ *
+ * Deliberately NOT the same call as `reserveStackAcresExchange` with a
+ * negative amount. That RPC raises on a non-positive amount on purpose -- a
+ * zero would hand back a non-null total and authorise a payout that reserved
+ * nothing -- and the release has the opposite failure mode to guard: it
+ * clamps at zero rather than refusing, because a release that cannot find
+ * what to release must not throw on top of a harvest that already settled.
+ *
+ * Best-effort by construction. It returns the day's new total, or null if the
+ * release could not be recorded; the caller logs and carries on, because the
+ * player has already been paid correctly either way and the only casualty is
+ * that they may reach today's ceiling sooner than they should.
+ */
+export async function releaseStackAcresExchange(
+  profileId: string,
+  day: string,
+  gold: number,
+): Promise<number | null> {
+  if (!Number.isFinite(gold) || gold <= 0) return null;
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${day}`;
+    const next = Math.max(0, (memoryExchanges.get(key) ?? 0) - gold);
+    memoryExchanges.set(key, next);
+    return next;
+  }
+
+  const { data, error } = await supabase.rpc("release_homestead_exchange", {
+    p_profile_id: profileId,
+    p_day: day,
+    p_gold: gold,
+  });
+  if (error) {
+    console.error("stackacres.allowance_release_failed", { profileId, day, gold, error });
+    return null;
+  }
   return data === null ? null : Number(data);
 }
 

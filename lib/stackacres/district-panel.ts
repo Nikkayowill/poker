@@ -38,6 +38,9 @@ import type { ZoneId } from "./zones";
 export type UnitRowAction =
   | { kind: "collect" }
   | { kind: "feed"; disabled: boolean; reason: string | null }
+  /** Watering costs nothing but attention, so unlike feeding it can never be
+   *  refused for want of a resource -- there is no `disabled` here. */
+  | { kind: "water" }
   | { kind: "clear"; fee: number; disabled: boolean; reason: string | null }
   | { kind: "retire" }
   | { kind: "none" };
@@ -45,7 +48,7 @@ export type UnitRowAction =
 /** The one action a unit's row affords right now. */
 export function unitRowAction(
   unit: StackAcresUnitSnapshot,
-  context: { feed: number; bushels: number },
+  context: { feed: number; gold: number },
 ): UnitRowAction {
   switch (unit.state) {
     case "ready":
@@ -54,10 +57,12 @@ export function unitRowAction(
       return context.feed < 1
         ? { kind: "feed", disabled: true, reason: "No feed left in the barn." }
         : { kind: "feed", disabled: false, reason: null };
+    case "dry":
+      return { kind: "water" };
     case "mucked": {
       const fee = unit.muckFee ?? 0;
-      return context.bushels < fee
-        ? { kind: "clear", fee, disabled: true, reason: `Clearing costs ${fee.toLocaleString()} Bushels.` }
+      return context.gold < fee
+        ? { kind: "clear", fee, disabled: true, reason: `Clearing costs ${fee.toLocaleString()} Gold.` }
         : { kind: "clear", fee, disabled: false, reason: null };
     }
     case "working":
@@ -86,11 +91,11 @@ export interface BuyOption {
   owned: number;
   cap: number;
   atCap: boolean;
+  /** Gold, buys ONE cycle. A fiftieth of `outrightCost`. */
   seedCost: number;
   seedAfford: boolean;
   seedReason: string | null;
-  /** Gold, buys the animal/crop outright. Always shown enabled -- see the
-   *  file header on why Gold affordability isn't checked client-side. */
+  /** Gold, buys the animal/crop outright and permanently. */
   outrightCost: number;
   /** Null once capacity is already maxed -- there is nothing left to buy. */
   expand: { cost: number } | null;
@@ -100,7 +105,7 @@ export interface BuyOption {
  *  there (./world.ts's `stocksInZone`). */
 export function buyOptionsForZone(
   zone: ZoneId,
-  context: { units: readonly StackAcresUnitSnapshot[]; bushels: number; capacity: Readonly<Record<string, number>> },
+  context: { units: readonly StackAcresUnitSnapshot[]; gold: number; capacity: Readonly<Record<string, number>> },
 ): BuyOption[] {
   return stocksInZone(zone).map((stock) => {
     const def = STACKACRES_CATALOGUE[stock];
@@ -115,13 +120,13 @@ export function buyOptionsForZone(
       cap,
       atCap,
       seedCost: def.seedCost,
-      seedAfford: !atCap && context.bushels >= def.seedCost,
+      seedAfford: !atCap && context.gold >= def.seedCost,
       seedReason: atCap
         ? isLivestock(stock)
           ? "This pen is already full."
           : "This field is already full."
-        : context.bushels < def.seedCost
-          ? `${def.label} seed costs ${def.seedCost.toLocaleString()} Bushels.`
+        : context.gold < def.seedCost
+          ? `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`
           : null,
       outrightCost: stackacresStockPrice(stock),
       // Only worth showing once the base cap is actually the thing in the

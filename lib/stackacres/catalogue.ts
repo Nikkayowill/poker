@@ -2,24 +2,26 @@
  * StackAcres's whole economy in one file: what you can own, what it costs to
  * keep, and the capacity ladder that bounds how much of it you can run.
  *
- * EVERY NUMBER HERE IS IN BUSHELS, the farm's own currency, with exactly one
- * exception: `stackacresCapacityPrice`, which is Gold. That split is the
- * feature's whole safety story and is worth stating plainly.
+ * EVERY NUMBER HERE IS IN GOLD. It used to be Bushels, the farm's own
+ * currency, with `stackacresCapacityPrice` as the one Gold exception. Bushels
+ * are gone -- a harvest is valued and paid in one step now, so a second
+ * currency had nothing left to denominate.
  *
- * - Bushels never leave the StackAcres. Seed, stock, feed and muck are all
- *   priced in them, harvests are sold for them, and phase 4's swinging market
- *   will move them. Because none of it is Gold, none of it is a money bug.
- * - Gold enters in two places (buying capacity, buying stock outright) and
- *   leaves in one, the daily exchange window. The farm's maximum Gold output
- *   is a flat daily constant -- not a percentage, not scaled by stock owned,
- *   not scaled by how well you traded. That single invariant is what keeps
- *   this out of the category Ante Up was in when it printed money.
+ * THE SAFETY ARGUMENT DID NOT MOVE, and it is worth restating because the
+ * currency that carried it did. What kept this out of the category Ante Up was
+ * in when it printed money was never the Bushel firewall; it was the ceiling
+ * behind it: **the farm's maximum Gold OUTPUT is a flat daily constant per
+ * player** -- not a percentage, not scaled by stock owned, not scaled by how
+ * well anybody played. That ceiling is still here, still mirrored as a hard
+ * limit in SQL, and it is now applied to the harvest itself rather than to an
+ * exchange window downstream of it. See ./exchange.ts.
  *
- * Because these are no longer real money, the tuning is deliberately looser
- * than the Gold version it replaces: a cycle is meant to feel worth doing.
- * What survives from that version is the shape -- separate caps per kind, and
- * an upkeep cost sized as a fraction of what the unit actually earned rather
- * than a flat fee that bankrupts the cheapest tier.
+ * THE CONVERSION: every Bushel price below was multiplied by 2, the exact rate
+ * the exchange window paid. That preserves the internal balance the numbers
+ * were tuned for -- seed against yield, muck at 40% of a tier's net, a serving
+ * of feed under a tenth of what the animals that eat it earn -- and it leaves
+ * the daily ceiling calibrated, since 15,000 Gold a day was sized against
+ * exactly this rate.
  *
  * Seed cost and yield are snapshotted onto the unit row at stocking and never
  * re-read here at collection -- the same rule StoredWordStackRound.wagerLadder
@@ -29,6 +31,9 @@
  * you own is just a row -- see ./units.ts -- standing in whichever district
  * ./world.ts's `stockZone` says its kind lives in. What used to be "buy a
  * plot, then stock it" is now one step: buy the animal or crop directly.
+ *
+ * WHAT HOLDING IT COSTS is not here: Land Maintenance scales with the whole
+ * estate rather than attaching to a tier, so it lives in ./upkeep.ts.
  */
 
 export const STACKACRES_CROPS = ["sprout", "cash_crop"] as const;
@@ -54,19 +59,36 @@ export function isLivestock(stock: StackAcresStock): stock is StackAcresLivestoc
 export interface StackAcresStockDef {
   /** What the player calls it. */
   label: string;
-  /** Bushels debited when the plot is stocked. */
+  /** Gold debited when the unit is stocked for one cycle. */
   seedCost: number;
   /** Working time until it can be collected, excluding any time spent hungry. */
   durationMs: number;
   /**
    * How long after its last feed an animal goes hungry. Null for crops, which
    * do not eat -- that is the whole difference between the two tracks. A crop
-   * is set-and-forget and yields little; an animal yields more and wants
-   * tending.
+   * yields little and an animal yields more, and each is tended its own way:
+   * an animal is fed, a crop is watered (see `thirstMs`).
    */
   hungerMs: number | null;
   /**
-   * What clearing this plot costs after a muck, in Bushels. Scaled to the tier
+   * How long after its last watering a crop's soil dries out. Null for
+   * livestock, which drink from their own trough and are tended by feeding
+   * instead -- exactly the mirror of `hungerMs`, and deliberately the same
+   * shape so the two freeze-the-clock paths read alike.
+   *
+   * A dry crop stops growing outright: `isStackAcresUnitReady` refuses it,
+   * and watering pushes `readyAt` forward by however long it stood dry, so
+   * the neglected time is never silently credited as work. Same rule feeding
+   * already follows -- neglect costs time, never yield.
+   *
+   * Both numbers sit UNDER their kind's own `durationMs` on purpose, unlike
+   * the Hen Coop's deliberately-unreachable hunger window: watering is the
+   * crop track's whole tending loop, so a crop that could finish a cycle
+   * without ever needing a drink would have no loop at all.
+   */
+  thirstMs: number | null;
+  /**
+   * What clearing this plot costs after a muck, in Gold. Scaled to the tier
    * on purpose: a single flat fee across tiers an order of magnitude apart
    * makes the cheapest one permanently negative. Twice the tier's net keeps
    * the expected cost at 40% of what the plot earned, on every tier -- there
@@ -76,34 +98,41 @@ export interface StackAcresStockDef {
 }
 
 /**
- * Seed cost, time and hunger. What a plot YIELDS is in ./items.ts, because a
- * harvest is now produce rather than a number: the value of a cycle is the
- * yield times whatever the store is paying, not a payout baked in here.
+ * Seed cost, time and hunger. What a unit YIELDS is in ./items.ts: the value
+ * of a cycle is the snapshotted yield times what that produce is worth today,
+ * not a payout baked in here.
  */
 export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresStockDef>> = {
   sprout: {
     label: "Sprout Row",
-    seedCost: 10,
+    seedCost: 20,
     durationMs: 15 * 60 * 1000,
     hungerMs: null,
-    muckFee: 16,
+    // Half its own 15m cycle: one drink mid-row, so the cheapest crop teaches
+    // the watering loop without being a chore.
+    thirstMs: 8 * 60 * 1000,
+    muckFee: 32,
   },
   cash_crop: {
     label: "Cash Crop",
-    seedCost: 60,
+    seedCost: 120,
     durationMs: 4 * 60 * 60 * 1000,
     hungerMs: null,
-    muckFee: 100,
+    // Roughly two drinks across a 4h cycle, the same tending weight a Sheep
+    // Pen carries on the livestock track at the same duration.
+    thirstMs: 90 * 60 * 1000,
+    muckFee: 200,
   },
   hen: {
     label: "Hen Coop",
-    seedCost: 25,
+    seedCost: 50,
     durationMs: 15 * 60 * 1000,
     // Longer than its own cycle, so a Hen never goes hungry. The cheapest
     // animal is deliberately fire-and-forget; tending is what you take on when
     // you move up to the tiers that yield.
     hungerMs: 45 * 60 * 1000,
-    muckFee: 22,
+    thirstMs: null,
+    muckFee: 44,
   },
   pig: {
     // Labelled a sheep, keyed as a pig. The tile pack has no pig and a pink
@@ -112,22 +141,24 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     // every plot row, and renaming it would be a data migration to fix a
     // caption. Draw a pig and this one line goes back.
     label: "Sheep Pen",
-    seedCost: 150,
+    seedCost: 300,
     durationMs: 4 * 60 * 60 * 1000,
     hungerMs: 2 * 60 * 60 * 1000,
-    muckFee: 156,
+    thirstMs: null,
+    muckFee: 312,
   },
   cattle: {
     label: "Cattle Pen",
-    seedCost: 600,
+    seedCost: 1_200,
     durationMs: 24 * 60 * 60 * 1000,
     hungerMs: 8 * 60 * 60 * 1000,
-    muckFee: 560,
+    thirstMs: null,
+    muckFee: 1_120,
   },
 };
 
 /**
- * Feed, sold in shipments and priced in Bushels. Priced per serving against
+ * Feed, sold in shipments and priced in Gold. Priced per serving against
  * the tiers that actually eat: a Sheep Pen wants one serving a cycle and a
  * Cattle Pen two or three, so a serving has to cost well under a tenth of
  * those tiers' net or feeding costs more than the animal earns.
@@ -139,8 +170,8 @@ export interface StackAcresFeedDef {
 }
 
 export const STACKACRES_FEED: Readonly<Record<string, StackAcresFeedDef>> = {
-  feed_sack: { label: "Feed Sack", cost: 48, servings: 6 },
-  bulk_shipment: { label: "Bulk Shipment", cost: 140, servings: 20 },
+  feed_sack: { label: "Feed Sack", cost: 96, servings: 6 },
+  bulk_shipment: { label: "Bulk Shipment", cost: 280, servings: 20 },
 };
 
 export const STACKACRES_FEED_IDS = Object.keys(STACKACRES_FEED);
@@ -183,8 +214,8 @@ export function capFor(extraSlots: number): number {
 export const STACKACRES_MUCK_CHANCE = 0.2;
 
 /**
- * What buying one extra capacity slot costs, in GOLD -- the only number in
- * this file that is not Bushels. Replaces the old flat plot price
+ * What buying one extra capacity slot costs, in Gold. Untouched by the
+ * single-currency change: it was always Gold. Replaces the old flat plot price
  * (STACKACRES_PLOT_PRICE, 10,000 for any of plots 5-16): there is no land to
  * unlock any more, so Gold buys room the same way it always did, just
  * attached to a kind instead of a tile.

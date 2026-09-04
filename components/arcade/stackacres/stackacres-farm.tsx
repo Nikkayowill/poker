@@ -32,21 +32,27 @@ import {
   sowSound,
   toolSound,
   travelSound,
+  waterSound,
 } from "@/lib/audio/stackacres-sfx";
 import { STACKACRES_FEED, type StackAcresStock } from "@/lib/stackacres/catalogue";
 import { buyOptionsForZone, type BuyOption } from "@/lib/stackacres/district-panel";
 import {
   exchangeState,
-  goldForBushels,
   type StackAcresExchangeState,
 } from "@/lib/stackacres/exchange";
 import {
-  STACKACRES_ITEM_CATALOGUE,
-  STACKACRES_ITEMS,
-  itemLabel,
+
   type StackAcresItem,
 } from "@/lib/stackacres/items";
 import { emptyMuseumRegistry, type MuseumRegistry } from "@/lib/stackacres/museum";
+import {
+  HOME_SECTOR,
+  STACKACRES_SECTORS,
+  isSectorUnlocked,
+  type SectorId,
+} from "@/lib/stackacres/sectors";
+import { upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
+import type { BountifulHarvest } from "@/lib/stackacres/bounty";
 import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
@@ -61,6 +67,7 @@ import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
 import { StackAcresRadialMenu } from "./stackacres-radial-menu";
+import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
 import { useStackAcresMusic } from "./use-stackacres-music";
@@ -111,34 +118,77 @@ interface StackAcresResponse {
   profile: PlayerProfile | null;
   feed: number;
   capacity: Partial<Record<StackAcresStock, number>>;
-  inventory: Record<string, number>;
-  bushels: number;
   exchange: StackAcresExchangeState;
   museum: MuseumRegistry;
-  collected?: {
-    stock: StackAcresStock;
-    item: StackAcresItem;
-    quantity: number;
-    mucked: boolean;
-    discovery: { item: StackAcresItem; bonus: number } | null;
+  /** Land the player may work. Everything else is drawn as wild growth. */
+  sectors: SectorId[];
+  upkeep: StackAcresUpkeepState;
+  collected?: { stock: StackAcresStock; item: StackAcresItem; quantity: number; mucked: boolean };
+  harvest?: {
+    units: number;
+    tally: { item: StackAcresItem; quantity: number }[];
+    gross: number;
+    bounty: BountifulHarvest;
+    bonus: number;
+    upkeep: number;
+    gold: number;
+    mucked: number;
+    /** Items donated to Ray's Museum for the very first time in this sweep,
+     *  and what each paid -- already folded into `gold` above. */
+    discoveries: { item: StackAcresItem; bonus: number }[];
   };
-  sold?: { item: StackAcresItem; quantity: number; bushels: number };
-  exchanged?: { bushels: number; gold: number };
   error?: string;
   round?: StackAcresUnitSnapshot[];
 }
 
 type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
+  | { action: "clear-sector"; sector: SectorId }
   | { action: "stock"; stock: StackAcresStock }
   | { action: "buy-stock"; stock: StackAcresStock }
   | { action: "retire"; unitId: string }
-  | { action: "collect"; unitId: string }
+  // No `unitIds` means "bring in everything that is ready" -- what the
+  // Harvest key sends. A single id is what tapping one unit sends.
+  | { action: "collect"; unitIds?: string[] }
   | { action: "feed"; unitId: string }
+  | { action: "water"; unitId: string }
   | { action: "clear"; unitId: string }
   | { action: "buy-feed"; itemId: string }
   | { action: "sell"; item: StackAcresItem; quantity: number }
-  | { action: "exchange"; bushels: number };
+  ;
+
+/**
+ * What the player asked for, as one string. Two presses that mean the same
+ * thing share it; collecting two different hens does not.
+ *
+ * This is the identity both duplicate guards are keyed on -- the in-flight set
+ * that drops a second press, and the idempotency key held across a request
+ * whose answer never arrived.
+ */
+function intentOf(body: Action): string {
+  if ("unitId" in body) return `${body.action}:${body.unitId}`;
+  if ("stock" in body) return `${body.action}:${body.stock}`;
+  if ("sector" in body) return `${body.action}:${body.sector}`;
+  if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
+  if ("itemId" in body) return `${body.action}:${body.itemId}`;
+  return body.action;
+}
+
+/**
+ * A fresh idempotency key.
+ *
+ * `crypto.randomUUID` is only defined in a secure context, which the deployed
+ * site always is and a phone pointed at a dev box over the LAN is not -- and a
+ * throw here would silently swallow the action rather than perform it. The
+ * fallback does not have to be a UUID, only unlikely to collide with this same
+ * player's other keys inside the server's own ten-minute window.
+ */
+function newIntentKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `k-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
 
 /**
  * A shelf in Ray's store, named and given the painted badge of what is on it.
@@ -175,22 +225,36 @@ function countdownLabel(msLeft: number): string {
 }
 
 /**
- * Re-derives readiness and hunger locally so a unit flips without a network
- * trip. Hunger is checked first and freezes progress, mirroring
- * lib/stackacres/units.ts exactly -- if these two ever disagree the server
- * wins, because it is the only one that can pay.
+ * Re-derives readiness, hunger and dry soil locally so a unit flips without a
+ * network trip. Both freeze conditions are checked before readiness and both
+ * stop the progress bar where it stood, mirroring lib/stackacres/units.ts
+ * exactly -- if these two ever disagree the server wins, because it is the
+ * only one that can pay.
  */
 function withLocalClock(units: StackAcresUnitSnapshot[], nowMs: number): StackAcresUnitSnapshot[] {
   return units.map((unit) => {
     if (unit.state === "mucked") return unit;
-    const hungry = unit.hungryAt !== null && Date.parse(unit.hungryAt) <= nowMs;
-    if (hungry) return { ...unit, state: "hungry" };
     const ready = Date.parse(unit.readyAt);
     const started = Date.parse(unit.startedAt);
+    const progressAt = (atMs: number) =>
+      ready > started ? Math.min(1, Math.max(0, (atMs - started) / (ready - started))) : 1;
+
+    const hungry = unit.hungryAt !== null && Date.parse(unit.hungryAt) <= nowMs;
+    if (hungry) return { ...unit, state: "hungry" };
+    const driedAt = unit.thirstyAt === null ? null : Date.parse(unit.thirstyAt);
+    // `ready > driedAt` mirrors isStackAcresUnitDry's own carve-out: a crop
+    // that finished growing before the ground dried is not dry, it is just
+    // waiting to be picked. Dropping this here would flip a ripe row to dry
+    // between refetches even though the server would still collect it.
+    const dry = driedAt !== null && Number.isFinite(driedAt) && driedAt <= nowMs && ready > driedAt;
+    // `ready > driedAt` is already false for an unparseable readyAt, so this
+    // branch always has real timestamps to read the frozen bar at: the moment
+    // the soil went dry rather than now, so a frozen crop's bar stops where it
+    // stopped instead of creeping on to a full bar it cannot cash.
+    if (dry) return { ...unit, state: "dry", isWatered: false, progress: progressAt(driedAt) };
     if (!Number.isFinite(ready) || !Number.isFinite(started)) return unit;
-    if (ready <= nowMs) return { ...unit, state: "ready", progress: 1 };
-    const progress = ready > started ? Math.min(1, Math.max(0, (nowMs - started) / (ready - started))) : 1;
-    return { ...unit, state: "working", progress };
+    if (ready <= nowMs) return { ...unit, state: "ready", progress: 1, isWatered: true };
+    return { ...unit, state: "working", progress: progressAt(nowMs), isWatered: true };
   });
 }
 
@@ -199,15 +263,24 @@ export function StackAcresFarm() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [feed, setFeed] = useState(0);
   const [capacity, setCapacity] = useState<Partial<Record<StackAcresStock, number>>>({});
-  const [inventory, setInventory] = useState<Record<string, number>>({});
-  const [bushels, setBushels] = useState(0);
+
   // Seeded from the same pure helper the server uses, so the window's terms are
   // right on the first paint rather than blank until the read lands.
   const [exchange, setExchange] = useState<StackAcresExchangeState>(() =>
     exchangeState(0, new Date()),
   );
-  const [exchangeChoice, setExchangeChoice] = useState<number | null>(null);
-  const [exchangeNote, setExchangeNote] = useState<string | null>(null);
+  /**
+   * Land the player may work, and what keeping it costs today.
+   *
+   * Seeded to home-only rather than to everything, the same posture the scene
+   * takes with its own `locked` default: until the first read lands, drawing
+   * a farm on land that might not be cleared is the wrong way to be wrong.
+   */
+  const [sectors, setSectors] = useState<SectorId[]>([HOME_SECTOR]);
+  const [upkeep, setUpkeep] = useState<StackAcresUpkeepState>(() => upkeepState(0, 0));
+  /** The wild district a finger just landed on, if the clearing modal is up. */
+  const [clearing, setClearing] = useState<SectorId | null>(null);
+
   const [loaded, setLoaded] = useState(false);
   const [worldReady, setWorldReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -341,10 +414,50 @@ export function StackAcresFarm() {
    * a frame behind the response that reads it.
    */
   const tapAnchor = useRef<TapPoint | null>(null);
+  /**
+   * The idempotency key for each action whose fate this browser does not know.
+   *
+   * Keyed by what the player asked for (`collect:<unitId>`, `stock:hen`), and
+   * held ONLY while an attempt at it ended without an answer -- a dropped
+   * connection, a request that never came back. That is the one case where
+   * pressing again is a retry rather than a second request, and reusing the
+   * key is what stops the retry buying a second animal when the first one
+   * actually landed.
+   *
+   * Cleared the moment the server answers at all, success or refusal, because
+   * from then on the player pressing again means it: two taps on Seed really
+   * are two Sprout Rows, and a key held across them would silently swallow
+   * the second.
+   */
+  const pendingKeys = useRef(new Map<string, string>());
+  /**
+   * Intents with a request already out for them.
+   *
+   * The one place every entry point funnels through, so a duplicate press is
+   * dropped whether it came from the map, the sidebar or the seed menu -- all
+   * three used to lean on the `busy` STATE, which only turns true a render
+   * after the request starts and so lets two presses in the same frame both
+   * through. Per intent rather than global: two presses at the same hen are
+   * one intent pressed twice, feeding one hen and collecting another are not.
+   */
+  const inFlight = useRef(new Set<string>());
   // Which unit is mid-"are you sure" for retiring. Never a plain confirm():
   // retiring refunds nothing, so it has to be two deliberate taps.
   const [retiringUnitId, setRetiringUnitId] = useState<string | null>(null);
   useEffect(() => () => { mounted.current = false; }, []);
+
+  /**
+   * The purse every price on this screen is read against. One currency now, so
+   * this is simply the player's Gold -- the same balance the poker tables and
+   * the Collection spend.
+   *
+   * An admin account with unlimited Gold can afford anything: the server is
+   * the authority on the spend either way, and a button greyed out against a
+   * balance that is not real would be a lie.
+   */
+  const gold = profile?.unlimitedGold
+    ? Number.MAX_SAFE_INTEGER
+    : (profile?.goldBalance ?? 0);
 
   /**
    * The unit list as of right now, for `act` to read when a response lands.
@@ -366,10 +479,10 @@ export function StackAcresFarm() {
     if (data.units) setUnits(data.units);
     if (typeof data.feed === "number") setFeed(data.feed);
     if (data.capacity) setCapacity(data.capacity);
-    if (data.inventory) setInventory(data.inventory);
-    if (typeof data.bushels === "number") setBushels(data.bushels);
     if (data.exchange) setExchange(data.exchange);
     if (data.museum) setMuseum(data.museum);
+    if (data.sectors) setSectors(data.sectors);
+    if (data.upkeep) setUpkeep(data.upkeep);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -412,7 +525,11 @@ export function StackAcresFarm() {
   const liveUnits = useMemo(() => withLocalClock(units, nowMs), [units, nowMs]);
 
   const anyWorking = units.some(
-    (unit) => unit.state === "working" || unit.state === "hungry" || unit.state === "ready",
+    (unit) =>
+      unit.state === "working" ||
+      unit.state === "hungry" ||
+      unit.state === "dry" ||
+      unit.state === "ready",
   );
   useEffect(() => {
     if (!anyWorking) return;
@@ -422,28 +539,49 @@ export function StackAcresFarm() {
 
   const act = useCallback(
     async (body: Action) => {
+      // A second press at something already being asked about is a duplicate,
+      // not a second request. Dropped here rather than sent and deduplicated
+      // server-side: the cheapest duplicate is the one that never leaves.
+      const intent = intentOf(body);
+      if (inFlight.current.has(intent)) return;
+      inFlight.current.add(intent);
       sending.current = true;
       setBusy(true);
       if ("unitId" in body) setBusyUnitId(body.unitId);
       setError(null);
+      // A key held over from an attempt that never came back makes this press
+      // a retry of that one; otherwise it names a new intent.
+      const key = pendingKeys.current.get(intent) ?? newIntentKey();
+      pendingKeys.current.set(intent, key);
+      // Set the moment this browser knows what became of the request. While it
+      // is false the key survives, so the next press at the same thing is a
+      // retry; once it is true the key is dropped and the next press is a new
+      // intent. Deliberately NOT set merely because `fetch` resolved: a body
+      // that fails to parse leaves the outcome just as unknown as a dropped
+      // connection does.
+      let answered = false;
       try {
         const response = await fetch("/api/stackacres/actions", {
           method: "POST",
           cache: "no-store",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ ...body, key }),
         });
         if (response.status === 429) {
+          // Rejected before it reached the farm, so nothing was applied.
+          answered = true;
           const header = Number(response.headers.get("Retry-After"));
           const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
           if (mounted.current) setError(`Too many taps. Give it ${seconds}s.`);
           return;
         }
         if (response.status === 401) {
+          answered = true;
           window.location.reload();
           return;
         }
         const data = (await response.json()) as Partial<StackAcresResponse>;
+        answered = true;
         if (!mounted.current) return;
         if (!response.ok) {
           // A dull knock on wood, never a buzzer: most refusals here are "you
@@ -461,7 +599,7 @@ export function StackAcresFarm() {
           // today's allowance is left. Re-read it once this request has let
           // go of the send lock, so the window shows the truth rather than
           // the amount this browser thought it could still send.
-          if (body.action === "exchange") window.setTimeout(() => void refresh(), 0);
+          if (body.action === "collect") window.setTimeout(() => void refresh(), 0);
           return;
         }
         applyResponse(data);
@@ -470,30 +608,55 @@ export function StackAcresFarm() {
         // that was tapped. A sidebar press leaves this null and the toast
         // below is the whole answer, same as it always was.
         const anchor = tapAnchor.current;
-        if (body.action === "collect" && data.collected) {
+        if (body.action === "collect" && data.harvest) {
+          const { harvest } = data;
+          const single = body.unitIds?.length === 1 ? body.unitIds[0] : null;
           // Fired here rather than on the press because the ANIMAL is what
           // makes this sound worth having, and only the response knows which
           // unit actually paid out: a hen clucking as the eggs go in the
-          // basket is the moment the farm most needs to feel alive.
-          const unit = unitsRef.current.find((candidate) => candidate.id === body.unitId);
-          if (unit) collectSound(unit.stock);
-          setCelebrate({ unitId: body.unitId, nonce: Date.now() });
-          // A first-ever donation rides on the same toast rather than a
-          // second one stacked on top of it -- one thing landed, one thing
-          // to read.
-          const discovery = data.collected.discovery;
+          // basket is the moment the farm most needs to feel alive. A
+          // whole-farm sweep plays the loudest thing it brought in.
+          const sounded = single
+            ? unitsRef.current.find((candidate) => candidate.id === single)
+            : unitsRef.current.find((candidate) => candidate.state === "ready");
+          if (sounded) collectSound(sounded.stock);
+          if (single) setCelebrate({ unitId: single, nonce: Date.now() });
+          // The toast leads with the money, because that is what a harvest is
+          // now -- the produce is the reason, not the reward. The synergy and
+          // the fee each get a clause only when they actually applied. Ray's
+          // Museum rides on the same toast rather than a second one stacked
+          // on top of it -- its bonus is already folded into `harvest.gold`,
+          // so this clause is purely what it was FOR, not a separate figure.
+          const bonusPart = harvest.bounty.label
+            ? ` · ${harvest.bounty.label} +${harvest.bonus.toLocaleString()}`
+            : "";
+          const upkeepPart =
+            harvest.upkeep > 0 ? ` · upkeep -${harvest.upkeep.toLocaleString()}` : "";
+          const discoveryTotal = harvest.discoveries.reduce((sum, d) => sum + d.bonus, 0);
+          const discoveryPart =
+            harvest.discoveries.length > 0
+              ? ` · ${harvest.discoveries.length === 1 ? "New Discovery!" : "New Discoveries!"} +${discoveryTotal.toLocaleString()}`
+              : "";
           setLastCollect({
-            text: discovery
-              ? `+${itemLabel(data.collected.item, data.collected.quantity)} · New Discovery! +${discovery.bonus.toLocaleString()} Bushels`
-              : `+${itemLabel(data.collected.item, data.collected.quantity)}`,
+            text: `+${harvest.gold.toLocaleString()} Gold${bonusPart}${upkeepPart}${discoveryPart}`,
             nonce: Date.now(),
           });
           if (anchor) {
-            const float = collectFloat(data.collected.item, data.collected.quantity);
+            // A one-unit sweep floats its produce, which is what a tap on that
+            // animal was asking about. A whole-farm sweep floats the money:
+            // naming five kinds of produce over one thumb is unreadable.
+            const float =
+              single && harvest.tally.length === 1
+                ? collectFloat(harvest.tally[0].item, harvest.tally[0].quantity)
+                : { text: `+${harvest.gold.toLocaleString()} Gold`, icon: "ico-gold" };
             world.current?.floatAt(anchor, float.text, "gain", float.icon as PainterName);
           }
-          if (data.collected.mucked) {
-            setError("That came up weather-worn. Clear it before it earns again.");
+          if (harvest.mucked > 0) {
+            setError(
+              harvest.mucked === 1
+                ? "That came up weather-worn. Clear it before it earns again."
+                : `${harvest.mucked} came up weather-worn. Clear them before they earn again.`,
+            );
           }
         }
         // The other three a finger can start from the map. No produce to
@@ -501,25 +664,19 @@ export function StackAcresFarm() {
         const done =
           body.action === "feed"
             ? "Fed"
-            : body.action === "clear"
-              ? "Cleared"
-              : body.action === "stock"
-                ? "Seeded"
-                : null;
+            : body.action === "water"
+              ? "Watered"
+              : body.action === "clear"
+                ? "Cleared"
+                : body.action === "stock"
+                  ? "Seeded"
+                  : null;
         if (anchor && done) world.current?.floatAt(anchor, done, "gain");
-        if (body.action === "exchange" && data.exchanged) {
-          // The one place on the farm where coins are heard: this is Gold
-          // actually leaving for the player's balance, and it is the only
-          // action here that touches the wider economy.
-          goldSound();
-          setExchangeChoice(null);
-          setExchangeNote(
-            `${data.exchanged.gold.toLocaleString()} Gold is in your balance, for ${data.exchanged.bushels.toLocaleString()} Bushels.`,
-          );
-        }
       } catch {
         if (mounted.current) setError("Could not reach the farm. Check your connection.");
       } finally {
+        inFlight.current.delete(intent);
+        if (answered) pendingKeys.current.delete(intent);
         sending.current = false;
         // One request, one anchor. Leaving it set would float the NEXT
         // action's reward out of the last place a finger happened to be.
@@ -554,14 +711,31 @@ export function StackAcresFarm() {
       // The collection itself is announced when it lands (in `act`), where
       // the produce is actually known -- this is only the press.
       tapSound();
-      void act({ action: "collect", unitId: unit.id });
+      void act({ action: "collect", unitIds: [unit.id] });
     },
     [act],
   );
+  /**
+   * Bring in everything that is ready, in one act. This is the only control
+   * that can earn a Bountiful Harvest: the synergy is a property of what was
+   * gathered TOGETHER, so a unit tapped on its own can never qualify.
+   */
+  const onHarvestAll = useCallback(() => {
+    tapSound();
+    void act({ action: "collect" });
+  }, [act]);
+
   const onFeed = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       feedSound(unit.stock);
       void act({ action: "feed", unitId: unit.id });
+    },
+    [act],
+  );
+  const onWater = useCallback(
+    (unit: StackAcresUnitSnapshot) => {
+      waterSound();
+      void act({ action: "water", unitId: unit.id });
     },
     [act],
   );
@@ -617,11 +791,18 @@ export function StackAcresFarm() {
     setError(null);
   }, []);
 
-  const travel = useCallback((zone: ZoneId) => {
-    travelSound();
-    setPlace(zone);
-    world.current?.focusZone(zone);
-  }, []);
+  const travel = useCallback(
+    (zone: ZoneId) => {
+      travelSound();
+      setPlace(zone);
+      world.current?.focusZone(zone);
+      // Picking wild land off the signpost flies you there AND makes the
+      // offer. Landing at a wood with no explanation would be the one place
+      // on this screen where going somewhere tells you nothing.
+      setClearing(isSectorUnlocked(zone, sectors) ? null : zone);
+    },
+    [sectors],
+  );
 
   const closeRadial = useCallback(() => setRadial(null), []);
 
@@ -645,17 +826,31 @@ export function StackAcresFarm() {
       // The sidebar follows the finger rather than gating it: whatever the
       // player is touching is what "here" means now.
       setPlace(stockZone(unit.stock));
-      const action = tapActionFor(unit, { feed, bushels, nowMs });
+      const action = tapActionFor(unit, { feed, gold, nowMs });
       if (action.kind === "refused") {
         world.current?.floatAt(at, action.reason, "deny");
         return;
       }
-      if (busy) return;
+      // `sending`, not the `busy` STATE beside it. `busy` only becomes true a
+      // render after the request starts, so two taps landing in the same frame
+      // both read it as false and both fire -- which is what mashing a ready
+      // unit does. The ref flips synchronously inside `act`, so the second tap
+      // never leaves the browser. The intent key behind it is the backstop for
+      // the duplicates this cannot see (a retry after a dropped connection,
+      // another tab).
+      if (sending.current) return;
       tapSound();
       tapAnchor.current = at;
-      void act({ action: action.kind, unitId });
+      // A tap is a one-unit sweep. It earns no synergy by construction --
+      // three is the fewest a Bountiful Harvest considers -- which is exactly
+      // what the Harvest key beside it is for.
+      void act(
+        action.kind === "collect"
+          ? { action: "collect", unitIds: [unitId] }
+          : { action: action.kind, unitId },
+      );
     },
-    [act, bushels, busy, feed, liveUnits, nowMs],
+    [act, feed, gold, liveUnits, nowMs],
   );
 
   /** A finger landed on a district's fenced ground and hit nothing. That is
@@ -675,6 +870,32 @@ export function StackAcresFarm() {
     panelSound();
     setShowMuseum(true);
   }, []);
+
+  /**
+   * A finger landed on land nobody has cleared. There is nothing standing
+   * there to act on, so this is a question rather than an action: what is
+   * under the growth, what it costs, and what is still in the way.
+   *
+   * A full modal rather than the radial menu the fenced ground gets, and
+   * deliberately: the seed menu is a fast, repeatable choice between things
+   * you already understand, and this is a permanent purchase with conditions
+   * on it. It is worth stopping for.
+   */
+  const onWorldLockedTap = useCallback((zone: ZoneId) => {
+    panelSound();
+    setRadial(null);
+    setPlace(zone);
+    setClearing(zone);
+  }, []);
+
+  const onClearSector = useCallback(
+    (sector: SectorId) => {
+      buySound();
+      setClearing(null);
+      void act({ action: "clear-sector", sector });
+    },
+    [act],
+  );
 
   /** Seeding straight out of the radial menu. Closes first: the menu's
    *  prices are about to move under it, and a second tap on a stale one
@@ -739,37 +960,20 @@ export function StackAcresFarm() {
     setAmbienceHerd(herd);
   }, [districtUnits]);
   const buyOptions: BuyOption[] = useMemo(
-    () => buyOptionsForZone(place, { units: liveUnits, bushels, capacity }),
-    [place, liveUnits, bushels, capacity],
+    () => buyOptionsForZone(place, { units: liveUnits, gold, capacity }),
+    [place, liveUnits, gold, capacity],
   );
 
   const toolHint = STACKACRES_TOOL_DEFS[tool].hint;
 
   /** Produce in the barn, in catalogue order so the list never reshuffles. */
-  const carried = useMemo(
-    () =>
-      STACKACRES_ITEMS.map((item) => ({ item, quantity: inventory[item] ?? 0 })).filter(
-        (line) => line.quantity > 0,
-      ),
-    [inventory],
+  /** Everything standing ready right now. The Harvest key's whole subject. */
+  const readyUnits = useMemo(
+    () => liveUnits.filter((unit) => unit.state === "ready"),
+    [liveUnits],
   );
-  const carrying = carried.reduce((total, line) => total + line.quantity, 0);
+  const carrying = readyUnits.length;
 
-  /**
-   * The most this player can send out right now: the smaller of what is in the
-   * barn and what is left of today's flat allowance. The allowance is the same
-   * number for every farm, which is the whole point of the window -- more
-   * stock fills the bucket faster, it never makes the bucket bigger.
-   */
-  const exchangeMax = Math.min(bushels, exchange.maxBushels);
-  const exchangeAmount = Math.min(exchangeChoice ?? exchangeMax, exchangeMax);
-  const exchangePresets = useMemo(
-    () => [100, 500, 1_000].filter((amount) => amount < exchangeMax),
-    [exchangeMax],
-  );
-  // The bar shows what is LEFT, not what has been spent. Filling it as the day
-  // was spent put a full gold bar directly above the words "0 of 5,000 Gold
-  // left today", which is the opposite of what it meant. It drains now.
   const exchangeLeft = exchange.ceiling > 0 ? exchange.remaining / exchange.ceiling : 0;
 
   const onWorldReady = useCallback(() => setWorldReady(true), []);
@@ -808,6 +1012,7 @@ export function StackAcresFarm() {
 
   const hint = busy ? "Working…" : toolHint;
   const district = STACKACRES_ZONES[place];
+  const placeLocked = !isSectorUnlocked(place, sectors);
 
   return (
     <main className="duel-shell ante-shell sa-shell">
@@ -818,20 +1023,28 @@ export function StackAcresFarm() {
             <HelpCircle size={13} aria-hidden="true" /> How to play
           </button>
         </div>
-        {/* Bushels sit first and Gold last, in the order they matter here:
-            everything on this screen is bought with Bushels, and Gold buys
-            capacity and stock outright. */}
+        {/* One purse now. The farm's own currency is gone, so the Gold pill
+            the rest of the app already shows is the whole story, and it keeps
+            its usual place at the end of the row. */}
         <div className="sa-hud">
-          <span className="sa-purse" title="Bushels">
-            <StackAcresIcon name="ico-bushels" size={16} />
-            <strong>{bushels.toLocaleString()}</strong>
-            <span className="sa-sr">Bushels</span>
-          </span>
           <span className="sa-feed" title="Feed servings">
             <StackAcresIcon name="ico-feed" size={16} />
             <strong>{feed}</strong>
             <span className="sa-sr">feed servings</span>
           </span>
+          {/* Only when something is actually owed. A land fee of zero is the
+              normal state for a small farm, and a permanent "0" in the HUD
+              would be a bill where there is no bill. */}
+          {upkeep.due > 0 && (
+            <span
+              className="sa-upkeep"
+              title={`Land maintenance on ${upkeep.plots} plots. Comes out of your next harvest.`}
+            >
+              <StackAcresIcon name="ico-gold" size={16} />
+              <strong>-{upkeep.due.toLocaleString()}</strong>
+              <span className="sa-sr">Gold of land maintenance due</span>
+            </span>
+          )}
           <span className="gold-balance floor-wallet" title="Gold">
             <Coins size={13} aria-hidden="true" />
             <strong>{profile?.unlimitedGold ? "∞" : (profile?.goldBalance ?? 0).toLocaleString()}</strong>
@@ -858,6 +1071,8 @@ export function StackAcresFarm() {
               onUnitTap={onWorldUnitTap}
               onGroundTap={onWorldGroundTap}
               onBarnTap={onWorldBarnTap}
+              sectors={sectors}
+              onLockedSectorTap={onWorldLockedTap}
               onViewMoved={closeRadial}
               api={world}
             />
@@ -901,6 +1116,7 @@ export function StackAcresFarm() {
           <StackAcresDestinations
             active={place}
             onTravel={travel}
+            unlocked={sectors}
             onOpenStore={() => { panelSound(); setShowStore(true); }}
             carrying={carrying}
           />
@@ -924,7 +1140,7 @@ export function StackAcresFarm() {
           {radial && (
             <StackAcresRadialMenu
               at={radial.at}
-              options={buyOptionsForZone(radial.zone, { units: liveUnits, bushels, capacity })}
+              options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity })}
               districtLabel={STACKACRES_ZONES[radial.zone].label}
               busy={busy}
               onSeed={onRadialSeed}
@@ -940,6 +1156,28 @@ export function StackAcresFarm() {
           <div className="sa-side">
             {error && <p className="duel-error" role="alert">{error}</p>}
           </div>
+
+          {/* Bring the whole farm in at once.
+              THIS IS THE ONLY CONTROL THAT CAN EARN A SYNERGY, and that is why
+              it exists as its own affordance rather than being implied by
+              tapping units one at a time: Bountiful Harvest is a property of
+              what was gathered TOGETHER, so a farm collected a tap at a time
+              earns nothing. It only appears when there is something to bring
+              in -- a permanently-visible disabled key on a canvas is chrome a
+              player learns to stop reading. */}
+          {carrying > 0 && (
+            <button
+              type="button"
+              className="sa-harvest-all"
+              disabled={busy}
+              onClick={onHarvestAll}
+            >
+              <StackAcresIcon name="ico-harvest" size={18} />
+              <span>
+                Harvest {carrying} {carrying === 1 ? "field" : "fields"}
+              </span>
+            </button>
+          )}
 
           {/* The handle the panel hangs off when it is shut. Before this,
               the only way back into a district you had closed was to find
@@ -994,43 +1232,65 @@ export function StackAcresFarm() {
             <h2 className="sa-district-title">{district.label}</h2>
             <p className="sa-district-blurb">{district.blurb}</p>
 
-            {/* Buy comes first now. Seeding with Bushels is the one thing on
-                this panel a tap on the map also does; buying outright and
-                expanding capacity are Gold, are permanent, and are the reason
-                to open this at all -- so they lead, rather than sitting under
-                a list of things you could have collected by touching them. */}
-            <div className="sa-panel-section">
-              <h3 className="sa-group-label">Buy &amp; expand</h3>
-              <StackAcresBuySection
-                options={buyOptions}
-                busy={busy}
-                onSeed={onSeed}
-                onBuyOutright={onBuyOutright}
-                onExpand={onExpand}
-              />
-            </div>
+            {/* Wild land has no farm on it to manage, so the drawer offers
+                the one thing that IS available there rather than a buy list
+                for pens that do not exist and a standing list that is always
+                empty. It is the same modal a tap on the trees opens -- there
+                is exactly one way to buy land, reached from two places. */}
+            {placeLocked ? (
+              <div className="sa-panel-section">
+                <h3 className="sa-group-label">Uncleared land</h3>
+                <p className="sa-panel-note">{STACKACRES_SECTORS[place].promise}</p>
+                <button
+                  type="button"
+                  className="sa-cta"
+                  onClick={() => { panelSound(); setClearing(place); }}
+                >
+                  What would clearing it cost?
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Buy comes first now. Seeding one cycle is the one thing on
+                    this panel a tap on the map also does; buying outright and
+                    expanding capacity are Gold, are permanent, and are the reason
+                    to open this at all -- so they lead, rather than sitting under
+                    a list of things you could have collected by touching them. */}
+                <div className="sa-panel-section">
+                  <h3 className="sa-group-label">Buy &amp; expand</h3>
+                  <StackAcresBuySection
+                    options={buyOptions}
+                    busy={busy}
+                    onSeed={onSeed}
+                    onBuyOutright={onBuyOutright}
+                    onExpand={onExpand}
+                  />
+                </div>
 
-            <div className="sa-panel-section">
-              <h3 className="sa-group-label">What&apos;s here</h3>
-              <p className="sa-panel-note">
-                Tap anything on the map to collect, feed or clear it. These rows do the same, and
-                are how you retire something you own outright.
-              </p>
-              <StackAcresUnitRows
-                units={districtUnits}
-                nowMs={nowMs}
-                feed={feed}
-                bushels={bushels}
-                busyUnitId={busyUnitId}
-                armedUnitId={retiringUnitId}
-                onCollect={onCollect}
-                onFeed={onFeed}
-                onClear={onClear}
-                onArmRetire={onArmRetire}
-                onConfirmRetire={onConfirmRetire}
-                onCancelRetire={onCancelRetire}
-              />
-            </div>
+                <div className="sa-panel-section">
+                  <h3 className="sa-group-label">What&apos;s here</h3>
+                  <p className="sa-panel-note">
+                    Tap anything on the map to collect, feed, water or clear it. These rows do the
+                    same, and are how you retire something you own outright.
+                  </p>
+                  <StackAcresUnitRows
+                    units={districtUnits}
+                    nowMs={nowMs}
+                    feed={feed}
+                    gold={gold}
+                    busyUnitId={busyUnitId}
+                    armedUnitId={retiringUnitId}
+                    onCollect={onCollect}
+                    onFeed={onFeed}
+                    onWater={onWater}
+                    onClear={onClear}
+                    onArmRetire={onArmRetire}
+                    onConfirmRetire={onConfirmRetire}
+                    onCancelRetire={onCancelRetire}
+                  />
+                </div>
+              </>
+            )}
           </aside>
         </div>
       </div>
@@ -1049,7 +1309,7 @@ export function StackAcresFarm() {
               <button
                 type="button"
                 className="sa-sheet-close"
-                onClick={() => { panelSound(); setShowStore(false); setExchangeNote(null); }}
+                onClick={() => { panelSound(); setShowStore(false); }}
               >
                 Done
               </button>
@@ -1059,48 +1319,52 @@ export function StackAcresFarm() {
                 by a button in here has to be answered in here. */}
             {error && <p className="duel-error" role="alert">{error}</p>}
 
-            {/* Selling comes first: it is what you came in to do after a
-                harvest, and it is where the Bushels for everything below it
-                come from. */}
-            <StoreShelf icon="ico-harvest">Sell your produce</StoreShelf>
-            {carried.length === 0 ? (
+            {/* What the day has left comes first. It is the only number in
+                here a player has to plan around: the farm can send out the
+                same Gold whatever it owns, so a full bar is the reason to go
+                and harvest and an empty one is the reason to stop. */}
+            <StoreShelf icon="ico-gold">Today&apos;s allowance</StoreShelf>
+            <div className="sa-exchange">
               <p className="sa-sheet-note">
-                The barn is empty. Collect from a ready unit and its produce turns up here.
+                Bringing in a harvest pays Gold on the spot. Every farm can send out the same{" "}
+                {exchange.ceiling.toLocaleString()} Gold a day, whatever it owns — more stock fills
+                the day faster, it never makes the day bigger.
               </p>
-            ) : (
-              <ul className="sa-barn">
-                {carried.map(({ item, quantity }) => {
-                  const def = STACKACRES_ITEM_CATALOGUE[item];
-                  return (
-                    <li key={item} className="sa-barn-row">
-                      <StackAcresIcon name={def.icon as PainterName} size={28} />
-                      <span className="sa-barn-name">
-                        <strong>{itemLabel(item, quantity)}</strong>
-                        <span>{def.price.toLocaleString()} each</span>
-                      </span>
-                      <span className="sa-barn-actions">
-                        <button
-                          type="button"
-                          className="sa-cta sa-cta-small"
-                          disabled={busy}
-                          onClick={() => { sellSound(); void act({ action: "sell", item, quantity: 1 }); }}
-                        >
-                          Sell 1
-                        </button>
-                        <button
-                          type="button"
-                          className="sa-cta sa-cta-small"
-                          disabled={busy}
-                          onClick={() => { sellSound(); void act({ action: "sell", item, quantity }); }}
-                        >
-                          Sell all · {(def.price * quantity).toLocaleString()}
-                        </button>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+              <p className="sa-exchange-meter">
+                <span className="sa-exchange-bar" aria-hidden="true">
+                  <span style={{ transform: `scaleX(${exchangeLeft})` }} />
+                </span>
+                <span aria-live="polite">
+                  <strong>{exchange.remaining.toLocaleString()}</strong> of{" "}
+                  {exchange.ceiling.toLocaleString()} Gold left today
+                </span>
+              </p>
+              {exchange.remaining < 1 && (
+                <p className="sa-sheet-note">
+                  That is everything this farm can send out today. Anything still standing keeps
+                  until the day turns over, in {countdownLabel(Date.parse(exchange.resetsAt) - nowMs)}.
+                </p>
+              )}
+            </div>
+
+            <StoreShelf icon="ico-harvest">Land maintenance</StoreShelf>
+            <p className="sa-sheet-note">
+              Holding cleared land costs <strong>{upkeep.fee.toLocaleString()} Gold</strong> a day
+              across {upkeep.plots} {upkeep.plots === 1 ? "plot" : "plots"}, and the first three are
+              free. It comes out of what you harvest, never out of your balance, and it climbs
+              faster than the land earns — a big estate keeps less of every extra plot than a small
+              one does.
+            </p>
+            <p className="sa-sheet-note">
+              {upkeep.due > 0 ? (
+                <>
+                  Today has <strong>{upkeep.due.toLocaleString()} Gold</strong> still to pay. Your
+                  next harvest covers what it can.
+                </>
+              ) : (
+                <>Today is paid up.</>
+              )}
+            </p>
 
             <StoreShelf icon="ico-feed">Feed</StoreShelf>
             <p className="sa-sheet-note">
@@ -1113,13 +1377,13 @@ export function StackAcresFarm() {
                   <h3>{item.label}</h3>
                   <p className="sa-stock-terms">{item.servings} servings</p>
                   <p className="sa-stock-yield">
-                    {item.cost.toLocaleString()} Bushels{" "}
+                    {item.cost.toLocaleString()} Gold{" "}
                     <span>({Math.round(item.cost / item.servings)} each)</span>
                   </p>
                   <button
                     type="button"
                     className="sa-cta"
-                    disabled={busy || bushels < item.cost}
+                    disabled={busy || gold < item.cost}
                     onClick={() => { buySound(); void act({ action: "buy-feed", itemId: id }); }}
                   >
                     Buy
@@ -1131,72 +1395,6 @@ export function StackAcresFarm() {
               You have <strong>{feed}</strong> {feed === 1 ? "serving" : "servings"} in the barn.
             </p>
 
-            {/* Last, and deliberately so. Everything above is the farm's own
-                money going round; this is the one place it leaves, and it
-                should be a thing you go and do rather than the first button
-                under your thumb. */}
-            <StoreShelf icon="ico-gold">Exchange window</StoreShelf>
-            <div className="sa-exchange">
-              <p className="sa-sheet-note">
-                Bushels leave the farm here, at <strong>{exchange.rate} Gold</strong> each. Every
-                farm can send out the same {exchange.ceiling.toLocaleString()} Gold a day, whatever
-                it owns — stock fills the day faster, it never makes the day bigger.
-              </p>
-              <p className="sa-exchange-meter">
-                <span className="sa-exchange-bar" aria-hidden="true">
-                  <span style={{ transform: `scaleX(${exchangeLeft})` }} />
-                </span>
-                <span aria-live="polite">
-                  <strong>{exchange.remaining.toLocaleString()}</strong> of{" "}
-                  {exchange.ceiling.toLocaleString()} Gold left today
-                </span>
-              </p>
-
-              {exchange.maxBushels < 1 ? (
-                <p className="sa-sheet-note">
-                  That is everything this farm can send out today. The window opens again in{" "}
-                  {countdownLabel(Date.parse(exchange.resetsAt) - nowMs)}, and your Bushels keep
-                  until then.
-                </p>
-              ) : bushels === 0 ? (
-                <p className="sa-sheet-note">
-                  Nothing to send. Sell some produce above and the Bushels turn up here.
-                </p>
-              ) : (
-                <>
-                  <div className="sa-exchange-amounts" role="group" aria-label="How many Bushels">
-                    {[...exchangePresets, exchangeMax].map((amount) => (
-                      <button
-                        key={amount}
-                        type="button"
-                        className={clsx("sa-amount", { "is-on": amount === exchangeAmount })}
-                        aria-pressed={amount === exchangeAmount}
-                        onClick={() => { tapSound(); setExchangeChoice(amount); }}
-                      >
-                        {amount === exchangeMax && exchangePresets.length > 0
-                          ? `Max · ${amount.toLocaleString()}`
-                          : amount.toLocaleString()}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    className="sa-cta"
-                    disabled={busy || exchangeAmount < 1}
-                    onClick={() => void act({ action: "exchange", bushels: exchangeAmount })}
-                  >
-                    Exchange {exchangeAmount.toLocaleString()} Bushels for{" "}
-                    {goldForBushels(exchangeAmount).toLocaleString()} Gold
-                  </button>
-                </>
-              )}
-
-              {exchangeNote && (
-                <p className="sa-sheet-note sa-exchange-done" role="status">
-                  {exchangeNote}
-                </p>
-              )}
-            </div>
           </div>
         </div>
       )}
@@ -1208,9 +1406,15 @@ export function StackAcresFarm() {
             tap a district&apos;s name to travel straight to it.
           </p>
           <p>
+            <strong>Only the Farmstead is yours to begin with.</strong> The other three are wild
+            ground — trees, scrub and long grass, with nothing built on them. Tap anywhere on one
+            and it tells you what is under the growth, what clearing it costs in Gold, and what you
+            still need before it is offered. Clearing is permanent.
+          </p>
+          <p>
             <strong>Everything is tapped on the map itself.</strong> Tap a crop or an animal to
-            collect it when it is ready, feed it when it is hungry, or clear it when it comes up
-            weather-worn. Tap the bare ground inside a district and a small menu opens right there
+            collect it when it is ready, feed it when it is hungry, water it when its soil has gone
+            dry, or clear it when it comes up weather-worn. Tap the bare ground inside a district and a small menu opens right there
             to seed something new.
           </p>
           <p>
@@ -1219,28 +1423,43 @@ export function StackAcresFarm() {
             handle without moving the camera.
           </p>
           <p>
-            The farm runs on <strong>Bushels</strong>, its own currency. Collecting from a ready
-            unit puts produce in the barn; selling it at the supply store is what earns Bushels, and
-            Bushels buy your seed and feed. Gold buys stock outright, and buys more room to keep at
-            once.
+            <strong>Everything is paid in Gold, in one step.</strong> Bringing in a harvest works
+            out what the produce is worth and puts the Gold straight in your balance — there is no
+            second currency, no barn to empty and nothing to queue for. Gold also buys your seed,
+            your feed, stock outright, more room to keep at once, and the wild districts you clear.
           </p>
           <p>
-            Bushels come back out as Gold at the supply store&apos;s exchange window, at{" "}
-            {exchange.rate} Gold each. Every farm can send out the same{" "}
-            {exchange.ceiling.toLocaleString()} Gold a day — owning more reaches that sooner, it
-            never gets more than that. Whatever you do not exchange keeps until tomorrow.
+            Bringing several fields in <em>together</em> can earn a <strong>Bountiful Harvest</strong>.
+            Three or more of the same kind is <strong>Mono-cropping</strong>; a balanced mix of
+            things grown and things an animal made is <strong>Crop Rotation</strong>. Either
+            multiplies what the whole harvest pays, so the Harvest key is worth more than tapping
+            each field on its own.
+          </p>
+          <p>
+            Every farm can send out the same {exchange.ceiling.toLocaleString()} Gold a day, whatever
+            it owns — owning more reaches that sooner, it never gets more than that. Anything still
+            standing keeps until tomorrow.
           </p>
           <ul>
-            <li>Seed a crop or stock a pen with Bushels, then come back when it turns gold.</li>
-            <li>Crops look after themselves. Animals need feeding, and stop working when hungry.</li>
+            <li>Seed a crop or stock a pen with Gold, then come back when it turns gold.</li>
+            <li>
+              Animals need feeding and crops need watering. A hungry pen and a dry field both stop
+              where they are until you tend them — a faded plant is one waiting for a drink.
+            </li>
             <li>Nothing here can die and nothing can be lost. Neglect costs you time, not produce.</li>
             <li>
               Each kind of animal or crop can have three going at once, more if you spend Gold to
               expand it — one kind&apos;s room has nothing to do with any other&apos;s.
             </li>
             <li>
-              Something finished sometimes comes up weather-worn and needs clearing, in Bushels,
+              Something finished sometimes comes up weather-worn and needs clearing, in Gold,
               before it frees its room again.
+            </li>
+            <li>
+              Land you have cleared costs a daily maintenance fee that grows steeply the more room
+              you keep, and the first three plots are free. It comes out of what you harvest and
+              never out of your balance, so a big day can be worth nothing after the fee — but
+              nothing you own is ever taken away.
             </li>
             <li>
               Buying outright with Gold is permanent: it starts its next run the moment you collect,
@@ -1249,6 +1468,20 @@ export function StackAcresFarm() {
             </li>
           </ul>
         </HowToPlayModal>
+      )}
+
+      {clearing && (
+        <StackAcresSectorModal
+          sector={clearing}
+          unlocked={sectors}
+          unitCount={units.length}
+          goldBalance={profile?.goldBalance ?? null}
+          unlimitedGold={profile?.unlimitedGold === true}
+          upkeepOutstanding={upkeep.due}
+          busy={busy}
+          onClear={onClearSector}
+          onClose={() => { panelSound(); setClearing(null); }}
+        />
       )}
 
       {showWelcome && <StackAcresRayWelcome onClose={dismissWelcome} />}

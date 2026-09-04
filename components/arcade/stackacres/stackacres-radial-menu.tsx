@@ -20,7 +20,7 @@ import { StackAcresIcon } from "./stackacres-icon";
  * capacity with Gold and the deep management behind it stay in the sidebar
  * on purpose: they are decisions you make about the farm, not about the
  * patch of mud under your thumb, and a Gold spend should never be one
- * mis-aimed tap away from a Bushel one.
+ * mis-aimed tap away from one that spends Gold.
  *
  * Real DOM buttons, not canvas hit boxes. The Escape key closes it and the
  * first option takes focus when it opens, so a keyboard reaches it -- though
@@ -152,7 +152,7 @@ export function StackAcresRadialMenu({
                   `${option.owned}/${option.cap} full`
                 ) : (
                   <>
-                    <StackAcresIcon name="ico-bushels" size={12} />
+                    <StackAcresIcon name="ico-gold" size={12} />
                     {def.seedCost.toLocaleString()}
                   </>
                 )}

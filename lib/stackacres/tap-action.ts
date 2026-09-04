@@ -28,6 +28,7 @@ import type { StackAcresUnitSnapshot } from "./units";
 export type StackAcresTapAction =
   | { kind: "collect"; unitId: string }
   | { kind: "feed"; unitId: string }
+  | { kind: "water"; unitId: string }
   | { kind: "clear"; unitId: string }
   /** Nothing to send, and the line of text to float where the finger landed. */
   | { kind: "refused"; reason: string };
@@ -55,9 +56,9 @@ export function timeLeftLabel(readyAtIso: string, nowMs: number): string {
  */
 export function tapActionFor(
   unit: StackAcresUnitSnapshot,
-  context: { feed: number; bushels: number; nowMs: number },
+  context: { feed: number; gold: number; nowMs: number },
 ): StackAcresTapAction {
-  const action = unitRowAction(unit, { feed: context.feed, bushels: context.bushels });
+  const action = unitRowAction(unit, { feed: context.feed, gold: context.gold });
   switch (action.kind) {
     case "collect":
       return { kind: "collect", unitId: unit.id };
@@ -65,6 +66,10 @@ export function tapActionFor(
       return action.disabled
         ? { kind: "refused", reason: action.reason ?? "Not now." }
         : { kind: "feed", unitId: unit.id };
+    // Never refused: watering spends nothing, so there is no "you are out of"
+    // branch for it the way there is for feed.
+    case "water":
+      return { kind: "water", unitId: unit.id };
     case "clear":
       return action.disabled
         ? { kind: "refused", reason: action.reason ?? "Not now." }

@@ -1,6 +1,8 @@
 "use client";
 
 import clsx from "clsx";
+import { Lock } from "lucide-react";
+import { isSectorUnlocked, type SectorId } from "@/lib/stackacres/sectors";
 import { zonesByDistance, type ZoneId } from "@/lib/stackacres/zones";
 
 /**
@@ -48,46 +50,66 @@ export interface StackAcresDestinationsProps {
    *  on its own -- panning away is not arriving anywhere. */
   active: ZoneId | null;
   onTravel: (zone: ZoneId) => void;
+  /**
+   * Land the player may work. A district not in here is still listed and
+   * still travelled to -- the signpost's job is to say a place exists, and
+   * hiding one until it is bought would mean nobody knows there is anything
+   * to buy. It just wears a lock, and arriving makes the offer.
+   */
+  unlocked: readonly SectorId[];
   /** Opens the supply store. Ray's own entry, not a travel target. */
   onOpenStore: () => void;
   /** Produce sitting in the barn, unsold -- shown as a badge on Ray's entry
    *  the same way it used to sit on the header's own Store button. */
+  /** How many fields and pens are ready to bring in. */
   carrying: number;
 }
 
 export function StackAcresDestinations({
   active,
   onTravel,
+  unlocked,
   onOpenStore,
   carrying,
 }: StackAcresDestinationsProps) {
   return (
     <nav className="sa-destinations" aria-label="Places">
-      {zonesByDistance().map((zone) => (
-        <button
-          key={zone.id}
-          type="button"
-          className={clsx("sa-dest", `sa-dest-${zone.id}`, { "is-there": active === zone.id })}
-          // The blurb is the honest description of the place and belongs to
-          // the button, not to a tooltip a thumb can never open.
-          title={zone.blurb}
-          aria-label={`${zone.label}, ${HEADING[zone.id]} — ${zone.blurb}`}
-          onClick={() => onTravel(zone.id)}
-        >
-          <span className="sa-dest-swatch" aria-hidden="true" />
-          <span className="sa-dest-text">
-            <span className="sa-dest-name">{zone.label.replace(/^The /, "")}</span>
-            <span className="sa-dest-way" aria-hidden="true">
-              {HEADING[zone.id]}
+      {zonesByDistance().map((zone) => {
+        const open = isSectorUnlocked(zone.id, unlocked);
+        return (
+          <button
+            key={zone.id}
+            type="button"
+            className={clsx("sa-dest", `sa-dest-${zone.id}`, {
+              "is-there": active === zone.id,
+              "is-wild": !open,
+            })}
+            // The blurb is the honest description of the place and belongs to
+            // the button, not to a tooltip a thumb can never open.
+            title={open ? zone.blurb : `${zone.blurb} Not cleared yet.`}
+            aria-label={`${zone.label}, ${HEADING[zone.id]} — ${zone.blurb}${open ? "" : " Not cleared yet."}`}
+            onClick={() => onTravel(zone.id)}
+          >
+            <span className="sa-dest-swatch" aria-hidden="true" />
+            <span className="sa-dest-text">
+              <span className="sa-dest-name">{zone.label.replace(/^The /, "")}</span>
+              <span className="sa-dest-way" aria-hidden="true">
+                {open ? HEADING[zone.id] : "uncleared"}
+              </span>
             </span>
-          </span>
-        </button>
-      ))}
+            {!open && (
+              <span className="sa-dest-lock" aria-hidden="true">
+                <Lock size={12} />
+              </span>
+            )}
+          </button>
+        );
+      })}
       <button
         type="button"
         className="sa-dest sa-dest-ray"
-        title="Sell produce, buy feed, and exchange Bushels for Gold."
-        aria-label="Buy from Ray — sell produce, buy feed, and exchange Bushels for Gold."
+        title="Buy feed, and see what is left of the daily allowance."
+        aria-label="Buy from Ray — buy feed, and see what is left of the daily allowance."
         onClick={onOpenStore}
       >
         <img

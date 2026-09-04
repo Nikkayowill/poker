@@ -42,10 +42,10 @@ describe("a fresh registry", () => {
 });
 
 describe("the discovery bonus", () => {
-  it("is half of what the harvest sold for at today's price, rounded", () => {
+  it("is half of what the harvest is worth in Gold, rounded", () => {
     for (const item of STACKACRES_ITEMS) {
-      const price = STACKACRES_ITEM_CATALOGUE[item].price;
-      expect(museumDiscoveryBonus(item, 4)).toBe(Math.round(price * 4 * 0.5));
+      const goldValue = STACKACRES_ITEM_CATALOGUE[item].goldValue;
+      expect(museumDiscoveryBonus(item, 4)).toBe(Math.round(goldValue * 4 * 0.5));
     }
   });
 

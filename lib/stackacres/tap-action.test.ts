@@ -20,6 +20,8 @@ function unit(
     readyAt: new Date(NOW + 15 * 60_000).toISOString(),
     progress: state === "mucked" ? null : 0.5,
     hungryAt: null,
+    thirstyAt: null,
+    isWatered: true,
     muckFee: state === "mucked" ? 22 : null,
     permanent: false,
     ...overrides,
@@ -27,15 +29,21 @@ function unit(
 }
 
 describe("tapActionFor", () => {
+  it("waters a dry crop, with no barn stock to check first", () => {
+    expect(
+      tapActionFor(unit("dry", { stock: "sprout" }), { feed: 0, gold: 0, nowMs: NOW }),
+    ).toEqual({ kind: "water", unitId: "u1" });
+  });
+
   it("collects a ready unit", () => {
-    expect(tapActionFor(unit("ready"), { feed: 0, bushels: 0, nowMs: NOW })).toEqual({
+    expect(tapActionFor(unit("ready"), { feed: 0, gold: 0, nowMs: NOW })).toEqual({
       kind: "collect",
       unitId: "u1",
     });
   });
 
   it("feeds a hungry unit when there is feed in the barn", () => {
-    expect(tapActionFor(unit("hungry"), { feed: 2, bushels: 0, nowMs: NOW })).toEqual({
+    expect(tapActionFor(unit("hungry"), { feed: 2, gold: 0, nowMs: NOW })).toEqual({
       kind: "feed",
       unitId: "u1",
     });
@@ -45,26 +53,26 @@ describe("tapActionFor", () => {
   // canvas to put a disabled button with a title attribute, so the reason has
   // to travel with the answer.
   it("refuses to feed with an empty barn, and says why", () => {
-    const action = tapActionFor(unit("hungry"), { feed: 0, bushels: 0, nowMs: NOW });
+    const action = tapActionFor(unit("hungry"), { feed: 0, gold: 0, nowMs: NOW });
     expect(action.kind).toBe("refused");
     expect(action.kind === "refused" && action.reason).toMatch(/feed/i);
   });
 
   it("clears a mucked unit when the fee is affordable", () => {
-    expect(tapActionFor(unit("mucked"), { feed: 0, bushels: 100, nowMs: NOW })).toEqual({
+    expect(tapActionFor(unit("mucked"), { feed: 0, gold: 100, nowMs: NOW })).toEqual({
       kind: "clear",
       unitId: "u1",
     });
   });
 
   it("refuses to clear when the fee is not affordable", () => {
-    const action = tapActionFor(unit("mucked"), { feed: 0, bushels: 5, nowMs: NOW });
+    const action = tapActionFor(unit("mucked"), { feed: 0, gold: 5, nowMs: NOW });
     expect(action.kind).toBe("refused");
     expect(action.kind === "refused" && action.reason).toContain("22");
   });
 
   it("answers a working unit with its countdown rather than nothing", () => {
-    const action = tapActionFor(unit("working"), { feed: 9, bushels: 9_999, nowMs: NOW });
+    const action = tapActionFor(unit("working"), { feed: 9, gold: 9_999, nowMs: NOW });
     expect(action).toEqual({ kind: "refused", reason: "Ready in 15m" });
   });
 
@@ -73,7 +81,7 @@ describe("tapActionFor", () => {
   it("never retires from a tap, even on a permanent unit", () => {
     const action = tapActionFor(unit("working", { permanent: true }), {
       feed: 9,
-      bushels: 9_999,
+      gold: 9_999,
       nowMs: NOW,
     });
     expect(action.kind).toBe("refused");

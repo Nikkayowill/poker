@@ -6,6 +6,7 @@ import {
   StackAcresRequestError,
   buyStackAcresFeed,
   buyStackAcresStock,
+  clearStackAcresSector,
   clearStackAcresUnit,
   collectStackAcres,
   exchangeStackAcresBushels,
@@ -25,8 +26,12 @@ import {
   adjustStackAcresInventory,
   createStackAcresUnit,
   getStackAcresUnit,
+  raiseStackAcresUpkeep,
   readStackAcresFeed,
   readStackAcresInventory,
+  readStackAcresSectors,
+  readStackAcresUpkeep,
+  recordStackAcresSectorCleared,
 } from "./stackacres-store";
 import { adjustGold, ensureProfile } from "./profile-store";
 import {
@@ -42,7 +47,16 @@ import {
   STACKACRES_GOLD_CEILING,
   STACKACRES_MAX_EXCHANGE_BUSHELS,
   goldForBushels,
+  stackacresExchangeDay,
 } from "@/lib/stackacres/exchange";
+import {
+  HOME_SECTOR,
+  SECTOR_LADDER,
+  STACKACRES_SECTORS,
+  landUpkeepDue,
+  unlockedPlotCount,
+  type SectorId,
+} from "@/lib/stackacres/sectors";
 import {
   BUSHELS,
   STACKACRES_ITEM_CATALOGUE,
@@ -95,15 +109,40 @@ const HEN_READY = new Date(T0.getTime() + HEN.durationMs);
 const HEN_YIELD = STACKACRES_YIELDS.hen;
 
 /**
+ * The most plots the game can ever bill for: every stock kind, every capacity
+ * slot bought. `settled` below pre-pays against this rather than against the
+ * farm's plots as they stand, so nothing a test buys mid-way can push the
+ * day's bill above what was already paid and land a charge in the middle of
+ * an assertion about seed costs.
+ */
+const MAX_PLOTS = STACKACRES_STOCK.length * (STACKACRES_BASE_CAP + STACKACRES_MAX_EXTRA_CAP);
+
+/**
  * A profile with Gold for capacity/stock and Bushels for everything else.
  * The read is what triggers the one-time starting grant, so it happens
  * before the top-up.
+ *
+ * EVERY SECTOR IS CLEARED AND THE DAY'S LAND FEE IS PRE-PAID by default, and
+ * that is a deliberate seam rather than a shortcut. Almost every test in this
+ * file is about stock, money ordering or the settlement guards, and none of
+ * them are about land -- so the land is handed over so those tests keep
+ * asserting exactly the Bushel arithmetic they were written to assert. The
+ * land rules have their own describe block at the bottom, which passes
+ * `{ land: [] }` and starts where a real new farm starts.
  */
-async function funded(gold = 500_000, bushels = 100_000) {
+async function funded(
+  gold = 500_000,
+  bushels = 100_000,
+  { land = [...SECTOR_LADDER], settled = true }: { land?: SectorId[]; settled?: boolean } = {},
+) {
   const token = randomUUID();
   const profile = await ensureProfile(token);
   const delta = gold - profile.goldBalance;
   if (delta !== 0) await adjustGold(profile.id, delta);
+  for (const sector of land) await recordStackAcresSectorCleared(profile.id, sector, T0);
+  if (settled) {
+    await raiseStackAcresUpkeep(profile.id, stackacresExchangeDay(T0), landUpkeepDue(MAX_PLOTS));
+  }
   await readStackAcres(token, T0);
   const held = await readStackAcresInventory(profile.id);
   await adjustStackAcresInventory(profile.id, BUSHELS, bushels - (held[BUSHELS] ?? 0));
@@ -962,17 +1001,22 @@ describe("the currency wall", () => {
   const calls = (source: string, fn: string) => source.split(`${fn}(`).length - 1;
 
   it("moves Gold in exactly the places we know about", async () => {
-    // spendGoldByProfile: expanding capacity, and stock bought outright. Two
-    // SINKS. creditGoldByProfile: the capacity refund, the one refund path in
-    // buyStackAcresStock, and the exchange payout -- so two refunds and one
-    // payout, and a refund can never hand back more than was just taken.
+    // spendGoldByProfile: expanding capacity, stock bought outright, and
+    // clearing a sector's wild ground. Three SINKS. creditGoldByProfile: the
+    // capacity refund, the one refund path in buyStackAcresStock, the two in
+    // clearStackAcresSector (a throwing write, and losing the race for land
+    // another tab just took), and the exchange payout -- so four refunds and
+    // one payout, and a refund can never hand back more than was just taken.
     //
     // A new call site of either is a new Gold path. Go and look at it rather
     // than editing these numbers, and ask the only question that matters:
     // which DIRECTION does it move Gold? A new spend is a sink. A new credit
     // that is not a refund is a faucet, and that is the change to stop over.
-    expect(calls(SERVICE, "spendGoldByProfile")).toBe(2);
-    expect(calls(SERVICE, "creditGoldByProfile")).toBe(3);
+    //
+    // 2 -> 3 and 3 -> 5 on 2026-09-04, when clearing land arrived. Both are
+    // sinks and refunds of sinks; nothing new pays a player anything.
+    expect(calls(SERVICE, "spendGoldByProfile")).toBe(3);
+    expect(calls(SERVICE, "creditGoldByProfile")).toBe(5);
   });
 
   it("exposes exactly one action that pays Gold out", () => {
@@ -984,6 +1028,7 @@ describe("the currency wall", () => {
       "buy-feed",
       "buy-stock",
       "clear",
+      "clear-sector",
       "collect",
       "exchange",
       "expand-capacity",
@@ -996,10 +1041,11 @@ describe("the currency wall", () => {
 
     // The claim that actually matters, held separately from the list so it
     // cannot be lost in a rename: `exchange` is the only action that pays a
-    // player Gold. `expand-capacity` and `buy-stock` spend it; everything
-    // else moves Bushels or produce, neither of which leaves the farm.
+    // player Gold. `expand-capacity`, `buy-stock` and `clear-sector` spend
+    // it; everything else moves Bushels or produce, neither of which leaves
+    // the farm.
     const paysGold = ["exchange"];
-    const spendsGold = ["expand-capacity", "buy-stock"];
+    const spendsGold = ["expand-capacity", "buy-stock", "clear-sector"];
     for (const action of actions) {
       if (paysGold.includes(action) || spendsGold.includes(action)) continue;
       expect(SERVICE.includes(`"${action}"`)).toBe(false);
@@ -1243,5 +1289,306 @@ describe("retiring bought stock", () => {
     await expect(retireStackAcresStock(token, randomUUID(), T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
+  });
+});
+
+/**
+ * Land: three of the four districts start under wild growth.
+ *
+ * Everything above this point hands the land over in `funded` so it can get
+ * on with testing stock. These start where a real new farm starts -- home
+ * only -- and are the ones that hold the land rules themselves.
+ */
+describe("clearing land", () => {
+  /** A new farm: nothing cleared, nothing pre-paid, plenty of Gold. */
+  async function greenfield(gold = 500_000, bushelBalance = 100_000) {
+    return funded(gold, bushelBalance, { land: [], settled: false });
+  }
+
+  const FIRST = SECTOR_LADDER[0];
+  const SECOND = SECTOR_LADDER[1];
+
+  it("opens a new farm with home only", async () => {
+    const { token } = await greenfield();
+    const view = await readStackAcres(token, T0);
+    expect(view.sectors).toEqual([HOME_SECTOR]);
+  });
+
+  it("refuses to stock a kind whose land is still wild", async () => {
+    const { token, id } = await greenfield();
+    const before = await bushels(id);
+
+    await expect(stockStackAcres(token, { stock: "sprout" }, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    // Rule 1 in reverse: nothing was created, so nothing was paid for.
+    expect(await bushels(id)).toBe(before);
+    expect((await readStackAcres(token, T0)).units).toEqual([]);
+  });
+
+  it("refuses to buy that kind outright either, and takes no Gold for it", async () => {
+    const { token } = await greenfield();
+    const before = await balance(token);
+
+    await expect(buyStackAcresStock(token, { stock: "cattle" }, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("refuses to expand capacity on land nobody has cleared", async () => {
+    const { token } = await greenfield();
+    const before = await balance(token);
+
+    await expect(expandStackAcresCapacity(token, "cattle", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("still lets a new farm work the Farmstead it starts with", async () => {
+    const { token } = await greenfield();
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    expect(unitOf(view, "hen").state).toBe("working");
+  });
+
+  it("holds the first rung shut until enough stock is going", async () => {
+    const { token } = await greenfield();
+    const before = await balance(token);
+
+    await expect(clearStackAcresSector(token, FIRST, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("sells the first rung once its requirements are met, and takes the Gold", async () => {
+    const { token, id } = await greenfield();
+    for (let i = 0; i < STACKACRES_SECTORS[FIRST].requiresUnits; i += 1) {
+      await stockStackAcres(token, { stock: "hen" }, T0);
+    }
+    const before = await balance(token);
+
+    const view = await clearStackAcresSector(token, FIRST, T0);
+
+    expect(view.sectors).toContain(FIRST);
+    expect(await balance(token)).toBe(before - STACKACRES_SECTORS[FIRST].clearCost);
+    expect(await readStackAcresSectors(id)).toEqual([FIRST]);
+  });
+
+  it("lets the land it just sold be stocked", async () => {
+    const { token } = await greenfield();
+    for (let i = 0; i < STACKACRES_SECTORS[FIRST].requiresUnits; i += 1) {
+      await stockStackAcres(token, { stock: "hen" }, T0);
+    }
+    await clearStackAcresSector(token, FIRST, T0);
+
+    const view = await stockStackAcres(token, { stock: "sprout" }, T0);
+    expect(unitOf(view, "sprout").state).toBe("working");
+  });
+
+  it("holds a later rung shut until the one before it is cleared", async () => {
+    // Requirements met on units, Gold in hand, and still refused: the ladder
+    // is the thing being tested, not the price.
+    const { token } = await greenfield();
+    for (let i = 0; i < STACKACRES_BASE_CAP; i += 1) {
+      await stockStackAcres(token, { stock: "hen" }, T0);
+    }
+    await clearStackAcresSector(token, FIRST, T0);
+    while (
+      (await readStackAcres(token, T0)).units.length < STACKACRES_SECTORS[SECOND].requiresUnits
+    ) {
+      await stockStackAcres(token, { stock: "sprout" }, T0);
+    }
+
+    const third = SECTOR_LADDER[2];
+    const before = await balance(token);
+    await expect(clearStackAcresSector(token, third, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+
+    // The rung that IS next goes through.
+    await clearStackAcresSector(token, SECOND, T0);
+    expect((await readStackAcres(token, T0)).sectors).toContain(SECOND);
+  });
+
+  it("charges for the same land once, and refunds the tab that lost the race", async () => {
+    const { token } = await greenfield();
+    for (let i = 0; i < STACKACRES_SECTORS[FIRST].requiresUnits; i += 1) {
+      await stockStackAcres(token, { stock: "hen" }, T0);
+    }
+    const before = await balance(token);
+
+    await clearStackAcresSector(token, FIRST, T0);
+    await expect(clearStackAcresSector(token, FIRST, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+
+    expect(await balance(token)).toBe(before - STACKACRES_SECTORS[FIRST].clearCost);
+  });
+
+  it("refuses land nobody can afford, and creates nothing", async () => {
+    const { token, id } = await greenfield(0);
+    for (let i = 0; i < STACKACRES_SECTORS[FIRST].requiresUnits; i += 1) {
+      await stockStackAcres(token, { stock: "hen" }, T0);
+    }
+
+    await expect(clearStackAcresSector(token, FIRST, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await readStackAcresSectors(id)).toEqual([]);
+  });
+
+  it("refuses a district that does not exist", async () => {
+    const { token } = await greenfield();
+    await expect(clearStackAcresSector(token, "the-moon", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+  });
+
+  it("carries a farm that already keeps stock on land the gate never existed for", async () => {
+    // The live-farm clause. A player who bought cattle before land was gated
+    // must not wake up locked out of Ox Fields, and this holds it without any
+    // backfill having had to get it right.
+    const { token, id } = await greenfield();
+    await createStackAcresUnit(id, {
+      stock: "cattle",
+      stake: CATTLE.seedCost,
+      yieldQuantity: STACKACRES_YIELDS.cattle.quantity,
+      startedAt: T0,
+      readyAt: new Date(T0.getTime() + CATTLE.durationMs),
+      lastFedAt: T0,
+      lastWateredAt: null,
+      permanent: false,
+    });
+
+    const view = await readStackAcres(token, T0);
+    expect(view.sectors).toContain("oxfields");
+    // And it is genuinely usable, not just listed.
+    await expect(stockStackAcres(token, { stock: "cattle" }, T0)).resolves.toBeTruthy();
+  });
+});
+
+describe("land maintenance", () => {
+  const DAY = stackacresExchangeDay(T0);
+
+  /** A farm with every sector cleared but nothing paid toward today. */
+  async function unpaid(bushelBalance = 100_000) {
+    return funded(500_000, bushelBalance, { settled: false });
+  }
+
+  it("charges a brand-new farm nothing at all", async () => {
+    const { token, id } = await funded(500_000, 1_000, { land: [], settled: false });
+    const before = await bushels(id);
+
+    await stockStackAcres(token, { stock: "hen" }, T0);
+
+    // The Farmstead's own three Hen Coop slots are exactly the free base, so
+    // the only Bushels that moved were the seed's.
+    expect(await bushels(id)).toBe(before - HEN.seedCost);
+    expect(await readStackAcresUpkeep(id, DAY)).toBe(0);
+    expect((await readStackAcres(token, T0)).upkeep.due).toBe(0);
+  });
+
+  it("takes the day's fee off the first action that touches the land", async () => {
+    const { token, id } = await unpaid();
+    const view = await readStackAcres(token, T0);
+    const due = view.upkeep.due;
+    expect(due).toBeGreaterThan(0);
+    expect(view.upkeep.settled).toBe(false);
+    const before = await bushels(id);
+
+    await stockStackAcres(token, { stock: "hen" }, T0);
+
+    expect(await bushels(id)).toBe(before - due - HEN.seedCost);
+    expect(await readStackAcresUpkeep(id, DAY)).toBe(due);
+  });
+
+  it("takes it once a day, however many times the player acts", async () => {
+    const { token, id } = await unpaid();
+    const due = (await readStackAcres(token, T0)).upkeep.due;
+    const before = await bushels(id);
+
+    await stockStackAcres(token, { stock: "hen" }, T0);
+    await stockStackAcres(token, { stock: "hen" }, T0);
+    await stockStackAcres(token, { stock: "hen" }, T0);
+
+    expect(await bushels(id)).toBe(before - due - HEN.seedCost * 3);
+  });
+
+  it("charges only the RISE when the farm grows mid-day", async () => {
+    // The trap `raiseStackAcresUpkeep` exists for: buying a slot at noon
+    // raises the bill, and settling it must cost the difference rather than
+    // the whole new bill on top of the old one.
+    const { token, id } = await unpaid();
+    await stockStackAcres(token, { stock: "hen" }, T0);
+    const paidSoFar = await readStackAcresUpkeep(id, DAY);
+
+    await expandStackAcresCapacity(token, "hen", T0);
+    const before = await bushels(id);
+    await stockStackAcres(token, { stock: "hen" }, T0);
+
+    const raised = await readStackAcresUpkeep(id, DAY);
+    expect(raised).toBeGreaterThan(paidSoFar);
+    expect(await bushels(id)).toBe(before - (raised - paidSoFar) - HEN.seedCost);
+  });
+
+  it("charges again the next day", async () => {
+    const { token, id } = await unpaid();
+    await stockStackAcres(token, { stock: "hen" }, T0);
+    const due = await readStackAcresUpkeep(id, DAY);
+
+    const tomorrow = new Date(T0.getTime() + 24 * 60 * 60 * 1000);
+    const before = await bushels(id);
+    await stockStackAcres(token, { stock: "hen" }, tomorrow);
+
+    expect(await readStackAcresUpkeep(id, stackacresExchangeDay(tomorrow))).toBe(due);
+    expect(await bushels(id)).toBe(before - due - HEN.seedCost);
+  });
+
+  it("blocks a farm in arrears from taking on more land", async () => {
+    const { token } = await unpaid(0);
+    await expect(stockStackAcres(token, { stock: "hen" }, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    await expect(expandStackAcresCapacity(token, "hen", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+  });
+
+  it("never blocks harvesting, which is how the arrears get paid", async () => {
+    // The debt-trap guard. A farm that cannot pay must still be able to
+    // collect what it already grew and sell it.
+    const { token, id } = await funded(500_000, 100_000, { settled: false });
+    await raiseStackAcresUpkeep(id, DAY, landUpkeepDue(MAX_PLOTS));
+    const sown = await stockStackAcres(token, { stock: "hen" }, T0);
+    const unitId = unitOf(sown, "hen").id;
+    // Now empty the barn, so the next day's bill cannot be paid.
+    await adjustStackAcresInventory(id, BUSHELS, -(await bushels(id)));
+
+    const view = await collectStackAcres(token, unitId, HEN_READY);
+    expect(view.collected.quantity).toBe(HEN_YIELD.quantity);
+    expect(await held(id, HEN_YIELD.item)).toBe(HEN_YIELD.quantity);
+  });
+
+  it("charges nothing it cannot afford, leaving the day part-paid", async () => {
+    const { token, id } = await unpaid(0);
+    await expect(stockStackAcres(token, { stock: "hen" }, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await bushels(id)).toBe(0);
+    expect(await readStackAcresUpkeep(id, DAY)).toBe(0);
+  });
+
+  it("bills only for land that has actually been cleared", async () => {
+    const home = await funded(500_000, 100_000, { land: [], settled: false });
+    const whole = await unpaid();
+    const homeDue = (await readStackAcres(home.token, T0)).upkeep;
+    const wholeDue = (await readStackAcres(whole.token, T0)).upkeep;
+
+    expect(homeDue.plots).toBeLessThan(wholeDue.plots);
+    expect(homeDue.due).toBeLessThan(wholeDue.due);
+    expect(wholeDue.plots).toBe(unlockedPlotCount([HOME_SECTOR, ...SECTOR_LADDER], {}));
   });
 });

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { Coins, HelpCircle, LocateFixed, ZoomIn, ZoomOut } from "lucide-react";
+import { Coins, HelpCircle, LocateFixed, X, ZoomIn, ZoomOut } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
@@ -206,6 +206,10 @@ export function StackAcresFarm() {
    * second "which plot is selected" any more.
    */
   const [place, setPlace] = useState<ZoneId>("farmstead");
+  // The district panel used to sit open over the map at all times; Kayo
+  // didn't ask for a permanent right-edge sidebar, so it now opens only when
+  // a player actually travels somewhere and stays open until they close it.
+  const [panelOpen, setPanelOpen] = useState(false);
   // Which unit is mid-"are you sure" for retiring. Never a plain confirm():
   // retiring refunds nothing, so it has to be two deliberate taps.
   const [retiringUnitId, setRetiringUnitId] = useState<string | null>(null);
@@ -412,6 +416,7 @@ export function StackAcresFarm() {
   const travel = useCallback((zone: ZoneId) => {
     tapSound();
     setPlace(zone);
+    setPanelOpen(true);
     world.current?.focusZone(zone);
   }, []);
 
@@ -567,7 +572,7 @@ export function StackAcresFarm() {
             <button type="button" className="sa-camera-btn" aria-label="Zoom out" onClick={() => world.current?.zoomBy(1 / 1.3)}>
               <ZoomOut size={16} aria-hidden="true" />
             </button>
-            <button type="button" className="sa-camera-btn" aria-label="Back to the farm" onClick={() => { setPlace("farmstead"); world.current?.recenter(); }}>
+            <button type="button" className="sa-camera-btn" aria-label="Back to the farm" onClick={() => { setPlace("farmstead"); setPanelOpen(true); world.current?.recenter(); }}>
               <LocateFixed size={16} aria-hidden="true" />
             </button>
           </div>
@@ -580,12 +585,28 @@ export function StackAcresFarm() {
             {error && <p className="duel-error" role="alert">{error}</p>}
           </div>
 
-          {/* The district sidebar: no plot to select any more, travelling
-              here (the signpost above) IS the selection. */}
-          <aside className="sa-district-panel" aria-label={`${district.label} panel`}>
-            <div className="sa-ray-row">
-              <img src="/stackacres/sprites/grandfather-ray-portrait.png" alt="" className="sa-ray-portrait" />
-              <span className="sa-ray-name">Grandfather Ray</span>
+          {/* The district panel: no plot to select any more, travelling here
+              (the signpost above) IS the selection. It only slides out once
+              a player has actually travelled somewhere, and stays shut
+              otherwise until the close button below dismisses it. */}
+          <aside
+            className={clsx("sa-district-panel", { "is-open": panelOpen })}
+            aria-label={`${district.label} panel`}
+            inert={!panelOpen}
+          >
+            <div className="sa-panel-head">
+              <div className="sa-ray-row">
+                <img src="/stackacres/sprites/grandfather-ray-portrait.png" alt="" className="sa-ray-portrait" />
+                <span className="sa-ray-name">Grandfather Ray</span>
+              </div>
+              <button
+                type="button"
+                className="sa-panel-close"
+                aria-label="Close panel"
+                onClick={() => setPanelOpen(false)}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
             </div>
             <h2 className="sa-district-title">{district.label}</h2>
             <p className="sa-district-blurb">{district.blurb}</p>
@@ -792,9 +813,9 @@ export function StackAcresFarm() {
         <HowToPlayModal title="StackAcres" onClose={() => setShowHelp(false)}>
           <p>
             The farm is a map of four districts. Drag to look around, pinch or scroll to zoom, or
-            tap a district&apos;s name to travel straight to it. Wherever you are, the panel beside
-            the map shows what you own there and what you can buy — there is nothing to tap on the
-            map itself except the scythe.
+            tap a district&apos;s name to travel straight to it — that also opens a panel showing
+            what you own there and what you can buy. Close it or re-tap the district to bring it
+            back; there is nothing to tap on the map itself except the scythe.
           </p>
           <p>
             The farm runs on <strong>Bushels</strong>, its own currency. Collecting from a ready

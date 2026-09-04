@@ -499,13 +499,19 @@
 
 .sa-side > * { pointer-events: auto; }
 
-/* The district sidebar: no plot to select any more, travelling to a
-   district (the signpost) IS the selection, so this is a fixed dock rather
-   than something that tracks a canvas position the way .sa-detail used to.
+/* The district panel: no plot to select any more, travelling to a district
+   (the signpost) IS the selection, so this is a fixed dock rather than
+   something that tracks a canvas position the way .sa-detail used to.
    Docked to the same right edge the toolbelt and zoom buttons already
    anchor to, below the toolbelt's own column, and independently scrollable
    -- a district with several units plus its buy section can outgrow a
-   390px-tall phone. */
+   390px-tall phone.
+
+   It does NOT sit open over the map at all times -- it's parked off the
+   right edge until `.is-open` (a real travel, not just camera panning)
+   slides it in, and slides back out on close. `visibility` (not just the
+   transform) keeps it out of the tab order and off-screen readers while
+   shut, on top of the `inert` the component already sets. */
 .sa-district-panel {
   position: absolute;
   /* Clears .sa-controls' own toolbelt above it (two 46px-min-height tools,
@@ -522,7 +528,39 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   pointer-events: auto;
+  transform: translateX(calc(100% + 16px));
+  visibility: hidden;
+  transition: transform 200ms ease, visibility 200ms;
 }
+
+.sa-district-panel.is-open {
+  transform: translateX(0);
+  visibility: visible;
+}
+
+.sa-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sa-panel-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-surface);
+  color: var(--neon-chalk);
+  cursor: pointer;
+  flex: none;
+}
+
+.sa-panel-close:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
 
 .sa-district-title {
   margin: 0 0 2px;

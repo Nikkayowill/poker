@@ -12,8 +12,10 @@ import {
 } from "@/lib/stackacres/catalogue";
 import {
   hungryAtFor,
+  isStackAcresUnitDry,
   isStackAcresUnitHungry,
   isStackAcresUnitReady,
+  thirstyAtFor,
   toStackAcresUnitSnapshots,
   type StackAcresUnitSnapshot,
 } from "@/lib/stackacres/units";
@@ -56,6 +58,7 @@ import {
   recordStackAcresHarvest,
   reserveStackAcresExchange,
   retireStackAcresUnit,
+  waterStackAcresUnit,
   type StoredStackAcresUnit,
 } from "./stackacres-store";
 import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
@@ -290,6 +293,8 @@ export async function buyStackAcresStock(
       startedAt: now,
       readyAt: new Date(now.getTime() + def.durationMs),
       lastFedAt: def.hungerMs === null ? null : now,
+      // Sowing waters the ground; an animal never runs dry.
+      lastWateredAt: def.thirstMs === null ? null : now,
       permanent: true,
     });
   } catch (error) {
@@ -355,6 +360,8 @@ export async function stockStackAcres(
       readyAt: new Date(now.getTime() + def.durationMs),
       // An animal counts as fed the moment it arrives; a crop never eats.
       lastFedAt: def.hungerMs === null ? null : now,
+      // And a crop goes into watered ground; an animal has no soil to dry out.
+      lastWateredAt: def.thirstMs === null ? null : now,
       permanent: false,
     });
   } catch (error) {
@@ -635,6 +642,72 @@ export async function feedStackAcres(
   }
   if (!fed) {
     await adjustStackAcresFeed(profile.id, 1).catch(() => null);
+    throw new StackAcresRequestError("That moved on.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return view(profile, now);
+}
+
+/**
+ * Waters a dry crop, spending nothing.
+ *
+ * The mirror of `feedStackAcres` on the crop track, and the same guarantee:
+ * ready_at moves forward by however long the soil stood dry, so neglected
+ * time is never credited as work, and the yield is untouched.
+ *
+ * It is deliberately FREE. Every money-ordering rule at the top of this file
+ * is about a debit and the thing it pays for, and watering has neither -- it
+ * costs attention, which is the resource this loop is actually asking for.
+ * That is why there is no spend to reverse when the guarded write loses its
+ * race: a lost race here is just a 409, not a refund.
+ *
+ * Watering a crop that is not dry is refused rather than treated as a
+ * top-up. Allowing it would let a player push ready_at forward by zero all
+ * day, which does nothing, and reset the thirst clock for free, which is the
+ * whole tending loop -- so a drink only counts once the ground actually
+ * needs it.
+ */
+export async function waterStackAcres(
+  token: string,
+  unitIdInput: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const unitId = parseUnitId(unitIdInput);
+  const profile = await ensureProfile(token);
+
+  const unit = await getStackAcresUnit(profile.id, unitId);
+  if (!unit || unit.status !== "working") {
+    throw new StackAcresRequestError("Nothing here to water.", 404, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const thirstyAt = thirstyAtFor(unit);
+  if (!thirstyAt) {
+    throw new StackAcresRequestError("That does not grow in soil.", 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  // Wet ground is a NO-OP, not a refusal, and the distinction matters on a
+  // phone. `withLocalClock` decides dryness from the device's own clock, so a
+  // handset running a few minutes fast paints a faded crop with a Water button
+  // over ground the server still calls wet -- and an error banner for pressing
+  // the button the app just drew is a bug the player cannot act on.
+  //
+  // Returning early rather than watering is what keeps the guard: nothing is
+  // written, so the thirst clock is not reset and there is no free top-up to
+  // farm. It costs nothing to allow because watering costs nothing.
+  if (!isStackAcresUnitDry(unit, now)) return view(profile, now);
+
+  const driedAt = Date.parse(thirstyAt);
+  const dryMs = Number.isFinite(driedAt) ? Math.max(0, now.getTime() - driedAt) : 0;
+  const readyAt = Date.parse(unit.readyAt);
+  const pushed = new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + dryMs);
+
+  const watered = await waterStackAcresUnit(unit, now, pushed);
+  if (!watered) {
     throw new StackAcresRequestError("That moved on.", 409, {
       round: await snapshots(profile.id, now),
     });

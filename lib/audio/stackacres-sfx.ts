@@ -53,6 +53,24 @@ export function feedSound(stock: StackAcresStock) {
   }
 }
 
+/**
+ * Watering a dry field: a can tipped over the row.
+ *
+ * Built out of `water-drop` rather than a new synth voice, and staggered
+ * rather than played once, because one drop is a plink and three falling
+ * away from each other is a pour. The gains descend so the can reads as
+ * emptying -- an even three sounds like a machine.
+ *
+ * The one action cue with no animal in it, deliberately: nothing on the crop
+ * track has a voice to answer with, and borrowing a hen for it would put a
+ * bird in the Long Meadow, where there are none.
+ */
+export function waterSound() {
+  playFarmVoice("water-drop", 0.9);
+  window.setTimeout(() => playFarmVoice("water-drop", 0.7), 90);
+  window.setTimeout(() => playFarmVoice("water-drop", 0.5), 200);
+}
+
 /** Clearing a mucked unit: the one genuinely laborious thing on the farm. */
 export function muckSound() {
   playFarmVoice("muck-clear", 1);

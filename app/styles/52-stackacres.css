@@ -147,6 +147,13 @@
   --sa-carrot-side: #e1741f;
   --sa-carrot-rim: #ae5312;
 
+  /* The pond's own ramp (RAMPS.water in components/arcade/stackacres/
+     art-palette.ts), reused for the watering loop: a dry field is marked in
+     the colour of what it is short of. */
+  --sa-water: #63c8e8;
+  --sa-water-side: #3fa6cc;
+  --sa-water-rim: #2a7e9e;
+
   /* Sprite colours, not chrome: they exist to agree with artwork the palette
      knows nothing about. --sa-grass matches the grass painter's own fill, so
      the DOM frame and the canvas background read as one continuous lawn. */
@@ -1365,6 +1372,7 @@
    readable at 12.5px on paper. */
 .sa-unit-state[data-state="ready"] { color: var(--sa-corn-rim); }
 .sa-unit-state[data-state="hungry"] { color: var(--sa-carrot-rim); }
+.sa-unit-state[data-state="dry"] { color: var(--sa-water-rim); }
 .sa-unit-state[data-state="mucked"] { color: var(--sa-choc); }
 
 .sa-unit-action {
@@ -1390,6 +1398,16 @@
 .sa-unit-action.is-warn {
   background: var(--sa-carrot);
   box-shadow: 0 4px 0 var(--sa-carrot-rim), var(--sa-drop);
+  color: var(--sa-ink);
+}
+
+/* Watering: the same shape as Feed, in the pond's blue rather than the
+   carrot's orange, because the two are the same kind of tending on two tracks
+   and a player should be able to tell at a glance which one a row is asking
+   for. */
+.sa-unit-action.is-water {
+  background: var(--sa-water);
+  box-shadow: 0 4px 0 var(--sa-water-rim), var(--sa-drop);
   color: var(--sa-ink);
 }
 

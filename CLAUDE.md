@@ -46,6 +46,76 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### StackAcres crops are watered, and drawn far bigger than the rest of the world (2026-09-04)
+Two changes to the crop track, one loop and one visual. **Watering** is the deliberate mirror of the
+livestock hunger mechanic that has existed since the first migration, built by copying its shape
+rather than inventing a second one: `thirstMs` on the catalogue (crops only, `null` for livestock,
+exactly as `hungerMs` is the reverse), `last_watered_at` on `homestead_units`, an
+`isStackAcresUnitDry` guard checked beside `isStackAcresUnitHungry` inside
+`isStackAcresUnitReady`, and a version-guarded `waterStackAcresUnit` write that pushes `ready_at`
+forward by however long the soil stood dry. **The one deliberate divergence from hunger is the
+load-bearing line: a crop that finished growing BEFORE its ground dried is never dry.** Mirroring
+hunger exactly here was a real bug, caught by probing the case rather than by any test asking for it
+-- a ripe, uncollected row went dry, stopped being collectable, and watering it then pushed `ready_at`
+forward by the drought, UN-RIPENING finished produce and charging the player again for time already
+waited. Hunger genuinely does behave that way (a ready cow that goes hungry must be fed before it is
+milked) and it is defensible there, because a neglected animal stopping is the point; it is not
+defensible for produce already grown. The test is `readyAt <= thirstyAt`, compared against
+`thirstyAt` rather than `now` so it is a fact about the row settled once rather than something that
+flips as the clock moves -- and so it cannot recurse into `isStackAcresUnitReady`, which calls it.
+`withLocalClock` in the component carries the same carve-out or a ripe row flickers to dry between
+refetches.
+
+A `/code-review` pass caught three more, all real and all fixed. (1) **`collectStackAcresUnit`'s
+permanent-restart branch never reset `last_watered_at`**, so a Gold-bought crop re-sowed itself dry at
+progress 0 carrying the previous cycle's watering, and the only available fix -- one Water tap -- then
+added the entire stale gap to `ready_at`, turning a 15-minute cycle into however long the unit had sat
+ripe. It now re-waters on restart, keyed off the row's own value so the store needs no catalogue
+import; `last_fed_at` deliberately still does NOT, and the asymmetry is the point (an animal can be
+fed any time, a crop cannot be watered until it is actually dry). (2) **The migration backfill used
+`started_at` and had to become `now()`.** Since `thirstMs` is under `durationMs` for both crop kinds,
+`started_at + thirst` always precedes `ready_at`, so the ripened-before-the-drought carve-out could not
+protect a single legacy row -- every already-ripe crop would have flipped to `dry` at deploy and
+un-ripened itself on the first Water tap. Checked against the live table: all seven working crop rows
+were already ripe, so that was 100% of the real data. The cost of `now()` is one free thirst window per
+in-flight crop, once, which is the cheaper side by a wide margin -- the original comment arguing the
+other way was wrong. (3) **`unitAt` now ranks an art hit above a ground-diamond hit**, because a ripe
+crop's diamond doubled to 48 units in a 136x118 interior holding up to six of each kind; on depth alone
+the front crop swallowed the tap target of everything behind it. Depth still settles hits of the same
+kind, which is the case that rule was written for. Also: watering wet ground is a NO-OP rather than a
+400 (a phone whose clock runs fast paints the Water button itself, and erroring on it is unactionable
+-- nothing is written, so nothing can be farmed), and `FOOT_INSET` now measures to the bottom of the
+INK rather than the path, since a stroke is centred on its own line and measuring to the path
+over-corrected and buried the stem. Three things worth keeping: (1) **watering is free** --
+it costs attention, not Bushels and not Gold -- so it touches none of the money-ordering rules and
+has nothing to refund when its guarded write loses a race, which is the one way it differs from
+feeding; the currency-wall test's route-action list was extended to say so out loud. (2) **A dry
+crop's progress bar is read at the moment the soil dried, not at `now`** -- `progressOf` takes an
+explicit `atMs` for this. Without it a frozen crop's bar creeps to full and then sits there looking
+finished while readiness refuses it, which is exactly the "trains people to tap a unit that cannot
+pay yet" failure `growthStage`'s own comment in `world.ts` warns about. Hunger does NOT do this and
+was deliberately left alone (out of scope, and its bar is a smaller lie on a longer cycle). (3)
+**`lastWateredAt: null` on a crop means "row predates the column", not "bone dry"** -- it falls back
+to `startedAt`, since sowing waters the ground; reading it as dry would have frozen every crop in the
+field the moment this shipped. Watering wet ground is refused (`400`) rather than treated as a
+top-up, or the thirst clock could be reset for free all day.
+
+**Crop sprites are now drawn well off the world's own scale**, and this is a deliberate break with
+everything else on the map (which all draws at `1 / ART_SCALE`): a ripe carrot is a 12x16 unit box of
+mostly leaf, and at the opening shot's zoom on a phone in landscape it is a few pixels of green
+indistinguishable from a row sown a minute ago. Sprout 2.5x, mature 4x, seedling 1.6x (the third
+number was not specified and is an interpolation -- leaving it at 1x next to a 2.5x sprout makes the
+first frame invisible and the second look teleported in). The arithmetic lives in a new
+`lib/stackacres/crop-visuals.ts` rather than in the scene, for the reason `units.ts`'s header already
+states: vitest only reaches `lib/` and `app/`. Two non-obvious pieces there: a painter anchors at
+(0.5, 1) and Phaser scales about that origin, so a frame whose ink starts above its own box's bottom
+edge (carrot0/carrot1, whose leaves spring from y 15 in a 16-tall box) FLOATS once scaled --
+`cropGroundOffset` pushes it back down by the growth in that gap, and is 0 for every frame already
+drawn to its baseline; and the tap footprint (`unitFootprintHalf`, previously a flat 12 for crops)
+now tracks the sprite but keeps 12 as a FLOOR, since 1.6x of a 6-unit half is 9.6 and shrinking the
+target of the hardest crop to see would be exactly backwards. Verified live in memory-mode `next dev`
+against a real browser, not just in tests. **Migration `20260904120000_stackacres_soil_watering.sql`
+is written but NOT applied** -- see `[[reference_stackchips_migrations_not_auto_applied]]`.
 ### StackAcres got a soundscape: a synthesised ASMR bed, farm SFX, real animals (2026-09-04)
 Kayo: "better sound effects and music... animal noises and just ambient noise around the farm thats
 more ASMR like. not beats." The farm had **three music tracks and nothing else** -- every action on
@@ -1595,6 +1665,11 @@ settle once).
 - Challenging a specific opponent shipped for table seats (PR #111, 2026-08-19). Picking a friend to
   invite to an empty seat (M16 table invites) is still open — a different flow, no seated opponent to
   challenge.
+- `lib/server/game-store.test.ts`'s "does not prefer a populated table whose only human seat has gone
+  quiet" is FLAKY, not red: it failed once in five runs at a pristine `origin/main` worktree, in
+  isolation as well as in the full suite (measured 2026-09-04). Re-run it before treating a single
+  red as a regression. `lib/scene/table-anchors.test.ts`'s dealer elbow-room test is separately and
+  reliably red on main -- see `[[project_stackchips_headsup_geometry_regression]]`.
 - `multiplayer.spec.ts`'s six-player test and two `safe-area.spec.ts` table tests fail identically at
   a pristine HEAD worktree, unrelated to recent work — reconfirm against a fresh worktree before
   treating a red run here as a regression (see `[[reference_stackchips_e2e_traps]]`).

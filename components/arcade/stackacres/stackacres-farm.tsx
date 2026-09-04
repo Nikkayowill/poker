@@ -32,6 +32,7 @@ import {
   sowSound,
   toolSound,
   travelSound,
+  waterSound,
 } from "@/lib/audio/stackacres-sfx";
 import { STACKACRES_FEED, type StackAcresStock } from "@/lib/stackacres/catalogue";
 import { buyOptionsForZone, type BuyOption } from "@/lib/stackacres/district-panel";
@@ -126,6 +127,7 @@ type Action =
   | { action: "retire"; unitId: string }
   | { action: "collect"; unitId: string }
   | { action: "feed"; unitId: string }
+  | { action: "water"; unitId: string }
   | { action: "clear"; unitId: string }
   | { action: "buy-feed"; itemId: string }
   | { action: "sell"; item: StackAcresItem; quantity: number }
@@ -166,22 +168,36 @@ function countdownLabel(msLeft: number): string {
 }
 
 /**
- * Re-derives readiness and hunger locally so a unit flips without a network
- * trip. Hunger is checked first and freezes progress, mirroring
- * lib/stackacres/units.ts exactly -- if these two ever disagree the server
- * wins, because it is the only one that can pay.
+ * Re-derives readiness, hunger and dry soil locally so a unit flips without a
+ * network trip. Both freeze conditions are checked before readiness and both
+ * stop the progress bar where it stood, mirroring lib/stackacres/units.ts
+ * exactly -- if these two ever disagree the server wins, because it is the
+ * only one that can pay.
  */
 function withLocalClock(units: StackAcresUnitSnapshot[], nowMs: number): StackAcresUnitSnapshot[] {
   return units.map((unit) => {
     if (unit.state === "mucked") return unit;
-    const hungry = unit.hungryAt !== null && Date.parse(unit.hungryAt) <= nowMs;
-    if (hungry) return { ...unit, state: "hungry" };
     const ready = Date.parse(unit.readyAt);
     const started = Date.parse(unit.startedAt);
+    const progressAt = (atMs: number) =>
+      ready > started ? Math.min(1, Math.max(0, (atMs - started) / (ready - started))) : 1;
+
+    const hungry = unit.hungryAt !== null && Date.parse(unit.hungryAt) <= nowMs;
+    if (hungry) return { ...unit, state: "hungry" };
+    const driedAt = unit.thirstyAt === null ? null : Date.parse(unit.thirstyAt);
+    // `ready > driedAt` mirrors isStackAcresUnitDry's own carve-out: a crop
+    // that finished growing before the ground dried is not dry, it is just
+    // waiting to be picked. Dropping this here would flip a ripe row to dry
+    // between refetches even though the server would still collect it.
+    const dry = driedAt !== null && Number.isFinite(driedAt) && driedAt <= nowMs && ready > driedAt;
+    // `ready > driedAt` is already false for an unparseable readyAt, so this
+    // branch always has real timestamps to read the frozen bar at: the moment
+    // the soil went dry rather than now, so a frozen crop's bar stops where it
+    // stopped instead of creeping on to a full bar it cannot cash.
+    if (dry) return { ...unit, state: "dry", isWatered: false, progress: progressAt(driedAt) };
     if (!Number.isFinite(ready) || !Number.isFinite(started)) return unit;
-    if (ready <= nowMs) return { ...unit, state: "ready", progress: 1 };
-    const progress = ready > started ? Math.min(1, Math.max(0, (nowMs - started) / (ready - started))) : 1;
-    return { ...unit, state: "working", progress };
+    if (ready <= nowMs) return { ...unit, state: "ready", progress: 1, isWatered: true };
+    return { ...unit, state: "working", progress: progressAt(nowMs), isWatered: true };
   });
 }
 
@@ -400,7 +416,11 @@ export function StackAcresFarm() {
   const liveUnits = useMemo(() => withLocalClock(units, nowMs), [units, nowMs]);
 
   const anyWorking = units.some(
-    (unit) => unit.state === "working" || unit.state === "hungry" || unit.state === "ready",
+    (unit) =>
+      unit.state === "working" ||
+      unit.state === "hungry" ||
+      unit.state === "dry" ||
+      unit.state === "ready",
   );
   useEffect(() => {
     if (!anyWorking) return;
@@ -483,11 +503,13 @@ export function StackAcresFarm() {
         const done =
           body.action === "feed"
             ? "Fed"
-            : body.action === "clear"
-              ? "Cleared"
-              : body.action === "stock"
-                ? "Seeded"
-                : null;
+            : body.action === "water"
+              ? "Watered"
+              : body.action === "clear"
+                ? "Cleared"
+                : body.action === "stock"
+                  ? "Seeded"
+                  : null;
         if (anchor && done) world.current?.floatAt(anchor, done, "gain");
         if (body.action === "exchange" && data.exchanged) {
           // The one place on the farm where coins are heard: this is Gold
@@ -544,6 +566,13 @@ export function StackAcresFarm() {
     (unit: StackAcresUnitSnapshot) => {
       feedSound(unit.stock);
       void act({ action: "feed", unitId: unit.id });
+    },
+    [act],
+  );
+  const onWater = useCallback(
+    (unit: StackAcresUnitSnapshot) => {
+      waterSound();
+      void act({ action: "water", unitId: unit.id });
     },
     [act],
   );
@@ -984,8 +1013,8 @@ export function StackAcresFarm() {
             <div className="sa-panel-section">
               <h3 className="sa-group-label">What&apos;s here</h3>
               <p className="sa-panel-note">
-                Tap anything on the map to collect, feed or clear it. These rows do the same, and
-                are how you retire something you own outright.
+                Tap anything on the map to collect, feed, water or clear it. These rows do the
+                same, and are how you retire something you own outright.
               </p>
               <StackAcresUnitRows
                 units={districtUnits}
@@ -996,6 +1025,7 @@ export function StackAcresFarm() {
                 armedUnitId={retiringUnitId}
                 onCollect={onCollect}
                 onFeed={onFeed}
+                onWater={onWater}
                 onClear={onClear}
                 onArmRetire={onArmRetire}
                 onConfirmRetire={onConfirmRetire}
@@ -1180,8 +1210,8 @@ export function StackAcresFarm() {
           </p>
           <p>
             <strong>Everything is tapped on the map itself.</strong> Tap a crop or an animal to
-            collect it when it is ready, feed it when it is hungry, or clear it when it comes up
-            weather-worn. Tap the bare ground inside a district and a small menu opens right there
+            collect it when it is ready, feed it when it is hungry, water it when its soil has gone
+            dry, or clear it when it comes up weather-worn. Tap the bare ground inside a district and a small menu opens right there
             to seed something new.
           </p>
           <p>
@@ -1203,7 +1233,10 @@ export function StackAcresFarm() {
           </p>
           <ul>
             <li>Seed a crop or stock a pen with Bushels, then come back when it turns gold.</li>
-            <li>Crops look after themselves. Animals need feeding, and stop working when hungry.</li>
+            <li>
+              Animals need feeding and crops need watering. A hungry pen and a dry field both stop
+              where they are until you tend them — a faded plant is one waiting for a drink.
+            </li>
             <li>Nothing here can die and nothing can be lost. Neglect costs you time, not produce.</li>
             <li>
               Each kind of animal or crop can have three going at once, more if you spend Gold to

@@ -15,6 +15,7 @@ import {
   retireStackAcresStock,
   sellStackAcresProduce,
   stockStackAcres,
+  waterStackAcres,
   type StackAcresView,
 } from "./stackacres-service";
 import {
@@ -282,6 +283,187 @@ describe("hunger", () => {
     await adjustStackAcresFeed(id, 1);
     await feedStackAcres(token, unitId, new Date(hungryAt.getTime() + 5 * 60 * 60 * 1000));
     expect((await getStackAcresUnit(id, unitId))?.yieldQuantity).toBe(STACKACRES_YIELDS.cattle.quantity);
+  });
+});
+
+describe("thirst", () => {
+  const THIRST = SPROUT.thirstMs ?? 0;
+  const stackacresSprout = (token: string) => stockStackAcres(token, { stock: "sprout" }, T0);
+  const dryAt = new Date(T0.getTime() + THIRST + 1000);
+
+  it("freezes a field past its watering window instead of letting it finish", async () => {
+    const { token } = await funded();
+    const view = await stockStackAcres(token, { stock: "sprout" }, T0);
+    const unitId = unitOf(view, "sprout").id;
+
+    // Well past readiness, but the soil went dry long before that.
+    const wayLater = new Date(T0.getTime() + SPROUT.durationMs + 60_000);
+    const later = await readStackAcres(token, wayLater);
+    expect(unitOf(later, "sprout").state).toBe("dry");
+    expect(unitOf(later, "sprout").isWatered).toBe(false);
+
+    await expect(collectStackAcres(token, unitId, wayLater)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+  });
+
+  it("pushes readiness out by the time spent dry, and spends nothing to do it", async () => {
+    const { token, id } = await funded();
+    const startingBushels = await bushels(id);
+    const startingGold = await balance(token);
+    const view = await stockStackAcres(token, { stock: "sprout" }, T0);
+    const spentOnSeed = startingBushels - (await bushels(id));
+
+    const unitId = unitOf(view, "sprout").id;
+    const before = await getStackAcresUnit(id, unitId);
+    const wateredAt = new Date(dryAt.getTime() + 60_000);
+    await waterStackAcres(token, unitId, wateredAt);
+
+    const after = await getStackAcresUnit(id, unitId);
+    const parched = wateredAt.getTime() - (T0.getTime() + THIRST);
+    expect(Date.parse(after?.readyAt ?? "")).toBe(Date.parse(before?.readyAt ?? "") + parched);
+    expect(after?.lastWateredAt).toBe(wateredAt.toISOString());
+    // The seed cost is the only thing that ever left the purse.
+    expect(await bushels(id)).toBe(startingBushels - spentOnSeed);
+    expect(await balance(token)).toBe(startingGold);
+    expect(await readStackAcresFeed(id)).toBe(0);
+  });
+
+  it("lets the field finish once watered, on the pushed-out clock", async () => {
+    const { token } = await funded();
+    const view = await stockStackAcres(token, { stock: "sprout" }, T0);
+    const unitId = unitOf(view, "sprout").id;
+
+    const wateredAt = new Date(dryAt.getTime() + 60_000);
+    const resumed = await waterStackAcres(token, unitId, wateredAt);
+    expect(unitOf(resumed, "sprout").state).toBe("working");
+    expect(unitOf(resumed, "sprout").isWatered).toBe(true);
+
+    // Ready at its own pushed-out clock -- the time the field stood dry was
+    // ADDED to the cycle, not credited to it. Read exactly there: a Sprout
+    // Row's thirst window is under its own cycle length, so waiting long past
+    // this would simply find it dry again, which is the loop working.
+    const done = await readStackAcres(token, new Date(Date.parse(unitOf(resumed, "sprout").readyAt)));
+    expect(unitOf(done, "sprout").state).toBe("ready");
+  });
+
+  it("preserves the time REMAINING across a drought, which is what freezing means", async () => {
+    const { token, id } = await funded();
+    const view = await stackacresSprout(token);
+    const unitId = unitOf(view, "sprout").id;
+
+    // What was left to do at the moment the ground dried...
+    const before = await getStackAcresUnit(id, unitId);
+    const leftWhenItDried = Date.parse(before?.readyAt ?? "") - (T0.getTime() + THIRST);
+
+    // ...must still be what is left the instant it is watered, however long
+    // it stood there. The progress FRACTION drifts up (startedAt never moves,
+    // so the denominator grows) -- the remaining time is the real guarantee.
+    const wateredAt = new Date(T0.getTime() + THIRST + 42 * 60 * 1000);
+    await waterStackAcres(token, unitId, wateredAt);
+    const after = await getStackAcresUnit(id, unitId);
+    expect(Date.parse(after?.readyAt ?? "") - wateredAt.getTime()).toBe(leftWhenItDried);
+  });
+
+  it("writes nothing when the ground is still wet, so the thirst clock cannot be reset for free", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "sprout" }, T0);
+    const unitId = unitOf(view, "sprout").id;
+    const before = await getStackAcresUnit(id, unitId);
+
+    // A no-op rather than a refusal -- a phone whose clock runs fast paints
+    // the Water button itself, and erroring on it is unactionable. What has to
+    // hold is that nothing MOVED: same watering date, same ready_at, and no
+    // version bump, so there is no free top-up to farm.
+    const stillWet = new Date(T0.getTime() + THIRST - 1000);
+    await expect(waterStackAcres(token, unitId, stillWet)).resolves.toBeDefined();
+
+    const after = await getStackAcresUnit(id, unitId);
+    expect(after?.lastWateredAt).toBe(T0.toISOString());
+    expect(after?.readyAt).toBe(before?.readyAt);
+    expect(after?.version).toBe(before?.version);
+  });
+
+  it("still harvests a crop that ripened before its ground dried", async () => {
+    const { token, id } = await funded();
+    const view = await stackacresSprout(token);
+    const unitId = unitOf(view, "sprout").id;
+
+    // Water once late in the cycle, so the crop finishes at its own clock and
+    // the ground only gives out afterwards.
+    const wateredAt = new Date(T0.getTime() + THIRST + 1000);
+    await waterStackAcres(token, unitId, wateredAt);
+    const readyAt = Date.parse((await getStackAcresUnit(id, unitId))?.readyAt ?? "");
+
+    // Long after both the finish line and the next drought.
+    const muchLater = new Date(readyAt + 12 * 60 * 60 * 1000);
+    const late = await readStackAcres(token, muchLater);
+    expect(unitOf(late, "sprout").state).toBe("ready");
+
+    // And it actually pays -- a drought after the harvest was made takes
+    // nothing away from it.
+    const before = await held(id, STACKACRES_YIELDS.sprout.item);
+    await collectStackAcres(token, unitId, muchLater);
+    expect(await held(id, STACKACRES_YIELDS.sprout.item)).toBe(
+      before + STACKACRES_YIELDS.sprout.quantity,
+    );
+  });
+
+  it("re-waters a bought crop when it re-sows itself, so a restart is not born dry", async () => {
+    const { token, id } = await funded();
+    await buyStackAcresStock(token, { stock: "sprout" }, T0);
+    const unitId = unitOf(await readStackAcres(token, T0), "sprout").id;
+
+    // Water it through its one drought so it actually reaches the finish
+    // line -- a Sprout Row's thirst window is under its own cycle length.
+    await waterStackAcres(token, unitId, new Date(T0.getTime() + THIRST + 1000));
+
+    // Collected a full day after it ripened -- the realistic case for a
+    // permanent unit, which sits ready until someone comes back for it.
+    const collectedAt = new Date(T0.getTime() + 24 * 60 * 60 * 1000);
+    await collectStackAcres(token, unitId, collectedAt);
+
+    // The new cycle must start wet. Carrying the OLD cycle's watering across
+    // makes it dry at progress 0, and one Water tap would then add the whole
+    // stale gap to ready_at -- turning a 15-minute cycle into a day-long one.
+    const restarted = await getStackAcresUnit(id, unitId);
+    expect(restarted?.lastWateredAt).toBe(collectedAt.toISOString());
+
+    const fresh = unitOf(await readStackAcres(token, collectedAt), "sprout");
+    expect(fresh.state).toBe("working");
+    expect(fresh.isWatered).toBe(true);
+    expect(Date.parse(restarted?.readyAt ?? "")).toBe(collectedAt.getTime() + SPROUT.durationMs);
+  });
+
+  it("refuses to water livestock, which has no soil", async () => {
+    const { token } = await funded();
+    const view = await stockStackAcres(token, { stock: "cattle" }, T0);
+    const unitId = unitOf(view, "cattle").id;
+    await expect(
+      waterStackAcres(token, unitId, new Date(T0.getTime() + 10 * 60 * 60 * 1000)),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+
+  it("never lets neglect cost produce: the snapshotted yield is untouched by watering", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "sprout" }, T0);
+    const unitId = unitOf(view, "sprout").id;
+    await waterStackAcres(token, unitId, new Date(dryAt.getTime() + 6 * 60 * 60 * 1000));
+    expect((await getStackAcresUnit(id, unitId))?.yieldQuantity).toBe(
+      STACKACRES_YIELDS.sprout.quantity,
+    );
+  });
+
+  it("waters a crop stocked with Gold the same way, and still moves no Gold", async () => {
+    const { token, id } = await funded();
+    await buyStackAcresStock(token, { stock: "sprout" }, T0);
+    const goldAfterBuying = await balance(token);
+    const view = await readStackAcres(token, T0);
+    const unitId = unitOf(view, "sprout").id;
+
+    await waterStackAcres(token, unitId, new Date(dryAt.getTime() + 60_000));
+    expect(await balance(token)).toBe(goldAfterBuying);
+    expect((await getStackAcresUnit(id, unitId))?.permanent).toBe(true);
   });
 });
 
@@ -809,6 +991,7 @@ describe("the currency wall", () => {
       "retire",
       "sell",
       "stock",
+      "water",
     ]);
 
     // The claim that actually matters, held separately from the list so it

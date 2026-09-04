@@ -15,6 +15,7 @@ import {
   sellStackAcresProduce,
   stockStackAcres,
   toStackAcresErrorResponse,
+  waterStackAcres,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -56,6 +57,7 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("retire"), unitId: unitIdSchema }),
   z.object({ action: z.literal("collect"), unitId: unitIdSchema }),
   z.object({ action: z.literal("feed"), unitId: unitIdSchema }),
+  z.object({ action: z.literal("water"), unitId: unitIdSchema }),
   z.object({ action: z.literal("clear"), unitId: unitIdSchema }),
   z.object({
     action: z.literal("buy-feed"),
@@ -98,6 +100,8 @@ function run(token: string, action: StackAcresAction) {
       return collectStackAcres(token, action.unitId);
     case "feed":
       return feedStackAcres(token, action.unitId);
+    case "water":
+      return waterStackAcres(token, action.unitId);
     case "clear":
       return clearStackAcresUnit(token, action.unitId);
     case "sell":

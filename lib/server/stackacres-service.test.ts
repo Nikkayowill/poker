@@ -14,11 +14,14 @@ import {
   feedStackAcres,
   readStackAcres,
   retireStackAcresStock,
+  runStackAcresAction,
   sellStackAcresProduce,
   stockStackAcres,
   waterStackAcres,
+  type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
+import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import {
   __stackacresHarvestsForTest,
   __resetStackAcresForTest,
@@ -1590,5 +1593,192 @@ describe("land maintenance", () => {
     expect(homeDue.plots).toBeLessThan(wholeDue.plots);
     expect(homeDue.due).toBeLessThan(wholeDue.due);
     expect(wholeDue.plots).toBe(unlockedPlotCount([HOME_SECTOR, ...SECTOR_LADDER], {}));
+  });
+});
+
+/**
+ * Idempotency keys, and the line they draw.
+ *
+ * The six actions that mutate an existing unit were always replay-safe -- the
+ * version guard settles once and a lost race pays nothing (see "harvesting"
+ * above). These cover the four that CREATE something, where nothing in the
+ * schema can tell a duplicated request from a second deliberate purchase:
+ * `stock`, `buy-stock`, `buy-feed` and `expand-capacity` each insert or
+ * increment and debit for it, and before the key existed a duplicate simply
+ * did that twice.
+ *
+ * The load-bearing distinction, and the one worth breaking a build over: a
+ * SHARED key means one intent pressed twice and must act once; DIFFERENT keys
+ * mean two intents and must act twice. Collapsing the second case would make
+ * it impossible to deliberately sow two Sprout Rows.
+ */
+describe("idempotency keys", () => {
+  const run = <T,>(token: string, key: string | null, action: string, fn: () => Promise<T>) =>
+    runStackAcresAction(token, key, action, fn as () => Promise<StackAcresActionResult>);
+
+  beforeEach(() => {
+    __resetStackAcresIntentsForTest();
+  });
+
+  it("sows once when the same key arrives twice", async () => {
+    const { token, id } = await funded();
+    const key = randomUUID();
+    const before = await bushels(id);
+
+    await run(token, key, "stock", () => stockStackAcres(token, { stock: "sprout" }, T0));
+    const replay = await run(token, key, "stock", () =>
+      stockStackAcres(token, { stock: "sprout" }, T0),
+    );
+
+    expect(replay.units.filter((u) => u.stock === "sprout")).toHaveLength(1);
+    expect(await bushels(id)).toBe(before - STACKACRES_CATALOGUE.sprout.seedCost);
+  });
+
+  it("sows twice when two different keys arrive -- two intents, not a duplicate", async () => {
+    const { token, id } = await funded();
+    const before = await bushels(id);
+
+    await run(token, randomUUID(), "stock", () => stockStackAcres(token, { stock: "sprout" }, T0));
+    const second = await run(token, randomUUID(), "stock", () =>
+      stockStackAcres(token, { stock: "sprout" }, T0),
+    );
+
+    expect(second.units.filter((u) => u.stock === "sprout")).toHaveLength(2);
+    expect(await bushels(id)).toBe(before - STACKACRES_CATALOGUE.sprout.seedCost * 2);
+  });
+
+  it("debits Gold once when a bought animal's key arrives twice", async () => {
+    const { token } = await funded();
+    const key = randomUUID();
+    const before = await balance(token);
+
+    await run(token, key, "buy-stock", () => buyStackAcresStock(token, { stock: "hen" }, T0));
+    const replay = await run(token, key, "buy-stock", () =>
+      buyStackAcresStock(token, { stock: "hen" }, T0),
+    );
+
+    expect(replay.units.filter((u) => u.stock === "hen")).toHaveLength(1);
+    expect(await balance(token)).toBe(before - stackacresStockPrice("hen"));
+  });
+
+  it("buys one shipment of feed when its key arrives twice", async () => {
+    const { token, id } = await funded();
+    const key = randomUUID();
+    const before = await bushels(id);
+
+    await run(token, key, "buy-feed", () => buyStackAcresFeed(token, "feed_sack", T0));
+    const replay = await run(token, key, "buy-feed", () =>
+      buyStackAcresFeed(token, "feed_sack", T0),
+    );
+
+    expect(replay.feed).toBe(STACKACRES_FEED.feed_sack.servings);
+    expect(await bushels(id)).toBe(before - STACKACRES_FEED.feed_sack.cost);
+  });
+
+  it("buys one capacity slot when its key arrives twice", async () => {
+    const { token } = await funded();
+    const key = randomUUID();
+    const before = await balance(token);
+
+    await run(token, key, "expand-capacity", () => expandStackAcresCapacity(token, "hen", T0));
+    const replay = await run(token, key, "expand-capacity", () =>
+      expandStackAcresCapacity(token, "hen", T0),
+    );
+
+    expect(replay.capacity.hen).toBe(1);
+    expect(await balance(token)).toBe(before - stackacresCapacityPrice("hen"));
+  });
+
+  it("hands a replayed harvest the same produce line, not a refusal", async () => {
+    // A hen, not a crop: livestock has no thirst clock, so `HEN_READY` is
+    // genuinely ready without a watering step in the middle of a test that is
+    // about something else.
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    const unitId = unitOf(view, "hen").id;
+    const key = randomUUID();
+
+    const first = await runStackAcresAction(
+      token,
+      key,
+      "collect",
+      () => collectStackAcres(token, unitId, HEN_READY),
+      HEN_READY,
+    );
+    // Without the key this second call is the 409 the version guard raises,
+    // which the farm answers with a refusal knock -- a denial sound for an
+    // action that actually succeeded.
+    const replay = await runStackAcresAction(
+      token,
+      key,
+      "collect",
+      () => collectStackAcres(token, unitId, HEN_READY),
+      HEN_READY,
+    );
+
+    expect(replay.collected).toEqual(first.collected);
+    // And the produce landed exactly once, which is what the version guard was
+    // always good for -- the key only fixes what the duplicate SOUNDS like.
+    expect(await held(id, HEN_YIELD.item)).toBe(HEN_YIELD.quantity);
+  });
+
+  it("frees the key when the action refused, so the retry is a real attempt", async () => {
+    const { token, id } = await funded(500_000, 0);
+    const key = randomUUID();
+
+    await expect(
+      run(token, key, "stock", () => stockStackAcres(token, { stock: "sprout" }, T0)),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    // The player tops up and presses again. A held key would answer this with
+    // "already done" and sow nothing.
+    await adjustStackAcresInventory(id, BUSHELS, 1_000);
+    const retried = await run(token, key, "stock", () =>
+      stockStackAcres(token, { stock: "sprout" }, T0),
+    );
+    expect(retried.units.filter((u) => u.stock === "sprout")).toHaveLength(1);
+  });
+
+  it("runs unguarded when no key is sent, so an older client still works", async () => {
+    const { token, id } = await funded();
+    const before = await bushels(id);
+
+    await run(token, null, "stock", () => stockStackAcres(token, { stock: "sprout" }, T0));
+    const second = await run(token, null, "stock", () =>
+      stockStackAcres(token, { stock: "sprout" }, T0),
+    );
+
+    expect(second.units.filter((u) => u.stock === "sprout")).toHaveLength(2);
+    expect(await bushels(id)).toBe(before - STACKACRES_CATALOGUE.sprout.seedCost * 2);
+  });
+
+  it("sows once when both copies land at the same time", async () => {
+    const { token, id } = await funded();
+    const key = randomUUID();
+    const before = await bushels(id);
+
+    // Both in flight together, which is the shape a retry fired before the
+    // first request came back actually has. One claims, the other is told the
+    // farm as it stands rather than being refused.
+    const [, second] = await Promise.all([
+      run(token, key, "stock", () => stockStackAcres(token, { stock: "sprout" }, T0)),
+      run(token, key, "stock", () => stockStackAcres(token, { stock: "sprout" }, T0)),
+    ]);
+
+    expect(second.units.filter((u) => u.stock === "sprout").length).toBeLessThanOrEqual(1);
+    expect(await bushels(id)).toBe(before - STACKACRES_CATALOGUE.sprout.seedCost);
+  });
+
+  it("keeps one player's key clear of another's", async () => {
+    const a = await funded();
+    const b = await funded();
+    const key = randomUUID();
+
+    await run(a.token, key, "stock", () => stockStackAcres(a.token, { stock: "sprout" }, T0));
+    const other = await run(b.token, key, "stock", () =>
+      stockStackAcres(b.token, { stock: "sprout" }, T0),
+    );
+
+    expect(other.units.filter((u) => u.stock === "sprout")).toHaveLength(1);
   });
 });

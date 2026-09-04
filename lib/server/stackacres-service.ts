@@ -79,6 +79,11 @@ import {
   waterStackAcresUnit,
   type StoredStackAcresUnit,
 } from "./stackacres-store";
+import {
+  claimStackAcresIntent,
+  completeStackAcresIntent,
+  releaseStackAcresIntent,
+} from "./stackacres-intent-store";
 import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
 
 /**
@@ -213,6 +218,86 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     // charge happens in `settleLandUpkeep`, off a mutating action.
     upkeep: upkeepState(unlockedPlotCount(sectors, capacity), upkeepPaid),
   };
+}
+
+/**
+ * Everything any action can add to the view. Exactly three actions return
+ * anything beyond the farm itself, and these are they -- which is why a
+ * replayed intent only has to remember this much (see `replayDelta`).
+ */
+export type StackAcresActionResult = StackAcresView & {
+  collected?: unknown;
+  sold?: unknown;
+  exchanged?: unknown;
+};
+
+/**
+ * The part of a result a duplicate has to be told a second time.
+ *
+ * Never the view: a replay is answered with a freshly read one, so a duplicate
+ * can only ever hand back numbers at least as current as the original did.
+ * Storing the view instead would mean a request replayed ten minutes later
+ * repainted the farm as it looked ten minutes ago.
+ */
+function replayDelta(result: StackAcresActionResult): Record<string, unknown> | null {
+  const delta: Record<string, unknown> = {};
+  if (result.collected !== undefined) delta.collected = result.collected;
+  if (result.sold !== undefined) delta.sold = result.sold;
+  if (result.exchanged !== undefined) delta.exchanged = result.exchanged;
+  return Object.keys(delta).length > 0 ? delta : null;
+}
+
+/**
+ * Runs one action at most once per intent.
+ *
+ * `key` is the client's own name for what it is trying to do, and this is the
+ * only thing standing between a duplicated request and a double spend for the
+ * four actions that CREATE something -- `stock`, `buy-stock`, `buy-feed` and
+ * `expand-capacity` have no row to version-guard, so nothing else can tell a
+ * duplicate from a second deliberate purchase. See
+ * ./stackacres-intent-store.ts for why the other six were already safe.
+ *
+ * `key` is optional, and a request without one runs exactly as it always did.
+ * That is deliberate: the guard belongs to callers who can name their intent,
+ * and an older client (or a phone that reloaded mid-deploy) must not start
+ * failing because it does not send one.
+ *
+ * Three outcomes, and NONE of them is a refusal -- a duplicate that sounds
+ * like a denial is the bug this exists to avoid:
+ *
+ *   * **fresh** -- nobody has claimed this intent. Run it, then record the
+ *     small delta a twin would need. A throw releases the claim, because a
+ *     refusal did not happen and the player's next press must be a real
+ *     attempt.
+ *   * **replay** -- the twin already finished. Answer with a fresh view plus
+ *     the delta it recorded, so the duplicate reads exactly like the original
+ *     succeeding.
+ *   * **in-flight** -- the twin is still running. Answer with the farm as it
+ *     stands; the client's own clock re-reads a second later and picks up
+ *     whatever the twin lands.
+ */
+export async function runStackAcresAction(
+  token: string,
+  key: string | null,
+  action: string,
+  run: () => Promise<StackAcresActionResult>,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  if (!key) return run();
+
+  const profile = await ensureProfile(token);
+  const claim = await claimStackAcresIntent(profile.id, key, action, now.getTime());
+  if (claim.kind === "replay") return { ...(await view(profile, now)), ...(claim.result ?? {}) };
+  if (claim.kind === "in-flight") return view(profile, now);
+
+  try {
+    const result = await run();
+    await completeStackAcresIntent(profile.id, key, replayDelta(result));
+    return result;
+  } catch (error) {
+    await releaseStackAcresIntent(profile.id, key);
+    throw error;
+  }
 }
 
 /**

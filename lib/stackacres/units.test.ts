@@ -5,6 +5,8 @@ import {
   isStackAcresUnitDry,
   isStackAcresUnitHungry,
   isStackAcresUnitReady,
+  optimisticallyFedUnit,
+  optimisticallyWateredUnit,
   thirstyAtFor,
   toStackAcresUnitSnapshots,
   type StackAcresUnitRow,
@@ -293,5 +295,72 @@ describe("growth pauses while a crop goes unwatered", () => {
     const [mucked] = toStackAcresUnitSnapshots([crop(THIRST * 10, { status: "mucked", muckFee: 16 })], NOW);
     expect(mucked.isWatered).toBe(true);
     expect(mucked.state).toBe("mucked");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Optimistic tending -- the client-side twin of a feed/water response */
+/* ------------------------------------------------------------------ */
+
+describe("optimisticallyFedUnit", () => {
+  const HUNGER = STACKACRES_CATALOGUE.hen.hungerMs ?? 0;
+
+  it("pushes readyAt forward by exactly the time spent starving", () => {
+    const readyAt = NOW.getTime() + 5 * 60 * 1000;
+    const hungryAt = NOW.getTime() - 2 * 60 * 1000; // starving for 2 minutes
+    const [hungry] = toStackAcresUnitSnapshots(
+      [
+        row({
+          stock: "hen",
+          readyAt: new Date(readyAt).toISOString(),
+          lastFedAt: new Date(hungryAt - HUNGER).toISOString(),
+        }),
+      ],
+      NOW,
+    );
+    expect(hungry.state).toBe("hungry");
+
+    const fed = optimisticallyFedUnit(hungry, NOW.getTime());
+    expect(Date.parse(fed.readyAt)).toBe(readyAt + 2 * 60 * 1000);
+  });
+
+  it("restarts the feed window from the moment it was fed", () => {
+    const [hungry] = toStackAcresUnitSnapshots(
+      [row({ stock: "hen", lastFedAt: new Date(NOW.getTime() - 60 * 60 * 1000).toISOString() })],
+      NOW,
+    );
+    const fed = optimisticallyFedUnit(hungry, NOW.getTime());
+    expect(Date.parse(fed.hungryAt ?? "")).toBe(NOW.getTime() + HUNGER);
+  });
+
+  it("never predicts hunger for a kind that never eats", () => {
+    const [ready] = toStackAcresUnitSnapshots(
+      [crop(0, { readyAt: new Date(NOW.getTime() - 1000).toISOString() })],
+      NOW,
+    );
+    expect(optimisticallyFedUnit(ready, NOW.getTime()).hungryAt).toBeNull();
+  });
+});
+
+describe("optimisticallyWateredUnit", () => {
+  it("pushes readyAt forward by exactly the time the soil stood dry", () => {
+    const dry = crop(THIRST + 3 * 60 * 1000); // 3 minutes past the watering window
+    const [snap] = toStackAcresUnitSnapshots([dry], NOW);
+    expect(snap.state).toBe("dry");
+
+    const watered = optimisticallyWateredUnit(snap, NOW.getTime());
+    expect(Date.parse(watered.readyAt)).toBe(Date.parse(dry.readyAt) + 3 * 60 * 1000);
+  });
+
+  it("restarts the thirst window from the moment it was watered", () => {
+    const dry = crop(THIRST + 60_000);
+    const [snap] = toStackAcresUnitSnapshots([dry], NOW);
+    const watered = optimisticallyWateredUnit(snap, NOW.getTime());
+    expect(Date.parse(watered.thirstyAt ?? "")).toBe(NOW.getTime() + THIRST);
+  });
+
+  it("never predicts thirst for livestock, which drinks from its own trough", () => {
+    const [snap] = toStackAcresUnitSnapshots([row({ stock: "cattle" })], NOW);
+    expect(optimisticallyWateredUnit(snap, NOW.getTime()).thirstyAt).toBeNull();
   });
 });

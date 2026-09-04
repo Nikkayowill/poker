@@ -84,7 +84,7 @@ export function __stackacresHarvestsForTest(): readonly StackAcresHarvestEntry[]
 }
 
 const UNIT_COLUMNS =
-  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, muck_fee, permanent, version, created_at";
+  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at";
 
 interface UnitDbRow {
   id: string;
@@ -96,6 +96,7 @@ interface UnitDbRow {
   started_at: string;
   ready_at: string;
   last_fed_at: string | null;
+  last_watered_at: string | null;
   muck_fee: number | string | null;
   permanent: boolean | null;
   version: number | string;
@@ -113,6 +114,7 @@ function fromRow(row: UnitDbRow): StoredStackAcresUnit {
     startedAt: String(row.started_at),
     readyAt: String(row.ready_at),
     lastFedAt: row.last_fed_at ? String(row.last_fed_at) : null,
+    lastWateredAt: row.last_watered_at ? String(row.last_watered_at) : null,
     muckFee: row.muck_fee === null ? null : Number(row.muck_fee),
     permanent: row.permanent === true,
     version: Number(row.version),
@@ -215,6 +217,9 @@ export async function createStackAcresUnit(
     startedAt: Date;
     readyAt: Date;
     lastFedAt: Date | null;
+    /** Crops only: sowing waters the ground, so a new crop starts wet. Null
+     *  for livestock, which never runs dry. */
+    lastWateredAt: Date | null;
     /** True when this was bought outright with Gold rather than sown. */
     permanent: boolean;
   },
@@ -233,6 +238,7 @@ export async function createStackAcresUnit(
       startedAt: entry.startedAt.toISOString(),
       readyAt: entry.readyAt.toISOString(),
       lastFedAt: entry.lastFedAt ? entry.lastFedAt.toISOString() : null,
+      lastWateredAt: entry.lastWateredAt ? entry.lastWateredAt.toISOString() : null,
       muckFee: null,
       permanent: entry.permanent,
       version: 1,
@@ -253,6 +259,7 @@ export async function createStackAcresUnit(
       started_at: entry.startedAt.toISOString(),
       ready_at: entry.readyAt.toISOString(),
       last_fed_at: entry.lastFedAt ? entry.lastFedAt.toISOString() : null,
+      last_watered_at: entry.lastWateredAt ? entry.lastWateredAt.toISOString() : null,
       permanent: entry.permanent,
       version: 1,
     })
@@ -302,6 +309,51 @@ export async function feedStackAcresUnit(
 }
 
 /**
+ * Waters a dry crop: pushes ready_at forward by however long the soil stood
+ * dry, so the clock genuinely stopped. Deliberately the same shape as
+ * `feedStackAcresUnit` -- same version/status guard, same null-means-lost-race
+ * contract -- because it is the same freeze-and-resume mechanic on the other
+ * track. It differs in one way only, and the difference is upstream: watering
+ * spends nothing, so a caller has nothing to refund when this returns null.
+ */
+export async function waterStackAcresUnit(
+  current: StoredStackAcresUnit,
+  wateredAt: Date,
+  newReadyAt: Date,
+): Promise<StoredStackAcresUnit | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const stored = memoryUnits.get(current.id);
+    if (!stored || stored.status !== "working" || stored.version !== current.version) return null;
+    const updated: StoredStackAcresUnit = {
+      ...stored,
+      lastWateredAt: wateredAt.toISOString(),
+      readyAt: newReadyAt.toISOString(),
+      version,
+    };
+    memoryUnits.set(current.id, clone(updated));
+    return clone(updated);
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_units")
+    .update({
+      last_watered_at: wateredAt.toISOString(),
+      ready_at: newReadyAt.toISOString(),
+      version,
+    })
+    .eq("id", current.id)
+    .eq("version", current.version)
+    .eq("status", "working")
+    .select(UNIT_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not water that: ${error.message}`);
+  return data ? fromRow(data as UnitDbRow) : null;
+}
+
+/**
  * Settles a ready unit, exactly once. THREE OUTCOMES, decided by the caller
  * and passed in rather than derived here:
  *
@@ -334,11 +386,27 @@ export async function collectStackAcresUnit(
   const version = current.version + 1;
 
   if (restartReadyAt) {
+    // A re-sown crop goes into watered ground, exactly as a freshly stocked
+    // one does. `last_fed_at` deliberately does NOT get this treatment (see
+    // the doc comment above) and the asymmetry is the point: an animal can be
+    // fed at any time, so being hungry the moment it restarts costs the
+    // player a serving and nothing else. A crop cannot be watered until it is
+    // actually dry, so carrying the old cycle's watering across would restart
+    // it dry at progress 0 AND make the only available fix -- one Water tap --
+    // add the whole stale gap to ready_at, turning a 15-minute cycle into
+    // however long the unit sat ripe before anyone collected it.
+    //
+    // Keyed off the row's own value rather than the catalogue, so this needs
+    // no import: livestock is null and stays null. A legacy crop row still
+    // null here is correct either way, since `thirstyAtFor` falls back to
+    // startedAt, which this branch has just reset to `now`.
+    const restartWatered = current.lastWateredAt === null ? null : now.toISOString();
     const next: StoredStackAcresUnit = {
       ...current,
       status: "working",
       startedAt: now.toISOString(),
       readyAt: restartReadyAt.toISOString(),
+      lastWateredAt: restartWatered,
       muckFee: null,
       version,
     };
@@ -361,6 +429,7 @@ export async function collectStackAcresUnit(
         status: "working",
         started_at: next.startedAt,
         ready_at: next.readyAt,
+        last_watered_at: next.lastWateredAt,
         muck_fee: null,
         version,
       })

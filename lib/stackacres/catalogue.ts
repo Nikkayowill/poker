@@ -1,29 +1,34 @@
 /**
- * StackAcres's whole economy in one file: what you can put on a
- * plot, what it costs to keep, the caps, and the plot ladder.
+ * StackAcres's whole economy in one file: what you can own, what it costs to
+ * keep, and the capacity ladder that bounds how much of it you can run.
  *
  * EVERY NUMBER HERE IS IN BUSHELS, the farm's own currency, with exactly one
- * exception: `stackacresPlotPrice`, which is Gold. That split is the feature's
- * whole safety story and is worth stating plainly.
+ * exception: `stackacresCapacityPrice`, which is Gold. That split is the
+ * feature's whole safety story and is worth stating plainly.
  *
  * - Bushels never leave the StackAcres. Seed, stock, feed and muck are all
  *   priced in them, harvests are sold for them, and phase 4's swinging market
  *   will move them. Because none of it is Gold, none of it is a money bug.
- * - Gold enters in one place, buying acreage, and leaves in one place, the
- *   daily exchange window phase 3 builds. The farm's maximum Gold output is a
- *   flat daily constant -- not a percentage, not scaled by land owned, not
- *   scaled by how well you traded. That single invariant is what keeps this
- *   out of the category Ante Up was in when it printed money.
+ * - Gold enters in two places (buying capacity, buying stock outright) and
+ *   leaves in one, the daily exchange window. The farm's maximum Gold output
+ *   is a flat daily constant -- not a percentage, not scaled by stock owned,
+ *   not scaled by how well you traded. That single invariant is what keeps
+ *   this out of the category Ante Up was in when it printed money.
  *
  * Because these are no longer real money, the tuning is deliberately looser
  * than the Gold version it replaces: a cycle is meant to feel worth doing.
- * What survives from that version is the shape -- separate caps per track, and
- * an upkeep cost sized as a fraction of what the plot actually earned rather
+ * What survives from that version is the shape -- separate caps per kind, and
+ * an upkeep cost sized as a fraction of what the unit actually earned rather
  * than a flat fee that bankrupts the cheapest tier.
  *
- * Seed cost and yield are snapshotted onto the plot row at stocking and never
+ * Seed cost and yield are snapshotted onto the unit row at stocking and never
  * re-read here at collection -- the same rule StoredWordStackRound.wagerLadder
- * states: a retune must not change what an already-planted plot returns.
+ * states: a retune must not change what an already-stocked unit returns.
+ *
+ * THERE IS NO PLOT GRID ANY MORE (see 2026-09-03's CLAUDE.md entry). A unit
+ * you own is just a row -- see ./units.ts -- standing in whichever district
+ * ./world.ts's `stockZone` says its kind lives in. What used to be "buy a
+ * plot, then stock it" is now one step: buy the animal or crop directly.
  */
 
 export const STACKACRES_CROPS = ["sprout", "cash_crop"] as const;
@@ -145,18 +150,26 @@ export function isStackAcresFeed(value: string): boolean {
 }
 
 /**
- * Separate caps, not one shared budget. Crops and livestock are two tracks
- * rather than two prices for the same slot, and keeping livestock at three
- * leaves the tier that was signed off exactly where it was.
+ * The cap is per KIND now, not per track. It used to be one shared budget of
+ * 3 across all three livestock kinds -- an artifact of the single-grid era,
+ * when a Hen Coop and a Cattle Pen competed for the same handful of plots.
+ * Since the pen-zoning pass put each kind in its own district, and now that
+ * there is no plot ladder to physically bound them at all, a shared cap makes
+ * no sense: three cattle at Ox Fields no longer has anything to do with
+ * whether a Hen Coop is buyable at the Farmstead. Every kind gets its own
+ * free base of 3, same number as the old shared cap, extendable by Gold.
  *
- * Both are mirrored by a BEFORE trigger in the migration (advisory-locked, so
- * two racing stockings cannot squeeze past them).
+ * Mirrored by a BEFORE INSERT trigger on homestead_units (advisory-locked, so
+ * two racing stockings cannot squeeze past it), reading the purchased slots
+ * from homestead_capacity.
  */
-export const STACKACRES_PEN_CAP = 3;
-export const STACKACRES_FIELD_CAP = 3;
+export const STACKACRES_BASE_CAP = 3;
 
-export function capFor(stock: StackAcresStock): number {
-  return isLivestock(stock) ? STACKACRES_PEN_CAP : STACKACRES_FIELD_CAP;
+/** How many extra slots Gold can buy for one kind, on top of the free base. */
+export const STACKACRES_MAX_EXTRA_CAP = 3;
+
+export function capFor(extraSlots: number): number {
+  return STACKACRES_BASE_CAP + Math.max(0, Math.min(STACKACRES_MAX_EXTRA_CAP, extraSlots));
 }
 
 /**
@@ -169,48 +182,34 @@ export function capFor(stock: StackAcresStock): number {
  */
 export const STACKACRES_MUCK_CHANCE = 0.2;
 
-/** The grid is 4x4; plot indexes are 1-based to match plot_index's CHECK. */
-export const STACKACRES_GRID_PLOTS = 16;
-
-/** The first four plots are free; the rest are a pure Gold sink. */
-export const STACKACRES_FREE_PLOTS = 4;
-
 /**
- * What one locked plot costs, in GOLD -- the only number in this file that is
- * not Bushels.
+ * What buying one extra capacity slot costs, in GOLD -- the only number in
+ * this file that is not Bushels. Replaces the old flat plot price
+ * (STACKACRES_PLOT_PRICE, 10,000 for any of plots 5-16): there is no land to
+ * unlock any more, so Gold buys room the same way it always did, just
+ * attached to a kind instead of a tile.
  *
- * Sized against what land is actually FOR. The caps are three pens and three
- * fields, so six plots is everything a player can run at once, and the four
- * free ones do not reach it. Plots five and six are the ones that matter and
- * cost 20,000 together; every plot above six is room to arrange a farm you
- * like looking at rather than more income.
+ * Flat per kind, same "buy any slot, no forced order" reasoning that
+ * flattened the old plot ladder -- a player buying the fourth Cattle Pen slot
+ * without first buying a fourth Hen Coop slot is the point, not a gap to
+ * guard against. Scaled BY kind, not flat across all four: a Cattle Pen slot
+ * and a Hen Coop slot are not the same purchase, the same way land itself was
+ * never priced against what a Cattle Pen alone was worth.
  *
  * Lives here rather than in market.ts because market.ts reads this module and
  * the reverse would be a cycle. market.ts re-exports it, so the Gold prices
- * can still all be read in one place.
+ * can still all be read in one place. Still sunk, never returned: capacity is
+ * progression, not principal, and it buys ROOM rather than income -- the cap
+ * itself bounds how much can run at once.
  */
-export const STACKACRES_PLOT_PRICE = 10_000;
+export const STACKACRES_CAPACITY_PRICE: Readonly<Record<StackAcresStock, number>> = {
+  sprout: 5_000,
+  cash_crop: 5_000,
+  hen: 2_000,
+  pig: 15_000,
+  cattle: 40_000,
+};
 
-/**
- * What unlocking a plot costs, in GOLD. Flat: every locked plot is the same
- * price, and they may be bought in any order.
- *
- * This replaced a ladder that doubled from 2,500 to 5.12 million. Two things
- * were wrong with it, and they were the same thing twice. The doubling made
- * the top of the grid unreachable rather than aspirational, and it FORCED the
- * strict purchase order -- `buyStackAcresPlot` had to walk the ladder and
- * refuse a gap, purely so a cheap tile could not go unbought beneath a dear
- * one. Nobody wanted that rule; it was an artefact of the pricing. Flatten the
- * price and it dissolves, which is why `plots.ts` now marks every locked plot
- * purchasable.
- *
- * The price itself lives in market.ts with the rest of the Gold prices, so
- * there is one file to read when the question is "what does Gold buy here".
- * Still sunk, never returned: land is progression, not principal, and it buys
- * ROOM rather than income -- the two caps bound how much can run at once.
- */
-export function stackacresPlotPrice(plotIndex: number): number | null {
-  if (!Number.isInteger(plotIndex)) return null;
-  if (plotIndex <= STACKACRES_FREE_PLOTS || plotIndex > STACKACRES_GRID_PLOTS) return null;
-  return STACKACRES_PLOT_PRICE;
+export function stackacresCapacityPrice(stock: StackAcresStock): number {
+  return STACKACRES_CAPACITY_PRICE[stock];
 }

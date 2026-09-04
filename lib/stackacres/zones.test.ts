@@ -159,12 +159,6 @@ describe("zone tool policy", () => {
     }
   });
 
-  it("lets all four plot tools work in every district, since a plot can be in any of them now", () => {
-    for (const tool of ["plant", "harvest", "feed", "clear"] as const) {
-      expect(zoneToolPolicy[tool]).toEqual([...ZONE_IDS]);
-    }
-  });
-
   it("lets Look work anywhere and the scythe only in the meadow", () => {
     expect(zoneToolPolicy.inspect).toEqual([...ZONE_IDS]);
     expect(zoneToolPolicy.scythe).toEqual(["meadow"]);
@@ -186,7 +180,7 @@ describe("zone tool policy", () => {
   });
 
   it("refuses out in the woodland, where there is no district at all", () => {
-    const no = isActionValidInZone(-600, -600, "plant");
+    const no = isActionValidInZone(-600, -600, "scythe");
     expect(no.ok).toBe(false);
     if (no.ok) throw new Error("unreachable");
     expect(no.zone).toBeNull();

@@ -1,25 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  STACKACRES_CAPACITY_PRICE,
   STACKACRES_GOLD_PER_SEED_BUSHEL,
-  STACKACRES_PLOT_PRICE,
   STACKACRES_RETIRE_REFUND,
-  STACKACRES_STALLS,
-  STALL_LIST,
   goldStockRoundTrip,
+  stackacresCapacityPrice,
   stackacresStockPrice,
-  stallSelling,
-  stallSells,
-  stallShelf,
 } from "./market";
-import {
-  STACKACRES_CATALOGUE,
-  STACKACRES_FREE_PLOTS,
-  STACKACRES_GRID_PLOTS,
-  STACKACRES_STOCK,
-  stackacresPlotPrice,
-} from "./catalogue";
+import { STACKACRES_CATALOGUE, STACKACRES_STOCK } from "./catalogue";
 import { STACKACRES_GOLD_PER_BUSHEL } from "./exchange";
 import { STACKACRES_ITEM_CATALOGUE, STACKACRES_YIELDS } from "./items";
+import { stockZone, stocksInZone } from "./world";
 import { ZONE_IDS } from "./zones";
 
 /**
@@ -33,8 +24,8 @@ import { ZONE_IDS } from "./zones";
  * liquidating everything it makes must return less Gold than it cost, on every
  * tier, with no tuning of the constants able to quietly break it.
  *
- * Everything else here is shape: prices derive from one rule, land is flat,
- * every stock is sold somewhere.
+ * Everything else here is shape: prices derive from one rule, capacity has a
+ * Gold price for every kind, every stock lives in exactly one district.
  */
 
 describe("stock prices", () => {
@@ -96,33 +87,26 @@ describe("the round trip", () => {
   });
 });
 
-describe("land", () => {
-  it("costs the same whichever plot it is", () => {
-    const prices = [];
-    for (let i = STACKACRES_FREE_PLOTS + 1; i <= STACKACRES_GRID_PLOTS; i += 1) {
-      prices.push(stackacresPlotPrice(i));
+describe("capacity prices", () => {
+  it("give every stock kind a positive Gold price", () => {
+    for (const stock of STACKACRES_STOCK) {
+      expect(STACKACRES_CAPACITY_PRICE[stock]).toBeGreaterThan(0);
+      expect(stackacresCapacityPrice(stock)).toBe(STACKACRES_CAPACITY_PRICE[stock]);
     }
-    expect(new Set(prices)).toEqual(new Set([STACKACRES_PLOT_PRICE]));
-  });
-
-  it("is free below the free-plot line and not for sale past the grid", () => {
-    expect(stackacresPlotPrice(STACKACRES_FREE_PLOTS)).toBeNull();
-    expect(stackacresPlotPrice(STACKACRES_GRID_PLOTS + 1)).toBeNull();
-    expect(stackacresPlotPrice(1.5)).toBeNull();
   });
 });
 
-describe("the stalls", () => {
+describe("districts", () => {
   it("give every district something to sell", () => {
     for (const zone of ZONE_IDS) {
-      expect(STACKACRES_STALLS[zone].stock.length).toBeGreaterThan(0);
+      expect(stocksInZone(zone).length).toBeGreaterThan(0);
     }
   });
 
-  it("sell every stock in the catalogue, at exactly one stall", () => {
+  it("sell every stock in exactly one district", () => {
     const counts = new Map<string, number>();
-    for (const stall of STALL_LIST) {
-      for (const stock of stall.stock) {
+    for (const zone of ZONE_IDS) {
+      for (const stock of stocksInZone(zone)) {
         counts.set(stock, (counts.get(stock) ?? 0) + 1);
       }
     }
@@ -132,44 +116,34 @@ describe("the stalls", () => {
     expect(counts.size).toBe(STACKACRES_STOCK.length);
   });
 
-  it("agree with themselves about who sells what", () => {
+  it("agree with themselves about who keeps what", () => {
     for (const stock of STACKACRES_STOCK) {
-      const zone = stallSelling(stock);
-      expect(stallSells(zone, stock)).toBe(true);
+      const zone = stockZone(stock);
+      expect(stocksInZone(zone)).toContain(stock);
       for (const other of ZONE_IDS) {
-        if (other !== zone) expect(stallSells(other, stock)).toBe(false);
+        if (other !== zone) expect(stocksInZone(other)).not.toContain(stock);
       }
     }
   });
 
-  it("sell each pen's stock at the district it physically stands in", () => {
-    // world.ts's PEN_GROUP_ORIGIN puts the "field" block in the Long Meadow
-    // and "cattle" at Ox Fields; a stall that disagrees offers stock its own
-    // district's plots refuse (stockAllowedOnPlot rejects it server-side),
-    // so a buy button that always errors. Held so a future reshuffle of
-    // either table has to move both together.
-    expect(stallSelling("cash_crop")).toBe("meadow");
-    expect(stallSelling("cattle")).toBe("oxfields");
-    expect(stallSelling("pig")).toBe("wallow");
-  });
-
-  it("shows a shelf carrying both prices for the same stock", () => {
-    const shelf = stallShelf("oxfields");
-    expect(shelf).toHaveLength(1);
-    expect(shelf[0]).toMatchObject({
-      stock: "cattle",
-      price: 60_000,
-      seedCost: STACKACRES_CATALOGUE.cattle.seedCost,
-      animal: true,
-    });
+  it("keep cattle at the Ox Fields and pigs at the Wallow", () => {
+    // The districts were built with their own scenery and blurbs before the
+    // pens moved in; a mapping that ignores that would read as arbitrary.
+    // Held so a future reshuffle has to be deliberate. The internal zone id
+    // stays "wallow" even though the player-facing label is "The Fold" --
+    // see zones.ts.
+    expect(stockZone("cattle")).toBe("oxfields");
+    expect(stockZone("pig")).toBe("wallow");
+    expect(stockZone("cash_crop")).toBe("meadow");
+    expect(stockZone("hen")).toBe("farmstead");
   });
 });
 
 describe("retiring", () => {
   it("refunds nothing", () => {
     // Stated as a test rather than left implied by an absent branch: a refund
-    // would make a plot somewhere to park Gold and take it back out, which is
-    // the one shape the whole subsystem is built not to have.
+    // would make owned stock somewhere to park Gold and take it back out,
+    // which is the one shape the whole subsystem is built not to have.
     expect(STACKACRES_RETIRE_REFUND).toBe(0);
   });
 });

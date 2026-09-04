@@ -9,31 +9,33 @@
  * Two layers. The world is a Phaser canvas (stackacres-world.tsx) that fills
  * .sa-field and moves when the player drags it. Everything else on the screen
  * -- the .floor-bar header (back link, How to play, Bushels/Gold), the title
- * pill, the toolbelt, the seed strip, the detail panel, the zoom buttons, the
- * hint -- is DOM absolutely positioned over that canvas and never moves. Each
- * overlay wrapper is pointer-events: none with its controls set back to auto,
- * so a drag that starts in the gap between two buttons reaches the map
+ * pill, the toolbelt, the district sidebar, the zoom buttons, the hint -- is
+ * DOM absolutely positioned over that canvas and never moves. Each overlay
+ * wrapper is pointer-events: none with its controls set back to auto, so a
+ * drag that starts in the gap between two buttons reaches the map
  * underneath. The whole page is a fixed-height column for the same reason
  * the table is: the map needs a definite height to fill, and a page that
  * scrolls under a map that also scrolls is two things fighting for one
  * finger.
  *
- * The state and affordance rings that used to be CSS on grid buttons are now
- * drawn in the canvas by stackacres-scene.ts, in the same colours: gold for
- * ripe, amber for hungry, brown for weather-worn, chalk for selected, violet
- * for "the held tool can act here" and red for "it could, but you cannot pay".
- * The palette reasoning is unchanged -- the affordance tint is violet rather
- * than green because green is what the art already is -- and lives in that
- * file's colour table.
+ * THERE IS NO PLOT GRID any more (see 2026-09-03's CLAUDE.md entry --
+ * "districts hold stock, not plots"). What used to be a grid of tappable
+ * plot buttons, each carrying a state ring and a held-tool affordance ring,
+ * is the .sa-district-panel sidebar now: real DOM rows, one per owned unit,
+ * with the one action button that applies. The canvas still draws a state
+ * ring per unit (gold for ripe, amber for hungry, brown for weather-worn --
+ * see stackacres-scene.ts) but there is no affordance ring any more, because
+ * there is no held tool that acts on a unit -- only the scythe, which targets
+ * ground, not a unit.
  *
- * The world is vector art now, not a tile sheet: every sprite is a Canvas2D
+ * The world is vector art, not a tile sheet: every sprite is a Canvas2D
  * painter (components/arcade/stackacres/stackacres-art.ts) baked into a Phaser
  * texture at boot and drawn at the browser's own device pixel ratio, so it is
  * smooth at every zoom rather than a grid of fixed-size squares. Nothing is
  * downloaded for it. `--sa-grass` matches the grass painter's own fill colour
  * so the DOM frame and the canvas background read as one continuous lawn.
  * --sa-hungry and --sa-muck are the same state colours the scene draws with,
- * kept here for the keyboard plot list. The chrome's own icons
+ * kept here for the district sidebar's unit rows. The chrome's own icons
  * (`.sa-ico`, below) are the same painters, drawn into a small DOM canvas by
  * `<StackAcresIcon>` rather than loaded as PNGs.
  *
@@ -202,13 +204,6 @@
 
 .sa-scoreline .ante-lobby-heading h1 { font-size: 16px; }
 
-.sa-cap {
-  color: var(--neon-muted);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
 /* The heading's real name is the logo (components/brand/stackacres-logo.tsx);
    the <h1> beside it is sr-only, kept for the a11y tree only. This has room
    to be the widest the mark ships anywhere -- it's the game's own masthead,
@@ -216,18 +211,16 @@
 .sa-heading-logo { width: 210px; height: auto; }
 /* ---- the toolbelt ---------------------------------------------------- */
 
-/* Pinned down the right edge, where a thumb wrapped around a phone held
-   sideways already is. The seed strip stands to its LEFT rather than under it
-   (row-reverse), because five tools plus five seeds stacked in one column
-   outgrow a 390px-tall screen and the bottom of the list becomes unreachable.
-   Side by side, each column fits with room to spare. */
+/* Pinned to the top of the right edge, where a thumb wrapped around a phone
+   held sideways already is -- and sized to its own content now, not
+   stretched the height of the screen, since there is only the one tool
+   column left (Look/Scythe; see ./stackacres-toolbelt.tsx) and nothing
+   beside it any more. .sa-district-panel docks to the same edge below it. */
 .sa-controls {
   position: absolute;
   top: calc(var(--sa-header-h) + 8px);
   right: 8px;
-  bottom: 48px;
   display: flex;
-  flex-direction: row-reverse;
   align-items: center;
   gap: 8px;
   pointer-events: none;
@@ -292,77 +285,6 @@
 }
 
 .sa-tool:focus-visible {
-  outline: 2px solid var(--neon-purple-bright);
-  outline-offset: 2px;
-}
-
-.sa-tool-count {
-  position: absolute;
-  top: 2px;
-  right: 4px;
-  min-width: 16px;
-  padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--brand-gold);
-  color: var(--brand-ink);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 16px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ---- what to plant --------------------------------------------------- */
-
-.sa-seeds {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 100%;
-  padding: 6px;
-  border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
-  box-shadow: var(--elevation-2);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
-  pointer-events: auto;
-}
-
-/* pan-y, not none: the strip scrolls vertically when it has to, and the drag
-   that places a chip on the map is a sideways one. Anything vertical stays
-   the browser's; anything else is ours. */
-.sa-seed {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 40px;
-  padding: 5px 10px 5px 6px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--brand-surface);
-  color: var(--neon-muted);
-  font-size: 14px;
-  white-space: nowrap;
-  cursor: grab;
-  touch-action: pan-y;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.sa-seed .sa-ico { width: 22px; height: 22px; }
-
-.sa-seed.is-picked {
-  background: var(--brand-surface-2);
-  box-shadow: inset 0 0 0 1px var(--brand-gold), var(--accent-glow-gold);
-  color: var(--neon-chalk);
-}
-
-/* Full is not disabled: picking a full track is how you find out it is full,
-   and the map then explains it in red rather than the chip refusing a tap. */
-.sa-seed[data-full] { opacity: .55; }
-
-.sa-seed:focus-visible {
   outline: 2px solid var(--neon-purple-bright);
   outline-offset: 2px;
 }
@@ -598,22 +520,260 @@
 
 .sa-side > * { pointer-events: auto; }
 
-/* The detail card hangs beside the plot it is about. Its position is set
-   on the node by stackacres-farm.tsx's placeDetail, from the plot's place on
-   the canvas, so the card follows the plot through a pan or a zoom; the
-   stylesheet only says how big it may be. Hidden until the first position
-   arrives, so it never flashes at the corner. */
-.sa-detail {
+/* The district sidebar: no plot to select any more, travelling to a
+   district (the signpost) IS the selection, so this is a fixed dock rather
+   than something that tracks a canvas position the way .sa-detail used to.
+   Docked to the same right edge the toolbelt and zoom buttons already
+   anchor to, below the toolbelt's own column, and independently scrollable
+   -- a district with several units plus its buy section can outgrow a
+   390px-tall phone. */
+.sa-district-panel {
   position: absolute;
-  top: 0;
-  left: 0;
+  /* Clears .sa-controls' own toolbelt above it (two 46px-min-height tools,
+     stacked, plus its own top offset and padding -- roughly 130px). */
+  top: calc(var(--sa-header-h) + 130px);
+  right: 8px;
+  bottom: 48px;
   width: min(300px, 46%);
-  margin: 0;
-  visibility: hidden;
-  will-change: transform;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--brand-ink-lift);
+  box-shadow: var(--accent-edge), var(--elevation-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
 }
 
-.sa-detail:empty { display: none; }
+.sa-district-title {
+  margin: 0 0 2px;
+  font-size: 16px;
+  color: var(--neon-chalk);
+}
+
+.sa-district-blurb {
+  margin: 0 0 10px;
+  color: var(--neon-muted);
+  font-size: 13px;
+  opacity: .85;
+}
+
+.sa-panel-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--sa-panel-rule, rgba(182, 166, 219, .18));
+}
+
+.sa-panel-section:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.sa-district-empty {
+  margin: 4px 0 0;
+  color: var(--neon-muted);
+  font-size: 13px;
+  opacity: .8;
+}
+
+/* ---- what's here: owned units ----------------------------------------- */
+
+.sa-unit-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sa-unit-row {
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface-2);
+}
+
+.sa-unit-icon { display: flex; }
+.sa-unit-icon .sa-ico { width: 24px; height: 24px; }
+
+.sa-unit-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sa-unit-name {
+  color: var(--neon-chalk);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sa-unit-state {
+  font-size: 12px;
+  color: var(--neon-muted);
+}
+
+.sa-unit-state[data-state="ready"] { color: var(--brand-gold-light); }
+.sa-unit-state[data-state="hungry"] { color: var(--sa-hungry); }
+.sa-unit-state[data-state="mucked"] { color: var(--sa-muck); }
+
+.sa-unit-action {
+  min-height: 32px;
+  padding: 5px 11px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sa-unit-action:disabled { opacity: .45; cursor: not-allowed; }
+
+.sa-unit-action.is-primary {
+  background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
+  color: #1c1305;
+}
+
+.sa-unit-action.is-warn {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--sa-hungry);
+  color: var(--sa-hungry);
+}
+
+/* Destructive-adjacent (clear a mucked unit, confirm a retire): one warning
+   colour in the system, the same red the retire confirmation always used. */
+.sa-unit-action.is-bad {
+  background: linear-gradient(152deg, #ff8a86 0%, #ff6f6b 55%, #b3312d 100%);
+  color: #2a0d0c;
+}
+
+.sa-unit-action.is-ghost {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--sa-panel-rule, rgba(182, 166, 219, .18));
+  color: var(--neon-muted);
+}
+
+.sa-unit-action:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+}
+
+.sa-unit-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.sa-unit-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--neon-muted);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---- buy ---------------------------------------------------------------
+ * One block per stock kind this district sells. The rule is separation,
+ * not decoration: seeding with Bushels and buying outright with Gold are
+ * genuinely different purchases (one cycle versus the animal), so each
+ * kind reads as its own small counter rather than a row of buttons.
+ */
+
+.sa-buy-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sa-buy-kind + .sa-buy-kind {
+  padding-top: 10px;
+  border-top: 1px solid var(--sa-panel-rule, rgba(182, 166, 219, .18));
+}
+
+.sa-buy-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.sa-buy-kind-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--neon-chalk);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sa-buy-kind-name .sa-ico { width: 18px; height: 18px; }
+
+.sa-buy-cap {
+  color: var(--neon-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-buy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sa-buy-btn {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 120px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--brand-surface);
+  cursor: pointer;
+  text-align: left;
+}
+
+.sa-buy-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.sa-buy-btn:focus-visible {
+  outline: 2px solid var(--neon-purple-bright);
+  outline-offset: 2px;
+}
+
+.sa-buy-label {
+  color: var(--neon-chalk);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sa-buy-price {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-buy-btn.is-bushels .sa-buy-price { color: var(--neon-muted); }
+.sa-buy-btn.is-gold .sa-buy-price { color: var(--brand-gold-light); }
+
+.sa-buy-btn.is-expand {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--brand-gold);
+}
+.sa-buy-btn.is-expand .sa-buy-price { color: var(--brand-gold-light); }
 
 /* The shared error line is a translucent wash, tuned for a dark page. Over
    bright grass it turns to mud and the words go with it; give it the panel's
@@ -688,12 +848,6 @@
 
 .sa-panel > p { margin: 6px 0; color: var(--neon-muted); font-size: 14px; }
 
-.sa-countdown {
-  color: var(--brand-gold-light) !important;
-  font-size: 16px !important;
-  font-variant-numeric: tabular-nums;
-}
-
 .sa-note { font-size: 14px !important; opacity: .85; }
 
 .sa-stock-cards {
@@ -751,140 +905,6 @@
 .sa-cta:focus-visible {
   outline: 0;
   box-shadow: var(--brand-focus);
-}
-
-.sa-sell-btn { font-size: 15px; padding: 10px 22px; }
-
-/* ---- the Gold shelf --------------------------------------------------- */
-/*
- * Sits under the Bushel "sow" button on an empty plot and sells the same stock
- * outright for Gold. The rule is separation, not decoration: the two prices buy
- * genuinely different things (one cycle versus the animal), so the shelf reads
- * as a second counter rather than a second button.
- *
- * The district's own name heads it, because each district sells a different
- * part of the catalogue -- cattle out in the meadow, pigs in the wallow -- and
- * without the name a player has no way to know why the shelf changed.
- */
-
-.sa-shelf {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--sa-panel-rule, rgba(182, 166, 219, .18));
-}
-
-.sa-shelf-head {
-  margin: 0;
-  color: var(--brand-gold-light);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-
-.sa-shelf-blurb {
-  margin: 2px 0 0;
-  font-size: 13px !important;
-  opacity: .8;
-}
-
-/* One step quieter than the primary gold CTA above it: an outright purchase is
-   the bigger commitment, so it must not be the loudest thing on the card. */
-.sa-cta-gold {
-  width: 100%;
-  background: transparent;
-  border: 1px solid var(--brand-gold);
-  box-shadow: none;
-  color: var(--brand-gold-light);
-}
-
-.sa-cta-gold:hover:not(:disabled) {
-  background: rgba(255, 210, 63, .1);
-  filter: none;
-}
-
-.sa-owned {
-  color: var(--brand-gold-light);
-  opacity: 1 !important;
-}
-
-/* Destructive and unrefundable, so it takes the one warning colour in the
-   system rather than the gold every other action here wears. */
-.sa-retire-confirm {
-  background: linear-gradient(152deg, #ff8a86 0%, #ff6f6b 55%, #b3312d 100%);
-  box-shadow: none;
-  color: #2a0d0c;
-}
-
-/* ---- the keyboard plot list ------------------------------------------ */
-
-/* Invisible until something in it has focus, then a strip of numbered plot
-   buttons over the bottom of the map. A canvas cannot be tabbed into; this
-   is how the keyboard gets the same sixteen taps a finger has. */
-.sa-plot-list {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.sa-plot-list:focus-within {
-  left: 50%;
-  bottom: 44px;
-  width: auto;
-  height: auto;
-  max-width: calc(100% - 16px);
-  padding: 8px 10px;
-  transform: translateX(-50%);
-  clip-path: none;
-  border-radius: var(--radius-card);
-  background: var(--brand-ink-lift);
-  box-shadow: var(--elevation-4);
-  white-space: normal;
-}
-
-.sa-plot-list-hint {
-  margin: 0 0 6px;
-  color: var(--neon-muted);
-  font-size: 12px;
-}
-
-.sa-plot-list ul {
-  display: grid;
-  grid-template-columns: repeat(8, 32px);
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sa-plot-item {
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: var(--brand-surface);
-  color: var(--neon-muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-}
-
-.sa-plot-item[data-state="locked"] { opacity: .5; }
-.sa-plot-item[data-state="ready"] { box-shadow: inset 0 0 0 2px var(--brand-gold); }
-.sa-plot-item[data-state="hungry"] { box-shadow: inset 0 0 0 2px var(--sa-hungry); }
-.sa-plot-item[data-state="mucked"] { box-shadow: inset 0 0 0 2px var(--sa-muck); }
-.sa-plot-item[data-afford="act"] { color: var(--neon-chalk); background: var(--neon-purple-deep); }
-.sa-plot-item[data-afford="blocked"] { box-shadow: inset 0 0 0 2px var(--brand-red); }
-.sa-plot-item.is-selected { color: var(--neon-chalk); box-shadow: inset 0 0 0 2px var(--neon-chalk); }
-
-.sa-plot-item:focus-visible {
-  outline: 2px solid var(--neon-purple-bright);
-  outline-offset: 2px;
 }
 
 /* ---- HUD and store --------------------------------------------------- */
@@ -1383,22 +1403,23 @@
   }
   .sa-shell .ante-lobby-heading h1 { font-size: 16px; }
   .sa-shell .sa-heading-logo { width: 150px; }
-  .sa-shell .sa-cap { font-size: 14px; }
 
   .sa-scoreline { padding: 3px 10px; }
   .sa-scoreline .ante-lobby-heading h1 { font-size: 14px; }
-  .sa-shell .sa-cap { font-size: 12px; }
 
   .sa-tool { width: 56px; min-height: 42px; }
   .sa-tool .sa-ico { width: 20px; height: 20px; }
 
-  .sa-seed { padding: 4px 9px 4px 5px; min-height: 36px; }
-  .sa-seed .sa-ico { width: 18px; height: 18px; }
-
   .sa-panel { padding: 10px 12px; }
   .sa-panel h2 { font-size: 15px; margin-bottom: 4px; }
   .sa-panel > p { font-size: 14px; margin: 4px 0; }
-  .sa-countdown { font-size: 15px !important; }
+
+  /* The district panel is the tallest thing on a short landscape phone --
+     it competes with the map for the same scarce height the rest of this
+     block is already giving back. */
+  .sa-district-panel { top: calc(var(--sa-header-h) + 110px); padding: 10px 12px; }
+  .sa-district-title { font-size: 15px; }
+  .sa-district-blurb { font-size: 12px; margin-bottom: 8px; }
 
   .sa-tool-hint { font-size: 12px; max-width: 50%; }
 }

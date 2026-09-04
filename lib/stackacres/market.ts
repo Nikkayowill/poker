@@ -1,6 +1,6 @@
 /**
  * The Gold market: the second place Gold enters StackAcres, and the first
- * place it buys something that is not dirt.
+ * place it buys something that is not capacity.
  *
  * WHY THIS EXISTS. Before this, Gold bought acreage and nothing else. A player
  * who arrived with a season of poker winnings could buy an empty field and
@@ -10,24 +10,28 @@
  *
  * WHAT IT DOES NOT DO, and the thing to check in review: it does not move
  * `STACKACRES_GOLD_CEILING`. The farm's maximum Gold OUTPUT is still a flat
- * 5,000 a day per player, mirrored as a hard ceiling inside
+ * daily amount per player, mirrored as a hard ceiling inside
  * `reserve_homestead_exchange`. This file only adds ways for Gold to go IN.
  * Every price here is a sink; there is no code path in this module that pays
  * anybody anything. That asymmetry is the entire safety argument, and it
  * survives any mistuning of the numbers below.
  *
  * The honest consequence, stated plainly because it is the real one: buying
- * permanent stock makes the EXISTING 5,000/day ceiling reliably reachable
- * where before it took constant attention. Nobody extracts more than they
- * could yesterday; they just stop having to work for it. If that volume is
- * ever a problem, the conversation is about the ceiling, not about this file.
+ * permanent stock makes the EXISTING daily ceiling reliably reachable where
+ * before it took constant attention. Nobody extracts more than they could
+ * yesterday; they just stop having to work for it. If that volume is ever a
+ * problem, the conversation is about the ceiling, not about this file.
+ *
+ * WHERE THINGS ARE SOLD used to be its own mapping here (`STACKACRES_STALLS`)
+ * -- a second, hand-written zone-to-stock table alongside world.ts's
+ * `stockZone`. It drifted: it predated the pen-zoning pass and still had
+ * cattle sold at the Long Meadow and crops at Ox Fields, the opposite of
+ * where the actual pens stood, and nothing caught it because nothing checked
+ * the two against each other. Deleted outright rather than fixed in place --
+ * `stockZone`/`stocksInZone` in world.ts is the one mapping now.
  */
 
-import { STACKACRES_CATALOGUE, isLivestock, type StackAcresStock } from "./catalogue";
-// Type-only, and it has to stay that way: world.ts imports zones.ts, so a
-// value import back from here would be read mid-evaluation. Same arrangement
-// paths.ts and water.ts already have with world.ts.
-import type { ZoneId } from "./zones";
+import { STACKACRES_CATALOGUE, type StackAcresStock } from "./catalogue";
 
 /**
  * Gold per Bushel of a stock's seed price. THE ONE RULE, and the reason there
@@ -53,12 +57,12 @@ import type { ZoneId } from "./zones";
 export const STACKACRES_GOLD_PER_SEED_BUSHEL = 100;
 
 /**
- * What a plot of land costs, in Gold. FLAT, and the same for every locked plot
- * on the grid -- re-exported from catalogue.ts, which owns it because this
- * module reads that one and the reverse would be a cycle. Kept visible here so
- * every Gold price in StackAcres can be read off a single file.
+ * What buying capacity costs, in Gold -- re-exported from catalogue.ts, which
+ * owns it because this module reads that one and the reverse would be a
+ * cycle. Kept visible here so every Gold price in StackAcres can be read off
+ * a single file.
  */
-export { STACKACRES_PLOT_PRICE } from "./catalogue";
+export { STACKACRES_CAPACITY_PRICE, stackacresCapacityPrice } from "./catalogue";
 
 /** What buying `stock` outright costs, in Gold. Pure function of the seed price. */
 export function stackacresStockPrice(stock: StackAcresStock): number {
@@ -66,83 +70,7 @@ export function stackacresStockPrice(stock: StackAcresStock): number {
 }
 
 /**
- * A market stall: which district sells what.
- *
- * The map grew four districts before this and none of them sold anything --
- * they were somewhere to look at rather than somewhere to go. Splitting the
- * catalogue across them is what gives the roads a destination, and it is
- * deliberately a SPLIT rather than four copies of the same shelf: a stall you
- * can reach from where you are standing is not a journey.
- *
- * Land is the exception and is sold at every stall, because the plots are all
- * physically in the farmstead and walking back to buy one you are looking at
- * from three districts away is friction with no game in it.
- */
-export interface StackAcresStall {
-  zone: ZoneId;
-  /** What the sign over the counter says. */
-  label: string;
-  /** One line, for the stall card. */
-  blurb: string;
-  /** What this stall sells outright for Gold. */
-  stock: readonly StackAcresStock[];
-}
-
-export const STACKACRES_STALLS: Readonly<Record<ZoneId, StackAcresStall>> = {
-  farmstead: {
-    zone: "farmstead",
-    label: "The Yard",
-    blurb: "Seed trays and the hen house. Where everybody starts.",
-    stock: ["sprout", "hen"],
-  },
-  // Sells the Crop Fields' own stock -- world.ts's PEN_GROUP_ORIGIN puts the
-  // "field" pen block physically in the Long Meadow, and a stall has to
-  // match the plots standing in its own district or the buy button offers
-  // stock that plot refuses (stockAllowedOnPlot, checked server-side) and
-  // always errors. This stall sold "cattle" until that drift was caught.
-  meadow: {
-    zone: "meadow",
-    label: "The Seed Barrow",
-    blurb: "Cash Crop seed, ready for the Long Meadow's own fields.",
-    stock: ["cash_crop"],
-  },
-  // Sells the Cattle Pens' own stock -- PEN_GROUP_ORIGIN.cattle is the block
-  // physically standing at Ox Fields. Sold "cash_crop" until the same drift
-  // that hit meadow (above) was fixed alongside it.
-  oxfields: {
-    zone: "oxfields",
-    label: "The Stockyard",
-    blurb: "Where a Cattle Pen starts, if you'd rather not wait on a calf.",
-    stock: ["cattle"],
-  },
-  wallow: {
-    zone: "wallow",
-    label: "The Shearing Shed",
-    blurb: "Wool and mud, and the Sheep Pens that call the Fold home.",
-    stock: ["pig"],
-  },
-};
-
-export const STALL_LIST: readonly StackAcresStall[] = Object.values(STACKACRES_STALLS);
-
-/** Which district sells this stock. Every stock is sold at exactly one. */
-export function stallSelling(stock: StackAcresStock): ZoneId {
-  for (const stall of STALL_LIST) {
-    if (stall.stock.includes(stock)) return stall.zone;
-  }
-  // Unreachable while the record above covers the catalogue, and held by a
-  // test. Falling back to the farmstead rather than throwing keeps a future
-  // stock the stalls have not been told about buyable instead of dead.
-  return "farmstead";
-}
-
-/** True if this district sells this stock. What the buy route checks. */
-export function stallSells(zone: ZoneId, stock: StackAcresStock): boolean {
-  return STACKACRES_STALLS[zone].stock.includes(stock);
-}
-
-/**
- * What a Gold-bought plot returns per cycle if every Bushel of it were taken
+ * What a Gold-bought unit returns per cycle if every Bushel of it were taken
  * straight back out through the exchange window, as a fraction of what it
  * cost. THE NUMBER THAT MUST STAY BELOW 1 on every tier.
  *
@@ -168,30 +96,24 @@ export function goldStockRoundTrip(
  * What retiring permanent stock refunds: NOTHING, stated as a function so the
  * decision is somewhere rather than implied by an absent branch.
  *
- * A refund would make a plot a place to park Gold and take it back out, and
- * "take it back out" is the one shape this whole subsystem is built to not
- * have. Retiring exists so a player is never trapped by a full pen cap, not as
- * a way to undo a purchase -- the UI has to say so before it asks.
+ * A refund would make owning stock a place to park Gold and take it back out,
+ * and "take it back out" is the one shape this whole subsystem is built to
+ * not have. Retiring exists so a player is never trapped by a full cap, not
+ * as a way to undo a purchase -- the UI has to say so before it asks.
  */
 export const STACKACRES_RETIRE_REFUND = 0;
 
-/** Everything a stall shows on the shelf. */
-export interface StackAcresStallItem {
+/** Everything the district's buy section shows for one stock kind. */
+export interface StackAcresShelfItem {
   stock: StackAcresStock;
   label: string;
   /** Gold, outright, permanent. */
   price: number;
   /** Bushels, one cycle, the path that already existed. */
   seedCost: number;
-  animal: boolean;
 }
 
-export function stallShelf(zone: ZoneId): StackAcresStallItem[] {
-  return STACKACRES_STALLS[zone].stock.map((stock) => ({
-    stock,
-    label: STACKACRES_CATALOGUE[stock].label,
-    price: stackacresStockPrice(stock),
-    seedCost: STACKACRES_CATALOGUE[stock].seedCost,
-    animal: isLivestock(stock),
-  }));
+export function shelfItem(stock: StackAcresStock): StackAcresShelfItem {
+  const def = STACKACRES_CATALOGUE[stock];
+  return { stock, label: def.label, price: stackacresStockPrice(stock), seedCost: def.seedCost };
 }

@@ -1,217 +1,81 @@
 import { describe, expect, it } from "vitest";
-import { STACKACRES_GRID_PLOTS, STACKACRES_STOCK } from "./catalogue";
+import { STACKACRES_STOCK } from "./catalogue";
 import { nearPath } from "./paths";
-import type { StackAcresPlotSnapshot, StackAcresPlotState } from "./plots";
 import {
   FARM_ZONE,
-  STACKACRES_CELL,
   STACKACRES_CHUNK,
   STACKACRES_ZOOM_MAX,
   STACKACRES_ZOOM_MIN,
-  STACKACRES_ZOOM_OPEN_MAX,
-  cellCenter,
-  cellOrigin,
   chunkScenery,
   clampZoom,
-  clearedLayout,
-  critterCount,
+  cropSpot,
+  growAreaBounds,
+  growAreaInterior,
   inFarmZone,
-  openingZoom,
-  ownedBounds,
-  penGroupBounds,
-  penInterior,
-  plotIndexAt,
-  plotNeighbor,
-  plotPenZone,
   powerOfTwoCeil,
   scrollToKeepUnderPointer,
+  seedFromId,
   seededRandom,
   spawnCritter,
   stepCritter,
-  STACKACRES_PEN_ZONES,
-  stockAllowedOnPlot,
-  thicketLayout,
+  stockAllowedInZone,
+  stockZone,
+  stocksInZone,
 } from "./world";
+import { ZONE_IDS } from "./zones";
 
-function plot(
-  plotIndex: number,
-  state: StackAcresPlotState,
-  over: Partial<StackAcresPlotSnapshot> = {},
-): StackAcresPlotSnapshot {
-  return {
-    plotIndex,
-    state,
-    stock: null,
-    stake: null,
-    yieldQuantity: null,
-    startedAt: null,
-    readyAt: null,
-    progress: null,
-    hungryAt: null,
-    muckFee: null,
-    permanent: false,
-    unlockPrice: null,
-    purchasable: false,
-    ...over,
-  };
-}
-
-/** The first `owned` of the Farmstead's own four Hen Coop plots, cleared --
- *  kept inside that one block rather than spanning all sixteen, since plots
- *  5 and up now live in three other districts entirely (see "owned bounds"
- *  below). */
-function henFarm(owned: number): StackAcresPlotSnapshot[] {
-  return Array.from({ length: owned }, (_, i) => plot(i + 1, "empty"));
-}
-
-function cellRectFor(plotIndex: number) {
-  const origin = cellOrigin(plotIndex);
-  return { x: origin.x, y: origin.y, width: STACKACRES_CELL, height: STACKACRES_CELL };
-}
-
-describe("plot placement", () => {
-  it("lays each kind's four plots out 2x2, reading order, inside its own block", () => {
-    const hen = penGroupBounds("hen");
-    expect(cellOrigin(1)).toEqual({ x: hen.x, y: hen.y });
-    expect(cellOrigin(2)).toEqual({ x: hen.x + STACKACRES_CELL, y: hen.y });
-    expect(cellOrigin(3)).toEqual({ x: hen.x, y: hen.y + STACKACRES_CELL });
-    expect(cellOrigin(4)).toEqual({ x: hen.x + STACKACRES_CELL, y: hen.y + STACKACRES_CELL });
+describe("stock zoning", () => {
+  it("gives every kind exactly the district the pen-zoning pass put it in", () => {
+    expect(stockZone("hen")).toBe("farmstead");
+    expect(stockZone("sprout")).toBe("meadow");
+    expect(stockZone("cash_crop")).toBe("meadow");
+    expect(stockZone("pig")).toBe("wallow");
+    expect(stockZone("cattle")).toBe("oxfields");
   });
 
-  it("puts each kind's block in the district that kind now lives in", () => {
-    // 1-4 Hen Coops (Farmstead), 5-8 Crop Fields (Long Meadow), 9-12 Sheep
-    // Pens (the Fold), 13-16 Cattle Pens (Ox Fields) -- see plotPenZone's own
-    // header for why this order.
-    const field = penGroupBounds("field");
-    const pig = penGroupBounds("pig");
-    const cattle = penGroupBounds("cattle");
-    expect(cellOrigin(5)).toEqual({ x: field.x, y: field.y });
-    expect(cellOrigin(9)).toEqual({ x: pig.x, y: pig.y });
-    expect(cellOrigin(13)).toEqual({ x: cattle.x, y: cattle.y });
-  });
-
-  it("hit-tests every plot's centre back to itself", () => {
-    for (let index = 1; index <= STACKACRES_GRID_PLOTS; index += 1) {
-      const centre = cellCenter(index);
-      expect(plotIndexAt(centre.x, centre.y)).toBe(index);
-    }
-  });
-
-  it("gives a plot's far edge to the next plot within its own block, and the last pixel to itself", () => {
-    const origin = cellOrigin(1);
-    expect(plotIndexAt(origin.x, origin.y)).toBe(1);
-    expect(plotIndexAt(origin.x + STACKACRES_CELL - 0.01, origin.y)).toBe(1);
-    expect(plotIndexAt(origin.x + STACKACRES_CELL, origin.y)).toBe(2);
-    expect(plotIndexAt(origin.x, origin.y + STACKACRES_CELL)).toBe(3);
-  });
-
-  it("returns null off every block, including the open ground between two of them", () => {
-    expect(plotIndexAt(0, 0)).toBeNull();
-    expect(plotIndexAt(1_000_000, 100)).toBeNull();
-    // Between the Farmstead's Hen Coops and its own barn -- inside the
-    // district, not inside any plot.
-    expect(plotIndexAt(100, 0)).toBeNull();
-  });
-});
-
-describe("plot neighbours within a block", () => {
-  it("finds the three real neighbours of a corner plot", () => {
-    // Plot 1 is (col 0, row 0) of the Hen Coop block.
-    expect(plotNeighbor(1, 1, 0)).toBe(2); // east
-    expect(plotNeighbor(1, 0, 1)).toBe(3); // south
-    expect(plotNeighbor(1, -1, 0)).toBeNull(); // off the block's own west edge
-    expect(plotNeighbor(1, 0, -1)).toBeNull(); // off the block's own north edge
-    expect(plotNeighbor(1, 1, 1)).toBe(4); // the diagonal is in-bounds too, just unused by any real caller
-  });
-
-  it("never crosses into a different kind's block", () => {
-    // Plot 4 is the Hen block's own bottom-right corner; plot 5 is a
-    // different kind (Crop Fields) entirely, even though the numbers are
-    // sequential. Nothing about plotNeighbor may reach across that seam.
-    expect(plotNeighbor(4, 1, 0)).toBeNull();
-    expect(plotNeighbor(4, 0, 1)).toBeNull();
-  });
-});
-
-describe("pen zones", () => {
-  it("gives every one of the four blocks its own zone, in ladder order", () => {
-    expect([1, 2, 3, 4].map(plotPenZone)).toEqual(["hen", "hen", "hen", "hen"]);
-    expect([5, 6, 7, 8].map(plotPenZone)).toEqual(["field", "field", "field", "field"]);
-    expect([9, 10, 11, 12].map(plotPenZone)).toEqual(["pig", "pig", "pig", "pig"]);
-    expect([13, 14, 15, 16].map(plotPenZone)).toEqual(["cattle", "cattle", "cattle", "cattle"]);
-  });
-
-  it("names a zone for every plot on the ladder, with no gaps", () => {
-    for (let index = 1; index <= STACKACRES_GRID_PLOTS; index += 1) {
-      expect(STACKACRES_PEN_ZONES).toContain(plotPenZone(index));
-    }
-  });
-
-  it("lets a crop stand only on a field, and an animal only on its own pen", () => {
-    // Block 1 (hen): only the hen.
-    expect(stockAllowedOnPlot(1, "hen")).toBe(true);
-    expect(stockAllowedOnPlot(1, "pig")).toBe(false);
-    expect(stockAllowedOnPlot(1, "cattle")).toBe(false);
-    expect(stockAllowedOnPlot(1, "sprout")).toBe(false);
-    // Block 2 (field): both crops, neither animal.
-    expect(stockAllowedOnPlot(5, "sprout")).toBe(true);
-    expect(stockAllowedOnPlot(5, "cash_crop")).toBe(true);
-    expect(stockAllowedOnPlot(5, "hen")).toBe(false);
-    expect(stockAllowedOnPlot(5, "pig")).toBe(false);
-    expect(stockAllowedOnPlot(5, "cattle")).toBe(false);
-    // Block 3 (pig) and block 4 (cattle): the same shape, one species each.
-    expect(stockAllowedOnPlot(9, "pig")).toBe(true);
-    expect(stockAllowedOnPlot(9, "cattle")).toBe(false);
-    expect(stockAllowedOnPlot(13, "cattle")).toBe(true);
-    expect(stockAllowedOnPlot(13, "pig")).toBe(false);
-  });
-
-  it("gives every real stock exactly one home on the ladder", () => {
-    // Nothing in the catalogue is homeless or double-homed: a real farm has
-    // one right place for a given animal or crop, not zero and not two.
+  it("agrees with itself: a stock is only allowed in its own zone", () => {
     for (const stock of STACKACRES_STOCK) {
-      const homes = Array.from({ length: STACKACRES_GRID_PLOTS }, (_, i) => i + 1).filter((index) =>
-        stockAllowedOnPlot(index, stock),
-      );
-      expect(homes.length).toBeGreaterThan(0);
-      const zones = new Set(homes.map(plotPenZone));
-      expect(zones.size).toBe(1);
+      const home = stockZone(stock);
+      for (const zone of ZONE_IDS) {
+        expect(stockAllowedInZone(zone, stock)).toBe(zone === home);
+      }
     }
+  });
+
+  it("names every zone's stock as the exact reverse of stockZone", () => {
+    for (const zone of ZONE_IDS) {
+      const listed = stocksInZone(zone);
+      for (const stock of listed) expect(stockZone(stock)).toBe(zone);
+      for (const stock of STACKACRES_STOCK) {
+        expect(listed.includes(stock)).toBe(stockZone(stock) === zone);
+      }
+    }
+    // Every stock is accounted for exactly once across all four zones.
+    const total = ZONE_IDS.reduce((sum, zone) => sum + stocksInZone(zone).length, 0);
+    expect(total).toBe(STACKACRES_STOCK.length);
   });
 });
 
-describe("owned bounds", () => {
-  it("frames a subset of one block's plots, no padding", () => {
-    const bounds = ownedBounds(henFarm(2));
-    const hen = penGroupBounds("hen");
-    expect(bounds).toEqual({ x: hen.x, y: hen.y, width: 2 * STACKACRES_CELL, height: STACKACRES_CELL });
+describe("grow areas", () => {
+  it("gives every district a sane, non-degenerate rect", () => {
+    for (const zone of ZONE_IDS) {
+      const bounds = growAreaBounds(zone);
+      expect(bounds.width).toBeGreaterThan(0);
+      expect(bounds.height).toBeGreaterThan(0);
+    }
   });
 
-  it("frames a whole block once every plot in it is owned", () => {
-    expect(ownedBounds(henFarm(4))).toEqual(penGroupBounds("hen"));
-  });
-
-  it("frames the plot list's own first entry when nothing is acreage", () => {
-    expect(ownedBounds([])).toEqual(cellRectFor(1));
-  });
-
-  it("does not count locked land that is not for sale", () => {
-    const bounds = ownedBounds([plot(1, "empty"), plot(4, "locked")]);
-    expect(bounds).toEqual(cellRectFor(1));
-  });
-
-  it("is zone-blind: given plots from two different kinds, it unions them honestly rather than assuming one place", () => {
-    // ownedBounds itself does not know or care that plot 1 (a Hen Coop, at
-    // the Farmstead) and plot 5 (a Crop Field, at the Long Meadow) are 800
-    // units apart -- it is up to a caller that wants "one place" to filter
-    // to one block's plots first, the way the scene's own home view does.
-    const bounds = ownedBounds([plot(1, "empty"), plot(5, "empty")]);
-    const hen = cellRectFor(1);
-    const field = cellRectFor(5);
-    expect(bounds.x).toBe(Math.min(hen.x, field.x));
-    expect(bounds.y).toBe(Math.min(hen.y, field.y));
-    expect(bounds.x + bounds.width).toBe(Math.max(hen.x + hen.width, field.x + field.width));
-    expect(bounds.y + bounds.height).toBe(Math.max(hen.y + hen.height, field.y + field.height));
+  it("keeps the walkable interior nested inside the fenced bounds, on every side", () => {
+    for (const zone of ZONE_IDS) {
+      const bounds = growAreaBounds(zone);
+      const interior = growAreaInterior(zone);
+      expect(interior.width).toBeGreaterThan(0);
+      expect(interior.height).toBeGreaterThan(0);
+      expect(interior.x).toBeGreaterThan(bounds.x);
+      expect(interior.y).toBeGreaterThan(bounds.y);
+      expect(interior.x + interior.width).toBeLessThan(bounds.x + bounds.width);
+      expect(interior.y + interior.height).toBeLessThan(bounds.y + bounds.height);
+    }
   });
 });
 
@@ -221,18 +85,6 @@ describe("zoom", () => {
     expect(clampZoom(50)).toBe(STACKACRES_ZOOM_MAX);
     expect(clampZoom(2)).toBe(2);
     expect(clampZoom(Number.NaN)).toBe(STACKACRES_ZOOM_MIN);
-  });
-
-  it("opens a small farm close but not so close a hen fills the screen", () => {
-    const bounds = ownedBounds(henFarm(4));
-    const opening = openingZoom(bounds, 844, 390);
-    expect(opening).toBeGreaterThanOrEqual(STACKACRES_ZOOM_MIN);
-    expect(opening).toBeLessThanOrEqual(STACKACRES_ZOOM_OPEN_MAX);
-  });
-
-  it("never opens past the open-zoom cap even on a huge window", () => {
-    const bounds = ownedBounds(henFarm(4));
-    expect(openingZoom(bounds, 4000, 3000)).toBe(STACKACRES_ZOOM_OPEN_MAX);
   });
 
   it("keeps the world point under the finger through a zoom", () => {
@@ -251,25 +103,8 @@ describe("zoom", () => {
 });
 
 describe("animals", () => {
-  it("shows a picture of the pen, not the yield", () => {
-    expect(critterCount("hen")).toBe(3);
-    expect(critterCount("pig")).toBe(2);
-    expect(critterCount("cattle")).toBe(2);
-    expect(critterCount("sprout")).toBe(0);
-    expect(critterCount(null)).toBe(0);
-  });
-
-  it("keeps a pen's walkable area inside the fence", () => {
-    const cell = cellOrigin(6);
-    const pen = penInterior(6);
-    expect(pen.x).toBeGreaterThan(cell.x);
-    expect(pen.y).toBeGreaterThan(cell.y);
-    expect(pen.x + pen.width).toBeLessThan(cell.x + STACKACRES_CELL);
-    expect(pen.y + pen.height).toBeLessThan(cell.y + STACKACRES_CELL);
-  });
-
   it("never walks an animal through the fence, however long it wanders", () => {
-    const pen = penInterior(3);
+    const pen = growAreaInterior("farmstead");
     const random = seededRandom(99);
     let critter = spawnCritter(pen, random);
     let walked = 0;
@@ -391,33 +226,6 @@ describe("open-world scenery", () => {
   });
 });
 
-describe("locked-plot thicket", () => {
-  it("is deterministic per plot and stays in cell-local bounds", () => {
-    const first = thicketLayout(7, false);
-    expect(thicketLayout(7, false)).toEqual(first);
-    expect(thicketLayout(8, false)).not.toEqual(first);
-    for (const layout of [first, thicketLayout(7, true), clearedLayout(7)]) {
-      for (const piece of layout) {
-        expect(piece.x).toBeGreaterThanOrEqual(0);
-        expect(piece.x).toBeLessThanOrEqual(STACKACRES_CELL);
-        expect(piece.y).toBeGreaterThanOrEqual(0);
-        expect(piece.y).toBeLessThanOrEqual(STACKACRES_CELL);
-      }
-    }
-  });
-
-  it("thins the thicket on the plot that is for sale", () => {
-    expect(thicketLayout(9, true).length).toBeLessThan(thicketLayout(9, false).length);
-  });
-
-  it("sorts by y, for correct draw order", () => {
-    const items = thicketLayout(11, false);
-    for (let i = 1; i < items.length; i += 1) {
-      expect(items[i].y).toBeGreaterThanOrEqual(items[i - 1].y);
-    }
-  });
-});
-
 describe("powerOfTwoCeil", () => {
   it("rounds a texture side up to the next power of two, never down", () => {
     expect(powerOfTwoCeil(1)).toBe(1);
@@ -449,6 +257,36 @@ describe("seeded randomness", () => {
       expect(value).toBe(b());
       expect(value).toBeGreaterThanOrEqual(0);
       expect(value).toBeLessThan(1);
+    }
+  });
+});
+
+describe("seedFromId", () => {
+  it("is deterministic: the same id always hashes the same", () => {
+    expect(seedFromId("unit-42")).toBe(seedFromId("unit-42"));
+  });
+
+  it("differs for different ids", () => {
+    expect(seedFromId("unit-1")).not.toBe(seedFromId("unit-2"));
+  });
+});
+
+describe("cropSpot", () => {
+  it("is deterministic per unit id", () => {
+    expect(cropSpot("meadow", "crop-7")).toEqual(cropSpot("meadow", "crop-7"));
+  });
+
+  it("lands inside the zone's own grow-area interior", () => {
+    const ids = ["crop-1", "crop-2", "crop-3", "another-id", "yet-another"];
+    for (const zone of ZONE_IDS) {
+      const interior = growAreaInterior(zone);
+      for (const id of ids) {
+        const spot = cropSpot(zone, id);
+        expect(spot.x).toBeGreaterThanOrEqual(interior.x);
+        expect(spot.x).toBeLessThanOrEqual(interior.x + interior.width);
+        expect(spot.y).toBeGreaterThanOrEqual(interior.y);
+        expect(spot.y).toBeLessThanOrEqual(interior.y + interior.height);
+      }
     }
   });
 });

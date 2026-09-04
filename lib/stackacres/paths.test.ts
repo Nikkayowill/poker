@@ -8,22 +8,16 @@ import {
   pathBakePadding,
   pathBounds,
 } from "./paths";
-import {
-  FARM_ZONE,
-  STACKACRES_PEN_ZONES,
-  cellCenter,
-  inFarmZone,
-  penGroupBounds,
-} from "./world";
-import { STACKACRES_GRID_PLOTS } from "./catalogue";
-import { zoneAt } from "./zones";
+import { FARM_ZONE, growAreaBounds, inFarmZone } from "./world";
+import { ZONE_IDS, zoneAt } from "./zones";
 
-/** Every kind's own 2x2 pen block -- the plots are four separate small
- *  squares now, one per district, not one 4x4 square at the Farmstead. */
-const PLOT_BLOCKS = STACKACRES_PEN_ZONES.map(penGroupBounds);
+/** Every district's own grow area -- the plots are gone; each district has
+ *  one fixed rect where its units stand, and that is what a path must stay
+ *  clear of now. */
+const GROW_AREA_BLOCKS = ZONE_IDS.map(growAreaBounds);
 
 function insidePlots(x: number, y: number, margin = 0): boolean {
-  return PLOT_BLOCKS.some(
+  return GROW_AREA_BLOCKS.some(
     (block) =>
       x >= block.x - margin &&
       x <= block.x + block.width + margin &&
@@ -118,10 +112,17 @@ describe("farm paths", () => {
     expect(nearPath(50 + laneHalf + PATH_CLEARANCE + 0.1, 200)).toBe(false);
   });
 
-  it("is off every plot's centre", () => {
-    for (let index = 1; index <= STACKACRES_GRID_PLOTS; index += 1) {
-      const c = cellCenter(index);
-      expect(nearPath(c.x, c.y)).toBe(false);
+  it("is off every grow area's corners and centre", () => {
+    for (const zone of ZONE_IDS) {
+      const area = growAreaBounds(zone);
+      const points = [
+        { x: area.x, y: area.y },
+        { x: area.x + area.width, y: area.y },
+        { x: area.x, y: area.y + area.height },
+        { x: area.x + area.width, y: area.y + area.height },
+        { x: area.x + area.width / 2, y: area.y + area.height / 2 },
+      ];
+      for (const p of points) expect(nearPath(p.x, p.y), `${zone} at ${p.x},${p.y}`).toBe(false);
     }
   });
 

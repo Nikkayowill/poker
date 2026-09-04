@@ -3,14 +3,31 @@
  *
  * WHY THIS EXISTS. Everything else in StackAcres is drawn by a function in
  * stackacres-art.ts, and that is still the default: a painter is on the
- * `RAMPS` palette by construction, recolours by swapping a ramp (which is how
- * `tree1/2/3` are one painter and three ramps), and costs nothing to ship.
- * These are the exception, generated rather than drawn, and they buy a
- * silhouette the painters were not getting -- the cow and the hen especially,
- * which were circles with rounded-rect legs. `sheep`, `ox` and `hog` are the
- * same trade for the same reason (see the FLUX bake-off Kayo signed off on);
- * `grandfatherRay` is not an animal at all but is drawn the identical way,
- * since he is a character sprite standing in the world, not a UI portrait.
+ * `RAMPS` palette by construction, recolours by swapping a ramp, and costs
+ * nothing to ship. These are the exception, generated rather than drawn, and
+ * they buy a silhouette the painters were not getting -- the cow and the hen
+ * especially, which were circles with rounded-rect legs. `sheep`, `ox` and
+ * `hog` are the same trade for the same reason (see the FLUX bake-off Kayo
+ * signed off on); `grandfatherRay` is not an animal at all but is drawn the
+ * identical way, since he is a character sprite standing in the world, not a
+ * UI portrait.
+ *
+ * `tree1/2/3`, `pine` and `bush` joined them on 2026-09-04, and they are the
+ * reason this comment no longer opens by holding the trees up as the model
+ * case FOR painters. They were one `treeRound` shape drawn three times in
+ * three greens, which was the cheapest thing in the art file and the weakest
+ * thing on the map. Two things changed together: Kayo called the art (his
+ * words) "complete dog shit", and the same pass grouped the woodland into
+ * groves and treelines (`chunkScenery` in lib/stackacres/world.ts), so
+ * copies now stand shoulder to shoulder where the old scatter spread them
+ * thin enough for one silhouette to pass. The three broadleaves are three
+ * genuinely different renders now rather than three ramps, BECAUSE a PNG
+ * cannot be recoloured -- the variety had to move into the art itself.
+ *
+ * `grassTile` is in here but is not one of these: it is not a painter, has no
+ * box or anchor, and is never wrapped by `spriteBacked`. It rides this module
+ * only because this list is what the scene's `preload` walks, and `bakeGrass`
+ * wants it in hand before it bakes the lawn rather than a frame later.
  *
  * WHAT THEY COST, so nobody has to rediscover it: they are off `RAMPS`, they
  * carry gradients where the rest of the farm is flat, and they cannot be
@@ -37,9 +54,25 @@ export const SPRITE_ART = {
   barn: "/stackacres/sprites/barn.png",
   windmill: "/stackacres/sprites/windmill.png",
   grandfatherRay: "/stackacres/sprites/grandfather-ray.png",
+  tree1: "/stackacres/sprites/tree1.png",
+  tree2: "/stackacres/sprites/tree2.png",
+  tree3: "/stackacres/sprites/tree3.png",
+  pine: "/stackacres/sprites/pine.png",
+  bush: "/stackacres/sprites/bush.png",
+  // Not a painter and not a cut-out: the ground tile, drawn by `bakeGrass`
+  // straight into its own 256-unit canvas. It rides this module only because
+  // this is what the scene's `preload` walks, and a tile that arrived late
+  // would mean baking the lawn twice.
+  grassTile: "/stackacres/sprites/grass-tile.png",
 } as const;
 
 export type SpriteName = keyof typeof SPRITE_ART;
+
+/** The sprites that stand in FRONT OF A PAINTER, which is every one of them
+ *  except the ground tile -- `grassTile` has no painter behind it (the lawn is
+ *  a texture, not a thing with a box and an anchor), so it is the one name
+ *  here that `spriteBacked` and `bakeSpriteTexture` must never be handed. */
+export type PainterSpriteName = Exclude<SpriteName, "grassTile">;
 
 export const SPRITE_NAMES = Object.keys(SPRITE_ART) as readonly SpriteName[];
 

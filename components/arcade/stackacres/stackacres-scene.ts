@@ -46,6 +46,7 @@ import {
   clampZoom,
   critterSpeed,
   cropSpot,
+  growAreaAt,
   growAreaBounds,
   growAreaInterior,
   growthStage,
@@ -60,6 +61,7 @@ import {
   type WorldPoint,
   type WorldRect,
 } from "@/lib/stackacres/world";
+import { FENCE_BAY } from "@/lib/stackacres/fence";
 import {
   ART_FRAME,
   ART_SCALE,
@@ -71,7 +73,7 @@ import {
   type PainterName,
 } from "./stackacres-art";
 import { SPRITE_ART, SPRITE_NAMES, spriteLoadKey } from "./stackacres-sprites";
-import { rampHex } from "./art-palette";
+import { RAMPS, rampHex } from "./art-palette";
 import { bakePathTexture } from "./art-paths";
 import { bakePondTexture } from "./art-water";
 
@@ -100,23 +102,25 @@ import { bakePondTexture } from "./art-water";
  * (what it is, what state it is in, how far along it is) from the React
  * shell, which reads that straight off lib/stackacres/units.ts. THERE IS NO
  * PLOT GRID ANY MORE (see 2026-09-03's CLAUDE.md entry -- "districts hold
- * stock, not plots") -- buying and tending a unit is a DOM sidebar
- * (stackacres-district-panel.tsx), not a tap on the canvas, so the scene has
- * no plot-tap or sweep callbacks left at all: it draws the farm and reports
- * once when the first frame is up, and that is the entire contract with the
- * shell now.
+ * stock, not plots"), but the farm IS tappable again: a tap that lands on a
+ * unit's own picture collects, feeds or clears it where it stands, and a tap
+ * on a district's empty fenced ground offers to seed something there. The
+ * scene reports WHICH unit and WHERE (`onUnitTap`, `onGroundTap`) and
+ * nothing else -- it still owns no rules, and lib/stackacres/tap-action.ts
+ * is what decides whether that finger is worth a network call.
  *
  * The HUD, the toolbelt and the district sidebar are NOT in here. They stay
  * as DOM, pinned over the canvas by CSS, because a `<button>` is reachable by
- * a screen reader and a thumb alike, and a Phaser Text object is neither.
+ * a screen reader and a thumb alike, and a Phaser Text object is neither --
+ * so the sidebar's own unit rows remain the keyboard and screen-reader path
+ * to everything a tap on the map now does faster.
  * Those overlays are siblings of the canvas host rather than children of it,
  * so a press on one never reaches the map at all -- which is also why
  * Phaser's own input is switched off entirely (see stackacres-world.tsx) and
  * every gesture is read straight off the host element with native pointer
- * events. See `bindInput` for why that matters more than tidiness. The one
- * gesture still read straight off the canvas is the scythe's mow-drag -- the
- * Long Meadow's grass is not a unit and has no sidebar row, so cutting it is
- * still something you do to the ground itself.
+ * events. See `bindInput` for why that matters more than tidiness, and
+ * `unitAt` for why a tap on a unit is resolved by hand at release rather
+ * than by a `GAMEOBJECT_POINTER_DOWN` on each sprite.
  *
  * Three coordinate systems meet here and it matters which one is in hand.
  *
@@ -166,9 +170,34 @@ export interface StackAcresSceneUnit {
   permanent: boolean;
 }
 
+/** Where a tap landed, in CSS pixels relative to the canvas host -- which is
+ *  also the box every DOM overlay on this screen is positioned in, so the
+ *  shell can drop a menu or a label straight onto these numbers. */
+export interface TapPoint {
+  x: number;
+  y: number;
+}
+
 export interface StackAcresSceneCallbacks {
   /** Fired once the first frame with units on it has been drawn. */
   onReady: () => void;
+  /**
+   * A tap that landed on an owned unit's own picture. The scene reports WHICH
+   * unit and WHERE; it does not know what tapping one is worth, and the shell
+   * decides that through lib/stackacres/tap-action.ts.
+   */
+  onUnitTap: (unitId: string, at: TapPoint) => void;
+  /**
+   * A tap on a district's own fenced ground that hit no unit -- an offer to
+   * seed something there, answered by the radial menu in stackacres-farm.tsx.
+   */
+  onGroundTap: (zone: ZoneId, at: TapPoint) => void;
+  /**
+   * The view moved under whatever the shell has pinned to it. A menu dropped
+   * at a finger is anchored to the screen, not to the world, so it has to go
+   * away rather than drift off the thing it was opened on.
+   */
+  onViewMoved: () => void;
 }
 
 export interface StackAcresSceneOptions {
@@ -208,6 +237,18 @@ const TAP_SLOP = 8;
  * sounding like separate chops.
  */
 const SWISH_GAP_MS = 190;
+
+/** How far outside its own art a unit still answers a tap, in CSS pixels. A
+ *  hen at the zoomed-out end of the range is a thumbnail; without this the
+ *  only way to collect one is to zoom in first, which is exactly the friction
+ *  this whole surface exists to remove. Constant on SCREEN, not in the world
+ *  -- it is sized against a fingertip, and a fingertip does not zoom. */
+const TAP_PAD = 12;
+
+/** How far the world may slide, in CSS pixels, before anything the shell has
+ *  pinned to a screen position is told the ground has moved out from under
+ *  it. See `notifyViewMoved`. */
+const VIEW_MOVE_SLOP = 4;
 
 /** Inertia after a flick. Speeds are CSS pixels per millisecond. */
 const FLICK_WINDOW_MS = 80;
@@ -277,13 +318,16 @@ function castsShadow(kind: SceneryKind): boolean {
 function sceneryShadowScale(kind: SceneryKind): readonly [number, number] {
   switch (kind) {
     case "bush":
-      return [0.6, 0.9];
+      return [0.95, 1.25];
     case "log":
       return [0.7, 0.5];
     case "boulder":
       return [0.85, 0.7];
     default:
-      return [0.9, 0.9];
+      // Trees and pines, tracking the painters themselves (24 units wide
+      // originally, then 42, now 64). A pool sized to a tree that no longer
+      // exists leaves a big canopy standing on a saucer.
+      return [2.05, 1.75];
   }
 }
 
@@ -405,6 +449,11 @@ interface UnitNode {
    *  move in lockstep. */
   phase: number;
   tweens: Phaser.Tweens.Tween[];
+  /** The squash-and-stretch answering the last tap on this unit, if it is
+   *  still running. Held on its own rather than pushed onto `tweens`: a unit
+   *  can be tapped over and over between rebuilds, and a list nothing ever
+   *  prunes would grow one dead chain per tap. */
+  pop: Phaser.Tweens.TweenChain | null;
   signature: string;
   unit: StackAcresSceneUnit;
 }
@@ -509,6 +558,26 @@ export class StackAcresScene extends Phaser.Scene {
   /** The held tool. Only the scythe changes what a gesture MEANS here; every
    *  other tool does nothing on the canvas at all. */
   private tool: StackAcresTool = "inspect";
+
+  /**
+   * The camera as of the last frame, so `update` can tell the shell when the
+   * view has moved. Watched here rather than fired from each of the half
+   * dozen places that move the camera (a drag, a pinch, a wheel, the zoom
+   * buttons, "home", travelling to a district, and the inertia that outlives
+   * all of them) -- most of those hand off to a tween that keeps moving after
+   * the call returns, so the only honest place to notice is the frame.
+   */
+  private lastView = { x: 0, y: 0, zoom: 0 };
+
+  /**
+   * The farm's own display face, read off the host element rather than
+   * hardcoded -- `.sa-theme` sets `--sa-font` and the canvas host inherits it,
+   * so a label drawn INTO the picture speaks in the same voice as every
+   * button pinned over it. next/font mints the family name at build time
+   * (see stackacres-font.ts), which is exactly why this cannot be a literal.
+   * Read once, on first use: it never changes for the life of a scene.
+   */
+  private displayFont: string | null = null;
 
   constructor(callbacks: StackAcresSceneCallbacks, options: StackAcresSceneOptions) {
     super({ key: "StackAcresScene" });
@@ -1202,6 +1271,7 @@ export class StackAcresScene extends Phaser.Scene {
       critter,
       phase: this.random() * Math.PI * 2,
       tweens: [],
+      pop: null,
       signature,
       unit,
     };
@@ -1212,6 +1282,8 @@ export class StackAcresScene extends Phaser.Scene {
 
   private destroyNode(node: UnitNode): void {
     for (const tween of node.tweens) tween.remove();
+    node.pop?.remove();
+    node.pop = null;
     node.container.destroy(true);
   }
 
@@ -1239,23 +1311,29 @@ export class StackAcresScene extends Phaser.Scene {
     const ground = livestock === "cattle" ? "soil" : livestock === "pig" ? "muck" : "straw";
     this.paintAreaGround(area, ground);
 
-    // Every rail gets its own true world position and the ordinary
-    // `put()` depth (feet-based), so a wandering animal sorts correctly
-    // against it on its own -- in front of the near rail, behind the far
-    // one -- with no back/front split needed the way the old per-plot fence
-    // required to keep its own animals from drawing over their own gate.
-    const step = 16;
-    const midX = Math.round(area.width / 2 / step) * step;
-    for (let x = 0; x < area.width; x += step) {
-      this.put("railH", area.x + x, area.y).setRotation(ISO_EDGE_ANGLE.alongX);
-      const isGate = Math.abs(x - midX) < step / 2;
-      this.put(isGate ? "gate" : "railH", area.x + x, area.y + area.height - 9).setRotation(
-        ISO_EDGE_ANGLE.alongX,
-      );
+    // Bays sit on the boundary itself now. The old 9-unit inset was headroom
+    // for a flat sprite's footprint; a standing bay anchors on the foot of
+    // its first post, and `growAreaInterior` already keeps animals 12 units
+    // clear of the rail.
+    //
+    // Each bay takes the ordinary feet-based `put()` depth, so a wandering
+    // animal sorts against it on its own -- in front of the near rail,
+    // behind the far one. Depth is measured at the bay's midpoint, not its
+    // anchor post: a bay spans half a tile of screen depth, and sorting it
+    // by one end tips every animal beside it the same way.
+    const step = FENCE_BAY;
+    const east = area.x + area.width;
+    const south = area.y + area.height;
+    const half = step / 2;
+    // The one gate, in the middle of the near (south) run, snapped to a bay.
+    const gateX = area.x + Math.round(area.width / 2 / step) * step;
+    for (let x = area.x; x < east; x += step) {
+      this.put("railX", x, area.y, this.depthAt(x + half, area.y));
+      this.put(x === gateX ? "gateX" : "railX", x, south, this.depthAt(x + half, south));
     }
-    for (let y = 12; y < area.height - 10; y += step) {
-      this.put("railV", area.x, area.y + y).setRotation(ISO_EDGE_ANGLE.alongY);
-      this.put("railV", area.x + area.width - 9, area.y + y).setRotation(ISO_EDGE_ANGLE.alongY);
+    for (let y = area.y; y < south; y += step) {
+      this.put("railY", area.x, y, this.depthAt(area.x, y + half));
+      this.put("railY", east, y, this.depthAt(east, y + half));
     }
   }
 
@@ -1732,10 +1810,22 @@ export class StackAcresScene extends Phaser.Scene {
       if (gesture.startMow) {
         const at = resolveWorld(event.clientX, event.clientY);
         this.mowSegment(at, at);
+        return;
       }
-      // Any other tap on the canvas does nothing: buying and tending a unit
-      // is entirely the district sidebar's job now, and the map is just a
-      // picture of the farm to look around in.
+      // Every other tap is aimed at the farm itself. A unit's own picture
+      // first -- collecting, feeding and clearing happen where the finger
+      // landed now, not in a sidebar row -- and failing that, the fenced
+      // ground of whichever district it fell in, which is an offer to seed
+      // something there. A tap in the woods still does nothing.
+      const local = { x: event.clientX - this.hostOrigin.left, y: event.clientY - this.hostOrigin.top };
+      const hit = this.unitAt(event.clientX, event.clientY);
+      if (hit) {
+        this.callbacks.onUnitTap(hit, local);
+        return;
+      }
+      const ground = resolveWorld(event.clientX, event.clientY);
+      const zone = growAreaAt(ground.x, ground.y);
+      if (zone) this.callbacks.onGroundTap(zone, local);
     };
 
     const onUp = (event: PointerEvent): void => up(event, false);
@@ -1881,8 +1971,212 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /* ---------------------------------------------------------------- */
+  /* Hit testing                                                       */
+  /* ---------------------------------------------------------------- */
+
+  /** Where a unit is standing in the world right now: an animal's wandered
+   *  position, or the fixed spot a crop (or anything mucked) sits at. The
+   *  same two cases `buildUnit` and `update` already split on. */
+  private unitWorldSpot(node: UnitNode): WorldPoint {
+    return node.critter ?? this.staticSpotFor(node.unit);
+  }
+
+  /**
+   * The unit under a finger, or null.
+   *
+   * Two regions, both in scene space and both padded by a fingertip. The
+   * unit's own ART is the first -- a cow's body is drawn well above the
+   * ground it stands on, and that body is what the player is aiming at. Its
+   * ground DIAMOND is the second, which is what makes the gold "ready" ring
+   * a target too, and what catches a crop whose ripe sprite is a few pixels
+   * of carrot top.
+   *
+   * The topmost hit wins, by the same depth the renderer sorts by, so a tap
+   * where two pens overlap picks the one actually drawn in front.
+   *
+   * NOT Phaser's own input system. This scene runs with Phaser input off
+   * entirely (see the game config in stackacres-world.tsx) and reads raw
+   * pointer events off the host, so a `GAMEOBJECT_POINTER_DOWN` here would
+   * be a second input layer double-handling every press -- and it fires on
+   * PRESS, which would collect a unit the moment a pan that happened to
+   * start on a hen began. Resolving the hit ourselves at release is what
+   * keeps a drag across the map a drag.
+   */
+  private unitAt(clientX: number, clientY: number): string | null {
+    if (this.nodes.size === 0) return null;
+    const cam = this.cameras.main;
+    const at = cam.getWorldPoint(
+      (clientX - this.hostOrigin.left) * DPR,
+      (clientY - this.hostOrigin.top) * DPR,
+    );
+    // A CSS pixel is this many scene units at the current zoom, which is what
+    // keeps the pad a constant size under the thumb rather than under the map.
+    const pad = TAP_PAD / this.zoomL();
+    let best: { id: string; depth: number } | null = null;
+    for (const [id, node] of this.nodes) {
+      const art = node.sprite.getBounds();
+      let hit =
+        at.x >= art.x - pad &&
+        at.x <= art.right + pad &&
+        at.y >= art.y - pad &&
+        at.y <= art.bottom + pad;
+      if (!hit) {
+        const spot = this.unitWorldSpot(node);
+        const half = this.unitFootprintHalf(node.unit);
+        const ground = projectedBounds({
+          x: spot.x - half,
+          y: spot.y - half,
+          width: half * 2,
+          height: half * 2,
+        });
+        hit =
+          at.x >= ground.x - pad &&
+          at.x <= ground.x + ground.width + pad &&
+          at.y >= ground.y - pad &&
+          at.y <= ground.y + ground.height + pad;
+      }
+      if (!hit) continue;
+      const depth = node.container.depth;
+      if (!best || depth > best.depth) best = { id, depth };
+    }
+    return best ? best.id : null;
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Effects                                                           */
   /* ---------------------------------------------------------------- */
+
+  /**
+   * The squash-and-stretch a tapped unit answers with: a quick widen-and-
+   * flatten, a smaller overshoot the other way, then rest. Entirely local to
+   * the press -- it says "heard you" before the network has said anything at
+   * all, which is the whole reason a tap on the map feels like a button and
+   * a tap that waits for a response does not.
+   *
+   * On the CONTAINER, not the sprite: `update` rewrites a walking animal's
+   * own sprite scale every frame for its gait and breathing, so a tween
+   * there would be overwritten mid-bounce. The container's scale is nobody
+   * else's, and scaling it takes the shadow and the state ring along, which
+   * is what makes the whole unit react rather than just its outline.
+   */
+  popUnit(unitId: string): void {
+    const node = this.nodes.get(unitId);
+    if (!node) return;
+    // A second tap mid-bounce restarts the bounce rather than stacking a
+    // second one on the same scale.
+    node.pop?.remove();
+    node.pop = null;
+    node.container.setScale(1, 1);
+    if (this.options.reducedMotion) return;
+    node.pop = this.tweens.chain({
+      targets: node.container,
+      tweens: [
+        { scaleX: 1.16, scaleY: 0.84, duration: 90, ease: "Quad.easeOut" },
+        { scaleX: 0.95, scaleY: 1.09, duration: 130, ease: "Quad.easeInOut" },
+        { scaleX: 1, scaleY: 1, duration: 150, ease: "Back.easeOut" },
+      ],
+      // A unit whose picture is rebuilt mid-bounce (a clock tick crossing a
+      // growth stage) leaves this chain pointed at a destroyed container;
+      // `destroyNode` removes it. Resting the scale here means a bounce that
+      // ran to the end never leaves a unit fractionally squashed.
+      onComplete: () => {
+        node.container.setScale(1, 1);
+        node.pop = null;
+      },
+    });
+  }
+
+  /**
+   * The reward, and the refusal: a line of text (and, when there is produce
+   * to name, its own icon) that lifts off the tap, leans over and fades.
+   *
+   * Positioned in SCENE space at the world point under the finger, not pinned
+   * to the screen, so it stays glued to the thing that produced it if the map
+   * moves under it. Sized so it lands at a constant CSS size whatever the
+   * zoom: the text is rasterised at device resolution and the whole group is
+   * scaled back down by `1 / (zoomL * DPR)`, which is what keeps it crisp at
+   * 5x instead of a stretched 15px bitmap.
+   */
+  floatAt(at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName): void {
+    if (!this.created) return;
+    const cam = this.cameras.main;
+    const world = cam.getWorldPoint(at.x * DPR, at.y * DPR);
+    const group = this.add.container(world.x, world.y).setDepth(9000);
+    this.displayFont ??= window.getComputedStyle(this.options.host).fontFamily || "system-ui";
+    // The art's own ramps, not chrome tokens: this is a label drawn INTO the
+    // picture, over grass, and it has to sit in the same light everything
+    // else on the canvas does. Gold for something gained, chalk for a
+    // refusal, over the darkest pine so it reads on a bright field.
+    const colour = tone === "gain" ? RAMPS.gold.top : RAMPS.chalk.side;
+    // Authored in DEVICE pixels; `group` scales the lot back to CSS size.
+    const label = this.add
+      .text(0, 0, text, {
+        fontFamily: this.displayFont,
+        fontSize: `${Math.round(15 * DPR)}px`,
+        fontStyle: "700",
+        color: colour,
+        stroke: RAMPS.pine.rim,
+        strokeThickness: 4 * DPR,
+      })
+      .setOrigin(0, 0.5);
+    let width = label.width;
+    if (icon) {
+      const badge = this.add
+        .image(0, 0, icon, ART_FRAME)
+        // A painter is 24 units baked at ART_SCALE, so its texture is
+        // 24 * ART_SCALE across; this lands it at 20 CSS pixels.
+        .setScale((20 * DPR) / (PAINTERS[icon].w * S))
+        .setOrigin(0, 0.5);
+      label.setX(badge.displayWidth + 4 * DPR);
+      width = label.x + label.width;
+      group.add(badge);
+    }
+    group.add(label);
+    // Centred on the finger horizontally, and started just above it so the
+    // text is never under the thumb that spawned it.
+    group.setScale(1 / (this.zoomL() * DPR));
+    label.setY(0);
+    group.x -= (width / 2) * group.scaleX;
+    group.y -= 14 / this.zoomL();
+
+    if (this.options.reducedMotion) {
+      this.time.delayedCall(600, () => group.destroy(true));
+      return;
+    }
+    this.tweens.add({
+      targets: group,
+      y: group.y - 34 / this.zoomL(),
+      angle: tone === "gain" ? -6 : 6,
+      alpha: { from: 1, to: 0, duration: 600, ease: "Quad.easeIn" },
+      duration: 600,
+      ease: "Cubic.easeOut",
+      onComplete: () => group.destroy(true),
+    });
+  }
+
+  /**
+   * Fires `onViewMoved` once the world has visibly slid under whatever the
+   * shell has pinned to a screen position.
+   *
+   * The threshold is in CSS pixels of apparent movement, not in raw scroll:
+   * a scroll unit at the zoomed-out end of the range is a third of a pixel
+   * on screen and at the zoomed-in end is five, so a fixed scroll epsilon
+   * would mean two different things at the two ends of the same map. Sized
+   * so a real pan or a zoom step reports on its first frame, while a tween
+   * easing out over its last few sub-pixel frames does not -- a menu opened
+   * just as the camera settled should stay open.
+   */
+  private notifyViewMoved(): void {
+    const cam = this.cameras.main;
+    const screen = cam.zoom / DPR;
+    const moved =
+      Math.abs(cam.scrollX - this.lastView.x) * screen > VIEW_MOVE_SLOP ||
+      Math.abs(cam.scrollY - this.lastView.y) * screen > VIEW_MOVE_SLOP ||
+      Math.abs(cam.zoom / (this.lastView.zoom || cam.zoom) - 1) > 0.02;
+    if (!moved) return;
+    this.lastView = { x: cam.scrollX, y: cam.scrollY, zoom: cam.zoom };
+    this.callbacks.onViewMoved();
+  }
 
   /** The gold burst a collected unit leaves behind, at wherever it is
    *  standing right now -- an animal's current wandered position, or a
@@ -1956,11 +2250,11 @@ export class StackAcresScene extends Phaser.Scene {
         const [wide, tall] = sceneryShadowScale(item.kind);
         items.push(
           this.put("shadow", item.x, item.y + 1, item.y - 0.5)
-            .setScale(wide / S, tall / S)
+            .setScale((wide * item.scale) / S, (tall * item.scale) / S)
             .setAlpha(0.8),
         );
       }
-      items.push(this.put(item.kind, item.x, item.y, item.y));
+      items.push(this.put(item.kind, item.x, item.y, item.y).setScale(item.scale / S));
     }
 
     for (const item of zoneScenery(cx, cy)) {
@@ -2334,6 +2628,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.tendWorld();
     this.fitVignette();
     this.fitEdgeGuides();
+    this.notifyViewMoved();
     if (this.options.reducedMotion) return;
 
     this.animatePond(time);

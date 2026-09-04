@@ -7,8 +7,10 @@ import {
   STACKACRES_ZOOM_MAX,
   STACKACRES_ZOOM_MIN,
   chunkScenery,
+  forestDensityAt,
   clampZoom,
   cropSpot,
+  growAreaAt,
   growAreaBounds,
   growAreaInterior,
   inFarmZone,
@@ -76,6 +78,43 @@ describe("grow areas", () => {
       expect(interior.x + interior.width).toBeLessThan(bounds.x + bounds.width);
       expect(interior.y + interior.height).toBeLessThan(bounds.y + bounds.height);
     }
+  });
+
+  // `growAreaAt` returns the first match with no tie-break, which is only
+  // honest while the four boxes are disjoint. A district nudged on top of
+  // another would silently start offering the wrong stock to a tap.
+  it("keeps the four grow areas from overlapping each other", () => {
+    for (const a of ZONE_IDS) {
+      for (const b of ZONE_IDS) {
+        if (a === b) continue;
+        const one = growAreaBounds(a);
+        const two = growAreaBounds(b);
+        const apart =
+          one.x + one.width < two.x ||
+          two.x + two.width < one.x ||
+          one.y + one.height < two.y ||
+          two.y + two.height < one.y;
+        expect(apart).toBe(true);
+      }
+    }
+  });
+
+  it("finds a district from a point inside its grow area, and only there", () => {
+    for (const zone of ZONE_IDS) {
+      const bounds = growAreaBounds(zone);
+      const mid = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      expect(growAreaAt(mid.x, mid.y)).toBe(zone);
+      // Corners are inside: the fence is part of the ground you can seed.
+      expect(growAreaAt(bounds.x, bounds.y)).toBe(zone);
+      expect(growAreaAt(bounds.x + bounds.width, bounds.y + bounds.height)).toBe(zone);
+      // A step outside is not. A tap in the woods must offer nothing.
+      expect(growAreaAt(bounds.x - 1, bounds.y - 1)).not.toBe(zone);
+    }
+  });
+
+  it("is narrower than the district itself -- the woods answer nothing", () => {
+    // Far outside every district, in the open world the camera can roam.
+    expect(growAreaAt(5_000, 5_000)).toBeNull();
   });
 });
 
@@ -163,6 +202,8 @@ describe("animals", () => {
 });
 
 describe("open-world scenery", () => {
+  const isWood = (p: { kind: string }) => p.kind !== "tuft" && !p.kind.startsWith("flower");
+
   it("grows a chunk deterministically and keeps every piece inside it", () => {
     const first = chunkScenery(5, -2);
     expect(chunkScenery(5, -2)).toEqual(first);
@@ -215,14 +256,41 @@ describe("open-world scenery", () => {
     }
   });
 
-  it("caps a chunk's woodland by distance from the farm", () => {
-    const isWood = (p: { kind: string }) => p.kind !== "tuft" && !p.kind.startsWith("flower");
-    // Chunk (0, -1) sits just north of the farm, close enough to be in the
-    // dense tier -- the cap holds even though some of its candidates land
-    // inside FARM_ZONE and are dropped rather than shifted.
-    expect(chunkScenery(0, -1).filter(isWood).length).toBeLessThanOrEqual(9);
-    // Far out, only the sparse tier applies.
-    expect(chunkScenery(40, 40).filter(isWood).length).toBeLessThanOrEqual(3);
+  it("grows real woods and real open ground, not an even sprinkle", () => {
+    // The point of the forest field: somewhere out there is deep wood, and
+    // somewhere out there is grass you can cross. An even scatter -- which is
+    // what this replaced, twice -- would make every chunk look like every
+    // other one, and would fail this.
+    const counts: number[] = [];
+    for (let cx = -12; cx <= 12; cx += 1) {
+      for (let cy = -12; cy <= 12; cy += 1) {
+        counts.push(chunkScenery(cx, cy).filter(isWood).length);
+      }
+    }
+    const dense = counts.filter((n) => n >= 12).length;
+    const open = counts.filter((n) => n <= 2).length;
+    expect(dense).toBeGreaterThan(0);
+    expect(open).toBeGreaterThan(0);
+    // And the lattice is a hard ceiling: 5x5 planting points per chunk, plus
+    // at most 3 lone things out in the grass.
+    expect(Math.max(...counts)).toBeLessThanOrEqual(28);
+  });
+
+  it("keeps the gaps open: a lane through the wood is walkable ground", () => {
+    // Sample a long line across the world and confirm the field actually
+    // returns to zero inside otherwise-wooded country, rather than being one
+    // unbroken mass with soft edges.
+    let inWood = 0;
+    let gapsInsideWood = 0;
+    for (let x = -3000; x < 3000; x += 7) {
+      const here = forestDensityAt(x, 640);
+      if (here > 0.5) inWood += 1;
+      if (here === 0 && forestDensityAt(x - 90, 640) > 0.5 && forestDensityAt(x + 90, 640) > 0.5) {
+        gapsInsideWood += 1;
+      }
+    }
+    expect(inWood).toBeGreaterThan(0);
+    expect(gapsInsideWood).toBeGreaterThan(0);
   });
 });
 

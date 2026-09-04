@@ -3,6 +3,16 @@
 // download the engine for a toolbelt icon; Phaser enters only through
 // stackacres-world.tsx's dynamic import of the scene.
 import type * as Phaser from "phaser";
+import {
+  FENCE_BAY,
+  FENCE_BAY_DROP,
+  FENCE_BOX,
+  FENCE_CAP_H,
+  FENCE_POST_H,
+  FENCE_POST_W,
+  FENCE_RAIL_AT,
+  FENCE_RAIL_T,
+} from "@/lib/stackacres/fence";
 import { STACKACRES_CELL, powerOfTwoCeil, seededRandom } from "@/lib/stackacres/world";
 import {
   ART_FRAME,
@@ -29,7 +39,12 @@ import { RAMPS, tint, type Ramp } from "./art-palette";
 import { PROP_PAINTERS, type PropPainterName } from "./art-props";
 import { WATER_PAINTERS, type WaterPainterName } from "./art-water";
 import { ZONE_PAINTERS, type ZonePainterName } from "./art-zones";
-import { isSpriteName, spriteImage, spriteLoadKey, type SpriteName } from "./stackacres-sprites";
+import {
+  isSpriteName,
+  spriteImage,
+  spriteLoadKey,
+  type PainterSpriteName,
+} from "./stackacres-sprites";
 
 export type { Painter } from "./art-kit";
 // The bake constants live in art-kit.ts so a per-area art module can read
@@ -88,9 +103,9 @@ type CorePainterName =
   | "straw"
   | "muckbed"
   | "wild"
-  | "railH"
-  | "railV"
-  | "gate"
+  | "railX"
+  | "railY"
+  | "gateX"
   | "troughFull"
   | "troughEmpty"
   | "carrot0"
@@ -126,10 +141,28 @@ type CorePainterName =
 
 /* ---- scenery ----------------------------------------------------------- */
 
-/** The three broadleaves differ only in their greens, so a stand of them
- *  reads as a wood rather than as one tree stamped repeatedly. Flat vector:
- *  the crown is a canopy of puffs shaded in two passes (see `canopy`), not a
- *  mass under a radial light. */
+/** Draws a paint function authored against a `w0` x `h0` box into whatever
+ *  box its painter now declares. The scenery painters were all drawn to fit
+ *  the sizes trees used to be; rather than re-typing every coordinate in them
+ *  when the trees grew, they keep their own arithmetic and get scaled into
+ *  the new box. A painter is baked once, so this costs one transform at boot
+ *  and nothing afterwards. */
+const grown =
+  (w0: number, h0: number, w: number, h: number, paint: Paint): Paint =>
+  (c) => {
+    c.save();
+    c.scale(w / w0, h / h0);
+    paint(c);
+    c.restore();
+  };
+
+/** The fallback broadleaf, in three greens -- what the world showed until
+ *  2026-09-04 and what it still shows if the generated tree sprites do not
+ *  arrive (SSR, first paint, a 404). Three ramps over one shape was never
+ *  enough on its own to stop a stand reading as one tree stamped repeatedly,
+ *  which is most of why the shipped trees are images now; see
+ *  stackacres-sprites.ts. Flat vector: the crown is a canopy of puffs shaded
+ *  in two passes (see `canopy`), not a mass under a radial light. */
 const treeRound =
   (mat: Ramp): Paint =>
   (c) => {
@@ -209,6 +242,60 @@ function glass(c: Ctx, x: number, y: number, w: number, h: number): void {
 
 const CELL = STACKACRES_CELL;
 
+/** One post, standing straight up from `footY` at `cx`. Vertical is exact,
+ *  not an approximation: `isoProject` shears x and y only, so the world's up
+ *  axis and the screen's are the same line. */
+function fencePost(c: Ctx, cx: number, footY: number, ramp: Ramp = RAMPS.cream): void {
+  const topY = footY - FENCE_POST_H;
+  // Contact shade, or the post reads as pasted onto the field. Inline rather
+  // than the `shadow` painter because a bay is boot-time art with no node.
+  ell(c, cx, footY, FENCE_POST_W * 0.7, FENCE_POST_W * 0.28);
+  F(c, "rgba(38,54,18,.24)");
+  // Lit left face, turned right face -- the same sun as everything else here.
+  rr(c, cx - FENCE_POST_W / 2, topY, FENCE_POST_W, FENCE_POST_H, 0.9);
+  F(c, ramp.top);
+  rr(c, cx + FENCE_POST_W * 0.06, topY, FENCE_POST_W * 0.44, FENCE_POST_H, 0.9);
+  F(c, ramp.side);
+  rr(c, cx - FENCE_POST_W / 2, topY, FENCE_POST_W, FENCE_POST_H, 0.9);
+  stroke(c, ramp.rim, 0.5);
+  ell(c, cx, topY, FENCE_POST_W / 2, FENCE_CAP_H);
+  F(c, ramp.top);
+  ell(c, cx, topY, FENCE_POST_W / 2, FENCE_CAP_H);
+  stroke(c, ramp.rim, 0.45);
+}
+
+/** One rail, leaning along the bay's run. A parallelogram, not a rotated
+ *  rectangle: the ends stay vertical, so consecutive bays butt together
+ *  without a sawtooth seam. */
+function fenceRail(
+  c: Ctx,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  ramp: Ramp = RAMPS.cream,
+): void {
+  const t = FENCE_RAIL_T / 2;
+  poly(c, [[x0, y0 - t], [x1, y1 - t], [x1, y1 + t], [x0, y0 + t]]);
+  F(c, ramp.side);
+  // The sliver of the rail's own top face the camera can see from up here.
+  poly(c, [[x0, y0 - t], [x1, y1 - t], [x1, y1 - t * 0.15], [x0, y0 - t * 0.15]]);
+  F(c, ramp.top);
+  poly(c, [[x0, y0 - t], [x1, y1 - t], [x1, y1 + t], [x0, y0 + t]]);
+  stroke(c, ramp.rim, 0.45);
+}
+
+/** A whole bay: rails first, posts over them, so the rails run behind the
+ *  posts and their cut ends never show. `xa` is the near post, `xb` the far
+ *  one -- which of the two sits on the left is what tells railX from railY. */
+function fenceBay(c: Ctx, xa: number, xb: number): void {
+  const ya = FENCE_BOX.footY;
+  const yb = ya + FENCE_BAY_DROP;
+  for (const at of FENCE_RAIL_AT) fenceRail(c, xa, ya - at, xb, yb - at);
+  fencePost(c, xa, ya);
+  fencePost(c, xb, yb);
+}
+
 /** Every painter, by name, as drawn code. A record literal rather than a
  *  table built by mutation, so a name added to `PainterName` without a
  *  painter is a compile error instead of an undefined texture at boot.
@@ -265,11 +352,27 @@ const DRAWN: Record<PainterName, Painter> = {
     0.5,
   ),
 
-  tree1: painter(24, 30, treeRound(RAMPS.leaf)),
-  tree2: painter(24, 30, treeRound({ top: "#7acb46", side: "#5ca632", rim: "#3f7620" })),
-  tree3: painter(24, 30, treeRound({ top: "#4fae55", side: "#3a8840", rim: "#27622c" })),
+  // 64x80, from 24x30 originally and 42x52 on the way. The barn is 74x62, so
+  // a tree now stands taller than it -- which is what a mature tree next to a
+  // farm building actually does, and the two smaller sizes both still read as
+  // scrub against one. The drawn fallback is scaled into the box by `grown`
+  // rather than re-typed, and the generated sprites are re-fitted to it from
+  // the original 816x1024 renders each time it changes, never upscaled from
+  // the previous asset -- 640px of art from a 1024px render is still a
+  // downscale, so this stays sharp.
+  tree1: painter(64, 80, grown(24, 30, 64, 80, treeRound(RAMPS.leaf))),
+  tree2: painter(
+    64,
+    80,
+    grown(24, 30, 64, 80, treeRound({ top: "#7acb46", side: "#5ca632", rim: "#3f7620" })),
+  ),
+  tree3: painter(
+    64,
+    80,
+    grown(24, 30, 64, 80, treeRound({ top: "#4fae55", side: "#3a8840", rim: "#27622c" })),
+  ),
 
-  pine: painter(20, 34, (c) => {
+  pine: painter(52, 88, grown(20, 34, 52, 88, (c) => {
     rr(c, 8.4, 24, 3.2, 10, 1.2);
     F(c, RAMPS.wood.side);
     // Three skirts, each split down the middle: lit half toward the sun, dark
@@ -282,9 +385,9 @@ const DRAWN: Record<PainterName, Painter> = {
       poly(c, [[10 - hw, y1], [10, y0], [10 + hw, y1]]);
       stroke(c, RAMPS.pine.rim, 0.7);
     }
-  }),
+  })),
 
-  bush: painter(16, 12, (c) => {
+  bush: painter(26, 20, grown(16, 12, 26, 20, (c) => {
     canopy(
       c,
       [
@@ -294,7 +397,7 @@ const DRAWN: Record<PainterName, Painter> = {
       ],
       RAMPS.leaf,
     );
-  }),
+  })),
 
   rock: painter(14, 10, (c) => {
     blob(c, 7, 6, 6.2, 4.2, RAMPS.stone);
@@ -427,69 +530,59 @@ const DRAWN: Record<PainterName, Painter> = {
     0,
   ),
 
-  /* ---- the pen ---- */
+  /* ---- the pen fence ---- */
+  // These stand up. The old ones were plan-view rails rotated by
+  // ISO_EDGE_ANGLE into the ground plane, which is what a fence lying flat in
+  // the grass looks like. Nothing else here is rotated -- world "up" projects
+  // to screen "up" exactly, so a post is a plain vertical box and only the
+  // rails lean. One painter per edge direction rather than one mirrored at
+  // draw time, since flipping a baked texture flips its lighting too.
+  //
+  // A bay carries a post at both ends, so bays laid end to end share their
+  // interior posts and a corner gets one from each run -- a little overdraw
+  // instead of separate cap and corner art.
 
-  railH: painter(
-    16,
-    9,
+  railX: painter(
+    FENCE_BOX.w,
+    FENCE_BOX.h,
     (c) => {
-      for (const y of [2.2, 5.4]) {
-        rr(c, 0, y, 16, 1.6, 0.8);
-        F(c, RAMPS.cream.side);
-      }
-      for (const x of [1.4, 8, 14.6]) {
-        rr(c, x - 1.5, 0.6, 3, 8, 1.2);
-        F(c, RAMPS.cream.top);
-        rr(c, x + 0.1, 0.6, 1.4, 8, 0.6);
-        F(c, RAMPS.cream.side);
-        rr(c, x - 1.5, 0.6, 3, 8, 1.2);
-        stroke(c, RAMPS.cream.rim, 0.5);
-      }
+      fenceBay(c, FENCE_BOX.footX, FENCE_BOX.footX + FENCE_BAY);
     },
-    0,
-    0,
+    FENCE_BOX.ax,
+    FENCE_BOX.ay,
   ),
 
-  railV: painter(
-    9,
-    16,
+  railY: painter(
+    FENCE_BOX.w,
+    FENCE_BOX.h,
     (c) => {
-      for (const x of [2.2, 5.4]) {
-        rr(c, x, 0, 1.6, 16, 0.8);
-        F(c, RAMPS.cream.side);
-      }
-      for (const y of [1.4, 8, 14.6]) {
-        rr(c, 0.6, y - 1.5, 8, 3, 1.2);
-        F(c, RAMPS.cream.top);
-        rr(c, 0.6, y + 0.1, 8, 1.4, 0.6);
-        F(c, RAMPS.cream.side);
-        rr(c, 0.6, y - 1.5, 8, 3, 1.2);
-        stroke(c, RAMPS.cream.rim, 0.5);
-      }
+      fenceBay(c, FENCE_BOX.w - FENCE_BOX.footX, FENCE_BOX.footX);
     },
-    0,
-    0,
+    1 - FENCE_BOX.ax,
+    FENCE_BOX.ay,
   ),
 
-  gate: painter(
-    16,
-    9,
+  // The one way in. Wood posts rather than cream, so it still reads as a gate
+  // from across the district where the brace is two pixels of nothing.
+  gateX: painter(
+    FENCE_BOX.w,
+    FENCE_BOX.h,
     (c) => {
-      for (const y of [2.2, 5.4]) {
-        rr(c, 0, y, 16, 1.6, 0.8);
-        F(c, RAMPS.cream.top);
-      }
+      const x0 = FENCE_BOX.footX;
+      const x1 = x0 + FENCE_BAY;
+      const y0 = FENCE_BOX.footY;
+      const y1 = y0 + FENCE_BAY_DROP;
+      // Brace first, so the rails read as nailed over it.
       c.beginPath();
-      c.moveTo(1, 6.6);
-      c.lineTo(15, 2.2);
-      stroke(c, RAMPS.cream.side, 1.4);
-      for (const x of [0.4, 14.2]) {
-        rr(c, x, 0, 1.8, 9, 0.8);
-        F(c, RAMPS.wood.side);
-      }
+      c.moveTo(x0 + 1.6, y0 - 1.4);
+      c.lineTo(x1 - 1.6, y1 - FENCE_RAIL_AT[1] - 0.6);
+      stroke(c, RAMPS.wood.side, 1.5);
+      for (const at of FENCE_RAIL_AT) fenceRail(c, x0, y0 - at, x1, y1 - at, RAMPS.wood);
+      fencePost(c, x0, y0, RAMPS.wood);
+      fencePost(c, x1, y1, RAMPS.wood);
     },
-    0,
-    0,
+    FENCE_BOX.ax,
+    FENCE_BOX.ay,
   ),
 
   troughFull: painter(
@@ -930,7 +1023,7 @@ const DRAWN: Record<PainterName, Painter> = {
  * written against it -- the asset was fitted to that box, rather than the box
  * moved to the asset.
  */
-function spriteBacked(name: SpriteName, drawn: Painter): Painter {
+function spriteBacked(name: PainterSpriteName, drawn: Painter): Painter {
   const p = ((c: Ctx) => {
     const img = spriteImage(name);
     if (img) c.drawImage(img, 0, 0, drawn.w, drawn.h);
@@ -956,6 +1049,18 @@ export const PAINTERS: Record<PainterName, Painter> = {
   barn: spriteBacked("barn", DRAWN.barn),
   windmill: spriteBacked("windmill", DRAWN.windmill),
   grandfatherRay: spriteBacked("grandfatherRay", DRAWN.grandfatherRay),
+  // The wild scenery. `treeRound` in three ramps was the cheapest thing in
+  // this file and the weakest thing on the map -- three tones, three puffs,
+  // one silhouette, and the woodland pass below multiplied it by about three,
+  // so the same outline now stands in groves and treelines where it used to
+  // be spread thin enough to get away with. These five are the same trade the
+  // animals took (see stackacres-sprites.ts), and the drawn versions stay
+  // exactly where they are as the fallback.
+  tree1: spriteBacked("tree1", DRAWN.tree1),
+  tree2: spriteBacked("tree2", DRAWN.tree2),
+  tree3: spriteBacked("tree3", DRAWN.tree3),
+  pine: spriteBacked("pine", DRAWN.pine),
+  bush: spriteBacked("bush", DRAWN.bush),
 };
 
 /**
@@ -986,7 +1091,7 @@ export const PAINTERS: Record<PainterName, Painter> = {
  *
  * Falls back to painting the drawn version if the file never arrived.
  */
-export function bakeSpriteTexture(scene: Phaser.Scene, name: SpriteName): string {
+export function bakeSpriteTexture(scene: Phaser.Scene, name: PainterSpriteName): string {
   if (scene.textures.exists(name)) return name;
   const source = scene.textures.exists(spriteLoadKey(name))
     ? (scene.textures.get(spriteLoadKey(name)).getSourceImage() as CanvasImageSource)
@@ -1054,7 +1159,13 @@ export function bakeVignette(scene: Phaser.Scene): string {
 
 /** The ground: one 256-unit tile that repeats seamlessly in every direction,
  *  which is what lets the whole open lawn stand on a single tile sprite
- *  rather than one baked per district or per chunk. */
+ *  rather than one baked per district or per chunk.
+ *
+ *  Drawn from the generated tile when the scene preloaded one, and from the
+ *  code below when it did not -- the same fallback bargain `spriteBacked`
+ *  makes for the animals, except that this one cannot go through it: the
+ *  lawn is not a painter with a box and an anchor, it is a texture, so it
+ *  is baked here by hand instead of through `bakeArt`. */
 export function bakeGrass(scene: Phaser.Scene): void {
   const key = "grass";
   if (scene.textures.exists(key)) return;
@@ -1064,6 +1175,38 @@ export function bakeGrass(scene: Phaser.Scene): void {
   const texture = scene.textures.createCanvas(key, units * GRASS_PX, units * GRASS_PX);
   if (!texture) return;
   const c = texture.context;
+
+  // The generated tile REPLACES every pass below rather than sitting under
+  // them: the render already carries its own blades, dew and clover, so
+  // drawing the procedural marks over the top of it doubles the detail and
+  // reads as noise. It is drawn 1:1 in device pixels, before the unit scale
+  // goes on, because the file is authored at exactly this canvas's size.
+  // What makes it wrap at all is prep_grass.py, not the model -- see that
+  // script for why a raw render never does.
+  const tileKey = spriteLoadKey("grassTile");
+  const tile = scene.textures.exists(tileKey)
+    ? (scene.textures.get(tileKey).getSourceImage() as HTMLImageElement)
+    : null;
+  if (tile) {
+    // Drawn at its own pixel size and repeated to fill, rather than stretched
+    // to the canvas: the file is half the canvas's side, so it lands 2x2, and
+    // that is deliberate -- it is what sets the SCALE of the grass. Stretched
+    // to the full 256-unit canvas these tufts would stand about eight world
+    // units tall next to a thirty-unit tree; at half that they are about four,
+    // which is the size the drawn blades below already used. It tiles inside
+    // the canvas for the same reason the canvas tiles across the world, and
+    // it can only do either because prep_grass.py made it wrap.
+    const side = units * GRASS_PX;
+    const step = tile.width > 0 ? tile.width : side;
+    for (let x = 0; x < side; x += step) {
+      for (let y = 0; y < side; y += step) {
+        c.drawImage(tile, x, y, step, step);
+      }
+    }
+    texture.refresh();
+    return;
+  }
+
   c.scale(GRASS_PX, GRASS_PX);
   c.fillStyle = RAMPS.grass.top;
   c.fillRect(0, 0, units, units);

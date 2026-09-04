@@ -125,6 +125,93 @@ a pinned midday 13 / 6 (birds), the exact inversion the plan describes. Full `np
 (the three tracks are ~3min each and regenerating one costs more than the whole credit balance), and
 there is no duck, goose or rooster -- the pond has ducks on it that make no sound.
 
+### StackAcres is tapped on the map itself; the sidebar became deep management (2026-09-04)
+Removes the loop the district sidebar had become (tap a district -> panel opens -> find the row ->
+press Collect). A tap that lands on a unit's own picture now collects, feeds or clears it where it
+stands, and a tap on a district's bare fenced ground drops a small radial seed menu beside the
+finger. `place` follows the finger instead of gating it, and **the drawer no longer opens on
+travel** — the chrome pass above landed `sa-panel-tab`, a named peg on the right edge, and that
+(plus the ring's own handoff) is the way back in; a `Manage` key in the zoom group was built for
+this first and then deleted on the rebase rather than left beside the peg as a second door to the
+same room. The drawer now leads with the Gold decisions (buy outright, expand capacity) rather than
+the unit list. **The unit rows were deliberately NOT deleted** despite the drawer being reframed as
+deep management: the canvas is `aria-hidden` and they are the only keyboard/screen-reader path to
+what a tap does, plus they carry the one action a tap must never reach (retiring, which refunds
+nothing). Five things worth keeping: (1) the hit test is **hand-resolved at pointer RELEASE inside
+the scene's existing gesture pipeline, not `GAMEOBJECT_POINTER_DOWN`** — Phaser input is off
+entirely here and a second input layer would double-handle every press, and a press-time hit would
+collect a unit the moment a pan that happened to start on a hen began. Two regions per unit (its
+sprite bounds, since a cow's body is drawn well above its feet; and its ground diamond, which makes
+the ready-ring a target), padded by a fingertip in CSS pixels so the pad does not shrink with zoom,
+topmost depth wins. (2) The squash-and-stretch is on the unit's **container**, not its sprite —
+`update()` rewrites a walking animal's sprite scale every frame for gait and breathing and would
+overwrite a tween there. (3) The floating "+4 Eggs" is authored in device pixels and scaled by
+`1/(zoomL * DPR)`, which is what keeps it a constant CSS size and crisp at 5x; a local refusal
+("Ready in 15m", "No feed left in the barn") floats immediately and never reaches the network,
+while a reward floats from the remembered tap point once the server confirms. (4) The dismissal
+scrim is rendered in `stackacres-farm.tsx` **before** the toolbelt/signpost/zoom keys rather than
+inside the menu component — those are positioned siblings with no z-index, so DOM order is what
+keeps the chrome live while the ring is up; a scrim inside the menu's own stacking context would
+swallow them. (5) The ring is styled inside the `.sa-theme` carve-out the chrome pass established,
+so it reaches for no `--brand-*`/`--neon-*` token and joins the four shared block lists (font,
+press, focus, unlit) rather than restating that grammar — and its centring is `translate`, not
+`transform`, because the shared press rule sets `transform` outright and would otherwise jump every
+button half its own size on the way down. `lib/stackacres/tap-action.ts` (new) decides what a tap is
+worth off the same `unitRowAction` the sidebar rows use, so the two surfaces cannot disagree;
+`growAreaAt` (new, in world.ts) is deliberately narrower than `zoneAt` — seeding is offered on
+fenced ground, not anywhere inside a district's generous box. Live-verified against a real
+`next dev` in memory mode, before and again after the rebase onto the new chrome.
+
+### The woodland became forest: a world-space field, bigger trees, lanes through it (2026-09-04)
+Kayo, in two passes. First: the map read as empty "because trees aren't bundled together" and the
+tree art was "complete dog shit" (grass too), all on the 4050. Then, on seeing the result: still
+empty, trees "so small", "some need to be taller than others", and -- the part that changed the
+design -- "IRL there's a ton of grass and then u get to a point where there's miles of just straight
+forest ... gaps in between each set of trees like its a maze".
+**Placement is now a WORLD-SPACE field, not a per-chunk roll** (`forestDensityAt`, lib/stackacres/
+world.ts), and that is the load-bearing change. Two earlier versions both grew trees from each
+chunk's own seeded RNG -- independent uniform points (confetti), then per-chunk groves and treelines
+(clumps, but every one stopped at its own chunk). Neither can produce open country that runs for a
+long way and then becomes unbroken forest, because neither knows anything outside its own 160 units.
+Smooth value noise sampled in world units has no chunk boundary in it, so a stand spans as many
+chunks as it likes. Three layers: a broad field (520-unit cells) roughened by a finer one and
+thresholded into a mass; a threshold that falls with distance from the farm, interpolated not
+stepped, so home keeps its air and the deep world closes in; and two families of winding lanes cut
+back OUT of the mass where a second and third field cross their own mid-line -- those are the maze
+gaps, they run for hundreds of units and they cross. Trees plant on a jittered 44-unit lattice
+(uniform random points clump and leave holes at forest density), thinned by the field's own value so
+an edge feathers instead of ending on a line. Conifer-vs-broadleaf is its own slow field, so a pine
+stand is a place rather than a per-tree coin flip.
+**Trees are much bigger and each its own height.** Grown twice in the same pass, on sight of each
+result: `tree1/2/3` painter(24,30) -> (42,52) -> (64,80), `pine` (20,34) -> (34,58) -> (52,88),
+`bush` (16,12) -> (20,15) -> (26,20). The barn is 74x62, so a tree now stands taller than it, and
+both smaller sizes still read as scrub beside one. `FOREST_SPACING` grew with them but deliberately
+by less (34 -> 44, against roughly 1.5x on the trees), so the canopy closes up rather than merely
+keeping pace: fewer planting points per chunk, far more cover. `SceneryItem` carries a `scale`
+(0.78x-1.36x per tree, litter near 1) that the scene applies to the sprite AND its shadow. The drawn
+fallbacks are authored in their original 24x30-era boxes and scaled into whatever box the painter now
+declares by `grown()` rather than re-typed coordinate by coordinate; `sceneryShadowScale`'s tree
+default tracked the canopy, 0.9 -> [2.05, 1.75].
+**Art**: `tree1/2/3`, `pine`, `bush` are FLUX-generated PNGs behind `spriteBacked`, same trade the
+animals took, drawn painters kept as the SSR/first-paint/404 fallback. The three broadleaves were one
+`treeRound` shape in three ramps; a PNG cannot be recoloured, so the variety moved into the art as
+three different canopies -- which is why stackacres-sprites.ts's module doc no longer opens by
+holding the trees up as the case FOR painters. Assets were RE-FITTED from the 816x1024 renders when
+the boxes grew, never upscaled. **Grass**: `bakeGrass` draws a generated seamless tile when the scene
+preloaded one, at its own pixel size repeated 2x2 inside the bake canvas rather than stretched --
+that repeat is what sets the scale; stretched to the full 256-unit canvas the tufts would stand ~8
+world units against a 30-unit tree. Falls back to its own five passes untouched.
+Pipeline at `~/.local/share/flux-sprite-test/task-trees/` (not in git, same as the earlier batches);
+the asset-prep and seamless-tiling traps that cost real attempts are in
+`[[reference_stackchips_flux_texture_and_cutout_prep]]` -- worth reading before the next texture,
+particularly that a ground pad TOUCHING the subject defeats every blob-based strip, and that a tile
+must not be rolled by half.
+Verified live at three zooms on a real dev server in memory mode, plus vitest/lint/tsc/build. The
+world.test.ts density caps were replaced by tests of what now matters: that dense wood AND open
+ground both exist across a 25x25 chunk sweep, and that lanes actually return the field to zero inside
+otherwise-wooded country. The one `lib/scene/table-anchors.test.ts` red is the pre-existing heads-up
+geometry regression, untouched. Branch `feat/stackacres-tree-clusters-flux-art`, off
+`feat/stackacres-bounded-world-visuals`. Not committed -- working tree only.
 ### StackAcres' chrome is its own visual world now, not Neon Marquee over grass (2026-09-04)
 Kayo's brief: the farm's GUI "looks too much like a flat, generic web app sidebar" and wants the
 chunky, tactile feel of a casual mobile farm game. It was literally that -- every panel, pill and

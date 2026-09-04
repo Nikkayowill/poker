@@ -46,6 +46,7 @@ import {
   itemLabel,
   type StackAcresItem,
 } from "@/lib/stackacres/items";
+import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import { stockZone } from "@/lib/stackacres/world";
@@ -57,24 +58,34 @@ import { StackAcresIcon } from "./stackacres-icon";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
+import { StackAcresRadialMenu } from "./stackacres-radial-menu";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresWorld, type StackAcresWorldApi } from "./stackacres-world";
+import type { TapPoint } from "./stackacres-scene";
 
 /**
  * StackAcres: a farm of staked crops and livestock, drawn as a place you look
  * around in.
  *
  * THERE IS NO PLOT GRID (see 2026-09-03's CLAUDE.md entry -- "districts hold
- * stock, not plots"). Travelling to a district (the signpost, unchanged) IS
- * the selection; ./stackacres-district-panel.tsx's `StackAcresUnitRows` and
- * `StackAcresBuySection` are the fixed sidebar that shows what's standing
- * there and what can be bought, and they ARE the accessible/keyboard
- * surface, not a second one bolted on -- every row and button in them is a
- * real DOM button already. The canvas (./stackacres-world.tsx) is a picture
- * now, plus the one interactive gesture left on it: the scythe, dragged
- * across the Long Meadow.
+ * stock, not plots"), but THE FARM ITSELF IS THE CONTROLS. A tap that lands
+ * on a unit's own picture collects, feeds or clears it where it stands; a
+ * tap on a district's empty fenced ground drops ./stackacres-radial-menu.tsx
+ * beside the finger to seed something there. Nothing opens, nothing has to be
+ * travelled to first, and `place` follows the finger rather than the other
+ * way round. lib/stackacres/tap-action.ts is what decides which of those a
+ * given tap is, off the same `unitRowAction` the sidebar rows use, so the
+ * two surfaces can never disagree about what a unit affords.
+ *
+ * The sidebar (./stackacres-district-panel.tsx) is for the deep end now:
+ * capacity bought with Gold, stock bought outright, and the district's own
+ * standing list. It no longer opens on its own -- travelling flies the
+ * camera and nothing else -- so the old tap-district / wait / find-the-row /
+ * press-Collect loop is gone. Its unit rows STAY, and are not redundant:
+ * they remain the only keyboard and screen-reader path to everything a tap
+ * on the canvas does, and the canvas is `aria-hidden` by design.
  *
  * The DATABASE is the one thing that did not move: `homestead_plots` (left
  * in place, inert), `homestead_units`, `homestead_capacity`,
@@ -300,10 +311,25 @@ export function StackAcresFarm() {
    * second "which plot is selected" any more.
    */
   const [place, setPlace] = useState<ZoneId>("farmstead");
-  // The district panel used to sit open over the map at all times; Kayo
-  // didn't ask for a permanent right-edge sidebar, so it now opens only when
-  // a player actually travels somewhere and stays open until they close it.
+  // The district panel used to sit open over the map at all times, and then
+  // to open whenever a player travelled anywhere. It is deep management now
+  // -- capacity, buying outright, the standing list -- so it only opens when
+  // it is actually asked for: the Manage button, or the radial menu's own
+  // handoff. Travelling flies the camera and nothing else.
   const [panelOpen, setPanelOpen] = useState(false);
+  /**
+   * The seed menu dropped beside a finger that tapped empty district ground,
+   * and where to draw it -- pixels inside .sa-field, which is the same box
+   * the scene reported the tap in.
+   */
+  const [radial, setRadial] = useState<{ zone: ZoneId; at: TapPoint } | null>(null);
+  /**
+   * Where the finger that started the request in flight landed, so the reward
+   * floats out of the thing that was tapped rather than out of the middle of
+   * the screen. A ref, not state: nothing renders from it, and it must not be
+   * a frame behind the response that reads it.
+   */
+  const tapAnchor = useRef<TapPoint | null>(null);
   // Which unit is mid-"are you sure" for retiring. Never a plain confirm():
   // retiring refunds nothing, so it has to be two deliberate taps.
   const [retiringUnitId, setRetiringUnitId] = useState<string | null>(null);
@@ -427,6 +453,11 @@ export function StackAcresFarm() {
           return;
         }
         applyResponse(data);
+        // Where the finger that asked for this landed, if it was a tap on the
+        // map rather than a sidebar row -- the reward floats out of the thing
+        // that was tapped. A sidebar press leaves this null and the toast
+        // below is the whole answer, same as it always was.
+        const anchor = tapAnchor.current;
         if (body.action === "collect" && data.collected) {
           // Fired here rather than on the press because the ANIMAL is what
           // makes this sound worth having, and only the response knows which
@@ -439,10 +470,25 @@ export function StackAcresFarm() {
             text: `+${itemLabel(data.collected.item, data.collected.quantity)}`,
             nonce: Date.now(),
           });
+          if (anchor) {
+            const float = collectFloat(data.collected.item, data.collected.quantity);
+            world.current?.floatAt(anchor, float.text, "gain", float.icon as PainterName);
+          }
           if (data.collected.mucked) {
             setError("That came up weather-worn. Clear it before it earns again.");
           }
         }
+        // The other three a finger can start from the map. No produce to
+        // name, so the float just confirms the verb landed.
+        const done =
+          body.action === "feed"
+            ? "Fed"
+            : body.action === "clear"
+              ? "Cleared"
+              : body.action === "stock"
+                ? "Seeded"
+                : null;
+        if (anchor && done) world.current?.floatAt(anchor, done, "gain");
         if (body.action === "exchange" && data.exchanged) {
           // The one place on the farm where coins are heard: this is Gold
           // actually leaving for the player's balance, and it is the only
@@ -457,6 +503,9 @@ export function StackAcresFarm() {
         if (mounted.current) setError("Could not reach the farm. Check your connection.");
       } finally {
         sending.current = false;
+        // One request, one anchor. Leaving it set would float the NEXT
+        // action's reward out of the last place a finger happened to be.
+        tapAnchor.current = null;
         if (mounted.current) {
           setBusy(false);
           setBusyUnitId(null);
@@ -553,8 +602,72 @@ export function StackAcresFarm() {
   const travel = useCallback((zone: ZoneId) => {
     travelSound();
     setPlace(zone);
-    setPanelOpen(true);
     world.current?.focusZone(zone);
+  }, []);
+
+  const closeRadial = useCallback(() => setRadial(null), []);
+
+  /**
+   * A finger landed on a unit's own picture. It pops immediately -- before
+   * anything has been sent, which is the whole point: the farm answers the
+   * touch, and the network answers a moment later. What happens next is
+   * `tapActionFor`'s call, off the same `unitRowAction` the sidebar's rows
+   * read, so the map and the list can never disagree.
+   *
+   * A refusal never leaves the browser. There is no room on a canvas for a
+   * disabled button with a title attribute explaining itself, so the reason
+   * floats where the finger was instead.
+   */
+  const onWorldUnitTap = useCallback(
+    (unitId: string, at: TapPoint) => {
+      setRadial(null);
+      const unit = liveUnits.find((candidate) => candidate.id === unitId);
+      if (!unit) return;
+      world.current?.popUnit(unitId);
+      // The sidebar follows the finger rather than gating it: whatever the
+      // player is touching is what "here" means now.
+      setPlace(stockZone(unit.stock));
+      const action = tapActionFor(unit, { feed, bushels, nowMs });
+      if (action.kind === "refused") {
+        world.current?.floatAt(at, action.reason, "deny");
+        return;
+      }
+      if (busy) return;
+      tapSound();
+      tapAnchor.current = at;
+      void act({ action: action.kind, unitId });
+    },
+    [act, bushels, busy, feed, liveUnits, nowMs],
+  );
+
+  /** A finger landed on a district's fenced ground and hit nothing. That is
+   *  "I want something HERE", answered where the finger is. */
+  const onWorldGroundTap = useCallback((zone: ZoneId, at: TapPoint) => {
+    tapSound();
+    setPlace(zone);
+    setRadial({ zone, at });
+  }, []);
+
+  /** Seeding straight out of the radial menu. Closes first: the menu's
+   *  prices are about to move under it, and a second tap on a stale one
+   *  would be a purchase the player did not read. */
+  const onRadialSeed = useCallback(
+    (stock: StackAcresStock) => {
+      const at = radial?.at ?? null;
+      setRadial(null);
+      tapSound();
+      tapAnchor.current = at;
+      void act({ action: "stock", stock });
+    },
+    [act, radial],
+  );
+
+  /** The ring's own way through to the deep end -- the same drawer the peg on
+   *  the right edge opens, reached without having to go and find the peg. */
+  const openPanel = useCallback(() => {
+    tapSound();
+    setRadial(null);
+    setPanelOpen(true);
   }, []);
 
   const districtUnits = useMemo(
@@ -714,11 +827,29 @@ export function StackAcresFarm() {
               tool={tool}
               celebrate={celebrate}
               onReady={onWorldReady}
+              onUnitTap={onWorldUnitTap}
+              onGroundTap={onWorldGroundTap}
+              onViewMoved={closeRadial}
               api={world}
             />
           )}
           {(!loaded || !worldReady) && (
             <p className="sa-hint sa-loading">Walking the fences…</p>
+          )}
+
+          {/* The seed menu's dismissal layer, and its position in this file is
+              the whole design: it covers the map but sits EARLIER than the
+              toolbelt, the signpost and the camera buttons, which are
+              positioned siblings with no z-index of their own and therefore
+              stack above it. So the next tap on the world closes the menu,
+              and the chrome stays live while it is open. */}
+          {radial && (
+            <button
+              type="button"
+              className="sa-radial-scrim"
+              aria-label="Close the seed menu"
+              onClick={closeRadial}
+            />
           )}
 
           {/* The masthead pill (logo, and before that the pen/field counts) that
@@ -752,10 +883,26 @@ export function StackAcresFarm() {
             <button type="button" className="sa-camera-btn" aria-label="Zoom out" onClick={() => world.current?.zoomBy(1 / 1.3)}>
               <ZoomOut size={16} aria-hidden="true" />
             </button>
-            <button type="button" className="sa-camera-btn" aria-label="Back to the farm" onClick={() => { setPlace("farmstead"); setPanelOpen(true); world.current?.recenter(); }}>
+            <button type="button" className="sa-camera-btn" aria-label="Back to the farm" onClick={() => { setPlace("farmstead"); setRadial(null); world.current?.recenter(); }}>
               <LocateFixed size={16} aria-hidden="true" />
             </button>
           </div>
+
+          {/* The seed menu, on the canvas next to the finger that asked for
+              it. Rendered after the camera controls so it stacks over them,
+              and inside .sa-field so its coordinates are the ones the scene
+              reported the tap in. */}
+          {radial && (
+            <StackAcresRadialMenu
+              at={radial.at}
+              options={buyOptionsForZone(radial.zone, { units: liveUnits, bushels, capacity })}
+              districtLabel={STACKACRES_ZONES[radial.zone].label}
+              busy={busy}
+              onSeed={onRadialSeed}
+              onClose={closeRadial}
+              onManage={openPanel}
+            />
+          )}
 
           <p className={clsx("sa-tool-hint", { "is-busy": busy })} aria-live="polite">
             {hint}
@@ -786,11 +933,14 @@ export function StackAcresFarm() {
             <span className="sa-panel-tab-label">{district.label.replace(/^The /, "")}</span>
           </button>
 
-          {/* The district panel: no plot to select any more, travelling here
-              (the signpost above) IS the selection. It only slides out once
-              a player has actually travelled somewhere, and stays shut
-              otherwise until the close button below -- or the peg above --
-              says otherwise. */}
+          {/* The district panel: deep management, not the way you play.
+              The fast loop is on the canvas now -- tap a ripe crop to collect
+              it, tap empty ground to seed it -- so this no longer opens itself
+              when a player travels somewhere. The peg above is how it comes
+              back, and it holds what a tap has no business doing: Gold spends,
+              and the full standing list. That list is also the keyboard and
+              screen-reader path to every canvas tap, which is why it is still
+              here rather than deleted along with the loop it used to be. */}
           <aside
             id="sa-district-panel"
             className={clsx("sa-district-panel", { "is-open": panelOpen })}
@@ -815,8 +965,28 @@ export function StackAcresFarm() {
             <h2 className="sa-district-title">{district.label}</h2>
             <p className="sa-district-blurb">{district.blurb}</p>
 
+            {/* Buy comes first now. Seeding with Bushels is the one thing on
+                this panel a tap on the map also does; buying outright and
+                expanding capacity are Gold, are permanent, and are the reason
+                to open this at all -- so they lead, rather than sitting under
+                a list of things you could have collected by touching them. */}
+            <div className="sa-panel-section">
+              <h3 className="sa-group-label">Buy &amp; expand</h3>
+              <StackAcresBuySection
+                options={buyOptions}
+                busy={busy}
+                onSeed={onSeed}
+                onBuyOutright={onBuyOutright}
+                onExpand={onExpand}
+              />
+            </div>
+
             <div className="sa-panel-section">
               <h3 className="sa-group-label">What&apos;s here</h3>
+              <p className="sa-panel-note">
+                Tap anything on the map to collect, feed or clear it. These rows do the same, and
+                are how you retire something you own outright.
+              </p>
               <StackAcresUnitRows
                 units={districtUnits}
                 nowMs={nowMs}
@@ -830,17 +1000,6 @@ export function StackAcresFarm() {
                 onArmRetire={onArmRetire}
                 onConfirmRetire={onConfirmRetire}
                 onCancelRetire={onCancelRetire}
-              />
-            </div>
-
-            <div className="sa-panel-section">
-              <h3 className="sa-group-label">Buy</h3>
-              <StackAcresBuySection
-                options={buyOptions}
-                busy={busy}
-                onSeed={onSeed}
-                onBuyOutright={onBuyOutright}
-                onExpand={onExpand}
               />
             </div>
           </aside>
@@ -1017,10 +1176,18 @@ export function StackAcresFarm() {
         <HowToPlayModal title="StackAcres" onClose={() => setShowHelp(false)}>
           <p>
             The farm is a map of four districts. Drag to look around, pinch or scroll to zoom, or
-            tap a district&apos;s name to travel straight to it — that also opens a panel showing
-            what you own there and what you can buy. Close it and it folds away to a handle on the
-            right edge; tap that to bring it back without moving the camera. There is nothing to
-            tap on the map itself except the scythe.
+            tap a district&apos;s name to travel straight to it.
+          </p>
+          <p>
+            <strong>Everything is tapped on the map itself.</strong> Tap a crop or an animal to
+            collect it when it is ready, feed it when it is hungry, or clear it when it comes up
+            weather-worn. Tap the bare ground inside a district and a small menu opens right there
+            to seed something new.
+          </p>
+          <p>
+            The handle on the right edge opens that district&apos;s panel, which is where Gold buys
+            stock outright and buys more room to keep at once. Close it and it folds back to the
+            handle without moving the camera.
           </p>
           <p>
             The farm runs on <strong>Bushels</strong>, its own currency. Collecting from a ready

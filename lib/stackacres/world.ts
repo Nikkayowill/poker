@@ -16,8 +16,12 @@
  * mapping was ever really for), and `growAreaBounds` answers "where in that
  * district do its units stand" -- one rect per district, not one per plot.
  *
- * The camera is unbounded: the player can roam past the farm in any
- * direction into procedurally-grown scenery (see `chunkScenery`).
+ * The camera is bounded (see ./bounds.ts): a hard edge sits a margin past
+ * the outermost district, past which the camera cannot scroll. Inside that
+ * edge the player can still roam past any district into procedurally-grown
+ * scenery (see `chunkScenery`) -- bounding the camera did not touch that
+ * system, it just means its farthest, thinnest tier is now scenery that sits
+ * this side of the wall rather than a tail that used to run to infinity.
  */
 
 import { STACKACRES_STOCK, type StackAcresStock } from "./catalogue";
@@ -342,6 +346,13 @@ export function cropSpot(zone: ZoneId, unitId: string): WorldPoint {
 
 /** How wide the open world's procedural-scenery chunks are, in world units. */
 export const STACKACRES_CHUNK = 160;
+
+/** How far past the union of every district's own bounds the hard camera
+ *  boundary sits (./bounds.ts), in world units -- about one and a half
+ *  scenery chunks, so a ring or two of the woodland `chunkScenery` already
+ *  thins into still stands between the outermost district and the wall,
+ *  rather than the districts' own fences butting straight up against it. */
+export const WORLD_BOUND_MARGIN = STACKACRES_CHUNK * 1.5;
 
 /**
  * The rectangle kept clear of wild scenery: x 28..440, y -60..410. The Hen

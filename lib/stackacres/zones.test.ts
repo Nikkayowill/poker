@@ -217,6 +217,28 @@ describe("district ground", () => {
     }
   });
 
+  it("shades each tile's colour a little, so same-colour tiles are not identical", () => {
+    for (const id of OUTER_ZONE_IDS) {
+      const zone = STACKACRES_ZONES[id];
+      const tiles = zoneGroundTiles(id);
+      const distinctColours = new Set(tiles.map((t) => t.colour));
+      // More distinct shades than the two colours `ground.base`/`alt` alone
+      // would produce -- the jitter is doing something.
+      expect(distinctColours.size).toBeGreaterThan(2);
+      // But every shade stays close to the colour it was dealt from, per
+      // `shade`'s own comment: this is grain, not a third hard colour.
+      for (const colour of distinctColours) {
+        const dist = (a: number, b: number) =>
+          Math.max(
+            Math.abs(((a >> 16) & 255) - ((b >> 16) & 255)),
+            Math.abs(((a >> 8) & 255) - ((b >> 8) & 255)),
+            Math.abs((a & 255) - (b & 255)),
+          );
+        expect(Math.min(dist(colour, zone.ground.base), dist(colour, zone.ground.alt))).toBeLessThan(20);
+      }
+    }
+  });
+
   it("fades out at the edge and eats the corners, so the box is not a box", () => {
     for (const id of OUTER_ZONE_IDS) {
       const zone = STACKACRES_ZONES[id];

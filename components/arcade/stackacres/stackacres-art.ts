@@ -19,7 +19,6 @@ import {
   litMass,
   painter,
   poly,
-  rad,
   rr,
   stroke,
   type Ctx,
@@ -71,7 +70,7 @@ export type PainterName =
 
 type CorePainterName =
   | "shadow"
-  | "cloud"
+  | "edgeArrow"
   | "tree1"
   | "tree2"
   | "tree3"
@@ -246,16 +245,25 @@ const DRAWN: Record<PainterName, Painter> = {
     0.5,
   ),
 
-  cloud: painter(160, 90, (c) => {
-    for (const [x, y, r] of [[60, 45, 40], [95, 40, 36], [120, 52, 28], [40, 55, 26]] as const) {
-      ell(c, x, y, r, r * 0.62);
-      F(c, "rgba(255,255,255,.86)");
-    }
-    for (const [x, y, r] of [[62, 41, 34], [96, 36, 30], [42, 51, 21]] as const) {
-      ell(c, x, y, r, r * 0.58);
-      F(c, "#ffffff");
-    }
-  }),
+  // The "you've gone far enough" nudge, pinned to a screen edge by the scene
+  // (stackacres-scene.ts's `fitEdgeGuides`) and rotated per edge -- drawn
+  // pointing right so rotation 0 is the shape as-is. A single flat chevron,
+  // gold like every other "look here" cue in the toolbelt (ico-gold, a
+  // ready-to-harvest glow), outlined in its own rim rather than black per
+  // the palette's usual rule even though this is a HUD glyph, not a world
+  // object -- consistency with the rest of the art reads better than a
+  // one-off UI convention for a single icon.
+  edgeArrow: painter(
+    32,
+    20,
+    (c) => {
+      poly(c, [[6, 7], [18, 7], [18, 3], [30, 10], [18, 17], [18, 13], [6, 13]]);
+      F(c, RAMPS.gold.top);
+      stroke(c, RAMPS.gold.rim, 1.6);
+    },
+    0.5,
+    0.5,
+  ),
 
   tree1: painter(24, 30, treeRound(RAMPS.leaf)),
   tree2: painter(24, 30, treeRound({ top: "#7acb46", side: "#5ca632", rim: "#3f7620" })),
@@ -1026,7 +1034,8 @@ export function bakeVignette(scene: Phaser.Scene): string {
 }
 
 /** The ground: one 256-unit tile that repeats seamlessly in every direction,
- *  which is what lets an unbounded camera stand on a single tile sprite. */
+ *  which is what lets the whole open lawn stand on a single tile sprite
+ *  rather than one baked per district or per chunk. */
 export function bakeGrass(scene: Phaser.Scene): void {
   const key = "grass";
   if (scene.textures.exists(key)) return;
@@ -1053,47 +1062,14 @@ export function bakeGrass(scene: Phaser.Scene): void {
       }
     }
   };
-  // A layer of broad, faint patches first: the lawn is not one green, it is
-  // sunlit sweeps and cooler hollows. Kept under radius 40 and very faint --
-  // a few huge ones (radius 62) tiled visibly into a "stained" pattern once
-  // zoomed out, which is the same trap a stronger alpha would fall into.
-  for (let i = 0; i < 16; i += 1) {
-    const x = r() * units;
-    const y = r() * units;
-    const rx = 24 + r() * 16;
-    const ry = rx * (0.5 + r() * 0.4);
-    const rot = r() * 3;
-    const light = r() < 0.55;
-    wrapped(() => {
-      ell(c, x, y, rx, ry, rot);
-      F(
-        c,
-        rad(c, x, y, 0, rx, [
-          [0, light ? "rgba(255,255,215,.09)" : "rgba(25,95,35,.08)"],
-          [1, "rgba(0,0,0,0)"],
-        ]),
-      );
-    });
-  }
-  // Smaller, more numerous patches read as mottling.
-  for (let i = 0; i < 46; i += 1) {
-    const x = r() * units;
-    const y = r() * units;
-    const rx = 9 + r() * 20;
-    const ry = rx * (0.5 + r() * 0.4);
-    const rot = r() * 3;
-    const dark = r() < 0.5;
-    wrapped(() => {
-      ell(c, x, y, rx, ry, rot);
-      F(
-        c,
-        rad(c, x, y, 0, rx, [
-          [0, dark ? "rgba(40,110,40,.11)" : "rgba(255,255,255,.08)"],
-          [1, "rgba(0,0,0,0)"],
-        ]),
-      );
-    });
-  }
+  // 2026-09-04: BOTH radial-gradient patch layers that used to live here
+  // (a broad "sunlit sweeps" pass and a smaller, denser "mottle" pass) are
+  // gone. Cutting the first and shrinking the second was not enough -- a
+  // smaller soft-edged blob is still a soft-edged blob, and Kayo still read
+  // it as a cloud shadow stain on the grass. What is left to break up the
+  // flat fill is every OTHER pass below: individual blade strokes and dew
+  // dots (fine marks, not blobs) plus the clover/pebble accent pass -- none
+  // of them a radial gradient, so none of them can read as a stain.
   for (let i = 0; i < 140; i += 1) {
     const x = r() * units;
     const y = r() * units;
@@ -1113,6 +1089,41 @@ export function bakeGrass(scene: Phaser.Scene): void {
     wrapped(() => {
       ell(c, x, y, 0.9, 0.9);
       F(c, pale ? "rgba(255,255,255,.55)" : "rgba(255,230,120,.7)");
+    });
+  }
+  // A last, faint accent pass: tiny clover flecks and pebbles, at roughly
+  // the dew pass's own mark budget so the tile's total draw cost stays in
+  // the same ballpark. Kept small and low-alpha for the same reason the
+  // broad patches above are capped under radius 40 -- anything bigger or
+  // bolder tiles visibly into a stamped-looking repeat at this 256-unit
+  // scale. A clover patch or pebble that should read as its own, distinct,
+  // non-repeating thing belongs in the world's scatter systems instead
+  // (chunkScenery in lib/stackacres/world.ts, zones.ts's ZONE_SCATTER) --
+  // this pass is texture, not content.
+  for (let i = 0; i < 14; i += 1) {
+    const x = r() * units;
+    const y = r() * units;
+    const rot = r() * Math.PI * 2;
+    wrapped(() => {
+      c.save();
+      c.translate(x, y);
+      c.rotate(rot);
+      for (const a of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) {
+        ell(c, Math.cos(a) * 0.55, Math.sin(a) * 0.55, 0.5, 0.36, a);
+        F(c, tint(RAMPS.leaf.top, 0.4));
+      }
+      c.restore();
+    });
+  }
+  for (let i = 0; i < 12; i += 1) {
+    const x = r() * units;
+    const y = r() * units;
+    const rx = 0.5 + r() * 0.4;
+    wrapped(() => {
+      ell(c, x, y, rx, rx * 0.75, r() * 3);
+      F(c, tint(RAMPS.stone.side, 0.5));
+      ell(c, x - rx * 0.2, y - rx * 0.2, rx * 0.4, rx * 0.3);
+      F(c, tint(RAMPS.stone.top, 0.55));
     });
   }
   texture.refresh();

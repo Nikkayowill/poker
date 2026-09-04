@@ -294,6 +294,22 @@ function seeded(seed: number): () => number {
 }
 
 /**
+ * A 0xRRGGBB colour with its channels scaled by `factor`, clamped to a valid
+ * byte each. A continuous per-tile brightness jitter rather than a third
+ * hard colour: `ZoneGround.alt`'s own comment already found out the hard way
+ * that a second colour with real contrast reads as a chessboard at a tile's
+ * size on screen, so grain has to come from shading the colour that was
+ * already picked, not from adding another one to pick between.
+ */
+function shade(colour: number, factor: number): number {
+  const clamp = (channel: number) => Math.max(0, Math.min(255, Math.round(channel * factor)));
+  const r = clamp((colour >> 16) & 255);
+  const g = clamp((colour >> 8) & 255);
+  const b = clamp(colour & 255);
+  return (r << 16) | (g << 8) | b;
+}
+
+/**
  * How strongly a point is inside a rect, 0 on the edge and 1 once it is a
  * full `ZONE_FEATHER` in.
  *
@@ -354,11 +370,17 @@ export function zoneGroundTiles(id: ZoneId): ZoneGroundTile[] {
       // boundary, which is what ground actually does where a field peters
       // out into grass.
       if (inset < 0.75 && random() > 0.35 + inset * 0.65) continue;
+      // A third, continuous roll on top of the base/alt pick: +-7% per-tile
+      // brightness, so two tiles that land the same colour still are not
+      // identical. This is grain, the same job the lawn tile's own mottle
+      // patches do underneath everything -- see `shade`'s own comment for
+      // why it is a shade and not a third colour.
+      const tone = shade(random() < 0.34 ? zone.ground.alt : zone.ground.base, 0.93 + random() * 0.14);
       tiles.push({
         x,
         y,
         size: ZONE_TILE,
-        colour: random() < 0.34 ? zone.ground.alt : zone.ground.base,
+        colour: tone,
         alpha,
       });
     }

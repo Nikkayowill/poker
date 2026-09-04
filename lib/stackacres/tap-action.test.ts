@@ -73,7 +73,21 @@ describe("tapActionFor", () => {
 
   it("answers a working unit with its countdown rather than nothing", () => {
     const action = tapActionFor(unit("working"), { feed: 9, gold: 9_999, nowMs: NOW });
-    expect(action).toEqual({ kind: "refused", reason: "Ready in 15m" });
+    expect(action).toEqual({ kind: "refused", reason: "Ready in 15m", why: "waiting" });
+  });
+
+  // The split the farm's refusal SOUND hangs off: a real no knocks on wood, a
+  // unit that is only still growing says nothing. Getting these the wrong way
+  // round makes idle poking around the map into a stream of error noises.
+  it("marks an unaffordable action blocked and a growing one waiting", () => {
+    const empty = tapActionFor(unit("hungry"), { feed: 0, gold: 0, nowMs: NOW });
+    expect(empty.kind === "refused" && empty.why).toBe("blocked");
+
+    const poor = tapActionFor(unit("mucked"), { feed: 0, gold: 5, nowMs: NOW });
+    expect(poor.kind === "refused" && poor.why).toBe("blocked");
+
+    const growing = tapActionFor(unit("working"), { feed: 9, gold: 9_999, nowMs: NOW });
+    expect(growing.kind === "refused" && growing.why).toBe("waiting");
   });
 
   // Retiring refunds nothing. It stays two deliberate presses behind the

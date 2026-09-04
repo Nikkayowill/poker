@@ -30,8 +30,18 @@ export type StackAcresTapAction =
   | { kind: "feed"; unitId: string }
   | { kind: "water"; unitId: string }
   | { kind: "clear"; unitId: string }
-  /** Nothing to send, and the line of text to float where the finger landed. */
-  | { kind: "refused"; reason: string };
+  /**
+   * Nothing to send, and the line of text to float where the finger landed.
+   *
+   * `why` splits the two very different things this shape carries, because
+   * they do not sound the same. "blocked" is a real no -- the barn is empty,
+   * the clearing fee is more Gold than you have -- and takes the knock on
+   * wood. "waiting" is a unit that is simply still growing, which is the
+   * commonest tap there is on a farm full of crops and is a question rather
+   * than a refusal; answering that with an error noise every few seconds is
+   * how a farm turns into a nagging one. Both still float their line.
+   */
+  | { kind: "refused"; reason: string; why: "blocked" | "waiting" };
 
 /** "12m", "3h 20m", "any moment" -- how long until a working unit is ready.
  *  Shared with the sidebar's own rows so the two never word it differently. */
@@ -64,7 +74,7 @@ export function tapActionFor(
       return { kind: "collect", unitId: unit.id };
     case "feed":
       return action.disabled
-        ? { kind: "refused", reason: action.reason ?? "Not now." }
+        ? { kind: "refused", reason: action.reason ?? "Not now.", why: "blocked" }
         : { kind: "feed", unitId: unit.id };
     // Never refused: watering spends nothing, so there is no "you are out of"
     // branch for it the way there is for feed.
@@ -72,14 +82,18 @@ export function tapActionFor(
       return { kind: "water", unitId: unit.id };
     case "clear":
       return action.disabled
-        ? { kind: "refused", reason: action.reason ?? "Not now." }
+        ? { kind: "refused", reason: action.reason ?? "Not now.", why: "blocked" }
         : { kind: "clear", unitId: unit.id };
     // Retiring is deliberately not a tap. It refunds nothing, so it stays two
     // deliberate presses behind the sidebar's own confirmation rather than
     // riding on a finger that landed on an animal.
     case "retire":
     case "none":
-      return { kind: "refused", reason: `Ready in ${timeLeftLabel(unit.readyAt, context.nowMs)}` };
+      return {
+        kind: "refused",
+        reason: `Ready in ${timeLeftLabel(unit.readyAt, context.nowMs)}`,
+        why: "waiting",
+      };
   }
 }
 

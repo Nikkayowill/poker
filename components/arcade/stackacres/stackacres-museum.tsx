@@ -1,7 +1,6 @@
 "use client";
 
 import { X } from "lucide-react";
-import { tapSound } from "@/lib/audio/ui-sounds";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { STACKACRES_ITEM_CATALOGUE } from "@/lib/stackacres/items";
 import { MUSEUM_EXHIBITS, MUSEUM_EXHIBIT_CATALOGUE, type MuseumRegistry } from "@/lib/stackacres/museum";
@@ -47,7 +46,7 @@ export function StackAcresMuseum({
           <button
             ref={closeButtonRef}
             className="modal-close"
-            onClick={() => { tapSound(); onClose(); }}
+            onClick={onClose}
             aria-label="Close"
           >
             <X size={18} />

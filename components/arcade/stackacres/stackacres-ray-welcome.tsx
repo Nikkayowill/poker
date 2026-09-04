@@ -1,7 +1,6 @@
 "use client";
 
 import { X } from "lucide-react";
-import { tapSound } from "@/lib/audio/ui-sounds";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 
 /**
@@ -33,7 +32,7 @@ export function StackAcresRayWelcome({ onClose }: { onClose: () => void }) {
           <button
             ref={closeButtonRef}
             className="modal-close"
-            onClick={() => { tapSound(); onClose(); }}
+            onClick={onClose}
             aria-label="Close"
           >
             <X size={18} />
@@ -52,7 +51,7 @@ export function StackAcresRayWelcome({ onClose }: { onClose: () => void }) {
             supply store&rsquo;s mine too, so holler if you need feed or want to sell.&rdquo;
           </p>
           <p>&ldquo;Go on and get your hands dirty. I&rsquo;ll be right here.&rdquo;</p>
-          <button type="button" className="sa-cta" onClick={() => { tapSound(); onClose(); }}>
+          <button type="button" className="sa-cta" onClick={onClose}>
             Thanks, Ray
           </button>
         </div>

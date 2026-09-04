@@ -1,19 +1,11 @@
 "use client";
 
 import { useEffect, useImperativeHandle, useMemo, useRef, type Ref } from "react";
-import type { StackAcresStock } from "@/lib/stackacres/catalogue";
-import type { StackAcresPlotSnapshot } from "@/lib/stackacres/plots";
-import {
-  STACKACRES_TOOL_DEFS,
-  affordanceFor,
-  type AffordanceContext,
-  type StackAcresTool,
-} from "@/lib/stackacres/tools";
+import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
+import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { PainterName } from "./stackacres-art";
-import type { StackAcresScene, StackAcresSceneCell, PlotScreenRect } from "./stackacres-scene";
-
-export type { PlotScreenRect };
+import type { StackAcresScene, StackAcresSceneUnit } from "./stackacres-scene";
 
 /**
  * The Phaser mount, and the bundle boundary.
@@ -22,123 +14,76 @@ export type { PlotScreenRect };
  * player who never opens the StackAcres never downloads Phaser -- the same
  * isolation poker-app.tsx's `dynamic(..., { ssr: false })` gives the table.
  *
- * Rendering is driven from props: `plots` plus the held tool become the
- * scene's cells (what each plot is, and what a tap would do to it), and the
- * scene repaints only the cells whose picture actually changed. Everything
- * the player can DO comes back out through `onPlotTap`, routed by the shell
- * exactly as the old grid's taps were, so the rules never moved.
+ * Rendering is driven from props: `units` plus the held tool become the
+ * scene's own units. THERE IS NO PLOT GRID (see 2026-09-03's CLAUDE.md entry
+ * -- "districts hold stock, not plots"), so unlike the old grid this
+ * component has no action callbacks at all -- buying and tending a unit is
+ * entirely the district sidebar's job (stackacres-district-panel.tsx), a DOM
+ * surface that talks to the server directly and never touches this bridge.
+ * The only thing that still comes back OUT of the canvas is `onReady`
+ * (the first frame is drawn) and, through `api`, a way for the shell to move
+ * the camera around -- `zoomBy` for the zoom buttons mouse users need
+ * (nobody has a pinch gesture with a mouse), `recenter` for "home", and
+ * `focusZone` for the destination signpost.
  *
- * `api` is the shell's handle for the few things that are not a render:
- * dragging a seed out of the strip (the placement ghost), and the zoom
- * buttons for mouse users who have no pinch. Its coordinates are CSS pixels
- * relative to this host; the scene converts, because the canvas underneath is
- * deliberately denser than the screen (see the scale config below).
- *
- * The canvas is decorative to assistive tech. The keyboard and screen-reader
- * surface is the plot list in stackacres-farm.tsx, which drives the same
- * callbacks -- hence aria-hidden here rather than a second, invisible copy of
- * every tile kept in sync with the canvas.
+ * The canvas is decorative to assistive tech -- `aria-hidden`. The
+ * keyboard/screen-reader surface is the district sidebar's own real DOM
+ * buttons, not a second hidden copy of the map kept in sync with it; there
+ * is nothing left on the canvas a sidebar row doesn't already say.
  */
 
 export interface StackAcresWorldApi {
-  /** Move (or hide, with null) the placement ghost. Returns the empty plot under it. */
-  setGhost: (stock: StackAcresStock | null, clientX: number, clientY: number) => number | null;
   zoomBy: (factor: number) => void;
   recenter: () => void;
-  /** Pan so a plot sits clear of the overlays, if it is not already. */
-  focusPlot: (plotIndex: number) => void;
   /** Travel to a district's gate (lib/stackacres/zones.ts). */
   focusZone: (zone: ZoneId) => void;
-  /** Report where a plot is on screen via `onTrackedRect` until told to stop. */
-  trackPlot: (plotIndex: number | null) => void;
 }
 
 export interface StackAcresWorldProps {
-  plots: StackAcresPlotSnapshot[];
+  units: StackAcresUnitSnapshot[];
   tool: StackAcresTool;
-  context: AffordanceContext;
-  selected: number | null;
-  celebrate: { plotIndex: number; nonce: number } | null;
-  onPlotTap: (plot: StackAcresPlotSnapshot) => void;
-  /**
-   * Fired once per plot, in crossing order, as a drag that started on an
-   * actionable plot sweeps the held tool across every further one it
-   * crosses -- the same thing `onPlotTap` would do to that plot, just
-   * reached by dragging over it instead of tapping it alone.
-   */
-  onSweepPlot: (plot: StackAcresPlotSnapshot) => void;
-  onGroundTap: () => void;
+  /** Fired once, by nonce, to trigger the gold-burst effect on one unit --
+   *  the client-side twin of a collect action the sidebar just confirmed. */
+  celebrate: { unitId: string; nonce: number } | null;
   onReady: () => void;
-  /** The tracked plot's place on the canvas, whenever it moves. */
-  onTrackedRect: (rect: PlotScreenRect | null) => void;
   api: Ref<StackAcresWorldApi | null>;
 }
 
-function toCells(
-  plots: StackAcresPlotSnapshot[],
-  tool: StackAcresTool,
-  context: AffordanceContext,
-  selected: number | null,
-): StackAcresSceneCell[] {
-  return plots.map((plot) => ({
-    plotIndex: plot.plotIndex,
-    state: plot.state,
-    stock: plot.stock,
-    progress: plot.progress,
-    afford: affordanceFor(tool, plot, context).kind,
-    selected: plot.plotIndex === selected,
-    purchasable: plot.purchasable,
-    unlockPrice: plot.unlockPrice,
+function toUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
+  return units.map((unit) => ({
+    id: unit.id,
+    stock: unit.stock,
+    state: unit.state,
+    progress: unit.progress,
+    permanent: unit.permanent,
   }));
 }
 
-export function StackAcresWorld({
-  plots,
-  tool,
-  context,
-  selected,
-  celebrate,
-  onPlotTap,
-  onSweepPlot,
-  onGroundTap,
-  onReady,
-  onTrackedRect,
-  api,
-}: StackAcresWorldProps) {
+export function StackAcresWorld({ units, tool, celebrate, onReady, api }: StackAcresWorldProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<StackAcresScene | null>(null);
   const gameRef = useRef<{ destroy: (removeCanvas: boolean) => void } | null>(null);
 
   // The scene calls back into whatever the shell currently is, not whatever
   // it was when the game booted.
-  const plotsRef = useRef(plots);
-  const tapRef = useRef(onPlotTap);
-  const sweepRef = useRef(onSweepPlot);
-  const groundRef = useRef(onGroundTap);
   const readyRef = useRef(onReady);
-  const trackedRef = useRef(onTrackedRect);
-  // The tool's own picture, for the sweep ghost -- read at mount (before the
-  // scene exists to push it to) and again on every change afterward.
+  // The tool's own picture, for the mow-drag ghost -- read at mount (before
+  // the scene exists to push it to) and again on every change afterward.
   const toolIconRef = useRef<PainterName>(STACKACRES_TOOL_DEFS[tool].icon as PainterName);
   // The tool itself, not just its picture: the scythe's target is ground
-  // rather than a plot, so the scene has to know which tool is held to read a
+  // rather than a unit, so the scene has to know which tool is held to read a
   // drag correctly. See `setTool` in stackacres-scene.ts.
   const toolRef = useRef<StackAcresTool>(tool);
   useEffect(() => {
-    plotsRef.current = plots;
-    tapRef.current = onPlotTap;
-    sweepRef.current = onSweepPlot;
-    groundRef.current = onGroundTap;
     readyRef.current = onReady;
-    trackedRef.current = onTrackedRect;
     toolIconRef.current = STACKACRES_TOOL_DEFS[tool].icon as PainterName;
     toolRef.current = tool;
   });
 
-  const cells = useMemo(() => toCells(plots, tool, context, selected), [plots, tool, context, selected]);
-  const cellsRef = useRef(cells);
+  const sceneUnits = useMemo(() => toUnits(units), [units]);
+  const unitsRef = useRef(sceneUnits);
   useEffect(() => {
-    cellsRef.current = cells;
+    unitsRef.current = sceneUnits;
   });
 
   useEffect(() => {
@@ -162,17 +107,7 @@ export function StackAcresWorld({
 
       const scene = new SceneClass(
         {
-          onTapPlot: (plotIndex) => {
-            const plot = plotsRef.current.find((p) => p.plotIndex === plotIndex);
-            if (plot) tapRef.current(plot);
-          },
-          onSweepPlot: (plotIndex) => {
-            const plot = plotsRef.current.find((p) => p.plotIndex === plotIndex);
-            if (plot) sweepRef.current(plot);
-          },
-          onTapGround: () => groundRef.current(),
           onReady: () => readyRef.current(),
-          onTrackedRect: (rect) => trackedRef.current(rect),
         },
         { reducedMotion, host },
       );
@@ -216,7 +151,7 @@ export function StackAcresWorld({
       });
       sceneRef.current = scene;
       gameRef.current = game;
-      scene.setPlots(cellsRef.current);
+      scene.setUnits(unitsRef.current);
       scene.setToolIcon(toolIconRef.current);
       scene.setTool(toolRef.current);
 
@@ -260,28 +195,19 @@ export function StackAcresWorld({
   useImperativeHandle(
     api,
     () => ({
-      setGhost: (stock, clientX, clientY) => {
-        const host = hostRef.current;
-        const scene = sceneRef.current;
-        if (!host || !scene) return null;
-        const rect = host.getBoundingClientRect();
-        return scene.setGhost(stock, clientX - rect.left, clientY - rect.top);
-      },
       zoomBy: (factor) => sceneRef.current?.zoomBy(factor),
       recenter: () => sceneRef.current?.recenter(),
-      focusPlot: (plotIndex) => sceneRef.current?.focusPlot(plotIndex),
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
-      trackPlot: (plotIndex) => sceneRef.current?.trackPlot(plotIndex),
     }),
     [],
   );
 
-  // Repaint when some cell's picture changed. The parent re-derives plots
-  // every second for its countdowns; the scene diffs per cell and only
+  // Repaint when some unit's picture changed. The parent re-derives units
+  // every second for its countdowns; the scene diffs per unit and only
   // rebuilds the ones whose signature moved, so this is cheap to call often.
   useEffect(() => {
-    sceneRef.current?.setPlots(cells);
-  }, [cells]);
+    sceneRef.current?.setUnits(sceneUnits);
+  }, [sceneUnits]);
 
   useEffect(() => {
     sceneRef.current?.setToolIcon(STACKACRES_TOOL_DEFS[tool].icon as PainterName);
@@ -289,7 +215,7 @@ export function StackAcresWorld({
   }, [tool]);
 
   useEffect(() => {
-    if (celebrate) sceneRef.current?.celebrateHarvest(celebrate.plotIndex);
+    if (celebrate) sceneRef.current?.celebrateHarvest(celebrate.unitId);
   }, [celebrate]);
 
   return <div ref={hostRef} className="sa-world" aria-hidden="true" />;

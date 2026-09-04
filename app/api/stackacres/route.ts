@@ -7,10 +7,10 @@ import { readSessionToken } from "@/lib/server/session";
 export const runtime = "nodejs";
 
 /**
- * The StackAcres's read side: the caller's whole plot grid, their profile, and
- * their feed. Progress is derived client-side from the timestamps this
- * returns, so the client only ever calls this on mount and on tab-return,
- * never on a poll -- the limit is sized for that.
+ * The StackAcres's read side: every unit the caller owns, their profile, and
+ * their feed/capacity/inventory. Progress is derived client-side from the
+ * timestamps this returns, so the client only ever calls this on mount and on
+ * tab-return, never on a poll -- the limit is sized for that.
  *
  * Read-only, so it must never mint a session (session-minting.test.ts's
  * rule).

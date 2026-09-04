@@ -47,8 +47,9 @@ export function StackAcresRayWelcome({ onClose }: { onClose: () => void }) {
           />
           <p>
             &ldquo;Well now, come on in. Name&rsquo;s Ray — this land&rsquo;s been in the family a long
-            while, and I keep an eye on it. You buy your acreage from me, and the supply store&rsquo;s
-            mine too, so holler if you need feed or want to sell.&rdquo;
+            while, and I keep an eye on it. Walk yourself out to whichever district takes your fancy
+            and the panel beside you will show what&rsquo;s standing there and what you can buy — the
+            supply store&rsquo;s mine too, so holler if you need feed or want to sell.&rdquo;
           </p>
           <p>&ldquo;Go on and get your hands dirty. I&rsquo;ll be right here.&rdquo;</p>
           <button type="button" className="sa-cta" onClick={() => { tapSound(); onClose(); }}>

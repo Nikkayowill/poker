@@ -46,6 +46,84 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### StackAcres drops the plot grid: districts hold stock, not plots (2026-09-03)
+Kayo didn't want visible plot patches at all -- "I select an area and the sidebar reflects what I can
+do within that area. So if I wanna buy more cattle they'll appear within that area." Confirmed over
+several rounds of questions rather than assumed, since the pen-zoning pass immediately above this one
+had already gotten a similar-sounding ask backwards once: **plot ownership is gone outright**, not
+hidden -- you buy an animal or crop directly (Bushels to grow one, Gold to buy one outright), it just
+appears in whichever district its kind lives in (unchanged mapping: hen@Farmstead, crops@Long Meadow,
+sheep@Wallow, cattle@Ox Fields). Travelling to a district (the signpost, unchanged) IS the selection;
+a fixed DOM sidebar there (`stackacres-district-panel.tsx`'s `StackAcresUnitRows`/`StackAcresBuySection`)
+lists what's standing there with the one action each row affords, and what can be bought. Concept
+approved from a working HTML mockup before any code changed (Kayo's standing rule for map/UI
+direction) -- https://claude.ai/code/artifact/dda84511-9c53-4100-b584-47bbdc6efb2b.
+
+**The old land-purchase step (buy a plot, then plant it) is replaced by a per-KIND capacity ladder**,
+not removed outright -- Kayo's call when asked. Each of the five stock kinds gets its own free base
+cap of 3 (unchanged number) independent of the others, extendable up to +3 by Gold at a flat per-kind
+price (`stackacresCapacityPrice`, `lib/stackacres/catalogue.ts`). This is a genuine, deliberate
+economy change worth restating: the old cap was *shared* across all three livestock kinds (an
+artifact of the single-grid era), so total possible concurrent livestock rises from 3 to as much as
+18 fully expanded -- the honest consequence of kinds having been physically separate places since the
+pen-zoning pass, not an oversight.
+
+**A unit is a row with no position**, `lib/stackacres/units.ts` (successor to `plots.ts`): `working |
+hungry | ready | mucked`, no `locked`/`empty`/`purchasable` at all, since a unit only exists once
+bought. `homestead_plots` is left in place, inert, same posture as the `payout` column two migrations
+ago; the new `homestead_units` table backfilled the 4 real working rows production held at migration
+time (one of them -- a cattle row -- had been stocked before pen-zoning ever existed and sat on a grid
+position that never matched its kind's district; dropping position entirely made that stale mismatch
+moot rather than something to reconcile). **A mucked unit still counts toward its kind's cap** -- this
+was a real bug caught only by driving the actual UI, not by the test suite: the first cut counted only
+`working` rows (mirroring the old plot trigger, which needed to since a mucked PLOT still physically
+held a tile), so a mucked unit stopped costing anything at all once units had no tile to hold hostage
+-- buy a fresh one instead of ever paying the fee, and muck's whole purpose (the cost of turning ground
+over) would never actually cost anything. Fixed same-day in both the server (`countOccupiedStackAcresUnits`)
+and the DB trigger (`homestead_units_enforce_stock_shape`, migration `20260903190000`, applied same day
+as the table it patches).
+
+**Server actions drop `plotIndex` for either nothing (buying) or `unitId`** (acting on an owned unit).
+`buy-plot` is gone; `expand-capacity` replaces it as the Gold sink. `stock`/`buy-stock` are now a
+single INSERT (no more "claim an empty plot, then stock it" two-step) -- `createStackAcresUnit` is
+born already working. A clean, non-permanent collect **deletes the row** rather than emptying a plot
+back to `empty`; a mucked, non-permanent unit's `clear` also deletes it, once the fee is paid -- there
+is no "back to empty" state to return either kind of row to any more.
+
+**The Phaser scene surgery (`stackacres-scene.ts`, 2,868 lines) was the highest-risk piece and was
+delegated to a background agent with an exhaustive, explicit keep/delete/add spec** rather than
+attempted freehand, given the size and that camera/rendering work in this codebase already has its own
+higher verification bar. Deleted outright: the whole per-plot cell system (`CellNode`/`buildCell`,
+fence-merge/`groupNeighborOwned`, the ghost-drag-to-plot placement system, the tool-sweep gesture, and
+plot screen-position tracking for the old floating detail card -- there is no floating card any more,
+the sidebar is a fixed dock). Added: one `UnitNode` per owned unit (one sprite per unit now, not the
+old 2-3 decorative critters standing in for a whole pen's stock), a `Critter`-driven wander box for
+animals (`growAreaInterior(stockZone(stock))`) or a deterministic fixed spot for a crop (`cropSpot`,
+seeded off the unit's own id via a new `seedFromId` hash -- no server-stored position needed), and one
+static straw-and-fence boundary painted once per district instead of a per-plot merged fence. Verified
+by an actual `next dev` + minted session + admin grant run (`localhost`, not `127.0.0.1`, or
+middleware's origin check silently 403s every POST while GETs keep succeeding -- lost real time to this
+before remembering it), not just `tsc`/build: real hen and cow sprites wandering their district's
+fenced diamond, the sidebar updating live across buy/collect/feed/clear/retire, zero console errors.
+
+**Other real bugs surfaced only by that live run, both fixed same pass:** the capacity-expand button
+in the buy section was showing even on a district with room to spare (checked only whether extra
+slots were maxed, not whether the base cap was actually the thing in the way -- `district-panel.test.ts`
+had a real coverage gap here, since every existing test happened to pair a full or empty cap with the
+condition under test rather than crossing the two); and Grandfather Ray's one-time welcome modal still
+said "you buy your acreage from me," a stale reference to the deleted land-purchase step.
+
+**Migrations applied same day, in order**: `20260903180000_stackacres_units.sql` (`homestead_units`,
+`homestead_capacity` + `adjust_homestead_capacity` RPC, the stock/cap/ceiling trigger, harvest-ledger
+columns) and `20260903190000_stackacres_units_cap_counts_mucked.sql` (the mucked-counts-as-occupied
+fix above). Both verified against the live constraint/trigger definitions before writing, not assumed
+from the original `homestead_plots` migration -- a CHECK constraint passes on NULL by default, which
+made a first draft's belt-and-suspenders constraint rewrite on `homestead_harvests.plot_index`
+unnecessary once checked.
+
+Full `npx vitest run` 2,807/2,808 (the one red is the pre-existing PR #163 `table-anchors`
+dealer-shoulder-room regression), `npm run lint` and `npm run build` clean.
+
 ### The pens moved out into the districts: each animal has its own place on the map (2026-09-03)
 First cut of this got the ask backwards -- Kayo: "the zoning was meant to make the user have to visit
 each section we made... not to zone the middle part of the land." The four districts (Farmstead, Ox

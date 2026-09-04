@@ -8,12 +8,12 @@ import { PROP_SHADOW, PROP_SIZE, VERGE_PROPS, WINDMILL_HUB, YARD_PROPS, propRect
 import { PROP_PAINTERS } from "@/components/arcade/stackacres/art-props";
 import { FARM_PATHS, PATH_CLEARANCE, distanceToPath, nearPath } from "./paths";
 import { POND, POND_SAND, pondRadial } from "./water";
-import { FARM_ZONE, inFarmZone, penGroupBounds } from "./world";
+import { FARM_ZONE, growAreaBounds, inFarmZone } from "./world";
 
-/** The Farmstead's own plots now: the Hen Coop block, x 170..330, y 200..360
- *  -- not the old 4x4 square, which is what "the plot square" meant before
- *  the other three kinds moved out to their own districts. */
-const PLOTS = penGroupBounds("hen");
+/** The Farmstead's own grow area now: the Hen Coop block, x 170..330,
+ *  y 200..360 -- not the old 4x4 square, which is what "the plot square"
+ *  meant before the other three kinds moved out to their own districts. */
+const PLOTS = growAreaBounds("farmstead");
 
 /** What paintBarn stands in the yard, as boxes (see stackacres-scene.ts). */
 const BARN_PIECES = [

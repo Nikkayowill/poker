@@ -18,8 +18,8 @@ import {
   pondRadial,
 } from "./water";
 import { FARM_PATHS, nearPath } from "./paths";
-import { STACKACRES_GRID_PLOTS } from "./catalogue";
-import { STACKACRES_CHUNK, cellCenter, chunkScenery } from "./world";
+import { STACKACRES_CHUNK, chunkScenery, growAreaBounds } from "./world";
+import { ZONE_IDS } from "./zones";
 
 /** Distance from a point to the nearest point of a rectangle. */
 function rectDistance(x: number, y: number, r: { x: number; y: number; width: number; height: number }): number {
@@ -51,11 +51,18 @@ describe("the pond", () => {
     expect(inPondZone(POND.x - POND.rx - POND_CLEARANCE + 1, POND.y)).toBe(true);
     expect(inPondZone(POND.x - POND.rx - POND_CLEARANCE - 1, POND.y)).toBe(false);
     expect(inPondZone(POND.x, POND.y + POND.ry + POND_CLEARANCE + 1)).toBe(false);
-    // The lane itself, and every plot, are outside it.
+    // The lane itself, and every district's grow area, are outside it.
     expect(inPondZone(50, 120)).toBe(false);
-    for (let index = 1; index <= STACKACRES_GRID_PLOTS; index += 1) {
-      const c = cellCenter(index);
-      expect(inPondZone(c.x, c.y)).toBe(false);
+    for (const zone of ZONE_IDS) {
+      const area = growAreaBounds(zone);
+      const points = [
+        { x: area.x, y: area.y },
+        { x: area.x + area.width, y: area.y },
+        { x: area.x, y: area.y + area.height },
+        { x: area.x + area.width, y: area.y + area.height },
+        { x: area.x + area.width / 2, y: area.y + area.height / 2 },
+      ];
+      for (const p of points) expect(inPondZone(p.x, p.y), `${zone} at ${p.x},${p.y}`).toBe(false);
     }
   });
 

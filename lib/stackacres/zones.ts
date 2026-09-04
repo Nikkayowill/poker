@@ -223,25 +223,13 @@ export function inOuterZone(x: number, y: number): boolean {
 /* ------------------------------------------------------------------ */
 
 /**
- * Which districts each tool is allowed to act in.
- *
- * The five plot tools used to be farmstead-only, back when the farmstead was
- * the only district with any plots in it -- `plotIndexAt` returned null
- * everywhere else, so this table just wrote down a rule that was already
- * implicit. It is not implicit any more: a Hen Coop's plots resolve at the
- * Farmstead, a Cattle Pen's at Ox Fields, a Sheep Pen's at the Wallow, a crop
- * plot's at the Long Meadow, so every plot tool has real business in all
- * four now -- `plotIndexAt` itself already refuses a tap that lands nowhere,
- * so this table is what lets a refusal name the reason rather than just
- * staying quiet. The scythe alone stays Long-Meadow-only: its target is the
- * GROUND, not a plot, and mowing has no reason to exist anywhere else.
+ * Which districts each tool is allowed to act in. Down to two tools now
+ * (./tools.ts) -- `inspect` is the resting state and has no target to gate;
+ * the scythe alone is district-specific, because its target is the GROUND,
+ * not a unit, and mowing has no reason to exist anywhere but the Long Meadow.
  */
 export const zoneToolPolicy: Readonly<Record<StackAcresTool, readonly ZoneId[]>> = {
   inspect: ZONE_IDS,
-  plant: ZONE_IDS,
-  harvest: ZONE_IDS,
-  feed: ZONE_IDS,
-  clear: ZONE_IDS,
   scythe: ["meadow"],
 };
 
@@ -457,14 +445,15 @@ function deepInZone(id: ZoneId, x: number, y: number): boolean {
 }
 
 /**
- * The pen block a district's real, player-owned plots stand in, restated
- * here as a literal -- see world.ts's `PEN_GROUP_ORIGIN`, which this has to
- * match by hand for the same reason `FARM_ZONE` is restated rather than
- * imported: world.ts imports THIS module as a value, so the reverse would
- * read a constant before world.ts finishes evaluating. Kept out of the
- * ambient scatter so a furrow, a mud pool or a stray clover patch can never
- * spawn on top of a fence or a crop row. The Farmstead has none: its own
- * scatter list is already empty, so there is nothing to exclude.
+ * The grow area a district's owned units stand and wander in, restated here
+ * as a literal -- see world.ts's `growAreaBounds` (backed by its own
+ * `GROW_AREA`), which this has to match by hand for the same reason
+ * `FARM_ZONE` is restated rather than imported: world.ts imports THIS module
+ * as a value, so the reverse would read a constant before world.ts finishes
+ * evaluating. Kept out of the ambient scatter so a furrow, a mud pool or a
+ * stray clover patch can never spawn on top of a fence or a wandering animal.
+ * The Farmstead has none: its own scatter list is already empty, so there is
+ * nothing to exclude.
  */
 const PEN_BLOCKS: Readonly<Partial<Record<ZoneId, WorldRect>>> = {
   meadow: { x: 220, y: 560, width: 160, height: 160 },

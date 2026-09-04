@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import {
-  STACKACRES_FEED_IDS,
-  STACKACRES_GRID_PLOTS,
-  STACKACRES_STOCK,
-} from "@/lib/stackacres/catalogue";
+import { STACKACRES_FEED_IDS, STACKACRES_STOCK } from "@/lib/stackacres/catalogue";
 import { STACKACRES_MAX_EXCHANGE_BUSHELS } from "@/lib/stackacres/exchange";
 import { STACKACRES_ITEMS } from "@/lib/stackacres/items";
 import {
   buyStackAcresFeed,
-  buyStackAcresPlot,
   buyStackAcresStock,
-  clearStackAcresPlot,
+  clearStackAcresUnit,
   collectStackAcres,
   exchangeStackAcresBushels,
+  expandStackAcresCapacity,
   feedStackAcres,
   retireStackAcresStock,
   sellStackAcresProduce,
@@ -28,50 +24,39 @@ import { readSessionToken, withRequestSessionCookie } from "@/lib/server/session
 export const runtime = "nodejs";
 
 /**
- * Acts on the caller's own farm. `buy-plot`, `stock`, `buy-feed`, `sell` and
- * `clear` all DEBIT the caller -- see the ordering rules in
- * lib/server/stackacres-service.ts -- and `collect` yields a settled plot's
- * produce exactly once, guarded by version.
+ * Acts on the caller's own farm. `stock`, `buy-stock`, `expand-capacity`,
+ * `buy-feed`, `sell` and `clear` all DEBIT the caller -- see the ordering
+ * rules in lib/server/stackacres-service.ts -- and `collect` yields a settled
+ * unit's produce exactly once, guarded by version.
+ *
+ * THERE IS NO PLOT ANY MORE. Every unit-scoped action takes a `unitId`
+ * instead of a `plotIndex`; buying land is gone, replaced by
+ * `expand-capacity`, which buys room for one stock kind rather than a tile.
  *
  * Three actions move GOLD, and the asymmetry between them is what keeps this
- * safe: `buy-plot` and `buy-stock` SPEND it, `exchange` PAYS it out at the
- * daily window under a flat per-player ceiling. Everything else is denominated
- * in Bushels or produce, both of which stay inside the farm.
+ * safe: `expand-capacity` and `buy-stock` SPEND it, `exchange` PAYS it out at
+ * the daily window under a flat per-player ceiling. Everything else is
+ * denominated in Bushels or produce, both of which stay inside the farm.
  *
- * This comment used to say a third Gold path must never exist, because a
- * Gold-to-Bushels round trip could launder Gold through the capped window.
- * That holds only when the inbound rate is as good as the outbound one: stock
- * costs 100 Gold per Bushel of its seed price against an exchange that pays 2,
- * so no round trip has ever returned a profit and market.test.ts holds it. The
- * rule that actually matters is the direction -- an action that PAYS Gold is
- * the change worth stopping over. One that spends it is a sink.
+ * No `version` field in any action: each handler reads the live row itself
+ * and the guarded write settles at most once, so a stale client gets a 409
+ * carrying the true round rather than a torn write.
  *
- * No `version` field in any action: each handler reads the live row itself and
- * the guarded write settles at most once, so a stale client gets a 409
- * carrying the true grid rather than a torn write.
- *
- * This is the route that moves money, so it is the one the gate really matters
- * on: only a profile an admin has granted access gets past, everyone else gets
- * a 401.
+ * This is the route that moves money, so it is the one the gate really
+ * matters on: only a profile an admin has granted access gets past, everyone
+ * else gets a 401.
  */
-const plotIndexSchema = z.number().int().min(1).max(STACKACRES_GRID_PLOTS);
+const unitIdSchema = z.string().min(1);
+const stockSchema = z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]);
 
 const bodySchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("buy-plot"), plotIndex: plotIndexSchema }),
-  z.object({
-    action: z.literal("stock"),
-    plotIndex: plotIndexSchema,
-    stock: z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]),
-  }),
-  z.object({
-    action: z.literal("buy-stock"),
-    plotIndex: plotIndexSchema,
-    stock: z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]),
-  }),
-  z.object({ action: z.literal("retire"), plotIndex: plotIndexSchema }),
-  z.object({ action: z.literal("collect"), plotIndex: plotIndexSchema }),
-  z.object({ action: z.literal("feed"), plotIndex: plotIndexSchema }),
-  z.object({ action: z.literal("clear"), plotIndex: plotIndexSchema }),
+  z.object({ action: z.literal("expand-capacity"), stock: stockSchema }),
+  z.object({ action: z.literal("stock"), stock: stockSchema }),
+  z.object({ action: z.literal("buy-stock"), stock: stockSchema }),
+  z.object({ action: z.literal("retire"), unitId: unitIdSchema }),
+  z.object({ action: z.literal("collect"), unitId: unitIdSchema }),
+  z.object({ action: z.literal("feed"), unitId: unitIdSchema }),
+  z.object({ action: z.literal("clear"), unitId: unitIdSchema }),
   z.object({
     action: z.literal("buy-feed"),
     itemId: z.enum(STACKACRES_FEED_IDS as unknown as [string, ...string[]]),
@@ -101,20 +86,20 @@ type StackAcresAction = z.infer<typeof bodySchema>;
  */
 function run(token: string, action: StackAcresAction) {
   switch (action.action) {
-    case "buy-plot":
-      return buyStackAcresPlot(token, action.plotIndex);
+    case "expand-capacity":
+      return expandStackAcresCapacity(token, action.stock);
     case "stock":
-      return stockStackAcres(token, { plotIndex: action.plotIndex, stock: action.stock });
+      return stockStackAcres(token, { stock: action.stock });
     case "buy-stock":
-      return buyStackAcresStock(token, { plotIndex: action.plotIndex, stock: action.stock });
+      return buyStackAcresStock(token, { stock: action.stock });
     case "retire":
-      return retireStackAcresStock(token, action.plotIndex);
+      return retireStackAcresStock(token, action.unitId);
     case "collect":
-      return collectStackAcres(token, action.plotIndex);
+      return collectStackAcres(token, action.unitId);
     case "feed":
-      return feedStackAcres(token, action.plotIndex);
+      return feedStackAcres(token, action.unitId);
     case "clear":
-      return clearStackAcresPlot(token, action.plotIndex);
+      return clearStackAcresUnit(token, action.unitId);
     case "sell":
       return sellStackAcresProduce(token, { item: action.item, quantity: action.quantity });
     case "exchange":
@@ -126,8 +111,8 @@ function run(token: string, action: StackAcresAction) {
 
 export async function POST(request: NextRequest) {
   // Every action here moves one purse at most once and the guards make
-  // replays idempotent; 60/min covers a fast Hen Coop restocking ritual plus
-  // feeding and selling with a wide margin.
+  // replays idempotent; 60/min covers a fast restocking ritual plus feeding
+  // and selling with a wide margin.
   const limited = enforceRateLimit(request, "stackacres:act", 60, 60 * 1000);
   if (limited) return limited;
 
@@ -145,7 +130,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       return withRequestSessionCookie(
         request,
-        NextResponse.json({ error: "Send a plot and an action." }, { status: 400 }),
+        NextResponse.json({ error: "Send a valid action." }, { status: 400 }),
         token,
       );
     }

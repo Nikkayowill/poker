@@ -1,62 +1,56 @@
 /**
- * The StackAcres as a place rather than a grid: where every plot sits in the
- * world, how the animals wander inside their pens, and what grows wild
+ * StackAcres as a place rather than a grid: which district a stock kind
+ * belongs to, where its owned units stand and wander, and what grows wild
  * outside the fence line.
  *
  * Everything here is pure and unit-based so it can be tested without a
  * renderer. One unit is one device pixel of the vector art at zoom 1; the
  * scene scales the whole thing with its camera and never with the sprites.
  *
- * The plot index is still the identity a plot has on the server. Nothing in
- * this file changes what a plot IS -- only where it is drawn. The 16-plot
- * ladder, the in-order unlock and every economic rule stay exactly where
- * they were in ./catalogue.ts and ./plots.ts; this module only answers
- * "which plot did the player just tap at these world coordinates", "where do
- * the hens walk" and "what does the open world look like out past the
- * fence".
- *
- * THE PLOTS ARE NOT ONE GRID ANY MORE. Kayo: "the zoning was meant to make
- * the user have to visit each section we made" -- the four districts
- * ./zones.ts already built (the Farmstead, the Long Meadow, Ox Fields, the
- * Wallow) are where the pens physically live now, one kind of pen per
- * district, four plots each. A Hen Coop plot is drawn at the Farmstead, a
- * Cattle Pen plot at Ox Fields, and so on -- see `PEN_GROUP_ORIGIN`. Tending
- * a Cattle Pen means travelling to Ox Fields, the way it would on a real
- * farm; there is no longer one grid where every animal stands side by side.
+ * THERE IS NO PLOT GRID (see 2026-09-03's CLAUDE.md entry -- "districts hold
+ * stock, not plots"). What used to live here as `cellOrigin`/`plotIndexAt`/
+ * `plotNeighbor`/`PEN_GROUP_ORIGIN` -- a 16-plot ladder cut into four
+ * districts' own 2x2 blocks -- is gone outright, not adapted: a unit you own
+ * (./units.ts) has no position of its own to look up. `stockZone` still
+ * answers "which district does this kind belong to" (the one thing that
+ * mapping was ever really for), and `growAreaBounds` answers "where in that
+ * district do its units stand" -- one rect per district, not one per plot.
  *
  * The camera is unbounded: the player can roam past the farm in any
  * direction into procedurally-grown scenery (see `chunkScenery`).
  */
 
-import {
-  STACKACRES_CROPS,
-  STACKACRES_GRID_PLOTS,
-  type StackAcresStock,
-} from "./catalogue";
+import { STACKACRES_STOCK, type StackAcresStock } from "./catalogue";
 // paths.ts imports only TYPES back from this module, so the cycle is
 // harmless; a value import there would be read before this file finished
 // evaluating and throw.
 import { nearPath } from "./paths";
-import type { StackAcresPlotSnapshot } from "./plots";
 // Same arrangement as ./paths: water.ts imports only types from here.
 import { inPondZone } from "./water";
 // And again for ./zones, which grows the districts' own scenery in the same
 // chunks the woodland uses and so has to be able to say "not here".
-import { inOuterZone } from "./zones";
+import { inOuterZone, type ZoneId } from "./zones";
 
 /** One art unit, in device pixels of the baked vector art at zoom 1. */
 export const STACKACRES_TILE = 16;
 
-/** A plot is a square of this many tiles a side: room for a fence and a pen. */
+/**
+ * A baking dimension only, not a world-geometry one any more. The isometric
+ * pass already replaced the flat plot-cell ground painters (`mown`/`soil`/
+ * `straw`/`muckbed`/`wild` in stackacres-art.ts) with diamond Graphics fills
+ * drawn straight from their RAMPS colours -- those five painters have not
+ * been drawn onto anything since, only baked -- and this migration removes
+ * the plot cell those painters were ever sized to. Kept as a plain constant
+ * so stackacres-art.ts's `CELL` still resolves; touching those five painters
+ * is a separate, pre-existing cleanup, not part of this change.
+ */
 export const STACKACRES_CELL_TILES = 5;
-
-/** A plot's edge, in world units. */
 export const STACKACRES_CELL = STACKACRES_TILE * STACKACRES_CELL_TILES;
 
 /** Offset of a district's own yard elements from the world origin, so
  *  nothing sits flush at (0, 0). Barn, silo, paths and props are all
  *  hand-placed relative to this -- it is a fixed reference point for the
- *  Farmstead's yard, not a plot-grid margin any more. */
+ *  Farmstead's yard. */
 export const STACKACRES_MARGIN_TILES = 4;
 export const STACKACRES_MARGIN = STACKACRES_TILE * STACKACRES_MARGIN_TILES;
 
@@ -73,211 +67,89 @@ export interface WorldPoint {
 }
 
 /* ------------------------------------------------------------------ */
-/* Pen zones -- which district a plot lives in                        */
+/* Where a kind lives, and where its units stand                       */
 /* ------------------------------------------------------------------ */
 
 /**
- * Which kind of stock a plot is fenced for, and which district it physically
- * stands in. Four kinds, four districts, one match each:
+ * Which district a stock kind belongs to. Four kinds, four districts, one
+ * match each -- unchanged from the pen-zoning pass, just no longer routed
+ * through a plot index to get there:
  *
- *   hen    -- the Farmstead (home base -- the cheap starter tier, no travel)
- *   field  -- the Long Meadow ("Crop Fields")
- *   pig    -- the Wallow (its wild hogs retired for real, ownable Sheep Pens)
- *   cattle -- Ox Fields (its wild oxen retired for real, ownable Cattle Pens)
- *
- * Kayo: "the zoning was meant to make the user have to visit each section
- * we made" -- not fence four kinds of stock into four rows of one grid (an
- * earlier pass here did exactly that, and it was the wrong fix), but stand
- * each kind's pens in the district that already has that animal's theming.
- * The 16-plot ladder is four blocks of four, one block per kind, in the
- * order this array lists them -- plots 1-4 are the free Hen Coops, 5-8 are
- * Crop Fields, 9-12 are Sheep Pens, 13-16 are Cattle Pens.
+ *   hen               -- the Farmstead (home base -- the cheap starter tier)
+ *   sprout, cash_crop  -- the Long Meadow ("Crop Fields")
+ *   pig                -- the Wallow (labelled Sheep Pens)
+ *   cattle             -- Ox Fields
  */
-export const STACKACRES_PEN_ZONES = ["hen", "field", "pig", "cattle"] as const;
-
-export type StackAcresPenZone = (typeof STACKACRES_PEN_ZONES)[number];
-
-const PEN_ZONE_LABEL: Readonly<Record<StackAcresPenZone, string>> = {
-  hen: "the Hen Coops",
-  field: "the Crop Fields",
-  pig: "the Sheep Pens",
-  cattle: "the Cattle Pens",
+const STOCK_ZONE: Readonly<Record<StackAcresStock, ZoneId>> = {
+  hen: "farmstead",
+  sprout: "meadow",
+  cash_crop: "meadow",
+  pig: "wallow",
+  cattle: "oxfields",
 };
 
-/** What each zone will let you plant or stock, whichever route pays for it. */
-const PEN_ZONE_STOCK: Readonly<Record<StackAcresPenZone, readonly StackAcresStock[]>> = {
-  hen: ["hen"],
-  field: STACKACRES_CROPS,
-  pig: ["pig"],
-  cattle: ["cattle"],
+export function stockZone(stock: StackAcresStock): ZoneId {
+  return STOCK_ZONE[stock];
+}
+
+/** Whether this stock may be bought/stocked while standing in this district
+ *  -- checked before a Bushel or a piece of Gold moves. */
+export function stockAllowedInZone(zone: ZoneId, stock: StackAcresStock): boolean {
+  return STOCK_ZONE[stock] === zone;
+}
+
+/** Every stock kind sold/kept in this district -- the complement of
+ *  `stockZone`, and the whole answer to "what does the sidebar's buy section
+ *  show here". Replaces market.ts's old, since-drifted `STACKACRES_STALLS`
+ *  (it predated the pen-zoning pass and had cattle at the Long Meadow and
+ *  crops at Ox Fields -- the opposite of where the pens actually stand);
+ *  `stockZone` is the one true mapping now, and this is just its reverse. */
+export function stocksInZone(zone: ZoneId): StackAcresStock[] {
+  return STACKACRES_STOCK.filter((stock) => STOCK_ZONE[stock] === zone);
+}
+
+/**
+ * Top-left corner of each district's grow area, in world units -- where its
+ * units stand and wander. Hand-placed to clear what is already standing in
+ * each district (the barn, the pond, the roads, the districts' own scenery);
+ * these are the exact boxes the pen-zoning pass placed its four 2x2 plot
+ * blocks in, kept as literals rather than re-derived, since re-fitting them
+ * against everything else already screenshotted correctly there.
+ *
+ * Restated as literals in ./zones.ts for the same reason `FARM_ZONE` is --
+ * zones.ts imports this module as a value, so the reverse would read a
+ * constant before this module finishes evaluating. zones.test.ts holds the
+ * two to each other.
+ */
+const GROW_AREA: Readonly<Record<ZoneId, WorldRect>> = {
+  farmstead: { x: 170, y: 200, width: 160, height: 160 },
+  meadow: { x: 220, y: 560, width: 160, height: 160 },
+  oxfields: { x: 680, y: 70, width: 160, height: 160 },
+  wallow: { x: -320, y: -390, width: 160, height: 160 },
 };
 
-/** How many plots stand in one kind's block, and how they are arranged --
- *  a small 2x2, not a long row, so a block reads as one fenced pen area
- *  rather than a strip. */
-export const PEN_GROUP_COLUMNS = 2;
-export const PEN_GROUP_ROWS = 2;
-const PEN_GROUP_SIZE = PEN_GROUP_COLUMNS * PEN_GROUP_ROWS;
-
-/**
- * Top-left corner of each kind's 2x2 block, in world units, inside the
- * district that kind now lives in (./zones.ts). Hand-placed to clear what is
- * already standing in each district -- restated as literals in ./zones.ts
- * for the two districts whose wild-herd scatter has to avoid the same box
- * (a value import back from here would read before this module finishes
- * evaluating, the same reason ./paths.ts and ./water.ts only take types).
- *
- *   hen    -- south-east of the pond, clear of the barn and the yard clutter
- *   field  -- the Long Meadow's open grass, east of the lane on its west edge
- *   cattle -- Ox Fields, roughly where the wild ox herd used to range
- *   pig    -- the Wallow, roughly where the wild hogs used to range
- *
- * Exact fit against each district's own props/scatter is a build-and-
- * screenshot job, not an arithmetic one -- see the district passes in
- * CLAUDE.md for the standing precedent.
- */
-const PEN_GROUP_ORIGIN: Readonly<Record<StackAcresPenZone, WorldPoint>> = {
-  hen: { x: 170, y: 200 },
-  field: { x: 220, y: 560 },
-  cattle: { x: 680, y: 70 },
-  pig: { x: -320, y: -390 },
-};
-
-function plotLocal(plotIndex: number): { col: number; row: number } {
-  const slot = (plotIndex - 1) % PEN_GROUP_SIZE;
-  return { col: slot % PEN_GROUP_COLUMNS, row: Math.floor(slot / PEN_GROUP_COLUMNS) };
+/** Where a district's units stand: the fenced boundary the scene draws once
+ *  per district, and the box every one of that district's animals wanders
+ *  inside (crops sit at a fixed spot within the same box). */
+export function growAreaBounds(zone: ZoneId): WorldRect {
+  return GROW_AREA[zone];
 }
 
-/** Which zone this plot belongs to. Every plot falls in exactly one block of
- *  four, and every block is exactly one zone -- there is no plot this can
- *  fail to name. */
-export function plotPenZone(plotIndex: number): StackAcresPenZone {
-  const group = Math.floor((plotIndex - 1) / PEN_GROUP_SIZE);
-  return STACKACRES_PEN_ZONES[Math.min(group, STACKACRES_PEN_ZONES.length - 1)];
+/** The walkable interior, inset from the fence/rail the scene draws around
+ *  `growAreaBounds`. Narrower than a naive "inset the whole area" because the
+ *  vector fence and trough take real room at the box's own edge. */
+export function growAreaInterior(zone: ZoneId): WorldRect {
+  const area = GROW_AREA[zone];
+  return { x: area.x + 12, y: area.y + 30, width: area.width - 24, height: area.height - 42 };
 }
 
-/** What the player calls a zone, for a refusal message that names the place
- *  the stock actually belongs rather than just saying no. */
-export function penZoneLabel(zone: StackAcresPenZone): string {
-  return PEN_ZONE_LABEL[zone];
-}
-
-/** Whether this stock is allowed to stand on this plot at all -- checked
- *  before a Bushel or a piece of Gold moves, on both the planting and the
- *  outright-buy routes. */
-export function stockAllowedOnPlot(plotIndex: number, stock: StackAcresStock): boolean {
-  return PEN_ZONE_STOCK[plotPenZone(plotIndex)].includes(stock);
-}
-
-/** The full district-relative rect a kind's 2x2 block covers. What the
- *  scene's district ground/scatter exclusions and this module's own hit
- *  test both measure against. */
-export function penGroupBounds(zone: StackAcresPenZone): WorldRect {
-  const origin = PEN_GROUP_ORIGIN[zone];
-  return {
-    x: origin.x,
-    y: origin.y,
-    width: PEN_GROUP_COLUMNS * STACKACRES_CELL,
-    height: PEN_GROUP_ROWS * STACKACRES_CELL,
-  };
-}
-
-/** Top-left corner of a plot's own square, inside its kind's block. */
-export function cellOrigin(plotIndex: number): WorldPoint {
-  const zone = plotPenZone(plotIndex);
-  const origin = PEN_GROUP_ORIGIN[zone];
-  const { col, row } = plotLocal(plotIndex);
-  return { x: origin.x + col * STACKACRES_CELL, y: origin.y + row * STACKACRES_CELL };
-}
-
-export function cellRect(plotIndex: number): WorldRect {
-  const origin = cellOrigin(plotIndex);
-  return { x: origin.x, y: origin.y, width: STACKACRES_CELL, height: STACKACRES_CELL };
-}
-
-export function cellCenter(plotIndex: number): WorldPoint {
-  const origin = cellOrigin(plotIndex);
-  return { x: origin.x + STACKACRES_CELL / 2, y: origin.y + STACKACRES_CELL / 2 };
-}
-
-/**
- * Which plot a world point lands on, or null off every block. The tap that
- * decides what the player meant: checks each kind's 2x2 block in turn (the
- * four blocks never overlap, since they sit in four different districts),
- * and inside the one it lands in, a point on a plot's right edge belongs to
- * the next plot over, the last pixel of the last plot is still that plot --
- * the same edge rule the old single grid held, just per block now.
- */
-export function plotIndexAt(x: number, y: number): number | null {
-  for (let group = 0; group < STACKACRES_PEN_ZONES.length; group += 1) {
-    const origin = PEN_GROUP_ORIGIN[STACKACRES_PEN_ZONES[group]];
-    const col = Math.floor((x - origin.x) / STACKACRES_CELL);
-    const row = Math.floor((y - origin.y) / STACKACRES_CELL);
-    if (col < 0 || col >= PEN_GROUP_COLUMNS || row < 0 || row >= PEN_GROUP_ROWS) continue;
-    const index = group * PEN_GROUP_SIZE + row * PEN_GROUP_COLUMNS + col + 1;
-    return index <= STACKACRES_GRID_PLOTS ? index : null;
-  }
-  return null;
-}
-
-/**
- * The plot at this offset from `plotIndex`, within the SAME 2x2 block, or
- * null off its edge. What the fence-merge check needs: two owned plots share
- * a rail only when they are actual neighbours inside one kind's block, never
- * across two different kinds (a Hen Coop and a Cattle Pen are never in the
- * same block, so this can never merge them even by a numbering accident).
- */
-export function plotNeighbor(plotIndex: number, deltaCol: number, deltaRow: number): number | null {
-  const zone = plotPenZone(plotIndex);
-  const { col, row } = plotLocal(plotIndex);
-  const nCol = col + deltaCol;
-  const nRow = row + deltaRow;
-  if (nCol < 0 || nCol >= PEN_GROUP_COLUMNS || nRow < 0 || nRow >= PEN_GROUP_ROWS) return null;
-  const group = STACKACRES_PEN_ZONES.indexOf(zone);
-  return group * PEN_GROUP_SIZE + nRow * PEN_GROUP_COLUMNS + nCol + 1;
-}
-
-/** Plots the player can see as theirs: everything owned, plus the one for sale. */
-export function isAcreage(plot: Pick<StackAcresPlotSnapshot, "state" | "purchasable">): boolean {
-  return plot.state !== "locked" || plot.purchasable;
-}
-
-/**
- * The bounding box of a set of plots: everything owned among them, plus the
- * one for sale, with no padding. A farm with nothing on it yet is still a
- * place: it frames the plot list's own first entry.
- *
- * Pass ALL sixteen plots and this spans every district at once -- not useful
- * for framing a camera any more, now that a Hen Coop and a Cattle Pen can be
- * 800 units apart. Callers that want "home" or "this district" filter to
- * that district's own four plots first (`plotPenZone`), which is what makes
- * this still the right primitive: one small, pure box-fit, reused per place
- * rather than rewritten per place.
- */
-export function ownedBounds(
-  plots: readonly Pick<StackAcresPlotSnapshot, "plotIndex" | "state" | "purchasable">[],
-): WorldRect {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const plot of plots) {
-    if (!isAcreage(plot)) continue;
-    const rect = cellRect(plot.plotIndex);
-    minX = Math.min(minX, rect.x);
-    minY = Math.min(minY, rect.y);
-    maxX = Math.max(maxX, rect.x + rect.width);
-    maxY = Math.max(maxY, rect.y + rect.height);
-  }
-  if (!Number.isFinite(minX)) {
-    // Only reachable with an empty `plots` list -- `isAcreage` is true for
-    // every real plot (a locked one is always `purchasable` now), so a
-    // non-empty district-filtered list always has something to fit.
-    const first = cellRect(plots[0]?.plotIndex ?? 1);
-    return { x: first.x, y: first.y, width: first.width, height: first.height };
-  }
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-}
+/** The bounding box of every district that currently has anything to show:
+ *  the camera frame for "home", when there is no single owned plot list to
+ *  fit any more. Kept for parity with the old `ownedBounds`/`openingZoom`
+ *  pair, but the scene now opens on ./zones.ts's `zoneFrame("farmstead")`
+ *  directly -- a fixed-size gate window, the same shot arriving there via
+ *  the signpost gets -- rather than fitting a box of owned stock, since
+ *  units have no fixed position to fit a box around. */
 
 /**
  * The smallest power of two that is at least `n` (and at least 1). Baked art
@@ -289,30 +161,13 @@ export function powerOfTwoCeil(n: number): number {
   return 2 ** Math.ceil(Math.log2(n));
 }
 
-/** How far in and out the camera may go. Fixed now that the camera is
- *  unbounded -- there is no roamable area left to fit, only a floor so the
- *  art never shrinks to a smudge and a ceiling so it never fills the screen
- *  with one leaf. */
+/** How far in and out the camera may go. */
 export const STACKACRES_ZOOM_MIN = 0.6;
 export const STACKACRES_ZOOM_MAX = 5;
 
 export function clampZoom(zoom: number): number {
   if (!Number.isFinite(zoom)) return STACKACRES_ZOOM_MIN;
   return Math.min(STACKACRES_ZOOM_MAX, Math.max(STACKACRES_ZOOM_MIN, zoom));
-}
-
-/**
- * The zoom the farm opens at: the owned plots filling the screen with a
- * little air around them. `STACKACRES_ZOOM_OPEN_MAX` stops a brand-new farm
- * (four plots) from opening so close that a single hen fills a phone.
- */
-export const STACKACRES_ZOOM_OPEN_MAX = 3;
-
-export function openingZoom(bounds: WorldRect, viewWidth: number, viewHeight: number): number {
-  const paddedWidth = bounds.width + STACKACRES_CELL * 1.5;
-  const paddedHeight = bounds.height + STACKACRES_CELL;
-  const fit = Math.min(viewWidth / Math.max(1, paddedWidth), viewHeight / Math.max(1, paddedHeight));
-  return clampZoom(Math.min(fit, STACKACRES_ZOOM_OPEN_MAX));
 }
 
 /**
@@ -338,33 +193,6 @@ export function scrollToKeepUnderPointer(
 /* ------------------------------------------------------------------ */
 /* Animals                                                             */
 /* ------------------------------------------------------------------ */
-
-/** Where a pen's animals may walk: inside the fence, below the trough. The
- *  vector fence and trough take more of the cell than the old tile art did,
- *  so the walkable box is smaller than a naive "inset the whole cell". */
-export function penInterior(plotIndex: number): WorldRect {
-  const origin = cellOrigin(plotIndex);
-  return {
-    x: origin.x + 12,
-    y: origin.y + 30,
-    width: STACKACRES_CELL - 24,
-    height: STACKACRES_CELL - 42,
-  };
-}
-
-/** How many animals a working pen shows. Not the yield -- the picture. */
-export function critterCount(stock: StackAcresStock | null): number {
-  switch (stock) {
-    case "hen":
-      return 3;
-    case "pig":
-      return 2;
-    case "cattle":
-      return 2;
-    default:
-      return 0;
-  }
-}
 
 /** Walking speed in units per second. A hen scurries, a cow does not. */
 export function critterSpeed(stock: StackAcresStock | null): number {
@@ -470,15 +298,11 @@ export function stepCritter(
   return next;
 }
 
-/* ------------------------------------------------------------------ */
-/* Scenery                                                             */
-/* ------------------------------------------------------------------ */
-
 /**
- * A deterministic random source, so a plot's forest -- or a patch of open
- * world -- is the same forest every time it is drawn. Mulberry32: tiny, good
- * enough for placing bushes, and the same function every other seeded thing
- * in this codebase reaches for.
+ * A deterministic random source, so a unit's spot -- or a patch of open
+ * world -- is the same every time it is drawn. Mulberry32: tiny, good enough
+ * for placing bushes and standing crops, and the same function every other
+ * seeded thing in this codebase reaches for.
  */
 export function seededRandom(seed: number): Random {
   let state = seed >>> 0;
@@ -491,6 +315,31 @@ export function seededRandom(seed: number): Random {
   };
 }
 
+/**
+ * A stable hash of a unit's own id, for seeding its fixed spot (a crop) or
+ * its initial wander state (an animal, before `stepCritter` takes over) --
+ * the same unit renders in the same place every time it is drawn, without
+ * the server needing to store a position at all.
+ */
+export function seedFromId(id: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < id.length; i += 1) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/** A crop's fixed spot within its district's grow area -- it does not
+ *  wander, so all it needs is one stable point. */
+export function cropSpot(zone: ZoneId, unitId: string): WorldPoint {
+  return pointWithin(growAreaInterior(zone), seededRandom(seedFromId(unitId)));
+}
+
+/* ------------------------------------------------------------------ */
+/* Scenery                                                             */
+/* ------------------------------------------------------------------ */
+
 /** How wide the open world's procedural-scenery chunks are, in world units. */
 export const STACKACRES_CHUNK = 160;
 
@@ -502,12 +351,8 @@ export const STACKACRES_CHUNK = 160;
  * (y 402) -- with air around all of it, so a tree can never grow on the roof
  * or lean its canopy over the lane.
  *
- * Fixed literals now, not derived from a plot-grid formula: this is the
- * Farmstead's own footprint (barn, pond, yard, four Hen Coops), which no
- * longer has anything to do with how big the whole 16-plot ladder is, since
- * the other twelve plots live in three other districts entirely. It still
- * has to equal `STACKACRES_ZONES.farmstead.bounds` in ./zones.ts exactly --
- * zones.test.ts holds the two to each other.
+ * Still has to equal `STACKACRES_ZONES.farmstead.bounds` in ./zones.ts
+ * exactly -- zones.test.ts holds the two to each other.
  */
 export const FARM_ZONE: WorldRect = { x: 28, y: -60, width: 412, height: 470 };
 
@@ -520,10 +365,9 @@ export function inFarmZone(x: number, y: number): boolean {
   );
 }
 
-/** Everything the vector art can paint out in the open world or on a locked
- *  plot's thicket. Not every painter name -- crops, animals, buildings and
- *  icons are placed by the scene itself from the game state, not scattered
- *  as scenery. */
+/** Everything the vector art can paint out in the open world. Not every
+ *  painter name -- crops, animals, buildings and icons are placed by the
+ *  scene itself from the game state, not scattered as scenery. */
 export type SceneryKind =
   | "tree1"
   | "tree2"
@@ -541,8 +385,7 @@ export type SceneryKind =
 
 export interface SceneryItem {
   kind: SceneryKind;
-  /** World units. Chunk scenery is world-absolute; thicket/cleared scenery
-   *  is cell-local (relative to the plot's own origin). */
+  /** World units, absolute. */
   x: number;
   y: number;
 }
@@ -564,7 +407,6 @@ const CHUNK_WOOD_KINDS: readonly SceneryKind[] = [
   "boulder",
 ];
 const GROUND_KINDS: readonly SceneryKind[] = ["flower1", "flower2", "flower3"];
-const THICKET_WOOD_KINDS: readonly SceneryKind[] = ["tree1", "tree2", "tree3", "pine", "pine", "bush"];
 
 /**
  * One chunk of the open world's scenery, deterministic by chunk coordinate
@@ -573,18 +415,9 @@ const THICKET_WOOD_KINDS: readonly SceneryKind[] = ["tree1", "tree2", "tree3", "
  * of) and thinner far out, where it exists only so the horizon is never
  * bare. Anything `blocked` refuses -- the farm zone, a path, the pond's
  * clearing, or one of ./zones.ts's districts -- is dropped rather than
- * shifted, so the farm's own edge stays exactly where the plot ladder ends,
- * the road out stays a road, no tree stands in the water, and the districts
- * keep the ground they paint for themselves.
- */
-/**
- * Where the woodland may not grow. Four exclusions, and the districts are the
- * newest: a district paints its own ground and grows its own furniture (see
- * ./zones.ts), so a wild pine standing in the middle of a ploughed ox field
- * would be the woodland leaking into a place that exists to look unlike it.
- * The farmstead is excluded through `inFarmZone` rather than through
- * `inOuterZone`, which deliberately covers only the three outer districts --
- * the two rectangles are the same, and one of them predates the other.
+ * shifted, so the farm's own edge stays exactly where it is, the road out
+ * stays a road, no tree stands in the water, and the districts keep the
+ * ground they paint for themselves.
  */
 function blocked(x: number, y: number): boolean {
   return inFarmZone(x, y) || nearPath(x, y) || inPondZone(x, y) || inOuterZone(x, y);
@@ -620,54 +453,12 @@ export function chunkScenery(cx: number, cy: number): SceneryItem[] {
   return items.sort((a, b) => a.y - b.y);
 }
 
-/**
- * Unbroken land: a thicket that fills a locked plot, in cell-local units.
- * Dense for land that is not for sale yet, thinned out for the one plot that
- * is, so the plot the player can buy reads as a clearing waiting to happen
- * rather than the same wall of trees as everything beyond it.
- */
-export function thicketLayout(plotIndex: number, forSale: boolean): SceneryItem[] {
-  const random = seededRandom(plotIndex * 7919 + 13);
-  const want = forSale ? 3 : 8;
-  const items: SceneryItem[] = [];
-  for (let i = 0; i < want; i += 1) {
-    items.push({
-      kind: THICKET_WOOD_KINDS[Math.floor(random() * THICKET_WOOD_KINDS.length)],
-      x: 10 + random() * 60,
-      y: 32 + random() * 44,
-    });
-  }
-  for (let i = 0; i < 3; i += 1) {
-    items.push({
-      kind: random() < 0.5 ? "tuft" : "rock",
-      x: 6 + random() * 68,
-      y: 10 + random() * 66,
-    });
-  }
-  return items.sort((a, b) => a.y - b.y);
-}
-
-/** Cleared land with nothing on it: mown grass and the odd tuft or flower,
- *  in cell-local units. */
-export function clearedLayout(plotIndex: number): SceneryItem[] {
-  const random = seededRandom(plotIndex * 104729 + 7);
-  const out: SceneryItem[] = [];
-  for (let i = 0; i < 3; i += 1) {
-    out.push({
-      kind: random() < 0.6 ? "tuft" : GROUND_KINDS[Math.floor(random() * GROUND_KINDS.length)],
-      x: 8 + random() * 64,
-      y: 8 + random() * 66,
-    });
-  }
-  return out;
-}
-
-/** Where a growing plot sits in its three-frame life, by elapsed fraction. */
+/** Where a growing unit sits in its three-frame life, by elapsed fraction. */
 export function growthStage(progress: number | null, ready: boolean): 0 | 1 | 2 {
   if (ready) return 2;
   if (progress === null) return 0;
   // Two thirds of the cycle is spent as a visibly half-grown plant. A crop
   // that looks finished long before it is finished trains people to tap a
-  // plot that cannot pay yet.
+  // unit that cannot pay yet.
   return progress < 0.34 ? 0 : 1;
 }

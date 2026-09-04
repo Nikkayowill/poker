@@ -2,7 +2,11 @@
 // bundler picks for the browser) has only named exports, and `import Phaser
 // from "phaser"` fails at build time with "export default doesn't exist".
 import * as Phaser from "phaser";
-import { isLivestock, type StackAcresStock } from "@/lib/stackacres/catalogue";
+import {
+  isLivestock,
+  type StackAcresLivestock,
+  type StackAcresStock,
+} from "@/lib/stackacres/catalogue";
 import {
   ISO_EDGE_ANGLE,
   isoProject,
@@ -13,14 +17,14 @@ import {
   type DiamondCorners,
 } from "@/lib/stackacres/iso";
 import { FARM_PATHS } from "@/lib/stackacres/paths";
-import type { StackAcresPlotState } from "@/lib/stackacres/plots";
 import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS } from "@/lib/stackacres/props";
-import type { PlotAffordance, StackAcresTool } from "@/lib/stackacres/tools";
+import type { StackAcresTool } from "@/lib/stackacres/tools";
 import { DOCK, DUCK_ORBIT, LILY_PADS, POND, REEDS, RIPPLE_SPOTS } from "@/lib/stackacres/water";
 import {
   MEADOW_TILE,
   OUTER_ZONE_IDS,
   STACKACRES_ZONES,
+  ZONE_IDS,
   meadowBaseDensity,
   meadowDensityAt,
   meadowTileAt,
@@ -33,29 +37,21 @@ import {
   type ZoneId,
 } from "@/lib/stackacres/zones";
 import {
-  STACKACRES_CELL,
   STACKACRES_CHUNK,
   STACKACRES_MARGIN,
-  cellCenter,
-  cellOrigin,
-  cellRect,
   chunkScenery,
   clampZoom,
-  clearedLayout,
-  critterCount,
   critterSpeed,
+  cropSpot,
+  growAreaBounds,
+  growAreaInterior,
   growthStage,
-  openingZoom,
-  ownedBounds,
-  penInterior,
-  plotIndexAt,
-  plotNeighbor,
-  plotPenZone,
   scrollToKeepUnderPointer,
   seededRandom,
   spawnCritter,
   stepCritter,
-  thicketLayout,
+  stockZone,
+  stocksInZone,
   type Critter,
   type SceneryKind,
   type WorldPoint,
@@ -79,104 +75,93 @@ import { bakePondTexture } from "./art-water";
 /**
  * The farm as a place you look around in.
  *
- * One Phaser scene draws the whole world -- the barn yard, every plot, the
- * animals, and the woodland the farm was cut out of -- and the camera is what
- * the player moves: drag to pan, pinch or wheel to zoom. The camera is
- * unbounded. Roaming off the edge of the farm is not an error state to fence
- * off, it is the point of drawing a map instead of a grid, so the world past
- * the fence is grown in chunks around wherever the camera is (`tendWorld`) and
- * thrown away again once it is well out of sight.
+ * One Phaser scene draws the whole world -- the barn yard, every district,
+ * the owned units standing in them, and the woodland the farm was cut out
+ * of -- and the camera is what the player moves: drag to pan, pinch or wheel
+ * to zoom. The camera is unbounded. Roaming off the edge of a district is
+ * not an error state to fence off, it is the point of drawing a map instead
+ * of a grid, so the world past the fence is grown in chunks around wherever
+ * the camera is (`tendWorld`) and thrown away again once it is well out of
+ * sight.
  *
  * Nothing is downloaded. Every picture is a Canvas2D painter from
  * ./stackacres-art.ts, baked once at boot into a texture at ART_SCALE device
  * pixels per unit and then only ever scaled DOWN by the camera, which is what
  * keeps it smooth at 5x where a 16px tile sheet went to mush.
  *
- * This file paints. It owns no rules: every cell arrives already decided
- * (state, what the held tool would do, whether it is selected) from the React
- * shell, which computed those with lib/stackacres/tools.ts exactly as the old
- * grid did. The scene's only outputs are "the player tapped plot N" and "the
- * player tapped grass".
+ * This file paints. It owns no rules: every unit arrives already decided
+ * (what it is, what state it is in, how far along it is) from the React
+ * shell, which reads that straight off lib/stackacres/units.ts. THERE IS NO
+ * PLOT GRID ANY MORE (see 2026-09-03's CLAUDE.md entry -- "districts hold
+ * stock, not plots") -- buying and tending a unit is a DOM sidebar
+ * (stackacres-district-panel.tsx), not a tap on the canvas, so the scene has
+ * no plot-tap or sweep callbacks left at all: it draws the farm and reports
+ * once when the first frame is up, and that is the entire contract with the
+ * shell now.
  *
- * The HUD, the toolbelt and the store are NOT in here. They stay as DOM,
- * pinned over the canvas by CSS, because a `<button>` is reachable by a
- * screen reader and a thumb alike, and a Phaser Text object is neither. Those
- * overlays are siblings of the canvas host rather than children of it, so a
- * press on one never reaches the map at all -- which is also why Phaser's own
- * input is switched off entirely (see stackacres-world.tsx) and every gesture
- * is read straight off the host element with native pointer events. See
- * `bindInput` for why that matters more than tidiness.
+ * The HUD, the toolbelt and the district sidebar are NOT in here. They stay
+ * as DOM, pinned over the canvas by CSS, because a `<button>` is reachable by
+ * a screen reader and a thumb alike, and a Phaser Text object is neither.
+ * Those overlays are siblings of the canvas host rather than children of it,
+ * so a press on one never reaches the map at all -- which is also why
+ * Phaser's own input is switched off entirely (see stackacres-world.tsx) and
+ * every gesture is read straight off the host element with native pointer
+ * events. See `bindInput` for why that matters more than tidiness. The one
+ * gesture still read straight off the canvas is the scythe's mow-drag -- the
+ * Long Meadow's grass is not a unit and has no sidebar row, so cutting it is
+ * still something you do to the ground itself.
  *
  * Three coordinate systems meet here and it matters which one is in hand.
  *
  * `world.ts` space is the true Cartesian plane every game rule lives in: a
- * plot is a CELL-square at `cellOrigin(index)`, an animal walks a rectangle,
- * `plotIndexAt` is a plain divide. Nothing in that file, or in `paths.ts` /
- * `water.ts` / `props.ts`, knows the camera is isometric -- it never has to.
+ * district's grow area is a rectangle at `growAreaBounds(zone)`, an animal
+ * walks inside `growAreaInterior(zone)`, a crop sits at a fixed
+ * `cropSpot(zone, unitId)`. Nothing in that file, or in `paths.ts` /
+ * `water.ts` / `props.ts` / `zones.ts`, knows the camera is isometric -- it
+ * never has to.
  *
  * `iso.ts` is the seam: `isoProject` turns a world point into the sheared,
  * diamond-tiled space this scene actually draws into ("scene space" below),
  * and `isoUnproject` is its exact inverse. Every literal world-space number
- * this file reads from `world.ts`/`paths.ts`/`water.ts`/`props.ts` -- a
- * plot's origin, a prop's feet, an animal's walk position -- goes through
- * `isoProject` before it becomes a Phaser position or a depth key. Every
- * point Phaser hands back (a pointer's world point, `cam.getWorldPoint`)
- * goes through `isoUnproject` before it is allowed near `plotIndexAt` or any
- * other `world.ts` function. `put()` and `buildCell`'s cell-local `img`/
- * `shadow` closures do this once, at the seam, so most of the file below
- * just calls them with plain world-space numbers exactly as it did before
- * the camera tilted.
+ * this file reads from `world.ts`/`paths.ts`/`water.ts`/`props.ts`/
+ * `zones.ts` -- a grow area's corner, a prop's feet, an animal's walk
+ * position -- goes through `isoProject` before it becomes a Phaser position
+ * or a depth key. Every point Phaser hands back (a pointer's world point,
+ * `cam.getWorldPoint`) goes through `isoUnproject` before it is allowed near
+ * `meadowTileAt` or any other function that wants true world space -- the
+ * scythe's own drag is the only gesture left that still needs this round
+ * trip.
  *
  * On top of that, the canvas is DPR times denser than the screen (that
  * density is what makes the vector art crisp), so Phaser's camera width and
- * zoom are in device pixels, while a pointer event and everything the DOM
- * shell hands over or gets back -- the ghost's position, the tracked plot's
- * rectangle -- are in CSS pixels. The `viewW`/`viewH`/`zoomL`/`toScreen`
- * helpers are the CSS-pixel side; the `cam.*` values are the device-pixel
- * side. `toScreen`'s own input is scene space, same as `cam.*`.
+ * zoom are in device pixels, while a pointer event is in CSS pixels. The
+ * `viewW`/`viewH`/`zoomL`/`toScreen` helpers are the CSS-pixel side; the
+ * `cam.*` values are the device-pixel side.
  */
 
-export interface StackAcresSceneCell {
-  plotIndex: number;
-  state: StackAcresPlotState;
-  stock: StackAcresStock | null;
-  /** 0..1 while working, 1 once ready, null otherwise. */
+/**
+ * One owned animal or crop, as the scene draws it. Successor to the old
+ * per-plot `StackAcresSceneCell`: a unit has no position of its own to carry
+ * in (an animal wanders inside its district's `growAreaInterior`, a crop
+ * sits at a deterministic `cropSpot`), so there is no `plotIndex`, `afford`,
+ * `selected` or `purchasable` here -- those all existed to answer "what
+ * would the held tool do to this square", and there is no square any more.
+ */
+export interface StackAcresSceneUnit {
+  id: string;
+  stock: StackAcresStock;
+  state: "working" | "hungry" | "ready" | "mucked";
+  /** 0..1 while working, 1 once ready, null while mucked. */
   progress: number | null;
-  /** What the held tool would do here, from lib/stackacres/tools.ts. */
-  afford: PlotAffordance["kind"];
-  selected: boolean;
-  purchasable: boolean;
-  unlockPrice: number | null;
-}
-
-/** Where a plot sits on the canvas, in CSS pixels, plus the canvas size. */
-export interface PlotScreenRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  viewWidth: number;
-  viewHeight: number;
+  /** True once bought outright with Gold -- drawn no differently, kept only
+   *  because it is part of what makes a unit's own picture change (see
+   *  `signatureOf`), the same way it was on the old cell. */
+  permanent: boolean;
 }
 
 export interface StackAcresSceneCallbacks {
-  onTapPlot: (plotIndex: number) => void;
-  onTapGround: () => void;
-  /**
-   * Fired once per plot, in crossing order, as a tool-sweep drag walks over
-   * it -- only for a plot the scene already knows the held tool can act on
-   * (`afford === "act"`); a plot it has no business with is skipped. The
-   * shell runs the same action a tap on that plot would.
-   */
-  onSweepPlot: (plotIndex: number) => void;
-  /** Fired once the first frame with plots on it has been drawn. */
+  /** Fired once the first frame with units on it has been drawn. */
   onReady: () => void;
-  /**
-   * Where the tracked plot (see `trackPlot`) is on screen, whenever that
-   * changes -- a pan, a zoom, a resize. Null once tracking stops. The shell
-   * hangs the detail card off this so the card follows the plot it is about.
-   */
-  onTrackedRect: (rect: PlotScreenRect | null) => void;
 }
 
 export interface StackAcresSceneOptions {
@@ -197,16 +182,15 @@ export interface StackAcresSceneOptions {
  */
 export const DPR = typeof window === "undefined" ? 1 : Math.min(2, window.devicePixelRatio || 1);
 
-const CELL = STACKACRES_CELL;
 const S = ART_SCALE;
 
-/** Chrome colours, as the canvas needs them. Same values as 01-tokens.css. */
+/** Chrome colours, as the canvas needs them. Same values as 01-tokens.css.
+ *  Only the three a unit's own state ring still needs -- the old
+ *  `selected`/`blocked` colours (chalk, red) and the afford/progress accent
+ *  (violet) went with the plot-tap system they existed for. */
 const GOLD = 0xffd23f;
-const VIOLET = 0xb26bff;
-const RED = 0xdc1413;
 const AMBER = 0xff8a3d;
 const MUCK = 0x785830;
-const CHALK = 0xf3eefc;
 
 /** How far a finger may wander before a press stops counting as a tap. In CSS
  *  pixels, because pointer events are. */
@@ -221,13 +205,11 @@ const FLICK_SPEED_MIN = 0.12;
 const GLIDE_DECAY = 0.92;
 const GLIDE_STOP = 0.02;
 
-// The barn stands north of the first row of plots with a yard between: its
-// feet are on y 34, thirty units above the plot square, and the lane and
-// road (lib/stackacres/paths.ts) run through that gap. Its roof reaches
-// BARN_TOP, which is what "home" has to frame as well as the plots themselves.
+// The barn stands north of the Farmstead's own grow area with a yard
+// between: its feet are on y 34, and the lane and road (lib/stackacres/
+// paths.ts) run through that gap.
 const BARN_X = STACKACRES_MARGIN + 44;
 const BARN_Y = STACKACRES_MARGIN - 30;
-const BARN_TOP = BARN_Y - 66;
 
 // Ground art sits just above the grass and well below anything with feet:
 // the paths at -1e8, the pond one above them so its sand paints over the
@@ -235,6 +217,12 @@ const BARN_TOP = BARN_Y - 66;
 /** The districts' own ground sits under the paths: a road is laid ON a
  *  field, so the field has to be beneath it, and both are above the lawn. */
 const ZONE_GROUND_DEPTH = -1e8 - 10;
+/** A district's grow-area floor (see `paintDistrictBoundary`) sits one step
+ *  above the district's own base ground, so a Hen Coop's straw reads as laid
+ *  ON the Farmstead rather than floating over it -- still far below every
+ *  real object in the scene, by the same always-behind-everything logic
+ *  `ZONE_GROUND_DEPTH` itself uses. */
+const GROW_AREA_GROUND_DEPTH = ZONE_GROUND_DEPTH + 1;
 const PATH_DEPTH = -1e8;
 const POND_DEPTH = PATH_DEPTH + 1;
 const POND_SURFACE_DEPTH = PATH_DEPTH + 2;
@@ -242,22 +230,14 @@ const POND_SURFACE_DEPTH = PATH_DEPTH + 2;
 /** How many glints drift across the pond at once. */
 const GLINT_COUNT = 5;
 
-/** Which animal stands in which pen. */
-const STOCK_ART: Partial<Record<StackAcresStock, PainterName>> = {
+/** Which animal stands in which district's grow area. Exhaustive over
+ *  livestock only (never crops) -- every read of this table is already
+ *  behind an `isLivestock` check, so there is nothing to fall back to. */
+const STOCK_ART: Readonly<Record<StackAcresLivestock, PainterName>> = {
   hen: "hen",
   pig: "sheep",
   cattle: "cow",
 };
-
-/** What the player is dragging out of the seed strip, as a picture. */
-const GHOST_ART: Record<StackAcresStock, PainterName> = {
-  hen: "hen",
-  pig: "sheep",
-  cattle: "cow",
-  sprout: "carrot2",
-  cash_crop: "corn2",
-};
-
 /** A Phaser packed colour, lightened (positive) or darkened (negative) by a
  *  flat channel amount. The one-sun shading every isometric structure below
  *  uses: a roof lit from directly above, a left wall toward the light, a
@@ -331,13 +311,14 @@ interface TrailPoint {
 
 /**
  * One finger down: a press until it has moved TAP_SLOP, then either a pan
- * (the map moves) or a sweep (the held tool walks across every actionable
- * plot the finger crosses) -- which one is decided once, at that moment, by
- * whether the plot under the *original* press was one the tool had business
- * with.
+ * (the map moves) or a mow (the scythe cuts a swathe across the Long
+ * Meadow) -- decided once, at that moment, by whether the press began on
+ * standing grass with the scythe held. There is no plot left for a drag to
+ * sweep across instead (buying and tending a unit is the district sidebar's
+ * job now), so every press that is not the scythe's own gesture simply pans.
  */
 interface DragGesture {
-  kind: "press" | "pan" | "sweep" | "mow";
+  kind: "press" | "pan" | "mow";
   id: number;
   x: number;
   y: number;
@@ -345,15 +326,6 @@ interface DragGesture {
   startY: number;
   /** The last ~80ms of movement, which is what the flick is measured from. */
   trail: TrailPoint[];
-  /** The plot under the finger at pointerdown, and what the held tool would
-   *  do there. `null`/`"none"` for a press that started on ground -- that
-   *  always pans, the same as it always has. */
-  startPlot: number | null;
-  startAfford: PlotAffordance["kind"];
-  /** Plots this sweep has already fired on. Only a sweep gesture has one;
-   *  set the moment `kind` becomes `"sweep"`, so re-crossing a plot later in
-   *  the same drag can never trigger it twice. */
-  visited?: Set<number>;
   /**
    * True when the press began on standing grass with the scythe held, which
    * is what lets a drag from there cut instead of panning.
@@ -366,6 +338,7 @@ interface DragGesture {
    */
   startMow?: boolean;
 }
+
 
 /**
  * What one grown chunk owns. `items` is everything to destroy when the chunk
@@ -398,61 +371,45 @@ interface PinchGesture {
 
 type Gesture = DragGesture | PinchGesture;
 
-interface CritterNode {
-  sprite: Phaser.GameObjects.Image;
-  shadow: Phaser.GameObjects.Image;
-  state: Critter;
-  /** How far off the ground a tap has bounced it, in world units. Tweened;
-   *  update() folds it into the sprite's y, which it otherwise owns. */
-  lift: number;
-  /** Offsets this animal's gait and breathing so a pen never moves in
-   *  lockstep. */
-  phase: number;
-}
-
-interface CellNode {
+interface UnitNode {
   container: Phaser.GameObjects.Container;
-  /** State ring: ready, hungry, mucked, selected. */
+  /** State ring: ready, hungry, mucked. There is no "selected"/"afford"
+   *  ring any more -- a unit either shows what it is doing or it does not,
+   *  and nothing on the canvas is ever chosen or blocked. */
   ring: Phaser.GameObjects.Graphics;
-  /** Affordance ring, pulsed separately so the state ring stays still. */
-  afford: Phaser.GameObjects.Graphics;
-  progress: Phaser.GameObjects.Graphics;
-  progressValue: number;
-  critters: CritterNode[];
-  /** Index in the container's list where the first animal sprite sits; the
-   *  sprites are a contiguous block from there, re-ordered by y each frame. */
-  spriteSlot: number;
-  /** The draw order the animals were last put in, as critter indexes. */
-  order: number[];
-  /** Every plant in a field, for the tap ripple. */
-  plants: Phaser.GameObjects.Image[];
-  bobbing: Phaser.GameObjects.GameObject[];
+  /** The unit's own picture: the animal, the crop, or (mucked) the mess
+   *  standing in for either. */
+  sprite: Phaser.GameObjects.Image;
+  /**
+   * Present for livestock, driving the same wander `stepCritter` already
+   * drives everywhere else on this map (the pond's duck, the districts'
+   * ambient herds) -- null for a crop, which is planted at one fixed spot
+   * and never moves, and null for a mucked unit of any kind, which has
+   * stopped wandering along with everything else it was doing.
+   */
+  critter: Critter | null;
+  /** Out-of-phase gait/breathing offset, so units of the same kind never
+   *  move in lockstep. */
+  phase: number;
   tweens: Phaser.Tweens.Tween[];
-  /** Scene time until which a tap's bounce owns the sprites' scale. */
-  juiceUntil: number;
   signature: string;
-  cell: StackAcresSceneCell;
+  unit: StackAcresSceneUnit;
 }
 
-function signatureOf(cell: StackAcresSceneCell): string {
-  const stage = growthStage(cell.progress, cell.state === "ready");
-  return [
-    cell.state,
-    cell.stock ?? "",
-    stage,
-    cell.afford,
-    cell.selected ? 1 : 0,
-    cell.purchasable ? 1 : 0,
-    cell.unlockPrice ?? "",
-  ].join("|");
+/** What a unit's own picture is signed by: only its state, kind, growth
+ *  stage and permanence change what gets drawn, so `setUnits` rebuilds a
+ *  node exactly when one of these four actually changes. */
+function signatureOf(unit: StackAcresSceneUnit): string {
+  const stage = growthStage(unit.progress, unit.state === "ready");
+  return [unit.state, unit.stock, stage, unit.permanent ? 1 : 0].join("|");
 }
 
 export class StackAcresScene extends Phaser.Scene {
   private readonly callbacks: StackAcresSceneCallbacks;
   private readonly options: StackAcresSceneOptions;
-  private nodes = new Map<number, CellNode>();
-  private cells: StackAcresSceneCell[] = [];
-  private pending: StackAcresSceneCell[] | null = null;
+  private nodes = new Map<string, UnitNode>();
+  private units: StackAcresSceneUnit[] = [];
+  private pending: StackAcresSceneUnit[] | null = null;
   private created = false;
   private opened = false;
   private random = seededRandom(Date.now() % 100_000);
@@ -501,7 +458,7 @@ export class StackAcresScene extends Phaser.Scene {
   private lastRegrow = 0;
 
   /** The districts' animals: the oxen in their furrows, the hogs in the mud.
-   *  Driven by the same `stepCritter` the pens use. */
+   *  Driven by the same `stepCritter` the owned units use. */
   private herds: HerdSprite[] = [];
 
   /** The pond's surface, built once in paintPond and walked by index in
@@ -521,24 +478,16 @@ export class StackAcresScene extends Phaser.Scene {
   /** The windmill's sails, turned in update(); still under reduced motion. */
   private blades: Phaser.GameObjects.Image | null = null;
 
-  private ghost: Phaser.GameObjects.Image | null = null;
-  private ghostRing: Phaser.GameObjects.Graphics | null = null;
-
-  /** The held tool's own picture, floating over a finger that is mid-sweep.
-   *  Unlike `ghost` it never snaps to a cell -- a sweep crosses many plots,
-   *  so it just follows the finger. */
+  /** The held tool's own picture, floating over a finger that is mid-mow --
+   *  the scythe is the only tool left with a canvas gesture of its own.
+   *  Kept the name `toolGhost` (not `mowGhost`): it once also floated over a
+   *  plot-sweep drag, and that gesture is gone, this is what is left of it. */
   private toolGhost: Phaser.GameObjects.Image | null = null;
   private toolGhostTween: Phaser.Tweens.Tween | null = null;
   private toolIconName: PainterName = "ico-look";
   /** The held tool. Only the scythe changes what a gesture MEANS here; every
-   *  other tool reaches the scene as a plot's `afford` instead. */
+   *  other tool does nothing on the canvas at all. */
   private tool: StackAcresTool = "inspect";
-
-  private tracked: number | null = null;
-  private trackedKey = "";
-
-  /** Tweens made while a node is being built, claimed by it in paintRings. */
-  private pendingTweens: Phaser.Tweens.Tween[] = [];
 
   constructor(callbacks: StackAcresSceneCallbacks, options: StackAcresSceneOptions) {
     super({ key: "StackAcresScene" });
@@ -562,7 +511,7 @@ export class StackAcresScene extends Phaser.Scene {
     // Every texture is drawn here, at boot. Most icons are still painted
     // straight into DOM canvases by stackacres-icon.tsx and never need a
     // Phaser texture -- but the toolbelt set also has to exist here, as the
-    // picture `toolGhost` floats over a finger mid-sweep, so all of PAINTERS
+    // picture `toolGhost` floats over a finger mid-mow, so all of PAINTERS
     // is baked now. The image sprites are baked from what `preload`
     // fetched; everything else from its painter.
     for (const name of Object.keys(PAINTERS) as PainterName[]) {
@@ -584,14 +533,11 @@ export class StackAcresScene extends Phaser.Scene {
     this.paintBarn();
     this.paintProps();
     this.spawnHerds();
+    // Every district's grow-area floor and (for livestock) fence, painted
+    // once each here -- see the "Units" section below for why this replaces
+    // the old per-plot fence-merge rather than adapting it.
+    for (const id of ZONE_IDS) this.paintDistrictBoundary(id);
 
-    this.ghostRing = this.add.graphics().setDepth(9000).setVisible(false);
-    this.ghost = this.add
-      .image(0, 0, "hen", ART_FRAME)
-      .setOrigin(0.5, 1)
-      .setScale(1.3 / S)
-      .setDepth(9001)
-      .setVisible(false);
     this.toolGhost = this.add
       .image(0, 0, this.toolIconName, ART_FRAME)
       .setOrigin(0.5, 1)
@@ -620,11 +566,12 @@ export class StackAcresScene extends Phaser.Scene {
 
     this.created = true;
     if (this.pending) {
-      const cells = this.pending;
+      const units = this.pending;
       this.pending = null;
-      this.setPlots(cells);
+      this.setUnits(units);
     }
   }
+
 
   /**
    * The scene-space depth key for a world point: the projected y, which is
@@ -1078,216 +1025,232 @@ export class StackAcresScene extends Phaser.Scene {
       .setDepth(this.depthAt(x, y, 0.5));
   }
 
+
   /* ---------------------------------------------------------------- */
-  /* Plots                                                             */
+  /* Units                                                             */
   /* ---------------------------------------------------------------- */
 
-  setPlots(cells: StackAcresSceneCell[]): void {
+  /**
+   * One owned animal or crop's world node, replacing the old per-plot
+   * `buildCell`/`CellNode` pair now that a unit has no plot underneath it
+   * (see lib/stackacres/units.ts's own header). A district's grow area
+   * itself -- its ground and, for livestock, its fence -- is drawn ONCE per
+   * district at boot (`paintDistrictBoundary`, called from `create()`), not
+   * per unit: there is no fixed number of "slots" to draw empty or waiting
+   * any more, only exactly `units.length` pictures, one each, standing in
+   * whichever district `stockZone` says they belong in.
+   */
+  setUnits(units: StackAcresSceneUnit[]): void {
     if (!this.created) {
-      this.pending = cells;
+      this.pending = units;
       return;
     }
-    // How many plots were owned before this update, so a purchase can be
-    // detected below. Used to be "did the acreage bounding box grow" -- that
-    // stopped meaning anything once the districts scattered the plots across
-    // the whole map; a plain count survives that just fine.
-    const beforeOwned = this.cells.filter((c) => c.state !== "locked").length;
-    this.cells = cells;
-
-    for (const cell of cells) {
-      const signature = signatureOf(cell);
-      const existing = this.nodes.get(cell.plotIndex);
+    this.units = units;
+    const seen = new Set<string>();
+    for (const unit of units) {
+      seen.add(unit.id);
+      const signature = signatureOf(unit);
+      const existing = this.nodes.get(unit.id);
       if (existing && existing.signature === signature) {
-        existing.cell = cell;
-        this.paintProgress(existing, cell);
+        existing.unit = unit;
         continue;
       }
-      this.buildCell(cell, signature, existing);
+      this.buildUnit(unit, signature, existing);
+    }
+    // A unit that is no longer in the list -- collected and consumed, or
+    // retired -- has nothing left to draw. `units` above only ever touches
+    // ids that ARE still owned, so anything left unseen here is gone.
+    for (const [id, node] of this.nodes) {
+      if (seen.has(id)) continue;
+      this.destroyNode(node);
+      this.nodes.delete(id);
     }
 
     if (!this.opened) {
       this.opened = true;
       this.openCamera();
       this.callbacks.onReady();
-      return;
-    }
-    // Land was bought: more plots are owned than a moment ago. Glide to
-    // whatever just opened up -- it may be in a different district entirely.
-    const owned = cells.filter((c) => c.state !== "locked");
-    if (owned.length > beforeOwned) {
-      const newest = owned[owned.length - 1];
-      if (newest) this.focusPlot(newest.plotIndex, true);
     }
   }
 
-  private buildCell(
-    cell: StackAcresSceneCell,
-    signature: string,
-    previous: CellNode | undefined,
-  ): void {
-    const origin = cellOrigin(cell.plotIndex);
-    // Animals survive a repaint of their own pen (a ring changing, a clock
-    // tick crossing a growth stage) so they do not all jump to new spots
-    // every time the player changes tool.
-    const carried =
-      previous && previous.cell.stock === cell.stock && cell.stock !== null && isLivestock(cell.stock)
-        ? previous.critters.map((c) => c.state)
-        : [];
+  /** A world-space child of `container`, positioned and scaled the way every
+   *  painter placement in this file is -- projected once here so callers
+   *  hand over plain world-space numbers, same as the rest of the scene. */
+  private addLocal(
+    name: PainterName,
+    x: number,
+    y: number,
+    container: Phaser.GameObjects.Container,
+  ): Phaser.GameObjects.Image {
+    const p = PAINTERS[name];
+    const s = isoProject(x, y);
+    const image = this.add
+      .image(s.x, s.y, name, ART_FRAME)
+      .setOrigin(p.ax, p.ay)
+      .setScale(1 / S);
+    container.add(image);
+    return image;
+  }
+
+  /**
+   * A unit's own fixed spot: a crop's `cropSpot`, or -- new here -- where a
+   * MUCKED unit stands, livestock or crop. Muck stops an animal wandering
+   * the same way it stops a crop growing, so both settle at the same kind of
+   * deterministic point a crop already uses; there is nothing left about a
+   * mucked unit's own kind that needs representing once it has stopped.
+   */
+  private staticSpotFor(unit: StackAcresSceneUnit): WorldPoint {
+    return cropSpot(stockZone(unit.stock), unit.id);
+  }
+
+  private buildUnit(unit: StackAcresSceneUnit, signature: string, previous: UnitNode | undefined): void {
+    const zone = stockZone(unit.stock);
+    // An animal survives a repaint of its own picture (a ring changing, a
+    // clock tick crossing a growth stage) so it does not jump to a fresh
+    // spawn point every time its state changes -- the same carry-over
+    // `buildCell` used to give a pen's animals, just one critter instead of
+    // several sharing a pen.
+    const carriedCritter = previous?.critter ?? null;
     if (previous) this.destroyNode(previous);
 
-    const originScreen = isoProject(origin.x, origin.y);
-    const container = this.add
-      .container(originScreen.x, originScreen.y)
-      .setDepth(this.depthAt(origin.x + CELL, origin.y + CELL));
-    const node: CellNode = {
-      container,
-      ring: this.add.graphics(),
-      afford: this.add.graphics(),
-      progress: this.add.graphics(),
-      progressValue: -1,
-      critters: [],
-      spriteSlot: -1,
-      order: [],
-      plants: [],
-      bobbing: [],
-      tweens: [],
-      juiceUntil: 0,
-      signature,
-      cell,
-    };
+    const container = this.add.container(0, 0);
+    let sprite: Phaser.GameObjects.Image;
+    let critter: Critter | null = null;
 
-    // Cell-local placement: the container already sits at the plot's
-    // projected origin, and a cell-local (x, y) is projected here the same
-    // way -- `isoProject` is additive (iso.test.ts), so the two compose to
-    // exactly where a caller means, without either side having to know
-    // about the other's offset.
-    const img = (name: PainterName, x: number, y: number): Phaser.GameObjects.Image => {
-      const p = PAINTERS[name];
-      const s = isoProject(x, y);
-      const image = this.add
-        .image(s.x, s.y, name, ART_FRAME)
-        .setOrigin(p.ax, p.ay)
-        .setScale(1 / S);
-      container.add(image);
-      return image;
-    };
-    const shadow = (x: number, y: number, sx = 1, sy = 1) =>
-      img("shadow", x, y + 1)
-        .setScale(sx / S, sy / S)
-        .setAlpha(0.8);
-
-    switch (cell.state) {
-      case "locked":
-        this.paintThicket(cell, img, shadow, container);
-        break;
-      case "empty":
-        // A field-zoned plot is bare grass waiting to be tilled. A pen-zoned
-        // plot is a fenced, empty paddock -- it never looks like open lawn,
-        // because the whole point of the zoning is that the fence line is
-        // there whether or not anything is standing behind it yet.
-        if (plotPenZone(cell.plotIndex) === "field") {
-          this.paintGroundDiamond(container, "mown");
-          for (const item of clearedLayout(cell.plotIndex)) img(item.kind, item.x, item.y);
-        } else {
-          this.paintPenFence(container, cell, img);
-        }
-        break;
-      case "mucked":
-        this.paintGroundDiamond(container, "muckbed");
-        img("puddle", 26, 30);
-        img("rock", 52, 44);
-        img("rock", 20, 62);
-        shadow(60, 68, 0.5);
-        img("stump", 60, 68);
-        img("rock", 44, 22);
-        break;
-      default:
-        if (cell.stock && isLivestock(cell.stock)) this.paintPen(node, cell, carried, img, shadow);
-        else if (cell.stock) this.paintField(node, cell, img);
-        break;
+    if (unit.state === "mucked") {
+      // A mess to clear, not something with legs -- livestock or crop, a
+      // mucked unit stands at the same kind of fixed spot a crop always
+      // uses and stops doing whatever it was doing.
+      const at = this.staticSpotFor(unit);
+      this.addLocal("puddle", -3, 6, container);
+      this.addLocal("rock", -9, -3, container);
+      sprite = this.addLocal("stump", 5, -2, container);
+      const screen = isoProject(at.x, at.y);
+      container.setPosition(screen.x, screen.y);
+      container.setDepth(this.depthAt(at.x, at.y));
+    } else if (isLivestock(unit.stock)) {
+      const art = STOCK_ART[unit.stock];
+      critter = carriedCritter ?? spawnCritter(growAreaInterior(zone), this.random);
+      // Shadow scale mirrors the old per-species pool sizes exactly: cattle
+      // widest and shortest, a hen narrowest and tallest.
+      const [shadowW, shadowH] =
+        art === "cow" ? [0.75, 0.7] : art === "sheep" ? [0.6, 0.6] : [0.45, 0.5];
+      // A fixed local offset -- (0, 1) in world units, projected once here --
+      // since the container itself already tracks the critter's true ground
+      // position every frame (see update()); the shadow never has to move
+      // again after this.
+      this.addLocal("shadow", 0, 1, container).setScale(shadowW / S, shadowH / S).setAlpha(0.8);
+      sprite = this.addLocal(art, 0, 0, container);
+      if (unit.state === "hungry") sprite.setTint(0xb9b4ae);
+      const screen = isoProject(critter.x, critter.y);
+      container.setPosition(screen.x, screen.y);
+      container.setDepth(this.depthAt(critter.x, critter.y));
+    } else {
+      const at = this.staticSpotFor(unit);
+      const stage = growthStage(unit.progress, unit.state === "ready");
+      const crop = unit.stock === "cash_crop" ? "corn" : "carrot";
+      sprite = this.addLocal(`${crop}${stage}` as PainterName, 0, 0, container);
+      const screen = isoProject(at.x, at.y);
+      container.setPosition(screen.x, screen.y);
+      container.setDepth(this.depthAt(at.x, at.y));
     }
 
-    container.add([node.ring, node.afford, node.progress]);
-    this.paintRings(node, cell);
-    this.paintProgress(node, cell);
-    this.nodes.set(cell.plotIndex, node);
+    const ring = this.add.graphics();
+    container.add(ring);
+
+    const node: UnitNode = {
+      container,
+      ring,
+      sprite,
+      critter,
+      phase: this.random() * Math.PI * 2,
+      tweens: [],
+      signature,
+      unit,
+    };
+    this.paintUnitRing(node, unit);
+    if (unit.state === "ready" && !isLivestock(unit.stock)) this.bob(node, [sprite]);
+    this.nodes.set(unit.id, node);
   }
 
-  private destroyNode(node: CellNode): void {
+  private destroyNode(node: UnitNode): void {
     for (const tween of node.tweens) tween.remove();
     node.container.destroy(true);
   }
 
   /**
-   * A cell's own ground, as a diamond fill rather than the flat baked
-   * rectangle painter used before: `mown`, `soil`, `straw` and `muckbed` are
-   * each a whole CELL square, and a square texture repositioned onto a
-   * diamond footprint would still render as a square, just floating at the
-   * wrong angle. Colours are lifted from the flat painters of the same name
-   * in stackacres-art.ts, so a plot reads as the same material, only tilted.
-   * Drawn as the container's first child, same as the `img("mown", 0, 0)`
-   * call it replaces, so everything else in the cell paints over it.
+   * A district's own grow-area floor and (livestock only) its fence,
+   * painted ONCE at boot -- see the "Units" section's own note on why there
+   * is no more per-plot fence-merge. Crops (the Long Meadow) get tilled soil
+   * and no rails, the same as an old field-zoned plot never had a pen fence
+   * either; every livestock district gets a straw bed and a full boundary,
+   * traced unconditionally on all four sides since a whole-area boundary has
+   * no interior seam left to merge away the way four separate 2x2 plots did.
    */
-  private paintGroundDiamond(
-    container: Phaser.GameObjects.Container,
-    kind: "mown" | "soil" | "straw" | "muckbed" | "wild",
-  ): void {
-    const corners = projectedCorners({ x: 0, y: 0, width: CELL, height: CELL });
-    const g = this.add.graphics();
-    const diamond = (fill: number, alpha: number, edge?: number): void => {
-      g.fillStyle(fill, alpha);
-      g.beginPath();
-      g.moveTo(corners.n.x, corners.n.y);
-      g.lineTo(corners.e.x, corners.e.y);
-      g.lineTo(corners.s.x, corners.s.y);
-      g.lineTo(corners.w.x, corners.w.y);
-      g.closePath();
-      g.fillPath();
-      if (edge !== undefined) {
-        g.lineStyle(1, edge, 0.55);
-        g.strokePath();
-      }
-    };
-    // Colours come from art-palette.ts, the same ramps the Canvas2D painters
-    // bake with, so a plot's diamond and the props standing on it cannot
-    // drift apart -- see that file's header for why one table and not two.
-    switch (kind) {
-      case "mown":
-        // Solid now, not a wash. A cleared plot has to be the warmest, most
-        // inviting thing in frame, and a translucent tint over the world
-        // grass could only ever be a shade of whatever it sat on.
-        diamond(rampHex("lawn").top, 1, rampHex("lawn").rim);
-        break;
-      case "soil":
-        diamond(rampHex("soil").top, 1, rampHex("soil").rim);
-        this.paintFurrows(g);
-        break;
-      case "straw":
-        diamond(rampHex("straw").top, 1, rampHex("straw").rim);
-        break;
-      case "muckbed":
-        diamond(rampHex("muck").top, 1, rampHex("muck").rim);
-        break;
-      case "wild":
-        // Was a 12%-alpha near-black wash, which is what made an uncleared
-        // plot read as a flat grey rectangle when zoomed out -- the open gap
-        // CLAUDE.md has carried since the premium pass. It is a real green.
-        diamond(rampHex("wild").top, 1, rampHex("wild").rim);
-        break;
+  private paintDistrictBoundary(zone: ZoneId): void {
+    const area = growAreaBounds(zone);
+    const fenced = stocksInZone(zone).some((stock) => isLivestock(stock));
+    this.paintAreaGround(area, fenced ? "straw" : "soil");
+    if (!fenced) return;
+
+    // Every rail gets its own true world position and the ordinary
+    // `put()` depth (feet-based), so a wandering animal sorts correctly
+    // against it on its own -- in front of the near rail, behind the far
+    // one -- with no back/front split needed the way the old per-plot fence
+    // required to keep its own animals from drawing over their own gate.
+    const step = 16;
+    const midX = Math.round(area.width / 2 / step) * step;
+    for (let x = 0; x < area.width; x += step) {
+      this.put("railH", area.x + x, area.y).setRotation(ISO_EDGE_ANGLE.alongX);
+      const isGate = Math.abs(x - midX) < step / 2;
+      this.put(isGate ? "gate" : "railH", area.x + x, area.y + area.height - 9).setRotation(
+        ISO_EDGE_ANGLE.alongX,
+      );
     }
-    container.add(g);
+    for (let y = 12; y < area.height - 10; y += step) {
+      this.put("railV", area.x, area.y + y).setRotation(ISO_EDGE_ANGLE.alongY);
+      this.put("railV", area.x + area.width - 9, area.y + y).setRotation(ISO_EDGE_ANGLE.alongY);
+    }
   }
 
-  /** Three furrow lines across a tilled plot, cell-local, drawn along the
-   *  diamond's own grain so they read as rows rather than as stripes painted
-   *  over the top of it. */
-  private paintFurrows(g: Phaser.GameObjects.Graphics): void {
-    const rows = 3;
+  /**
+   * A district's grow-area floor, as one diamond fill rather than the flat
+   * baked rectangle painters (`straw`/`soil`) those colours come from --
+   * see `paintZoneGround`'s own note on why a district-sized flat texture on
+   * a diamond grid reads as a bug. Drawn far below everything else
+   * (`GROW_AREA_GROUND_DEPTH`, the same always-behind-everything scheme
+   * `ZONE_GROUND_DEPTH` uses) rather than at the area's own varying
+   * isometric depth, because ground never needs to sort against anything
+   * standing on it -- it is always furthest back, by construction.
+   */
+  private paintAreaGround(area: WorldRect, kind: "straw" | "soil"): void {
+    const corners = projectedCorners(area);
+    const ramp = rampHex(kind);
+    const g = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
+    g.fillStyle(ramp.top, 1);
+    g.beginPath();
+    g.moveTo(corners.n.x, corners.n.y);
+    g.lineTo(corners.e.x, corners.e.y);
+    g.lineTo(corners.s.x, corners.s.y);
+    g.lineTo(corners.w.x, corners.w.y);
+    g.closePath();
+    g.fillPath();
+    g.lineStyle(1, ramp.rim, 0.55);
+    g.strokePath();
+    if (kind === "soil") this.paintFurrows(g, area);
+  }
+
+  /** Furrow lines across a tilled grow area, drawn along the diamond's own
+   *  grain so they read as rows rather than as stripes painted over the top
+   *  of it -- the same idea the old per-plot soil ground used, spread across
+   *  a whole district's worth of field instead of one CELL. */
+  private paintFurrows(g: Phaser.GameObjects.Graphics, area: WorldRect): void {
+    const rows = 6;
     for (let r = 1; r <= rows; r += 1) {
       const k = r / (rows + 1);
-      const a = isoProject(6, 6 + k * (CELL - 12));
-      const b = isoProject(CELL - 6, 6 + k * (CELL - 12));
-      g.lineStyle(1.1, 0x000000, 0.16);
+      const a = isoProject(area.x + 10, area.y + k * area.height);
+      const b = isoProject(area.x + area.width - 10, area.y + k * area.height);
+      g.lineStyle(1.1, 0x000000, 0.14);
       g.beginPath();
       g.moveTo(a.x, a.y);
       g.lineTo(b.x, b.y);
@@ -1295,236 +1258,75 @@ export class StackAcresScene extends Phaser.Scene {
     }
   }
 
-  /** Land nobody has cleared yet: trees, and a price sign on the one for sale. */
-  private paintThicket(
-    cell: StackAcresSceneCell,
-    img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
-    shadow: (x: number, y: number, sx?: number, sy?: number) => Phaser.GameObjects.Image,
-    container: Phaser.GameObjects.Container,
-  ): void {
-    this.paintGroundDiamond(container, "wild");
-    // The layout is already sorted by y, litter interleaved with trees: sort
-    // them separately and a pebble at the back paints over a tree in front.
-    for (const item of thicketLayout(cell.plotIndex, cell.purchasable)) {
-      if (!castsShadow(item.kind)) {
-        img(item.kind, item.x, item.y);
-        continue;
-      }
-      shadow(item.x, item.y, item.kind === "bush" ? 0.55 : 0.75);
-      img(item.kind, item.x, item.y).setScale(0.82 / S);
+  /**
+   * How big a ring to trace around one unit -- half the diamond's own side
+   * length, derived from the painter's own box rather than a hand-kept
+   * table (the "drifted hand-written copies" trap this codebase has hit
+   * before with STAKES_TIERS and the wager ladders). A mucked unit has no
+   * single painter box to measure -- it is a small cluster -- so it gets a
+   * fixed footprint sized to roughly cover that cluster instead.
+   */
+  private unitFootprintHalf(unit: StackAcresSceneUnit): number {
+    if (unit.state === "mucked") return 16;
+    if (isLivestock(unit.stock)) {
+      const box = PAINTERS[STOCK_ART[unit.stock]];
+      return Math.max(box.w, box.h) / 2 + 6;
     }
-    if (cell.purchasable) {
-      // Barely lifted, not tinted: the plot for sale should read as the same
-      // wood as everything beyond it, just standing in daylight.
-      for (const child of container.list) {
-        if (child instanceof Phaser.GameObjects.Image && child.texture.key !== "wild") {
-          child.setAlpha(0.92);
-        }
-      }
-      if (cell.unlockPrice !== null) container.add(this.priceSign(cell.unlockPrice));
-      return;
-    }
-    for (const child of container.list) {
-      if (child instanceof Phaser.GameObjects.Image) child.setTint(0xcfd8c4);
-    }
+    return 12;
   }
 
-  /** "2,500 Gold" on a wooden sign, planted on the plot that is for sale. */
-  private priceSign(price: number): Phaser.GameObjects.Container {
-    const sign = this.add.image(0, 0, "sign", ART_FRAME).setOrigin(0.5, 1).setScale(1 / S);
-    // A 6.5px font would be a smear at any zoom past 1; `resolution` renders
-    // the glyphs 8x oversized and lets the camera scale them down, the same
-    // trick the rest of the art gets from being baked at ART_SCALE.
-    const label = this.add
-      .text(0, -17.5, `${price.toLocaleString()} Gold`, {
-        fontFamily: "system-ui, -apple-system, Segoe UI, sans-serif",
-        fontSize: "6.5px",
-        fontStyle: "700",
-        color: "#3d2a14",
-        resolution: 8,
-      })
-      .setOrigin(0.5);
-    const anchor = isoProject(CELL / 2, CELL / 2 + 18);
-    const tag = this.add.container(anchor.x, anchor.y, [sign, label]);
-    if (!this.options.reducedMotion) {
-      this.pendingTweens.push(
-        this.tweens.add({
-          targets: tag,
-          y: tag.y - 1.5,
-          duration: 1_300,
-          yoyo: true,
-          repeat: -1,
-          ease: "Sine.easeInOut",
-        }),
-      );
-    }
-    return tag;
-  }
-
-  private paintField(
-    node: CellNode,
-    cell: StackAcresSceneCell,
-    img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
-  ): void {
-    this.paintGroundDiamond(node.container, "soil");
-    const stage = growthStage(cell.progress, cell.state === "ready");
-    const crop = cell.stock === "cash_crop" ? "corn" : "carrot";
-    const frame = `${crop}${stage}` as PainterName;
-    for (const rowY of [19.5, 35.5, 51.5, 67.5]) {
-      for (let i = 0; i < 5; i += 1) {
-        const plant = img(frame, 14 + i * 13, rowY);
-        node.plants.push(plant);
-        if (cell.state === "ready") node.bobbing.push(plant);
-      }
-    }
-    this.bob(node);
+  /** Traces a diamond of the given half-size, centred on a unit's own
+   *  container origin (local (0, 0) -- `buildUnit` always positions the
+   *  container at the unit's true screen position, so a local-space diamond
+   *  here composes correctly with it exactly the way the old per-plot
+   *  `tracePlotDiamond` composed with a CellNode's own container). `inset`
+   *  shrinks (positive) or grows (negative) the traced edge, same
+   *  convention as before. */
+  private traceUnitDiamond(g: Phaser.GameObjects.Graphics, half: number, inset: number): void {
+    const h = half - inset;
+    const c = projectedCorners({ x: -h, y: -h, width: h * 2, height: h * 2 });
+    g.moveTo(c.n.x, c.n.y);
+    g.lineTo(c.e.x, c.e.y);
+    g.lineTo(c.s.x, c.s.y);
+    g.lineTo(c.w.x, c.w.y);
+    g.closePath();
   }
 
   /**
-   * The walk box for one pen's animals. `penInterior` is the pen -- species
-   * blind, because a pen does not change shape when you sell the cows -- so
-   * the animal's own width is inset here, where the picture is: a cow anchored
-   * at its feet is 24 units wide and would otherwise stand through the rails.
+   * A unit's own state ring -- ready, hungry, mucked -- the one piece of the
+   * old `paintRings` that still means anything now that there is no
+   * afford/selected ring left to draw alongside it. Static once painted:
+   * unlike the old afford ring, nothing here pulses, so this only ever runs
+   * again when `setUnits` decides the unit's own signature changed.
    */
-  private penFor(cell: StackAcresSceneCell): WorldRect {
-    const pen = penInterior(cell.plotIndex);
-    const art = cell.stock ? STOCK_ART[cell.stock] : undefined;
-    const half = art ? PAINTERS[art].w / 2 : 0;
-    const inset = Math.min(half, pen.width / 2 - 1);
-    return { x: pen.x + inset, y: pen.y, width: pen.width - inset * 2, height: pen.height };
-  }
-
-  /**
-   * The rails that mark a pen-zoned plot, split into a back half (the far
-   * and side rails) and a front half (the near rail and gate) because the
-   * near rail has to paint OVER a working pen's animals -- see `paintPen`'s
-   * own call site. An empty pen has nothing to occlude, so `paintPenFence`
-   * below just calls both.
-   *
-   * Rails run along the diamond's own two edge directions, not screen
-   * horizontal/vertical -- see ISO_EDGE_ANGLE. `img` positions each rail's
-   * anchor correctly by itself; the rotation is what makes the sprite
-   * actually lie along that edge instead of floating flat at an angle.
-   *
-   * Each of the four rails is dropped wherever the plot on that side, in the
-   * SAME kind's 2x2 block (`plotNeighbor`), is also owned -- a plot outside
-   * the block (a different animal's pens, in a different district) can never
-   * be that neighbour, so this can never merge a Cattle Pen's fence into a
-   * Hen Coop's. Two owned neighbours inside one block share a rail; a block's
-   * own outer edge -- there being no neighbour past it -- never drops, which
-   * is what keeps every block read as one fenced area rather than open on a
-   * side. Four Cattle Pens in a block therefore read as one paddock with
-   * rails only around the outside, not four cramped boxes.
-   */
-  private paintPenRailsBack(
-    container: Phaser.GameObjects.Container,
-    cell: StackAcresSceneCell,
-    img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
-  ): void {
-    this.paintGroundDiamond(container, "straw");
-    const skipNorth = this.groupNeighborOwned(cell.plotIndex, 0, -1);
-    const skipWest = this.groupNeighborOwned(cell.plotIndex, -1, 0);
-    const skipEast = this.groupNeighborOwned(cell.plotIndex, 1, 0);
-    if (!skipNorth) {
-      for (let x = 0; x < CELL; x += 16) img("railH", x, 4).setRotation(ISO_EDGE_ANGLE.alongX);
+  private paintUnitRing(node: UnitNode, unit: StackAcresSceneUnit): void {
+    const ring = node.ring;
+    ring.clear();
+    const colour =
+      unit.state === "ready" ? GOLD : unit.state === "hungry" ? AMBER : unit.state === "mucked" ? MUCK : null;
+    if (colour === null) return;
+    const half = this.unitFootprintHalf(unit);
+    if (unit.state === "ready") {
+      ring.lineStyle(5, GOLD, 0.22);
+      ring.beginPath();
+      this.traceUnitDiamond(ring, half, -1);
+      ring.strokePath();
     }
-    for (let y = 12; y < CELL - 10; y += 16) {
-      if (!skipWest) img("railV", 0, y).setRotation(ISO_EDGE_ANGLE.alongY);
-      if (!skipEast) img("railV", CELL - 9, y).setRotation(ISO_EDGE_ANGLE.alongY);
-    }
+    ring.lineStyle(2.2, colour, 1);
+    ring.beginPath();
+    this.traceUnitDiamond(ring, half, 1.5);
+    ring.strokePath();
   }
 
-  private paintPenRailsFront(
-    cell: StackAcresSceneCell,
-    img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
-  ): void {
-    if (this.groupNeighborOwned(cell.plotIndex, 0, 1)) return;
-    for (let x = 0; x < CELL; x += 16) {
-      img(x === 32 ? "gate" : "railH", x, CELL - 9).setRotation(ISO_EDGE_ANGLE.alongX);
-    }
-  }
-
-  /** An unstocked pen-zoned plot: fenced and empty, nothing to occlude. */
-  private paintPenFence(
-    container: Phaser.GameObjects.Container,
-    cell: StackAcresSceneCell,
-    img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
-  ): void {
-    this.paintPenRailsBack(container, cell, img);
-    this.paintPenRailsFront(cell, img);
-  }
-
-  /**
-   * Whether the plot at this offset, inside the SAME kind's 2x2 block, is
-   * owned -- the merge test `paintPenRailsBack`/`Front` use to drop a shared
-   * rail. A locked neighbour is still thicket (see `paintThicket`), so the
-   * fence has to stay whole at that edge: rails hanging off the last owned
-   * plot into unclaimed forest would read as a gap rather than the edge of
-   * what has actually been bought. `plotNeighbor` already returns null for
-   * an offset that falls outside the block, which reads here as "no
-   * neighbour" -- exactly the block's own outer edge.
-   */
-  private groupNeighborOwned(plotIndex: number, deltaCol: number, deltaRow: number): boolean {
-    const neighborIndex = plotNeighbor(plotIndex, deltaCol, deltaRow);
-    if (neighborIndex === null) return false;
-    const neighbor = this.cells.find((c) => c.plotIndex === neighborIndex);
-    return !!neighbor && neighbor.state !== "locked";
-  }
-
-  private paintPen(
-    node: CellNode,
-    cell: StackAcresSceneCell,
-    carried: Critter[],
-    img: (name: PainterName, x: number, y: number) => Phaser.GameObjects.Image,
-    shadow: (x: number, y: number, sx?: number, sy?: number) => Phaser.GameObjects.Image,
-  ): void {
-    this.paintPenRailsBack(node.container, cell, img);
-    img(cell.state === "hungry" ? "troughEmpty" : "troughFull", 24, 12);
-
-    const art = cell.stock ? STOCK_ART[cell.stock] : undefined;
-    if (art) {
-      const pen = this.penFor(cell);
-      const origin = cellOrigin(cell.plotIndex);
-      const count = critterCount(cell.stock);
-      const states: Critter[] = [];
-      // Every shadow first, then every animal, so the animals are one
-      // contiguous block the per-frame depth sort can shuffle by y without
-      // ever lifting one above the near fence or dropping it under the straw.
-      const casts: Phaser.GameObjects.Image[] = [];
-      for (let i = 0; i < count; i += 1) {
-        const state = carried[i] ?? spawnCritter(pen, this.random);
-        states.push(state);
-        casts.push(
-          shadow(
-            state.x - origin.x,
-            state.y - origin.y,
-            art === "cow" ? 0.75 : art === "sheep" ? 0.6 : 0.45,
-            art === "hen" ? 0.5 : 0.7,
-          ),
-        );
-      }
-      for (let i = 0; i < count; i += 1) {
-        const state = states[i];
-        const sprite = img(art, state.x - origin.x, state.y - origin.y).setFlipX(state.facing === 1);
-        if (cell.state === "hungry") sprite.setTint(0xb9b4ae);
-        if (i === 0) node.spriteSlot = node.container.getIndex(sprite);
-        // Animals are never bobbed: the tween would own y, update() owns the
-        // shadow's y, and the two drift apart. A ready pen has its gold ring.
-        node.critters.push({ sprite, shadow: casts[i], state, lift: 0, phase: i * 2.1 });
-      }
-    }
-
-    // The near fence paints over the animals, so it goes on last.
-    this.paintPenRailsFront(cell, img);
-    this.bob(node);
-  }
-
-  /** A ripe plot's contents hop, the way the old grid's sprite did. */
-  private bob(node: CellNode): void {
-    if (this.options.reducedMotion || node.bobbing.length === 0) return;
+  /** A ripe crop hops gently in place, the way the old grid's plants did.
+   *  Livestock is never bobbed -- an animal already has its own gait and
+   *  breathing in update(), and stacking a bob on top of that would fight
+   *  it every frame. */
+  private bob(node: UnitNode, targets: Phaser.GameObjects.GameObject[]): void {
+    if (this.options.reducedMotion) return;
     node.tweens.push(
       this.tweens.add({
-        targets: node.bobbing,
+        targets,
         y: "-=2",
         duration: 480,
         yoyo: true,
@@ -1534,110 +1336,6 @@ export class StackAcresScene extends Phaser.Scene {
     );
   }
 
-  /** Traces a diamond -- the cell footprint inset by `inset` on every side,
-   *  projected -- into a Graphics object's current path. Sharp corners, not
-   *  rounded: a diamond's corners are the point of the shape, and rounding
-   *  them reads as a square with clipped corners rather than a tile. Callers
-   *  still own `beginPath`/`fillPath`/`strokePath` around this. */
-  private tracePlotDiamond(g: Phaser.GameObjects.Graphics, inset: number): void {
-    const c = projectedCorners({
-      x: inset,
-      y: inset,
-      width: CELL - inset * 2,
-      height: CELL - inset * 2,
-    });
-    g.moveTo(c.n.x, c.n.y);
-    g.lineTo(c.e.x, c.e.y);
-    g.lineTo(c.s.x, c.s.y);
-    g.lineTo(c.w.x, c.w.y);
-    g.closePath();
-  }
-
-  private paintRings(node: CellNode, cell: StackAcresSceneCell): void {
-    node.tweens.push(...this.pendingTweens);
-    this.pendingTweens = [];
-
-    const ring = node.ring;
-    ring.clear();
-    const stateColour = cell.selected
-      ? CHALK
-      : cell.state === "ready"
-        ? GOLD
-        : cell.state === "hungry"
-          ? AMBER
-          : cell.state === "mucked"
-            ? MUCK
-            : null;
-    if (stateColour !== null) {
-      if (cell.state === "ready" && !cell.selected) {
-        ring.lineStyle(5, GOLD, 0.22);
-        ring.beginPath();
-        this.tracePlotDiamond(ring, -1);
-        ring.strokePath();
-      }
-      ring.lineStyle(2.2, stateColour, 1);
-      ring.beginPath();
-      this.tracePlotDiamond(ring, 1.5);
-      ring.strokePath();
-    }
-
-    const afford = node.afford;
-    afford.clear();
-    afford.setAlpha(1);
-    if (cell.afford === "act") {
-      afford.fillStyle(VIOLET, 0.14);
-      afford.beginPath();
-      this.tracePlotDiamond(afford, 4);
-      afford.fillPath();
-      afford.lineStyle(2, VIOLET, 1);
-      afford.beginPath();
-      this.tracePlotDiamond(afford, 4);
-      afford.strokePath();
-      if (!this.options.reducedMotion) {
-        node.tweens.push(
-          this.tweens.add({
-            targets: afford,
-            alpha: 0.45,
-            duration: 800,
-            yoyo: true,
-            repeat: -1,
-            ease: "Sine.easeInOut",
-          }),
-        );
-      }
-    } else if (cell.afford === "blocked") {
-      afford.lineStyle(2, RED, 1);
-      afford.beginPath();
-      this.tracePlotDiamond(afford, 4);
-      afford.strokePath();
-    }
-  }
-
-  private paintProgress(node: CellNode, cell: StackAcresSceneCell): void {
-    const show = cell.progress !== null && (cell.state === "working" || cell.state === "hungry");
-    const value = show ? Math.round((cell.progress ?? 0) * 60) / 60 : -1;
-    if (value === node.progressValue) return;
-    node.progressValue = value;
-    const g = node.progress;
-    g.clear();
-    if (!show) return;
-    // A screen-flat bar, not a diamond-following one: a mini progress bar
-    // reads as UI everywhere else in this codebase's own conventions, and a
-    // sheared one under a tilted camera would look like a rendering bug
-    // rather than a bar. Anchored under the diamond's own nearest (south)
-    // corner, which is where "the front of the plot" now actually is.
-    const near = isoProject(CELL, CELL);
-    const track = CELL * 0.62;
-    const x = near.x - track / 2;
-    const y = near.y + 7;
-    const fill = Math.max(3.6, track * Math.max(0, value));
-    g.fillStyle(0x000000, 0.45);
-    g.fillRoundedRect(x, y, track, 3.6, 1.8);
-    g.fillStyle(VIOLET, 1);
-    g.fillRoundedRect(x, y, fill, 3.6, 1.8);
-    g.fillStyle(0xffffff, 0.3);
-    g.fillRoundedRect(x, y, fill, 1.4, 0.7);
-  }
 
   /* ---------------------------------------------------------------- */
   /* Camera. Everything here is in CSS pixels; the camera is not.      */
@@ -1660,35 +1358,36 @@ export class StackAcresScene extends Phaser.Scene {
     this.cameras.main.setZoom(clampZoom(zoom) * DPR);
   }
 
-  /** "Home": the Farmstead's own Hen Coop plots and the barn yard above
-   *  them, framed together -- NOT every owned plot everywhere, now that the
-   *  other three kinds live in three other districts up to 800 units away.
-   *  "Home" is the Farmstead, the same place the destination rail's own
-   *  "home" entry means. `box` is world space, same as before the camera
-   *  tilted; `openingZoom` needs the diamond's own screen-space bounding
-   *  box, not the rect's own width/height, to fit it to the viewport. The
-   *  centre point does not need a separate projected-bounds computation:
-   *  `isoProject` is linear, so a rect's own centre projects to exactly the
-   *  centre of its diamond's bounding box (iso.test.ts's additivity case is
-   *  the same fact). */
-  private homeView(): { zoom: number; x: number; y: number } {
-    const hens = this.cells.filter((c) => plotPenZone(c.plotIndex) === "hen");
-    const farm = ownedBounds(hens.length > 0 ? hens : this.cells);
-    const top = Math.min(farm.y, BARN_TOP);
-    const box: WorldRect = {
-      x: farm.x,
-      y: top,
-      width: farm.width,
-      height: farm.y + farm.height - top,
-    };
-    const screenBox = projectedBounds(box);
-    const centre = isoProject(box.x + box.width / 2, box.y + box.height / 2);
-    return {
-      zoom: openingZoom(screenBox, this.viewW(), this.viewH()),
-      x: centre.x,
-      y: centre.y,
-    };
+
+  /**
+   * Zoom that fits a screen-space box inside the viewport, with a little
+   * breathing room around the edges. Replaces world.ts's own `openingZoom`,
+   * which existed to fit a box that grew and shrank with however much land
+   * was owned -- there is no such box any more (a unit has no position to
+   * bound a rectangle around), so every caller here only ever has to fit ONE
+   * fixed-size window, `zoneFrame`'s own `ZONE_ARRIVAL_WINDOW` box, and the
+   * geometry for that belongs with the camera code that uses it rather than
+   * in world.ts.
+   */
+  private fitZoomToBox(box: { width: number; height: number }, viewW: number, viewH: number): number {
+    const margin = 0.86;
+    return clampZoom(Math.min((viewW * margin) / box.width, (viewH * margin) / box.height));
   }
+
+  /** "Home": the Farmstead's own gate (lib/stackacres/zones.ts's
+   *  `zoneFrame("farmstead")`) -- the same fixed-size arrival window every
+   *  district's own signpost travel uses (`focusZone`), rather than a box
+   *  fitted to whatever land happens to be owned. There is nothing left to
+   *  fit a box around: a unit wanders or sits at a deterministic spot inside
+   *  its district, it has no position of its own to bound a rectangle
+   *  with. */
+  private homeView(): { zoom: number; x: number; y: number } {
+    const frame = zoneFrame("farmstead");
+    const screenBox = projectedBounds(frame);
+    const centre = isoProject(frame.x + frame.width / 2, frame.y + frame.height / 2);
+    return { zoom: this.fitZoomToBox(screenBox, this.viewW(), this.viewH()), x: centre.x, y: centre.y };
+  }
+
 
   private openCamera(): void {
     const view = this.homeView();
@@ -1747,58 +1446,6 @@ export class StackAcresScene extends Phaser.Scene {
     };
   }
 
-  /**
-   * Brings a plot into the clear part of the screen -- the middle, away from
-   * the toolbelt down the right edge and the detail panel over the bottom-left
-   * -- and only if it is not already there. Opening a panel about a plot the
-   * panel then covers is the one thing this exists to prevent; a plot already
-   * in the clear is left alone so a tap does not shove the map about.
-   *
-   * `force` pans regardless, for land that just opened up off-screen.
-   */
-  focusPlot(plotIndex: number, force = false): void {
-    if (!this.created) return;
-    this.glide = null;
-    const cam = this.cameras.main;
-    const world = cellCenter(plotIndex);
-    const centre = isoProject(world.x, world.y);
-    if (!force) {
-      const { x: sx, y: sy } = this.toScreen(centre.x, centre.y);
-      const clear = sx > 40 && sx < this.viewW() - 150 && sy > 60 && sy < this.viewH() - 40;
-      if (clear) return;
-    }
-    if (this.options.reducedMotion) cam.centerOn(centre.x, centre.y);
-    else cam.pan(centre.x, centre.y, force ? 550 : 320, "Sine.easeInOut");
-  }
-
-  /** Start (or, with null, stop) reporting where a plot is on screen. */
-  trackPlot(plotIndex: number | null): void {
-    this.tracked = plotIndex;
-    this.trackedKey = "";
-    if (plotIndex === null) this.callbacks.onTrackedRect(null);
-    else this.reportTracked();
-  }
-
-  private reportTracked(): void {
-    // The camera does not exist until create(); the shell can start tracking
-    // a plot the moment it renders, which is before the engine has booted.
-    if (this.tracked === null || !this.created) return;
-    const rect = cellRect(this.tracked);
-    // The diamond's own screen-space bounding box -- wider than it is tall
-    // now, not the square `size` a flat cell used to report on both axes.
-    const screenBox = projectedBounds(rect);
-    const tl = this.toScreen(screenBox.x, screenBox.y);
-    const zoom = this.zoomL();
-    const width = screenBox.width * zoom;
-    const height = screenBox.height * zoom;
-    const viewWidth = this.viewW();
-    const viewHeight = this.viewH();
-    const key = `${Math.round(tl.x)}:${Math.round(tl.y)}:${Math.round(width)}:${Math.round(height)}:${viewWidth}:${viewHeight}`;
-    if (key === this.trackedKey) return;
-    this.trackedKey = key;
-    this.callbacks.onTrackedRect({ x: tl.x, y: tl.y, width, height, viewWidth, viewHeight });
-  }
-
   /* ---------------------------------------------------------------- */
   /* Input                                                             */
   /* ---------------------------------------------------------------- */
@@ -1819,9 +1466,8 @@ export class StackAcresScene extends Phaser.Scene {
    * takes it out again.
    *
    * The DOM overlays are siblings of the host, so a press on the toolbelt or
-   * the seed strip never reaches this listener at all -- which is also what
-   * keeps a chip's drag-to-place from panning the map underneath it: that
-   * drag's pointerdown went to the chip, so `pts` never hears about it.
+   * the district sidebar never reaches this listener at all -- a button
+   * press there is a real DOM click, and `pts` never hears about it.
    */
   private bindInput(): void {
     const host = this.options.host;
@@ -1840,18 +1486,10 @@ export class StackAcresScene extends Phaser.Scene {
     const fingers = (): Finger[] => [...this.pts.values()];
     const gap = (a: Finger, b: Finger): number => Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
     const mid = (a: Finger, b: Finger): Finger => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-    // The one seam a tap, a sweep and the placement ghost all resolve a
-    // finger through: CSS pixels -> device pixels -> scene space -> world
-    // space -> which plot (if any) is there.
-    const resolvePlot = (clientX: number, clientY: number): { index: number | null; scene: { x: number; y: number } } => {
-      const at = toGame(clientX, clientY);
-      const scene = this.cameras.main.getWorldPoint(at.x, at.y);
-      const world = isoUnproject(scene.x, scene.y);
-      return { index: plotIndexAt(world.x, world.y), scene: { x: scene.x, y: scene.y } };
-    };
-    // Two shorter stops along the same seam: scene space (what the ghost
-    // sprites are positioned in) and true world space (what the meadow's
-    // tiles are indexed in).
+    // Two stops along the seam every gesture that still needs true world
+    // space resolves a finger through: scene space (what the tool ghost is
+    // positioned in) and true world space (what the meadow's tiles are
+    // indexed in).
     const sceneAt = (clientX: number, clientY: number): { x: number; y: number } => {
       const at = toGame(clientX, clientY);
       const scene = this.cameras.main.getWorldPoint(at.x, at.y);
@@ -1869,13 +1507,7 @@ export class StackAcresScene extends Phaser.Scene {
       const key = meadowTileKey(tile.tx, tile.ty);
       return meadowDensityAt(tile.tx, tile.ty, this.mown.get(key) ?? null, Date.now()) > 0;
     };
-    const oneFinger = (
-      id: number,
-      at: Finger,
-      kind: "press" | "pan",
-      startPlot: number | null = null,
-      startAfford: PlotAffordance["kind"] = "none",
-    ): DragGesture => ({
+    const oneFinger = (id: number, at: Finger, kind: "press" | "pan"): DragGesture => ({
       kind,
       id,
       x: at.x,
@@ -1883,31 +1515,7 @@ export class StackAcresScene extends Phaser.Scene {
       startX: at.x,
       startY: at.y,
       trail: [{ t: performance.now(), x: at.x, y: at.y }],
-      startPlot,
-      startAfford,
     });
-    // Walks every plot the pointer crossed between two screen points, firing
-    // the sweep callback once per newly-entered plot the held tool can act
-    // on. Sampled rather than resolved only at the two endpoints -- a fast
-    // swipe on a phone can put two pointermove events a tile-width or more
-    // apart, and a plot skipped between them would never see the tool.
-    const SWEEP_STEPS = 8;
-    const sweepSegment = (gesture: DragGesture, fromX: number, fromY: number, toX: number, toY: number): void => {
-      if (!gesture.visited) gesture.visited = new Set();
-      const visited = gesture.visited;
-      let last: number | null = null;
-      for (let i = 1; i <= SWEEP_STEPS; i += 1) {
-        const t = i / SWEEP_STEPS;
-        const { index } = resolvePlot(fromX + (toX - fromX) * t, fromY + (toY - fromY) * t);
-        if (index === null || index === last) continue;
-        last = index;
-        if (visited.has(index)) continue;
-        visited.add(index);
-        if (this.cellAfford(index) !== "act") continue;
-        this.pokePlot(index);
-        this.callbacks.onSweepPlot(index);
-      }
-    };
     const startPinch = (): void => {
       const [a, b] = fingers();
       if (!a || !b) return;
@@ -1936,15 +1544,7 @@ export class StackAcresScene extends Phaser.Scene {
       this.pts.set(event.pointerId, { x: event.clientX, y: event.clientY });
       if (this.pts.size === 2) startPinch();
       else {
-        const { index } = resolvePlot(event.clientX, event.clientY);
-        const afford = index === null ? "none" : this.cellAfford(index);
-        const gesture = oneFinger(
-          event.pointerId,
-          { x: event.clientX, y: event.clientY },
-          "press",
-          index,
-          afford,
-        );
+        const gesture = oneFinger(event.pointerId, { x: event.clientX, y: event.clientY }, "press");
         gesture.startMow = mowable(event.clientX, event.clientY);
         this.gesture = gesture;
       }
@@ -1995,8 +1595,8 @@ export class StackAcresScene extends Phaser.Scene {
           return;
         }
         // A drag that started on standing grass with the scythe out cuts a
-        // swathe, the ground-level twin of the plot sweep below: same "start
-        // on the target" rule, a different kind of target.
+        // swathe; anywhere else, a drag pans -- there is no plot left for it
+        // to sweep across instead.
         if (gesture.startMow) {
           gesture.kind = "mow";
           const start = sceneAt(gesture.startX, gesture.startY);
@@ -2009,25 +1609,7 @@ export class StackAcresScene extends Phaser.Scene {
           this.moveToolGhost(here.x, here.y);
           return;
         }
-        // A drag that started on a plot the held tool has business with
-        // sweeps that tool across every such plot it crosses, instead of
-        // panning the map -- the same "start on the target" rule a tap
-        // already follows, just given room to run.
-        if (gesture.startAfford === "none") {
-          gesture.kind = "pan";
-        } else {
-          gesture.kind = "sweep";
-          gesture.visited = new Set();
-          if (gesture.startPlot !== null) {
-            gesture.visited.add(gesture.startPlot);
-            if (gesture.startAfford === "act") {
-              this.pokePlot(gesture.startPlot);
-              this.callbacks.onSweepPlot(gesture.startPlot);
-            }
-          }
-          const start = resolvePlot(gesture.startX, gesture.startY);
-          this.showToolGhost(start.scene.x, start.scene.y);
-        }
+        gesture.kind = "pan";
       }
       if (gesture.kind === "mow") {
         // Cut from where the finger WAS to where it is: `mowStroke` samples
@@ -2039,12 +1621,6 @@ export class StackAcresScene extends Phaser.Scene {
         );
         const here = sceneAt(event.clientX, event.clientY);
         this.moveToolGhost(here.x, here.y);
-        return;
-      }
-      if (gesture.kind === "sweep") {
-        sweepSegment(gesture, prevX, prevY, event.clientX, event.clientY);
-        const here = resolvePlot(event.clientX, event.clientY);
-        this.moveToolGhost(here.scene.x, here.scene.y);
         return;
       }
       const cam = this.cameras.main;
@@ -2077,7 +1653,7 @@ export class StackAcresScene extends Phaser.Scene {
         if (!cancelled) this.flick(gesture);
         return;
       }
-      if (gesture.kind === "sweep" || gesture.kind === "mow") {
+      if (gesture.kind === "mow") {
         this.hideToolGhost();
         return;
       }
@@ -2090,17 +1666,10 @@ export class StackAcresScene extends Phaser.Scene {
       if (gesture.startMow) {
         const at = resolveWorld(event.clientX, event.clientY);
         this.mowSegment(at, at);
-        return;
       }
-      const { index } = resolvePlot(event.clientX, event.clientY);
-      if (index === null) {
-        this.callbacks.onTapGround();
-        return;
-      }
-      // The picture answers the finger before the rules do: whatever the
-      // shell decides the tap meant, the animals noticed it.
-      this.pokePlot(index);
-      this.callbacks.onTapPlot(index);
+      // Any other tap on the canvas does nothing: buying and tending a unit
+      // is entirely the district sidebar's job now, and the map is just a
+      // picture of the farm to look around in.
     };
 
     const onUp = (event: PointerEvent): void => up(event, false);
@@ -2145,6 +1714,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.DESTROY, this.releaseInput, this);
   }
 
+
   private releaseInput(): void {
     this.unbindInput?.();
     this.unbindInput = null;
@@ -2188,77 +1758,13 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /* ---------------------------------------------------------------- */
-  /* Placement ghost                                                    */
+  /* The held tool                                                     */
   /* ---------------------------------------------------------------- */
 
-  /**
-   * Shows what the player is dragging out of the seed strip, snapped to the
-   * empty plot under the finger when there is one. Returns that plot's index,
-   * or null when the drop would land on nothing plantable.
-   *
-   * The coordinates are CSS pixels relative to the canvas host, as the DOM
-   * hands them over; the camera wants device pixels.
-   */
-  setGhost(stock: StackAcresStock | null, cssX: number, cssY: number): number | null {
-    const ghost = this.ghost;
-    const ring = this.ghostRing;
-    if (!ghost || !ring) return null;
-    if (!stock) {
-      ghost.setVisible(false);
-      ring.setVisible(false);
-      return null;
-    }
-    ghost.setTexture(GHOST_ART[stock], ART_FRAME).setVisible(true);
-    // `scene` is what the pointer is actually over on screen; `world` is the
-    // same point translated back to world.ts's plane, which is the only
-    // space `plotIndexAt` understands.
-    const scene = this.cameras.main.getWorldPoint(cssX * DPR, cssY * DPR);
-    const world = isoUnproject(scene.x, scene.y);
-    const index = plotIndexAt(world.x, world.y);
-    const cell = index === null ? null : this.cells.find((c) => c.plotIndex === index);
-    if (index !== null && cell && cell.state === "empty") {
-      const worldCentre = cellCenter(index);
-      const centre = isoProject(worldCentre.x, worldCentre.y);
-      ghost.setPosition(centre.x, centre.y + 10).setAlpha(1);
-      ring.clear().setVisible(true);
-      const origin = cellOrigin(index);
-      const diamond = projectedCorners({ x: origin.x + 3, y: origin.y + 3, width: CELL - 6, height: CELL - 6 });
-      const trace = (): void => {
-        ring.moveTo(diamond.n.x, diamond.n.y);
-        ring.lineTo(diamond.e.x, diamond.e.y);
-        ring.lineTo(diamond.s.x, diamond.s.y);
-        ring.lineTo(diamond.w.x, diamond.w.y);
-        ring.closePath();
-      };
-      ring.fillStyle(VIOLET, 0.2);
-      ring.beginPath();
-      trace();
-      ring.fillPath();
-      ring.lineStyle(2.2, VIOLET, 1);
-      ring.beginPath();
-      trace();
-      ring.strokePath();
-      return index;
-    }
-    ghost.setPosition(scene.x, scene.y + 6).setAlpha(0.65);
-    ring.setVisible(false);
-    return null;
-  }
-
-  /* ---------------------------------------------------------------- */
-  /* Tool sweep                                                        */
-  /* ---------------------------------------------------------------- */
-
-  /** What the held tool would do at this plot, per the cell picture it was
-   *  last handed -- the same field bindInput's sweep reads to decide whether
-   *  a plot is worth firing on. */
-  private cellAfford(plotIndex: number): PlotAffordance["kind"] {
-    return this.nodes.get(plotIndex)?.cell.afford ?? "none";
-  }
-
-  /** Which tool's picture `toolGhost` shows once a sweep starts. Set from the
-   *  shell whenever the held tool changes; harmless to call before `create()`
-   *  has run, since nothing shows the picture until a sweep actually begins. */
+  /** Which tool's picture `toolGhost` shows once a mow drag starts. Set
+   *  from the shell whenever the held tool changes; harmless to call before
+   *  `create()` has run, since nothing shows the picture until a drag
+   *  actually begins. */
   setToolIcon(icon: PainterName): void {
     this.toolIconName = icon;
     this.toolGhost?.setTexture(icon, ART_FRAME);
@@ -2267,20 +1773,19 @@ export class StackAcresScene extends Phaser.Scene {
   /**
    * Which tool is held, by name.
    *
-   * The scene has never needed this before: every other tool acts on a plot,
-   * and a plot arrives from the shell already carrying what the tool would do
-   * to it (`cell.afford`), so the scene could stay ignorant of which tool
-   * produced that. The scythe's target is ground rather than a plot, so there
-   * is no cell to carry the answer and the scene has to ask the question
-   * itself -- see `mowable` in `bindInput`.
+   * Down to two tools now (see lib/stackacres/tools.ts): `inspect`, which
+   * does nothing on the canvas at all, and `scythe`, whose target is the
+   * ground rather than a unit -- there is no unit to carry the answer the
+   * way a plot's own `afford` field once did, so the scene has to ask the
+   * question itself. See `mowable` in `bindInput`.
    */
   setTool(tool: StackAcresTool): void {
     this.tool = tool;
   }
 
   /** Floats the held tool's own picture above a finger that just turned a
-   *  press into a sweep -- offset up, the way `setGhost` offsets down, so
-   *  the thumb dragging it never covers the art it is answering for. */
+   *  press into a mow drag -- offset up so the thumb dragging it never
+   *  covers the swathe it is cutting. */
   private showToolGhost(sceneX: number, sceneY: number): void {
     const ghost = this.toolGhost;
     if (!ghost) return;
@@ -2297,6 +1802,7 @@ export class StackAcresScene extends Phaser.Scene {
     });
   }
 
+
   private moveToolGhost(sceneX: number, sceneY: number): void {
     this.toolGhost?.setPosition(sceneX, sceneY - 16);
   }
@@ -2312,78 +1818,21 @@ export class StackAcresScene extends Phaser.Scene {
   /* Effects                                                           */
   /* ---------------------------------------------------------------- */
 
-  /**
-   * The tap's own answer, before any rule runs: a pen's animals squash and
-   * spring up one after another, a field's plants ripple across in waves.
-   * Squash-and-stretch keeps rough volume (1.22 wide is 0.8 tall), which is
-   * what makes it read as a body flexing rather than the picture stretching.
-   * Scale only: update() owns every animal's y, so the hop goes through
-   * `lift`, which update() folds in. One bounce at a time per plot; a second
-   * tap mid-bounce is ignored rather than stacked.
-   */
-  pokePlot(plotIndex: number): void {
-    if (this.options.reducedMotion) return;
-    const node = this.nodes.get(plotIndex);
-    if (!node || node.juiceUntil > this.now) return;
-    const base = 1 / S;
-    // Finished tweens have already left the manager; keep the list to the
-    // live ones so destroyNode never removes a tween twice.
-    node.tweens = node.tweens.filter((t) => !t.isDestroyed());
-    const own = (tween: Phaser.Tweens.Tween) => node.tweens.push(tween);
-    const squash = (target: object, delay: number, wide: number, tall: number, ms: number) =>
-      own(
-        this.tweens.add({
-          targets: target,
-          scaleX: base * wide,
-          scaleY: base * tall,
-          duration: ms,
-          delay,
-          yoyo: true,
-          ease: "Quad.easeOut",
-        }),
-      );
-
-    if (node.critters.length > 0) {
-      node.juiceUntil = this.now + 520 + node.critters.length * 70;
-      node.critters.forEach((critter, i) => {
-        const delay = i * 70;
-        squash(critter.sprite, delay, 1.22, 0.8, 70);
-        squash(critter.sprite, delay + 140, 0.9, 1.14, 110);
-        own(
-          this.tweens.add({
-            targets: critter,
-            lift: 4,
-            duration: 130,
-            delay: delay + 140,
-            yoyo: true,
-            ease: "Sine.easeOut",
-          }),
-        );
-        squash(critter.sprite, delay + 400, 1.08, 0.94, 55);
-      });
-      return;
-    }
-    if (node.plants.length > 0) {
-      // Last plant's delay tops out at 180ms (row 3, col 4: 4*36 + 3*12), then
-      // the two chained squash tweens (80ms + 90ms, both yoyo'd so doubled)
-      // add another 340ms -- guard must cover the full 180 + 340 = 520ms, not
-      // just the first tween's span, or a re-tap lands mid squash-back.
-      node.juiceUntil = this.now + 520;
-      node.plants.forEach((plant, i) => {
-        const delay = (i % 5) * 36 + Math.floor(i / 5) * 12;
-        squash(plant, delay, 1.18, 0.84, 80);
-        squash(plant, delay + 160, 0.94, 1.1, 90);
-      });
-    }
-  }
-
-  celebrateHarvest(plotIndex: number): void {
-    const world = cellCenter(plotIndex);
-    const centre = isoProject(world.x, world.y);
+  /** The gold burst a collected unit leaves behind, at wherever it is
+   *  standing right now -- an animal's current wandered position, or a
+   *  crop's fixed spot. Looked up by unit id in `nodes` rather than by a
+   *  stored screen position, so a burst on a unit mid-walk still lands where
+   *  it actually is. Same look as before: a soft ring that swells and
+   *  fades, plus a handful of sparks thrown outward. */
+  celebrateHarvest(unitId: string): void {
+    const node = this.nodes.get(unitId);
+    if (!node) return;
+    const x = node.container.x;
+    const y = node.container.y;
     const burst = this.add.graphics().setDepth(8500);
     burst.fillStyle(0xffe98a, 0.85);
-    burst.fillCircle(0, 0, CELL * 0.45);
-    burst.setPosition(centre.x, centre.y).setScale(0.4);
+    burst.fillCircle(0, 0, 36);
+    burst.setPosition(x, y).setScale(0.4);
     if (this.options.reducedMotion) {
       this.time.delayedCall(300, () => burst.destroy());
       return;
@@ -2400,13 +1849,13 @@ export class StackAcresScene extends Phaser.Scene {
       const spark = this.add.graphics().setDepth(8501);
       spark.fillStyle(GOLD, 1);
       spark.fillCircle(0, 0, 1.4);
-      spark.setPosition(centre.x, centre.y);
+      spark.setPosition(x, y);
       const angle = this.random() * Math.PI * 2;
       const reach = 18 + this.random() * 22;
       this.tweens.add({
         targets: spark,
-        x: centre.x + Math.cos(angle) * reach,
-        y: centre.y + Math.sin(angle) * reach - 10,
+        x: x + Math.cos(angle) * reach,
+        y: y + Math.sin(angle) * reach - 10,
         alpha: 0,
         duration: 520 + this.random() * 200,
         ease: "Cubic.easeOut",
@@ -2414,6 +1863,7 @@ export class StackAcresScene extends Phaser.Scene {
       });
     }
   }
+
 
   /* ---------------------------------------------------------------- */
   /* The open world                                                    */
@@ -2716,6 +2166,7 @@ export class StackAcresScene extends Phaser.Scene {
     }
   }
 
+
   /**
    * Eases the camera to a district's gate (lib/stackacres/zones.ts's
    * `zoneFrame`), which is a fixed-size window on its approach point rather
@@ -2729,7 +2180,7 @@ export class StackAcresScene extends Phaser.Scene {
     const frame = zoneFrame(id);
     const screenBox = projectedBounds(frame);
     const centre = isoProject(frame.x + frame.width / 2, frame.y + frame.height / 2);
-    const zoom = openingZoom(screenBox, this.viewW(), this.viewH());
+    const zoom = this.fitZoomToBox(screenBox, this.viewW(), this.viewH());
     if (this.options.reducedMotion) {
       this.setZoomL(zoom);
       cam.centerOn(centre.x, centre.y);
@@ -2741,6 +2192,7 @@ export class StackAcresScene extends Phaser.Scene {
     cam.zoomTo(clampZoom(zoom) * DPR, 700, "Sine.easeInOut");
     cam.pan(centre.x, centre.y, 700, "Sine.easeInOut");
   }
+
 
   /**
    * Keeps the vignette over the whole screen. A scroll factor of zero pins
@@ -2756,52 +2208,9 @@ export class StackAcresScene extends Phaser.Scene {
     vignette.setDisplaySize(cam.width / cam.zoom + 2, cam.height / cam.zoom + 2);
   }
 
-  /**
-   * Front-to-back order inside one pen: the animal standing furthest south
-   * draws last, so a hen walking in front of another is in front of it. The
-   * sprites are a contiguous block of the container's list (see paintPen),
-   * so this only ever permutes within that block -- the near fence stays
-   * above them and the straw below -- and only touches the list at all when
-   * the order actually changed.
-   */
-  private sortPen(node: CellNode): void {
-    const critters = node.critters;
-    const n = critters.length;
-    if (node.spriteSlot < 0 || n < 2) return;
-    // An in-place insertion sort of the persistent index array: two or three
-    // animals a pen, so it is a handful of compares, and unlike map().sort()
-    // it allocates nothing on a frame where nobody overtook anybody.
-    const order = node.order;
-    if (order.length !== n) {
-      order.length = 0;
-      for (let i = 0; i < n; i += 1) order.push(i);
-    }
-    let moved = false;
-    for (let i = 1; i < n; i += 1) {
-      const index = order[i];
-      // (x + y) is the isometric depth key -- see iso.ts -- not y alone,
-      // which was only ever the right key under the flat top-down camera.
-      const depth = critters[index].state.x + critters[index].state.y;
-      let j = i - 1;
-      while (j >= 0 && critters[order[j]].state.x + critters[order[j]].state.y > depth) {
-        order[j + 1] = order[j];
-        j -= 1;
-      }
-      if (j + 1 !== i) {
-        order[j + 1] = index;
-        moved = true;
-      }
-    }
-    if (!moved) return;
-    for (let slot = 0; slot < n; slot += 1) {
-      node.container.moveTo(critters[order[slot]].sprite, node.spriteSlot + slot);
-    }
-  }
-
   update(time: number, delta: number): void {
     this.now = time;
     this.coast(delta);
-    this.reportTracked();
     this.tendWorld();
     this.fitVignette();
     if (this.options.reducedMotion) return;
@@ -2825,44 +2234,34 @@ export class StackAcresScene extends Phaser.Scene {
       );
     });
 
+    // Every owned animal, one tick of its day -- the same wander
+    // `stepCritter` drives everywhere else on this map, just one critter per
+    // unit instead of several sharing a pen, so there is no within-unit
+    // depth sort left to do (the old `sortPen` is gone with it).
     for (const node of this.nodes.values()) {
-      if (node.critters.length === 0) continue;
-      const cell = node.cell;
+      const critter = node.critter;
+      if (!critter) continue; // a crop, or a mucked unit: nothing wanders.
       // A hungry animal has stopped. Standing still is the picture of that.
-      if (cell.state === "hungry") continue;
-      const pen = this.penFor(cell);
-      const origin = cellOrigin(cell.plotIndex);
-      const speed = critterSpeed(cell.stock);
-      const bouncing = node.juiceUntil > time;
-      for (const critter of node.critters) {
-        critter.state = stepCritter(critter.state, pen, speed, delta, this.random);
-        const walking = critter.state.mode === "walk";
-        const hop = walking ? Math.abs(Math.sin(time / 90 + critter.phase)) * 1.2 : 0;
-        // World-space local offset, projected once here every frame -- the
-        // one-time `img()` projection at construction only covers a sprite's
-        // starting position, and this one walks.
-        const local = isoProject(critter.state.x - origin.x, critter.state.y - origin.y);
-        critter.sprite.x = local.x;
-        critter.sprite.y = local.y - hop - critter.lift;
-        critter.shadow.x = local.x;
-        critter.shadow.y = local.y + 1;
-        // The shadow thins as the animal leaves the ground.
-        critter.shadow.alpha = 0.8 / (1 + critter.lift * 0.18);
-        critter.sprite.setFlipX(critter.state.facing === 1);
-        // A standing animal breathes, slowly and out of step with its
-        // neighbours. A tap's bounce owns the scale until it is done, and a
-        // walking animal is simply its own size.
-        if (!bouncing) {
-          const breath = walking ? 0 : Math.sin(time / 420 + critter.phase) * 0.022;
-          critter.sprite.setScale((1 - breath * 0.5) / S, (1 + breath) / S);
-        }
-      }
-      this.sortPen(node);
-      // The rings and the progress bar sit over everything in the cell,
-      // including the near fence the animals walk behind.
-      node.container.bringToTop(node.ring);
-      node.container.bringToTop(node.afford);
-      node.container.bringToTop(node.progress);
+      if (node.unit.state === "hungry") continue;
+      const zone = stockZone(node.unit.stock);
+      const bounds = growAreaInterior(zone);
+      const speed = critterSpeed(node.unit.stock);
+      node.critter = stepCritter(critter, bounds, speed, delta, this.random);
+      const walking = node.critter.mode === "walk";
+      const hop = walking ? Math.abs(Math.sin(time / 90 + node.phase)) * 1.2 : 0;
+      const at = isoProject(node.critter.x, node.critter.y);
+      // The container tracks the animal's true ground position; the hop is
+      // a screen-space bounce applied only to the sprite's own local
+      // offset, so the shadow (a fixed local child, see `buildUnit`) never
+      // bounces with it.
+      node.container.setPosition(at.x, at.y);
+      node.container.setDepth(this.depthAt(node.critter.x, node.critter.y));
+      node.sprite.setPosition(0, -hop);
+      node.sprite.setFlipX(node.critter.facing === 1);
+      // A standing animal breathes, slowly and out of step with its
+      // neighbours; a walking one is simply its own size.
+      const breath = walking ? 0 : Math.sin(time / 420 + node.phase) * 0.022;
+      node.sprite.setScale((1 - breath * 0.5) / S, (1 + breath) / S);
     }
   }
 }

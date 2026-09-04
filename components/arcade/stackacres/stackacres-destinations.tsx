@@ -61,6 +61,7 @@ export interface StackAcresDestinationsProps {
   onOpenStore: () => void;
   /** Produce sitting in the barn, unsold -- shown as a badge on Ray's entry
    *  the same way it used to sit on the header's own Store button. */
+  /** How many fields and pens are ready to bring in. */
   carrying: number;
 }
 
@@ -107,8 +108,8 @@ export function StackAcresDestinations({
       <button
         type="button"
         className="sa-dest sa-dest-ray"
-        title="Sell produce, buy feed, and exchange Bushels for Gold."
-        aria-label="Buy from Ray — sell produce, buy feed, and exchange Bushels for Gold."
+        title="Buy feed, and see what is left of the daily allowance."
+        aria-label="Buy from Ray — buy feed, and see what is left of the daily allowance."
         onClick={onOpenStore}
       >
         <img

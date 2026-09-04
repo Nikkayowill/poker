@@ -47,7 +47,7 @@ function stateLine(unit: StackAcresUnitSnapshot, nowMs: number): string {
     case "dry":
       return "Thirsty -- water to keep it growing";
     case "mucked":
-      return `Weather-worn -- clear for ${(unit.muckFee ?? 0).toLocaleString()} Bushels`;
+      return `Weather-worn -- clear for ${(unit.muckFee ?? 0).toLocaleString()} Gold`;
     case "working":
       return unit.permanent ? `Working -- ready in ${timeLeftLabel(unit.readyAt, nowMs)}` : `Ready in ${timeLeftLabel(unit.readyAt, nowMs)}`;
   }
@@ -57,7 +57,8 @@ export interface StackAcresUnitRowsProps {
   units: readonly StackAcresUnitSnapshot[];
   nowMs: number;
   feed: number;
-  bushels: number;
+  /** The player's Gold. It buys seed, feed and muck clearing now. */
+  gold: number;
   busyUnitId: string | null;
   /** The unit currently mid-"are you sure" for retiring. Never a plain
    *  confirm(): retiring refunds nothing, so it takes two deliberate taps. */
@@ -78,7 +79,7 @@ export function StackAcresUnitRows({
   units,
   nowMs,
   feed,
-  bushels,
+  gold,
   busyUnitId,
   armedUnitId,
   onCollect,
@@ -101,7 +102,7 @@ export function StackAcresUnitRows({
     <ul className="sa-unit-rows" aria-label="What you own here">
       {units.map((unit) => {
         const def = STACKACRES_CATALOGUE[unit.stock];
-        const action = unitRowAction(unit, { feed, bushels });
+        const action = unitRowAction(unit, { feed, gold });
         const busy = busyUnitId === unit.id;
         return (
           <li key={unit.id} className="sa-unit-row" data-state={unit.state}>
@@ -217,13 +218,13 @@ export function StackAcresBuySection({ options, busy, onSeed, onBuyOutright, onE
           <div className="sa-buy-actions">
             <button
               type="button"
-              className="sa-buy-btn is-bushels"
+              className="sa-buy-btn is-seed"
               disabled={busy || !option.seedAfford}
               title={option.seedReason ?? undefined}
               onClick={() => onSeed(option.stock)}
             >
-              <span className="sa-buy-label">Seed with Bushels</span>
-              <span className="sa-buy-price">{option.seedCost.toLocaleString()} Bushels</span>
+              <span className="sa-buy-label">Seed one cycle</span>
+              <span className="sa-buy-price">{option.seedCost.toLocaleString()} Gold</span>
             </button>
             <button
               type="button"

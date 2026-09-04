@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   STACKACRES_CAPACITY_PRICE,
-  STACKACRES_GOLD_PER_SEED_BUSHEL,
   STACKACRES_RETIRE_REFUND,
+  STACKACRES_SEED_MULTIPLE_TO_OWN,
   goldStockRoundTrip,
   stackacresCapacityPrice,
   stackacresStockPrice,
 } from "./market";
 import { STACKACRES_CATALOGUE, STACKACRES_STOCK } from "./catalogue";
-import { STACKACRES_GOLD_PER_BUSHEL } from "./exchange";
-import { STACKACRES_ITEM_CATALOGUE, STACKACRES_YIELDS } from "./items";
+import { MONO_CROP_MAX_MULTIPLIER } from "./bounty";
+import { yieldValue } from "./items";
 import { stockZone, stocksInZone } from "./world";
 import { ZONE_IDS } from "./zones";
 
@@ -17,12 +17,15 @@ import { ZONE_IDS } from "./zones";
  * THE ONE TEST IN THIS FILE THAT IS ABOUT MONEY is "a round trip always
  * loses", and it is the reason the Gold market is allowed to exist at all.
  *
- * The service used to carry a rule saying no Gold -> Bushels path could ever
- * be added, on the grounds that a round trip would launder Gold through the
- * capped exchange window and back out. That reasoning is sound and it is
- * exactly what this asserts is impossible: buying stock with Gold and
- * liquidating everything it makes must return less Gold than it cost, on every
- * tier, with no tuning of the constants able to quietly break it.
+ * It used to be a check against laundering Gold through a capped exchange
+ * window and back out. There is one currency now and no window, and the check
+ * is sharper for it: buying a tier outright and taking its very first harvest
+ * must return less Gold than the animal cost, on every tier -- otherwise the
+ * shelf is a faucet with no cooldown on it at all.
+ *
+ * It is also checked against the largest Bountiful Harvest multiplier a sweep
+ * can earn, which is new: a synergy must not be able to push a single cycle
+ * past its own purchase price either.
  *
  * Everything else here is shape: prices derive from one rule, capacity has a
  * Gold price for every kind, every stock lives in exactly one district.
@@ -32,7 +35,7 @@ describe("stock prices", () => {
   it("derive from the seed price by a single multiplier", () => {
     for (const stock of STACKACRES_STOCK) {
       expect(stackacresStockPrice(stock)).toBe(
-        STACKACRES_CATALOGUE[stock].seedCost * STACKACRES_GOLD_PER_SEED_BUSHEL,
+        STACKACRES_CATALOGUE[stock].seedCost * STACKACRES_SEED_MULTIPLE_TO_OWN,
       );
     }
   });
@@ -45,6 +48,8 @@ describe("stock prices", () => {
     const first = stackacresStockPrice("cattle");
     const later = stackacresStockPrice("cattle");
     expect(later).toBe(first);
+    // Unchanged across the single-currency conversion, deliberately: seed
+    // prices doubled and the multiple halved, so no price on the shelf moved.
     expect(first).toBe(60_000);
   });
 
@@ -62,28 +67,37 @@ describe("stock prices", () => {
 describe("the round trip", () => {
   it("always loses, on every tier", () => {
     for (const stock of STACKACRES_STOCK) {
-      const produce = STACKACRES_YIELDS[stock];
-      const grossBushels = produce.quantity * STACKACRES_ITEM_CATALOGUE[produce.item].price;
-      const ratio = goldStockRoundTrip(stock, grossBushels, STACKACRES_GOLD_PER_BUSHEL);
-      expect(ratio).toBeLessThan(1);
+      expect(goldStockRoundTrip(stock)).toBeLessThan(1);
+    }
+  });
+
+  it("still loses at the best synergy a sweep can earn", () => {
+    // Bountiful Harvest multiplies what a harvest pays, so it has to be inside
+    // this check rather than beside it: a bonus that could carry one cycle
+    // past its own purchase price would be exactly the sharp edge this test
+    // exists to rule out.
+    for (const stock of STACKACRES_STOCK) {
+      expect(goldStockRoundTrip(stock, MONO_CROP_MAX_MULTIPLIER)).toBeLessThan(1);
     }
   });
 
   it("loses by a wide enough margin that a retune cannot silently flip it", () => {
     // The closest tier to breaking even is the one to watch. A margin this
-    // wide means the inbound rate would have to fall by more than an order of
-    // magnitude, or the exchange rate rise by one, before a cycle paid for
-    // itself outright -- either of which is a deliberate act, not a slip.
-    const ratios = STACKACRES_STOCK.map((stock) => {
-      const produce = STACKACRES_YIELDS[stock];
-      const grossBushels = produce.quantity * STACKACRES_ITEM_CATALOGUE[produce.item].price;
-      return goldStockRoundTrip(stock, grossBushels, STACKACRES_GOLD_PER_BUSHEL);
-    });
+    // wide means yields would have to rise by an order of magnitude, or the
+    // outright multiple fall by one, before a single cycle paid for the animal
+    // -- either of which is a deliberate act, not a slip.
+    const ratios = STACKACRES_STOCK.map((stock) => goldStockRoundTrip(stock));
     expect(Math.max(...ratios)).toBeLessThan(0.1);
   });
 
-  it("is what the inbound rate being far above the outbound one buys", () => {
-    expect(STACKACRES_GOLD_PER_SEED_BUSHEL).toBeGreaterThan(STACKACRES_GOLD_PER_BUSHEL);
+  it("is what the outright multiple being far above one cycle buys", () => {
+    // A tier costs fifty seeds to own outright and one seed to sow once, and
+    // one sowing is worth well under one seed's multiple of itself.
+    for (const stock of STACKACRES_STOCK) {
+      expect(yieldValue(stock)).toBeLessThan(
+        STACKACRES_CATALOGUE[stock].seedCost * STACKACRES_SEED_MULTIPLE_TO_OWN,
+      );
+    }
   });
 });
 

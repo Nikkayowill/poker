@@ -4,19 +4,16 @@ import {
   SECTOR_IDS,
   SECTOR_LADDER,
   STACKACRES_SECTORS,
-  STACKACRES_UPKEEP_FREE_PLOTS,
-  STACKACRES_UPKEEP_GROWTH,
   isSectorUnlocked,
-  landUpkeepDue,
   lockedSectors,
   sectorClearCheck,
   sectorLabel,
   sectorOvergrowth,
   unlockedPlotCount,
   unlockedSectors,
-  upkeepState,
   type SectorId,
 } from "./sectors";
+import { STACKACRES_UPKEEP_FREE_PLOTS } from "./upkeep";
 import { STACKACRES_STOCK, capFor, type StackAcresStock } from "./catalogue";
 import { nearPath } from "./paths";
 import { stockZone } from "./world";
@@ -154,58 +151,15 @@ describe("sectorClearCheck", () => {
   });
 });
 
-describe("land maintenance", () => {
-  it("charges nothing for a farm at or under the free base", () => {
-    for (let plots = 0; plots <= STACKACRES_UPKEEP_FREE_PLOTS; plots += 1) {
-      expect(landUpkeepDue(plots)).toBe(0);
-    }
-  });
-
-  it("starts charging at the first plot past the free base", () => {
-    expect(landUpkeepDue(STACKACRES_UPKEEP_FREE_PLOTS + 1)).toBeGreaterThan(0);
-  });
-
-  it("rises with every plot", () => {
-    let last = 0;
-    for (let plots = STACKACRES_UPKEEP_FREE_PLOTS + 1; plots <= 30; plots += 1) {
-      const due = landUpkeepDue(plots);
-      expect(due).toBeGreaterThan(last);
-      last = due;
-    }
-  });
-
-  it("compounds rather than adding a flat step", () => {
-    // The shape, not the figures: each extra plot must cost more than the one
-    // before it did, which is what separates this from a linear per-plot rent.
-    const step = (plots: number) => landUpkeepDue(plots) - landUpkeepDue(plots - 1);
-    expect(step(20)).toBeGreaterThan(step(10));
-    expect(step(30)).toBeGreaterThan(step(20));
-    expect(STACKACRES_UPKEEP_GROWTH).toBeGreaterThan(1);
-  });
-
-  it("stays inside what a fully built farm can actually earn in a day", () => {
-    // The guard rail on a retune. Every slot on every sector, every capacity
-    // upgrade bought -- the most expensive farm the game allows -- must still
-    // cost well under the 7,500 Bushels the exchange window can take out in a
-    // day, or owning everything becomes a trap rather than a commitment.
-    const everything = STACKACRES_STOCK.length * capFor(3);
-    expect(landUpkeepDue(everything)).toBeLessThan(2_000);
-  });
-
-  it("returns whole Bushels", () => {
-    for (let plots = 0; plots <= 30; plots += 1) {
-      expect(Number.isInteger(landUpkeepDue(plots))).toBe(true);
-    }
-  });
-});
-
 describe("unlockedPlotCount", () => {
   it("counts only slots standing on cleared ground", () => {
     // Home alone is the Hen Coop's own three free slots, which is exactly the
     // free base -- so a brand-new farm owes nothing.
     const home = unlockedPlotCount([HOME_SECTOR], {});
     expect(home).toBe(capFor(0));
-    expect(landUpkeepDue(home)).toBe(0);
+    // Exactly the free base, so a brand-new farm owes nothing. The fee itself
+    // now lives in ./upkeep.ts; upkeep.test.ts holds that half.
+    expect(home).toBe(STACKACRES_UPKEEP_FREE_PLOTS);
   });
 
   it("grows as land is cleared", () => {
@@ -227,30 +181,6 @@ describe("unlockedPlotCount", () => {
     expect(unlockedPlotCount([HOME_SECTOR], { cattle: 3 })).toBe(
       unlockedPlotCount([HOME_SECTOR], {}),
     );
-  });
-});
-
-describe("upkeepState", () => {
-  it("is settled when nothing is owed", () => {
-    const state = upkeepState(STACKACRES_UPKEEP_FREE_PLOTS, 0);
-    expect(state.due).toBe(0);
-    expect(state.outstanding).toBe(0);
-    expect(state.settled).toBe(true);
-  });
-
-  it("is outstanding until the day's bill is taken", () => {
-    const plots = 12;
-    const due = landUpkeepDue(plots);
-    expect(upkeepState(plots, 0)).toMatchObject({ due, paid: 0, outstanding: due, settled: false });
-    expect(upkeepState(plots, due)).toMatchObject({ paid: due, outstanding: 0, settled: true });
-  });
-
-  it("never reports more paid than was ever due", () => {
-    // A retune downward between the charge and the read would otherwise show
-    // a negative outstanding and a credit nobody has.
-    const state = upkeepState(5, 999_999);
-    expect(state.paid).toBe(state.due);
-    expect(state.outstanding).toBe(0);
   });
 });
 

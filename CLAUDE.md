@@ -63,6 +63,62 @@ Crops now mirror the livestock hunger mechanic: a `thirstMs`/`last_watered_at` p
 ### StackAcres got a soundscape: a synthesised ASMR bed, farm SFX, real animals (2026-09-04)
 The farm had three music loops and nothing else; every action fired the app's one generic chrome click. Ambience is synthesised at runtime rather than looped from files, since a looped bed becomes audibly repetitive inside a minute. Five continuous beds are filtered noise driven by a random walk, never an LFO, and sparse cues (crickets, birds) fire on a rolled gap rather than a fixed period. The mix follows time of day, district (Ox Fields windiest, the Wallow wettest), and the animals a player actually owns. Only six sounds are real recordings, since a throat and resonant timber are hard to synthesise convincingly; everything else, including all action sounds, is synthesised. Two real bugs fixed in passing: the mute toggle was double-negated so it always showed the wrong state, and the farm route was eagerly loading the poker table's ~450KB cue set. Branch `feat/stackacres-audio`. Still open: the music itself, and a few animal sounds (duck, goose, rooster).
 
+### StackAcres went single-currency: harvest pays Gold in one step, plus synergies (2026-09-04)
+Bushels are gone. Collecting used to fill a barn, the barn was sold at Ray's for Bushels, and Bushels
+were queued at a daily exchange window for Gold; a harvest now values and pays itself in Gold in one
+act. **The exchange window went; the ceiling behind it did not** -- `STACKACRES_GOLD_CEILING` (15,000
+flat, per player, per UTC day, hard-mirrored in `reserve_homestead_exchange`) is now applied to the
+harvest itself. That distinction is the whole safety story: the Bushel firewall only ever made the
+farm's internal numbers cheap to get wrong, and it was always the flat ceiling that stopped the farm
+printing money. **Every Bushel price was multiplied by 2** -- the exact rate the window paid -- so the
+internal balance (seed against yield, muck at 40% of a tier's net, feed under a tenth of what eats it)
+and the ceiling's calibration both survive untouched, and no price on the shelf moved
+(`STACKACRES_GOLD_PER_SEED_BUSHEL` 100 -> `STACKACRES_SEED_MULTIPLE_TO_OWN` 50; a Cattle Pen is still
+60,000). Deleted rather than converted: the 150-Bushel starting grant (every player already has Gold),
+`homestead_inventory`'s use (table left inert, like `homestead_plots`), `sellStackAcresProduce` and
+`exchangeStackAcresBushels`.
+
+**Bountiful Harvest** (`lib/stackacres/bounty.ts`) is the one new mechanic: collecting is a SWEEP now,
+and a synergy is a property of the set -- Mono-cropping (3+ of one kind, 1.05 rising to a 1.30 cap) or
+Crop Rotation (both tracks present, minority share >= 1/3, up to 1.25). They cannot stack,
+structurally: one kind cannot also be two tracks. A unit tapped on its own is a one-unit sweep and
+earns nothing, which is what the new bottom-centre Harvest key is for.
+
+**LAND MAINTENANCE WAS ALREADY HERE, in Bushels, from the sectors pass earlier the same day** -- this
+merged with it rather than replacing it. What survived from that version is what it got right: the
+charge base is **slots on cleared ground** (`unlockedPlotCount`), not units standing, or a player
+could clear every district and pay nothing for the empty room; and the **first three plots are free**,
+so a farm that has cleared nothing never sees a bill. What changed is the denomination and, more
+importantly, the SHAPE: the fee is `25 * (plots - 3)^1.5` Gold, **netted out of what a harvest pays
+and clamped at it**, so it can leave a harvest worth nothing and can never reach a balance. That is
+the answer to `sectors.ts`'s own original objection that a Gold upkeep would "take real value out of a
+player's balance on a timer" -- nothing is taken on a timer, and nothing is taken from a farm nobody
+is harvesting. `landGate` went with it: gating growth on arrears existed because a Bushel debit could
+go unpaid while the farm still earned elsewhere, and a farm producing no Gold has nothing to sink.
+The ledger is main's own `homestead_upkeep` + `raise_homestead_upkeep`, reused as-is (raise-to-target,
+because a day's bill rises when a slot is bought at noon); only the currency changed, and the
+`bushels` column keeps its name as a legacy compatibility id like every other `homestead_*` object.
+
+**Five things worth keeping.** (1) A harvest **reserves against the ceiling BEFORE settling any unit**
+-- the reverse of rule 2 -- because a full day discovered after the crops are gone would consume a
+harvest and pay nothing; the cost is `release_homestead_exchange`, which only ever subtracts and is
+floored at 0. (2) **A smaller sweep can be worth MORE than the sweep containing it**: 3 cattle + 1
+carrot earns nothing (one crop in four is below the rotation floor), while the same 3 cattle alone are
+a Mono-crop worth 228 more. That is why the re-price after a lost race is capped at what was reserved;
+`harvest.test.ts` pins the counter-example. (3) `creditGoldByProfile` is held to **exactly two call
+sites** -- one `refundGold` helper and the harvest payout -- because counting credits stopped meaning
+anything once every spend path gained a refund. (4) **`collect` lost its ban carve-out.** It was
+exempt while it moved no money; it pays Gold now, so leaving it was the one way a suspended account
+could earn. (5) **A crop left alone never ripens** now that watering shipped, which makes crops
+useless as a passive test fixture -- the Hen Coop is the only tier whose hunger window is longer than
+its own cycle, so it is the fixture for anything not about tending.
+
+Migration `20260904150000_stackacres_release_allowance.sql` is **written and UNAPPLIED** (just the one
+function; Land Maintenance needed no new schema). See
+`[[reference_stackchips_migrations_not_auto_applied]]`. Branch `feat/stackacres-harvest-gold-upkeep`.
+Verified after merging origin/main: isolated StackAcres suite 23/23 green, `tsc` clean, lint 0 errors,
+`npm run build` clean, `tests/e2e/stackacres-harvest.spec.ts` green.
+
 ### StackAcres is tapped on the map itself; the sidebar became deep management (2026-09-04)
 Replaced the tap-district → open-panel → find-row → press-Collect loop: tapping a unit's own picture now collects, feeds, or clears it directly, and tapping bare fenced ground opens a small radial seed menu at the fingertip. The sidebar drawer no longer opens on travel and now leads with Gold decisions rather than the unit list, but its rows stayed — the canvas is `aria-hidden` and the rows are the only keyboard/screen-reader path to these actions, and the only place retiring (which refunds nothing) can happen. The hit test resolves at pointer release inside the scene's existing gesture pipeline rather than via Phaser's own input system, which stays off entirely here to avoid double-handling every press.
 

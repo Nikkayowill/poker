@@ -265,78 +265,15 @@ export function unlockedPlotCount(
 }
 
 /**
- * Plots that are free of the land fee. The Farmstead's own three Hen Coop
- * slots, exactly -- so a farm that has cleared nothing and bought nothing
- * never sees a bill at all, and the first charge is the first thing a player
- * chose to take on.
+ * THE LAND FEE USED TO LIVE HERE, in Bushels. It moved to ./upkeep.ts when the
+ * farm went single-currency, and it kept the two things this pass got right --
+ * the charge base is still slots on cleared ground (`unlockedPlotCount`,
+ * above) and the first three plots are still free. What changed is the
+ * denomination and, more importantly, the SHAPE: the fee is netted out of what
+ * a harvest pays and clamped at it, rather than debited from a balance, which
+ * is what answers this file's own original objection to a Gold-denominated
+ * upkeep.
  */
-export const STACKACRES_UPKEEP_FREE_PLOTS = 3;
-
-/** Bushels for the first chargeable plot. Deliberately trivial: the fee is
- *  meant to be noticed at the top of the ladder, not to tax a second Hen
- *  Coop into being a bad idea. */
-export const STACKACRES_UPKEEP_BASE = 8;
-
-/**
- * How fast the fee compounds per extra plot.
- *
- * This is the number the whole mechanic lives or dies on, so the arithmetic
- * is written down rather than left to be rediscovered. At 1.2:
- *
- *   4 plots  (one slot past the free base)      8 Bushels a day
- *   15 plots (all four sectors, nothing bought) 59
- *   21 plots                                    178
- *   30 plots (every sector, every slot bought)  916
- *
- * Against that, a fully built farm collected attentively grosses a few
- * thousand Bushels a day, and the exchange window will only ever take 7,500
- * of them out. So the top of the ladder costs a real, visible slice of a big
- * farm's day and nothing a small one would notice -- which is the point: the
- * fee exists so that owning everything is a commitment rather than a
- * one-way ratchet, not so that it is unaffordable.
- *
- * Raising this is a retune of the whole late game. sectors.test.ts pins the
- * shape (rising, exponential, zero at the free base) rather than the exact
- * figures, so a deliberate retune moves cleanly and an accidental sign flip
- * does not.
- */
-export const STACKACRES_UPKEEP_GROWTH = 1.2;
-
-/**
- * The day's land maintenance, in BUSHELS, for a farm of this many plots.
- *
- * Bushels, not Gold, and that is not a detail: the farm's own currency never
- * leaves the StackAcres, so a mistake in this curve costs a save state rather
- * than money. A Gold-denominated upkeep would be the first thing in this
- * subsystem that takes real value out of a player's balance on a timer, which
- * is a category nobody asked for.
- */
-export function landUpkeepDue(plots: number): number {
-  const chargeable = Math.floor(plots) - STACKACRES_UPKEEP_FREE_PLOTS;
-  if (chargeable <= 0) return 0;
-  return Math.round(STACKACRES_UPKEEP_BASE * STACKACRES_UPKEEP_GROWTH ** (chargeable - 1));
-}
-
-/** Today's land bill, as the client renders it. */
-export interface StackAcresUpkeepState {
-  /** Slots on cleared ground. What the fee is charged on. */
-  plots: number;
-  /** Bushels owed for the current UTC day. */
-  due: number;
-  /** Bushels already taken for the current UTC day. */
-  paid: number;
-  /** What is still owed today. Zero once settled, and zero all day for a
-   *  farm under the free base. */
-  outstanding: number;
-  /** True when the bill is settled -- the gate on taking on more land. */
-  settled: boolean;
-}
-
-export function upkeepState(plots: number, paidToday: number): StackAcresUpkeepState {
-  const due = landUpkeepDue(plots);
-  const paid = Math.max(0, Math.min(paidToday, due));
-  return { plots, due, paid, outstanding: due - paid, settled: due - paid <= 0 };
-}
 
 /* ------------------------------------------------------------------ */
 /* What stands on land nobody has cleared                              */

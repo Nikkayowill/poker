@@ -36,6 +36,12 @@ export type PropPainterName =
   | "stoneWall"
   | "scarecrow"
   | "grandfatherRay"
+  // Not props: the farmhand walks (see lib/stackacres/farmhand.ts) and so has
+  // no `PropPlacement` and no entry in YARD_PROPS. He is drawn here because
+  // this is where the map's people are drawn, Ray included. Both of these are
+  // his UPPER BODY only -- see their own comment below.
+  | "farmhand"
+  | "farmhandBack"
   | "log"
   | "mushroom"
   | "boulder";
@@ -601,6 +607,113 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     rr(c, 7.2, 1.6, 5.6, 4.4, 2.2);
     F(c, "#e6c878");
   }),
+
+  /*
+   * The farmhand, coming and going -- HIS UPPER BODY ONLY.
+   *
+   * Two pieces of art rather than one, and that is the whole reason this pair
+   * exists: a mirror is a negative x scale (see `mirrorFor` in
+   * stackacres-scene.ts) and can only ever express LEFT and RIGHT, so the two
+   * screen directions a mirror cannot reach -- toward the camera and away
+   * from it -- need a second drawing. `farmhand` x mirror gives SE and SW,
+   * `farmhandBack` x mirror gives NE and NW: the four diagonals a 2:1 tile
+   * has, off two painters and one sign. `Farmhand.towards` in
+   * lib/stackacres/farmhand.ts picks between them.
+   *
+   * THESE STOP AT THE CROTCH, and there are no legs anywhere in this file.
+   * The scene rigs them instead, from lib/stackacres/farmhand-walk.ts, so
+   * they actually swing and bend -- a single frozen pose is what made the
+   * first version read as a cardboard cutout being jiggled. The box and the
+   * anchor are measured off the generated art these stand in front of (see
+   * rig_farmhand.py): the anchor's y is the cut line and its x is the hip
+   * midpoint, so placing one is just "put the pelvis here", and the two views
+   * can carry their pelvis in different places inside their own box (they do).
+   *
+   * Built on Grandfather Ray's proportions deliberately -- the two are the
+   * same species of silhouette. Everything else is pushed as far from Ray as
+   * the palette allows, because at the opening shot they are thirteen pixels
+   * tall and the only thing separating them is the outline. Ray is a straw
+   * hat and earth tones; this is a peaked cap, a red shirt and blue denim.
+   */
+  farmhand: painter(
+    11.375,
+    25.625,
+    (c) => {
+      // Far arm first, a shade darker, so the near side reads as nearer.
+      rr(c, 0.2, 12.4, 2.8, 8.2, 1.4);
+      F(c, RAMPS.roof.rim);
+      // The overalls run off the bottom of the box: the cut line is the hip,
+      // and this denim carries on into the legs the scene draws.
+      rr(c, 1.5, 13.6, 8, 12.1, 2.4);
+      F(c, RAMPS.water.rim);
+      // The shirt shows above the bib, which is what makes the torso two
+      // colours rather than one flat block at a distance.
+      rr(c, 1.2, 9.8, 8.6, 6.2, 2.2);
+      F(c, RAMPS.roof.top);
+      rr(c, 2.8, 12.4, 5.6, 4.4, 1.6);
+      F(c, RAMPS.water.side);
+      for (const x of [3.1, 7.3]) {
+        rr(c, x, 10, 1.1, 3.2, 0.5);
+        F(c, RAMPS.water.rim);
+      }
+      rr(c, 8.3, 12.8, 3, 8.2, 1.4);
+      F(c, RAMPS.roof.side);
+
+      ell(c, 5.5, 7, 3.4, 3.8);
+      F(c, "#c08758");
+      for (const x of [5.1, 7.3]) {
+        ell(c, x, 7.4, 0.5, 0.7);
+        F(c, "rgba(40,26,16,.8)");
+      }
+      // Peak first, crown over it, offset to the right: the peak is the one
+      // shape carrying which way he is looking at thirteen pixels tall.
+      ell(c, 6.8, 4.9, 3.9, 1.3);
+      F(c, RAMPS.roof.rim);
+      rr(c, 2.2, 1.2, 6.1, 4.3, 2.1);
+      F(c, RAMPS.roof.side);
+    },
+    0.4725,
+    1,
+  ),
+
+  // Walking away. No face, no bib (the overalls are one flat panel from
+  // behind), and the straps cross -- the one detail that says "this is his
+  // back" at a size where a face was never legible anyway.
+  farmhandBack: painter(
+    11.25,
+    25.625,
+    (c) => {
+      rr(c, 0.2, 12.4, 2.8, 8.2, 1.4);
+      F(c, RAMPS.roof.rim);
+      rr(c, 1.6, 12.6, 8, 13.1, 2.4);
+      F(c, RAMPS.water.rim);
+      rr(c, 1.3, 9.8, 8.6, 4.6, 2);
+      F(c, RAMPS.roof.top);
+      c.beginPath();
+      c.moveTo(3.2, 12.8);
+      c.lineTo(7.8, 17.4);
+      stroke(c, RAMPS.water.side, 1.1);
+      c.beginPath();
+      c.moveTo(7.8, 12.8);
+      c.lineTo(3.2, 17.4);
+      stroke(c, RAMPS.water.side, 1.1);
+      rr(c, 8.2, 12.8, 3, 8.2, 1.4);
+      F(c, RAMPS.roof.side);
+
+      ell(c, 5.6, 7, 3.4, 3.8);
+      F(c, "#c08758");
+      rr(c, 2.7, 7.2, 5.8, 3, 1.5);
+      F(c, "#5a3d26");
+      // The cap's own back seam, and no peak: it is on the far side of his
+      // head from here.
+      ell(c, 5.6, 5.9, 3.7, 1.1);
+      F(c, RAMPS.roof.rim);
+      rr(c, 2.3, 1.5, 6.1, 4.4, 2.1);
+      F(c, RAMPS.roof.side);
+    },
+    0.5667,
+    1,
+  ),
 
   /* ---- the woodland floor's litter, scattered by chunkScenery ---- */
 

@@ -1050,6 +1050,14 @@ export const PAINTERS: Record<PainterName, Painter> = {
   barn: spriteBacked("barn", DRAWN.barn),
   windmill: spriteBacked("windmill", DRAWN.windmill),
   grandfatherRay: spriteBacked("grandfatherRay", DRAWN.grandfatherRay),
+  // The farmhand's two views. The only pair in here that has to agree with
+  // ANOTHER asset rather than only with its own drawn fallback: they are the
+  // same man walking toward and away from the camera, so a mismatched
+  // costume between them reads as two people. Both are generated facing
+  // screen right, matching `ART_FACES`'s default and the drawn painters
+  // underneath, so the scene's mirror is the only thing that ever turns him.
+  farmhand: spriteBacked("farmhand", DRAWN.farmhand),
+  farmhandBack: spriteBacked("farmhandBack", DRAWN.farmhandBack),
   // The wild scenery. `treeRound` in three ramps was the cheapest thing in
   // this file and the weakest thing on the map -- three tones, three puffs,
   // one silhouette, and the woodland pass below multiplied it by about three,

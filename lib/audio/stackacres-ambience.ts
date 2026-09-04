@@ -19,7 +19,7 @@
  * happens after the tap-to-play splash -- an AudioContext created before a
  * gesture starts suspended and every scheduled voice would pile up behind it.
  * The context is also suspended whenever the tab is hidden, because a farm
- * making wind noise in a background tab is a battery bug.
+ * making noise in a background tab is a battery bug.
  */
 
 import {
@@ -279,39 +279,11 @@ class Ambience {
       return { sources: [source], walks: [] };
     }));
 
-    // `wind`: a band of pink-ish noise whose centre frequency AND level both
-    // wander. Moving only the level gives a fan; moving the filter with it is
-    // what makes a gust read as air moving past something.
-    this.beds.set("wind", this.bed(ctx, bus, (out) => {
-      const source = noiseSource(ctx, "brown");
-      const filter = ctx.createBiquadFilter();
-      filter.type = "bandpass";
-      filter.Q.value = 0.7;
-      filter.frequency.value = 400;
-      const gust = ctx.createGain();
-      gust.gain.value = 0.5;
-      source.connect(filter).connect(gust).connect(out);
-      return {
-        sources: [source],
-        walks: [
-          new RandomWalk(filter.frequency, 180, 900, 2600, ctx),
-          // 0.09..0.55, not 0.16..1.0. Wind shipped as the loudest thing on
-          // the farm by a wide margin: its gust walk peaked at 1.0 where every
-          // other bed tops out around 0.5 (grass) or lower (insects at 0.3),
-          // so on the Ox Fields -- which multiply wind by 0.92 -- it sat about
-          // 5dB over the whole rest of the mix and Kayo flagged it by ear.
-          // Both ends are scaled by the same 0.55, deliberately: cutting only
-          // the ceiling would have narrowed the gust from a 6x swing to a 3x
-          // one and quietly cost the bed the thing that makes it read as
-          // weather rather than as a fan.
-          new RandomWalk(gust.gain, 0.09, 0.55, 1900, ctx),
-        ],
-      };
-    }));
-
-    // `grass`: the rustle. Shares no signal with `wind`, but its own gust
-    // walk runs on a similar timescale, so the two drift in and out of phase
-    // instead of being locked -- which is what real grass in real wind does.
+    // `grass`: the rustle, and all that is left of the weather -- see
+    // AMBIENCE_BEDS in lib/stackacres/ambience-plan.ts for why there is no
+    // wind bed above it any more. Its own gust walk is what carries the
+    // weather now: the band moves as well as the level, so it reads as air
+    // going THROUGH grass rather than as a level being ridden up and down.
     this.beds.set("grass", this.bed(ctx, bus, (out) => {
       const source = noiseSource(ctx, "white");
       const high = ctx.createBiquadFilter();

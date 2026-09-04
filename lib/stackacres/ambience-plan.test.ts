@@ -34,14 +34,21 @@ describe("ambienceMix", () => {
     }
   });
 
-  it("makes the ox fields the windiest district and the wallow the wettest", () => {
+  it("makes the long meadow the grassiest district and the wallow the wettest", () => {
     // The districts have to be TOLD APART by ear, which is the whole point of
     // mixing per district rather than playing one farm bed everywhere.
-    const wind = ZONE_IDS.map((zone) => ({ zone, value: ambienceMix("day", zone).wind }));
-    expect(wind.sort((a, b) => b.value - a.value)[0].zone).toBe("oxfields");
+    const grass = ZONE_IDS.map((zone) => ({ zone, value: ambienceMix("day", zone).grass }));
+    expect(grass.sort((a, b) => b.value - a.value)[0].zone).toBe("meadow");
 
     const water = ZONE_IDS.map((zone) => ({ zone, value: ambienceMix("day", zone).water }));
     expect(water.sort((a, b) => b.value - a.value)[0].zone).toBe("wallow");
+  });
+
+  it("has no wind bed at all", () => {
+    // Not a level to be tuned down -- the bed is gone, and the doc over
+    // AMBIENCE_BEDS says why it must not come back. A bed reinstated at a
+    // "safe" gain is the exact regression this is here to catch.
+    expect([...AMBIENCE_BEDS] as string[]).not.toContain("wind");
   });
 
   it("hands the daytime insect hum over to the cricket cue at night", () => {
@@ -52,10 +59,10 @@ describe("ambienceMix", () => {
     }
   });
 
-  it("drops the wind with the light", () => {
+  it("settles the grass with the light", () => {
     for (const zone of ZONE_IDS) {
-      const day = ambienceMix("day", zone).wind;
-      const night = ambienceMix("night", zone).wind;
+      const day = ambienceMix("day", zone).grass;
+      const night = ambienceMix("night", zone).grass;
       if (day > 0) expect(night, zone).toBeLessThan(day);
     }
   });

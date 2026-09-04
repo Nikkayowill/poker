@@ -8,7 +8,6 @@ import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { useLandscape } from "@/components/use-landscape";
 import { useAppShell } from "@/components/shell/app-shell";
-import { tapSound } from "@/lib/audio/ui-sounds";
 import {
   setAmbienceAwake,
   setAmbienceHerd,
@@ -336,6 +335,7 @@ export function StackAcresFarm() {
     return () => window.clearTimeout(timer);
   }, [hasStarted]);
   const dismissWelcome = useCallback(() => {
+    panelSound();
     setShowWelcome(false);
     try {
       window.localStorage.setItem("sa-ray-welcomed", "1");
@@ -361,9 +361,9 @@ export function StackAcresFarm() {
     return () => stopAmbience();
   }, [hasStarted]);
 
-  // A farm making wind noise in a background tab is a battery bug, not
-  // atmosphere. Suspends the whole graph rather than muting it, so the
-  // scheduler stops doing work too.
+  // A farm making noise in a background tab is a battery bug, not atmosphere.
+  // Suspends the whole graph rather than muting it, so the scheduler stops
+  // doing work too.
   useEffect(() => {
     if (!hasStarted) return;
     const onVisible = () => setAmbienceAwake(document.visibilityState === "visible");
@@ -396,10 +396,11 @@ export function StackAcresFarm() {
    * It was called with `gameSounds: true`, which eagerly fetches the POKER
    * table's cue set (deal, chips, win) -- around 450KB -- on a route that
    * never plays any of them. It was there because two actions used to answer
-   * with `play("ui")`; both now have farm sounds of their own, and the chrome
-   * cues `tapSound` still uses prime themselves on import (CHROME_EFFECTS in
-   * lib/audio/manifest.ts). The app-wide mute is applied by the shell, which
-   * is always mounted, so nothing is left for the hook to do.
+   * with `play("ui")`. Nothing on this screen answers with a chrome cue any
+   * more: every press here is either an action on the farm (its own voice in
+   * lib/audio/stackacres-sfx.ts) or a panel moving (`panelSound`), so there
+   * is no `tapSound` left to import. The app-wide mute is applied by the
+   * shell, which is always mounted, so nothing is left for the hook to do.
    */
   const sending = useRef(false);
   const mounted = useRef(true);
@@ -771,9 +772,10 @@ export function StackAcresFarm() {
 
   const onCollect = useCallback(
     (unit: StackAcresUnitSnapshot) => {
-      // The collection itself is announced when it lands (in `act`), where
-      // the produce is actually known -- this is only the press.
-      tapSound();
+      // Silent on the press on purpose: the collection announces itself when
+      // it lands (in `act`), with the voice of the animal that actually paid
+      // out. A chrome click in front of that is one sound too many, and it is
+      // the app's click rather than the farm's.
       sendFarmhand(unit.id);
       void act({ action: "collect", unitIds: [unit.id] });
     },
@@ -785,7 +787,9 @@ export function StackAcresFarm() {
    * gathered TOGETHER, so a unit tapped on its own can never qualify.
    */
   const onHarvestAll = useCallback(() => {
-    tapSound();
+    // Same as a single collect: `act` answers with the loudest thing the
+    // sweep brought in. The key only renders while `carrying > 0`, so there
+    // is always something to answer with.
     void act({ action: "collect" });
   }, [act]);
 
@@ -840,11 +844,11 @@ export function StackAcresFarm() {
     [act, tendLocally],
   );
   const onArmRetire = useCallback((unit: StackAcresUnitSnapshot) => {
-    tapSound();
+    panelSound();
     setRetiringUnitId(unit.id);
   }, []);
   const onCancelRetire = useCallback(() => {
-    tapSound();
+    panelSound();
     setRetiringUnitId(null);
   }, []);
   const onConfirmRetire = useCallback(
@@ -921,6 +925,10 @@ export function StackAcresFarm() {
       setPlace(stockZone(unit.stock));
       const action = tapActionFor(unit, { feed, gold, nowMs });
       if (action.kind === "refused") {
+        // A knock on wood for a real no, and silence for a unit that is only
+        // still growing -- see `why` on StackAcresTapAction. The floated line
+        // answers both either way.
+        if (action.why === "blocked") refusedSound();
         world.current?.floatAt(at, action.reason, "deny");
         return;
       }
@@ -932,7 +940,25 @@ export function StackAcresFarm() {
       // the duplicates this cannot see (a retry after a dropped connection,
       // another tab).
       if (sending.current) return;
-      tapSound();
+      // The farm's own voice for the gesture, chosen off the same `action`
+      // that is about to be sent. This is the press the whole sound set was
+      // written for and it was the last thing still answering with the app's
+      // chrome click: tapping a hen, a dry row and a mucked plot all made the
+      // one lobby noise, while the sidebar rows beside them -- doing exactly
+      // the same three things -- had had their own sounds since the sound
+      // pass landed. The tap path simply predated it.
+      //
+      // Feed, water and clear speak on the PRESS because `tendLocally` below
+      // has already applied them locally: the farm has changed by the time
+      // the finger lifts, so a sound that waits for the network would be late
+      // for something that has visibly already happened. Collect is the
+      // deliberate exception and stays silent here -- it answers in `act`,
+      // where the response says which unit paid out, and it answers with that
+      // animal's own voice. A click in front of a hen clucking is a click in
+      // front of the best sound on the farm.
+      if (action.kind === "feed") feedSound(unit.stock);
+      else if (action.kind === "water") waterSound();
+      else if (action.kind === "clear") muckSound();
       tapAnchor.current = at;
       // Only for a tap that actually became a request: he answers the write,
       // not the finger. Clearing is excluded -- see `sendFarmhand`.
@@ -955,7 +981,10 @@ export function StackAcresFarm() {
   /** A finger landed on a district's fenced ground and hit nothing. That is
    *  "I want something HERE", answered where the finger is. */
   const onWorldGroundTap = useCallback((zone: ZoneId, at: TapPoint) => {
-    tapSound();
+    // A menu opening over the map, same as the barn and the locked-land
+    // sheets below -- not an action on the farm, so it takes the farm's
+    // panel cue rather than one of the action voices.
+    panelSound();
     setPlace(zone);
     setRadial({ zone, at });
   }, []);
@@ -1003,7 +1032,9 @@ export function StackAcresFarm() {
     (stock: StackAcresStock) => {
       const at = radial?.at ?? null;
       setRadial(null);
-      tapSound();
+      // The same seed going into the same ground as `onSeed`; the only
+      // difference is which control asked for it.
+      sowSound();
       tapAnchor.current = at;
       void act({ action: "stock", stock });
     },
@@ -1013,7 +1044,7 @@ export function StackAcresFarm() {
   /** The ring's own way through to the deep end -- the same drawer the peg on
    *  the right edge opens, reached without having to go and find the peg. */
   const openPanel = useCallback(() => {
-    tapSound();
+    panelSound();
     setRadial(null);
     setPanelOpen(true);
   }, []);
@@ -1124,7 +1155,7 @@ export function StackAcresFarm() {
       <header className="floor-bar">
         <div className="floor-bar-left">
           <FloorBackLink />
-          <button type="button" className="htp-trigger" onClick={() => { tapSound(); setShowHelp(true); }}>
+          <button type="button" className="htp-trigger" onClick={() => { panelSound(); setShowHelp(true); }}>
             <HelpCircle size={13} aria-hidden="true" /> How to play
           </button>
         </div>

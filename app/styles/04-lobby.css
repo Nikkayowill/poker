@@ -1113,7 +1113,12 @@ button:disabled { cursor: wait; opacity: .62; }
   z-index: 2;
   display: flex;
   justify-content: center;
-  padding: 14px 16px calc(14px + var(--safe-bottom));
+  /* The bottom pad ABSORBS the safe-area strip rather than sitting on top of
+     it. `calc(14px + inset)` spent both, which on a home-indicator iPhone put
+     48px of empty bar under a 12px row of links and read as the footer
+     hovering rather than resting on the edge. The inset already is the
+     clearance; 14px is only the floor for a device that reports none. */
+  padding: 14px 16px max(14px, var(--safe-bottom));
   border-top: 1px solid rgba(182, 166, 219, .15);
   background: linear-gradient(180deg, rgba(22, 27, 38, 0), rgba(22, 27, 38, .94) 35%);
 }

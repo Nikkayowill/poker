@@ -193,6 +193,41 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
 
+  /* The bottom inset is capped, and this is the fix for the long-running
+     "everything sits too high above the bottom edge" bug -- the one the open
+     block at the top of 45-mobile-shell.css spent five passes on, plus the
+     sign-in footer's Terms row floating a long way up the dead bar below it.
+
+     What is actually happening: on an installed iOS PWA this device reports
+     env(safe-area-inset-bottom) at roughly 86px, not the 34px the home
+     indicator occupies. Reproduced rather than guessed -- rendering this app
+     at 393x852 with the inset forced to 86px puts the tab pill and the
+     .entry-footer links exactly where a real device screenshot has them, and
+     forcing it to 34px does not. So the layout viewport is NOT short (that
+     was the earlier diagnosis, and it is wrong) and nothing is mispositioned;
+     the number coming out of the browser is simply far larger than the strip
+     the hardware actually owns.
+
+     Capping is safe because the space below is demonstrably usable screen: on
+     that same device the lobby's pane content paints through the whole strip,
+     down to the physical edge, with nothing covering it. It is also the right
+     call for the browser case -- iOS Safari already holds a
+     `position: fixed; bottom: 0` element above its own bottom toolbar, so
+     spending the toolbar's height again as padding was double-counting it.
+
+     34px is the iPhone home indicator in portrait, and the largest real
+     bottom inset on hardware this app ships to (iPad is 20-24px, landscape
+     iPhone 21px; the Capacitor Android build runs above the nav bar and
+     reports 0). REVISIT THIS NUMBER if Android edge-to-edge is ever turned
+     on -- a 3-button nav bar is 48dp and would need the room.
+
+     A second declaration rather than folded into the one above, so a browser
+     without min() keeps the uncapped value instead of dropping --safe-bottom
+     entirely -- same progressive-enhancement shape as the `100vh` / `100svh`
+     pairs elsewhere. safe-area.spec.ts overrides the property wholesale, so
+     its own 34px case is unaffected either way. */
+  --safe-bottom: min(env(safe-area-inset-bottom, 0px), 34px);
+
   /* The lobby chrome's height, stated once because three other rules have to
      agree with it: .lobby-header is this tall, and .lobby and
      .account-entry-page are each `100svh` minus it. They used to be three

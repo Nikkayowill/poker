@@ -13,39 +13,35 @@
    missing z-index (8cc6ae5) was the one confirmed real cause -- and dropped
    the reflow entirely.
 
-   OPEN BUG, and read this before touching the bar again (2026-08-29).
+   THE BAR-SITS-TOO-HIGH BUG IS FIXED (2026-09-04). It was never this file.
 
-   On an installed iOS PWA's cold launch the bar sits roughly a Safari-
-   toolbar's height above the screen bottom, with a strip of bare colour
-   under it; rotating to landscape and back fixes it for that session. A
-   fresh install (delete the icon, re-add) does NOT fix it, so this is not
-   the stale-WKWebView-instance trap.
+   Six passes read it as a gap opening UNDER a `bottom: 0` bar and went
+   looking for a short layout viewport -- a stale web view frame, a hijacked
+   containing block, a reflow that never fired. All of that was chasing the
+   wrong shape. The bar was not gapped: `env(safe-area-inset-bottom)` on an
+   installed iOS PWA reports about 86px where the home indicator is 34px, so
+   every bottom offset keyed to it -- this bar, `.entry-footer`'s Terms row,
+   the panes' bottom padding -- was simply built ~50px too tall. The "strip
+   of bare colour" was the bar's own oversized safe-area padding, not the
+   room showing through beneath it.
 
-   What is ruled out, so nobody re-runs it:
-     - Stale/zero `--safe-bottom`. The padding below is INSIDE the bar and
-       its background paints across it, so a wrong inset makes the bar too
-       SHORT, flush at the bottom. It cannot open a gap beneath a
-       `bottom: 0` element.
-     - A hijacked containing block. Nothing on the ancestor chain
-       (.app-root > main.lobby.lobby-shell > .hub > .mshell) sets transform,
-       filter, backdrop-filter, perspective, contain or container-type, and
-       no other rule in this app sets `bottom` on .mshell-nav.
-     - Forced reflow from JS. Tried three times (b694082, 1372ea2, and once
-       on 2026-08-29, reverted before shipping). The strip is the ROOM
-       colour, not this bar's, under a bar already at `bottom: 0` -- so the
-       layout viewport is short and the DOM is laid out correctly inside it.
-       A reflow re-runs layout against the same short viewport. Only a real
-       window-bounds change (the rotation) makes WebKit re-measure, and JS
-       cannot trigger one.
+   What settled it, and how to re-run it if the number ever moves: render
+   this app headless at 393x852 with `--safe-bottom` forced to 86px (the
+   `withInsets` init-script recipe in tests/e2e/safe-area.spec.ts) and the
+   pill and the sign-in footer land exactly where a real device screenshot
+   has them; forced to 34px they do not. Measuring the render against the
+   device beats reasoning about WebKit, which is what the previous passes
+   were doing.
 
-   So the remaining suspect is the web view's own frame at cold launch, not
-   anything this stylesheet says. Measure before changing code:
-   `app/debug/viewport-launch` renders the recorded launch timeline (window vs
-   visualViewport vs screen height, and where a fixed `bottom: 0` probe
-   actually lands). If the probe's bottom equals innerHeight while the gap
-   is still visible on screen, the gap is OUTSIDE the document entirely and
-   no CSS or JS in this app can close it -- that points at the manifest and
-   the native shell.
+   The cap lives in 01-tokens.css on --safe-bottom itself, with the full
+   reasoning and the one condition that should make someone revisit it. This
+   file only stopped ADDING its own float on top of the inset (see
+   .mshell-nav's `bottom` below) -- that was the other half.
+
+   `app/debug/viewport-launch` and components/debug/viewport-probe.tsx were
+   built for the short-viewport theory and are kept only until the cap is
+   confirmed on a real installed PWA. Once it is, delete both along with the
+   probe's mount in app/layout.tsx.
    =========================================================================
    Turns on at max-width 600px, the same width every other mobile rule in this
    app already uses (`--lobby-header-h` drops to 68px there, `.hub-grid` goes
@@ -137,7 +133,7 @@
        above the safe area -- named once so the bar itself, the panes that
        must not scroll content under it, and the install nudge that sits
        just above it all agree on the same number. */
-    --mshell-nav-h: calc(58px + max(var(--safe-bottom), 10px) + 10px);
+    --mshell-nav-h: calc(58px + max(var(--safe-bottom), 20px));
   }
 
   /* ---- the swipe track ------------------------------------------------ */
@@ -646,19 +642,19 @@
   /* A floating glass pill, not the TikTok-style bar this replaces (that
      shape lived here as a ~44px row flush against the safe-area strip --
      see git history if it needs resurrecting). It no longer touches any
-     edge: it floats `--safe-bottom` (or a 10px floor) plus another 10px
-     above the bottom, inset from the sides, fully rounded via
-     `--radius-pill`. Nothing paints under it, so unlike the old bar there
-     is no safe-area padding baked into the shape itself -- the floating gap
-     already clears the home indicator.
+     edge: it floats `--safe-bottom` (or a 20px floor) above the bottom,
+     inset from the sides, fully rounded via `--radius-pill`. Nothing paints
+     under it, so unlike the old bar there is no safe-area padding baked into
+     the shape itself -- the floating gap already clears the home indicator,
+     which is exactly why it must not also be spent as a separate float.
 
      `position: fixed` rather than a flex sibling sized by `.lobby.lobby-shell`'s
-     own `100dvh` calc, for the same reason the flush bar was: on an installed
-     iOS PWA (standalone), `100dvh` measures short of the true screen bottom by
-     roughly the home-indicator inset, so a height-derived bar drifts. Fixed to
-     the real viewport sidesteps that. `.mshell-pane`'s bottom padding and
-     `.install-strip`'s offset both key off `--mshell-nav-h` (declared on
-     `.mshell`) to clear the pill's new footprint.
+     own `100dvh` calc, for the same reason the flush bar was: a bar whose
+     position is derived from a viewport-unit height moves whenever that unit
+     is re-resolved, and pinning to the viewport sidesteps the question.
+     `.mshell-pane`'s bottom padding and `.install-strip`'s offset both key
+     off `--mshell-nav-h` (declared on `.mshell`) to clear the pill's
+     footprint.
 
      No JS anywhere in this rule or the ones below it -- `--safe-bottom` is
      read live, same as every other fixed bottom layer in this app. See the
@@ -669,7 +665,12 @@
     position: fixed;
     left: 14px;
     right: 14px;
-    bottom: calc(max(var(--safe-bottom), 10px) + 10px);
+    /* Absorbs the safe-area strip instead of floating a further 10px above
+       it: the inset IS the float on a home-indicator phone, and spending
+       both put the pill 44px off the edge. 20px is the floor for anything
+       reporting no inset, which is what keeps it reading as floating on
+       Android and on a narrow desktop window. */
+    bottom: max(var(--safe-bottom), 20px);
     z-index: var(--z-status-overlay);
     padding: 0 4px;
     border-radius: var(--radius-pill);

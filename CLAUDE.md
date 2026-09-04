@@ -619,6 +619,30 @@ Gold sink; nothing new pays Gold out. Verified live end to end against memory-mo
 `20260904130000_stackacres_sectors_and_upkeep.sql` is **unapplied**; see
 `[[reference_stackchips_migrations_not_auto_applied]]`.
 
+### The bottom-chrome "everything sits too high" bug: `--safe-bottom` is now capped (2026-09-04)
+Six earlier passes read this as a gap opening *under* the phone tab bar and hunted a short layout
+viewport (a stale WKWebView frame, a hijacked containing block, three separate `useEffect`
+reflow-forcing attempts, all reverted) — the open-bug block at the top of `45-mobile-shell.css` recorded
+that diagnosis and it was **wrong**. Kayo's second symptom is what broke it open: the sign-in screen's
+`.entry-footer` Terms row sits just as high, and that page shares nothing with the mobile shell except
+`--safe-bottom`. On an installed iOS PWA `env(safe-area-inset-bottom)` reports **~86px** where the home
+indicator is 34px, so every bottom offset keyed to it was built ~50px too tall; the "strip of bare
+colour" was the bar's own oversized safe-area padding, not the room showing through beneath it.
+Established by **reproduction, not reasoning**: rendering headless at 393x852 with the inset forced to
+86px lands the pill and the footer links exactly where a device screenshot has them, and 34px does not
+— re-run it with `safe-area.spec.ts`'s own `withInsets` init-script recipe if the number ever moves.
+Two halves to the fix: (1) `--safe-bottom` is capped at 34px in `01-tokens.css`, as a **second
+declaration** so a browser without `min()` keeps the uncapped value rather than dropping the property;
+safe to cap because that strip is demonstrably usable screen (the lobby's own pane paints right through
+it) and because iOS Safari already holds `fixed; bottom: 0` above its own toolbar, so spending the
+toolbar height again was double-counting. (2) the bottom chrome now **absorbs** the inset instead of
+stacking on it — `.entry-footer` `max(14px, inset)` not `calc(14px + inset)`, `.mshell-nav`
+`max(inset, 20px)` not `calc(max(inset, 10px) + 10px)`. **Revisit the 34px cap if Android edge-to-edge
+is ever enabled** (a 3-button nav bar is 48dp; the Capacitor build currently runs above it and reports
+0). `app/debug/viewport-launch` + `components/debug/viewport-probe.tsx` were built for the dead
+short-viewport theory — delete them and the probe's mount in `app/layout.tsx` once the cap is confirmed
+on a real installed PWA.
+
 ### Word Stack and Connections now carry their payout ladder (2026-08-27)
 Closes a gap left open by the Ante Up economy fix earlier the same day: both games computed payout
 from a module-level multiplier table at settlement, and since both are once-a-day boards that can be

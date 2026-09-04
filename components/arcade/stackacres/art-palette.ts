@@ -41,24 +41,34 @@ export interface Ramp {
 }
 
 export const RAMPS = {
+  // 2026-09-03: grass/lawn/leaf/pine and path/wood widened -- more distance
+  // between `top` and `rim` on each (the docstring above is right that the
+  // eye reads that STEP, not the raw hue, so this is where "brighter" is
+  // actually spent) plus a touch more saturation on `top` itself, aimed at
+  // a livelier, more saturated read overall. `wild`/`soil`/`straw`/`muck`
+  // deliberately untouched: the owned-vs-wild and worked-ground brightness
+  // hierarchies these ramps encode (see their own comments, and
+  // zones.ts's Ox Fields/Fold mood) depend on staying duller than what's
+  // around them, so brightening them would undercut the exact hierarchy
+  // that makes owned land read as the most inviting thing in frame.
   /** Open ground outside a plot. */
-  grass: { top: "#8cd444", side: "#6bb233", rim: "#4c8623" },
+  grass: { top: "#9be23f", side: "#67ab2c", rim: "#3d6f19" },
   /** A cleared, owned plot -- deliberately the warmest, brightest green on
    *  screen, because owned land must be the most inviting thing in frame. */
-  lawn: { top: "#a2e05c", side: "#7cc03c", rim: "#59932a" },
+  lawn: { top: "#b3ee66", side: "#79c136", rim: "#4a7d1f" },
   /** Land nobody has cleared: darker and cooler, so owned land wins. */
   wild: { top: "#5e9b3a", side: "#487a2b", rim: "#33591d" },
-  path: { top: "#f2dda4", side: "#d8bc7c", rim: "#b2955a" },
+  path: { top: "#f7d98c", side: "#dbb46a", rim: "#9f7c40" },
   soil: { top: "#c89058", side: "#a87038", rim: "#7e5127" },
   straw: { top: "#efd98a", side: "#d4ba63", rim: "#a8913f" },
   muck: { top: "#7a5636", side: "#5c3f26", rim: "#3c2817" },
-  wood: { top: "#d9a05f", side: "#b47c3e", rim: "#8a5a28" },
+  wood: { top: "#dd9a4a", side: "#b8762c", rim: "#79491b" },
   /** Fences, trim, painted boards. */
   cream: { top: "#f8f1dc", side: "#e0d4b2", rim: "#b9a87e" },
   roof: { top: "#f05c42", side: "#ce3f2c", rim: "#9c2b1c" },
   water: { top: "#63c8e8", side: "#3fa6cc", rim: "#2a7e9e" },
-  leaf: { top: "#5fbf3a", side: "#46992a", rim: "#2f7019" },
-  pine: { top: "#3e9450", side: "#2e7440", rim: "#1e512c" },
+  leaf: { top: "#6bd041", side: "#429322", rim: "#235411" },
+  pine: { top: "#439f57", side: "#2c7a3f", rim: "#163f21" },
   carrot: { top: "#ff9a3c", side: "#e1741f", rim: "#ae5312" },
   corn: { top: "#ffd24d", side: "#e0ae28", rim: "#a87d14" },
   stone: { top: "#c3c1ba", side: "#a3a199", rim: "#7c7a73" },

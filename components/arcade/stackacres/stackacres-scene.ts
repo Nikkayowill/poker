@@ -16,6 +16,7 @@ import {
   unprojectBoundsApprox,
   type DiamondCorners,
 } from "@/lib/stackacres/iso";
+import { worldBoundsScreenRect } from "@/lib/stackacres/bounds";
 import { FARM_PATHS } from "@/lib/stackacres/paths";
 import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS } from "@/lib/stackacres/props";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
@@ -39,6 +40,7 @@ import {
 import {
   STACKACRES_CHUNK,
   STACKACRES_MARGIN,
+  WORLD_BOUND_MARGIN,
   chunkScenery,
   clampZoom,
   critterSpeed,
@@ -78,11 +80,15 @@ import { bakePondTexture } from "./art-water";
  * One Phaser scene draws the whole world -- the barn yard, every district,
  * the owned units standing in them, and the woodland the farm was cut out
  * of -- and the camera is what the player moves: drag to pan, pinch or wheel
- * to zoom. The camera is unbounded. Roaming off the edge of a district is
- * not an error state to fence off, it is the point of drawing a map instead
- * of a grid, so the world past the fence is grown in chunks around wherever
- * the camera is (`tendWorld`) and thrown away again once it is well out of
- * sight.
+ * to zoom. The camera is bounded (lib/stackacres/bounds.ts, wired in here at
+ * the top of `create()`): a hard edge sits a margin past the outermost
+ * district, and Phaser simply will not scroll the camera across it. Roaming
+ * off the edge of a district is still not an error state to fence off --
+ * the whole point of a map over a grid is that there is somewhere to walk to
+ * -- so short of that hard edge the world is still grown in chunks around
+ * wherever the camera is (`tendWorld`) and thrown away again once it is well
+ * out of sight; the bound just gives that growth a finite range to ever be
+ * asked for.
  *
  * Nothing is downloaded. Every picture is a Canvas2D painter from
  * ./stackacres-art.ts, baked once at boot into a texture at ART_SCALE device
@@ -425,9 +431,15 @@ export class StackAcresScene extends Phaser.Scene {
   private unbindInput: (() => void) | null = null;
 
   private grass: Phaser.GameObjects.TileSprite | null = null;
-  private clouds: Phaser.GameObjects.Image[] = [];
   /** The screen-pinned wash over everything: darker corners, warm sun corner. */
   private vignette: Phaser.GameObjects.Image | null = null;
+  /** The world's own hard edge, in the same projected screen space as
+   *  `camera.setBounds()` and `viewRect()` -- set once in `create()`, read
+   *  every frame by `fitEdgeGuides()` to know how close the view is to it. */
+  private worldBounds: WorldRect | null = null;
+  /** The four "you've gone far enough" nudges, one per screen edge, faded in
+   *  by `fitEdgeGuides()` as the view nears that edge of `worldBounds`. */
+  private edgeGuides: Record<"n" | "e" | "s" | "w", Phaser.GameObjects.Image> | null = null;
   /** Scene time as of the last update(), for anything a pointer event starts. */
   private now = 0;
   /** Grown scenery, by "cx:cy". The open world, one chunk at a time -- the
@@ -525,6 +537,16 @@ export class StackAcresScene extends Phaser.Scene {
     this.grass.tileScaleX = 1 / GRASS_PX;
     this.grass.tileScaleY = 1 / GRASS_PX;
 
+    // The world's own hard edge, set before anything else about its shape:
+    // every later camera move (drag, glide, pinch-zoom, focusZone, the
+    // opening homeView() itself) is already written in this same projected
+    // screen space, so none of them need to know bounds exist -- Phaser
+    // clamps scrollX/scrollY against this rect on every frame regardless of
+    // which of them moved the camera there.
+    const bounds = worldBoundsScreenRect();
+    this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    this.worldBounds = bounds;
+
     // Districts before paths: a road is laid on a field, and the ground the
     // road runs over has to exist underneath it.
     this.paintZoneGround();
@@ -544,15 +566,6 @@ export class StackAcresScene extends Phaser.Scene {
       .setScale(1.5 / S)
       .setDepth(9001)
       .setVisible(false);
-    for (let i = 0; i < 3; i += 1) {
-      this.clouds.push(
-        this.add
-          .image(0, 0, "cloud", ART_FRAME)
-          .setScale(1 / S)
-          .setDepth(8000)
-          .setAlpha(this.options.reducedMotion ? 0 : 1),
-      );
-    }
     // Pinned to the screen, not the world, and above every world object
     // (the DOM chrome is a separate layer entirely, so nothing of the
     // player's is under it). Sized to the camera in update().
@@ -561,6 +574,21 @@ export class StackAcresScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(1e9);
+
+    // The "you've gone far enough" nudges -- same screen-pinned treatment as
+    // the vignette, one above it (a higher depth) so they read against its
+    // darkened corners. Built invisible; `fitEdgeGuides()` (called every
+    // frame alongside `fitVignette()`) is what fades each one in as the view
+    // nears that edge of `worldBounds` and positions/sizes them for the
+    // current zoom.
+    const edgeGuide = () =>
+      this.add.image(0, 0, "edgeArrow", ART_FRAME).setOrigin(0.5).setScrollFactor(0).setDepth(2e9).setAlpha(0);
+    this.edgeGuides = {
+      n: edgeGuide().setRotation(Math.PI / 2),
+      e: edgeGuide().setRotation(Math.PI),
+      s: edgeGuide().setRotation(-Math.PI / 2),
+      w: edgeGuide().setRotation(0),
+    };
 
     this.bindInput();
 
@@ -2263,31 +2291,60 @@ export class StackAcresScene extends Phaser.Scene {
     vignette.setDisplaySize(cam.width / cam.zoom + 2, cam.height / cam.zoom + 2);
   }
 
+  /**
+   * Fades each edge nudge in as the view nears that edge of `worldBounds`,
+   * and holds it at a fixed spot on screen at any zoom.
+   *
+   * A scrollFactor(0) object is still scaled by the camera's zoom around the
+   * camera's own origin (cam.width/2, cam.height/2) -- the exact reason
+   * `fitVignette` has to divide its display SIZE by zoom to hold a constant
+   * apparent size. An off-centre object needs the same correction applied to
+   * its POSITION: its offset from that centre has to be pre-divided by zoom
+   * too, or it drifts toward the corners as the player zooms in.
+   */
+  private fitEdgeGuides(): void {
+    const guides = this.edgeGuides;
+    const bounds = this.worldBounds;
+    if (!guides || !bounds) return;
+    const cam = this.cameras.main;
+    const view = this.viewRect();
+
+    const distW = Math.max(0, view.x - bounds.x);
+    const distE = Math.max(0, bounds.x + bounds.width - (view.x + view.width));
+    const distN = Math.max(0, view.y - bounds.y);
+    const distS = Math.max(0, bounds.y + bounds.height - (view.y + view.height));
+    // How close counts as "near": the same margin the boundary itself was
+    // padded by (./bounds.ts), so the nudge starts appearing right as the
+    // view enters the ring of woodland that padding exists to leave standing.
+    const near = (dist: number) => 1 - Math.min(1, dist / WORLD_BOUND_MARGIN);
+
+    const cx = cam.width / 2;
+    const cy = cam.height / 2;
+    const inset = Math.min(cam.width, cam.height) * 0.12;
+    const size = Math.min(cam.width, cam.height) * 0.09;
+    const place = (image: Phaser.GameObjects.Image, screenX: number, screenY: number, alpha: number) => {
+      image.setPosition(cx + (screenX - cx) / cam.zoom, cy + (screenY - cy) / cam.zoom);
+      image.setDisplaySize(size / cam.zoom, (size * (20 / 32)) / cam.zoom);
+      image.setAlpha(alpha);
+    };
+    place(guides.w, inset, cy, near(distW));
+    place(guides.e, cam.width - inset, cy, near(distE));
+    place(guides.n, cx, inset, near(distN));
+    place(guides.s, cx, cam.height - inset, near(distS));
+  }
+
   update(time: number, delta: number): void {
     this.now = time;
     this.coast(delta);
     this.tendWorld();
     this.fitVignette();
+    this.fitEdgeGuides();
     if (this.options.reducedMotion) return;
 
     this.animatePond(time);
     this.walkHerds(time, delta);
     this.regrowMeadow();
     if (this.blades) this.blades.rotation = time * WINDMILL_SPEED;
-
-    // Cloud shadows, drifting across whatever the camera is looking at. They
-    // are placed against the view rather than the world: there is no world
-    // edge for them to have come from.
-    const view = this.viewRect();
-    this.clouds.forEach((cloud, i) => {
-      const w = view.width + 400;
-      const h = view.height + 300;
-      const t = time * 0.004 + i * 700;
-      cloud.setPosition(
-        view.x - 200 + ((t * 2.2 + i * 500) % w),
-        view.y - 150 + ((t * 0.8 + i * 900) % h),
-      );
-    });
 
     // Every owned animal, one tick of its day -- the same wander
     // `stepCritter` drives everywhere else on this map, just one critter per
